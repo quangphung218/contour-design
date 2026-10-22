@@ -477,3 +477,62 @@ async fn live_artifacts_over_http() {
     // The file API still refuses the reserved folder.
     assert!(h.state.store.read_file(&id, ".live-artifacts/x").is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Plugins
+
+#[tokio::test]
+async fn bundled_plugins_list_info_and_apply() {
+    let h = harness();
+    let all = h.get("/api/plugins").await.json();
+    let ids: Vec<&str> = all["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&"od-new-generation") && ids.contains(&"todo-write"));
+    assert!(!ids.contains(&"od-default"), "hidden by default");
+    let with_hidden = h
+        .get("/api/plugins?includeHidden=1&kind=scenario")
+        .await
+        .json();
+    let scenarios = with_hidden["plugins"].as_array().unwrap();
+    assert_eq!(scenarios.len(), 10);
+    assert!(scenarios.iter().all(|p| p["kind"] == "scenario"));
+
+    let info = h.get("/api/plugins/od-media-generation").await;
+    assert_eq!(info.status, StatusCode::OK);
+    let info = info.json();
+    assert!(info["plugin"]["body"].as_str().unwrap().len() > 100);
+    assert_eq!(info["plugin"]["source"], "bundled");
+    assert_eq!(
+        h.get("/api/plugins/nope").await.status,
+        StatusCode::NOT_FOUND
+    );
+
+    let res = h
+        .post(
+            "/api/plugins/od-new-generation/apply",
+            json!({ "inputs": {} }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let res = h
+        .post(
+            "/api/plugins/od-new-generation/apply",
+            json!({ "inputs": { "artifactKind": "dashboard", "audience": "ops", "topic": "latency" }, "locale": "vi" }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let v = res.json();
+    assert!(
+        v["query"]
+            .as_str()
+            .unwrap()
+            .starts_with("Generate a dashboard for ops on latency.")
+    );
+    assert_eq!(v["projectMetadata"]["taskKind"], "new-generation");
+    let block = v["appliedPlugin"]["promptBlock"].as_str().unwrap();
+    assert!(block.contains("## Plugin inputs") && block.contains("- **topic**: latency"));
+}

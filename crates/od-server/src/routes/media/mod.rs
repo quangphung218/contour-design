@@ -3,9 +3,11 @@
 //!
 //! - `POST /api/projects/:id/export/mp4`: HyperFrames → MP4 ([`mp4`]).
 //! - `/api/live-artifacts/*`, `/api/tools/live-artifacts/*` ([`live`]).
+//! - `/api/plugins*` ([`plugins`]); runs apply them via `pluginId`.
 
 pub mod live;
 pub mod mp4;
+pub mod plugins;
 
 use crate::state::AppState;
 use axum::routing::post;
@@ -24,4 +26,5 @@ pub fn routes_with(renderer: Arc<dyn Renderer>) -> Router<AppState> {
         .route("/api/projects/{id}/export/mp4", post(mp4::export_mp4))
         .layer(Extension(renderer))
         .merge(live::routes())
+        .merge(plugins::routes())
 }

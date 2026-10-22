@@ -3,6 +3,7 @@
 
 use crate::craft::list_craft;
 use crate::design_systems::{DesignSystemEntry, ListOptions, list_design_systems};
+use crate::plugins::{PluginEntry, list_plugins};
 use crate::skills::{SkillEntry, list_skills, resolve_skill_id};
 use arc_swap::ArcSwap;
 use od_contracts::CraftEntry;
@@ -17,9 +18,12 @@ pub struct ContentRoots {
     pub bundled_design_templates: PathBuf,
     pub bundled_design_systems: PathBuf,
     pub craft: PathBuf,
+    /// `plugins/_official` (groups of plugin folders).
+    pub bundled_plugins: PathBuf,
     pub user_skills: Option<PathBuf>,
     pub user_design_templates: Option<PathBuf>,
     pub user_design_systems: Option<PathBuf>,
+    pub user_plugins: Option<PathBuf>,
 }
 
 impl ContentRoots {
@@ -31,6 +35,7 @@ impl ContentRoots {
             bundled_design_templates: resource_root.join("design-templates"),
             bundled_design_systems: resource_root.join("design-systems"),
             craft: resource_root.join("craft"),
+            bundled_plugins: resource_root.join("plugins").join("_official"),
             ..Self::default()
         }
     }
@@ -42,6 +47,7 @@ impl ContentRoots {
         self.user_skills = Some(data_root.join("skills"));
         self.user_design_templates = Some(data_root.join("design-templates"));
         self.user_design_systems = Some(data_root.join("design-systems"));
+        self.user_plugins = Some(data_root.join("plugins"));
         self
     }
 
@@ -61,6 +67,7 @@ pub struct ContentIndex {
     pub design_systems: Vec<DesignSystemEntry>,
     pub craft: Vec<CraftEntry>,
     pub craft_dir: PathBuf,
+    pub plugins: Vec<PluginEntry>,
     pub build_time: Duration,
 }
 
@@ -104,12 +111,14 @@ impl ContentIndex {
                 )
             },
         );
+        let plugins = list_plugins(&roots.bundled_plugins, roots.user_plugins.as_deref());
         Self {
             skills,
             design_templates,
             design_systems,
             craft,
             craft_dir: roots.craft.clone(),
+            plugins,
             build_time: started.elapsed(),
         }
     }
@@ -128,6 +137,11 @@ impl ContentIndex {
     #[must_use]
     pub fn find_design_system(&self, id: &str) -> Option<&DesignSystemEntry> {
         self.design_systems.iter().find(|d| d.summary.id == id)
+    }
+
+    #[must_use]
+    pub fn find_plugin(&self, id: &str) -> Option<&PluginEntry> {
+        self.plugins.iter().find(|p| p.id == id)
     }
 }
 
@@ -152,6 +166,7 @@ impl ContentStore {
             design_templates = index.design_templates.len(),
             design_systems = index.design_systems.len(),
             craft = index.craft.len(),
+            plugins = index.plugins.len(),
             ms = index.build_time.as_millis(),
             "content index built"
         );

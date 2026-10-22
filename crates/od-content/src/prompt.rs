@@ -54,6 +54,8 @@ pub struct PromptInput<'a> {
     /// Concatenated craft sections and their slugs.
     pub craft: Option<(&'a str, &'a [String])>,
     pub skills: &'a [&'a SkillEntry],
+    /// Rendered `## Active plugin` block (see [`crate::plugins`]).
+    pub plugin_block: Option<&'a str>,
 }
 
 impl PromptInput<'_> {
@@ -233,7 +235,10 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     if !ask {
         p.push(format!("\n\n{SEMANTIC_OUTPUT_FILE_NAMES}"));
     }
-    // 10. Plugins: none bundled yet.
+    // 10. Active plugin, next to the skill it extends.
+    if let Some(block) = input.plugin_block.filter(|b| !b.trim().is_empty()) {
+        p.push(block.to_owned());
+    }
     // 11. Deck framework, unless a deck skill brings its own seed.
     let deck_seed = input.skills.iter().any(|s| {
         s.info.mode == od_contracts::SkillMode::Deck && s.body.contains("assets/template.html")
