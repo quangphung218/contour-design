@@ -138,8 +138,9 @@ pub fn print_slides(w: u32, h: u32) -> String {
     )
 }
 
-/// Installs the frame bridge over `window.__timelines` and waits (up to
-/// 15 s) for the root composition's timeline to register. Resolves to
+/// Installs the frame bridge over `window.__timelines` and waits for the
+/// root composition's timeline to register: not at all without scripts,
+/// 1 s when the root declares `data-duration`, else up to 15 s. Resolves to
 /// `{duration, timelines}`: `duration` in seconds is the root's
 /// `data-duration`, else the longest registered timeline.
 pub fn frame_ready() -> String {
@@ -151,7 +152,13 @@ pub fn frame_ready() -> String {
     if (!all || typeof all !== 'object') return [];
     return Object.values(all).filter((tl) => tl && (typeof tl.seek === 'function' || typeof tl.totalTime === 'function'));
   };
-  const deadline = Date.now() + 15000;
+  // Scripts may register timelines late (GSAP loading). Nothing to wait
+  // for without scripts; with a declared duration, only a short grace:
+  // `seek` looks timelines up again on every frame anyway.
+  const declaredAtStart = Number(root && root.getAttribute('data-duration'));
+  const wait = !document.querySelector('script') ? 0
+    : Number.isFinite(declaredAtStart) && declaredAtStart > 0 ? 1000 : 15000;
+  const deadline = Date.now() + wait;
   while (Date.now() < deadline) {
     const all = window.__timelines;
     if (all && (id ? all[id] : timelines().length > 0)) break;

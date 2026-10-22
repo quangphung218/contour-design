@@ -144,3 +144,42 @@ async fn composition_becomes_a_60_frame_h264_mp4() {
     let find = |tag: &[u8]| bytes.windows(4).position(|w| w == tag).unwrap();
     assert!(find(b"moov") < find(b"mdat"), "moov must precede mdat");
 }
+
+/// CSS-only: a declared duration and no timeline to wait for.
+const CSS_ONLY: &str = r#"<!doctype html><html><head><style>
+html,body{margin:0;background:#000}
+#stage{width:320px;height:180px;background:rgb(30,200,30)}
+</style></head><body>
+<div id="stage" data-composition-id="main" data-width="320" data-height="180" data-fps="10" data-duration="0.5"></div>
+<script>document.title = 'no timeline here';</script>
+</body></html>"#;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_composition_without_timelines_does_not_wait_15_s() {
+    if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
+        eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
+        return;
+    }
+    let renderer = CdpRenderer::with_executable(find_chrome().expect("Chrome is required"));
+    let dir = tempfile::tempdir().unwrap();
+    let html = dir.path().join("index.html");
+    std::fs::write(&html, CSS_ONLY).unwrap();
+    let mut target = RenderTarget::new(html);
+    target.width = 320;
+    target.height = 180;
+    let started = std::time::Instant::now();
+    let frames = renderer
+        .render_frames(
+            &target,
+            FrameOptions {
+                fps: 10,
+                duration_ms: 500,
+            },
+            &dir.path().join("frames"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(frames.count, 5);
+    let took = started.elapsed();
+    assert!(took < std::time::Duration::from_secs(8), "took {took:?}");
+}
