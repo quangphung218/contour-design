@@ -1,0 +1,12 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Assets are served by the daemon from the site root.
+public_url = "/"
+filehash = true
+
+[serve]
+# `trunk serve` for UI work: API calls go to a daemon on the default port.
+port = 8080
+[[proxy]]
+backend = "http://127.0.0.1:7456/api/"

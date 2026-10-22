@@ -1,0 +1,9 @@
+{"type":"step_start","timestamp":1789392700000,"sessionID":"ses_od1","part":{"id":"prt_1","sessionID":"ses_od1","messageID":"msg_1","type":"step-start"}}
+{"type":"text","timestamp":1789392700100,"sessionID":"ses_od1","part":{"id":"prt_2","sessionID":"ses_od1","messageID":"msg_1","type":"text","text":"I'll build the landing page."}}
+{"type":"tool_use","timestamp":1789392700200,"sessionID":"ses_od1","part":{"id":"prt_3","sessionID":"ses_od1","messageID":"msg_1","type":"tool","callID":"call_write","tool":"write","state":{"status":"completed","input":{"filePath":"/proj/index.html","content":"<!doctype html><title>Hi</title>"},"output":"","title":"index.html","metadata":{}}}}
+{"type":"tool_use","timestamp":1789392700300,"sessionID":"ses_od1","part":{"id":"prt_4","sessionID":"ses_od1","messageID":"msg_1","type":"tool","callID":"call_bash","tool":"bash","state":{"status":"completed","input":{"command":"ls missing"},"output":"ls: missing: No such file or directory","metadata":{"exit":1}}}}
+{"type":"tool_use","timestamp":1789392700301,"sessionID":"ses_od1","part":{"id":"prt_4","sessionID":"ses_od1","messageID":"msg_1","type":"tool","callID":"call_bash","tool":"bash","state":{"status":"completed","input":{"command":"ls missing"},"output":"ls: missing: No such file or directory","metadata":{"exit":1}}}}
+{"type":"text","timestamp":1789392700400,"sessionID":"ses_od1","part":{"id":"prt_5","sessionID":"ses_od1","messageID":"msg_1","type":"text","text":"Done: index.html is ready."}}
+{"type":"step_finish","timestamp":1789392700500,"sessionID":"ses_od1","part":{"id":"prt_6","sessionID":"ses_od1","messageID":"msg_1","type":"step-finish","reason":"stop","cost":0.0123,"tokens":{"input":1200,"output":340,"reasoning":12,"cache":{"read":800,"write":0}}}}
+{"type":"error","timestamp":1789392700600,"sessionID":"ses_od1","error":{"name":"ProviderAuthError","data":{"providerID":"anthropic","message":"Invalid API key"}}}
+opencode: warning, not json

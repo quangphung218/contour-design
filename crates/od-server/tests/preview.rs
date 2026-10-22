@@ -1,0 +1,441 @@
+//! Preview routes through the real router: preview scope + CSP, bridge
+//! injection on `raw`, and the project events stream (spec 4.1, 5.5).
+
+#![allow(clippy::unwrap_used)] // test helpers fail loudly by design
+
+use axum::Router;
+use axum::body::Body;
+use axum::http::{HeaderMap, Request, StatusCode, header};
+use http_body_util::BodyExt;
+use od_content::{ContentRoots, ContentStore};
+use od_contracts::CreateProjectResponse;
+use od_preview::{PREVIEW_CSP, PreviewUrlResponse};
+use od_server::{AppState, ServerConfig, router};
+use od_store::{DataDir, Store};
+use serde_json::{Value, json};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tower::ServiceExt;
+
+const DECK: &str = "<!doctype html><html><head><meta charset=utf-8><script>window.author=1</script></head>\
+<body><img src=\"img/a.png\"><script src=\"app.js\"></script></body></html>";
+
+struct App {
+    _tmp: tempfile::TempDir,
+    data: PathBuf,
+    /// One router for the whole test: scopes and watchers live in it.
+    app: Router,
+}
+
+struct Reply {
+    status: StatusCode,
+    headers: HeaderMap,
+    body: Vec<u8>,
+}
+
+impl Reply {
+    fn text(&self) -> String {
+        String::from_utf8(self.body.clone()).unwrap()
+    }
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(name).map(|v| v.to_str().unwrap())
+    }
+}
+
+fn app() -> App {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    let empty = std::env::temp_dir().join("od-empty-content-for-tests");
+    let state = AppState {
+        store: Arc::new(Store::open(DataDir::new(&data)).unwrap()),
+        content: Arc::new(ContentStore::load(ContentRoots::bundled(&empty))),
+        config: Arc::new(ServerConfig {
+            host: "127.0.0.1".to_owned(),
+            ports: vec![7456],
+            api_token: None,
+            allowed_origins: Vec::new(),
+            resource_root: empty,
+            daemon_url: None,
+        }),
+        runs: Arc::new(od_server::RunContext::new(
+            Arc::new(od_runs::Runs::new(data.join("runs"))),
+            od_runtime::EngineConfig::from_env(),
+        )),
+        preview: od_server::Preview::default(),
+    };
+    App {
+        _tmp: tmp,
+        data,
+        app: router(state),
+    }
+}
+
+impl App {
+    async fn send(&self, req: Request<Body>) -> Reply {
+        let res = self.app.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let headers = res.headers().clone();
+        let body = res.into_body().collect().await.unwrap().to_bytes().to_vec();
+        Reply {
+            status,
+            headers,
+            body,
+        }
+    }
+
+    async fn get(&self, uri: &str) -> Reply {
+        self.send(Request::get(uri).body(Body::empty()).unwrap())
+            .await
+    }
+
+    async fn post_json(&self, uri: &str, body: &Value) -> Reply {
+        self.send(
+            Request::post(uri)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+    }
+
+    async fn project(&self) -> String {
+        let r = self
+            .post_json("/api/projects", &json!({ "name": "p" }))
+            .await;
+        assert_eq!(r.status, StatusCode::OK);
+        serde_json::from_slice::<CreateProjectResponse>(&r.body)
+            .unwrap()
+            .project
+            .id
+    }
+
+    async fn write(&self, id: &str, name: &str, content: &str) {
+        let r = self
+            .post_json(
+                &format!("/api/projects/{id}/files"),
+                &json!({ "name": name, "content": content }),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text());
+    }
+
+    async fn preview_url(&self, id: &str, file: &str) -> PreviewUrlResponse {
+        let r = self
+            .get(&format!("/api/projects/{id}/preview-url?file={file}"))
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text());
+        assert_eq!(r.header("cache-control"), Some("no-store"));
+        serde_json::from_slice(&r.body).unwrap()
+    }
+}
+
+#[tokio::test]
+async fn preview_scope_serves_with_strict_csp() {
+    let a = app();
+    let id = a.project().await;
+    a.write(&id, "deck/index.html", DECK).await;
+
+    let p = a.preview_url(&id, "deck/index.html").await;
+    assert_eq!(p.file, "deck/index.html");
+    assert_eq!(p.csp, PREVIEW_CSP);
+    assert_eq!(p.iframe_sandbox, "allow-scripts allow-forms");
+    assert!(p.opaque_origin);
+    assert!(p.url.starts_with(&format!("/api/projects/{id}/preview/")));
+    assert!(p.url.ends_with("/deck/index.html"));
+
+    let r = a.get(&p.url).await;
+    assert_eq!(r.status, StatusCode::OK);
+    let csp = r.header("content-security-policy").unwrap();
+    assert_eq!(csp, PREVIEW_CSP);
+    for directive in [
+        "default-src 'self' data: blob:",
+        "connect-src 'none'",
+        "form-action 'none'",
+        "base-uri 'none'",
+    ] {
+        assert!(csp.contains(directive), "{directive}");
+    }
+    assert_eq!(r.header("x-content-type-options"), Some("nosniff"));
+    assert_eq!(r.header("cache-control"), Some("no-store"));
+    assert_eq!(r.text(), DECK, "no bridge unless asked");
+
+    let bridged = a.get(&format!("{}?bridge=1", p.url)).await;
+    assert_eq!(bridged.header("x-od-bridge"), Some("injected"));
+    assert_eq!(bridged.header("content-security-policy"), Some(PREVIEW_CSP));
+    let html = bridged.text();
+    let bridge = html.find("<script data-od-bridge>").unwrap();
+    assert!(bridge < html.find("window.author").unwrap());
+    assert!(
+        !html.contains("data-od-preview-base"),
+        "base-uri 'none' forbids it"
+    );
+    assert_eq!(
+        bridged.header("content-length").unwrap(),
+        html.len().to_string()
+    );
+}
+
+#[tokio::test]
+async fn preview_scope_is_checked() {
+    let a = app();
+    let id = a.project().await;
+    let other = a.project().await;
+    a.write(&id, "index.html", "<p>x</p>").await;
+    a.write(&other, "index.html", "<p>y</p>").await;
+    let p = a.preview_url(&id, "index.html").await;
+    let token = p.url.split('/').nth(5).unwrap();
+
+    let r = a
+        .get(&format!("/api/projects/{other}/preview/{token}/index.html"))
+        .await;
+    assert_eq!(
+        r.status,
+        StatusCode::NOT_FOUND,
+        "scope bound to its project"
+    );
+    let r = a
+        .get(&format!(
+            "/api/projects/{id}/preview/0123456789abcdef/index.html"
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let r = a
+        .get(&format!("/api/projects/{id}/preview/bad!/index.html"))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    let r = a
+        .get(&format!(
+            "/api/projects/{id}/preview/{token}/../../etc/passwd"
+        ))
+        .await;
+    assert!(r.status.is_client_error());
+    let r = a
+        .get(&format!("/api/projects/{id}/preview-url?file=nope.html"))
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    // Sandboxed iframes (Origin: null) may load scoped assets.
+    let r = a
+        .send(
+            Request::get(&p.url)
+                .header(header::ORIGIN, "null")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.header("access-control-allow-origin"), Some("*"));
+    let r = a
+        .send(
+            Request::get(format!("/api/projects/{id}/preview-url?file=index.html"))
+                .header(header::ORIGIN, "null")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "minting stays host-only");
+}
+
+#[tokio::test]
+async fn raw_bridge_injects_before_author_scripts_with_scoped_base() {
+    let a = app();
+    let id = a.project().await;
+    a.write(&id, "deck/index.html", DECK).await;
+    a.write(&id, "deck/app.js", "window.app=1").await;
+
+    let plain = a
+        .get(&format!("/api/projects/{id}/raw/deck/index.html"))
+        .await;
+    assert_eq!(plain.text(), DECK);
+    assert!(plain.header("etag").is_some());
+
+    let uri = format!("/api/projects/{id}/raw/deck/index.html?v=1&bridge=1");
+    let r = a
+        .send(
+            Request::get(&uri)
+                .header(header::IF_NONE_MATCH, plain.header("etag").unwrap())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(
+        r.status,
+        StatusCode::OK,
+        "validators do not apply to injected bytes"
+    );
+    assert_eq!(r.header("x-od-bridge"), Some("injected"));
+    assert_eq!(r.header("etag"), None);
+    assert_eq!(r.header("cache-control"), Some("no-store"));
+    let html = r.text();
+    let base_at = html.find("<base href=\"").unwrap();
+    let bridge_at = html.find("<script data-od-bridge>").unwrap();
+    assert!(base_at < bridge_at && bridge_at < html.find("window.author").unwrap());
+
+    let href = html[base_at + 12..].split('"').next().unwrap().to_owned();
+    assert!(href.starts_with(&format!("/api/projects/{id}/preview/")));
+    assert!(href.ends_with("/deck/"));
+    let asset = a.get(&format!("{href}app.js")).await;
+    assert_eq!(asset.status, StatusCode::OK, "base points at a live scope");
+    assert_eq!(asset.text(), "window.app=1");
+
+    let again = a.get(&uri).await;
+    assert_eq!(
+        again.text(),
+        html,
+        "same scope → stable bytes, no iframe reload"
+    );
+
+    let css = a
+        .get(&format!("/api/projects/{id}/raw/deck/app.js?bridge=1"))
+        .await;
+    assert_eq!(css.text(), "window.app=1", "only HTML is rewritten");
+}
+
+#[tokio::test]
+async fn raw_bridge_skips_html_over_2_mib() {
+    let a = app();
+    let id = a.project().await;
+    let big = format!(
+        "<html><head></head><body>{}</body></html>",
+        "x".repeat(2 * 1024 * 1024)
+    );
+    let dir = a.data.join("projects").join(&id);
+    std::fs::write(dir.join("big.html"), &big).unwrap();
+    let r = a
+        .get(&format!("/api/projects/{id}/raw/big.html?bridge=1"))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.header("x-od-bridge"), Some("skipped"));
+    assert_eq!(r.body.len(), big.len());
+}
+
+/// Reads SSE frames until one `event:` matches, returning its data JSON.
+async fn next_event(body: &mut Body, name: &str, within: Duration) -> Value {
+    let deadline = Instant::now() + within;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let frame = tokio::time::timeout(left, body.frame())
+            .await
+            .unwrap_or_else(|_| panic!("no `{name}` event within {within:?}"))
+            .unwrap()
+            .unwrap();
+        let Ok(data) = frame.into_data() else {
+            continue;
+        };
+        let text = String::from_utf8(data.to_vec()).unwrap();
+        if !text.contains(&format!("event: {name}\n")) {
+            continue;
+        }
+        assert!(text.contains("id: "), "{text}");
+        let line = text.lines().find(|l| l.starts_with("data: ")).unwrap();
+        return serde_json::from_str(&line["data: ".len()..]).unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn events_stream_ready_then_file_changed_within_300ms() {
+    let a = app();
+    let id = a.project().await;
+    let res = a
+        .app
+        .clone()
+        .oneshot(
+            Request::get(format!("/api/projects/{id}/events"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers()[header::CONTENT_TYPE].to_str().unwrap(),
+        "text/event-stream"
+    );
+    assert_eq!(
+        res.headers()[header::CACHE_CONTROL],
+        "no-cache, no-transform"
+    );
+    assert_eq!(res.headers()["x-accel-buffering"], "no");
+    let mut body = res.into_body();
+    let ready = next_event(&mut body, "ready", Duration::from_secs(2)).await;
+    assert_eq!(ready, json!({ "type": "ready", "projectId": id }));
+    // Let the watcher's setup noise (manifest written at creation) drain.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    // An agent writes straight to disk.
+    let file = a.data.join("projects").join(&id).join("index.html");
+    let started = Instant::now();
+    std::fs::write(&file, "<h1>v1</h1>").unwrap();
+    let changed = next_event(&mut body, "file-changed", Duration::from_secs(2)).await;
+    let took = started.elapsed();
+    eprintln!("write → file-changed: {took:?}");
+    assert_eq!(changed["path"], "index.html");
+    assert_eq!(changed["kind"], "add");
+    assert!(took <= Duration::from_millis(300), "took {took:?}");
+
+    let r = a.get("/api/projects/nope/events").await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn creating_a_conversation_publishes_conversation_created() {
+    let a = app();
+    let id = a.project().await;
+    let res = a
+        .app
+        .clone()
+        .oneshot(
+            Request::get(format!("/api/projects/{id}/events"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut body = res.into_body();
+    next_event(&mut body, "ready", Duration::from_secs(2)).await;
+
+    let r = a
+        .post_json(
+            &format!("/api/projects/{id}/conversations"),
+            &json!({ "title": "Second idea" }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text());
+    let conversation: Value = serde_json::from_slice(&r.body).unwrap();
+    let created = next_event(&mut body, "conversation-created", Duration::from_secs(2)).await;
+    assert_eq!(
+        created,
+        json!({
+            "type": "conversation-created",
+            "projectId": id,
+            "conversationId": conversation["conversation"]["id"],
+            "title": "Second idea",
+            "createdAt": conversation["conversation"]["createdAt"],
+        })
+    );
+}
+
+#[tokio::test]
+async fn raw_documents_carry_the_no_network_csp() {
+    let a = app();
+    let id = a.project().await;
+    a.write(&id, "index.html", DECK).await;
+    for uri in [
+        format!("/api/projects/{id}/raw/index.html"),
+        format!("/api/projects/{id}/raw/index.html?bridge=1"),
+    ] {
+        let r = a.get(&uri).await;
+        assert_eq!(r.status, StatusCode::OK);
+        let csp = r.header("content-security-policy").unwrap_or_default();
+        for directive in [
+            "sandbox allow-scripts",
+            "connect-src 'none'",
+            "form-action 'none'",
+            "base-uri 'self'",
+        ] {
+            assert!(csp.contains(directive), "{uri}: {directive} in {csp:?}");
+        }
+        assert_eq!(r.header("x-content-type-options"), Some("nosniff"));
+    }
+}

@@ -1,8 +1,12 @@
 use crate::error::{ApiErr, ApiResult};
 use od_content::ContentStore;
+use od_preview::{PreviewScopes, ProjectEvents};
+use od_runs::Runs;
+use od_runtime::{EngineConfig, RunEngine, ToolTokens};
 use od_store::{Store, StoreError};
+use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Default daemon port, shared with the CLI.
 pub const DEFAULT_PORT: u16 = 7456;
@@ -20,6 +24,46 @@ pub struct ServerConfig {
     /// Extra browser origins from `OD_ALLOWED_ORIGINS`.
     pub allowed_origins: Vec<String>,
     pub resource_root: PathBuf,
+    /// This daemon's base URL, exported to agents as `OD_DAEMON_URL`.
+    pub daemon_url: Option<String>,
+}
+
+/// Run registry, engine and per-run tool tokens.
+#[derive(Debug)]
+pub struct RunContext {
+    pub registry: Arc<Runs>,
+    pub engine: RunEngine,
+    pub tokens: ToolTokens,
+    /// Runs canceled after registering but before their agent launched.
+    pending_cancels: Mutex<HashSet<String>>,
+}
+
+impl RunContext {
+    #[must_use]
+    pub fn new(registry: Arc<Runs>, engine: EngineConfig) -> Self {
+        Self {
+            registry,
+            engine: RunEngine::new(engine),
+            tokens: ToolTokens::default(),
+            pending_cancels: Mutex::default(),
+        }
+    }
+
+    /// Cancel requests for runs not yet in the engine. Lock it around
+    /// `engine.cancel` / `engine.launch` so neither side misses the other.
+    pub fn pending_cancels(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.pending_cancels
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Preview scopes and the per-project event hub (watchers and
+/// `conversation-created`), shared by every route.
+#[derive(Clone, Default)]
+pub struct Preview {
+    pub scopes: Arc<PreviewScopes>,
+    pub events: Arc<ProjectEvents>,
 }
 
 /// Shared handler state.
@@ -28,6 +72,8 @@ pub struct AppState {
     pub store: Arc<Store>,
     pub content: Arc<ContentStore>,
     pub config: Arc<ServerConfig>,
+    pub runs: Arc<RunContext>,
+    pub preview: Preview,
 }
 
 impl AppState {

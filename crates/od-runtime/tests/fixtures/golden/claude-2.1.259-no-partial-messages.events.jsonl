@@ -1,0 +1,21 @@
+{"type":"status","label":"initializing","model":"claude-sonnet-4-5","sessionId":"c8bc1209-0202-4ee6-98b4-7c744ec02f8b"}
+{"type":"thinking_tokens","tokens":1.0}
+{"type":"thinking_tokens","tokens":16.0}
+{"type":"thinking_tokens","tokens":31.0}
+{"type":"thinking_tokens","tokens":43.0}
+{"type":"thinking_tokens","tokens":153.0}
+{"type":"request_usage","requestId":"msg_011Cefie2LiXgABDJ932Epjz","usage":{"input_tokens":10,"output_tokens":1,"cache_creation_input_tokens":4752,"cache_read_input_tokens":17907}}
+{"type":"thinking_delta","delta":"用户要求我：\n1. 使用 Bash 工具运行精确的命令：echo w103-hello\n2. 然后仅用 DONE 这个词回复\n3. 不使用任何其他工具\n\n这是一个非常明确的指令。我需要：\n1. 调用 Bash 工具\n2. 运行命令 \"echo w103-hello\"\n3. 在工具结果后，只回复 \"DONE\"\n\n让我执行这个命令。"}
+{"type":"request_usage","requestId":"msg_011Cefie2LiXgABDJ932Epjz","usage":{"input_tokens":10,"output_tokens":1,"cache_creation_input_tokens":4752,"cache_read_input_tokens":17907}}
+{"type":"tool_use","id":"toolu_01Y1RoZgfMRLUqai3i6VDHfo","name":"Bash","input":{"command":"echo w103-hello","description":"运行 echo 命令"}}
+{"type":"tool_result","toolUseId":"toolu_01Y1RoZgfMRLUqai3i6VDHfo","content":"w103-hello","isError":false}
+{"type":"thinking_tokens","tokens":1.0}
+{"type":"thinking_tokens","tokens":2.0}
+{"type":"thinking_tokens","tokens":14.0}
+{"type":"thinking_tokens","tokens":15.0}
+{"type":"thinking_tokens","tokens":104.0}
+{"type":"request_usage","requestId":"msg_011Cefif6T3eAtEbaH9GnxcG","usage":{"input_tokens":8,"output_tokens":4,"cache_creation_input_tokens":965,"cache_read_input_tokens":22659}}
+{"type":"thinking_delta","delta":"好的，命令已经成功执行，输出了 \"w103-hello\"。现在按照用户的要求，我只需要回复 \"DONE\" 这个词。"}
+{"type":"request_usage","requestId":"msg_011Cefif6T3eAtEbaH9GnxcG","usage":{"input_tokens":8,"output_tokens":4,"cache_creation_input_tokens":965,"cache_read_input_tokens":22659}}
+{"type":"text_delta","delta":"DONE"}
+{"type":"usage","usage":{"input_tokens":18,"cache_creation_input_tokens":5717,"cache_read_input_tokens":40566,"output_tokens":285,"output_tokens_details":{"thinking_tokens":197},"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":5717,"ephemeral_5m_input_tokens":0},"inference_geo":"not_available","iterations":[{"input_tokens":8,"output_tokens":62,"cache_read_input_tokens":22659,"cache_creation_input_tokens":965,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":965},"type":"message"}],"speed":"standard"},"costUsd":0.05080080000000001,"durationMs":30785.0,"stopReason":"end_turn"}

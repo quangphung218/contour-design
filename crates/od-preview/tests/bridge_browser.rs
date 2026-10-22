@@ -1,0 +1,407 @@
+//! The bridge in a real browser (spec 5.7 M4): headless Chrome from this
+//! machine drives a bundled deck through `od:slide`, real keys and the
+//! redirect guard. The host page embeds the injected document as a sandboxed
+//! srcDoc iframe, like the app does. All network is blackholed.
+//!
+//! Needs Chrome/Edge/Chromium (standard paths or `OD_CHROME_PATH`). Without
+//! one the test fails; set `OD_SKIP_BROWSER_TESTS=1` to skip it explicitly.
+
+#![allow(clippy::unwrap_used)] // test helpers fail loudly by design
+
+use chromiumoxide::cdp::browser_protocol::input::{DispatchKeyEventParams, DispatchKeyEventType};
+use chromiumoxide::layout::Point;
+use chromiumoxide::{Browser, BrowserConfig, Page};
+use futures_util::StreamExt;
+use od_preview::inject_bridge;
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+const FRAME_W: u32 = 1280;
+const FRAME_H: u32 = 720;
+
+fn chrome_path() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("OD_CHROME_PATH").filter(|p| !p.is_empty()) {
+        return Some(PathBuf::from(p));
+    }
+    let candidates = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/microsoft-edge",
+    ];
+    candidates.iter().map(PathBuf::from).find(|p| p.exists())
+}
+
+/// Host page: one sandboxed iframe plus helpers that record every message
+/// the bridge posts.
+const HOST: &str = r#"<!doctype html><html><head><style>body{margin:0}</style></head><body>
+<iframe id="f" sandbox="allow-scripts allow-forms" style="border:0;width:__W__px;height:__H__px"></iframe>
+<script>
+  window.__msgs = [];
+  const frame = document.getElementById('f');
+  window.addEventListener('message', (e) => {
+    if (e.source === frame.contentWindow) window.__msgs.push(e.data);
+  });
+  window.__load = (html) => { window.__msgs = []; frame.srcdoc = html; return true; };
+  window.__send = (msg) => { frame.contentWindow.postMessage(msg, '*'); return true; };
+  // First message of `type` at index >= since that passes `pred`.
+  window.__after = (type, since, pred, ms) => new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    (function tick() {
+      for (let i = since; i < window.__msgs.length; i++) {
+        const m = window.__msgs[i];
+        if (m && m.type === type && (!pred || pred(m))) return resolve(m);
+      }
+      if (Date.now() - t0 > ms) return reject(new Error('timeout waiting for ' + type));
+      setTimeout(tick, 10);
+    })();
+  });
+  window.__nav = async (msg) => {
+    const since = window.__msgs.length;
+    window.__send(Object.assign({ type: 'od:slide', protocolVersion: 1 }, msg));
+    return (await window.__after('od:slide-state', since, null, 8000)).active;
+  };
+</script></body></html>"#;
+
+struct Harness {
+    browser: Browser,
+    page: Page,
+    _profile: tempfile::TempDir,
+}
+
+impl Harness {
+    async fn start() -> Option<Self> {
+        let Some(chrome) = chrome_path() else {
+            assert!(
+                std::env::var("OD_SKIP_BROWSER_TESTS").is_ok_and(|v| v == "1"),
+                "no Chrome/Edge/Chromium found: set OD_CHROME_PATH, or OD_SKIP_BROWSER_TESTS=1 to skip"
+            );
+            eprintln!("skipping: no Chrome and OD_SKIP_BROWSER_TESTS=1");
+            return None;
+        };
+        let profile = tempfile::tempdir().unwrap();
+        let config = BrowserConfig::builder()
+            .chrome_executable(chrome)
+            .user_data_dir(profile.path())
+            .new_headless_mode()
+            .window_size(FRAME_W + 100, FRAME_H + 100)
+            .viewport(None)
+            // No network: every hostname resolves to nothing.
+            .arg(("host-resolver-rules", "MAP * ~NOTFOUND"))
+            .build()
+            .unwrap();
+        let (browser, mut handler) = Browser::launch(config).await.unwrap();
+        tokio::spawn(async move { while handler.next().await.is_some() {} });
+        let page = browser.new_page("about:blank").await.unwrap();
+        let host = HOST
+            .replace("__W__", &FRAME_W.to_string())
+            .replace("__H__", &FRAME_H.to_string());
+        page.set_content(host).await.unwrap();
+        Some(Self {
+            browser,
+            page,
+            _profile: profile,
+        })
+    }
+
+    async fn eval(&self, js: &str) -> Value {
+        self.page
+            .evaluate(js)
+            .await
+            .unwrap_or_else(|e| panic!("{js}: {e}"))
+            .into_value()
+            .unwrap_or(Value::Null)
+    }
+
+    async fn load(&self, html: &str) {
+        let doc = String::from_utf8(inject_bridge(html.as_bytes(), None).unwrap()).unwrap();
+        self.eval(&format!(
+            "window.__load({})",
+            serde_json::to_string(&doc).unwrap()
+        ))
+        .await;
+    }
+
+    async fn wait(&self, ty: &str, pred: &str, ms: u64) -> Value {
+        self.eval(&format!("window.__after({ty:?}, 0, {pred}, {ms})"))
+            .await
+    }
+
+    async fn msg_count(&self) -> u64 {
+        self.eval("window.__msgs.length").await.as_u64().unwrap()
+    }
+
+    async fn nav(&self, msg: Value) -> i64 {
+        self.eval(&format!("window.__nav({msg})"))
+            .await
+            .as_i64()
+            .unwrap_or_else(|| panic!("no state after {msg}"))
+    }
+
+    /// Presses a real key inside the frame and waits for the deck to report
+    /// `expect`.
+    async fn key(&self, key: &str, expect: i64) {
+        let since = self.msg_count().await;
+        self.press(key).await;
+        let pred = format!("(m) => m.active === {expect}");
+        let got = self
+            .eval(&format!(
+                "window.__after('od:slide-state', {since}, {pred}, 8000).then(m => m.active)"
+            ))
+            .await;
+        assert_eq!(got, json!(expect), "after {key}");
+    }
+
+    /// Raw CDP key press into the focused frame. chromiumoxide's
+    /// `press_key` also sends a native key code, which macOS Chrome reads
+    /// as a different key (Escape opened chrome://settings/help).
+    async fn press(&self, key: &str) {
+        let vk = match key {
+            "Escape" => 27,
+            "End" => 35,
+            "Home" => 36,
+            "ArrowLeft" => 37,
+            "ArrowRight" => 39,
+            _ => panic!("unmapped key {key}"),
+        };
+        // Focus the frame's document first.
+        self.page.click(Point { x: 5.0, y: 5.0 }).await.unwrap();
+        for ty in [
+            DispatchKeyEventType::RawKeyDown,
+            DispatchKeyEventType::KeyUp,
+        ] {
+            let cmd = DispatchKeyEventParams::builder()
+                .r#type(ty)
+                .key(key)
+                .code(key)
+                .windows_virtual_key_code(vk)
+                .build()
+                .unwrap();
+            self.page.execute(cmd).await.unwrap();
+        }
+    }
+
+    async fn close(mut self) {
+        let _ = self.browser.close().await;
+        let _ = self.browser.wait().await;
+    }
+}
+
+fn template(rel: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../content/design-templates")
+        .join(rel);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bridge_in_headless_chrome() {
+    let Some(h) = Harness::start().await else {
+        return;
+    };
+    deck_navigation(&h).await;
+    keyless_deck_and_foreign_messages(&h).await;
+    selection_snapshot_and_size(&h).await;
+    pins_follow_their_elements(&h).await;
+    storage_shim(&h).await;
+    reload_loops_are_stopped(&h).await;
+    h.close().await;
+}
+
+async fn deck_navigation(h: &Harness) {
+    h.load(&template("simple-deck/example.html")).await;
+    let ready = h.wait("od:deck-ready", "null", 10_000).await;
+    assert_eq!(ready["count"], 6, "{ready}");
+    assert_eq!(ready["protocolVersion"], 1);
+    let first = h.wait("od:slide-state", "null", 5_000).await;
+    assert_eq!(
+        (first["active"].as_i64(), first["count"].as_i64()),
+        (Some(0), Some(6))
+    );
+
+    let steps: [(Value, i64); 10] = [
+        (json!({ "action": "next" }), 1),
+        (json!({ "action": "next" }), 2),
+        (json!({ "action": "prev" }), 1),
+        (json!({ "action": "go", "index": 4 }), 4),
+        (json!({ "action": "go", "index": 99 }), 5),
+        (json!({ "action": "next" }), 5),
+        (json!({ "action": "first" }), 0),
+        (json!({ "action": "prev" }), 0),
+        (json!({ "action": "last" }), 5),
+        (json!({ "action": "go", "index": 2 }), 2),
+    ];
+    for (msg, want) in steps {
+        assert_eq!(h.nav(msg.clone()).await, want, "{msg}");
+    }
+
+    // Real keyboard inside the frame: Home and End reach both ends.
+    h.key("Home", 0).await;
+    h.key("End", 5).await;
+    h.key("ArrowLeft", 4).await;
+
+    let since = h.msg_count().await;
+    h.press("Escape").await;
+    h.eval(&format!(
+        "window.__after('od:esc', {since}, null, 3000).then(() => true)"
+    ))
+    .await;
+}
+
+/// A deck with no keyboard handling falls back to scrolling; `od:slide`
+/// posted by the page itself (not the host) is ignored.
+async fn keyless_deck_and_foreign_messages(h: &Harness) {
+    let html = r"<!doctype html><html><head><style>
+      body{margin:0} .slide{height:100vh;box-sizing:border-box;border:1px solid #ccc}
+    </style></head><body>
+      <section class='slide'>one</section><section class='slide'>two</section>
+      <section class='slide'>three</section><section class='slide'>four</section>
+      <script>window.postMessage({ type: 'od:slide', action: 'last' }, '*');</script>
+    </body></html>";
+    h.load(html).await;
+    let ready = h.wait("od:deck-ready", "null", 5_000).await;
+    assert_eq!(ready["count"], 4);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let since = h.msg_count().await;
+    h.eval("window.__send({ type: 'od:slide-state-request' })")
+        .await;
+    let state = h
+        .eval(&format!(
+            "window.__after('od:slide-state', {since}, null, 3000).then(m => m.active)"
+        ))
+        .await;
+    assert_eq!(state, json!(0), "self-posted od:slide must not navigate");
+
+    assert_eq!(h.nav(json!({ "action": "go", "index": 2 })).await, 2);
+    assert_eq!(h.nav(json!({ "action": "prev" })).await, 1);
+    assert_eq!(h.nav(json!({ "action": "last" })).await, 3);
+}
+
+async fn selection_snapshot_and_size(h: &Harness) {
+    let html = r#"<!doctype html><html><head><style>body{margin:0;font:16px sans-serif}
+      .card{margin:40px;padding:20px;width:300px;background:#eee}</style></head>
+      <body><div class="card" data-od-id="hero"><h1>Title <em>here</em></h1></div>
+      <p>untagged paragraph</p></body></html>"#;
+    h.load(html).await;
+    h.wait("od:ready", "null", 5_000).await;
+    let size = h.wait("od:size", "null", 5_000).await;
+    assert!(size["width"].as_f64().unwrap() > 0.0 && size["height"].as_f64().unwrap() > 0.0);
+
+    h.eval("window.__send({ type: 'od:select-mode', enabled: true })")
+        .await;
+    // Inside the tagged card: the nearest data-od-id wins.
+    h.page.move_mouse(Point { x: 80.0, y: 70.0 }).await.unwrap();
+    h.page.click(Point { x: 80.0, y: 70.0 }).await.unwrap();
+    let picked = h.wait("od:select", "null", 5_000).await;
+    assert_eq!(picked["odId"], "hero", "{picked}");
+    assert_eq!(picked["selector"], "[data-od-id=\"hero\"]");
+    assert_eq!(picked["tag"], "div");
+    let hover = h.wait("od:hover", "null", 5_000).await;
+    assert_eq!(hover["odId"], "hero");
+
+    h.eval("window.__send({ type: 'od:snapshot', requestId: 's1' })")
+        .await;
+    let snap = h
+        .wait("od:snapshot-result", "(m) => m.requestId === 's1'", 10_000)
+        .await;
+    assert_eq!(snap["width"], FRAME_W, "{snap}");
+    assert_eq!(snap["height"], FRAME_H);
+    let url = snap["dataUrl"].as_str().unwrap();
+    assert!(url.starts_with("data:image/svg+xml"), "{url:.60}");
+    assert!(url.contains("foreignObject"));
+    assert!(url.contains("untagged%20paragraph"));
+    assert!(
+        !url.contains("data-od-bridge-ui"),
+        "overlay is not captured"
+    );
+}
+
+/// `od:locate` reports where stored selectors are now, and again after the
+/// page scrolls, so comment pins stay on their element.
+async fn pins_follow_their_elements(h: &Harness) {
+    let html = r#"<!doctype html><html><head><style>body{margin:0}
+      #spacer{height:600px}#target{height:50px;background:#c00}</style></head>
+      <body><div id="spacer"></div><div id="target" data-od-id="t">x</div>
+      <div style="height:3000px"></div></body></html>"#;
+    h.load(html).await;
+    h.wait("od:ready", "null", 5_000).await;
+    let since = h.msg_count().await;
+    h.eval(
+        "window.__send({ type: 'od:locate', items: [\
+          { id: 'c1', selector: '[data-od-id=\"t\"]' }, { id: 'gone', selector: '#nope' }] })",
+    )
+    .await;
+    let first = h
+        .eval(&format!(
+            "window.__after('od:located', {since}, null, 5000)"
+        ))
+        .await;
+    assert_eq!(first["items"][0]["id"], "c1", "{first}");
+    assert_eq!(first["items"][0]["rect"]["y"], 600.0, "{first}");
+    assert!(first["items"][1]["rect"].is_null(), "{first}");
+
+    let since = h.msg_count().await;
+    // Scroll inside the frame through a real wheel event.
+    h.page
+        .execute(
+            chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventParams::builder()
+                .r#type(
+                    chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventType::MouseWheel,
+                )
+                .x(100.0)
+                .y(100.0)
+                .delta_x(0.0)
+                .delta_y(400.0)
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let moved = h
+        .eval(&format!(
+            "window.__after('od:located', {since}, (m) => m.items[0].rect && m.items[0].rect.y < 600, 5000)"
+        ))
+        .await;
+    let y = moved["items"][0]["rect"]["y"].as_f64().unwrap();
+    assert!(y < 600.0, "{moved}");
+}
+
+async fn storage_shim(h: &Harness) {
+    let html = r"<!doctype html><html><head><script>
+      localStorage.setItem('k', 'v1');
+      sessionStorage.setItem('s', 'v2');
+      parent.postMessage({ type: 'test:storage', ls: localStorage.getItem('k'),
+        ss: sessionStorage.getItem('s'), n: localStorage.length }, '*');
+    </script></head><body></body></html>";
+    h.load(html).await;
+    let got = h.wait("test:storage", "null", 5_000).await;
+    assert_eq!(got["ls"], "v1");
+    assert_eq!(got["ss"], "v2");
+    assert_eq!(got["n"], 1);
+}
+
+async fn reload_loops_are_stopped(h: &Harness) {
+    for page in [
+        "<!doctype html><html><head><script>location.reload()</script></head><body>loop</body></html>",
+        "<!doctype html><html><head><meta http-equiv=\"refresh\" content=\"0\"></head><body>loop</body></html>",
+        "<!doctype html><html><body><script>setTimeout(() => location.reload(), 20)</script></body></html>",
+    ] {
+        let started = Instant::now();
+        h.load(page).await;
+        let blocked = h.wait("od:redirect-loop-blocked", "null", 15_000).await;
+        assert!(blocked["hops"].as_u64().unwrap() > 15, "{blocked}");
+        // The host stays responsive and the frame has stopped reloading.
+        let settled = h.msg_count().await;
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let t0 = Instant::now();
+        assert_eq!(h.eval("1 + 1").await, json!(2));
+        assert!(t0.elapsed() < Duration::from_secs(1));
+        assert_eq!(h.msg_count().await, settled, "frame kept reloading: {page}");
+        eprintln!("loop stopped after {:?}: {page:.60}", started.elapsed());
+    }
+}

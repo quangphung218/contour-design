@@ -2,6 +2,8 @@
 //! directory layout, project folders, file version history, and the safe
 //! path resolution every file operation goes through.
 
+pub mod chat;
+pub mod comments;
 pub mod data_dir;
 pub mod db;
 pub mod error;
@@ -10,6 +12,7 @@ pub mod paths;
 pub mod store;
 pub mod versions;
 
+pub use chat::{AgentSession, NewTurn};
 pub use data_dir::{DATA_DIR_ENV, DataDir};
 pub use error::{Result, StoreError};
 pub use files::ProjectRoot;

@@ -69,8 +69,10 @@ impl From<StoreError> for ApiErr {
             StoreError::HiddenSegment => (S::FORBIDDEN, ErrorCode::Forbidden),
             StoreError::PathEscape => (S::FORBIDDEN, ErrorCode::PathEscape),
             StoreError::ProjectNotFound => (S::NOT_FOUND, ErrorCode::ProjectNotFound),
+            StoreError::ConversationNotFound => (S::NOT_FOUND, ErrorCode::ConversationNotFound),
             StoreError::FileNotFound => (S::NOT_FOUND, ErrorCode::FileNotFound),
             StoreError::VersionNotFound => (S::NOT_FOUND, ErrorCode::VersionNotFound),
+            StoreError::CommentNotFound => (S::NOT_FOUND, ErrorCode::NotFound),
             StoreError::FileExists => (S::CONFLICT, ErrorCode::FileExists),
             StoreError::ProjectFolderMissing => (S::CONFLICT, ErrorCode::Conflict),
             _ => {

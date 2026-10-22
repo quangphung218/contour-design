@@ -10,20 +10,42 @@ license.workspace = true
 od-contracts.workspace = true
 od-content.workspace = true
 od-store.workspace = true
+od-runs.workspace = true
+od-runtime.workspace = true
+od-preview.workspace = true
+od-export.workspace = true
+od-render-cdp.workspace = true
+od-live.workspace = true
+od-media.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 base64.workspace = true
+futures-util.workspace = true
+hex.workspace = true
 httpdate.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+uuid.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
 
 [dev-dependencies]
 http-body-util.workspace = true
-tempfile.workspace = true
+lopdf.workspace = true
+reqwest.workspace = true
 tower.workspace = true
+zip.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "sse_latency"
+harness = false

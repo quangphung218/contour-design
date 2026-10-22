@@ -1,0 +1,756 @@
+//! Data-only runtime definitions (spec 2.3): one value per coding agent,
+//! interpreted by the shared engine. No agent has its own `run()` code.
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+/// How stdout is parsed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamFormat {
+    /// `claude -p --output-format stream-json --verbose`.
+    ClaudeStreamJson,
+    /// `codex exec --json`.
+    CodexExecJson,
+    /// Agent Client Protocol: JSON-RPC 2.0 over stdio, one shared client
+    /// for every ACP agent (Kimi, Hermes, Kiro, Kilo, Vibe, Trae, Reasonix,
+    /// Devin).
+    Acp,
+    /// `opencode run --format json`.
+    OpenCodeJson,
+    /// `cursor-agent --print --output-format stream-json`.
+    CursorStreamJson,
+    /// `copilot --output-format json`.
+    CopilotJson,
+    /// DeepSeek Harness `--stdio` profile protocol (JSONL commands/frames).
+    DshJsonl,
+    /// Raw text on stdout; `<artifact>` blocks become files at the end.
+    Plain,
+    /// No process: the daemon streams the provider API with the user's key
+    /// (see [`crate::byok`]).
+    Byok,
+}
+
+/// How the prompt reaches the agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptInput {
+    /// One stream-json user line on stdin; stdin stays open for steering
+    /// until the turn ends.
+    StreamJsonStdin,
+    /// The whole prompt as text on stdin, then EOF (all-or-nothing).
+    TextStdin,
+    /// A protocol session (ACP, dsh): the parser writes the requests,
+    /// stdin stays open until the protocol says the prompt is done.
+    Rpc,
+}
+
+/// Where a resumable session id comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionIdSource {
+    /// The daemon mints a UUID and passes it on the command line.
+    Minted,
+    /// The agent announces it in the stream (`status.sessionId`).
+    Captured,
+    /// No resumable session: every turn sends the full transcript.
+    None,
+}
+
+/// `agent_permission_mode` (decisions #1).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PermissionMode {
+    /// The agent approves its own tool calls (default, like the original).
+    #[default]
+    Auto,
+    /// Claude asks before anything but edits; other CLIs drop auto-approve.
+    Ask,
+}
+
+impl PermissionMode {
+    /// Parses the setting value; unknown values fall back to `Auto`.
+    #[must_use]
+    pub fn from_setting(value: &str) -> Self {
+        if value.trim().eq_ignore_ascii_case("ask") {
+            Self::Ask
+        } else {
+            Self::Auto
+        }
+    }
+}
+
+/// One coding agent, as data.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeDef {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub bin: &'static str,
+    /// Tried in order when `bin` is not on PATH.
+    pub fallback_bins: &'static [&'static str],
+    pub stream_format: StreamFormat,
+    pub prompt_input: PromptInput,
+    pub session: SessionIdSource,
+    pub version_args: &'static [&'static str],
+    /// Arguments whose output is searched for [`Self::help_flags`].
+    pub help_args: &'static [&'static str],
+    /// Optional flags detected from `--help`, reported as capabilities.
+    pub help_flags: &'static [&'static str],
+    /// Extra environment for this agent only.
+    pub extra_env: &'static [(&'static str, &'static str)],
+    /// Stop the run when neither stdout nor stderr produced a line for this
+    /// long (spec 2.3: 10 minutes).
+    pub idle_timeout: Duration,
+    /// Text in stderr or a failed result meaning the stored session is gone.
+    pub resume_failure_markers: &'static [&'static str],
+    /// Fixed argv in `Auto` permission mode (protocol and plain runtimes;
+    /// unused by runtimes with their own argv builder).
+    pub args: &'static [&'static str],
+    /// The same argv without the agent's own auto-approve flags (`Ask`).
+    pub ask_args: &'static [&'static str],
+    /// ACP: a `turn_end` session update completes the prompt (Kiro never
+    /// answers `session/prompt` on its own).
+    pub acp_turn_end_completes: bool,
+}
+
+/// Capability flag that makes Claude stream partial messages.
+pub const CLAUDE_PARTIAL_FLAG: &str = "--include-partial-messages";
+
+pub const CLAUDE: RuntimeDef = RuntimeDef {
+    id: "claude",
+    name: "Claude Code",
+    bin: "claude",
+    fallback_bins: &[],
+    stream_format: StreamFormat::ClaudeStreamJson,
+    prompt_input: PromptInput::StreamJsonStdin,
+    session: SessionIdSource::Minted,
+    version_args: &["--version"],
+    help_args: &["-p", "--help"],
+    help_flags: &[CLAUDE_PARTIAL_FLAG],
+    extra_env: &[("CLAUDE_CODE_ENABLE_TODO_TOOLS", "1")],
+    idle_timeout: Duration::from_secs(600),
+    resume_failure_markers: &[
+        "No conversation found with session ID",
+        "No conversation found",
+    ],
+    args: &[],
+    ask_args: &[],
+    acp_turn_end_completes: false,
+};
+
+pub const CODEX: RuntimeDef = RuntimeDef {
+    id: "codex",
+    name: "Codex CLI",
+    bin: "codex",
+    fallback_bins: &[],
+    stream_format: StreamFormat::CodexExecJson,
+    prompt_input: PromptInput::TextStdin,
+    session: SessionIdSource::Captured,
+    version_args: &["--version"],
+    help_args: &["exec", "--help"],
+    help_flags: &[],
+    extra_env: &[],
+    idle_timeout: Duration::from_secs(600),
+    resume_failure_markers: &[
+        "no rollout found for thread id",
+        "thread not found",
+        "session not found",
+    ],
+    args: &[],
+    ask_args: &[],
+    acp_turn_end_completes: false,
+};
+
+/// Shared shape of the ACP family; each agent overrides id, name, bin and
+/// argv (`runtimes/defs/*.ts` with `streamFormat: 'acp-json-rpc'`).
+const ACP_BASE: RuntimeDef = RuntimeDef {
+    id: "",
+    name: "",
+    bin: "",
+    fallback_bins: &[],
+    stream_format: StreamFormat::Acp,
+    prompt_input: PromptInput::Rpc,
+    session: SessionIdSource::Captured,
+    version_args: &["--version"],
+    help_args: &[],
+    help_flags: &[],
+    extra_env: &[],
+    idle_timeout: Duration::from_secs(600),
+    resume_failure_markers: &[
+        "Session not found",
+        "session not found",
+        "Unknown session",
+        "unknown session",
+        "Resource not found",
+    ],
+    args: &["acp"],
+    ask_args: &["acp"],
+    acp_turn_end_completes: false,
+};
+
+pub const KIMI: RuntimeDef = RuntimeDef {
+    id: "kimi",
+    name: "Kimi CLI",
+    bin: "kimi",
+    ..ACP_BASE
+};
+
+pub const HERMES: RuntimeDef = RuntimeDef {
+    id: "hermes",
+    name: "Hermes",
+    bin: "hermes",
+    args: &["acp", "--accept-hooks"],
+    ask_args: &["acp", "--accept-hooks"],
+    ..ACP_BASE
+};
+
+pub const KIRO: RuntimeDef = RuntimeDef {
+    id: "kiro",
+    name: "Kiro CLI",
+    bin: "kiro-cli",
+    acp_turn_end_completes: true,
+    ..ACP_BASE
+};
+
+pub const KILO: RuntimeDef = RuntimeDef {
+    id: "kilo",
+    name: "Kilo",
+    bin: "kilo",
+    ..ACP_BASE
+};
+
+pub const VIBE: RuntimeDef = RuntimeDef {
+    id: "vibe",
+    name: "Mistral Vibe CLI",
+    bin: "vibe-acp",
+    args: &[],
+    ask_args: &[],
+    ..ACP_BASE
+};
+
+pub const TRAE: RuntimeDef = RuntimeDef {
+    id: "trae-cli",
+    name: "Trae CLI",
+    bin: "traecli",
+    args: &["acp", "serve", "--yolo"],
+    ask_args: &["acp", "serve"],
+    ..ACP_BASE
+};
+
+/// Appended to Reasonix's ACP system prompt so it answers like a design
+/// tool (`defs/reasonix.ts`).
+const REASONIX_SYSTEM_APPEND: &str = "# OpenDesign integration — MUST follow\n\n\
+You are running inside OpenDesign, a design tool. The user message contains design context \
+(system prompt, skill instructions, design system tokens). Follow these rules:\n\n\
+1. **Output format**: Wrap your HTML output in <artifact> tags.\n\
+2. **Design system**: Apply the colors, typography, spacing and component patterns of the \
+design system in the user message consistently.\n\
+3. **Skill workflow**: Follow the steps of the skill (SKILL.md) in the user message in order.\n\
+4. **No code fences**: Do NOT wrap HTML in ```html fences; raw HTML inside <artifact> only.\n\
+5. **Single file**: A complete, self-contained HTML file with all CSS and JS inline.\n\
+6. **Language**: Match the language of the user's prompt.";
+
+pub const REASONIX: RuntimeDef = RuntimeDef {
+    id: "reasonix",
+    name: "DeepSeek Reasonix",
+    bin: "reasonix",
+    fallback_bins: &["dsnix"],
+    extra_env: &[("REASONIX_ACP_SYSTEM_APPEND", REASONIX_SYSTEM_APPEND)],
+    ..ACP_BASE
+};
+
+pub const DEVIN: RuntimeDef = RuntimeDef {
+    id: "devin",
+    name: "Devin for Terminal",
+    bin: "devin",
+    args: &[
+        "--permission-mode",
+        "dangerous",
+        "--respect-workspace-trust",
+        "false",
+        "acp",
+    ],
+    ask_args: &["--respect-workspace-trust", "false", "acp"],
+    ..ACP_BASE
+};
+
+/// OpenCode's flag that skips its own permission prompts (detected from
+/// `run --help`, sent only in `Auto` mode).
+pub const OPENCODE_SKIP_PERMISSIONS_FLAG: &str = "--dangerously-skip-permissions";
+
+pub const OPENCODE: RuntimeDef = RuntimeDef {
+    id: "opencode",
+    name: "OpenCode",
+    bin: "opencode-cli",
+    fallback_bins: &["opencode"],
+    stream_format: StreamFormat::OpenCodeJson,
+    prompt_input: PromptInput::TextStdin,
+    session: SessionIdSource::Captured,
+    version_args: &["--version"],
+    help_args: &["run", "--help"],
+    help_flags: &[OPENCODE_SKIP_PERMISSIONS_FLAG],
+    extra_env: &[],
+    idle_timeout: Duration::from_secs(600),
+    resume_failure_markers: &["Session not found", "session not found"],
+    args: &[],
+    ask_args: &[],
+    acp_turn_end_completes: false,
+};
+
+/// Cursor Agent's workspace-trust flag (detected from `--help`).
+pub const CURSOR_TRUST_FLAG: &str = "--trust";
+
+pub const CURSOR: RuntimeDef = RuntimeDef {
+    id: "cursor-agent",
+    name: "Cursor Agent",
+    bin: "cursor-agent",
+    fallback_bins: &[],
+    stream_format: StreamFormat::CursorStreamJson,
+    prompt_input: PromptInput::TextStdin,
+    session: SessionIdSource::None,
+    version_args: &["--version"],
+    help_args: &["--help"],
+    help_flags: &[CURSOR_TRUST_FLAG],
+    extra_env: &[],
+    idle_timeout: Duration::from_secs(600),
+    resume_failure_markers: &[],
+    args: &[],
+    ask_args: &[],
+    acp_turn_end_completes: false,
+};
+
+pub const COPILOT: RuntimeDef = RuntimeDef {
+    id: "copilot",
+    name: "GitHub Copilot CLI",
+    bin: "copilot",
+    fallback_bins: &[],
+    stream_format: StreamFormat::CopilotJson,
+    prompt_input: PromptInput::TextStdin,
+    session: SessionIdSource::None,
+    version_args: &["--version"],
+    help_args: &[],
+    help_flags: &[],
+    extra_env: &[],
+    // Heavy turns go silent for longer than 10 minutes (spec 2.3).
+    idle_timeout: Duration::from_secs(30 * 60),
+    resume_failure_markers: &[],
+    args: &[],
+    ask_args: &[],
+    acp_turn_end_completes: false,
+};
+
+pub const DSH: RuntimeDef = RuntimeDef {
+    id: "deepseek-harness",
+    name: "DeepSeek Harness",
+    bin: "dsh",
+    fallback_bins: &[],
+    stream_format: StreamFormat::DshJsonl,
+    prompt_input: PromptInput::Rpc,
+    session: SessionIdSource::Captured,
+    version_args: &["--version"],
+    help_args: &[],
+    help_flags: &[],
+    extra_env: &[],
+    idle_timeout: Duration::from_secs(600),
+    resume_failure_markers: &["DSH_PROFILE_RESUME_REJECTED", "could not resume"],
+    args: &["--profile", "open-design", "--stdio"],
+    ask_args: &["--profile", "open-design", "--stdio"],
+    acp_turn_end_completes: false,
+};
+
+/// Qwen Code, the plain-text runtime: stdout is the answer and its
+/// `<artifact>` blocks become project files.
+pub const QWEN: RuntimeDef = RuntimeDef {
+    id: "qwen",
+    name: "Qwen Code",
+    bin: "qwen",
+    fallback_bins: &[],
+    stream_format: StreamFormat::Plain,
+    prompt_input: PromptInput::TextStdin,
+    session: SessionIdSource::None,
+    version_args: &["--version"],
+    help_args: &[],
+    help_flags: &[],
+    extra_env: &[],
+    idle_timeout: Duration::from_secs(600),
+    resume_failure_markers: &[],
+    args: &["--yolo"],
+    ask_args: &[],
+    acp_turn_end_completes: false,
+};
+
+/// Bring-your-own-key: no CLI, the daemon calls the provider API.
+pub const BYOK: RuntimeDef = RuntimeDef {
+    id: "byok",
+    name: "API key (BYOK)",
+    bin: "",
+    fallback_bins: &[],
+    stream_format: StreamFormat::Byok,
+    prompt_input: PromptInput::TextStdin,
+    session: SessionIdSource::None,
+    version_args: &[],
+    help_args: &[],
+    help_flags: &[],
+    extra_env: &[],
+    idle_timeout: Duration::from_secs(600),
+    resume_failure_markers: &[],
+    args: &[],
+    ask_args: &[],
+    acp_turn_end_completes: false,
+};
+
+/// Every built-in runtime, in port order (spec 2.3).
+pub const BUILTIN: [&RuntimeDef; 15] = [
+    &CLAUDE, &CODEX, &KIMI, &HERMES, &KIRO, &KILO, &VIBE, &TRAE, &REASONIX, &DEVIN, &OPENCODE,
+    &CURSOR, &COPILOT, &DSH, &QWEN,
+];
+
+/// [`BUILTIN`] plus [`BYOK`], which has no binary to detect.
+pub const ALL: [&RuntimeDef; 16] = [
+    &CLAUDE, &CODEX, &KIMI, &HERMES, &KIRO, &KILO, &VIBE, &TRAE, &REASONIX, &DEVIN, &OPENCODE,
+    &CURSOR, &COPILOT, &DSH, &QWEN, &BYOK,
+];
+
+#[must_use]
+pub fn find(id: &str) -> Option<&'static RuntimeDef> {
+    ALL.into_iter().find(|d| d.id == id)
+}
+
+/// Inputs to [`RuntimeDef::build_args`].
+#[derive(Debug, Clone, Default)]
+pub struct ArgvInput<'a> {
+    pub model: Option<&'a str>,
+    pub reasoning: Option<&'a str>,
+    pub cwd: Option<&'a std::path::Path>,
+    pub extra_dirs: &'a [PathBuf],
+    /// Continue this stored session.
+    pub resume_session_id: Option<&'a str>,
+    /// Session id to create (minted runtimes, fresh sessions only).
+    pub new_session_id: Option<&'a str>,
+    pub permission: PermissionMode,
+    /// Detected help flags (see [`RuntimeDef::help_flags`]).
+    pub capabilities: &'a [String],
+}
+
+fn non_default(value: Option<&str>) -> Option<&str> {
+    value.filter(|v| !v.is_empty() && *v != "default")
+}
+
+impl RuntimeDef {
+    #[must_use]
+    pub fn supports_steer(&self) -> bool {
+        self.prompt_input == PromptInput::StreamJsonStdin
+    }
+
+    /// The argv after the binary.
+    #[must_use]
+    pub fn build_args(&self, input: &ArgvInput<'_>) -> Vec<String> {
+        match self.stream_format {
+            StreamFormat::ClaudeStreamJson => claude_args(input),
+            StreamFormat::CodexExecJson => codex_args(input),
+            StreamFormat::OpenCodeJson => opencode_args(input),
+            StreamFormat::CursorStreamJson => cursor_args(input),
+            StreamFormat::CopilotJson => copilot_args(input),
+            // Model and session travel inside the protocol.
+            StreamFormat::Acp | StreamFormat::DshJsonl => self.mode_args(input.permission),
+            StreamFormat::Plain => {
+                let mut args = self.mode_args(input.permission);
+                if let Some(model) = non_default(input.model) {
+                    args.extend(["--model".to_owned(), model.to_owned()]);
+                }
+                args
+            }
+            StreamFormat::Byok => Vec::new(),
+        }
+    }
+
+    fn mode_args(&self, permission: PermissionMode) -> Vec<String> {
+        let args = match permission {
+            PermissionMode::Auto => self.args,
+            PermissionMode::Ask => self.ask_args,
+        };
+        args.iter().map(|a| (*a).to_owned()).collect()
+    }
+}
+
+fn opencode_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args: Vec<String> = ["run", "--format", "json"].map(str::to_owned).to_vec();
+    if input.permission == PermissionMode::Auto
+        && input
+            .capabilities
+            .iter()
+            .any(|c| c == OPENCODE_SKIP_PERMISSIONS_FLAG)
+    {
+        args.push(OPENCODE_SKIP_PERMISSIONS_FLAG.to_owned());
+    }
+    // Unconditional: OpenCode otherwise adopts the enclosing git root as
+    // its workspace and writes outside the project (opencode-permissions.ts).
+    if let Some(cwd) = input.cwd {
+        args.extend(["--dir".to_owned(), cwd.to_string_lossy().into_owned()]);
+    }
+    if let Some(id) = input.resume_session_id {
+        args.extend(["-s".to_owned(), id.to_owned()]);
+    }
+    if let Some(model) = non_default(input.model) {
+        args.extend(["-m".to_owned(), model.to_owned()]);
+    }
+    args
+}
+
+fn cursor_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "--print",
+        "--output-format",
+        "stream-json",
+        "--stream-partial-output",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    if input.permission == PermissionMode::Auto {
+        args.push("--force".to_owned());
+    }
+    if input.capabilities.iter().any(|c| c == CURSOR_TRUST_FLAG) {
+        args.push(CURSOR_TRUST_FLAG.to_owned());
+    }
+    if let Some(cwd) = input.cwd {
+        args.extend(["--workspace".to_owned(), cwd.to_string_lossy().into_owned()]);
+    }
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    args
+}
+
+fn copilot_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = Vec::new();
+    if input.permission == PermissionMode::Auto {
+        args.push("--allow-all-tools".to_owned());
+    }
+    args.extend(["--output-format".to_owned(), "json".to_owned()]);
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    for dir in input.extra_dirs {
+        args.extend(["--add-dir".to_owned(), dir.to_string_lossy().into_owned()]);
+    }
+    args
+}
+
+fn claude_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    if input.capabilities.iter().any(|c| c == CLAUDE_PARTIAL_FLAG) {
+        args.push(CLAUDE_PARTIAL_FLAG.to_owned());
+    }
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    for dir in input.extra_dirs {
+        args.extend(["--add-dir".to_owned(), dir.to_string_lossy().into_owned()]);
+    }
+    match (input.resume_session_id, input.new_session_id) {
+        (Some(id), _) => args.extend(["--resume".to_owned(), id.to_owned()]),
+        (None, Some(id)) => args.extend(["--session-id".to_owned(), id.to_owned()]),
+        (None, None) => {}
+    }
+    let mode = match input.permission {
+        PermissionMode::Auto => "bypassPermissions",
+        PermissionMode::Ask => "acceptEdits",
+    };
+    args.extend(["--permission-mode".to_owned(), mode.to_owned()]);
+    args
+}
+
+fn codex_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let resume = input.resume_session_id;
+    let mut args: Vec<String> = Vec::new();
+    let push = |args: &mut Vec<String>, items: &[&str]| {
+        args.extend(items.iter().map(|s| (*s).to_owned()));
+    };
+    if resume.is_some() {
+        // `exec resume` rejects `--sandbox`, `-C` and `--add-dir`; the
+        // sandbox goes through `-c` and the rest was fixed at creation.
+        push(
+            &mut args,
+            &["exec", "resume", "--json", "--skip-git-repo-check"],
+        );
+        push(&mut args, &["-c", "sandbox_mode=\"workspace-write\""]);
+    } else {
+        push(&mut args, &["exec", "--json", "--skip-git-repo-check"]);
+        push(&mut args, &["--sandbox", "workspace-write"]);
+    }
+    if input.permission == PermissionMode::Auto {
+        push(
+            &mut args,
+            &["-c", "sandbox_workspace_write.network_access=true"],
+        );
+    }
+    push(&mut args, &["-c", "model_reasoning_summary=\"detailed\""]);
+    push(&mut args, &["-c", "tools.update_plan.enabled=true"]);
+    if resume.is_none() {
+        if let Some(cwd) = input.cwd {
+            args.extend(["-C".to_owned(), cwd.to_string_lossy().into_owned()]);
+        }
+        for dir in input.extra_dirs {
+            args.extend(["--add-dir".to_owned(), dir.to_string_lossy().into_owned()]);
+        }
+    }
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    if let Some(effort) = non_default(input.reasoning) {
+        args.extend([
+            "-c".to_owned(),
+            format!("model_reasoning_effort=\"{effort}\""),
+        ]);
+    }
+    if let Some(id) = resume {
+        // Positional SESSION_ID comes last; the prompt arrives on stdin.
+        args.push(id.to_owned());
+    }
+    args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claude_fresh_vs_resume() {
+        let caps = vec![CLAUDE_PARTIAL_FLAG.to_owned()];
+        let fresh = CLAUDE.build_args(&ArgvInput {
+            model: Some("sonnet"),
+            new_session_id: Some("s-1"),
+            capabilities: &caps,
+            ..ArgvInput::default()
+        });
+        assert_eq!(
+            fresh.join(" "),
+            "-p --input-format stream-json --output-format stream-json --verbose \
+             --include-partial-messages --model sonnet --session-id s-1 \
+             --permission-mode bypassPermissions"
+        );
+        let resumed = CLAUDE.build_args(&ArgvInput {
+            model: Some("default"),
+            resume_session_id: Some("s-1"),
+            new_session_id: Some("ignored"),
+            permission: PermissionMode::Ask,
+            ..ArgvInput::default()
+        });
+        assert!(
+            resumed
+                .join(" ")
+                .ends_with("--resume s-1 --permission-mode acceptEdits")
+        );
+        assert!(!resumed.iter().any(|a| a == "--model"));
+    }
+
+    #[test]
+    fn codex_resume_drops_create_only_flags() {
+        let cwd = std::path::Path::new("/p");
+        let dirs = [PathBuf::from("/extra")];
+        let fresh = CODEX.build_args(&ArgvInput {
+            cwd: Some(cwd),
+            extra_dirs: &dirs,
+            ..ArgvInput::default()
+        });
+        assert!(fresh.windows(2).any(|w| w == ["-C", "/p"]));
+        assert!(
+            fresh
+                .windows(2)
+                .any(|w| w == ["--sandbox", "workspace-write"])
+        );
+        let resumed = CODEX.build_args(&ArgvInput {
+            cwd: Some(cwd),
+            extra_dirs: &dirs,
+            resume_session_id: Some("thread-9"),
+            ..ArgvInput::default()
+        });
+        assert_eq!(&resumed[..2], ["exec", "resume"]);
+        assert_eq!(resumed.last().map(String::as_str), Some("thread-9"));
+        assert!(
+            !resumed
+                .iter()
+                .any(|a| a == "-C" || a == "--add-dir" || a == "--sandbox")
+        );
+    }
+
+    #[test]
+    fn ask_mode_drops_auto_approve_flags() {
+        let ask = ArgvInput {
+            permission: PermissionMode::Ask,
+            ..ArgvInput::default()
+        };
+        let auto = ArgvInput::default();
+        assert_eq!(TRAE.build_args(&auto), ["acp", "serve", "--yolo"]);
+        assert_eq!(TRAE.build_args(&ask), ["acp", "serve"]);
+        assert!(DEVIN.build_args(&auto).iter().any(|a| a == "dangerous"));
+        assert!(!DEVIN.build_args(&ask).iter().any(|a| a == "dangerous"));
+        assert_eq!(
+            DEVIN.build_args(&ask).last().map(String::as_str),
+            Some("acp")
+        );
+        assert_eq!(QWEN.build_args(&auto), ["--yolo"]);
+        assert!(QWEN.build_args(&ask).is_empty());
+        assert!(
+            COPILOT
+                .build_args(&auto)
+                .iter()
+                .any(|a| a == "--allow-all-tools")
+        );
+        assert!(
+            !COPILOT
+                .build_args(&ask)
+                .iter()
+                .any(|a| a == "--allow-all-tools")
+        );
+        assert!(CURSOR.build_args(&auto).iter().any(|a| a == "--force"));
+        assert!(!CURSOR.build_args(&ask).iter().any(|a| a == "--force"));
+    }
+
+    #[test]
+    fn opencode_pins_workspace_and_resumes() {
+        let caps = vec![OPENCODE_SKIP_PERMISSIONS_FLAG.to_owned()];
+        let cwd = std::path::Path::new("/p");
+        let args = OPENCODE.build_args(&ArgvInput {
+            cwd: Some(cwd),
+            model: Some("anthropic/claude-sonnet-4-5"),
+            resume_session_id: Some("ses_1"),
+            capabilities: &caps,
+            ..ArgvInput::default()
+        });
+        assert_eq!(
+            args.join(" "),
+            "run --format json --dangerously-skip-permissions --dir /p -s ses_1 \
+             -m anthropic/claude-sonnet-4-5"
+        );
+        let ask = OPENCODE.build_args(&ArgvInput {
+            capabilities: &caps,
+            permission: PermissionMode::Ask,
+            ..ArgvInput::default()
+        });
+        assert_eq!(ask, ["run", "--format", "json"]);
+    }
+
+    #[test]
+    fn every_id_is_unique_and_findable() {
+        let mut ids: Vec<&str> = ALL.iter().map(|d| d.id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), ALL.len());
+        for def in ALL {
+            assert_eq!(find(def.id).map(|d| d.id), Some(def.id));
+        }
+    }
+
+    #[test]
+    fn permission_setting_parses() {
+        assert_eq!(PermissionMode::from_setting("ask"), PermissionMode::Ask);
+        assert_eq!(PermissionMode::from_setting("auto"), PermissionMode::Auto);
+        assert_eq!(PermissionMode::from_setting("bogus"), PermissionMode::Auto);
+    }
+}

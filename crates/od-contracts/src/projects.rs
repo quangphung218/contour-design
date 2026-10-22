@@ -190,3 +190,14 @@ pub struct DuplicateProjectResponse {
 pub struct OkResponse {
     pub ok: bool,
 }
+
+/// `GET /api/projects/:id/handoff`: what a coding agent needs to build the
+/// design for real (spec 1.3 Handoff).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffResponse {
+    /// Absolute project folder.
+    pub dir: String,
+    /// Ready-to-paste prompt for a coding agent.
+    pub prompt: String,
+}

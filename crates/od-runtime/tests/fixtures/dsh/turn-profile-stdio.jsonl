@@ -1,0 +1,9 @@
+{"v":1,"type":"ready","runtime":"open-design","protocol_version":1,"plugin_version":"0.1.2-rc.1","capabilities":{"session_resume":true,"session_cancel":true,"structured_events":true}}
+{"v":1,"type":"session","request_id":"req-1","session_id":"dsh-sess-1","resumed":false}
+{"v":1,"type":"thinking","request_id":"req-1","content":"Sketching the page."}
+{"v":1,"type":"text","request_id":"other-request","content":"not ours"}
+{"v":1,"type":"text","request_id":"req-1","content":"Writing index.html."}
+{"v":1,"type":"tool_call","request_id":"req-1","call_id":"c1","name":"write_file","arguments":"{\"path\":\"index.html\",\"content\":\"<h1>Hi</h1>\"}"}
+{"v":1,"type":"tool_result","request_id":"req-1","call_id":"c1","name":"write_file","output":"ok","is_error":false}
+{"v":1,"type":"usage","request_id":"req-1","provider":"deepseek","model":"deepseek-v4-pro","input_tokens":1000,"output_tokens":200,"cache_read_tokens":50}
+{"v":1,"type":"result","request_id":"req-1","status":"completed","session_id":"dsh-sess-1","stop_reason":"end_turn","resume_rejected":false}

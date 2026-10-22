@@ -2,14 +2,17 @@
 //! other subcommand is a thin client of the daemon's HTTP API.
 
 mod client;
+mod export_cmd;
+mod mcp_cmd;
 
 use anyhow::Context;
 use base64::Engine;
 use clap::{Args, Parser, Subcommand};
 use client::Client;
 use od_contracts::{
-    CreateProjectRequest, CreateProjectResponse, DuplicateProjectRequest, DuplicateProjectResponse,
-    FileResponse, FilesResponse, ProjectKind, ProjectMetadata, ProjectResponse, ProjectsResponse,
+    ChatRequest, CreateProjectRequest, CreateProjectResponse, CreateRunResponse,
+    DuplicateProjectRequest, DuplicateProjectResponse, FileResponse, FilesResponse, ProjectKind,
+    ProjectMetadata, ProjectResponse, ProjectsResponse, RunActionResponse, RunStatus, RunsResponse,
     WriteFileRequest,
 };
 use std::io::{Read, Write};
@@ -45,6 +48,53 @@ enum Command {
     /// Read and write project files.
     #[command(subcommand)]
     Files(FilesCommand),
+    /// Start, watch and cancel agent runs.
+    #[command(subcommand)]
+    Run(RunCommand),
+    /// Export a project file (HTML, PDF, PPTX, image) or the project (ZIP).
+    Export(export_cmd::ExportArgs),
+    /// MCP stdio server for coding agents; `od mcp install <agent>`.
+    Mcp(mcp_cmd::McpArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum RunCommand {
+    /// Start a run; prints the run id (or, with --watch, its events).
+    Start {
+        #[arg(long)]
+        project: String,
+        /// Agent id: claude or codex.
+        #[arg(long, default_value = "claude")]
+        agent: String,
+        #[arg(long)]
+        message: String,
+        #[arg(long)]
+        conversation: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        skill: Option<String>,
+        /// Idempotency key: the same key returns the same run.
+        #[arg(long)]
+        client_request_id: Option<String>,
+        /// Stream the run's events as NDJSON until it ends.
+        #[arg(long)]
+        watch: bool,
+    },
+    /// Stream a run's events as NDJSON until it ends.
+    Watch {
+        id: String,
+        /// Resume after this event id.
+        #[arg(long)]
+        after: Option<u64>,
+    },
+    /// Cancel a run (the whole process tree is stopped).
+    Cancel { id: String },
+    /// List runs, newest first.
+    List {
+        #[arg(long)]
+        project: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -140,6 +190,13 @@ fn main() -> ExitCode {
         Some(Command::Files(cmd)) => {
             Client::new(&cli.daemon_url).and_then(|c| files(&c, cmd, cli.json))
         }
+        Some(Command::Run(cmd)) => {
+            Client::new(&cli.daemon_url).and_then(|c| run(&c, cmd, cli.json))
+        }
+        Some(Command::Export(args)) => {
+            Client::new(&cli.daemon_url).and_then(|c| export_cmd::run(&c, args, cli.json))
+        }
+        Some(Command::Mcp(args)) => return mcp_cmd::run(args, &cli.daemon_url, cli.json),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -338,6 +395,87 @@ fn files(client: &Client, cmd: FilesCommand, json: bool) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn run(client: &Client, cmd: RunCommand, json: bool) -> anyhow::Result<()> {
+    match cmd {
+        RunCommand::Start {
+            project,
+            agent,
+            message,
+            conversation,
+            model,
+            skill,
+            client_request_id,
+            watch,
+        } => {
+            let req = ChatRequest {
+                agent_id: agent,
+                message,
+                project_id: project,
+                conversation_id: conversation,
+                client_request_id,
+                skill_id: skill,
+                model,
+                ..ChatRequest::default()
+            };
+            let res: CreateRunResponse = client.send_json("POST", &["api", "runs"], &req)?;
+            if watch {
+                return watch_run(client, &res.run_id, None);
+            }
+            if json {
+                return print_json(&res);
+            }
+            println!("{}", res.run_id);
+        }
+        RunCommand::Watch { id, after } => return watch_run(client, &id, after),
+        RunCommand::Cancel { id } => {
+            let res: RunActionResponse =
+                client.send_empty("POST", &["api", "runs", &id, "cancel"])?;
+            if json {
+                return print_json(&res);
+            }
+            println!("{id}\t{}", res.status.as_str());
+        }
+        RunCommand::List { project } => {
+            let query: Vec<(&str, &str)> = project
+                .as_deref()
+                .map(|p| ("projectId", p))
+                .into_iter()
+                .collect();
+            let res: RunsResponse = client.get_json_query(&["api", "runs"], &query)?;
+            if json {
+                return print_json(&res);
+            }
+            for r in &res.runs {
+                println!("{}\t{}\t{}", r.id, r.status.as_str(), r.agent_id);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Prints each SSE event as one NDJSON line `{id, event, data}`. Fails when
+/// the run did not succeed.
+fn watch_run(client: &Client, id: &str, after: Option<u64>) -> anyhow::Result<()> {
+    let mut status = None;
+    client.stream_events(id, after, |ev| {
+        if ev.event == "end" {
+            status = ev
+                .data
+                .get("status")
+                .and_then(|s| serde_json::from_value::<RunStatus>(s.clone()).ok());
+        }
+        let mut out = std::io::stdout().lock();
+        writeln!(out, "{}", serde_json::to_string(&ev)?)?;
+        out.flush()?;
+        Ok(())
+    })?;
+    match status {
+        Some(RunStatus::Succeeded) => Ok(()),
+        Some(other) => anyhow::bail!("run {}", other.as_str()),
+        None => anyhow::bail!("stream closed before the run ended"),
+    }
 }
 
 #[cfg(test)]

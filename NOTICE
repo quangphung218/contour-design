@@ -11,8 +11,24 @@ Nội dung đã copy (git archive tại e03d5c2, chỉ file được git theo d�
 
 Đã loại hoặc chưa copy:
 - Font: không có file font (.woff/.woff2/.ttf/.otf/.eot) nào trong 4 thư mục trên, nên không phải loại gì.
-- prompt-templates/: chưa copy (P2). Khi copy phải loại 2 file không rõ license và ghi công 72 file CC-BY-4.0.
-- plugins/_official/ (atoms, scenarios, examples, image/video-templates, design-systems): chưa copy, M1 không dùng.
+- prompt-templates/: xem mục M6 bên dưới.
+- plugins/_official/ examples, image/video-templates, design-systems: chưa copy.
   Khi copy examples/ phải loại font không có license (examples/open-design-homepage/assets/fonts) và font hash trong video-templates/*/source/fonts.
 
 Dữ liệu test: crates/od-content/tests/fixtures/original-*.json là output của loader TypeScript gốc (Apache-2.0) chạy trên content/ ở trên.
+
+M2 (run engine), lấy từ OpenDesign commit e03d5c2 (Apache-2.0):
+- crates/od-runtime/tests/fixtures/claude-cli-recordings/: 6 bản ghi stdout thật của Claude Code 2.1.259 + README, chép nguyên từ apps/daemon/tests/fixtures/claude-cli-recordings/.
+- crates/od-runtime/tests/fixtures/codex/turn-exec-json.jsonl: bản ghi `codex exec --json`, chép từ apps/daemon/tests/fixtures/codex-app-server/.
+- crates/od-content/prompts/legacy/*.md: văn bản prompt bộ legacy (apps/daemon/src/prompts/, packages/contracts/src/prompts/), render với execution profile `filesystem`; bản Rust chỉ ghép lại theo thứ tự spec 2.4.
+
+M6 track W2-media, lấy từ OpenDesign commit e03d5c2:
+- content/plugins/_official/atoms/ (13) và scenarios/ (10): manifest ghi license MIT, tác giả OpenDesign (nexu-io).
+  Không copy scenario od-next-strategy (rollout), od-share-to-community (share), od-tune-collab (collab),
+  od-figma-migration (cần connector Figma qua mạng).
+- content/prompt-templates/image (46) và video (58) = 104 file JSON. Mỗi file giữ khối `source`
+  (repo, license, author, url) để ghi công: 72 file CC-BY-4.0 (ghi công tác giả theo `source.author`/`source.url`),
+  31 Apache-2.0, 1 MIT. Đã loại 2 file license "Original X post" (không rõ license):
+  image/profile-avatar-seedream-high-fashion-dreamy-portrait.json,
+  image/social-media-post-seedream-squishcraft-kids-clay-ad.json,
+  và ảnh image/notion-team-dashboard-live-artifact.preview.png. API không trả URL ảnh preview (CDN bên thứ ba).
