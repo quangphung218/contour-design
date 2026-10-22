@@ -11,6 +11,16 @@ use std::time::Duration;
 pub struct Client {
     base: Url,
     http: Http,
+    /// No total timeout: event streams stay open for the whole run.
+    streaming: Http,
+}
+
+/// One SSE event of a run stream.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StreamEvent {
+    pub id: u64,
+    pub event: String,
+    pub data: serde_json::Value,
 }
 
 impl Client {
@@ -21,7 +31,12 @@ impl Client {
             // Never route loopback calls through a system proxy.
             .no_proxy()
             .build()?;
-        Ok(Self { base, http })
+        let streaming = Http::builder().no_proxy().timeout(None).build()?;
+        Ok(Self {
+            base,
+            http,
+            streaming,
+        })
     }
 
     pub fn base(&self) -> &Url {
@@ -73,6 +88,67 @@ impl Client {
 
     pub fn get_json<T: DeserializeOwned>(&self, segments: &[&str]) -> anyhow::Result<T> {
         Ok(self.send(self.http.get(self.url(segments)?))?.json()?)
+    }
+
+    pub fn get_json_query<T: DeserializeOwned>(
+        &self,
+        segments: &[&str],
+        query: &[(&str, &str)],
+    ) -> anyhow::Result<T> {
+        Ok(self
+            .send(self.http.get(self.url(segments)?).query(query))?
+            .json()?)
+    }
+
+    /// Reads `GET /api/runs/:id/events` until the server closes it, calling
+    /// `on_event` for each event (keepalive comments skipped).
+    pub fn stream_events(
+        &self,
+        run_id: &str,
+        after: Option<u64>,
+        mut on_event: impl FnMut(StreamEvent) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        use std::io::BufRead;
+        let mut req = self
+            .streaming
+            .get(self.url(&["api", "runs", run_id, "events"])?);
+        if let Some(after) = after {
+            req = req.header("Last-Event-ID", after.to_string());
+        }
+        let res = self.send(req)?;
+        let reader = std::io::BufReader::new(res);
+        let mut ev = StreamEvent {
+            id: 0,
+            event: String::new(),
+            data: serde_json::Value::Null,
+        };
+        let mut data = String::new();
+        for line in reader.lines() {
+            let line = line?;
+            if line.is_empty() {
+                if !data.is_empty() {
+                    ev.data = serde_json::from_str(&data)?;
+                    on_event(std::mem::replace(
+                        &mut ev,
+                        StreamEvent {
+                            id: 0,
+                            event: String::new(),
+                            data: serde_json::Value::Null,
+                        },
+                    ))?;
+                    data.clear();
+                }
+                continue;
+            }
+            if let Some(v) = line.strip_prefix("id:") {
+                ev.id = v.trim().parse().unwrap_or(0);
+            } else if let Some(v) = line.strip_prefix("event:") {
+                v.trim().clone_into(&mut ev.event);
+            } else if let Some(v) = line.strip_prefix("data:") {
+                data.push_str(v.strip_prefix(' ').unwrap_or(v));
+            }
+        }
+        Ok(())
     }
 
     pub fn get_bytes(&self, segments: &[&str]) -> anyhow::Result<Vec<u8>> {

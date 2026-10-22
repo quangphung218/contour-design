@@ -17,6 +17,18 @@ pub enum ErrorCode {
     PathEscape,
     PayloadTooLarge,
     InternalError,
+    RunNotFound,
+    AgentNotFound,
+    AgentUnavailable,
+    ConversationNotFound,
+    /// `clientRequestId` reused for a different request.
+    IdempotencyConflict,
+    /// Steer: the runtime has no steering channel.
+    RuntimeUnsupported,
+    /// Steer: the run already ended.
+    RunTerminal,
+    /// Steer: the stdin of the agent is already closed.
+    StdinClosed,
 }
 
 /// Error payload: `{ "error": { "code": "...", "message": "..." } }`.

@@ -1,0 +1,24 @@
+{"type":"status","label":"initializing","model":"claude-haiku-4-5-20251001","sessionId":"8499ffaf-1554-4dac-bb8e-cda467640651"}
+{"type":"status","label":"requesting"}
+{"type":"thinking_start"}
+{"type":"thinking_tokens","tokens":50.0}
+{"type":"thinking_tokens","tokens":150.0}
+{"type":"thinking_tokens","tokens":274.0}
+{"type":"request_usage","requestId":"msg_011CefkDXVSwZRpkvaPc6ne4","usage":{"input_tokens":10,"output_tokens":4,"cache_creation_input_tokens":9511,"cache_read_input_tokens":13615}}
+{"type":"tool_input_delta","id":"toolu_01GdYLYS5v19KGt7UJA9b78D","name":"Write","delta":""}
+{"type":"tool_input_delta","id":"toolu_01GdYLYS5v19KGt7UJA9b78D","name":"Write","delta":"{\"file_path\": \"/private/tmp/claude-501/-Users-elian-Documents-open-design/bff58f5e-18bb-4b58-96e7"}
+{"type":"tool_input_delta","id":"toolu_01GdYLYS5v19KGt7UJA9b78D","name":"Write","delta":"-8180846e980a/scratchpad/w107/cwd2/gamma.html"}
+{"type":"tool_input_delta","id":"toolu_01GdYLYS5v19KGt7UJA9b78D","name":"Write","delta":"\", \"content\": \"<!doctype html><html>"}
+{"type":"tool_input_delta","id":"toolu_01GdYLYS5v19KGt7UJA9b78D","name":"Write","delta":"<body><h1>Gamma</h1></body></html>"}
+{"type":"tool_input_delta","id":"toolu_01GdYLYS5v19KGt7UJA9b78D","name":"Write","delta":"\"}"}
+{"type":"request_usage","requestId":"msg_011CefkDXVSwZRpkvaPc6ne4","usage":{"input_tokens":10,"output_tokens":4,"cache_creation_input_tokens":9511,"cache_read_input_tokens":13615}}
+{"type":"tool_use","id":"toolu_01GdYLYS5v19KGt7UJA9b78D","name":"Write","input":{"file_path":"/private/tmp/claude-501/-Users-elian-Documents-open-design/bff58f5e-18bb-4b58-96e7-8180846e980a/scratchpad/w107/cwd2/gamma.html","content":"<!doctype html><html><body><h1>Gamma</h1></body></html>"}}
+{"type":"turn_end","stopReason":"tool_use"}
+{"type":"tool_result","toolUseId":"toolu_01GdYLYS5v19KGt7UJA9b78D","content":"File created successfully at: /private/tmp/claude-501/-Users-elian-Documents-open-design/bff58f5e-18bb-4b58-96e7-8180846e980a/scratchpad/w107/cwd2/gamma.html (file state is current in your context — no need to Read it back)","isError":false}
+{"type":"status","label":"requesting"}
+{"type":"thinking_start"}
+{"type":"request_usage","requestId":"msg_011CefkDsYwpubJ78qAE3JaC","usage":{"input_tokens":8,"output_tokens":1,"cache_creation_input_tokens":551,"cache_read_input_tokens":23126}}
+{"type":"text_delta","delta":"<artifact type=\"text/html\" title=\"Gamma\">\n<!doctype html><html><body><h1>Gamma</h1></body></html>\n</artifact>"}
+{"type":"request_usage","requestId":"msg_011CefkDsYwpubJ78qAE3JaC","usage":{"input_tokens":8,"output_tokens":1,"cache_creation_input_tokens":551,"cache_read_input_tokens":23126}}
+{"type":"turn_end","stopReason":"end_turn"}
+{"type":"usage","usage":{"input_tokens":18,"cache_creation_input_tokens":10062,"cache_read_input_tokens":36741,"output_tokens":502,"output_tokens_details":{"thinking_tokens":305},"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":10062,"ephemeral_5m_input_tokens":0},"inference_geo":"not_available","iterations":[{"input_tokens":8,"output_tokens":80,"cache_read_input_tokens":23126,"cache_creation_input_tokens":551,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":551},"type":"message"}],"speed":"standard"},"costUsd":0.0263261,"durationMs":7753.0,"stopReason":"end_turn"}

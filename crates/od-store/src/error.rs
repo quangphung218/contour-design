@@ -16,6 +16,8 @@ pub enum StoreError {
     InvalidId,
     #[error("project not found")]
     ProjectNotFound,
+    #[error("conversation not found")]
+    ConversationNotFound,
     #[error("file not found")]
     FileNotFound,
     #[error("version not found")]

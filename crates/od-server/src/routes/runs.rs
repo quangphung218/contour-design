@@ -1,0 +1,676 @@
+//! Runs (spec 2.2, 2.3): create, stream (SSE with replay), cancel, steer,
+//! list; agent detection.
+
+use crate::error::{ApiErr, ApiJson, ApiResult};
+use crate::state::AppState;
+use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::{IntoResponse, Response};
+use futures_util::stream;
+use od_content::prompt::{self, PromptInput, TranscriptTurn};
+use od_content::skills::skill_cwd_alias_segment;
+use od_contracts::{
+    AgentsResponse, ChatRequest, CreateRunResponse, ErrorCode, MessageRole, RunActionResponse,
+    RunResponse, RunStatus, RunsResponse, SteerRequest, sse,
+};
+use od_runs::{Run, RunMeta, RunsError};
+use od_runtime::env::{RunEnv, agent_env};
+use od_runtime::stage::{SkillToStage, stage_skill};
+use od_runtime::{LaunchSpec, PermissionMode, RunOutcome, SteerError};
+use od_store::{AgentSession, NewTurn};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::convert::Infallible;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+/// SSE keepalive comment interval (spec 2.2).
+pub const KEEPALIVE: Duration = Duration::from_secs(25);
+/// Persisted event batches are written at least this often…
+const BATCH_INTERVAL: Duration = Duration::from_millis(250);
+/// …or when this many events are pending.
+const BATCH_MAX: usize = 64;
+
+fn conflict(code: ErrorCode, message: impl Into<String>) -> ApiErr {
+    ApiErr::new(StatusCode::CONFLICT, code, message)
+}
+
+fn run_not_found() -> ApiErr {
+    ApiErr::new(
+        StatusCode::NOT_FOUND,
+        ErrorCode::RunNotFound,
+        "run not found",
+    )
+}
+
+fn non_default(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && *v != "default")
+        .map(str::to_owned)
+}
+
+/// Fingerprint of the logical request behind a `clientRequestId`.
+fn request_hash(req: &ChatRequest) -> String {
+    let logical = json!({
+        "agentId": req.agent_id,
+        "message": req.message,
+        "projectId": req.project_id,
+        "conversationId": req.conversation_id,
+        "model": req.model,
+        "skillId": req.skill_id,
+        "skillIds": req.skill_ids,
+        "designSystemId": req.design_system_id,
+        "attachments": req.attachments,
+    });
+    hex::encode(&Sha256::digest(logical.to_string().as_bytes())[..16])
+}
+
+fn safe_client_id(id: Option<&str>) -> ApiResult<Option<String>> {
+    match id {
+        None => Ok(None),
+        Some(id)
+            if !id.is_empty()
+                && id.len() <= 128
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.:".contains(&b)) =>
+        {
+            Ok(Some(id.to_owned()))
+        }
+        Some(_) => Err(ApiErr::bad_request("invalid id")),
+    }
+}
+
+/// `POST /api/runs` → 202.
+pub async fn create(
+    State(state): State<AppState>,
+    ApiJson(req): ApiJson<ChatRequest>,
+) -> ApiResult<Response> {
+    let def = od_runtime::def::find(&req.agent_id).ok_or_else(|| {
+        ApiErr::new(
+            StatusCode::BAD_REQUEST,
+            ErrorCode::AgentNotFound,
+            format!("unknown agent {:?}", req.agent_id),
+        )
+    })?;
+    if req.message.trim().is_empty() {
+        return Err(ApiErr::bad_request("message required"));
+    }
+    let client_request_id = safe_client_id(req.client_request_id.as_deref())?;
+    let user_message_id = safe_client_id(req.user_message_id.as_deref())?.unwrap_or_else(new_id);
+    let assistant_message_id =
+        safe_client_id(req.assistant_message_id.as_deref())?.unwrap_or_else(new_id);
+    let project_id = req.project_id.clone();
+    let conversation_id = req.conversation_id.clone();
+    let (project, conversation) = state
+        .blocking(move |s| {
+            let project = s.get_project(&project_id)?;
+            let conversation = match conversation_id {
+                Some(cid) => s.get_conversation(&project.id, &cid)?,
+                None => s.latest_or_new_conversation(&project.id)?,
+            };
+            Ok((project, conversation))
+        })
+        .await?;
+
+    let run_id = new_id();
+    let meta = RunMeta {
+        run_id: run_id.clone(),
+        agent_id: def.id.to_owned(),
+        project_id: Some(project.id.clone()),
+        conversation_id: Some(conversation.id.clone()),
+        assistant_message_id: Some(assistant_message_id.clone()),
+        client_request_id: client_request_id.clone(),
+        request_hash: Some(request_hash(&req)),
+        created_at: od_runs::now_ms(),
+    };
+    let (run, reused) = match state.runs.registry.create_or_reuse(meta) {
+        Ok(found) => found,
+        Err(RunsError::IdempotencyConflict) => {
+            return Err(conflict(
+                ErrorCode::IdempotencyConflict,
+                "clientRequestId is already associated with a different logical run request",
+            ));
+        }
+        Err(err) => return Err(ApiErr::internal(err.to_string())),
+    };
+    if reused {
+        // Same key and same request (the registry checked the hash).
+        return Ok(reused_response(&run));
+    }
+
+    match prepare_and_launch(
+        &state,
+        def,
+        &req,
+        &project,
+        &conversation.id,
+        &run,
+        &user_message_id,
+    )
+    .await
+    {
+        Ok(resumed) => Ok((
+            StatusCode::ACCEPTED,
+            ApiJson(CreateRunResponse {
+                run_id,
+                conversation_id: conversation.id,
+                assistant_message_id,
+                client_request_id,
+                reused: false,
+                resumed,
+            }),
+        )
+            .into_response()),
+        Err(err) => {
+            // The turn may already be recorded; never leave it "running".
+            if let Some(msg) = run.meta().assistant_message_id.clone() {
+                let _ = state
+                    .blocking(move |s| {
+                        if s.get_message(&msg)?.is_some() {
+                            s.finish_assistant_message(&msg, "", RunStatus::Failed, 0)?;
+                        }
+                        Ok(())
+                    })
+                    .await;
+            }
+            run.emit_error(&err.message, None);
+            run.finish(od_contracts::RunEndPayload {
+                status: RunStatus::Failed,
+                code: None,
+                signal: None,
+                terminal_at: od_runs::now_ms(),
+                artifact_paths: Vec::new(),
+                resumable: false,
+                retryable: false,
+                failure_category: Some(od_contracts::FailureCategory::SpawnFailed),
+                error: Some(err.message.clone()),
+            });
+            Err(err)
+        }
+    }
+}
+
+fn reused_response(run: &Arc<Run>) -> Response {
+    let meta = run.meta();
+    (
+        StatusCode::ACCEPTED,
+        ApiJson(CreateRunResponse {
+            run_id: meta.run_id.clone(),
+            conversation_id: meta.conversation_id.clone().unwrap_or_default(),
+            assistant_message_id: meta.assistant_message_id.clone().unwrap_or_default(),
+            client_request_id: meta.client_request_id.clone(),
+            reused: true,
+            resumed: false,
+        }),
+    )
+        .into_response()
+}
+
+fn new_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+/// Everything resolved on the blocking pool before launch.
+struct Prepared {
+    cwd: PathBuf,
+    prompt: String,
+    fallback_prompt: Option<String>,
+    resume_session_id: Option<String>,
+    stable_hash: String,
+    permission: PermissionMode,
+}
+
+/// Records the turn, composes the prompt, decides on resume, stages
+/// skills and launches. Returns whether the run resumes a session.
+async fn prepare_and_launch(
+    state: &AppState,
+    def: &'static od_runtime::RuntimeDef,
+    req: &ChatRequest,
+    project: &od_contracts::Project,
+    conversation_id: &str,
+    run: &Arc<Run>,
+    user_message_id: &str,
+) -> ApiResult<bool> {
+    let assistant_message_id = run.meta().assistant_message_id.clone().unwrap_or_default();
+    let model = non_default(req.model.as_deref());
+    let content = state.content.snapshot();
+    let req2 = req.clone();
+    let project2 = project.clone();
+    let conversation = conversation_id.to_owned();
+    let run_id = run.id().to_owned();
+    let assistant = assistant_message_id.clone();
+    let user_message = user_message_id.to_owned();
+    let model2 = model.clone();
+    let prepared = state
+        .blocking(move |s| {
+            let root = s.project_root(&project2)?;
+            let cwd = root.dir;
+            let prior = s.list_messages(&conversation)?;
+            s.begin_turn(&NewTurn {
+                conversation_id: &conversation,
+                user_message_id: &user_message,
+                assistant_message_id: &assistant,
+                content: &req2.message,
+                attachments: &req2.attachments,
+                agent_id: def.id,
+                run_id: &run_id,
+            })?;
+
+            // Skills: explicit ids, else the project's skill.
+            let mut ids: Vec<String> = req2.skill_ids.clone();
+            ids.extend(req2.skill_id.clone());
+            if ids.is_empty() {
+                ids.extend(project2.skill_id.clone());
+            }
+            ids.dedup();
+            let skills: Vec<&od_content::SkillEntry> = ids
+                .iter()
+                .filter_map(|id| {
+                    content
+                        .find_skill(id)
+                        .or_else(|| content.find_design_template(id))
+                })
+                .collect();
+            let ds_id = req2
+                .design_system_id
+                .clone()
+                .or_else(|| project2.design_system_id.clone());
+            let ds = ds_id
+                .as_deref()
+                .and_then(|id| content.find_design_system(id));
+            let is_deck = project2
+                .metadata
+                .as_ref()
+                .and_then(|m| m.kind)
+                .is_some_and(|k| k == od_contracts::ProjectKind::Deck);
+            let skill_requires: Vec<String> = skills
+                .iter()
+                .flat_map(|s| s.info.craft_requires.iter().cloned())
+                .collect();
+            let requested =
+                od_content::craft::resolve_craft_requirements(&od_content::craft::CraftRequest {
+                    is_deck,
+                    skill_requires: &skill_requires,
+                    design_system_applies: &[],
+                    design_system_exemptions: &[],
+                });
+            let (craft_body, craft_sections) =
+                od_content::craft::load_craft_sections(&content.craft_dir, &requested);
+            let session_mode = req2.session_mode.unwrap_or_default();
+            let instructions = prompt::compose_instructions(&PromptInput {
+                session_mode,
+                locale: req2.locale.as_deref(),
+                metadata: project2.metadata.as_ref(),
+                user_instructions: None,
+                project_instructions: project2.custom_instructions.as_deref(),
+                design_system: ds,
+                craft: Some((craft_body.as_str(), craft_sections.as_slice())),
+                skills: &skills,
+            });
+            let stable_hash = prompt::stable_hash(&instructions);
+            let cwd_str = cwd.to_string_lossy().into_owned();
+
+            // Resume only when the stored session still matches (spec 2.3).
+            let stored = s.get_agent_session(&conversation, def.id)?;
+            let latest = s.latest_completed_assistant_id(&conversation)?;
+            let resume = stored.filter(|st| {
+                st.model == model2
+                    && st.cwd.as_deref() == Some(cwd_str.as_str())
+                    && st.last_message_id == latest
+            });
+            let turns: Vec<TranscriptTurn<'_>> = prior
+                .iter()
+                .map(|m| TranscriptTurn {
+                    assistant: m.role == MessageRole::Assistant,
+                    content: &m.content,
+                })
+                .collect();
+            let transcript = prompt::transcript(&turns);
+            let full = prompt::compose_user_message(
+                Some(&instructions),
+                Some(&cwd_str),
+                Some(&transcript),
+                &req2.message,
+                &req2.attachments,
+            );
+            let (prompt, fallback, resume_id) = match resume {
+                Some(st) => {
+                    let same = st.stable_prompt_hash.as_deref() == Some(stable_hash.as_str());
+                    let short = prompt::compose_user_message(
+                        (!same).then_some(instructions.as_str()),
+                        None,
+                        None,
+                        &req2.message,
+                        &req2.attachments,
+                    );
+                    (short, Some(full), Some(st.session_id))
+                }
+                None => (full, None, None),
+            };
+
+            for skill in &skills {
+                let alias = skill_cwd_alias_segment(&skill.dir);
+                stage_skill(
+                    &cwd,
+                    &SkillToStage {
+                        source_dir: &skill.dir,
+                        alias: &alias,
+                        skill_md: &skill.body,
+                    },
+                )?;
+            }
+            let permission = s
+                .data_dir()
+                .app_setting("agent_permission_mode")
+                .or_else(|| s.data_dir().app_setting("agentPermissionMode"))
+                .and_then(|v| v.as_str().map(PermissionMode::from_setting))
+                .unwrap_or_default();
+            Ok(Prepared {
+                cwd,
+                prompt,
+                fallback_prompt: fallback,
+                resume_session_id: resume_id,
+                stable_hash,
+                permission,
+            })
+        })
+        .await?;
+
+    let token = state.runs.tokens.issue(
+        run.id(),
+        Some(&project.id),
+        od_runtime::tokens::MIN_TOOL_TOKEN_TTL,
+    );
+    let od_bin = std::env::current_exe().ok();
+    let engine = &state.runs.engine;
+    let data_root = state.store.data_dir().root().to_path_buf();
+    let env = agent_env(
+        def,
+        &engine.config().base_env,
+        &engine.config().path,
+        &RunEnv {
+            data_dir: Some(&data_root),
+            daemon_url: state.config.daemon_url.as_deref(),
+            tool_token: Some(&token),
+            project_id: Some(&project.id),
+            project_dir: Some(&prepared.cwd),
+            od_bin: od_bin.as_deref(),
+            run_id: Some(run.id()),
+        },
+    );
+    let resumed = prepared.resume_session_id.is_some();
+    let handle = engine.launch(LaunchSpec {
+        run: Arc::clone(run),
+        def,
+        cwd: prepared.cwd.clone(),
+        prompt: prepared.prompt,
+        fallback_prompt: prepared.fallback_prompt,
+        model: model.clone(),
+        reasoning: non_default(req.reasoning.as_deref()),
+        extra_dirs: Vec::new(),
+        resume_session_id: prepared.resume_session_id,
+        permission: prepared.permission,
+        env,
+        project_id: Some(project.id.clone()),
+    });
+    tokio::spawn(persist_run(
+        state.clone(),
+        Arc::clone(run),
+        handle,
+        Finalize {
+            conversation_id: conversation_id.to_owned(),
+            agent_id: def.id.to_owned(),
+            assistant_message_id,
+            model,
+            cwd: prepared.cwd.to_string_lossy().into_owned(),
+            stable_hash: prepared.stable_hash,
+        },
+    ));
+    Ok(resumed)
+}
+
+struct Finalize {
+    conversation_id: String,
+    agent_id: String,
+    assistant_message_id: String,
+    model: Option<String>,
+    cwd: String,
+    stable_hash: String,
+}
+
+/// Agent payloads that are only meaningful live.
+fn persisted(data: &Value) -> bool {
+    !matches!(
+        data.get("type").and_then(Value::as_str),
+        Some("tool_input_delta" | "tool_in_flight")
+    )
+}
+
+/// Writes the run's `agent` events into `message_event_batches` while it
+/// streams, then finalizes the assistant message and the agent session.
+async fn persist_run(
+    state: AppState,
+    run: Arc<Run>,
+    handle: tokio::task::JoinHandle<RunOutcome>,
+    fin: Finalize,
+) {
+    let mut sub = run.subscribe(0);
+    let mut pending: Vec<Value> = Vec::new();
+    let mut seq = 0i64;
+    let mut last_id = 0u64;
+    let mut tick = tokio::time::interval(BATCH_INTERVAL);
+    loop {
+        let flush = tokio::select! {
+            ev = sub.next() => match ev {
+                Some(ev) => {
+                    last_id = ev.id;
+                    if ev.event == sse::AGENT && persisted(&ev.data) {
+                        pending.push(ev.data.clone());
+                    }
+                    pending.len() >= BATCH_MAX
+                }
+                None => break,
+            },
+            _ = tick.tick() => !pending.is_empty(),
+        };
+        if flush {
+            let batch = std::mem::take(&mut pending);
+            let (msg, rid) = (fin.assistant_message_id.clone(), run.id().to_owned());
+            let n = seq;
+            seq += 1;
+            if let Err(err) = state
+                .blocking(move |s| s.append_event_batch(&msg, &rid, n, &batch, last_id))
+                .await
+            {
+                tracing::warn!(run = %run.id(), error = %err.message, "event batch write failed");
+            }
+        }
+    }
+    if !pending.is_empty() {
+        let (msg, rid) = (fin.assistant_message_id.clone(), run.id().to_owned());
+        let _ = state
+            .blocking(move |s| s.append_event_batch(&msg, &rid, seq, &pending, last_id))
+            .await;
+    }
+    let outcome = match handle.await {
+        Ok(o) => o,
+        Err(err) => {
+            tracing::error!(run = %run.id(), error = %err, "run task failed");
+            RunOutcome {
+                status: run.status(),
+                session_id: None,
+                resumed: false,
+                resume_failed: false,
+                text: String::new(),
+                exit_code: None,
+                failure_category: None,
+            }
+        }
+    };
+    state.runs.tokens.revoke_run(run.id());
+    let status = run.status();
+    let res = state
+        .blocking(move |s| {
+            s.finish_assistant_message(&fin.assistant_message_id, &outcome.text, status, last_id)?;
+            match (&outcome.session_id, status) {
+                (Some(session), RunStatus::Succeeded) => s.save_agent_session(&AgentSession {
+                    conversation_id: fin.conversation_id,
+                    agent_id: fin.agent_id,
+                    session_id: session.clone(),
+                    stable_prompt_hash: Some(fin.stable_hash),
+                    model: fin.model,
+                    cwd: Some(fin.cwd),
+                    last_message_id: Some(fin.assistant_message_id),
+                })?,
+                _ if outcome.resume_failed => {
+                    s.delete_agent_session(&fin.conversation_id, &fin.agent_id)?;
+                }
+                _ => {}
+            }
+            Ok(())
+        })
+        .await;
+    if let Err(err) = res {
+        tracing::warn!(run = %run.id(), error = %err.message, "finalizing the message failed");
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventsQuery {
+    #[serde(default)]
+    after: Option<u64>,
+}
+
+/// `GET /api/runs/:id/events`: SSE with replay from `Last-Event-ID` or
+/// `?after=N`; a finished run sends its history and closes.
+pub async fn events(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(q): Query<EventsQuery>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    let run = state.runs.registry.get(&id).ok_or_else(run_not_found)?;
+    let after = headers
+        .get("last-event-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .or(q.after)
+        .unwrap_or(0);
+    let sub = run.subscribe(after);
+    let body = stream::unfold(sub, |mut sub| async move {
+        let ev = sub.next().await?;
+        let event = Event::default()
+            .id(ev.id.to_string())
+            .event(ev.event.clone())
+            .data(ev.data.to_string());
+        Some((Ok::<_, Infallible>(event), sub))
+    });
+    let sse = Sse::new(body).keep_alive(KeepAlive::new().interval(KEEPALIVE).text("keepalive"));
+    Ok((
+        [
+            (header::CACHE_CONTROL, "no-cache, no-transform"),
+            (header::HeaderName::from_static("x-accel-buffering"), "no"),
+        ],
+        sse,
+    )
+        .into_response())
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListQuery {
+    #[serde(default)]
+    project_id: Option<String>,
+    #[serde(default)]
+    conversation_id: Option<String>,
+}
+
+pub async fn list(
+    State(state): State<AppState>,
+    Query(q): Query<ListQuery>,
+) -> ApiJson<RunsResponse> {
+    let runs = state
+        .runs
+        .registry
+        .list()
+        .into_iter()
+        .filter(|r| {
+            q.project_id
+                .as_deref()
+                .is_none_or(|p| r.meta().project_id.as_deref() == Some(p))
+                && q.conversation_id
+                    .as_deref()
+                    .is_none_or(|c| r.meta().conversation_id.as_deref() == Some(c))
+        })
+        .map(|r| r.info())
+        .collect();
+    ApiJson(RunsResponse { runs })
+}
+
+pub async fn get(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<ApiJson<RunResponse>> {
+    let run = state.runs.registry.get(&id).ok_or_else(run_not_found)?;
+    Ok(ApiJson(RunResponse { run: run.info() }))
+}
+
+/// `POST /api/runs/:id/cancel`. Idempotent: a finished run reports its
+/// final status.
+pub async fn cancel(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<ApiJson<RunActionResponse>> {
+    let run = state.runs.registry.get(&id).ok_or_else(run_not_found)?;
+    state.runs.engine.cancel(&id);
+    Ok(ApiJson(RunActionResponse {
+        ok: true,
+        status: run.status(),
+    }))
+}
+
+/// `POST /api/runs/:id/steer`: 202, or 409 with `runtime_unsupported`,
+/// `run_terminal` or `stdin_closed`.
+pub async fn steer(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<SteerRequest>,
+) -> ApiResult<Response> {
+    let run = state.runs.registry.get(&id).ok_or_else(run_not_found)?;
+    if body.message.trim().is_empty() {
+        return Err(ApiErr::bad_request("message required"));
+    }
+    match state.runs.engine.steer(&run, &body.message).await {
+        Ok(()) => Ok((
+            StatusCode::ACCEPTED,
+            ApiJson(RunActionResponse {
+                ok: true,
+                status: run.status(),
+            }),
+        )
+            .into_response()),
+        Err(SteerError::NotFound) => Err(run_not_found()),
+        Err(err) => {
+            let code = match err {
+                SteerError::RuntimeUnsupported => ErrorCode::RuntimeUnsupported,
+                SteerError::RunTerminal | SteerError::NotFound => ErrorCode::RunTerminal,
+                SteerError::StdinClosed => ErrorCode::StdinClosed,
+            };
+            Err(conflict(code, err.to_string()))
+        }
+    }
+}
+
+/// `GET /api/agents`: fresh detection, never cached on disk.
+pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
+    let path = state.runs.engine.config().path.clone();
+    ApiJson(AgentsResponse {
+        agents: od_runtime::detect::detect_all(path).await,
+    })
+}

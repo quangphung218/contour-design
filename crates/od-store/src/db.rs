@@ -8,7 +8,8 @@ use std::path::Path;
 
 /// Ordered migrations; index `i` upgrades `user_version` from `i` to `i + 1`.
 /// Never edit a shipped entry: append a new one.
-const MIGRATIONS: &[&str] = &[r"
+const MIGRATIONS: &[&str] = &[
+    r"
 CREATE TABLE projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -93,13 +94,26 @@ CREATE TABLE preview_comments (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX idx_preview_comments_project ON preview_comments(project_id, file_path);
-"];
+",
+    r"
+CREATE TABLE message_event_batches (
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  events_json TEXT NOT NULL,
+  last_event_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, seq)
+);
+",
+];
 
 /// Tables that must exist after migration. Used by tests.
-pub const CORE_TABLES: [&str; 6] = [
+pub const CORE_TABLES: [&str; 7] = [
     "projects",
     "conversations",
     "messages",
+    "message_event_batches",
     "agent_sessions",
     "templates",
     "preview_comments",

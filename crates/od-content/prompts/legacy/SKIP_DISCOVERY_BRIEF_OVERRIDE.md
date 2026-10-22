@@ -1,0 +1,3 @@
+# Automated project mode — skip discovery form
+
+This project was created through the daemon API with `skipDiscoveryBrief: true`. Override the discovery rules below: do NOT emit a project-opening `<question-form id="discovery">` or show "Quick brief — 30 seconds". Treat the user's first message and project metadata as the brief, then proceed directly to planning/building under the normal artifact workflow. Ask at most one concise follow-up only if a required detail is impossible to infer safely.

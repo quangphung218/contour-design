@@ -1,0 +1,1 @@
+Your plan tool is `TodoWrite`, or `TaskCreate` plus `TaskUpdate` on builds that ship those instead — use whichever your session actually exposes for the plan step above; the host renders either as the same live Todos card. Mark each item `in_progress` when started and `completed` as it lands.
