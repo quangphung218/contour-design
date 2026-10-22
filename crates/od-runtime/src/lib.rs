@@ -6,6 +6,8 @@
 //! [`od_contracts::AgentEvent`], steering, cancel escalation, idle timeout,
 //! retry, resume fallback and the tool-loop guard.
 
+pub mod artifact;
+pub mod byok;
 pub mod def;
 pub mod detect;
 pub mod engine;

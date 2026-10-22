@@ -57,6 +57,7 @@ sleep 300
             permission: PermissionMode::Auto,
             env: vec![("PATH".into(), engine.config().path.clone())],
             project_id: None,
+            byok: None,
         });
         let mut sub = run.subscribe(0);
         while let Some(ev) = sub.next().await {

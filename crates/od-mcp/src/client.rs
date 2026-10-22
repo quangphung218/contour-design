@@ -214,6 +214,13 @@ impl Daemon {
     /// Reads a finished run's SSE log (`GET api/runs/<id>/events`) and joins
     /// its `text_delta` payloads. Best effort: `None` on any failure.
     pub async fn run_agent_message(&self, run_id: &str) -> Option<String> {
+        let text = self.run_events(run_id).await?;
+        let message = agent_text(&text);
+        (!message.trim().is_empty()).then_some(message)
+    }
+
+    /// A finished run's whole SSE log. Best effort: `None` on any failure.
+    pub async fn run_events(&self, run_id: &str) -> Option<String> {
         let url = self.url(&["api", "runs", run_id, "events"]);
         let res = self
             .http
@@ -226,17 +233,13 @@ impl Daemon {
         if res.status() != StatusCode::OK {
             return None;
         }
-        let text = res.text().await.ok()?;
-        let message = agent_text(&text);
-        (!message.trim().is_empty()).then_some(message)
+        res.text().await.ok()
     }
 }
 
-/// Concatenates `text_delta` text from SSE `agent` events.
-#[must_use]
-pub fn agent_text(sse: &str) -> String {
-    let mut out = String::new();
-    for block in sse.split("\n\n") {
+/// `(event, data)` of each SSE block.
+fn sse_blocks(sse: &str) -> impl Iterator<Item = (&str, String)> {
+    sse.split("\n\n").map(|block| {
         let mut event = "message";
         let mut data = String::new();
         for line in block.lines() {
@@ -246,6 +249,32 @@ pub fn agent_text(sse: &str) -> String {
                 data.push_str(v.strip_prefix(' ').unwrap_or(v));
             }
         }
+        (event, data)
+    })
+}
+
+/// `artifactPaths` of the run's `end` event (absolute paths the agent
+/// wrote), empty when absent.
+#[must_use]
+pub fn end_artifact_paths(sse: &str) -> Vec<String> {
+    sse_blocks(sse)
+        .filter(|(event, _)| *event == "end")
+        .filter_map(|(_, data)| serde_json::from_str::<Value>(&data).ok())
+        .flat_map(|v| {
+            v.get("artifactPaths")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .filter_map(|p| p.as_str().map(str::to_owned))
+        .collect()
+}
+
+/// Concatenates `text_delta` text from SSE `agent` events.
+#[must_use]
+pub fn agent_text(sse: &str) -> String {
+    let mut out = String::new();
+    for (event, data) in sse_blocks(sse) {
         if event != "agent" {
             continue;
         }
@@ -273,6 +302,13 @@ mod tests {
     fn joins_text_deltas() {
         let sse = "id: 1\nevent: start\ndata: {}\n\nid: 2\nevent: agent\ndata: {\"type\":\"text_delta\",\"delta\":\"Hel\"}\n\nevent: agent\ndata: {\"type\":\"tool_use\"}\n\nevent: agent\ndata: {\"type\":\"text_delta\",\"text\":\"lo\"}\n\n";
         assert_eq!(agent_text(sse), "Hello");
+    }
+
+    #[test]
+    fn reads_end_artifact_paths() {
+        let sse = "event: agent\ndata: {}\n\nid: 9\nevent: end\ndata: {\"status\":\"succeeded\",\"artifactPaths\":[\"/p/index.html\",\"/p/a.css\"]}\n\n";
+        assert_eq!(end_artifact_paths(sse), ["/p/index.html", "/p/a.css"]);
+        assert!(end_artifact_paths("event: end\ndata: {}\n\n").is_empty());
     }
 
     #[test]

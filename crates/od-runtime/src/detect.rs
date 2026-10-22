@@ -2,7 +2,7 @@
 //! probe `--version`, then the help flags. Each probe is isolated, so one
 //! broken CLI never empties the list. Nothing is cached on disk.
 
-use crate::def::RuntimeDef;
+use crate::def::{RuntimeDef, SessionIdSource, StreamFormat};
 use od_contracts::AgentInfo;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -76,9 +76,8 @@ pub async fn probe_capabilities(def: &RuntimeDef, bin: &Path, path: &OsStr) -> V
         .collect()
 }
 
-/// Detects one agent.
-pub async fn detect(def: &RuntimeDef, path: &OsStr) -> AgentInfo {
-    let mut info = AgentInfo {
+fn unavailable(def: &RuntimeDef, error: Option<String>) -> AgentInfo {
+    AgentInfo {
         id: def.id.to_owned(),
         name: def.name.to_owned(),
         bin: def.bin.to_owned(),
@@ -86,10 +85,24 @@ pub async fn detect(def: &RuntimeDef, path: &OsStr) -> AgentInfo {
         path: None,
         version: None,
         capabilities: Vec::new(),
-        supports_resume: true,
+        supports_resume: def.session != SessionIdSource::None,
         supports_steer: def.supports_steer(),
-        error: None,
-    };
+        error,
+    }
+}
+
+/// Detects one agent. BYOK has no binary: it is available when a key is
+/// configured (`byok_configured`).
+pub async fn detect(def: &RuntimeDef, path: &OsStr, byok_configured: bool) -> AgentInfo {
+    if def.stream_format == StreamFormat::Byok {
+        let mut info = unavailable(def, Some("no API key configured".to_owned()));
+        if byok_configured {
+            info.available = true;
+            info.error = None;
+        }
+        return info;
+    }
+    let mut info = unavailable(def, None);
     let Some(bin) = resolve_bin(def, path) else {
         info.error = Some(format!("`{}` not found on PATH", def.bin));
         return info;
@@ -108,31 +121,20 @@ pub async fn detect(def: &RuntimeDef, path: &OsStr) -> AgentInfo {
     info
 }
 
-/// Detects every built-in agent concurrently.
-pub async fn detect_all(path: OsString) -> Vec<AgentInfo> {
-    let tasks: Vec<_> = crate::def::BUILTIN
+/// Detects every built-in agent (and BYOK) concurrently.
+pub async fn detect_all(path: OsString, byok_configured: bool) -> Vec<AgentInfo> {
+    let tasks: Vec<_> = crate::def::ALL
         .into_iter()
         .map(|def| {
             let path = path.clone();
-            tokio::spawn(async move { detect(def, &path).await })
+            tokio::spawn(async move { detect(def, &path, byok_configured).await })
         })
         .collect();
     let mut out = Vec::with_capacity(tasks.len());
-    for (task, def) in tasks.into_iter().zip(crate::def::BUILTIN) {
+    for (task, def) in tasks.into_iter().zip(crate::def::ALL) {
         match task.await {
             Ok(info) => out.push(info),
-            Err(err) => out.push(AgentInfo {
-                id: def.id.to_owned(),
-                name: def.name.to_owned(),
-                bin: def.bin.to_owned(),
-                available: false,
-                path: None,
-                version: None,
-                capabilities: Vec::new(),
-                supports_resume: true,
-                supports_steer: def.supports_steer(),
-                error: Some(format!("probe failed: {err}")),
-            }),
+            Err(err) => out.push(unavailable(def, Some(format!("probe failed: {err}")))),
         }
     }
     out

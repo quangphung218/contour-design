@@ -223,6 +223,7 @@ struct Prepared {
     resume_session_id: Option<String>,
     stable_hash: String,
     permission: PermissionMode,
+    byok: Option<od_runtime::byok::ByokConfig>,
 }
 
 /// Records the turn, composes the prompt, decides on resume, stages
@@ -364,6 +365,10 @@ async fn prepare_and_launch(
                     },
                 )?;
             }
+            let byok = s
+                .data_dir()
+                .app_setting(od_runtime::byok::APP_CONFIG_KEY)
+                .and_then(|v| od_runtime::byok::ByokConfig::from_value(&v));
             let permission = s
                 .data_dir()
                 .app_setting("agent_permission_mode")
@@ -377,6 +382,7 @@ async fn prepare_and_launch(
                 resume_session_id: resume_id,
                 stable_hash,
                 permission,
+                byok,
             })
         })
         .await?;
@@ -417,6 +423,7 @@ async fn prepare_and_launch(
         permission: prepared.permission,
         env,
         project_id: Some(project.id.clone()),
+        byok: prepared.byok,
     });
     tokio::spawn(persist_run(
         state.clone(),
@@ -670,7 +677,13 @@ pub async fn steer(
 /// `GET /api/agents`: fresh detection, never cached on disk.
 pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
     let path = state.runs.engine.config().path.clone();
+    let byok = state
+        .store
+        .data_dir()
+        .app_setting(od_runtime::byok::APP_CONFIG_KEY)
+        .and_then(|v| od_runtime::byok::ByokConfig::from_value(&v))
+        .is_some();
     ApiJson(AgentsResponse {
-        agents: od_runtime::detect::detect_all(path).await,
+        agents: od_runtime::detect::detect_all(path, byok).await,
     })
 }
