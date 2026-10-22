@@ -415,3 +415,27 @@ async fn creating_a_conversation_publishes_conversation_created() {
         })
     );
 }
+
+#[tokio::test]
+async fn raw_documents_carry_the_no_network_csp() {
+    let a = app();
+    let id = a.project().await;
+    a.write(&id, "index.html", DECK).await;
+    for uri in [
+        format!("/api/projects/{id}/raw/index.html"),
+        format!("/api/projects/{id}/raw/index.html?bridge=1"),
+    ] {
+        let r = a.get(&uri).await;
+        assert_eq!(r.status, StatusCode::OK);
+        let csp = r.header("content-security-policy").unwrap_or_default();
+        for directive in [
+            "sandbox allow-scripts",
+            "connect-src 'none'",
+            "form-action 'none'",
+            "base-uri 'none'",
+        ] {
+            assert!(csp.contains(directive), "{uri}: {directive} in {csp:?}");
+        }
+        assert_eq!(r.header("x-content-type-options"), Some("nosniff"));
+    }
+}

@@ -15,10 +15,11 @@ pub use scope::{PreviewScope, PreviewScopes, SCOPE_TTL, is_scope_token};
 /// `sandbox` attribute the host puts on the preview iframe (opaque origin).
 pub const PREVIEW_IFRAME_SANDBOX: &str = "allow-scripts allow-forms";
 
-/// CSP for `GET .../preview/<scope>/...`: only `'self'`, `data:` and `blob:`,
-/// no network calls, no form posts, no `<base>` rewrites.
-pub const PREVIEW_CSP: &str = "sandbox allow-scripts allow-forms; \
-default-src 'self' data: blob:; \
+/// Fetch directives shared by every preview CSP: only `'self'`, `data:` and
+/// `blob:`, no network calls, no form posts, no `<base>` rewrites.
+macro_rules! preview_directives {
+    () => {
+        "default-src 'self' data: blob:; \
 img-src 'self' data: blob:; \
 media-src 'self' data: blob:; \
 font-src 'self' data:; \
@@ -27,7 +28,20 @@ script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
 connect-src 'none'; \
 form-action 'none'; \
 base-uri 'none'; \
-object-src 'none'";
+object-src 'none'"
+    };
+}
+
+/// CSP for `GET .../preview/<scope>/...`.
+pub const PREVIEW_CSP: &str = concat!("sandbox allow-scripts allow-forms; ", preview_directives!());
+
+/// CSP for `GET .../raw/...`: the Studio preview iframe loads project HTML
+/// from `raw`, so it gets the same no-network policy. Its sandbox matches
+/// that iframe's `sandbox` attribute (the stricter of the two applies).
+pub const RAW_CSP: &str = concat!(
+    "sandbox allow-scripts allow-forms allow-popups allow-modals; ",
+    preview_directives!()
+);
 
 /// Body of `GET /api/projects/:id/preview-url`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

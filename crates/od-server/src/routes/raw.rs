@@ -87,6 +87,15 @@ fn not_modified_since(headers: &HeaderMap, mtime: SystemTime) -> bool {
     UNIX_EPOCH + Duration::from_secs(secs) <= since
 }
 
+/// Types a browser renders as a scriptable document.
+fn is_document(mime: &str) -> bool {
+    let essence = mime.split(';').next().unwrap_or_default().trim();
+    matches!(
+        essence,
+        "text/html" | "application/xhtml+xml" | "image/svg+xml" | "text/xml" | "application/xml"
+    )
+}
+
 pub async fn raw(
     State(state): State<AppState>,
     Path((id, rest)): Path<(String, String)>,
@@ -102,7 +111,13 @@ pub async fn raw(
         .header(header::ETAG, &etag)
         .header(header::LAST_MODIFIED, httpdate::fmt_http_date(mtime))
         .header(header::CACHE_CONTROL, "no-cache")
-        .header(header::ACCEPT_RANGES, "bytes");
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff");
+    // Project HTML renders in the Studio iframe from here: no network.
+    // Other types (PDF, images) keep their native viewers.
+    if is_document(&file.mime) {
+        builder = builder.header(header::CONTENT_SECURITY_POLICY, od_preview::RAW_CSP);
+    }
     // Sandboxed preview iframes send `Origin: null`; let them read assets.
     if headers.get(header::ORIGIN).map(HeaderValue::as_bytes) == Some(b"null") {
         builder = builder.header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
