@@ -21,10 +21,14 @@ serde_json.workspace = true
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
+    "Blob",
+    "BlobPropertyBag",
+    "Clipboard",
     "Crypto",
     "Document",
     "Element",
     "EventSource",
+    "HtmlAnchorElement",
     "HtmlElement",
     "HtmlIFrameElement",
     "KeyboardEvent",
@@ -32,6 +36,8 @@ web-sys = { version = "0.3", features = [
     "MediaQueryList",
     "MessageEvent",
     "Navigator",
+    "NodeList",
+    "Url",
     "Window",
 ] }
 

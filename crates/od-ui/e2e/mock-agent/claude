@@ -6,7 +6,9 @@
 #
 # Turn N is the N-th page version: "Mock page v<N>", where N-1 is read back
 # from the current index.html. A request containing `form` ends with a
-# <question-form>; `slow` streams slowly so Stop can be tested.
+# <question-form>; `slow` streams slowly so Stop can be tested; `plan` adds a
+# TodoWrite plan; `deck` writes a 3-slide deck.html (with speaker notes)
+# instead of index.html. Attached preview comments are acknowledged.
 
 case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
@@ -32,16 +34,46 @@ say() {
 
 printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
 say "Turn $turn. Working on: $first "
+case "$line" in *attached-preview-comments*)
+  say "Saw preview comments. "
+;; esac
+case "$req" in *plan*)
+  printf '{"type":"assistant","message":{"id":"m%s-p","role":"assistant","content":[{"type":"tool_use","id":"plan-%s","name":"TodoWrite","input":{"todos":[{"content":"Read the brief","activeForm":"Reading the brief","status":"completed"},{"content":"Write the page","activeForm":"Writing the page","status":"in_progress"},{"content":"Check the result","activeForm":"Checking the result","status":"pending"}]}}]}}\n' "$$" "$$"
+;; esac
 case "$req" in *slow*)
   i=0
   while [ $i -lt 40 ]; do say "step$i "; i=$((i + 1)); sleep 0.25; done
 ;; esac
 
 tool="tool-$$"
-printf '{"type":"assistant","message":{"id":"m%s-w","role":"assistant","content":[{"type":"tool_use","id":"%s","name":"Write","input":{"file_path":"%s/index.html","content":"..."}}]}}\n' "$$" "$tool" "$PWD"
-printf '<!doctype html><html><body><h1 id="title">Mock page v%s</h1><p>%s</p></body></html>\n' "$turn" "$first" > index.html
+target=index.html
+case "$req" in *deck*) target=deck.html;; esac
+printf '{"type":"assistant","message":{"id":"m%s-w","role":"assistant","content":[{"type":"tool_use","id":"%s","name":"Write","input":{"file_path":"%s/%s","content":"..."}}]}}\n' "$$" "$tool" "$PWD" "$target"
+if [ "$target" = deck.html ]; then
+  cat > deck.html <<'HTML'
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:40px system-ui}.slide{display:none;width:100vw;height:100vh;padding:40px;box-sizing:border-box}
+.slide.active{display:block}.notes{display:none}
+</style></head><body>
+<section class="slide active"><h1>Slide one</h1><aside class="notes">Notes for slide one</aside></section>
+<section class="slide"><h1>Slide two</h1><aside class="notes">Notes for slide two</aside></section>
+<section class="slide"><h1>Slide three</h1></section>
+<script>
+var i = 0, s = [].slice.call(document.querySelectorAll('.slide'));
+function show(n) { i = Math.max(0, Math.min(s.length - 1, n)); s.forEach(function (e, k) { e.classList.toggle('active', k === i); }); }
+addEventListener('keydown', function (e) {
+  if (e.key === 'ArrowRight') show(i + 1);
+  if (e.key === 'ArrowLeft') show(i - 1);
+  if (e.key === 'Home') show(0);
+  if (e.key === 'End') show(s.length - 1);
+});
+</script></body></html>
+HTML
+else
+  printf '<!doctype html><html><body><h1 id="title">Mock page v%s</h1><p>%s</p></body></html>\n' "$turn" "$first" > index.html
+fi
 printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"%s","content":"File created successfully"}]}}\n' "$tool"
-say "\\n\\nWrote \`index.html\` (v$turn)."
+say "\\n\\nWrote \`$target\` (v$turn)."
 
 case "$req" in *form*)
   say '\n\n<question-form id=\"discovery\" title=\"A few questions\">\n{\"questions\": [\n  {\"id\": \"platform\", \"label\": \"Platform\", \"type\": \"radio\", \"options\": [\"Mobile\", \"Desktop\"], \"required\": true},\n  {\"id\": \"audience\", \"label\": \"Audience\", \"type\": \"text\", \"placeholder\": \"Who is it for?\"}\n]}\n</question-form>'

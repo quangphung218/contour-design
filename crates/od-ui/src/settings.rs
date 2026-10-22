@@ -57,6 +57,9 @@ pub struct AppConfig {
     pub theme: Theme,
     #[serde(default)]
     pub onboarding_completed: bool,
+    /// UI language tag (`en`, `vi`); absent: follow the browser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
     /// Settings this UI does not know, kept on round trips.
     #[serde(flatten)]
     pub extra: Map<String, Value>,

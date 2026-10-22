@@ -1,14 +1,17 @@
-// UI e2e (spec 5.7 M3) against the real daemon (`od daemon start`) whose
-// only agent is the mock `claude` CLI in ./mock-agent: onboarding → brief →
-// streamed text → the agent writes index.html → preview → second turn reloads
-// the preview → question form → stop → history after reload → settings.
-// Every request leaving loopback is blocked and fails the test.
+// UI e2e (spec 5.7 M3, wave 2) against the real daemon (`od daemon start`)
+// whose only agent is the mock `claude` CLI in ./mock-agent: onboarding →
+// brief → streamed text → the agent writes index.html → preview → second
+// turn reloads the preview → question form → plan pill, queue, steer, stop →
+// history after reload → preview comments sent with a turn → deck viewer
+// (next, thumbnails, notes, present, Esc) → quick switcher and tabs →
+// version restore → fork → export and handoff → open folder → settings and
+// Vietnamese. Every request leaving loopback is blocked and fails the test.
 //
 // Run through ./run.sh (builds the bundle and `od` first).
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -51,7 +54,8 @@ mkdirSync(OUT, { recursive: true });
 // this machine is never detected or launched.
 const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
   stdio: ['ignore', 'inherit', 'inherit'],
-  env: { ...process.env, OD_DATA_DIR: data, PATH: `${MOCK_AGENTS}:/usr/bin:/bin` },
+  // `true` stands in for Finder/xdg-open so handoff never opens a window.
+  env: { ...process.env, OD_DATA_DIR: data, PATH: `${MOCK_AGENTS}:/usr/bin:/bin`, OD_OPEN_COMMAND: '/usr/bin/true' },
 });
 let browser;
 const results = {};
@@ -59,7 +63,8 @@ const results = {};
 try {
   await waitHealthy();
   browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1360, height: 860 } });
+  const context = await browser.newContext({ viewport: { width: 1360, height: 860 }, acceptDownloads: true });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
   const external = [];
   await context.route('**/*', (route) => {
     const url = new URL(route.request().url());
@@ -72,6 +77,7 @@ try {
   const runBodies = [];
   const page = await context.newPage();
   page.on('pageerror', (e) => log('page error:', e.message));
+  page.on('console', (m) => m.type() === 'error' && log('console error:', m.text().slice(0, 2000)));
   page.on('request', (req) => {
     if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/runs') runBodies.push(req.postDataJSON());
   });
@@ -97,6 +103,7 @@ try {
   await page.getByTestId('brief').fill(brief);
   await page.getByTestId('brief').press('Enter');
   await page.waitForURL('**/projects/*');
+  const projectUrl = page.url();
 
   // 3. Streamed text shows up in the assistant message.
   const assistant = page.getByTestId('assistant-msg');
@@ -151,51 +158,195 @@ try {
   await assistant.nth(3).getByText('Turn 4. Working on: [form answers — discovery]').waitFor();
   results.questionForm = 'ok';
 
-  // 7. Stop cancels a running turn.
+  // 7. Plan pill, queue, steer, stop; the queued message goes out after.
   await until(async () => (await assistant.nth(3).getAttribute('data-state')) === 'succeeded', 'turn 4 end');
-  await page.getByTestId('composer').fill('slow please');
+  await page.getByTestId('composer').fill('slow plan please');
   await page.getByTestId('composer').press('Enter');
+  await page.getByTestId('plan-pill').getByText('Step 2/3').waitFor();
+  await page.getByTestId('plan-pill').getByText('Writing the page').waitFor();
+  results.planPill = 'ok';
+  await page.getByTestId('composer').fill('steer me');
+  await page.getByTestId('composer').press('Enter');
+  await page.getByTestId('composer').fill('after stop');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await page.getByTestId('queued').count()) === 2, 'two queued');
+  await page.getByTestId('queued').first().getByTestId('steer').click();
+  await assistant.nth(4).getByText('Steered: steer me').waitFor();
+  await until(async () => (await page.getByTestId('queued').count()) === 1, 'steered item left the queue');
+  results.queueSteer = 'ok';
   await page.getByTestId('stop').click();
   await until(async () => (await assistant.nth(4).getAttribute('data-state')) === 'canceled', 'canceled state');
   await assistant.nth(4).getByText('Stopped').waitFor();
-  await page.getByTestId('send').waitFor();
+  await assistant.nth(5).getByText('Turn 5. Working on: after stop').waitFor();
+  await until(async () => (await assistant.nth(5).getAttribute('data-state')) === 'succeeded', 'queued turn end');
+  assert.equal(await page.getByTestId('queued').count(), 0);
   results.stop = 'ok';
 
   // 8. Reload: history comes back from the conversation.
   await page.reload();
-  await until(async () => (await assistant.count()) === 5, 'history restored');
+  await until(async () => (await assistant.count()) === 6, 'history restored');
   assert.equal(await assistant.nth(4).getAttribute('data-state'), 'canceled');
-  await frame.locator('#title', { hasText: 'Mock page v4' }).waitFor();
+  await frame.locator('#title', { hasText: 'Mock page v5' }).waitFor();
   results.history = 'ok';
 
-  // 9. Project list.
+  // 9. Comment on the preview; it rides along with the next turn.
+  await page.getByTestId('comment-mode').click();
+  await page.waitForTimeout(150);
+  await frame.locator('#title').click();
+  await page.getByTestId('comment-note').fill('Make the title green');
+  await page.getByTestId('comment-add').click();
+  await page.getByTestId('comment-chip').getByText('Make the title green').waitFor();
+  await page.getByTestId('comment-pin').first().waitFor();
+  await page.getByTestId('comment-mode').click();
+  await page.getByTestId('composer').fill('apply comments');
+  await page.getByTestId('composer').press('Enter');
+  await assistant.nth(6).getByText('Saw preview comments.').waitFor();
+  const withComments = runBodies[runBodies.length - 1];
+  assert.equal(withComments.message, 'apply comments');
+  assert.equal(withComments.commentAttachments.length, 1);
+  assert.equal(withComments.commentAttachments[0].comment, 'Make the title green');
+  assert.equal(withComments.commentAttachments[0].filePath, 'index.html');
+  assert.match(withComments.commentAttachments[0].selector, /h1/);
+  await until(async () => (await page.getByTestId('comment-chip').count()) === 0, 'chip cleared after send');
+  await until(async () => (await assistant.nth(6).getAttribute('data-state')) === 'succeeded', 'turn 7 end');
+  results.comments = 'ok';
+
+  // 10. Deck viewer: counter, next, thumbnails, notes, present, Esc.
+  await page.getByTestId('composer').fill('make a deck');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await assistant.nth(7).getAttribute('data-state')) === 'succeeded', 'deck turn end');
+  // Let the watcher's file-changed (200 ms debounce) land before driving the
+  // deck, or it reloads the frame mid-navigation.
+  await sleep(800);
+  await page.locator('.file', { hasText: 'deck.html' }).click();
+  const counter = page.getByTestId('deck-counter');
+  await until(async () => (await counter.textContent()) === '1 / 3', 'deck ready 1/3');
+  await page.getByTestId('deck-next').click();
+  await until(async () => (await counter.textContent()) === '2 / 3', 'deck next 2/3');
+  await frame.getByRole('heading', { name: 'Slide two' }).waitFor();
+  assert.equal(await page.getByTestId('deck-thumb').count(), 3);
+  await page.getByTestId('deck-notes').click();
+  await page.getByTestId('speaker-notes').getByText('Notes for slide two').waitFor();
+  await page.getByTestId('deck-thumb').nth(0).click();
+  await until(async () => (await counter.textContent()) === '1 / 3', 'thumbnail goes to slide 1');
+  await page.getByTestId('deck-present').click();
+  await until(async () => (await page.getByTestId('preview-pane').getAttribute('class')).includes('presenting'), 'present mode');
+  await page.keyboard.press('End');
+  await until(async () => (await counter.textContent()) === '3 / 3', 'End in present mode');
+  await page.screenshot({ path: OUT + 'deck-present.png' });
+  await page.keyboard.press('Escape');
+  await until(async () => !(await page.getByTestId('preview-pane').getAttribute('class')).includes('presenting'), 'Esc leaves present');
+  // Esc pressed inside the deck reaches the host through the bridge.
+  await page.getByTestId('deck-present').click();
+  await frame.locator('body').press('Escape');
+  await until(async () => !(await page.getByTestId('preview-pane').getAttribute('class')).includes('presenting'), 'Esc from the frame');
+  results.deck = 'ok';
+
+  // 11. Quick switcher and tabs.
+  assert.equal(await page.getByTestId('tab').count(), 2);
+  await page.keyboard.press('Control+p');
+  await page.getByTestId('quick-switcher').waitFor();
+  await page.getByTestId('switcher-input').fill('idx');
+  assert.equal((await page.getByTestId('switcher-item').first().textContent()).startsWith('index.html'), true);
+  await page.getByTestId('switcher-input').press('Enter');
+  await until(async () => (await page.getByTestId('quick-switcher').count()) === 0, 'switcher closed');
+  await page.locator('.tab.active', { hasText: 'index.html' }).waitFor();
+  await page.keyboard.press('Control+2');
+  await page.locator('.tab.active', { hasText: 'deck.html' }).waitFor();
+  await page.keyboard.press('Control+w');
+  await until(async () => (await page.getByTestId('tab').count()) === 1, 'Ctrl+W closed a tab');
+  await page.locator('.tab.active', { hasText: 'index.html' }).waitFor();
+  results.quickSwitcher = 'ok';
+
+  // 12. Version history: restore the first AI version of index.html.
+  await page.getByTestId('history').click();
+  await page.locator('[data-testid="version"][data-version="1"]').waitFor();
+  assert.ok((await page.getByTestId('version').count()) >= 5, 'one version per turn that wrote index.html');
+  await page.locator('[data-testid="version"][data-version="1"]').getByTestId('version-restore').click();
+  await frame.locator('#title', { hasText: 'Mock page v1' }).waitFor();
+  assert.match(readFileSync(join(data, 'projects', page.url().split('/').pop(), 'index.html'), 'utf8'), /Mock page v1/);
+  await page.getByTestId('history').click();
+  results.restoreVersion = 'ok';
+
+  // 13. Fork from the first answer into a new conversation, then go back.
+  const original = await page.getByTestId('conversation').inputValue();
+  await assistant.first().getByTestId('fork').click();
+  await until(async () => (await page.locator('[data-testid="conversation"] option').count()) === 2, 'fork listed');
+  await until(async () => (await assistant.count()) === 1, 'fork holds the first exchange');
+  assert.notEqual(await page.getByTestId('conversation').inputValue(), original);
+  await page.getByTestId('conversation').selectOption(original);
+  await until(async () => (await assistant.count()) === 8, 'back to the original');
+  results.fork = 'ok';
+
+  // 14. Export HTML and ZIP; handoff copies a prompt and opens the folder.
+  await page.getByTestId('export').click();
+  const [html] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-html').click()]);
+  assert.equal(html.suggestedFilename(), 'index.html');
+  assert.match(readFileSync(await html.path(), 'utf8'), /Mock page v1/);
+  await page.getByTestId('export').click();
+  const [zip] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-zip').click()]);
+  assert.equal(readFileSync(await zip.path()).subarray(0, 2).toString(), 'PK');
+  await page.getByTestId('export').click();
+  await page.getByTestId('handoff-copy').click();
+  await page.getByTestId('export-status').getByText('Prompt copied').waitFor();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  assert.match(copied, /Start from `index\.html`/);
+  await page.getByTestId('export').click();
+  await page.getByTestId('handoff-open').click();
+  await page.getByTestId('export-status').getByText('Folder opened').waitFor();
+  results.exportHandoff = 'ok';
+
+  // 15. Project list; an existing folder opens as a project.
   await page.goto(BASE + '/projects');
   await page.locator('.project-row', { hasText: brief }).waitFor();
+  const folder = mkdtempSync(join(tmpdir(), 'od-e2e-folder-'));
+  writeFileSync(join(folder, 'index.html'), '<!doctype html><h1 id="title">From my folder</h1>');
+  await page.getByTestId('open-folder').click();
+  await page.getByTestId('folder-path').fill(folder);
+  await page.getByTestId('folder-import').click();
+  await page.waitForURL('**/projects/*');
+  await frame.locator('#title', { hasText: 'From my folder' }).waitFor();
+  rmSync(folder, { recursive: true, force: true });
   results.projects = 'ok';
 
-  // 10. Settings persist and switch the theme.
+  // 16. Settings persist and switch the theme; Vietnamese everywhere.
   await page.goto(BASE + '/settings');
   await page.getByText('Ask first').click();
   await page.getByRole('button', { name: 'Dark' }).click();
   await page.getByTestId('model').fill('mock-large');
   await page.getByTestId('save-settings').click();
   await page.getByText('Saved').waitFor();
-  const cfg = await (await fetch(`${BASE}/api/app-config`)).json();
+  let cfg = await (await fetch(`${BASE}/api/app-config`)).json();
   assert.equal(cfg.agentPermissionMode, 'ask');
   assert.equal(cfg.model, 'mock-large');
   assert.equal(cfg.agentId, 'claude');
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+  await page.getByTestId('language').selectOption('vi');
+  await page.getByTestId('save-settings').click();
+  await page.locator('h1', { hasText: 'Cài đặt' }).waitFor();
+  await page.locator('.topnav', { hasText: 'Trang chủ' }).waitFor();
+  cfg = await (await fetch(`${BASE}/api/app-config`)).json();
+  assert.equal(cfg.locale, 'vi');
+  assert.equal(await page.locator('html').getAttribute('lang'), 'vi');
   await page.goto(BASE + '/');
-  await page.screenshot({ path: OUT + 'home-dark.png' });
+  await page.locator('h1', { hasText: 'Hôm nay thiết kế gì?' }).waitFor();
+  await page.screenshot({ path: OUT + 'home-dark-vi.png' });
+  await page.goto(projectUrl);
+  await page.getByTestId('composer').waitFor();
+  assert.match(await page.getByTestId('composer').getAttribute('placeholder'), /Enter để gửi/);
+  await page.getByTestId('history').getByText('Lịch sử').waitFor();
+  await page.screenshot({ path: OUT + 'studio-vi.png' });
   results.settings = 'ok';
+  results.vietnamese = 'ok';
 
-  // 11. Nothing left loopback during the whole scenario.
+  // 17. Nothing left loopback during the whole scenario.
   assert.deepEqual(external, [], `external requests: ${external.join(', ')}`);
   results.externalRequests = 0;
 
   log('PASS', JSON.stringify(results));
 } catch (e) {
   log('FAIL', e.stack || e);
+  await browser?.contexts()[0]?.pages()[0]?.screenshot({ path: OUT + 'failure.png' }).catch(() => {});
   log('so far', JSON.stringify(results));
   process.exitCode = 1;
 } finally {

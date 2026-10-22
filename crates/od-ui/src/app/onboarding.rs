@@ -2,6 +2,7 @@
 
 use super::Shell;
 use crate::events::AgentInfo;
+use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 
@@ -39,19 +40,17 @@ pub fn Onboarding() -> impl IntoView {
 
     view! {
         <section class="page narrow">
-            <h1>"Choose your coding agent"</h1>
-            <p class="muted">
-                "Open Design drives a coding agent installed on this machine. Nothing leaves your computer except what the agent itself sends to its provider."
-            </p>
+            <h1>{t(T::OnboardingTitle)}</h1>
+            <p class="muted">{t(T::OnboardingIntro)}</p>
             <div class="agent-list" role="radiogroup">
                 {move || match shell.agents.get() {
-                    None => view! { <p class="empty">"Detecting agents…"</p> }.into_any(),
+                    None => view! { <p class="empty">{t(T::DetectingAgents)}</p> }.into_any(),
                     Some(Err(e)) => {
-                        view! { <p class="error-text">{format!("Agent detection unavailable: {e}")}</p> }
+                        view! { <p class="error-text">{tf(T::AgentDetectionUnavailable, &[&e])}</p> }
                             .into_any()
                     }
                     Some(Ok(list)) if list.is_empty() => {
-                        view! { <p class="empty">"No agents found. Install Claude Code or Codex, then refresh."</p> }
+                        view! { <p class="empty">{t(T::NoAgentsFound)}</p> }
                             .into_any()
                     }
                     Some(Ok(list)) => {
@@ -64,15 +63,15 @@ pub fn Onboarding() -> impl IntoView {
             </div>
             {move || error.get().map(|e| view! { <p class="error-text">{e}</p> })}
             <div class="row end">
-                <button class="btn" on:click=move |_| shell.reload_agents()>"Refresh"</button>
-                <button class="btn ghost" on:click=move |_| finish_skip(None)>"Skip for now"</button>
+                <button class="btn" on:click=move |_| shell.reload_agents()>{t(T::Refresh)}</button>
+                <button class="btn ghost" on:click=move |_| finish_skip(None)>{t(T::SkipForNow)}</button>
                 <button
                     class="btn primary"
                     data-testid="onboarding-continue"
                     disabled=move || picked.get().is_none()
                     on:click=move |_| finish(picked.get_untracked())
                 >
-                    "Continue"
+                    {t(T::Continue)}
                 </button>
             </div>
         </section>
@@ -84,15 +83,15 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
     let id = agent.id.clone();
     let id_check = id.clone();
     let detail = if agent.available {
-        agent
-            .version
-            .clone()
-            .map_or_else(|| "Installed".to_owned(), |v| format!("Installed · {v}"))
+        agent.version.clone().map_or_else(
+            || t(T::Installed).to_owned(),
+            |v| tf(T::InstalledVersion, &[&v]),
+        )
     } else {
         agent
             .error
             .clone()
-            .unwrap_or_else(|| "Not installed".to_owned())
+            .unwrap_or_else(|| t(T::NotInstalled).to_owned())
     };
     view! {
         <button
