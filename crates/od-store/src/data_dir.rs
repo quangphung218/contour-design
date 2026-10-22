@@ -39,6 +39,21 @@ impl DataDir {
         self.root.join("projects")
     }
 
+    /// `app-config.json`: user settings such as `agent_permission_mode`.
+    #[must_use]
+    pub fn app_config_path(&self) -> PathBuf {
+        self.root.join("app-config.json")
+    }
+
+    /// One top-level value of `app-config.json`; `None` when the file or
+    /// key is missing or unreadable.
+    #[must_use]
+    pub fn app_setting(&self, key: &str) -> Option<serde_json::Value> {
+        let bytes = std::fs::read(self.app_config_path()).ok()?;
+        let mut config: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        config.get_mut(key).map(serde_json::Value::take)
+    }
+
     #[must_use]
     pub fn runs_dir(&self) -> PathBuf {
         self.root.join("runs")

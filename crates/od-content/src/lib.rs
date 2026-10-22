@@ -9,6 +9,7 @@ pub mod craft;
 pub mod design_systems;
 pub mod frontmatter;
 pub mod index;
+pub mod prompt;
 pub mod skills;
 mod text;
 

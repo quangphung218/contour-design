@@ -16,3 +16,8 @@ Nội dung đã copy (git archive tại e03d5c2, chỉ file được git theo d�
   Khi copy examples/ phải loại font không có license (examples/open-design-homepage/assets/fonts) và font hash trong video-templates/*/source/fonts.
 
 Dữ liệu test: crates/od-content/tests/fixtures/original-*.json là output của loader TypeScript gốc (Apache-2.0) chạy trên content/ ở trên.
+
+M2 (run engine), lấy từ OpenDesign commit e03d5c2 (Apache-2.0):
+- crates/od-runtime/tests/fixtures/claude-cli-recordings/: 6 bản ghi stdout thật của Claude Code 2.1.259 + README, chép nguyên từ apps/daemon/tests/fixtures/claude-cli-recordings/.
+- crates/od-runtime/tests/fixtures/codex/turn-exec-json.jsonl: bản ghi `codex exec --json`, chép từ apps/daemon/tests/fixtures/codex-app-server/.
+- crates/od-content/prompts/legacy/*.md: văn bản prompt bộ legacy (apps/daemon/src/prompts/, packages/contracts/src/prompts/), render với execution profile `filesystem`; bản Rust chỉ ghép lại theo thứ tự spec 2.4.

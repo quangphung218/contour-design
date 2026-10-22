@@ -1,5 +1,7 @@
 use crate::error::{ApiErr, ApiResult};
 use od_content::ContentStore;
+use od_runs::Runs;
+use od_runtime::{EngineConfig, RunEngine, ToolTokens};
 use od_store::{Store, StoreError};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,6 +22,27 @@ pub struct ServerConfig {
     /// Extra browser origins from `OD_ALLOWED_ORIGINS`.
     pub allowed_origins: Vec<String>,
     pub resource_root: PathBuf,
+    /// This daemon's base URL, exported to agents as `OD_DAEMON_URL`.
+    pub daemon_url: Option<String>,
+}
+
+/// Run registry, engine and per-run tool tokens.
+#[derive(Debug)]
+pub struct RunContext {
+    pub registry: Arc<Runs>,
+    pub engine: RunEngine,
+    pub tokens: ToolTokens,
+}
+
+impl RunContext {
+    #[must_use]
+    pub fn new(registry: Arc<Runs>, engine: EngineConfig) -> Self {
+        Self {
+            registry,
+            engine: RunEngine::new(engine),
+            tokens: ToolTokens::default(),
+        }
+    }
 }
 
 /// Shared handler state.
@@ -28,6 +51,7 @@ pub struct AppState {
     pub store: Arc<Store>,
     pub content: Arc<ContentStore>,
     pub config: Arc<ServerConfig>,
+    pub runs: Arc<RunContext>,
 }
 
 impl AppState {

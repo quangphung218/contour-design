@@ -33,6 +33,11 @@ fn free_port() -> u16 {
 
 /// `bare`: run `od` with no subcommand (port from `OD_PORT`).
 fn start(bare: bool) -> Daemon {
+    start_with_path(bare, None)
+}
+
+/// Like [`start`], with `dir` first on the daemon's `PATH` (mock agents).
+fn start_with_path(bare: bool, dir: Option<&std::path::Path>) -> Daemon {
     let tmp = tempfile::tempdir().unwrap();
     let resources = tmp.path().join("resources");
     std::fs::create_dir_all(resources.join("skills/demo")).unwrap();
@@ -45,6 +50,13 @@ fn start(bare: bool) -> Daemon {
     let mut cmd = Command::new(OD);
     if !bare {
         cmd.args(["daemon", "start", "--port", &port.to_string()]);
+    }
+    if let Some(dir) = dir {
+        let mut parts = vec![dir.to_path_buf()];
+        parts.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        cmd.env("PATH", std::env::join_paths(parts).unwrap());
     }
     let child = cmd
         .env("OD_PORT", port.to_string())
@@ -214,4 +226,104 @@ fn non_loopback_bind_requires_token() {
         .unwrap();
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("OD_API_TOKEN"));
+}
+
+#[cfg(unix)]
+#[test]
+fn run_start_watch_cancel_list() {
+    use std::os::unix::fs::PermissionsExt;
+    let mocks = tempfile::tempdir().unwrap();
+    let claude = mocks.path().join("claude");
+    std::fs::write(
+        &claude,
+        r#"#!/bin/sh
+case "$1" in --version) echo "mock"; exit 0;; -p) [ "$2" = "--help" ] && exit 0;; esac
+IFS= read -r line
+case "$line" in *slow*) printf '{"type":"system","subtype":"init","session_id":"s"}\n'; sleep 30;; esac
+printf '{"type":"assistant","message":{"id":"m","content":[{"type":"text","text":"hi there"}]}}\n'
+printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+cat >/dev/null
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let d = start_with_path(false, Some(mocks.path()));
+    let project = od_json(&d, &["project", "create", "--name", "Runs"])["project"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // start --watch streams NDJSON and exits 0 on success.
+    let out = od(
+        &d,
+        &[
+            "run",
+            "start",
+            "--project",
+            &project,
+            "--message",
+            "hello",
+            "--watch",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines[0]["event"], "start");
+    assert!(lines.iter().any(|l| l["data"]["delta"] == "hi there"));
+    let last = lines.last().unwrap();
+    assert_eq!(last["event"], "end");
+    assert_eq!(last["data"]["status"], "succeeded");
+    let ids: Vec<u64> = lines.iter().map(|l| l["id"].as_u64().unwrap()).collect();
+    assert_eq!(ids, (1..=ids.len() as u64).collect::<Vec<_>>());
+
+    // start → cancel → watch reports the cancellation (exit 1).
+    let out = od(
+        &d,
+        &[
+            "run",
+            "start",
+            "--project",
+            &project,
+            "--message",
+            "slow please",
+        ],
+    );
+    assert!(out.status.success());
+    let run_id = String::from_utf8(out.stdout).unwrap().trim().to_owned();
+    std::thread::sleep(Duration::from_millis(300));
+    let out = od(&d, &["run", "cancel", &run_id]);
+    assert!(out.status.success());
+    let out = od(&d, &["run", "watch", &run_id]);
+    assert!(!out.status.success());
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let end: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+    assert_eq!(end["data"]["status"], "canceled");
+    // watch --after replays only the tail.
+    let out = od(
+        &d,
+        &[
+            "run",
+            "watch",
+            &run_id,
+            "--after",
+            &(end["id"].as_u64().unwrap() - 1).to_string(),
+        ],
+    );
+    assert_eq!(String::from_utf8(out.stdout).unwrap().lines().count(), 1);
+
+    let listed = od_json(&d, &["run", "list", "--project", &project]);
+    let runs = listed["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 2);
+    assert!(
+        runs.iter()
+            .any(|r| r["id"] == run_id.as_str() && r["status"] == "canceled")
+    );
 }

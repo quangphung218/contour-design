@@ -18,14 +18,14 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-pub use state::{AppState, DEFAULT_HOST, DEFAULT_PORT, ServerConfig};
+pub use state::{AppState, DEFAULT_HOST, DEFAULT_PORT, RunContext, ServerConfig};
 
 /// Request bodies up to 200 MiB (largest expected design asset).
 const MAX_BODY_BYTES: usize = 200 * 1024 * 1024;
 
 /// Builds the API router over `state`.
 pub fn router(state: AppState) -> Router {
-    use routes::{content, files, projects, raw, system};
+    use routes::{content, conversations, files, projects, raw, runs, system};
     let api = Router::new()
         .route("/api/health", get(system::health))
         .route("/api/version", get(system::version))
@@ -57,7 +57,25 @@ pub fn router(state: AppState) -> Router {
         .route("/api/design-systems", get(content::list_design_systems))
         .route("/api/design-systems/{id}", get(content::get_design_system))
         .route("/api/craft", get(content::list_craft))
-        .route("/api/craft/{id}", get(content::get_craft));
+        .route("/api/craft/{id}", get(content::get_craft))
+        .route(
+            "/api/projects/{id}/conversations",
+            get(conversations::list).post(conversations::create),
+        )
+        .route(
+            "/api/projects/{id}/conversations/{cid}/messages",
+            get(conversations::messages),
+        )
+        .route(
+            "/api/projects/{id}/conversations/{cid}/messages/{mid}",
+            axum::routing::put(conversations::put_message),
+        )
+        .route("/api/agents", get(runs::agents))
+        .route("/api/runs", get(runs::list).post(runs::create))
+        .route("/api/runs/{id}", get(runs::get))
+        .route("/api/runs/{id}/events", get(runs::events))
+        .route("/api/runs/{id}/cancel", post(runs::cancel))
+        .route("/api/runs/{id}/steer", post(runs::steer));
     api.layer(axum::middleware::from_fn_with_state(
         state.clone(),
         guard::origin_guard,
@@ -136,6 +154,34 @@ fn is_loopback_host(host: &str) -> bool {
             .is_ok_and(|ip| ip.is_loopback())
 }
 
+/// Restores runs from `<data>/runs`: in-flight runs of a crashed daemon
+/// are ended as failed, their leftover process groups killed, and their
+/// assistant messages marked failed.
+///
+/// # Errors
+/// When the runs folder cannot be listed.
+pub async fn open_runs(store: &Store) -> anyhow::Result<Arc<od_runs::Runs>> {
+    let dir = store.data_dir().runs_dir();
+    let (runs, report) = tokio::task::spawn_blocking(move || od_runs::Runs::load(dir))
+        .await?
+        .context("loading runs")?;
+    for (run_id, orphan) in &report.interrupted {
+        if let Some(orphan) = orphan {
+            if od_runtime::process::reap_orphan(orphan.pgid, orphan.bin.as_deref()) {
+                tracing::warn!(run = %run_id, pgid = orphan.pgid, "killed an orphaned agent");
+            }
+        }
+    }
+    let failed = store.fail_interrupted_messages()?;
+    tracing::info!(
+        runs = report.loaded,
+        interrupted = report.interrupted.len(),
+        messages_failed = failed,
+        "restored runs"
+    );
+    Ok(Arc::new(runs))
+}
+
 /// Opens the store, indexes content, binds and serves until Ctrl-C.
 ///
 /// # Errors
@@ -152,6 +198,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         .context("opening the data store")?;
     let roots = ContentRoots::bundled(&opts.resource_root).with_user_root(opts.data_dir.root());
     let content = tokio::task::spawn_blocking(move || ContentStore::load(roots)).await?;
+    let runs = open_runs(&store).await?;
 
     let listener = tokio::net::TcpListener::bind((opts.host.as_str(), opts.port))
         .await
@@ -175,8 +222,14 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             api_token: opts.api_token,
             allowed_origins: opts.allowed_origins,
             resource_root: opts.resource_root,
+            daemon_url: Some(format!("http://{local}")),
         }),
+        runs: Arc::new(RunContext::new(
+            Arc::clone(&runs),
+            od_runtime::EngineConfig::from_env(),
+        )),
     };
+    let _flusher = runs.spawn_flusher();
     tracing::info!(
         url = %format!("http://{local}"),
         data_dir = %opts.data_dir.root().display(),

@@ -65,12 +65,27 @@ pub async fn token_guard(State(state): State<AppState>, req: Request, next: Next
     {
         return next.run(req).await;
     }
+    // An agent calling back with its run's OD_TOOL_TOKEN, on its allowlist.
+    if bearer(req.headers())
+        .is_some_and(|t| state.runs.tokens.authorize(t, req.uri().path()).is_some())
+    {
+        return next.run(req).await;
+    }
     ApiErr::new(
         axum::http::StatusCode::UNAUTHORIZED,
         od_contracts::ErrorCode::Unauthorized,
         "missing or invalid API token",
     )
     .into_response()
+}
+
+fn bearer(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+        .map(str::trim)
 }
 
 fn has_token(headers: &HeaderMap, token: &str) -> bool {

@@ -14,6 +14,8 @@ od-contracts = { path = "crates/od-contracts" }
 od-store = { path = "crates/od-store" }
 od-content = { path = "crates/od-content" }
 od-server = { path = "crates/od-server" }
+od-runtime = { path = "crates/od-runtime" }
+od-runs = { path = "crates/od-runs" }
 
 anyhow = "1"
 arc-swap = "1"
@@ -21,8 +23,10 @@ axum = { version = "0.8", features = ["multipart", "macros"] }
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 criterion = { version = "0.5", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 httpdate = "1"
+nix = { version = "0.30", default-features = false, features = ["signal", "process"] }
 rayon = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking"] }
@@ -33,7 +37,7 @@ sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
 tokio-util = { version = "0.7", features = ["io"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "sync", "io-util"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "sync", "io-util", "process", "time"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 tracing = "0.1"
