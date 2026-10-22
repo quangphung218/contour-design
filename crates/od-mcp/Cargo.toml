@@ -1,0 +1,25 @@
+[package]
+name = "od-mcp"
+description = "MCP stdio server proxying to the daemon HTTP API, plus `od mcp install`"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+reqwest.workspace = true
+rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
