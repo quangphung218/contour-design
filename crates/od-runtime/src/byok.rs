@@ -226,8 +226,11 @@ impl ByokRequest {
 /// # Errors
 /// HTTP, transport or in-stream provider errors, classified.
 pub async fn stream(req: ByokRequest, tx: mpsc::Sender<AgentEvent>) -> Result<(), ByokFailure> {
+    // No redirects: reqwest keeps custom headers (`x-api-key`) when one
+    // points at another host, and a provider API never needs one.
     let client = reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| ByokFailure::new(FailureCategory::SpawnFailed, e.to_string()))?;
     let mut builder = client

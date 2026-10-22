@@ -305,17 +305,36 @@ fn upstream(tag: &str, e: impl std::fmt::Display) -> MediaError {
     MediaError::Upstream(format!("{tag}: {e}"))
 }
 
-/// Shared client: generous timeout (image models take minutes).
-///
-/// # Errors
-/// TLS backend initialisation failure.
-pub fn http_client() -> Result<reqwest::Client, MediaError> {
+fn client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(10 * 60))
         .connect_timeout(Duration::from_secs(30))
         .user_agent(concat!("open-design-rs/", env!("CARGO_PKG_VERSION")))
+}
+
+/// Shared client for provider APIs: generous timeout (image models take
+/// minutes), no redirects. reqwest keeps custom key headers (`xi-api-key`)
+/// across hosts, and provider APIs never redirect.
+///
+/// # Errors
+/// TLS backend initialisation failure.
+pub fn http_client() -> Result<reqwest::Client, MediaError> {
+    client_builder()
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| upstream("http client", e))
+}
+
+/// Client for result downloads: no key is sent, so CDN redirects are fine.
+fn download_client() -> Result<&'static reqwest::Client, MediaError> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client);
+    }
+    let client = client_builder()
+        .build()
+        .map_err(|e| upstream("http client", e))?;
+    Ok(CLIENT.get_or_init(|| client))
 }
 
 /// Tunables (tests shorten the fal poll interval).
@@ -371,8 +390,12 @@ async fn json_of(res: reqwest::Response, tag: &str) -> Result<Value, MediaError>
     })
 }
 
-async fn download(http: &reqwest::Client, url: &str, tag: &str) -> Result<Vec<u8>, MediaError> {
-    let res = http.get(url).send().await.map_err(|e| upstream(tag, e))?;
+async fn download(url: &str, tag: &str) -> Result<Vec<u8>, MediaError> {
+    let res = download_client()?
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| upstream(tag, e))?;
     if !res.status().is_success() {
         return Err(MediaError::Upstream(format!(
             "{tag} {}",
@@ -457,7 +480,7 @@ async fn openai_image(
             .decode(b64)
             .map_err(|e| upstream("openai b64_json", e))?
     } else if let Some(u) = entry.get("url").and_then(Value::as_str) {
-        download(http, u, "openai image fetch").await?
+        download(u, "openai image fetch").await?
     } else {
         return Err(MediaError::Upstream(
             "openai response had neither b64_json nor url".to_owned(),
@@ -615,7 +638,7 @@ async fn fal_image(
                 truncate(&result.to_string(), 200)
             ))
         })?;
-    let bytes = download(http, url, "fal image download").await?;
+    let bytes = download(url, "fal image download").await?;
     let ext = sniff_image_ext(&bytes);
     Ok(Rendered {
         note: format!("fal/{endpoint} · {aspect} · {} bytes", bytes.len()),
@@ -665,7 +688,7 @@ async fn fal_video(
                 truncate(&result.to_string(), 200)
             ))
         })?;
-    let bytes = download(http, url, "fal video download").await?;
+    let bytes = download(url, "fal video download").await?;
     Ok(Rendered {
         note: format!("fal/{endpoint} · {aspect} · {} bytes", bytes.len()),
         bytes,
