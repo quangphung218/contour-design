@@ -1,0 +1,11 @@
+{"type":"session.tools_updated","data":{"model":"claude-sonnet-4.6","tools":["bash","create"]}}
+{"type":"assistant.turn_start","data":{"turnId":"0"}}
+{"type":"assistant.reasoning_delta","data":{"deltaContent":"Need a hero section."}}
+{"type":"assistant.message_delta","data":{"messageId":"m1","deltaContent":"Creating "}}
+{"type":"assistant.message_delta","data":{"messageId":"m1","deltaContent":"index.html."}}
+{"type":"tool.execution_start","data":{"toolCallId":"tc_1","toolName":"create","arguments":{"path":"/proj/index.html","file_text":"<h1>Hi</h1>"}}}
+{"type":"tool.execution_complete","data":{"toolCallId":"tc_1","success":true,"result":{"content":"Created file /proj/index.html"}}}
+{"type":"tool.execution_start","data":{"toolCallId":"tc_2","toolName":"bash","arguments":{"command":"exit 2"}}}
+{"type":"tool.execution_complete","data":{"toolCallId":"tc_2","success":false,"result":{"detailedContent":"exit status 2"}}}
+{"type":"session.info","data":{"message":"ignored"}}
+{"type":"result","success":true,"exitCode":0,"usage":{"premiumRequests":1,"sessionDurationMs":5321}}

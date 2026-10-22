@@ -1,8 +1,11 @@
 //! Routes the UI needs beyond the core API (spec 1.1, 1.5):
 //!
 //! - `GET/PUT /api/app-config`: app settings (agent, model,
-//!   `agentPermissionMode`, theme, onboarding), a JSON object in
-//!   `<data>/app-config.json`.
+//!   `agentPermissionMode`, theme, onboarding, `byok`), a JSON object in
+//!   `<data>/app-config.json`, written with mode `0600` because it holds
+//!   the BYOK API key. Responses never carry the key: `byok.apiKey` is
+//!   replaced by `hasApiKey` and `apiKeyHint` (last four characters), and a
+//!   `byok` patch without `apiKey` keeps the stored one.
 //! - `POST /api/import/folder`: a project pointing at an existing folder.
 //! - Everything else that is not `/api/*`: the static `od-ui` bundle, with
 //!   `index.html` as the SPA fallback.
@@ -107,23 +110,99 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
             }
         }
     }
+    match patch.get(BYOK_KEY) {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(byok)) => {
+            if let Some(p) = byok.get("protocol") {
+                if !matches!(
+                    p.as_str(),
+                    Some("anthropic" | "openai" | "openai-compatible")
+                ) {
+                    return Err(format!(
+                        "byok.protocol must be anthropic or openai, got {p}"
+                    ));
+                }
+            }
+            for key in [API_KEY, "baseUrl", "model"] {
+                if byok
+                    .get(key)
+                    .is_some_and(|v| !v.is_string() && !v.is_null())
+                {
+                    return Err(format!("byok.{key} must be a string"));
+                }
+            }
+        }
+        Some(other) => return Err(format!("byok must be an object, got {other}")),
+    }
     Ok(())
 }
 
-/// Shallow merge: `null` removes a key, anything else replaces it.
+/// Shallow merge: `null` removes a key, anything else replaces it. A
+/// `byok` object without `apiKey` keeps the stored key, so the UI can save
+/// the other fields without ever having seen it.
 fn merge_patch(config: &mut Map<String, Value>, patch: Map<String, Value>) {
-    for (key, value) in patch {
+    for (key, mut value) in patch {
         if value.is_null() {
             config.remove(&key);
-        } else {
-            config.insert(key, value);
+            continue;
         }
+        if key == BYOK_KEY {
+            let stored = config.get(BYOK_KEY).and_then(|b| b.get(API_KEY)).cloned();
+            if let (Some(obj), Some(stored)) = (value.as_object_mut(), stored) {
+                if !obj.contains_key(API_KEY) {
+                    obj.insert(API_KEY.to_owned(), stored);
+                }
+            }
+        }
+        config.insert(key, value);
     }
 }
 
+const BYOK_KEY: &str = od_runtime::byok::APP_CONFIG_KEY;
+const API_KEY: &str = "apiKey";
+
+/// The config as the UI may see it: the BYOK key replaced by a hint.
+fn redacted(mut config: Map<String, Value>) -> Value {
+    if let Some(Value::Object(byok)) = config.get_mut(BYOK_KEY) {
+        let key = byok.remove(API_KEY);
+        let key = key.as_ref().and_then(Value::as_str).unwrap_or_default();
+        byok.insert("hasApiKey".to_owned(), Value::Bool(!key.is_empty()));
+        if key.chars().count() >= 8 {
+            let tail: String = key
+                .chars()
+                .rev()
+                .take(4)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            byok.insert("apiKeyHint".to_owned(), Value::String(format!("…{tail}")));
+        }
+    }
+    Value::Object(config)
+}
+
+/// Writes through a temp file created `0600`: the config holds the BYOK key.
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, bytes)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&tmp)?;
+    // `mode` only applies on creation; a leftover temp file keeps its own.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    drop(file);
     std::fs::rename(&tmp, path)
 }
 
@@ -134,7 +213,7 @@ async fn get_config(State(state): State<AppState>) -> ApiResult<ApiJson<Value>> 
             read_config(&config_path(s))
         })
         .await?;
-    Ok(ApiJson(Value::Object(config)))
+    Ok(ApiJson(redacted(config)))
 }
 
 async fn put_config(
@@ -153,7 +232,7 @@ async fn put_config(
             Ok(config)
         })
         .await?;
-    Ok(ApiJson(Value::Object(config)))
+    Ok(ApiJson(redacted(config)))
 }
 
 // ------------------------------------------------------------- folder import

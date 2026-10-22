@@ -2,11 +2,14 @@
 //! definition — spawn, parse, steer, cancel, timeout, retry and resume
 //! fallback — and writes everything into the run's event log.
 
-use crate::def::{ArgvInput, PermissionMode, PromptInput, RuntimeDef, SessionIdSource};
-use crate::detect;
+use crate::byok::{self, ByokConfig, ByokRequest};
+use crate::def::{
+    ArgvInput, PermissionMode, PromptInput, RuntimeDef, SessionIdSource, StreamFormat,
+};
 use crate::guard::{ToolLoopGuard, ToolLoopLimits, Verdict};
-use crate::parse::{StreamParser, parser_for};
+use crate::parse::{SessionContext, StreamParser, parser_for};
 use crate::process::{self, KILL_GRACE, SpawnSpec};
+use crate::{artifact, detect};
 use od_contracts::{
     AgentEvent, FailureCategory, RUN_PROTOCOL_VERSION, RunChunkPayload, RunEndPayload,
     RunErrorPayload, RunRetryPayload, RunStartPayload, RunStatus, sse,
@@ -31,6 +34,10 @@ const STDERR_TAIL_BYTES: usize = 16 * 1024;
 /// After the agent exits, how long to wait for its pipes to close (a
 /// background grandchild may hold them open).
 const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(500);
+/// After a protocol session completes and stdin closes, how long the agent
+/// may take to exit before it is stopped (ACP agents wait for the next
+/// prompt instead of exiting).
+const EXIT_AFTER_COMPLETION: Duration = Duration::from_millis(500);
 
 /// Engine-wide settings.
 #[derive(Debug, Clone)]
@@ -90,6 +97,8 @@ pub struct LaunchSpec {
     /// The agent's environment (see [`crate::env::agent_env`]).
     pub env: Vec<(OsString, OsString)>,
     pub project_id: Option<String>,
+    /// Provider settings for [`crate::def::BYOK`]; ignored by CLI runtimes.
+    pub byok: Option<ByokConfig>,
 }
 
 /// How a run ended, for whoever persists messages and sessions.
@@ -244,15 +253,23 @@ impl RunEngine {
     async fn drive(&self, spec: LaunchSpec, active: &Active) -> RunOutcome {
         let run = &spec.run;
         let def = spec.def;
-        let bin = detect::resolve_bin(def, &self.config.path);
+        let is_byok = def.stream_format == StreamFormat::Byok;
+        let bin = if is_byok {
+            None
+        } else {
+            detect::resolve_bin(def, &self.config.path)
+        };
+        let shown_bin = match (&bin, &spec.byok) {
+            (Some(b), _) => b.to_string_lossy().into_owned(),
+            (None, Some(cfg)) if is_byok => cfg.label(),
+            _ => def.bin.to_owned(),
+        };
         run.emit_json(
             sse::START,
             &RunStartPayload {
                 run_id: run.id().to_owned(),
                 agent_id: def.id.to_owned(),
-                bin: bin
-                    .as_ref()
-                    .map_or_else(|| def.bin.to_owned(), |b| b.to_string_lossy().into_owned()),
+                bin: shown_bin,
                 protocol_version: RUN_PROTOCOL_VERSION,
                 cwd: Some(spec.cwd.to_string_lossy().into_owned()),
                 project_id: spec.project_id.clone(),
@@ -261,15 +278,23 @@ impl RunEngine {
                 resumed: spec.resume_session_id.is_some(),
             },
         );
-        let Some(bin) = bin else {
-            let message = format!("`{}` was not found on PATH", def.bin);
-            return finish(
-                run,
-                Finish::failed(FailureCategory::SpawnFailed, message, None),
-                &[],
-            );
+        let bin = match bin {
+            Some(bin) => bin,
+            None if is_byok => PathBuf::new(),
+            None => {
+                let message = format!("`{}` was not found on PATH", def.bin);
+                return finish(
+                    run,
+                    Finish::failed(FailureCategory::SpawnFailed, message, None),
+                    &[],
+                );
+            }
         };
-        let capabilities = self.capabilities_for(def, &bin).await;
+        let capabilities = if is_byok {
+            Vec::new()
+        } else {
+            self.capabilities_for(def, &bin).await
+        };
 
         let mut resume = spec.resume_session_id.clone();
         let mut prompt = spec.prompt.clone();
@@ -279,7 +304,7 @@ impl RunEngine {
             let session_id = match (def.session, &resume) {
                 (_, Some(id)) => Some(id.clone()),
                 (SessionIdSource::Minted, None) => Some(uuid::Uuid::new_v4().to_string()),
-                (SessionIdSource::Captured, None) => None,
+                (SessionIdSource::Captured | SessionIdSource::None, None) => None,
             };
             let args = def.build_args(&ArgvInput {
                 model: spec.model.as_deref(),
@@ -291,8 +316,10 @@ impl RunEngine {
                 permission: spec.permission,
                 capabilities: &capabilities,
             });
-            let attempt = self
-                .attempt(
+            let attempt = if is_byok {
+                self.attempt_byok(&spec, active, &prompt).await
+            } else {
+                self.attempt(
                     &spec,
                     active,
                     SpawnSpec {
@@ -302,8 +329,10 @@ impl RunEngine {
                         env: spec.env.clone(),
                     },
                     &prompt,
+                    resume.as_deref(),
                 )
-                .await;
+                .await
+            };
             let session = attempt.session_id.clone().or(session_id);
             if attempt.canceled {
                 let mut f = Finish::canceled(attempt.exit_code, attempt.signal.clone());
@@ -356,6 +385,15 @@ impl RunEngine {
             for err in &attempt.held_errors {
                 run.emit_json(sse::ERROR, err);
             }
+            let mut attempt = attempt;
+            if attempt.failure.is_none()
+                && matches!(def.stream_format, StreamFormat::Plain | StreamFormat::Byok)
+            {
+                if let Err(message) = write_artifacts(run, &spec.cwd, &mut attempt) {
+                    run.emit_error(&message, None);
+                    attempt.failure = Some((FailureCategory::AgentError, message));
+                }
+            }
             let mut f = match attempt.failure {
                 Some((category, message)) => Finish::failed(category, message, attempt.exit_code),
                 None => Finish::succeeded(attempt.exit_code),
@@ -376,10 +414,24 @@ impl RunEngine {
         active: &Active,
         spawn: SpawnSpec,
         prompt: &str,
+        resume: Option<&str>,
     ) -> Attempt {
         let run = &spec.run;
         let def = spec.def;
         let mut att = Attempt::default();
+        let mut parser: Box<dyn StreamParser> = parser_for(
+            def.stream_format,
+            &SessionContext {
+                prompt: prompt.to_owned(),
+                cwd: spec.cwd.clone(),
+                model: spec.model.clone(),
+                reasoning: spec.reasoning.clone(),
+                resume_session_id: resume.map(str::to_owned),
+                permission: spec.permission,
+                request_id: uuid::Uuid::new_v4().to_string(),
+                acp_turn_end_completes: def.acp_turn_end_completes,
+            },
+        );
         let mut child = match process::spawn(&spawn) {
             Ok(c) => c,
             Err(err) => {
@@ -409,16 +461,19 @@ impl RunEngine {
             let payload = match def.prompt_input {
                 PromptInput::StreamJsonStdin => stream_json_user_line(prompt),
                 PromptInput::TextStdin => prompt.to_owned(),
+                // The protocol session writes its own requests.
+                PromptInput::Rpc => String::new(),
             };
             let wrote =
                 stdin.write_all(payload.as_bytes()).await.is_ok() && stdin.flush().await.is_ok();
-            if wrote && def.prompt_input == PromptInput::StreamJsonStdin {
-                // Held open for steering until the turn ends.
+            if wrote && def.prompt_input != PromptInput::TextStdin {
+                // Held open for steering until the turn ends, or for the
+                // protocol until the prompt completes.
                 *active.stdin.lock().await = Some(stdin);
             }
         }
+        write_stdin(active, parser.take_writes()).await;
 
-        let mut parser: Box<dyn StreamParser> = parser_for(def.stream_format);
         let mut guard = ToolLoopGuard::new(self.config.tool_loop);
         let idle = self.config.idle_timeout.unwrap_or(def.idle_timeout);
         let mut deadline = tokio::time::Instant::now() + idle;
@@ -428,6 +483,8 @@ impl RunEngine {
         let mut drain_deadline: Option<tokio::time::Instant> = None;
         let mut streams_open = true;
         let mut escalation: Option<tokio::task::JoinHandle<bool>> = None;
+        // Set when the protocol completed and stdin was closed.
+        let mut completion_deadline: Option<tokio::time::Instant> = None;
         let wait = child.wait();
         tokio::pin!(wait);
 
@@ -435,7 +492,7 @@ impl RunEngine {
             if !streams_open && exit.is_some() {
                 break;
             }
-            let sleep_until = drain_deadline.unwrap_or(deadline);
+            let sleep_until = drain_deadline.or(completion_deadline).unwrap_or(deadline);
             tokio::select! {
                 line = rx.recv(), if streams_open => {
                     let Some(line) = line else {
@@ -446,14 +503,22 @@ impl RunEngine {
                     match line {
                         Line::Stdout(text) => {
                             parser.line(&text, &mut events);
+                            write_stdin(active, parser.take_writes()).await;
                             let verdicts = self
                                 .apply_events(run, active, &mut att, &mut guard, &mut events)
                                 .await;
                             if let Some(message) = verdicts {
                                 if stop.is_none() {
                                     stop = Some((FailureCategory::ToolLoop, message));
-                                    escalation = Some(self.escalate(active, pgid).await);
+                                    let abort = parser.abort_line();
+                                    escalation = Some(self.escalate(active, pgid, abort).await);
                                 }
+                            }
+                            if parser.completed() && !att.protocol_completed {
+                                att.protocol_completed = true;
+                                *active.stdin.lock().await = None;
+                                completion_deadline =
+                                    Some(tokio::time::Instant::now() + EXIT_AFTER_COMPLETION);
                             }
                         }
                         Line::Stderr(text) => {
@@ -468,17 +533,26 @@ impl RunEngine {
                 }
                 () = active.cancel.notified(), if escalation.is_none() => {
                     att.canceled = true;
-                    escalation = Some(self.escalate(active, pgid).await);
+                    let abort = parser.abort_line();
+                    escalation = Some(self.escalate(active, pgid, abort).await);
                 }
                 () = tokio::time::sleep_until(sleep_until) => {
                     if drain_deadline.is_some() {
                         // Exited; a grandchild still holds the pipes.
                         break;
                     }
+                    if completion_deadline.take().is_some() {
+                        // Done, but the agent waits for another prompt.
+                        if escalation.is_none() {
+                            escalation = Some(self.escalate(active, pgid, None).await);
+                        }
+                        continue;
+                    }
                     if stop.is_none() && escalation.is_none() {
                         let message = format!("no output for {} s; stopping the agent", idle.as_secs());
                         stop = Some((FailureCategory::Timeout, message));
-                        escalation = Some(self.escalate(active, pgid).await);
+                        let abort = parser.abort_line();
+                        escalation = Some(self.escalate(active, pgid, abort).await);
                     }
                     deadline = tokio::time::Instant::now() + idle;
                 }
@@ -502,7 +576,85 @@ impl RunEngine {
         if att.canceled {
             return att;
         }
-        att.failure = stop.or_else(|| att.classify_exit(exit.success()));
+        // A completed protocol session is stopped by us; its signal exit is
+        // not a failure.
+        att.failure = stop.or_else(|| att.classify_exit(exit.success() || att.protocol_completed));
+        att
+    }
+
+    /// One BYOK call: the provider stream instead of a process.
+    async fn attempt_byok(&self, spec: &LaunchSpec, active: &Active, prompt: &str) -> Attempt {
+        let mut att = Attempt::default();
+        let Some(config) = spec.byok.clone() else {
+            att.failure = Some((
+                FailureCategory::SpawnFailed,
+                "no API key is configured; add one in Settings".to_owned(),
+            ));
+            return att;
+        };
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let mut task = tokio::spawn(byok::stream(
+            ByokRequest {
+                config,
+                model: spec.model.clone(),
+                prompt: prompt.to_owned(),
+            },
+            tx,
+        ));
+        let mut guard = ToolLoopGuard::new(self.config.tool_loop);
+        let idle = self.config.idle_timeout.unwrap_or(spec.def.idle_timeout);
+        let mut deadline = tokio::time::Instant::now() + idle;
+        let mut events = Vec::new();
+        let mut result = None;
+        loop {
+            tokio::select! {
+                ev = rx.recv() => {
+                    let Some(ev) = ev else {
+                        // The stream task dropped its sender: it is done.
+                        if result.is_none() {
+                            result = Some((&mut task).await);
+                        }
+                        break;
+                    };
+                    deadline = tokio::time::Instant::now() + idle;
+                    events.push(ev);
+                    let _ = self
+                        .apply_events(&spec.run, active, &mut att, &mut guard, &mut events)
+                        .await;
+                }
+                joined = &mut task, if result.is_none() => {
+                    result = Some(joined);
+                }
+                () = active.cancel.notified() => {
+                    task.abort();
+                    att.canceled = true;
+                    return att;
+                }
+                () = tokio::time::sleep_until(deadline) => {
+                    task.abort();
+                    att.failure = Some((
+                        FailureCategory::Timeout,
+                        format!("no output for {} s; stopping the request", idle.as_secs()),
+                    ));
+                    return att;
+                }
+            }
+        }
+        let failure = match result {
+            Some(Ok(Ok(()))) | None => None,
+            Some(Ok(Err(f))) => Some((f.category, f.message)),
+            Some(Err(join)) => Some((FailureCategory::AgentError, join.to_string())),
+        };
+        if let Some((category, message)) = failure {
+            att.error_text.push_str(&message);
+            att.held_errors.push(RunErrorPayload {
+                message: message.clone(),
+                code: None,
+            });
+            att.failure = Some((category, message));
+        } else {
+            att.failure = att.classify_exit(true);
+        }
         att
     }
 
@@ -549,7 +701,10 @@ impl RunEngine {
                         }
                     }
                 }
-                AgentEvent::TurnEnd { stop_reason } if stop_reason != "tool_use" => {
+                AgentEvent::TurnEnd { stop_reason }
+                    if stop_reason != "tool_use"
+                        && active.def.prompt_input == PromptInput::StreamJsonStdin =>
+                {
                     // Turn over: close stdin so the CLI exits. Closing on
                     // `tool_use` would cut the answer short.
                     *active.stdin.lock().await = None;
@@ -562,7 +717,8 @@ impl RunEngine {
                     if *is_error {
                         att.result_error = true;
                     }
-                    if *is_error || stop_reason.as_deref() != Some("tool_use") {
+                    let steerable = active.def.prompt_input == PromptInput::StreamJsonStdin;
+                    if steerable && (*is_error || stop_reason.as_deref() != Some("tool_use")) {
                         *active.stdin.lock().await = None;
                     }
                 }
@@ -588,8 +744,13 @@ impl RunEngine {
     }
 
     /// Spawns the stop sequence for the live attempt.
-    async fn escalate(&self, active: &Active, pgid: i32) -> tokio::task::JoinHandle<bool> {
-        if let Some(line) = active.def.abort_line {
+    async fn escalate(
+        &self,
+        active: &Active,
+        pgid: i32,
+        abort: Option<String>,
+    ) -> tokio::task::JoinHandle<bool> {
+        if let Some(line) = abort {
             let mut stdin = active.stdin.lock().await;
             if let Some(pipe) = stdin.as_mut() {
                 let _ = pipe.write_all(line.as_bytes()).await;
@@ -664,6 +825,58 @@ where
     }
 }
 
+/// Writes protocol lines to the live stdin; a broken pipe closes it.
+async fn write_stdin(active: &Active, lines: Vec<String>) {
+    if lines.is_empty() {
+        return;
+    }
+    let mut stdin = active.stdin.lock().await;
+    let Some(pipe) = stdin.as_mut() else {
+        return;
+    };
+    for line in lines {
+        if pipe.write_all(line.as_bytes()).await.is_err() {
+            *stdin = None;
+            return;
+        }
+    }
+    if pipe.flush().await.is_err() {
+        *stdin = None;
+    }
+}
+
+/// Splits the answer's `<artifact>` blocks into files in `cwd` and reports
+/// each as a `Write` tool call, so the chat and `artifactPaths` see them.
+fn write_artifacts(run: &Run, cwd: &Path, att: &mut Attempt) -> Result<(), String> {
+    let artifacts = artifact::extract(&att.text_parts.concat());
+    let paths = artifact::persist(cwd, &artifacts)
+        .map_err(|e| format!("could not write the artifact into the project: {e}"))?;
+    for (i, (a, path)) in artifacts.iter().zip(paths).enumerate() {
+        let path = path.to_string_lossy().into_owned();
+        let id = format!("artifact-{}", i + 1);
+        run.emit_json(
+            sse::AGENT,
+            &AgentEvent::ToolUse {
+                id: id.clone(),
+                name: "Write".to_owned(),
+                input: json!({"file_path": path, "title": a.title}),
+            },
+        );
+        run.emit_json(
+            sse::AGENT,
+            &AgentEvent::ToolResult {
+                tool_use_id: id,
+                content: format!("wrote {}", a.file_name),
+                is_error: false,
+            },
+        );
+        if !att.written_files.contains(&path) {
+            att.written_files.push(path);
+        }
+    }
+    Ok(())
+}
+
 /// One stream-json user message line.
 #[must_use]
 pub fn stream_json_user_line(text: &str) -> String {
@@ -679,6 +892,8 @@ pub fn stream_json_user_line(text: &str) -> String {
 #[derive(Debug, Default)]
 struct Attempt {
     canceled: bool,
+    /// The protocol session reported the prompt complete.
+    protocol_completed: bool,
     visible_output: bool,
     held_errors: Vec<RunErrorPayload>,
     error_text: String,

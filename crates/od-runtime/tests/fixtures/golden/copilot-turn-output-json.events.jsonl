@@ -1,0 +1,10 @@
+{"type":"status","label":"initializing","model":"claude-sonnet-4.6"}
+{"type":"status","label":"streaming"}
+{"type":"thinking_delta","delta":"Need a hero section."}
+{"type":"text_delta","delta":"Creating "}
+{"type":"text_delta","delta":"index.html."}
+{"type":"tool_use","id":"tc_1","name":"create","input":{"path":"/proj/index.html","file_text":"<h1>Hi</h1>"}}
+{"type":"tool_result","toolUseId":"tc_1","content":"Created file /proj/index.html","isError":false}
+{"type":"tool_use","id":"tc_2","name":"bash","input":{"command":"exit 2"}}
+{"type":"tool_result","toolUseId":"tc_2","content":"exit status 2","isError":true}
+{"type":"usage","usage":{"premiumRequests":1,"sessionDurationMs":5321},"durationMs":5321.0,"stopReason":"completed"}

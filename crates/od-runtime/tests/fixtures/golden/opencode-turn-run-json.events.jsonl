@@ -1,0 +1,10 @@
+{"type":"status","label":"running","sessionId":"ses_od1"}
+{"type":"text_delta","delta":"I'll build the landing page."}
+{"type":"tool_use","id":"call_write","name":"Write","input":{"filePath":"/proj/index.html","content":"<!doctype html><title>Hi</title>","file_path":"/proj/index.html"}}
+{"type":"tool_result","toolUseId":"call_write","content":"","isError":false}
+{"type":"tool_use","id":"call_bash","name":"Bash","input":{"command":"ls missing"}}
+{"type":"tool_result","toolUseId":"call_bash","content":"ls: missing: No such file or directory","isError":true}
+{"type":"text_delta","delta":"Done: index.html is ready."}
+{"type":"usage","usage":{"input_tokens":1200,"output_tokens":340,"thought_tokens":12,"cached_read_tokens":800,"cached_write_tokens":0},"costUsd":0.0123,"stopReason":"stop"}
+{"type":"error","message":"Invalid API key"}
+{"type":"raw","line":"opencode: warning, not json"}

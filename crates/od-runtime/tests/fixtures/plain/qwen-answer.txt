@@ -1,0 +1,12 @@
+Here is the page.
+
+```html
+<artifact type="text/html">example only, inside a fence</artifact>
+```
+
+<artifact identifier="index" type="text/html" title="Landing">
+<!doctype html>
+<html><body><h1>Hi</h1></body></html>
+</artifact>
+
+<artifact title="Theme" type="text/css">body { color: #111; }</artifact>

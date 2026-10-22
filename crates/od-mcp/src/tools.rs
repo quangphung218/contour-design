@@ -3,7 +3,7 @@
 //! few HTTP requests to the daemon, so listing works with the daemon down.
 
 use crate::brief::BriefStore;
-use crate::client::{Daemon, DaemonError};
+use crate::client::{Daemon, DaemonError, agent_text, end_artifact_paths};
 use base64::Engine;
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeSet, VecDeque};
@@ -1172,28 +1172,69 @@ async fn get_run(daemon: &Daemon, args: &Map<String, Value>) -> ToolResult {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_owned();
+    let terminal = matches!(status.as_str(), "succeeded" | "failed" | "canceled");
+    let events = if terminal {
+        daemon.run_events(run_id).await
+    } else {
+        None
+    };
     if status == "succeeded" {
         if let Some(project) = run
             .get("projectId")
             .and_then(Value::as_str)
             .map(str::to_owned)
         {
-            if let Ok(p) = project_json(daemon, &project).await {
-                if let Some(entry) = entry_file(&p) {
-                    run["previewUrl"] = json!(daemon.raw_url(&project, &entry));
-                    run["artifactRef"] = json!({ "projectId": project, "entryFile": entry });
-                }
+            if let Some(entry) = preview_entry(daemon, &project, events.as_deref()).await {
+                run["previewUrl"] = json!(daemon.raw_url(&project, &entry));
+                run["artifactRef"] = json!({ "projectId": project, "entryFile": entry });
             }
         }
     }
-    if matches!(status.as_str(), "succeeded" | "failed" | "canceled") {
-        if let Some(message) = daemon.run_agent_message(run_id).await {
+    if terminal {
+        let message = events.as_deref().map(agent_text).unwrap_or_default();
+        if !message.trim().is_empty() {
             run["agentMessage"] = json!(message);
         }
     } else {
         run["hint"] = json!("Run still in flight. Keep polling get_run every 30-60 s.");
     }
     Ok(ToolOutput::json(run))
+}
+
+/// The file a finished run should preview: the project's `entryFile`,
+/// else the first HTML file the run wrote (`end.artifactPaths`), else
+/// `index.html` when the project has one. New projects have no
+/// `entryFile`, so without the fallbacks `get_run` had no `previewUrl`.
+async fn preview_entry(daemon: &Daemon, project: &str, events: Option<&str>) -> Option<String> {
+    if let Some(entry) = project_json(daemon, project)
+        .await
+        .ok()
+        .as_ref()
+        .and_then(entry_file)
+    {
+        return Some(entry);
+    }
+    let names: Vec<String> = files(daemon, project)
+        .await
+        .ok()?
+        .iter()
+        .map(|f| file_name(f).to_owned())
+        .filter(|n| !n.is_empty())
+        .collect();
+    let written = events.map(end_artifact_paths).unwrap_or_default();
+    let is_html = |n: &str| {
+        let n = n.to_ascii_lowercase();
+        n.ends_with(".html") || n.ends_with(".htm")
+    };
+    // Absolute paths: match the longest project file name they end with.
+    let from_run = written.iter().filter(|p| is_html(p)).find_map(|path| {
+        names
+            .iter()
+            .filter(|n| path.ends_with(&format!("/{n}")) || path == *n)
+            .max_by_key(|n| n.len())
+            .cloned()
+    });
+    from_run.or_else(|| names.iter().find(|n| *n == "index.html").cloned())
 }
 
 async fn cancel_run(daemon: &Daemon, args: &Map<String, Value>) -> ToolResult {

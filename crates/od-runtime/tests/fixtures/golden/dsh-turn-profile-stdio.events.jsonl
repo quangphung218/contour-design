@@ -1,0 +1,8 @@
+{"type":"status","label":"working","sessionId":"dsh-sess-1"}
+{"type":"thinking_start"}
+{"type":"thinking_delta","delta":"Sketching the page."}
+{"type":"text_delta","delta":"Writing index.html."}
+{"type":"tool_use","id":"c1","name":"write_file","input":{"path":"index.html","content":"<h1>Hi</h1>"}}
+{"type":"tool_result","toolUseId":"c1","content":"ok","isError":false}
+{"type":"usage","usage":{"input_tokens":1000,"output_tokens":200,"cached_read_tokens":50,"cached_write_tokens":0,"total_tokens":1200}}
+{"type":"usage","usage":null,"stopReason":"end_turn"}

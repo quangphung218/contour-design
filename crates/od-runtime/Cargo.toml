@@ -11,6 +11,7 @@ od-contracts.workspace = true
 od-runs.workspace = true
 hex.workspace = true
 regex.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls-native-roots"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
