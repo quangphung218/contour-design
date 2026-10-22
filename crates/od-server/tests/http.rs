@@ -996,6 +996,38 @@ async fn origin_guard() {
 }
 
 #[tokio::test]
+async fn no_origin_still_needs_a_local_host_header() {
+    let h = harness();
+    let with_host = |host: &str| {
+        Request::get("/api/projects")
+            .header(header::HOST, host)
+            .body(Body::empty())
+            .unwrap()
+    };
+    // DNS rebinding: a page on evil.example resolved to 127.0.0.1 sends
+    // same-origin GETs without an Origin header.
+    for host in [
+        "evil.example:7456",
+        "evil.example",
+        "127.0.0.1.evil.example:7456",
+    ] {
+        let r = h.send(with_host(host)).await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{host}");
+    }
+    for host in [
+        "127.0.0.1:7456",
+        "localhost:7456",
+        "[::1]:7456",
+        "192.168.1.5:7456",
+    ] {
+        let r = h.send(with_host(host)).await;
+        assert_eq!(r.status, StatusCode::OK, "{host}");
+    }
+    // Non-HTTP/1.1 clients without Host (and in-process tests) still pass.
+    assert_eq!(h.get("/api/projects").await.status, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn content_endpoints_serve_real_catalogue() {
     let h = harness_with(&content_root());
     let skills = h.get("/api/skills").await.json();

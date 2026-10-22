@@ -1,7 +1,10 @@
 //! Request guards (spec 2.2): browser origin check and the optional API
 //! token for non-loopback binds.
 //!
-//! - No `Origin` header (CLI, curl): allowed.
+//! - No `Origin` header (CLI, curl, same-origin GETs): allowed when `Host`
+//!   is absent or names a loopback/LAN address, the bind host, a host from
+//!   `OD_ALLOWED_ORIGINS`, or the request carries the API token. This stops
+//!   DNS rebinding (`Host: evil.example`) from reading the API.
 //! - `Origin: null` (sandboxed preview iframes): only `GET .../raw/...` and
 //!   `GET .../preview/<scope>/...`.
 //! - Any other origin must be loopback or private LAN on the daemon's port,
@@ -27,7 +30,20 @@ pub async fn origin_guard(State(state): State<AppState>, req: Request, next: Nex
         .unwrap_or_default()
         .to_owned();
     if origin.is_empty() {
-        return next.run(req).await;
+        let cfg = &state.config;
+        let host_ok = req.headers().get(header::HOST).is_none_or(|h| {
+            h.to_str()
+                .is_ok_and(|h| is_local_host_header(h, &cfg.host, &cfg.allowed_origins))
+        });
+        let token_ok = cfg
+            .api_token
+            .as_deref()
+            .is_some_and(|t| has_token(req.headers(), t));
+        return if host_ok || token_ok {
+            next.run(req).await
+        } else {
+            ApiErr::forbidden("Host not allowed").into_response()
+        };
     }
     if origin == "null" {
         return if req.method() == Method::GET && is_raw_path(req.uri().path()) {
@@ -188,6 +204,20 @@ fn is_loopback_or_private_lan(host: &str) -> bool {
     ) || is_private_ipv4(host)
 }
 
+/// `Host` of an Origin-less request: a name only this machine or its LAN
+/// would use for the daemon.
+fn is_local_host_header(host_header: &str, bind_host: &str, extra: &[String]) -> bool {
+    let Some(host) = parse_host(host_header, 80) else {
+        return false;
+    };
+    is_loopback_or_private_lan(&host.hostname)
+        || host.hostname == bind_host.to_lowercase()
+        || extra
+            .iter()
+            .filter_map(|o| parse_origin(o))
+            .any(|(_, o)| o.hostname == host.hostname)
+}
+
 /// Port of the original `isAllowedBrowserOrigin`.
 fn is_allowed_browser_origin(
     origin: &str,
@@ -251,6 +281,23 @@ mod tests {
             "127.0.0.1",
             &["https://evil.example".to_owned()]
         ));
+    }
+
+    #[test]
+    fn origin_less_host_check() {
+        let extra = ["https://studio.example:8443".to_owned()];
+        for host in ["127.0.0.1:7456", "localhost", "[::1]:1", "10.0.0.2:7456"] {
+            assert!(is_local_host_header(host, "127.0.0.1", &[]), "{host}");
+        }
+        assert!(is_local_host_header("mybox:7456", "mybox", &[]));
+        assert!(is_local_host_header(
+            "studio.example:7456",
+            "127.0.0.1",
+            &extra
+        ));
+        for host in ["evil.example:7456", "localhost.evil.example", "", "a b"] {
+            assert!(!is_local_host_header(host, "127.0.0.1", &extra), "{host}");
+        }
     }
 
     #[test]
