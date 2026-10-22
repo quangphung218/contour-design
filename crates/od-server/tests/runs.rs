@@ -858,3 +858,47 @@ echo "read ECONNRESET" >&2; exit 1
     assert_eq!(end_of(&events)["status"], "failed");
     assert_eq!(std::fs::read_to_string(count).unwrap().trim(), "1");
 }
+
+/// Decision 1: `auto` by default; Settings › "Ask first" (`PUT
+/// /api/app-config`) switches Claude to `acceptEdits` and drops Codex's
+/// self-approval flag on the next run.
+#[tokio::test]
+async fn settings_permission_mode_reaches_the_agent_argv() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude_hello(&d.mocks));
+    write_mock(&d.mocks, "codex", &codex_mock(&d));
+    let (project, _) = d.project().await;
+    async fn run(d: &Daemon, project: &str, agent: &str) {
+        let body = json!({"agentId": agent, "projectId": project, "message": "go"});
+        let run = d.start(body).await;
+        let end = end_of(&d.events(&run.run_id, None).await).clone();
+        assert_eq!(end["status"], "succeeded", "{agent}: {end}");
+    }
+    let network = "sandbox_workspace_write.network_access=true";
+
+    run(&d, &project, "claude").await;
+    run(&d, &project, "codex").await;
+    let res = d
+        .http
+        .put(format!("{}/api/app-config", d.base))
+        .json(&json!({"agentPermissionMode": "ask"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 200);
+    run(&d, &project, "claude").await;
+    run(&d, &project, "codex").await;
+
+    let argv = argv_lines(&d);
+    assert_eq!(argv.len(), 4, "{argv:?}");
+    assert_eq!(
+        flag_value(&argv[0], "--permission-mode").as_deref(),
+        Some("bypassPermissions")
+    );
+    assert!(argv[1].contains(network), "{}", argv[1]);
+    assert_eq!(
+        flag_value(&argv[2], "--permission-mode").as_deref(),
+        Some("acceptEdits")
+    );
+    assert!(!argv[3].contains(network), "{}", argv[3]);
+}

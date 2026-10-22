@@ -377,3 +377,41 @@ async fn events_stream_ready_then_file_changed_within_300ms() {
     let r = a.get("/api/projects/nope/events").await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn creating_a_conversation_publishes_conversation_created() {
+    let a = app();
+    let id = a.project().await;
+    let res = a
+        .app
+        .clone()
+        .oneshot(
+            Request::get(format!("/api/projects/{id}/events"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut body = res.into_body();
+    next_event(&mut body, "ready", Duration::from_secs(2)).await;
+
+    let r = a
+        .post_json(
+            &format!("/api/projects/{id}/conversations"),
+            &json!({ "title": "Second idea" }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text());
+    let conversation: Value = serde_json::from_slice(&r.body).unwrap();
+    let created = next_event(&mut body, "conversation-created", Duration::from_secs(2)).await;
+    assert_eq!(
+        created,
+        json!({
+            "type": "conversation-created",
+            "projectId": id,
+            "conversationId": conversation["conversation"]["id"],
+            "title": "Second idea",
+            "createdAt": conversation["conversation"]["createdAt"],
+        })
+    );
+}
