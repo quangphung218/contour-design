@@ -207,6 +207,7 @@ async fn bridge_in_headless_chrome() {
     deck_navigation(&h).await;
     keyless_deck_and_foreign_messages(&h).await;
     selection_snapshot_and_size(&h).await;
+    pins_follow_their_elements(&h).await;
     storage_shim(&h).await;
     reload_loops_are_stopped(&h).await;
     h.close().await;
@@ -318,6 +319,56 @@ async fn selection_snapshot_and_size(h: &Harness) {
         !url.contains("data-od-bridge-ui"),
         "overlay is not captured"
     );
+}
+
+/// `od:locate` reports where stored selectors are now, and again after the
+/// page scrolls, so comment pins stay on their element.
+async fn pins_follow_their_elements(h: &Harness) {
+    let html = r#"<!doctype html><html><head><style>body{margin:0}
+      #spacer{height:600px}#target{height:50px;background:#c00}</style></head>
+      <body><div id="spacer"></div><div id="target" data-od-id="t">x</div>
+      <div style="height:3000px"></div></body></html>"#;
+    h.load(html).await;
+    h.wait("od:ready", "null", 5_000).await;
+    let since = h.msg_count().await;
+    h.eval(
+        "window.__send({ type: 'od:locate', items: [\
+          { id: 'c1', selector: '[data-od-id=\"t\"]' }, { id: 'gone', selector: '#nope' }] })",
+    )
+    .await;
+    let first = h
+        .eval(&format!(
+            "window.__after('od:located', {since}, null, 5000)"
+        ))
+        .await;
+    assert_eq!(first["items"][0]["id"], "c1", "{first}");
+    assert_eq!(first["items"][0]["rect"]["y"], 600.0, "{first}");
+    assert!(first["items"][1]["rect"].is_null(), "{first}");
+
+    let since = h.msg_count().await;
+    // Scroll inside the frame through a real wheel event.
+    h.page
+        .execute(
+            chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventParams::builder()
+                .r#type(
+                    chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventType::MouseWheel,
+                )
+                .x(100.0)
+                .y(100.0)
+                .delta_x(0.0)
+                .delta_y(400.0)
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let moved = h
+        .eval(&format!(
+            "window.__after('od:located', {since}, (m) => m.items[0].rect && m.items[0].rect.y < 600, 5000)"
+        ))
+        .await;
+    let y = moved["items"][0]["rect"]["y"].as_f64().unwrap();
+    assert!(y < 600.0, "{moved}");
 }
 
 async fn storage_shim(h: &Harness) {

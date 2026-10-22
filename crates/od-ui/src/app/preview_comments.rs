@@ -3,8 +3,10 @@
 //! comments ride along with the next message (`commentAttachments`).
 
 use super::api;
+use super::bridge;
 use super::studio::StudioCtx;
 use crate::i18n::{T, t, tf};
+use crate::preview_bridge as pb;
 use leptos::prelude::*;
 use od_contracts::{CommentResponse, CommentStatus, CreateCommentRequest, PreviewComment};
 
@@ -71,9 +73,19 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
                 .collect::<Vec<_>>()
         })
     };
+    // Ask the frame where these elements are now; it keeps answering on
+    // scroll and resize, and a new document (`od:ready`) asks again.
+    Effect::new(move |_| {
+        ctx.frame_ready.track();
+        let shown = pins();
+        bridge::post_main(&pb::locate(
+            shown.iter().map(|c| (c.id.as_str(), c.selector.as_str())),
+        ));
+    });
     view! {
         <div class="comment-layer" aria-live="polite">
             {move || {
+                let rects = ctx.pin_rects.get();
                 pins()
                     .into_iter()
                     .enumerate()
@@ -81,10 +93,11 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
                         let id = c.id.clone();
                         let id_open = c.id.clone();
                         let attached = c.status == CommentStatus::Attached;
+                        let at = rects.get(&c.id).copied().unwrap_or(c.position);
                         let style = format!(
                             "left:{:.0}px;top:{:.0}px",
-                            c.position.x + c.position.width - 10.0,
-                            (c.position.y - 10.0).max(0.0)
+                            at.x + at.width - 10.0,
+                            (at.y - 10.0).max(0.0)
                         );
                         view! {
                             <div class="pin-wrap" style=style>

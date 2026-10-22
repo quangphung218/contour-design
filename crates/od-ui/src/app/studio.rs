@@ -24,12 +24,13 @@ use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use od_contracts::{
-    CommentAttachment, CommentStatus, CommentsResponse, Conversation, ConversationResponse,
-    CreateVersionRequest, FileKind, FilesResponse, PreviewComment, Project, ProjectFile,
-    ProjectResponse, UpdateCommentRequest, VersionSource,
+    CommentAttachment, CommentRect, CommentStatus, CommentsResponse, Conversation,
+    ConversationResponse, CreateVersionRequest, FileKind, FilesResponse, PreviewComment, Project,
+    ProjectFile, ProjectResponse, UpdateCommentRequest, VersionSource,
 };
 use send_wrapper::SendWrapper;
 use serde_json::json;
+use std::collections::HashMap;
 
 /// Preview frame widths (spec 1.2 device frames).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,6 +94,11 @@ pub struct StudioCtx {
     pub comment_mode: RwSignal<bool>,
     /// The element picked in comment mode, waiting for its note.
     pub comment_draft: RwSignal<Option<Picked>>,
+    /// Where each shown comment's element is now (`od:located`), so pins
+    /// follow scroll and reflow; missing ids fall back to the stored box.
+    pub pin_rects: RwSignal<HashMap<String, CommentRect>>,
+    /// Bumped on every `od:ready`: the new document needs `od:locate`.
+    pub frame_ready: RwSignal<u32>,
     /// Set once the previewed file turns out to be a deck.
     pub deck: RwSignal<Option<DeckState>>,
     pub notes: RwSignal<Vec<String>>,
@@ -604,6 +610,16 @@ impl StudioCtx {
                 if self.comment_mode.get_untracked() {
                     bridge::post_main(&pb::select_mode(true));
                 }
+                self.pin_rects.set(HashMap::new());
+                self.frame_ready.update(|n| *n = n.wrapping_add(1));
+            }
+            (Source::Main, BridgeMsg::Located { items }) => {
+                self.pin_rects.set(
+                    items
+                        .into_iter()
+                        .filter_map(|l| Some((l.id, l.rect?)))
+                        .collect(),
+                );
             }
             (Source::Main, BridgeMsg::DeckReady { count }) => {
                 self.deck.set(Some(DeckState { active: 0, count }));
@@ -780,6 +796,8 @@ pub fn Studio() -> impl IntoView {
         comments: RwSignal::new(Vec::new()),
         comment_mode: RwSignal::new(false),
         comment_draft: RwSignal::new(None),
+        pin_rects: RwSignal::new(HashMap::new()),
+        frame_ready: RwSignal::new(0),
         deck: RwSignal::new(None),
         notes: RwSignal::new(Vec::new()),
         show_notes: RwSignal::new(false),

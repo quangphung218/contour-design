@@ -20,6 +20,14 @@ pub struct Picked {
     pub rect: CommentRect,
 }
 
+/// Where a located comment's element is now (`None`: no longer matches).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Located {
+    pub id: String,
+    #[serde(default)]
+    pub rect: Option<CommentRect>,
+}
+
 /// Bridge → host.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type")]
@@ -34,6 +42,8 @@ pub enum BridgeMsg {
     Esc,
     #[serde(rename = "od:select")]
     Select(Picked),
+    #[serde(rename = "od:located")]
+    Located { items: Vec<Located> },
     #[serde(other)]
     Other,
 }
@@ -86,6 +96,17 @@ pub fn select_mode(enabled: bool) -> Value {
     json!({ "type": "od:select-mode", "enabled": enabled })
 }
 
+/// Host → bridge: report (and keep reporting) where these comments'
+/// elements are, by `(id, selector)`.
+#[must_use]
+pub fn locate<'a>(items: impl IntoIterator<Item = (&'a str, &'a str)>) -> Value {
+    let items: Vec<Value> = items
+        .into_iter()
+        .map(|(id, selector)| json!({ "id": id, "selector": selector }))
+        .collect();
+    json!({ "type": "od:locate", "items": items })
+}
+
 /// Host → bridge: ask for the current slide.
 #[must_use]
 pub fn slide_state_request() -> Value {
@@ -128,6 +149,32 @@ mod tests {
         assert_eq!(
             BridgeMsg::decode(r#"{"type":"od:size","width":1}"#),
             Some(BridgeMsg::Other)
+        );
+        assert_eq!(
+            BridgeMsg::decode(
+                r#"{"type":"od:located","items":[{"id":"c1","rect":{"x":1,"y":2,"width":3,"height":4}},{"id":"c2","rect":null}]}"#
+            ),
+            Some(BridgeMsg::Located {
+                items: vec![
+                    Located {
+                        id: "c1".into(),
+                        rect: Some(CommentRect {
+                            x: 1.0,
+                            y: 2.0,
+                            width: 3.0,
+                            height: 4.0
+                        })
+                    },
+                    Located {
+                        id: "c2".into(),
+                        rect: None
+                    },
+                ]
+            })
+        );
+        assert_eq!(
+            locate([("c1", "h1")]),
+            json!({"type": "od:locate", "items": [{"id": "c1", "selector": "h1"}]})
         );
         assert_eq!(BridgeMsg::decode(r#"{"type":"webpack"}"#), None);
         assert_eq!(BridgeMsg::decode("3"), None);

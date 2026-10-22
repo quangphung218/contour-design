@@ -494,6 +494,41 @@
   }, true);
 
   // ---------------------------------------------------------------------
+  // Locate: where stored comment selectors are now. The last request is
+  // answered again after scroll and resize, so host pins follow reflow.
+  // ---------------------------------------------------------------------
+  var MAX_LOCATE = 500;
+  var locating = null;
+  var locateQueued = false;
+
+  function locate() {
+    if (!locating) return;
+    post('od:located', {
+      items: locating.map(function (it) {
+        var el = null;
+        try {
+          el = document.querySelector(String(it.selector));
+        } catch (_) {}
+        if (!el) return { id: it.id, rect: null };
+        var r = el.getBoundingClientRect();
+        return { id: it.id, rect: { x: r.left, y: r.top, width: r.width, height: r.height } };
+      })
+    });
+  }
+
+  function queueLocate() {
+    if (!locating || locateQueued) return;
+    locateQueued = true;
+    requestAnimationFrame(function () {
+      locateQueued = false;
+      locate();
+    });
+  }
+
+  document.addEventListener('scroll', queueLocate, { capture: true, passive: true });
+  window.addEventListener('resize', queueLocate);
+
+  // ---------------------------------------------------------------------
   // Snapshot: no real screenshot. Clone the DOM with computed styles inlined
   // and draw it through an SVG foreignObject.
   // ---------------------------------------------------------------------
@@ -596,6 +631,10 @@
       case 'od:snapshot':
         snapshot(data);
         break;
+      case 'od:locate':
+        locating = Array.isArray(data.items) ? data.items.slice(0, MAX_LOCATE) : null;
+        locate();
+        break;
       case 'od:size-request':
         lastSize = '';
         queueSize();
@@ -608,7 +647,7 @@
   function onReady() {
     post('od:ready', {
       protocolVersion: PROTOCOL_VERSION,
-      capabilities: ['deck', 'selection', 'snapshot', 'size', 'redirect-guard', 'storage-shim']
+      capabilities: ['deck', 'selection', 'locate', 'snapshot', 'size', 'redirect-guard', 'storage-shim']
     });
     watchSize();
     announceDeck();
