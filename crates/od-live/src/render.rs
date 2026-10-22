@@ -53,7 +53,7 @@ static EXECUTABLE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
             "srcdoc attributes are not supported in live artifact previews",
         ),
         (
-            re(r"(?i)\son[a-z][a-z0-9_-]*\s*="),
+            re(r#"(?i)[\s/"'`]on[a-z][a-z0-9_-]*\s*="#),
             "event handler attributes are not supported in live artifact previews",
         ),
         (
@@ -67,15 +67,134 @@ static EXECUTABLE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     ]
 });
 
-/// Refuses templates that could execute code in the preview.
+/// Refuses templates that could execute code in the preview. The rules run
+/// on the template and on a copy with character references decoded and
+/// tab/newline removed (`&#106;avascript:`, `java\tscript:`), as browsers
+/// read URLs. This is a second layer: the preview's CSP forbids scripts.
 ///
 /// # Errors
 /// The first matching rule's message.
 pub fn validate_security(template: &str) -> Result<()> {
-    match EXECUTABLE.iter().find(|(p, _)| p.is_match(template)) {
+    let decoded = decode_for_check(template);
+    match EXECUTABLE
+        .iter()
+        .find(|(p, _)| p.is_match(template) || p.is_match(&decoded))
+    {
         Some((_, message)) => err(*message),
         None => Ok(()),
     }
+}
+
+static CHAR_REF: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?i)&#x([0-9a-f]{1,6});?|&#([0-9]{1,7});?|&(colon|tab|newline);"));
+
+/// Decodes numeric and the URL-relevant named character references, then
+/// drops tab, CR and LF.
+fn decode_for_check(text: &str) -> String {
+    let decoded = CHAR_REF.replace_all(text, |c: &Captures<'_>| {
+        let code = match (c.get(1), c.get(2), c.get(3)) {
+            (Some(hex), _, _) => u32::from_str_radix(hex.as_str(), 16).ok(),
+            (_, Some(dec), _) => dec.as_str().parse().ok(),
+            (_, _, Some(name)) => match name.as_str().to_ascii_lowercase().as_str() {
+                "colon" => Some(u32::from(b':')),
+                "tab" => Some(u32::from(b'\t')),
+                _ => Some(u32::from(b'\n')),
+            },
+            _ => None,
+        };
+        code.and_then(char::from_u32)
+            .map(String::from)
+            .unwrap_or_default()
+    });
+    decoded
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+        .collect()
+}
+
+/// Where a binding sits in the template.
+enum BindingContext {
+    Text,
+    /// Inside an open tag, in the value of attribute `name`.
+    Attribute {
+        name: String,
+        quoted: bool,
+    },
+}
+
+static ATTR_BEFORE_VALUE: LazyLock<Regex> =
+    LazyLock::new(|| re(r#"([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*["']?[^"'\s>]*$"#));
+
+/// Classifies the binding that starts right after `before`.
+fn binding_context(before: &str) -> BindingContext {
+    let Some(open) = before.rfind('<') else {
+        return BindingContext::Text;
+    };
+    let head = &before[open..];
+    let mut quote = None;
+    let mut quote_start = 0;
+    for (i, b) in head.bytes().enumerate() {
+        match quote {
+            Some(q) if b == q => quote = None,
+            Some(_) => {}
+            None if b == b'"' || b == b'\'' => {
+                quote = Some(b);
+                quote_start = i;
+            }
+            None if b == b'>' => return BindingContext::Text,
+            None => {}
+        }
+    }
+    let upto = if quote.is_some() {
+        &head[..=quote_start]
+    } else {
+        head
+    };
+    match ATTR_BEFORE_VALUE.captures(upto) {
+        Some(c) => BindingContext::Attribute {
+            name: c[1].to_ascii_lowercase(),
+            quoted: quote.is_some(),
+        },
+        None => BindingContext::Text,
+    }
+}
+
+const URL_ATTRIBUTES: [&str; 7] = [
+    "href",
+    "src",
+    "action",
+    "formaction",
+    "xlink:href",
+    "poster",
+    "background",
+];
+
+/// A value that turns a URL attribute into code or an HTML document.
+fn is_script_url(value: &str) -> bool {
+    let v: String = decode_for_check(value)
+        .chars()
+        .filter(|c| !c.is_whitespace() && !c.is_control())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    v.starts_with("javascript:") || v.starts_with("vbscript:") || v.starts_with("data:text/html")
+}
+
+/// Unquoted attribute values end at whitespace; keep data inside them.
+fn escape_unquoted(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            ' ' => out.push_str("&#32;"),
+            '\t' => out.push_str("&#9;"),
+            '\n' => out.push_str("&#10;"),
+            '\r' => out.push_str("&#13;"),
+            '\x0c' => out.push_str("&#12;"),
+            '=' => out.push_str("&#61;"),
+            '`' => out.push_str("&#96;"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 #[must_use]
@@ -185,7 +304,23 @@ fn interpolate(fragment: &str, scope: &Scope<'_>) -> Result<String> {
     for caps in INTERPOLATION.captures_iter(fragment) {
         let whole = caps.get(0).expect("group 0");
         out.push_str(&fragment[last..whole.start()]);
-        out.push_str(&scope.resolve(caps[1].trim())?);
+        let value = scope.resolve(caps[1].trim())?;
+        match binding_context(&fragment[..whole.start()]) {
+            BindingContext::Text => out.push_str(&value),
+            BindingContext::Attribute { name, quoted } => {
+                if URL_ATTRIBUTES.contains(&name.as_str()) && is_script_url(&value) {
+                    return err(format!(
+                        "template binding {} would make a script URL in {name}",
+                        caps[1].trim()
+                    ));
+                }
+                if quoted {
+                    out.push_str(&value);
+                } else {
+                    out.push_str(&escape_unquoted(&value));
+                }
+            }
+        }
         last = whole.end();
     }
     out.push_str(&fragment[last..]);
@@ -395,6 +530,44 @@ mod tests {
             let e = render(tpl, &d).unwrap_err();
             assert!(e.0.contains(msg), "{tpl}: {e}");
         }
+    }
+
+    #[test]
+    fn filter_bypasses_from_review_are_refused() {
+        let d = Map::new();
+        for tpl in [
+            r#"<img src="x"/onerror=alert(1)>"#,
+            r#"<img src=x"onerror=alert(1)>"#,
+            r#"<a href="&#106;avascript:alert(1)">x</a>"#,
+            r#"<a href="&#x6A;avascript&colon;alert(1)">x</a>"#,
+            "<a href=\"java\tscript:alert(1)\">x</a>",
+        ] {
+            assert!(render(tpl, &d).is_err(), "{tpl}");
+        }
+    }
+
+    #[test]
+    fn data_cannot_become_script_urls_or_attributes() {
+        for url in [
+            "javascript:alert(1)",
+            " JavaScript:alert(1)",
+            "data:text/html,<b>",
+        ] {
+            let d = data(json!({ "u": url }));
+            assert!(
+                render(r#"<a href="{{data.u}}">x</a>"#, &d).is_err(),
+                "{url}"
+            );
+            assert!(render("<img src={{data.u}}>", &d).is_err(), "{url}");
+        }
+        let d = data(json!({ "u": "https://example.com/a", "c": "x onmouseover=alert(1)" }));
+        assert_eq!(
+            render(r#"<a href="{{data.u}}">{{data.c}}</a>"#, &d).unwrap(),
+            r#"<a href="https://example.com/a">x onmouseover=alert(1)</a>"#,
+            "text and safe URLs are untouched"
+        );
+        let html = render("<p class={{data.c}}>t</p>", &d).unwrap();
+        assert_eq!(html, "<p class=x&#32;onmouseover&#61;alert(1)>t</p>");
     }
 
     #[test]

@@ -426,12 +426,22 @@ async fn live_artifacts_over_http() {
         .await;
     assert_eq!(preview.status, StatusCode::OK);
     assert_eq!(String::from_utf8_lossy(&preview.body), "<p>Total: 1</p>");
-    assert!(
-        preview.headers[header::CONTENT_SECURITY_POLICY]
-            .to_str()
-            .unwrap()
-            .contains("sandbox")
-    );
+    let csp = preview.headers[header::CONTENT_SECURITY_POLICY]
+        .to_str()
+        .unwrap();
+    // No scripts, and no loads off the daemon: `<img src="https://…?{{data}}">`
+    // must not carry data out.
+    for directive in [
+        "sandbox;",
+        "default-src 'none'",
+        "img-src 'self' data: blob:",
+        "script-src 'none'",
+        "connect-src 'none'",
+        "form-action 'none'",
+        "base-uri 'none'",
+    ] {
+        assert!(csp.contains(directive), "{directive} in {csp}");
+    }
 
     h.file(&id, "sales.json", r#"{"total": 1234}"#);
     let res = h

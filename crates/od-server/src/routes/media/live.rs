@@ -107,6 +107,14 @@ pub async fn get_one(
     Ok(Json(json!({ "artifact": artifact })))
 }
 
+/// CSP of the rendered page: no scripts, and nothing loaded from off the
+/// daemon (an `<img src="https://…?x={{data.secret}}">` would carry data
+/// out). Same fetch rules as the file preview, minus scripts.
+pub const LIVE_PREVIEW_CSP: &str = "sandbox; default-src 'none'; \
+img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; \
+style-src 'self' 'unsafe-inline'; script-src 'none'; connect-src 'none'; \
+form-action 'none'; base-uri 'none'; object-src 'none'";
+
 /// The rendered page. Scripts are already refused at write time; the CSP
 /// keeps it that way for anything a user edits by hand on disk.
 pub async fn preview(
@@ -124,7 +132,7 @@ pub async fn preview(
     );
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("sandbox; script-src 'none'; object-src 'none'"),
+        HeaderValue::from_static(LIVE_PREVIEW_CSP),
     );
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     Ok(res)
