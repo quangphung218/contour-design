@@ -1,0 +1,51 @@
+[workspace]
+resolver = "3"
+members = ["crates/od-contracts", "crates/od-store", "crates/od-content"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "local"
+
+[workspace.dependencies]
+od-contracts = { path = "crates/od-contracts" }
+od-store = { path = "crates/od-store" }
+od-content = { path = "crates/od-content" }
+od-server = { path = "crates/od-server" }
+
+anyhow = "1"
+arc-swap = "1"
+axum = { version = "0.8", features = ["multipart"] }
+base64 = "0.22"
+clap = { version = "4", features = ["derive", "env"] }
+criterion = { version = "0.5", default-features = false }
+hex = "0.4"
+httpdate = "1"
+rayon = "1"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "sync"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+dbg_macro = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
