@@ -2,7 +2,8 @@
 //! token for non-loopback binds.
 //!
 //! - No `Origin` header (CLI, curl): allowed.
-//! - `Origin: null` (sandboxed preview iframes): only `GET .../raw/...`.
+//! - `Origin: null` (sandboxed preview iframes): only `GET .../raw/...` and
+//!   `GET .../preview/<scope>/...`.
 //! - Any other origin must be loopback or private LAN on the daemon's port,
 //!   or listed in `OD_ALLOWED_ORIGINS`.
 
@@ -103,7 +104,7 @@ fn is_raw_path(path: &str) -> bool {
     let mut parts = path.trim_start_matches('/').splitn(5, '/');
     matches!(
         (parts.next(), parts.next(), parts.next(), parts.next(), parts.next()),
-        (Some("api"), Some("projects"), Some(id), Some("raw"), Some(rest)) if !id.is_empty() && !rest.is_empty()
+        (Some("api"), Some("projects"), Some(id), Some("raw" | "preview"), Some(rest)) if !id.is_empty() && !rest.is_empty()
     )
 }
 
@@ -242,6 +243,8 @@ mod tests {
         assert!(is_raw_path("/api/projects/p1/raw/index.html"));
         assert!(!is_raw_path("/api/projects/p1/files/index.html"));
         assert!(!is_raw_path("/api/projects/p1/raw/"));
+        assert!(is_raw_path("/api/projects/p1/preview/scope1234/index.html"));
+        assert!(!is_raw_path("/api/projects/p1/preview-url"));
     }
 
     #[test]
