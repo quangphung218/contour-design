@@ -144,20 +144,20 @@ case "$1" in --version) echo "kimi 9.9.9"; exit 0;; esac
 log="$MOCK_LOG"
 trap 'echo SIGTERM >> "$log"; exit 143' TERM
 say() { printf '%s\n' "$1"; }
-read -r l; echo "$l" >> "$log"
+read -r l; printf "%s\n" "$l" >> "$log"
 say '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}}'
-read -r l; echo "$l" >> "$log"
+read -r l; printf "%s\n" "$l" >> "$log"
 say '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess-1"}}'
-read -r l; echo "$l" >> "$log"
+read -r l; printf "%s\n" "$l" >> "$log"
 if [ "$MOCK_MODE" = cancel ]; then
   say '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"working"}}}}'
-  read -r l; echo "$l" >> "$log"
+  read -r l; printf "%s\n" "$l" >> "$log"
   sleep 30 & wait $!
   exit 0
 fi
 say '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"tool_call","toolCallId":"w1","title":"Write index.html","kind":"edit","status":"pending","locations":[{"path":"index.html"}]}}}'
 say "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"sess-1\",\"toolCall\":{\"toolCallId\":\"w1\",\"kind\":\"${MOCK_PERM_KIND:-edit}\",\"title\":\"Write index.html\"},\"options\":[{\"optionId\":\"once\",\"kind\":\"allow_once\"},{\"optionId\":\"always\",\"kind\":\"allow_always\"},{\"optionId\":\"no\",\"kind\":\"reject_once\"}]}}"
-read -r l; echo "$l" >> "$log"
+read -r l; printf "%s\n" "$l" >> "$log"
 printf '<h1>ACP</h1>' > index.html
 say '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"w1","status":"completed"}}}'
 say '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Wrote index.html."}}}}'
@@ -166,7 +166,7 @@ if [ "$MOCK_MODE" = linger ]; then
   sleep 30 & wait $!
   exit 0
 fi
-while read -r l; do echo "$l" >> "$log"; done
+while read -r l; do printf "%s\n" "$l" >> "$log"; done
 echo EOF >> "$log"
 "#;
 

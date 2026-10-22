@@ -276,6 +276,12 @@ case "$1" in --version) echo "mock 1.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage"; exit 0; fi
 IFS= read -r line
 case "$line" in *"take your time"*) sleep 30;; esac
+case "$line" in *"nested page"*)
+  mkdir -p site && printf '<h1>nested</h1>' > site/page.html
+  printf '{"type":"assistant","message":{"id":"m0","content":[{"type":"tool_use","id":"t1","name":"Write","input":{"file_path":"%s/site/page.html"}}]}}\n' "$PWD"
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null; exit 0;;
+esac
 printf '<h1>landing</h1>' > index.html
 printf '{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Made a landing page."}]}}\n'
 printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
@@ -350,6 +356,10 @@ async fn mcp_run_tools_against_the_real_run_engine() {
     assert_eq!(run["agentId"], "claude");
     assert_eq!(run["projectId"], project.as_str());
     assert_eq!(run["agentMessage"], "Made a landing page.");
+    // A new project has no entryFile: the preview falls back to index.html.
+    let preview = run["previewUrl"].as_str().unwrap_or_default();
+    assert!(preview.ends_with("/raw/index.html"), "{run}");
+    assert_eq!(run["artifactRef"]["entryFile"], "index.html");
     let (err, text, _) = call(
         &client,
         "get_file",
@@ -357,6 +367,18 @@ async fn mcp_run_tools_against_the_real_run_engine() {
     )
     .await;
     assert!(!err && text.ends_with("<h1>landing</h1>"), "{text}");
+
+    // A run that wrote another HTML file previews that file.
+    let nested = ok(
+        &client,
+        "start_run",
+        json!({ "project": project, "prompt": "a nested page", "agent": "claude" }),
+    )
+    .await;
+    let nested_id = nested["runId"].as_str().unwrap().to_owned();
+    let run = wait_run(&client, &nested_id, "succeeded").await;
+    let preview = run["previewUrl"].as_str().unwrap_or_default();
+    assert!(preview.ends_with("/raw/site/page.html"), "{run}");
 
     // Cancel stops an in-flight run.
     let slow = ok(
