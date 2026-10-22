@@ -1,0 +1,5 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false},"clientInfo":{"name":"open-design","version":"runtime-adapter"}}}
+{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/proj","mcpServers":[]}}
+{"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":"sess-kimi-1","prompt":[{"type":"text","text":"Build a landing page"}]}}
+{"jsonrpc":"2.0","id":0,"result":{"outcome":{"outcome":"selected","optionId":"allow_always"}}}
+{"jsonrpc":"2.0","id":"fs-1","error":{"code":-32601,"message":"fs/read_text_file is not supported"}}

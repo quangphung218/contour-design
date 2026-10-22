@@ -84,7 +84,7 @@ impl AcpSession {
                     "fs": {"readTextFile": false, "writeTextFile": false},
                     "terminal": false,
                 },
-                "clientInfo": {"name": "open-design", "version": env!("CARGO_PKG_VERSION")},
+                "clientInfo": {"name": "open-design", "version": "runtime-adapter"},
             }),
         );
         session

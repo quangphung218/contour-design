@@ -1,0 +1,9 @@
+{"type":"status","label":"initializing","model":"synthetic-cursor-model"}
+{"type":"thinking_start"}
+{"type":"thinking_delta","delta":"Planning the layout."}
+{"type":"text_delta","delta":"ha"}
+{"type":"text_delta","delta":"ha"}
+{"type":"tool_use","id":"tool_edit_1","name":"Edit","input":{"path":"/proj/index.html","streamContent":"<div>synthetic edit</div>","file_path":"/proj/index.html"}}
+{"type":"tool_result","toolUseId":"tool_edit_1","content":"Edited /proj/index.html","isError":false}
+{"type":"text_delta","delta":", done."}
+{"type":"usage","usage":{"input_tokens":900,"output_tokens":120,"cached_read_tokens":300,"cached_write_tokens":0},"durationMs":4211.0}
