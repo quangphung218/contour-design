@@ -1,0 +1,29 @@
+[package]
+name = "od-content"
+description = "Indexes bundled and user skills, design templates, design systems and craft rules"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+od-contracts.workspace = true
+arc-swap.workspace = true
+hex.workspace = true
+rayon.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+tempfile.workspace = true
+
+[[bench]]
+name = "index"
+harness = false
+
+[lints]
+workspace = true

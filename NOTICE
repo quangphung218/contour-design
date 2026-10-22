@@ -1,3 +1,18 @@
 open-design-rs
 Bản viết lại bằng Rust của OpenDesign (https://github.com/nexu-io/open-design), Copyright nexu-io và cộng tác viên, Apache License 2.0.
-Nội dung trong content/ (skills, design-templates, design-systems, craft, plugins…) lấy từ OpenDesign commit e03d5c2; mỗi thư mục con giữ file LICENSE gốc nếu có.
+Nội dung trong content/ (skills, design-templates, design-systems, craft…) lấy từ OpenDesign commit e03d5c2; mỗi thư mục con giữ file LICENSE gốc nếu có.
+
+Nội dung đã copy (git archive tại e03d5c2, chỉ file được git theo dõi):
+- content/craft/            13 file (11 mục craft + README.md + FUTURE_SECTIONS.md)
+- content/skills/           169 thư mục
+- content/design-templates/ 115 thư mục
+- content/design-systems/   152 package + _schema; giữ tên thương hiệu và attribution theo docs/decisions.md mục 3
+- 73 file LICENSE con được giữ nguyên chỗ.
+
+Đã loại hoặc chưa copy:
+- Font: không có file font (.woff/.woff2/.ttf/.otf/.eot) nào trong 4 thư mục trên, nên không phải loại gì.
+- prompt-templates/: chưa copy (P2). Khi copy phải loại 2 file không rõ license và ghi công 72 file CC-BY-4.0.
+- plugins/_official/ (atoms, scenarios, examples, image/video-templates, design-systems): chưa copy, M1 không dùng.
+  Khi copy examples/ phải loại font không có license (examples/open-design-homepage/assets/fonts) và font hash trong video-templates/*/source/fonts.
+
+Dữ liệu test: crates/od-content/tests/fixtures/original-*.json là output của loader TypeScript gốc (Apache-2.0) chạy trên content/ ở trên.
