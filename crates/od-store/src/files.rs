@@ -196,7 +196,7 @@ fn write_atomic(target: &Path, bytes: &[u8], place: Place) -> Result<()> {
         file.sync_data()?;
         match place {
             Place::Overwrite => fs::rename(&tmp, target),
-            Place::CreateNew => fs::hard_link(&tmp, target),
+            Place::CreateNew => place_new(&tmp, target, bytes, |from, to| fs::hard_link(from, to)),
         }
     })();
     if place == Place::CreateNew || result.is_err() {
@@ -205,6 +205,30 @@ fn write_atomic(target: &Path, bytes: &[u8], place: Place) -> Result<()> {
     match result {
         Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => Err(StoreError::FileExists),
         other => Ok(other?),
+    }
+}
+
+/// Claims `target` without overwriting: hard-links the finished temp file
+/// (readers never see a partial file). File systems without hard links
+/// (exFAT, FAT, many SMB shares) fall back to `create_new` and writing in
+/// place: still never overwrites, but a reader could see a partial file.
+fn place_new(
+    tmp: &Path,
+    target: &Path,
+    bytes: &[u8],
+    link: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    match link(tmp, target) {
+        Err(err) if err.kind() != std::io::ErrorKind::AlreadyExists => {
+            tracing::debug!(error = %err, "hard link unavailable; using create_new");
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(target)?;
+            file.write_all(bytes)?;
+            file.sync_data()
+        }
+        other => other,
     }
 }
 
@@ -386,4 +410,56 @@ pub fn upload_file(
         }
     }
     Err(StoreError::FileExists)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unsupported(_: &Path, _: &Path) -> std::io::Result<()> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+
+    #[test]
+    fn create_new_falls_back_when_hard_links_are_unsupported() {
+        let tmp = tempfile::tempdir().unwrap();
+        let staged = tmp.path().join(".od-tmp-x");
+        fs::write(&staged, b"data").unwrap();
+        let target = tmp.path().join("a.png");
+        place_new(&staged, &target, b"data", unsupported).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"data");
+        // Still never overwrites.
+        let err = place_new(&staged, &target, b"other", unsupported).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&target).unwrap(), b"data");
+    }
+
+    #[test]
+    fn create_new_keeps_already_exists_from_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("a.png");
+        let err = place_new(&target, &target, b"x", |_, _| {
+            Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
+        })
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert!(!target.exists(), "no fallback write when the name is taken");
+    }
+
+    #[test]
+    fn listing_hides_leftover_temp_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(".od-tmp-abc"), b"partial").unwrap();
+        fs::write(tmp.path().join("index.html"), b"<p>").unwrap();
+        let root = ProjectRoot {
+            dir: tmp.path().to_path_buf(),
+            imported: false,
+        };
+        let names: Vec<_> = list_files(&root)
+            .unwrap()
+            .into_iter()
+            .map(|f| f.name)
+            .collect();
+        assert_eq!(names, ["index.html"]);
+    }
 }

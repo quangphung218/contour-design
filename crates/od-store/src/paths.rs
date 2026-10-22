@@ -176,8 +176,19 @@ pub fn resolve_safe_real(root: &Path, name: &str) -> Result<PathBuf> {
         Err(err) if err.kind() == io::ErrorKind::NotFound => resolve_existing_prefix(&candidate)?,
         Err(err) => return Err(err.into()),
     };
-    if !real.starts_with(&root_real) {
+    let Ok(inside) = real.strip_prefix(&root_real) else {
         return Err(StoreError::PathEscape);
+    };
+    // Check reserved names again on the real path: case-insensitive file
+    // systems fold more than ASCII (APFS maps `ſ` to `s` and `ﬁ` to `fi`), so
+    // `.open-deſign` passes the lexical check yet names `.open-design`.
+    // `canonicalize` returns the stored name for every existing component;
+    // the missing tail was already checked lexically above.
+    if inside.components().any(|c| match c {
+        Component::Normal(part) => is_reserved_segment(&part.to_string_lossy()),
+        _ => false,
+    }) {
+        return Err(StoreError::ReservedPath);
     }
     Ok(real)
 }

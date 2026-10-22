@@ -508,6 +508,46 @@ async fn path_traversal_table() {
         project_dir.join(PROJECT_MANIFEST_PATH).is_file(),
         "manifest survives"
     );
+
+    // Unicode case folding (review round 2): APFS folds `ſ` to `s` and `ﬁ`
+    // to `fi`. On case-sensitive file systems these are just missing files
+    // (404); either way they must never reach the reserved folders.
+    h.write(&id, "index.html", "<p>history</p>").await;
+    let history = std::fs::read_dir(project_dir.join(".file-versions"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .into_owned();
+    let manifest_before = std::fs::read(project_dir.join(PROJECT_MANIFEST_PATH)).unwrap();
+    let folded = [
+        format!("/api/projects/{id}/raw/.open-de%C5%BFign/project.json"),
+        format!("/api/projects/{id}/files/.open-de%C5%BFign/project.json"),
+        format!("/api/projects/{id}/raw/.%EF%AC%81le-versions/{history}/manifest.json"),
+        format!("/api/projects/{id}/files/.%EF%AC%81le-versions/{history}/manifest.json"),
+    ];
+    for uri in &folded {
+        let r = h.get(uri).await;
+        assert_ne!(r.status, StatusCode::OK, "GET {uri}");
+        let r = h
+            .send(Request::delete(uri.as_str()).body(Body::empty()).unwrap())
+            .await;
+        assert_ne!(r.status, StatusCode::OK, "DELETE {uri}");
+    }
+    assert_eq!(
+        std::fs::read(project_dir.join(PROJECT_MANIFEST_PATH)).unwrap(),
+        manifest_before,
+        "manifest intact"
+    );
+    assert!(
+        project_dir
+            .join(".file-versions")
+            .join(&history)
+            .join("manifest.json")
+            .is_file()
+    );
     assert!(reads.len() + writes.len() + 5 >= 10);
 }
 
