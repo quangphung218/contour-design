@@ -354,7 +354,16 @@ fn project_relative(path: &str, cwd: Option<&str>) -> Option<String> {
     let path = path.trim();
     let rel = if path.starts_with('/') {
         match cwd.map(|c| c.trim_end_matches('/')) {
-            Some(cwd) => path.strip_prefix(cwd)?.strip_prefix('/')?,
+            Some(cwd) => {
+                // macOS: the daemon may name `/var/…` while the agent
+                // reports the real `/private/var/…` (or the other way round).
+                let other = cwd
+                    .strip_prefix("/private")
+                    .map_or_else(|| format!("/private{cwd}"), str::to_owned);
+                [cwd, other.as_str()]
+                    .iter()
+                    .find_map(|root| path.strip_prefix(root)?.strip_prefix('/'))?
+            }
             None => {
                 let rel = strip_cwd(path);
                 (rel != path).then_some(rel)?
@@ -463,6 +472,15 @@ mod tests {
         t.apply(start("/Users/me/site"));
         t.apply(write("/Users/me/site/index.html"));
         assert_eq!(t.touched_files(), vec!["index.html".to_owned()]);
+
+        let mut t = AssistantTurn::new();
+        t.apply(start("/var/folders/x/projects/p1"));
+        t.apply(write("/private/var/folders/x/projects/p1/index.html"));
+        t.apply(write("/var/folders/x/projects/p1/a.html"));
+        assert_eq!(
+            t.touched_files(),
+            vec!["index.html".to_owned(), "a.html".to_owned()]
+        );
     }
 
     #[test]
