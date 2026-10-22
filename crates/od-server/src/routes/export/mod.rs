@@ -18,7 +18,7 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Router};
-use od_contracts::Project;
+use od_contracts::{ErrorCode, Project};
 use od_export::archive::{content_disposition, sanitize_filename, write_zip};
 use od_export::standalone::{self, MAX_ENTRY_BYTES};
 use od_export::{
@@ -58,19 +58,17 @@ pub fn routes_with(renderer: Arc<dyn Renderer>) -> Router<AppState> {
 // ---------------------------------------------------------------------------
 // Errors
 
-/// An API error whose code may be outside `od_contracts::ErrorCode`
-/// (`VALIDATION_FAILED`, `UNSUPPORTED_MEDIA_TYPE`, `UPSTREAM_UNAVAILABLE`,
-/// as in the original app), with optional `details`.
+/// An API error with optional `details` (missing dependency, limit hit).
 #[derive(Debug)]
 pub struct ExportErr {
     status: StatusCode,
-    code: &'static str,
+    code: ErrorCode,
     message: String,
     details: Option<Value>,
 }
 
 impl ExportErr {
-    fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+    fn new(status: StatusCode, code: ErrorCode, message: impl Into<String>) -> Self {
         Self {
             status,
             code,
@@ -87,23 +85,7 @@ impl ExportErr {
 
 impl From<ApiErr> for ExportErr {
     fn from(e: ApiErr) -> Self {
-        let code = serde_json::to_value(e.code)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_owned))
-            .unwrap_or_default();
-        // Codes are a closed set; leak-free static mapping.
-        let code: &'static str = match code.as_str() {
-            "BAD_REQUEST" => "BAD_REQUEST",
-            "FORBIDDEN" => "FORBIDDEN",
-            "NOT_FOUND" => "NOT_FOUND",
-            "PROJECT_NOT_FOUND" => "PROJECT_NOT_FOUND",
-            "FILE_NOT_FOUND" => "FILE_NOT_FOUND",
-            "PATH_ESCAPE" => "PATH_ESCAPE",
-            "CONFLICT" => "CONFLICT",
-            "PAYLOAD_TOO_LARGE" => "PAYLOAD_TOO_LARGE",
-            _ => "INTERNAL_ERROR",
-        };
-        Self::new(e.status, code, e.message)
+        Self::new(e.status, e.code, e.message)
     }
 }
 
@@ -119,25 +101,29 @@ impl From<StandaloneError> for ExportErr {
         let (status, code) = match &e {
             StandaloneError::LimitExceeded { limit, .. } => {
                 details["limit"] = json!(limit);
-                (StatusCode::PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE")
+                (StatusCode::PAYLOAD_TOO_LARGE, ErrorCode::PayloadTooLarge)
             }
             StandaloneError::MissingDependency { dependency, chain } => {
                 details["dependency"] = json!(dependency);
                 details["chain"] = json!(chain);
-                (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_FAILED")
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    ErrorCode::ValidationFailed,
+                )
             }
-            StandaloneError::InvalidSource { .. } => {
-                (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_FAILED")
-            }
+            StandaloneError::InvalidSource { .. } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ErrorCode::ValidationFailed,
+            ),
             StandaloneError::PathOutsideProject { dependency } => {
                 details["dependency"] = json!(dependency);
-                (StatusCode::BAD_REQUEST, "BAD_REQUEST")
+                (StatusCode::BAD_REQUEST, ErrorCode::BadRequest)
             }
             StandaloneError::DependencyCycle { chain } => {
                 details["chain"] = json!(chain);
-                (StatusCode::BAD_REQUEST, "BAD_REQUEST")
+                (StatusCode::BAD_REQUEST, ErrorCode::BadRequest)
             }
-            StandaloneError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
+            StandaloneError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
         };
         Self::new(status, code, e.to_string()).with_details(details)
     }
@@ -146,12 +132,15 @@ impl From<StandaloneError> for ExportErr {
 impl From<RenderError> for ExportErr {
     fn from(e: RenderError) -> Self {
         let (status, code) = match &e {
-            RenderError::Unavailable(_) => {
-                (StatusCode::SERVICE_UNAVAILABLE, "UPSTREAM_UNAVAILABLE")
+            RenderError::Unavailable(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorCode::UpstreamUnavailable,
+            ),
+            RenderError::NotADeck => (StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::BadRequest),
+            RenderError::Unsupported(_) => {
+                (StatusCode::NOT_IMPLEMENTED, ErrorCode::UpstreamUnavailable)
             }
-            RenderError::NotADeck => (StatusCode::UNPROCESSABLE_ENTITY, "BAD_REQUEST"),
-            RenderError::Unsupported(_) => (StatusCode::NOT_IMPLEMENTED, "UPSTREAM_UNAVAILABLE"),
-            RenderError::Failed(_) => (StatusCode::BAD_GATEWAY, "UPSTREAM_UNAVAILABLE"),
+            RenderError::Failed(_) => (StatusCode::BAD_GATEWAY, ErrorCode::UpstreamUnavailable),
         };
         Self::new(status, code, e.to_string())
     }
@@ -172,7 +161,7 @@ type ExportResult<T> = Result<T, ExportErr>;
 fn internal(e: impl std::fmt::Display) -> ExportErr {
     ExportErr::new(
         StatusCode::INTERNAL_SERVER_ERROR,
-        "INTERNAL_ERROR",
+        ErrorCode::InternalError,
         e.to_string(),
     )
 }
@@ -243,8 +232,13 @@ fn parse_body(body: &Bytes) -> ExportResult<ExportRequest> {
     if body.iter().all(u8::is_ascii_whitespace) {
         return Ok(ExportRequest::default());
     }
-    serde_json::from_slice(body)
-        .map_err(|e| ExportErr::new(StatusCode::BAD_REQUEST, "BAD_REQUEST", e.to_string()))
+    serde_json::from_slice(body).map_err(|e| {
+        ExportErr::new(
+            StatusCode::BAD_REQUEST,
+            ErrorCode::BadRequest,
+            e.to_string(),
+        )
+    })
 }
 
 /// The project, its root, and the validated HTML entry path.
@@ -304,7 +298,7 @@ async fn resolve_entry(state: &AppState, id: String, req: &ExportRequest) -> Exp
     if !is_html_name(&entry.path) {
         return Err(ExportErr::new(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "UNSUPPORTED_MEDIA_TYPE",
+            ErrorCode::UnsupportedMediaType,
             "export only supports HTML entry files",
         ));
     }
@@ -470,7 +464,7 @@ pub async fn archive(
         if entries.is_empty() && !root.dir.join(p).is_dir() {
             return Err(ApiErr::new(
                 StatusCode::NOT_FOUND,
-                od_contracts::ErrorCode::FileNotFound,
+                ErrorCode::FileNotFound,
                 format!("no folder {p} in this project"),
             )
             .into());
@@ -567,7 +561,7 @@ pub async fn export_pdf_image(
         .map_err(|e| {
             ExportErr::new(
                 StatusCode::BAD_GATEWAY,
-                "UPSTREAM_UNAVAILABLE",
+                ErrorCode::UpstreamUnavailable,
                 e.to_string(),
             )
         })?;
@@ -593,7 +587,7 @@ pub async fn export_image(
         Some(other) => {
             return Err(ExportErr::new(
                 StatusCode::BAD_REQUEST,
-                "BAD_REQUEST",
+                ErrorCode::BadRequest,
                 format!("imageFormat must be png or jpeg, got {other:?}"),
             ));
         }
@@ -612,7 +606,7 @@ pub async fn export_image(
             slides.images.into_iter().nth(i).ok_or_else(|| {
                 ExportErr::new(
                     StatusCode::BAD_REQUEST,
-                    "BAD_REQUEST",
+                    ErrorCode::BadRequest,
                     format!("slide index {i} out of range (deck has {count})"),
                 )
             })?
@@ -623,7 +617,7 @@ pub async fn export_image(
                 .map_err(|e| {
                     ExportErr::new(
                         StatusCode::BAD_GATEWAY,
-                        "UPSTREAM_UNAVAILABLE",
+                        ErrorCode::UpstreamUnavailable,
                         e.to_string(),
                     )
                 })?
@@ -682,7 +676,7 @@ pub async fn export_pptx(
             .map_err(|e| {
                 ExportErr::new(
                     StatusCode::BAD_GATEWAY,
-                    "UPSTREAM_UNAVAILABLE",
+                    ErrorCode::UpstreamUnavailable,
                     e.to_string(),
                 )
             })?;

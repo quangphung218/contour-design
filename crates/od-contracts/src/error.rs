@@ -29,6 +29,12 @@ pub enum ErrorCode {
     RunTerminal,
     /// Steer: the stdin of the agent is already closed.
     StdinClosed,
+    /// Export: the source cannot be bundled (missing dependency, bad HTML).
+    ValidationFailed,
+    /// Export: the entry file is not HTML.
+    UnsupportedMediaType,
+    /// Export: Chrome is missing or the render failed.
+    UpstreamUnavailable,
 }
 
 /// Error payload: `{ "error": { "code": "...", "message": "..." } }`.
