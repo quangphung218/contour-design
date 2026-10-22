@@ -272,3 +272,85 @@ async fn bundles_are_neither_imported_nor_opened() {
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     assert!(!marker.exists(), "the bundle was launched");
 }
+
+#[tokio::test]
+async fn comments_follow_the_run_that_applies_them() {
+    let d = daemon().await;
+    let (project, conversation) = d.project().await;
+    let base = format!("/api/projects/{project}/conversations/{conversation}/comments");
+    let make = |note: &'static str| {
+        let d = &d;
+        let base = base.clone();
+        async move {
+            let (status, made) = send(
+                d,
+                reqwest::Method::POST,
+                &base,
+                Some(json!({"filePath": "index.html", "selector": "h1", "elementId": "h",
+                    "label": "h1", "text": "T", "position": {"x": 1, "y": 2, "width": 3, "height": 4},
+                    "note": note})),
+            )
+            .await;
+            assert_eq!(status, 200, "{made}");
+            made["comment"]["id"].as_str().unwrap().to_owned()
+        }
+    };
+    let status_of = |id: String| {
+        let d = &d;
+        let base = base.clone();
+        async move {
+            let listed = d.get_json(&base).await;
+            listed["comments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["id"] == id.as_str())
+                .unwrap()["status"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        }
+    };
+    let attach = |id: &str| {
+        json!([{"id": id, "order": 1, "filePath": "index.html", "elementId": "h",
+            "selector": "h1", "label": "h1", "currentText": "T", "comment": "x"}])
+    };
+
+    write_mock(&d.mocks, "claude", &claude_echo(&d.mocks));
+    let ok = make("green").await;
+    let run = d
+        .start(
+            json!({"agentId": "claude", "projectId": project, "conversationId": conversation,
+            "message": "apply", "commentAttachments": attach(&ok)}),
+        )
+        .await;
+    assert_eq!(
+        end_of(&d.events(&run.run_id, None).await)["status"],
+        "succeeded"
+    );
+    d.settled_messages(&project, &conversation).await;
+    assert_eq!(status_of(ok).await, "resolved");
+
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!("{PROBES}\nIFS= read -r line\nexit 3\n"),
+    );
+    let failed = make("red").await;
+    let run = d
+        .start(
+            json!({"agentId": "claude", "projectId": project, "conversationId": conversation,
+            "message": "apply", "commentAttachments": attach(&failed)}),
+        )
+        .await;
+    assert_eq!(
+        end_of(&d.events(&run.run_id, None).await)["status"],
+        "failed"
+    );
+    d.settled_messages(&project, &conversation).await;
+    assert_eq!(
+        status_of(failed).await,
+        "attached",
+        "back for the next turn"
+    );
+}

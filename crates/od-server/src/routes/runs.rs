@@ -11,14 +11,15 @@ use futures_util::stream;
 use od_content::prompt::{self, PromptInput, TranscriptTurn};
 use od_content::skills::skill_cwd_alias_segment;
 use od_contracts::{
-    AgentsResponse, ChatRequest, CreateRunResponse, ErrorCode, MessageRole, RunActionResponse,
-    RunResponse, RunStatus, RunsResponse, SteerRequest, sse,
+    AgentsResponse, ChatRequest, CommentStatus, CreateRunResponse, ErrorCode, MessageRole,
+    RunActionResponse, RunResponse, RunStatus, RunsResponse, SteerRequest, UpdateCommentRequest,
+    sse,
 };
 use od_runs::{Run, RunMeta, RunsError};
 use od_runtime::env::{RunEnv, agent_env};
 use od_runtime::stage::{SkillToStage, stage_skill};
 use od_runtime::{LaunchSpec, PermissionMode, RunOutcome, SteerError};
-use od_store::{AgentSession, NewTurn};
+use od_store::{AgentSession, NewTurn, Store, StoreError};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -169,6 +170,7 @@ pub async fn create(
                 end_unlaunched(
                     &state,
                     &run,
+                    &comment_ids(&req),
                     RunStatus::Failed,
                     Some(&err.message),
                     Some(od_contracts::FailureCategory::SpawnFailed),
@@ -200,22 +202,34 @@ pub async fn create(
 async fn end_unlaunched(
     state: &AppState,
     run: &Arc<Run>,
+    comments: &[String],
     status: RunStatus,
     error: Option<&str>,
     failure_category: Option<od_contracts::FailureCategory>,
 ) {
     state.runs.tokens.revoke_run(run.id());
     state.runs.pending_cancels().remove(run.id());
-    if let Some(msg) = run.meta().assistant_message_id.clone() {
-        let _ = state
-            .blocking(move |s| {
-                if s.get_message(&msg)?.is_some() {
-                    s.finish_assistant_message(&msg, "", status, 0)?;
+    let meta = run.meta().clone();
+    let comments = comments.to_vec();
+    let _ = state
+        .blocking(move |s| {
+            if let Some(msg) = &meta.assistant_message_id {
+                if s.get_message(msg)?.is_some() {
+                    s.finish_assistant_message(msg, "", status, 0)?;
                 }
-                Ok(())
-            })
-            .await;
-    }
+            }
+            if let (Some(project), Some(conversation)) = (&meta.project_id, &meta.conversation_id) {
+                set_comments(
+                    s,
+                    project,
+                    conversation,
+                    &comments,
+                    settled_comment_status(status),
+                )?;
+            }
+            Ok(())
+        })
+        .await;
     if let Some(error) = error {
         run.emit_error(error, None);
     }
@@ -250,6 +264,44 @@ fn reused_response(run: &Arc<Run>) -> Response {
 
 fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
+}
+
+fn comment_ids(req: &ChatRequest) -> Vec<String> {
+    req.comment_attachments
+        .iter()
+        .filter_map(|c| c.id.clone())
+        .collect()
+}
+
+/// Moves the turn's preview comments to `status`: `applying` while the run
+/// works on them, then `resolved` on success or back to `attached` so the
+/// next turn carries them again. Comments deleted meanwhile are skipped.
+fn set_comments(
+    s: &Store,
+    project_id: &str,
+    conversation_id: &str,
+    ids: &[String],
+    status: CommentStatus,
+) -> Result<(), StoreError> {
+    for id in ids {
+        let req = UpdateCommentRequest {
+            status: Some(status),
+            ..UpdateCommentRequest::default()
+        };
+        match s.update_comment(project_id, conversation_id, id, req) {
+            Ok(_) | Err(StoreError::CommentNotFound) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+fn settled_comment_status(run: RunStatus) -> CommentStatus {
+    if run == RunStatus::Succeeded {
+        CommentStatus::Resolved
+    } else {
+        CommentStatus::Attached
+    }
 }
 
 /// Everything resolved on the blocking pool before launch.
@@ -299,6 +351,13 @@ async fn prepare_and_launch(
                 agent_id: def.id,
                 run_id: &run_id,
             })?;
+            set_comments(
+                s,
+                &project2.id,
+                &conversation,
+                &comment_ids(&req2),
+                CommentStatus::Applying,
+            )?;
 
             // Skills: explicit ids, else the project's skill.
             let mut ids: Vec<String> = req2.skill_ids.clone();
@@ -482,7 +541,15 @@ async fn prepare_and_launch(
         }
     };
     let Some(handle) = launched else {
-        end_unlaunched(state, run, RunStatus::Canceled, None, None).await;
+        end_unlaunched(
+            state,
+            run,
+            &comment_ids(req),
+            RunStatus::Canceled,
+            None,
+            None,
+        )
+        .await;
         return Ok(resumed);
     };
     tokio::spawn(persist_run(
@@ -490,6 +557,8 @@ async fn prepare_and_launch(
         Arc::clone(run),
         handle,
         Finalize {
+            project_id: project.id.clone(),
+            comment_ids: comment_ids(req),
             conversation_id: conversation_id.to_owned(),
             agent_id: def.id.to_owned(),
             assistant_message_id,
@@ -502,6 +571,8 @@ async fn prepare_and_launch(
 }
 
 struct Finalize {
+    project_id: String,
+    comment_ids: Vec<String>,
     conversation_id: String,
     agent_id: String,
     assistant_message_id: String,
@@ -584,6 +655,13 @@ async fn persist_run(
     let res = state
         .blocking(move |s| {
             s.finish_assistant_message(&fin.assistant_message_id, &outcome.text, status, last_id)?;
+            set_comments(
+                s,
+                &fin.project_id,
+                &fin.conversation_id,
+                &fin.comment_ids,
+                settled_comment_status(status),
+            )?;
             match (&outcome.session_id, status) {
                 (Some(session), RunStatus::Succeeded) => s.save_agent_session(&AgentSession {
                     conversation_id: fin.conversation_id,

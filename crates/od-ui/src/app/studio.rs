@@ -272,9 +272,16 @@ impl StudioCtx {
                     self.conversation_id.set(Some(res.conversation_id));
                     turn.update(|t| t.run_id = Some(res.run_id.clone()));
                     self.attach(res.run_id, turn, Some(text));
-                    for c in attached {
-                        self.set_comment_status(&c.id, CommentStatus::Applying);
-                    }
+                    // The daemon moves them to applying, then resolved or
+                    // back to attached when the run ends; mirror it here.
+                    self.comments.update(|list| {
+                        for c in list
+                            .iter_mut()
+                            .filter(|c| attached.iter().any(|a| a.id == c.id))
+                        {
+                            c.status = CommentStatus::Applying;
+                        }
+                    });
                 }
                 Err(e) => {
                     fail(turn, e.to_string());
@@ -409,6 +416,7 @@ impl StudioCtx {
         });
         self.refresh_files();
         self.reload_preview();
+        self.reload_comments();
     }
 
     pub fn cancel(self) {
@@ -438,6 +446,22 @@ impl StudioCtx {
             || {},
         );
         self.project_stream.set_value(stream.map(SendWrapper::new));
+    }
+
+    /// Re-reads the open conversation's comments (statuses change when a
+    /// run that applies them ends).
+    fn reload_comments(self) {
+        let Some(cid) = self.conversation_id.get_untracked() else {
+            return;
+        };
+        leptos::task::spawn_local(async move {
+            let path = format!("{}/comments", self.conversation_base(&cid));
+            if let Ok(res) = api::get::<CommentsResponse>(&path).await {
+                if self.conversation_id.get_untracked().as_deref() == Some(cid.as_str()) {
+                    self.comments.set(res.comments);
+                }
+            }
+        });
     }
 
     pub fn reload_conversations(self) {
