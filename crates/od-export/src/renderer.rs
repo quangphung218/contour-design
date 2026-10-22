@@ -3,7 +3,7 @@
 //! underneath (`od-render-cdp` drives Chrome; tests use a fake).
 
 use futures_util::future::BoxFuture;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Default capture size: 1920×1080, the deck stage of the original app.
 pub const DEFAULT_WIDTH: u32 = 1920;
@@ -90,11 +90,32 @@ pub struct CaptureOptions {
     pub full_page: bool,
 }
 
-/// Timeline capture for MP4 export (P2, spec 1.3).
+/// Timeline capture for MP4 export (spec 1.3, 4.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameOptions {
     pub fps: u32,
+    /// Timeline length; `0` asks the renderer to measure the page's
+    /// registered timelines instead.
     pub duration_ms: u64,
+}
+
+/// Output of [`Renderer::render_frames`]: `count` PNGs named
+/// [`FRAME_FILE_PATTERN`] (1-based) in the output folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameSet {
+    pub count: u32,
+    pub fps: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Frame file names, in ffmpeg's `printf` syntax.
+pub const FRAME_FILE_PATTERN: &str = "frame-%08d.png";
+
+/// File name of frame `index` (0-based) under [`FRAME_FILE_PATTERN`].
+#[must_use]
+pub fn frame_file_name(index: u32) -> String {
+    format!("frame-{:08}.png", u64::from(index) + 1)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -123,12 +144,14 @@ pub trait Renderer: Send + Sync {
         mode: DeckMode,
     ) -> BoxFuture<'a, RenderResult<Slides>>;
 
-    /// Timeline → PNG frames at `fps`.
+    /// Timeline → one PNG per frame at `fps`, written to `out_dir` (frames
+    /// of a long video do not fit in memory).
     fn render_frames<'a>(
         &'a self,
         target: &'a RenderTarget,
         options: FrameOptions,
-    ) -> BoxFuture<'a, RenderResult<Vec<Vec<u8>>>>;
+        out_dir: &'a Path,
+    ) -> BoxFuture<'a, RenderResult<FrameSet>>;
 
     /// Vector PDF through the print pipeline. Decks print one slide per
     /// 13.333×7.5 in page.

@@ -13,6 +13,13 @@ pub struct McpArgs {
 
 #[derive(Debug, Subcommand)]
 enum McpCommand {
+    /// Second stdio server: live artifact tools. Uses `OD_TOOL_TOKEN` when
+    /// an agent run launches it; otherwise `--project`.
+    LiveArtifacts {
+        /// Default project for tools called without `projectId`.
+        #[arg(long, env = od_mcp::live::PROJECT_ENV)]
+        project: Option<String>,
+    },
     /// Register `od mcp` in a coding agent (claude, codex, cursor).
     Install {
         agent: String,
@@ -31,6 +38,9 @@ enum McpCommand {
 pub fn run(args: McpArgs, daemon_url: &str, json: bool) -> ExitCode {
     let result = match args.command {
         None => serve(daemon_url).map(|()| ExitCode::SUCCESS),
+        Some(McpCommand::LiveArtifacts { project }) => {
+            serve_live(daemon_url, project).map(|()| ExitCode::SUCCESS)
+        }
         Some(McpCommand::Install {
             agent,
             print,
@@ -53,7 +63,7 @@ pub fn run(args: McpArgs, daemon_url: &str, json: bool) -> ExitCode {
     })
 }
 
-fn serve(daemon_url: &str) -> anyhow::Result<()> {
+fn stdio_runtime() -> anyhow::Result<tokio::runtime::Runtime> {
     // stdout carries the protocol: logs go to stderr only.
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -62,12 +72,24 @@ fn serve(daemon_url: &str) -> anyhow::Result<()> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
         )
         .init();
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
-        .context("starting the async runtime")?;
-    runtime.block_on(od_mcp::serve_stdio(daemon_url))
+        .context("starting the async runtime")
+}
+
+fn serve(daemon_url: &str) -> anyhow::Result<()> {
+    stdio_runtime()?.block_on(od_mcp::serve_stdio(daemon_url))
+}
+
+fn serve_live(daemon_url: &str, project: Option<String>) -> anyhow::Result<()> {
+    let token = std::env::var(od_mcp::live::TOOL_TOKEN_ENV).ok();
+    stdio_runtime()?.block_on(od_mcp::serve_live_stdio(
+        daemon_url,
+        token.as_deref(),
+        project.filter(|p| !p.trim().is_empty()),
+    ))
 }
 
 fn install(

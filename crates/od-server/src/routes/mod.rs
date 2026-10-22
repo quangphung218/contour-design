@@ -2,6 +2,7 @@ pub mod content;
 pub mod conversations;
 pub mod export;
 pub mod files;
+pub mod media;
 pub mod preview;
 pub mod projects;
 pub mod raw;

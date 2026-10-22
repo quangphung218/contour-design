@@ -76,7 +76,8 @@ impl Renderer for Fake {
         &'a self,
         _: &'a RenderTarget,
         _: FrameOptions,
-    ) -> BoxFuture<'a, RenderResult<Vec<Vec<u8>>>> {
+        _: &'a std::path::Path,
+    ) -> BoxFuture<'a, RenderResult<od_export::FrameSet>> {
         Box::pin(async { Err(RenderError::Unsupported("frames")) })
     }
     fn print_pdf<'a>(

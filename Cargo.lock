@@ -3522,6 +3522,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "od-live"
+version = "0.1.0"
+dependencies = [
+ "od-contracts",
+ "od-store",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
 name = "od-mcp"
 version = "0.1.0"
 dependencies = [
@@ -3624,6 +3638,7 @@ dependencies = [
  "od-content",
  "od-contracts",
  "od-export",
+ "od-live",
  "od-preview",
  "od-render-cdp",
  "od-runs",

@@ -15,6 +15,7 @@ od-runtime.workspace = true
 od-preview.workspace = true
 od-export.workspace = true
 od-render-cdp.workspace = true
+od-live.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 base64.workspace = true
