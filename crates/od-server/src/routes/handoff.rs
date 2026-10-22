@@ -112,6 +112,11 @@ async fn open_folder(
     if !dir.is_dir() {
         return Err(ApiErr::bad_request("project folder is missing"));
     }
+    if crate::routes::ui::is_bundle(&dir) {
+        return Err(ApiErr::bad_request(
+            "the project folder is an app bundle; opening it would launch it",
+        ));
+    }
     let program = opener();
     // Not awaited: file managers may stay attached to the child.
     let mut child = tokio::process::Command::new(&program)

@@ -202,3 +202,73 @@ async fn handoff_returns_folder_and_prompt() {
     .await;
     assert_eq!(status, 404);
 }
+
+/// A macOS bundle: `open` would launch it instead of showing the folder.
+#[cfg(unix)]
+fn fake_app(dir: &std::path::Path, marker: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let app = dir.join("Fake.app");
+    std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
+    std::fs::write(
+        app.join("Contents/Info.plist"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>Fake</string>
+<key>CFBundleIdentifier</key><string>dev.open-design-rs.test.fake</string>
+<key>LSBackgroundOnly</key><true/>
+</dict></plist>"#,
+    )
+    .unwrap();
+    let exe = app.join("Contents/MacOS/Fake");
+    std::fs::write(&exe, format!("#!/bin/sh\ndate > '{}'\n", marker.display())).unwrap();
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    app
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn bundles_are_neither_imported_nor_opened() {
+    let d = daemon().await;
+    // Not under `d.tmp` (`.tmp…`): import refuses hidden folders anyway.
+    let work = tempfile::Builder::new()
+        .prefix("od-bundle-")
+        .tempdir()
+        .unwrap();
+    let marker = work.path().join("launched");
+    let app = fake_app(work.path(), &marker);
+
+    let (status, body) = send(
+        &d,
+        reqwest::Method::POST,
+        "/api/import/folder",
+        Some(json!({"baseDir": app})),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    assert!(body.to_string().contains("bundle"), "{body}");
+
+    // A project that already points at a bundle (imported before the check).
+    let (project, _) = d
+        .state
+        .store
+        .create_project(od_contracts::CreateProjectRequest {
+            name: "Fake".into(),
+            metadata: Some(od_contracts::ProjectMetadata {
+                base_dir: Some(app.to_string_lossy().into_owned()),
+                imported_from: Some("folder".into()),
+                ..od_contracts::ProjectMetadata::default()
+            }),
+            ..od_contracts::CreateProjectRequest::default()
+        })
+        .unwrap();
+    let (status, body) = send(
+        &d,
+        reqwest::Method::POST,
+        &format!("/api/projects/{}/handoff/open", project.id),
+        None,
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert!(!marker.exists(), "the bundle was launched");
+}

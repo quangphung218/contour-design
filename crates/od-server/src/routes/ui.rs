@@ -245,13 +245,23 @@ struct ImportFolderRequest {
     name: Option<String>,
 }
 
+/// A macOS bundle (`Foo.app`, or any folder with `Contents/Info.plist`):
+/// `open` launches it instead of showing its files.
+#[must_use]
+pub fn is_bundle(dir: &Path) -> bool {
+    dir.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("app"))
+        || dir.join("Contents").join("Info.plist").is_file()
+}
+
 /// Creates a project whose files live in `dir` (never copied, spec 1.1).
 ///
 /// # Errors
 /// [`StoreError::BadRequest`] when `dir` is not an absolute existing folder,
 /// overlaps the data directory (which also rules out `/`), is the home
-/// folder or one of its parents, or (after resolving symlinks) has a hidden
-/// segment such as `~/.ssh` (spec 3.2).
+/// folder or one of its parents, (after resolving symlinks) has a hidden
+/// segment such as `~/.ssh` (spec 3.2), or is an app bundle
+/// ([`is_bundle`]).
 pub fn import_folder(
     store: &Store,
     dir: &Path,
@@ -266,6 +276,9 @@ pub fn import_folder(
         .map_err(|_| bad("baseDir does not exist"))?;
     if !dir.is_dir() {
         return Err(bad("baseDir is not a folder"));
+    }
+    if is_bundle(&dir) {
+        return Err(bad("baseDir is an app bundle, not a folder"));
     }
     let data_root = store
         .data_dir()
