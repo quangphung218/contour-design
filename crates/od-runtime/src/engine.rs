@@ -566,6 +566,13 @@ impl RunEngine {
         if let Some(handle) = escalation {
             let _ = handle.await;
         }
+        // The agent is gone but its group may not be (`cmd &`, a dev
+        // server): the run owns those processes, so they end with it.
+        if pgid > 0 && process::group_alive(pgid) {
+            tracing::warn!(run = %run.id(), pgid, "agent left processes behind; stopping its group");
+            process::terminate_group(pgid, self.config.kill_grace).await;
+        }
+        run.set_process(None, None);
         let exit = exit.unwrap_or_default();
         att.exit_code = exit.code();
         #[cfg(unix)]
