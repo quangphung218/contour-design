@@ -69,3 +69,10 @@ dbg_macro = "warn"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[profile.dev]
+# Bỏ debuginfo: target mỗi worktree từ ~14 GB xuống còn vài GB, build nhanh hơn.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

@@ -1,4 +1,4 @@
 [build]
 jobs = 4
-# Mọi worktree dùng chung target: dep chỉ compile một lần, cargo tự khoá nên không chạy rustc song song (máy 16 GB).
-target-dir = "/Users/quangphung/.cache/odrs-target"
+# Không dùng target-dir chung giữa worktree: cargo dùng nhầm artifact crate path của worktree khác (W2-ui, E0432/E0609).
+# Makefile đặt CARGO_TARGET_DIR riêng cho từng worktree.
