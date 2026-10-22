@@ -422,6 +422,10 @@ async fn path_traversal_table() {
         format!("/api/projects/{id}/files/C:%5Cwindows%5Cwin.ini"),
         format!("/api/projects/{id}/files/.file-versions/x/manifest.json"),
         format!("/api/projects/{id}/files/.open-design/project.json"),
+        // macOS/Windows file systems ignore case: reserved names must too.
+        format!("/api/projects/{id}/files/.OPEN-DESIGN/project.json"),
+        format!("/api/projects/{id}/raw/.Open-Design/project.json"),
+        format!("/api/projects/{id}/raw/.File-Versions/x/manifest.json"),
         format!("/api/projects/{id}/files/a%00b"),
         format!("/api/projects/{id}/files/..%5C..%5Capp.sqlite"),
         format!("/api/projects/{imp}/files/.ssh/id_rsa"),
@@ -483,7 +487,245 @@ async fn path_traversal_table() {
         .await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
     assert!(outside.join("secret.txt").exists());
-    assert!(reads.len() + writes.len() + 2 >= 10);
+    for uri in [
+        format!("/api/projects/{id}/files/.OPEN-DESIGN/project.json"),
+        format!("/api/projects/{id}/files/.Open-Design/project.json"),
+    ] {
+        let r = h
+            .send(Request::delete(uri.as_str()).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "delete {uri}");
+    }
+    let r = h
+        .json(
+            "POST",
+            &format!("/api/projects/{id}/files/rename"),
+            &json!({ "from": ".OPEN-DESIGN/project.json", "to": "stolen.json" }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert!(
+        project_dir.join(PROJECT_MANIFEST_PATH).is_file(),
+        "manifest survives"
+    );
+    assert!(reads.len() + writes.len() + 5 >= 10);
+}
+
+/// Review round 1, item 1: same-name uploads in parallel never overwrite.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_same_name_uploads_keep_every_file() {
+    const N: usize = 16;
+    let h = harness();
+    let id = h.create_project("Race").await;
+    let boundary = "RACEBOUNDARY";
+    let mut tasks = Vec::new();
+    for i in 0..N {
+        let state = h.state.clone();
+        let uri = format!("/api/projects/{id}/upload");
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"same.png\"\r\nContent-Type: image/png\r\n\r\npayload-{i}\r\n--{boundary}--\r\n"
+        );
+        tasks.push(tokio::spawn(async move {
+            let req = Request::post(uri)
+                .header(
+                    header::CONTENT_TYPE,
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(body))
+                .unwrap();
+            let res = router(state).oneshot(req).await.unwrap();
+            let status = res.status();
+            let bytes = res.into_body().collect().await.unwrap().to_bytes();
+            (status, serde_json::from_slice::<Value>(&bytes).unwrap())
+        }));
+    }
+    let mut names = std::collections::BTreeSet::new();
+    for task in tasks {
+        let (status, body) = task.await.unwrap();
+        assert_eq!(status, StatusCode::OK, "{body}");
+        names.insert(body["files"][0]["name"].as_str().unwrap().to_owned());
+    }
+    assert_eq!(names.len(), N, "every upload got its own name: {names:?}");
+    let dir = h.data.join("projects").join(&id);
+    let mut payloads: Vec<String> = names
+        .iter()
+        .map(|n| std::fs::read_to_string(dir.join(n)).unwrap())
+        .collect();
+    payloads.sort();
+    let mut expected: Vec<String> = (0..N).map(|i| format!("payload-{i}")).collect();
+    expected.sort();
+    assert_eq!(payloads, expected, "no upload's bytes were lost");
+}
+
+/// Review round 1, item 1: `overwrite: false` is atomic under contention.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_create_only_writes_have_one_winner() {
+    const N: usize = 12;
+    let h = harness();
+    let id = h.create_project("CreateNew").await;
+    let mut tasks = Vec::new();
+    for i in 0..N {
+        let state = h.state.clone();
+        let uri = format!("/api/projects/{id}/files");
+        tasks.push(tokio::spawn(async move {
+            let req = Request::post(uri)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({ "name": "once.txt", "content": format!("writer-{i}"), "overwrite": false })
+                        .to_string(),
+                ))
+                .unwrap();
+            router(state).oneshot(req).await.unwrap().status()
+        }));
+    }
+    let mut ok = 0;
+    for task in tasks {
+        match task.await.unwrap() {
+            StatusCode::OK => ok += 1,
+            StatusCode::CONFLICT => {}
+            other => panic!("unexpected {other}"),
+        }
+    }
+    assert_eq!(ok, 1, "exactly one create-only write succeeds");
+}
+
+/// Review round 1, item 2: restore writes back to the exact file name even
+/// when the sanitizer would change it.
+#[tokio::test]
+async fn restore_targets_unsanitized_file_name() {
+    let h = harness();
+    let id = h.create_project("Spaces").await;
+    let dir = h.data.join("projects").join(&id);
+    // Agents write straight to disk with any name.
+    std::fs::write(dir.join("My Page.html"), "<p>v1</p>").unwrap();
+    let listed: FileVersionsResponse = h
+        .get(&format!("/api/projects/{id}/files/My%20Page.html/versions"))
+        .await
+        .typed();
+    let v1 = listed.versions[0].id.clone();
+    std::fs::write(dir.join("My Page.html"), "<p>v2-edited</p>").unwrap();
+    let r = h
+        .send(
+            Request::post(format!(
+                "/api/projects/{id}/files/My%20Page.html/versions/{v1}/restore"
+            ))
+            .body(Body::empty())
+            .unwrap(),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    assert_eq!(r.json()["file"]["name"], "My Page.html");
+    assert_eq!(
+        std::fs::read(dir.join("My Page.html")).unwrap(),
+        b"<p>v1</p>"
+    );
+    assert!(
+        !dir.join("My-Page.html").exists(),
+        "no sanitized twin created"
+    );
+    let listed: FileVersionsResponse = h
+        .get(&format!("/api/projects/{id}/files/My%20Page.html/versions"))
+        .await
+        .typed();
+    assert_eq!(listed.versions.len(), 2);
+    assert!(listed.versions[1].current);
+}
+
+/// Review round 1, item 3: each HTML write through the API is a version.
+#[tokio::test]
+async fn html_writes_create_versions() {
+    let h = harness();
+    let id = h.create_project("Saves").await;
+    for content in ["<p>one</p>", "<p>two</p>", "<p>three</p>", "<p>three</p>"] {
+        assert_eq!(h.write(&id, "a.html", content).await.status, StatusCode::OK);
+    }
+    let listed: FileVersionsResponse = h
+        .get(&format!("/api/projects/{id}/files/a.html/versions"))
+        .await
+        .typed();
+    assert_eq!(
+        listed.versions.len(),
+        3,
+        "unchanged rewrite adds no version"
+    );
+    for (version, content) in
+        listed
+            .versions
+            .iter()
+            .zip(["<p>one</p>", "<p>two</p>", "<p>three</p>"])
+    {
+        let r = h
+            .get(&format!(
+                "/api/projects/{id}/files/a.html/versions/{}",
+                version.id
+            ))
+            .await;
+        assert_eq!(r.json()["content"], content);
+    }
+    assert!(listed.versions[2].current);
+    h.write(&id, "style.css", "a{}").await;
+    assert_eq!(
+        h.get(&format!("/api/projects/{id}/files/style.css/versions"))
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+/// Review round 1, item 5: a vanished import folder is never recreated.
+#[tokio::test]
+async fn missing_import_folder_is_not_recreated() {
+    let h = harness();
+    let import_dir = h.data.join("external-drive/work");
+    std::fs::create_dir_all(&import_dir).unwrap();
+    let import_req = |dir: &Path| CreateProjectRequest {
+        name: "Imported".to_owned(),
+        metadata: Some(ProjectMetadata {
+            base_dir: Some(dir.to_string_lossy().into_owned()),
+            imported_from: Some("folder".to_owned()),
+            ..ProjectMetadata::default()
+        }),
+        ..CreateProjectRequest::default()
+    };
+    let (project, _) = h
+        .state
+        .store
+        .create_project(import_req(&import_dir))
+        .unwrap();
+    let id = project.id;
+    std::fs::remove_dir_all(h.data.join("external-drive")).unwrap();
+
+    let r = h.write(&id, "index.html", "<p>x</p>").await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    assert_eq!(r.json()["error"]["code"], "CONFLICT");
+    let boundary = "B";
+    let r = h
+        .send(
+            Request::post(format!("/api/projects/{id}/upload"))
+                .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
+                .body(Body::from(format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"a.png\"\r\n\r\nx\r\n--{boundary}--\r\n"
+                )))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    let r = h
+        .json(
+            "PATCH",
+            &format!("/api/projects/{id}"),
+            &json!({ "name": "Renamed" }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "metadata edits still work");
+    assert!(
+        !h.data.join("external-drive").exists(),
+        "folder not recreated"
+    );
+
+    let missing = h.data.join("never-existed");
+    assert!(h.state.store.create_project(import_req(&missing)).is_err());
+    assert!(!missing.exists());
 }
 
 #[tokio::test]
@@ -589,7 +831,8 @@ async fn versions_create_list_restore_bytes_exact() {
         .await;
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.json()["version"]["label"], "after edit");
-    assert_eq!(r.json()["version"]["version"], 2);
+    // v2 came from the write itself; this explicit snapshot is v3.
+    assert_eq!(r.json()["version"]["version"], 3);
 
     let r = h
         .get(&format!(
@@ -622,8 +865,8 @@ async fn versions_create_list_restore_bytes_exact() {
         .get(&format!("/api/projects/{id}/files/index.html/versions"))
         .await
         .typed();
-    assert_eq!(listed.versions.len(), 3);
-    assert!(listed.versions[2].current);
+    assert_eq!(listed.versions.len(), 4);
+    assert!(listed.versions[3].current);
 
     let r = h
         .send(

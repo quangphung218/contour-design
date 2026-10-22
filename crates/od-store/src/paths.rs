@@ -13,6 +13,15 @@ use std::path::{Component, Path, PathBuf};
 /// Internal folders the file API refuses to touch.
 pub const RESERVED_SEGMENTS: [&str; 3] = [".file-versions", ".live-artifacts", ".open-design"];
 
+/// Case-insensitive: macOS and Windows file systems usually are, so
+/// `.OPEN-DESIGN` names the same folder as `.open-design`.
+#[must_use]
+pub fn is_reserved_segment(segment: &str) -> bool {
+    RESERVED_SEGMENTS
+        .iter()
+        .any(|reserved| reserved.eq_ignore_ascii_case(segment))
+}
+
 /// Generated, installed or cache trees skipped by listings.
 const IGNORED_DIR_NAMES: [&str; 29] = [
     ".git",
@@ -84,7 +93,7 @@ pub fn validate_project_path(raw: &str) -> Result<String> {
     if parts.is_empty() || parts.iter().any(|p| *p == "." || *p == "..") {
         return Err(StoreError::InvalidPath);
     }
-    if parts.iter().any(|p| RESERVED_SEGMENTS.contains(p)) {
+    if parts.iter().any(|p| is_reserved_segment(p)) {
         return Err(StoreError::ReservedPath);
     }
     Ok(parts.join("/"))
@@ -189,8 +198,15 @@ fn resolve_existing_prefix(path: &Path) -> Result<PathBuf> {
                 return Ok(out);
             }
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                if std::fs::symlink_metadata(current).is_ok() {
-                    return Err(StoreError::PathEscape);
+                match std::fs::symlink_metadata(current) {
+                    // A dangling symlink: writing through it would escape.
+                    Ok(meta) if meta.file_type().is_symlink() => {
+                        return Err(StoreError::PathEscape);
+                    }
+                    // Created by a concurrent writer since `canonicalize`
+                    // failed: resolve it again.
+                    Ok(_) => continue,
+                    Err(_) => {}
                 }
                 match (current.parent(), current.components().next_back()) {
                     (Some(parent), Some(Component::Normal(part))) => {
@@ -321,6 +337,16 @@ mod tests {
             validate_project_path("a/.open-design/project.json"),
             Err(StoreError::ReservedPath)
         ));
+        for mixed in [
+            ".OPEN-DESIGN/project.json",
+            ".File-Versions/x/manifest.json",
+            "a/.Live-Artifacts/x",
+        ] {
+            assert!(
+                matches!(validate_project_path(mixed), Err(StoreError::ReservedPath)),
+                "{mixed} must be reserved"
+            );
+        }
         assert_eq!(validate_project_path("a//b\\c.html").unwrap(), "a/b/c.html");
     }
 

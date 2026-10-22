@@ -22,6 +22,10 @@ pub enum StoreError {
     VersionNotFound,
     #[error("file already exists")]
     FileExists,
+    /// An imported project's folder is gone (e.g. an unplugged drive). The
+    /// daemon never recreates a user folder.
+    #[error("project folder is missing")]
+    ProjectFolderMissing,
     #[error("versions are only available for HTML files")]
     NotHtml,
     #[error("{0}")]

@@ -113,6 +113,12 @@ impl Store {
 
     fn write_manifest(&self, project: &Project) -> Result<()> {
         let root = self.project_root(project)?;
+        if root.imported && !root.dir.is_dir() {
+            // Never recreate a user folder (spec 3.2). SQLite stays the source
+            // of truth; the manifest is rewritten on the next update.
+            tracing::warn!(project = %project.id, "imported project folder is missing; manifest not written");
+            return Ok(());
+        }
         let path = root.dir.join(PROJECT_MANIFEST_PATH);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -167,9 +173,7 @@ impl Store {
             }
             db::insert_project(&tx, &project)?;
             db::insert_conversation(&tx, &conversation_id, &project.id, now)?;
-            if !root.imported {
-                fs::create_dir_all(&root.dir)?;
-            }
+            root.ensure_exists()?;
             tx.commit()?;
         }
         self.write_manifest(&project)?;
@@ -330,7 +334,15 @@ impl Store {
         artifact_manifest: Option<&Value>,
     ) -> Result<ProjectFile> {
         let root = self.root_for(project_id)?;
-        files::write_file(&root, name, bytes, overwrite, artifact_manifest)
+        let _guard = self.versions_guard();
+        let file = files::write_file(&root, name, bytes, overwrite, artifact_manifest)?;
+        // Like the original app, every HTML save lands in the history.
+        if is_html_name(&file.name) {
+            if let Ok(text) = std::str::from_utf8(bytes) {
+                versions::ensure_current_version(&root.dir, &file.name, text, manual())?;
+            }
+        }
+        Ok(file)
     }
 
     /// # Errors
@@ -475,7 +487,9 @@ impl Store {
         let safe = validate_project_path(name)?;
         let _guard = self.versions_guard();
         let (restored, content) = versions::read_version(&root.dir, &safe, version_id)?;
-        let file = files::write_file(&root, &safe, content.as_bytes(), true, None)?;
+        // Exact name: the file may carry characters the sanitizer would
+        // rewrite (`My Page.html`), and restore must hit that same file.
+        let file = files::write_file_exact(&root, &safe, content.as_bytes())?;
         let manual_prompt = prompt.filter(|p| !p.trim().is_empty());
         let prompt_source = if manual_prompt.is_some() {
             PromptSource::Manual

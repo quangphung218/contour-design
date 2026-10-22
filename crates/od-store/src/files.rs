@@ -33,6 +33,24 @@ impl ProjectRoot {
     fn real_dir(&self) -> PathBuf {
         fs::canonicalize(&self.dir).unwrap_or_else(|_| self.dir.clone())
     }
+
+    /// Makes sure the root exists before a write. A managed folder is
+    /// created; an imported (user) folder must already exist, so a write
+    /// never recreates e.g. an unplugged drive's path on the system disk.
+    ///
+    /// # Errors
+    /// [`StoreError::ProjectFolderMissing`] for a missing imported folder.
+    pub fn ensure_exists(&self) -> Result<()> {
+        if self.imported {
+            if self.dir.is_dir() {
+                Ok(())
+            } else {
+                Err(StoreError::ProjectFolderMissing)
+            }
+        } else {
+            Ok(fs::create_dir_all(&self.dir)?)
+        }
+    }
 }
 
 pub(crate) fn mtime_ms(meta: &fs::Metadata) -> f64 {
@@ -156,8 +174,19 @@ pub fn read_file(root: &ProjectRoot, name: &str) -> Result<(ProjectFile, Vec<u8>
     Ok((file, bytes))
 }
 
-/// Writes atomically (temp file + rename in the same folder).
-fn write_atomic(target: &Path, bytes: &[u8]) -> Result<()> {
+/// How [`write_atomic`] puts the finished temp file in place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Place {
+    /// Replace whatever is at the target.
+    Overwrite,
+    /// Fail with [`StoreError::FileExists`] if the target exists, atomically
+    /// (no check-then-write race between concurrent writers).
+    CreateNew,
+}
+
+/// Writes to a temp file in the target folder, then moves it into place:
+/// `rename` to overwrite, `hard_link` (fails if the target exists) to create.
+fn write_atomic(target: &Path, bytes: &[u8], place: Place) -> Result<()> {
     let parent = target.parent().ok_or(StoreError::InvalidPath)?;
     fs::create_dir_all(parent)?;
     let tmp = parent.join(format!(".od-tmp-{}", uuid::Uuid::new_v4().simple()));
@@ -165,12 +194,18 @@ fn write_atomic(target: &Path, bytes: &[u8]) -> Result<()> {
         let mut file = fs::File::create(&tmp)?;
         file.write_all(bytes)?;
         file.sync_data()?;
-        fs::rename(&tmp, target)
+        match place {
+            Place::Overwrite => fs::rename(&tmp, target),
+            Place::CreateNew => fs::hard_link(&tmp, target),
+        }
     })();
-    if result.is_err() {
+    if place == Place::CreateNew || result.is_err() {
         let _ = fs::remove_file(&tmp);
     }
-    Ok(result?)
+    match result {
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => Err(StoreError::FileExists),
+        other => Ok(other?),
+    }
 }
 
 /// Writes `bytes` to a sanitized `name`. With `overwrite == false` an
@@ -188,21 +223,48 @@ pub fn write_file(
 ) -> Result<ProjectFile> {
     assert_visible_for_import(name, root.imported)?;
     let safe_name = sanitize_path(name)?;
-    fs::create_dir_all(&root.dir)?;
-    let target = root.resolve(&safe_name)?;
-    if !overwrite && fs::symlink_metadata(&target).is_ok() {
-        return Err(StoreError::FileExists);
-    }
+    write_named(root, safe_name, bytes, overwrite, artifact_manifest)
+}
+
+/// Overwrites the file at exactly `name` (validated, not sanitized). For
+/// writing back to a file that already exists under a name the sanitizer
+/// would change, e.g. restoring `My Page.html`.
+///
+/// # Errors
+/// Path or I/O errors.
+pub fn write_file_exact(root: &ProjectRoot, name: &str, bytes: &[u8]) -> Result<ProjectFile> {
+    let exact = validate_project_path(name)?;
+    write_named(root, exact, bytes, true, None)
+}
+
+fn write_named(
+    root: &ProjectRoot,
+    rel: String,
+    bytes: &[u8],
+    overwrite: bool,
+    artifact_manifest: Option<&Value>,
+) -> Result<ProjectFile> {
+    root.ensure_exists()?;
+    let target = root.resolve(&rel)?;
     if target.is_dir() {
         return Err(StoreError::BadRequest("path is a directory".to_owned()));
     }
-    write_atomic(&target, bytes)?;
+    let place = if overwrite {
+        Place::Overwrite
+    } else {
+        Place::CreateNew
+    };
+    write_atomic(&target, bytes, place)?;
     if let Some(manifest) = artifact_manifest.filter(|m| m.is_object()) {
-        let sidecar = root.resolve(&format!("{safe_name}{ARTIFACT_SUFFIX}"))?;
-        write_atomic(&sidecar, &serde_json::to_vec_pretty(manifest)?)?;
+        let sidecar = root.resolve(&format!("{rel}{ARTIFACT_SUFFIX}"))?;
+        write_atomic(
+            &sidecar,
+            &serde_json::to_vec_pretty(manifest)?,
+            Place::Overwrite,
+        )?;
     }
     let meta = fs::metadata(&target)?;
-    Ok(describe(&root.real_dir(), safe_name, &meta))
+    Ok(describe(&root.real_dir(), rel, &meta))
 }
 
 /// Deletes a file and its artifact sidecar.
@@ -258,8 +320,8 @@ pub fn rename_file(root: &ProjectRoot, from: &str, to: &str) -> Result<(String, 
     Ok((old_name, describe(&root.real_dir(), new_name, &meta)))
 }
 
-/// Picks `name`, `name-1`, `name-2`… so an upload never clobbers a file.
-fn unique_name(dir: &Path, safe: &str) -> String {
+/// Candidate names `name`, `name-1`, `name-2`…
+fn candidate_names(safe: &str) -> impl Iterator<Item = String> + '_ {
     let path = Path::new(safe);
     let stem = path
         .file_stem()
@@ -268,19 +330,18 @@ fn unique_name(dir: &Path, safe: &str) -> String {
         .extension()
         .map(|e| format!(".{}", e.to_string_lossy()))
         .unwrap_or_default();
-    (0..10_000)
-        .map(|i| {
-            if i == 0 {
-                safe.to_owned()
-            } else {
-                format!("{stem}-{i}{ext}")
-            }
-        })
-        .find(|candidate| fs::symlink_metadata(dir.join(candidate)).is_err())
-        .unwrap_or_else(|| format!("{stem}-{}{ext}", crate::now_ms()))
+    (0..10_000).map(move |i| {
+        if i == 0 {
+            safe.to_owned()
+        } else {
+            format!("{stem}-{i}{ext}")
+        }
+    })
 }
 
 /// Stores an uploaded file under optional subfolder `dir`, never overwriting.
+/// Each candidate name is claimed atomically, so concurrent uploads with the
+/// same name all land under distinct names.
 ///
 /// # Errors
 /// Path or I/O errors.
@@ -297,28 +358,32 @@ pub fn upload_file(
         }
         None => String::new(),
     };
-    fs::create_dir_all(&root.dir)?;
-    let base = if rel_dir.is_empty() {
-        root.real_dir()
-    } else {
-        let resolved = root.resolve(&rel_dir)?;
-        fs::create_dir_all(&resolved)?;
-        resolved
-    };
-    let file_name = unique_name(&base, &sanitize_name(original_name));
-    let rel = if rel_dir.is_empty() {
-        file_name
-    } else {
-        format!("{rel_dir}/{file_name}")
-    };
-    let target = root.resolve(&rel)?;
-    write_atomic(&target, bytes)?;
-    let meta = fs::metadata(&target)?;
-    Ok(UploadedFile {
-        name: rel.clone(),
-        path: rel,
-        size: meta.len(),
-        mtime: mtime_ms(&meta),
-        original_name: original_name.to_owned(),
-    })
+    root.ensure_exists()?;
+    if !rel_dir.is_empty() {
+        fs::create_dir_all(root.resolve(&rel_dir)?)?;
+    }
+    let safe = sanitize_name(original_name);
+    for file_name in candidate_names(&safe) {
+        let rel = if rel_dir.is_empty() {
+            file_name
+        } else {
+            format!("{rel_dir}/{file_name}")
+        };
+        let target = root.resolve(&rel)?;
+        match write_atomic(&target, bytes, Place::CreateNew) {
+            Ok(()) => {
+                let meta = fs::metadata(&target)?;
+                return Ok(UploadedFile {
+                    name: rel.clone(),
+                    path: rel,
+                    size: meta.len(),
+                    mtime: mtime_ms(&meta),
+                    original_name: original_name.to_owned(),
+                });
+            }
+            Err(StoreError::FileExists) => {}
+            Err(err) => return Err(err),
+        }
+    }
+    Err(StoreError::FileExists)
 }
