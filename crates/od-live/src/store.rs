@@ -167,8 +167,6 @@ impl LiveStore {
         let template = template.map_or_else(|| default_template(&title), str::to_owned);
         let provenance = provenance.unwrap_or_else(|| default_provenance(&now));
         validate_provenance(&provenance)?;
-        // Render once up front: a bad template never reaches the disk.
-        render::render(&template, &document.data_json)?;
         let artifact = LiveArtifact {
             schema_version: SCHEMA_VERSION,
             id: model::new_artifact_id(&title, input.slug.as_deref()),

@@ -182,8 +182,15 @@ fn artifacts_without_a_refreshable_source_do_not_refresh() {
     assert!(store.preview_html(&a.id).unwrap().contains("<p>Static</p>"));
     // Daemon-owned fields are refused on input.
     assert!(serde_json::from_value::<CreateInput>(json!({ "title": "x", "id": "y" })).is_err());
-    // Paths escaping the store are not found.
-    assert!(matches!(store.get("../p1"), Err(LiveError::NotFound)));
+    // Ids that would walk into another project are not found.
+    let other_dir = root.dir.parent().unwrap().join("p2");
+    std::fs::create_dir_all(&other_dir).unwrap();
+    let other = LiveStore::new(&other_dir, "p2");
+    let theirs = other.create(input(json!({ "title": "Theirs" })), None, None, None).unwrap();
+    let sneaky = format!("../../p2/.live-artifacts/{}", theirs.id);
+    assert!(matches!(store.get(&sneaky), Err(LiveError::NotFound)));
+    assert!(matches!(store.delete(&sneaky), Err(LiveError::NotFound)));
+    assert!(other.get(&theirs.id).is_ok());
     store.delete(&a.id).unwrap();
     assert!(store.list().unwrap().is_empty());
 }
