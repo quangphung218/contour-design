@@ -18,7 +18,7 @@ use od_export::{
     CaptureOptions, DeckMode, FrameOptions, FrameSet, RenderError, RenderResult, RenderTarget,
     Renderer, Slides,
 };
-use od_server::routes::media::routes_with;
+use od_server::routes::media::{Deps, routes_with};
 use od_server::{AppState, ServerConfig};
 use od_store::{DataDir, Store};
 use serde_json::{Value, json};
@@ -120,7 +120,16 @@ fn harness() -> Harness {
         preview: od_server::Preview::default(),
     };
     let frames = Arc::new(Frames::default());
-    let app = routes_with(Arc::clone(&frames) as Arc<dyn Renderer>).with_state(state.clone());
+    let deps = Deps {
+        renderer: Arc::clone(&frames) as Arc<dyn Renderer>,
+        // Never pick up a real key from the machine running the tests.
+        env: Arc::new(|_: &str| None),
+        limits: od_media::Limits {
+            fal_poll_interval: std::time::Duration::from_millis(10),
+            fal_max_poll: std::time::Duration::from_secs(5),
+        },
+    };
+    let app = routes_with(deps).with_state(state.clone());
     Harness {
         tmp,
         state,
@@ -195,6 +204,16 @@ impl Harness {
         }
         self.send(req.body(Body::from(body.to_string())).unwrap())
             .await
+    }
+
+    async fn put(&self, uri: &str, body: Value) -> Reply {
+        self.send(
+            Request::put(uri)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
     }
 }
 
@@ -535,4 +554,196 @@ async fn bundled_plugins_list_info_and_apply() {
     assert_eq!(v["projectMetadata"]["taskKind"], "new-generation");
     let block = v["appliedPlugin"]["promptBlock"].as_str().unwrap();
     assert!(block.contains("## Plugin inputs") && block.contains("- **topic**: latency"));
+}
+
+// ---------------------------------------------------------------------------
+// Media generation (loopback fake provider) and prompt templates
+
+/// A fake OpenAI Images + ElevenLabs endpoint; records the auth header.
+async fn fake_provider() -> (String, Arc<Mutex<Vec<String>>>) {
+    use axum::routing::post;
+    let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let s1 = Arc::clone(&seen);
+    let s2 = Arc::clone(&seen);
+    let app = Router::new()
+        .route(
+            "/v1/images/generations",
+            post(move |h: axum::http::HeaderMap| async move {
+                s1.lock().unwrap().push(h["authorization"].to_str().unwrap().to_owned());
+                let png = solid_png(2, 2, [1, 2, 3]).unwrap();
+                use base64::Engine;
+                axum::Json(json!({ "data": [{ "b64_json": base64::engine::general_purpose::STANDARD.encode(png) }] }))
+            }),
+        )
+        .route(
+            "/v1/text-to-speech/{voice}",
+            post(move |h: axum::http::HeaderMap| async move {
+                s2.lock().unwrap().push(h["xi-api-key"].to_str().unwrap().to_owned());
+                b"ID3fake".to_vec()
+            }),
+        );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (base, seen)
+}
+
+#[tokio::test]
+async fn media_config_and_generation_write_into_the_project() {
+    let h = harness();
+    let id = h.project("Media");
+    let (base, seen) = fake_provider().await;
+
+    let cfg = h.get("/api/media/config").await.json();
+    assert_eq!(cfg["providers"]["openai"]["configured"], false);
+    let res = h
+        .post(
+            &format!("/api/projects/{id}/media/generate"),
+            json!({ "surface": "image", "model": "gpt-image-1", "prompt": "a red square" }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert!(
+        res.json()["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no openai API key")
+    );
+    assert!(seen.lock().unwrap().is_empty());
+
+    let res = h
+        .put(
+            "/api/media/config",
+            json!({ "providers": {
+                "openai": { "apiKey": "sk-user-9876", "baseUrl": format!("{base}/v1") },
+                "elevenlabs": { "apiKey": "el-user", "baseUrl": base },
+            } }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let masked = res.json();
+    assert_eq!(masked["providers"]["openai"]["apiKeyTail"], "9876");
+    assert!(!masked.to_string().contains("sk-user"));
+    let on_disk =
+        std::fs::read_to_string(h.state.store.data_dir().root().join("media-config.json")).unwrap();
+    assert!(on_disk.contains("sk-user-9876"));
+
+    let res = h
+        .post(
+            &format!("/api/projects/{id}/media/generate"),
+            json!({ "surface": "image", "model": "gpt-image-1", "prompt": "a red square", "output": "assets/hero.webp" }),
+        )
+        .await;
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&res.body)
+    );
+    let v = res.json();
+    assert_eq!(v["name"], "assets/hero.png");
+    assert_eq!(v["provider"], "openai");
+    assert!(
+        v["providerNote"]
+            .as_str()
+            .unwrap()
+            .starts_with("openai/gpt-image-1")
+    );
+    let written = std::fs::read(h.project_dir(&id).join("assets/hero.png")).unwrap();
+    assert!(written.starts_with(b"\x89PNG"));
+    assert_eq!(seen.lock().unwrap().as_slice(), ["Bearer sk-user-9876"]);
+
+    // The agent's tool route: project from the run token.
+    let token = h
+        .state
+        .runs
+        .tokens
+        .issue("run-3", Some(&id), std::time::Duration::ZERO);
+    let res = h
+        .post_with(
+            "/api/tools/media/generate",
+            json!({ "surface": "audio", "model": "elevenlabs-v3", "prompt": "Chào anh", "output": "voice/intro" }),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&res.body)
+    );
+    assert_eq!(res.json()["name"], "voice/intro.mp3");
+    assert_eq!(
+        std::fs::read(h.project_dir(&id).join("voice/intro.mp3")).unwrap(),
+        b"ID3fake"
+    );
+
+    let models = h.get("/api/media/models").await.json();
+    let configured: Vec<(&str, bool)> = models["providers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["id"].as_str().unwrap(),
+                p["configured"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        configured,
+        [("openai", true), ("fal", false), ("elevenlabs", true)]
+    );
+    assert!(models["models"].as_array().unwrap().len() >= 15);
+    let res = h
+        .post(
+            "/api/projects/missing/media/generate",
+            json!({ "surface": "image", "model": "gpt-image-1", "prompt": "x" }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        seen.lock().unwrap().len(),
+        2,
+        "no provider call for a missing project"
+    );
+}
+
+#[tokio::test]
+async fn prompt_templates_carry_attribution() {
+    let h = harness();
+    let all = h.get("/api/prompt-templates").await.json();
+    let list = all["promptTemplates"].as_array().unwrap();
+    assert_eq!(
+        list.len(),
+        104,
+        "106 upstream minus 2 without a clear license"
+    );
+    for t in list {
+        assert!(t.get("prompt").is_none(), "list omits the prompt text");
+        assert!(t.get("previewImageUrl").is_none() && t.get("previewVideoUrl").is_none());
+        let license = t["source"]["license"].as_str().unwrap();
+        assert!(
+            ["CC-BY-4.0", "Apache-2.0", "MIT"].contains(&license),
+            "{license}"
+        );
+    }
+    assert!(
+        !list
+            .iter()
+            .any(|t| t["id"] == "profile-avatar-seedream-high-fashion-dreamy-portrait")
+    );
+    let videos = h.get("/api/prompt-templates?surface=video").await.json();
+    assert_eq!(videos["promptTemplates"].as_array().unwrap().len(), 58);
+    let one = h
+        .get("/api/prompt-templates/image/3d-stone-staircase-evolution-infographic")
+        .await
+        .json();
+    assert!(one["promptTemplate"]["prompt"].as_str().unwrap().len() > 20);
+    assert_eq!(
+        h.get("/api/prompt-templates/image/..%2F..%2Fsecret")
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
 }

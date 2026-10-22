@@ -11,6 +11,7 @@ pub mod frontmatter;
 pub mod index;
 pub mod plugins;
 pub mod prompt;
+pub mod prompt_templates;
 pub mod skills;
 mod text;
 

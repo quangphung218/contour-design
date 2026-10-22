@@ -3,6 +3,7 @@
 //! used by `od mcp live-artifacts`) takes the project from the run's
 //! `OD_TOOL_TOKEN` when one is sent, else from `projectId`.
 
+use super::tool_caller;
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
@@ -195,51 +196,6 @@ pub async fn refresh(
 
 // ---------------------------------------------------------------------------
 // Agent tool endpoints
-
-/// Who is calling a tool endpoint: the project (and run) from the tool
-/// token, else the `projectId` the local caller named.
-struct ToolCaller {
-    project_id: Option<String>,
-    run_id: Option<String>,
-}
-
-fn tool_caller(
-    state: &AppState,
-    headers: &HeaderMap,
-    path: &str,
-    supplied: Option<&str>,
-) -> ApiResult<ToolCaller> {
-    let bearer = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|t| t.starts_with("odt_"));
-    let Some(token) = bearer else {
-        return Ok(ToolCaller {
-            project_id: supplied.map(str::to_owned),
-            run_id: None,
-        });
-    };
-    let grant = state.runs.tokens.authorize(token, path).ok_or_else(|| {
-        ApiErr::new(
-            StatusCode::UNAUTHORIZED,
-            ErrorCode::Unauthorized,
-            "invalid or expired tool token",
-        )
-    })?;
-    if let (Some(s), Some(g)) = (supplied, grant.project_id.as_deref()) {
-        if s != g {
-            return Err(ApiErr::forbidden(
-                "projectId is derived from the tool token",
-            ));
-        }
-    }
-    Ok(ToolCaller {
-        project_id: grant.project_id.or_else(|| supplied.map(str::to_owned)),
-        run_id: Some(grant.run_id),
-    })
-}
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]

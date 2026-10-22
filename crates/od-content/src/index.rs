@@ -4,6 +4,7 @@
 use crate::craft::list_craft;
 use crate::design_systems::{DesignSystemEntry, ListOptions, list_design_systems};
 use crate::plugins::{PluginEntry, list_plugins};
+use crate::prompt_templates::{PromptTemplate, list_prompt_templates};
 use crate::skills::{SkillEntry, list_skills, resolve_skill_id};
 use arc_swap::ArcSwap;
 use od_contracts::CraftEntry;
@@ -20,6 +21,8 @@ pub struct ContentRoots {
     pub craft: PathBuf,
     /// `plugins/_official` (groups of plugin folders).
     pub bundled_plugins: PathBuf,
+    /// `prompt-templates/{image,video}`.
+    pub prompt_templates: PathBuf,
     pub user_skills: Option<PathBuf>,
     pub user_design_templates: Option<PathBuf>,
     pub user_design_systems: Option<PathBuf>,
@@ -36,6 +39,7 @@ impl ContentRoots {
             bundled_design_systems: resource_root.join("design-systems"),
             craft: resource_root.join("craft"),
             bundled_plugins: resource_root.join("plugins").join("_official"),
+            prompt_templates: resource_root.join("prompt-templates"),
             ..Self::default()
         }
     }
@@ -68,6 +72,7 @@ pub struct ContentIndex {
     pub craft: Vec<CraftEntry>,
     pub craft_dir: PathBuf,
     pub plugins: Vec<PluginEntry>,
+    pub prompt_templates: Vec<PromptTemplate>,
     pub build_time: Duration,
 }
 
@@ -112,6 +117,7 @@ impl ContentIndex {
             },
         );
         let plugins = list_plugins(&roots.bundled_plugins, roots.user_plugins.as_deref());
+        let prompt_templates = list_prompt_templates(&roots.prompt_templates);
         Self {
             skills,
             design_templates,
@@ -119,6 +125,7 @@ impl ContentIndex {
             craft,
             craft_dir: roots.craft.clone(),
             plugins,
+            prompt_templates,
             build_time: started.elapsed(),
         }
     }
