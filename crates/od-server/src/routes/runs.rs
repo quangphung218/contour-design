@@ -147,56 +147,88 @@ pub async fn create(
         return Ok(reused_response(&run));
     }
 
-    match prepare_and_launch(
-        &state,
-        def,
-        &req,
-        &project,
-        &conversation.id,
-        &run,
-        &user_message_id,
-    )
-    .await
-    {
-        Ok(resumed) => Ok((
-            StatusCode::ACCEPTED,
-            ApiJson(CreateRunResponse {
-                run_id,
-                conversation_id: conversation.id,
-                assistant_message_id,
-                client_request_id,
-                reused: false,
-                resumed,
-            }),
-        )
-            .into_response()),
-        Err(err) => {
-            // The turn may already be recorded; never leave it "running".
-            if let Some(msg) = run.meta().assistant_message_id.clone() {
-                let _ = state
-                    .blocking(move |s| {
-                        if s.get_message(&msg)?.is_some() {
-                            s.finish_assistant_message(&msg, "", RunStatus::Failed, 0)?;
-                        }
-                        Ok(())
-                    })
-                    .await;
+    // axum drops this future when the client disconnects. Once the run is
+    // registered it must launch or end, so the rest runs in its own task.
+    let task = tokio::spawn({
+        let state = state.clone();
+        let run = Arc::clone(&run);
+        let conversation_id = conversation.id.clone();
+        async move {
+            let res = prepare_and_launch(
+                &state,
+                def,
+                &req,
+                &project,
+                &conversation_id,
+                &run,
+                &user_message_id,
+            )
+            .await;
+            if let Err(err) = &res {
+                end_unlaunched(
+                    &state,
+                    &run,
+                    RunStatus::Failed,
+                    Some(&err.message),
+                    Some(od_contracts::FailureCategory::SpawnFailed),
+                )
+                .await;
             }
-            run.emit_error(&err.message, None);
-            run.finish(od_contracts::RunEndPayload {
-                status: RunStatus::Failed,
-                code: None,
-                signal: None,
-                terminal_at: od_runs::now_ms(),
-                artifact_paths: Vec::new(),
-                resumable: false,
-                retryable: false,
-                failure_category: Some(od_contracts::FailureCategory::SpawnFailed),
-                error: Some(err.message.clone()),
-            });
-            Err(err)
+            res
         }
+    });
+    let resumed = task
+        .await
+        .map_err(|e| ApiErr::internal(format!("run launch failed: {e}")))??;
+    Ok((
+        StatusCode::ACCEPTED,
+        ApiJson(CreateRunResponse {
+            run_id,
+            conversation_id: conversation.id,
+            assistant_message_id,
+            client_request_id,
+            reused: false,
+            resumed,
+        }),
+    )
+        .into_response())
+}
+
+/// Ends a run whose agent never started (prepare failed, or a cancel came
+/// first). The turn may already be recorded; never leave it "running".
+async fn end_unlaunched(
+    state: &AppState,
+    run: &Arc<Run>,
+    status: RunStatus,
+    error: Option<&str>,
+    failure_category: Option<od_contracts::FailureCategory>,
+) {
+    state.runs.tokens.revoke_run(run.id());
+    state.runs.pending_cancels().remove(run.id());
+    if let Some(msg) = run.meta().assistant_message_id.clone() {
+        let _ = state
+            .blocking(move |s| {
+                if s.get_message(&msg)?.is_some() {
+                    s.finish_assistant_message(&msg, "", status, 0)?;
+                }
+                Ok(())
+            })
+            .await;
     }
+    if let Some(error) = error {
+        run.emit_error(error, None);
+    }
+    run.finish(od_contracts::RunEndPayload {
+        status,
+        code: None,
+        signal: None,
+        terminal_at: od_runs::now_ms(),
+        artifact_paths: Vec::new(),
+        resumable: false,
+        retryable: false,
+        failure_category,
+        error: error.map(str::to_owned),
+    });
 }
 
 fn reused_response(run: &Arc<Run>) -> Response {
@@ -399,44 +431,57 @@ async fn prepare_and_launch(
         })
         .await?;
 
-    let token = state.runs.tokens.issue(
-        run.id(),
-        Some(&project.id),
-        od_runtime::tokens::MIN_TOOL_TOKEN_TTL,
-    );
-    let od_bin = std::env::current_exe().ok();
-    let engine = &state.runs.engine;
-    let data_root = state.store.data_dir().root().to_path_buf();
-    let env = agent_env(
-        def,
-        &engine.config().base_env,
-        &engine.config().path,
-        &RunEnv {
-            data_dir: Some(&data_root),
-            daemon_url: state.config.daemon_url.as_deref(),
-            tool_token: Some(&token),
-            project_id: Some(&project.id),
-            project_dir: Some(&prepared.cwd),
-            od_bin: od_bin.as_deref(),
-            run_id: Some(run.id()),
-        },
-    );
     let resumed = prepared.resume_session_id.is_some();
-    let handle = engine.launch(LaunchSpec {
-        run: Arc::clone(run),
-        def,
-        cwd: prepared.cwd.clone(),
-        prompt: prepared.prompt,
-        fallback_prompt: prepared.fallback_prompt,
-        model: model.clone(),
-        reasoning: non_default(req.reasoning.as_deref()),
-        extra_dirs: Vec::new(),
-        resume_session_id: prepared.resume_session_id,
-        permission: prepared.permission,
-        env,
-        project_id: Some(project.id.clone()),
-        byok: prepared.byok,
-    });
+    let engine = &state.runs.engine;
+    let launched = {
+        // Held across the check and `launch` so a concurrent cancel either
+        // finds the run in the engine or leaves a pending cancel seen here.
+        let mut pending = state.runs.pending_cancels();
+        if pending.remove(run.id()) {
+            None
+        } else {
+            let token = state.runs.tokens.issue(
+                run.id(),
+                Some(&project.id),
+                od_runtime::tokens::MIN_TOOL_TOKEN_TTL,
+            );
+            let od_bin = std::env::current_exe().ok();
+            let data_root = state.store.data_dir().root().to_path_buf();
+            let env = agent_env(
+                def,
+                &engine.config().base_env,
+                &engine.config().path,
+                &RunEnv {
+                    data_dir: Some(&data_root),
+                    daemon_url: state.config.daemon_url.as_deref(),
+                    tool_token: Some(&token),
+                    project_id: Some(&project.id),
+                    project_dir: Some(&prepared.cwd),
+                    od_bin: od_bin.as_deref(),
+                    run_id: Some(run.id()),
+                },
+            );
+            Some(engine.launch(LaunchSpec {
+                run: Arc::clone(run),
+                def,
+                cwd: prepared.cwd.clone(),
+                prompt: prepared.prompt,
+                fallback_prompt: prepared.fallback_prompt,
+                model: model.clone(),
+                reasoning: non_default(req.reasoning.as_deref()),
+                extra_dirs: Vec::new(),
+                resume_session_id: prepared.resume_session_id,
+                permission: prepared.permission,
+                env,
+                project_id: Some(project.id.clone()),
+                byok: prepared.byok,
+            }))
+        }
+    };
+    let Some(handle) = launched else {
+        end_unlaunched(state, run, RunStatus::Canceled, None, None).await;
+        return Ok(resumed);
+    };
     tokio::spawn(persist_run(
         state.clone(),
         Arc::clone(run),
@@ -647,7 +692,13 @@ pub async fn cancel(
     Path(id): Path<String>,
 ) -> ApiResult<ApiJson<RunActionResponse>> {
     let run = state.runs.registry.get(&id).ok_or_else(run_not_found)?;
-    state.runs.engine.cancel(&id);
+    {
+        let mut pending = state.runs.pending_cancels();
+        if !state.runs.engine.cancel(&id) && !run.status().is_terminal() {
+            // Registered but not launched yet: the launch step ends it.
+            pending.insert(id);
+        }
+    }
     Ok(ApiJson(RunActionResponse {
         ok: true,
         status: run.status(),

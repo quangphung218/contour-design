@@ -4,8 +4,9 @@ use od_preview::{PreviewScopes, ProjectEvents};
 use od_runs::Runs;
 use od_runtime::{EngineConfig, RunEngine, ToolTokens};
 use od_store::{Store, StoreError};
+use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Default daemon port, shared with the CLI.
 pub const DEFAULT_PORT: u16 = 7456;
@@ -33,6 +34,8 @@ pub struct RunContext {
     pub registry: Arc<Runs>,
     pub engine: RunEngine,
     pub tokens: ToolTokens,
+    /// Runs canceled after registering but before their agent launched.
+    pending_cancels: Mutex<HashSet<String>>,
 }
 
 impl RunContext {
@@ -42,7 +45,16 @@ impl RunContext {
             registry,
             engine: RunEngine::new(engine),
             tokens: ToolTokens::default(),
+            pending_cancels: Mutex::default(),
         }
+    }
+
+    /// Cancel requests for runs not yet in the engine. Lock it around
+    /// `engine.cancel` / `engine.launch` so neither side misses the other.
+    pub fn pending_cancels(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.pending_cancels
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 
