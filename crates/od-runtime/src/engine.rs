@@ -278,14 +278,6 @@ impl RunEngine {
                 resumed: spec.resume_session_id.is_some(),
             },
         );
-        if is_byok && spec.byok.is_none() {
-            let message = "no API key is configured; add one in Settings".to_owned();
-            return finish(
-                run,
-                Finish::failed(FailureCategory::SpawnFailed, message, None),
-                &[],
-            );
-        }
         let bin = match bin {
             Some(bin) => bin,
             None if is_byok => PathBuf::new(),
@@ -596,7 +588,7 @@ impl RunEngine {
         let Some(config) = spec.byok.clone() else {
             att.failure = Some((
                 FailureCategory::SpawnFailed,
-                "no API key is configured".to_owned(),
+                "no API key is configured; add one in Settings".to_owned(),
             ));
             return att;
         };

@@ -9,7 +9,7 @@
 use od_contracts::{FailureCategory, RunStatus, sse};
 use od_runs::{RunEvent, RunMeta, Runs};
 use od_runtime::byok::{ByokConfig, ByokProtocol};
-use od_runtime::def::{BYOK, KIMI, QWEN, RuntimeDef};
+use od_runtime::def::{BYOK, DSH, KIMI, QWEN, RuntimeDef};
 use od_runtime::{EngineConfig, LaunchSpec, PermissionMode, RunEngine, RunOutcome};
 use serde_json::Value;
 use std::ffi::OsString;
@@ -43,6 +43,8 @@ impl Harness {
         let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
         config.kill_grace = Duration::from_millis(500);
         config.retry_base = Duration::from_millis(10);
+        // A hang shows up as a failed run within seconds, not a stuck test.
+        config.idle_timeout = Some(Duration::from_secs(5));
         let runs = Runs::new(tmp.path().join("runs"));
         Self {
             engine: RunEngine::new(config),
@@ -272,6 +274,50 @@ async fn acp_cancel_sends_session_cancel_before_any_signal() {
         frames[3].get("id").is_none(),
         "session/cancel is a notification"
     );
+}
+
+/// A scripted `dsh --stdio`: ready, read execute, stream (a mid-run
+/// `usage` included), then wait for `cancel`, which it ignores.
+const DSH_MOCK: &str = r#"
+case "$1" in --version) echo "0.1.2-rc.1"; exit 0;; esac
+log="$MOCK_LOG"
+trap 'echo SIGTERM >> "$log"; exit 143' TERM
+say() { printf '%s\n' "$1"; }
+say '{"v":1,"type":"ready","runtime":"open-design","protocol_version":1,"plugin_version":"0.1.2-rc.1","capabilities":{"session_resume":true,"session_cancel":true,"structured_events":true}}'
+read -r l; printf '%s\n' "$l" >> "$log"
+rid=$(printf '%s' "$l" | sed 's/.*"request_id":"\([^"]*\)".*/\1/')
+say "{\"v\":1,\"type\":\"session\",\"request_id\":\"$rid\",\"session_id\":\"d1\",\"resumed\":false}"
+say "{\"v\":1,\"type\":\"usage\",\"request_id\":\"$rid\",\"provider\":\"p\",\"model\":\"m\",\"input_tokens\":1,\"output_tokens\":1}"
+say "{\"v\":1,\"type\":\"text\",\"request_id\":\"$rid\",\"content\":\"working\"}"
+if read -r l; then printf '%s\n' "$l" >> "$log"; else echo EOF >> "$log"; fi
+sleep 30 & wait $!
+"#;
+
+#[tokio::test]
+async fn dsh_cancel_is_sent_on_the_open_stdin_before_any_signal() {
+    let h = Harness::new();
+    write_mock(&h.mocks, "dsh", DSH_MOCK);
+    let spec = h.spec("dsh-cancel", &DSH, &[]);
+    let run = spec.run.clone();
+    let handle = h.engine.launch(spec);
+    let mut sub = run.subscribe(0);
+    while let Some(ev) = sub.next().await {
+        if ev.event == sse::AGENT && ev.data["type"] == "text_delta" {
+            break;
+        }
+    }
+    assert!(h.engine.cancel("dsh-cancel"));
+    let outcome = handle.await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Canceled);
+    let log = std::fs::read_to_string(h.log()).unwrap();
+    let lines: Vec<&str> = log.lines().collect();
+    assert_eq!(lines.len(), 3, "{log}");
+    let execute: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(execute["type"], "execute");
+    let cancel: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(cancel["type"], "cancel");
+    assert_eq!(cancel["request_id"], execute["request_id"]);
+    assert_eq!(lines[2], "SIGTERM");
 }
 
 #[tokio::test]
