@@ -52,6 +52,69 @@ pub enum Block {
     Thinking(String),
     Tool(ToolCall),
     Error(String),
+    /// A message the user pushed into the running turn (steer).
+    Steered(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TodoStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+/// One step of the agent's plan (Claude's `TodoWrite`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Todo {
+    pub content: String,
+    /// Present-tense label shown while the step runs.
+    pub active_form: String,
+    pub status: TodoStatus,
+}
+
+/// Reads a `TodoWrite` input: `{"todos": [{content, status, activeForm}]}`.
+#[must_use]
+pub fn parse_todos(input: &Value) -> Option<Vec<Todo>> {
+    let list = input.get("todos")?.as_array()?;
+    Some(
+        list.iter()
+            .filter_map(|t| {
+                let content = t.get("content")?.as_str()?.trim().to_owned();
+                let status = match t.get("status").and_then(Value::as_str) {
+                    Some("completed") => TodoStatus::Completed,
+                    Some("in_progress") => TodoStatus::InProgress,
+                    _ => TodoStatus::Pending,
+                };
+                let active_form = t
+                    .get("activeForm")
+                    .and_then(Value::as_str)
+                    .map_or_else(|| content.clone(), |s| s.trim().to_owned());
+                Some(Todo {
+                    content,
+                    active_form,
+                    status,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// "Step N/M" for the plan pill: N is the step in progress, else the next
+/// one to start (M when all are done). `None` without a plan.
+#[must_use]
+pub fn plan_progress(todos: &[Todo]) -> Option<(usize, usize, &Todo)> {
+    let total = todos.len();
+    let last = todos.last()?;
+    if let Some(i) = todos
+        .iter()
+        .position(|t| t.status == TodoStatus::InProgress)
+    {
+        return Some((i + 1, total, &todos[i]));
+    }
+    match todos.iter().position(|t| t.status != TodoStatus::Completed) {
+        Some(i) => Some((i + 1, total, &todos[i])),
+        None => Some((total, total, last)),
+    }
 }
 
 /// One assistant turn, built from its run's frames.
@@ -63,6 +126,8 @@ pub struct AssistantTurn {
     pub model: Option<String>,
     /// Latest `status` label while running ("thinking", "writing"…).
     pub status: Option<String>,
+    /// The latest plan the agent wrote with `TodoWrite`.
+    pub todos: Vec<Todo>,
 }
 
 impl Default for AssistantTurn {
@@ -80,6 +145,7 @@ impl AssistantTurn {
             run_id: None,
             model: None,
             status: None,
+            todos: Vec::new(),
         }
     }
 
@@ -150,6 +216,11 @@ impl AssistantTurn {
                 _ => self.blocks.push(Block::Thinking(delta)),
             },
             AgentEvent::ToolUse { id, name, input } => {
+                if name == "TodoWrite" {
+                    if let Some(todos) = parse_todos(&input) {
+                        self.todos = todos;
+                    }
+                }
                 let summary = summarize_input(&name, &input);
                 self.blocks.push(Block::Tool(ToolCall {
                     id,
@@ -177,8 +248,9 @@ impl AssistantTurn {
                 count,
                 stopped: true,
                 ..
-            } => self.blocks.push(Block::Error(format!(
-                "Stopped: {tool_name} failed {count} times in a row"
+            } => self.blocks.push(Block::Error(crate::i18n::tf(
+                crate::i18n::T::ToolLoopStopped,
+                &[&tool_name, &count.to_string()],
             ))),
             // Usage, turn ends, raw lines, loop warnings: nothing to show.
             _ => {}
@@ -308,6 +380,37 @@ mod tests {
         );
         assert_eq!(t.text(), "Hello done");
         assert_eq!(t.touched_files(), vec!["index.html".to_owned()]);
+    }
+
+    #[test]
+    fn todo_write_drives_the_plan_pill() {
+        let mut t = AssistantTurn::new();
+        assert!(plan_progress(&t.todos).is_none());
+        let plan = |a: &str, b: &str, c: &str| {
+            agent(
+                json!({"type": "tool_use", "id": "p", "name": "TodoWrite", "input": {"todos": [
+                    {"content": "Sketch layout", "activeForm": "Sketching layout", "status": a},
+                    {"content": "Write HTML", "activeForm": "Writing HTML", "status": b},
+                    {"content": "Polish", "status": c}
+                ]}}),
+            )
+        };
+        t.apply(plan("in_progress", "pending", "pending"));
+        let (n, m, step) = plan_progress(&t.todos).unwrap_or_else(|| panic!("plan"));
+        assert_eq!(
+            (n, m, step.active_form.as_str()),
+            (1, 3, "Sketching layout")
+        );
+        t.apply(plan("completed", "completed", "pending"));
+        let (n, _, step) = plan_progress(&t.todos).unwrap_or_else(|| panic!("plan"));
+        assert_eq!(
+            (n, step.active_form.as_str()),
+            (3, "Polish"),
+            "next step to start"
+        );
+        t.apply(plan("completed", "completed", "completed"));
+        assert_eq!(plan_progress(&t.todos).map(|p| (p.0, p.1)), Some((3, 3)));
+        assert!(parse_todos(&json!({"todos": "x"})).is_none());
     }
 
     #[test]

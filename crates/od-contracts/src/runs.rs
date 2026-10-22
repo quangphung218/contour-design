@@ -272,6 +272,9 @@ pub struct ChatRequest {
     /// Project-relative paths the user attached.
     #[serde(default)]
     pub attachments: Vec<String>,
+    /// Preview comments sent along as scoped context for this turn.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comment_attachments: Vec<crate::CommentAttachment>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
@@ -397,6 +400,12 @@ pub struct CreateConversationRequest {
     pub title: Option<String>,
     #[serde(default)]
     pub session_mode: Option<SessionMode>,
+    /// Fork: copy the messages of this conversation (same project)…
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_from_conversation_id: Option<String>,
+    /// …up to and including this message. Absent: copy all of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fork_after_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

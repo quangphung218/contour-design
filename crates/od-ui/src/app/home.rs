@@ -1,6 +1,7 @@
 //! Home: brief box, output chips, design system and template pickers.
 
-use super::{Shell, ago, api};
+use super::{Shell, ago, api, kind_label};
+use crate::i18n::{T, t};
 use crate::intent::{Chip, HomeIntent, templates_for};
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -87,13 +88,13 @@ pub fn Home() -> impl IntoView {
 
     view! {
         <section class="home">
-            <h1 class="home-title">"What do you want to design?"</h1>
+            <h1 class="home-title">{t(T::HomeTitle)}</h1>
             <div class="composer-card">
                 <textarea
                     class="brief"
                     data-testid="brief"
                     rows="4"
-                    placeholder="Describe a page, an app screen or a deck…"
+                    placeholder=t(T::BriefPlaceholder)
                     prop:value=move || brief.get()
                     on:input=move |ev| brief.set(event_target_value(&ev))
                     on:keydown=move |ev: web_sys::KeyboardEvent| {
@@ -104,7 +105,7 @@ pub fn Home() -> impl IntoView {
                     }
                 ></textarea>
                 <div class="composer-row">
-                    <div class="chips" role="radiogroup" aria-label="Output type">
+                    <div class="chips" role="radiogroup" aria-label=t(T::OutputType)>
                         {Chip::ALL
                             .into_iter()
                             .map(|c| {
@@ -119,7 +120,7 @@ pub fn Home() -> impl IntoView {
                                             template.set(None);
                                         }
                                     >
-                                        {c.label()}
+                                        {match c { Chip::Prototype => t(T::ChipPrototype), Chip::Deck => t(T::ChipDeck) }}
                                     </button>
                                 }
                             })
@@ -131,12 +132,12 @@ pub fn Home() -> impl IntoView {
                         disabled=move || busy.get() || brief.with(|b| b.trim().is_empty())
                         on:click=move |_| submit()
                     >
-                        {move || if busy.get() { "Creating…" } else { "Create" }}
+                        {move || if busy.get() { t(T::Creating) } else { t(T::Create) }}
                     </button>
                 </div>
                 <div class="pickers">
                     <label class="picker">
-                        <span>"Design system"</span>
+                        <span>{t(T::DesignSystem)}</span>
                         <select
                             data-testid="design-system"
                             on:change=move |ev| {
@@ -144,7 +145,7 @@ pub fn Home() -> impl IntoView {
                                 design_system.set(Some(v).filter(|v| !v.is_empty()));
                             }
                         >
-                            <option value="">"None"</option>
+                            <option value="">{t(T::NoneOption)}</option>
                             {move || {
                                 systems
                                     .get()
@@ -164,7 +165,7 @@ pub fn Home() -> impl IntoView {
                         <Swatches systems=systems selected=design_system/>
                     </label>
                     <label class="picker">
-                        <span>"Template"</span>
+                        <span>{t(T::Template)}</span>
                         <select
                             data-testid="template"
                             on:change=move |ev| {
@@ -173,7 +174,7 @@ pub fn Home() -> impl IntoView {
                             }
                         >
                             <option value="" selected=move || template.get().is_none()>
-                                "Default for this type"
+                                {t(T::DefaultTemplate)}
                             </option>
                             {move || {
                                 chip_templates()
@@ -189,14 +190,14 @@ pub fn Home() -> impl IntoView {
                 {move || error.get().map(|e| view! { <p class="error-text">{e}</p> })}
             </div>
             <div class="section-head">
-                <h2>"Recent projects"</h2>
-                <A href="/projects">"All projects"</A>
+                <h2>{t(T::RecentProjects)}</h2>
+                <A href="/projects">{t(T::AllProjects)}</A>
             </div>
             <div class="project-grid">
                 {move || match recent.get() {
-                    None => view! { <p class="empty">"Loading…"</p> }.into_any(),
+                    None => view! { <p class="empty">{t(T::Loading)}</p> }.into_any(),
                     Some(list) if list.is_empty() => {
-                        view! { <p class="empty">"No projects yet. Your first brief creates one."</p> }
+                        view! { <p class="empty">{t(T::NoProjectsFirstBrief)}</p> }
                             .into_any()
                     }
                     Some(list) => {
@@ -230,12 +231,7 @@ fn Swatches(
 
 #[component]
 pub fn ProjectTile(project: Project) -> impl IntoView {
-    let kind = project
-        .metadata
-        .as_ref()
-        .and_then(|m| m.kind)
-        .map(|k| format!("{k:?}"))
-        .unwrap_or_else(|| "Project".to_owned());
+    let kind = kind_label(&project);
     view! {
         <A href=format!("/projects/{}", project.id) attr:class="tile">
             <span class="tile-kind">{kind}</span>

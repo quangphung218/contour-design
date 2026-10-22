@@ -1,7 +1,9 @@
+pub mod comments;
 pub mod content;
 pub mod conversations;
 pub mod export;
 pub mod files;
+pub mod handoff;
 pub mod media;
 pub mod preview;
 pub mod projects;

@@ -4,9 +4,14 @@
 
 pub mod chat;
 pub mod events;
+pub mod fuzzy;
+pub mod i18n;
 pub mod intent;
 pub mod markdown;
+pub mod preview_bridge;
 pub mod question_form;
 pub mod settings;
+pub mod speaker_notes;
+pub mod workspace;
 
 pub mod app;

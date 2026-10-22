@@ -1,7 +1,8 @@
 //! Project list: open, rename, duplicate, delete (with confirmation), and
-//! "Open folder" on desktop.
+//! "Open folder": the native picker on desktop, a path field in a browser.
 
-use super::{ago, api, desktop};
+use super::{ago, api, desktop, kind_label};
+use crate::i18n::{T, t};
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
@@ -29,12 +30,10 @@ pub fn Projects() -> impl IntoView {
     };
     reload();
 
-    let open_folder = move |_| {
+    // Imports `dir` and opens its Studio.
+    let import = move |dir: String| {
         let navigate = navigate.clone();
         leptos::task::spawn_local(async move {
-            let Some(dir) = desktop::pick_folder().await else {
-                return;
-            };
             match api::post::<_, CreateProjectResponse>(
                 "/api/import/folder",
                 &json!({ "baseDir": dir }),
@@ -46,24 +45,82 @@ pub fn Projects() -> impl IntoView {
             }
         });
     };
+    let path_field = RwSignal::new(None::<String>);
+    let import_pick = import.clone();
+    let open_folder = move |_| {
+        if !desktop::is_desktop() {
+            path_field.update(|f| {
+                *f = if f.is_some() {
+                    None
+                } else {
+                    Some(String::new())
+                }
+            });
+            return;
+        }
+        let import = import_pick.clone();
+        leptos::task::spawn_local(async move {
+            if let Some(dir) = desktop::pick_folder().await {
+                import(dir);
+            }
+        });
+    };
+    let import_typed = move || {
+        if let Some(dir) = path_field.get_untracked().filter(|d| !d.trim().is_empty()) {
+            import(dir.trim().to_owned());
+        }
+    };
+    let import_key = import_typed.clone();
 
     view! {
         <section class="page">
             <div class="section-head">
-                <h1>"Projects"</h1>
+                <h1>{t(T::ProjectsTitle)}</h1>
                 <div class="row">
-                    <Show when=desktop::is_desktop>
-                        <button class="btn" on:click=open_folder.clone()>"Open folder…"</button>
-                    </Show>
-                    <A href="/" attr:class="btn primary">"New project"</A>
+                    <button class="btn" data-testid="open-folder" on:click=open_folder>
+                        {t(T::OpenFolder)}
+                    </button>
+                    <A href="/" attr:class="btn primary">{t(T::NewProject)}</A>
                 </div>
             </div>
+            {move || {
+                path_field
+                    .get()
+                    .is_some()
+                    .then(|| {
+                        let import_typed = import_typed.clone();
+                        let import_key = import_key.clone();
+                        view! {
+                            <div class="folder-field">
+                                <label class="field">
+                                    <span>{t(T::FolderPathLabel)}</span>
+                                    <input
+                                        class="input mono"
+                                        data-testid="folder-path"
+                                        placeholder=t(T::FolderPathPlaceholder)
+                                        prop:value=move || path_field.get().unwrap_or_default()
+                                        on:input=move |ev| path_field.set(Some(event_target_value(&ev)))
+                                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                            if ev.key() == "Enter" {
+                                                import_key();
+                                            }
+                                        }
+                                    />
+                                    <span class="muted">{t(T::FolderHint)}</span>
+                                </label>
+                                <button class="btn primary" data-testid="folder-import" on:click=move |_| import_typed()>
+                                    {t(T::OpenAsProject)}
+                                </button>
+                            </div>
+                        }
+                    })
+            }}
             {move || error.get().map(|e| view! { <p class="error-text">{e}</p> })}
             <div class="project-list">
                 {move || match projects.get() {
-                    None => view! { <p class="empty">"Loading…"</p> }.into_any(),
+                    None => view! { <p class="empty">{t(T::Loading)}</p> }.into_any(),
                     Some(list) if list.is_empty() => {
-                        view! { <p class="empty">"No projects yet."</p> }.into_any()
+                        view! { <p class="empty">{t(T::NoProjects)}</p> }.into_any()
                     }
                     Some(list) => {
                         list.into_iter()
@@ -83,12 +140,7 @@ fn ProjectRow(project: Project, on_change: Callback<()>) -> impl IntoView {
     let name = RwSignal::new(project.name.clone());
     let editing = RwSignal::new(false);
     let confirming = RwSignal::new(false);
-    let kind = project
-        .metadata
-        .as_ref()
-        .and_then(|m| m.kind)
-        .map(|k| format!("{k:?}"))
-        .unwrap_or_else(|| "Project".to_owned());
+    let kind = kind_label(&project);
     let imported = project.metadata.as_ref().and_then(|m| m.base_dir.clone());
 
     let rename = move || {
@@ -157,9 +209,9 @@ fn ProjectRow(project: Project, on_change: Callback<()>) -> impl IntoView {
                 {move || {
                     if confirming.get() {
                         view! {
-                            <span class="confirm">"Delete this project?"</span>
-                            <button class="btn danger" on:click=delete>"Delete"</button>
-                            <button class="btn" on:click=move |_| confirming.set(false)>"Cancel"</button>
+                            <span class="confirm">{t(T::ConfirmDeleteProject)}</span>
+                            <button class="btn danger" on:click=delete>{t(T::Delete)}</button>
+                            <button class="btn" on:click=move |_| confirming.set(false)>{t(T::Cancel)}</button>
                         }
                             .into_any()
                     } else {
@@ -170,10 +222,10 @@ fn ProjectRow(project: Project, on_change: Callback<()>) -> impl IntoView {
                                     if editing.get_untracked() { rename() } else { editing.set(true) }
                                 }
                             >
-                                {move || if editing.get() { "Save" } else { "Rename" }}
+                                {move || if editing.get() { t(T::Save) } else { t(T::Rename) }}
                             </button>
-                            <button class="btn ghost" on:click=duplicate>"Duplicate"</button>
-                            <button class="btn ghost" on:click=move |_| confirming.set(true)>"Delete"</button>
+                            <button class="btn ghost" on:click=duplicate>{t(T::Duplicate)}</button>
+                            <button class="btn ghost" on:click=move |_| confirming.set(true)>{t(T::Delete)}</button>
                         }
                             .into_any()
                     }
