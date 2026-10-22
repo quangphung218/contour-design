@@ -44,7 +44,9 @@ async fn real_daemon_with(tmp: &Path, engine: od_runtime::EngineConfig) -> Strin
     let data = tmp.join("data");
     let empty = tmp.join("content");
     let store = Store::open(DataDir::new(&data)).unwrap();
-    let runs = od_server::open_runs(&store).await.unwrap();
+    let runs = od_server::open_runs(&store, &od_server::DaemonLock::acquire(&data).unwrap())
+        .await
+        .unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let state = AppState {

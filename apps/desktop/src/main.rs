@@ -11,7 +11,8 @@ use anyhow::Context;
 use od_content::{ContentRoots, ContentStore};
 use od_server::routes::ui::import_folder;
 use od_server::{
-    AppState, Preview, RunContext, ServerConfig, open_runs, resolve_resource_root, router,
+    AppState, DaemonLock, Preview, RunContext, ServerConfig, open_runs, resolve_resource_root,
+    router,
 };
 use od_store::{DataDir, Store};
 use std::net::SocketAddr;
@@ -27,6 +28,7 @@ const OPEN_FOLDER_MENU_ID: &str = "open-folder";
 struct Daemon {
     state: AppState,
     url: Url,
+    _lock: DaemonLock,
 }
 
 /// Bundled content: `Resources/content` in a packaged app, else the usual
@@ -42,6 +44,7 @@ fn resource_root(app: &AppHandle) -> PathBuf {
 
 async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
     let data_dir = DataDir::from_env();
+    let mut lock = DaemonLock::acquire(data_dir.root())?;
     let store = {
         let data_dir = data_dir.clone();
         tokio::task::spawn_blocking(move || Store::open(data_dir))
@@ -50,11 +53,12 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
     };
     let roots = ContentRoots::bundled(&resource_root).with_user_root(data_dir.root());
     let content = tokio::task::spawn_blocking(move || ContentStore::load(roots)).await?;
-    let runs = open_runs(&store).await?;
-    // Port 0: a fresh loopback port per launch, so a CLI daemon on 7456 or a
-    // second window never collides.
+    // Port 0: a fresh loopback port per launch, so a CLI daemon on 7456 never
+    // collides on the port (the data dir lock above refuses a second daemon).
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
     let local = listener.local_addr()?;
+    lock.record_url(&format!("http://{local}"))?;
+    let runs = open_runs(&store, &lock).await?;
     let state = AppState {
         store: Arc::new(store),
         content: Arc::new(content),
@@ -81,7 +85,11 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
     });
     let url = Url::parse(&format!("http://{local}/"))?;
     tracing::info!(%url, data_dir = %data_dir.root().display(), "in-process daemon listening");
-    Ok(Daemon { state, url })
+    Ok(Daemon {
+        state,
+        url,
+        _lock: lock,
+    })
 }
 
 /// Native folder picker for the UI's "Open folder…" button.
@@ -152,7 +160,19 @@ fn main() -> anyhow::Result<()> {
         })
         .setup(|app| {
             let handle = app.handle().clone();
-            let daemon = tauri::async_runtime::block_on(start_daemon(resource_root(&handle)))?;
+            let daemon = match tauri::async_runtime::block_on(start_daemon(resource_root(&handle)))
+            {
+                Ok(daemon) => daemon,
+                Err(e) => {
+                    // Typically a CLI daemon already owns the data dir.
+                    handle
+                        .dialog()
+                        .message(format!("{e:#}"))
+                        .title("Open Design")
+                        .blocking_show();
+                    return Err(e.into());
+                }
+            };
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(daemon.url.clone()))
                 .title("Open Design")
                 .inner_size(1360.0, 860.0)

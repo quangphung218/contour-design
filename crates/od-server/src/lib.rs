@@ -5,6 +5,7 @@
 
 pub mod error;
 pub mod guard;
+pub mod lock;
 pub mod routes;
 pub mod state;
 
@@ -18,6 +19,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub use lock::{DaemonLock, LockError};
 pub use state::{AppState, DEFAULT_HOST, DEFAULT_PORT, Preview, RunContext, ServerConfig};
 
 /// Request bodies up to 200 MiB (largest expected design asset).
@@ -164,9 +166,12 @@ fn is_loopback_host(host: &str) -> bool {
 /// are ended as failed, their leftover process groups killed, and their
 /// assistant messages marked failed.
 ///
+/// Takes the data dir's [`DaemonLock`]: only the sole daemon on a folder may
+/// treat its running runs as orphans.
+///
 /// # Errors
 /// When the runs folder cannot be listed.
-pub async fn open_runs(store: &Store) -> anyhow::Result<Arc<od_runs::Runs>> {
+pub async fn open_runs(store: &Store, _lock: &DaemonLock) -> anyhow::Result<Arc<od_runs::Runs>> {
     let dir = store.data_dir().runs_dir();
     let (runs, report) = tokio::task::spawn_blocking(move || od_runs::Runs::load(dir))
         .await?
@@ -198,18 +203,21 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         anyhow::bail!("binding to {} requires OD_API_TOKEN", opts.host);
     }
     let started = std::time::Instant::now();
+    let mut lock = DaemonLock::acquire(opts.data_dir.root())?;
     let data_dir = opts.data_dir.clone();
     let store = tokio::task::spawn_blocking(move || Store::open(data_dir))
         .await?
         .context("opening the data store")?;
     let roots = ContentRoots::bundled(&opts.resource_root).with_user_root(opts.data_dir.root());
     let content = tokio::task::spawn_blocking(move || ContentStore::load(roots)).await?;
-    let runs = open_runs(&store).await?;
 
     let listener = tokio::net::TcpListener::bind((opts.host.as_str(), opts.port))
         .await
         .with_context(|| format!("binding {}:{}", opts.host, opts.port))?;
     let local = listener.local_addr()?;
+    lock.record_url(&format!("http://{local}"))
+        .context("recording the daemon url")?;
+    let runs = open_runs(&store, &lock).await?;
     let mut ports = vec![local.port()];
     if let Some(web) = std::env::var("OD_WEB_PORT")
         .ok()

@@ -55,7 +55,9 @@ pub async fn daemon_with(opts: Options) -> Daemon {
         .content_root
         .unwrap_or_else(|| tmp.path().join("no-content"));
     let content = ContentStore::load(ContentRoots::bundled(&content_root).with_user_root(&data));
-    let runs = od_server::open_runs(&store).await.unwrap();
+    let runs = od_server::open_runs(&store, &od_server::DaemonLock::acquire(&data).unwrap())
+        .await
+        .unwrap();
     let mut engine = EngineConfig::from_env().with_path_prefix(&mocks);
     engine.idle_timeout = opts.idle_timeout;
     engine.kill_grace = opts.kill_grace;
