@@ -67,6 +67,7 @@ fn request_hash(req: &ChatRequest) -> String {
         "attachments": req.attachments,
         "pluginId": req.plugin_id,
         "pluginInputs": req.plugin_inputs,
+        "commentAttachments": req.comment_attachments,
     });
     hex::encode(&Sha256::digest(logical.to_string().as_bytes())[..16])
 }
@@ -308,7 +309,9 @@ async fn prepare_and_launch(
             if let Some(p) = &plugin {
                 ids.extend(p.skill_ids.iter().cloned());
             }
-            ids.dedup();
+            // First mention wins; `dedup` alone only drops neighbours.
+            let mut seen = std::collections::HashSet::new();
+            ids.retain(|id| seen.insert(id.clone()));
             let skills: Vec<&od_content::SkillEntry> = ids
                 .iter()
                 .filter_map(|id| {
