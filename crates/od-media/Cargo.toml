@@ -12,12 +12,12 @@ reqwest = { workspace = true, features = ["rustls-tls"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tempfile.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
-tempfile.workspace = true
 tokio.workspace = true
 
 [lints]

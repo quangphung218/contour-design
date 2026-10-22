@@ -149,6 +149,11 @@ impl ConfigFile {
     /// # Errors
     /// Unknown providers, non-http(s) base URLs, I/O.
     pub fn write(&self, body: &Value) -> Result<(), ConfigError> {
+        // Read-modify-write of one file: concurrent PUTs take turns.
+        static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = WRITE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let incoming = body
             .get("providers")
             .and_then(Value::as_object)
@@ -200,31 +205,27 @@ impl ConfigFile {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let tmp = self.path.with_extension("json.tmp");
         let mut bytes = serde_json::to_vec_pretty(&next).map_err(|e| ConfigError::Io(e.into()))?;
         bytes.push(b'\n');
-        write_private(&tmp, &bytes)?;
-        std::fs::rename(&tmp, &self.path)?;
+        write_private(&self.path, &bytes)?;
         Ok(())
     }
 }
 
-#[cfg(unix)]
+/// Atomic replace through a fresh, uniquely named temp file next to `path`
+/// (`tempfile` creates it `0600`), so no leftover `*.tmp` of another mode
+/// or another writer is ever reused.
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    f.write_all(bytes)
-}
-
-#[cfg(not(unix))]
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    std::fs::write(path, bytes)
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::Builder::new()
+        .prefix(".media-config-")
+        .suffix(".tmp")
+        .tempfile_in(dir)?;
+    tmp.write_all(bytes)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path).map_err(|e| e.error)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -233,6 +234,50 @@ mod tests {
 
     fn no_env(_: &str) -> Option<String> {
         None
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_leftover_world_readable_temp_file_does_not_leak_its_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let file = ConfigFile::in_dir(tmp.path());
+        let stale = tmp.path().join(CONFIG_FILE).with_extension("json.tmp");
+        std::fs::write(&stale, "{}").unwrap();
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o644)).unwrap();
+        file.write(&json!({ "providers": { "openai": { "apiKey": "sk-secret-1234" } } }))
+            .unwrap();
+        let mode = std::fs::metadata(tmp.path().join(CONFIG_FILE))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn concurrent_writes_never_fail_or_mix() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        let workers: Vec<_> = (0..6)
+            .map(|w| {
+                let dir = dir.clone();
+                std::thread::spawn(move || {
+                    let file = ConfigFile::in_dir(&dir);
+                    for i in 0..40 {
+                        let key = format!("sk-{w}-{i}-{}", "x".repeat(200 * w));
+                        file.write(&json!({ "providers": { "openai": { "apiKey": key } } }))
+                            .unwrap();
+                    }
+                })
+            })
+            .collect();
+        for w in workers {
+            w.join().unwrap();
+        }
+        let text = std::fs::read_to_string(dir.join(CONFIG_FILE)).unwrap();
+        let v: Value = serde_json::from_str(&text).unwrap();
+        let key = v["providers"]["openai"]["apiKey"].as_str().unwrap();
+        assert!(key.starts_with("sk-") && key.contains("-39"), "{key}");
     }
 
     #[test]
