@@ -16,7 +16,7 @@ pub use scope::{PreviewScope, PreviewScopes, SCOPE_TTL, is_scope_token};
 pub const PREVIEW_IFRAME_SANDBOX: &str = "allow-scripts allow-forms";
 
 /// Fetch directives shared by every preview CSP: only `'self'`, `data:` and
-/// `blob:`, no network calls, no form posts, no `<base>` rewrites.
+/// `blob:`, no network calls, no form posts.
 macro_rules! preview_directives {
     () => {
         "default-src 'self' data: blob:; \
@@ -27,20 +27,26 @@ style-src 'self' 'unsafe-inline'; \
 script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
 connect-src 'none'; \
 form-action 'none'; \
-base-uri 'none'; \
 object-src 'none'"
     };
 }
 
-/// CSP for `GET .../preview/<scope>/...`.
-pub const PREVIEW_CSP: &str = concat!("sandbox allow-scripts allow-forms; ", preview_directives!());
+/// CSP for `GET .../preview/<scope>/...`: no `<base>` rewrites either.
+pub const PREVIEW_CSP: &str = concat!(
+    "sandbox allow-scripts allow-forms; ",
+    preview_directives!(),
+    "; base-uri 'none'"
+);
 
 /// CSP for `GET .../raw/...`: the Studio preview iframe loads project HTML
 /// from `raw`, so it gets the same no-network policy. Its sandbox matches
 /// that iframe's `sandbox` attribute (the stricter of the two applies).
+/// `?bridge=1` adds a `<base>` into the daemon's preview scope, so `<base>`
+/// may point at the daemon (`'self'`), nowhere else.
 pub const RAW_CSP: &str = concat!(
     "sandbox allow-scripts allow-forms allow-popups allow-modals; ",
-    preview_directives!()
+    preview_directives!(),
+    "; base-uri 'self'"
 );
 
 /// Body of `GET /api/projects/:id/preview-url`.

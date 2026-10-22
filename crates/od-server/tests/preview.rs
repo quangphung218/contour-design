@@ -432,7 +432,7 @@ async fn raw_documents_carry_the_no_network_csp() {
             "sandbox allow-scripts",
             "connect-src 'none'",
             "form-action 'none'",
-            "base-uri 'none'",
+            "base-uri 'self'",
         ] {
             assert!(csp.contains(directive), "{uri}: {directive} in {csp:?}");
         }
