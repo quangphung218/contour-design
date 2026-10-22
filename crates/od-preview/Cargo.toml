@@ -1,0 +1,27 @@
+[package]
+name = "od-preview"
+description = "Preview serving helpers: bridge injection, CSP, preview scopes, project file watcher and events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+od-store.workspace = true
+lol_html.workspace = true
+notify.workspace = true
+notify-debouncer-full.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+chromiumoxide.workspace = true
+futures-util.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
