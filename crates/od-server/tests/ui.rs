@@ -95,7 +95,8 @@ async fn app_config_round_trip() {
 
 #[tokio::test]
 async fn import_folder_points_at_folder() {
-    let tmp = tempfile::tempdir().unwrap();
+    // `tempdir()` names start with `.tmp`, a hidden segment import refuses.
+    let tmp = tempfile::Builder::new().prefix("od-ui-").tempdir().unwrap();
     let app = router(state(tmp.path()));
     let folder = tmp.path().join("my-site");
     std::fs::create_dir(&folder).unwrap();
@@ -123,12 +124,21 @@ async fn import_folder_points_at_folder() {
     assert_eq!(s, StatusCode::OK);
     assert_eq!(b, b"<h1>hi</h1>");
 
+    let hidden = tmp.path().join(".fake-hidden");
+    std::fs::create_dir_all(hidden.join("inside")).unwrap();
+    let linked_hidden = tmp.path().join("visible-link");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&hidden, &linked_hidden).unwrap();
     for bad in [
         json!({"baseDir": "relative/dir"}),
         json!({"baseDir": "."}),
         json!({"baseDir": tmp.path().join("missing")}),
         json!({"baseDir": tmp.path().join("data")}),
         json!({"baseDir": "/"}),
+        json!({"baseDir": hidden}),
+        json!({"baseDir": hidden.join("inside")}),
+        json!({"baseDir": linked_hidden}),
+        json!({"baseDir": std::env::var("HOME").unwrap()}),
     ] {
         let (s, _) = call(&app, "POST", "/api/import/folder", Some(bad.clone())).await;
         assert_eq!(s, StatusCode::BAD_REQUEST, "{bad}");

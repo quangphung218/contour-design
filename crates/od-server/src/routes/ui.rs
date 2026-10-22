@@ -249,7 +249,9 @@ struct ImportFolderRequest {
 ///
 /// # Errors
 /// [`StoreError::BadRequest`] when `dir` is not an absolute existing folder,
-/// or overlaps the data directory (which also rules out `/`).
+/// overlaps the data directory (which also rules out `/`), is the home
+/// folder or one of its parents, or (after resolving symlinks) has a hidden
+/// segment such as `~/.ssh` (spec 3.2).
 pub fn import_folder(
     store: &Store,
     dir: &Path,
@@ -272,6 +274,20 @@ pub fn import_folder(
         .unwrap_or_else(|_| store.data_dir().root().to_path_buf());
     if dir.starts_with(&data_root) || data_root.starts_with(&dir) {
         return Err(bad("baseDir overlaps the data directory"));
+    }
+    if dir
+        .components()
+        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+    {
+        return Err(bad("baseDir must not be inside a hidden folder"));
+    }
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .and_then(|h| h.canonicalize().ok());
+    if home.is_some_and(|h| h.starts_with(&dir)) {
+        return Err(bad(
+            "baseDir must not be the home folder or one of its parents",
+        ));
     }
     let name = name
         .filter(|n| !n.trim().is_empty())
