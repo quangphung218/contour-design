@@ -2,6 +2,8 @@
 //! and against golden output produced by the original app's TypeScript
 //! loaders (`tests/fixtures/original-*.json`, see `tests/fixtures/README.md`).
 
+#![allow(clippy::unwrap_used)] // test helpers fail loudly by design
+
 use od_content::{ContentIndex, ContentRoots};
 use od_contracts::{DesignSystemSummary, SkillInfo, SkillMode};
 use serde_json::Value;

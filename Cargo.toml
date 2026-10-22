@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/od-contracts", "crates/od-store", "crates/od-content"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -17,7 +17,7 @@ od-server = { path = "crates/od-server" }
 
 anyhow = "1"
 arc-swap = "1"
-axum = { version = "0.8", features = ["multipart"] }
+axum = { version = "0.8", features = ["multipart", "macros"] }
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 criterion = { version = "0.5", default-features = false }
@@ -32,7 +32,8 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "sync"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "sync", "io-util"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 tracing = "0.1"
