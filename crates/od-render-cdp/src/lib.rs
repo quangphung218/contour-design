@@ -5,11 +5,17 @@
 //! install locations for the OS, then `PATH`. Each operation launches a
 //! fresh headless browser with a throwaway profile and DNS for everything
 //! but localhost disabled, loads a file from disk, and closes it again.
+//! The page may load nothing but that file (`data:`/`blob:` aside): every
+//! other request, `file://` or network, is failed through CDP `Fetch`.
 
 pub mod ffmpeg;
 mod script;
 
 use chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams;
+use chromiumoxide::cdp::browser_protocol::fetch::{
+    ContinueRequestParams, EnableParams, EventRequestPaused, FailRequestParams, RequestPattern,
+};
+use chromiumoxide::cdp::browser_protocol::network::ErrorReason;
 use chromiumoxide::cdp::browser_protocol::page::{
     CaptureScreenshotFormat, CaptureScreenshotParams, PrintToPdfParams, Viewport,
 };
@@ -174,6 +180,8 @@ struct Session {
     browser: Browser,
     handler: tokio::task::JoinHandle<()>,
     page: Page,
+    /// Answers paused requests: only the target file goes through.
+    gate: Option<tokio::task::JoinHandle<()>>,
     width: u32,
     height: u32,
     _profile: tempfile::TempDir,
@@ -213,18 +221,56 @@ impl Session {
                 .map_err(failed("opening a page"))?,
             browser,
             handler,
+            gate: None,
             width: target.width.max(1),
             height: target.height.max(1),
             _profile: profile,
         };
         session.resize(session.width, session.height).await?;
         let url = file_url(&target.html_path)?;
+        session.gate = Some(session.only_allow(url.clone()).await?);
         session
             .page
             .goto(url)
             .await
             .map_err(failed("loading the page"))?;
         Ok(session)
+    }
+
+    /// Pauses every request and lets only `allowed` (the page itself)
+    /// continue, so a bundle cannot pull in local files (`<iframe
+    /// src="file:///…">`) or reach the network by IP literal.
+    async fn only_allow(&self, allowed: String) -> RenderResult<tokio::task::JoinHandle<()>> {
+        let mut paused = self
+            .page
+            .event_listener::<EventRequestPaused>()
+            .await
+            .map_err(failed("intercepting requests"))?;
+        self.page
+            .execute(
+                EnableParams::builder()
+                    .pattern(RequestPattern::builder().url_pattern("*").build())
+                    .build(),
+            )
+            .await
+            .map_err(failed("intercepting requests"))?;
+        let page = self.page.clone();
+        Ok(tokio::spawn(async move {
+            while let Some(ev) = paused.next().await {
+                let id = ev.request_id.clone();
+                let res = if same_file_url(&ev.request.url, &allowed) {
+                    page.execute(ContinueRequestParams::new(id)).await.map(drop)
+                } else {
+                    tracing::warn!(url = %ev.request.url, "render blocked a request");
+                    page.execute(FailRequestParams::new(id, ErrorReason::BlockedByClient))
+                        .await
+                        .map(drop)
+                };
+                if res.is_err() {
+                    break; // the page is gone
+                }
+            }
+        }))
     }
 
     async fn resize(&mut self, width: u32, height: u32) -> RenderResult<()> {
@@ -319,6 +365,9 @@ impl Session {
     }
 
     async fn close(mut self) {
+        if let Some(gate) = self.gate.take() {
+            gate.abort();
+        }
         let _ = self.browser.close().await;
         let _ = self.browser.wait().await;
         self.handler.abort();
@@ -349,6 +398,36 @@ fn file_url(path: &Path) -> RenderResult<String> {
         }
     }
     Ok(url)
+}
+
+/// `url` names the same file as `allowed` (fragment and percent-encoding
+/// differences aside).
+fn same_file_url(url: &str, allowed: &str) -> bool {
+    let strip = |u: &str| percent_decode(u.split('#').next().unwrap_or_default());
+    strip(url) == strip(allowed)
+}
+
+fn percent_decode(s: &str) -> Vec<u8> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = bytes
+            .get(i + 1..i + 3)
+            .and_then(|h| std::str::from_utf8(h).ok())
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (bytes[i], hex) {
+            (b'%', Some(b)) => {
+                out.push(b);
+                i += 3;
+            }
+            (b, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    out
 }
 
 fn is_deck(mode: DeckMode, info: &PageInfo) -> RenderResult<bool> {
