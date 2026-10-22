@@ -186,7 +186,9 @@ fn artifacts_without_a_refreshable_source_do_not_refresh() {
     let other_dir = root.dir.parent().unwrap().join("p2");
     std::fs::create_dir_all(&other_dir).unwrap();
     let other = LiveStore::new(&other_dir, "p2");
-    let theirs = other.create(input(json!({ "title": "Theirs" })), None, None, None).unwrap();
+    let theirs = other
+        .create(input(json!({ "title": "Theirs" })), None, None, None)
+        .unwrap();
     let sneaky = format!("../../p2/.live-artifacts/{}", theirs.id);
     assert!(matches!(store.get(&sneaky), Err(LiveError::NotFound)));
     assert!(matches!(store.delete(&sneaky), Err(LiveError::NotFound)));
