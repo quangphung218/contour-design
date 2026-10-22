@@ -262,15 +262,53 @@ pub fn persist(dir: &Path, artifacts: &[Artifact]) -> std::io::Result<Vec<PathBu
     let mut written = Vec::with_capacity(artifacts.len());
     for a in artifacts {
         let path = dir.join(&a.file_name);
-        std::fs::write(&path, a.content.as_bytes())?;
+        write_no_follow(&path, a.content.as_bytes())?;
         written.push(path);
     }
     Ok(written)
 }
 
+/// Writes `path` but refuses a symlink there: an imported folder (or an
+/// earlier run) may have linked `index.html` to a file outside the project.
+fn write_no_follow(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    // The open itself fails (ELOOP) on a symlink: no check-then-open gap.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(nix::libc::O_NOFOLLOW);
+    }
+    #[cfg(not(unix))]
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{} is a symlink", path.display()),
+        ));
+    }
+    options.open(path)?.write_all(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn persist_never_writes_through_a_symlink() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside.txt");
+        std::fs::write(&outside, "keep me").unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir(&project).unwrap();
+        std::os::unix::fs::symlink(&outside, project.join("index.html")).unwrap();
+        let artifacts =
+            extract("<artifact identifier=\"index\" type=\"text/html\"><p>x</p></artifact>");
+        assert_eq!(artifacts[0].file_name, "index.html");
+        assert!(persist(&project, &artifacts).is_err());
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep me");
+    }
 
     #[test]
     fn extracts_typed_and_html_blocks() {
