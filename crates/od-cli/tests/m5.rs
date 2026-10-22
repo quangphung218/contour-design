@@ -3,9 +3,6 @@
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
-use axum::Router;
-use axum::extract::{Path as AxPath, State};
-use axum::routing::{get, post};
 use od_content::{ContentRoots, ContentStore};
 use od_server::{AppState, ServerConfig};
 use od_store::{DataDir, Store};
@@ -14,10 +11,10 @@ use rmcp::model::{CallToolRequestParams, ReadResourceRequestParams};
 use rmcp::service::RunningService;
 use rmcp::transport::TokioChildProcess;
 use serde_json::{Map, Value, json};
-use std::net::TcpListener as StdListener;
+use std::net::{SocketAddr, TcpListener as StdListener};
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const OD: &str = env!("CARGO_BIN_EXE_od");
@@ -30,19 +27,28 @@ fn free_port() -> u16 {
         .port()
 }
 
-async fn serve(router: Router) -> String {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-    url
-}
-
 /// The real daemon router over a temp data dir, in this process.
 async fn real_daemon(tmp: &Path) -> String {
+    real_daemon_with(tmp, od_runtime::EngineConfig::from_env()).await
+}
+
+/// Same, with the run engine's `PATH` set to `mocks` plus system tools, so
+/// the mock CLIs there are the only agents found.
+async fn real_daemon_with_agents(tmp: &Path, mocks: &Path) -> String {
+    let mut engine = od_runtime::EngineConfig::from_env();
+    engine.path = std::env::join_paths([mocks, Path::new("/usr/bin"), Path::new("/bin")]).unwrap();
+    real_daemon_with(tmp, engine).await
+}
+
+async fn real_daemon_with(tmp: &Path, engine: od_runtime::EngineConfig) -> String {
     let data = tmp.join("data");
     let empty = tmp.join("content");
+    let store = Store::open(DataDir::new(&data)).unwrap();
+    let runs = od_server::open_runs(&store).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
     let state = AppState {
-        store: Arc::new(Store::open(DataDir::new(&data)).unwrap()),
+        store: Arc::new(store),
         content: Arc::new(ContentStore::load(ContentRoots::bundled(&empty))),
         config: Arc::new(ServerConfig {
             host: "127.0.0.1".to_owned(),
@@ -50,15 +56,14 @@ async fn real_daemon(tmp: &Path) -> String {
             api_token: None,
             allowed_origins: Vec::new(),
             resource_root: empty,
-            daemon_url: None,
+            daemon_url: Some(url.clone()),
         }),
-        runs: Arc::new(od_server::RunContext::new(
-            Arc::new(od_runs::Runs::new(data.join("runs"))),
-            od_runtime::EngineConfig::from_env(),
-        )),
+        runs: Arc::new(od_server::RunContext::new(runs, engine)),
         preview: od_server::Preview::default(),
     };
-    serve(od_server::router(state)).await
+    let app = od_server::router(state).into_make_service_with_connect_info::<SocketAddr>();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    url
 }
 
 type Client = RunningService<rmcp::RoleClient, ()>;
@@ -264,101 +269,106 @@ async fn mcp_file_tools_and_active_project_over_stdio() {
     client.cancel().await.unwrap();
 }
 
-/// A stand-in for the M2 run engine: `/api/agents`, `/api/runs`, SSE.
-#[derive(Clone, Default)]
-struct FakeRuns {
-    bodies: Arc<Mutex<Vec<Value>>>,
-    canceled: Arc<Mutex<Vec<String>>>,
-}
+/// Mock `claude` CLI: writes index.html in its cwd (the project folder) and
+/// says so; a prompt containing "take your time" sleeps until canceled.
+const MOCK_CLAUDE: &str = r#"#!/bin/sh
+case "$1" in --version) echo "mock 1.0"; exit 0;; esac
+if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage"; exit 0; fi
+IFS= read -r line
+case "$line" in *"take your time"*) sleep 30;; esac
+printf '<h1>landing</h1>' > index.html
+printf '{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Made a landing page."}]}}\n'
+printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+cat >/dev/null
+"#;
 
-async fn fake_run_daemon() -> (String, FakeRuns) {
-    let fake = FakeRuns::default();
-    let router = Router::new()
-        .route(
-            "/api/projects",
-            get(|| async { axum::Json(json!({ "projects": [{ "id": "p1", "name": "Landing" }] })) }),
-        )
-        .route(
-            "/api/projects/{id}",
-            get(|AxPath(id): AxPath<String>| async move {
-                axum::Json(json!({ "project": { "id": id, "name": "Landing", "metadata": { "entryFile": "index.html" } } }))
-            }),
-        )
-        .route("/api/active", get(|| async { axum::Json(json!({ "active": false })) }))
-        .route(
-            "/api/agents",
-            get(|| async {
-                axum::Json(json!({ "agents": [
-                    { "id": "gemini", "name": "Gemini", "available": false },
-                    { "id": "claude", "name": "Claude Code", "available": true, "models": ["a","b","c","d","e","f","g","h","i","j","k","l"] },
-                ] }))
-            }),
-        )
-        .route(
-            "/api/runs",
-            post(|State(f): State<FakeRuns>, axum::Json(body): axum::Json<Value>| async move {
-                f.bodies.lock().unwrap().push(body.clone());
-                (
-                    axum::http::StatusCode::ACCEPTED,
-                    axum::Json(json!({ "runId": "r1", "conversationId": "c1", "assistantMessageId": "m1", "clientRequestId": body["clientRequestId"], "reused": false, "resumed": false })),
-                )
-            }),
-        )
-        .route(
-            "/api/runs/{id}",
-            get(|AxPath(id): AxPath<String>| async move {
-                axum::Json(json!({ "run": { "id": id, "status": "succeeded", "agentId": "claude", "projectId": "p1", "createdAt": 1, "lastEventId": 3 } }))
-            }),
-        )
-        .route(
-            "/api/runs/{id}/events",
-            get(|| async {
-                (
-                    [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
-                    "id: 1\nevent: start\ndata: {\"runId\":\"r1\"}\n\nid: 2\nevent: agent\ndata: {\"type\":\"text_delta\",\"delta\":\"Made a landing page.\"}\n\nid: 3\nevent: end\ndata: {\"status\":\"succeeded\"}\n\n",
-                )
-            }),
-        )
-        .route(
-            "/api/runs/{id}/cancel",
-            post(|State(f): State<FakeRuns>, AxPath(id): AxPath<String>| async move {
-                f.canceled.lock().unwrap().push(id);
-                axum::Json(json!({ "ok": true, "status": "canceled" }))
-            }),
-        )
-        .with_state(fake.clone());
-    (serve(router).await, fake)
+async fn wait_run(client: &Client, run_id: &str, status: &str) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let run = ok(client, "get_run", json!({ "runId": run_id })).await;
+        if run["status"] == status {
+            return run;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "run never reached {status}: {run}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn mcp_run_tools_against_a_fake_run_engine() {
-    let (url, fake) = fake_run_daemon().await;
+async fn mcp_run_tools_against_the_real_run_engine() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mocks = tmp.path().join("mocks");
+    std::fs::create_dir_all(&mocks).unwrap();
+    let claude = mocks.join("claude");
+    std::fs::write(&claude, MOCK_CLAUDE).unwrap();
+    std::fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let url = real_daemon_with_agents(tmp.path(), &mocks).await;
     let client = mcp(&url).await;
 
     let agents = ok(&client, "list_agents", json!({})).await;
-    assert_eq!(agents["agents"].as_array().unwrap().len(), 1);
-    assert_eq!(agents["agents"][0]["modelsCount"], 12);
-    assert_eq!(agents["agents"][0]["models"].as_array().unwrap().len(), 10);
+    let ids: Vec<&str> = agents["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a["id"].as_str())
+        .collect();
+    assert_eq!(ids, ["claude"]);
+    let all = ok(
+        &client,
+        "list_agents",
+        json!({ "includeUnavailable": true }),
+    )
+    .await;
+    assert!(all["agents"].as_array().unwrap().len() > 1, "{all}");
 
-    let started = ok(&client, "start_run", json!({ "project": "landing", "prompt": "A landing page", "skill": "web", "requestId": "req-1" })).await;
-    assert_eq!(started["runId"], "r1");
+    let created = ok(&client, "create_project", json!({ "name": "Landing" })).await;
+    let project = created["project"]["id"].as_str().unwrap().to_owned();
+
+    // No agent given: the first installed one runs; requestId is idempotent.
+    let started = ok(
+        &client,
+        "start_run",
+        json!({ "project": "landing", "prompt": "A landing page", "requestId": "req-1" }),
+    )
+    .await;
+    let run_id = started["runId"].as_str().unwrap().to_owned();
+    assert_eq!(started["projectId"], project.as_str());
     assert_eq!(started["resolvedProject"]["via"], "exact");
-    let body = fake.bodies.lock().unwrap()[0].clone();
-    assert_eq!(
-        body,
-        json!({ "agentId": "claude", "message": "A landing page", "projectId": "p1", "clientRequestId": "req-1", "skillId": "web" })
-    );
+    let again = ok(
+        &client,
+        "start_run",
+        json!({ "project": project, "prompt": "A landing page", "requestId": "req-1" }),
+    )
+    .await;
+    assert_eq!(again["runId"], run_id.as_str());
+    assert_eq!(again["reused"], true);
 
-    let run = ok(&client, "get_run", json!({ "runId": "r1" })).await;
-    assert_eq!(run["status"], "succeeded");
+    let run = wait_run(&client, &run_id, "succeeded").await;
+    assert_eq!(run["agentId"], "claude");
+    assert_eq!(run["projectId"], project.as_str());
     assert_eq!(run["agentMessage"], "Made a landing page.");
-    assert_eq!(
-        run["previewUrl"],
-        format!("{url}/api/projects/p1/raw/index.html")
-    );
+    let (err, text, _) = call(
+        &client,
+        "get_file",
+        json!({ "project": project, "path": "index.html" }),
+    )
+    .await;
+    assert!(!err && text.ends_with("<h1>landing</h1>"), "{text}");
 
-    ok(&client, "cancel_run", json!({ "runId": "r1" })).await;
-    assert_eq!(fake.canceled.lock().unwrap().as_slice(), ["r1"]);
+    // Cancel stops an in-flight run.
+    let slow = ok(
+        &client,
+        "start_run",
+        json!({ "project": project, "prompt": "take your time", "agent": "claude" }),
+    )
+    .await;
+    let slow_id = slow["runId"].as_str().unwrap().to_owned();
+    wait_run(&client, &slow_id, "running").await;
+    ok(&client, "cancel_run", json!({ "runId": slow_id })).await;
+    wait_run(&client, &slow_id, "canceled").await;
 
     // The brief pair needs no daemon.
     let brief = ok(
