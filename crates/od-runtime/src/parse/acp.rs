@@ -256,8 +256,12 @@ impl AcpSession {
     fn on_request(&mut self, id: &Value, method: &str, params: &Value, out: &mut Vec<AgentEvent>) {
         if method == "session/request_permission" {
             let tool = params.get("toolCall").unwrap_or(&Value::Null);
-            let (outcome, approved) =
-                permission_outcome(self.ctx.permission, params.get("options"), tool);
+            let (outcome, approved) = permission_outcome(
+                self.ctx.permission,
+                params.get("options"),
+                tool,
+                &self.ctx.cwd,
+            );
             let title = str_field(tool, "title").unwrap_or("tool call");
             out.push(AgentEvent::Status {
                 label: "permission".to_owned(),
@@ -497,14 +501,16 @@ impl StreamParser for AcpSession {
 
 /// The permission answer and whether it approves. `Auto` approves like the
 /// original (`approve_for_session`, then `allow_always`, then
-/// `allow_once`). `Ask` mirrors Claude's `acceptEdits`: reads and edits are
-/// allowed once, anything else (commands, fetches, custom tools) is
-/// rejected, since there is nobody to ask mid-run.
+/// `allow_once`). `Ask` mirrors Claude's `acceptEdits`: reads and edits
+/// inside `cwd` are allowed once, anything else (commands, fetches, custom
+/// tools, files outside the project, edits naming no file) is rejected,
+/// since there is nobody to ask mid-run.
 #[must_use]
 pub fn permission_outcome(
     mode: PermissionMode,
     options: Option<&Value>,
     tool: &Value,
+    cwd: &Path,
 ) -> (Value, bool) {
     let options: &[Value] = options.and_then(Value::as_array).map_or(&[], Vec::as_slice);
     let by_kind = |kind: &str| {
@@ -522,11 +528,16 @@ pub fn permission_outcome(
             .or_else(|| by_kind("allow_once")),
         PermissionMode::Ask => {
             let kind = str_field(tool, "kind").unwrap_or_default().to_lowercase();
-            let editing = matches!(
-                kind.as_str(),
-                "read" | "edit" | "delete" | "move" | "search" | "think"
-            );
-            if editing { by_kind("allow_once") } else { None }
+            let changes = matches!(kind.as_str(), "edit" | "delete" | "move");
+            let looks = matches!(kind.as_str(), "read" | "search" | "think");
+            let paths: Vec<&str> = tool
+                .get("locations")
+                .and_then(Value::as_array)
+                .map(|l| l.iter().filter_map(|loc| str_field(loc, "path")).collect())
+                .unwrap_or_default();
+            let in_project = paths.iter().all(|p| inside(cwd, p));
+            let ok = (changes && !paths.is_empty() && in_project) || (looks && in_project);
+            if ok { by_kind("allow_once") } else { None }
         }
     };
     if let Some(id) = allow {
@@ -536,6 +547,37 @@ pub fn permission_outcome(
         Some(id) => (selected(id), false),
         None => (json!({"outcome": "cancelled"}), false),
     }
+}
+
+/// Whether `path` (relative paths are under `cwd`) stays inside `cwd`
+/// once `..` and symlinks are resolved. A file that does not exist yet is
+/// judged by its nearest existing ancestor.
+fn inside(cwd: &Path, path: &str) -> bool {
+    let Ok(root) = cwd.canonicalize() else {
+        return false;
+    };
+    let mut probe = cwd.join(path);
+    let mut rest = Vec::new();
+    let real = loop {
+        if let Ok(real) = probe.canonicalize() {
+            break real;
+        }
+        match (
+            probe.file_name().map(std::ffi::OsStr::to_os_string),
+            probe.parent(),
+        ) {
+            (Some(name), Some(parent)) => {
+                rest.push(name);
+                probe = parent.to_path_buf();
+            }
+            _ => return false,
+        }
+    };
+    // What is left must not climb back out.
+    if rest.iter().any(|n| n == "..") {
+        return false;
+    }
+    real.starts_with(&root)
 }
 
 fn update_text(update: &Value) -> Option<String> {
@@ -790,33 +832,67 @@ mod tests {
     #[test]
     fn auto_prefers_session_wide_approval() {
         let tool = json!({"kind": "execute"});
-        let (o, ok) = permission_outcome(PermissionMode::Auto, Some(&options()), &tool);
+        let cwd = Path::new("/p");
+        let (o, ok) = permission_outcome(PermissionMode::Auto, Some(&options()), &tool, cwd);
         assert!(ok);
         assert_eq!(o["optionId"], "always");
         let with_session = json!([{"optionId": "approve_for_session", "kind": "x"}]);
-        let (o, _) = permission_outcome(PermissionMode::Auto, Some(&with_session), &tool);
+        let (o, _) = permission_outcome(PermissionMode::Auto, Some(&with_session), &tool, cwd);
         assert_eq!(o["optionId"], "approve_for_session");
     }
 
     #[test]
     fn ask_allows_edits_once_and_rejects_commands() {
-        let (o, ok) = permission_outcome(
-            PermissionMode::Ask,
-            Some(&options()),
-            &json!({"kind": "edit"}),
-        );
+        let cwd = tempfile::tempdir().unwrap();
+        let cwd = cwd.path();
+        let edit = json!({"kind": "edit", "locations": [{"path": "index.html"}]});
+        let (o, ok) = permission_outcome(PermissionMode::Ask, Some(&options()), &edit, cwd);
         assert!(ok);
         assert_eq!(o["optionId"], "allow");
         let (o, ok) = permission_outcome(
             PermissionMode::Ask,
             Some(&options()),
             &json!({"kind": "execute"}),
+            cwd,
         );
         assert!(!ok);
         assert_eq!(o["optionId"], "deny");
-        let (o, ok) = permission_outcome(PermissionMode::Ask, None, &json!({"kind": "execute"}));
+        let (o, ok) =
+            permission_outcome(PermissionMode::Ask, None, &json!({"kind": "execute"}), cwd);
         assert!(!ok);
         assert_eq!(o["outcome"], "cancelled");
+    }
+
+    #[test]
+    fn ask_only_approves_file_changes_inside_the_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("project");
+        std::fs::create_dir_all(cwd.join("pages")).unwrap();
+        let ask =
+            |tool: Value| permission_outcome(PermissionMode::Ask, Some(&options()), &tool, &cwd).1;
+        let inside = cwd.join("pages/about.html");
+        assert!(ask(
+            json!({"kind": "edit", "locations": [{"path": inside}]})
+        ));
+        assert!(ask(
+            json!({"kind": "move", "locations": [{"path": "a.html"}, {"path": "pages/b.html"}]})
+        ));
+        for tool in [
+            json!({"kind": "edit", "locations": [{"path": "/Users/me/.zshrc"}]}),
+            json!({"kind": "edit", "locations": [{"path": "../outside.txt"}]}),
+            json!({"kind": "delete", "locations": [{"path": "a.html"}, {"path": "/etc/hosts"}]}),
+            json!({"kind": "edit"}),
+            json!({"kind": "delete", "locations": []}),
+        ] {
+            assert!(!ask(tool.clone()), "{tool}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(tmp.path(), cwd.join("up")).unwrap();
+            assert!(!ask(
+                json!({"kind": "edit", "locations": [{"path": "up/secret.txt"}]})
+            ));
+        }
     }
 
     #[test]
