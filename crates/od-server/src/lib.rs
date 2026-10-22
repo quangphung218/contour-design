@@ -57,7 +57,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/design-systems", get(content::list_design_systems))
         .route("/api/design-systems/{id}", get(content::get_design_system))
         .route("/api/craft", get(content::list_craft))
-        .route("/api/craft/{id}", get(content::get_craft));
+        .route("/api/craft/{id}", get(content::get_craft))
+        .merge(routes::export::routes());
     api.layer(axum::middleware::from_fn_with_state(
         state.clone(),
         guard::origin_guard,

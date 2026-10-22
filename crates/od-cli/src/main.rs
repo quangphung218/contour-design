@@ -2,6 +2,8 @@
 //! other subcommand is a thin client of the daemon's HTTP API.
 
 mod client;
+mod export_cmd;
+mod mcp_cmd;
 
 use anyhow::Context;
 use base64::Engine;
@@ -45,6 +47,10 @@ enum Command {
     /// Read and write project files.
     #[command(subcommand)]
     Files(FilesCommand),
+    /// Export a project file (HTML, PDF, PPTX, image) or the project (ZIP).
+    Export(export_cmd::ExportArgs),
+    /// MCP stdio server for coding agents; `od mcp install <agent>`.
+    Mcp(mcp_cmd::McpArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -140,6 +146,10 @@ fn main() -> ExitCode {
         Some(Command::Files(cmd)) => {
             Client::new(&cli.daemon_url).and_then(|c| files(&c, cmd, cli.json))
         }
+        Some(Command::Export(args)) => {
+            Client::new(&cli.daemon_url).and_then(|c| export_cmd::run(&c, args, cli.json))
+        }
+        Some(Command::Mcp(args)) => return mcp_cmd::run(args, &cli.daemon_url, cli.json),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

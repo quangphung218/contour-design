@@ -6,6 +6,8 @@
 //! Missing browser = failure, unless `OD_SKIP_CHROME_TESTS=1` is set.
 //! Everything runs in one test so only one browser is alive at a time.
 
+#![allow(clippy::unwrap_used)] // test helpers fail loudly by design
+
 use od_export::image::{decode_rgb, png_size, solid_png};
 use od_export::standalone;
 use od_export::{

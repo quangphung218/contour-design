@@ -650,40 +650,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darling"
-version = "0.24.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed17f5901b6630b993ca003def43f2f8ef4014fc13b047b57aad617ff32bc2ec"
-dependencies = [
- "darling_core",
- "darling_macro",
-]
-
-[[package]]
-name = "darling_core"
-version = "0.24.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6837e2cf7485aaae18f86181d2f0e9a7ed297a025e220aeabf63fdebd3a2ddff"
-dependencies = [
- "ident_case",
- "proc-macro2",
- "quote",
- "strsim",
- "syn 3.0.9",
-]
-
-[[package]]
-name = "darling_macro"
-version = "0.24.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ac7135c3ef02b2f7833bbeb1be5ba7f966dcde8a87c6b87f65a778d71a02785"
-dependencies = [
- "darling_core",
- "quote",
- "syn 3.0.9",
-]
-
-[[package]]
 name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1264,12 +1230,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ident_case"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
-
-[[package]]
 name = "idna"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1583,17 +1543,25 @@ name = "od-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "base64 0.22.1",
  "clap",
+ "lopdf",
+ "od-content",
  "od-contracts",
+ "od-export",
+ "od-mcp",
  "od-server",
+ "od-store",
  "reqwest 0.12.28",
+ "rmcp",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "zip",
 ]
 
 [[package]]
@@ -1646,11 +1614,13 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
+ "regex",
  "reqwest 0.12.28",
  "rmcp",
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
  "uuid",
@@ -1680,10 +1650,14 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
+ "futures-util",
  "http-body-util",
  "httpdate",
+ "lopdf",
  "od-content",
  "od-contracts",
+ "od-export",
+ "od-render-cdp",
  "od-store",
  "serde",
  "serde_json",
@@ -1692,6 +1666,7 @@ dependencies = [
  "tokio-util",
  "tower",
  "tracing",
+ "zip",
 ]
 
 [[package]]
@@ -2076,7 +2051,6 @@ version = "3.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ceb42e9e47443cd83a834dea57b5816d35481417bae72ade5dc5615c59122e26"
 dependencies = [
- "base64 0.23.1",
  "chrono",
  "futures",
  "indexmap",
@@ -2084,7 +2058,6 @@ dependencies = [
  "pastey",
  "pin-project-lite",
  "process-wrap",
- "rmcp-macros",
  "schemars",
  "serde",
  "serde_json",
@@ -2094,19 +2067,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "rmcp-macros"
-version = "3.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f55ef2d84752d676d735604548fcb65811504e23330d85670b0eff5f8735144"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "serde_json",
- "syn 3.0.9",
 ]
 
 [[package]]

@@ -103,4 +103,84 @@ impl Client {
             .send(self.http.request(method, self.url(segments)?))?
             .json()?)
     }
+
+    /// `GET` a download: bytes, the `Content-Disposition` file name and the
+    /// content type.
+    pub fn get_download(
+        &self,
+        segments: &[&str],
+        query: &[(&str, &str)],
+    ) -> anyhow::Result<(Vec<u8>, Option<String>, String)> {
+        let mut url = self.url(segments)?;
+        if !query.is_empty() {
+            url.query_pairs_mut().extend_pairs(query);
+        }
+        download(self.send(self.http.get(url))?)
+    }
+
+    /// `POST` JSON, expecting a download back.
+    pub fn post_download<B: Serialize>(
+        &self,
+        segments: &[&str],
+        body: &B,
+    ) -> anyhow::Result<(Vec<u8>, Option<String>, String)> {
+        // Browser exports can take minutes on long decks.
+        let req = self
+            .http
+            .post(self.url(segments)?)
+            .timeout(Duration::from_secs(600))
+            .json(body);
+        download(self.send(req)?)
+    }
+}
+
+fn download(res: Response) -> anyhow::Result<(Vec<u8>, Option<String>, String)> {
+    let header = |name| {
+        res.headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+    };
+    let name = header(reqwest::header::CONTENT_DISPOSITION).and_then(|d| attachment_name(&d));
+    let mime = header(reqwest::header::CONTENT_TYPE).unwrap_or_default();
+    Ok((res.bytes()?.to_vec(), name, mime))
+}
+
+/// The file name of a `Content-Disposition` header (`filename*` preferred),
+/// reduced to a bare name so a server cannot pick the directory.
+pub fn attachment_name(disposition: &str) -> Option<String> {
+    let mut plain = None;
+    for part in disposition.split(';').map(str::trim) {
+        if let Some(v) = part.strip_prefix("filename*=") {
+            let encoded = v.strip_prefix("UTF-8''").unwrap_or(v);
+            let mut bytes = Vec::new();
+            let raw = encoded.as_bytes();
+            let mut i = 0;
+            while i < raw.len() {
+                let hex = |b: u8| char::from(b).to_digit(16);
+                match (
+                    raw[i],
+                    raw.get(i + 1).copied().and_then(hex),
+                    raw.get(i + 2).copied().and_then(hex),
+                ) {
+                    (b'%', Some(h), Some(l)) => {
+                        bytes.push(u8::try_from(h * 16 + l).unwrap_or(b'_'));
+                        i += 3;
+                    }
+                    (b, _, _) => {
+                        bytes.push(b);
+                        i += 1;
+                    }
+                }
+            }
+            plain = String::from_utf8(bytes).ok().or(plain);
+            break;
+        }
+        if let Some(v) = part.strip_prefix("filename=") {
+            plain = Some(v.trim_matches('"').to_owned());
+        }
+    }
+    plain
+        .map(|n| n.rsplit(['/', '\\']).next().unwrap_or("").to_owned())
+        .filter(|n| !n.is_empty() && n != "." && n != "..")
 }

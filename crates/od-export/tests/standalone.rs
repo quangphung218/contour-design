@@ -1,6 +1,8 @@
 //! Standalone HTML: the output must not reference any local file (spec 5.7
 //! M5), and every limit maps to a typed error.
 
+#![allow(clippy::unwrap_used)] // test helpers fail loudly by design
+
 use base64::Engine;
 use od_export::standalone::{self, MANIFEST_ID};
 use od_export::{AssetMeta, AssetSource, Limits, Options, StandaloneError};
