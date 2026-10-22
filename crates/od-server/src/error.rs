@@ -72,6 +72,7 @@ impl From<StoreError> for ApiErr {
             StoreError::ConversationNotFound => (S::NOT_FOUND, ErrorCode::ConversationNotFound),
             StoreError::FileNotFound => (S::NOT_FOUND, ErrorCode::FileNotFound),
             StoreError::VersionNotFound => (S::NOT_FOUND, ErrorCode::VersionNotFound),
+            StoreError::CommentNotFound => (S::NOT_FOUND, ErrorCode::NotFound),
             StoreError::FileExists => (S::CONFLICT, ErrorCode::FileExists),
             StoreError::ProjectFolderMissing => (S::CONFLICT, ErrorCode::Conflict),
             _ => {

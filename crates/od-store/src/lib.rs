@@ -3,6 +3,7 @@
 //! path resolution every file operation goes through.
 
 pub mod chat;
+pub mod comments;
 pub mod data_dir;
 pub mod db;
 pub mod error;

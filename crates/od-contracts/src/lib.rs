@@ -4,6 +4,7 @@
 //! and fixtures keep working. Every type here is plain data: no I/O, no
 //! validation beyond what serde enforces.
 
+pub mod comments;
 pub mod content;
 pub mod error;
 pub mod files;
@@ -11,6 +12,7 @@ pub mod projects;
 pub mod runs;
 pub mod system;
 
+pub use comments::*;
 pub use content::*;
 pub use error::*;
 pub use files::*;

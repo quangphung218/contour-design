@@ -348,9 +348,88 @@ pub fn compose_user_message(
     out
 }
 
+/// The request plus its preview comments as a scoped block the agent must
+/// stay inside (spec 1.2). No comments: the request unchanged.
+#[must_use]
+pub fn with_comment_attachments(
+    request: &str,
+    comments: &[od_contracts::CommentAttachment],
+) -> String {
+    if comments.is_empty() {
+        return request.to_owned();
+    }
+    let or = |s: &str, empty: &'static str| {
+        let s = s.trim();
+        if s.is_empty() {
+            empty.to_owned()
+        } else {
+            s.to_owned()
+        }
+    };
+    let mut out = String::from(request);
+    out.push_str("\n\n<attached-preview-comments>\n");
+    out.push_str(
+        "Hard scope: change ONLY the elements identified below by file and selector. \
+         Do not modify sibling sections, parent layout, global CSS or design tokens; \
+         mention other issues in your reply instead. If the request cannot be done \
+         inside this scope, ask the user first.\n",
+    );
+    for (i, c) in comments.iter().enumerate() {
+        let order = if c.order == 0 {
+            i + 1
+        } else {
+            c.order as usize
+        };
+        let p = c.page_position;
+        out.push_str(&format!(
+            "\n{order}. {}\nfile: {}\nselector: {}\nlabel: {}\nposition: x={:.0} y={:.0} {:.0}x{:.0}\n",
+            or(&c.element_id, "(element)"),
+            c.file_path,
+            c.selector,
+            or(&c.label, "(unlabeled)"),
+            p.x,
+            p.y,
+            p.width,
+            p.height,
+        ));
+        if let Some(slide) = c.slide_index {
+            out.push_str(&format!("slide: {}\n", slide + 1));
+        }
+        out.push_str(&format!(
+            "currentText: {}\nhtmlHint: {}\ncomment: {}\n",
+            or(&c.current_text, "(empty)"),
+            or(&c.html_hint, "(none)"),
+            c.comment.trim(),
+        ));
+    }
+    out.push_str("</attached-preview-comments>");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comment_attachments_render_a_scoped_block() {
+        assert_eq!(with_comment_attachments("hi", &[]), "hi");
+        let c = od_contracts::CommentAttachment {
+            file_path: "deck.html".into(),
+            selector: "[data-od-id=\"hero\"]".into(),
+            element_id: "hero".into(),
+            label: "h1".into(),
+            current_text: "Hello".into(),
+            slide_index: Some(1),
+            comment: "Make it red".into(),
+            ..od_contracts::CommentAttachment::default()
+        };
+        let out = with_comment_attachments("Fix this", &[c]);
+        assert!(out.starts_with("Fix this\n\n<attached-preview-comments>\n"));
+        assert!(out.contains("\n1. hero\nfile: deck.html\nselector: [data-od-id=\"hero\"]\n"));
+        assert!(out.contains("slide: 2\n"));
+        assert!(out.contains("currentText: Hello\nhtmlHint: (none)\ncomment: Make it red\n"));
+        assert!(out.ends_with("</attached-preview-comments>"));
+    }
 
     fn pos(haystack: &str, needle: &str) -> usize {
         haystack

@@ -117,6 +117,35 @@ fn get_conversation(conn: &Connection, id: &str) -> Result<Option<Conversation>>
         .optional()?)
 }
 
+/// Position of `message_id` in `conversation_id`, the last message a fork keeps.
+fn fork_position(conn: &Connection, conversation_id: &str, message_id: &str) -> Result<i64> {
+    conn.query_row(
+        "SELECT position FROM messages WHERE id = ?1 AND conversation_id = ?2",
+        params![message_id, conversation_id],
+        |r| r.get(0),
+    )
+    .optional()?
+    .ok_or_else(|| StoreError::BadRequest("fork message not found".into()))
+}
+
+/// Copies messages up to position `upto` under fresh ids. A turn still
+/// running in the source ends up canceled in the copy: its run stays with
+/// the source conversation.
+fn copy_messages(conn: &Connection, from: &str, to: &str, upto: i64) -> Result<()> {
+    conn.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, agent_id, run_id, run_status, \
+           last_run_event_id, position, events_json, attachments_json, comment_attachments_json, \
+           produced_files_json, feedback_json, started_at, ended_at, created_at) \
+         SELECT lower(hex(randomblob(16))), ?2, role, content, agent_id, run_id, \
+           CASE WHEN run_status = 'running' THEN 'canceled' ELSE run_status END, \
+           last_run_event_id, position, events_json, attachments_json, comment_attachments_json, \
+           produced_files_json, feedback_json, started_at, ended_at, created_at \
+         FROM messages WHERE conversation_id = ?1 AND position <= ?3",
+        params![from, to, upto],
+    )?;
+    Ok(())
+}
+
 fn next_position(conn: &Connection, conversation_id: &str) -> Result<i64> {
     Ok(conn.query_row(
         "SELECT COALESCE(MAX(position), -1) + 1 FROM messages WHERE conversation_id = ?1",
@@ -168,6 +197,10 @@ impl Store {
             Some(_) => return Err(StoreError::BadRequest("invalid conversation id".into())),
             None => uuid::Uuid::new_v4().to_string(),
         };
+        let seed = match req.seed_from_conversation_id.as_deref() {
+            Some(src) => Some(self.get_conversation(project_id, src)?.id),
+            None => None,
+        };
         let now = crate::now_ms();
         let mode = req.session_mode.unwrap_or_default();
         let title = req.title.filter(|t| !t.trim().is_empty());
@@ -175,11 +208,19 @@ impl Store {
             if get_conversation(conn, &id)?.is_some() {
                 return Err(StoreError::BadRequest("conversation id already exists".into()));
             }
+            let fork_upto = match (&seed, req.fork_after_message_id.as_deref()) {
+                (Some(src), Some(mid)) => Some(fork_position(conn, src, mid)?),
+                (Some(_), None) => Some(i64::MAX),
+                (None, _) => None,
+            };
             conn.execute(
                 "INSERT INTO conversations (id, project_id, title, session_mode, created_at, updated_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
                 params![id, project_id, title, mode_str(mode), now],
             )?;
+            if let (Some(src), Some(upto)) = (&seed, fork_upto) {
+                copy_messages(conn, src, &id, upto)?;
+            }
             Ok(Conversation {
                 id: id.clone(),
                 project_id: project_id.to_owned(),
@@ -568,6 +609,75 @@ mod tests {
     use crate::DataDir;
     use od_contracts::CreateProjectRequest;
     use serde_json::json;
+
+    #[test]
+    fn fork_copies_messages_up_to_the_fork_point() {
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let store = Store::open(DataDir::new(tmp.path())).unwrap_or_else(|e| panic!("{e}"));
+        let (project, conv) = store
+            .create_project(CreateProjectRequest {
+                name: "p".into(),
+                ..CreateProjectRequest::default()
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        for (u, a, run) in [("u1", "a1", "r1"), ("u2", "a2", "r2")] {
+            store
+                .begin_turn(&NewTurn {
+                    conversation_id: &conv,
+                    user_message_id: u,
+                    assistant_message_id: a,
+                    content: u,
+                    attachments: &[],
+                    agent_id: "claude",
+                    run_id: run,
+                })
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        let fork = |after: Option<&str>| {
+            store.create_conversation(
+                &project.id,
+                CreateConversationRequest {
+                    seed_from_conversation_id: Some(conv.clone()),
+                    fork_after_message_id: after.map(str::to_owned),
+                    ..CreateConversationRequest::default()
+                },
+            )
+        };
+        let first = fork(Some("a1")).unwrap_or_else(|e| panic!("{e}"));
+        let copied = store
+            .list_messages(&first.id)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            copied
+                .iter()
+                .map(|m| m.content.as_str())
+                .collect::<Vec<_>>(),
+            ["u1", ""]
+        );
+        assert!(
+            copied.iter().all(|m| m.id != "u1" && m.id != "a1"),
+            "fresh ids"
+        );
+        assert_eq!(
+            copied[1].run_status,
+            Some(RunStatus::Canceled),
+            "a running turn is not running in the copy"
+        );
+        let all = fork(None).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(store.list_messages(&all.id).map(|m| m.len()).ok(), Some(4));
+        let before = store.list_conversations(&project.id).map(|c| c.len()).ok();
+        assert!(matches!(fork(Some("nope")), Err(StoreError::BadRequest(_))));
+        assert_eq!(
+            store.list_conversations(&project.id).map(|c| c.len()).ok(),
+            before,
+            "a failed fork leaves no conversation behind"
+        );
+        assert_eq!(
+            store.list_messages(&conv).map(|m| m.len()).ok(),
+            Some(4),
+            "the source is untouched"
+        );
+    }
 
     #[test]
     fn turn_batches_fold_into_events_json() {

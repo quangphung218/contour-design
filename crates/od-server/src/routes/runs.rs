@@ -331,11 +331,13 @@ async fn prepare_and_launch(
                 })
                 .collect();
             let transcript = prompt::transcript(&turns);
+            let request =
+                prompt::with_comment_attachments(&req2.message, &req2.comment_attachments);
             let full = prompt::compose_user_message(
                 Some(&instructions),
                 Some(&cwd_str),
                 Some(&transcript),
-                &req2.message,
+                &request,
                 &req2.attachments,
             );
             let (prompt, fallback, resume_id) = match resume {
@@ -345,7 +347,7 @@ async fn prepare_and_launch(
                         (!same).then_some(instructions.as_str()),
                         None,
                         None,
-                        &req2.message,
+                        &request,
                         &req2.attachments,
                     );
                     (short, Some(full), Some(st.session_id))

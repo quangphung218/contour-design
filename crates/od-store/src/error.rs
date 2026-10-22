@@ -22,6 +22,8 @@ pub enum StoreError {
     FileNotFound,
     #[error("version not found")]
     VersionNotFound,
+    #[error("comment not found")]
+    CommentNotFound,
     #[error("file already exists")]
     FileExists,
     /// An imported project's folder is gone (e.g. an unplugged drive). The
