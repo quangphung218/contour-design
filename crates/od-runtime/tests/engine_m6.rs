@@ -43,7 +43,7 @@ impl Harness {
         let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
         config.kill_grace = Duration::from_millis(500);
         config.retry_base = Duration::from_millis(10);
-        let runs = Runs::new(&tmp.path().join("runs"));
+        let runs = Runs::new(tmp.path().join("runs"));
         Self {
             engine: RunEngine::new(config),
             tmp,
