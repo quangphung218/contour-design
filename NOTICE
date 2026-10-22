@@ -1,0 +1,3 @@
+open-design-rs
+Bản viết lại bằng Rust của OpenDesign (https://github.com/nexu-io/open-design), Copyright nexu-io và cộng tác viên, Apache License 2.0.
+Nội dung trong content/ (skills, design-templates, design-systems, craft, plugins…) lấy từ OpenDesign commit e03d5c2; mỗi thư mục con giữ file LICENSE gốc nếu có.
