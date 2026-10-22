@@ -1,0 +1,51 @@
+#!/bin/sh
+# Mock `claude` CLI for the UI e2e (run.sh puts this folder first on the
+# daemon's PATH). Speaks Claude Code's stream-json: reads the user message
+# from stdin, writes index.html in the project folder (its cwd) and streams
+# text plus a Write tool call. Nothing leaves the machine.
+#
+# Turn N is the N-th page version: "Mock page v<N>", where N-1 is read back
+# from the current index.html. A request containing `form` ends with a
+# <question-form>; `slow` streams slowly so Stop can be tested.
+
+case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
+if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
+
+sid=""; prev=""
+for a in "$@"; do
+  case "$prev" in --session-id|--resume) sid="$a";; esac
+  prev="$a"
+done
+
+IFS= read -r line
+# The request after the prompt's "# User request" heading, still JSON-escaped.
+req=$(printf '%s' "$line" | sed -e 's/.*# User request\\n\\n//' -e 's/\([^\\]\)".*/\1/')
+first=$(printf '%s' "$req" | sed -e 's/\\n.*//')
+last=$(sed -n 's/.*Mock page v\([0-9][0-9]*\).*/\1/p' index.html 2>/dev/null | head -n 1)
+turn=$(( ${last:-0} + 1 ))
+
+n=0
+say() {
+  n=$((n + 1))
+  printf '{"type":"assistant","message":{"id":"m%s-%s","role":"assistant","content":[{"type":"text","text":"%s"}]}}\n' "$$" "$n" "$1"
+}
+
+printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+say "Turn $turn. Working on: $first "
+case "$req" in *slow*)
+  i=0
+  while [ $i -lt 40 ]; do say "step$i "; i=$((i + 1)); sleep 0.25; done
+;; esac
+
+tool="tool-$$"
+printf '{"type":"assistant","message":{"id":"m%s-w","role":"assistant","content":[{"type":"tool_use","id":"%s","name":"Write","input":{"file_path":"%s/index.html","content":"..."}}]}}\n' "$$" "$tool" "$PWD"
+printf '<!doctype html><html><body><h1 id="title">Mock page v%s</h1><p>%s</p></body></html>\n' "$turn" "$first" > index.html
+printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"%s","content":"File created successfully"}]}}\n' "$tool"
+say "\\n\\nWrote \`index.html\` (v$turn)."
+
+case "$req" in *form*)
+  say '\n\n<question-form id=\"discovery\" title=\"A few questions\">\n{\"questions\": [\n  {\"id\": \"platform\", \"label\": \"Platform\", \"type\": \"radio\", \"options\": [\"Mobile\", \"Desktop\"], \"required\": true},\n  {\"id\": \"audience\", \"label\": \"Audience\", \"type\": \"text\", \"placeholder\": \"Who is it for?\"}\n]}\n</question-form>'
+;; esac
+
+printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+cat >/dev/null

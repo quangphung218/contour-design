@@ -1,7 +1,7 @@
 //! Chat transcript state: folds run frames into what an assistant turn shows
 //! (text, thinking, tool rows, notices). Pure data, tested natively.
 
-use crate::events::{AgentEvent, RunFrame, RunStatus, StoredMessage};
+use crate::events::{AgentEvent, Message, RunFrame, RunStatus};
 use serde_json::Value;
 
 /// Longest tool input summary shown on a tool row.
@@ -85,7 +85,7 @@ impl AssistantTurn {
 
     /// Rebuilds a finished (or still running) turn from a stored message.
     #[must_use]
-    pub fn from_stored(msg: &StoredMessage) -> Self {
+    pub fn from_stored(msg: &Message) -> Self {
         let mut turn = Self::new();
         turn.run_id.clone_from(&msg.run_id);
         for raw in &msg.events {
@@ -171,19 +171,17 @@ impl AssistantTurn {
                     call.result = Some(is_error);
                 }
             }
-            AgentEvent::Error { message } => self.blocks.push(Block::Error(message)),
+            AgentEvent::Error { message, .. } => self.blocks.push(Block::Error(message)),
             AgentEvent::ToolLoop {
                 tool_name,
                 count,
                 stopped: true,
+                ..
             } => self.blocks.push(Block::Error(format!(
                 "Stopped: {tool_name} failed {count} times in a row"
             ))),
-            AgentEvent::ToolLoop { .. }
-            | AgentEvent::TurnEnd { .. }
-            | AgentEvent::Usage { .. }
-            | AgentEvent::Raw { .. }
-            | AgentEvent::Unknown => {}
+            // Usage, turn ends, raw lines, loop warnings: nothing to show.
+            _ => {}
         }
     }
 
@@ -270,7 +268,7 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{RunEnd, RunStart, decode_frame};
+    use crate::events::decode_frame;
     use serde_json::json;
 
     fn agent(v: Value) -> RunFrame {
@@ -280,12 +278,10 @@ mod tests {
     #[test]
     fn text_deltas_merge_and_tools_split_them() {
         let mut t = AssistantTurn::new();
-        t.apply(RunFrame::Start(RunStart {
-            run_id: "r1".into(),
-            agent_id: "mock".into(),
-            model: Some("m".into()),
-            resumed: false,
-        }));
+        t.apply(decode_frame(
+            "start",
+            r#"{"runId":"r1","agentId":"claude","bin":"claude","protocolVersion":1,"model":"m"}"#,
+        ));
         assert_eq!(t.state, TurnState::Running);
         t.apply(agent(json!({"type": "text_delta", "delta": "Hel"})));
         t.apply(agent(json!({"type": "text_delta", "delta": "lo"})));
@@ -332,11 +328,10 @@ mod tests {
     fn end_sets_state_and_reports_error_once() {
         let mut t = AssistantTurn::new();
         t.apply(RunFrame::Error("agent crashed".into()));
-        t.apply(RunFrame::End(RunEnd {
-            status: RunStatus::Failed,
-            error: Some("agent crashed".into()),
-            artifact_paths: vec![],
-        }));
+        t.apply(decode_frame(
+            "end",
+            r#"{"status":"failed","code":1,"terminalAt":1,"error":"agent crashed"}"#,
+        ));
         assert_eq!(t.state, TurnState::Failed);
         assert_eq!(t.blocks, vec![Block::Error("agent crashed".into())]);
         assert!(!t.state.is_live());
@@ -344,8 +339,9 @@ mod tests {
 
     #[test]
     fn rebuilds_from_stored_message() {
-        let msg: StoredMessage = serde_json::from_value(json!({
-            "id": "m2", "role": "assistant", "content": "",
+        let msg: Message = serde_json::from_value(json!({
+            "id": "m2", "conversationId": "c1", "role": "assistant", "content": "",
+            "position": 1, "createdAt": 1,
             "runId": "r9", "runStatus": "canceled",
             "events": [
                 {"type": "text_delta", "delta": "partial"},

@@ -1,9 +1,10 @@
-// UI e2e (spec 5.7 M3) against the mock daemon: onboarding → brief → streamed
-// text → preview → second turn reloads the preview → question form → stop →
-// history after reload → settings. Every request leaving loopback is blocked
-// and fails the test.
+// UI e2e (spec 5.7 M3) against the real daemon (`od daemon start`) whose
+// only agent is the mock `claude` CLI in ./mock-agent: onboarding → brief →
+// streamed text → the agent writes index.html → preview → second turn reloads
+// the preview → question form → stop → history after reload → settings.
+// Every request leaving loopback is blocked and fails the test.
 //
-// Run through ./run.sh (builds the bundle and the mock daemon first).
+// Run through ./run.sh (builds the bundle and `od` first).
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
@@ -12,11 +13,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 
-const BIN = process.env.OD_MOCK_DAEMON;
+const BIN = process.env.OD_E2E_BIN;
+const MOCK_AGENTS = process.env.OD_MOCK_AGENTS;
 const PORT = Number(process.env.OD_E2E_PORT || 17461);
 const BASE = `http://127.0.0.1:${PORT}`;
 const OUT = new URL('./test-results/', import.meta.url).pathname;
-assert.ok(BIN, 'OD_MOCK_DAEMON must point at the built mock_daemon example');
+assert.ok(BIN, 'OD_E2E_BIN must point at the built `od` binary');
+assert.ok(MOCK_AGENTS, 'OD_MOCK_AGENTS must point at the mock agent folder');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log('[e2e]', ...a);
@@ -44,7 +47,12 @@ async function until(fn, label, timeout = 10_000) {
 
 const data = mkdtempSync(join(tmpdir(), 'od-e2e-'));
 mkdirSync(OUT, { recursive: true });
-const daemon = spawn(BIN, [String(PORT), data], { stdio: ['ignore', 'inherit', 'inherit'] });
+// Only the mock agent and system tools on PATH, so a real claude/codex on
+// this machine is never detected or launched.
+const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
+  stdio: ['ignore', 'inherit', 'inherit'],
+  env: { ...process.env, OD_DATA_DIR: data, PATH: `${MOCK_AGENTS}:/usr/bin:/bin` },
+});
 let browser;
 const results = {};
 
@@ -68,10 +76,10 @@ try {
     if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/runs') runBodies.push(req.postDataJSON());
   });
 
-  // 1. First run goes to onboarding; the mock agent is preselected.
+  // 1. First run goes to onboarding; the (mock) claude agent is preselected.
   await page.goto(BASE + '/');
   await page.waitForURL('**/onboarding');
-  await page.locator('[data-agent="mock"].active').waitFor();
+  await page.locator('[data-agent="claude"].active').waitFor();
   assert.equal(await page.locator('[data-agent="codex"]').isDisabled(), true, 'unavailable agent is disabled');
   await page.getByTestId('onboarding-continue').click();
   await page.waitForURL(BASE + '/');
@@ -97,7 +105,7 @@ try {
     await assistant.first().locator('code', { hasText: 'index.html' }).waitFor();
   });
   results.textStream = 'ok';
-  assert.equal(runBodies[0].agentId, 'mock');
+  assert.equal(runBodies[0].agentId, 'claude');
   assert.equal(runBodies[0].message, brief);
 
   // 4. Preview shows the file the agent wrote.
@@ -175,7 +183,7 @@ try {
   const cfg = await (await fetch(`${BASE}/api/app-config`)).json();
   assert.equal(cfg.agentPermissionMode, 'ask');
   assert.equal(cfg.model, 'mock-large');
-  assert.equal(cfg.agentId, 'mock');
+  assert.equal(cfg.agentId, 'claude');
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
   await page.goto(BASE + '/');
   await page.screenshot({ path: OUT + 'home-dark.png' });

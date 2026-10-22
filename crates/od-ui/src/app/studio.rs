@@ -153,14 +153,13 @@ impl StudioCtx {
             design_system_id: project.as_ref().and_then(|p| p.design_system_id.clone()),
             model,
             locale: web_sys::window().and_then(|w| w.navigator().language()),
+            ..ChatRequest::default()
         };
         self.live_run.set(Some(String::new()));
         leptos::task::spawn_local(async move {
             match api::post::<_, CreateRunResponse>("/api/runs", &req).await {
                 Ok(res) => {
-                    if res.conversation_id.is_some() {
-                        self.conversation_id.set(res.conversation_id);
-                    }
+                    self.conversation_id.set(Some(res.conversation_id));
                     turn.update(|t| t.run_id = Some(res.run_id.clone()));
                     self.attach(res.run_id, turn);
                 }

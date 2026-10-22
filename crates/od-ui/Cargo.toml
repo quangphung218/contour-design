@@ -35,19 +35,5 @@ web-sys = { version = "0.3", features = [
     "Window",
 ] }
 
-# The mock daemon used by the e2e test runs natively next to the real router.
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-anyhow.workspace = true
-axum.workspace = true
-od-content.workspace = true
-od-runs.workspace = true
-od-runtime.workspace = true
-od-server.workspace = true
-od-store.workspace = true
-tokio.workspace = true
-tokio-stream = { version = "0.1", features = ["sync"] }
-tracing-subscriber.workspace = true
-uuid.workspace = true
-
 [lints]
 workspace = true
