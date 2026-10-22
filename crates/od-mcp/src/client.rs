@@ -52,11 +52,27 @@ impl Daemon {
     /// # Errors
     /// An unparsable URL.
     pub fn new(base: &str) -> anyhow::Result<Self> {
+        Self::with_bearer(base, None)
+    }
+
+    /// A client that sends `Authorization: Bearer <token>` on every
+    /// request (an agent's `OD_TOOL_TOKEN`).
+    ///
+    /// # Errors
+    /// An unparsable URL or a token that is not a valid header value.
+    pub fn with_bearer(base: &str, token: Option<&str>) -> anyhow::Result<Self> {
         let base = Url::parse(base.trim_end_matches('/'))?;
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Some(token) = token.map(str::trim).filter(|t| !t.is_empty()) {
+            let mut value = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))?;
+            value.set_sensitive(true);
+            headers.insert(reqwest::header::AUTHORIZATION, value);
+        }
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
             // Loopback only: never route through a system proxy.
             .no_proxy()
+            .default_headers(headers)
             .build()?;
         Ok(Self { base, http })
     }

@@ -137,3 +137,64 @@ pub fn print_slides(w: u32, h: u32) -> String {
         css = js_str(&css),
     )
 }
+
+/// Installs the frame bridge over `window.__timelines` and waits (up to
+/// 15 s) for the root composition's timeline to register. Resolves to
+/// `{duration, timelines}`: `duration` in seconds is the root's
+/// `data-duration`, else the longest registered timeline.
+pub fn frame_ready() -> String {
+    r#"(async () => {
+  const root = document.querySelector('[data-composition-id]');
+  const id = root && root.getAttribute('data-composition-id');
+  const timelines = () => {
+    const all = window.__timelines;
+    if (!all || typeof all !== 'object') return [];
+    return Object.values(all).filter((tl) => tl && (typeof tl.seek === 'function' || typeof tl.totalTime === 'function'));
+  };
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const all = window.__timelines;
+    if (all && (id ? all[id] : timelines().length > 0)) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const clips = Array.from(document.querySelectorAll('[data-start][data-duration]')).filter((el) => el !== root);
+  window.__odFrame = {
+    async seek(t) {
+      for (const tl of timelines()) {
+        if (typeof tl.pause === 'function') tl.pause();
+        if (typeof tl.seek === 'function') tl.seek(t, false); else tl.totalTime(t, false);
+      }
+      if (document.getAnimations) {
+        for (const a of document.getAnimations()) { a.pause(); a.currentTime = t * 1000; }
+      }
+      for (const el of clips) {
+        const start = Number(el.getAttribute('data-start'));
+        const dur = Number(el.getAttribute('data-duration'));
+        if (Number.isFinite(start) && Number.isFinite(dur)) {
+          el.style.visibility = t >= start && t < start + dur ? '' : 'hidden';
+        }
+      }
+      for (const v of document.querySelectorAll('video')) {
+        try { v.pause(); v.currentTime = t; } catch (_) {}
+      }
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    }
+  };
+  const declared = Number(root && root.getAttribute('data-duration'));
+  let duration = Number.isFinite(declared) && declared > 0 ? declared : 0;
+  if (!duration) {
+    for (const tl of timelines()) {
+      const d = Number(typeof tl.duration === 'function' ? tl.duration() : tl.duration);
+      if (Number.isFinite(d) && d > duration) duration = d;
+    }
+  }
+  return { duration, timelines: timelines().length };
+})()"#
+        .to_owned()
+}
+
+/// Seeks every timeline to `seconds` and waits two frames.
+pub fn seek_frame(seconds: f64) -> String {
+    format!("window.__odFrame.seek({seconds})")
+}

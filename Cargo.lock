@@ -2206,6 +2206,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -3506,6 +3507,7 @@ dependencies = [
  "od-contracts",
  "rayon",
  "regex",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
@@ -3559,6 +3561,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "od-live"
+version = "0.1.0"
+dependencies = [
+ "od-contracts",
+ "od-store",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
 name = "od-mcp"
 version = "0.1.0"
 dependencies = [
@@ -3575,6 +3591,21 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "od-media"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3662,6 +3693,8 @@ dependencies = [
  "od-content",
  "od-contracts",
  "od-export",
+ "od-live",
+ "od-media",
  "od-preview",
  "od-render-cdp",
  "od-runs",
@@ -4487,6 +4520,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -6704,6 +6738,15 @@ dependencies = [
  "pkg-config",
  "soup3-sys",
  "system-deps",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]

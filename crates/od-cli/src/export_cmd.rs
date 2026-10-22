@@ -20,6 +20,8 @@ pub enum Format {
     Image,
     /// ZIP of the project (or of --root).
     Zip,
+    /// MP4 of a HyperFrames composition (needs Chrome and ffmpeg).
+    Mp4,
 }
 
 #[derive(Debug, Args)]
@@ -74,6 +76,7 @@ pub fn run(client: &Client, args: ExportArgs, json: bool) -> anyhow::Result<()> 
             Format::PdfVector => "pdf",
             Format::Pptx => "pptx",
             Format::Image => "image",
+            Format::Mp4 => "mp4",
             Format::Zip => unreachable!("handled above"),
         };
         let mut body = json!({});

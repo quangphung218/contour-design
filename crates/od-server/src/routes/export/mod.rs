@@ -68,7 +68,7 @@ pub struct ExportErr {
 }
 
 impl ExportErr {
-    fn new(status: StatusCode, code: ErrorCode, message: impl Into<String>) -> Self {
+    pub(crate) fn new(status: StatusCode, code: ErrorCode, message: impl Into<String>) -> Self {
         Self {
             status,
             code,
@@ -156,9 +156,9 @@ impl IntoResponse for ExportErr {
     }
 }
 
-type ExportResult<T> = Result<T, ExportErr>;
+pub(crate) type ExportResult<T> = Result<T, ExportErr>;
 
-fn internal(e: impl std::fmt::Display) -> ExportErr {
+pub(crate) fn internal(e: impl std::fmt::Display) -> ExportErr {
     ExportErr::new(
         StatusCode::INTERNAL_SERVER_ERROR,
         ErrorCode::InternalError,
@@ -201,9 +201,9 @@ impl AssetSource for StoreSource {
 #[serde(rename_all = "camelCase")]
 pub struct ExportRequest {
     #[serde(default)]
-    file_name: Option<String>,
+    pub(crate) file_name: Option<String>,
     #[serde(default)]
-    title: Option<String>,
+    pub(crate) title: Option<String>,
     /// `true` deck, `false` page, absent: detect slides.
     #[serde(default)]
     deck: Option<bool>,
@@ -213,9 +213,9 @@ pub struct ExportRequest {
     #[serde(default)]
     image_format: Option<String>,
     #[serde(default)]
-    width: Option<u32>,
+    pub(crate) width: Option<u32>,
     #[serde(default)]
-    height: Option<u32>,
+    pub(crate) height: Option<u32>,
 }
 
 impl ExportRequest {
@@ -242,16 +242,16 @@ fn parse_body(body: &Bytes) -> ExportResult<ExportRequest> {
 }
 
 /// The project, its root, and the validated HTML entry path.
-struct Entry {
-    project: Project,
-    root: ProjectRoot,
-    path: String,
+pub(crate) struct Entry {
+    pub(crate) project: Project,
+    pub(crate) root: ProjectRoot,
+    pub(crate) path: String,
     size: u64,
 }
 
 impl Entry {
     /// Download name: the title, else the entry's file stem.
-    fn filename(&self, title: Option<&str>, ext: &str) -> String {
+    pub(crate) fn filename(&self, title: Option<&str>, ext: &str) -> String {
         let base = title
             .map(str::trim)
             .filter(|t| !t.is_empty())
@@ -267,7 +267,11 @@ impl Entry {
     }
 }
 
-async fn resolve_entry(state: &AppState, id: String, req: &ExportRequest) -> ExportResult<Entry> {
+pub(crate) async fn resolve_entry(
+    state: &AppState,
+    id: String,
+    req: &ExportRequest,
+) -> ExportResult<Entry> {
     let file_name = req
         .file_name
         .as_deref()
@@ -336,12 +340,16 @@ async fn bundle(entry: &Entry, lenient: bool) -> ExportResult<od_export::Standal
 
 /// A bundled copy of the entry in a scratch folder under the data dir,
 /// removed when dropped.
-struct Scratch {
-    _dir: tempfile::TempDir,
-    target: RenderTarget,
+pub(crate) struct Scratch {
+    pub(crate) dir: tempfile::TempDir,
+    pub(crate) target: RenderTarget,
 }
 
-async fn scratch(state: &AppState, entry: &Entry, req: &ExportRequest) -> ExportResult<Scratch> {
+pub(crate) async fn scratch(
+    state: &AppState,
+    entry: &Entry,
+    req: &ExportRequest,
+) -> ExportResult<Scratch> {
     let bundled = bundle(entry, true).await?;
     let base = state.store.data_dir().root().join("export-render");
     tokio::task::spawn_blocking(move || {
@@ -364,11 +372,11 @@ async fn scratch(state: &AppState, entry: &Entry, req: &ExportRequest) -> Export
         if let Some(h) = req.height.filter(|h| (1..=7_680).contains(h)) {
             target.height = h;
         }
-        Scratch { _dir: dir, target }
+        Scratch { dir, target }
     })
 }
 
-fn attachment(mime: &str, filename: &str, body: impl Into<Body>) -> Response {
+pub(crate) fn attachment(mime: &str, filename: &str, body: impl Into<Body>) -> Response {
     let mut res = Response::new(body.into());
     let headers = res.headers_mut();
     if let Ok(v) = HeaderValue::from_str(mime) {

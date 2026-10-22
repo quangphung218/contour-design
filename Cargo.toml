@@ -20,6 +20,8 @@ od-preview = { path = "crates/od-preview" }
 od-export = { path = "crates/od-export" }
 od-render-cdp = { path = "crates/od-render-cdp" }
 od-mcp = { path = "crates/od-mcp" }
+od-live = { path = "crates/od-live" }
+od-media = { path = "crates/od-media" }
 
 anyhow = "1"
 arc-swap = "1"

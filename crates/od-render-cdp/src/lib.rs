@@ -6,6 +6,7 @@
 //! fresh headless browser with a throwaway profile and DNS for everything
 //! but localhost disabled, loads a file from disk, and closes it again.
 
+pub mod ffmpeg;
 mod script;
 
 use chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams;
@@ -16,10 +17,11 @@ use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
-use od_export::renderer::MAX_PAGE_HEIGHT;
+use od_export::hyperframes::{MAX_FPS, frame_count};
+use od_export::renderer::{MAX_PAGE_HEIGHT, frame_file_name};
 use od_export::{
-    CaptureOptions, DeckMode, FrameOptions, ImageFormat, RenderError, RenderResult, RenderTarget,
-    Renderer, Slides,
+    CaptureOptions, DeckMode, FrameOptions, FrameSet, ImageFormat, RenderError, RenderResult,
+    RenderTarget, Renderer, Slides,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -31,6 +33,10 @@ pub const CHROME_PATH_ENV: &str = "OD_CHROME_PATH";
 /// Smallest and largest slide edge we trust from measurement.
 const SLIDE_MIN_PX: u32 = 320;
 const SLIDE_MAX_PX: u32 = 7_680;
+/// Whole frame capture must finish within 5 minutes (original limit).
+pub const FRAME_CAPTURE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// Most frames one capture writes (one hour at 30 fps).
+pub const MAX_FRAMES: u64 = 108_000;
 /// Deck PDF page width (spec 4.2: 13.333 × 7.5 in).
 const DECK_PAGE_WIDTH_IN: f64 = 13.333;
 const CSS_PX_PER_IN: f64 = 96.0;
@@ -457,6 +463,75 @@ impl CdpRenderer {
 }
 
 impl CdpRenderer {
+    async fn frames(
+        &self,
+        target: &RenderTarget,
+        options: FrameOptions,
+        out_dir: &Path,
+    ) -> RenderResult<FrameSet> {
+        if options.fps == 0 || options.fps > MAX_FPS {
+            return Err(RenderError::Failed(format!(
+                "frame rate must be 1–{MAX_FPS}, got {}",
+                options.fps
+            )));
+        }
+        tokio::fs::create_dir_all(out_dir)
+            .await
+            .map_err(|e| RenderError::Failed(format!("{}: {e}", out_dir.display())))?;
+        let s = self.open(target).await?;
+        let result = tokio::time::timeout(FRAME_CAPTURE_TIMEOUT, async {
+            s.settle().await?;
+            let meta = s.eval(&script::frame_ready()).await?;
+            let duration_ms = if options.duration_ms > 0 {
+                options.duration_ms
+            } else {
+                let secs = meta.get("duration").and_then(Value::as_f64).unwrap_or(0.0);
+                if !(secs.is_finite() && secs > 0.0) {
+                    return Err(RenderError::Failed(
+                        "the composition declares no data-duration and registers no timeline in window.__timelines"
+                            .to_owned(),
+                    ));
+                }
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // positive, finite
+                let ms = (secs * 1000.0).round() as u64;
+                ms
+            };
+            let count = frame_count(duration_ms, options.fps);
+            if count > MAX_FRAMES {
+                return Err(RenderError::Failed(format!(
+                    "{count} frames exceed the {MAX_FRAMES} frame limit"
+                )));
+            }
+            let count = u32::try_from(count).unwrap_or(u32::MAX);
+            for i in 0..count {
+                s.eval(&script::seek_frame(f64::from(i) / f64::from(options.fps)))
+                    .await?;
+                let png = s
+                    .screenshot(s.viewport_clip(0, s.height), ImageFormat::Png, false)
+                    .await?;
+                let path = out_dir.join(frame_file_name(i));
+                tokio::fs::write(&path, png)
+                    .await
+                    .map_err(|e| RenderError::Failed(format!("{}: {e}", path.display())))?;
+            }
+            Ok(FrameSet {
+                count,
+                fps: options.fps,
+                width: s.width,
+                height: s.height,
+            })
+        })
+        .await
+        .unwrap_or_else(|_| {
+            Err(RenderError::Failed(format!(
+                "frame capture timed out after {} minutes",
+                FRAME_CAPTURE_TIMEOUT.as_secs() / 60
+            )))
+        });
+        s.close().await;
+        result
+    }
+
     /// Loads `target`, waits for it to settle, and returns the value of `js`
     /// (awaited if it is a promise). For diagnostics and tests.
     ///
@@ -485,11 +560,11 @@ impl Renderer for CdpRenderer {
 
     fn render_frames<'a>(
         &'a self,
-        _target: &'a RenderTarget,
-        _options: FrameOptions,
-    ) -> BoxFuture<'a, RenderResult<Vec<Vec<u8>>>> {
-        // HyperFrames MP4 is P2 (spec 5.7 M6).
-        Box::pin(async { Err(RenderError::Unsupported("timeline frame capture")) })
+        target: &'a RenderTarget,
+        options: FrameOptions,
+        out_dir: &'a Path,
+    ) -> BoxFuture<'a, RenderResult<FrameSet>> {
+        Box::pin(self.frames(target, options, out_dir))
     }
 
     fn print_pdf<'a>(

@@ -280,6 +280,12 @@ pub struct ChatRequest {
     pub session_mode: Option<SessionMode>,
     #[serde(default)]
     pub locale: Option<String>,
+    /// Bundled or user plugin applied to this run (spec 1.4: preset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
+    /// Answers to the plugin's `od.inputs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_inputs: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 /// `POST /api/runs` → 202.

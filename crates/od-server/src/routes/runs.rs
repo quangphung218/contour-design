@@ -65,6 +65,8 @@ fn request_hash(req: &ChatRequest) -> String {
         "skillIds": req.skill_ids,
         "designSystemId": req.design_system_id,
         "attachments": req.attachments,
+        "pluginId": req.plugin_id,
+        "pluginInputs": req.plugin_inputs,
     });
     hex::encode(&Sha256::digest(logical.to_string().as_bytes())[..16])
 }
@@ -100,6 +102,8 @@ pub async fn create(
     if req.message.trim().is_empty() {
         return Err(ApiErr::bad_request("message required"));
     }
+    // An unknown plugin or missing plugin inputs fail before any run exists.
+    crate::routes::media::plugins::applied_plugin(&state.content.snapshot(), &req)?;
     let client_request_id = safe_client_id(req.client_request_id.as_deref())?;
     let user_message_id = safe_client_id(req.user_message_id.as_deref())?.unwrap_or_else(new_id);
     let assistant_message_id =
@@ -247,6 +251,7 @@ async fn prepare_and_launch(
     let assistant = assistant_message_id.clone();
     let user_message = user_message_id.to_owned();
     let model2 = model.clone();
+    let plugin = crate::routes::media::plugins::applied_plugin(&content, req)?;
     let prepared = state
         .blocking(move |s| {
             let root = s.project_root(&project2)?;
@@ -267,6 +272,9 @@ async fn prepare_and_launch(
             ids.extend(req2.skill_id.clone());
             if ids.is_empty() {
                 ids.extend(project2.skill_id.clone());
+            }
+            if let Some(p) = &plugin {
+                ids.extend(p.skill_ids.iter().cloned());
             }
             ids.dedup();
             let skills: Vec<&od_content::SkillEntry> = ids
@@ -292,6 +300,7 @@ async fn prepare_and_launch(
             let skill_requires: Vec<String> = skills
                 .iter()
                 .flat_map(|s| s.info.craft_requires.iter().cloned())
+                .chain(plugin.iter().flat_map(|p| p.craft_requires.iter().cloned()))
                 .collect();
             let requested =
                 od_content::craft::resolve_craft_requirements(&od_content::craft::CraftRequest {
@@ -312,6 +321,7 @@ async fn prepare_and_launch(
                 design_system: ds,
                 craft: Some((craft_body.as_str(), craft_sections.as_slice())),
                 skills: &skills,
+                plugin_block: plugin.as_ref().map(|p| p.prompt_block.as_str()),
             });
             let stable_hash = prompt::stable_hash(&instructions);
             let cwd_str = cwd.to_string_lossy().into_owned();
