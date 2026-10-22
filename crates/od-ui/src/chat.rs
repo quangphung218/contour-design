@@ -42,6 +42,8 @@ pub struct ToolCall {
     pub name: String,
     /// One-line description of the input (file path, command…).
     pub summary: String,
+    /// Full file path of a write tool, as the agent sent it.
+    pub path: Option<String>,
     /// `Some(is_error)` once the result arrived.
     pub result: Option<bool>,
 }
@@ -128,6 +130,9 @@ pub struct AssistantTurn {
     pub status: Option<String>,
     /// The latest plan the agent wrote with `TodoWrite`.
     pub todos: Vec<Todo>,
+    /// The run's project folder (from `start`), to make written paths
+    /// project-relative.
+    pub cwd: Option<String>,
 }
 
 impl Default for AssistantTurn {
@@ -146,6 +151,7 @@ impl AssistantTurn {
             model: None,
             status: None,
             todos: Vec::new(),
+            cwd: None,
         }
     }
 
@@ -173,6 +179,7 @@ impl AssistantTurn {
                 self.state = TurnState::Running;
                 self.run_id = Some(start.run_id);
                 self.model = start.model;
+                self.cwd = start.cwd;
             }
             RunFrame::Agent(ev) => self.apply_agent(ev),
             RunFrame::Error(message) => self.blocks.push(Block::Error(message)),
@@ -222,10 +229,19 @@ impl AssistantTurn {
                     }
                 }
                 let summary = summarize_input(&name, &input);
+                let path = is_write_tool(&name)
+                    .then(|| {
+                        ["file_path", "path"]
+                            .iter()
+                            .find_map(|k| input.get(*k)?.as_str())
+                    })
+                    .flatten()
+                    .map(str::to_owned);
                 self.blocks.push(Block::Tool(ToolCall {
                     id,
                     name,
                     summary,
+                    path,
                     result: None,
                 }));
             }
@@ -269,15 +285,26 @@ impl AssistantTurn {
             .collect()
     }
 
-    /// Project files the agent wrote or edited in this turn.
+    /// Project files (relative paths) the agent wrote or edited in this
+    /// turn. Built from the full tool paths and the run's cwd, never from
+    /// the truncated row summary; writes outside the project are left out.
     #[must_use]
     pub fn touched_files(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for b in &self.blocks {
-            if let Block::Tool(c) = b {
-                if is_write_tool(&c.name) && !c.summary.is_empty() && !out.contains(&c.summary) {
-                    out.push(c.summary.clone());
-                }
+            let Block::Tool(c) = b else { continue };
+            if !is_write_tool(&c.name) {
+                continue;
+            }
+            let Some(rel) = c
+                .path
+                .as_deref()
+                .and_then(|p| project_relative(p, self.cwd.as_deref()))
+            else {
+                continue;
+            };
+            if !out.contains(&rel) {
+                out.push(rel);
             }
         }
         out
@@ -319,6 +346,25 @@ pub fn summarize_input(name: &str, input: &Value) -> String {
         line
     };
     truncate(line, SUMMARY_CHARS)
+}
+
+/// `path` relative to the project folder `cwd`; `None` when it lies outside.
+/// Without a cwd (a stored turn) only the `…/projects/<id>/` layout is known.
+fn project_relative(path: &str, cwd: Option<&str>) -> Option<String> {
+    let path = path.trim();
+    let rel = if path.starts_with('/') {
+        match cwd.map(|c| c.trim_end_matches('/')) {
+            Some(cwd) => path.strip_prefix(cwd)?.strip_prefix('/')?,
+            None => {
+                let rel = strip_cwd(path);
+                (rel != path).then_some(rel)?
+            }
+        }
+    } else {
+        path
+    };
+    let rel = rel.trim_start_matches("./");
+    (!rel.is_empty()).then(|| rel.to_owned())
 }
 
 /// Agents report absolute paths; the project-relative tail is what matters.
@@ -373,12 +419,49 @@ mod tests {
                     id: "t1".into(),
                     name: "Write".into(),
                     summary: "index.html".into(),
+                    path: Some("/data/projects/p1/index.html".into()),
                     result: Some(false),
                 }),
                 Block::Text(" done".into()),
             ]
         );
         assert_eq!(t.text(), "Hello done");
+        assert_eq!(t.touched_files(), vec!["index.html".to_owned()]);
+    }
+
+    #[test]
+    fn touched_files_are_relative_to_the_run_cwd_and_never_truncated() {
+        let write = |path: &str| {
+            agent(json!({"type": "tool_use", "id": path, "name": "Write",
+                "input": {"file_path": path, "content": "x"}}))
+        };
+        let start = |cwd: &str| {
+            decode_frame(
+                "start",
+                &json!({"runId": "r", "agentId": "claude", "bin": "claude",
+                    "protocolVersion": 1, "cwd": cwd})
+                .to_string(),
+            )
+        };
+        let long = format!("{}/index.html", "a".repeat(130));
+        let mut t = AssistantTurn::new();
+        t.apply(start("/Users/me/projects/site"));
+        t.apply(write("/Users/me/projects/site/pages/about.html"));
+        t.apply(write(&format!("/Users/me/projects/site/{long}")));
+        t.apply(write("notes/plan.md"));
+        t.apply(write("/Users/me/.zshrc"));
+        assert_eq!(
+            t.touched_files(),
+            vec![
+                "pages/about.html".to_owned(),
+                long,
+                "notes/plan.md".to_owned()
+            ]
+        );
+
+        let mut t = AssistantTurn::new();
+        t.apply(start("/Users/me/site"));
+        t.apply(write("/Users/me/site/index.html"));
         assert_eq!(t.touched_files(), vec!["index.html".to_owned()]);
     }
 
