@@ -75,7 +75,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/runs/{id}", get(runs::get))
         .route("/api/runs/{id}/events", get(runs::events))
         .route("/api/runs/{id}/cancel", post(runs::cancel))
-        .route("/api/runs/{id}/steer", post(runs::steer));
+        .route("/api/runs/{id}/steer", post(runs::steer))
+        .merge(routes::ui::routes());
     api.layer(axum::middleware::from_fn_with_state(
         state.clone(),
         guard::origin_guard,

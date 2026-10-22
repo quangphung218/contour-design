@@ -1,0 +1,29 @@
+[package]
+name = "od-desktop"
+description = "Open Design desktop shell (Tauri 2): runs od-server in-process on a random loopback port"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "od-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+od-content.workspace = true
+od-server.workspace = true
+od-store.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
