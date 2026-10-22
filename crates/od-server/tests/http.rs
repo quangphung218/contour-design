@@ -47,6 +47,7 @@ fn harness_with(resource_root: &Path) -> Harness {
             Arc::new(od_runs::Runs::new(data.join("runs"))),
             od_runtime::EngineConfig::from_env(),
         )),
+        preview: od_server::Preview::default(),
     };
     Harness {
         _tmp: tmp,

@@ -423,7 +423,13 @@ async fn main() -> anyhow::Result<()> {
             api_token: None,
             allowed_origins: Vec::new(),
             resource_root,
+            daemon_url: None,
         }),
+        runs: Arc::new(od_server::RunContext::new(
+            Arc::new(od_runs::Runs::new(data_dir.join("runs"))),
+            od_runtime::EngineConfig::from_env(),
+        )),
+        preview: od_server::Preview::default(),
     };
     let ctx = Ctx {
         app: app.clone(),

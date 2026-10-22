@@ -10,7 +10,9 @@
 use anyhow::Context;
 use od_content::{ContentRoots, ContentStore};
 use od_server::routes::ui::import_folder;
-use od_server::{AppState, ServerConfig, resolve_resource_root, router};
+use od_server::{
+    AppState, Preview, RunContext, ServerConfig, open_runs, resolve_resource_root, router,
+};
 use od_store::{DataDir, Store};
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -48,6 +50,7 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
     };
     let roots = ContentRoots::bundled(&resource_root).with_user_root(data_dir.root());
     let content = tokio::task::spawn_blocking(move || ContentStore::load(roots)).await?;
+    let runs = open_runs(&store).await?;
     // Port 0: a fresh loopback port per launch, so a CLI daemon on 7456 or a
     // second window never collides.
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
@@ -61,8 +64,15 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
             api_token: None,
             allowed_origins: Vec::new(),
             resource_root,
+            daemon_url: Some(format!("http://{local}")),
         }),
+        runs: Arc::new(RunContext::new(
+            Arc::clone(&runs),
+            od_runtime::EngineConfig::from_env(),
+        )),
+        preview: Preview::default(),
     };
+    let _flusher = runs.spawn_flusher();
     let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = axum::serve(listener, app).await {

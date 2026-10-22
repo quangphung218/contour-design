@@ -12,6 +12,7 @@
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::routes::raw;
 use crate::state::AppState;
+pub use crate::state::Preview;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, Query, RawQuery, Request, State};
@@ -23,8 +24,8 @@ use axum::routing::get;
 use axum::{Extension, middleware};
 use od_contracts::ErrorCode;
 use od_preview::{
-    MAX_INJECT_BYTES, PREVIEW_CSP, PREVIEW_IFRAME_SANDBOX, PreviewScopes, PreviewUrlResponse,
-    ProjectEvent, ProjectEvents, encode_path, encode_segment, inject_bridge, is_scope_token,
+    MAX_INJECT_BYTES, PREVIEW_CSP, PREVIEW_IFRAME_SANDBOX, PreviewUrlResponse, ProjectEvent,
+    encode_path, encode_segment, inject_bridge, is_scope_token,
 };
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -34,16 +35,8 @@ use std::time::Duration;
 pub const BRIDGE_HEADER: &str = "x-od-bridge";
 const KEEPALIVE: Duration = Duration::from_secs(25);
 
-/// Scopes and watchers shared by the preview routes.
-#[derive(Clone, Default)]
-pub struct Preview {
-    pub scopes: Arc<PreviewScopes>,
-    pub events: Arc<ProjectEvents>,
-}
-
 /// Adds the preview routes to `api` and the bridge rewrite for `raw`.
-pub fn mount(api: Router<AppState>) -> Router<AppState> {
-    let preview = Preview::default();
+pub fn mount(api: Router<AppState>, preview: Preview) -> Router<AppState> {
     api.route("/api/projects/{id}/preview-url", get(preview_url))
         .route("/api/projects/{id}/preview/{scope}/{*path}", get(scoped))
         .route("/api/projects/{id}/events", get(events))

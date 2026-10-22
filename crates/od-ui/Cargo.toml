@@ -40,6 +40,8 @@ web-sys = { version = "0.3", features = [
 anyhow.workspace = true
 axum.workspace = true
 od-content.workspace = true
+od-runs.workspace = true
+od-runtime.workspace = true
 od-server.workspace = true
 od-store.workspace = true
 tokio.workspace = true

@@ -1,5 +1,6 @@
 use crate::error::{ApiErr, ApiResult};
 use od_content::ContentStore;
+use od_preview::{PreviewScopes, ProjectEvents};
 use od_runs::Runs;
 use od_runtime::{EngineConfig, RunEngine, ToolTokens};
 use od_store::{Store, StoreError};
@@ -45,6 +46,14 @@ impl RunContext {
     }
 }
 
+/// Preview scopes and the per-project event hub (watchers and
+/// `conversation-created`), shared by every route.
+#[derive(Clone, Default)]
+pub struct Preview {
+    pub scopes: Arc<PreviewScopes>,
+    pub events: Arc<ProjectEvents>,
+}
+
 /// Shared handler state.
 #[derive(Clone)]
 pub struct AppState {
@@ -52,6 +61,7 @@ pub struct AppState {
     pub content: Arc<ContentStore>,
     pub config: Arc<ServerConfig>,
     pub runs: Arc<RunContext>,
+    pub preview: Preview,
 }
 
 impl AppState {

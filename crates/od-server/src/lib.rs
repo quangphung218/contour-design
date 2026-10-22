@@ -18,7 +18,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-pub use state::{AppState, DEFAULT_HOST, DEFAULT_PORT, RunContext, ServerConfig};
+pub use state::{AppState, DEFAULT_HOST, DEFAULT_PORT, Preview, RunContext, ServerConfig};
 
 /// Request bodies up to 200 MiB (largest expected design asset).
 const MAX_BODY_BYTES: usize = 200 * 1024 * 1024;
@@ -76,8 +76,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/runs/{id}/events", get(runs::events))
         .route("/api/runs/{id}/cancel", post(runs::cancel))
         .route("/api/runs/{id}/steer", post(runs::steer))
-        .merge(routes::ui::routes());
-    let api = routes::preview::mount(api);
+        .merge(routes::ui::routes())
+        .merge(routes::export::routes());
+    let api = routes::preview::mount(api, state.preview.clone());
     api.layer(axum::middleware::from_fn_with_state(
         state.clone(),
         guard::origin_guard,
@@ -230,6 +231,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             Arc::clone(&runs),
             od_runtime::EngineConfig::from_env(),
         )),
+        preview: Preview::default(),
     };
     let _flusher = runs.spawn_flusher();
     tracing::info!(

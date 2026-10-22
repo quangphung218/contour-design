@@ -8,6 +8,7 @@ use od_contracts::{
     ConversationResponse, ConversationsResponse, CreateConversationRequest, MessageResponse,
     MessagesResponse, UpsertMessageRequest,
 };
+use od_preview::ProjectEvent;
 
 pub async fn list(
     State(state): State<AppState>,
@@ -33,6 +34,15 @@ pub async fn create(
     let conversation = state
         .blocking(move |s| s.create_conversation(&project_id, req))
         .await?;
+    state.preview.events.publish(
+        &conversation.project_id,
+        ProjectEvent::ConversationCreated {
+            project_id: conversation.project_id.clone(),
+            conversation_id: conversation.id.clone(),
+            title: conversation.title.clone(),
+            created_at: conversation.created_at,
+        },
+    );
     Ok(ApiJson(ConversationResponse { conversation }))
 }
 

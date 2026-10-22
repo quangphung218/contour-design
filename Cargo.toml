@@ -17,6 +17,9 @@ od-server = { path = "crates/od-server" }
 od-runtime = { path = "crates/od-runtime" }
 od-runs = { path = "crates/od-runs" }
 od-preview = { path = "crates/od-preview" }
+od-export = { path = "crates/od-export" }
+od-render-cdp = { path = "crates/od-render-cdp" }
+od-mcp = { path = "crates/od-mcp" }
 
 anyhow = "1"
 arc-swap = "1"
@@ -25,29 +28,34 @@ base64 = "0.22"
 chromiumoxide = { version = "0.9", default-features = false }
 clap = { version = "4", features = ["derive", "env"] }
 criterion = { version = "0.5", default-features = false }
-futures-util = { version = "0.3", default-features = false, features = ["std"] }
+flate2 = "1"
+futures-util = "0.3"
 hex = "0.4"
+http-body-util = "0.1"
 httpdate = "1"
-nix = { version = "0.30", default-features = false, features = ["signal", "process"] }
 lol_html = "3"
+lopdf = { version = "0.46", default-features = false }
+nix = { version = "0.30", default-features = false, features = ["signal", "process"] }
 notify = "8"
 notify-debouncer-full = "0.7"
+png = "0.18"
 rayon = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking"] }
+rmcp = { version = "3", default-features = false, features = ["server", "transport-io"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
-tokio-util = { version = "0.7", features = ["io"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "sync", "io-util", "process", "time"] }
+tokio-util = { version = "0.7", features = ["io"] }
 tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -29,7 +29,13 @@ fn state(tmp: &Path) -> AppState {
             api_token: None,
             allowed_origins: Vec::new(),
             resource_root: empty,
+            daemon_url: None,
         }),
+        runs: Arc::new(od_server::RunContext::new(
+            Arc::new(od_runs::Runs::new(data.join("runs"))),
+            od_runtime::EngineConfig::from_env(),
+        )),
+        preview: od_server::Preview::default(),
     }
 }
 
