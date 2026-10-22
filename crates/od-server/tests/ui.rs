@@ -119,6 +119,7 @@ async fn import_folder_points_at_folder() {
 
     for bad in [
         json!({"baseDir": "relative/dir"}),
+        json!({"baseDir": "."}),
         json!({"baseDir": tmp.path().join("missing")}),
         json!({"baseDir": tmp.path().join("data")}),
         json!({"baseDir": "/"}),

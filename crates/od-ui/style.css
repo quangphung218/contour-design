@@ -178,6 +178,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .agent-card.active { border-color: var(--accent); background: var(--accent-soft); }
 .agent-card:disabled { opacity: 0.55; cursor: default; }
 .agent-name { font-weight: 500; }
+.agent-list > p, .agent-list > .field { grid-column: 1 / -1; }
 
 /* ---------- studio ---------- */
 .studio { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(340px, 34%) 1fr; }

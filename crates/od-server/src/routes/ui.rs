@@ -170,7 +170,7 @@ struct ImportFolderRequest {
 ///
 /// # Errors
 /// [`StoreError::BadRequest`] when `dir` is not an absolute existing folder,
-/// is the filesystem root, or lies inside the data directory.
+/// or overlaps the data directory (which also rules out `/`).
 pub fn import_folder(
     store: &Store,
     dir: &Path,
@@ -185,9 +185,6 @@ pub fn import_folder(
         .map_err(|_| bad("baseDir does not exist"))?;
     if !dir.is_dir() {
         return Err(bad("baseDir is not a folder"));
-    }
-    if dir.parent().is_none() {
-        return Err(bad("refusing to import the filesystem root"));
     }
     let data_root = store
         .data_dir()
