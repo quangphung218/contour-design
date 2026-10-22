@@ -1,2 +1,4 @@
 [build]
 jobs = 4
+# Mọi worktree dùng chung target: dep chỉ compile một lần, cargo tự khoá nên không chạy rustc song song (máy 16 GB).
+target-dir = "/Users/quangphung/.cache/odrs-target"
