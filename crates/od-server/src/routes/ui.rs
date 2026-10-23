@@ -183,7 +183,7 @@ fn redacted(mut config: Map<String, Value>) -> Value {
 }
 
 /// Writes through a temp file created `0600`: the config holds the BYOK key.
-fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let tmp = path.with_extension("json.tmp");
     let mut options = std::fs::OpenOptions::new();
@@ -214,6 +214,24 @@ async fn get_config(State(state): State<AppState>) -> ApiResult<ApiJson<Value>> 
         })
         .await?;
     Ok(ApiJson(redacted(config)))
+}
+
+/// Merges `patch` (an object, see [`merge_patch`]) into the stored config
+/// from server code, under the same lock as `PUT /api/app-config`.
+///
+/// # Errors
+/// I/O errors; [`StoreError::BadRequest`] when `patch` is not an object.
+pub(crate) fn patch_config(store: &Store, patch: Value) -> Result<(), StoreError> {
+    let Value::Object(patch) = patch else {
+        return Err(StoreError::BadRequest("patch must be an object".to_owned()));
+    };
+    let _guard = CONFIG_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let path = config_path(store);
+    let mut config = read_config(&path)?;
+    merge_patch(&mut config, patch);
+    let bytes = serde_json::to_vec_pretty(&config)?;
+    write_atomic(&path, &bytes)?;
+    Ok(())
 }
 
 async fn put_config(

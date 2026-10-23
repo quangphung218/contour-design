@@ -17,7 +17,7 @@ Không dùng: gradient tím, emoji làm icon, ký tự làm icon (`↻ × ⤓ >_
 | `crates/od-ui/styles/app.css` | App shell và từng màn (Home, Projects, Studio, Settings…), chỉ ghép token và component |
 | `crates/od-ui/styles/library.css` | Các màn thư viện (Design systems, Plugins, Media, Templates), nạp sau `app.css`, cũng chỉ ghép token và component |
 | `crates/od-ui/src/app/icons.rs` | `Glyph` + hàm `icon(glyph)` |
-| `crates/od-ui/vendor/remixicon/` | 97 icon SVG Remix Icon 4.8.0, Apache-2.0 |
+| `crates/od-ui/vendor/remixicon/` | 109 icon SVG Remix Icon 4.8.0, Apache-2.0 |
 | `crates/od-ui/assets/` | Favicon và mark Nét (sinh từ `assets/brand`, xem [`brand.md`](brand.md)) |
 | `crates/od-ui/vendor/fonts/` | Geist, Geist Mono (variable, woff2), SIL OFL 1.1 |
 
@@ -125,7 +125,7 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 
 ## App shell
 
-- Sidebar trái: logo Nét, ô "Tìm hoặc chạy lệnh" (mở command palette), Home, Projects, Automations, Design systems, Plugins, Media, Templates, rồi Phím tắt và Settings ở dưới cùng. Nút thu gọn thành rail 56px; lựa chọn lưu trong `localStorage` riêng cho Studio (`od.sidebar.studio-collapsed`, mặc định thu gọn) và các trang khác (`od.sidebar.collapsed`). Cửa sổ hẹp hơn 960px tự thành rail.
+- Sidebar trái: logo Nét, ô "Tìm hoặc chạy lệnh" (mở command palette), Home, Projects, Templates, Design systems, Plugins, Media, Automations, Integrations, Messages, rồi Phím tắt và Settings ở dưới cùng. Nút thu gọn thành rail 56px; lựa chọn lưu trong `localStorage` riêng cho Studio (`od.sidebar.studio-collapsed`, mặc định thu gọn) và các trang khác (`od.sidebar.collapsed`). Cửa sổ hẹp hơn 960px tự thành rail.
 - Nội dung nằm trong panel `.main` nổi trên nền canvas.
 - Desktop macOS: cửa sổ Tauri dùng title bar overlay (`TitleBarStyle::Overlay`, ẩn tiêu đề). UI phát hiện Tauri + macOS, đặt `data-shell="mac"` trên `<html>` và chừa dải `.titlebar` cao 38px làm vùng kéo cửa sổ (`data-tauri-drag-region`, quyền `core:window:allow-start-dragging`).
 

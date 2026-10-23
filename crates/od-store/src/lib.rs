@@ -9,6 +9,7 @@ pub mod db;
 pub mod edit;
 pub mod error;
 pub mod files;
+pub mod manage;
 pub mod memory;
 pub mod paths;
 pub mod store;

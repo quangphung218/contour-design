@@ -100,6 +100,11 @@ pub struct LaunchSpec {
     pub fallback_prompt: Option<String>,
     pub model: Option<String>,
     pub reasoning: Option<String>,
+    /// Codex service tier (Settings ▸ Service tier).
+    pub service_tier: Option<String>,
+    /// A user-chosen executable (Settings ▸ Advanced, e.g. `CODEX_BIN`);
+    /// the one on `PATH` when it is not executable.
+    pub bin: Option<PathBuf>,
     pub extra_dirs: Vec<PathBuf>,
     pub resume_session_id: Option<String>,
     pub permission: PermissionMode,
@@ -297,7 +302,10 @@ impl RunEngine {
         let bin = if is_byok {
             None
         } else {
-            detect::resolve_bin(def, &self.config.path)
+            spec.bin
+                .clone()
+                .filter(|b| detect::is_executable(b))
+                .or_else(|| detect::resolve_bin(def, &self.config.path))
         };
         let shown_bin = match (&bin, &spec.byok) {
             (Some(b), _) => b.to_string_lossy().into_owned(),
@@ -349,6 +357,7 @@ impl RunEngine {
             let mut args = def.build_args(&ArgvInput {
                 model: spec.model.as_deref(),
                 reasoning: spec.reasoning.as_deref(),
+                service_tier: spec.service_tier.as_deref(),
                 cwd: Some(&spec.cwd),
                 extra_dirs: &spec.extra_dirs,
                 resume_session_id: resume.as_deref(),

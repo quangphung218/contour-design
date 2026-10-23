@@ -22,7 +22,8 @@ use std::time::Duration;
 
 pub use cron::Schedule;
 pub use store::{
-    AutomationError, NewRoutine, Routine, RoutinePatch, RoutineRun, RoutineStore, RunState, Trigger,
+    AutomationError, NewRoutine, Routine, RoutinePatch, RoutineRun, RoutineStore, RunState,
+    TargetMode, Trigger,
 };
 
 /// How a launched run ended.
@@ -36,6 +37,8 @@ pub struct RunEnd {
 pub struct Launched {
     pub run_id: String,
     pub conversation_id: String,
+    /// Where the run happens (a new project for create-each-run routines).
+    pub project_id: String,
     /// Resolves when the run ends.
     pub done: BoxFuture<'static, RunEnd>,
 }
@@ -160,11 +163,15 @@ impl Scheduler {
         let routine_id = routine.id.clone();
         match self.launcher.launch(routine).await {
             Ok(launched) => {
-                let _ = self
-                    .store
-                    .attach_run(&row.id, &launched.run_id, &launched.conversation_id);
+                let _ = self.store.attach_run(
+                    &row.id,
+                    &launched.run_id,
+                    &launched.conversation_id,
+                    &launched.project_id,
+                );
                 row.run_id = Some(launched.run_id);
                 row.conversation_id = Some(launched.conversation_id);
+                row.project_id = Some(launched.project_id);
                 let this = Arc::clone(self);
                 let history_id = row.id.clone();
                 tokio::spawn(async move {

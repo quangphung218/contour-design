@@ -81,6 +81,8 @@ impl Harness {
             fallback_prompt: None,
             model: None,
             reasoning: None,
+            service_tier: None,
+            bin: None,
             extra_dirs: Vec::new(),
             resume_session_id: None,
             permission: PermissionMode::Auto,

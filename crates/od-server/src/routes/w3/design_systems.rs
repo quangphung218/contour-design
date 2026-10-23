@@ -305,6 +305,8 @@ pub async fn generate(
             .model
             .filter(|m| !m.trim().is_empty() && m != "default"),
         reasoning: None,
+        service_tier: None,
+        bin: None,
         extra_dirs: Vec::new(),
         resume_session_id: None,
         permission,

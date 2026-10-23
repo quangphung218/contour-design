@@ -21,7 +21,7 @@ use futures_util::FutureExt;
 use futures_util::future::BoxFuture;
 use od_automation::{
     AutomationError, Launched, Launcher, NewRoutine, Routine, RoutinePatch, RoutineRun,
-    RoutineStore, RunEnd, RunState, Scheduler,
+    RoutineStore, RunEnd, RunState, Scheduler, TargetMode,
 };
 use od_contracts::{
     ChatRequest, CreateConversationRequest, CreateRunResponse, ErrorCode, RunStatus,
@@ -88,23 +88,43 @@ async fn launch(state: AppState, routine: Routine) -> ApiResult<Launched> {
         routine.name,
         chrono::Local::now().format("%Y-%m-%d %H:%M")
     );
-    let project_id = routine.project_id.clone();
-    let conversation = state
+    let mode = routine.target_mode;
+    let reuse_project = routine.project_id.clone();
+    let (project_id, conversation_id) = state
         .blocking(move |s| {
-            s.create_conversation(
-                &project_id,
-                CreateConversationRequest {
-                    title: Some(title),
-                    ..CreateConversationRequest::default()
-                },
-            )
+            let request = CreateConversationRequest {
+                title: Some(title.clone()),
+                ..CreateConversationRequest::default()
+            };
+            match mode {
+                TargetMode::Reuse => {
+                    let c = s.create_conversation(&reuse_project, request)?;
+                    Ok((reuse_project, c.id))
+                }
+                // A fresh, isolated project per fire, in its first conversation.
+                TargetMode::CreateEachRun => {
+                    let (project, cid) = s.create_project(od_contracts::CreateProjectRequest {
+                        name: title.clone(),
+                        ..od_contracts::CreateProjectRequest::default()
+                    })?;
+                    s.update_conversation(
+                        &project.id,
+                        &cid,
+                        od_contracts::UpdateConversationRequest {
+                            title: Some(title),
+                            session_mode: None,
+                        },
+                    )?;
+                    Ok((project.id, cid))
+                }
+            }
         })
         .await?;
     let req: ChatRequest = serde_json::from_value(serde_json::json!({
         "agentId": routine.agent_id,
         "message": routine.prompt,
-        "projectId": routine.project_id,
-        "conversationId": conversation.id,
+        "projectId": project_id,
+        "conversationId": conversation_id,
     }))
     .map_err(|e| ApiErr::internal(e.to_string()))?;
     let res = runs::create(State(state.clone()), ApiJson(req)).await?;
@@ -136,6 +156,7 @@ async fn launch(state: AppState, routine: Routine) -> ApiResult<Launched> {
     Ok(Launched {
         run_id: created.run_id,
         conversation_id: created.conversation_id,
+        project_id,
         done,
     })
 }
@@ -217,8 +238,10 @@ async fn create(
     ApiJson(new): ApiJson<NewRoutine>,
 ) -> ApiResult<Response> {
     known_agent(&new.agent_id)?;
-    let project_id = new.project_id.clone();
-    state.blocking(move |s| s.get_project(&project_id)).await?;
+    if new.target_mode == TargetMode::Reuse {
+        let project_id = new.project_id.clone();
+        state.blocking(move |s| s.get_project(&project_id)).await?;
+    }
     let routine = with_store(&sched, move |s| s.create(&new, next_fire)).await?;
     tracing::info!(routine = %routine.id, schedule = %routine.schedule, "routine created");
     Ok((StatusCode::CREATED, ApiJson(RoutineResponse { routine })).into_response())
@@ -233,12 +256,16 @@ async fn get_one(
 }
 
 async fn update(
+    State(state): State<AppState>,
     Extension(sched): Extension<Arc<Scheduler>>,
     Path(rid): Path<String>,
     ApiJson(patch): ApiJson<RoutinePatch>,
 ) -> ApiResult<ApiJson<RoutineResponse>> {
     if let Some(agent) = &patch.agent_id {
         known_agent(agent)?;
+    }
+    if let Some(project_id) = patch.project_id.clone().filter(|p| !p.is_empty()) {
+        state.blocking(move |s| s.get_project(&project_id)).await?;
     }
     let routine = with_store(&sched, move |s| s.update(&rid, &patch, next_fire)).await?;
     Ok(ApiJson(RoutineResponse { routine }))

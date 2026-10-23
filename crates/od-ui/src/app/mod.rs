@@ -4,6 +4,7 @@ mod agent_w3;
 mod api;
 mod automations;
 mod bridge;
+mod byok_form;
 mod chat_view;
 mod deck;
 mod desktop;
@@ -12,10 +13,15 @@ mod ds_page;
 mod export_menu;
 mod home;
 mod icons;
+mod inbox;
+mod integrations;
 mod lazy_frame;
 mod lib_ui;
+mod manage;
 mod mcp_settings;
 mod media_page;
+mod new_project;
+mod notify;
 mod onboarding;
 mod palette;
 mod plugins_page;
@@ -203,6 +209,8 @@ fn Shelled() -> impl IntoView {
             <Show when=move || shell.shortcuts.get()>
                 <shortcuts::ShortcutsDialog/>
             </Show>
+            <ViewTracker/>
+            <notify::RunWatcher/>
             <div class="app">
                 {mac.then(|| view! { <div class="titlebar" data-tauri-drag-region=""></div> })}
                 <div class="app-body">
@@ -219,6 +227,8 @@ fn Shelled() -> impl IntoView {
                             <Route path=path!("/plugins") view=plugins_page::PluginsPage/>
                             <Route path=path!("/media") view=media_page::MediaPage/>
                             <Route path=path!("/templates") view=templates_page::TemplatesPage/>
+                            <Route path=path!("/integrations") view=integrations::Integrations/>
+                            <Route path=path!("/inbox") view=inbox::Inbox/>
                         </Routes>
                     </main>
                 </div>
@@ -315,11 +325,13 @@ fn Sidebar() -> impl IntoView {
             <nav class="sidenav" aria-label=t(T::MainNavigation)>
                 {link("/", Glyph::Home, T::NavHome, true)}
                 {link("/projects", Glyph::Projects, T::NavProjects, false)}
-                {link("/automations", Glyph::Automations, T::NavAutomations, false)}
+                {link("/templates", Glyph::Grid, T::NavTemplates, false)}
                 {link("/design-systems", Glyph::DesignSystem, T::NavDesignSystems, false)}
                 {link("/plugins", Glyph::Plugin, T::NavPlugins, false)}
                 {link("/media", Glyph::Image, T::NavMedia, false)}
-                {link("/templates", Glyph::Grid, T::NavTemplates, false)}
+                {link("/automations", Glyph::Automations, T::NavAutomations, false)}
+                {link("/integrations", Glyph::Mcp, T::NavIntegrations, false)}
+                {link("/inbox", Glyph::Inbox, T::NavInbox, false)}
                 <span class="spacer"></span>
                 <button
                     class="nav-link"
@@ -363,6 +375,29 @@ fn is_mac_desktop() -> bool {
     on
 }
 
+/// Records each Studio visit for "Recently viewed".
+#[component]
+fn ViewTracker() -> impl IntoView {
+    let location = use_location();
+    Effect::new(move |_| {
+        let path = location.pathname.get();
+        let Some(id) = path
+            .strip_prefix("/projects/")
+            .map(|rest| rest.split('/').next().unwrap_or_default().to_owned())
+            .filter(|id| !id.is_empty())
+        else {
+            return;
+        };
+        leptos::task::spawn_local(async move {
+            let _ = api::post::<_, serde_json::Value>(
+                &format!("/api/projects/{}/viewed", api::seg(&id)),
+                &serde_json::json!({}),
+            )
+            .await;
+        });
+    });
+}
+
 /// Sends first-time users to onboarding once settings are known.
 #[component]
 fn OnboardingGate() -> impl IntoView {
@@ -377,16 +412,6 @@ fn OnboardingGate() -> impl IntoView {
             navigate("/onboarding", Default::default());
         }
     });
-}
-
-/// Label of a project's kind.
-pub(crate) fn kind_label(project: &od_contracts::Project) -> &'static str {
-    use od_contracts::ProjectKind;
-    match project.metadata.as_ref().and_then(|m| m.kind) {
-        Some(ProjectKind::Prototype) => t(T::KindPrototype),
-        Some(ProjectKind::Deck) => t(T::KindDeck),
-        _ => t(T::KindProject),
-    }
 }
 
 /// Relative "x min ago" from epoch milliseconds.

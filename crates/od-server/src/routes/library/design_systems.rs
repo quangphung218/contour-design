@@ -1062,6 +1062,9 @@ pub(crate) async fn launch(
         fallback_prompt: None,
         model: model.filter(|m| !m.trim().is_empty() && m != "default"),
         reasoning: None,
+        service_tier: None,
+        // Settings ▸ Advanced: a user-chosen agent executable applies here too.
+        bin: crate::routes::manage::settings::custom_bin(&data_root, def.id),
         extra_dirs: Vec::new(),
         resume_session_id: None,
         permission,
