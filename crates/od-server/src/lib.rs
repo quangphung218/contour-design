@@ -198,8 +198,32 @@ pub async fn open_runs(store: &Store, _lock: &DaemonLock) -> anyhow::Result<Arc<
     Ok(Arc::new(runs))
 }
 
-/// Opens the store, indexes content, binds and serves until Ctrl-C, then
-/// ends the terminal tabs' shells.
+/// Resolves on Ctrl-C, or on Unix on SIGINT or SIGTERM (what launchd,
+/// systemd and `kill` send). The handlers are in place once this returns.
+///
+/// # Errors
+/// When a signal handler cannot be installed.
+pub fn shutdown_signal() -> std::io::Result<impl std::future::Future<Output = ()>> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut int = signal(SignalKind::interrupt())?;
+        let mut term = signal(SignalKind::terminate())?;
+        Ok(async move {
+            tokio::select! {
+                _ = int.recv() => {}
+                _ = term.recv() => {}
+            }
+        })
+    }
+    #[cfg(not(unix))]
+    Ok(async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+}
+
+/// Opens the store, indexes content, binds and serves until Ctrl-C or
+/// SIGTERM, then ends the terminal tabs' shells.
 ///
 /// # Errors
 /// Refuses a non-loopback bind without `OD_API_TOKEN`; store, bind and I/O
@@ -221,6 +245,8 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("binding {}:{}", opts.host, opts.port))?;
     let local = listener.local_addr()?;
+    // Before the daemon is announced: a signal right after is not missed.
+    let stop = shutdown_signal()?;
     lock.record_url(&format!("http://{local}"))
         .context("recording the daemon url")?;
     let runs = open_runs(&store, &lock).await?;
@@ -260,9 +286,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
     );
     let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
     let served = axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
+        .with_graceful_shutdown(stop)
         .await;
     state.shutdown().await;
     served?;

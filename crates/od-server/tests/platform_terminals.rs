@@ -144,10 +144,14 @@ async fn foreign_origins_hosts_and_bodies_are_refused() {
     let port = d.base.rsplit(':').next().unwrap().to_owned();
 
     // WebSocket upgrades from pages that are not the app.
+    // A loopback page on another port (or the default one) is another site.
     for origin in [
         "https://evil.example",
         "null",
         &format!("http://192.168.1.5:{port}"),
+        "http://localhost",
+        "http://127.0.0.1",
+        "http://localhost:1",
     ] {
         assert_eq!(
             connect(&d, &tid, Some(origin)).await.err(),

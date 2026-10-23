@@ -7,6 +7,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod login_path;
+
 use anyhow::Context;
 use od_content::{ContentRoots, ContentStore};
 use od_server::routes::ui::import_folder;
@@ -54,6 +56,7 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
     };
     let roots = ContentRoots::bundled(&resource_root).with_user_root(data_dir.root());
     let content = tokio::task::spawn_blocking(move || ContentStore::load(roots)).await?;
+    let agent_path = login_path::agent_path().await;
     // Port 0: a fresh loopback port per launch, so a CLI daemon on 7456 never
     // collides on the port (the data dir lock above refuses a second daemon).
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
@@ -73,7 +76,10 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
         }),
         runs: Arc::new(RunContext::new(
             Arc::clone(&runs),
-            od_runtime::EngineConfig::from_env(),
+            od_runtime::EngineConfig {
+                path: agent_path,
+                ..od_runtime::EngineConfig::from_env()
+            },
         )),
         preview: Preview::default(),
         platform: Platform::from_env(),
@@ -211,6 +217,17 @@ fn main() -> anyhow::Result<()> {
                 .min_inner_size(900.0, 600.0)
                 .build()?;
             app.manage(daemon);
+            // SIGTERM (logout, `kill`) and Ctrl-C quit through `RunEvent::Exit`,
+            // which ends the terminal tabs' shells.
+            tauri::async_runtime::spawn(async move {
+                match od_server::shutdown_signal() {
+                    Ok(stop) => {
+                        stop.await;
+                        handle.exit(0);
+                    }
+                    Err(e) => tracing::warn!(error = %e, "no SIGTERM handler"),
+                }
+            });
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -221,14 +238,46 @@ fn main() -> anyhow::Result<()> {
                 if let Some(daemon) = app.try_state::<Daemon>() {
                     tauri::async_runtime::block_on(daemon.state.shutdown());
                 }
+                remove_webview_temp(&std::env::temp_dir());
             }
         });
     Ok(())
 }
 
+/// The webview (WebKit on macOS) keeps caches in `<tmp>/<executable
+/// name>`; nothing there outlives the app.
+fn remove_webview_temp(tmp: &std::path::Path) {
+    let Some(name) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.file_stem().map(std::ffi::OsStr::to_owned))
+    else {
+        return;
+    };
+    let dir = tmp.join(name);
+    if dir.is_dir() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_webview_temp_folder_goes_on_exit() {
+        let tmp = std::env::temp_dir().join(format!("od-desktop-test-{}", std::process::id()));
+        let name = std::env::current_exe()
+            .unwrap()
+            .file_stem()
+            .unwrap()
+            .to_owned();
+        std::fs::create_dir_all(tmp.join(&name).join("WebKit")).unwrap();
+        std::fs::create_dir_all(tmp.join("other")).unwrap();
+        remove_webview_temp(&tmp);
+        assert!(!tmp.join(&name).exists());
+        assert!(tmp.join("other").exists());
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
 
     #[test]
     fn navigation_stays_on_the_daemon_origin() {

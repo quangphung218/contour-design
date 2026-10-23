@@ -124,6 +124,8 @@ pub fn parse(text: &str, done: bool) -> Option<(CritiqueReport, Option<String>)>
                     score: (role != PanelRole::Designer)
                         .then(|| attr(tag, "score").and_then(|v| v.trim().parse::<f64>().ok()))
                         .flatten()
+                        // `NaN` and infinities parse but are no score.
+                        .filter(|s| s.is_finite())
                         .map(|s| s.clamp(0.0, 10.0)),
                     must_fix: elements(inner, "MUST_FIX"),
                     notes: elements(inner, "NOTES")
@@ -373,6 +375,26 @@ mod tests {
         assert_eq!(report.ship_round, Some(2));
         assert_eq!(report.summary, "Converged in two rounds.");
         assert_eq!(artifact.as_deref(), Some("<!doctype html><h1>final</h1>"));
+    }
+
+    #[test]
+    fn scores_that_are_not_numbers_count_as_missing() {
+        for bad in ["NaN", "inf", "-infinity"] {
+            let text = ROUND_1.replace(
+                "role=\"critic\" score=\"6\"",
+                &format!("role=\"critic\" score=\"{bad}\""),
+            );
+            let (report, _) = parse(&text, true).unwrap();
+            let critic = report.rounds[0]
+                .panelists
+                .iter()
+                .find(|p| p.role == PanelRole::Critic)
+                .unwrap();
+            assert_eq!(critic.score, None, "{bad}");
+            // brand 7, a11y 5, copy 6 at .2 each: 6.0.
+            assert_eq!(report.rounds[0].composite, Some(6.0), "{bad}");
+            assert_eq!(report.composite, Some(6.0), "{bad}");
+        }
     }
 
     #[test]

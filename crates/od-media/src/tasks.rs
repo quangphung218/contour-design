@@ -545,9 +545,18 @@ mod tests {
         });
         let q = TaskQueue::new(1, Arc::clone(&persist) as Arc<dyn TaskPersist>, worker);
         let a = q.submit("p", json!({"n": 0})).id;
+        // `b` only once `a` holds the slot: spawned together, either may get
+        // it first on a multi-thread runtime.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while q.get(&a).unwrap().status != TaskStatus::Running
+            && tokio::time::Instant::now() < deadline
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(q.get(&a).unwrap().status, TaskStatus::Running);
         let b = q.submit("p", json!({"n": 1})).id;
         tokio::time::sleep(Duration::from_millis(50)).await;
-        assert_eq!(q.get(&a).unwrap().status, TaskStatus::Running);
+        assert_eq!(q.get(&b).unwrap().status, TaskStatus::Queued);
         let token = q.tasks().get(&a).unwrap().cancel.clone();
         persist.free_slot.set(token).unwrap();
         // Off the workers, so the woken tasks run while the cancel sleeps.

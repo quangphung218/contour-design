@@ -1137,21 +1137,30 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                             ></iframe>
                         }.into_any(),
                         (Some(url), None) if is_image() => view! { <img class="preview-image" src=url alt=t(T::Preview)/> }.into_any(),
-                        (Some(url), None) => view! {
-                            <div class="frame-wrap" style=move || format!("width:{}", device.get().width())>
-                                // No allow-same-origin: artifact scripts run in an
-                                // opaque origin and cannot call the daemon API.
-                                <iframe
-                                    class="preview-frame"
-                                    data-testid="preview"
-                                    title=t(T::Preview)
-                                    sandbox="allow-scripts allow-forms allow-popups allow-modals"
-                                    src=url
-                                ></iframe>
-                                <CommentLayer ctx=ctx/>
-                                {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
-                            </div>
-                        }.into_any(),
+                        (Some(url), None) => {
+                            // Each load of a bridged frame gets a fresh
+                            // edit-key id (od-preview `edit_key`).
+                            let url = if url.contains("bridge=1") {
+                                format!("{url}&key={}", ctx.tools.new_frame_kid())
+                            } else {
+                                url
+                            };
+                            view! {
+                                <div class="frame-wrap" style=move || format!("width:{}", device.get().width())>
+                                    // No allow-same-origin: artifact scripts run in an
+                                    // opaque origin and cannot call the daemon API.
+                                    <iframe
+                                        class="preview-frame"
+                                        data-testid="preview"
+                                        title=t(T::Preview)
+                                        sandbox="allow-scripts allow-forms allow-popups allow-modals"
+                                        src=url
+                                    ></iframe>
+                                    <CommentLayer ctx=ctx/>
+                                    {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
+                                </div>
+                            }.into_any()
+                        }
                     }}
                 </div>
                 <Show when=move || ctx.history_open.get() && !ctx.presenting.get()>

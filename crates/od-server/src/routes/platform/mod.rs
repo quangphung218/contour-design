@@ -5,7 +5,8 @@
 //! Every route here can start programs on this machine, so on top of the
 //! daemon-wide origin and token guards each request must come from a
 //! loopback peer, name a loopback `Host`, and carry no `Origin` or a
-//! loopback one (no LAN origins, no API-token access from elsewhere).
+//! loopback one on one of the daemon's ports (no LAN origins, no other
+//! local site, no API-token access from elsewhere).
 
 pub mod automations;
 pub mod mcp;
@@ -13,7 +14,7 @@ pub mod terminals;
 
 use crate::error::ApiErr;
 use crate::state::AppState;
-use axum::extract::{ConnectInfo, Request};
+use axum::extract::{ConnectInfo, Request, State};
 use axum::http::header;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -52,7 +53,8 @@ pub fn mount(api: Router<AppState>, state: &AppState) -> Router<AppState> {
     if let Some(mcp) = mcp::Mcp::new(state) {
         routes = routes.merge(mcp::routes().layer(Extension(mcp)));
     }
-    api.merge(routes.layer(middleware::from_fn(loopback_only)))
+    let ports: Arc<[u16]> = state.config.ports.clone().into();
+    api.merge(routes.layer(middleware::from_fn_with_state(ports, loopback_only)))
 }
 
 fn is_loopback_name(host: &str) -> bool {
@@ -69,17 +71,30 @@ fn hostname(authority: &str) -> &str {
     authority.rsplit_once(':').map_or(authority, |(h, _)| h)
 }
 
-fn loopback_origin(origin: &str) -> bool {
+/// A loopback origin naming one of `ports` explicitly: a portless one
+/// (`http://localhost`) is another local site, not the app.
+fn loopback_origin(origin: &str, ports: &[u16]) -> bool {
     ["http://", "https://"].iter().any(|scheme| {
-        origin
-            .strip_prefix(scheme)
-            .is_some_and(|rest| !rest.contains(['/', '@']) && is_loopback_name(hostname(rest)))
+        origin.strip_prefix(scheme).is_some_and(|rest| {
+            !rest.contains(['/', '@'])
+                && is_loopback_name(hostname(rest))
+                && port(rest).is_some_and(|p| ports.contains(&p))
+        })
     })
+}
+
+/// The explicit port of `host:port` (IPv6 in brackets).
+fn port(authority: &str) -> Option<u16> {
+    let after_host = match authority.strip_prefix('[') {
+        Some(rest) => rest.split_once(']')?.1,
+        None => authority,
+    };
+    after_host.rsplit_once(':')?.1.parse().ok()
 }
 
 /// See the module docs. A request without peer info (not served through
 /// `into_make_service_with_connect_info`) is refused too.
-pub async fn loopback_only(req: Request, next: Next) -> Response {
+pub async fn loopback_only(State(ports): State<Arc<[u16]>>, req: Request, next: Next) -> Response {
     let peer_ok = req
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
@@ -92,7 +107,7 @@ pub async fn loopback_only(req: Request, next: Next) -> Response {
     let origin_ok = req
         .headers()
         .get(header::ORIGIN)
-        .is_none_or(|o| o.to_str().is_ok_and(loopback_origin));
+        .is_none_or(|o| o.to_str().is_ok_and(|o| loopback_origin(o, &ports)));
     if peer_ok && host_ok && origin_ok {
         next.run(req).await
     } else {
@@ -118,11 +133,24 @@ mod tests {
         ] {
             assert!(!is_loopback_name(hostname(h)), "{h}");
         }
-        assert!(loopback_origin("http://127.0.0.1:7456"));
-        assert!(loopback_origin("http://[::1]:7456"));
-        assert!(!loopback_origin("http://192.168.1.5:7456"));
-        assert!(!loopback_origin("null"));
-        assert!(!loopback_origin("http://127.0.0.1@evil.example"));
-        assert!(!loopback_origin("file://"));
+        let ports = [7456, 5173];
+        for ok in [
+            "http://127.0.0.1:7456",
+            "http://[::1]:7456",
+            "http://localhost:5173",
+        ] {
+            assert!(loopback_origin(ok, &ports), "{ok}");
+        }
+        for bad in [
+            "http://192.168.1.5:7456",
+            "null",
+            "http://127.0.0.1@evil.example",
+            "file://",
+            "http://localhost",
+            "http://[::1]",
+            "http://127.0.0.1:8080",
+        ] {
+            assert!(!loopback_origin(bad, &ports), "{bad}");
+        }
     }
 }

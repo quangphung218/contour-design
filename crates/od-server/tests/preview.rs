@@ -440,3 +440,56 @@ async fn raw_documents_carry_the_no_network_csp() {
         assert_eq!(r.header("x-content-type-options"), Some("nosniff"));
     }
 }
+
+/// The edit key of one preview load: in the first response for its id
+/// only, and handed to the host once, never to a sandboxed frame.
+#[tokio::test]
+async fn edit_key_goes_to_the_first_load_and_to_the_host_once() {
+    let a = app();
+    let id = a.project().await;
+    a.write(&id, "index.html", DECK).await;
+    let kid = "load-0123456789abcdef";
+    let uri = format!("/api/projects/{id}/raw/index.html?bridge=1&v=3&key={kid}");
+    let first = a.get(&uri).await.text();
+    let key = first
+        .split("data-od-key=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("key on the bridge tag")
+        .to_owned();
+    assert_eq!(key.len(), 32);
+    // The page fetching its own URL again: no key.
+    let again = a.get(&uri).await.text();
+    assert!(again.contains("<script data-od-bridge>"), "{again:.200}");
+    assert!(!again.contains("data-od-key=\""));
+
+    let claim = format!("/api/projects/{id}/edit-keys/{kid}");
+    let sandboxed = a
+        .send(
+            Request::post(&claim)
+                .header(header::ORIGIN, "null")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(sandboxed.status, StatusCode::FORBIDDEN);
+    let other = a.project().await;
+    let wrong = a
+        .post_json(
+            &format!("/api/projects/{other}/edit-keys/{kid}"),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(wrong.status, StatusCode::NOT_FOUND);
+    let got = a.post_json(&claim, &json!({})).await;
+    assert_eq!(got.status, StatusCode::OK, "{}", got.text());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&got.body).unwrap()["key"],
+        key
+    );
+    assert_eq!(
+        a.post_json(&claim, &json!({})).await.status,
+        StatusCode::NOT_FOUND,
+        "taken once"
+    );
+}

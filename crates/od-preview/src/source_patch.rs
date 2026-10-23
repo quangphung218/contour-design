@@ -93,7 +93,7 @@ fn apply_edit(html: &str, edit: &SourceEdit) -> Result<String, PatchError> {
             return Err(PatchError::TextMismatch { found });
         }
     }
-    rewrite(html, &target.selector, edit)
+    rewrite(html, &target.selector, edit, target.chunks > 0)
 }
 
 /// The one source element an edit addresses.
@@ -105,6 +105,8 @@ struct Target {
     /// Raw (entity-encoded) text inside the element, without the code of
     /// nested `script`/`style`/… elements.
     text: String,
+    /// Text chunks seen inside the element, code included.
+    chunks: usize,
 }
 
 fn parse(selector: &str) -> Result<Selector, PatchError> {
@@ -115,22 +117,29 @@ fn parse(selector: &str) -> Result<Selector, PatchError> {
 
 /// The bridge's selector, then the same path without the parts the browser
 /// implied: `html >`, then `head`/`body` right under it, each dropped only
-/// when the source has no such element.
+/// when the source has no such element (`<html>` without `<body>` keeps
+/// `html >`).
 fn candidates(html: &str, selector: &str) -> Result<Vec<String>, PatchError> {
     let mut out = vec![selector.to_owned()];
-    if let Some(rest) = selector.strip_prefix("html > ")
-        && !has_element(html, "html")?
-    {
+    let Some(rest) = selector.strip_prefix("html > ") else {
+        return Ok(out);
+    };
+    let has_html = has_element(html, "html")?;
+    if !has_html {
         out.push(rest.to_owned());
-        for (tag, implied) in [
-            ("body", "body:nth-of-type(1) > "),
-            ("head", "head:nth-of-type(1) > "),
-        ] {
-            if let Some(r) = rest.strip_prefix(implied)
-                && !has_element(html, tag)?
-            {
-                out.push(r.to_owned());
-            }
+    }
+    for (tag, implied) in [
+        ("body", "body:nth-of-type(1) > "),
+        ("head", "head:nth-of-type(1) > "),
+    ] {
+        if let Some(r) = rest.strip_prefix(implied)
+            && !has_element(html, tag)?
+        {
+            out.push(if has_html {
+                format!("html > {r}")
+            } else {
+                r.to_owned()
+            });
         }
     }
     Ok(out)
@@ -218,14 +227,15 @@ fn scan(html: &str, selector: &str) -> Result<Scan, PatchError> {
         rewriter.write(html.as_bytes())?;
         rewriter.end()?;
     }
+    let chunks = chunks.into_inner();
     Ok(Scan {
         matches: matches.get(),
         target: Target {
             selector: selector.to_owned(),
             tag: tag.into_inner(),
             descendants: descendants.get(),
+            chunks: chunks.len(),
             text: chunks
-                .into_inner()
                 .into_iter()
                 .filter_map(|(t, code)| (!code).then_some(t))
                 .collect(),
@@ -233,25 +243,48 @@ fn scan(html: &str, selector: &str) -> Result<Scan, PatchError> {
     })
 }
 
-fn rewrite(html: &str, selector: &str, edit: &SourceEdit) -> Result<String, PatchError> {
+/// `has_text`: whether the target holds any text chunk (else new text is
+/// prepended).
+fn rewrite(
+    html: &str,
+    selector: &str,
+    edit: &SourceEdit,
+    has_text: bool,
+) -> Result<String, PatchError> {
     let sel = parse(selector)?;
     let mut out = Vec::with_capacity(html.len() + 64);
     {
-        let handlers = ElementContentHandlers::default().element(|el: &mut Element<'_, '_>| {
-            if !edit.style.is_empty() {
-                let current = el.get_attribute("style").unwrap_or_default();
-                let merged = merge_style(&current, edit);
-                if merged.is_empty() {
-                    el.remove_attribute("style");
-                } else {
-                    el.set_attribute("style", &merged)?;
+        // New text takes the place of the first text chunk; the others go.
+        // Comments inside the element stay where they were.
+        let first = Cell::new(true);
+        let handlers = ElementContentHandlers::default()
+            .element(|el: &mut Element<'_, '_>| {
+                if !edit.style.is_empty() {
+                    let current = el.get_attribute("style").unwrap_or_default();
+                    let merged = merge_style(&current, edit);
+                    if merged.is_empty() {
+                        el.remove_attribute("style");
+                    } else {
+                        el.set_attribute("style", &merged)?;
+                    }
                 }
-            }
-            if let Some(text) = &edit.text {
-                el.set_inner_content(text, ContentType::Text);
-            }
-            Ok(())
-        });
+                if let Some(text) = &edit.text
+                    && !has_text
+                {
+                    el.prepend(text, ContentType::Text);
+                }
+                Ok(())
+            })
+            .text(|chunk: &mut TextChunk<'_>| {
+                if let Some(text) = &edit.text {
+                    if first.replace(false) {
+                        chunk.replace(text, ContentType::Text);
+                    } else {
+                        chunk.remove();
+                    }
+                }
+                Ok(())
+            });
         let settings = Settings::new().append_element_content_handler((Cow::Owned(sel), handlers));
         let mut rewriter = HtmlRewriter::new(settings, |c: &[u8]| out.extend_from_slice(c));
         rewriter.write(html.as_bytes())?;
@@ -618,6 +651,35 @@ mod tests {
                 "{page}"
             );
         }
+    }
+
+    #[test]
+    fn html_without_body_still_takes_edits() {
+        // `<body>` may be left out of a document that has `<html>`.
+        let page = "<html><head><title>T</title></head><p>Hi</p></html>";
+        let p1 = "html > body:nth-of-type(1) > p:nth-of-type(1)";
+        assert_eq!(
+            apply_edits(page, &[styled(p1, "Hi")]),
+            Ok("<html><head><title>T</title></head><p style=\"color: red\">Hi</p></html>".into())
+        );
+        let title = "html > head:nth-of-type(1) > title:nth-of-type(1)";
+        let headless = "<html><title>T</title><body><p>Hi</p></body></html>";
+        assert!(apply_edits(headless, &[text_edit(title, "U", Some("T"))]).is_ok());
+    }
+
+    #[test]
+    fn text_edit_keeps_comments() {
+        let page = "<p>Hi <!-- keep me --> there</p><p><!-- only --></p>";
+        let p1 = "html > body:nth-of-type(1) > p:nth-of-type(1)";
+        assert_eq!(
+            apply_edits(page, &[text_edit(p1, "Hello", Some("Hi there"))]),
+            Ok("<p>Hello<!-- keep me --></p><p><!-- only --></p>".into())
+        );
+        let p2 = "html > body:nth-of-type(1) > p:nth-of-type(2)";
+        assert_eq!(
+            apply_edits(page, &[text_edit(p2, "New", Some(""))]),
+            Ok("<p>Hi <!-- keep me --> there</p><p>New<!-- only --></p>".into())
+        );
     }
 
     #[test]

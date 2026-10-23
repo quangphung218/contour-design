@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>Open Design</title>
+    <link data-trunk rel="css" href="vendor/xterm/xterm.css" />
     <link data-trunk rel="css" href="style.css" />
+    <!-- Terminal tab (vendored, see vendor/xterm/README.md): globals Terminal, FitAddon. -->
+    <script data-trunk src="vendor/xterm/xterm.js"></script>
+    <script data-trunk src="vendor/xterm/addon-fit.js"></script>
     <link data-trunk rel="rust" data-bin="od-ui" data-wasm-opt="z" />
   </head>
   <body></body>

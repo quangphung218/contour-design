@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+od-job.workspace = true
 portable-pty = "0.9"
 serde.workspace = true
 thiserror.workspace = true
@@ -16,9 +17,6 @@ uuid.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-od-job.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

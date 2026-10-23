@@ -325,3 +325,90 @@ async fn media_commands() {
     assert!(stdout(&out).lines().count() > 10);
     assert!(stdout(&out).lines().all(|l| l.starts_with("image\t")));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lint_command() {
+    let d = daemon().await;
+    let (project, _) = d
+        .state
+        .store
+        .create_project(od_contracts::CreateProjectRequest {
+            name: "Lint".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    let pid = project.id.as_str();
+    let dir = d.state.store.project_root(&project).unwrap().dir;
+    let clean = "<!doctype html><style>:root{--accent:#c96442}</style><section data-od-id=\"hero\"><h1>Tea</h1></section>";
+    std::fs::write(dir.join("clean.html"), clean).unwrap();
+    std::fs::write(
+        dir.join("slop.html"),
+        "<style>.a{background:linear-gradient(90deg,#7C3AED,#fff)}</style>",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("pages")).unwrap();
+    std::fs::write(
+        dir.join("pages/p2.html"),
+        "<section data-od-id=\"a\"></section><section></section>",
+    )
+    .unwrap();
+    std::fs::write(dir.join("notes.txt"), "not html").unwrap();
+
+    let out = od(&d, &["lint", pid, "clean.html"]).await;
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stdout(&out).starts_with("clean — 0 findings in 1 file"),
+        "{}",
+        stdout(&out)
+    );
+
+    let out = od(&d, &["lint", pid, "slop.html", "--agent-message"]).await;
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        text.contains("slop.html: [P0] purple-gradient — "),
+        "{text}"
+    );
+    assert!(text.contains("fix: "), "{text}");
+    assert!(
+        text.contains("<artifact-lint"),
+        "agent block printed: {text}"
+    );
+    assert_eq!(stderr(&out), "", "the findings are the message");
+
+    // A P2 finding passes the default threshold, fails at --fail-on p2.
+    let out = od(&d, &["lint", pid, "pages/p2.html"]).await;
+    assert!(out.status.success(), "{}", stdout(&out));
+    assert!(stdout(&out).contains("pages/p2.html: [P2] missing-section-anchor"));
+    let out = od(&d, &["lint", pid, "pages/p2.html", "--fail-on", "p2"]).await;
+    assert_eq!(out.status.code(), Some(1));
+
+    // No file: every HTML file in the project, sorted; other files skipped.
+    let out = od(&d, &["--json", "lint", pid, "--fail-on", "none"]).await;
+    assert!(out.status.success(), "{}", stderr(&out));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["ok"], true);
+    assert_eq!(v["failOn"], "none");
+    let files: Vec<&str> = v["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["file"].as_str().unwrap())
+        .collect();
+    assert_eq!(files, ["clean.html", "pages/p2.html", "slop.html"]);
+    assert_eq!(v["counts"]["p0"], 1);
+    assert!(v["counts"]["p2"].as_u64().unwrap() >= 1);
+    let out = od(&d, &["lint", pid]).await;
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stdout(&out).contains("in 3 files"), "{}", stdout(&out));
+
+    let out = od(&d, &["lint", pid, "notes.txt"]).await;
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stderr(&out).contains("only HTML files are linted"),
+        "{}",
+        stderr(&out)
+    );
+    let out = od(&d, &["lint", "no-such-project"]).await;
+    assert!(!out.status.success());
+}

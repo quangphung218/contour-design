@@ -12,7 +12,7 @@ use chromiumoxide::cdp::browser_protocol::input::{DispatchKeyEventParams, Dispat
 use chromiumoxide::layout::Point;
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
-use od_preview::inject_bridge;
+use od_preview::inject_bridge_keyed;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -48,6 +48,13 @@ const HOST: &str = r#"<!doctype html><html><head><style>body{margin:0}</style></
     if (e.source === frame.contentWindow) window.__msgs.push(e.data);
   });
   window.__load = (html) => { window.__msgs = []; frame.srcdoc = html; return true; };
+  // As bytes from a URL, like the daemon serves it (BOM, quirks mode).
+  window.__loadUrl = (html) => {
+    window.__msgs = [];
+    frame.removeAttribute('srcdoc');
+    frame.src = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+    return true;
+  };
   window.__send = (msg) => { frame.contentWindow.postMessage(msg, '*'); return true; };
   // First message of `type` at index >= since that passes `pred`.
   window.__after = (type, since, pred, ms) => new Promise((resolve, reject) => {
@@ -119,7 +126,12 @@ impl Harness {
     }
 
     async fn load(&self, html: &str) {
-        let doc = String::from_utf8(inject_bridge(html.as_bytes(), None).unwrap()).unwrap();
+        self.load_keyed(html, None).await;
+    }
+
+    async fn load_keyed(&self, html: &str, key: Option<&str>) {
+        let doc =
+            String::from_utf8(inject_bridge_keyed(html.as_bytes(), None, key).unwrap()).unwrap();
         self.eval(&format!(
             "window.__load({})",
             serde_json::to_string(&doc).unwrap()
@@ -210,6 +222,8 @@ async fn bridge_in_headless_chrome() {
     pins_follow_their_elements(&h).await;
     storage_shim(&h).await;
     inspect_prints_survive_scripts(&h).await;
+    edit_key_stays_with_the_bridge(&h).await;
+    bridge_runs_before_any_author_markup(&h).await;
     reload_loops_are_stopped(&h).await;
     h.close().await;
 }
@@ -398,11 +412,50 @@ async fn inspect_prints_survive_scripts(h: &Harness) {
              prop: 'color', value: 'red', tag: 'div', text: {text:?} }}] }});"
         )
     };
-    // Set on #b, which the path pointed at before the script ran.
+    // Set on #b, which the path pointed at before the script ran: left
+    // out, and the host hears which one.
+    let since = h.msg_count().await;
     let stale = h.eval(&inspect(&replay("B"))).await;
     assert!(stale["overrides"].get("color").is_none(), "{stale}");
+    let skipped = h
+        .eval(&format!(
+            "window.__after('od:inspect-replay-skipped', {since}, null, 3000)"
+        ))
+        .await;
+    assert_eq!(
+        skipped["items"],
+        json!([{ "selector": div2, "prop": "color" }]),
+        "{skipped}"
+    );
+    let since = h.msg_count().await;
     let same = h.eval(&inspect(&replay("A"))).await;
     assert_eq!(same["overrides"]["color"], "red", "{same}");
+    let quiet = h
+        .eval(&format!(
+            "window.__msgs.slice({since}).some(m => m.type === 'od:inspect-replay-skipped')"
+        ))
+        .await;
+    assert_eq!(quiet, json!(false));
+
+    // An element anchored by its own data-od-id takes its override back
+    // even though a script rewrote its text.
+    h.load(
+        r#"<!doctype html><html><body><h1 data-od-id="x">Loading</h1>
+        <script>document.querySelector('h1').textContent = 'Welcome'</script></body></html>"#,
+    )
+    .await;
+    h.wait("od:ready", "null", 5_000).await;
+    let x = r#"[data-od-id="x"]"#;
+    let anchored = h
+        .eval(&format!(
+            "(async () => {{ const since = window.__msgs.length; \
+             window.__send({{ type: 'od:inspect-replay', items: [{{ selector: {x:?}, \
+             prop: 'color', value: 'red', tag: 'h1', text: 'Loading' }}] }}); \
+             window.__send({{ type: 'od:inspect', selector: {x:?} }}); \
+             return await window.__after('od:inspect-result', since, null, 5000); }})()"
+        ))
+        .await;
+    assert_eq!(anchored["overrides"]["color"], "red", "{anchored}");
 }
 
 async fn storage_shim(h: &Harness) {
@@ -417,6 +470,133 @@ async fn storage_shim(h: &Harness) {
     assert_eq!(got["ls"], "v1");
     assert_eq!(got["ss"], "v2");
     assert_eq!(got["n"], 1);
+}
+
+/// Steals what it can from the DOM now and from every later mutation, into
+/// `__k` of the outermost window it can reach. No `<` or `"`: it goes in
+/// attributes and in SVG scripts.
+const STEAL: &str = "(function(){var W=window;try{if(parent!==window&&parent.document)W=parent}catch(e){}\
+var K=W.__k=W.__k||[];function g(v){try{K.push(String(v))}catch(e){}}\
+function scan(n){try{if(n.attributes)for(var i=0;i!==n.attributes.length;i++)g(n.attributes[i].value);\
+if(n.nodeType===8||n.nodeType===3)g(n.data);if(n.content)scan(n.content);\
+for(var c=n.firstChild;c;c=c.nextSibling)scan(c)}catch(e){}}\
+var D=W.document;scan(D);g(D.documentElement?D.documentElement.outerHTML:'');\
+try{new MutationObserver(function(rs){rs.forEach(function(r){g(r.oldValue);r.addedNodes.forEach(scan);scan(r.target)})})\
+.observe(D,{subtree:true,childList:true,attributes:true,attributeOldValue:true,characterData:true})}catch(e){}})()";
+
+/// Every way an artifact can start, from both reviews of P1-2: the bridge
+/// runs first and keeps the key, the page reads nothing of it, and a
+/// doctype still sets standards mode.
+async fn bridge_runs_before_any_author_markup(h: &Harness) {
+    const KEY: &str = "0a9c632539dc4393834dafb3f50a283a";
+    let s = STEAL;
+    let iframe_onload = format!(r#"<iframe onload="{s}"></iframe>"#);
+    let starts = [
+        (
+            "head",
+            format!("<!doctype html><html><head><script>{s}</script></head><body>"),
+        ),
+        (
+            "no head/body, iframe onload",
+            format!("<!doctype html>{iframe_onload}"),
+        ),
+        ("no doctype, iframe onload", iframe_onload.clone()),
+        (
+            "svg script",
+            format!("<!doctype html><svg><script>{s}</script></svg>"),
+        ),
+        (
+            "math script",
+            format!("<!doctype html><math><script>{s}</script></math>"),
+        ),
+        (
+            "template script",
+            format!("<!doctype html><template><script>{s}</script></template>"),
+        ),
+        (
+            "noscript script",
+            format!("<!doctype html><noscript><script>{s}</script></noscript>"),
+        ),
+        (
+            "iframe srcdoc",
+            format!(r#"<!doctype html><iframe srcdoc="<script>{s}</script>"></iframe>"#),
+        ),
+        (
+            "document.write",
+            format!(r#"<!doctype html><script>document.write(`<script>{s}<\/script>`)</script>"#),
+        ),
+        (
+            "svg onload",
+            format!(r#"<!doctype html><svg onload="{s}"></svg><img src=x onerror="{s}">"#),
+        ),
+        (
+            "BOM, comment, doctype",
+            format!("\u{feff}<!-- c --><!DOCTYPE html>\n<!-- d -->{iframe_onload}"),
+        ),
+        (
+            "short comments",
+            format!("<!--><!---><!-- --!>{iframe_onload}"),
+        ),
+        (
+            "bang comment",
+            format!("<!--!>{iframe_onload}--><!---!>-->"),
+        ),
+        (
+            "xml prolog, svg",
+            format!(r#"<?xml version="1.0"?><svg><script>{s}</script></svg>"#),
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (name, start) in starts {
+        // Loads closer than the bridge's reload-loop gap would chain.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        let html = format!(
+            "{start}<p>Hi</p><script>{s};setTimeout(function(){{parent.postMessage({{type:'test:loot',\
+             loot:(window.__k||[]).join('\\n'),mode:document.compatMode}},'*')}},300)</script>"
+        );
+        let doc = String::from_utf8(inject_bridge_keyed(html.as_bytes(), None, Some(KEY)).unwrap())
+            .unwrap();
+        h.eval(&format!(
+            "window.__loadUrl({})",
+            serde_json::to_string(&doc).unwrap()
+        ))
+        .await;
+        let got = |ty: &str| format!("window.__after({ty:?}, 0, null, 5000).catch(() => null)");
+        let ready = h.eval(&got("od:ready")).await;
+        let loot = h.eval(&got("test:loot")).await;
+        let text = loot["loot"].as_str().unwrap_or_default();
+        let mut wrong = Vec::new();
+        if ready.is_null() {
+            wrong.push("the bridge did not run".to_owned());
+        }
+        if !text.contains("Hi") {
+            wrong.push("the page could not look".to_owned());
+        }
+        if text.contains(KEY) {
+            wrong.push("the page learned the key".to_owned());
+        }
+        let standards = start.to_ascii_lowercase().contains("<!doctype");
+        if (loot["mode"] == "CSS1Compat") != standards {
+            wrong.push(format!("mode {}", loot["mode"]));
+        }
+        if !ready.is_null() {
+            let since = h.msg_count().await;
+            h.eval("window.__send({ type: 'od:inspect', selector: 'p' })")
+                .await;
+            let inspected = h
+                .eval(&format!(
+                    "window.__after('od:inspect-result', {since}, null, 5000).catch(() => null)"
+                ))
+                .await;
+            if inspected["key"] != KEY {
+                wrong.push("the bridge lost its key".to_owned());
+            }
+        }
+        if !wrong.is_empty() {
+            failures.push(format!("{name}: {}", wrong.join(", ")));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 async fn reload_loops_are_stopped(h: &Harness) {
@@ -438,4 +618,105 @@ async fn reload_loops_are_stopped(h: &Harness) {
         assert_eq!(h.msg_count().await, settled, "frame kept reloading: {page}");
         eprintln!("loop stopped after {:?}: {page:.60}", started.elapsed());
     }
+}
+
+/// The artifact's own script cannot learn the edit key, and cannot make the
+/// bridge send it: not by reading the DOM, listening to messages, trapping
+/// assignments on `Object.prototype`, or a synthetic click and Enter. A real
+/// click and Enter send it with the edit.
+async fn edit_key_stays_with_the_bridge(h: &Harness) {
+    const KEY: &str = "5ec7e7ab0c1d4e2fa3b4c5d6e7f80912";
+    let html = r#"<!doctype html><html><head><script>
+      const loot = [];
+      const grab = (v) => { try { loot.push(typeof v === 'string' ? v : JSON.stringify(v)); } catch (_) { loot.push(String(v)); } };
+      grab(document.documentElement.outerHTML);
+      document.querySelectorAll('*').forEach((el) => { for (const a of el.attributes) grab(a.value); });
+      for (const p of ['key', 'type', 'text', 'selector', 'overrides', 'doc']) {
+        Object.defineProperty(Object.prototype, p, {
+          configurable: true,
+          set(v) { grab(this); Object.defineProperty(this, p, { value: v, writable: true, enumerable: true, configurable: true }); },
+        });
+      }
+      window.addEventListener('message', (e) => {
+        grab(e.data);
+        if (e.data && e.data.type === 'test:forge') {
+          parent.postMessage({ type: 'od:text-edit', selector: 'h1', before: 'Hello', text: 'forged', doc: 'index.html' }, '*');
+          const h1 = document.querySelector('h1');
+          h1.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          h1.textContent = 'forged too';
+          h1.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          h1.blur();
+          parent.postMessage({ type: 'test:forged' }, '*');
+        }
+        if (e.data && e.data.type === 'test:loot') {
+          grab(document.documentElement.outerHTML);
+          parent.postMessage({ type: 'test:loot', loot: loot.join('\n') }, '*');
+        }
+      }, true);
+    </script></head><body><h1 style="margin:40px;font:32px sans-serif">Hello</h1></body></html>"#;
+    h.load_keyed(html, Some(KEY)).await;
+    h.wait("od:ready", "null", 5_000).await;
+    h.eval("window.__send({ type: 'od:edit-mode', enabled: true, doc: 'index.html' })")
+        .await;
+    h.eval("window.__send({ type: 'test:forge' })").await;
+    h.wait("test:forged", "null", 5_000).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let keyed = |ty: &str| {
+        format!(
+            "window.__msgs.filter(m => m.type === {ty:?}).map(m => [m.key || null, m.text || null])"
+        )
+    };
+    // The forged edit has no key, and the synthetic events started none.
+    assert_eq!(
+        h.eval(&keyed("od:text-edit")).await,
+        json!([[null, "forged"]])
+    );
+
+    // A real click on the heading, real typing, a real Enter.
+    let since = h.msg_count().await;
+    h.page.click(Point { x: 80.0, y: 60.0 }).await.unwrap();
+    h.page
+        .execute(chromiumoxide::cdp::browser_protocol::input::InsertTextParams::new("Hi there"))
+        .await
+        .unwrap();
+    for ty in [
+        DispatchKeyEventType::RawKeyDown,
+        DispatchKeyEventType::KeyUp,
+    ] {
+        let cmd = DispatchKeyEventParams::builder()
+            .r#type(ty)
+            .key("Enter")
+            .code("Enter")
+            .windows_virtual_key_code(13)
+            .build()
+            .unwrap();
+        h.page.execute(cmd).await.unwrap();
+    }
+    let edit = h
+        .eval(&format!(
+            "window.__after('od:text-edit', {since}, (m) => m.key, 5000)"
+        ))
+        .await;
+    assert_eq!(edit["key"], KEY, "{edit}");
+    assert_eq!(edit["text"], "Hi there", "{edit}");
+    assert_eq!(edit["doc"], "index.html");
+
+    let since = h.msg_count().await;
+    h.eval("window.__send({ type: 'od:inspect', selector: 'h1' })")
+        .await;
+    let inspected = h
+        .eval(&format!(
+            "window.__after('od:inspect-result', {since}, null, 5000)"
+        ))
+        .await;
+    assert_eq!(inspected["key"], KEY);
+    assert_eq!(inspected["text"], "Hi there");
+
+    h.eval("window.__send({ type: 'test:loot' })").await;
+    let loot = h.wait("test:loot", "null", 5_000).await;
+    let loot = loot["loot"].as_str().unwrap();
+    assert!(loot.contains("Hi there"), "the page saw the edit happen");
+    assert!(!loot.contains(KEY), "the page learned the key");
+    h.eval("window.__send({ type: 'od:edit-mode', enabled: false })")
+        .await;
 }

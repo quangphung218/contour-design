@@ -231,6 +231,7 @@ messages! {
     UnsavedOverrides => "{0} unsaved style changes", "{0} thay đổi style chưa ghi";
     SavedVersion => "Saved to {0} as v{1}", "Đã ghi vào {0}, thành v{1}";
     SaveFailed => "Could not write to the source: {0}", "Không ghi được vào source: {0}";
+    OverridesDropped => "{0} unsaved style change(s) dropped: the element no longer reads as it did.", "Đã bỏ {0} thay đổi style chưa lưu: phần tử không còn như lúc chỉnh.";
     PaletteLabel => "Palette", "Bảng màu";
     PaletteOriginal => "Original colors", "Màu gốc";
     PaletteCoral => "Coral", "Coral";

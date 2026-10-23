@@ -38,6 +38,8 @@ const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(500);
 /// may take to exit before it is stopped (ACP agents wait for the next
 /// prompt instead of exiting).
 const EXIT_AFTER_COMPLETION: Duration = Duration::from_millis(500);
+/// Default [`EngineConfig::probe_retry_after`].
+const PROBE_RETRY_AFTER: Duration = Duration::from_secs(60);
 
 /// Engine-wide settings.
 #[derive(Debug, Clone)]
@@ -55,6 +57,9 @@ pub struct EngineConfig {
     pub tool_loop: ToolLoopLimits,
     /// Limit of the help probe that finds a CLI's optional flags.
     pub probe_timeout: Duration,
+    /// After a failed help probe, runs go without optional flags for this
+    /// long before the CLI is probed again.
+    pub probe_retry_after: Duration,
 }
 
 impl EngineConfig {
@@ -69,6 +74,7 @@ impl EngineConfig {
             retry_base: Duration::from_millis(500),
             tool_loop: ToolLoopLimits::default(),
             probe_timeout: detect::PROBE_TIMEOUT,
+            probe_retry_after: PROBE_RETRY_AFTER,
         }
     }
 
@@ -159,7 +165,15 @@ struct Active {
 pub struct RunEngine {
     config: Arc<EngineConfig>,
     active: Arc<Mutex<HashMap<String, Arc<Active>>>>,
-    capabilities: Arc<Mutex<HashMap<PathBuf, Vec<String>>>>,
+    capabilities: Arc<Mutex<HashMap<PathBuf, Probed>>>,
+}
+
+/// What the help probe of one binary gave.
+#[derive(Debug, Clone)]
+enum Probed {
+    Flags(Vec<String>),
+    /// It failed (timed out, could not run) at this time.
+    Failed(std::time::Instant),
 }
 
 impl RunEngine {
@@ -248,26 +262,32 @@ impl RunEngine {
     }
 
     async fn capabilities_for(&self, def: &RuntimeDef, bin: &Path) -> Vec<String> {
-        if let Some(found) = self
+        let cached = self
             .capabilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(bin)
-        {
-            return found.clone();
+            .cloned();
+        match cached {
+            Some(Probed::Flags(flags)) => return flags,
+            // A failed probe is not "no flags", but probing a CLI whose
+            // `--help` hangs on every run would add its timeout to each.
+            Some(Probed::Failed(at)) if at.elapsed() < self.config.probe_retry_after => {
+                return Vec::new();
+            }
+            _ => {}
         }
         let probed =
             detect::probe_capabilities(def, bin, &self.config.path, self.config.probe_timeout)
                 .await;
-        // A failed probe is not "no flags": the next run probes again.
-        let Some(caps) = probed else {
-            return Vec::new();
-        };
+        let entry = probed
+            .clone()
+            .map_or_else(|| Probed::Failed(std::time::Instant::now()), Probed::Flags);
         self.capabilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(bin.to_path_buf(), caps.clone());
-        caps
+            .insert(bin.to_path_buf(), entry);
+        probed.unwrap_or_default()
     }
 
     async fn drive(&self, spec: LaunchSpec, active: &Active) -> RunOutcome {
