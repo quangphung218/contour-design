@@ -1333,3 +1333,56 @@ ShortcutSlash = فرمان‌ها (در ابتدای خط)
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
+
+# Track C4-depth: Crystallize and evolution proposals (Automations).
+Crystallize = بلورسازی
+Crystallizing = در حال بلورسازی…
+CrystallizeTitle = پیش‌نویس پیشنهاد مهارت و حافظه از این اجرا
+CrystallizeFailed = بلورسازی ناموفق بود: {0}
+CrystallizeNoProposals = بلورسازی تمام شد، اما پیشنهادی برنگشت.
+ProposalsTitle = پیشنهادهای تکامل
+ProposalsSub = پیش از آنکه خروجی اتوماسیون حافظه، مهارت‌ها یا سیستم‌های طراحی را تغییر دهد، آن را بررسی کنید.
+ProposalsPending = {0} در انتظار
+ProposalApply = اعمال
+ProposalReject = رد کردن
+ProposalsDismissReason = در اتوماسیون‌ها کنار گذاشته شد
+ProposalTargetMemory = حافظه
+ProposalTargetSkill = مهارت
+ProposalActionCreate = ایجاد
+ProposalPreview = پیش‌نمایش
+ProposalSkillApplied = به‌عنوان مهارت {0} ذخیره شد.
+ProposalMemoryApplied = در حافظه ذخیره شد.
+# Track C4-depth: GenUI surfaces in the chat.
+GenuiWaiting = یک پلاگین منتظر پاسخ است
+GenuiContinue = ادامه
+GenuiAuthorize = مجاز کردن
+GenuiSkip = رد کردن مورد
+GenuiAcceptAll = پذیرفتن همه
+GenuiRejectAll = رد کردن همه
+GenuiPartial = انتخاب برای هر فایل
+GenuiAccept = پذیرفتن
+GenuiReject = رد کردن
+GenuiSubmit = ارسال
+GenuiSubmitPartial = ارسال تصمیم هر فایل
+GenuiPatchNotes = یادداشت برای نویسنده وصله (اختیاری)
+GenuiConfirmDefault = برای ادامه، پلاگین به تأیید شما نیاز دارد.
+GenuiAuthorizeDefault = برای ادامه، {0} را مجاز کنید.
+GenuiTheConnection = اتصال
+GenuiConnectorHint = اتصال‌دهنده: {0}
+GenuiMcpHint = سرور MCP: {0}
+GenuiReviewDefault = تفاوت‌ها را بررسی کنید و روش ادامه را انتخاب کنید.
+GenuiFilesTouched = {0} فایل تغییر کرد.
+GenuiNoFileList = هنوز فهرست فایلی نیست: تصمیم برای همه فایل‌ها اعمال می‌شود.
+GenuiPickEach = برای این فایل‌ها پذیرفتن یا رد کردن را انتخاب کنید: {0}
+GenuiAnswerDefault = برای ادامه، پلاگین به پاسخ نیاز دارد.
+GenuiJsonPlaceholder = با JSON یا متن ساده پاسخ دهید
+GenuiFieldRequired = {0} الزامی است.
+GenuiFieldNumber = {0} باید عدد باشد.
+GenuiFieldWhole = {0} باید عدد صحیح باشد.
+GenuiFieldRange = {0} خارج از محدوده است.
+GenuiAnswerFailed = ارسال پاسخ ممکن نشد: {0}
+GenuiRemembered = پاسخ‌های به‌خاطر‌سپرده ({0})
+GenuiRememberedHint = پلاگین‌ها این پاسخ‌ها را بدون پرسش دوباره استفاده می‌کنند.
+GenuiRevoke = لغو
+GenuiTierProject = پروژه
+GenuiTierConversation = گفت‌وگو

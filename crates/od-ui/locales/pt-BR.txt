@@ -1332,3 +1332,57 @@ ShortcutSlash = Comandos (no início de uma linha)
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
+
+# Track C4-depth: Crystallize and evolution proposals (Automations).
+Crystallize = Cristalizar
+Crystallizing = Cristalizando…
+CrystallizeTitle = Rascunhar propostas de skill e memória a partir desta execução
+CrystallizeFailed = Falha ao cristalizar: {0}
+CrystallizeNoProposals = A cristalização terminou, mas nenhuma proposta foi retornada.
+ProposalsTitle = Propostas de evolução
+ProposalsSub = Revise a saída da automação antes que ela altere memória, skills ou design systems.
+ProposalsPending = {0} pendentes
+ProposalApply = Aplicar
+ProposalReject = Rejeitar
+ProposalsDismissReason = Descartada em Automações
+ProposalTargetMemory = Memória
+ProposalTargetSkill = Skill
+ProposalActionCreate = Criar
+ProposalPreview = Prévia
+ProposalSkillApplied = Salva como skill {0}.
+ProposalMemoryApplied = Salva na memória.
+
+# Track C4-depth: GenUI surfaces in the chat.
+GenuiWaiting = Um plugin está aguardando uma resposta
+GenuiContinue = Continuar
+GenuiAuthorize = Autorizar
+GenuiSkip = Pular
+GenuiAcceptAll = Aceitar tudo
+GenuiRejectAll = Rejeitar tudo
+GenuiPartial = Escolher por arquivo
+GenuiAccept = Aceitar
+GenuiReject = Rejeitar
+GenuiSubmit = Enviar
+GenuiSubmitPartial = Enviar decisão parcial
+GenuiPatchNotes = Notas para o autor do patch (opcional)
+GenuiConfirmDefault = O plugin precisa da sua confirmação para continuar.
+GenuiAuthorizeDefault = Autorize {0} para continuar.
+GenuiTheConnection = a conexão
+GenuiConnectorHint = Conector: {0}
+GenuiMcpHint = Servidor MCP: {0}
+GenuiReviewDefault = Revise o diff e escolha como prosseguir.
+GenuiFilesTouched = {0} arquivos alterados.
+GenuiNoFileList = Ainda sem lista de arquivos: a decisão vale para todos os arquivos.
+GenuiPickEach = Escolha aceitar ou rejeitar para: {0}
+GenuiAnswerDefault = O plugin precisa de uma resposta para continuar.
+GenuiJsonPlaceholder = Responda em JSON ou texto
+GenuiFieldRequired = {0} é obrigatório.
+GenuiFieldNumber = {0} deve ser um número.
+GenuiFieldWhole = {0} deve ser um número inteiro.
+GenuiFieldRange = {0} está fora do intervalo.
+GenuiAnswerFailed = Não foi possível enviar a resposta: {0}
+GenuiRemembered = Respostas lembradas ({0})
+GenuiRememberedHint = Os plugins reutilizam estas respostas sem perguntar de novo.
+GenuiRevoke = Revogar
+GenuiTierProject = projeto
+GenuiTierConversation = conversa

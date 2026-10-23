@@ -1333,3 +1333,56 @@ ShortcutSlash = コマンド（行頭）
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
+
+# Track C4-depth: Crystallize and evolution proposals (Automations).
+Crystallize = 結晶化
+Crystallizing = 結晶化中…
+CrystallizeTitle = この実行からスキルとメモリの提案を作成
+CrystallizeFailed = 結晶化に失敗しました: {0}
+CrystallizeNoProposals = 結晶化は完了しましたが、提案は返されませんでした。
+ProposalsTitle = 進化の提案
+ProposalsSub = メモリ、スキル、デザインシステムを変更する前に、オートメーションの出力を確認します。
+ProposalsPending = {0}件保留中
+ProposalApply = 適用
+ProposalReject = 却下
+ProposalsDismissReason = オートメーションで却下しました
+ProposalTargetMemory = メモリ
+ProposalTargetSkill = スキル
+ProposalActionCreate = 作成
+ProposalPreview = プレビュー
+ProposalSkillApplied = スキル {0} として保存しました。
+ProposalMemoryApplied = メモリに保存しました。
+# Track C4-depth: GenUI surfaces in the chat.
+GenuiWaiting = プラグインが回答を待っています
+GenuiContinue = 続行
+GenuiAuthorize = 許可
+GenuiSkip = スキップ
+GenuiAcceptAll = すべて承認
+GenuiRejectAll = すべて却下
+GenuiPartial = ファイルごとに選択
+GenuiAccept = 承認
+GenuiReject = 却下
+GenuiSubmit = 送信
+GenuiSubmitPartial = ファイルごとの判断を送信
+GenuiPatchNotes = パッチ作成者へのメモ（任意）
+GenuiConfirmDefault = 続行するには、プラグインの確認が必要です。
+GenuiAuthorizeDefault = 続行するには {0} を許可してください。
+GenuiTheConnection = この接続
+GenuiConnectorHint = コネクタ: {0}
+GenuiMcpHint = MCP サーバー: {0}
+GenuiReviewDefault = 差分を確認して、進め方を選んでください。
+GenuiFilesTouched = {0}件のファイルを変更しました。
+GenuiNoFileList = ファイル一覧はまだありません。判断はすべてのファイルに適用されます。
+GenuiPickEach = 承認または却下するファイルを選択: {0}
+GenuiAnswerDefault = 続行するには、プラグインへの回答が必要です。
+GenuiJsonPlaceholder = JSON またはテキストで回答
+GenuiFieldRequired = {0} は必須です。
+GenuiFieldNumber = {0} は数値で入力してください。
+GenuiFieldWhole = {0} は整数で入力してください。
+GenuiFieldRange = {0} は範囲外です。
+GenuiAnswerFailed = 回答を送信できませんでした: {0}
+GenuiRemembered = 記憶済みの回答 ({0})
+GenuiRememberedHint = プラグインはこれらの回答を再確認なしで再利用します。
+GenuiRevoke = 取り消す
+GenuiTierProject = プロジェクト
+GenuiTierConversation = 会話

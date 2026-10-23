@@ -1333,3 +1333,56 @@ ShortcutSlash = Команды (в начале строки)
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
+
+# Track C4-depth: Crystallize and evolution proposals (Automations).
+Crystallize = Кристаллизовать
+Crystallizing = Кристаллизация…
+CrystallizeTitle = Подготовить предложения навыка и памяти по этому запуску
+CrystallizeFailed = Не удалось кристаллизовать: {0}
+CrystallizeNoProposals = Кристаллизация завершена, но предложений нет.
+ProposalsTitle = Предложения по развитию
+ProposalsSub = Проверьте результат автоматизации, прежде чем он изменит память, навыки или дизайн-системы.
+ProposalsPending = Ожидают: {0}
+ProposalApply = Применить
+ProposalReject = Отклонить
+ProposalsDismissReason = Закрыто в Автоматизациях
+ProposalTargetMemory = Память
+ProposalTargetSkill = Навык
+ProposalActionCreate = Создать
+ProposalPreview = Предпросмотр
+ProposalSkillApplied = Сохранено как навык {0}.
+ProposalMemoryApplied = Сохранено в память.
+# Track C4-depth: GenUI surfaces in the chat.
+GenuiWaiting = Плагин ждёт ответа
+GenuiContinue = Продолжить
+GenuiAuthorize = Разрешить
+GenuiSkip = Пропустить
+GenuiAcceptAll = Принять все
+GenuiRejectAll = Отклонить все
+GenuiPartial = Выбрать по файлам
+GenuiAccept = Принять
+GenuiReject = Отклонить
+GenuiSubmit = Отправить
+GenuiSubmitPartial = Отправить выбор по файлам
+GenuiPatchNotes = Заметки для автора патча (необязательно)
+GenuiConfirmDefault = Плагину нужно ваше подтверждение, чтобы продолжить.
+GenuiAuthorizeDefault = Разрешите {0}, чтобы продолжить.
+GenuiTheConnection = подключение
+GenuiConnectorHint = Коннектор: {0}
+GenuiMcpHint = MCP-сервер: {0}
+GenuiReviewDefault = Просмотрите diff и выберите, как поступить.
+GenuiFilesTouched = Изменено файлов: {0}.
+GenuiNoFileList = Списка файлов пока нет: решение относится ко всем файлам.
+GenuiPickEach = Принять или отклонить: {0}
+GenuiAnswerDefault = Плагину нужен ответ, чтобы продолжить.
+GenuiJsonPlaceholder = Ответ в JSON или обычным текстом
+GenuiFieldRequired = Укажите {0}.
+GenuiFieldNumber = {0} должно быть числом.
+GenuiFieldWhole = {0} должно быть целым числом.
+GenuiFieldRange = {0} вне допустимого диапазона.
+GenuiAnswerFailed = Не удалось отправить ответ: {0}
+GenuiRemembered = Сохранённые ответы ({0})
+GenuiRememberedHint = Плагины повторно используют эти ответы, не спрашивая снова.
+GenuiRevoke = Отозвать
+GenuiTierProject = проект
+GenuiTierConversation = беседа

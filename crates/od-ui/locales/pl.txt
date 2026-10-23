@@ -1332,3 +1332,57 @@ ShortcutSlash = Polecenia (na początku wiersza)
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
+
+# Track C4-depth: Crystallize and evolution proposals (Automations).
+Crystallize = Skrystalizuj
+Crystallizing = Krystalizowanie…
+CrystallizeTitle = Utwórz propozycje umiejętności i pamięci na podstawie tego uruchomienia
+CrystallizeFailed = Krystalizowanie nie powiodło się: {0}
+CrystallizeNoProposals = Krystalizowanie zakończone, ale nie zwrócono żadnych propozycji.
+ProposalsTitle = Propozycje ewolucji
+ProposalsSub = Przejrzyj wyniki automatyzacji, zanim zmienią pamięć, umiejętności lub systemy projektowe.
+ProposalsPending = {0} oczekujących
+ProposalApply = Zastosuj
+ProposalReject = Odrzuć
+ProposalsDismissReason = Odrzucono w Automatyzacjach
+ProposalTargetMemory = Pamięć
+ProposalTargetSkill = Umiejętność
+ProposalActionCreate = Utwórz
+ProposalPreview = Podgląd
+ProposalSkillApplied = Zapisano jako umiejętność {0}.
+ProposalMemoryApplied = Zapisano w pamięci.
+
+# Track C4-depth: GenUI surfaces in the chat.
+GenuiWaiting = Wtyczka czeka na odpowiedź
+GenuiContinue = Dalej
+GenuiAuthorize = Autoryzuj
+GenuiSkip = Pomiń
+GenuiAcceptAll = Przyjmij wszystko
+GenuiRejectAll = Odrzuć wszystko
+GenuiPartial = Wybierz dla plików
+GenuiAccept = Zaakceptuj
+GenuiReject = Odrzuć
+GenuiSubmit = Wyślij
+GenuiSubmitPartial = Wyślij decyzję częściową
+GenuiPatchNotes = Uwagi dla autora poprawki (opcjonalnie)
+GenuiConfirmDefault = Wtyczka potrzebuje Twojego potwierdzenia, aby kontynuować.
+GenuiAuthorizeDefault = Autoryzuj {0}, aby kontynuować.
+GenuiTheConnection = połączenie
+GenuiConnectorHint = Konektor: {0}
+GenuiMcpHint = Serwer MCP: {0}
+GenuiReviewDefault = Przejrzyj diff i wybierz, co dalej.
+GenuiFilesTouched = Zmienione pliki: {0}.
+GenuiNoFileList = Brak listy plików: decyzja dotyczy wszystkich plików.
+GenuiPickEach = Wybierz akceptację lub odrzucenie dla: {0}
+GenuiAnswerDefault = Wtyczka potrzebuje odpowiedzi, aby kontynuować.
+GenuiJsonPlaceholder = Odpowiedz w JSON lub tekstem
+GenuiFieldRequired = Pole {0} jest wymagane.
+GenuiFieldNumber = {0} musi być liczbą.
+GenuiFieldWhole = {0} musi być liczbą całkowitą.
+GenuiFieldRange = {0} jest poza zakresem.
+GenuiAnswerFailed = Nie udało się wysłać odpowiedzi: {0}
+GenuiRemembered = Zapamiętane odpowiedzi ({0})
+GenuiRememberedHint = Wtyczki używają tych odpowiedzi ponownie bez pytania.
+GenuiRevoke = Cofnij
+GenuiTierProject = projekt
+GenuiTierConversation = rozmowa

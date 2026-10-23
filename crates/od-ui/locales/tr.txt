@@ -1332,3 +1332,56 @@ ShortcutSlash = Komutlar (satır başında)
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
+
+# Track C4-depth: Crystallize and evolution proposals (Automations).
+Crystallize = Kristalleştir
+Crystallizing = Kristalleştiriliyor…
+CrystallizeTitle = Bu çalıştırmadan skill ve bellek önerileri hazırla
+CrystallizeFailed = Kristalleştirme başarısız: {0}
+CrystallizeNoProposals = Kristalleştirme bitti ama öneri dönmedi.
+ProposalsTitle = Gelişim önerileri
+ProposalsSub = Otomasyon çıktısı belleği, skill'leri veya tasarım sistemlerini değiştirmeden önce gözden geçirin.
+ProposalsPending = {0} bekliyor
+ProposalApply = Uygula
+ProposalReject = Reddet
+ProposalsDismissReason = Otomasyonlar'da kapatıldı
+ProposalTargetMemory = Bellek
+ProposalTargetSkill = Skill
+ProposalActionCreate = Oluştur
+ProposalPreview = Önizleme
+ProposalSkillApplied = {0} skill olarak kaydedildi.
+ProposalMemoryApplied = Belleğe kaydedildi.
+# Track C4-depth: GenUI surfaces in the chat.
+GenuiWaiting = Bir plugin yanıt bekliyor
+GenuiContinue = Devam
+GenuiAuthorize = Yetkilendir
+GenuiSkip = Atla
+GenuiAcceptAll = Tümünü kabul et
+GenuiRejectAll = Tümünü reddet
+GenuiPartial = Dosya dosya seç
+GenuiAccept = Kabul et
+GenuiReject = Reddet
+GenuiSubmit = Gönder
+GenuiSubmitPartial = Dosya bazlı kararı gönder
+GenuiPatchNotes = Patch yazarına notlar (isteğe bağlı)
+GenuiConfirmDefault = Plugin'in devam etmesi için onayınız gerekiyor.
+GenuiAuthorizeDefault = Devam etmek için {0} erişimini yetkilendirin.
+GenuiTheConnection = bağlantı
+GenuiConnectorHint = Connector: {0}
+GenuiMcpHint = MCP sunucusu: {0}
+GenuiReviewDefault = Diff'i inceleyin ve nasıl ilerleyeceğinizi seçin.
+GenuiFilesTouched = {0} dosya değişti.
+GenuiNoFileList = Henüz dosya listesi yok: karar tüm dosyalar için geçerli.
+GenuiPickEach = Şunlar için kabul veya reddet seçin: {0}
+GenuiAnswerDefault = Plugin'in devam etmesi için bir yanıt gerekiyor.
+GenuiJsonPlaceholder = JSON veya düz metin olarak yanıtlayın
+GenuiFieldRequired = {0} gerekli.
+GenuiFieldNumber = {0} bir sayı olmalı.
+GenuiFieldWhole = {0} tam sayı olmalı.
+GenuiFieldRange = {0} aralık dışında.
+GenuiAnswerFailed = Yanıt gönderilemedi: {0}
+GenuiRemembered = Hatırlanan yanıtlar ({0})
+GenuiRememberedHint = Plugin'ler bu yanıtları tekrar sormadan kullanır.
+GenuiRevoke = Geri al
+GenuiTierProject = proje
+GenuiTierConversation = konuşma

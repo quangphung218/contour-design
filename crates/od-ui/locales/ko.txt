@@ -1333,3 +1333,56 @@ ShortcutSlash = 명령 (줄 맨 앞에서)
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
+
+# Track C4-depth: Crystallize and evolution proposals (Automations).
+Crystallize = 결정화
+Crystallizing = 결정화 중…
+CrystallizeTitle = 이 실행에서 스킬과 메모리 제안 만들기
+CrystallizeFailed = 결정화에 실패했습니다: {0}
+CrystallizeNoProposals = 결정화는 끝났지만 제안이 반환되지 않았습니다.
+ProposalsTitle = 진화 제안
+ProposalsSub = 메모리, 스킬, 디자인 시스템을 바꾸기 전에 자동화 결과를 검토합니다.
+ProposalsPending = {0}개 대기 중
+ProposalApply = 적용
+ProposalReject = 거부
+ProposalsDismissReason = 자동화에서 닫음
+ProposalTargetMemory = 메모리
+ProposalTargetSkill = 스킬
+ProposalActionCreate = 생성
+ProposalPreview = 미리보기
+ProposalSkillApplied = 스킬 {0}(으)로 저장했습니다.
+ProposalMemoryApplied = 메모리에 저장했습니다.
+# Track C4-depth: GenUI surfaces in the chat.
+GenuiWaiting = 플러그인이 답변을 기다리고 있습니다
+GenuiContinue = 계속
+GenuiAuthorize = 승인
+GenuiSkip = 건너뛰기
+GenuiAcceptAll = 모두 수락
+GenuiRejectAll = 모두 거부
+GenuiPartial = 파일별로 선택
+GenuiAccept = 수락
+GenuiReject = 거부
+GenuiSubmit = 제출
+GenuiSubmitPartial = 파일별 결정 제출
+GenuiPatchNotes = 패치 작성자에게 남길 메모 (선택)
+GenuiConfirmDefault = 계속하려면 플러그인에 대한 확인이 필요합니다.
+GenuiAuthorizeDefault = 계속하려면 {0}을(를) 승인하세요.
+GenuiTheConnection = 이 연결
+GenuiConnectorHint = 커넥터: {0}
+GenuiMcpHint = MCP 서버: {0}
+GenuiReviewDefault = diff를 검토하고 진행 방법을 선택하세요.
+GenuiFilesTouched = 파일 {0}개를 수정했습니다.
+GenuiNoFileList = 아직 파일 목록이 없습니다. 결정은 모든 파일에 적용됩니다.
+GenuiPickEach = 수락 또는 거부할 파일 선택: {0}
+GenuiAnswerDefault = 계속하려면 플러그인에 대한 답변이 필요합니다.
+GenuiJsonPlaceholder = JSON 또는 일반 텍스트로 답변
+GenuiFieldRequired = {0}은(는) 필수입니다.
+GenuiFieldNumber = {0}은(는) 숫자여야 합니다.
+GenuiFieldWhole = {0}은(는) 정수여야 합니다.
+GenuiFieldRange = {0}이(가) 범위를 벗어났습니다.
+GenuiAnswerFailed = 답변을 보내지 못했습니다: {0}
+GenuiRemembered = 기억된 답변 ({0})
+GenuiRememberedHint = 플러그인은 이 답변을 다시 묻지 않고 재사용합니다.
+GenuiRevoke = 취소
+GenuiTierProject = 프로젝트
+GenuiTierConversation = 대화

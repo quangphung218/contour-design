@@ -1332,3 +1332,56 @@ ShortcutSlash = 命令（行首输入）
 # / app) with the upstream product name swapped for Nét. The files keep
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
+
+# Track C4-depth: Crystallize and evolution proposals (Automations).
+Crystallize = 结晶
+Crystallizing = 结晶中…
+CrystallizeTitle = 根据本次运行起草技能和记忆提案
+CrystallizeFailed = 结晶失败：{0}
+CrystallizeNoProposals = 结晶已完成，但没有返回提案。
+ProposalsTitle = 演进提案
+ProposalsSub = 在自动化的输出修改记忆、技能或设计系统之前，请先审阅。
+ProposalsPending = {0} 项待处理
+ProposalApply = 应用
+ProposalReject = 拒绝
+ProposalsDismissReason = 已在自动化中忽略
+ProposalTargetMemory = 记忆
+ProposalTargetSkill = 技能
+ProposalActionCreate = 创建
+ProposalPreview = 预览
+ProposalSkillApplied = 已保存为技能 {0}。
+ProposalMemoryApplied = 已保存到记忆。
+# Track C4-depth: GenUI surfaces in the chat.
+GenuiWaiting = 插件正在等待回答
+GenuiContinue = 继续
+GenuiAuthorize = 授权
+GenuiSkip = 跳过
+GenuiAcceptAll = 全部接受
+GenuiRejectAll = 全部拒绝
+GenuiPartial = 按文件选择
+GenuiAccept = 接受
+GenuiReject = 拒绝
+GenuiSubmit = 提交
+GenuiSubmitPartial = 提交按文件的决定
+GenuiPatchNotes = 给补丁作者的备注（可选）
+GenuiConfirmDefault = 插件需要你确认后才能继续。
+GenuiAuthorizeDefault = 请授权 {0} 以继续。
+GenuiTheConnection = 该连接
+GenuiConnectorHint = 连接器：{0}
+GenuiMcpHint = MCP 服务器：{0}
+GenuiReviewDefault = 请审阅差异并选择处理方式。
+GenuiFilesTouched = 已修改 {0} 个文件。
+GenuiNoFileList = 暂无文件列表：该决定适用于所有文件。
+GenuiPickEach = 请为以下文件选择接受或拒绝：{0}
+GenuiAnswerDefault = 插件需要你的回答才能继续。
+GenuiJsonPlaceholder = 以 JSON 或纯文本回答
+GenuiFieldRequired = {0} 为必填项。
+GenuiFieldNumber = {0} 必须是数字。
+GenuiFieldWhole = {0} 必须是整数。
+GenuiFieldRange = {0} 超出范围。
+GenuiAnswerFailed = 无法发送回答：{0}
+GenuiRemembered = 已记住的回答（{0}）
+GenuiRememberedHint = 插件会直接复用这些回答，不再询问。
+GenuiRevoke = 撤销
+GenuiTierProject = 项目
+GenuiTierConversation = 对话
