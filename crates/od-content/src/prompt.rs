@@ -251,6 +251,10 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     if !ask {
         p.push(format!("\n\n{SEMANTIC_OUTPUT_FILE_NAMES}"));
     }
+    // 9b. Structured choices from project creation (Home chips, media picker).
+    if let Some(block) = metadata.and_then(metadata_block) {
+        p.push(block);
+    }
     // 10. Active plugin, next to the skill it extends.
     if let Some(block) = input.plugin_block.filter(|b| !b.trim().is_empty()) {
         p.push(block.to_owned());
@@ -282,6 +286,57 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     // 14. Comment identity.
     p.push(format!("{SEP}{COMMENT_IDENTITY_EDIT_DIRECTIVE}"));
     p.concat()
+}
+
+/// Metadata keys of the Home media picker, in the original's names, with
+/// the label the prompt shows.
+const MEDIA_FIELDS: [(&str, &str); 8] = [
+    ("imageAspect", "aspectRatio"),
+    ("imageResolution", "resolution"),
+    ("videoModel", "videoModel"),
+    ("videoAspect", "aspectRatio"),
+    ("videoLength", "lengthSeconds"),
+    ("videoResolution", "resolution"),
+    ("audioKind", "audioKind"),
+    ("audioDuration", "durationSeconds"),
+];
+
+/// `## Project metadata`: the choices the user made on Home (output type,
+/// fidelity, platform, media options). Only known fields are listed;
+/// `None` when the project carries none of them.
+fn metadata_block(m: &ProjectMetadata) -> Option<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for (label, value) in [
+        ("intent", m.intent.as_deref()),
+        ("fidelity", m.fidelity.as_deref()),
+        ("platform", m.platform.as_deref()),
+    ] {
+        if let Some(v) = value.map(str::trim).filter(|v| !v.is_empty()) {
+            lines.push(format!("- **{label}**: {v}"));
+        }
+    }
+    for (key, label) in MEDIA_FIELDS {
+        let value = match m.extra.get(key) {
+            Some(serde_json::Value::String(s)) if !s.trim().is_empty() => s.trim().to_owned(),
+            Some(serde_json::Value::Number(n)) => n.to_string(),
+            _ => continue,
+        };
+        lines.push(format!("- **{label}**: {value}"));
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    let kind = m
+        .kind
+        .and_then(|k| serde_json::to_value(k).ok())
+        .and_then(|v| v.as_str().map(str::to_owned));
+    if let Some(kind) = kind {
+        lines.insert(0, format!("- **kind**: {kind}"));
+    }
+    Some(format!(
+        "\n\n## Project metadata\n\nThese are the structured choices the user made when creating this project. Treat known fields as authoritative. Missing fields are unresolved facts, not mandatory questions; infer reasonable defaults and clarify only when an answer would materially change the result.\n\n{}",
+        lines.join("\n")
+    ))
 }
 
 /// `## Project memory`: one bullet per remembered fact.
@@ -546,6 +601,45 @@ mod tests {
         assert!(out.contains("slide: 2\n"));
         assert!(out.contains("currentText: Hello\nhtmlHint: (none)\ncomment: Make it red\n"));
         assert!(out.ends_with("</attached-preview-comments>"));
+    }
+
+    #[test]
+    fn metadata_block_lists_home_choices_only_when_present() {
+        let plain = ProjectMetadata {
+            kind: Some(ProjectKind::Deck),
+            ..ProjectMetadata::default()
+        };
+        assert_eq!(metadata_block(&plain), None);
+        let mut video = ProjectMetadata {
+            kind: Some(ProjectKind::Video),
+            intent: Some("motion-design".into()),
+            ..ProjectMetadata::default()
+        };
+        video
+            .extra
+            .insert("videoAspect".into(), serde_json::json!("9:16"));
+        video
+            .extra
+            .insert("videoLength".into(), serde_json::json!(5));
+        video
+            .extra
+            .insert("videoResolution".into(), serde_json::json!(""));
+        let block = metadata_block(&video).unwrap_or_default();
+        assert!(block.starts_with("\n\n## Project metadata\n"), "{block}");
+        assert!(
+            block.ends_with(
+                "- **kind**: video\n- **intent**: motion-design\n- **aspectRatio**: 9:16\n- **lengthSeconds**: 5"
+            ),
+            "{block}"
+        );
+        let text = compose_instructions(&PromptInput {
+            metadata: Some(&video),
+            ..PromptInput::default()
+        });
+        assert!(
+            pos(&text, "## Project metadata")
+                < pos(&text, "## Structured clarification on any turn")
+        );
     }
 
     fn pos(haystack: &str, needle: &str) -> usize {
