@@ -19,6 +19,8 @@ const GROUPS: [(T, &[(&str, T)]); 4] = [
         T::ShortcutsGeneral,
         &[
             ("{m}K", T::CommandPalette),
+            ("{m},", T::NavSettings),
+            ("{m}B", T::ShortcutToggleSidebar),
             ("?", T::KeyboardShortcuts),
             ("Esc", T::ShortcutEsc),
         ],
@@ -27,11 +29,17 @@ const GROUPS: [(T, &[(&str, T)]); 4] = [
         T::ShortcutsStudio,
         &[
             ("{m}P", T::QuickOpen),
+            ("{m}T", T::NewTab),
             ("{m}B", T::ToggleFilesPanel),
             ("{m}W", T::CloseTab),
             ("{m}1…9", T::ShortcutPickTab),
-            ("Ctrl+Tab", T::ShortcutCycleTabs),
+            ("Ctrl+Tab / Ctrl+PageDown", T::ShortcutCycleTabs),
+            ("Ctrl+Shift+Tab / Ctrl+PageUp", T::ShortcutPrevTab),
+            ("{m}⌥← / {m}⌥→", T::ShortcutTabArrows),
             ("{m}= / {m}- / {m}0", T::ShortcutZoom),
+            ("{m}⇧K", T::ShortcutContinueCli),
+            ("{m}Enter", T::ShortcutSendComment),
+            ("{m}Z / {m}⇧Z", T::ShortcutUndoDraw),
         ],
     ),
     (
@@ -44,6 +52,7 @@ const GROUPS: [(T, &[(&str, T)]); 4] = [
             ("→ / {space}", T::ShortcutNextSlide),
             ("←", T::ShortcutPrevSlide),
             ("Home / End", T::ShortcutFirstLast),
+            ("R", T::ShortcutDeckReset),
         ],
     ),
 ];

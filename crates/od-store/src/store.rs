@@ -382,6 +382,34 @@ impl Store {
         versions::mark_deleted(&root.dir, &rel)
     }
 
+    /// Overwrites the existing file at exactly `name` (never renamed by the
+    /// sanitizer, so `My Deck.html` stays itself). An HTML file gets a
+    /// manual version labelled `label`.
+    ///
+    /// # Errors
+    /// Path errors, [`StoreError::FileNotFound`] when there is no such file
+    /// (new files go through [`Store::write_file`]), non-UTF-8 HTML.
+    pub fn replace_file(
+        &self,
+        project_id: &str,
+        name: &str,
+        bytes: &[u8],
+        label: &str,
+    ) -> Result<ProjectFile> {
+        let safe = validate_project_path(name)?;
+        if is_html_name(&safe) {
+            let text = std::str::from_utf8(bytes)
+                .map_err(|_| StoreError::BadRequest("HTML must be UTF-8".to_owned()))?
+                .to_owned();
+            return self
+                .edit_html::<StoreError>(project_id, &safe, label, |_| Ok(text))
+                .map(|(file, _)| file);
+        }
+        let root = self.root_for(project_id)?;
+        files::stat_file(&root, &safe)?;
+        files::write_file_exact(&root, &safe, bytes)
+    }
+
     /// # Errors
     /// [`StoreError::ProjectNotFound`] or I/O errors.
     pub fn list_folders(&self, project_id: &str) -> Result<Vec<String>> {

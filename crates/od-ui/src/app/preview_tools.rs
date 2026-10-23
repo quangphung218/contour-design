@@ -12,6 +12,7 @@ use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{
     self as pb, BridgeMsg, Inspected, Override, Snapshot, TweakDef, TweakKind,
 };
+use crate::sketch_model::{History, Pen, Stroke};
 use leptos::prelude::*;
 use od_contracts::{
     ContentEncoding, DeliverableResponse, DeliverableValidation, FileResponse, LintResponse,
@@ -48,7 +49,7 @@ const INSPECT_PROPS: [&str; 12] = [
 
 /// How long to wait for the bridge's snapshot.
 const SNAPSHOT_WAIT_MS: u32 = 4000;
-const DRAW_COLORS: [&str; 3] = ["#e5484d", "#1f6feb", "#1d7f4e"];
+pub(super) const DRAW_COLORS: [&str; 3] = ["#e5484d", "#1f6feb", "#1d7f4e"];
 /// Folder (in the project) for annotation images.
 const ANNOTATIONS_DIR: &str = "annotations";
 
@@ -600,6 +601,7 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
             {tool_button(Tool::Inspect, T::ToolInspect, Glyph::Inspect, "inspect-mode")}
             {tool_button(Tool::EditText, T::ToolEditText, Glyph::EditText, "edit-mode")}
             {tool_button(Tool::Draw, T::ToolDraw, Glyph::Draw, "draw-mode")}
+            <super::capture::ScreenshotMenu ctx=ctx/>
             <Show when=move || tools.tweaks.with(|t| !t.is_empty())>
                 {tool_button(Tool::Tweaks, T::ToolTweaks, Glyph::Tweaks, "tweaks-toggle")}
             </Show>
@@ -913,30 +915,21 @@ fn LintPanel(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-/// Pen or box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Pen {
-    Free,
-    Box,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct Stroke {
-    pen: Pen,
-    color: &'static str,
-    points: Vec<(f64, f64)>,
-}
-
-fn context_2d(canvas: &web_sys::HtmlCanvasElement) -> Option<web_sys::CanvasRenderingContext2d> {
+pub(super) fn context_2d(
+    canvas: &web_sys::HtmlCanvasElement,
+) -> Option<web_sys::CanvasRenderingContext2d> {
     canvas.get_context("2d").ok()??.dyn_into().ok()
 }
 
-fn paint(g: &web_sys::CanvasRenderingContext2d, strokes: &[Stroke]) {
+/// Font of text marks, in canvas pixels.
+const TEXT_FONT: &str = "600 18px system-ui, sans-serif";
+
+pub(super) fn paint(g: &web_sys::CanvasRenderingContext2d, strokes: &[Stroke]) {
     g.set_line_width(3.0);
     g.set_line_cap("round");
     g.set_line_join("round");
     for s in strokes {
-        g.set_stroke_style_str(s.color);
+        g.set_stroke_style_str(&s.color);
         match (s.pen, s.points.first(), s.points.last()) {
             (Pen::Box, Some(a), Some(b)) => g.stroke_rect(a.0, a.1, b.0 - a.0, b.1 - a.1),
             (Pen::Free, Some(a), _) => {
@@ -947,13 +940,18 @@ fn paint(g: &web_sys::CanvasRenderingContext2d, strokes: &[Stroke]) {
                 }
                 g.stroke();
             }
+            (Pen::Text, Some(a), _) => {
+                g.set_fill_style_str(&s.color);
+                g.set_font(TEXT_FONT);
+                let _ = g.fill_text(s.text.as_deref().unwrap_or_default(), a.0, a.1);
+            }
             _ => {}
         }
     }
 }
 
 /// White page, the snapshot (if any), then the strokes, as a PNG data URL.
-fn compose(
+pub(super) fn compose(
     width: u32,
     height: u32,
     snapshot: Option<&web_sys::HtmlImageElement>,
@@ -989,7 +987,7 @@ fn compose(
         .map_err(|_| "canvas export blocked".to_owned())
 }
 
-async fn load_image(url: &str) -> Option<web_sys::HtmlImageElement> {
+pub(super) async fn load_image(url: &str) -> Option<web_sys::HtmlImageElement> {
     let img = web_sys::HtmlImageElement::new().ok()?;
     img.set_src(url);
     wasm_bindgen_futures::JsFuture::from(img.decode())
@@ -999,7 +997,7 @@ async fn load_image(url: &str) -> Option<web_sys::HtmlImageElement> {
 }
 
 /// Asks the frame for a snapshot and waits for it.
-async fn take_snapshot(tools: Tools) -> Option<Snapshot> {
+pub(super) async fn take_snapshot(tools: Tools) -> Option<Snapshot> {
     let id = api::random_id();
     tools.snapshot.set(None);
     bridge::post_main(&pb::snapshot(&id));
@@ -1014,6 +1012,38 @@ async fn take_snapshot(tools: Tools) -> Option<Snapshot> {
         gloo_timers::future::TimeoutFuture::new(50).await;
     }
     None
+}
+
+/// The page as a PNG data URL (bridge snapshot), for screenshots.
+pub(super) async fn page_png(tools: Tools) -> Option<String> {
+    let url = take_snapshot(tools).await.and_then(snapshot_image)?;
+    let img = load_image(&url).await?;
+    compose(
+        img.natural_width().max(1),
+        img.natural_height().max(1),
+        Some(&img),
+        &[],
+    )
+    .ok()
+}
+
+/// Stores a PNG data URL as `name` in the project; returns its path.
+pub(super) async fn save_png(ctx: StudioCtx, name: String, png: &str) -> Result<String, String> {
+    let content = png
+        .split_once(',')
+        .map(|(_, b64)| b64.to_owned())
+        .ok_or("bad image data")?;
+    let req = WriteFileRequest {
+        name,
+        content,
+        encoding: ContentEncoding::Base64,
+        overwrite: Some(false),
+        artifact_manifest: None,
+    };
+    let res = api::post::<_, FileResponse>(&format!("{}/files", ctx.base()), &req)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(res.file.path)
 }
 
 /// Composes the annotation, stores it in the project and attaches it to
@@ -1036,27 +1066,189 @@ async fn attach_annotation(
         Some(Ok(png)) => (png, true),
         _ => (compose(width, height, None, &strokes)?, false),
     };
-    let content = png
-        .split_once(',')
-        .map(|(_, b64)| b64.to_owned())
-        .ok_or("bad image data")?;
-    let req = WriteFileRequest {
-        name: format!(
-            "{ANNOTATIONS_DIR}/annotation-{}.png",
-            js_sys::Date::now() as u64
-        ),
-        content,
-        encoding: ContentEncoding::Base64,
-        overwrite: Some(false),
-        artifact_manifest: None,
-    };
-    let res = api::post::<_, FileResponse>(&format!("{}/files", ctx.base()), &req)
-        .await
-        .map_err(|e| e.to_string())?;
-    ctx.tools
-        .attachments
-        .update(|a| a.push(res.file.path.clone()));
+    let name = format!(
+        "{ANNOTATIONS_DIR}/annotation-{}.png",
+        js_sys::Date::now() as u64
+    );
+    let path = save_png(ctx, name, &png).await?;
+    ctx.tools.attachments.update(|a| a.push(path));
     Ok(with_snapshot)
+}
+
+/// A canvas to draw on: pen, box and text marks into `history`, Cmd/Ctrl+Z
+/// to undo and Cmd/Ctrl+Shift+Z (or +Y) to redo. Pointer positions are in
+/// canvas pixels, so a canvas scaled by CSS (sketches) draws where the
+/// pointer is. Without `size` the canvas takes its on-screen size.
+#[component]
+pub(super) fn DrawSurface(
+    history: RwSignal<History>,
+    pen: RwSignal<Pen>,
+    color: RwSignal<&'static str>,
+    canvas_ref: NodeRef<leptos::html::Canvas>,
+    #[prop(optional)] size: Option<(u32, u32)>,
+    #[prop(optional)] class: &'static str,
+) -> impl IntoView {
+    let drawing = StoredValue::new(false);
+    // Where a text mark goes: canvas point and on-screen offset.
+    let text_at = RwSignal::new(None::<((f64, f64), (f64, f64))>);
+    let text = RwSignal::new(String::new());
+    let redraw = move || {
+        let Some(canvas) = canvas_ref.get() else {
+            return;
+        };
+        let (w, h) = match size {
+            Some(s) => s,
+            None => (
+                u32::try_from(canvas.client_width()).unwrap_or(0),
+                u32::try_from(canvas.client_height()).unwrap_or(0),
+            ),
+        };
+        if canvas.width() != w || canvas.height() != h {
+            canvas.set_width(w);
+            canvas.set_height(h);
+        }
+        if let Some(g) = context_2d(&canvas) {
+            g.clear_rect(0.0, 0.0, f64::from(w), f64::from(h));
+            if size.is_some() {
+                g.set_fill_style_str("#ffffff");
+                g.fill_rect(0.0, 0.0, f64::from(w), f64::from(h));
+            }
+            history.with(|h| paint(&g, h.strokes()));
+        }
+    };
+    Effect::new(move |_| {
+        history.track();
+        redraw();
+    });
+    let point = move |ev: &web_sys::PointerEvent| {
+        let (x, y) = (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
+        let scale = canvas_ref.get_untracked().map_or(1.0, |c| {
+            let shown = f64::from(c.client_width().max(1));
+            f64::from(c.width()) / shown
+        });
+        ((x * scale, y * scale), (x, y))
+    };
+    let commit_text = move || {
+        let Some((at, _)) = text_at.get_untracked() else {
+            return;
+        };
+        text_at.set(None);
+        let value = text.get_untracked().trim().to_owned();
+        text.set(String::new());
+        if !value.is_empty() {
+            history.update(|h| {
+                h.push(Stroke {
+                    pen: Pen::Text,
+                    color: color.get_untracked().to_owned(),
+                    points: vec![at],
+                    text: Some(value),
+                });
+            });
+        }
+    };
+    let keys = window_event_listener(leptos::ev::keydown, move |ev| {
+        let modifier = ev.ctrl_key() || ev.meta_key();
+        if !modifier || ev.alt_key() || super::studio::is_editing(&ev) {
+            return;
+        }
+        match ev.key().to_ascii_lowercase().as_str() {
+            "z" if ev.shift_key() => history.update(History::redo),
+            "z" => history.update(History::undo),
+            "y" => history.update(History::redo),
+            _ => return,
+        }
+        ev.prevent_default();
+    });
+    on_cleanup(move || keys.remove());
+    view! {
+        <canvas
+            node_ref=canvas_ref
+            class=format!("draw-canvas {class}")
+            data-testid="draw-canvas"
+            on:pointerdown=move |ev: web_sys::PointerEvent| {
+                let (p, css) = point(&ev);
+                if pen.get_untracked() == Pen::Text {
+                    ev.prevent_default();
+                    commit_text();
+                    text_at.set(Some((p, css)));
+                    return;
+                }
+                if let Some(el) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
+                    let _ = el.set_pointer_capture(ev.pointer_id());
+                }
+                drawing.set_value(true);
+                history.update(|h| h.push(Stroke { pen: pen.get_untracked(), color: color.get_untracked().to_owned(), points: vec![p, p], text: None }));
+            }
+            on:pointermove=move |ev: web_sys::PointerEvent| {
+                if !drawing.get_value() {
+                    return;
+                }
+                let (p, _) = point(&ev);
+                history.update(|h| {
+                    if let Some(last) = h.last_mut() {
+                        match last.pen {
+                            Pen::Free => last.points.push(p),
+                            Pen::Box => last.points[1] = p,
+                            Pen::Text => {}
+                        }
+                    }
+                });
+            }
+            on:pointerup=move |_| drawing.set_value(false)
+        ></canvas>
+        {move || text_at.get().map(|(_, (x, y))| view! {
+            <input
+                class="input small draw-text"
+                data-testid="draw-text-input"
+                style=format!("left:{x}px;top:{}px;color:{}", y - 16.0, color.get_untracked())
+                placeholder=t(T::DrawTextPlaceholder)
+                autofocus
+                prop:value=move || text.get()
+                on:input=move |ev| text.set(event_target_value(&ev))
+                on:keydown=move |ev: web_sys::KeyboardEvent| match ev.key().as_str() {
+                    "Enter" => { ev.prevent_default(); commit_text(); }
+                    "Escape" => { ev.stop_propagation(); text_at.set(None); text.set(String::new()); }
+                    _ => {}
+                }
+                on:blur=move |_| commit_text()
+            />
+        })}
+    }
+}
+
+/// Pen, box and text; colors; undo, redo, clear.
+pub(super) fn draw_controls(
+    history: RwSignal<History>,
+    pen: RwSignal<Pen>,
+    color: RwSignal<&'static str>,
+) -> impl IntoView {
+    view! {
+        <div class="segmented small">
+            <button class="seg" class:active=move || pen.get() == Pen::Free data-testid="draw-pen" on:click=move |_| pen.set(Pen::Free)>{icon(Glyph::Draw)}{t(T::DrawPen)}</button>
+            <button class="seg" class:active=move || pen.get() == Pen::Box data-testid="draw-box" on:click=move |_| pen.set(Pen::Box)>{icon(Glyph::Rectangle)}{t(T::DrawBox)}</button>
+            <button class="seg" class:active=move || pen.get() == Pen::Text data-testid="draw-text" on:click=move |_| pen.set(Pen::Text)>{icon(Glyph::EditText)}{t(T::DrawText)}</button>
+        </div>
+        {DRAW_COLORS
+            .into_iter()
+            .map(|c| view! {
+                <button
+                    class="draw-color"
+                    class:active=move || color.get() == c
+                    style=format!("background:{c}")
+                    aria-label=c
+                    on:click=move |_| color.set(c)
+                ></button>
+            })
+            .collect_view()}
+        <span class="head-divider" aria-hidden="true"></span>
+        <button class="icon-btn small" aria-label=t(T::Undo) data-tip=t(T::Undo) data-testid="draw-undo"
+            disabled=move || history.with(|h| !h.can_undo())
+            on:click=move |_| history.update(History::undo)>{icon(Glyph::Restore)}</button>
+        <button class="icon-btn small" aria-label=t(T::Redo) data-tip=t(T::Redo) data-testid="draw-redo"
+            disabled=move || history.with(|h| !h.can_redo())
+            on:click=move |_| history.update(History::redo)>{icon(Glyph::Redo)}</button>
+        <button class="btn small ghost" data-testid="draw-clear" on:click=move |_| history.update(History::clear)>{icon(Glyph::Delete)}{t(T::DrawClear)}</button>
+    }
 }
 
 /// Drawing surface over the preview frame (draw tool).
@@ -1064,38 +1256,16 @@ async fn attach_annotation(
 pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
     let tools = ctx.tools;
     let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
-    let strokes = RwSignal::new(Vec::<Stroke>::new());
+    let history = RwSignal::new(History::default());
     let pen = RwSignal::new(Pen::Free);
     let color = RwSignal::new(DRAW_COLORS[0]);
-    let drawing = StoredValue::new(false);
     let busy = RwSignal::new(false);
 
-    let redraw = move || {
-        let Some(canvas) = canvas_ref.get() else {
-            return;
-        };
-        let (w, h) = (canvas.client_width(), canvas.client_height());
-        let (w, h) = (u32::try_from(w).unwrap_or(0), u32::try_from(h).unwrap_or(0));
-        if canvas.width() != w || canvas.height() != h {
-            canvas.set_width(w);
-            canvas.set_height(h);
-        }
-        if let Some(g) = context_2d(&canvas) {
-            g.clear_rect(0.0, 0.0, f64::from(w), f64::from(h));
-            strokes.with(|s| paint(&g, s));
-        }
-    };
-    Effect::new(move |_| {
-        strokes.track();
-        redraw();
-    });
-
-    let point = |ev: &web_sys::PointerEvent| (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
     let attach = move || {
         let Some(canvas) = canvas_ref.get_untracked() else {
             return;
         };
-        let list = strokes.get_untracked();
+        let list = history.with_untracked(|h| h.strokes().to_vec());
         if list.is_empty() || busy.get_untracked() {
             return;
         }
@@ -1104,7 +1274,7 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
         leptos::task::spawn_local(async move {
             match attach_annotation(ctx, list, w, h).await {
                 Ok(with_snapshot) => {
-                    strokes.set(Vec::new());
+                    history.set(History::default());
                     tools.status.set(Some(
                         t(if with_snapshot {
                             T::DrawAttached
@@ -1122,57 +1292,13 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
     };
     view! {
         <div class="draw-layer" data-testid="draw-layer">
-            <canvas
-                node_ref=canvas_ref
-                class="draw-canvas"
-                data-testid="draw-canvas"
-                on:pointerdown=move |ev: web_sys::PointerEvent| {
-                    if let Some(el) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
-                        let _ = el.set_pointer_capture(ev.pointer_id());
-                    }
-                    drawing.set_value(true);
-                    let p = point(&ev);
-                    strokes.update(|s| s.push(Stroke { pen: pen.get_untracked(), color: color.get_untracked(), points: vec![p, p] }));
-                }
-                on:pointermove=move |ev: web_sys::PointerEvent| {
-                    if !drawing.get_value() {
-                        return;
-                    }
-                    let p = point(&ev);
-                    strokes.update(|s| {
-                        if let Some(last) = s.last_mut() {
-                            match last.pen {
-                                Pen::Free => last.points.push(p),
-                                Pen::Box => last.points[1] = p,
-                            }
-                        }
-                    });
-                }
-                on:pointerup=move |_| drawing.set_value(false)
-            ></canvas>
+            <DrawSurface history=history pen=pen color=color canvas_ref=canvas_ref/>
             <div class="draw-tools">
-                <div class="segmented small">
-                    <button class="seg" class:active=move || pen.get() == Pen::Free data-testid="draw-pen" on:click=move |_| pen.set(Pen::Free)>{icon(Glyph::Draw)}{t(T::DrawPen)}</button>
-                    <button class="seg" class:active=move || pen.get() == Pen::Box data-testid="draw-box" on:click=move |_| pen.set(Pen::Box)>{icon(Glyph::Rectangle)}{t(T::DrawBox)}</button>
-                </div>
-                {DRAW_COLORS
-                    .into_iter()
-                    .map(|c| view! {
-                        <button
-                            class="draw-color"
-                            class:active=move || color.get() == c
-                            style=format!("background:{c}")
-                            aria-label=c
-                            on:click=move |_| color.set(c)
-                        ></button>
-                    })
-                    .collect_view()}
-                <span class="head-divider" aria-hidden="true"></span>
-                <button class="btn small ghost" data-testid="draw-clear" on:click=move |_| strokes.set(Vec::new())>{icon(Glyph::Delete)}{t(T::DrawClear)}</button>
+                {draw_controls(history, pen, color)}
                 <button
                     class="btn small primary"
                     data-testid="draw-attach"
-                    disabled=move || busy.get() || strokes.with(Vec::is_empty)
+                    disabled=move || busy.get() || history.with(History::is_empty)
                     on:click=move |_| attach()
                 >
                     {icon(Glyph::Attachment)}

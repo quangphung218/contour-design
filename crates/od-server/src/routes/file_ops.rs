@@ -5,6 +5,8 @@
 //!   create one.
 //! - `DELETE /api/projects/:id/folders/*path`: a folder and its files.
 //! - `POST /api/projects/:id/archive/selection`: ZIP of the chosen files.
+//! - `PUT  /api/projects/:id/content/*path`: overwrite an existing file at
+//!   exactly that path (HTML gets a manual version).
 //! - `POST /api/projects/:id/save-template`: an HTML file, bundled to one
 //!   file, becomes a user design template (`<data>/design-templates`).
 
@@ -12,14 +14,16 @@ use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::routes::export::{ExportRequest, ExportResult, attachment, bundle, resolve_entry};
 use crate::state::AppState;
 use axum::Router;
-use axum::extract::{Path, State};
+use axum::body::Bytes;
+use axum::extract::{Path, Query, State};
 use axum::response::Response;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use od_contracts::{
-    ArchiveSelectionRequest, CreateFolderRequest, FolderResponse, FoldersResponse, ProjectKind,
-    SaveTemplateRequest, SaveTemplateResponse,
+    ArchiveSelectionRequest, CreateFolderRequest, FileResponse, FolderResponse, FoldersResponse,
+    ProjectKind, SaveTemplateRequest, SaveTemplateResponse,
 };
 use od_export::archive::{sanitize_filename, write_zip};
+use serde::Deserialize;
 use std::path::PathBuf;
 
 /// Most files one selection ZIP takes.
@@ -37,6 +41,32 @@ pub fn routes() -> Router<AppState> {
             post(archive_selection),
         )
         .route("/api/projects/{id}/save-template", post(save_template))
+        .route("/api/projects/{id}/content/{*path}", put(replace_content))
+}
+
+#[derive(Debug, Deserialize)]
+struct ReplaceQuery {
+    /// Version label for HTML files.
+    #[serde(default)]
+    label: Option<String>,
+}
+
+/// `PUT content/<path>`: the raw body becomes the existing file's content,
+/// at exactly that path (editors save with it: Markdown, sketches, notes).
+async fn replace_content(
+    State(state): State<AppState>,
+    Path((id, path)): Path<(String, String)>,
+    Query(q): Query<ReplaceQuery>,
+    body: Bytes,
+) -> ApiResult<ApiJson<FileResponse>> {
+    let label = q
+        .label
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or_else(|| "Edited in Nét".to_owned());
+    let file = state
+        .blocking(move |s| s.replace_file(&id, &path, &body, &label))
+        .await?;
+    Ok(ApiJson(FileResponse { file }))
 }
 
 async fn list_folders(

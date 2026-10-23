@@ -400,6 +400,11 @@ input[type="color"].swatch { cursor: pointer; }
 .menu-item:disabled { color: var(--color-text-disabled); cursor: not-allowed; }
 .menu-item:disabled .ico { color: var(--color-text-disabled); }
 .menu-item .menu-hint { margin-left: auto; font-size: var(--text-xs); color: var(--color-text-tertiary); }
+.menu-item.danger, .menu-item.danger .ico { color: var(--color-danger); }
+.menu-item.danger:hover:not(:disabled) { background: var(--color-danger-soft); }
+.menu-item.danger:hover:not(:disabled) .ico { color: var(--color-danger); }
+/* Click-away layer under an open menu. */
+.menu-scrim { position: fixed; inset: 0; z-index: var(--z-popover); }
 .menu-sep {
   margin: var(--space-1) calc(-1 * var(--space-1)) 0;
   padding: var(--space-2) var(--space-3-5) var(--space-1);
@@ -435,6 +440,8 @@ input[type="color"].swatch { cursor: pointer; }
   background: var(--color-accent-soft); color: var(--color-accent-text);
 }
 .dialog-icon .ico { width: var(--icon-lg); height: var(--icon-lg); }
+.dialog-icon.danger { background: var(--color-danger-soft); color: var(--color-danger); }
+.dialog.wide { width: min(680px, 100%); }
 .dialog-body { padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
 .dialog-foot { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-5) var(--space-5); }
 

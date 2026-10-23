@@ -282,3 +282,65 @@ async fn a_saved_template_shows_in_the_catalogue() {
     .await;
     assert_eq!(s, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn content_is_replaced_at_the_exact_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = router(state(tmp.path()));
+    let id = project(&app, &[]).await;
+    // A name the sanitizer would rewrite, as an agent may write it.
+    let dir = tmp.path().join(format!("data/projects/{id}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("My Deck.html"), "<p>1</p>").unwrap();
+    std::fs::write(dir.join("Brief notes.md"), "# Old").unwrap();
+
+    let put = |path: &str, body: &str| {
+        Request::builder()
+            .method("PUT")
+            .uri(format!("/api/projects/{id}/content/{path}"))
+            .body(Body::from(body.to_owned()))
+            .unwrap()
+    };
+    let res = app
+        .clone()
+        .oneshot(put("Brief%20notes.md", "# New"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("Brief notes.md")).unwrap(),
+        "# New"
+    );
+
+    let res = app
+        .clone()
+        .oneshot(put("My%20Deck.html?label=Speaker%20notes", "<p>2</p>"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("My Deck.html")).unwrap(),
+        "<p>2</p>"
+    );
+    assert!(!dir.join("My-Deck.html").exists(), "no sanitized copy");
+    let (_, b) = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{id}/files/My%20Deck.html/versions"),
+        None,
+    )
+    .await;
+    let text = String::from_utf8_lossy(&b);
+    assert!(text.contains("Speaker notes"), "{text}");
+
+    // Only existing files: new ones go through POST files.
+    let res = app.clone().oneshot(put("new.md", "x")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert!(!dir.join("new.md").exists());
+    let res = app
+        .clone()
+        .oneshot(put("..%2Fescape.md", "x"))
+        .await
+        .unwrap();
+    assert!(res.status().is_client_error());
+}

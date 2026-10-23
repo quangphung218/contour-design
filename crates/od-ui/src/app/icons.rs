@@ -57,7 +57,6 @@ glyphs! {
     Eye => "eye-line",
     Failed => "close-circle-line",
     File => "file-line",
-    FileAdd => "file-add-line",
     FileCode => "file-code-line",
     FileImage => "image-line",
     FileText => "file-text-line",

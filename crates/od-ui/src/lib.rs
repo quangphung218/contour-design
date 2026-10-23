@@ -7,12 +7,14 @@ pub mod events;
 pub mod file_tree;
 pub mod fuzzy;
 pub mod guide;
+pub mod handoff;
 pub mod i18n;
 pub mod intent;
 pub mod markdown;
 pub mod preview_bridge;
 pub mod question_form;
 pub mod settings;
+pub mod sketch_model;
 pub mod speaker_notes;
 pub mod workspace;
 

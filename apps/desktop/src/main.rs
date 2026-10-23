@@ -2,8 +2,9 @@
 //!
 //! Runs `od-server` inside this process on a random loopback port and points
 //! the window at it, so the UI talks to the same HTTP + SSE API as the CLI.
-//! No sidecar, no IPC for data: only the native folder picker goes through
-//! Tauri (`pick_folder` command and the File menu).
+//! No sidecar, no IPC for data: only the native folder picker, the window
+//! theme and the menus go through Tauri. The window opens on a splash page
+//! (`static/index.html`) while the daemon starts.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -19,13 +20,17 @@ use od_server::{
 use od_store::{DataDir, Store};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tauri::ipc::CapabilityBuilder;
 use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
 const OPEN_FOLDER_MENU_ID: &str = "open-folder";
+const SHORTCUTS_MENU_ID: &str = "help-shortcuts";
+const PALETTE_MENU_ID: &str = "help-palette";
+const SETTINGS_MENU_ID: &str = "app-settings";
+const DATA_FOLDER_MENU_ID: &str = "help-data-folder";
 /// Display name (window title, dialogs); `tauri.conf.json` `productName`.
 const APP_NAME: &str = "Nét";
 
@@ -113,6 +118,30 @@ async fn pick_folder(app: AppHandle) -> Option<String> {
     Some(path.to_string_lossy().into_owned())
 }
 
+/// Native window theme follows the app's (Settings ▸ Appearance), so the
+/// title bar and the window chrome match: `light`, `dark`, or `system`.
+#[tauri::command]
+fn set_theme(window: tauri::WebviewWindow, theme: String) {
+    let _ = window.set_theme(native_theme(&theme));
+}
+
+fn native_theme(theme: &str) -> Option<tauri::Theme> {
+    match theme {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    }
+}
+
+/// Menu actions the UI performs: `window` event `od:menu` with `detail`.
+fn ui_action(app: &AppHandle, action: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.eval(format!(
+            "window.dispatchEvent(new CustomEvent('od:menu', {{ detail: {action:?} }}))"
+        ));
+    }
+}
+
 /// File ▸ Open Folder…: import the folder and open its Studio.
 fn open_folder_from_menu(app: &AppHandle) {
     let handle = app.clone();
@@ -120,7 +149,9 @@ fn open_folder_from_menu(app: &AppHandle) {
         let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
             return;
         };
-        let daemon = handle.state::<Daemon>();
+        let Some(daemon) = handle.try_state::<Daemon>() else {
+            return;
+        };
         let target = match import_folder(&daemon.state.store, &path, None) {
             Ok((project, _)) => daemon.url.join(&format!("projects/{}", project.id)),
             Err(e) => {
@@ -153,10 +184,12 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
         .permission("dialog:default")
 }
 
-/// The main window stays on the daemon's origin; anything else (a link in
-/// a design, a redirect) is refused rather than loaded with the app's IPC.
-fn allowed_navigation(url: &Url, origin: &str) -> bool {
-    url.origin().ascii_serialization() == origin
+/// The main window stays on the daemon's origin (and the bundled splash
+/// shown before it); anything else (a link in a design, a redirect) is
+/// refused rather than loaded with the app's IPC.
+fn allowed_navigation(url: &Url, origin: Option<&str>) -> bool {
+    let splash = url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost");
+    splash || origin.is_some_and(|o| url.origin().ascii_serialization() == o)
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
@@ -170,7 +203,56 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     )?;
     let project = Submenu::with_items(app, "Project", true, &[&open])?;
     menu.append(&project)?;
+    let settings = MenuItem::with_id(
+        app,
+        SETTINGS_MENU_ID,
+        "Settings…",
+        true,
+        Some("CmdOrCtrl+,"),
+    )?;
+    let shortcuts = MenuItem::with_id(
+        app,
+        SHORTCUTS_MENU_ID,
+        "Keyboard Shortcuts",
+        true,
+        Some("CmdOrCtrl+/"),
+    )?;
+    let palette = MenuItem::with_id(app, PALETTE_MENU_ID, "Command Palette…", true, None::<&str>)?;
+    let data = MenuItem::with_id(
+        app,
+        DATA_FOLDER_MENU_ID,
+        "Show Data Folder",
+        true,
+        None::<&str>,
+    )?;
+    // macOS: Settings goes in the app menu, after About.
+    #[cfg(target_os = "macos")]
+    if let Some(app_menu) = menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
+        app_menu.insert(&settings, 2)?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    project.append(&settings)?;
+    let help = Submenu::with_items(app, "Help", true, &[&shortcuts, &palette, &data])?;
+    menu.append(&help)?;
     Ok(menu)
+}
+
+/// Help ▸ Show Data Folder: the data dir in the OS file manager.
+fn show_data_folder(app: &AppHandle) {
+    let Some(daemon) = app.try_state::<Daemon>() else {
+        return;
+    };
+    let dir = daemon.state.store.data_dir().root().to_path_buf();
+    let program = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(windows) {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    if let Err(e) = std::process::Command::new(program).arg(&dir).spawn() {
+        tracing::warn!(error = %e, dir = %dir.display(), "could not show the data folder");
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -182,35 +264,26 @@ fn main() -> anyhow::Result<()> {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![pick_folder])
+        .invoke_handler(tauri::generate_handler![pick_folder, set_theme])
         .menu(build_menu)
-        .on_menu_event(|app, event| {
-            if event.id() == OPEN_FOLDER_MENU_ID {
-                open_folder_from_menu(app);
-            }
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            OPEN_FOLDER_MENU_ID => open_folder_from_menu(app),
+            SHORTCUTS_MENU_ID => ui_action(app, "shortcuts"),
+            PALETTE_MENU_ID => ui_action(app, "palette"),
+            SETTINGS_MENU_ID => ui_action(app, "settings"),
+            DATA_FOLDER_MENU_ID => show_data_folder(app),
+            _ => {}
         })
         .setup(|app| {
             let handle = app.handle().clone();
-            let daemon = match tauri::async_runtime::block_on(start_daemon(resource_root(&handle)))
-            {
-                Ok(daemon) => daemon,
-                Err(e) => {
-                    // Typically a CLI daemon already owns the data dir.
-                    handle
-                        .dialog()
-                        .message(format!("{e:#}"))
-                        .title(APP_NAME)
-                        .blocking_show();
-                    return Err(e.into());
-                }
-            };
-            let origin = daemon.url.origin().ascii_serialization();
-            app.add_capability(ui_capability(&origin))?;
-            let nav_origin = origin.clone();
+            // The daemon's origin, once it listens; until then only the
+            // splash may load.
+            let origin: Arc<OnceLock<String>> = Arc::new(OnceLock::new());
+            let nav_origin = Arc::clone(&origin);
             let window =
-                WebviewWindowBuilder::new(app, "main", WebviewUrl::External(daemon.url.clone()))
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .on_navigation(move |url| {
-                        let ok = allowed_navigation(url, &nav_origin);
+                        let ok = allowed_navigation(url, nav_origin.get().map(String::as_str));
                         if !ok {
                             tracing::warn!(%url, "blocked a navigation away from the app");
                         }
@@ -218,7 +291,10 @@ fn main() -> anyhow::Result<()> {
                     })
                     .title(APP_NAME)
                     .inner_size(1360.0, 860.0)
-                    .min_inner_size(900.0, 600.0);
+                    .min_inner_size(900.0, 600.0)
+                    // Files dropped on the window reach the page as HTML5 drops
+                    // (files panel, Markdown editor) instead of Tauri events.
+                    .disable_drag_drop_handler();
             // The UI draws its own title strip under the traffic lights
             // (od-ui `data-shell="mac"`, dragged via data-tauri-drag-region).
             #[cfg(target_os = "macos")]
@@ -226,10 +302,33 @@ fn main() -> anyhow::Result<()> {
                 .title_bar_style(tauri::TitleBarStyle::Overlay)
                 .hidden_title(true);
             window.build()?;
-            app.manage(daemon);
-            // SIGTERM (logout, `kill`) and Ctrl-C quit through `RunEvent::Exit`,
-            // which ends the terminal tabs' shells.
+            let root = resource_root(&handle);
             tauri::async_runtime::spawn(async move {
+                let daemon = match start_daemon(root).await {
+                    Ok(daemon) => daemon,
+                    Err(e) => {
+                        // Typically a CLI daemon already owns the data dir.
+                        handle
+                            .dialog()
+                            .message(format!("{e:#}"))
+                            .title(APP_NAME)
+                            .blocking_show();
+                        handle.exit(1);
+                        return;
+                    }
+                };
+                let daemon_origin = daemon.url.origin().ascii_serialization();
+                if let Err(e) = handle.add_capability(ui_capability(&daemon_origin)) {
+                    tracing::error!(error = %e, "no IPC capability for the UI");
+                }
+                let _ = origin.set(daemon_origin);
+                let url = daemon.url.clone();
+                handle.manage(daemon);
+                if let Some(window) = handle.get_webview_window("main") {
+                    let _ = window.navigate(url);
+                }
+                // SIGTERM (logout, `kill`) and Ctrl-C quit through
+                // `RunEvent::Exit`, which ends the terminal tabs' shells.
                 match od_server::shutdown_signal() {
                     Ok(stop) => {
                         stop.await;
@@ -290,10 +389,27 @@ mod tests {
     }
 
     #[test]
+    fn native_theme_follows_the_app() {
+        assert_eq!(native_theme("dark"), Some(tauri::Theme::Dark));
+        assert_eq!(native_theme("light"), Some(tauri::Theme::Light));
+        assert_eq!(native_theme("system"), None);
+    }
+
+    #[test]
     fn navigation_stays_on_the_daemon_origin() {
         let origin = "http://127.0.0.1:50123";
-        let ok = |u: &str| allowed_navigation(&Url::parse(u).unwrap(), origin);
+        let ok = |u: &str| allowed_navigation(&Url::parse(u).unwrap(), Some(origin));
         assert!(ok("http://127.0.0.1:50123/projects/p1"));
+        // The splash, before and after the daemon is up.
+        assert!(ok("tauri://localhost/index.html"));
+        assert!(allowed_navigation(
+            &Url::parse("http://tauri.localhost/index.html").unwrap(),
+            None
+        ));
+        assert!(!allowed_navigation(
+            &Url::parse("http://127.0.0.1:50123/").unwrap(),
+            None
+        ));
         assert!(ok("http://127.0.0.1:50123/api/projects/p1/raw/index.html"));
         for bad in [
             "http://127.0.0.1:7456/",

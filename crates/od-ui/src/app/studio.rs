@@ -1,6 +1,6 @@
 //! Studio: chat on the left, the live preview in the middle (the main
 //! area), the file tree on the right, collapsible.
-//! Keyboard: Cmd/Ctrl+P or +T quick switcher, +W close tab, +1–9 pick a
+//! Keyboard: Cmd/Ctrl+P quick switcher, +T tab launcher, +W close tab, +1–9 pick a
 //! tab, Ctrl+Tab cycle, Cmd/Ctrl+B files panel, Cmd/Ctrl+= / - / 0 zoom;
 //! arrows/Home/End drive a deck, Esc leaves present and comment modes
 //! (spec 1.2). Cmd/Ctrl+K (palette) and ? (shortcuts) are app-wide.
@@ -9,10 +9,13 @@ use super::agent_w3::{SideChat, SideChatView, is_side_chat_title};
 use super::bridge::{self, Source};
 use super::chat_view::{ChatItem, ChatPane};
 use super::deck::{DeckBar, NotesPanel, ThumbRail};
+use super::doc_view::{DocView, MarkdownView, is_document};
 use super::export_menu::ExportMenu;
+use super::files_panel::{FilesPanel, FilesToast, FilesUi, TabLauncher};
 use super::icons::{Glyph, icon};
 use super::preview_comments::CommentLayer;
 use super::preview_tools::{self, DrawLayer, Tool, ToolBar, ToolPanel, Tools};
+use super::sketch::{SketchView, is_sketch};
 use super::sse::Sse;
 use super::switcher::QuickSwitcher;
 use super::terminal::{self, TermTab, TerminalView};
@@ -23,6 +26,7 @@ use crate::events::{
     ChatRequest, ConversationsResponse, CreateRunResponse, FileChanged, MessageRole,
     MessagesResponse, RunFrame, RunStatus, decode_frame,
 };
+use crate::file_tree::is_markdown;
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Picked, Slide};
 use crate::workspace::{Queued, Tabs, touch_recent};
@@ -96,6 +100,10 @@ pub fn zoom_step(current: u32, up: bool) -> u32 {
 fn at_max_zoom(zoom: u32) -> bool {
     zoom_step(zoom, true) == zoom
 }
+
+/// Slide states a deck restore waits through before it gives up (the
+/// user may have moved on).
+const RESTORE_PATIENCE: u8 = 3;
 
 /// `localStorage` key of the files panel state.
 const FILES_OPEN_KEY: &str = "od.studio.files-open";
@@ -171,6 +179,8 @@ pub struct StudioCtx {
     pub zoom: RwSignal<u32>,
     /// Last slide shown per deck file, restored when the deck reloads.
     last_slide: StoredValue<Option<(String, u32)>>,
+    /// A restore in flight: (file, slide, states left to wait for).
+    restoring: StoredValue<Option<(String, u32, u8)>>,
     run_stream: StoredValue<Option<SendWrapper<Sse>>>,
     project_stream: StoredValue<Option<SendWrapper<Sse>>>,
 }
@@ -728,13 +738,30 @@ impl StudioCtx {
                     _ => None,
                 });
                 match keep {
-                    Some(i) => self.slide(Slide::Go(i)),
+                    Some(i) => {
+                        self.restoring
+                            .set_value(path.map(|p| (p, i, RESTORE_PATIENCE)));
+                        self.slide(Slide::Go(i));
+                    }
                     None => bridge::post_main(&pb::slide_state_request()),
                 }
             }
             (Source::Main, BridgeMsg::SlideState { active, count }) => {
                 self.deck.set(Some(DeckState { active, count }));
-                if let Some(path) = self.active_untracked() {
+                let path = self.active_untracked();
+                // The bridge reports slide 0 right after `deck-ready`, before
+                // the restore lands; a reload in between must not take that
+                // for where the user was.
+                let pending = self.restoring.get_value();
+                if let Some((p, target, left)) = pending.filter(|(p, ..)| Some(p) == path.as_ref())
+                {
+                    if active != target && left > 0 {
+                        self.restoring.set_value(Some((p, target, left - 1)));
+                        return;
+                    }
+                    self.restoring.set_value(None);
+                }
+                if let Some(path) = path {
                     self.last_slide.set_value(Some((path, active)));
                 }
             }
@@ -761,7 +788,7 @@ impl StudioCtx {
         let modifier = ev.ctrl_key() || ev.meta_key();
         if modifier && !ev.alt_key() {
             let handled = match key.to_ascii_lowercase().as_str() {
-                "p" | "t" => {
+                "p" => {
                     self.switcher_open.set(true);
                     true
                 }
@@ -911,11 +938,13 @@ pub fn file_glyph(path: &str) -> Glyph {
 
 /// Whether a key press belongs to a text field rather than the workspace.
 pub(super) fn is_editing(ev: &web_sys::KeyboardEvent) -> bool {
+    is_editing_target(ev.target())
+}
+
+/// Whether `target` is a text field (input, textarea, editable, terminal).
+pub(super) fn is_editing_target(target: Option<web_sys::EventTarget>) -> bool {
     use wasm_bindgen::JsCast;
-    let Some(el) = ev
-        .target()
-        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-    else {
+    let Some(el) = target.and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else {
         return false;
     };
     matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT")
@@ -974,11 +1003,15 @@ pub fn Studio() -> impl IntoView {
         zoom: RwSignal::new(100),
         tools: Tools::new(),
         last_slide: StoredValue::new(None),
+        restoring: StoredValue::new(None),
         run_stream: StoredValue::new(None),
         project_stream: StoredValue::new(None),
     };
     provide_context(ctx);
+    let files_ui = FilesUi::new();
+    provide_context(files_ui);
     preview_tools::watch_lint(ctx);
+    super::deck::sync_deck(ctx);
     // The command palette offers this Studio's commands while it is open.
     shell.studio.set(Some(ctx));
 
@@ -991,6 +1024,9 @@ pub fn Studio() -> impl IntoView {
         }
     });
     let keys = window_event_listener(ev::keydown, move |ev| ctx.on_key(&ev));
+    let more_keys = window_event_listener(ev::keydown, move |ev| {
+        super::files_panel::on_studio_key(ctx, files_ui, &ev);
+    });
     let messages = window_event_listener(ev::message, move |ev| {
         if let Some((source, msg)) = bridge::decode(&ev) {
             ctx.on_bridge(source, msg);
@@ -998,6 +1034,7 @@ pub fn Studio() -> impl IntoView {
     });
     on_cleanup(move || {
         keys.remove();
+        more_keys.remove();
         messages.remove();
         ctx.run_stream.set_value(None);
         ctx.project_stream.set_value(None);
@@ -1006,7 +1043,7 @@ pub fn Studio() -> impl IntoView {
     });
 
     view! {
-        <div class="studio">
+        <div class="studio" class:focus=move || files_ui.focus.get()>
             <ChatPane ctx=ctx/>
             <section class="workspace" class:files-closed=move || !ctx.files_open.get()>
                 <PreviewPane ctx=ctx/>
@@ -1018,66 +1055,8 @@ pub fn Studio() -> impl IntoView {
                 <QuickSwitcher ctx=ctx/>
             </Show>
             <NoticeToast ctx=ctx/>
+            <FilesToast/>
         </div>
-    }
-}
-
-#[component]
-fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
-    view! {
-        <aside class="files" aria-label=t(T::ProjectFiles)>
-            <div class="pane-head files-head">
-                <span class="pane-title" title=move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()).unwrap_or_default())>
-                    {move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()).unwrap_or_default())}
-                </span>
-                <button class="icon-btn" aria-label=t(T::QuickOpen) data-tip=t(T::QuickOpen) data-tip-pos="left" data-testid="open-switcher" on:click=move |_| ctx.switcher_open.set(true)>
-                    {icon(Glyph::Search)}
-                </button>
-                <button class="icon-btn" aria-label=t(T::RefreshFiles) data-tip=t(T::RefreshFiles) data-tip-pos="left" on:click=move |_| ctx.refresh_files()>
-                    {icon(Glyph::Refresh)}
-                </button>
-                <button class="icon-btn" aria-label=t(T::HideFiles) data-tip=t(T::HideFiles) data-tip-pos="left" data-testid="hide-files" on:click=move |_| ctx.toggle_files()>
-                    {icon(Glyph::SidebarUnfold)}
-                </button>
-            </div>
-            <div class="files-label eyebrow">{t(T::Files)}</div>
-            <ul class="file-tree" data-testid="file-tree">
-                {move || {
-                    let files = ctx.files.get();
-                    if files.is_empty() {
-                        return view! {
-                            <li class="files-empty">
-                                <span class="files-empty-title">{icon(Glyph::File)}{t(T::NoFilesYet)}</span>
-                                <span class="subtle">{t(T::NoFilesYetHint)}</span>
-                            </li>
-                        }.into_any();
-                    }
-                    files
-                        .into_iter()
-                        .map(|f| {
-                            let depth = f.path.matches('/').count();
-                            let path = f.path.clone();
-                            let path_active = f.path.clone();
-                            view! {
-                                <li>
-                                    <button
-                                        class="file"
-                                        class:active=move || ctx.active().as_deref() == Some(path_active.as_str())
-                                        style=format!("padding-left:{}px", 10 + depth * 14)
-                                        title=f.path.clone()
-                                        on:click=move |_| ctx.open_file(&path)
-                                    >
-                                        <span class=format!("file-ico kind-{:?}", f.kind).to_lowercase()>{icon(file_glyph(&f.path))}</span>
-                                        <span class="file-name">{f.name.clone()}</span>
-                                    </button>
-                                </li>
-                            }
-                        })
-                        .collect_view()
-                        .into_any()
-                }}
-            </ul>
-        </aside>
     }
 }
 
@@ -1143,9 +1122,9 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                     })
                     .collect_view()
             }}
-            <button class="icon-btn tab-add" aria-label=t(T::NewTerminal) data-tip=t(T::NewTerminal) data-testid="new-terminal" on:click=move |_| terminal::open(ctx)>
-                {icon(Glyph::Terminal)}
-            </button>
+            <TabLauncher ctx=ctx/>
+            <span class="spacer"></span>
+            <super::files_panel::FocusToggle/>
         </div>
     }
 }
@@ -1190,6 +1169,77 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
         })
     };
     let is_html = move || ctx.active().is_some_and(|p| is_html_path(&p));
+    // Markdown, sketches and documents have their own views, kept across
+    // preview reloads (an auto-save reloads the preview).
+    let special = Memo::new(move |_| {
+        if ctx.show_code.get() || ctx.viewing.with(Option::is_some) {
+            return None;
+        }
+        let path = ctx.active()?;
+        if is_markdown(&path) {
+            return Some(Special::Markdown(path));
+        }
+        if is_sketch(&path) {
+            return Some(Special::Sketch(path));
+        }
+        let doc = ctx
+            .files
+            .with(|f| f.iter().any(|f| f.path == path && is_document(f)));
+        doc.then_some(Special::Doc(path))
+    });
+    // Rendered pages, images and versions; reloads with the preview.
+    let page = move || match (src.get(), ctx.viewing.get()) {
+        (None, _) => view! { <PreviewEmpty ctx=ctx/> }.into_any(),
+        // A version on view shows its own source, not the live file's.
+        (Some(_), Some(v)) if ctx.show_code.get() => {
+            view! { <CodeView ctx=ctx version=Some(v.content)/> }.into_any()
+        }
+        (Some(_), None) if ctx.show_code.get() && !is_image() => {
+            view! { <CodeView ctx=ctx version=None/> }.into_any()
+        }
+        (Some(_), Some(v)) => view! {
+            <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
+            <iframe
+                class="preview-frame"
+                data-testid="version-preview"
+                title=tf(T::ViewingVersion, &[&v.version.to_string()])
+                sandbox="allow-scripts"
+                srcdoc=v.content
+                style=move || zoomed(device.get(), ctx.zoom.get())
+            ></iframe>
+            </div>
+        }
+        .into_any(),
+        (Some(url), None) if is_image() => {
+            view! { <img class="preview-image" src=url alt=t(T::Preview)/> }.into_any()
+        }
+        (Some(url), None) => {
+            // Each load of a bridged frame gets a fresh
+            // edit-key id (od-preview `edit_key`).
+            let url = if url.contains("bridge=1") {
+                format!("{url}&key={}", ctx.tools.new_frame_kid())
+            } else {
+                url
+            };
+            view! {
+                <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
+                <div class="frame-wrap" style=move || zoomed(device.get(), ctx.zoom.get())>
+                    // No allow-same-origin: artifact scripts run in an
+                    // opaque origin and cannot call the daemon API.
+                    <iframe
+                        class="preview-frame"
+                        data-testid="preview"
+                        title=t(T::Preview)
+                        sandbox="allow-scripts allow-forms allow-popups allow-modals"
+                        src=url
+                    ></iframe>
+                    <CommentLayer ctx=ctx/>
+                    {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
+                </div>
+                </div>
+            }.into_any()
+        }
+    };
     view! {
         <section class="preview" class:presenting=move || ctx.presenting.get() data-testid="preview-pane">
             <TabsBar ctx=ctx/>
@@ -1286,50 +1336,14 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             <div class="preview-body">
                 <ThumbRail ctx=ctx src=src/>
                 <div class="preview-stage">
-                    {move || match (src.get(), ctx.viewing.get()) {
-                        (None, _) => view! { <PreviewEmpty ctx=ctx/> }.into_any(),
-                        // A version on view shows its own source, not the live file's.
-                        (Some(_), Some(v)) if ctx.show_code.get() => view! { <CodeView ctx=ctx version=Some(v.content)/> }.into_any(),
-                        (Some(_), None) if ctx.show_code.get() && !is_image() => view! { <CodeView ctx=ctx version=None/> }.into_any(),
-                        (Some(_), Some(v)) => view! {
-                            <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
-                            <iframe
-                                class="preview-frame"
-                                data-testid="version-preview"
-                                title=tf(T::ViewingVersion, &[&v.version.to_string()])
-                                sandbox="allow-scripts"
-                                srcdoc=v.content
-                                style=move || zoomed(device.get(), ctx.zoom.get())
-                            ></iframe>
-                            </div>
-                        }.into_any(),
-                        (Some(url), None) if is_image() => view! { <img class="preview-image" src=url alt=t(T::Preview)/> }.into_any(),
-                        (Some(url), None) => {
-                            // Each load of a bridged frame gets a fresh
-                            // edit-key id (od-preview `edit_key`).
-                            let url = if url.contains("bridge=1") {
-                                format!("{url}&key={}", ctx.tools.new_frame_kid())
-                            } else {
-                                url
-                            };
-                            view! {
-                                <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
-                                <div class="frame-wrap" style=move || zoomed(device.get(), ctx.zoom.get())>
-                                    // No allow-same-origin: artifact scripts run in an
-                                    // opaque origin and cannot call the daemon API.
-                                    <iframe
-                                        class="preview-frame"
-                                        data-testid="preview"
-                                        title=t(T::Preview)
-                                        sandbox="allow-scripts allow-forms allow-popups allow-modals"
-                                        src=url
-                                    ></iframe>
-                                    <CommentLayer ctx=ctx/>
-                                    {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
-                                </div>
-                                </div>
-                            }.into_any()
-                        }
+                    {move || match special.get() {
+                        Some(Special::Markdown(path)) => view! { <MarkdownView ctx=ctx path=path/> }.into_any(),
+                        Some(Special::Sketch(path)) => view! { <SketchView ctx=ctx path=path/> }.into_any(),
+                        Some(Special::Doc(path)) => match ctx.files.with_untracked(|f| f.iter().find(|f| f.path == path).cloned()) {
+                            Some(file) => view! { <DocView ctx=ctx file=file/> }.into_any(),
+                            None => ().into_any(),
+                        },
+                        None => page().into_any(),
                     }}
                 </div>
                 <Show when=move || ctx.history_open.get() && !ctx.presenting.get()>
@@ -1344,6 +1358,14 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             </Show>
         </section>
     }
+}
+
+/// A file shown by its own view instead of the preview frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Special {
+    Markdown(String),
+    Sketch(String),
+    Doc(String),
 }
 
 /// The box a zoomed preview takes in the stage: its on-screen size.

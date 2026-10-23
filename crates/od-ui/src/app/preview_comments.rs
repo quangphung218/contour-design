@@ -174,7 +174,10 @@ fn DraftBox(ctx: StudioCtx, picked: crate::preview_bridge::Picked) -> impl IntoV
                 prop:value=move || note.get()
                 on:input=move |ev| note.set(event_target_value(&ev))
                 on:keydown=move |ev: web_sys::KeyboardEvent| {
-                    if ev.key() == "Enter" && !ev.shift_key() && !ev.is_composing() {
+                    // Cmd/Ctrl+Enter sends (Shift+Enter is a new line), and
+                    // so does a plain Enter.
+                    let primary = ev.meta_key() || ev.ctrl_key();
+                    if ev.key() == "Enter" && (primary || !ev.shift_key()) && !ev.is_composing() {
                         ev.prevent_default();
                         submit_key();
                     } else if ev.key() == "Escape" {

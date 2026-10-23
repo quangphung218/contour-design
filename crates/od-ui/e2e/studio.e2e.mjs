@@ -524,6 +524,7 @@ try {
   // reattaches with the scrollback, closing the tab ends the shell.
   await page.goto(projectUrl);
   await page.getByTestId('composer').waitFor();
+  await page.getByTestId('tab-launcher').click();
   await page.getByTestId('new-terminal').click();
   await page.getByTestId('terminal-tab').waitFor();
   const term = page.getByTestId('terminal');

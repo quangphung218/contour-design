@@ -26,6 +26,28 @@ pub fn to_html(md: &str) -> String {
     out
 }
 
+/// Points relative `<img src>` of rendered Markdown at `base` (the
+/// document's folder as a URL ending in `/`), so a document's images show.
+#[must_use]
+pub fn rebase_images(html: &str, base: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(i) = rest.find("<img src=\"") {
+        let (head, tail) = rest.split_at(i + "<img src=\"".len());
+        out.push_str(head);
+        let lower = tail.to_ascii_lowercase();
+        let absolute = ["http:", "https:", "data:", "/", "#"]
+            .iter()
+            .any(|p| lower.starts_with(p));
+        if !absolute {
+            out.push_str(base);
+        }
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
+
 fn is_safe_url(url: &str) -> bool {
     let lower = url.trim().to_ascii_lowercase();
     !(lower.starts_with("javascript:")
@@ -44,6 +66,17 @@ mod tests {
             "<p><strong>hi</strong> <code>x</code></p>\n"
         );
         assert!(to_html("```rust\nfn a(){}\n```").contains("<code class=\"language-rust\">"));
+    }
+
+    #[test]
+    fn relative_images_point_at_the_document_folder() {
+        let html = to_html("![a](img/a.png) ![b](https://x.test/b.png)");
+        let out = rebase_images(&html, "/api/projects/p/raw/docs/");
+        assert!(
+            out.contains(r#"src="/api/projects/p/raw/docs/img/a.png""#),
+            "{out}"
+        );
+        assert!(out.contains(r#"src="https://x.test/b.png""#), "{out}");
     }
 
     #[test]
