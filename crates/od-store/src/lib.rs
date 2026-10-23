@@ -6,6 +6,7 @@ pub mod chat;
 pub mod comments;
 pub mod data_dir;
 pub mod db;
+pub mod edit;
 pub mod error;
 pub mod files;
 pub mod memory;

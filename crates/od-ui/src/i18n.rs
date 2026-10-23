@@ -205,6 +205,55 @@ messages! {
     ElementFallback => "element", "phần tử";
     CommentFailed => "Could not save the comment: {0}", "Không lưu được bình luận: {0}";
 
+    // Studio: preview tools
+    ToolInspect => "Inspect", "Inspect";
+    ToolEditText => "Edit text", "Sửa chữ";
+    ToolDraw => "Draw", "Vẽ";
+    ToolTweaks => "Tweaks", "Tweaks";
+    InspectHint => "Click an element to inspect its style", "Bấm vào một phần tử để xem style";
+    EditTextHint => "Click a text to edit it. Enter saves, Esc cancels.", "Bấm vào chữ để sửa. Enter để lưu, Esc để huỷ.";
+    DrawHint => "Draw on the preview, then attach it to the next message", "Vẽ lên preview rồi gửi kèm tin nhắn sau";
+    InspectEmpty => "Pick an element in the preview.", "Chọn một phần tử trong preview.";
+    InspectMissing => "This element is no longer in the page.", "Phần tử này không còn trong trang.";
+    ResetProp => "Reset", "Đặt lại";
+    ResetAll => "Reset all", "Đặt lại hết";
+    ExtractCss => "Extract CSS", "Trích CSS";
+    SaveToSource => "Save to source", "Ghi vào source";
+    NoOverrides => "No unsaved style changes.", "Chưa có thay đổi style nào.";
+    UnsavedOverrides => "{0} unsaved style changes", "{0} thay đổi style chưa ghi";
+    SavedVersion => "Saved to {0} as v{1}", "Đã ghi vào {0}, thành v{1}";
+    SaveFailed => "Could not write to the source: {0}", "Không ghi được vào source: {0}";
+    PaletteLabel => "Palette", "Bảng màu";
+    PaletteOriginal => "Original colors", "Màu gốc";
+    PaletteCoral => "Coral", "Coral";
+    PaletteElectric => "Electric", "Electric";
+    PaletteAcidForest => "Acid forest", "Acid forest";
+    PaletteRisograph => "Risograph", "Risograph";
+    PaletteMonoNoir => "Mono noir", "Mono noir";
+    TweaksEmpty => "This artifact declares no tweaks.", "Artifact này không khai báo tweak nào.";
+    TweaksReset => "Reset tweaks", "Đặt lại tweak";
+    LintBadge => "Lint · {0}", "Lint · {0}";
+    LintClean => "Lint ✓", "Lint ✓";
+    LintTitle => "Lint of {0}", "Lint của {0}";
+    LintNone => "No anti-slop issues found.", "Không thấy lỗi AI slop nào.";
+    LintFix => "Fix: {0}", "Cách sửa: {0}";
+    LintSend => "Ask the agent to fix", "Nhờ agent sửa";
+    LintFailed => "Lint failed: {0}", "Không lint được: {0}";
+    DrawPen => "Pen", "Bút";
+    DrawBox => "Box", "Khung";
+    DrawClear => "Clear", "Xoá nét";
+    DrawAttach => "Attach to next message", "Gửi kèm tin nhắn sau";
+    DrawAttached => "Annotation attached to the next message", "Đã đính kèm chú thích vào tin nhắn sau";
+    DrawAttachedNoSnapshot => "Annotation attached (without a page snapshot)", "Đã đính kèm chú thích (không kèm ảnh chụp trang)";
+    DrawFailed => "Could not attach the annotation: {0}", "Không đính kèm được chú thích: {0}";
+    FilesAttached => "Files sent with the next message", "File gửi kèm tin nhắn sau";
+    DeliverableNoArtifact => "The run ended without writing any file.", "Run đã xong nhưng không ghi file nào.";
+    DeliverableNotTouched => "The run did not update the entry file {0}.", "Run không cập nhật file chính {0}.";
+    DeliverableEntryMissing => "No entry file found for this project.", "Không tìm thấy file chính của project.";
+    DeliverableTypeMismatch => "The entry file {0} is not the kind this project delivers.", "File chính {0} không đúng loại mà project cần.";
+    DeliverableUnreadable => "The entry file {0} cannot be read.", "Không đọc được file chính {0}.";
+    DeliverableProjectMissing => "The project folder is missing.", "Không thấy thư mục project.";
+
     // Studio: versions
     History => "History", "Lịch sử";
     VersionsTitle => "Versions of {0}", "Các phiên bản của {0}";

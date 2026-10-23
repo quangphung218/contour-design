@@ -6,7 +6,9 @@
 
 pub mod events;
 pub mod inject;
+pub mod lint;
 pub mod scope;
+pub mod source_patch;
 
 pub use events::{ChangeKind, ProjectEvent, ProjectEvents, Subscription, WatchOptions};
 pub use inject::{BRIDGE_JS, InjectError, MAX_INJECT_BYTES, inject_bridge};

@@ -58,7 +58,7 @@ impl Store {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn versions_guard(&self) -> MutexGuard<'_, ()> {
+    pub(crate) fn versions_guard(&self) -> MutexGuard<'_, ()> {
         self.versions_lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -299,7 +299,7 @@ impl Store {
         }
     }
 
-    fn root_for(&self, project_id: &str) -> Result<ProjectRoot> {
+    pub(crate) fn root_for(&self, project_id: &str) -> Result<ProjectRoot> {
         self.project_root(&self.get_project(project_id)?)
     }
 
@@ -512,7 +512,7 @@ impl Store {
     }
 }
 
-fn manual() -> NewVersion {
+pub(crate) fn manual() -> NewVersion {
     NewVersion {
         source: Some(VersionSource::Manual),
         prompt_source: Some(PromptSource::Manual),
@@ -520,7 +520,7 @@ fn manual() -> NewVersion {
     }
 }
 
-fn utf8(bytes: &[u8]) -> Result<&str> {
+pub(crate) fn utf8(bytes: &[u8]) -> Result<&str> {
     std::str::from_utf8(bytes)
         .map_err(|_| StoreError::BadRequest("HTML file is not valid UTF-8".to_owned()))
 }

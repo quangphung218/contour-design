@@ -12,6 +12,10 @@
 # Chat/plan session modes answer "Mode: …" and write nothing; project
 # memory is echoed as "Memory: <first fact>"; a Design Jury prompt gets a
 # two-round jury run that ships.
+# instead of index.html; `tweak` writes a page that declares tweaks and
+# carries an anti-slop finding (emoji icon). A lint report (`artifact-lint`)
+# is answered without writing any file. Attached preview comments and
+# attached files are acknowledged.
 
 case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
@@ -58,6 +62,14 @@ case "$line" in *"# Critique Theater (active skill:"*)
 case "$line" in *attached-preview-comments*)
   say "Saw preview comments. "
 ;; esac
+case "$line" in *"Attached project files"*)
+  say "Saw attached files. "
+;; esac
+skip=""
+case "$req" in *artifact-lint*)
+  skip=1
+  say "Saw lint findings. "
+;; esac
 case "$req" in *plan*)
   printf '{"type":"assistant","message":{"id":"m%s-p","role":"assistant","content":[{"type":"tool_use","id":"plan-%s","name":"TodoWrite","input":{"todos":[{"content":"Read the brief","activeForm":"Reading the brief","status":"completed"},{"content":"Write the page","activeForm":"Writing the page","status":"in_progress"},{"content":"Check the result","activeForm":"Checking the result","status":"pending"}]}}]}}\n' "$$" "$$"
 ;; esac
@@ -66,6 +78,7 @@ case "$req" in *slow*)
   while [ $i -lt 40 ]; do say "step$i "; i=$((i + 1)); sleep 0.25; done
 ;; esac
 
+if [ -z "$skip" ]; then
 tool="tool-$$"
 target=index.html
 case "$req" in *deck*) target=deck.html;; esac
@@ -91,10 +104,27 @@ addEventListener('keydown', function (e) {
 </script></body></html>
 HTML
 else
-  printf '<!doctype html><html><body><h1 id="title">Mock page v%s</h1><p>%s</p></body></html>\n' "$turn" "$first" > index.html
+  case "$req" in
+  *tweak*)
+    cat > index.html <<HTML
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root{--accent:#c96442}
+body{font:16px system-ui;margin:24px}
+.cta{background:var(--accent);color:#fff;padding:8px 16px;border:0}
+[data-theme=dark] body{background:#111;color:#eee}
+</style>
+<script type="application/json" data-od-tweaks>{"tweaks":[{"id":"accent","label":"Accent","type":"color","var":"--accent","default":"#c96442"},{"id":"dark","label":"Dark","type":"toggle","attr":"data-theme","on":"dark","off":"light"}]}</script>
+</head><body><h1 id="title">Mock page v$turn</h1><h3>🚀 Fast</h3><button class="cta" id="cta">Order</button></body></html>
+HTML
+  ;;
+  *)
+    printf '<!doctype html><html><body><h1 id="title">Mock page v%s</h1><p>%s</p></body></html>\n' "$turn" "$first" > index.html
+  ;;
+  esac
 fi
 printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"%s","content":"File created successfully"}]}}\n' "$tool"
 say "\\n\\nWrote \`$target\` (v$turn)."
+fi
 
 case "$req" in *form*)
   say '\n\n<question-form id=\"discovery\" title=\"A few questions\">\n{\"questions\": [\n  {\"id\": \"platform\", \"label\": \"Platform\", \"type\": \"radio\", \"options\": [\"Mobile\", \"Desktop\"], \"required\": true},\n  {\"id\": \"audience\", \"label\": \"Audience\", \"type\": \"text\", \"placeholder\": \"Who is it for?\"}\n]}\n</question-form>'

@@ -6,7 +6,9 @@
 // (next, thumbnails, notes, present, Esc) → quick switcher and tabs →
 // version restore → fork → export and handoff → open folder → session mode,
 // memory, side chat, conversation export, Design Jury → settings and
-// Vietnamese → Ask-mode warning. Every request leaving loopback is blocked and fails the test.
+// Vietnamese → preview tools (lint, deliverable check, palette, tweaks,
+// inspect, text edit, drawn annotation) → Ask-mode warning. Every request
+// leaving loopback is blocked and fails the test.
 //
 // Run through ./run.sh (builds the bundle and `od` first).
 
@@ -446,7 +448,142 @@ try {
   results.settings = 'ok';
   results.vietnamese = 'ok';
 
-  // 16b. Copilot or Qwen in "Ask first" mode can hang: the UI says so.
+  // 16b. Preview tools (wave 3, still in Vietnamese): lint warns and goes to
+  // the agent, the deliverable check flags a turn that wrote nothing,
+  // palette, tweaks, inspect (set, reset, extract, save to source), text
+  // edit written back, drawn annotation sent with the next message.
+  const pid = projectUrl.split('/').pop();
+  const indexOnDisk = () => readFileSync(join(data, 'projects', pid, 'index.html'), 'utf8');
+  const lastAssistant = () => assistant.last();
+  const turnEnd = (label) => until(async () => (await lastAssistant().getAttribute('data-state')) === 'succeeded', label);
+  const cta = frame.locator('#cta');
+  const css = (loc, prop) => loc.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop);
+  const hue = (rgb) => {
+    const [r, g, b] = rgb.match(/\d+(\.\d+)?/g).slice(0, 3).map((x) => Number(x) / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    if (!d) return 0;
+    const h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return h * 60;
+  };
+  await page.getByTestId('composer').fill('a tweakable page');
+  await page.getByTestId('composer').press('Enter');
+  await turnEnd('tweak page turn');
+  await cta.waitFor();
+
+  // Lint: the badge counts findings, the panel lists them, the report goes
+  // to the agent as the next message.
+  await until(async () => Number(await page.getByTestId('lint-badge').getAttribute('data-count')) > 0, 'lint badge');
+  assert.match(await page.getByTestId('lint-badge').getAttribute('class'), /p0/);
+  await page.getByTestId('lint-badge').click();
+  await page.locator('[data-testid="lint-finding"][data-rule="emoji-icon"]').waitFor();
+  await page.getByTestId('lint-send').click();
+  await until(async () => runBodies[runBodies.length - 1].message.startsWith('<artifact-lint>'), 'lint sent');
+  assert.match(runBodies[runBodies.length - 1].message, /\[P0\] emoji-icon/);
+  await lastAssistant().getByText('Saw lint findings.').waitFor();
+  await turnEnd('lint turn end');
+  results.lint = 'ok';
+  // That turn wrote nothing: the deliverable check says so.
+  await page.getByTestId('deliverable-warning').waitFor();
+  results.deliverable = 'ok';
+  await page.getByTestId('lint-badge').click();
+
+  // Palette: electric moves chromatic paint to hue ~262; original restores.
+  const ctaBefore = await css(cta, 'background-color');
+  assert.equal(ctaBefore, 'rgb(201, 100, 66)');
+  await page.getByTestId('palette').selectOption('electric');
+  await until(async () => Math.abs(hue(await css(cta, 'background-color')) - 262) < 3, 'electric palette');
+  await page.getByTestId('palette').selectOption('mono-noir');
+  await until(async () => /^rgb\((\d+), \1, \1\)$/.test(await css(cta, 'background-color')), 'mono palette');
+  await page.getByTestId('palette').selectOption('');
+  await until(async () => (await css(cta, 'background-color')) === ctaBefore, 'palette restored');
+  results.palette = 'ok';
+
+  // Tweaks the page declares: accent color and a dark toggle.
+  await page.getByTestId('tweaks-toggle').click();
+  await page.getByTestId('tweaks-panel').waitFor();
+  await page.getByTestId('tweak-accent').fill('#0a7d3b');
+  await until(async () => (await css(cta, 'background-color')) === 'rgb(10, 125, 59)', 'accent tweak');
+  await page.getByTestId('tweak-dark').check();
+  await until(async () => (await frame.locator('html').getAttribute('data-theme')) === 'dark', 'dark tweak');
+  await page.getByTestId('tweaks-reset').click();
+  await until(async () => (await css(cta, 'background-color')) === ctaBefore, 'tweaks reset');
+  await page.getByTestId('tweaks-toggle').click();
+  results.tweaks = 'ok';
+
+  // Inspect: override color and font size, reset one, extract, save.
+  const title = frame.locator('#title');
+  await page.getByTestId('inspect-mode').click();
+  await page.waitForTimeout(150);
+  await title.click();
+  await page.getByTestId('inspect-color').waitFor();
+  await page.getByTestId('inspect-color').fill('rgb(10, 125, 59)');
+  await page.getByTestId('inspect-color').press('Tab');
+  await until(async () => (await css(title, 'color')) === 'rgb(10, 125, 59)', 'inspect color');
+  const sizeBefore = await css(title, 'font-size');
+  await page.getByTestId('inspect-font-size').fill('48px');
+  await page.getByTestId('inspect-font-size').press('Tab');
+  await until(async () => (await css(title, 'font-size')) === '48px', 'inspect font size');
+  await page.getByTestId('inspect-reset-font-size').click();
+  await until(async () => (await css(title, 'font-size')) === sizeBefore, 'font size reset');
+  await page.getByTestId('inspect-extract').click();
+  await page.getByTestId('inspect-css').getByText('color: rgb(10, 125, 59);').waitFor();
+  assert.doesNotMatch(await page.getByTestId('inspect-css').textContent(), /font-size/);
+  await page.getByTestId('inspect-save').click();
+  await page.getByTestId('tool-status').getByText('index.html').waitFor();
+  await until(async () => indexOnDisk().includes('<h1 id="title" style="color: rgb(10, 125, 59)">'), 'style saved to source');
+  let history = await (await fetch(`${BASE}/api/projects/${pid}/files/index.html/versions`)).json();
+  let latest = history.versions[history.versions.length - 1];
+  assert.equal(latest.source, 'manual');
+  assert.equal(latest.label, 'Edited in preview');
+  await page.getByTestId('inspect-mode').click();
+  results.inspect = 'ok';
+
+  // Text edit in place, written back as another manual version.
+  await until(async () => (await css(title, 'color')) === 'rgb(10, 125, 59)', 'reloaded with saved style');
+  await page.getByTestId('edit-mode').click();
+  await page.waitForTimeout(150);
+  await title.click();
+  await page.keyboard.type('Tea house');
+  await page.keyboard.press('Enter');
+  await until(async () => indexOnDisk().includes('style="color: rgb(10, 125, 59)">Tea house</h1>'), 'text saved to source');
+  await frame.locator('#title', { hasText: 'Tea house' }).waitFor();
+  history = await (await fetch(`${BASE}/api/projects/${pid}/files/index.html/versions`)).json();
+  latest = history.versions[history.versions.length - 1];
+  assert.equal(latest.source, 'manual');
+  await page.getByTestId('edit-mode').click();
+  results.textEdit = 'ok';
+
+  // Draw over the preview; the image rides along with the next message.
+  await page.getByTestId('draw-mode').click();
+  const box = await page.getByTestId('draw-canvas').boundingBox();
+  await page.mouse.move(box.x + 40, box.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 180, box.y + 90, { steps: 8 });
+  await page.mouse.up();
+  await page.getByTestId('draw-box').click();
+  await page.mouse.move(box.x + 60, box.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 220, box.y + 200, { steps: 4 });
+  await page.mouse.up();
+  await page.getByTestId('draw-attach').click();
+  await page.getByTestId('attachment-chip').waitFor();
+  const files = (await (await fetch(`${BASE}/api/projects/${pid}/files`)).json()).files;
+  const annotation = files.find((f) => f.path.startsWith('annotations/') && f.path.endsWith('.png'));
+  assert.ok(annotation, 'annotation stored in the project');
+  const png = Buffer.from(await (await fetch(`${BASE}/api/projects/${pid}/raw/${annotation.path}`)).arrayBuffer());
+  assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  results.annotationSnapshot = (await page.getByTestId('tool-status').textContent()).includes('không kèm') ? 'strokes only' : 'with page';
+  await page.getByTestId('composer').fill('see my sketch');
+  await page.getByTestId('composer').press('Enter');
+  await lastAssistant().getByText('Saw attached files.').waitFor();
+  assert.deepEqual(runBodies[runBodies.length - 1].attachments, [annotation.path]);
+  await until(async () => (await page.getByTestId('attachment-chip').count()) === 0, 'chip cleared after send');
+  await turnEnd('annotation turn end');
+  // The rewritten page has no slop left: the lint follows the reload.
+  await until(async () => (await page.getByTestId('lint-badge').getAttribute('data-count')) === '0', 'lint clean after rewrite');
+  await page.screenshot({ path: OUT + 'preview-tools.png' });
+  results.annotation = 'ok';
+  // 16c. Copilot or Qwen in "Ask first" mode can hang: the UI says so.
   const putConfig = (body) => fetch(`${BASE}/api/app-config`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   });
