@@ -728,6 +728,7 @@
   // the change back to the source.
   // ---------------------------------------------------------------------
   var editMode = false;
+  var editDoc = null; // the host's file, echoed with each edit
   var editing = null;
 
   function finishEdit(commit) {
@@ -748,14 +749,15 @@
       odId: el.getAttribute('data-od-id'),
       tag: el.tagName.toLowerCase(),
       before: cur.before,
-      text: text
+      text: text,
+      doc: cur.doc
     });
   }
 
   function startEdit(el) {
     if (editing && editing.el === el) return;
     finishEdit(true);
-    editing = { el: el, before: el.textContent || '', selector: selectorFor(el) };
+    editing = { el: el, before: el.textContent || '', selector: selectorFor(el), doc: editDoc };
     el.setAttribute('contenteditable', 'plaintext-only');
     showOverlay(el);
     el.focus();
@@ -768,8 +770,9 @@
     } catch (_) {}
   }
 
-  function setEditMode(on) {
+  function setEditMode(on, doc) {
     editMode = !!on;
+    editDoc = typeof doc === 'string' ? doc : null;
     if (!editMode) finishEdit(true);
   }
 
@@ -1042,7 +1045,7 @@
         extractOverrides();
         break;
       case 'od:edit-mode':
-        setEditMode(data.enabled);
+        setEditMode(data.enabled, data.doc);
         break;
       case 'od:palette':
         applyPalette(typeof data.id === 'string' ? data.id : null);

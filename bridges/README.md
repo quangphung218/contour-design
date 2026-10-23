@@ -23,7 +23,7 @@ window, so a page cannot drive itself through the protocol.
 | `od:inspect-reset` | `selector?`, `prop?` | Undoes overrides of one property, one element, or (no `selector`) all |
 | `od:inspect-replay` | `items`: `[{selector, prop, value, tag, text}]` | Sets overrides again (the host replays its unsaved ones after a reload), only on an element that still has `tag` and `text` |
 | `od:inspect-extract` | | Replies `od:inspect-overrides` |
-| `od:edit-mode` | `enabled` | Text-edit mode on or off |
+| `od:edit-mode` | `enabled`, `doc` | Text-edit mode on or off for the host's file `doc` |
 | `od:palette` | `id`: `coral` `electric` `acid-forest` `risograph` `mono-noir`, or `null` | Recolors the page, or restores it; replies `od:palette-state` |
 | `od:tweaks-request` | | Replies `od:tweaks` |
 | `od:tweak-set` | `id`, `value` | Sets a declared tweak |
@@ -43,7 +43,7 @@ window, so a page cannot drive itself through the protocol.
 | `od:redirect-loop-blocked` | `hops` | The page reloaded itself more than 15 times, each < 1 s apart |
 | `od:inspect-result` | `selector`, `tag`, `text`, `rect`, `styles` (computed), `overrides`, `textOnly`; or `missing: true` | After `od:inspect`, `od:inspect-set`, `od:inspect-reset` |
 | `od:inspect-overrides` | `items`: `[{selector, prop, value}]`, `css` | After `od:inspect-extract` |
-| `od:text-edit` | `selector`, `odId`, `tag`, `before`, `text` | A text edit was committed (Enter or blur) and changed the text |
+| `od:text-edit` | `selector`, `odId`, `tag`, `before`, `text`, `doc` | A text edit was committed (Enter or blur) and changed the text |
 | `od:palette-state` | `id` (or `null`) | After `od:palette` |
 | `od:tweaks` | `tweaks`: the valid declared tweaks (may be empty) | Each document load, and after `od:tweaks-request` |
 
@@ -53,7 +53,7 @@ window, so a page cannot drive itself through the protocol.
 - **Selection**: an element is named by its nearest `data-od-id`; without one, by a `tag:nth-of-type()` path from the nearest tagged ancestor or `html`.
 - **Locate**: `querySelector` on each stored selector, `getBoundingClientRect` in viewport pixels, so the host can draw comment pins where the element is now.
 - **Inspect**: computed style of a fixed property list. An override is an inline `style.setProperty`; the bridge keeps the inline value it replaced, so a reset restores the element exactly. The host writes overrides back to the source with `POST /api/projects/:id/source-edits`, sending the tag and text (`expectTag`, `expectText`) the element had, so a path a script shifted onto another element is refused (409). The text leaves out `script`/`style` code, as the source check does.
-- **Text edit**: only text-only elements (no child elements; not `script`, `style`, form fields) become `contenteditable="plaintext-only"` on click. Enter or leaving the element commits, Esc restores. The host writes the text back with `expectText` = the text before, so a source that moved on is refused (409), never overwritten.
+- **Text edit**: only text-only elements (no child elements; not `script`, `style`, form fields) become `contenteditable="plaintext-only"` on click. Enter or leaving the element commits, Esc restores. The host writes the text back with `expectText` = the text before, so a source that moved on is refused (409), never overwritten. The host takes an edit only while its text tool is on and for the file it named in `od:edit-mode` (the artifact's scripts share the bridge's window).
 - **Palette**: each chromatic color (computed `color`, `background-color`, `border-color`, `fill`, `stroke`, plus custom properties declared on `:root`/`html`/`body`) takes the preset's hue and keeps its lightness, and its saturation above a floor; grays, near-black and near-white stay. `mono-noir` drops saturation. Every change is recorded and undone on the next swap.
 - **Tweaks**: the artifact declares its knobs as JSON in a `script[type="application/json"][data-od-tweaks]` element: `{"tweaks": [{"id", "type", "label?", "var" | "attr", "default?", …}]}`. `type` is `color`, `range` (`min`, `max`, `step`, `unit?`), `select` (`options`: strings or `{label, value}`), `toggle` (`on?`, `off?`, default `"true"`/`"false"`) or `text`. A value lands on the root custom property `var` (`--name`) or the root attribute `attr` (`data-*`), and the bridge fires `od:tweak` (`detail: {id, value}`) on `window` for script-driven knobs. At most 24 tweaks.
 - **Snapshot**: clones the DOM with computed styles inlined (scripts and bridge UI dropped) and wraps it in an SVG `foreignObject`. No screenshot API.

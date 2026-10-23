@@ -72,6 +72,9 @@ pub struct TextEdit {
     #[serde(default)]
     pub before: String,
     pub text: String,
+    /// The file the host named when it turned edit mode on.
+    #[serde(default)]
+    pub doc: Option<String>,
 }
 
 /// Reply to `od:snapshot`: an SVG or PNG data URL, or an error.
@@ -311,10 +314,11 @@ pub fn inspect_extract() -> Value {
     json!({ "type": "od:inspect-extract" })
 }
 
-/// Host → bridge: text-edit mode on or off.
+/// Host → bridge: text-edit mode on or off for the file `doc`, which the
+/// bridge echoes in its `od:text-edit`.
 #[must_use]
-pub fn edit_mode(enabled: bool) -> Value {
-    json!({ "type": "od:edit-mode", "enabled": enabled })
+pub fn edit_mode(enabled: bool, doc: Option<&str>) -> Value {
+    json!({ "type": "od:edit-mode", "enabled": enabled, "doc": doc })
 }
 
 /// Palette presets the bridge knows, in menu order.
@@ -418,12 +422,13 @@ mod tests {
         assert!(i.text_only && !i.missing);
         assert_eq!(
             BridgeMsg::decode(
-                r#"{"type":"od:text-edit","selector":"h1","odId":null,"tag":"h1","before":"A","text":"B"}"#
+                r#"{"type":"od:text-edit","selector":"h1","odId":null,"tag":"h1","before":"A","text":"B","doc":"a.html"}"#
             ),
             Some(BridgeMsg::TextEdit(TextEdit {
                 selector: "h1".into(),
                 before: "A".into(),
-                text: "B".into()
+                text: "B".into(),
+                doc: Some("a.html".into()),
             }))
         );
         let Some(BridgeMsg::Tweaks { tweaks }) = BridgeMsg::decode(

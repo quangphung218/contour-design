@@ -150,6 +150,18 @@ pub fn style_edits(overrides: &[Override]) -> Vec<SourceEdit> {
         .collect()
 }
 
+/// A text edit the host should write: only while the text tool is on and
+/// for the file the bridge was told about. The artifact's own scripts share
+/// the bridge's window, so anything else may not be the user's.
+fn accepted_text_edit(e: &pb::TextEdit, tool: Option<Tool>, active: Option<&str>) -> bool {
+    tool == Some(Tool::EditText) && active.is_some() && e.doc.as_deref() == active
+}
+
+/// The snapshot's image, if it is one: the URL is loaded by the host page.
+fn snapshot_image(s: Snapshot) -> Option<String> {
+    s.data_url.filter(|u| u.starts_with("data:image/"))
+}
+
 fn deliverable_message(d: &DeliverableResponse) -> Option<String> {
     let entry = d.entry_file.clone().unwrap_or_default();
     Some(match d.validation {
@@ -182,14 +194,15 @@ impl StudioCtx {
         }
         self.tools.tool.set(tool);
         bridge::post_main(&pb::select_mode(tool == Some(Tool::Inspect)));
-        bridge::post_main(&pb::edit_mode(tool == Some(Tool::EditText)));
+        let doc = self.active_untracked();
+        bridge::post_main(&pb::edit_mode(tool == Some(Tool::EditText), doc.as_deref()));
     }
 
     /// Leaves any tool for comment mode (which owns selection then).
     pub fn leave_tool(self) {
         if self.tools.tool.get_untracked().is_some() {
             self.tools.tool.set(None);
-            bridge::post_main(&pb::edit_mode(false));
+            bridge::post_main(&pb::edit_mode(false, None));
         }
     }
 
@@ -204,7 +217,10 @@ impl StudioCtx {
         let tools = self.tools;
         match tools.tool.get_untracked() {
             Some(Tool::Inspect) => bridge::post_main(&pb::select_mode(true)),
-            Some(Tool::EditText) => bridge::post_main(&pb::edit_mode(true)),
+            Some(Tool::EditText) => {
+                let doc = self.active_untracked();
+                bridge::post_main(&pb::edit_mode(true, doc.as_deref()));
+            }
             _ => {}
         }
         let overrides = tools.overrides.get_untracked();
@@ -225,15 +241,20 @@ impl StudioCtx {
         match msg {
             BridgeMsg::InspectResult(i) => tools.inspected.set(Some(i.clone())),
             BridgeMsg::InspectOverrides { css, .. } => tools.extracted.set(Some(css.clone())),
-            BridgeMsg::TextEdit(e) => self.save_edits(
-                vec![SourceEdit {
-                    selector: e.selector.clone(),
-                    text: Some(e.text.clone()),
-                    expect_text: Some(e.before.clone()),
-                    ..SourceEdit::default()
-                }],
-                false,
-            ),
+            BridgeMsg::TextEdit(e) => {
+                let active = self.active_untracked();
+                if accepted_text_edit(e, tools.tool.get_untracked(), active.as_deref()) {
+                    self.save_edits(
+                        vec![SourceEdit {
+                            selector: e.selector.clone(),
+                            text: Some(e.text.clone()),
+                            expect_text: Some(e.before.clone()),
+                            ..SourceEdit::default()
+                        }],
+                        false,
+                    );
+                }
+            }
             BridgeMsg::Tweaks { tweaks } => {
                 let defs = TweakDef::parse_list(tweaks);
                 // Values set before the reload apply again.
@@ -860,7 +881,7 @@ async fn attach_annotation(
     height: u32,
 ) -> Result<bool, String> {
     let snapshot = take_snapshot(ctx.tools).await;
-    let image = match snapshot.and_then(|s| s.data_url) {
+    let image = match snapshot.and_then(snapshot_image) {
         Some(url) => load_image(&url).await,
         None => None,
     };
@@ -1129,6 +1150,45 @@ mod tests {
         assert!(edits[0].text.is_none());
         assert_eq!(edits[0].expect_tag.as_deref(), Some("h1"));
         assert_eq!(edits[0].expect_text.as_deref(), Some("h1 text"));
+    }
+
+    #[test]
+    fn text_edits_only_from_the_text_tool_on_the_shown_file() {
+        let e = |doc: Option<&str>| pb::TextEdit {
+            selector: "h1".into(),
+            before: "A".into(),
+            text: "B".into(),
+            doc: doc.map(str::to_owned),
+        };
+        let on = Some(Tool::EditText);
+        assert!(accepted_text_edit(&e(Some("a.html")), on, Some("a.html")));
+        // A script posting while no tool (or another) is on.
+        assert!(!accepted_text_edit(
+            &e(Some("a.html")),
+            None,
+            Some("a.html")
+        ));
+        assert!(!accepted_text_edit(
+            &e(Some("a.html")),
+            Some(Tool::Inspect),
+            Some("a.html")
+        ));
+        // The edit of the file left behind, landing after a switch.
+        assert!(!accepted_text_edit(&e(Some("a.html")), on, Some("b.html")));
+        assert!(!accepted_text_edit(&e(None), on, Some("a.html")));
+        assert!(!accepted_text_edit(&e(None), on, None));
+    }
+
+    #[test]
+    fn snapshots_must_be_images() {
+        let s = |url: &str| Snapshot {
+            request_id: "r".into(),
+            data_url: Some(url.into()),
+            ..Snapshot::default()
+        };
+        assert!(snapshot_image(s("data:image/png;base64,AAAA")).is_some());
+        assert_eq!(snapshot_image(s("https://evil.example/x.png")), None);
+        assert_eq!(snapshot_image(s("data:text/html,<b>x</b>")), None);
     }
 
     #[test]
