@@ -38,6 +38,17 @@ fn start(bare: bool) -> Daemon {
 
 /// Like [`start`], with `dir` first on the daemon's `PATH` (mock agents).
 fn start_with_path(bare: bool, dir: Option<&std::path::Path>) -> Daemon {
+    // The free port is released before the daemon binds it, so a test running
+    // alongside can take it first; the daemon then exits. Retry on a new port.
+    for _ in 0..3 {
+        if let Some(daemon) = try_start(bare, dir) {
+            return daemon;
+        }
+    }
+    panic!("daemon did not start after 3 ports");
+}
+
+fn try_start(bare: bool, dir: Option<&std::path::Path>) -> Option<Daemon> {
     let tmp = tempfile::tempdir().unwrap();
     let resources = tmp.path().join("resources");
     std::fs::create_dir_all(resources.join("skills/demo")).unwrap();
@@ -72,10 +83,14 @@ fn start_with_path(bare: bool, dir: Option<&std::path::Path>) -> Daemon {
         url: format!("http://127.0.0.1:{port}"),
         _tmp: tmp,
     };
+    let mut daemon = daemon;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if od(&daemon, &["daemon", "status"]).status.success() {
-            return daemon;
+            return Some(daemon);
+        }
+        if daemon.child.try_wait().unwrap().is_some() {
+            return None;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
