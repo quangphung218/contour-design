@@ -211,6 +211,17 @@ fn main() -> anyhow::Result<()> {
                 .min_inner_size(900.0, 600.0)
                 .build()?;
             app.manage(daemon);
+            // SIGTERM (logout, `kill`) and Ctrl-C quit through `RunEvent::Exit`,
+            // which ends the terminal tabs' shells.
+            tauri::async_runtime::spawn(async move {
+                match od_server::shutdown_signal() {
+                    Ok(stop) => {
+                        stop.await;
+                        handle.exit(0);
+                    }
+                    Err(e) => tracing::warn!(error = %e, "no SIGTERM handler"),
+                }
+            });
             Ok(())
         })
         .build(tauri::generate_context!())
