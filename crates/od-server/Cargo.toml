@@ -19,6 +19,8 @@ od-live.workspace = true
 od-media.workspace = true
 od-term.workspace = true
 od-automation.workspace = true
+od-mcp-client.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls-native-roots"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 anyhow.workspace = true
 axum = { workspace = true, features = ["ws"] }

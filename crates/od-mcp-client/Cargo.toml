@@ -1,0 +1,26 @@
+[package]
+name = "od-mcp-client"
+description = "External MCP servers for agents: config (0600), stdio and HTTP client, OAuth 2.1 PKCE with a loopback redirect, spawn-time wiring"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+base64.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls-native-roots"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url = "2"
+uuid.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

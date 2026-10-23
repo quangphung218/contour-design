@@ -73,6 +73,8 @@ pub struct SessionContext {
     pub request_id: String,
     /// See [`crate::RuntimeDef::acp_turn_end_completes`].
     pub acp_turn_end_completes: bool,
+    /// External MCP servers for ACP `session/new` and `session/load`.
+    pub mcp_servers: Vec<serde_json::Value>,
 }
 
 #[must_use]

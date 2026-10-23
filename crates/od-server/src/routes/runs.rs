@@ -494,6 +494,7 @@ async fn prepare_and_launch(
         .await?;
 
     let resumed = prepared.resume_session_id.is_some();
+    let mcp = crate::routes::platform::mcp::for_agent(state, def.stream_format, run.id()).await;
     let engine = &state.runs.engine;
     let launched = {
         // Held across the check and `launch` so a concurrent cancel either
@@ -509,7 +510,7 @@ async fn prepare_and_launch(
             );
             let od_bin = std::env::current_exe().ok();
             let data_root = state.store.data_dir().root().to_path_buf();
-            let env = agent_env(
+            let mut env = agent_env(
                 def,
                 &engine.config().base_env,
                 &engine.config().path,
@@ -523,6 +524,7 @@ async fn prepare_and_launch(
                     run_id: Some(run.id()),
                 },
             );
+            env.extend(mcp.env);
             Some(engine.launch(LaunchSpec {
                 run: Arc::clone(run),
                 def,
@@ -537,10 +539,14 @@ async fn prepare_and_launch(
                 env,
                 project_id: Some(project.id.clone()),
                 byok: prepared.byok,
+                mcp: mcp.launch,
             }))
         }
     };
     let Some(handle) = launched else {
+        if let Some(file) = &mcp.file {
+            let _ = std::fs::remove_file(file);
+        }
         end_unlaunched(
             state,
             run,
@@ -565,6 +571,7 @@ async fn prepare_and_launch(
             model,
             cwd: prepared.cwd.to_string_lossy().into_owned(),
             stable_hash: prepared.stable_hash,
+            mcp_file: mcp.file,
         },
     ));
     Ok(resumed)
@@ -579,6 +586,8 @@ struct Finalize {
     model: Option<String>,
     cwd: String,
     stable_hash: String,
+    /// The run's MCP config (holds tokens); removed when the run ends.
+    mcp_file: Option<PathBuf>,
 }
 
 /// Agent payloads that are only meaningful live.
@@ -651,6 +660,9 @@ async fn persist_run(
         }
     };
     state.runs.tokens.revoke_run(run.id());
+    if let Some(file) = &fin.mcp_file {
+        let _ = std::fs::remove_file(file);
+    }
     let status = run.status();
     let res = state
         .blocking(move |s| {

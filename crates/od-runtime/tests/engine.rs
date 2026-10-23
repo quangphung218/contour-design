@@ -58,6 +58,7 @@ sleep 300
             env: vec![("PATH".into(), engine.config().path.clone())],
             project_id: None,
             byok: None,
+            mcp: od_runtime::McpLaunch::default(),
         });
         let mut sub = run.subscribe(0);
         while let Some(ev) = sub.next().await {
@@ -164,6 +165,7 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
             env: vec![("PATH".into(), engine.config().path.clone())],
             project_id: None,
             byok: None,
+            mcp: od_runtime::McpLaunch::default(),
         })
         .await
         .unwrap();

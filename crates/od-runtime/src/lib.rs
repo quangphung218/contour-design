@@ -19,5 +19,5 @@ pub mod stage;
 pub mod tokens;
 
 pub use def::{PermissionMode, RuntimeDef};
-pub use engine::{EngineConfig, LaunchSpec, RunEngine, RunOutcome, SteerError};
+pub use engine::{EngineConfig, LaunchSpec, McpLaunch, RunEngine, RunOutcome, SteerError};
 pub use tokens::ToolTokens;

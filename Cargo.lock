@@ -3655,6 +3655,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "od-mcp-client"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "od-media"
 version = "0.1.0"
 dependencies = [
@@ -3759,6 +3777,7 @@ dependencies = [
  "od-contracts",
  "od-export",
  "od-live",
+ "od-mcp-client",
  "od-media",
  "od-preview",
  "od-render-cdp",

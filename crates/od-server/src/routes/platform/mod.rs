@@ -8,6 +8,7 @@
 //! loopback one (no LAN origins, no API-token access from elsewhere).
 
 pub mod automations;
+pub mod mcp;
 pub mod terminals;
 
 use crate::error::ApiErr;
@@ -46,6 +47,9 @@ pub fn mount(api: Router<AppState>, state: &AppState) -> Router<AppState> {
     let mut routes = terminals::routes().layer(Extension(platform));
     if let Some(scheduler) = automations::scheduler(state) {
         routes = routes.merge(automations::routes().layer(Extension(scheduler)));
+    }
+    if let Some(mcp) = mcp::Mcp::new(state) {
+        routes = routes.merge(mcp::routes().layer(Extension(mcp)));
     }
     api.merge(routes.layer(middleware::from_fn(loopback_only)))
 }
