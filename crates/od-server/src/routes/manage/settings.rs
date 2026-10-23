@@ -108,7 +108,9 @@ fn clean(v: Option<&str>) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn same_base(a: Option<&str>, b: Option<&str>) -> bool {
+/// Whether two base URLs name the same endpoint (empty means the protocol's
+/// own host).
+pub(crate) fn same_base(a: Option<&str>, b: Option<&str>) -> bool {
     let norm = |v: Option<&str>| clean(v).map(|s| byok_probe::normalize_base_url(&s).unwrap_or(s));
     norm(a) == norm(b)
 }
