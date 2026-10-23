@@ -289,7 +289,7 @@ pub fn TerminalView(id: String) -> impl IntoView {
     view! {
         <div class="terminal-pane">
             <div
-                class="terminal"
+                class="term-host"
                 data-terminal="1"
                 data-testid="terminal"
                 aria-label=t(T::TerminalHint)
