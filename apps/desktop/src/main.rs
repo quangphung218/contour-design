@@ -11,8 +11,8 @@ use anyhow::Context;
 use od_content::{ContentRoots, ContentStore};
 use od_server::routes::ui::import_folder;
 use od_server::{
-    AppState, DaemonLock, Preview, RunContext, ServerConfig, open_runs, resolve_resource_root,
-    router,
+    AppState, DaemonLock, Platform, Preview, RunContext, ServerConfig, open_runs,
+    resolve_resource_root, router,
 };
 use od_store::{DataDir, Store};
 use std::net::SocketAddr;
@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::ipc::CapabilityBuilder;
 use tauri::menu::{Menu, MenuItem, Submenu};
-use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
 const OPEN_FOLDER_MENU_ID: &str = "open-folder";
@@ -76,6 +76,7 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
             od_runtime::EngineConfig::from_env(),
         )),
         preview: Preview::default(),
+        platform: Platform::from_env(),
     };
     let _flusher = runs.spawn_flusher();
     let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
@@ -212,8 +213,17 @@ fn main() -> anyhow::Result<()> {
             app.manage(daemon);
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .context("running the desktop app")
+        .build(tauri::generate_context!())
+        .context("building the desktop app")?
+        .run(|app, event| {
+            // The terminal tabs' shells would outlive the app.
+            if let RunEvent::Exit = event {
+                if let Some(daemon) = app.try_state::<Daemon>() {
+                    tauri::async_runtime::block_on(daemon.state.shutdown());
+                }
+            }
+        });
+    Ok(())
 }
 
 #[cfg(test)]

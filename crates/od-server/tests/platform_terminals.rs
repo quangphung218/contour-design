@@ -259,3 +259,25 @@ async fn foreign_origins_hosts_and_bodies_are_refused() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn deleting_a_project_closes_its_terminals() {
+    let d = common::daemon().await;
+    let (project, _) = d.project().await;
+    let (other, _) = d.project().await;
+    let mine = open(&d, &project).await;
+    let kept = open(&d, &other).await;
+    let res = d
+        .http
+        .delete(format!("{}/api/projects/{project}", d.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let tid = mine["id"].as_str().unwrap();
+    assert_eq!(connect(&d, tid, None).await.err(), Some(404));
+    let list = d
+        .get_json(&format!("/api/projects/{other}/terminals"))
+        .await;
+    assert_eq!(list["terminals"][0]["id"], kept["id"]);
+}

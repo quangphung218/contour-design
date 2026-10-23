@@ -130,6 +130,7 @@ fn harness_with(fake: Fake) -> Harness {
             od_runtime::EngineConfig::from_env(),
         )),
         preview: od_server::Preview::default(),
+        platform: od_server::Platform::from_env(),
     };
     let fake = Arc::new(fake);
     let app = routes_with(Arc::clone(&fake) as Arc<dyn Renderer>).with_state(state.clone());

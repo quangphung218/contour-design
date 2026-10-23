@@ -63,6 +63,7 @@ fn app() -> App {
             od_runtime::EngineConfig::from_env(),
         )),
         preview: od_server::Preview::default(),
+        platform: od_server::Platform::from_env(),
     };
     App {
         _tmp: tmp,

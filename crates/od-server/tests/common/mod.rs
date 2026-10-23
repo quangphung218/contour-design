@@ -82,6 +82,7 @@ pub async fn daemon_with(opts: Options) -> Daemon {
         }),
         runs: Arc::new(RunContext::new(Arc::clone(&runs), engine)),
         preview: od_server::Preview::default(),
+        platform: od_server::Platform::from_env(),
     };
     let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move {

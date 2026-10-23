@@ -28,7 +28,9 @@ pub struct Platform {
 }
 
 impl Platform {
-    fn from_env() -> Self {
+    /// `OD_TERMINAL_SHELL` overrides the user's shell.
+    #[must_use]
+    pub fn from_env() -> Self {
         let shell = std::env::var_os("OD_TERMINAL_SHELL")
             .filter(|s| !s.is_empty())
             .map(Into::into);
@@ -43,8 +45,7 @@ impl Platform {
 
 /// Adds the platform routes to `api`.
 pub fn mount(api: Router<AppState>, state: &AppState) -> Router<AppState> {
-    let platform = Platform::from_env();
-    let mut routes = terminals::routes().layer(Extension(platform));
+    let mut routes = terminals::routes().layer(Extension(state.platform.clone()));
     if let Some(scheduler) = automations::scheduler(state) {
         routes = routes.merge(automations::routes().layer(Extension(scheduler)));
     }

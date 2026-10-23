@@ -43,6 +43,7 @@ async fn real_daemon(tmp: &Path) -> (String, Arc<RunContext>) {
         }),
         runs: Arc::clone(&run_ctx),
         preview: od_server::Preview::default(),
+        platform: od_server::Platform::from_env(),
     };
     let app = od_server::router(state).into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });

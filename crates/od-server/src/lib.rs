@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub use lock::{DaemonLock, LockError};
+pub use routes::platform::Platform;
 pub use state::{AppState, DEFAULT_HOST, DEFAULT_PORT, Preview, RunContext, ServerConfig};
 
 /// Request bodies up to 200 MiB (largest expected design asset).
@@ -197,7 +198,8 @@ pub async fn open_runs(store: &Store, _lock: &DaemonLock) -> anyhow::Result<Arc<
     Ok(Arc::new(runs))
 }
 
-/// Opens the store, indexes content, binds and serves until Ctrl-C.
+/// Opens the store, indexes content, binds and serves until Ctrl-C, then
+/// ends the terminal tabs' shells.
 ///
 /// # Errors
 /// Refuses a non-loopback bind without `OD_API_TOKEN`; store, bind and I/O
@@ -247,6 +249,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             od_runtime::EngineConfig::from_env(),
         )),
         preview: Preview::default(),
+        platform: Platform::from_env(),
     };
     let _flusher = runs.spawn_flusher();
     tracing::info!(
@@ -255,13 +258,13 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         startup_ms = started.elapsed().as_millis(),
         "od daemon listening"
     );
-    axum::serve(
-        listener,
-        router(state).into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
-    })
-    .await?;
+    let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
+    let served = axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await;
+    state.shutdown().await;
+    served?;
     Ok(())
 }

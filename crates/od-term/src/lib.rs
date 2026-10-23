@@ -415,6 +415,22 @@ impl Terminals {
             s.kill(self.cfg.kill_grace).await;
         }
     }
+
+    /// Closes the sessions of one project (it was deleted).
+    pub async fn close_project(&self, project_id: &str) {
+        let gone: Vec<Arc<Session>> = {
+            let mut sessions = lock(&self.sessions);
+            let ids: Vec<String> = sessions
+                .values()
+                .filter(|s| s.project_id == project_id)
+                .map(|s| s.id.clone())
+                .collect();
+            ids.iter().filter_map(|id| sessions.remove(id)).collect()
+        };
+        for s in gone {
+            s.kill(self.cfg.kill_grace).await;
+        }
+    }
 }
 
 fn spawn_session(

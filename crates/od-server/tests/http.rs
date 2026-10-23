@@ -48,6 +48,7 @@ fn harness_with(resource_root: &Path) -> Harness {
             od_runtime::EngineConfig::from_env(),
         )),
         preview: od_server::Preview::default(),
+        platform: od_server::Platform::from_env(),
     };
     Harness {
         _tmp: tmp,

@@ -53,7 +53,10 @@ pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<ApiJson<OkResponse>> {
-    state.blocking(move |s| s.delete_project(&id)).await?;
+    let pid = id.clone();
+    state.blocking(move |s| s.delete_project(&pid)).await?;
+    // Its shells would keep running in a folder that is gone.
+    state.platform.terminals.close_project(&id).await;
     Ok(ApiJson(OkResponse { ok: true }))
 }
 
