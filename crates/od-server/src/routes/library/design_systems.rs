@@ -129,23 +129,35 @@ fn user_root(state: &AppState) -> PathBuf {
     state.store.data_dir().root().join("design-systems")
 }
 
-/// A safe relative path inside a package (no `..`, no hidden segment).
+/// The real path of `rel` inside a package: no `..`, no hidden segment,
+/// and, like project files, resolved through the store's guard so a
+/// symlink in the package (an agent editing it in place can plant one)
+/// never takes a read or write outside it. Every package read and write
+/// goes through here.
 fn inside(dir: &std::path::Path, rel: &str) -> ApiResult<PathBuf> {
-    let mut out = dir.to_path_buf();
+    let mut parts = 0;
     for c in std::path::Path::new(rel).components() {
         match c {
-            Component::Normal(s) if !s.to_string_lossy().starts_with('.') => out.push(s),
+            Component::Normal(s) if !s.to_string_lossy().starts_with('.') => parts += 1,
             _ => return Err(ApiErr::bad_request("invalid path")),
         }
     }
-    if out == dir {
+    if parts == 0 {
         return Err(ApiErr::bad_request("invalid path"));
     }
-    Ok(out)
+    Ok(od_store::paths::resolve_safe_real(dir, rel)?)
+}
+
+/// [`inside`] for I/O helpers.
+fn inside_io(dir: &std::path::Path, rel: &str) -> std::io::Result<PathBuf> {
+    inside(dir, rel)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.message))
 }
 
 fn read(dir: &std::path::Path, name: &str) -> String {
-    std::fs::read_to_string(dir.join(name)).unwrap_or_default()
+    inside_io(dir, name)
+        .and_then(std::fs::read_to_string)
+        .unwrap_or_default()
 }
 
 fn mime_of(name: &str) -> &'static str {
@@ -341,20 +353,22 @@ pub struct RevisionFile {
 }
 
 fn revisions_of(dir: &std::path::Path) -> Vec<Revision> {
-    let Ok(read_dir) = std::fs::read_dir(dir.join(REVISIONS_DIR)) else {
+    let Ok(read_dir) = inside_io(dir, REVISIONS_DIR).and_then(std::fs::read_dir) else {
         return Vec::new();
     };
     let mut out: Vec<Revision> = read_dir
         .filter_map(Result::ok)
         .filter_map(|e| {
-            let rdir = e.path();
+            let rdir = format!("{REVISIONS_DIR}/{}", e.file_name().to_string_lossy());
+            let file = |n: &str| inside_io(dir, &format!("{rdir}/{n}"));
             let mut r: Revision =
-                serde_json::from_str(&std::fs::read_to_string(rdir.join(REVISION_FILE)).ok()?)
+                serde_json::from_str(&file(REVISION_FILE).and_then(std::fs::read_to_string).ok()?)
                     .ok()?;
             r.files = REVISABLE
                 .iter()
                 .filter_map(|n| {
-                    std::fs::read_to_string(rdir.join(n))
+                    file(n)
+                        .and_then(std::fs::read_to_string)
                         .ok()
                         .map(|content| RevisionFile {
                             name: (*n).to_owned(),
@@ -370,18 +384,18 @@ fn revisions_of(dir: &std::path::Path) -> Vec<Revision> {
 }
 
 fn write_revision(dir: &std::path::Path, r: &Revision) -> std::io::Result<()> {
-    let rdir = dir.join(REVISIONS_DIR).join(&r.id);
-    std::fs::create_dir_all(&rdir)?;
+    let rdir = format!("{REVISIONS_DIR}/{}", r.id);
+    std::fs::create_dir_all(inside_io(dir, &rdir)?)?;
     let meta = Revision {
         files: Vec::new(),
         ..r.clone()
     };
     std::fs::write(
-        rdir.join(REVISION_FILE),
+        inside_io(dir, &format!("{rdir}/{REVISION_FILE}"))?,
         serde_json::to_vec_pretty(&meta).map_err(std::io::Error::other)?,
     )?;
     for f in &r.files {
-        std::fs::write(rdir.join(&f.name), &f.content)?;
+        std::fs::write(inside_io(dir, &format!("{rdir}/{}", f.name))?, &f.content)?;
     }
     Ok(())
 }
@@ -410,7 +424,7 @@ fn asset_kind(name: &str) -> &'static str {
 }
 
 fn assets_of(dir: &std::path::Path) -> Vec<Asset> {
-    let Ok(read_dir) = std::fs::read_dir(dir.join(ASSETS_DIR)) else {
+    let Ok(read_dir) = inside_io(dir, ASSETS_DIR).and_then(std::fs::read_dir) else {
         return Vec::new();
     };
     let mut out: Vec<Asset> = read_dir
@@ -448,9 +462,12 @@ pub async fn kit(State(state): State<AppState>, Path(id): Path<String>) -> ApiRe
     let e = entry(&state, &id)?;
     let a2 = a2(&state);
     let kit = tokio::task::spawn_blocking(move || {
-        let body = std::fs::read_to_string(e.dir.join("DESIGN.md")).unwrap_or(e.body.clone());
+        let body = inside_io(&e.dir, "DESIGN.md")
+            .and_then(std::fs::read_to_string)
+            .unwrap_or(e.body.clone());
         let tokens = design_kit::parse_tokens(&read(&e.dir, "tokens.css"));
-        let mut previews: Vec<String> = std::fs::read_dir(e.dir.join("preview"))
+        let mut previews: Vec<String> = inside_io(&e.dir, "preview")
+            .and_then(std::fs::read_dir)
             .into_iter()
             .flatten()
             .filter_map(Result::ok)
@@ -461,7 +478,7 @@ pub async fn kit(State(state): State<AppState>, Path(id): Path<String>) -> ApiRe
         Kit {
             palette: design_kit::palette_from_markdown(&body),
             score: design_kit::score(&tokens, &a2),
-            has_components: e.dir.join("components.html").is_file(),
+            has_components: inside(&e.dir, "components.html").is_ok_and(|p| p.is_file()),
             assets: assets_of(&e.dir),
             revisions: revisions_of(&e.dir),
             previews,
@@ -480,7 +497,7 @@ pub async fn showcase(
     Path(id): Path<String>,
 ) -> ApiResult<Response> {
     let e = entry(&state, &id)?;
-    let components = e.dir.join("components.html");
+    let components = inside(&e.dir, "components.html")?;
     let html = match tokio::fs::read(&components).await {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -496,7 +513,7 @@ pub async fn file(
 ) -> ApiResult<Response> {
     let e = entry(&state, &id)?;
     let target = inside(&e.dir, &path)?;
-    if target.starts_with(e.dir.join(REVISIONS_DIR)) {
+    if target.starts_with(inside(&e.dir, REVISIONS_DIR)?) {
         return Err(ApiErr::not_found("file not found"));
     }
     let bytes = tokio::fs::read(&target)
@@ -522,7 +539,7 @@ pub async fn save_design_md(
         return Err(ApiErr::bad_request("DESIGN.md cannot be empty"));
     }
     write_and_reload(&state, move || {
-        std::fs::write(e.dir.join("DESIGN.md"), body.body)
+        std::fs::write(inside(&e.dir, "DESIGN.md")?, body.body)
             .map_err(|err| ApiErr::internal(err.to_string()))
     })
     .await?;
@@ -531,7 +548,7 @@ pub async fn save_design_md(
 
 /// Merges `patch` into the package's `metadata.json`.
 fn patch_metadata(dir: &std::path::Path, patch: &Value) -> std::io::Result<()> {
-    let path = dir.join("metadata.json");
+    let path = inside_io(dir, "metadata.json")?;
     let mut meta = std::fs::read_to_string(&path)
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
@@ -763,10 +780,11 @@ pub async fn upload_assets(
         if bytes.len() > MAX_ASSET_BYTES {
             return Err(ApiErr::bad_request(format!("{name} is larger than 20 MB")));
         }
-        let dir = e.dir.join(ASSETS_DIR);
-        tokio::fs::create_dir_all(&dir)
+        tokio::fs::create_dir_all(inside(&e.dir, ASSETS_DIR)?)
             .await
-            .and(tokio::fs::write(dir.join(&name), &bytes).await)
+            .map_err(|err| ApiErr::internal(err.to_string()))?;
+        tokio::fs::write(inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?, &bytes)
+            .await
             .map_err(|err| ApiErr::internal(err.to_string()))?;
         saved.push(json!({ "name": name, "kind": asset_kind(&name), "size": bytes.len() }));
     }
@@ -782,7 +800,7 @@ pub async fn delete_asset(
 ) -> ApiResult<Json<Value>> {
     let e = editable(&state, &id)?;
     let name = safe_asset_name(&name).ok_or_else(|| ApiErr::bad_request("invalid asset"))?;
-    tokio::fs::remove_file(e.dir.join(ASSETS_DIR).join(name))
+    tokio::fs::remove_file(inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?)
         .await
         .map_err(|_| ApiErr::not_found("asset not found"))?;
     Ok(Json(json!({ "ok": true })))
@@ -877,7 +895,7 @@ pub async fn decide(
         if accept {
             for f in &r.files {
                 if REVISABLE.contains(&f.name.as_str()) {
-                    std::fs::write(dir.join(&f.name), &f.content)
+                    std::fs::write(inside(&dir, &f.name)?, &f.content)
                         .map_err(|err| ApiErr::internal(err.to_string()))?;
                 }
             }
@@ -944,7 +962,9 @@ pub async fn revise(
     let mut r = new_revision("agent", Some(feedback.clone()), section.clone());
     let work = internal(tempfile::Builder::new().prefix("od-ds-revision-").tempdir())?;
     for f in REVISABLE {
-        let _ = std::fs::copy(e.dir.join(f), work.path().join(f));
+        if let Ok(from) = inside(&e.dir, f) {
+            let _ = std::fs::copy(from, work.path().join(f));
+        }
     }
     let prompt = revision_prompt(&e.summary.title, &feedback, section.as_deref());
     let launched = launch(
@@ -967,7 +987,8 @@ pub async fn revise(
             r.files = REVISABLE
                 .iter()
                 .filter_map(|n| {
-                    std::fs::read_to_string(work.path().join(n))
+                    inside_io(work.path(), n)
+                        .and_then(std::fs::read_to_string)
                         .ok()
                         .map(|content| RevisionFile {
                             name: (*n).to_owned(),

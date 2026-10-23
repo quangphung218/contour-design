@@ -72,6 +72,18 @@ pub fn is_valid_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
+/// The text of package file `name`, unless a symlink takes it outside
+/// `dir`: an agent editing a user package in place can plant one. Same
+/// rule as the store's project files.
+#[must_use]
+pub fn read_package_file(dir: &Path, name: &str) -> Option<String> {
+    let real = std::fs::canonicalize(dir.join(name)).ok()?;
+    if !real.starts_with(std::fs::canonicalize(dir).ok()?) {
+        return None;
+    }
+    std::fs::read_to_string(real).ok()
+}
+
 #[derive(Debug, Default)]
 struct UserMetadata {
     title: Option<String>,
@@ -81,8 +93,7 @@ struct UserMetadata {
 }
 
 fn read_user_metadata(dir: &Path) -> UserMetadata {
-    let Some(Value::Object(m)) = std::fs::read_to_string(dir.join("metadata.json"))
-        .ok()
+    let Some(Value::Object(m)) = read_package_file(dir, "metadata.json")
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
     else {
         return UserMetadata::default();
@@ -105,7 +116,7 @@ fn read_user_metadata(dir: &Path) -> UserMetadata {
 
 /// `manifest.json` when it matches the v1 package schema for `expected_id`.
 fn read_manifest(dir: &Path, expected_id: &str) -> Option<Value> {
-    let raw = std::fs::read_to_string(dir.join("manifest.json")).ok()?;
+    let raw = read_package_file(dir, "manifest.json")?;
     let value: Value = serde_json::from_str(&raw).ok()?;
     let m = value.as_object()?;
     let non_empty = |k: &str| {
@@ -130,11 +141,7 @@ fn read_manifest(dir: &Path, expected_id: &str) -> Option<Value> {
 
 fn load_one(name: &str, dir: &Path, opts: ListOptions<'_>) -> Option<DesignSystemEntry> {
     let manifest = read_manifest(dir, name);
-    let design_path = dir.join("DESIGN.md");
-    if !std::fs::metadata(&design_path).ok()?.is_file() {
-        return None;
-    }
-    let raw = std::fs::read_to_string(&design_path).ok()?;
+    let raw = read_package_file(dir, "DESIGN.md")?;
     let metadata = read_user_metadata(dir);
     let (front, body) = frontmatter::parse(&raw).ok()?;
     let mf = |k: &str| {
@@ -526,5 +533,25 @@ mod tests {
         assert_eq!(s.category, "Fintech");
         assert_eq!(s.summary, "Calm and precise.");
         assert_eq!(s.surface, Surface::Web);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn package_files_never_follow_a_link_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        let secret = tmp.path().join("secret.md");
+        std::fs::write(&secret, "# OUTSIDE\n").unwrap();
+        let root = tmp.path().join("systems");
+        let dir = root.join("acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::os::unix::fs::symlink(&secret, dir.join("DESIGN.md")).unwrap();
+        std::os::unix::fs::symlink(&secret, dir.join("metadata.json")).unwrap();
+        assert_eq!(read_package_file(&dir, "metadata.json"), None);
+        assert!(list_design_systems(&root, ListOptions::BUILT_IN).is_empty());
+        // A link that stays inside is fine.
+        std::fs::remove_file(dir.join("DESIGN.md")).unwrap();
+        std::fs::write(dir.join("real.md"), "# Acme\n").unwrap();
+        std::os::unix::fs::symlink("real.md", dir.join("DESIGN.md")).unwrap();
+        assert_eq!(list_design_systems(&root, ListOptions::BUILT_IN).len(), 1);
     }
 }

@@ -574,6 +574,145 @@ async fn wait<F: Fn(&Value) -> bool>(d: &Daemon, path: &str, done: F) -> Value {
     panic!("{path} did not settle");
 }
 
+/// A user package from pasted CSS, and its folder on disk.
+async fn css_package(d: &Daemon, name: &str) -> (String, PathBuf) {
+    let (s, v) = call(
+        d,
+        "POST",
+        "/api/design-systems/import",
+        Some(json!({ "name": name, "css": ":root { --background: 0 0% 100%; --foreground: 240 10% 4%; --primary: 142 70% 40%; }" })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let id = v["id"].as_str().unwrap().to_owned();
+    let dir = d.data.join("design-systems").join(&id["user:".len()..]);
+    assert!(dir.join("DESIGN.md").is_file(), "{dir:?}");
+    (id, dir)
+}
+
+/// A symlink planted in a package (an agent editing it in place can make
+/// one) never takes a route's read or write outside the package.
+#[tokio::test]
+async fn design_system_routes_stay_inside_the_package() {
+    let d = daemon().await;
+    let outside = d.tmp.path().join("outside");
+    std::fs::create_dir_all(outside.join("revs")).unwrap();
+    let secret = |name: &str| {
+        let p = outside.join(name);
+        std::fs::write(&p, "OUTSIDE").unwrap();
+        p
+    };
+    let unchanged = |p: &Path| assert_eq!(std::fs::read_to_string(p).unwrap(), "OUTSIDE", "{p:?}");
+    let link = |target: &Path, at: PathBuf| {
+        let _ = std::fs::remove_file(&at);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(target, at).unwrap();
+    };
+    let (id, dir) = css_package(&d, "Links").await;
+
+    // Reads: a package file, the kit's tokens, the showcase.
+    let leak = secret("leak.txt");
+    link(&leak, dir.join("assets/leak.txt"));
+    let (s, v) = call(
+        &d,
+        "GET",
+        &format!("/api/design-systems/{id}/file/assets/leak.txt"),
+        None,
+    )
+    .await;
+    assert_ne!(s, 200, "{v}");
+    assert!(!v.to_string().contains("OUTSIDE"));
+    let tokens = dir.join("tokens.css");
+    let kept_tokens = std::fs::read_to_string(&tokens).unwrap();
+    let css = outside.join("leak.css");
+    std::fs::write(&css, ":root { --leak: OUTSIDE; }").unwrap();
+    link(&css, tokens.clone());
+    let (_, v) = call(&d, "GET", &format!("/api/design-systems/{id}/kit"), None).await;
+    assert!(!v.to_string().contains("OUTSIDE"), "{v}");
+    std::fs::remove_file(&tokens).unwrap();
+    std::fs::write(&tokens, kept_tokens).unwrap();
+    link(&leak, dir.join("components.html"));
+    let (_, v) = call(
+        &d,
+        "GET",
+        &format!("/api/design-systems/{id}/showcase"),
+        None,
+    )
+    .await;
+    assert!(!v.to_string().contains("OUTSIDE"));
+    std::fs::remove_file(dir.join("components.html")).unwrap();
+
+    // Writes: an asset upload, the status, a revision folder.
+    let logo = secret("logo.png");
+    link(&logo, dir.join("assets/logo.png"));
+    let _ = upload(
+        &d,
+        &format!("/api/design-systems/{id}/assets"),
+        &[("logo.png", b"PNG")],
+    )
+    .await;
+    unchanged(&logo);
+    let meta = secret("metadata.json");
+    link(&meta, dir.join("metadata.json"));
+    let _ = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/status"),
+        Some(json!({"status": "published"})),
+    )
+    .await;
+    unchanged(&meta);
+    std::fs::remove_file(dir.join("metadata.json")).unwrap();
+    link(&outside.join("revs"), dir.join("revisions"));
+    let _ = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/token-contract/rebuild"),
+        None,
+    )
+    .await;
+    assert_eq!(std::fs::read_dir(outside.join("revs")).unwrap().count(), 0);
+    std::fs::remove_file(dir.join("revisions")).unwrap();
+    // Accepting a revision writes tokens.css: not through a link.
+    let (s, v) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/token-contract/rebuild"),
+        None,
+    )
+    .await;
+    assert_eq!((s, &v["decision"]), (200, &json!("revision")), "{v}");
+    let rid = v["revision"]["id"].as_str().unwrap().to_owned();
+    let css = secret("tokens.css");
+    link(&css, dir.join("tokens.css"));
+    let _ = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/revisions/{rid}"),
+        Some(json!({"status": "accepted"})),
+    )
+    .await;
+    unchanged(&css);
+
+    // DESIGN.md itself, linked after the package loaded: neither read nor
+    // overwritten, and after a reload the package is not listed through it.
+    let design = secret("DESIGN.md");
+    link(&design, dir.join("DESIGN.md"));
+    let (_, v) = call(&d, "GET", &format!("/api/design-systems/{id}/kit"), None).await;
+    assert!(!v.to_string().contains("OUTSIDE"), "{v}");
+    let _ = call(
+        &d,
+        "PUT",
+        &format!("/api/design-systems/{id}/design-md"),
+        Some(json!({"body": "# Over"})),
+    )
+    .await;
+    unchanged(&design);
+    let _ = call(&d, "POST", "/api/design-systems/reload", None).await;
+    let (_, v) = call(&d, "GET", &format!("/api/design-systems/{id}/kit"), None).await;
+    assert!(!v.to_string().contains("OUTSIDE"), "{v}");
+}
+
 #[tokio::test]
 async fn design_system_kit_import_copy_and_revisions() {
     let d = daemon().await;

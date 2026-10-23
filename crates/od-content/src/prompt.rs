@@ -202,8 +202,7 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     // 7. Active design system: USAGE.md → DESIGN.md → tokens.css.
     if let Some(ds) = ds.filter(|d| !d.body.trim().is_empty()) {
         let title = Some(ds.summary.title.as_str());
-        let usage = std::fs::read_to_string(ds.dir.join("USAGE.md"))
-            .ok()
+        let usage = crate::design_systems::read_package_file(&ds.dir, "USAGE.md")
             .filter(|u| !u.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_DESIGN_SYSTEM_USAGE.to_owned());
         p.push(format!(
@@ -216,8 +215,7 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
             titled("## Active design system", title),
             ds.body.trim()
         ));
-        if let Some(tokens) = std::fs::read_to_string(ds.dir.join("tokens.css"))
-            .ok()
+        if let Some(tokens) = crate::design_systems::read_package_file(&ds.dir, "tokens.css")
             .filter(|t| !t.trim().is_empty())
         {
             p.push(format!(
@@ -697,6 +695,30 @@ mod tests {
                 < pos(&text, "## Structured clarification on any turn")
         );
         assert_eq!(text.matches("## Project metadata").count(), 1, "once");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn design_system_files_never_follow_a_link_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        let secret = tmp.path().join("secret.css");
+        std::fs::write(&secret, ":root { --outside: 1; }").unwrap();
+        let dir = tmp.path().join("systems/acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("DESIGN.md"), "# Acme\n\nCalm.").unwrap();
+        for name in ["tokens.css", "USAGE.md"] {
+            std::os::unix::fs::symlink(&secret, dir.join(name)).unwrap();
+        }
+        let list = crate::design_systems::list_design_systems(
+            &tmp.path().join("systems"),
+            crate::design_systems::ListOptions::BUILT_IN,
+        );
+        let text = compose_instructions(&PromptInput {
+            design_system: list.first(),
+            ..PromptInput::default()
+        });
+        assert!(text.contains("## Active design system"));
+        assert!(!text.contains("--outside"));
     }
 
     fn pos(haystack: &str, needle: &str) -> usize {
