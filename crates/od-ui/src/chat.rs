@@ -330,6 +330,39 @@ impl AssistantTurn {
         }
         out
     }
+
+    /// Files this turn wrote or edited, project-relative, in first-touch
+    /// order. A file written and then edited counts as written.
+    #[must_use]
+    pub fn file_ops(&self) -> Vec<(String, FileOp)> {
+        let mut out: Vec<(String, FileOp)> = Vec::new();
+        for b in &self.blocks {
+            let Block::Tool(c) = b else { continue };
+            let op = match c.name.as_str() {
+                "Write" | "write_file" => FileOp::Write,
+                "Edit" | "MultiEdit" | "edit_file" => FileOp::Edit,
+                _ => continue,
+            };
+            let Some(rel) = c
+                .path
+                .as_deref()
+                .and_then(|p| project_relative(p, self.cwd.as_deref()))
+            else {
+                continue;
+            };
+            if !out.iter().any(|(p, _)| *p == rel) {
+                out.push((rel, op));
+            }
+        }
+        out
+    }
+}
+
+/// How a turn touched a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileOp {
+    Write,
+    Edit,
 }
 
 fn is_write_tool(name: &str) -> bool {

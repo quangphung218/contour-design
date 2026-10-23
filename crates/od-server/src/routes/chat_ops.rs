@@ -110,8 +110,9 @@ async fn check_dirs(
 }
 
 /// The canonical folder when `dir` may be linked: an absolute existing
-/// folder, not an app bundle, outside the data directory, without a hidden
-/// segment (`~/.ssh`), and not the home folder or one of its parents. The
+/// folder, not an app bundle, outside the data directory (except a
+/// project's own folder, `<data>/projects/<id>`), without a hidden segment
+/// (`~/.ssh`), and not the home folder or one of its parents. Otherwise the
 /// same rules as folder import.
 ///
 /// # Errors
@@ -131,6 +132,10 @@ pub fn check_dir(store: &Store, dir: &FsPath) -> Result<PathBuf, &'static str> {
     }
     let root = store.data_dir().root();
     let data_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    // Another project's own folder ("Reference another project").
+    if dir.parent() == Some(data_root.join("projects").as_path()) {
+        return Ok(dir);
+    }
     if dir.starts_with(&data_root) || data_root.starts_with(&dir) {
         return Err("the folder overlaps the data directory");
     }

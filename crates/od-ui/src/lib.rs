@@ -9,6 +9,8 @@ pub mod guide;
 pub mod i18n;
 pub mod intent;
 pub mod markdown;
+pub mod mention;
+pub mod models;
 pub mod preview_bridge;
 pub mod question_form;
 pub mod settings;

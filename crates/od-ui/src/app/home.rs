@@ -74,6 +74,8 @@ pub fn Home() -> impl IntoView {
             chip: chip.get_untracked(),
             design_system_id: design_system.get_untracked(),
             template_id: template.get_untracked(),
+            media: crate::intent::MediaOptions::default(),
+            linked_dirs: Vec::new(),
         };
         let req = intent.create_request(&skills.get_untracked().unwrap_or_default());
         busy.set(true);
@@ -132,10 +134,7 @@ pub fn Home() -> impl IntoView {
                             {Chip::ALL
                                 .into_iter()
                                 .map(|c| {
-                                    let (glyph, label) = match c {
-                                        Chip::Prototype => (Glyph::Prototype, t(T::ChipPrototype)),
-                                        Chip::Deck => (Glyph::Deck, t(T::ChipDeck)),
-                                    };
+                                    let (glyph, label) = (Glyph::Prototype, t(c.label_key()));
                                     view! {
                                         <button
                                             class="chip"

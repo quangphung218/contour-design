@@ -138,6 +138,7 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
                 hidden.display().to_string(),
                 d.data.display().to_string(),
                 outside.path().join("missing").display().to_string(),
+                d.data.join("projects").display().to_string(),
             ] }),
         )
         .await
@@ -150,6 +151,27 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
         assert!(refused["path"].is_null(), "{refused}");
         assert!(refused["error"].is_string(), "{refused}");
     }
+    // Another project's own folder may be referenced.
+    let (other, _) = d.project().await;
+    let other_dir = d.data.join("projects").join(&other);
+    let res: Value = d
+        .post(
+            "/api/linked-dirs/check",
+            &json!({ "paths": [other_dir.display().to_string()] }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        res["dirs"][0]["path"],
+        other_dir
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+            .as_str()
+    );
     let too_many: Vec<String> = (0..33).map(|i| format!("/tmp/{i}")).collect();
     let res = d
         .post("/api/linked-dirs/check", &json!({ "paths": too_many }))
