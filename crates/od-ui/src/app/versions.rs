@@ -1,6 +1,7 @@
 //! File version history (spec 1.2): list the versions of the previewed HTML
 //! file by source (AI, manual, restore), view one, restore it.
 
+use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, ViewedVersion, is_html_path};
 use super::{ago, api};
 use crate::i18n::{T, t, tf};
@@ -90,21 +91,22 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
     view! {
         <aside class="versions" data-testid="versions">
             <div class="pane-head">
-                <span class="pane-title">
+                <span class="pane-ico">{icon(Glyph::History)}</span>
+                <span class="pane-title" title=move || tf(T::VersionsTitle, &[&ctx.active().unwrap_or_default()])>
                     {move || tf(T::VersionsTitle, &[&ctx.active().unwrap_or_default()])}
                 </span>
-                <button class="icon-btn" title=t(T::Close) aria-label=t(T::Close) on:click=move |_| ctx.history_open.set(false)>
-                    "×"
+                <button class="icon-btn" aria-label=t(T::Close) on:click=move |_| ctx.history_open.set(false)>
+                    {icon(Glyph::Close)}
                 </button>
             </div>
             {move || ctx.viewing.get().map(|v| {
                 let id = v.id.clone();
                 view! {
                     <div class="viewing">
-                        <strong>{tf(T::ViewingVersion, &[&v.version.to_string()])}</strong>
+                        <strong>{icon(Glyph::Eye)}{tf(T::ViewingVersion, &[&v.version.to_string()])}</strong>
                         <div class="row">
                             <button class="btn small" on:click=move |_| ctx.viewing.set(None)>{t(T::BackToLive)}</button>
-                            <button class="btn small primary" on:click=move |_| restore(id.clone())>{t(T::Restore)}</button>
+                            <button class="btn small primary" on:click=move |_| restore(id.clone())>{icon(Glyph::Restore)}{t(T::Restore)}</button>
                         </div>
                     </div>
                 }
@@ -130,14 +132,16 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                             view! {
                                 <li class="version" data-testid="version" data-version=v.version.to_string()>
                                     <div class="version-head">
-                                        <strong>{tf(T::VersionLabel, &[&v.version.to_string()])}</strong>
-                                        <span class="tile-kind">{source_label(v.source)}</span>
-                                        {current.then(|| view! { <span class="badge">{t(T::Current)}</span> })}
-                                        <span class="tile-meta">{ago(v.created_at)}</span>
+                                        <strong class="version-n">{tf(T::VersionLabel, &[&v.version.to_string()])}</strong>
+                                        <span class="badge outline">{source_label(v.source)}</span>
+                                        {current.then(|| view! { <span class="badge accent">{t(T::Current)}</span> })}
+                                        <span class="spacer"></span>
+                                        <span class="subtle small">{ago(v.created_at)}</span>
                                     </div>
                                     {v.prompt.clone().map(|p| view! { <p class="version-prompt">{p}</p> })}
                                     <div class="row">
                                         <button class="btn small ghost" data-testid="version-view" on:click=move |_| view_version(shown.clone())>
+                                            {icon(Glyph::Eye)}
                                             {t(T::View)}
                                         </button>
                                         <button
@@ -146,6 +150,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                                             disabled=current
                                             on:click=move |_| restore(id.clone())
                                         >
+                                            {icon(Glyph::Restore)}
                                             {t(T::Restore)}
                                         </button>
                                     </div>

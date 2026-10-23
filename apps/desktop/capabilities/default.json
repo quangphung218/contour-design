@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Local app pages only. The UI comes from the in-process daemon on a random loopback port; its IPC capability is added at startup for that exact origin (main.rs `ui_capability`).",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "dialog:default"]
 }

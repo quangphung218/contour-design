@@ -6,6 +6,7 @@
 
 use super::api;
 use super::bridge;
+use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, is_html_path};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{
@@ -541,15 +542,16 @@ impl StudioCtx {
 #[component]
 pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
     let tools = ctx.tools;
-    let tool_button = move |tool: Tool, label: T, testid: &'static str| {
+    let tool_button = move |tool: Tool, label: T, glyph: Glyph, testid: &'static str| {
         view! {
             <button
-                class="btn small"
+                class="btn small ghost"
                 class:active=move || tools.tool.get() == Some(tool)
                 data-testid=testid
                 aria-pressed=move || (tools.tool.get() == Some(tool)).to_string()
                 on:click=move |_| ctx.toggle_tool(tool)
             >
+                {icon(glyph)}
                 {t(label)}
             </button>
         }
@@ -570,13 +572,14 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
             };
             view! {
                 <button
-                    class="btn small lint-badge"
+                    class="btn small ghost lint-badge"
                     class:p0=p0
                     class:active=move || tools.tool.get() == Some(Tool::Lint)
                     data-testid="lint-badge"
                     data-count=n.to_string()
                     on:click=move |_| ctx.toggle_tool(Tool::Lint)
                 >
+                    {icon(if n == 0 { Glyph::LintOk } else { Glyph::Warning })}
                     {label}
                 </button>
             }
@@ -584,14 +587,16 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
     };
     view! {
         <div class="tool-bar" data-testid="tool-bar">
-            {tool_button(Tool::Inspect, T::ToolInspect, "inspect-mode")}
-            {tool_button(Tool::EditText, T::ToolEditText, "edit-mode")}
-            {tool_button(Tool::Draw, T::ToolDraw, "draw-mode")}
+            {tool_button(Tool::Inspect, T::ToolInspect, Glyph::Inspect, "inspect-mode")}
+            {tool_button(Tool::EditText, T::ToolEditText, Glyph::EditText, "edit-mode")}
+            {tool_button(Tool::Draw, T::ToolDraw, Glyph::Draw, "draw-mode")}
             <Show when=move || tools.tweaks.with(|t| !t.is_empty())>
-                {tool_button(Tool::Tweaks, T::ToolTweaks, "tweaks-toggle")}
+                {tool_button(Tool::Tweaks, T::ToolTweaks, Glyph::Tweaks, "tweaks-toggle")}
             </Show>
-            <label class="palette-pick small muted">
-                {t(T::PaletteLabel)}
+            <span class="head-divider" aria-hidden="true"></span>
+            <label class="palette-pick small">
+                {icon(Glyph::Palette)}
+                <span class="muted">{t(T::PaletteLabel)}</span>
                 <select
                     class="input small"
                     data-testid="palette"
@@ -618,12 +623,13 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
                 Some(Tool::Draw) => Some(t(T::DrawHint)),
                 _ => None,
             };
-            hint.map(|h| view! { <p class="mode-hint">{h}</p> })
+            hint.map(|h| view! { <p class="mode-hint">{icon(Glyph::Info)}{h}</p> })
         }}
         {move || tools.status.get().map(|s| view! {
             <p class="tool-status" data-testid="tool-status">
-                {s}
-                <button class="chip-x" title=t(T::Close) aria-label=t(T::Close) on:click=move |_| tools.status.set(None)>"×"</button>
+                {icon(Glyph::Info)}
+                <span class="grow">{s}</span>
+                <button class="chip-x" title=t(T::Close) aria-label=t(T::Close) on:click=move |_| tools.status.set(None)>{icon(Glyph::Close)}</button>
             </p>
         })}
     }
@@ -652,8 +658,8 @@ fn panel_head(ctx: StudioCtx, title: String) -> impl IntoView {
     view! {
         <div class="pane-head">
             <span class="pane-title">{title}</span>
-            <button class="icon-btn" title=t(T::Close) aria-label=t(T::Close) on:click=move |_| ctx.set_tool(None)>
-                "×"
+            <button class="icon-btn" aria-label=t(T::Close) on:click=move |_| ctx.set_tool(None)>
+                {icon(Glyph::Close)}
             </button>
         </div>
     }
@@ -725,7 +731,7 @@ fn InspectPanel(ctx: StudioCtx) -> impl IntoView {
                                                 ctx.reset_override(&sel_reset, prop);
                                             }
                                         >
-                                            "↺"
+                                            {icon(Glyph::Reset)}
                                         </button>
                                     })}
                                 </span>
@@ -852,9 +858,13 @@ fn LintPanel(ctx: StudioCtx) -> impl IntoView {
     let body = move || match tools.lint.get() {
         None => view! { <p class="empty small">{t(T::Loading)}</p> }.into_any(),
         Some(Err(e)) => view! { <p class="error-text small">{e}</p> }.into_any(),
-        Some(Ok(r)) if r.findings.is_empty() => {
-            view! { <p class="empty small">{t(T::LintNone)}</p> }.into_any()
+        Some(Ok(r)) if r.findings.is_empty() => view! {
+            <div class="empty-state compact">
+                <span class="empty-icon ok">{icon(Glyph::LintOk)}</span>
+                <p>{t(T::LintNone)}</p>
+            </div>
         }
+        .into_any(),
         Some(Ok(r)) => {
             let message = r.agent_message.clone();
             view! {
@@ -1132,8 +1142,8 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
             ></canvas>
             <div class="draw-tools">
                 <div class="segmented small">
-                    <button class="seg" class:active=move || pen.get() == Pen::Free data-testid="draw-pen" on:click=move |_| pen.set(Pen::Free)>{t(T::DrawPen)}</button>
-                    <button class="seg" class:active=move || pen.get() == Pen::Box data-testid="draw-box" on:click=move |_| pen.set(Pen::Box)>{t(T::DrawBox)}</button>
+                    <button class="seg" class:active=move || pen.get() == Pen::Free data-testid="draw-pen" on:click=move |_| pen.set(Pen::Free)>{icon(Glyph::Draw)}{t(T::DrawPen)}</button>
+                    <button class="seg" class:active=move || pen.get() == Pen::Box data-testid="draw-box" on:click=move |_| pen.set(Pen::Box)>{icon(Glyph::Rectangle)}{t(T::DrawBox)}</button>
                 </div>
                 {DRAW_COLORS
                     .into_iter()
@@ -1147,13 +1157,15 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
                         ></button>
                     })
                     .collect_view()}
-                <button class="btn small" data-testid="draw-clear" on:click=move |_| strokes.set(Vec::new())>{t(T::DrawClear)}</button>
+                <span class="head-divider" aria-hidden="true"></span>
+                <button class="btn small ghost" data-testid="draw-clear" on:click=move |_| strokes.set(Vec::new())>{icon(Glyph::Delete)}{t(T::DrawClear)}</button>
                 <button
                     class="btn small primary"
                     data-testid="draw-attach"
                     disabled=move || busy.get() || strokes.with(Vec::is_empty)
                     on:click=move |_| attach()
                 >
+                    {icon(Glyph::Attachment)}
                     {t(T::DrawAttach)}
                 </button>
             </div>
@@ -1177,6 +1189,7 @@ pub fn AttachmentChips(ctx: StudioCtx) -> impl IntoView {
                             let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
                             view! {
                                 <span class="chip comment-chip" data-testid="attachment-chip" title=path.clone()>
+                                    {icon(Glyph::Attachment)}
                                     {name}
                                     <button
                                         class="chip-x"
@@ -1184,7 +1197,7 @@ pub fn AttachmentChips(ctx: StudioCtx) -> impl IntoView {
                                         aria-label=t(T::Detach)
                                         on:click=move |_| tools.attachments.update(|a| a.retain(|p| p != &remove))
                                     >
-                                        "×"
+                                        {icon(Glyph::Close)}
                                     </button>
                                 </span>
                             }
@@ -1208,8 +1221,9 @@ pub fn DeliverableWarning(ctx: StudioCtx) -> impl IntoView {
             .map(|msg| {
                 view! {
                     <p class="warn-text" data-testid="deliverable-warning">
-                        {msg}
-                        <button class="chip-x" title=t(T::Close) aria-label=t(T::Close) on:click=move |_| tools.deliverable.set(None)>"×"</button>
+                        {icon(Glyph::Warning)}
+                        <span class="grow">{msg}</span>
+                        <button class="chip-x" title=t(T::Close) aria-label=t(T::Close) on:click=move |_| tools.deliverable.set(None)>{icon(Glyph::Close)}</button>
                     </p>
                 }
             })

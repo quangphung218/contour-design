@@ -167,7 +167,7 @@ fn term_options() -> JsValue {
         "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
         "fontSize": 13,
         "scrollback": 5000,
-        "theme": {"background": "#111418", "foreground": "#e6e6e6"},
+        "theme": {"background": "#171614", "foreground": "#e8e6e1", "cursor": "#4fae8c", "selectionBackground": "#2f4a40"},
     });
     js_sys::JSON::parse(&opts.to_string()).unwrap_or(JsValue::UNDEFINED)
 }

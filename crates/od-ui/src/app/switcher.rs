@@ -1,6 +1,7 @@
 //! Quick switcher (Cmd/Ctrl+P, spec 1.2): fuzzy file search, recently
 //! opened files first. Enter opens the highlighted file in a tab.
 
+use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
 use crate::fuzzy;
 use crate::i18n::{T, t};
@@ -71,8 +72,10 @@ pub fn QuickSwitcher(ctx: StudioCtx) -> impl IntoView {
                 data-testid="quick-switcher"
                 on:click=|ev| ev.stop_propagation()
             >
+                <div class="switcher-search">
+                {icon(Glyph::Search)}
                 <input
-                    class="input"
+                    class="switcher-input"
                     node_ref=input
                     data-testid="switcher-input"
                     placeholder=t(T::SwitcherPlaceholder)
@@ -83,6 +86,8 @@ pub fn QuickSwitcher(ctx: StudioCtx) -> impl IntoView {
                     }
                     on:keydown=on_key
                 />
+                <kbd>"Esc"</kbd>
+                </div>
                 <ul class="switcher-list" role="listbox">
                     {move || {
                         let list = results.get();
@@ -105,8 +110,9 @@ pub fn QuickSwitcher(ctx: StudioCtx) -> impl IntoView {
                                         on:mousemove=move |_| selected.set(i)
                                         on:click=move |_| pick(target.clone())
                                     >
-                                        <span class="mono">{path}</span>
-                                        {is_recent.then(|| view! { <span class="badge">{t(T::RecentBadge)}</span> })}
+                                        {icon(super::studio::file_glyph(&path))}
+                                        <span class="switcher-path mono">{path}</span>
+                                        {is_recent.then(|| view! { <span class="badge outline">{t(T::RecentBadge)}</span> })}
                                     </li>
                                 }
                             })

@@ -111,7 +111,7 @@ messages! {
     Create => "Create", "Tạo";
     Creating => "Creating…", "Đang tạo…";
     DesignSystem => "Design system", "Design system";
-    NoneOption => "None", "Không dùng";
+    NoneOption => "No design system", "Không dùng design system";
     NewDesignSystem => "New design system…", "Tạo design system…";
     DesignSystemNamePlaceholder => "Name, e.g. Tea House", "Tên, ví dụ Tea House";
     DesignSystemBriefPlaceholder => "Describe the brand: mood, colours, type, audience…", "Mô tả thương hiệu: không khí, màu, kiểu chữ, đối tượng…";
@@ -121,7 +121,7 @@ messages! {
     DesignSystemCreated => "Created design system {0}.", "Đã tạo design system {0}.";
     DesignSystemFailed => "Could not create the design system: {0}", "Không tạo được design system: {0}";
     Template => "Template", "Template";
-    DefaultTemplate => "Default for this type", "Mặc định theo loại";
+    DefaultTemplate => "Default template", "Template mặc định";
     RecentProjects => "Recent projects", "Project gần đây";
     AllProjects => "All projects", "Tất cả project";
     NoProjectsFirstBrief => "No projects yet. Your first brief creates one.", "Chưa có project nào. Brief đầu tiên sẽ tạo project.";
@@ -242,7 +242,7 @@ messages! {
     TweaksEmpty => "This artifact declares no tweaks.", "Artifact này không khai báo tweak nào.";
     TweaksReset => "Reset tweaks", "Đặt lại tweak";
     LintBadge => "Lint · {0}", "Lint · {0}";
-    LintClean => "Lint ✓", "Lint ✓";
+    LintClean => "Lint", "Lint";
     LintTitle => "Lint of {0}", "Lint của {0}";
     LintNone => "No anti-slop issues found.", "Không thấy lỗi AI slop nào.";
     LintFix => "Fix: {0}", "Cách sửa: {0}";
@@ -418,6 +418,38 @@ messages! {
     McpFinishInBrowser => "Finish signing in in the browser, then test again.", "Đăng nhập xong trong trình duyệt rồi bấm Kiểm tra lại.";
     McpNoServers => "No MCP servers yet.", "Chưa có MCP server nào.";
     Remove => "Remove", "Gỡ";
+
+    // Redesign: shell, home gallery, empty states, section hints
+    MainNavigation => "Main navigation", "Điều hướng chính";
+    CollapseSidebar => "Collapse sidebar", "Thu gọn thanh bên";
+    ExpandSidebar => "Expand sidebar", "Mở rộng thanh bên";
+    HomeSubtitle => "Describe it in a sentence. The agent builds a live prototype or deck you keep refining.", "Mô tả bằng một câu. Agent dựng prototype hoặc deck chạy được để chỉnh tiếp.";
+    CreateHint => "Enter to create, Shift+Enter for a new line", "Enter để tạo, Shift+Enter để xuống dòng";
+    TemplatesTitle => "Start from a template", "Bắt đầu từ template";
+    TemplatesShowAll => "Show all {0}", "Xem cả {0}";
+    TemplatesShowFewer => "Show fewer", "Thu gọn";
+    TemplateSelected => "Selected", "Đang chọn";
+    NoTemplates => "No templates for this output type yet.", "Chưa có template cho loại đầu ra này.";
+    ProjectsEmptyTitle => "No projects yet", "Chưa có project nào";
+    ProjectsEmptyBody => "Write a brief on Home, or open a folder you already have.", "Viết brief ở Trang chủ, hoặc mở một thư mục có sẵn.";
+    MoreActions => "More actions", "Thêm thao tác";
+    OtherAgents => "Not installed", "Chưa cài";
+    AgentSectionHint => "The coding agent that runs briefs on this machine.", "Coding agent chạy brief trên máy này.";
+    PermissionsHint => "What the agent may do without asking.", "Những việc agent được làm mà không cần hỏi.";
+    AppearanceHint => "Follows the system unless you pin a theme.", "Theo hệ thống, trừ khi chọn cố định một chế độ.";
+    LanguageHint => "Applies to the whole app after saving.", "Áp dụng cho cả app sau khi lưu.";
+    NewRoutine => "New routine", "Routine mới";
+    RoutinesTitle => "Routines", "Routine";
+    NoRoutinesBody => "Add one above to run a prompt on a schedule.", "Thêm một routine ở trên để chạy prompt theo lịch.";
+    PreviewEmptyTitle => "Nothing to preview yet", "Chưa có gì để preview";
+    DescribeChangeTitle => "Start the conversation", "Bắt đầu trò chuyện";
+    Files => "Files", "File";
+    TurnOk => "done", "xong";
+    TurnFailed => "failed", "lỗi";
+    DsDialogTitle => "New design system", "Design system mới";
+    DsDialogBody => "The agent writes DESIGN.md and tokens.css from this brief. The new system is selected when it is ready.", "Agent viết DESIGN.md và tokens.css theo mô tả này. Xong thì design system mới được chọn sẵn.";
+    DsName => "Name", "Tên";
+    DsBrief => "Brand brief", "Mô tả thương hiệu";
 }
 
 /// The current language's text for `key`.

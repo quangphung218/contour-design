@@ -2,6 +2,7 @@
 //! forms, and the composer with its queue, plan pill and comment chips.
 
 use super::Shell;
+use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
 use super::preview_tools::{AttachmentChips, DeliverableWarning};
 use super::studio::{StudioCtx, conversation_title};
@@ -96,7 +97,11 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     }
                 />
                 <Show when=move || ctx.items.with(Vec::is_empty)>
-                    <p class="empty">{t(T::DescribeChange)}</p>
+                    <div class="empty-state compact chat-empty">
+                        <span class="empty-icon">{icon(Glyph::Chat)}</span>
+                        <strong>{t(T::DescribeChangeTitle)}</strong>
+                        <p>{t(T::DescribeChange)}</p>
+                    </div>
                 </Show>
             </div>
             <PlanPill ctx=ctx/>
@@ -108,6 +113,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                 <textarea
                     class="composer-input"
                     data-testid="composer"
+                    aria-label=t(T::Chat)
                     rows="3"
                     placeholder=t(T::ComposerPlaceholder)
                     prop:value=move || draft.get()
@@ -120,24 +126,29 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     }
                 ></textarea>
                 <div class="composer-actions">
-                    {move || {
-                        let live = ctx.live_run.get().is_some();
-                        view! {
-                            <button
-                                class=if live { "btn" } else { "btn primary" }
-                                data-testid="send"
-                                disabled=move || draft.with(|d| d.trim().is_empty())
-                                on:click=move |_| send()
-                            >
-                                {if live { t(T::Queue) } else { t(T::Send) }}
-                            </button>
-                        }
-                    }}
                     <Show when=move || ctx.live_run.get().is_some()>
-                        <button class="btn danger" data-testid="stop" on:click=move |_| ctx.cancel()>
+                        <button class="btn small ghost danger" data-testid="stop" on:click=move |_| ctx.cancel()>
+                            {icon(Glyph::Stop)}
                             {t(T::Stop)}
                         </button>
                     </Show>
+                    <span class="spacer"></span>
+                    {move || {
+                        let live = ctx.live_run.get().is_some();
+                        let label = if live { t(T::Queue) } else { t(T::Send) };
+                        view! {
+                            <button
+                                class=if live { "btn small send-btn queue" } else { "btn small primary send-btn" }
+                                data-testid="send"
+                                aria-label=label
+                                disabled=move || draft.with(|d| d.trim().is_empty())
+                                on:click=move |_| send()
+                            >
+                                {icon(if live { Glyph::Queue } else { Glyph::Send })}
+                                {label}
+                            </button>
+                        }
+                    }}
                 </div>
             </div>
         </section>
@@ -148,6 +159,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
 fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
     view! {
         <div class="pane-head conversation-bar">
+            <span class="conversation-ico">{icon(Glyph::Chat)}</span>
             <select
                 class="conversation-select"
                 data-testid="conversation"
@@ -175,14 +187,16 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
             </select>
             <button
                 class="icon-btn"
-                title=t(T::NewConversation)
                 aria-label=t(T::NewConversation)
+                data-tip=t(T::NewConversation)
+                data-tip-pos="left"
                 data-testid="new-conversation"
                 disabled=move || ctx.live_run.get().is_some()
                 on:click=move |_| ctx.new_conversation(None)
             >
-                "+"
+                {icon(Glyph::Add)}
             </button>
+            <super::agent_w3::TranscriptMenu ctx=ctx/>
         </div>
     }
 }
@@ -225,7 +239,7 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
         let can_steer = ctx.can_steer(shell);
         Some(view! {
             <div class="queue" data-testid="queue" aria-label=t(T::Queued)>
-                <span class="queue-title muted">{format!("{} · {}", t(T::Queued), t(T::QueuedHint))}</span>
+                <span class="queue-title">{icon(Glyph::Queue)}<strong>{t(T::Queued)}</strong><span class="subtle">{t(T::QueuedHint)}</span></span>
                 {queue
                     .into_iter()
                     .enumerate()
@@ -269,18 +283,18 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
                                     view! { <span class="queued-text">{q.text.clone()}</span> }.into_any()
                                 }}
                                 <div class="queued-actions">
-                                    <button class="icon-btn" title=t(T::MoveUp) aria-label=t(T::MoveUp) disabled=i == 0
-                                        on:click=move |_| ctx.queue.update(|q| move_item(q, i, i.saturating_sub(1)))>"↑"</button>
-                                    <button class="icon-btn" title=t(T::MoveDown) aria-label=t(T::MoveDown) disabled=i + 1 == n
-                                        on:click=move |_| ctx.queue.update(|q| move_item(q, i, i + 1))>"↓"</button>
-                                    <button class="icon-btn" title=t(T::Edit) aria-label=t(T::Edit)
-                                        on:click=move |_| editing.set(Some(id_edit.clone()))>"✎"</button>
+                                    <button class="icon-btn small" data-tip=t(T::MoveUp) aria-label=t(T::MoveUp) disabled=i == 0
+                                        on:click=move |_| ctx.queue.update(|q| move_item(q, i, i.saturating_sub(1)))>{icon(Glyph::ChevronUp)}</button>
+                                    <button class="icon-btn small" data-tip=t(T::MoveDown) aria-label=t(T::MoveDown) disabled=i + 1 == n
+                                        on:click=move |_| ctx.queue.update(|q| move_item(q, i, i + 1))>{icon(Glyph::ChevronDown)}</button>
+                                    <button class="icon-btn small" data-tip=t(T::Edit) aria-label=t(T::Edit)
+                                        on:click=move |_| editing.set(Some(id_edit.clone()))>{icon(Glyph::Rename)}</button>
                                     {can_steer.then(|| view! {
                                         <button class="btn small" title=t(T::SteerHint) data-testid="steer"
-                                            on:click=move |_| ctx.steer(id_steer.clone())>{t(T::Steer)}</button>
+                                            on:click=move |_| ctx.steer(id_steer.clone())>{icon(Glyph::ArrowRight)}{t(T::Steer)}</button>
                                     })}
-                                    <button class="icon-btn" title=t(T::Delete) aria-label=t(T::Delete)
-                                        on:click=move |_| ctx.queue.update(|q| q.retain(|x| x.id != id_del))>"×"</button>
+                                    <button class="icon-btn small danger" data-tip=t(T::Delete) data-tip-pos="left" aria-label=t(T::Delete)
+                                        on:click=move |_| ctx.queue.update(|q| q.retain(|x| x.id != id_del))>{icon(Glyph::Close)}</button>
                                 </div>
                             </div>
                         }
@@ -312,6 +326,7 @@ fn CommentChips(ctx: StudioCtx) -> impl IntoView {
                         let id = c.id.clone();
                         view! {
                             <span class="chip comment-chip" data-testid="comment-chip" title=c.file_path.clone()>
+                                {icon(Glyph::Comment)}
                                 <strong>{comment_label(&c)}</strong>
                                 {format!(": {}", c.note)}
                                 <button
@@ -320,7 +335,7 @@ fn CommentChips(ctx: StudioCtx) -> impl IntoView {
                                     aria-label=t(T::Detach)
                                     on:click=move |_| ctx.set_comment_status(&id, CommentStatus::Open)
                                 >
-                                    "×"
+                                    {icon(Glyph::Close)}
                                 </button>
                             </span>
                         }
@@ -337,7 +352,7 @@ fn UserBubble(text: String) -> impl IntoView {
         let body: String = text.lines().skip(1).collect::<Vec<_>>().join("\n");
         return view! {
             <div class="msg user answers">
-                <span class="answers-label">{t(T::Answers)}</span>
+                <span class="answers-label">{icon(Glyph::Check)}{t(T::Answers)}</span>
                 <pre>{body}</pre>
             </div>
         }
@@ -372,9 +387,9 @@ fn AssistantView(
                 turn.with(|t| match t.state {
                     TurnState::Pending | TurnState::Running => {
                         let label = t.status.clone().unwrap_or_else(|| crate::i18n::t(T::Working).to_owned());
-                        Some(view! { <div class="run-status"><span class="spinner"></span>{label}</div> }.into_any())
+                        Some(view! { <div class="run-status" role="status"><span class="spinner"></span>{label}</div> }.into_any())
                     }
-                    TurnState::Canceled => Some(view! { <div class="run-status muted">{crate::i18n::t(T::Stopped)}</div> }.into_any()),
+                    TurnState::Canceled => Some(view! { <div class="run-status muted">{icon(Glyph::Stop)}{crate::i18n::t(T::Stopped)}</div> }.into_any()),
                     TurnState::Succeeded | TurnState::Failed => None,
                 })
             }}
@@ -385,6 +400,7 @@ fn AssistantView(
                         data-testid="fork"
                         on:click=move |_| ctx.new_conversation(Some(item_id.get_value()))
                     >
+                        {icon(Glyph::Fork)}
                         {t(T::Fork)}
                     </button>
                 </div>
@@ -397,17 +413,17 @@ fn AssistantView(
 fn PlanList(todos: Vec<crate::chat::Todo>) -> impl IntoView {
     view! {
         <details class="plan" open=true>
-            <summary>{t(T::Plan)}</summary>
+            <summary>{icon(Glyph::Plan)}{t(T::Plan)}{icon(Glyph::ChevronDown)}</summary>
             <ol>
                 {todos
                     .into_iter()
                     .map(|td| {
                         let (mark, class) = match td.status {
-                            TodoStatus::Completed => ("✓", "done"),
-                            TodoStatus::InProgress => ("●", "doing"),
-                            TodoStatus::Pending => ("○", "todo"),
+                            TodoStatus::Completed => (icon(Glyph::Check).into_any(), "done"),
+                            TodoStatus::InProgress => (view! { <span class="plan-dot"></span> }.into_any(), "doing"),
+                            TodoStatus::Pending => (view! { <span class="plan-ring"></span> }.into_any(), "todo"),
                         };
-                        view! { <li class=class><span class="plan-mark">{mark}</span>{td.content}</li> }
+                        view! { <li class=class><span class="plan-mark">{mark}</span><span>{td.content}</span></li> }
                     })
                     .collect_view()}
             </ol>
@@ -442,27 +458,27 @@ pub(super) fn render_block(
             .into_any(),
         Block::Thinking(text) => view! {
             <details class="thinking">
-                <summary>{t(T::Thinking)}</summary>
+                <summary>{icon(Glyph::Thinking)}{t(T::Thinking)}{icon(Glyph::ChevronDown)}</summary>
                 <pre>{text}</pre>
             </details>
         }
         .into_any(),
         Block::Tool(call) => view! { <ToolRow call=call/> }.into_any(),
-        Block::Error(message) => view! { <div class="msg-error" role="alert">{message}</div> }.into_any(),
-        Block::Steered(text) => view! { <div class="steered">{tf(T::Steered, &[&text])}</div> }.into_any(),
+        Block::Error(message) => view! { <div class="msg-error" role="alert">{icon(Glyph::Warning)}<span>{message}</span></div> }.into_any(),
+        Block::Steered(text) => view! { <div class="steered">{icon(Glyph::ArrowRight)}{tf(T::Steered, &[&text])}</div> }.into_any(),
     }
 }
 
 #[component]
 fn ToolRow(call: ToolCall) -> impl IntoView {
-    let (icon, class) = match call.result {
-        None => ("…", "tool running"),
-        Some(false) => ("✓", "tool ok"),
-        Some(true) => ("✕", "tool failed"),
+    let (glyph, class) = match call.result {
+        None => (Glyph::Loader, "tool running"),
+        Some(false) => (Glyph::Check, "tool ok"),
+        Some(true) => (Glyph::Failed, "tool failed"),
     };
     view! {
         <div class=class>
-            <span class="tool-icon">{icon}</span>
+            <span class="tool-icon">{icon(glyph)}</span>
             <span class="tool-name">{call.name}</span>
             <span class="tool-summary mono">{call.summary}</span>
         </div>
@@ -519,7 +535,11 @@ fn QuestionFormView(form: QuestionForm, enabled: Signal<bool>) -> impl IntoView 
                     disabled=move || !active()
                     on:click=submit
                 >
-                    {move || if submitted.get() { t(T::Sent) } else { t(T::SendAnswers) }}
+                    {move || if submitted.get() {
+                        view! { {icon(Glyph::Check)}{t(T::Sent)} }.into_any()
+                    } else {
+                        view! { {t(T::SendAnswers)}{icon(Glyph::Send)} }.into_any()
+                    }}
                 </button>
             </div>
         </form>

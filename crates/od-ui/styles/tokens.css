@@ -1,0 +1,277 @@
+/* Open Design design tokens. Components read only these variables; see
+   docs/design-system.md for the scale and the rules. Light is the default,
+   dark follows the system unless Settings pins a theme (data-theme on
+   <html>). */
+
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ---- type ---- */
+  --font-sans: "Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --text-2xs: 10.5px;
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text-base: 13.5px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 21px;
+  --text-2xl: 28px;
+  --text-3xl: 36px;
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --tracking-tight: -0.022em;
+  --tracking-snug: -0.011em;
+  --tracking-label: 0.02em;
+
+  /* ---- space (4px grid) ---- */
+  --space-0: 0;
+  --space-px: 1px;
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-3-5: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- size ---- */
+  --control-xs: 22px;
+  --control-sm: 28px;
+  --control-md: 32px;
+  --control-lg: 40px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+  --sidebar-width: 232px;
+  --sidebar-rail: 56px;
+  --titlebar-height: 0px;
+
+  /* ---- radius: tighter inside, softer outside ---- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  /* ---- layers ---- */
+  --z-raised: 10;
+  --z-sticky: 20;
+  --z-popover: 40;
+  --z-present: 50;
+  --z-overlay: 60;
+  --z-modal: 70;
+  --z-toast: 80;
+  --z-tooltip: 90;
+
+  /* ---- motion ---- */
+  --duration-instant: 80ms;
+  --duration-fast: 140ms;
+  --duration-base: 200ms;
+  --duration-slow: 280ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-emphasized: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* ---- color: light (warm stone neutrals, one green accent) ---- */
+  --color-canvas: #f2f1ed;
+  --color-surface: #fcfcfa;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #f6f5f1;
+  --color-fill: #eeece6;
+  --color-fill-strong: #e5e2da;
+  --color-border: #e3e0d8;
+  --color-border-subtle: #eceae4;
+  --color-border-strong: #cfcbc1;
+  --color-text: #1c1b18;
+  --color-text-secondary: #5c5850;
+  --color-text-tertiary: #8a857b;
+  --color-text-disabled: #b3aea4;
+  --color-accent: #2a7560;
+  --color-accent-hover: #236652;
+  --color-accent-pressed: #1c5544;
+  --color-on-accent: #ffffff;
+  --color-accent-soft: #e2efe9;
+  --color-accent-soft-hover: #d5e8df;
+  --color-accent-text: #1f5e4c;
+  --color-focus-ring: rgb(42 117 96 / 0.38);
+  --color-success: #2b7a47;
+  --color-success-soft: #e4f1e8;
+  --color-warning: #9a5a0b;
+  --color-warning-soft: #f8eedb;
+  --color-danger: #b8382c;
+  --color-danger-hover: #a03025;
+  --color-danger-soft: #f9e8e5;
+  --color-on-danger: #ffffff;
+  --color-inverse: #262420;
+  --color-on-inverse: #f4f3ef;
+  --color-scrim: rgb(30 26 20 / 0.34);
+  --color-stage: #e9e7e1;
+  --color-paper: #ffffff;
+  --color-terminal: #171614;
+  --color-selection: rgb(42 117 96 / 0.18);
+  --color-cover-0: #ece9e2;
+  --color-cover-1: #e6eae2;
+  --color-cover-2: #ede5dd;
+  --color-cover-3: #e8e5e1;
+  --color-cover-dot: rgb(60 46 24 / 0.10);
+
+  --shadow-xs: 0 1px 1px rgb(60 46 24 / 0.05);
+  --shadow-sm: 0 1px 2px rgb(60 46 24 / 0.07), 0 1px 1px rgb(60 46 24 / 0.03);
+  --shadow-md: 0 6px 16px -4px rgb(60 46 24 / 0.12), 0 2px 4px -2px rgb(60 46 24 / 0.06);
+  --shadow-lg: 0 18px 44px -10px rgb(60 46 24 / 0.24), 0 6px 14px -6px rgb(60 46 24 / 0.10);
+  --shadow-highlight: inset 0 1px 0 rgb(255 255 255 / 0.7);
+  --shadow-accent: 0 1px 2px rgb(28 85 68 / 0.30), inset 0 1px 0 rgb(255 255 255 / 0.14);
+
+  color-scheme: light;
+}
+
+/* Dark: the same roles, tuned for a warm charcoal canvas. Declared twice
+   (system preference unless pinned light, and pinned dark). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-canvas: #131210;
+    --color-surface: #1a1917;
+    --color-surface-raised: #22211e;
+    --color-surface-sunken: #161513;
+    --color-fill: #272622;
+    --color-fill-strong: #312f2b;
+    --color-border: #2e2c28;
+    --color-border-subtle: #252420;
+    --color-border-strong: #3e3b36;
+    --color-text: #edebe5;
+    --color-text-secondary: #a9a499;
+    --color-text-tertiary: #7d786e;
+    --color-text-disabled: #57534c;
+    --color-accent: #4fae8c;
+    --color-accent-hover: #62bc9b;
+    --color-accent-pressed: #429a7b;
+    --color-on-accent: #0c1a14;
+    --color-accent-soft: #1d2e27;
+    --color-accent-soft-hover: #243a31;
+    --color-accent-text: #7fcbae;
+    --color-focus-ring: rgb(79 174 140 / 0.45);
+    --color-success: #5cb87d;
+    --color-success-soft: #1c2e22;
+    --color-warning: #d9a14e;
+    --color-warning-soft: #33281a;
+    --color-danger: #e5705f;
+    --color-danger-hover: #ec8676;
+    --color-danger-soft: #3a211d;
+    --color-on-danger: #1d0d0a;
+    --color-inverse: #edebe5;
+    --color-on-inverse: #1a1917;
+    --color-scrim: rgb(0 0 0 / 0.55);
+    --color-stage: #0f0e0d;
+    --color-paper: #ffffff;
+    --color-terminal: #0f0e0d;
+    --color-selection: rgb(79 174 140 / 0.28);
+  --color-cover-0: #22211e;
+  --color-cover-1: #1e231f;
+  --color-cover-2: #25201c;
+  --color-cover-3: #222020;
+  --color-cover-dot: rgb(255 255 255 / 0.06);
+
+    --shadow-xs: 0 1px 1px rgb(0 0 0 / 0.3);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 8px 20px -6px rgb(0 0 0 / 0.55), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 22px 52px -12px rgb(0 0 0 / 0.7), 0 8px 18px -8px rgb(0 0 0 / 0.5);
+    --shadow-highlight: inset 0 1px 0 rgb(255 255 255 / 0.04);
+    --shadow-accent: 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.18);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-canvas: #131210;
+  --color-surface: #1a1917;
+  --color-surface-raised: #22211e;
+  --color-surface-sunken: #161513;
+  --color-fill: #272622;
+  --color-fill-strong: #312f2b;
+  --color-border: #2e2c28;
+  --color-border-subtle: #252420;
+  --color-border-strong: #3e3b36;
+  --color-text: #edebe5;
+  --color-text-secondary: #a9a499;
+  --color-text-tertiary: #7d786e;
+  --color-text-disabled: #57534c;
+  --color-accent: #4fae8c;
+  --color-accent-hover: #62bc9b;
+  --color-accent-pressed: #429a7b;
+  --color-on-accent: #0c1a14;
+  --color-accent-soft: #1d2e27;
+  --color-accent-soft-hover: #243a31;
+  --color-accent-text: #7fcbae;
+  --color-focus-ring: rgb(79 174 140 / 0.45);
+  --color-success: #5cb87d;
+  --color-success-soft: #1c2e22;
+  --color-warning: #d9a14e;
+  --color-warning-soft: #33281a;
+  --color-danger: #e5705f;
+  --color-danger-hover: #ec8676;
+  --color-danger-soft: #3a211d;
+  --color-on-danger: #1d0d0a;
+  --color-inverse: #edebe5;
+  --color-on-inverse: #1a1917;
+  --color-scrim: rgb(0 0 0 / 0.55);
+  --color-stage: #0f0e0d;
+  --color-paper: #ffffff;
+  --color-terminal: #0f0e0d;
+  --color-selection: rgb(79 174 140 / 0.28);
+  --color-cover-0: #22211e;
+  --color-cover-1: #1e231f;
+  --color-cover-2: #25201c;
+  --color-cover-3: #222020;
+  --color-cover-dot: rgb(255 255 255 / 0.06);
+
+  --shadow-xs: 0 1px 1px rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 8px 20px -6px rgb(0 0 0 / 0.55), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 22px 52px -12px rgb(0 0 0 / 0.7), 0 8px 18px -8px rgb(0 0 0 / 0.5);
+  --shadow-highlight: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --shadow-accent: 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.18);
+
+  color-scheme: dark;
+}
+
+/* The macOS desktop window draws its traffic lights over the page. */
+:root[data-shell="mac"] {
+  --titlebar-height: 38px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}

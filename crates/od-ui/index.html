@@ -6,7 +6,12 @@
     <meta name="color-scheme" content="light dark" />
     <title>Open Design</title>
     <link data-trunk rel="css" href="vendor/xterm/xterm.css" />
-    <link data-trunk rel="css" href="style.css" />
+    <link data-trunk rel="css" href="styles/tokens.css" />
+    <link data-trunk rel="css" href="styles/components.css" />
+    <link data-trunk rel="css" href="styles/app.css" />
+    <!-- Geist (vendored, see vendor/fonts/README.md), served at /fonts/. -->
+    <link data-trunk rel="copy-dir" href="vendor/fonts" />
+    <link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
     <!-- Terminal tab (vendored, see vendor/xterm/README.md): globals Terminal, FitAddon. -->
     <script data-trunk src="vendor/xterm/xterm.js"></script>
     <script data-trunk src="vendor/xterm/addon-fit.js"></script>

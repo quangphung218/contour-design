@@ -2,12 +2,16 @@
 //! project folder, copy a prompt for a coding agent.
 
 use super::api;
+use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use od_contracts::{HandoffResponse, OkResponse};
 use serde_json::json;
 use wasm_bindgen::JsCast;
+
+/// How long an export or handoff result stays on screen.
+const TOAST_MS: u32 = 5_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Format {
@@ -53,6 +57,16 @@ impl Format {
         }
     }
 
+    fn glyph(self) -> Glyph {
+        match self {
+            Self::Html => Glyph::FileCode,
+            Self::Zip => Glyph::Download,
+            Self::Pdf => Glyph::FileText,
+            Self::Png => Glyph::FileImage,
+            Self::Pptx => Glyph::Deck,
+        }
+    }
+
     /// Needs an HTML file to render (all but ZIP).
     fn needs_file(self) -> bool {
         self != Self::Zip
@@ -89,6 +103,22 @@ fn stem(path: &str) -> &str {
 pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     let open = RwSignal::new(false);
     let status = RwSignal::new(None::<Result<String, String>>);
+    let busy = RwSignal::new(false);
+    // The result shows as a toast for a few seconds, then leaves.
+    Effect::new(move |_| {
+        let Some(shown) = status.get() else {
+            return;
+        };
+        if busy.get_untracked() {
+            return;
+        }
+        leptos::task::spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(TOAST_MS).await;
+            if status.with_untracked(|s| s.as_ref() == Some(&shown)) {
+                status.set(None);
+            }
+        });
+    });
 
     let export = move |format: Format| {
         open.set(false);
@@ -104,6 +134,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             Some(f) if format.needs_file() => format!("{}.{}", stem(f), format.ext()),
             _ => format!("{project}.{}", format.ext()),
         };
+        busy.set(true);
         status.set(Some(Ok(tf(T::Exporting, &[format.ext()]))));
         leptos::task::spawn_local(async move {
             let base = ctx.base();
@@ -123,6 +154,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                     api::post_bytes(&format!("{base}/export/{kind}"), &body).await
                 }
             };
+            busy.set(false);
             match res {
                 Ok(bytes) => {
                     download(&bytes, &name, format.mime());
@@ -162,12 +194,15 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         <div class="menu-wrap">
             <button
                 class="btn small"
+                class:active=move || open.get()
                 data-testid="export"
                 aria-haspopup="menu"
                 aria-expanded=move || open.get().to_string()
                 on:click=move |_| open.update(|o| *o = !*o)
             >
+                {icon(Glyph::Export)}
                 {t(T::Export)}
+                {icon(Glyph::ChevronDown)}
             </button>
             <Show when=move || open.get()>
                 <div class="menu" role="menu" data-testid="export-menu">
@@ -182,6 +217,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                                     disabled=move || f.needs_file() && ctx.active().is_none()
                                     on:click=move |_| export(f)
                                 >
+                                    {icon(f.glyph())}
                                     {f.label()}
                                 </button>
                             }
@@ -189,17 +225,37 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                         .collect_view()}
                     <div class="menu-sep">{t(T::Handoff)}</div>
                     <button class="menu-item" role="menuitem" data-testid="handoff-open" on:click=open_folder>
+                        {icon(Glyph::FolderOpen)}
                         {t(T::HandoffOpenFolder)}
                     </button>
                     <button class="menu-item" role="menuitem" data-testid="handoff-copy" on:click=copy_prompt>
+                        {icon(Glyph::Handoff)}
                         {t(T::HandoffCopyPrompt)}
                     </button>
                 </div>
             </Show>
-            {move || status.get().map(|s| match s {
-                Ok(m) => view! { <span class="menu-status muted" data-testid="export-status">{m}</span> }.into_any(),
-                Err(e) => view! { <span class="menu-status error-text" data-testid="export-status">{e}</span> }.into_any(),
-            })}
+            <div class="toast-region" aria-live="polite">
+                {move || status.get().map(|s| {
+                    let (error, text) = match s {
+                        Ok(m) => (false, m),
+                        Err(e) => (true, e),
+                    };
+                    let glyph = if error {
+                        Glyph::Warning
+                    } else if busy.get() {
+                        Glyph::Loader
+                    } else {
+                        Glyph::CheckCircle
+                    };
+                    view! {
+                        <div class="toast" class:error=error role="status" data-testid="export-status">
+                            <span class="toast-ico" class:spin=move || busy.get()>{icon(glyph)}</span>
+                            <span class="toast-text">{text}</span>
+                            <button class="chip-x" aria-label=t(T::Close) on:click=move |_| status.set(None)>{icon(Glyph::Close)}</button>
+                        </div>
+                    }
+                })}
+            </div>
         </div>
     }
 }

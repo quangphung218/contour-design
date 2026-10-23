@@ -303,7 +303,7 @@ try {
 
   // 15. Project list; an existing folder opens as a project.
   await page.goto(BASE + '/projects');
-  await page.locator('.project-row', { hasText: brief }).waitFor();
+  await page.locator('.project-card', { hasText: brief }).waitFor();
   const folder = mkdtempSync(join(tmpdir(), 'od-e2e-folder-'));
   writeFileSync(join(folder, 'index.html'), '<!doctype html><h1 id="title">From my folder</h1>');
   await page.getByTestId('open-folder').click();
@@ -513,7 +513,7 @@ try {
   await page.getByTestId('language').selectOption('vi');
   await page.getByTestId('save-settings').click();
   await page.locator('h1', { hasText: 'Cài đặt' }).waitFor();
-  await page.locator('.topnav', { hasText: 'Trang chủ' }).waitFor();
+  await page.locator('.sidenav', { hasText: 'Trang chủ' }).waitFor();
   cfg = await (await fetch(`${BASE}/api/app-config`)).json();
   assert.equal(cfg.locale, 'vi');
   assert.equal(await page.locator('html').getAttribute('lang'), 'vi');
