@@ -551,7 +551,11 @@
         } catch (_) {}
         if (!el) return { id: it.id, rect: null };
         var r = el.getBoundingClientRect();
-        return { id: it.id, rect: { x: r.left, y: r.top, width: r.width, height: r.height } };
+        return {
+          id: it.id,
+          rect: { x: r.left, y: r.top, width: r.width, height: r.height },
+          text: plainText(el)
+        };
       })
     });
   }
@@ -567,6 +571,89 @@
 
   document.addEventListener('scroll', queueLocate, { capture: true, passive: true });
   window.addEventListener('resize', queueLocate);
+
+  // ---------------------------------------------------------------------
+  // Mark: the host's chosen element (a comment in its list, a layer in
+  // manual edit) scrolled into view and outlined until the next mark.
+  // ---------------------------------------------------------------------
+  var marked = null;
+  var markBox = null;
+
+  function drawMark() {
+    if (!markBox) return;
+    if (!marked || !marked.isConnected) {
+      markBox.style.display = 'none';
+      return;
+    }
+    var r = marked.getBoundingClientRect();
+    markBox.style.left = r.left + 'px';
+    markBox.style.top = r.top + 'px';
+    markBox.style.width = r.width + 'px';
+    markBox.style.height = r.height + 'px';
+    markBox.style.display = 'block';
+  }
+
+  function mark(selector, scroll) {
+    marked = selector ? find(selector) : null;
+    if (!markBox) {
+      markBox = document.createElement('div');
+      markBox.setAttribute('data-od-bridge-ui', '');
+      markBox.style.cssText =
+        'position:fixed;pointer-events:none;z-index:2147483646;box-sizing:border-box;' +
+        'border:2px solid #2a7560;border-radius:2px;display:none';
+      document.documentElement.appendChild(markBox);
+    }
+    if (marked && scroll) {
+      try {
+        marked.scrollIntoView({ block: 'center', inline: 'nearest' });
+      } catch (_) {}
+    }
+    drawMark();
+  }
+
+  document.addEventListener('scroll', drawMark, { capture: true, passive: true });
+  window.addEventListener('resize', drawMark);
+
+  // ---------------------------------------------------------------------
+  // Layers: the body's element tree for manual edit, depth first, without
+  // code elements, line breaks, the bridge's UI and tiny visible boxes.
+  // ---------------------------------------------------------------------
+  var MAX_LAYERS = 400;
+  var MAX_LAYER_DEPTH = 12;
+
+  function layerKind(el) {
+    var tag = el.tagName.toUpperCase();
+    if (tag === 'A') return 'link';
+    if (tag === 'IMG') return 'image';
+    return isTextOnly(el) ? 'text' : 'container';
+  }
+
+  function layers() {
+    var out = [];
+    (function walk(parent, depth, hiddenAbove) {
+      for (var c = parent.firstElementChild; c && out.length < MAX_LAYERS; c = c.nextElementSibling) {
+        var tag = c.tagName.toUpperCase();
+        if (CODE_TAGS.test(tag) || tag === 'BR' || c.hasAttribute('data-od-bridge-ui')) continue;
+        var cs = getComputedStyle(c);
+        var hidden = hiddenAbove || cs.display === 'none' || cs.visibility === 'hidden' ||
+          c.hasAttribute('hidden');
+        var r = c.getBoundingClientRect();
+        if (!hidden && !c.firstElementChild && (r.width < 4 || r.height < 4)) continue;
+        out.push({
+          selector: selectorFor(c),
+          odId: c.getAttribute('data-od-id'),
+          tag: tag.toLowerCase(),
+          kind: layerKind(c),
+          label: String(c.getAttribute('data-od-label') || c.getAttribute('aria-label') ||
+            c.getAttribute('alt') || plainText(c)).slice(0, 42),
+          depth: depth,
+          hidden: hidden
+        });
+        if (depth < MAX_LAYER_DEPTH && tag !== 'SVG' && tag !== 'SELECT') walk(c, depth + 1, hidden);
+      }
+    })(document.body || document.documentElement, 0, false);
+    postKeyed({ type: 'od:layers', key: EDIT_KEY, items: out });
+  }
 
   // ---------------------------------------------------------------------
   // Snapshot: no real screenshot. Clone the DOM with computed styles inlined
@@ -1065,6 +1152,12 @@
         locating = Array.isArray(data.items) ? data.items.slice(0, MAX_LOCATE) : null;
         locate();
         break;
+      case 'od:mark':
+        mark(data.selector ? String(data.selector) : null, !!data.scroll);
+        break;
+      case 'od:layers-request':
+        layers();
+        break;
       case 'od:size-request':
         lastSize = '';
         queueSize();
@@ -1114,7 +1207,7 @@
       protocolVersion: PROTOCOL_VERSION,
       capabilities: [
         'deck', 'selection', 'locate', 'snapshot', 'size', 'redirect-guard', 'storage-shim',
-        'inspect', 'text-edit', 'palette', 'tweaks'
+        'inspect', 'text-edit', 'palette', 'tweaks', 'mark', 'layers'
       ]
     });
     watchSize();

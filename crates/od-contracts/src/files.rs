@@ -164,9 +164,14 @@ pub struct VersionContentResponse {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RestoreVersionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
+    /// Restore only while the file still holds this version's content
+    /// (manual-edit undo and redo); otherwise 409.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_version_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -29,6 +29,18 @@ pub enum Tool {
     Draw,
     Tweaks,
     Lint,
+    /// Manual edit: layers, content, style, attributes, HTML.
+    Manual,
+    /// The Comments tab: the shown file's comments as a list. It stays
+    /// open beside comment mode.
+    Comments,
+}
+
+impl Tool {
+    /// Whether clicks in the preview pick an element for this tool.
+    fn selects(self) -> bool {
+        matches!(self, Self::Inspect | Self::Manual)
+    }
 }
 
 /// Properties the inspect panel shows, in order.
@@ -82,6 +94,7 @@ pub struct Tools {
     /// That load's edit key, once claimed: bridge messages that write the
     /// source must carry it.
     edit_key: StoredValue<Option<String>>,
+    pub manual: super::manual_edit::Manual,
 }
 
 impl Tools {
@@ -103,6 +116,7 @@ impl Tools {
             frame_kid: StoredValue::new(String::new()),
             claimed_kid: StoredValue::new(String::new()),
             edit_key: StoredValue::new(None),
+            manual: super::manual_edit::Manual::new(),
         }
     }
 
@@ -124,6 +138,7 @@ impl Tools {
         self.tweak_values.set(BTreeMap::new());
         self.lint.set(None);
         self.status.set(None);
+        self.manual.forget();
     }
 }
 
@@ -268,18 +283,31 @@ impl StudioCtx {
     /// Turns a tool on (`Some`) or off. Tools and comment mode exclude
     /// each other; the bridge's selection and edit modes follow.
     pub fn set_tool(self, tool: Option<Tool>) {
-        if tool.is_some() && self.comment_mode.get_untracked() {
+        if tool.is_some_and(|t| t != Tool::Comments) && self.comment_mode.get_untracked() {
             self.set_comment_mode(false);
         }
+        let was = self.tools.tool.get_untracked();
         self.tools.tool.set(tool);
-        bridge::post_main(&pb::select_mode(tool == Some(Tool::Inspect)));
+        if was == Some(Tool::Manual) && tool != Some(Tool::Manual) {
+            self.leave_manual();
+        }
+        if tool == Some(Tool::Manual) {
+            self.enter_manual();
+        }
+        let selects = tool.is_some_and(Tool::selects)
+            || (tool == Some(Tool::Comments) && self.comment_mode.get_untracked());
+        bridge::post_main(&pb::select_mode(selects));
         let doc = self.active_untracked();
         bridge::post_main(&pb::edit_mode(tool == Some(Tool::EditText), doc.as_deref()));
     }
 
     /// Leaves any tool for comment mode (which owns selection then).
     pub fn leave_tool(self) {
-        if self.tools.tool.get_untracked().is_some() {
+        let tool = self.tools.tool.get_untracked();
+        if tool.is_some_and(|t| t != Tool::Comments) {
+            if tool == Some(Tool::Manual) {
+                self.leave_manual();
+            }
             self.tools.tool.set(None);
             bridge::post_main(&pb::edit_mode(false, None));
         }
@@ -296,6 +324,7 @@ impl StudioCtx {
         let tools = self.tools;
         match tools.tool.get_untracked() {
             Some(Tool::Inspect) => bridge::post_main(&pb::select_mode(true)),
+            Some(Tool::Manual) => bridge::post_main(&pb::select_mode(true)),
             Some(Tool::EditText) => {
                 let doc = self.active_untracked();
                 bridge::post_main(&pb::edit_mode(true, doc.as_deref()));
@@ -310,10 +339,17 @@ impl StudioCtx {
             bridge::post_main(&pb::palette(Some(&p)));
         }
         let kid = tools.frame_kid.get_value();
+        // Manual edit's layers and element answer only with the key.
+        let manual = move || {
+            if tools.tool.get_untracked() == Some(Tool::Manual) {
+                self.manual_ready();
+            }
+        };
         if kid.is_empty() || tools.claimed_kid.get_value() == kid {
             if let Some(i) = tools.inspected.get_untracked() {
                 bridge::post_main(&pb::inspect(&i.selector));
             }
+            manual();
             return;
         }
         // Take this load's edit key, then re-read the inspected element
@@ -329,6 +365,7 @@ impl StudioCtx {
             if let Some(i) = tools.inspected.get_untracked() {
                 bridge::post_main(&pb::inspect(&i.selector));
             }
+            manual();
         });
     }
 
@@ -339,6 +376,9 @@ impl StudioCtx {
             BridgeMsg::InspectResult(i) => {
                 if keyed(i.key.as_deref(), tools.edit_key.get_value().as_deref()) {
                     tools.inspected.set(Some(i.clone()));
+                    if tools.tool.get_untracked() == Some(Tool::Manual) {
+                        self.manual_inspected(i);
+                    }
                 }
             }
             BridgeMsg::InspectOverrides { css, .. } => tools.extracted.set(Some(css.clone())),
@@ -388,6 +428,11 @@ impl StudioCtx {
                 tools.tweaks.set(defs);
             }
             BridgeMsg::PaletteState { .. } => {}
+            BridgeMsg::Layers { key, items } => {
+                if keyed(key.as_deref(), tools.edit_key.get_value().as_deref()) {
+                    tools.manual.layers.set(items.clone());
+                }
+            }
             BridgeMsg::SnapshotResult(s) => tools.snapshot.set(Some(s.clone())),
             _ => return false,
         }
@@ -400,7 +445,7 @@ impl StudioCtx {
         bridge::post_main(&pb::inspect(selector));
     }
 
-    fn set_override(self, selector: &str, prop: &str, value: &str) {
+    pub(super) fn set_override(self, selector: &str, prop: &str, value: &str) {
         let Some(el) = self
             .tools
             .inspected
@@ -422,7 +467,7 @@ impl StudioCtx {
         });
     }
 
-    fn reset_override(self, selector: &str, prop: &str) {
+    pub(super) fn reset_override(self, selector: &str, prop: &str) {
         bridge::post_main(&pb::inspect_reset(Some(selector), Some(prop)));
         self.tools
             .overrides
@@ -599,8 +644,10 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
                 {icon(Glyph::Comment)}
                 {t(T::CommentMode)}
             </button>
+            <super::comments_panel::CommentsToggle ctx=ctx/>
             {tool_button(Tool::Inspect, T::ToolInspect, Glyph::Inspect, "inspect-mode")}
             {tool_button(Tool::EditText, T::ToolEditText, Glyph::EditText, "edit-mode")}
+            {tool_button(Tool::Manual, T::ToolManualEdit, Glyph::ManualEdit, "manual-edit-mode")}
             {tool_button(Tool::Draw, T::ToolDraw, Glyph::Draw, "draw-mode")}
             <super::capture::ScreenshotMenu ctx=ctx/>
             <Show when=move || tools.tweaks.with(|t| !t.is_empty())>
@@ -634,6 +681,7 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
                 Some(Tool::Inspect) => Some(t(T::InspectHint)),
                 Some(Tool::EditText) => Some(t(T::EditTextHint)),
                 Some(Tool::Draw) => Some(t(T::DrawHint)),
+                Some(Tool::Manual) => Some(t(T::ManualEditHint)),
                 _ => None,
             };
             hint.map(|h| view! { <p class="mode-hint">{icon(Glyph::Info)}{h}</p> })
@@ -657,6 +705,12 @@ pub fn ToolPanel(ctx: StudioCtx) -> impl IntoView {
             Some(Tool::Inspect) => view! { <InspectPanel ctx=ctx/> }.into_any(),
             Some(Tool::Tweaks) => view! { <TweaksPanel ctx=ctx/> }.into_any(),
             Some(Tool::Lint) => view! { <LintPanel ctx=ctx/> }.into_any(),
+            Some(Tool::Manual) => {
+                view! { <super::manual_edit::ManualEditPanel ctx=ctx/> }.into_any()
+            }
+            Some(Tool::Comments) => {
+                view! { <super::comments_panel::CommentsPanel ctx=ctx/> }.into_any()
+            }
             _ => return None,
         };
         Some(view! {
@@ -667,7 +721,7 @@ pub fn ToolPanel(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-fn panel_head(ctx: StudioCtx, title: String) -> impl IntoView {
+pub(super) fn panel_head(ctx: StudioCtx, title: String) -> impl IntoView {
     view! {
         <div class="pane-head">
             <span class="pane-title">{title}</span>

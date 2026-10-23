@@ -27,6 +27,29 @@ pub struct Located {
     pub id: String,
     #[serde(default)]
     pub rect: Option<CommentRect>,
+    /// The element's text now, printed as `od:select` prints it.
+    #[serde(default)]
+    pub text: Option<String>,
+}
+
+/// One element of the page's layer tree (`od:layers`).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Layer {
+    pub selector: String,
+    #[serde(default)]
+    pub od_id: Option<String>,
+    #[serde(default)]
+    pub tag: String,
+    /// `link`, `image`, `text` or `container`.
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub depth: u32,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 /// An inspected element (`od:inspect-result`): computed styles of the
@@ -239,6 +262,13 @@ pub enum BridgeMsg {
     },
     #[serde(rename = "od:snapshot-result")]
     SnapshotResult(Snapshot),
+    #[serde(rename = "od:layers")]
+    Layers {
+        #[serde(default)]
+        key: Option<String>,
+        #[serde(default)]
+        items: Vec<Layer>,
+    },
     #[serde(other)]
     Other,
 }
@@ -283,6 +313,19 @@ impl Slide {
         }
         m
     }
+}
+
+/// Host → bridge: outline the element `selector` (`None`: none), scrolled
+/// into view when `scroll`.
+#[must_use]
+pub fn mark(selector: Option<&str>, scroll: bool) -> Value {
+    json!({ "type": "od:mark", "selector": selector, "scroll": scroll })
+}
+
+/// Host → bridge: send the layer tree (`od:layers`).
+#[must_use]
+pub fn layers_request() -> Value {
+    json!({ "type": "od:layers-request" })
 }
 
 /// Host → bridge: comment (selection) mode on or off.
@@ -417,11 +460,13 @@ mod tests {
                             y: 2.0,
                             width: 3.0,
                             height: 4.0
-                        })
+                        }),
+                        text: None,
                     },
                     Located {
                         id: "c2".into(),
-                        rect: None
+                        rect: None,
+                        text: None,
                     },
                 ]
             })
@@ -485,5 +530,27 @@ mod tests {
         assert_eq!(Slide::Next.message()["action"], "next");
         assert!(Slide::Next.message().get("index").is_none());
         assert_eq!(select_mode(true)["enabled"], true);
+    }
+
+    #[test]
+    fn decodes_layers_and_builds_mark() {
+        let Some(BridgeMsg::Layers { key, items }) = BridgeMsg::decode(
+            r#"{"type":"od:layers","key":"k","items":[{"selector":"html > body:nth-of-type(1) > img:nth-of-type(1)","odId":null,"tag":"img","kind":"image","label":"Logo","depth":0,"hidden":false},{"selector":"p","depth":2,"hidden":true}]}"#,
+        ) else {
+            panic!("layers");
+        };
+        assert_eq!(key.as_deref(), Some("k"));
+        assert_eq!(items[0].kind, "image");
+        assert_eq!(items[0].label, "Logo");
+        assert!(items[1].hidden && items[1].depth == 2 && items[1].tag.is_empty());
+        let Some(BridgeMsg::Located { items }) = BridgeMsg::decode(
+            r#"{"type":"od:located","items":[{"id":"c1","rect":null,"text":"Hi"}]}"#,
+        ) else {
+            panic!("located");
+        };
+        assert_eq!(items[0].text.as_deref(), Some("Hi"));
+        assert_eq!(mark(Some("h1"), true)["scroll"], true);
+        assert_eq!(mark(None, false)["selector"], Value::Null);
+        assert_eq!(layers_request()["type"], "od:layers-request");
     }
 }

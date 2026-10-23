@@ -34,6 +34,9 @@ pub enum StoreError {
     NotHtml,
     #[error("{0}")]
     BadRequest(String),
+    /// The file moved on since the client read it.
+    #[error("{0}")]
+    Conflict(String),
     #[error("io error: {0}")]
     Io(#[from] io::Error),
     #[error("database error: {0}")]

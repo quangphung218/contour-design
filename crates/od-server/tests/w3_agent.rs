@@ -430,6 +430,7 @@ async fn restart_puts_applying_comments_back_to_attached() {
                 slide_index: None,
                 note: "bigger".into(),
                 status: Some(CommentStatus::Applying),
+                attachments: Vec::new(),
             },
         )
         .unwrap();

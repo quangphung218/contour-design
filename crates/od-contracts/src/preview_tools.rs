@@ -61,6 +61,19 @@ pub struct SourceEdit {
     /// have it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_tag: Option<String>,
+    /// Attributes to set (`Some`) or remove (`None`), as manual edit's
+    /// Attributes tab, link and image fields write them. `data-od-id`
+    /// cannot change (edits and comments find elements by it).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, Option<String>>,
+    /// Replacement HTML for the whole element, with exactly one root
+    /// element (manual edit's Html tab). Alone in its edit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outer_html: Option<String>,
+    /// Removes the element. Alone in its edit; the page's last visible
+    /// element and `html`/`head`/`body` stay.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remove: bool,
 }
 
 /// `POST /api/projects/:id/source-edits`.
@@ -76,9 +89,49 @@ pub struct SourceEditRequest {
 
 /// The file after the edits, and the manual version that records them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SourceEditResponse {
     pub file: ProjectFile,
     pub version: FileVersion,
+    /// The version that holds the source from before the edits (undo
+    /// restores it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_version_id: Option<String>,
+}
+
+/// `POST /api/projects/:id/source-element`: one element as the source
+/// has it, for manual edit.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceElementRequest {
+    pub file: String,
+    pub selector: String,
+    /// As in [`SourceEdit`]: the read is refused when the source element
+    /// is not the one the preview showed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_text: Option<String>,
+}
+
+/// One attribute, in source order.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceAttribute {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceElementResponse {
+    pub tag: String,
+    pub attributes: Vec<SourceAttribute>,
+    /// The element's source bytes, start tag to end tag.
+    pub outer_html: String,
+    /// Its text (entities decoded, code left out).
+    pub text: String,
+    /// No child elements: its text can be edited in place.
+    pub text_only: bool,
 }
 
 /// Outcome of the deliverable check (spec 1.2, P1).

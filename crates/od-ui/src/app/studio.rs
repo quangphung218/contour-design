@@ -22,11 +22,13 @@ use super::terminal::{self, TermTab, TerminalView};
 use super::versions::VersionsPanel;
 use super::{Shell, api};
 use crate::chat::{AssistantTurn, Block, TurnState};
+use crate::comment_board::{AnchorState, attached_images};
 use crate::events::{
     ChatRequest, ConversationsResponse, CreateRunResponse, FileChanged, MessageRole,
     MessagesResponse, RunFrame, RunStatus, decode_frame,
 };
 use crate::file_tree::is_markdown;
+use crate::highlight::{Lang, highlight};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Picked, Slide};
 use crate::workspace::{Queued, Tabs, touch_recent};
@@ -144,6 +146,8 @@ pub struct StudioCtx {
     /// Bumped to reload the preview iframe.
     pub preview_rev: RwSignal<u32>,
     pub notice: RwSignal<Option<String>>,
+    /// The project's event stream dropped and is reconnecting.
+    pub link_down: RwSignal<bool>,
     /// The project could not be loaded; shown until a retry succeeds.
     pub load_error: RwSignal<Option<String>>,
     pub comments: RwSignal<Vec<PreviewComment>>,
@@ -153,6 +157,8 @@ pub struct StudioCtx {
     /// Where each shown comment's element is now (`od:located`), so pins
     /// follow scroll and reflow; missing ids fall back to the stored box.
     pub pin_rects: RwSignal<HashMap<String, CommentRect>>,
+    /// Anchor state of each located comment (Comments tab).
+    pub anchors: RwSignal<HashMap<String, AnchorState>>,
     /// Bumped on every `od:ready`: the new document needs `od:locate`.
     pub frame_ready: RwSignal<u32>,
     /// Set once the previewed file turns out to be a deck.
@@ -189,7 +195,7 @@ pub struct StudioCtx {
     project_stream: StoredValue<Option<SendWrapper<Sse>>>,
 }
 
-fn is_previewable(f: &ProjectFile) -> bool {
+pub(super) fn is_previewable(f: &ProjectFile) -> bool {
     !f.path.starts_with('.') && !f.path.contains("/.")
 }
 
@@ -379,7 +385,16 @@ impl StudioCtx {
             plugin_inputs: extras.plugin_inputs,
             locale: Some(shell.locale.get_untracked().tag().to_owned()),
             session_mode: Some(self.session_mode.get_untracked()),
-            attachments: self.tools.attachments.get_untracked(),
+            attachments: {
+                // Images on the attached comments go along too.
+                let mut files = self.tools.attachments.get_untracked();
+                for path in attached_images(&attached) {
+                    if !files.contains(&path) {
+                        files.push(path);
+                    }
+                }
+                files
+            },
         };
         self.tools.deliverable.set(None);
         self.live_run.set(Some(String::new()));
@@ -573,7 +588,8 @@ impl StudioCtx {
                 }
             },
             || {},
-        );
+        )
+        .map(|s| s.on_connection(move |up| self.on_project_link(up)));
         self.project_stream.set_value(stream.map(SendWrapper::new));
     }
 
@@ -748,6 +764,7 @@ impl StudioCtx {
                 self.tools_ready();
             }
             (Source::Main, BridgeMsg::Located { items }) => {
+                self.on_located(&items);
                 self.pin_rects.set(
                     items
                         .into_iter()
@@ -797,6 +814,8 @@ impl StudioCtx {
                     self.comment_draft.set(Some(picked));
                 } else if self.tools.tool.get_untracked() == Some(Tool::Inspect) {
                     self.inspect(&picked.selector);
+                } else if self.tools.tool.get_untracked() == Some(Tool::Manual) {
+                    self.manual_select(&picked.selector);
                 }
             }
             (Source::Thumb(i), BridgeMsg::DeckReady { .. }) => {
@@ -1024,11 +1043,13 @@ pub fn Studio() -> impl IntoView {
         recent: RwSignal::new(Vec::new()),
         preview_rev: RwSignal::new(0),
         notice: RwSignal::new(None),
+        link_down: RwSignal::new(false),
         load_error: RwSignal::new(None),
         comments: RwSignal::new(Vec::new()),
         comment_mode: RwSignal::new(false),
         comment_draft: RwSignal::new(None),
         pin_rects: RwSignal::new(HashMap::new()),
+        anchors: RwSignal::new(HashMap::new()),
         frame_ready: RwSignal::new(0),
         deck: RwSignal::new(None),
         notes: RwSignal::new(Vec::new()),
@@ -1110,6 +1131,7 @@ pub fn Studio() -> impl IntoView {
                 <QuickSwitcher ctx=ctx/>
             </Show>
             <NoticeToast ctx=ctx/>
+            <super::recovery_tip::WorkspaceRecoveryTip ctx=ctx/>
             <FilesToast/>
             <super::project_actions::BrandReady ctx=ctx/>
         </div>
@@ -1221,7 +1243,9 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
         (Some(_), Some(count)) => super::deck::load_notes(ctx, count),
         _ => ctx.notes.set(Vec::new()),
     });
-    let is_image = move || {
+    // A memo: a files refresh (any upload) must not rebuild the frame and
+    // what sits on it (comment draft, drawing) unless this flips.
+    let image_shown = Memo::new(move |_| {
         let path = ctx.active();
         ctx.files.with(|files| {
             files
@@ -1229,7 +1253,8 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 .find(|f| Some(&f.path) == path.as_ref())
                 .is_some_and(|f| matches!(f.kind, FileKind::Image))
         })
-    };
+    });
+    let is_image = move || image_shown.get();
     let is_html = move || ctx.active().is_some_and(|p| is_html_path(&p));
     // Markdown, sketches and documents have their own views, kept across
     // preview reloads (an auto-save reloads the preview).
@@ -1401,6 +1426,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             <div class="preview-body">
                 <ThumbRail ctx=ctx src=src/>
                 <div class="preview-stage">
+                    <super::first_hint::FirstArtifactHint ctx=ctx/>
                     {move || match special.get() {
                         Some(Special::Markdown(path)) => view! { <MarkdownView ctx=ctx path=path/> }.into_any(),
                         Some(Special::Sketch(path)) => view! { <SketchView ctx=ctx path=path/> }.into_any(),
@@ -1514,7 +1540,8 @@ fn NoticeToast(ctx: StudioCtx) -> impl IntoView {
 /// Longest source shown in the code view; the rest is cut with a note.
 const CODE_LINES: usize = 4000;
 
-/// Read-only source of the active file, with line numbers; `version` is
+/// Read-only source of the active file, with line numbers and syntax
+/// colors (`crate::highlight`); `version` is
 /// the content of the version on view, shown instead of the live file.
 #[component]
 fn CodeView(ctx: StudioCtx, version: Option<String>) -> impl IntoView {
@@ -1539,11 +1566,19 @@ fn CodeView(ctx: StudioCtx, version: Option<String>) -> impl IntoView {
                 Some(None) => ().into_any(),
                 Some(Some(Err(e))) => view! { <p class="error-text" role="alert">{e}</p> }.into_any(),
                 Some(Some(Ok(src))) => {
-                    let total = src.lines().count();
-                    let lines = src
-                        .lines()
+                    let lang = Lang::for_path(&ctx.active_untracked().unwrap_or_default());
+                    let colored = highlight(&src, lang);
+                    let total = colored.len();
+                    let lines = colored
+                        .into_iter()
                         .take(CODE_LINES)
-                        .map(|l| view! { <span class="code-line">{l.to_owned()}"\n"</span> })
+                        .map(|line| {
+                            let parts = line
+                                .into_iter()
+                                .map(|(tok, part)| view! { <span class=tok.class()>{part.to_owned()}</span> })
+                                .collect_view();
+                            view! { <span class="code-line">{parts}"\n"</span> }
+                        })
                         .collect_view();
                     view! {
                         <pre class="code-src mono"><code>{lines}</code></pre>

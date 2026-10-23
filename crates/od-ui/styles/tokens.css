@@ -136,6 +136,13 @@
   --color-paper: #ffffff;
   --color-terminal: #171614;
   --color-selection: rgb(42 117 96 / 0.18);
+  /* Track C1-preview: syntax colors of the code view. */
+  --color-code-comment: #8a857b;
+  --color-code-keyword: #8b3d72;
+  --color-code-string: #2b7a47;
+  --color-code-number: #a0522d;
+  --color-code-tag: #2a6a8f;
+  --color-code-attr: #8a5a12;
   --color-cover-0: #ece9e2;
   --color-cover-1: #e6eae2;
   --color-cover-2: #ede5dd;
@@ -192,6 +199,13 @@
     --color-paper: #ffffff;
     --color-terminal: #0f0e0d;
     --color-selection: rgb(79 174 140 / 0.28);
+    /* Track C1-preview: syntax colors of the code view. */
+    --color-code-comment: #7d786e;
+    --color-code-keyword: #d495c0;
+    --color-code-string: #8fca9f;
+    --color-code-number: #e09b74;
+    --color-code-tag: #7fb4d6;
+    --color-code-attr: #d9a96a;
   --color-cover-0: #22211e;
   --color-cover-1: #1e231f;
   --color-cover-2: #25201c;
@@ -246,6 +260,13 @@
   --color-paper: #ffffff;
   --color-terminal: #0f0e0d;
   --color-selection: rgb(79 174 140 / 0.28);
+  /* Track C1-preview: syntax colors of the code view. */
+  --color-code-comment: #7d786e;
+  --color-code-keyword: #d495c0;
+  --color-code-string: #8fca9f;
+  --color-code-number: #e09b74;
+  --color-code-tag: #7fb4d6;
+  --color-code-attr: #d9a96a;
   --color-cover-0: #22211e;
   --color-cover-1: #1e231f;
   --color-cover-2: #25201c;

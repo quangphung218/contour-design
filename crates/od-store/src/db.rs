@@ -132,6 +132,7 @@ pub fn open(path: &Path) -> Result<Connection> {
     migrate(&mut conn)?;
     crate::memory::ensure_schema(&conn)?;
     crate::manage::ensure_schema(&conn)?;
+    crate::comments::ensure_schema(&conn)?;
     Ok(conn)
 }
 

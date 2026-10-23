@@ -2,7 +2,8 @@
 //!
 //! - `POST /api/artifacts/lint`: anti-slop lint of posted HTML.
 //! - `GET /api/projects/:id/lint/<path>`: the same for a project file.
-//! - `POST /api/projects/:id/source-edits`: style and text edits made in the
+//! - `POST /api/projects/:id/source-edits`: style, text, attribute, element
+//!   HTML and removal edits made in the
 //!   preview, written back to the file as a manual version.
 //! - `GET /api/runs/:id/deliverable`: did the run deliver its entry file?
 
@@ -46,7 +47,7 @@ fn lint_response(html: &str) -> LintResponse {
 }
 
 /// Runs `f` on the blocking pool with errors already mapped to HTTP.
-async fn blocking<T, F>(state: &AppState, f: F) -> ApiResult<T>
+pub(crate) async fn blocking<T, F>(state: &AppState, f: F) -> ApiResult<T>
 where
     T: Send + 'static,
     F: FnOnce(&Store) -> ApiResult<T> + Send + 'static,
@@ -86,17 +87,24 @@ async fn lint_file(
     Ok(ApiJson(res))
 }
 
-fn patch_err(err: PatchError) -> ApiErr {
+pub(crate) fn patch_err(err: PatchError) -> ApiErr {
     match err {
-        PatchError::InvalidSelector(_) | PatchError::InvalidStyle(_) | PatchError::Empty => {
-            ApiErr::bad_request(err.to_string())
-        }
+        PatchError::InvalidSelector(_)
+        | PatchError::InvalidStyle(_)
+        | PatchError::Empty
+        | PatchError::InvalidAttribute(_)
+        | PatchError::ProtectedAttribute(_)
+        | PatchError::InvalidEdit(_)
+        | PatchError::InvalidHtml(_)
+        | PatchError::NotRemovable(_)
+        | PatchError::LastElement => ApiErr::bad_request(err.to_string()),
         PatchError::Rewrite(_) => ApiErr::internal(err.to_string()),
         PatchError::NotFound(_)
         | PatchError::Ambiguous { .. }
         | PatchError::NotTextOnly
         | PatchError::TextMismatch { .. }
-        | PatchError::TagMismatch { .. } => {
+        | PatchError::TagMismatch { .. }
+        | PatchError::NoEndTag => {
             ApiErr::new(StatusCode::CONFLICT, ErrorCode::Conflict, err.to_string())
         }
     }
@@ -121,13 +129,17 @@ async fn source_edits(
         .chars()
         .take(120)
         .collect::<String>();
-    let (file, version) = blocking(&state, move |s| {
-        s.edit_html(&id, &req.file, &label, |html| {
+    let (file, version, previous) = blocking(&state, move |s| {
+        s.edit_html_tracked(&id, &req.file, &label, |html| {
             apply_edits(html, &req.edits).map_err(patch_err)
         })
     })
     .await?;
-    Ok(ApiJson(SourceEditResponse { file, version }))
+    Ok(ApiJson(SourceEditResponse {
+        file,
+        version,
+        previous_version_id: Some(previous.id),
+    }))
 }
 
 async fn deliverable(

@@ -1429,6 +1429,57 @@ messages! {
     FromFolder => "From folder", "Từ thư mục";
     ShortcutMention => "Mention a file, plugin, skill or MCP server", "Nhắc tới file, plugin, skill hoặc MCP server";
     ShortcutSlash => "Commands (at the start of a line)", "Lệnh (ở đầu dòng)";
+    // Track C1-preview: manual edit, comments tab, code colors, hints.
+    FirstArtifactTitle => "Your first design is ready", "Bản thiết kế đầu tiên đã xong";
+    FirstArtifactBody => "Edit and annotate it right in the preview, then export when you are happy.", "Sửa và chú thích ngay trên preview, ưng rồi thì export.";
+    FirstArtifactDismiss => "Got it", "Đã hiểu";
+    WorkspaceRecovering => "Connection to Nét interrupted. Reconnecting automatically…", "Mất kết nối tới Nét. Đang tự kết nối lại…";
+    ToolManualEdit => "Edit", "Sửa";
+    ManualEditHint => "Click an element in the preview or pick a layer, then change it. Each change is saved as a version.", "Bấm một phần tử trên preview hoặc chọn một layer rồi sửa. Mỗi lần sửa được lưu thành một version.";
+    CommentsTab => "Comments", "Comment";
+    CommentsFilterOpen => "Open", "Đang mở";
+    CommentsFilterResolved => "Resolved", "Đã xong";
+    CommentsNone => "No comments on this file yet. Turn on Comment and click an element.", "File này chưa có comment. Bật Comment rồi bấm vào một phần tử.";
+    CommentsNoneResolved => "No resolved comments on this file.", "File này chưa có comment nào đã xong.";
+    CommentStatusOpen => "Not sent", "Chưa gửi";
+    CommentStatusAttached => "Goes with next message", "Gửi kèm tin sau";
+    CommentStatusApplying => "Being applied", "Đang áp dụng";
+    CommentStatusResolved => "Resolved", "Đã xong";
+    CommentResolve => "Resolve", "Đánh dấu xong";
+    CommentReopen => "Reopen", "Mở lại";
+    AnchorStale => "Anchor may have moved", "Vị trí có thể đã đổi";
+    AnchorLost => "Anchor lost", "Mất vị trí";
+    CommentAttachImage => "Attach image", "Đính ảnh";
+    CommentImageFailed => "Could not attach the image: {0}", "Không đính được ảnh: {0}";
+    ManualLayers => "Layers", "Layer";
+    ManualNoLayers => "No elements to edit on this page yet.", "Trang này chưa có phần tử nào để sửa.";
+    ManualHidden => "Hidden", "Ẩn";
+    ManualEmpty => "Click an element in the preview or pick a layer.", "Bấm một phần tử trên preview hoặc chọn một layer.";
+    ManualMissing => "This element is no longer on the page.", "Phần tử này không còn trên trang.";
+    ManualTabContent => "Content", "Nội dung";
+    ManualTabStyle => "Style", "Kiểu";
+    ManualTabAttributes => "Attributes", "Thuộc tính";
+    ManualTabHtml => "Html", "Html";
+    ManualText => "Text", "Chữ";
+    ManualHref => "Link (href)", "Liên kết (href)";
+    ManualImageUrl => "Image URL", "URL ảnh";
+    ManualAlt => "Alt text", "Mô tả ảnh (alt)";
+    ManualUploadImage => "Upload image", "Tải ảnh lên";
+    ManualUploadFailed => "Could not upload the image: {0}", "Không tải được ảnh lên: {0}";
+    ManualContainerHint => "This element holds other elements. Edit its markup in the Html tab, or pick a layer inside it.", "Phần tử này chứa phần tử khác. Sửa markup ở tab Html, hoặc chọn một layer bên trong.";
+    ManualAttributesJson => "Attributes (JSON)", "Thuộc tính (JSON)";
+    ManualSelectedHtml => "Element HTML (as in the source)", "HTML của phần tử (như trong source)";
+    ManualInvalidAttributes => "Invalid attributes JSON: {0}", "JSON thuộc tính không hợp lệ: {0}";
+    ManualApply => "Apply", "Áp dụng";
+    ManualApplyContent => "Content", "Nội dung";
+    ManualApplyStyle => "Style", "Kiểu";
+    ManualApplyAttributes => "Attributes", "Thuộc tính";
+    ManualApplyHtml => "HTML", "HTML";
+    ManualDelete => "Delete element", "Xoá phần tử";
+    ManualUndo => "Undo", "Hoàn tác";
+    ManualRedo => "Redo", "Làm lại";
+    ManualHistoryFailed => "Could not undo or redo: {0}", "Không hoàn tác hoặc làm lại được: {0}";
+    // ---- end of track C1-preview ----
 }
 
 /// The current language's text for `key`.
