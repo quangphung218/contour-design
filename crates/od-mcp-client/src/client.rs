@@ -111,9 +111,11 @@ pub async fn list_tools(
 /// that left with `setsid` is in neither); on Windows its Job Object.
 struct KillTree(Option<u32>);
 
-impl Drop for KillTree {
-    fn drop(&mut self) {
-        let Some(pid) = self.0 else {
+impl KillTree {
+    /// Kills the tree now. Call it before reaping the server: once reaped,
+    /// its descendants belong to init and the walk no longer finds them.
+    fn kill(&mut self) {
+        let Some(pid) = self.0.take() else {
             return;
         };
         #[cfg(unix)]
@@ -129,6 +131,12 @@ impl Drop for KillTree {
         }
         #[cfg(windows)]
         od_job::kill(pid);
+    }
+}
+
+impl Drop for KillTree {
+    fn drop(&mut self) {
+        self.kill();
     }
 }
 
@@ -153,7 +161,7 @@ async fn stdio_tools(server: &McpServer) -> Result<Vec<ToolInfo>, McpError> {
         // Children it starts afterwards join the job.
         let _ = od_job::track(pid, handle);
     }
-    let _tree = KillTree(child.id());
+    let mut tree = KillTree(child.id());
     let mut stdin = child
         .stdin
         .take()
@@ -178,6 +186,7 @@ async fn stdio_tools(server: &McpServer) -> Result<Vec<ToolInfo>, McpError> {
     stdin.flush().await?;
     let tools = tools_of(&result_of(read_reply(&mut lines, 2).await?)?);
     drop(stdin);
+    tree.kill();
     let _ = child.start_kill();
     let _ = child.wait().await;
     Ok(tools)
@@ -407,6 +416,46 @@ mod tests {
         )
         .await;
         assert!(res.is_err(), "the server never answers");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        let mut left = sleepers(&secs);
+        while !left.is_empty() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            left = sleepers(&secs);
+        }
+        if !left.is_empty() {
+            let _ = std::process::Command::new("pkill")
+                .args(["-9", "-f", &format!("^sleep {secs}$")])
+                .status();
+        }
+        assert!(
+            left.is_empty(),
+            "the detached grandchild outlived the test: {left}"
+        );
+    }
+
+    /// A server that answers ends with its detached grandchild too: the tree
+    /// is walked before the server is reaped, while the grandchild is still
+    /// its descendant.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_finished_stdio_server_leaves_no_session_leavers() {
+        let secs = (700_000 + std::process::id() % 100_000).to_string();
+        let script = format!(
+            r#"perl -MPOSIX -e 'setsid(); exec q(sleep), {secs}' & sleep 0.5
+read l; echo '{{"jsonrpc":"2.0","id":1,"result":{{}}}}'
+read l; read l; echo '{{"jsonrpc":"2.0","id":2,"result":{{"tools":[{{"name":"t"}}]}}}}'
+wait"#
+        );
+        let server: McpServer = serde_json::from_value(json!({
+            "id": "answers",
+            "transport": "stdio",
+            "command": "/bin/sh",
+            "args": ["-c", script],
+        }))
+        .unwrap();
+        let http = reqwest::Client::new();
+        let tools = list_tools(&server, &http, None).await.unwrap();
+        assert_eq!(tools[0].name, "t");
         let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
         let mut left = sleepers(&secs);
         while !left.is_empty() && tokio::time::Instant::now() < deadline {
