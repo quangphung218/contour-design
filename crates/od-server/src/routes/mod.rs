@@ -6,6 +6,7 @@ pub mod files;
 pub mod handoff;
 pub mod media;
 pub mod preview;
+pub mod preview_tools;
 pub mod projects;
 pub mod raw;
 pub mod runs;

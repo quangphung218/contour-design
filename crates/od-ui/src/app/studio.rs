@@ -8,6 +8,7 @@ use super::chat_view::{ChatItem, ChatPane};
 use super::deck::{DeckBar, NotesPanel, ThumbRail};
 use super::export_menu::ExportMenu;
 use super::preview_comments::CommentLayer;
+use super::preview_tools::{self, DrawLayer, Tool, ToolBar, ToolPanel, Tools};
 use super::sse::Sse;
 use super::switcher::QuickSwitcher;
 use super::versions::VersionsPanel;
@@ -107,6 +108,8 @@ pub struct StudioCtx {
     pub switcher_open: RwSignal<bool>,
     pub history_open: RwSignal<bool>,
     pub viewing: RwSignal<Option<ViewedVersion>>,
+    /// Inspect, text edit, draw, tweaks, palette, lint (spec 1.2).
+    pub tools: Tools,
     /// Last slide shown per deck file, restored when the deck reloads.
     last_slide: StoredValue<Option<(String, u32)>>,
     run_stream: StoredValue<Option<SendWrapper<Sse>>>,
@@ -269,12 +272,18 @@ impl StudioCtx {
                 .collect(),
             model,
             locale: Some(shell.locale.get_untracked().tag().to_owned()),
+            attachments: self.tools.attachments.get_untracked(),
             ..ChatRequest::default()
         };
+        self.tools.deliverable.set(None);
         self.live_run.set(Some(String::new()));
+        let req_attachments = req.attachments.clone();
         leptos::task::spawn_local(async move {
             match api::post::<_, CreateRunResponse>("/api/runs", &req).await {
                 Ok(res) => {
+                    self.tools.attachments.update(|a| {
+                        a.retain(|p| !req_attachments.contains(p));
+                    });
                     self.conversation_id.set(Some(res.conversation_id));
                     turn.update(|t| t.run_id = Some(res.run_id.clone()));
                     self.attach(res.run_id, turn, Some(text));
@@ -346,6 +355,7 @@ impl StudioCtx {
         self.live_run.set(Some(run_id.clone()));
         let url = format!("/api/runs/{}/events", api::seg(&run_id));
         let prompt = StoredValue::new(prompt);
+        let run = StoredValue::new(run_id);
         let stream = Sse::open(
             &url,
             &["start", "agent", "error", "end"],
@@ -368,6 +378,7 @@ impl StudioCtx {
                     if status == RunStatus::Succeeded {
                         let files = turn.with_untracked(AssistantTurn::touched_files);
                         self.record_versions(files, prompt.get_value());
+                        self.check_deliverable(run.get_value());
                     }
                     self.finish_run(shell);
                 }
@@ -593,6 +604,9 @@ impl StudioCtx {
     }
 
     pub fn set_comment_mode(self, on: bool) {
+        if on {
+            self.leave_tool();
+        }
         self.comment_mode.set(on);
         if !on {
             self.comment_draft.set(None);
@@ -612,6 +626,7 @@ impl StudioCtx {
                 }
                 self.pin_rects.set(HashMap::new());
                 self.frame_ready.update(|n| *n = n.wrapping_add(1));
+                self.tools_ready();
             }
             (Source::Main, BridgeMsg::Located { items }) => {
                 self.pin_rects.set(
@@ -644,10 +659,15 @@ impl StudioCtx {
             (Source::Main, BridgeMsg::Select(picked)) => {
                 if self.comment_mode.get_untracked() {
                     self.comment_draft.set(Some(picked));
+                } else if self.tools.tool.get_untracked() == Some(Tool::Inspect) {
+                    self.inspect(&picked.selector);
                 }
             }
             (Source::Thumb(i), BridgeMsg::DeckReady { .. }) => {
                 bridge::post_thumb(i, &Slide::Go(i).message());
+            }
+            (Source::Main, msg) => {
+                self.on_tool_msg(&msg);
             }
             _ => {}
         }
@@ -693,6 +713,8 @@ impl StudioCtx {
                 self.presenting.set(false);
             } else if self.comment_mode.get_untracked() {
                 self.set_comment_mode(false);
+            } else if self.tools.tool.get_untracked().is_some() {
+                self.set_tool(None);
             }
             return;
         }
@@ -805,11 +827,13 @@ pub fn Studio() -> impl IntoView {
         switcher_open: RwSignal::new(false),
         history_open: RwSignal::new(false),
         viewing: RwSignal::new(None),
+        tools: Tools::new(),
         last_slide: StoredValue::new(None),
         run_stream: StoredValue::new(None),
         project_stream: StoredValue::new(None),
     };
     provide_context(ctx);
+    preview_tools::watch_lint(ctx);
 
     // Wait for settings so the first turn uses the configured agent.
     let started = StoredValue::new(false);
@@ -1009,6 +1033,9 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <button class="icon-btn" title=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>"↻"</button>
             </div>
             <DeckBar ctx=ctx/>
+            <Show when=move || is_html() && ctx.viewing.with(Option::is_none)>
+                <ToolBar ctx=ctx/>
+            </Show>
             {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{t(T::CommentModeOn)}</p> })}
             <div class="preview-body">
                 <ThumbRail ctx=ctx src=src/>
@@ -1038,12 +1065,16 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                                     src=url
                                 ></iframe>
                                 <CommentLayer ctx=ctx/>
+                                {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
                             </div>
                         }.into_any(),
                     }}
                 </div>
                 <Show when=move || ctx.history_open.get() && !ctx.presenting.get()>
                     <VersionsPanel ctx=ctx/>
+                </Show>
+                <Show when=move || !ctx.presenting.get()>
+                    <ToolPanel ctx=ctx/>
                 </Show>
             </div>
             <NotesPanel ctx=ctx/>

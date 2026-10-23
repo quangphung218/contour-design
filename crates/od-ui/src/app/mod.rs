@@ -9,6 +9,7 @@ mod export_menu;
 mod home;
 mod onboarding;
 mod preview_comments;
+mod preview_tools;
 mod projects;
 mod settings_page;
 mod sse;

@@ -3,6 +3,7 @@
 
 use super::Shell;
 use super::preview_comments::comment_label;
+use super::preview_tools::{AttachmentChips, DeliverableWarning};
 use super::studio::{StudioCtx, conversation_title};
 use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, TurnState, plan_progress};
 use crate::i18n::{T, t, tf};
@@ -100,6 +101,8 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             <PlanPill ctx=ctx/>
             <QueueStack ctx=ctx/>
             <CommentChips ctx=ctx/>
+            <AttachmentChips ctx=ctx/>
+            <DeliverableWarning ctx=ctx/>
             <div class="composer">
                 <textarea
                     class="composer-input"
