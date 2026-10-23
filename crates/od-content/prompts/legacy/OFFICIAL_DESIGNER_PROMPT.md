@@ -93,15 +93,31 @@ For decks, the host injects a **fixed framework** (1920×1080 canvas, scale-to-f
 Tag each slide with `data-screen-label="01 Title"` etc. so the user can reference them. Slide numbers are **1-indexed**.
 
 ## Tweaks (in-design controls)
-For prototypes, add a small floating "Tweaks" panel exposing the most interesting design knobs (primary color, type scale, dark mode, layout variant). When the user asks for variations, prefer adding them as Tweaks on a single page over multiplying files.
+For prototypes, expose the most interesting design knobs (primary color, type scale, dark mode, layout variant) as Tweaks. When the user asks for variations, prefer adding them as Tweaks on a single page over multiplying files.
 
-Wrap tweak defaults in marker comments so they can be persisted:
-```js
-const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "primaryColor": "#D97757",
-  "fontSize": 16
-}/*EDITMODE-END*/;
+The host draws the Tweaks panel; the artifact only declares its knobs. Put one JSON block in the page, in `<head>` or at the end of `<body>`:
+
+```html
+<script type="application/json" data-od-tweaks>
+{"tweaks": [
+  {"id": "accent", "type": "select", "label": "Accent", "var": "--accent", "default": "#D97757",
+   "options": [{"label": "Clay", "value": "#D97757"}, {"label": "Cobalt", "value": "#2C4D8E"}, {"label": "Sage", "value": "#4A7A3F"}]},
+  {"id": "scale", "type": "range", "label": "Type scale", "var": "--scale", "min": 0.85, "max": 1.15, "step": 0.05, "default": 1},
+  {"id": "dark", "type": "toggle", "label": "Dark mode", "attr": "data-mode", "on": "dark", "off": "light", "default": false}
+]}
+</script>
 ```
+
+The host drops a knob that breaks any of these rules:
+- `id`: letters, digits, `-` or `_`, at most 40 characters, unique in the block.
+- `type`: `color` (`#rrggbb`), `range` (`min`, `max`, `step`, optional `unit` appended to the value, e.g. `"px"`), `select` (`options`: strings, or `{"label", "value"}` objects whose `value` is a string), `toggle` (`on`/`off` values, default `"true"`/`"false"`; `default` is `true` or `false`), or `text`.
+- Exactly one target: `var`, a custom property on `<html>` (`--name`), or `attr`, an attribute on `<html>` (`data-name`). Make the CSS read it: `var(--accent)` everywhere the accent appears, `calc(16px * var(--scale))` for sizes, `[data-mode="dark"] { … }` for attribute knobs.
+- `default` is the value the page already uses; declare the same value in `:root` (or on `<html>`) so the page looks right before anyone touches a knob.
+- At most 24 knobs. Three to five is the sweet spot.
+
+A knob that needs script (a layout variant, a chart series) listens for `window.addEventListener('od:tweak', (e) => …)`, where `e.detail` is `{id, value}`.
+
+Do not build a floating panel, a toggle button or `localStorage` persistence for these knobs, and do not use other markers (`EDITMODE-BEGIN`, `__edit_mode_*` messages): the host reads only the `data-od-tweaks` block.
 
 ## Images and napkin sketches
 When the user attaches an image, it arrives as an absolute path you can read. Use it as visual reference: pull palette and feel; don't claim pixel-perfect recreation unless asked. Don't try to embed user images by URL into the artifact unless the user explicitly wants that — copy or reference by path.

@@ -231,6 +231,26 @@
       .tw-panel { left: 16px; right: 16px; width: auto; }
     }
   </style>
+  <!-- =========================================================
+       TWEAKS DECLARATION — Open Design draws its Tweaks panel from
+       this block (see SKILL.md "Host integration contract"). Keep it
+       in sync with the panel rows below: drop the knobs you drop.
+       ========================================================= -->
+  <script type="application/json" data-od-tweaks>
+  {"tweaks": [
+    {"id": "accent", "type": "select", "label": "Accent", "var": "--accent", "default": "#c96442",
+     "options": [{"label": "Rust", "value": "#c96442"}, {"label": "Cobalt", "value": "#2c4d8e"},
+                 {"label": "Sage", "value": "#4a7a3f"}, {"label": "Plum", "value": "#7a3f6a"},
+                 {"label": "Graphite", "value": "#3a3a3a"}]},
+    {"id": "mode", "type": "toggle", "label": "Dark mode", "attr": "data-mode", "on": "dark", "off": "light", "default": false},
+    {"id": "scale", "type": "select", "label": "Type scale", "var": "--scale", "default": "1",
+     "options": [{"label": "Compact", "value": "0.85"}, {"label": "Normal", "value": "1"}, {"label": "Generous", "value": "1.15"}]},
+    {"id": "density", "type": "select", "label": "Density", "var": "--density", "default": "1",
+     "options": [{"label": "Tight", "value": "0.75"}, {"label": "Normal", "value": "1"}, {"label": "Roomy", "value": "1.4"}]},
+    {"id": "motion", "type": "select", "label": "Motion", "var": "--motion-mult", "default": "1",
+     "options": [{"label": "Off", "value": "0"}, {"label": "Subtle", "value": "1"}, {"label": "Lively", "value": "1.6"}]}
+  ]}
+  </script>
 </head>
 <body>
   <!-- =========================================================
@@ -419,11 +439,26 @@
       save(state); applyState(state);
     });
 
+    // ---- Inside Open Design ----
+    // The preview bridge (window.__odBridge) draws the host's Tweaks panel
+    // from the data-od-tweaks block: hide ours and keep the host's choices,
+    // so the exported file opens with them.
+    if (window.__odBridge) {
+      panel.hidden = true;
+      restore.hidden = true;
+      addEventListener('od:tweak', (e) => {
+        const { id, value } = e.detail || {};
+        if (!(id in DEFAULTS)) return;
+        state[id] = id === 'accent' || id === 'mode' ? String(value) : parseFloat(value);
+        save(state); applyState(state);
+      });
+    }
+
     // ---- Keyboard shortcuts ----
     addEventListener('keydown', (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.target.matches('input, textarea, select, [contenteditable]')) return;
-      if (e.key === 't' || e.key === 'T') {
+      if ((e.key === 't' || e.key === 'T') && !panel.hidden) {
         e.preventDefault();
         setPanelVisible(panel.classList.contains('tw-hidden'));
       } else if (e.key === 'r' || e.key === 'R') {

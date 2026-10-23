@@ -36,3 +36,8 @@ M6 track W2-media, lấy từ OpenDesign commit e03d5c2:
 W4 terminal: crates/od-ui/vendor/xterm/ là xterm.js đóng gói cục bộ (không tải từ CDN):
 - xterm.js, xterm.css từ @xterm/xterm 6.0.0, MIT, Copyright The xterm.js authors, SourceLair, Christopher Jeffrey (LICENSE).
 - addon-fit.js từ @xterm/addon-fit 0.11.0, MIT, Copyright The xterm.js authors (LICENSE.addon-fit).
+
+W4 tweaks: đã sửa văn bản gốc để agent khai báo tweaks theo định dạng bridge bản Rust đọc (`data-od-tweaks`):
+- crates/od-content/prompts/legacy/OFFICIAL_DESIGNER_PROMPT.md mục "Tweaks (in-design controls)" (thay marker EDITMODE),
+  DISCOVERY_AND_PHILOSOPHY.md thêm một câu.
+- content/design-templates/tweaks/: SKILL.md mục "Host integration contract", assets/wrap.html và example.html thêm khối khai báo.
