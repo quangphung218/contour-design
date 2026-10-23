@@ -112,6 +112,14 @@ messages! {
     Creating => "Creating…", "Đang tạo…";
     DesignSystem => "Design system", "Design system";
     NoneOption => "None", "Không dùng";
+    NewDesignSystem => "New design system…", "Tạo design system…";
+    DesignSystemNamePlaceholder => "Name, e.g. Tea House", "Tên, ví dụ Tea House";
+    DesignSystemBriefPlaceholder => "Describe the brand: mood, colours, type, audience…", "Mô tả thương hiệu: không khí, màu, kiểu chữ, đối tượng…";
+    GenerateDesignSystem => "Generate", "Tạo";
+    GeneratingDesignSystem => "Generating…", "Đang tạo…";
+    GeneratingDesignSystemHint => "The agent is writing DESIGN.md and tokens.css…", "Agent đang viết DESIGN.md và tokens.css…";
+    DesignSystemCreated => "Created design system {0}.", "Đã tạo design system {0}.";
+    DesignSystemFailed => "Could not create the design system: {0}", "Không tạo được design system: {0}";
     Template => "Template", "Template";
     DefaultTemplate => "Default for this type", "Mặc định theo loại";
     RecentProjects => "Recent projects", "Project gần đây";

@@ -5,10 +5,14 @@
 //! never fatal. Normalization follows the original app so the same folders
 //! produce the same catalogue (spec 3.4–3.6).
 
+pub mod atoms;
 pub mod craft;
+pub mod design_system_gen;
 pub mod design_systems;
 pub mod frontmatter;
 pub mod index;
+pub mod pipeline;
+pub mod plugin_validate;
 pub mod plugins;
 pub mod prompt;
 pub mod prompt_templates;

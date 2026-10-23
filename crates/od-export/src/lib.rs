@@ -7,6 +7,7 @@ pub mod hyperframes;
 pub mod image;
 pub mod pdf;
 pub mod pptx;
+pub mod pptx_editable;
 pub mod renderer;
 pub mod standalone;
 

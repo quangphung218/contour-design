@@ -167,4 +167,14 @@ pub trait Renderer: Send + Sync {
         target: &'a RenderTarget,
         options: CaptureOptions,
     ) -> BoxFuture<'a, RenderResult<Vec<u8>>>;
+
+    /// Deck → one measured layout per slide, for the editable PPTX
+    /// ([`crate::pptx_editable`]). Renderers without it say so.
+    fn extract_layouts<'a>(
+        &'a self,
+        target: &'a RenderTarget,
+    ) -> BoxFuture<'a, RenderResult<Vec<crate::pptx_editable::SlideLayout>>> {
+        let _ = target;
+        Box::pin(async { Err(RenderError::Unsupported("editable PPTX")) })
+    }
 }

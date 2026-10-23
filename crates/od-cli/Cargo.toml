@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 od-contracts.workspace = true
+od-content.workspace = true
 od-server.workspace = true
 od-mcp.workspace = true
 anyhow.workspace = true
@@ -31,7 +32,6 @@ od-export.workspace = true
 od-runs.workspace = true
 od-runtime.workspace = true
 od-store.workspace = true
-od-content.workspace = true
 reqwest.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-child-process"] }
 tempfile.workspace = true

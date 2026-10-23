@@ -8,14 +8,13 @@
 # from the current index.html. A request containing `form` ends with a
 # <question-form>; `slow` streams slowly so Stop can be tested; `plan` adds a
 # TodoWrite plan; `deck` writes a 3-slide deck.html (with speaker notes)
-# instead of index.html. Attached preview comments are acknowledged.
-# Chat/plan session modes answer "Mode: …" and write nothing; project
-# memory is echoed as "Memory: <first fact>"; a Design Jury prompt gets a
-# two-round jury run that ships.
 # instead of index.html; `tweak` writes a page that declares tweaks and
 # carries an anti-slop finding (emoji icon). A lint report (`artifact-lint`)
-# is answered without writing any file. Attached preview comments and
-# attached files are acknowledged.
+# is answered without writing any file. A design system brief writes
+# DESIGN.md and tokens.css instead. Chat/plan session modes answer
+# "Mode: …" and write nothing; project memory is echoed as "Memory: <first
+# fact>"; a Design Jury prompt gets a two-round jury run that ships.
+# Attached preview comments and attached files are acknowledged.
 
 case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
@@ -27,6 +26,24 @@ for a in "$@"; do
 done
 
 IFS= read -r line
+
+# Design system generation (spec 1.4): write the two package files in the
+# staging folder (cwd) and stop.
+case "$line" in *"# Design system brief"*)
+  {
+    printf '# Mock System\n\n> Category: Custom\n\nCalm tea house palette from the mock agent.\n\n'
+    for s in "Visual Theme & Atmosphere" Color Typography "Spacing & Grid" "Layout & Composition" Components "Motion & Interaction" "Voice & Brand" Anti-patterns; do
+      printf '## %s\n\nText.\n\n' "$s"
+    done
+    printf -- '- **Leaf** `#2f6b3a`\n- **Cream** `#f6efe2`\n'
+  } > DESIGN.md
+  printf ':root { --bg: #f6efe2; --surface: #ffffff; --fg: #1d1b16; --accent: #2f6b3a; --font-display: Georgia, serif; --font-body: system-ui; }\n' > tokens.css
+  printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+  printf '{"type":"assistant","message":{"id":"ds-%s","role":"assistant","content":[{"type":"text","text":"Wrote DESIGN.md and tokens.css."}]}}\n' "$$"
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null
+  exit 0
+;; esac
 # The request after the prompt's "# User request" heading, still JSON-escaped.
 req=$(printf '%s' "$line" | sed -e 's/.*# User request\\n\\n//' -e 's/\([^\\]\)".*/\1/')
 first=$(printf '%s' "$req" | sed -e 's/\\n.*//')

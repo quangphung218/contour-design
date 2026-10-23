@@ -13,5 +13,7 @@ target_dir="$(cargo metadata --format-version 1 --no-deps --manifest-path "$root
 
 cd "$here"
 [ -d node_modules/playwright ] || npm ci --no-audit --no-fund
-OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$here/mock-agent" \
-  OD_RESOURCE_ROOT="$root/content" node studio.e2e.mjs
+export OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$here/mock-agent" \
+  OD_RESOURCE_ROOT="$root/content"
+node studio.e2e.mjs
+node design-system.e2e.mjs

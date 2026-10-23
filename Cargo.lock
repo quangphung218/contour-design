@@ -3552,6 +3552,7 @@ dependencies = [
  "lol_html",
  "lopdf",
  "png 0.18.1",
+ "quick-xml",
  "regex",
  "serde",
  "serde_json",
@@ -3605,7 +3606,9 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-util",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

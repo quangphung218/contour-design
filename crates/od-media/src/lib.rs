@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod provider;
+pub mod tasks;
 
 pub use config::{ConfigFile, Credentials, EnvLookup, KeySource, process_env};
 pub use provider::{Job, Limits, MediaError, ModelDef, Provider, Rendered, Surface, find_model};
