@@ -473,6 +473,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_cancel_racing_a_freed_slot_never_runs() {
+        // The running task and the queued one are canceled back to back: the
+        // freed slot and the cancel reach the queued task together.
+        for _ in 0..30 {
+            let g = gate();
+            let q = TaskQueue::new(1, Arc::new(MemoryPersist::default()), gated(&g));
+            let a = q.submit("p", json!({"n": 0})).id;
+            let b = q.submit("p", json!({"n": 1})).id;
+            settle().await;
+            let _ = q.cancel(&a);
+            let _ = q.cancel(&b);
+            settle().await;
+            assert_eq!(*g.order.lock().unwrap(), ["0"], "the canceled task ran");
+            assert_eq!(q.get(&b).unwrap().status, TaskStatus::Canceled);
+        }
+    }
+
+    #[tokio::test]
     async fn wait_times_out_with_the_live_record() {
         let g = gate();
         let q = TaskQueue::new(1, Arc::new(MemoryPersist::default()), gated(&g));
