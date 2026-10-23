@@ -177,6 +177,7 @@ fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
         custom_instructions: row.get(6)?,
         created_at: row.get(7)?,
         updated_at: row.get(8)?,
+        entry_file: None,
     })
 }
 

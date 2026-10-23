@@ -10,6 +10,8 @@ mod desktop;
 mod ds_create;
 mod export_menu;
 mod home;
+mod icons;
+mod lazy_frame;
 mod mcp_settings;
 mod onboarding;
 mod preview_comments;
@@ -25,6 +27,7 @@ mod versions;
 use crate::events::{AgentInfo, AgentsResponse};
 use crate::i18n::{self, Locale, T, t, tf};
 use crate::settings::{AppConfig, Theme};
+use icons::{Glyph, icon};
 use leptos::prelude::*;
 use leptos_router::components::{A, Route, Router, Routes};
 use leptos_router::hooks::{use_location, use_navigate};
@@ -154,33 +157,129 @@ pub fn App() -> impl IntoView {
 
 #[component]
 fn Shelled() -> impl IntoView {
+    let mac = is_mac_desktop();
     view! {
         <Router>
             <OnboardingGate/>
-            <header class="topbar">
-                <A href="/" attr:class="brand">
-                    <span class="brand-mark" aria-hidden="true"></span>
-                    "Open Design"
-                </A>
-                <nav class="topnav">
-                    <A href="/" exact=true>{t(T::NavHome)}</A>
-                    <A href="/projects">{t(T::NavProjects)}</A>
-                    <A href="/automations">{t(T::NavAutomations)}</A>
-                    <A href="/settings">{t(T::NavSettings)}</A>
-                </nav>
-            </header>
-            <main class="main">
-                <Routes fallback=|| view! { <p class="empty">{t(T::PageNotFound)}</p> }>
-                    <Route path=path!("/") view=home::Home/>
-                    <Route path=path!("/projects") view=projects::Projects/>
-                    <Route path=path!("/projects/:id") view=studio::Studio/>
-                    <Route path=path!("/onboarding") view=onboarding::Onboarding/>
-                    <Route path=path!("/settings") view=settings_page::SettingsPage/>
-                    <Route path=path!("/automations") view=automations::Automations/>
-                </Routes>
-            </main>
+            <div class="app">
+                {mac.then(|| view! { <div class="titlebar" data-tauri-drag-region=""></div> })}
+                <div class="app-body">
+                    <Sidebar/>
+                    <main class="main" id="main">
+                        <Routes fallback=|| view! { <p class="empty page">{t(T::PageNotFound)}</p> }>
+                            <Route path=path!("/") view=home::Home/>
+                            <Route path=path!("/projects") view=projects::Projects/>
+                            <Route path=path!("/projects/:id") view=studio::Studio/>
+                            <Route path=path!("/onboarding") view=onboarding::Onboarding/>
+                            <Route path=path!("/settings") view=settings_page::SettingsPage/>
+                            <Route path=path!("/automations") view=automations::Automations/>
+                        </Routes>
+                    </main>
+                </div>
+            </div>
         </Router>
     }
+}
+
+/// `localStorage` keys of the sidebar state: the Studio has its own, since
+/// it wants the room and starts collapsed.
+const SIDEBAR_KEY: &str = "od.sidebar.collapsed";
+const SIDEBAR_STUDIO_KEY: &str = "od.sidebar.studio-collapsed";
+
+fn stored_flag(key: &str) -> Option<bool> {
+    let storage = web_sys::window()?.local_storage().ok()??;
+    storage.get_item(key).ok()?.map(|v| v == "1")
+}
+
+fn store_flag(key: &str, on: bool) {
+    if let Some(Ok(Some(storage))) = web_sys::window().map(|w| w.local_storage()) {
+        let _ = storage.set_item(key, if on { "1" } else { "0" });
+    }
+}
+
+/// Left navigation: brand, pages, settings at the bottom. Collapses to an
+/// icon rail; the choice is remembered per context (Studio or the rest).
+#[component]
+fn Sidebar() -> impl IntoView {
+    let location = use_location();
+    let in_studio = Memo::new(move |_| {
+        location
+            .pathname
+            .with(|p| p.starts_with("/projects/") && p.len() > "/projects/".len())
+    });
+    let collapsed = RwSignal::new(stored_flag(SIDEBAR_KEY).unwrap_or(false));
+    let studio_collapsed = RwSignal::new(stored_flag(SIDEBAR_STUDIO_KEY).unwrap_or(true));
+    let rail = move || {
+        if in_studio.get() {
+            studio_collapsed.get()
+        } else {
+            collapsed.get()
+        }
+    };
+    let toggle = move |_| {
+        let (signal, key) = if in_studio.get_untracked() {
+            (studio_collapsed, SIDEBAR_STUDIO_KEY)
+        } else {
+            (collapsed, SIDEBAR_KEY)
+        };
+        let next = !signal.get_untracked();
+        signal.set(next);
+        store_flag(key, next);
+    };
+    let tip = move |label: &'static str| move || rail().then_some(label);
+    let link = move |href: &'static str, glyph: Glyph, label: T, exact: bool| {
+        let label = t(label);
+        view! {
+            <A href=href exact=exact attr:class="nav-link" attr:data-tip=tip(label) attr:data-tip-pos="right">
+                {icon(glyph)}
+                <span class="nav-label">{label}</span>
+            </A>
+        }
+    };
+    view! {
+        <aside class="sidebar" class:rail=rail>
+            <div class="sidebar-top">
+                <A href="/" attr:class="brand" attr:aria-label="Open Design">
+                    <span class="brand-mark" aria-hidden="true">{icon(Glyph::DesignSystem)}</span>
+                    <span class="brand-name">"Open Design"</span>
+                </A>
+                <button
+                    class="icon-btn sidebar-toggle"
+                    aria-label=move || if rail() { t(T::ExpandSidebar) } else { t(T::CollapseSidebar) }
+                    data-tip=move || if rail() { t(T::ExpandSidebar) } else { t(T::CollapseSidebar) }
+                    data-tip-pos="right"
+                    on:click=toggle
+                >
+                    {move || icon(if rail() { Glyph::SidebarUnfold } else { Glyph::SidebarFold })}
+                </button>
+            </div>
+            <nav class="sidenav" aria-label=t(T::MainNavigation)>
+                {link("/", Glyph::Home, T::NavHome, true)}
+                {link("/projects", Glyph::Projects, T::NavProjects, false)}
+                {link("/automations", Glyph::Automations, T::NavAutomations, false)}
+                <span class="spacer"></span>
+                {link("/settings", Glyph::Settings, T::NavSettings, false)}
+            </nav>
+        </aside>
+    }
+}
+
+/// The Tauri window on macOS draws its traffic lights over the page
+/// (overlay title bar), so the shell reserves a draggable strip for them.
+fn is_mac_desktop() -> bool {
+    let mac = web_sys::window()
+        .and_then(|w| w.navigator().user_agent().ok())
+        .is_some_and(|ua| ua.contains("Mac OS"));
+    let on = mac && desktop::is_desktop();
+    if on {
+        if let Some(root) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.document_element())
+        {
+            let _ = root.set_attribute("data-shell", "mac");
+        }
+    }
+    on
 }
 
 /// Sends first-time users to onboarding once settings are known.

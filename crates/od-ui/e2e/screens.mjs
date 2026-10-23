@@ -1,0 +1,222 @@
+// Screenshots of every main screen in light and dark at 1440x900, for
+// design review. Same setup as studio.e2e.mjs (real daemon, mock agent,
+// nothing leaves loopback); it asserts nothing beyond reaching each screen.
+//
+// Usage (after run.sh built the bundle and `od`):
+//   OD_E2E_BIN=… OD_MOCK_AGENTS=$PWD/mock-agent OD_UI_DIST=../dist \
+//   OD_RESOURCE_ROOT=../../../content OD_SCREENS_OUT=/some/dir node screens.mjs
+
+import { chromium } from 'playwright';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import assert from 'node:assert/strict';
+
+const BIN = process.env.OD_E2E_BIN;
+const MOCK_AGENTS = process.env.OD_MOCK_AGENTS;
+const OUT = process.env.OD_SCREENS_OUT || new URL('./test-results/screens/', import.meta.url).pathname;
+const PORT = Number(process.env.OD_E2E_PORT || 17471);
+const BASE = `http://127.0.0.1:${PORT}`;
+assert.ok(BIN && MOCK_AGENTS, 'OD_E2E_BIN and OD_MOCK_AGENTS are required');
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const log = (...a) => console.log('[screens]', ...a);
+
+async function until(fn, label, timeout = 15_000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    if (await fn().catch(() => false)) return;
+    await sleep(50);
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+const data = mkdtempSync(join(tmpdir(), 'od-screens-'));
+mkdirSync(OUT, { recursive: true });
+const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
+  stdio: ['ignore', 'ignore', 'inherit'],
+  env: { ...process.env, OD_DATA_DIR: data, PATH: `${MOCK_AGENTS}:/usr/bin:/bin`, OD_OPEN_COMMAND: '/usr/bin/true', SHELL: '/bin/sh' },
+});
+let browser;
+const shots = [];
+const failed = [];
+
+try {
+  for (let i = 0; i < 100; i++) {
+    try {
+      if ((await fetch(`${BASE}/api/health`)).ok) break;
+    } catch {}
+    await sleep(100);
+  }
+  browser = await chromium.launch({ headless: true });
+
+  for (const scheme of ['light', 'dark']) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme, deviceScaleFactor: 1 });
+    await context.route('**/*', (route) => {
+      const url = new URL(route.request().url());
+      const local = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || ['data:', 'blob:', 'about:'].includes(url.protocol);
+      return local ? route.continue() : route.abort();
+    });
+    const page = await context.newPage();
+    page.on('pageerror', (e) => log('page error:', e.message));
+    const shot = async (name, prepare) => {
+      try {
+        await prepare?.();
+        await sleep(350);
+        const path = join(OUT, `${name}-${scheme}.png`);
+        await page.screenshot({ path });
+        shots.push(path);
+      } catch (e) {
+        failed.push(`${name}-${scheme}: ${e.message.split('\n')[0]}`);
+        log('FAILED', name, scheme, e.message.split('\n')[0]);
+      }
+    };
+
+    // Onboarding (the first visit lands there; later ones go directly).
+    await shot('onboarding', async () => {
+      await page.goto(BASE + '/onboarding');
+      await page.locator('[data-agent="claude"]').waitFor();
+    });
+    await page.getByTestId('onboarding-continue').click();
+    await page.waitForURL(BASE + '/');
+    await until(async () => (await page.locator('[data-testid="design-system"] option').count()) > 1, 'design systems');
+
+    await shot('home', async () => {
+      await page.goto(BASE + '/');
+      await until(async () => (await page.locator('[data-testid="template"] option').count()) > 1, 'templates');
+      // Gallery thumbnails load as they scroll into view.
+      await until(async () => (await page.locator('.template-card iframe').count()) >= 4, 'template thumbnails');
+      await sleep(1200);
+    });
+    await shot('home-decks', async () => {
+      await page.locator('.chips [role="radio"]').nth(1).click();
+      await page.getByTestId('template-card').first().scrollIntoViewIfNeeded();
+      await page.getByRole('button', { name: /^Show all/ }).click();
+      await page.mouse.wheel(0, 300);
+      await until(async () => (await page.locator('.template-card iframe').count()) >= 8, 'deck thumbnails');
+      await sleep(1500);
+    });
+    await page.goto(BASE + '/');
+    await shot('home-design-system-dialog', async () => {
+      await page.getByTestId('ds-new').click();
+      await page.getByTestId('ds-form').waitFor();
+    });
+    await page.keyboard.press('Escape');
+
+    // A project with a page, a plan turn and a deck.
+    let projectUrl;
+    if (scheme === 'light') {
+      await page.goto(BASE + '/');
+      await page.getByTestId('brief').fill('A landing page for a tea shop');
+      await page.getByTestId('brief').press('Enter');
+      await page.waitForURL('**/projects/*');
+      projectUrl = page.url();
+      const assistant = page.getByTestId('assistant-msg');
+      await until(async () => (await assistant.first().getAttribute('data-state')) === 'succeeded', 'turn 1');
+      await page.getByTestId('composer').fill('plan the hero, then make it darker');
+      await page.getByTestId('composer').press('Enter');
+      await until(async () => (await assistant.nth(1).getAttribute('data-state')) === 'succeeded', 'turn 2');
+      await page.getByTestId('composer').fill('make a deck');
+      await page.getByTestId('composer').press('Enter');
+      await until(async () => (await assistant.nth(2).getAttribute('data-state')) === 'succeeded', 'turn 3');
+      await sleep(800);
+    } else {
+      const list = await (await fetch(`${BASE}/api/projects`)).json();
+      projectUrl = `${BASE}/projects/${list.projects[0].id}`;
+    }
+
+    await shot('projects', async () => {
+      await page.goto(BASE + '/projects');
+      await page.locator('.project-card iframe').first().waitFor();
+      await sleep(800);
+    });
+
+    const openStudio = async () => {
+      await page.goto(projectUrl);
+      await page.frameLocator('[data-testid="preview"]').locator('body').waitFor();
+      await page.locator('.file', { hasText: 'index.html' }).click();
+      await page.frameLocator('[data-testid="preview"]').locator('#title').waitFor();
+    };
+    await shot('studio', openStudio);
+    await shot('studio-export-menu', async () => {
+      await page.getByTestId('export').click();
+      await page.getByTestId('export-menu').waitFor();
+    });
+    await page.getByTestId('export').click();
+    await shot('studio-history', async () => {
+      await page.getByTestId('history').click();
+      await page.getByTestId('version').first().waitFor();
+    });
+    await page.getByTestId('history').click();
+    await shot('studio-inspect', async () => {
+      await page.getByTestId('inspect-mode').click();
+      await page.frameLocator('[data-testid="preview"]').locator('#title').click();
+      await page.getByTestId('tool-panel').waitFor();
+    });
+    await shot('studio-lint', async () => {
+      await page.getByTestId('lint-badge').click();
+      await page.getByTestId('lint-panel').waitFor();
+    });
+    await page.getByTestId('lint-badge').click();
+    await shot('studio-comments', async () => {
+      await page.getByTestId('comment-mode').click();
+      await page.frameLocator('[data-testid="preview"]').locator('#title').click();
+      await page.getByTestId('comment-draft').waitFor();
+      await page.getByTestId('comment-note').fill('Make the title green');
+    });
+    await page.keyboard.press('Escape');
+    await shot('studio-memory', async () => {
+      await openStudio();
+      await page.getByTestId('memory-toggle').click();
+      await page.getByTestId('memory-panel').waitFor();
+    });
+    await page.getByTestId('memory-toggle').click();
+    await shot('studio-switcher', async () => {
+      await page.getByTestId('open-switcher').click();
+      await page.getByTestId('quick-switcher').waitFor();
+    });
+    await page.keyboard.press('Escape');
+    await shot('studio-deck', async () => {
+      await page.locator('.file', { hasText: 'deck.html' }).click();
+      await until(async () => (await page.getByTestId('deck-counter').textContent()) === '1 / 3', 'deck ready');
+      await page.getByTestId('deck-notes').click();
+      await page.getByTestId('speaker-notes').waitFor();
+    });
+    await shot('studio-terminal', async () => {
+      await page.getByTestId('new-terminal').click();
+      await page.getByTestId('terminal').waitFor();
+      await sleep(600);
+    });
+    await shot('studio-side-chat', async () => {
+      await page.getByTestId('side-chat-tab').click();
+      await page.getByTestId('side-chat').waitFor();
+    });
+
+    await shot('settings', async () => {
+      await page.goto(BASE + '/settings');
+      await page.getByTestId('save-settings').waitFor();
+    });
+    await shot('settings-mcp', async () => {
+      await page.getByTestId('mcp-add').click();
+      await page.getByTestId('mcp-server').last().scrollIntoViewIfNeeded();
+    });
+    await shot('automations', async () => {
+      await page.goto(BASE + '/automations');
+      await page.getByTestId('automations').waitFor();
+    });
+    await context.close();
+    // The next scheme starts on onboarding again.
+    await fetch(`${BASE}/api/app-config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ onboardingCompleted: false }) });
+  }
+  log(`${shots.length} screenshots in ${OUT}`);
+  if (failed.length) {
+    log('failed:', failed.join('; '));
+    process.exitCode = 1;
+  }
+} finally {
+  await browser?.close();
+  daemon.kill('SIGTERM');
+  await sleep(300);
+  rmSync(data, { recursive: true, force: true });
+}

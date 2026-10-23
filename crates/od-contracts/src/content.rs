@@ -137,6 +137,11 @@ pub struct SkillSummary {
     #[serde(flatten)]
     pub info: SkillInfo,
     pub has_body: bool,
+    /// The folder ships a rendered example (`example.html`, or
+    /// `examples/<key>.html` for a derived entry), served at
+    /// `GET /api/design-templates/:id/example`.
+    #[serde(default)]
+    pub has_example: bool,
 }
 
 /// Single-entry response: metadata plus the full prompt body.

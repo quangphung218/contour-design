@@ -166,6 +166,14 @@ async fn project_crud_round_trip_creates_folder_and_manifest() {
 
     let list: ProjectsResponse = h.get("/api/projects").await.typed();
     assert_eq!(list.projects.len(), 1);
+    assert_eq!(list.projects[0].entry_file, None, "no HTML yet, no cover");
+    std::fs::write(dir.join("home.html"), b"<h1>hi</h1>").unwrap();
+    let list: ProjectsResponse = h.get("/api/projects").await.typed();
+    assert_eq!(
+        list.projects[0].entry_file.as_deref(),
+        Some("home.html"),
+        "the list names each project's cover file"
+    );
     let got = h.get(&format!("/api/projects/{id}")).await.json();
     assert_eq!(
         got["project"]["metadata"]["custom"], 1,
@@ -1049,7 +1057,43 @@ async fn content_endpoints_serve_real_catalogue() {
     );
 
     let templates = h.get("/api/design-templates").await.json();
-    assert!(templates["designTemplates"].as_array().unwrap().len() >= 100);
+    let templates = templates["designTemplates"].as_array().unwrap();
+    assert!(templates.len() >= 100);
+    // Rendered examples back the Home gallery thumbnails, derived
+    // `<parent>:<key>` entries included.
+    let with_example: Vec<&str> = templates
+        .iter()
+        .filter(|t| t["hasExample"] == true)
+        .map(|t| t["id"].as_str().unwrap())
+        .collect();
+    assert!(with_example.len() >= 100, "{}", with_example.len());
+    assert!(with_example.iter().any(|id| id.contains(':')));
+    for id in [
+        with_example[0],
+        *with_example.iter().find(|id| id.contains(':')).unwrap(),
+    ] {
+        let page = h.get(&format!("/api/design-templates/{id}/example")).await;
+        assert_eq!(page.status, StatusCode::OK, "{id}");
+        assert!(String::from_utf8_lossy(&page.body).contains("<"), "{id}");
+        let csp = page.headers[axum::http::header::CONTENT_SECURITY_POLICY]
+            .to_str()
+            .unwrap();
+        assert!(
+            csp.starts_with("default-src 'none'") && csp.ends_with("sandbox"),
+            "{csp}"
+        );
+        assert!(!csp.contains("script-src"), "no script runs: {csp}");
+    }
+    let without = templates.iter().find(|t| t["hasExample"] == false);
+    if let Some(t) = without {
+        let id = t["id"].as_str().unwrap();
+        let page = h.get(&format!("/api/design-templates/{id}/example")).await;
+        assert_eq!(page.status, StatusCode::NOT_FOUND, "{id}");
+    }
+    assert_eq!(
+        h.get("/api/design-templates/nope/example").await.status,
+        StatusCode::NOT_FOUND
+    );
 
     let systems = h.get("/api/design-systems").await.json();
     let systems = systems["designSystems"].as_array().unwrap();

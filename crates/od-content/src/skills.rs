@@ -36,6 +36,22 @@ pub struct SkillEntry {
     pub dir: PathBuf,
 }
 
+impl SkillEntry {
+    /// The rendered example of this entry: `examples/<key>.html` for a
+    /// derived `<parent>:<key>` entry, else the folder's `example.html`.
+    #[must_use]
+    pub fn example_html(&self) -> Option<PathBuf> {
+        let path = match self.info.id.split_once(':') {
+            Some((_, key)) if is_safe_example_key(key) => {
+                self.dir.join("examples").join(format!("{key}.html"))
+            }
+            Some(_) => return None,
+            None => self.dir.join("example.html"),
+        };
+        path.is_file().then_some(path)
+    }
+}
+
 /// Rewrites a deprecated id to its canonical form.
 #[must_use]
 pub fn resolve_skill_id(id: &str) -> &str {

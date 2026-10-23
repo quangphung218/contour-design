@@ -4,6 +4,7 @@
 
 use super::chat_view::{ChatItem, ItemKind, render_block};
 use super::export_menu::download;
+use super::icons::{Glyph, icon};
 use super::sse::Sse;
 use super::studio::StudioCtx;
 use super::{Shell, api};
@@ -161,7 +162,6 @@ pub fn ChatTools(ctx: StudioCtx) -> impl IntoView {
             </div>
             <JuryToggle ctx=ctx/>
             <MemoryMenu ctx=ctx/>
-            <TranscriptMenu ctx=ctx/>
         </div>
         <AskModeWarning/>
     }
@@ -184,14 +184,16 @@ fn JuryToggle(ctx: StudioCtx) -> impl IntoView {
     };
     view! {
         <button
-            class="btn small"
+            class="btn small ghost"
             class:active=move || ctx.jury.get()
             data-testid="jury-toggle"
+            aria-label=t(T::DesignJury)
             title=t(T::JuryHint)
             aria-pressed=move || ctx.jury.get().to_string()
             on:click=toggle
         >
-            {t(T::DesignJury)}
+            {icon(Glyph::Jury)}
+            <span class="btn-label">{t(T::DesignJury)}</span>
         </button>
     }
 }
@@ -231,8 +233,11 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
     view! {
         <div class="menu-wrap">
             <button
-                class="btn small"
+                class="btn small ghost"
+                class:active=move || open.get()
                 data-testid="memory-toggle"
+                aria-label=t(T::Memory)
+                data-tip=t(T::Memory)
                 aria-expanded=move || open.get().to_string()
                 on:click=move |_| {
                     if !open.get_untracked() {
@@ -241,16 +246,22 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
                     open.update(|o| *o = !*o);
                 }
             >
-                {move || format!("{} ({})", t(T::Memory), ctx.memory.with(Vec::len))}
+                {icon(Glyph::Memory)}
+                <span class="btn-label">{t(T::Memory)}</span>
+                <span class="count">{move || ctx.memory.with(Vec::len)}</span>
             </button>
             <Show when=move || open.get()>
-                <div class="menu memory-panel" data-testid="memory-panel" role="dialog" aria-label=t(T::Memory)>
+                <div class="menu popover left memory-panel" data-testid="memory-panel" role="dialog" aria-label=t(T::Memory)>
+                    <div class="popover-head">
+                        <strong>{icon(Glyph::Memory)}{t(T::Memory)}</strong>
+                        <button class="icon-btn small" aria-label=t(T::Close) on:click=move |_| open.set(false)>{icon(Glyph::Close)}</button>
+                    </div>
                     <p class="muted small-text">{t(T::MemoryHint)}</p>
                     <ul class="memory-list">
                         {move || {
                             let list = ctx.memory.get();
                             if list.is_empty() {
-                                return view! { <li class="muted">{t(T::MemoryEmpty)}</li> }.into_any();
+                                return view! { <li class="memory-empty subtle">{t(T::MemoryEmpty)}</li> }.into_any();
                             }
                             list.into_iter().map(|m| memory_row(m, remove)).collect_view().into_any()
                         }}
@@ -270,11 +281,13 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
                             }
                         />
                         <button class="btn small primary" data-testid="memory-add" on:click=move |_| add()>
+                            {icon(Glyph::Add)}
                             {t(T::MemoryAdd)}
                         </button>
                     </div>
                     <Show when=move || ctx.memory.with(|m| !m.is_empty())>
-                        <button class="btn small danger" data-testid="memory-clear" on:click=clear>
+                        <button class="btn small ghost danger memory-clear" data-testid="memory-clear" on:click=clear>
+                            {icon(Glyph::Delete)}
                             {t(T::MemoryClear)}
                         </button>
                     </Show>
@@ -291,20 +304,19 @@ fn memory_row(m: MemoryEntry, remove: impl Fn(String) + Copy + 'static) -> impl 
             <span class="memory-text">{m.text}</span>
             {(m.source == MemorySource::Chat).then(|| view! { <span class="chip small-chip">{t(T::MemoryFromChat)}</span> })}
             <button
-                class="icon-btn"
-                title=t(T::Delete)
+                class="icon-btn small danger"
                 aria-label=t(T::Delete)
                 data-testid="memory-delete"
                 on:click=move |_| remove(id.clone())
             >
-                "×"
+                {icon(Glyph::Close)}
             </button>
         </li>
     }
 }
 
 #[component]
-fn TranscriptMenu(ctx: StudioCtx) -> impl IntoView {
+pub(super) fn TranscriptMenu(ctx: StudioCtx) -> impl IntoView {
     let open = RwSignal::new(false);
     let export = move |format: &'static str| {
         open.set(false);
@@ -335,20 +347,24 @@ fn TranscriptMenu(ctx: StudioCtx) -> impl IntoView {
         <div class="menu-wrap">
             <button
                 class="icon-btn"
-                title=t(T::ExportConversation)
                 aria-label=t(T::ExportConversation)
+                data-tip=t(T::ExportConversation)
+                data-tip-pos="left"
+                aria-expanded=move || open.get().to_string()
                 data-testid="export-conversation"
                 disabled=move || ctx.conversation_id.get().is_none()
                 on:click=move |_| open.update(|o| *o = !*o)
             >
-                "⤓"
+                {icon(Glyph::Export)}
             </button>
             <Show when=move || open.get()>
                 <div class="menu" role="menu">
                     <button class="menu-item" role="menuitem" data-testid="export-md" on:click=move |_| export("md")>
+                        {icon(Glyph::Markdown)}
                         {t(T::ExportMarkdown)}
                     </button>
                     <button class="menu-item" role="menuitem" data-testid="export-json" on:click=move |_| export("json")>
+                        {icon(Glyph::Braces)}
                         {t(T::ExportJson)}
                     </button>
                 </div>
@@ -383,7 +399,8 @@ pub fn AskModeWarning() -> impl IntoView {
                 .unwrap_or(agent);
             view! {
                 <p class="warning-text" role="alert" data-testid="ask-mode-warning">
-                    {tf(T::AskModeWarning, &[&name])}
+                    {icon(Glyph::Warning)}
+                    <span>{tf(T::AskModeWarning, &[&name])}</span>
                 </p>
             }
         })
@@ -487,7 +504,7 @@ fn theater(ctx: StudioCtx, report: CritiqueReport, live: bool) -> impl IntoView 
     view! {
         <section class="jury" data-testid="jury" data-status=serde_status(status)>
             <header class="jury-head">
-                <strong>{t(T::DesignJury)}</strong>
+                <strong>{icon(Glyph::Jury)}{t(T::DesignJury)}</strong>
                 <span class="muted">{format!("≥ {}", score(report.threshold))}</span>
             </header>
             <ul class="jury-lanes">{lanes}</ul>
@@ -730,7 +747,7 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
     let never = Signal::derive(|| false);
     view! {
         <section class="side-chat" data-testid="side-chat" aria-label=t(T::SideChat)>
-            <p class="mode-hint">{t(T::SideChatHint)}</p>
+            <p class="mode-hint">{icon(Glyph::SideChat)}{t(T::SideChatHint)}</p>
             <div class="messages" node_ref=list_ref data-testid="side-messages">
                 <For
                     each=move || side.items.get()
@@ -742,7 +759,7 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
                                 data-state=move || format!("{:?}", turn.with(|t| t.state)).to_lowercase()>
                                 {move || turn.with(|tn| tn.blocks.iter().cloned().map(|b| render_block(b, turn, never)).collect_view())}
                                 {move || turn.with(|tn| tn.state.is_live().then(|| view! {
-                                    <div class="run-status"><span class="spinner"></span>{t(T::Working)}</div>
+                                    <div class="run-status" role="status"><span class="spinner"></span>{t(T::Working)}</div>
                                 }))}
                             </div>
                         }.into_any(),
@@ -765,17 +782,19 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
                     }
                 ></textarea>
                 <div class="composer-actions">
+                    <Show when=move || side.live_run.get().is_some()>
+                        <button class="btn small ghost danger" on:click=move |_| side.cancel()>{icon(Glyph::Stop)}{t(T::Stop)}</button>
+                    </Show>
+                    <span class="spacer"></span>
                     <button
-                        class="btn primary"
+                        class="btn small primary send-btn"
                         data-testid="side-send"
                         disabled=move || side.live_run.get().is_some() || draft.with(|d| d.trim().is_empty())
                         on:click=move |_| send()
                     >
+                        {icon(Glyph::Send)}
                         {t(T::Send)}
                     </button>
-                    <Show when=move || side.live_run.get().is_some()>
-                        <button class="btn danger" on:click=move |_| side.cancel()>{t(T::Stop)}</button>
-                    </Show>
                 </div>
             </div>
         </section>

@@ -1,8 +1,9 @@
 //! Settings: agent, model, permission mode, theme, language.
 
 use super::Shell;
-use super::onboarding::AgentCard;
-use crate::i18n::{Locale, T, t, tf};
+use super::icons::{Glyph, icon};
+use super::onboarding::AgentPicker;
+use crate::i18n::{Locale, T, t};
 use crate::settings::{AppConfig, PermissionMode, Theme};
 use leptos::prelude::*;
 
@@ -65,111 +66,130 @@ pub fn SettingsPage() -> impl IntoView {
     };
 
     view! {
-        <section class="page narrow">
-            <h1>{t(T::SettingsTitle)}</h1>
+        <section class="page narrow settings">
+            <header class="page-head">
+                <div class="page-title">
+                    <h1>{t(T::SettingsTitle)}</h1>
+                </div>
+            </header>
 
-            <h2>{t(T::Agent)}</h2>
-            <div class="agent-list">
-                {move || match shell.agents.get() {
-                    None => view! { <p class="empty">{t(T::DetectingAgents)}</p> }.into_any(),
-                    Some(Err(e)) => {
-                        view! {
-                            <p class="error-text">{tf(T::AgentDetectionUnavailable, &[&e])}</p>
-                            <label class="field">
-                                <span>{t(T::AgentId)}</span>
-                                <input
-                                    class="input"
-                                    prop:value=move || agent.get().unwrap_or_default()
-                                    on:input=move |ev| {
-                                        let v = event_target_value(&ev);
-                                        agent.set(Some(v).filter(|v| !v.trim().is_empty()));
-                                    }
-                                />
-                            </label>
-                        }
-                            .into_any()
-                    }
-                    Some(Ok(list)) => {
-                        list.into_iter()
-                            .map(|a| view! { <AgentCard agent=a picked=agent/> })
-                            .collect_view()
-                            .into_any()
-                    }
-                }}
-            </div>
+            <section class="settings-section">
+                <div class="section-intro">
+                    <h2>{icon(Glyph::Agent)}{t(T::Agent)}</h2>
+                    <p>{t(T::AgentSectionHint)}</p>
+                </div>
+                <div class="card padded">
+                    <AgentPicker picked=agent/>
+                    {move || matches!(shell.agents.get(), Some(Err(_))).then(|| view! {
+                        <label class="field">
+                            <span>{t(T::AgentId)}</span>
+                            <input
+                                class="input"
+                                prop:value=move || agent.get().unwrap_or_default()
+                                on:input=move |ev| {
+                                    let v = event_target_value(&ev);
+                                    agent.set(Some(v).filter(|v| !v.trim().is_empty()));
+                                }
+                            />
+                        </label>
+                    })}
+                    <label class="field">
+                        <span>{t(T::Model)}</span>
+                        <input
+                            class="input"
+                            data-testid="model"
+                            placeholder=t(T::ModelPlaceholder)
+                            prop:value=move || model.get()
+                            on:input=move |ev| model.set(event_target_value(&ev))
+                        />
+                        <span class="muted">{t(T::ModelHint)}</span>
+                    </label>
+                </div>
+            </section>
 
-            <label class="field">
-                <span>{t(T::Model)}</span>
-                <input
-                    class="input"
-                    data-testid="model"
-                    placeholder=t(T::ModelPlaceholder)
-                    prop:value=move || model.get()
-                    on:input=move |ev| model.set(event_target_value(&ev))
-                />
-                <span class="muted">{t(T::ModelHint)}</span>
-            </label>
+            <section class="settings-section">
+                <div class="section-intro">
+                    <h2>{icon(Glyph::LintOk)}{t(T::Permissions)}</h2>
+                    <p>{t(T::PermissionsHint)}</p>
+                </div>
+                <div class="card padded">
+                    <div class="radio-group">
+                        {perm_option(
+                            PermissionMode::Auto,
+                            T::PermAuto,
+                            T::PermAutoDetail,
+                        )}
+                        {perm_option(
+                            PermissionMode::Ask,
+                            T::PermAsk,
+                            T::PermAskDetail,
+                        )}
+                    </div>
+                    <super::agent_w3::AskModeWarning/>
+                </div>
+            </section>
 
-            <h2>{t(T::Permissions)}</h2>
-            <div class="radio-group">
-                {perm_option(
-                    PermissionMode::Auto,
-                    T::PermAuto,
-                    T::PermAutoDetail,
-                )}
-                {perm_option(
-                    PermissionMode::Ask,
-                    T::PermAsk,
-                    T::PermAskDetail,
-                )}
-            </div>
-            <super::agent_w3::AskModeWarning/>
+            <section class="settings-section">
+                <div class="section-intro">
+                    <h2>{icon(Glyph::System)}{t(T::Appearance)}</h2>
+                    <p>{t(T::AppearanceHint)}</p>
+                </div>
+                <div class="card padded settings-inline">
+                    <div class="segmented" role="group" aria-label=t(T::Appearance)>
+                        {Theme::ALL
+                            .into_iter()
+                            .map(|th| {
+                                let (glyph, label) = match th {
+                                    Theme::System => (Glyph::System, t(T::ThemeSystem)),
+                                    Theme::Light => (Glyph::Sun, t(T::ThemeLight)),
+                                    Theme::Dark => (Glyph::Moon, t(T::ThemeDark)),
+                                };
+                                view! {
+                                    <button
+                                        class="seg"
+                                        aria-pressed=move || (theme.get() == th).to_string()
+                                        class:active=move || theme.get() == th
+                                        on:click=move |_| theme.set(th)
+                                    >
+                                        {icon(glyph)}
+                                        {label}
+                                    </button>
+                                }
+                            })
+                            .collect_view()}
+                    </div>
+                </div>
+            </section>
 
-            <h2>{t(T::Appearance)}</h2>
-            <div class="segmented" role="radiogroup" aria-label=t(T::Appearance)>
-                {Theme::ALL
-                    .into_iter()
-                    .map(|th| {
-                        view! {
-                            <button
-                                class="seg"
-                                class:active=move || theme.get() == th
-                                on:click=move |_| theme.set(th)
-                            >
-                                {match th {
-                                    Theme::System => t(T::ThemeSystem),
-                                    Theme::Light => t(T::ThemeLight),
-                                    Theme::Dark => t(T::ThemeDark),
-                                }}
-                            </button>
-                        }
-                    })
-                    .collect_view()}
-            </div>
+            <section class="settings-section">
+                <div class="section-intro">
+                    <h2>{icon(Glyph::Language)}{t(T::Language)}</h2>
+                    <p>{t(T::LanguageHint)}</p>
+                </div>
+                <div class="card padded settings-inline">
+                    <select
+                        class="select-auto"
+                        data-testid="language"
+                        aria-label=t(T::Language)
+                        on:change=move |ev| language.set(Locale::parse(&event_target_value(&ev)))
+                    >
+                        {Locale::ALL
+                            .into_iter()
+                            .map(|l| {
+                                view! {
+                                    <option value=l.tag() selected=move || language.get() == l>
+                                        {l.native_name()}
+                                    </option>
+                                }
+                            })
+                            .collect_view()}
+                    </select>
+                </div>
+            </section>
 
-            <h2>{t(T::Language)}</h2>
-            <label class="field">
-                <select
-                    data-testid="language"
-                    aria-label=t(T::Language)
-                    on:change=move |ev| language.set(Locale::parse(&event_target_value(&ev)))
-                >
-                    {Locale::ALL
-                        .into_iter()
-                        .map(|l| {
-                            view! {
-                                <option value=l.tag() selected=move || language.get() == l>
-                                    {l.native_name()}
-                                </option>
-                            }
-                        })
-                        .collect_view()}
-                </select>
-            </label>
-
-            <div class="row end">
+            <div class="save-bar">
                 {move || match status.get() {
-                    Some(Ok(())) => view! { <span class="ok-text">{t(T::Saved)}</span> }.into_any(),
+                    Some(Ok(())) => view! { <span class="ok-text save-status">{icon(Glyph::Check)}{t(T::Saved)}</span> }.into_any(),
                     Some(Err(e)) => view! { <span class="error-text">{e}</span> }.into_any(),
                     None => ().into_any(),
                 }}
@@ -177,7 +197,9 @@ pub fn SettingsPage() -> impl IntoView {
             </div>
 
             // Saved on its own: the servers live in mcp-config.json.
-            <super::mcp_settings::McpSection/>
+            <section class="settings-section">
+                <super::mcp_settings::McpSection/>
+            </section>
         </section>
     }
 }

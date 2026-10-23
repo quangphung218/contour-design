@@ -81,8 +81,17 @@ try {
   });
   const runBodies = [];
   const page = await context.newPage();
-  page.on('pageerror', (e) => log('page error:', e.message));
-  page.on('console', (m) => m.type() === 'error' && log('console error:', m.text().slice(0, 2000)));
+  // Wasm panics surface as a console "panicked at" plus a pageerror.
+  const pageErrors = [];
+  page.on('pageerror', (e) => {
+    pageErrors.push(e.message);
+    log('page error:', e.message);
+  });
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    if (m.text().includes('panicked at')) pageErrors.push(m.text().slice(0, 500));
+    log('console error:', m.text().slice(0, 2000));
+  });
   page.on('request', (req) => {
     if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/runs') runBodies.push(req.postDataJSON());
   });
@@ -104,6 +113,22 @@ try {
     designSystems: (await page.locator('[data-testid="design-system"] option').count()) - 1,
     prototypeTemplates: (await page.locator('[data-testid="template"] option').count()) - 1,
   };
+  // 2b. The template select follows the gallery, also after a hand pick
+  // (an option picked by hand ignores the `selected` attribute).
+  const tplOptions = page.locator('[data-testid="template"] option');
+  const tplA = await tplOptions.nth(1).getAttribute('value');
+  const tplB = await tplOptions.nth(2).getAttribute('value');
+  const cards = page.getByTestId('template-card');
+  await page.getByTestId('template').selectOption(tplA);
+  await cards.nth(1).click();
+  assert.equal(await page.getByTestId('template').inputValue(), tplB);
+  await cards.nth(0).click();
+  assert.equal(await page.getByTestId('template').inputValue(), tplA, 'select shows the template that will be sent');
+  assert.equal(await cards.nth(0).getAttribute('aria-pressed'), 'true');
+  await page.getByTestId('template').selectOption('');
+  assert.equal(await cards.nth(0).getAttribute('aria-pressed'), 'false');
+  results.templatePicker = 'ok';
+
   const brief = 'A landing page for a tea shop';
   await page.getByTestId('brief').fill(brief);
   await page.getByTestId('brief').press('Enter');
@@ -300,10 +325,17 @@ try {
   await page.getByTestId('handoff-open').click();
   await page.getByTestId('export-status').getByText('Folder opened').waitFor();
   results.exportHandoff = 'ok';
+  // Leaving the Studio while the toast shows: its timer fires after the
+  // menu is gone and must not read the disposed signals.
+  await page.locator('.sidenav a[href="/projects"]').click();
+  await page.waitForURL(BASE + '/projects');
+  await sleep(5_500);
+  assert.deepEqual(pageErrors, [], 'no wasm panic once the toast timer fires');
+  results.toastAfterUnmount = 'ok';
 
   // 15. Project list; an existing folder opens as a project.
   await page.goto(BASE + '/projects');
-  await page.locator('.project-row', { hasText: brief }).waitFor();
+  await page.locator('.project-card', { hasText: brief }).waitFor();
   const folder = mkdtempSync(join(tmpdir(), 'od-e2e-folder-'));
   writeFileSync(join(folder, 'index.html'), '<!doctype html><h1 id="title">From my folder</h1>');
   await page.getByTestId('open-folder').click();
@@ -513,7 +545,7 @@ try {
   await page.getByTestId('language').selectOption('vi');
   await page.getByTestId('save-settings').click();
   await page.locator('h1', { hasText: 'Cài đặt' }).waitFor();
-  await page.locator('.topnav', { hasText: 'Trang chủ' }).waitFor();
+  await page.locator('.sidenav', { hasText: 'Trang chủ' }).waitFor();
   cfg = await (await fetch(`${BASE}/api/app-config`)).json();
   assert.equal(cfg.locale, 'vi');
   assert.equal(await page.locator('html').getAttribute('lang'), 'vi');

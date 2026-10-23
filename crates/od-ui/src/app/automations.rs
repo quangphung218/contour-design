@@ -1,6 +1,7 @@
 //! Automations (spec 1.5): routines that run a prompt in a project on a
 //! local cron schedule, with a switch, "run now" and the run history.
 
+use super::icons::{Glyph, icon};
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -134,10 +135,15 @@ pub fn Automations() -> impl IntoView {
 
     view! {
         <section class="page narrow" data-testid="automations">
-            <h1>{t(T::NavAutomations)}</h1>
-            <p class="muted">{t(T::AutomationsIntro)}</p>
+            <header class="page-head">
+                <div class="page-title">
+                    <h1>{t(T::NavAutomations)}</h1>
+                    <p class="page-sub">{t(T::AutomationsIntro)}</p>
+                </div>
+            </header>
 
             <div class="card form-card">
+                <h2 class="card-title">{icon(Glyph::Add)}{t(T::NewRoutine)}</h2>
                 <label class="field">
                     <span>{t(T::RoutineName)}</span>
                     <input class="input" data-testid="routine-name" prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev))/>
@@ -162,13 +168,20 @@ pub fn Automations() -> impl IntoView {
                 </label>
                 <div class="row end">
                     {move || error.get().map(|e| view! { <span class="error-text" data-testid="routine-error">{e}</span> })}
-                    <button class="btn primary" data-testid="routine-add" on:click=add>{t(T::RoutineAdd)}</button>
+                    <button class="btn primary" data-testid="routine-add" on:click=add>{icon(Glyph::Schedule)}{t(T::RoutineAdd)}</button>
                 </div>
             </div>
 
+            <h2 class="list-title">{t(T::RoutinesTitle)}</h2>
             {move || match routines.get() {
-                None => view! { <p class="empty">{t(T::Loading)}</p> }.into_any(),
-                Some(list) if list.is_empty() => view! { <p class="empty">{t(T::NoRoutines)}</p> }.into_any(),
+                None => view! { <div class="skeleton routine-skeleton"></div> }.into_any(),
+                Some(list) if list.is_empty() => view! {
+                    <div class="card empty-state compact">
+                        <span class="empty-icon">{icon(Glyph::Automations)}</span>
+                        <strong>{t(T::NoRoutines)}</strong>
+                        <p>{t(T::NoRoutinesBody)}</p>
+                    </div>
+                }.into_any(),
                 Some(list) => view! {
                     <ul class="routine-list">
                         {list.into_iter().map(|r| view! { <RoutineRow routine=r reload=reload/> }).collect_view()}
@@ -228,16 +241,17 @@ fn RoutineRow(routine: Routine, reload: impl Fn() + Copy + Send + Sync + 'static
     );
     view! {
         <li class="card routine" data-testid="routine" data-routine=routine.id.clone()>
-            <div class="row">
+            <div class="row routine-head">
+                <span class="routine-icon">{icon(Glyph::Automations)}</span>
                 <strong class="grow">{routine.name.clone()}</strong>
                 <label class="switch">
                     <input type="checkbox" data-testid="routine-enabled" prop:checked=routine.enabled on:change=move |ev| toggle(event_target_checked(&ev))/>
                     <span>{t(T::RoutineEnabled)}</span>
                 </label>
-                <button class="btn small" data-testid="routine-run" on:click=run_now>{t(T::RoutineRunNow)}</button>
-                <button class="btn small danger" on:click=remove>{t(T::Delete)}</button>
+                <button class="btn small" data-testid="routine-run" on:click=run_now>{icon(Glyph::Play)}{t(T::RoutineRunNow)}</button>
+                <button class="icon-btn danger" aria-label=t(T::Delete) data-tip=t(T::Delete) on:click=remove>{icon(Glyph::Delete)}</button>
             </div>
-            <p class="muted small"><code>{routine.schedule.clone()}</code>" · "{next}</p>
+            <p class="routine-schedule small">{icon(Glyph::Schedule)}<code>{routine.schedule.clone()}</code><span class="subtle">" · "{next}</span></p>
             <p class="small prompt-preview">{routine.prompt.clone()}</p>
             {move || failure.get().map(|e| view! { <p class="error-text small">{e}</p> })}
             <ul class="routine-history" data-testid="routine-history">
@@ -250,7 +264,7 @@ fn RoutineRow(routine: Routine, reload: impl Fn() + Copy + Send + Sync + 'static
                         let href = run.conversation_id.as_ref().map(|_| format!("/projects/{project_id}"));
                         view! {
                             <li class="small" data-testid="routine-run-row" data-status=run.status.clone()>
-                                <span class=format!("run-state {}", run.status)>{state_label(&run.status)}</span>
+                                <span class=format!("badge run-state {}", run.status)>{state_label(&run.status)}</span>
                                 " · "{trigger_label(&run.trigger)}" · "{local_time(run.started_at)}
                                 {run.error.clone().map(|e| view! { <span class="error-text">" · "{e}</span> })}
                                 {href.map(|h| view! { " · " <A href=h>{t(T::OpenConversation)}</A> })}

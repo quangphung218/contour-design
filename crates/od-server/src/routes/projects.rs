@@ -8,7 +8,7 @@ use od_contracts::{
 };
 
 pub async fn list(State(state): State<AppState>) -> ApiResult<ApiJson<ProjectsResponse>> {
-    let projects = state.blocking(|s| s.list_projects()).await?;
+    let projects = state.blocking(|s| s.list_projects_with_entry()).await?;
     Ok(ApiJson(ProjectsResponse { projects }))
 }
 

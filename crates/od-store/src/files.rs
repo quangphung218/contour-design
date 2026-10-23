@@ -30,6 +30,34 @@ impl ProjectRoot {
         resolve_safe_real(&self.dir, name)
     }
 
+    /// The HTML file to show for the project: `preferred` (its declared
+    /// entry) if it exists, else `index.html`, else the first top-level
+    /// HTML file by name. Looks at one directory only, so it stays cheap
+    /// for a whole project list.
+    #[must_use]
+    pub fn cover_html(&self, preferred: Option<&str>) -> Option<String> {
+        let is_html = |n: &str| {
+            let n = n.to_ascii_lowercase();
+            n.ends_with(".html") || n.ends_with(".htm")
+        };
+        let exists = |n: &str| self.resolve(n).is_ok_and(|p| p.is_file());
+        if let Some(p) = preferred.filter(|p| is_html(p) && exists(p)) {
+            return Some(p.to_owned());
+        }
+        if exists("index.html") {
+            return Some("index.html".to_owned());
+        }
+        let mut names: Vec<String> = fs::read_dir(&self.dir)
+            .ok()?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| !n.starts_with('.') && is_html(n))
+            .collect();
+        names.sort();
+        names.into_iter().next()
+    }
+
     fn real_dir(&self) -> PathBuf {
         fs::canonicalize(&self.dir).unwrap_or_else(|_| self.dir.clone())
     }
@@ -418,6 +446,38 @@ mod tests {
 
     fn unsupported(_: &Path, _: &Path) -> std::io::Result<()> {
         Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+
+    #[test]
+    fn cover_html_prefers_the_entry_then_index_then_first_html() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = ProjectRoot {
+            dir: tmp.path().to_path_buf(),
+            imported: false,
+        };
+        assert_eq!(root.cover_html(None), None);
+        fs::write(tmp.path().join("notes.txt"), b"x").unwrap();
+        fs::write(tmp.path().join(".hidden.html"), b"x").unwrap();
+        fs::write(tmp.path().join("b.html"), b"x").unwrap();
+        fs::write(tmp.path().join("a.htm"), b"x").unwrap();
+        assert_eq!(root.cover_html(None).as_deref(), Some("a.htm"));
+        fs::write(tmp.path().join("index.html"), b"x").unwrap();
+        assert_eq!(root.cover_html(None).as_deref(), Some("index.html"));
+        assert_eq!(root.cover_html(Some("b.html")).as_deref(), Some("b.html"));
+        // A declared entry that is missing, not HTML or outside the folder
+        // falls back.
+        assert_eq!(
+            root.cover_html(Some("gone.html")).as_deref(),
+            Some("index.html")
+        );
+        assert_eq!(
+            root.cover_html(Some("notes.txt")).as_deref(),
+            Some("index.html")
+        );
+        assert_eq!(
+            root.cover_html(Some("../x.html")).as_deref(),
+            Some("index.html")
+        );
     }
 
     #[test]

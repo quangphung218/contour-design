@@ -8,6 +8,7 @@ use super::bridge::{self, Source};
 use super::chat_view::{ChatItem, ChatPane};
 use super::deck::{DeckBar, NotesPanel, ThumbRail};
 use super::export_menu::ExportMenu;
+use super::icons::{Glyph, icon};
 use super::preview_comments::CommentLayer;
 use super::preview_tools::{self, DrawLayer, Tool, ToolBar, ToolPanel, Tools};
 use super::sse::Sse;
@@ -52,6 +53,14 @@ impl Device {
             Self::Desktop => t(T::DeviceDesktop),
             Self::Tablet => t(T::DeviceTablet),
             Self::Phone => t(T::DevicePhone),
+        }
+    }
+
+    fn glyph(self) -> Glyph {
+        match self {
+            Self::Desktop => Glyph::Desktop,
+            Self::Tablet => Glyph::Tablet,
+            Self::Phone => Glyph::Phone,
         }
     }
 
@@ -140,7 +149,7 @@ pub fn is_html_path(path: &str) -> bool {
 
 /// The file to preview first: the project's entry file, else `index.html`,
 /// else the first HTML file.
-fn pick_entry(project: Option<&Project>, files: &[ProjectFile]) -> Option<String> {
+pub(super) fn pick_entry(project: Option<&Project>, files: &[ProjectFile]) -> Option<String> {
     let entry = project
         .and_then(|p| p.metadata.as_ref())
         .and_then(|m| m.entry_file.clone());
@@ -812,6 +821,24 @@ pub fn conversation_title(c: &Conversation, number: usize) -> String {
         .unwrap_or_else(|| tf(T::ConversationN, &[&number.to_string()]))
 }
 
+/// Icon of a file, from its extension.
+pub fn file_glyph(path: &str) -> Glyph {
+    let ext = path
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "html" | "htm" | "css" | "js" | "mjs" | "ts" | "tsx" | "jsx" | "svelte" | "vue" => {
+            Glyph::FileCode
+        }
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "avif" | "ico" => Glyph::FileImage,
+        "md" | "markdown" => Glyph::Markdown,
+        "json" | "toml" | "yaml" | "yml" => Glyph::Braces,
+        "txt" | "csv" => Glyph::FileText,
+        _ => Glyph::File,
+    }
+}
+
 /// Whether a key press belongs to a text field rather than the workspace.
 fn is_editing(ev: &web_sys::KeyboardEvent) -> bool {
     use wasm_bindgen::JsCast;
@@ -918,22 +945,23 @@ pub fn Studio() -> impl IntoView {
 fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
     view! {
         <aside class="files" aria-label=t(T::ProjectFiles)>
-            <div class="pane-head">
-                <span class="pane-title">
+            <div class="pane-head files-head">
+                <span class="pane-title" title=move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()).unwrap_or_default())>
                     {move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()).unwrap_or_default())}
                 </span>
-                <button class="icon-btn" title=t(T::QuickOpen) data-testid="open-switcher" on:click=move |_| ctx.switcher_open.set(true)>
-                    "⌘P"
+                <button class="icon-btn" aria-label=t(T::QuickOpen) data-tip=t(T::QuickOpen) data-tip-pos="left" data-testid="open-switcher" on:click=move |_| ctx.switcher_open.set(true)>
+                    {icon(Glyph::Search)}
                 </button>
-                <button class="icon-btn" title=t(T::RefreshFiles) on:click=move |_| ctx.refresh_files()>
-                    "↻"
+                <button class="icon-btn" aria-label=t(T::RefreshFiles) data-tip=t(T::RefreshFiles) data-tip-pos="left" on:click=move |_| ctx.refresh_files()>
+                    {icon(Glyph::Refresh)}
                 </button>
             </div>
+            <div class="files-label eyebrow">{t(T::Files)}</div>
             <ul class="file-tree" data-testid="file-tree">
                 {move || {
                     let files = ctx.files.get();
                     if files.is_empty() {
-                        return view! { <li class="empty small">{t(T::NoFilesYet)}</li> }.into_any();
+                        return view! { <li class="empty small files-empty">{icon(Glyph::File)}{t(T::NoFilesYet)}</li> }.into_any();
                     }
                     files
                         .into_iter()
@@ -950,8 +978,8 @@ fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
                                         title=f.path.clone()
                                         on:click=move |_| ctx.open_file(&path)
                                     >
-                                        <span class=format!("dot kind-{:?}", f.kind).to_lowercase()></span>
-                                        {f.name.clone()}
+                                        <span class=format!("file-ico kind-{:?}", f.kind).to_lowercase()>{icon(file_glyph(&f.path))}</span>
+                                        <span class="file-name">{f.name.clone()}</span>
                                     </button>
                                 </li>
                             }
@@ -973,7 +1001,7 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                 let side_open = ctx.side.open.get();
                 let side_tab = view! {
                     <div class="tab side-tab" class:active=side_open role="tab" aria-selected=side_open.to_string() data-testid="side-chat-tab" title=t(T::SideChatHint)>
-                        <button class="tab-name" on:click=move |_| ctx.side.show(ctx)>{format!("💬 {}", t(T::SideChat))}</button>
+                        <button class="tab-name" on:click=move |_| ctx.side.show(ctx)>{icon(Glyph::SideChat)}{t(T::SideChat)}</button>
                     </div>
                 };
                 let term_active = ctx.active_term.with(Option::is_some);
@@ -986,14 +1014,13 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                         let close = path.clone();
                         view! {
                             <div class="tab" class:active=active role="tab" aria-selected=active.to_string() data-testid="tab" title=path.clone()>
-                                <button class="tab-name" on:click=move |_| ctx.open_file(&open)>{name}</button>
+                                <button class="tab-name" on:click=move |_| ctx.open_file(&open)>{icon(file_glyph(&name))}{name.clone()}</button>
                                 <button
                                     class="tab-close"
-                                    title=t(T::CloseTab)
                                     aria-label=t(T::CloseTab)
                                     on:click=move |_| ctx.tabs.update(|t| t.close(&close))
                                 >
-                                    "×"
+                                    {icon(Glyph::Close)}
                                 </button>
                             </div>
                         }
@@ -1011,24 +1038,24 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                         view! {
                             <div class="tab term-tab" class:active=active role="tab" aria-selected=active.to_string() data-testid="terminal-tab">
                                 <button class="tab-name" on:click=move |_| { ctx.side.open.set(false); ctx.active_term.set(Some(show.clone())); }>
+                                    {icon(Glyph::Terminal)}
                                     {tf(T::TerminalTab, &[&term.number.to_string()])}
                                 </button>
                                 <button
                                     class="tab-close"
-                                    title=t(T::CloseTerminal)
                                     aria-label=t(T::CloseTerminal)
                                     data-testid="terminal-close"
                                     on:click=move |_| terminal::close(ctx, close.clone())
                                 >
-                                    "×"
+                                    {icon(Glyph::Close)}
                                 </button>
                             </div>
                         }
                     })
                     .collect_view()
             }}
-            <button class="icon-btn tab-add" title=t(T::NewTerminal) aria-label=t(T::NewTerminal) data-testid="new-terminal" on:click=move |_| terminal::open(ctx)>
-                ">_"
+            <button class="icon-btn tab-add" aria-label=t(T::NewTerminal) data-tip=t(T::NewTerminal) data-testid="new-terminal" on:click=move |_| terminal::open(ctx)>
+                {icon(Glyph::Terminal)}
             </button>
         </div>
     }
@@ -1080,52 +1107,74 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             <Show when=move || !ctx.side.open.get() fallback=move || view! { <SideChatView ctx=ctx/> }>
             {move || ctx.active_term.get().map(|id| view! { <TerminalView id=id/> })}
             <div class="preview-main" style=move || if ctx.active_term.with(Option::is_some) { "display:none" } else { "display:contents" }>
-            <div class="pane-head">
-                <span class="pane-title mono">{move || ctx.active().unwrap_or_default()}</span>
-                <div class="segmented small">
+            <div class="pane-head preview-head">
+                <button class="icon-btn" aria-label=t(T::ReloadPreview) data-tip=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>
+                    {icon(Glyph::Refresh)}
+                </button>
+                <span class="pane-title path-title mono" title=move || ctx.active().unwrap_or_default()>
+                    {move || ctx.active().unwrap_or_default()}
+                </span>
+                <div class="segmented small icons" role="radiogroup" aria-label=t(T::Preview)>
                     {Device::ALL
                         .into_iter()
                         .map(|d| {
                             view! {
-                                <button class="seg" class:active=move || device.get() == d on:click=move |_| device.set(d)>
-                                    {d.label()}
+                                <button
+                                    class="seg"
+                                    role="radio"
+                                    aria-checked=move || (device.get() == d).to_string()
+                                    aria-label=d.label()
+                                    data-tip=d.label()
+                                    class:active=move || device.get() == d
+                                    on:click=move |_| device.set(d)
+                                >
+                                    {icon(d.glyph())}
                                 </button>
                             }
                         })
                         .collect_view()}
                 </div>
+                <span class="head-divider" aria-hidden="true"></span>
                 <Show when=is_html>
                     <button
-                        class="btn small"
+                        class="btn small ghost"
                         class:active=move || ctx.comment_mode.get()
                         data-testid="comment-mode"
                         aria-pressed=move || ctx.comment_mode.get().to_string()
                         on:click=move |_| ctx.set_comment_mode(!ctx.comment_mode.get_untracked())
                     >
+                        {icon(Glyph::Comment)}
                         {t(T::CommentMode)}
                     </button>
                     <button
-                        class="btn small"
+                        class="btn small ghost"
                         class:active=move || ctx.history_open.get()
+                        aria-pressed=move || ctx.history_open.get().to_string()
                         data-testid="history"
                         on:click=move |_| ctx.history_open.update(|o| *o = !*o)
                     >
+                        {icon(Glyph::History)}
                         {t(T::History)}
                     </button>
                 </Show>
                 <ExportMenu ctx=ctx/>
-                <button class="icon-btn" title=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>"↻"</button>
             </div>
             <DeckBar ctx=ctx/>
             <Show when=move || is_html() && ctx.viewing.with(Option::is_none)>
                 <ToolBar ctx=ctx/>
             </Show>
-            {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{t(T::CommentModeOn)}</p> })}
+            {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{icon(Glyph::Comment)}{t(T::CommentModeOn)}</p> })}
             <div class="preview-body">
                 <ThumbRail ctx=ctx src=src/>
                 <div class="preview-stage">
                     {move || match (src.get(), ctx.viewing.get()) {
-                        (None, _) => view! { <p class="empty">{t(T::PreviewEmpty)}</p> }.into_any(),
+                        (None, _) => view! {
+                            <div class="empty-state preview-empty">
+                                <span class="empty-icon">{icon(Glyph::Desktop)}</span>
+                                <strong>{t(T::PreviewEmptyTitle)}</strong>
+                                <p>{t(T::PreviewEmpty)}</p>
+                            </div>
+                        }.into_any(),
                         (Some(_), Some(v)) => view! {
                             <iframe
                                 class="preview-frame"

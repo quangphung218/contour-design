@@ -2,12 +2,16 @@
 //! project folder, copy a prompt for a coding agent.
 
 use super::api;
+use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use od_contracts::{HandoffResponse, OkResponse};
 use serde_json::json;
 use wasm_bindgen::JsCast;
+
+/// How long an export or handoff result stays on screen.
+const TOAST_MS: u32 = 5_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Format {
@@ -53,6 +57,16 @@ impl Format {
         }
     }
 
+    fn glyph(self) -> Glyph {
+        match self {
+            Self::Html => Glyph::FileCode,
+            Self::Zip => Glyph::Download,
+            Self::Pdf => Glyph::FileText,
+            Self::Png => Glyph::FileImage,
+            Self::Pptx => Glyph::Deck,
+        }
+    }
+
     /// Needs an HTML file to render (all but ZIP).
     fn needs_file(self) -> bool {
         self != Self::Zip
@@ -80,6 +94,16 @@ pub(super) fn download(bytes: &[u8], name: &str, mime: &str) -> Option<()> {
     Some(())
 }
 
+/// Whether the toast numbered `shown` may close when its time is up:
+/// never while an export is still running, never over a newer message
+/// (each message gets a new number, even one with the same text).
+fn toast_expired(busy: bool, current: u32, shown: u32) -> bool {
+    if busy {
+        return false;
+    }
+    current == shown
+}
+
 fn stem(path: &str) -> &str {
     let name = path.rsplit('/').next().unwrap_or(path);
     name.rsplit_once('.').map_or(name, |(s, _)| s)
@@ -89,6 +113,30 @@ fn stem(path: &str) -> &str {
 pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     let open = RwSignal::new(false);
     let status = RwSignal::new(None::<Result<String, String>>);
+    let busy = RwSignal::new(false);
+    // Numbers each message shown, so a timer only closes its own toast.
+    let shown_seq = RwSignal::new(0u32);
+    // The result shows as a toast for a few seconds, then leaves.
+    Effect::new(move |_| {
+        if status.with(Option::is_none) {
+            return;
+        }
+        let shown = shown_seq.get_untracked().wrapping_add(1);
+        shown_seq.set(shown);
+        leptos::task::spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(TOAST_MS).await;
+            // The menu may be gone (the user left the Studio): its signals
+            // are disposed then, and reading them would panic.
+            let (Some(busy), Some(current)) =
+                (busy.try_get_untracked(), shown_seq.try_get_untracked())
+            else {
+                return;
+            };
+            if toast_expired(busy, current, shown) {
+                status.set(None);
+            }
+        });
+    });
 
     let export = move |format: Format| {
         open.set(false);
@@ -104,6 +152,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             Some(f) if format.needs_file() => format!("{}.{}", stem(f), format.ext()),
             _ => format!("{project}.{}", format.ext()),
         };
+        busy.set(true);
         status.set(Some(Ok(tf(T::Exporting, &[format.ext()]))));
         leptos::task::spawn_local(async move {
             let base = ctx.base();
@@ -123,6 +172,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                     api::post_bytes(&format!("{base}/export/{kind}"), &body).await
                 }
             };
+            busy.set(false);
             match res {
                 Ok(bytes) => {
                     download(&bytes, &name, format.mime());
@@ -162,12 +212,15 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         <div class="menu-wrap">
             <button
                 class="btn small"
+                class:active=move || open.get()
                 data-testid="export"
                 aria-haspopup="menu"
                 aria-expanded=move || open.get().to_string()
                 on:click=move |_| open.update(|o| *o = !*o)
             >
+                {icon(Glyph::Export)}
                 {t(T::Export)}
+                {icon(Glyph::ChevronDown)}
             </button>
             <Show when=move || open.get()>
                 <div class="menu" role="menu" data-testid="export-menu">
@@ -182,6 +235,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                                     disabled=move || f.needs_file() && ctx.active().is_none()
                                     on:click=move |_| export(f)
                                 >
+                                    {icon(f.glyph())}
                                     {f.label()}
                                 </button>
                             }
@@ -189,17 +243,37 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                         .collect_view()}
                     <div class="menu-sep">{t(T::Handoff)}</div>
                     <button class="menu-item" role="menuitem" data-testid="handoff-open" on:click=open_folder>
+                        {icon(Glyph::FolderOpen)}
                         {t(T::HandoffOpenFolder)}
                     </button>
                     <button class="menu-item" role="menuitem" data-testid="handoff-copy" on:click=copy_prompt>
+                        {icon(Glyph::Handoff)}
                         {t(T::HandoffCopyPrompt)}
                     </button>
                 </div>
             </Show>
-            {move || status.get().map(|s| match s {
-                Ok(m) => view! { <span class="menu-status muted" data-testid="export-status">{m}</span> }.into_any(),
-                Err(e) => view! { <span class="menu-status error-text" data-testid="export-status">{e}</span> }.into_any(),
-            })}
+            <div class="toast-region" aria-live="polite">
+                {move || status.get().map(|s| {
+                    let (error, text) = match s {
+                        Ok(m) => (false, m),
+                        Err(e) => (true, e),
+                    };
+                    let glyph = if error {
+                        Glyph::Warning
+                    } else if busy.get() {
+                        Glyph::Loader
+                    } else {
+                        Glyph::CheckCircle
+                    };
+                    view! {
+                        <div class="toast" class:error=error role="status" data-testid="export-status">
+                            <span class="toast-ico" class:spin=move || busy.get()>{icon(glyph)}</span>
+                            <span class="toast-text">{text}</span>
+                            <button class="chip-x" aria-label=t(T::Close) on:click=move |_| status.set(None)>{icon(Glyph::Close)}</button>
+                        </div>
+                    }
+                })}
+            </div>
         </div>
     }
 }
@@ -214,4 +288,19 @@ async fn copy_text(text: &str) -> Result<(), String> {
         .await
         .map(|_| ())
         .map_err(|e| format!("{e:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::toast_expired;
+
+    #[test]
+    fn a_toast_closes_only_over_itself_and_not_mid_export() {
+        assert!(toast_expired(false, 3, 3));
+        // A newer message, even with the same text, has its own number and
+        // keeps its full time on screen.
+        assert!(!toast_expired(false, 4, 3));
+        // "Exporting…" stays until the export ends, however long it takes.
+        assert!(!toast_expired(true, 3, 3));
+    }
 }

@@ -58,6 +58,11 @@ pub struct Project {
     /// Unix epoch milliseconds.
     pub created_at: i64,
     pub updated_at: i64,
+    /// Filled by `GET /api/projects` only, never stored: the HTML file a
+    /// project card shows as its cover (`metadata.entryFile`, else
+    /// `index.html`, else the first top-level HTML file).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_file: Option<String>,
 }
 
 /// `.open-design/project.json` inside every project folder, so a project

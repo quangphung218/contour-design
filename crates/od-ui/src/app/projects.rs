@@ -1,6 +1,8 @@
 //! Project list: open, rename, duplicate, delete (with confirmation), and
 //! "Open folder": the native picker on desktop, a path field in a browser.
 
+use super::icons::{Glyph, icon};
+use super::lazy_frame::LazyFrame;
 use super::{ago, api, desktop, kind_label};
 use crate::i18n::{T, t};
 use leptos::prelude::*;
@@ -73,16 +75,22 @@ pub fn Projects() -> impl IntoView {
     let import_key = import_typed.clone();
 
     view! {
-        <section class="page">
-            <div class="section-head">
-                <h1>{t(T::ProjectsTitle)}</h1>
+        <section class="page wide">
+            <header class="page-head">
+                <div class="page-title">
+                    <h1>{t(T::ProjectsTitle)}</h1>
+                    {move || projects.with(|p| p.as_ref().filter(|l| !l.is_empty()).map(|l| {
+                        view! { <span class="count-badge">{l.len()}</span> }
+                    }))}
+                </div>
                 <div class="row">
-                    <button class="btn" data-testid="open-folder" on:click=open_folder>
+                    <button class="btn" data-testid="open-folder" aria-expanded=move || path_field.with(Option::is_some).to_string() on:click=open_folder>
+                        {icon(Glyph::FolderOpen)}
                         {t(T::OpenFolder)}
                     </button>
-                    <A href="/" attr:class="btn primary">{t(T::NewProject)}</A>
+                    <A href="/" attr:class="btn primary">{icon(Glyph::Add)}{t(T::NewProject)}</A>
                 </div>
-            </div>
+            </header>
             {move || {
                 path_field
                     .get()
@@ -91,7 +99,7 @@ pub fn Projects() -> impl IntoView {
                         let import_typed = import_typed.clone();
                         let import_key = import_key.clone();
                         view! {
-                            <div class="folder-field">
+                            <div class="card padded folder-field">
                                 <label class="field">
                                     <span>{t(T::FolderPathLabel)}</span>
                                     <input
@@ -115,13 +123,22 @@ pub fn Projects() -> impl IntoView {
                         }
                     })
             }}
-            {move || error.get().map(|e| view! { <p class="error-text">{e}</p> })}
-            <div class="project-list">
+            {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
+            <div class="project-grid large">
                 {move || match projects.get() {
-                    None => view! { <p class="empty">{t(T::Loading)}</p> }.into_any(),
-                    Some(list) if list.is_empty() => {
-                        view! { <p class="empty">{t(T::NoProjects)}</p> }.into_any()
+                    None => (0..6)
+                        .map(|_| view! { <div class="skeleton card-skeleton"></div> })
+                        .collect_view()
+                        .into_any(),
+                    Some(list) if list.is_empty() => view! {
+                        <div class="empty-state">
+                            <span class="empty-icon">{icon(Glyph::Projects)}</span>
+                            <strong>{t(T::ProjectsEmptyTitle)}</strong>
+                            <p>{t(T::ProjectsEmptyBody)}</p>
+                            <A href="/" attr:class="btn primary">{icon(Glyph::Add)}{t(T::NewProject)}</A>
+                        </div>
                     }
+                        .into_any(),
                     Some(list) => {
                         list.into_iter()
                             .map(|p| view! { <ProjectRow project=p on_change=Callback::new(move |()| reload())/> })
@@ -134,6 +151,50 @@ pub fn Projects() -> impl IntoView {
     }
 }
 
+/// A project's cover: its entry page (`entryFile` from the list) rendered
+/// small once it scrolls into view, else the kind's icon.
+#[component]
+fn ProjectCover(project: Project) -> impl IntoView {
+    let kind_glyph = match project.metadata.as_ref().and_then(|m| m.kind) {
+        Some(od_contracts::ProjectKind::Deck) => Glyph::Deck,
+        _ => Glyph::Prototype,
+    };
+    let src = project.entry_file.as_deref().map(|path| {
+        format!(
+            "/api/projects/{}/raw/{}",
+            api::seg(&project.id),
+            api::file_path(path)
+        )
+    });
+    view! {
+        <span class="cover project-cover" aria-hidden="true">
+            {match src {
+                Some(src) => view! { <LazyFrame src=src/> }.into_any(),
+                None => view! { <span class="cover-glyph">{icon(kind_glyph)}</span> }.into_any(),
+            }}
+        </span>
+    }
+}
+
+/// A project card linking to its Studio (Home's recent list).
+#[component]
+pub fn ProjectCard(project: Project) -> impl IntoView {
+    let kind = kind_label(&project);
+    let href = format!("/projects/{}", project.id);
+    view! {
+        <A href=href attr:class="project-card card interactive">
+            <ProjectCover project=project.clone()/>
+            <span class="project-body">
+                <span class="project-name">{project.name.clone()}</span>
+                <span class="project-meta">
+                    <span class="badge">{kind}</span>
+                    <span>{ago(project.updated_at)}</span>
+                </span>
+            </span>
+        </A>
+    }
+}
+
 #[component]
 fn ProjectRow(project: Project, on_change: Callback<()>) -> impl IntoView {
     let id = StoredValue::new(project.id.clone());
@@ -142,6 +203,7 @@ fn ProjectRow(project: Project, on_change: Callback<()>) -> impl IntoView {
     let confirming = RwSignal::new(false);
     let kind = kind_label(&project);
     let imported = project.metadata.as_ref().and_then(|m| m.base_dir.clone());
+    let updated = project.updated_at;
 
     let rename = move || {
         editing.set(false);
@@ -169,14 +231,17 @@ fn ProjectRow(project: Project, on_change: Callback<()>) -> impl IntoView {
     };
 
     view! {
-        <div class="project-row">
-            <span class="tile-kind">{kind}</span>
-            <div class="project-main">
+        <article class="project-card card interactive" data-testid="project-card">
+            <A href=format!("/projects/{}", id.get_value()) attr:class="cover-link" attr:tabindex="-1">
+                <ProjectCover project=project.clone()/>
+            </A>
+            <div class="project-body">
                 {move || {
                     if editing.get() {
                         view! {
                             <input
-                                class="input"
+                                class="input small"
+                                aria-label=t(T::Rename)
                                 prop:value=move || name.get()
                                 on:input=move |ev| name.set(event_target_value(&ev))
                                 on:keydown={
@@ -200,37 +265,51 @@ fn ProjectRow(project: Project, on_change: Callback<()>) -> impl IntoView {
                             .into_any()
                     }
                 }}
-                <span class="tile-meta">
-                    {ago(project.updated_at)}
-                    {imported.map(|d| format!(" · {d}"))}
+                <span class="project-meta">
+                    <span class="badge">{kind}</span>
+                    <span>{ago(updated)}</span>
                 </span>
+                {imported.map(|d| {
+                    let full = d.clone();
+                    view! { <span class="project-path mono" title=full>{icon(Glyph::FolderOpen)}{d}</span> }
+                })}
             </div>
-            <div class="row actions">
+            <div class="project-actions">
                 {move || {
                     if confirming.get() {
                         view! {
                             <span class="confirm">{t(T::ConfirmDeleteProject)}</span>
-                            <button class="btn danger" on:click=delete>{t(T::Delete)}</button>
-                            <button class="btn" on:click=move |_| confirming.set(false)>{t(T::Cancel)}</button>
+                            <span class="spacer"></span>
+                            <button class="btn small" on:click=move |_| confirming.set(false)>{t(T::Cancel)}</button>
+                            <button class="btn small danger" on:click=delete>{t(T::Delete)}</button>
                         }
                             .into_any()
                     } else {
                         view! {
                             <button
-                                class="btn ghost"
+                                class="btn ghost small"
                                 on:click=move |_| {
                                     if editing.get_untracked() { rename() } else { editing.set(true) }
                                 }
                             >
-                                {move || if editing.get() { t(T::Save) } else { t(T::Rename) }}
+                                {move || if editing.get() {
+                                    view! { {icon(Glyph::Check)}{t(T::Save)} }.into_any()
+                                } else {
+                                    view! { {icon(Glyph::Rename)}{t(T::Rename)} }.into_any()
+                                }}
                             </button>
-                            <button class="btn ghost" on:click=duplicate>{t(T::Duplicate)}</button>
-                            <button class="btn ghost" on:click=move |_| confirming.set(true)>{t(T::Delete)}</button>
+                            <span class="spacer"></span>
+                            <button class="icon-btn" aria-label=t(T::Duplicate) data-tip=t(T::Duplicate) on:click=duplicate>
+                                {icon(Glyph::Duplicate)}
+                            </button>
+                            <button class="icon-btn danger" aria-label=t(T::Delete) data-tip=t(T::Delete) on:click=move |_| confirming.set(true)>
+                                {icon(Glyph::Delete)}
+                            </button>
                         }
                             .into_any()
                     }
                 }}
             </div>
-        </div>
+        </article>
     }
 }

@@ -2,6 +2,7 @@
 //! agent, test them, sign in with OAuth. Servers are edited as JSON so env
 //! and header entries (shown masked by the daemon) round-trip untouched.
 
+use super::icons::{Glyph, icon};
 use super::{api, desktop};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -70,15 +71,22 @@ pub fn McpSection() -> impl IntoView {
     };
 
     view! {
-        <h2>{t(T::McpTitle)}</h2>
-        <p class="muted">{t(T::McpIntro)}</p>
+        <div class="section-intro">
+            <h2>{icon(Glyph::Mcp)}{t(T::McpTitle)}</h2>
+            <p>{t(T::McpIntro)}</p>
+        </div>
         <div class="mcp-list" data-testid="mcp-servers">
             // Rows are rebuilt only when their number changes: an edit or a
             // save must not reset a row (and the test result it shows).
             {move || {
                 let count = rows.get();
                 if count == 0 {
-                    return view! { <p class="empty small">{t(T::McpNoServers)}</p> }.into_any();
+                    return view! {
+                        <div class="card empty-state compact">
+                            <span class="empty-icon">{icon(Glyph::Mcp)}</span>
+                            <p>{t(T::McpNoServers)}</p>
+                        </div>
+                    }.into_any();
                 }
                 (0..count).map(|i| view! { <McpRow servers=servers index=i saving=saving/> }).collect_view().into_any()
             }}
@@ -89,7 +97,7 @@ pub fn McpSection() -> impl IntoView {
                 Some(Err(e)) => view! { <span class="error-text" data-testid="mcp-error">{e}</span> }.into_any(),
                 None => ().into_any(),
             }}
-            <button class="btn" data-testid="mcp-add" on:click=add>{t(T::McpAdd)}</button>
+            <button class="btn" data-testid="mcp-add" on:click=add>{icon(Glyph::Add)}{t(T::McpAdd)}</button>
             <button class="btn primary" data-testid="mcp-save" disabled=move || saving.get() on:click=save>{t(T::Save)}</button>
         </div>
     }
@@ -181,13 +189,13 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
     };
 
     view! {
-        <div class="card mcp-server" data-testid="mcp-server">
-            <div class="row">
+        <div class="card padded mcp-server" data-testid="mcp-server">
+            <div class="row mcp-head">
                 <label class="field grow">
                     <span>{t(T::McpId)}</span>
                     <input class="input mono" data-testid="mcp-id" prop:value=id on:change=move |ev| set("id", json!(event_target_value(&ev)))/>
                 </label>
-                <div class="segmented small">
+                <div class="segmented small transport">
                     <button class="seg" class:active=move || !is_http() on:click=move |_| switch_transport(false)>"stdio"</button>
                     <button class="seg" class:active=is_http data-testid="mcp-http" on:click=move |_| switch_transport(true)>"HTTP"</button>
                 </div>
@@ -226,8 +234,8 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
                     <span>{t(T::McpUseOauth)}</span>
                 </label>
             </Show>
-            <div class="row">
-                <button class="btn small" data-testid="mcp-test" disabled=move || saving.get() on:click=test>{t(T::McpTest)}</button>
+            <div class="row mcp-actions">
+                <button class="btn small" data-testid="mcp-test" disabled=move || saving.get() on:click=test>{icon(Glyph::Play)}{t(T::McpTest)}</button>
                 <Show when=move || is_http() && oauth()>
                     {move || if connected() {
                         view! {
@@ -246,7 +254,7 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
                         Probe::Failed(e) => view! { <span class="error-text">{e}</span> }.into_any(),
                     })}
                 </span>
-                <button class="btn small danger" on:click=remove>{t(T::Remove)}</button>
+                <button class="btn small ghost danger" on:click=remove>{icon(Glyph::Delete)}{t(T::Remove)}</button>
             </div>
         </div>
     }

@@ -57,6 +57,10 @@ pub fn router(state: AppState) -> Router {
             "/api/design-templates/{id}",
             get(content::get_design_template),
         )
+        .route(
+            "/api/design-templates/{id}/example",
+            get(content::get_design_template_example),
+        )
         .route("/api/design-systems", get(content::list_design_systems))
         .route("/api/design-systems/{id}", get(content::get_design_system))
         .route("/api/craft", get(content::list_craft))

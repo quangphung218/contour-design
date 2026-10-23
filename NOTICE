@@ -41,3 +41,9 @@ W4 tweaks: đã sửa văn bản gốc để agent khai báo tweaks theo định
 - crates/od-content/prompts/legacy/OFFICIAL_DESIGNER_PROMPT.md mục "Tweaks (in-design controls)" (thay marker EDITMODE),
   DISCOVERY_AND_PHILOSOPHY.md thêm một câu.
 - content/design-templates/tweaks/: SKILL.md mục "Host integration contract", assets/wrap.html và example.html thêm khối khai báo.
+
+UI redesign: icon và font đóng gói cục bộ trong crates/od-ui/vendor/ (không tải từ CDN hay Google Fonts):
+- remixicon/icons/: 78 file SVG chép nguyên từ remixicon 4.8.0, Apache License 2.0, Copyright Remix Design (remixicon/LICENSE).
+  Bản 4.9.0 trở đi đổi sang "Remix Icon License v1.0", nên giữ 4.8.0.
+- fonts/Geist-Variable.woff2, fonts/GeistMono-Variable.woff2 từ geist 1.8.2, SIL Open Font License 1.1,
+  Copyright (c) 2023 Vercel, in collaboration with basement.studio (fonts/OFL.txt).

@@ -147,6 +147,7 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
         .local(false)
         .remote(format!("{origin}/*"))
         .permission("core:default")
+        .permission("core:window:allow-start-dragging")
         .permission("dialog:default")
 }
 
@@ -204,18 +205,25 @@ fn main() -> anyhow::Result<()> {
             let origin = daemon.url.origin().ascii_serialization();
             app.add_capability(ui_capability(&origin))?;
             let nav_origin = origin.clone();
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(daemon.url.clone()))
-                .on_navigation(move |url| {
-                    let ok = allowed_navigation(url, &nav_origin);
-                    if !ok {
-                        tracing::warn!(%url, "blocked a navigation away from the app");
-                    }
-                    ok
-                })
-                .title("Open Design")
-                .inner_size(1360.0, 860.0)
-                .min_inner_size(900.0, 600.0)
-                .build()?;
+            let window =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::External(daemon.url.clone()))
+                    .on_navigation(move |url| {
+                        let ok = allowed_navigation(url, &nav_origin);
+                        if !ok {
+                            tracing::warn!(%url, "blocked a navigation away from the app");
+                        }
+                        ok
+                    })
+                    .title("Open Design")
+                    .inner_size(1360.0, 860.0)
+                    .min_inner_size(900.0, 600.0);
+            // The UI draws its own title strip under the traffic lights
+            // (od-ui `data-shell="mac"`, dragged via data-tauri-drag-region).
+            #[cfg(target_os = "macos")]
+            let window = window
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true);
+            window.build()?;
             app.manage(daemon);
             // SIGTERM (logout, `kill`) and Ctrl-C quit through `RunEvent::Exit`,
             // which ends the terminal tabs' shells.
