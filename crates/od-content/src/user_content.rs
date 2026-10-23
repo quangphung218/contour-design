@@ -316,8 +316,10 @@ mod tests {
     #[test]
     fn create_writes_a_parseable_skill_and_refuses_duplicates() {
         let tmp = tempfile::tempdir().unwrap();
-        let id = create_skill(tmp.path(), &draft("Brand Voice", "Write warmly."), |_| false)
-            .unwrap();
+        let id = create_skill(tmp.path(), &draft("Brand Voice", "Write warmly."), |_| {
+            false
+        })
+        .unwrap();
         assert_eq!(id, "brand-voice");
         let text = std::fs::read_to_string(tmp.path().join("brand-voice/SKILL.md")).unwrap();
         let (front, body) = frontmatter::parse(&text).unwrap();
@@ -373,14 +375,25 @@ mod tests {
             r#"{"name":"tea-plugin","title":"Tea","version":"1.0.0","od":{"kind":"scenario"}}"#,
         )
         .unwrap();
-        std::fs::write(src.join("SKILL.md"), "---\nname: tea-plugin\n---\nDo tea.\n").unwrap();
+        std::fs::write(
+            src.join("SKILL.md"),
+            "---\nname: tea-plugin\n---\nDo tea.\n",
+        )
+        .unwrap();
         let user = tmp.path().join("plugins");
         let p = install_plugin(&src, &user).unwrap();
         assert_eq!(p.id, "tea-plugin");
         assert_eq!(p.source, "user");
         assert!(user.join("tea-plugin/SKILL.md").is_file());
-        assert!(!user.join("tea-plugin/.git").exists(), "hidden folders are not copied");
-        std::fs::write(src.join("SKILL.md"), "---\nname: tea-plugin\n---\nDo more tea.\n").unwrap();
+        assert!(
+            !user.join("tea-plugin/.git").exists(),
+            "hidden folders are not copied"
+        );
+        std::fs::write(
+            src.join("SKILL.md"),
+            "---\nname: tea-plugin\n---\nDo more tea.\n",
+        )
+        .unwrap();
         let p = install_plugin(&src, &user).unwrap();
         assert_eq!(p.body, "Do more tea.");
         let empty = tmp.path().join("empty");

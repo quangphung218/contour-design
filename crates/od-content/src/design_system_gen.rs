@@ -180,13 +180,15 @@ pub struct Sources {
 impl Sources {
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.urls.is_empty() && self.github.is_none() && self.figma.is_none() && self.files.is_empty()
+        self.urls.is_empty()
+            && self.github.is_none()
+            && self.figma.is_none()
+            && self.files.is_empty()
     }
 }
 
 /// The brief used when only sources were given.
-pub const SOURCES_ONLY_BRIEF: &str =
-    "Derive the design system from the sources below: its colours, type, spacing, components and voice.";
+pub const SOURCES_ONLY_BRIEF: &str = "Derive the design system from the sources below: its colours, type, spacing, components and voice.";
 
 /// [`generation_prompt`] plus a `# Sources` section the agent studies
 /// first (it fetches URLs and clones repositories with its own tools).
@@ -318,7 +320,12 @@ pub fn install(
     req: &GenerateRequest,
 ) -> Result<Installed, GenError> {
     check_staging(staging)?;
-    install_checked(staging, user_root, req, "generated from a brief by an agent")
+    install_checked(
+        staging,
+        user_root,
+        req,
+        "generated from a brief by an agent",
+    )
 }
 
 /// Installs a package the user brought (pasted `DESIGN.md`, imported CSS
@@ -489,7 +496,10 @@ mod tests {
     #[test]
     fn sources_are_listed_after_the_files_to_write() {
         let r = GenerateRequest::new("Tea", SOURCES_ONLY_BRIEF, None).unwrap();
-        assert_eq!(generation_prompt_with_sources(&r, &Sources::default()), generation_prompt(&r));
+        assert_eq!(
+            generation_prompt_with_sources(&r, &Sources::default()),
+            generation_prompt(&r)
+        );
         let p = generation_prompt_with_sources(
             &r,
             &Sources {

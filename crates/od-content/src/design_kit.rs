@@ -46,9 +46,8 @@ pub struct Token {
     pub group: &'static str,
 }
 
-static DECL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)(--[A-Za-z0-9_-]+)\s*:\s*([^;{}]+);").expect("static regex")
-});
+static DECL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)(--[A-Za-z0-9_-]+)\s*:\s*([^;{}]+);").expect("static regex"));
 static COMMENT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)/\*.*?\*/").expect("static regex"));
 static HEX_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -173,7 +172,8 @@ pub fn score(tokens: &[Token], a2: &[Token]) -> TokenScore {
         .collect();
     let fallback_ratio = ratio(missing_a2.len(), a2.len());
     let alias_ratio = ratio(aliases, bound.len());
-    let raw = 100.0 * (0.7 * a1_coverage + 0.2 * (1.0 - fallback_ratio) + 0.1 * (1.0 - alias_ratio));
+    let raw =
+        100.0 * (0.7 * a1_coverage + 0.2 * (1.0 - fallback_ratio) + 0.1 * (1.0 - alias_ratio));
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=100
     let score = raw.round().clamp(0.0, 100.0) as u32;
     let grade = match score {
@@ -351,10 +351,7 @@ pub fn tokens_from_css_vars(css: &str) -> Option<String> {
     if !has(&out, "--font-display") {
         set(&mut out, "--font-display", "var(--font-body)".to_owned());
     }
-    let body: Vec<String> = out
-        .iter()
-        .map(|(n, v)| format!("  {n}: {v};"))
-        .collect();
+    let body: Vec<String> = out.iter().map(|(n, v)| format!("  {n}: {v};")).collect();
     Some(format!(":root {{\n{}\n}}\n", body.join("\n")))
 }
 
@@ -451,10 +448,16 @@ pub fn showcase_html(title: &str, tokens_css: &str) -> String {
             )
         })
         .collect();
-    let scale: String = ["--text-4xl", "--text-2xl", "--text-xl", "--text-base", "--text-sm"]
-        .iter()
-        .map(|n| format!("<p style=\"font-size:var({n},16px)\">{n} The quick brown fox</p>"))
-        .collect();
+    let scale: String = [
+        "--text-4xl",
+        "--text-2xl",
+        "--text-xl",
+        "--text-base",
+        "--text-sm",
+    ]
+    .iter()
+    .map(|n| format!("<p style=\"font-size:var({n},16px)\">{n} The quick brown fox</p>"))
+    .collect();
     let title = esc(title);
     let mut css = String::new();
     for t in &tokens {
@@ -490,7 +493,8 @@ pub fn showcase_html(title: &str, tokens_css: &str) -> String {
 mod tests {
     use super::*;
 
-    const DEFAULTS: &str = ":root { --accent-on: #fff; --space-1: 4px; --radius-sm: 8px; --motion-fast: 150ms; }";
+    const DEFAULTS: &str =
+        ":root { --accent-on: #fff; --space-1: 4px; --radius-sm: 8px; --motion-fast: 150ms; }";
 
     #[test]
     fn parses_tokens_without_comments_first_binding_wins() {
@@ -523,14 +527,16 @@ mod tests {
         assert!(!s.recommend_rebuild);
         assert!(s.missing_a1.is_empty() && s.missing_a2.is_empty());
 
-        let thin = parse_tokens(":root { --bg: #fff; --fg: #000; --surface: #eee; --accent: red; }");
+        let thin =
+            parse_tokens(":root { --bg: #fff; --fg: #000; --surface: #eee; --accent: red; }");
         let s = score(&thin, &a2);
         // 4 of 21 A1 bound, every A2 missing, no alias: 70·4/21 + 10.
         assert_eq!(s.score, 23);
         assert_eq!(s.grade, "needs-rebuild");
         assert!(s.recommend_rebuild);
         assert_eq!(s.missing_a2.len(), 4);
-        let aliased = parse_tokens(":root { --bg: #fff; --fg: #000; --surface: var(--bg); --accent: red; }");
+        let aliased =
+            parse_tokens(":root { --bg: #fff; --fg: #000; --surface: var(--bg); --accent: red; }");
         let s = score(&aliased, &a2);
         assert!((s.alias_ratio - 0.25).abs() < 1e-9);
         assert!(s.recommend_rebuild, "an aliased surface is weak identity");
@@ -543,18 +549,35 @@ mod tests {
         let rebuilt = rebuild_tokens(css, &a2).unwrap();
         assert!(rebuilt.starts_with(css));
         assert!(rebuilt.contains("--accent-on: #fff;"));
-        assert!(!rebuilt.contains("--space-1: 4px"), "a bound A2 token is kept");
+        assert!(
+            !rebuilt.contains("--space-1: 4px"),
+            "a bound A2 token is kept"
+        );
         assert!(rebuilt.contains("--text-base: 16px;"));
         assert!(!rebuilt.contains("--accent: "), "identity is never guessed");
-        assert_eq!(rebuild_tokens(&rebuilt, &a2), None, "a second rebuild has nothing to add");
+        assert_eq!(
+            rebuild_tokens(&rebuilt, &a2),
+            None,
+            "a second rebuild has nothing to add"
+        );
     }
 
     #[test]
     fn palette_reads_named_bullets_and_tables() {
         let md = "## Color\n- **Rausch** (`#ff385c`): brand.\n- **Ink** `#222222`\n| Leaf | #2F6B3A |\nText #abcdef.\n";
         let p = palette_from_markdown(md);
-        let got: Vec<(&str, &str)> = p.iter().map(|s| (s.name.as_str(), s.hex.as_str())).collect();
-        assert_eq!(got, [("Rausch", "#ff385c"), ("Ink", "#222222"), ("Leaf", "#2f6b3a")]);
+        let got: Vec<(&str, &str)> = p
+            .iter()
+            .map(|s| (s.name.as_str(), s.hex.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("Rausch", "#ff385c"),
+                ("Ink", "#222222"),
+                ("Leaf", "#2f6b3a")
+            ]
+        );
         let bare = palette_from_markdown("Use #fff and #000000.");
         assert_eq!(bare.len(), 2);
     }
@@ -574,7 +597,9 @@ mod tests {
 
     #[test]
     fn palette_tokens_pick_light_dark_and_accent() {
-        let p = palette_from_markdown("- **Cream** `#f6efe2`\n- **Leaf** `#2f6b3a`\n- **Ink** `#1d1b16`\n");
+        let p = palette_from_markdown(
+            "- **Cream** `#f6efe2`\n- **Leaf** `#2f6b3a`\n- **Ink** `#1d1b16`\n",
+        );
         let css = tokens_from_palette(&p).unwrap();
         assert!(css.contains("--bg: #f6efe2;"));
         assert!(css.contains("--fg: #1d1b16;"));

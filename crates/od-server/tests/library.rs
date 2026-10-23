@@ -40,7 +40,10 @@ async fn call(d: &Daemon, method: &str, path: &str, body: Option<Value>) -> (u16
     let res = req.send().await.unwrap();
     let status = res.status().as_u16();
     let text = res.text().await.unwrap();
-    (status, serde_json::from_str(&text).unwrap_or(Value::String(text)))
+    (
+        status,
+        serde_json::from_str(&text).unwrap_or(Value::String(text)),
+    )
 }
 
 /// A `multipart/form-data` body with one `file` part per entry.
@@ -221,7 +224,11 @@ async fn plugins_install_use_and_uninstall() {
         .to_string(),
     )
     .unwrap();
-    std::fs::write(src.join("SKILL.md"), "---\nname: recipe-cards\n---\nUse big photos.\n").unwrap();
+    std::fs::write(
+        src.join("SKILL.md"),
+        "---\nname: recipe-cards\n---\nUse big photos.\n",
+    )
+    .unwrap();
     let (s, v) = call(
         &d,
         "POST",
@@ -239,7 +246,13 @@ async fn plugins_install_use_and_uninstall() {
             .iter()
             .any(|p| p["id"] == "recipe-cards" && p["source"] == "user")
     );
-    let (s, _) = call(&d, "POST", "/api/plugins/install", Some(json!({ "path": "relative/x" }))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        "/api/plugins/install",
+        Some(json!({ "path": "relative/x" })),
+    )
+    .await;
     assert_eq!(s, 400);
 
     // Use: required inputs are checked, the project carries the plugin.
@@ -268,8 +281,10 @@ async fn plugins_install_use_and_uninstall() {
     assert_eq!(s, 200, "{v}");
     let pid = v["project"]["id"].as_str().unwrap().to_owned();
     let cid = v["conversationId"].as_str().unwrap().to_owned();
-    d.start(json!({ "agentId": "claude", "projectId": pid, "conversationId": cid, "message": "go" }))
-        .await;
+    d.start(
+        json!({ "agentId": "claude", "projectId": pid, "conversationId": cid, "message": "go" }),
+    )
+    .await;
     let dir = d.data.join("projects").join(&pid);
     assert_eq!(wait_file(&dir.join("plugin-seen.txt")).await.trim(), "yes");
     assert_eq!(wait_file(&dir.join("inputs-seen.txt")).await.trim(), "yes");
@@ -282,18 +297,60 @@ async fn plugins_install_use_and_uninstall() {
     assert_eq!(seen.trim(), "no");
 
     // Create with agent: a project whose first turn writes and installs.
-    let (s, v) = call(&d, "POST", "/api/plugins/author", Some(json!({ "brief": "Menu boards" }))).await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/plugins/author",
+        Some(json!({ "brief": "Menu boards" })),
+    )
+    .await;
     assert_eq!(s, 200, "{v}");
     let prompt = v["project"]["pendingPrompt"].as_str().unwrap();
     assert!(prompt.contains("Menu boards") && prompt.contains("/api/plugins/install"));
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/plugins/author",
+        Some(json!({ "source": "github:acme/plugins/recipe" })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    assert!(
+        v["project"]["pendingPrompt"]
+            .as_str()
+            .unwrap()
+            .contains("git clone --depth 1")
+    );
+    let (s, _) = call(
+        &d,
+        "POST",
+        "/api/plugins/author",
+        Some(json!({ "source": "file:///etc/passwd" })),
+    )
+    .await;
+    assert_eq!(s, 400);
+    let (s, _) = call(&d, "POST", "/api/plugins/author", Some(json!({}))).await;
+    assert_eq!(s, 400);
 
     // Uninstall: user plugins only.
-    let (s, _) = call(&d, "POST", "/api/plugins/od-media-generation/uninstall", None).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        "/api/plugins/od-media-generation/uninstall",
+        None,
+    )
+    .await;
     assert_eq!(s, 403);
     let (s, _) = call(&d, "POST", "/api/plugins/recipe-cards/uninstall", None).await;
     assert_eq!(s, 200);
     assert!(!d.data.join("plugins/recipe-cards").exists());
-    let (s, _) = call(&d, "POST", "/api/plugins/recipe-cards/use", Some(json!({ "inputs": { "dish": "x" } }))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        "/api/plugins/recipe-cards/use",
+        Some(json!({ "inputs": { "dish": "x" } })),
+    )
+    .await;
     assert_eq!(s, 404);
 }
 
@@ -341,7 +398,13 @@ async fn saved_templates_and_remix() {
     for n in ["index.html", "css/site.css", "about.html"] {
         assert!(names.contains(&n), "{names:?}");
     }
-    let (s, _) = call(&d, "POST", "/api/templates", Some(json!({ "name": " ", "sourceProjectId": pid }))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        "/api/templates",
+        Some(json!({ "name": " ", "sourceProjectId": pid })),
+    )
+    .await;
     assert_eq!(s, 400);
     let (s, _) = call(&d, "DELETE", &format!("/api/templates/{tid}"), None).await;
     assert_eq!(s, 200);
@@ -379,7 +442,11 @@ async fn saved_templates_and_remix() {
         .unwrap();
     let example = d
         .http
-        .get(format!("{}/api/design-templates/{}/example", d.base, id.replace(':', "%3A")))
+        .get(format!(
+            "{}/api/design-templates/{}/example",
+            d.base,
+            id.replace(':', "%3A")
+        ))
         .send()
         .await
         .unwrap()
@@ -402,7 +469,12 @@ const PNG: &[u8] = &[
 async fn media_library_lists_uploads_and_chats_to_design() {
     let d = daemon().await;
     let pid = new_project(&d, "Poster").await;
-    let (s, _) = upload(&d, &format!("/api/projects/{pid}/upload"), &[("hero.png", PNG), ("song.mp3", b"ID3")]).await;
+    let (s, _) = upload(
+        &d,
+        &format!("/api/projects/{pid}/upload"),
+        &[("hero.png", PNG), ("song.mp3", b"ID3")],
+    )
+    .await;
     assert_eq!(s, 200);
     write_file(&d, &pid, "index.html", "<p>not media</p>").await;
 
@@ -442,7 +514,13 @@ async fn media_library_lists_uploads_and_chats_to_design() {
     assert!(prompt.starts_with("A tea poster"));
     assert!(prompt.contains("assets/hero.png") && prompt.contains("assets/mood.png"));
     let np = v["project"]["id"].as_str().unwrap();
-    assert!(d.data.join("projects").join(np).join("assets/hero.png").is_file());
+    assert!(
+        d.data
+            .join("projects")
+            .join(np)
+            .join("assets/hero.png")
+            .is_file()
+    );
     let (s, _) = call(
         &d,
         "POST",
@@ -503,9 +581,25 @@ async fn design_system_kit_import_copy_and_revisions() {
 
     // Bundled kit: tokens, palette, score, showcase; writes are refused.
     let kit = d.get_json("/api/design-systems/airbnb/kit").await;
-    assert!(kit["tokens"].as_array().unwrap().iter().any(|t| t["name"] == "--accent"));
-    assert!(kit["palette"].as_array().unwrap().iter().any(|s| s["hex"] == "#ff385c"));
-    assert!(kit["score"]["score"].as_u64().unwrap() >= 80, "{}", kit["score"]);
+    assert!(
+        kit["tokens"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == "--accent")
+    );
+    assert!(
+        kit["palette"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["hex"] == "#ff385c")
+    );
+    assert!(
+        kit["score"]["score"].as_u64().unwrap() >= 80,
+        "{}",
+        kit["score"]
+    );
     assert_eq!(kit["hasComponents"], true);
     let res = d
         .http
@@ -513,10 +607,27 @@ async fn design_system_kit_import_copy_and_revisions() {
         .send()
         .await
         .unwrap();
-    assert!(res.headers()["content-security-policy"].to_str().unwrap().contains("sandbox"));
-    let (s, _) = call(&d, "PUT", "/api/design-systems/airbnb/design-md", Some(json!({ "body": "# x" }))).await;
+    assert!(
+        res.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .contains("sandbox")
+    );
+    let (s, _) = call(
+        &d,
+        "PUT",
+        "/api/design-systems/airbnb/design-md",
+        Some(json!({ "body": "# x" })),
+    )
+    .await;
     assert_eq!(s, 403);
-    let (s, _) = call(&d, "GET", "/api/design-systems/airbnb/file/..%2Fapple%2FDESIGN.md", None).await;
+    let (s, _) = call(
+        &d,
+        "GET",
+        "/api/design-systems/airbnb/file/..%2Fapple%2FDESIGN.md",
+        None,
+    )
+    .await;
     assert_eq!(s, 400);
 
     // Import a pasted shadcn theme.
@@ -552,39 +663,107 @@ async fn design_system_kit_import_copy_and_revisions() {
     )
     .await;
     assert_eq!(s, 200, "{v}");
-    let (s, _) = call(&d, "POST", "/api/design-systems/import", Some(json!({ "name": "None" }))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        "/api/design-systems/import",
+        Some(json!({ "name": "None" })),
+    )
+    .await;
     assert_eq!(s, 400);
 
     // Copy a bundled system, then edit, publish, upload, archive.
-    let (s, v) = call(&d, "POST", "/api/design-systems/airbnb/copy", Some(json!({ "name": "My Airbnb" }))).await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/design-systems/airbnb/copy",
+        Some(json!({ "name": "My Airbnb" })),
+    )
+    .await;
     assert_eq!(s, 200, "{v}");
     let id = v["id"].as_str().unwrap().to_owned();
     assert_eq!(id, "user:my-airbnb");
     let list = d.get_json("/api/design-systems").await;
-    let mine = list["designSystems"].as_array().unwrap().iter().find(|s| s["id"] == id.as_str()).unwrap();
+    let mine = list["designSystems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == id.as_str())
+        .unwrap();
     assert_eq!(mine["title"], "My Airbnb");
     assert_eq!(mine["isEditable"], true);
-    let (s, _) = call(&d, "PUT", &format!("/api/design-systems/{id}/design-md"), Some(json!({ "body": "# My Airbnb\n\n- **Coral** `#ff5a5f`\n" }))).await;
+    let (s, _) = call(
+        &d,
+        "PUT",
+        &format!("/api/design-systems/{id}/design-md"),
+        Some(json!({ "body": "# My Airbnb\n\n- **Coral** `#ff5a5f`\n" })),
+    )
+    .await;
     assert_eq!(s, 200);
     let kit = d.get_json(&format!("/api/design-systems/{id}/kit")).await;
     assert_eq!(kit["palette"][0]["hex"], "#ff5a5f");
-    let (s, _) = call(&d, "POST", &format!("/api/design-systems/{id}/status"), Some(json!({ "status": "published" }))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/status"),
+        Some(json!({ "status": "published" })),
+    )
+    .await;
     assert_eq!(s, 200);
     let list = d.get_json("/api/design-systems").await;
-    let mine = list["designSystems"].as_array().unwrap().iter().find(|s| s["id"] == id.as_str()).unwrap();
+    let mine = list["designSystems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == id.as_str())
+        .unwrap();
     assert_eq!(mine["status"], "published");
-    let (s, v) = upload(&d, &format!("/api/design-systems/{id}/assets"), &[("logo.png", PNG), ("Brand.woff2", b"wOF2")]).await;
+    let (s, v) = upload(
+        &d,
+        &format!("/api/design-systems/{id}/assets"),
+        &[("logo.png", PNG), ("Brand.woff2", b"wOF2")],
+    )
+    .await;
     assert_eq!(s, 200, "{v}");
-    let (s, _) = upload(&d, &format!("/api/design-systems/{id}/assets"), &[("x.sh", b"echo")]).await;
+    let (s, _) = upload(
+        &d,
+        &format!("/api/design-systems/{id}/assets"),
+        &[("x.sh", b"echo")],
+    )
+    .await;
     assert_eq!(s, 400);
     let kit = d.get_json(&format!("/api/design-systems/{id}/kit")).await;
-    let kinds: Vec<&str> = kit["assets"].as_array().unwrap().iter().map(|a| a["kind"].as_str().unwrap()).collect();
+    let kinds: Vec<&str> = kit["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["kind"].as_str().unwrap())
+        .collect();
     assert_eq!(kinds, ["font", "logo"]);
-    let logo = d.http.get(format!("{}/api/design-systems/{id}/file/assets/logo.png", d.base)).send().await.unwrap();
+    let logo = d
+        .http
+        .get(format!(
+            "{}/api/design-systems/{id}/file/assets/logo.png",
+            d.base
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(logo.headers()["content-type"], "image/png");
-    let (s, _) = call(&d, "POST", &format!("/api/design-systems/{id}/assets/Brand.woff2/delete"), None).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/assets/Brand.woff2/delete"),
+        None,
+    )
+    .await;
     assert_eq!(s, 200);
-    let zip = d.http.get(format!("{}/api/design-systems/{id}/archive", d.base)).send().await.unwrap();
+    let zip = d
+        .http
+        .get(format!("{}/api/design-systems/{id}/archive", d.base))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(zip.headers()["content-type"], "application/zip");
     let bytes = zip.bytes().await.unwrap();
     let names: Vec<String> = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec()))
@@ -592,52 +771,127 @@ async fn design_system_kit_import_copy_and_revisions() {
         .file_names()
         .map(|n| n.unwrap().into_owned())
         .collect();
-    assert!(names.contains(&"my-airbnb/DESIGN.md".to_owned()), "{names:?}");
+    assert!(
+        names.contains(&"my-airbnb/DESIGN.md".to_owned()),
+        "{names:?}"
+    );
     assert!(names.contains(&"my-airbnb/assets/logo.png".to_owned()));
 
     // Token contract: a thin package gets a rebuild revision; accepting
     // it writes tokens.css, a second decision conflicts.
-    let (s, v) = call(&d, "POST", "/api/design-systems/user:shad/token-contract/rebuild", None).await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/design-systems/user:shad/token-contract/rebuild",
+        None,
+    )
+    .await;
     assert_eq!(s, 200, "{v}");
     assert_eq!(v["decision"], "revision");
     let before = v["score"]["score"].as_u64().unwrap();
     let rid = v["revision"]["id"].as_str().unwrap().to_owned();
-    let (s, _) = call(&d, "POST", &format!("/api/design-systems/user:shad/revisions/{rid}"), Some(json!({ "status": "accepted" }))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/user:shad/revisions/{rid}"),
+        Some(json!({ "status": "accepted" })),
+    )
+    .await;
     assert_eq!(s, 200);
     let kit = d.get_json("/api/design-systems/user:shad/kit").await;
     assert!(kit["score"]["score"].as_u64().unwrap() > before);
     assert_eq!(kit["revisions"][0]["status"], "accepted");
-    let (s, _) = call(&d, "POST", &format!("/api/design-systems/user:shad/revisions/{rid}"), Some(json!({ "status": "rejected" }))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/user:shad/revisions/{rid}"),
+        Some(json!({ "status": "rejected" })),
+    )
+    .await;
     assert_eq!(s, 409);
-    let (_, v) = call(&d, "POST", "/api/design-systems/user:shad/token-contract/rebuild", None).await;
+    let (_, v) = call(
+        &d,
+        "POST",
+        "/api/design-systems/user:shad/token-contract/rebuild",
+        None,
+    )
+    .await;
     assert_eq!(v["decision"], "up-to-date");
 
     // Needs work: the agent revises a copy; reject leaves the package.
-    let (s, v) = call(&d, "POST", &format!("/api/design-systems/{id}/revisions"), Some(json!({ "feedback": "Warmer accent", "section": "Color" }))).await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/revisions"),
+        Some(json!({ "feedback": "Warmer accent", "section": "Color" })),
+    )
+    .await;
     assert_eq!(s, 202, "{v}");
-    let revs = wait(&d, &format!("/api/design-systems/{id}/revisions"), |v| v["revisions"][0]["status"] != "running").await;
+    let revs = wait(&d, &format!("/api/design-systems/{id}/revisions"), |v| {
+        v["revisions"][0]["status"] != "running"
+    })
+    .await;
     let r = &revs["revisions"][0];
     assert_eq!(r["status"], "pending", "{r}");
-    let tokens = r["files"].as_array().unwrap().iter().find(|f| f["name"] == "tokens.css").unwrap();
-    assert!(tokens["content"].as_str().unwrap().contains("--accent: #aa5500;"));
+    let tokens = r["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "tokens.css")
+        .unwrap();
+    assert!(
+        tokens["content"]
+            .as_str()
+            .unwrap()
+            .contains("--accent: #aa5500;")
+    );
     let rid = r["id"].as_str().unwrap();
-    let (s, _) = call(&d, "POST", &format!("/api/design-systems/{id}/revisions/{rid}"), Some(json!({ "status": "rejected" }))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/revisions/{rid}"),
+        Some(json!({ "status": "rejected" })),
+    )
+    .await;
     assert_eq!(s, 200);
     let css = std::fs::read_to_string(d.data.join("design-systems/my-airbnb/tokens.css")).unwrap();
     assert!(!css.contains("#aa5500"));
 
     // Edit with agent: one project whose folder is the package.
-    let (s, v) = call(&d, "POST", &format!("/api/design-systems/{id}/workspace"), None).await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/workspace"),
+        None,
+    )
+    .await;
     assert_eq!(s, 200, "{v}");
     let wp = v["project"]["id"].as_str().unwrap().to_owned();
-    assert!(v["project"]["metadata"]["baseDir"].as_str().unwrap().ends_with("design-systems/my-airbnb"));
-    let (_, v) = call(&d, "POST", &format!("/api/design-systems/{id}/workspace"), None).await;
+    assert!(
+        v["project"]["metadata"]["baseDir"]
+            .as_str()
+            .unwrap()
+            .ends_with("design-systems/my-airbnb")
+    );
+    let (_, v) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/workspace"),
+        None,
+    )
+    .await;
     assert_eq!(v["project"]["id"], wp.as_str(), "reused");
     let (s, _) = call(&d, "POST", "/api/design-systems/airbnb/workspace", None).await;
     assert_eq!(s, 403);
 
     // Delete.
-    let (s, _) = call(&d, "POST", &format!("/api/design-systems/{id}/delete"), None).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/delete"),
+        None,
+    )
+    .await;
     assert_eq!(s, 200);
     assert!(!d.data.join("design-systems/my-airbnb").exists());
     let (s, _) = call(&d, "POST", "/api/design-systems/airbnb/delete", None).await;
@@ -662,15 +916,28 @@ async fn design_system_from_sources() {
     .await;
     assert_eq!(s, 202, "{v}");
     let job = v["job"]["id"].as_str().unwrap().to_owned();
-    let done = wait(&d, &format!("/api/design-systems/jobs/{job}"), |v| v["job"]["status"] != "running").await;
+    let done = wait(&d, &format!("/api/design-systems/jobs/{job}"), |v| {
+        v["job"]["status"] != "running"
+    })
+    .await;
     assert_eq!(done["job"]["status"], "succeeded", "{done}");
     assert!(done["job"].get("phase").is_none());
     let kit = d.get_json("/api/design-systems/user:tea-site/kit").await;
     assert!(
-        kit["palette"].as_array().unwrap().iter().any(|s| s["hex"] == "#123456"),
+        kit["palette"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["hex"] == "#123456"),
         "the agent saw the website and the attached file"
     );
-    let (s, _) = call(&d, "POST", "/api/design-systems/generate", Some(json!({ "name": "X", "brief": "" }))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        "/api/design-systems/generate",
+        Some(json!({ "name": "X", "brief": "" })),
+    )
+    .await;
     assert_eq!(s, 400, "no brief and no source");
     let brands = d.get_json("/api/design-systems/brands").await;
     assert!(brands["brands"].as_array().unwrap().len() >= 30);

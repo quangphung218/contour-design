@@ -72,11 +72,10 @@ fn kind_name(kind: FileKind) -> &'static str {
 
 /// Media files of every project, filtered and sorted newest first.
 fn collect(s: &Store, q: &ListQuery) -> Result<Vec<Asset>, StoreError> {
-    let needle = q
-        .q
-        .as_deref()
-        .map(|n| n.trim().to_lowercase())
-        .filter(|n| !n.is_empty());
+    let needle =
+        q.q.as_deref()
+            .map(|n| n.trim().to_lowercase())
+            .filter(|n| !n.is_empty());
     let mut out = Vec::new();
     for p in s.list_projects()? {
         if q.project_id.as_deref().is_some_and(|id| id != p.id) {

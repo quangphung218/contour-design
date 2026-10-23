@@ -97,7 +97,11 @@ fn tile(id: &str, title: &str) -> impl IntoView + use<> {
 pub fn PluginsPage() -> impl IntoView {
     let plugins = RwSignal::new(None::<Vec<Value>>);
     let skills = RwSignal::new(None::<Vec<SkillSummary>>);
-    let kind = RwSignal::new(if query_param("skill").is_some() { Kind::Skills } else { Kind::Plugins });
+    let kind = RwSignal::new(if query_param("skill").is_some() {
+        Kind::Skills
+    } else {
+        Kind::Plugins
+    });
     let scope = RwSignal::new(Scope::Official);
     let query = RwSignal::new(String::new());
     let category = RwSignal::new(String::new());
@@ -116,7 +120,12 @@ pub fn PluginsPage() -> impl IntoView {
                 Err(e) => error.set(Some(e.to_string())),
             }
             match api::get::<SkillsResponse>("/api/skills").await {
-                Ok(r) => skills.set(Some(r.skills.into_iter().filter(|s| !s.info.id.contains(':')).collect())),
+                Ok(r) => skills.set(Some(
+                    r.skills
+                        .into_iter()
+                        .filter(|s| !s.info.id.contains(':'))
+                        .collect(),
+                )),
                 Err(e) => error.set(Some(e.to_string())),
             }
         });
@@ -133,15 +142,35 @@ pub fn PluginsPage() -> impl IntoView {
     let count = move |sc: Scope| -> usize {
         let personal = sc == Scope::Personal;
         match kind.get() {
-            Kind::Plugins => plugins.with(|l| l.as_ref().map_or(0, |l| l.iter().filter(|p| plugin_personal(p) == personal).count())),
-            Kind::Skills => skills.with(|l| l.as_ref().map_or(0, |l| l.iter().filter(|s| skill_personal(s) == personal).count())),
+            Kind::Plugins => plugins.with(|l| {
+                l.as_ref().map_or(0, |l| {
+                    l.iter().filter(|p| plugin_personal(p) == personal).count()
+                })
+            }),
+            Kind::Skills => skills.with(|l| {
+                l.as_ref().map_or(0, |l| {
+                    l.iter().filter(|s| skill_personal(s) == personal).count()
+                })
+            }),
         }
     };
     let categories = Memo::new(move |_| {
         let personal = scope.get() == Scope::Personal;
         let mut c: Vec<String> = match kind.get() {
-            Kind::Plugins => plugins.with(|l| l.iter().flatten().filter(|p| plugin_personal(p) == personal).map(plugin_category).collect()),
-            Kind::Skills => skills.with(|l| l.iter().flatten().filter(|s| skill_personal(s) == personal).map(skill_category).collect()),
+            Kind::Plugins => plugins.with(|l| {
+                l.iter()
+                    .flatten()
+                    .filter(|p| plugin_personal(p) == personal)
+                    .map(plugin_category)
+                    .collect()
+            }),
+            Kind::Skills => skills.with(|l| {
+                l.iter()
+                    .flatten()
+                    .filter(|s| skill_personal(s) == personal)
+                    .map(skill_category)
+                    .collect()
+            }),
         };
         c.retain(|c| !c.is_empty());
         c.sort();
@@ -156,7 +185,10 @@ pub fn PluginsPage() -> impl IntoView {
         match kind.get() {
             Kind::Plugins => {
                 let Some(list) = plugins.get() else {
-                    return (0..5).map(|_| view! { <li class="skeleton lib-row-skeleton"></li> }).collect_view().into_any();
+                    return (0..5)
+                        .map(|_| view! { <li class="skeleton lib-row-skeleton"></li> })
+                        .collect_view()
+                        .into_any();
                 };
                 let mut rows: Vec<Value> = list
                     .into_iter()
@@ -169,11 +201,17 @@ pub fn PluginsPage() -> impl IntoView {
                 if rows.is_empty() {
                     return empty(personal).into_any();
                 }
-                rows.into_iter().map(|p| view! { <PluginRow plugin=p open=open/> }).collect_view().into_any()
+                rows.into_iter()
+                    .map(|p| view! { <PluginRow plugin=p open=open/> })
+                    .collect_view()
+                    .into_any()
             }
             Kind::Skills => {
                 let Some(list) = skills.get() else {
-                    return (0..5).map(|_| view! { <li class="skeleton lib-row-skeleton"></li> }).collect_view().into_any();
+                    return (0..5)
+                        .map(|_| view! { <li class="skeleton lib-row-skeleton"></li> })
+                        .collect_view()
+                        .into_any();
                 };
                 let rows: Vec<SkillSummary> = list
                     .into_iter()
@@ -184,7 +222,10 @@ pub fn PluginsPage() -> impl IntoView {
                 if rows.is_empty() {
                     return empty(personal).into_any();
                 }
-                rows.into_iter().map(|sk| view! { <SkillRow skill=sk open=open/> }).collect_view().into_any()
+                rows.into_iter()
+                    .map(|sk| view! { <SkillRow skill=sk open=open/> })
+                    .collect_view()
+                    .into_any()
             }
         }
     };
@@ -323,7 +364,11 @@ impl InputField {
                 .as_array()
                 .map(|o| {
                     o.iter()
-                        .filter_map(|x| x.as_str().map(str::to_owned).or_else(|| x["value"].as_str().map(str::to_owned)))
+                        .filter_map(|x| {
+                            x.as_str()
+                                .map(str::to_owned)
+                                .or_else(|| x["value"].as_str().map(str::to_owned))
+                        })
                         .collect()
                 })
                 .unwrap_or_default(),
@@ -341,7 +386,9 @@ impl InputField {
             Value::String(s) => !s.trim().is_empty(),
             _ => true,
         };
-        !self.required || values.get(&self.name).is_some_and(present) || self.default.as_ref().is_some_and(present)
+        !self.required
+            || values.get(&self.name).is_some_and(present)
+            || self.default.as_ref().is_some_and(present)
     }
 }
 
@@ -418,10 +465,16 @@ fn InputsForm(fields: Vec<InputField>, values: RwSignal<Map<String, Value>>) -> 
 pub fn fill_query(query: &str, values: &Map<String, Value>, fields: &[InputField]) -> String {
     let mut out = query.to_owned();
     for f in fields {
-        let v = values.get(&f.name).filter(|v| !text_of(Some(v)).is_empty()).or(f.default.as_ref());
+        let v = values
+            .get(&f.name)
+            .filter(|v| !text_of(Some(v)).is_empty())
+            .or(f.default.as_ref());
         if let Some(v) = v {
             let text = text_of(Some(v));
-            for pattern in [format!("{{{{{}}}}}", f.name), format!("{{{{ {} }}}}", f.name)] {
+            for pattern in [
+                format!("{{{{{}}}}}", f.name),
+                format!("{{{{ {} }}}}", f.name),
+            ] {
                 out = out.replace(&pattern, &text);
             }
         }
@@ -430,7 +483,11 @@ pub fn fill_query(query: &str, values: &Map<String, Value>, fields: &[InputField
 }
 
 #[component]
-fn PluginDetail(id: String, on_back: Callback<()>, on_change: Callback<Option<Open>>) -> impl IntoView {
+fn PluginDetail(
+    id: String,
+    on_back: Callback<()>,
+    on_change: Callback<Option<Open>>,
+) -> impl IntoView {
     let navigate = use_navigate();
     let plugin = RwSignal::new(None::<Result<Value, String>>);
     let values = RwSignal::new(Map::new());
@@ -440,7 +497,9 @@ fn PluginDetail(id: String, on_back: Callback<()>, on_change: Callback<Option<Op
         let id = id.clone();
         leptos::task::spawn_local(async move {
             let res = api::get::<Value>(&format!("/api/plugins/{}", api::seg(&id))).await;
-            plugin.set(Some(res.map(|v| v["plugin"].clone()).map_err(|e| e.to_string())));
+            plugin.set(Some(
+                res.map(|v| v["plugin"].clone()).map_err(|e| e.to_string()),
+            ));
         });
     }
     let use_plugin = {
@@ -451,8 +510,16 @@ fn PluginDetail(id: String, on_back: Callback<()>, on_change: Callback<Option<Op
             busy.set(true);
             let body = json!({ "inputs": values.get_untracked(), "locale": locale().tag() });
             leptos::task::spawn_local(async move {
-                match api::post::<_, Value>(&format!("/api/plugins/{}/use", api::seg(&id)), &body).await {
-                    Ok(v) => navigate(&format!("/projects/{}", v["project"]["id"].as_str().unwrap_or_default()), Default::default()),
+                match api::post::<_, Value>(&format!("/api/plugins/{}/use", api::seg(&id)), &body)
+                    .await
+                {
+                    Ok(v) => navigate(
+                        &format!(
+                            "/projects/{}",
+                            v["project"]["id"].as_str().unwrap_or_default()
+                        ),
+                        Default::default(),
+                    ),
                     Err(e) => {
                         busy.set(false);
                         notice.set(Some(Err(e.to_string())));
@@ -468,7 +535,12 @@ fn PluginDetail(id: String, on_back: Callback<()>, on_change: Callback<Option<Op
             confirm_uninstall.set(false);
             let id = id.clone();
             leptos::task::spawn_local(async move {
-                match api::post::<_, Value>(&format!("/api/plugins/{}/uninstall", api::seg(&id)), &json!({})).await {
+                match api::post::<_, Value>(
+                    &format!("/api/plugins/{}/uninstall", api::seg(&id)),
+                    &json!({}),
+                )
+                .await
+                {
                     Ok(_) => on_change.run(None),
                     Err(e) => notice.set(Some(Err(e.to_string()))),
                 }
@@ -593,7 +665,11 @@ fn meta_list(label: T, items: Vec<String>) -> Option<impl IntoView> {
 }
 
 #[component]
-fn SkillDetailView(id: String, on_back: Callback<()>, on_change: Callback<Option<Open>>) -> impl IntoView {
+fn SkillDetailView(
+    id: String,
+    on_back: Callback<()>,
+    on_change: Callback<Option<Open>>,
+) -> impl IntoView {
     let navigate = use_navigate();
     let detail = RwSignal::new(None::<Result<SkillDetail, String>>);
     let editing = RwSignal::new(false);
@@ -713,7 +789,12 @@ struct SkillDraft {
 }
 
 #[component]
-fn SkillForm(draft: SkillDraft, name_locked: bool, on_cancel: Callback<()>, on_save: Callback<Value>) -> impl IntoView {
+fn SkillForm(
+    draft: SkillDraft,
+    name_locked: bool,
+    on_cancel: Callback<()>,
+    on_save: Callback<Value>,
+) -> impl IntoView {
     let name = RwSignal::new(draft.name);
     let description = RwSignal::new(draft.description);
     let triggers = RwSignal::new(draft.triggers);
@@ -761,6 +842,7 @@ fn SkillForm(draft: SkillDraft, name_locked: bool, on_cancel: Callback<()>, on_s
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CreateMode {
     Agent,
+    Link,
     Folder,
     Skill,
 }
@@ -773,28 +855,42 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
     let mode = RwSignal::new(CreateMode::Agent);
     let brief = RwSignal::new(String::new());
     let path = RwSignal::new(String::new());
+    let link = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
 
-    let author = move |_| {
-        let body = json!({ "brief": brief.get_untracked() });
+    // A project whose first turn writes (brief) or fetches (link) a plugin.
+    let author = Callback::new(move |link_mode: bool| {
+        let body = if link_mode {
+            json!({ "source": link.get_untracked() })
+        } else {
+            json!({ "brief": brief.get_untracked() })
+        };
         let navigate = navigate.clone();
         busy.set(true);
         leptos::task::spawn_local(async move {
             match api::post::<_, Value>("/api/plugins/author", &body).await {
-                Ok(v) => navigate(&format!("/projects/{}", v["project"]["id"].as_str().unwrap_or_default()), Default::default()),
+                Ok(v) => navigate(
+                    &format!(
+                        "/projects/{}",
+                        v["project"]["id"].as_str().unwrap_or_default()
+                    ),
+                    Default::default(),
+                ),
                 Err(e) => {
                     busy.set(false);
                     error.set(Some(e.to_string()));
                 }
             }
         });
-    };
+    });
     let install = move |dir: String| {
         busy.set(true);
         leptos::task::spawn_local(async move {
             match api::post::<_, Value>("/api/plugins/install", &json!({ "path": dir })).await {
-                Ok(v) => on_done.run(Some(Open::Plugin(v["plugin"]["id"].as_str().unwrap_or_default().to_owned()))),
+                Ok(v) => on_done.run(Some(Open::Plugin(
+                    v["plugin"]["id"].as_str().unwrap_or_default().to_owned(),
+                ))),
                 Err(e) => {
                     busy.set(false);
                     error.set(Some(e.to_string()));
@@ -812,7 +908,9 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
     let save_skill = Callback::new(move |body: Value| {
         leptos::task::spawn_local(async move {
             match api::post::<_, Value>("/api/skills", &body).await {
-                Ok(v) => on_done.run(Some(Open::Skill(v["id"].as_str().unwrap_or_default().to_owned()))),
+                Ok(v) => on_done.run(Some(Open::Skill(
+                    v["id"].as_str().unwrap_or_default().to_owned(),
+                ))),
                 Err(e) => error.set(Some(e.to_string())),
             }
         });
@@ -822,7 +920,7 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
         <Modal title=t(T::CreateTitle).to_owned() glyph=Glyph::Plugin wide=true testid="plugin-create" on_close=on_close>
             <div class="dialog-body">
                 <div class="segmented" role="group" aria-label=t(T::CreateTitle)>
-                    {[(CreateMode::Agent, T::CreateWithAgent, "create-agent", Glyph::Agent), (CreateMode::Folder, T::InstallFromFolder, "create-folder", Glyph::FolderOpen), (CreateMode::Skill, T::NewSkill, "create-skill", Glyph::Book)]
+                    {[(CreateMode::Agent, T::CreateWithAgent, "create-agent", Glyph::Agent), (CreateMode::Link, T::AddFromLink, "create-link", Glyph::Link), (CreateMode::Folder, T::InstallFromFolder, "create-folder", Glyph::FolderOpen), (CreateMode::Skill, T::NewSkill, "create-skill", Glyph::Book)]
                         .into_iter()
                         .map(|(m, label, id, glyph)| view! {
                             <button class="seg" data-testid=id aria-pressed=move || (mode.get() == m).to_string() on:click=move |_| { mode.set(m); error.set(None); }>{icon(glyph)}{t(label)}</button>
@@ -839,8 +937,21 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
                                 prop:value=move || brief.get() on:input=move |ev| brief.set(event_target_value(&ev))></textarea>
                         </label>
                         <div class="row end">
-                            <button class="btn primary" data-testid="plugin-author" disabled=move || busy.get() || brief.with(|b| b.trim().is_empty()) on:click=author.clone()>
+                            <button class="btn primary" data-testid="plugin-author" disabled=move || busy.get() || brief.with(|b| b.trim().is_empty()) on:click=move |_| author.run(false)>
                                 {icon(Glyph::Sparkle)}{t(T::StartWithAgent)}
+                            </button>
+                        </div>
+                    }.into_any(),
+                    CreateMode::Link => view! {
+                        <p class="muted">{t(T::AddFromLinkHint)}</p>
+                        <label class="field">
+                            <span>{t(T::PluginLink)}</span>
+                            <input class="input mono" data-testid="plugin-link" placeholder=t(T::PluginLinkPlaceholder)
+                                prop:value=move || link.get() on:input=move |ev| link.set(event_target_value(&ev))/>
+                        </label>
+                        <div class="row end">
+                            <button class="btn primary" data-testid="plugin-fetch" disabled=move || busy.get() || link.with(|l| l.trim().is_empty()) on:click=move |_| author.run(true)>
+                                {icon(Glyph::Download)}{t(T::FetchWithAgent)}
                             </button>
                         </div>
                     }.into_any(),
@@ -904,14 +1015,19 @@ mod tests {
         ];
         let mut m = Map::new();
         m.insert("dish".into(), json!("pho"));
-        assert_eq!(fill_query("{{dish}} in {{ style }} light, {{other}}", &m, &fields), "pho in warm light, {{other}}");
+        assert_eq!(
+            fill_query("{{dish}} in {{ style }} light, {{other}}", &m, &fields),
+            "pho in warm light, {{other}}"
+        );
     }
 
     #[test]
     fn preamble_is_dropped_from_the_edit_body() {
         assert_eq!(strip_preamble("Body only"), "Body only");
         assert_eq!(
-            strip_preamble("> **Skill root (relative to project):** `x/`\n>\n> more\n\nReal body\n> quote"),
+            strip_preamble(
+                "> **Skill root (relative to project):** `x/`\n>\n> more\n\nReal body\n> quote"
+            ),
             "Real body\n> quote"
         );
     }

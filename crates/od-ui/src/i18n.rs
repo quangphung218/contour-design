@@ -583,6 +583,11 @@ messages! {
     CreateTitle => "Create", "Tạo mới";
     CreateWithAgent => "Plugin with agent", "Plugin bằng agent";
     InstallFromFolder => "Install from folder", "Cài từ thư mục";
+    AddFromLink => "From link", "Từ link";
+    AddFromLinkHint => "A GitHub repository or an archive link. A new project asks the agent to fetch it and install it; the app itself never downloads.", "Repo GitHub hoặc link file nén. Một project mới sẽ nhờ agent tải về và cài; app không tự tải gì.";
+    PluginLink => "Plugin link", "Link plugin";
+    PluginLinkPlaceholder => "github:owner/repo/path or https://…/plugin.zip", "github:owner/repo/path hoặc https://…/plugin.zip";
+    FetchWithAgent => "Fetch with agent", "Nhờ agent tải";
     NewSkill => "New skill", "Skill mới";
     CreateWithAgentHint => "Describe the plugin. A new project asks the agent to write it and install it.", "Mô tả plugin. Một project mới sẽ nhờ agent viết và cài nó.";
     PluginBrief => "What should the plugin do?", "Plugin cần làm gì?";

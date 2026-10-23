@@ -75,7 +75,11 @@ pub fn DesignSystemsPage() -> impl IntoView {
                         category.set(String::new());
                         surface.set(None);
                         if let Some(s) = r.design_systems.iter().find(|s| s.id == id) {
-                            scope.set(if is_mine(s) { Scope::Mine } else { Scope::Presets });
+                            scope.set(if is_mine(s) {
+                                Scope::Mine
+                            } else {
+                                Scope::Presets
+                            });
                         }
                         selected.set(Some(id));
                     }
@@ -89,9 +93,10 @@ pub fn DesignSystemsPage() -> impl IntoView {
     let on_change = Callback::new(move |id: Option<String>| reload(id));
 
     let default_id = Memo::new(move |_| {
-        shell
-            .config
-            .with(|c| c.as_ref().and_then(crate::settings::AppConfig::default_design_system))
+        shell.config.with(|c| {
+            c.as_ref()
+                .and_then(crate::settings::AppConfig::default_design_system)
+        })
     });
 
     let in_scope = Memo::new(move |_| {
@@ -128,7 +133,10 @@ pub fn DesignSystemsPage() -> impl IntoView {
     Effect::new(move |_| {
         let list = visible.get();
         let current = selected.get_untracked();
-        if current.as_ref().is_none_or(|id| !list.iter().any(|s| &s.id == id)) {
+        if current
+            .as_ref()
+            .is_none_or(|id| !list.iter().any(|s| &s.id == id))
+        {
             if let Some(first) = list.first() {
                 selected.set(Some(first.id.clone()));
             }
@@ -136,11 +144,15 @@ pub fn DesignSystemsPage() -> impl IntoView {
     });
     let count = move |sc: Scope| {
         systems.with(|l| {
-            l.as_ref()
-                .map_or(0, |l| l.iter().filter(|s| (sc == Scope::Mine) == is_mine(s)).count())
+            l.as_ref().map_or(0, |l| {
+                l.iter()
+                    .filter(|s| (sc == Scope::Mine) == is_mine(s))
+                    .count()
+            })
         })
     };
-    let surface_count = move |sf: Surface| in_scope.with(|l| l.iter().filter(|s| s.surface == sf).count());
+    let surface_count =
+        move |sf: Surface| in_scope.with(|l| l.iter().filter(|s| s.surface == sf).count());
 
     let scope_tab = move |sc: Scope, label: T| {
         view! {
@@ -408,7 +420,12 @@ enum KitTab {
 fn sections(md: &str) -> Vec<String> {
     md.lines()
         .filter_map(|l| l.strip_prefix("## "))
-        .map(|h| h.trim().trim_start_matches(|c: char| c.is_ascii_digit() || c == '.').trim().to_owned())
+        .map(|h| {
+            h.trim()
+                .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.')
+                .trim()
+                .to_owned()
+        })
         .filter(|h| !h.is_empty())
         .collect()
 }
@@ -453,7 +470,9 @@ fn DsDetail(
         move || {
             let id = id.clone();
             leptos::task::spawn_local(async move {
-                let res = api::get::<Kit>(&ds_url(&id, "kit")).await.map_err(|e| e.to_string());
+                let res = api::get::<Kit>(&ds_url(&id, "kit"))
+                    .await
+                    .map_err(|e| e.to_string());
                 let running = res
                     .as_ref()
                     .is_ok_and(|k| k.revisions.iter().any(|r| r.status == "running"));
@@ -472,9 +491,9 @@ fn DsDetail(
     // Poll while a revision is running.
     let poll = load.clone();
     Effect::new(move |_| {
-        let running = kit.with(|k| {
-            matches!(k, Some(Ok(k)) if k.revisions.iter().any(|r| r.status == "running"))
-        });
+        let running = kit.with(
+            |k| matches!(k, Some(Ok(k)) if k.revisions.iter().any(|r| r.status == "running")),
+        );
         if running {
             let poll = poll.clone();
             leptos::task::spawn_local(async move {
@@ -505,16 +524,26 @@ fn DsDetail(
     };
 
     let copy_md = move || {
-        let body = kit.with_untracked(|k| k.as_ref().and_then(|k| k.as_ref().ok()).map(|k| k.body.clone()));
+        let body = kit.with_untracked(|k| {
+            k.as_ref()
+                .and_then(|k| k.as_ref().ok())
+                .map(|k| k.body.clone())
+        });
         if let Some(body) = body {
             leptos::task::spawn_local(async move {
-                say(copy_text(&body).await.map(|()| t(T::CopiedDesignMd).to_owned()));
+                say(copy_text(&body)
+                    .await
+                    .map(|()| t(T::CopiedDesignMd).to_owned()));
             });
         }
     };
     let start_edit = move || {
         if mine {
-            let body = kit.with_untracked(|k| k.as_ref().and_then(|k| k.as_ref().ok()).map(|k| k.body.clone()));
+            let body = kit.with_untracked(|k| {
+                k.as_ref()
+                    .and_then(|k| k.as_ref().ok())
+                    .map(|k| k.body.clone())
+            });
             tab.set(KitTab::Design);
             editing.set(body);
         }
@@ -529,7 +558,9 @@ fn DsDetail(
             let id = id.clone();
             let load = load.clone();
             leptos::task::spawn_local(async move {
-                match api::put::<_, Value>(&ds_url(&id, "design-md"), &json!({ "body": body })).await {
+                match api::put::<_, Value>(&ds_url(&id, "design-md"), &json!({ "body": body }))
+                    .await
+                {
                     Ok(_) => {
                         editing.set(None);
                         say(Ok(t(T::Saved).to_owned()));
@@ -551,8 +582,12 @@ fn DsDetail(
             let id = id.clone();
             let load = load.clone();
             leptos::task::spawn_local(async move {
-                match api::post::<_, Value>(&ds_url(&id, "token-contract/rebuild"), &json!({})).await {
-                    Ok(v) if v["decision"] == "up-to-date" => say(Ok(t(T::TokensUpToDate).to_owned())),
+                match api::post::<_, Value>(&ds_url(&id, "token-contract/rebuild"), &json!({}))
+                    .await
+                {
+                    Ok(v) if v["decision"] == "up-to-date" => {
+                        say(Ok(t(T::TokensUpToDate).to_owned()))
+                    }
                     Ok(_) => {
                         say(Ok(t(T::RebuildProposed).to_owned()));
                         load();
@@ -595,7 +630,12 @@ fn DsDetail(
         let post = post.clone();
         move |name: String| {
             if mine {
-                post(ds_url(&id, &format!("assets/{}/delete", api::seg(&name))), json!({}), t(T::AssetDeleted), false);
+                post(
+                    ds_url(&id, &format!("assets/{}/delete", api::seg(&name))),
+                    json!({}),
+                    t(T::AssetDeleted),
+                    false,
+                );
             }
         }
     };
@@ -609,8 +649,13 @@ fn DsDetail(
             let in_field = ev
                 .target()
                 .and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(t).ok())
-                .is_some_and(|el| matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT"));
-            if in_field || editing.with_untracked(Option::is_some) || super::lib_ui::from_dialog(&ev) {
+                .is_some_and(|el| {
+                    matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT")
+                });
+            if in_field
+                || editing.with_untracked(Option::is_some)
+                || super::lib_ui::from_dialog(&ev)
+            {
                 return;
             }
             match ev.key().as_str() {
@@ -641,11 +686,17 @@ fn DsDetail(
             if is_default {
                 next.extra.remove(DEFAULT_DESIGN_SYSTEM_KEY);
             } else {
-                next.extra.insert(DEFAULT_DESIGN_SYSTEM_KEY.to_owned(), json!(id));
+                next.extra
+                    .insert(DEFAULT_DESIGN_SYSTEM_KEY.to_owned(), json!(id));
             }
             leptos::task::spawn_local(async move {
                 match shell.save_config(next).await {
-                    Ok(()) => say(Ok(if is_default { t(T::DefaultCleared) } else { t(T::DefaultSet) }.to_owned())),
+                    Ok(()) => say(Ok(if is_default {
+                        t(T::DefaultCleared)
+                    } else {
+                        t(T::DefaultSet)
+                    }
+                    .to_owned())),
                     Err(e) => say(Err(e)),
                 }
             });
@@ -711,7 +762,12 @@ fn DsDetail(
         move |_| {
             menu.set(false);
             let next = if published { "draft" } else { "published" };
-            post(ds_url(&id, "status"), json!({ "status": next }), t(T::Saved), true);
+            post(
+                ds_url(&id, "status"),
+                json!({ "status": next }),
+                t(T::Saved),
+                true,
+            );
         }
     };
     let confirm_delete = RwSignal::new(false);
@@ -736,7 +792,14 @@ fn DsDetail(
     let looks_good = {
         let id = id.clone();
         let post = post.clone();
-        move |_| post(ds_url(&id, "status"), json!({ "status": "published" }), t(T::DsApproved), true)
+        move |_| {
+            post(
+                ds_url(&id, "status"),
+                json!({ "status": "published" }),
+                t(T::DsApproved),
+                true,
+            )
+        }
     };
     let send_feedback = {
         let id = id.clone();
@@ -765,7 +828,11 @@ fn DsDetail(
             post(
                 ds_url(&id, &format!("revisions/{}", api::seg(&rid))),
                 json!({ "status": status }),
-                if accept { t(T::RevisionAccepted) } else { t(T::RevisionRejected) },
+                if accept {
+                    t(T::RevisionAccepted)
+                } else {
+                    t(T::RevisionRejected)
+                },
                 false,
             );
         })
@@ -970,7 +1037,10 @@ fn RevisionCard(revision: Revision, decide: Callback<(String, bool)>) -> impl In
     let title = if revision.kind == "token-rebuild" {
         t(T::TokenRebuildRevision).to_owned()
     } else {
-        tf(T::RevisionFor, &[revision.section.as_deref().unwrap_or(t(T::WholeSystem))])
+        tf(
+            T::RevisionFor,
+            &[revision.section.as_deref().unwrap_or(t(T::WholeSystem))],
+        )
     };
     let status = revision.status.clone();
     view! {
@@ -1021,9 +1091,17 @@ fn KitOverview(
             .map(|t| (t.name.clone(), t.value.clone()))
             .collect()
     } else {
-        kit.palette.iter().map(|s| (s.name.clone(), s.hex.clone())).collect()
+        kit.palette
+            .iter()
+            .map(|s| (s.name.clone(), s.hex.clone()))
+            .collect()
     };
-    let font = |n: &str| kit.tokens.iter().find(|t| t.name == n).map(|t| t.value.clone());
+    let font = |n: &str| {
+        kit.tokens
+            .iter()
+            .find(|t| t.name == n)
+            .map(|t| t.value.clone())
+    };
     let display = font("--font-display");
     let body = font("--font-body");
     let score = kit.score.clone();
@@ -1119,7 +1197,9 @@ fn KitOverview(
 
 #[component]
 fn TokenTable(tokens: Vec<Token>) -> impl IntoView {
-    let groups = ["color", "font", "type", "space", "radius", "shadow", "motion", "other"];
+    let groups = [
+        "color", "font", "type", "space", "radius", "shadow", "motion", "other",
+    ];
     view! {
         <div class="token-groups" data-testid="kit-tokens">
             {groups.into_iter().filter_map(|g| {

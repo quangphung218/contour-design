@@ -205,7 +205,9 @@ pub async fn save(
         })
         .await?
         .ok_or_else(|| ApiErr::internal("the template was not saved"))?;
-    Ok(Json(json!({ "template": SavedTemplate { files: None, ..saved } })))
+    Ok(Json(
+        json!({ "template": SavedTemplate { files: None, ..saved } }),
+    ))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -229,9 +231,8 @@ pub async fn use_template(
     let body: UseBody = super::optional_json(&body)?;
     let (project, conversation_id) = state
         .blocking(move |s| {
-            let t = find_template(s, &id)?.ok_or(StoreError::BadRequest(
-                "template not found".to_owned(),
-            ))?;
+            let t = find_template(s, &id)?
+                .ok_or(StoreError::BadRequest("template not found".to_owned()))?;
             let entry = t
                 .files
                 .as_ref()
@@ -245,7 +246,9 @@ pub async fn use_template(
                 pending_prompt: non_empty(body.prompt),
                 metadata: Some(ProjectMetadata {
                     entry_file: entry,
-                    extra: [("templateId".to_owned(), json!(t.id))].into_iter().collect(),
+                    extra: [("templateId".to_owned(), json!(t.id))]
+                        .into_iter()
+                        .collect(),
                     ..ProjectMetadata::default()
                 }),
                 custom_instructions: None,

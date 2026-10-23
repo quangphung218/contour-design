@@ -362,7 +362,8 @@ async fn prepare_and_launch(
     let user_message = user_message_id.to_owned();
     let model2 = model.clone();
     let bound = crate::routes::library::plugins::project_plugin_request(req, project);
-    let plugin = crate::routes::media::plugins::applied_plugin(&content, bound.as_ref().unwrap_or(req))?;
+    let plugin =
+        crate::routes::media::plugins::applied_plugin(&content, bound.as_ref().unwrap_or(req))?;
     let prepared = state
         .blocking(move |s| {
             let root = s.project_root(&project2)?;

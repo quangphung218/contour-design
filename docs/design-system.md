@@ -15,11 +15,12 @@ Không dùng: gradient tím, emoji làm icon, ký tự làm icon (`↻ × ⤓ >_
 | `crates/od-ui/styles/tokens.css` | Mọi token: `@font-face`, màu light/dark, type scale, spacing, radius, shadow, z-index, motion |
 | `crates/od-ui/styles/components.css` | Component dùng lại (button, input, chip, card, tab, menu, dialog, toast, badge, tooltip, empty state, skeleton) |
 | `crates/od-ui/styles/app.css` | App shell và từng màn (Home, Projects, Studio, Settings…), chỉ ghép token và component |
+| `crates/od-ui/styles/library.css` | Các màn thư viện (Design systems, Plugins, Media, Templates), nạp sau `app.css`, cũng chỉ ghép token và component |
 | `crates/od-ui/src/app/icons.rs` | `Glyph` + hàm `icon(glyph)` |
-| `crates/od-ui/vendor/remixicon/` | 78 icon SVG Remix Icon 4.8.0, Apache-2.0 |
+| `crates/od-ui/vendor/remixicon/` | 92 icon SVG Remix Icon 4.8.0, Apache-2.0 |
 | `crates/od-ui/vendor/fonts/` | Geist, Geist Mono (variable, woff2), SIL OFL 1.1 |
 
-Thứ tự nạp trong `index.html`: tokens → components → app. Component chỉ đọc biến CSS, không viết mã màu trực tiếp (ngoại lệ: nền giấy trắng của preview và vài màu trên nền đen của chế độ trình chiếu).
+Thứ tự nạp trong `index.html`: tokens → components → app → library. Component chỉ đọc biến CSS, không viết mã màu trực tiếp (ngoại lệ: nền giấy trắng của preview và vài màu trên nền đen của chế độ trình chiếu).
 
 ## Token
 
@@ -90,12 +91,13 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 | `.switch` | | `<label class="switch"><input type="checkbox"><span>…</span></label>` |
 | `.radio-row` | | Thẻ chọn có mô tả; viền accent khi `:checked` |
 | `.chip` | `active` / `aria-checked="true"` | Chọn loại đầu ra, câu trả lời form, chip bình luận đính kèm |
-| `.segmented` + `.seg` | `small`, `icons` | Một lựa chọn trong vài giá trị (chế độ phiên, thiết bị, theme) |
+| `.segmented` + `.seg` | `small`, `icons` | Một lựa chọn trong vài giá trị (chế độ phiên, thiết bị, theme, tab của màn thư viện). Đang chọn: `.active`, `aria-checked`, `aria-pressed` hoặc `aria-selected` |
 | `.badge` | `accent`, `success`, `warning`, `danger`, `outline` | Vuông góc nhỏ (`--radius-xs`), không dùng viên thuốc |
 | `.card` | `padded`, `interactive` | Chỉ dùng khi độ nổi nói lên thứ bậc; còn lại dùng khoảng trắng |
 | `.tabs` + `.tab` | `active` | `.tab-name` (có icon) + `.tab-close` (hiện khi hover hoặc active) |
 | `.menu-wrap` + `.menu` / `.popover` | `left` | `.menu-item` có icon, `.menu-sep` là tiêu đề nhóm |
-| `.overlay` + `.dialog` | `overlay.center` | `.dialog-head` (`.dialog-icon`), `.dialog-body`, `.dialog-foot`; `role="dialog"`, `aria-modal`, Esc và bấm nền để đóng |
+| `.overlay` + `.dialog` | `overlay.center` | `.dialog-head` (`.dialog-icon`), `.dialog-body`, `.dialog-foot`; `role="dialog"`, `aria-modal`, Esc và bấm nền để đóng. Dùng component `lib_ui::Modal`: nền là `.modal-backdrop` đứng cạnh dialog (không bọc dialog), vì nút bên trong đóng modal sẽ gỡ cây DOM khi click còn đang nổi bọt |
+| `lib_ui::ConfirmBar` | | Dòng xác nhận xoá ngay trên trang (nền `--color-danger-soft`). Không dùng `window.confirm`: hộp thoại chặn làm handler của app bị gọi lại khi đang chạy |
 | `.toast-region` + `.toast` | `error` | Kết quả export/handoff, tự ẩn sau 5 giây |
 | `[data-tip]` | `data-tip-pos="right|left|top"` | Tooltip CSS, hiện sau 350ms. Không dùng thêm `title` trên cùng phần tử |
 | `.empty-state` | `compact` | `.empty-icon` + `<strong>` + `<p>` + nút hành động nếu có |
@@ -122,6 +124,6 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 
 ## App shell
 
-- Sidebar trái: Home, Projects, Automations, Settings (dưới cùng). Nút thu gọn thành rail 56px; lựa chọn lưu trong `localStorage` riêng cho Studio (`od.sidebar.studio-collapsed`, mặc định thu gọn) và các trang khác (`od.sidebar.collapsed`). Cửa sổ hẹp hơn 960px tự thành rail.
+- Sidebar trái: Home, Projects, Automations, Design systems, Plugins, Media, Templates, Settings (dưới cùng). Nút thu gọn thành rail 56px; lựa chọn lưu trong `localStorage` riêng cho Studio (`od.sidebar.studio-collapsed`, mặc định thu gọn) và các trang khác (`od.sidebar.collapsed`). Cửa sổ hẹp hơn 960px tự thành rail.
 - Nội dung nằm trong panel `.main` nổi trên nền canvas.
 - Desktop macOS: cửa sổ Tauri dùng title bar overlay (`TitleBarStyle::Overlay`, ẩn tiêu đề). UI phát hiện Tauri + macOS, đặt `data-shell="mac"` trên `<html>` và chừa dải `.titlebar` cao 38px làm vùng kéo cửa sổ (`data-tauri-drag-region`, quyền `core:window:allow-start-dragging`).

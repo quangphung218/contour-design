@@ -127,16 +127,21 @@ fn source_name(raw: &str) -> Option<String> {
     let base = raw.rsplit(['/', '\\']).next()?.trim();
     let clean: String = base
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     (!clean.is_empty() && !clean.starts_with('.')).then_some(clean)
 }
 
 /// What a running job is doing, from the files in its staging folder.
 fn phase_of(staging: &std::path::Path) -> &'static str {
-    let has = |f: &str| {
-        std::fs::metadata(staging.join(f)).is_ok_and(|m| m.is_file() && m.len() > 0)
-    };
+    let has =
+        |f: &str| std::fs::metadata(staging.join(f)).is_ok_and(|m| m.is_file() && m.len() > 0);
     match (has("DESIGN.md"), has("tokens.css")) {
         (false, false) => "sources",
         (true, false) => "tokens",
@@ -171,7 +176,12 @@ pub async fn generate(
     ApiJson(body): ApiJson<GenerateBody>,
 ) -> ApiResult<impl IntoResponse> {
     let mut sources = design_system_gen::Sources {
-        urls: body.urls.iter().filter_map(|u| clean_url(u)).take(8).collect(),
+        urls: body
+            .urls
+            .iter()
+            .filter_map(|u| clean_url(u))
+            .take(8)
+            .collect(),
         github: body
             .github
             .as_deref()
@@ -405,7 +415,10 @@ mod tests {
 
     #[test]
     fn sources_are_cleaned() {
-        assert_eq!(clean_url(" https://a.example/x "), Some("https://a.example/x".into()));
+        assert_eq!(
+            clean_url(" https://a.example/x "),
+            Some("https://a.example/x".into())
+        );
         assert_eq!(clean_url("file:///etc/passwd"), None);
         assert_eq!(clean_url("https://a b"), None);
         assert_eq!(source_name("../../logo.png").as_deref(), Some("logo.png"));

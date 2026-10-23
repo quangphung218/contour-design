@@ -374,13 +374,18 @@ pub fn CreateFlow(
                 }
                 match v["job"]["status"].as_str() {
                     Some("succeeded") => {
-                        let id = v["job"]["designSystemId"].as_str().unwrap_or_default().to_owned();
+                        let id = v["job"]["designSystemId"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_owned();
                         phase.set(Phase::Done(id.clone()));
                         on_created.run(id);
                         return;
                     }
                     Some("failed") => {
-                        phase.set(Phase::Failed(v["job"]["error"].as_str().unwrap_or_default().to_owned()));
+                        phase.set(Phase::Failed(
+                            v["job"]["error"].as_str().unwrap_or_default().to_owned(),
+                        ));
                         return;
                     }
                     _ => {}
@@ -398,7 +403,11 @@ pub fn CreateFlow(
         let agent = shell.agent_id();
         match source.get_untracked() {
             Source::Paste | Source::Css => {
-                let key = if source.get_untracked() == Source::Css { "css" } else { "designMd" };
+                let key = if source.get_untracked() == Source::Css {
+                    "css"
+                } else {
+                    "designMd"
+                };
                 let body = json!({ "name": n, key: pasted.get_untracked() });
                 phase.set(Phase::Running);
                 leptos::task::spawn_local(async move {
@@ -426,10 +435,11 @@ pub fn CreateFlow(
                     Source::Github => body["github"] = json!(github.get_untracked().trim()),
                     Source::Figma => body["figma"] = json!(figma.get_untracked().trim()),
                     Source::Files => {
-                        body["files"] = json!(files.with_untracked(|f| f
-                            .iter()
-                            .map(|(n, b)| json!({ "name": n, "dataBase64": base64(b) }))
-                            .collect::<Vec<_>>()));
+                        body["files"] = json!(files.with_untracked(|f| {
+                            f.iter()
+                                .map(|(n, b)| json!({ "name": n, "dataBase64": base64(b) }))
+                                .collect::<Vec<_>>()
+                        }));
                     }
                     _ => {}
                 }
@@ -466,7 +476,11 @@ pub fn CreateFlow(
         brands_open.set(false);
     });
 
-    let field = move |label: T, testid: &'static str, signal: RwSignal<String>, placeholder: T, rows: Option<&'static str>| {
+    let field = move |label: T,
+                      testid: &'static str,
+                      signal: RwSignal<String>,
+                      placeholder: T,
+                      rows: Option<&'static str>| {
         view! {
             <label class="field">
                 <span>{t(label)}</span>

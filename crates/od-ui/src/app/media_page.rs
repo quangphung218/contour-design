@@ -36,7 +36,11 @@ pub struct Asset {
 
 impl Asset {
     fn src(&self) -> String {
-        format!("/api/projects/{}/raw/{}", api::seg(&self.project_id), api::file_path(&self.path))
+        format!(
+            "/api/projects/{}/raw/{}",
+            api::seg(&self.project_id),
+            api::file_path(&self.path)
+        )
     }
 
     fn key(&self) -> String {
@@ -44,7 +48,11 @@ impl Asset {
     }
 
     fn file_name(&self) -> String {
-        self.path.rsplit('/').next().unwrap_or(&self.path).to_owned()
+        self.path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&self.path)
+            .to_owned()
     }
 }
 
@@ -108,7 +116,11 @@ const AUDIO_DURATIONS: [u32; 6] = [5, 10, 15, 30, 60, 120];
 #[component]
 pub fn MediaPage() -> impl IntoView {
     let template = query_param("template");
-    let tab = RwSignal::new(if template.is_some() { Tab::Generate } else { Tab::Library });
+    let tab = RwSignal::new(if template.is_some() {
+        Tab::Generate
+    } else {
+        Tab::Library
+    });
     let assets = RwSignal::new(None::<Vec<Asset>>);
     let tasks = RwSignal::new(Vec::<Task>::new());
     let projects = RwSignal::new(Vec::<Project>::new());
@@ -125,10 +137,13 @@ pub fn MediaPage() -> impl IntoView {
     let reload_tasks = move || {
         leptos::task::spawn_local(async move {
             if let Ok(v) = api::get::<Value>("/api/media/tasks").await {
-                let mut list: Vec<Task> = serde_json::from_value(v["tasks"].clone()).unwrap_or_default();
+                let mut list: Vec<Task> =
+                    serde_json::from_value(v["tasks"].clone()).unwrap_or_default();
                 list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
                 let finished = tasks.with_untracked(|old| {
-                    list.iter().any(|n| n.status == "done" && old.iter().any(|o| o.id == n.id && o.status != "done"))
+                    list.iter().any(|n| {
+                        n.status == "done" && old.iter().any(|o| o.id == n.id && o.status != "done")
+                    })
                 });
                 tasks.set(list);
                 if finished {
@@ -149,7 +164,10 @@ pub fn MediaPage() -> impl IntoView {
     reload_projects();
     if let Ok(handle) = set_interval_with_handle(
         move || {
-            if tasks.with_untracked(|l| l.iter().any(|t| matches!(t.status.as_str(), "queued" | "running"))) {
+            if tasks.with_untracked(|l| {
+                l.iter()
+                    .any(|t| matches!(t.status.as_str(), "queued" | "running"))
+            }) {
                 reload_tasks();
             }
         },
@@ -157,7 +175,13 @@ pub fn MediaPage() -> impl IntoView {
     ) {
         on_cleanup(move || handle.clear());
     }
-    let active = move || tasks.with(|l| l.iter().filter(|t| matches!(t.status.as_str(), "queued" | "running")).count());
+    let active = move || {
+        tasks.with(|l| {
+            l.iter()
+                .filter(|t| matches!(t.status.as_str(), "queued" | "running"))
+                .count()
+        })
+    };
 
     let tab_button = move |k: Tab, label: T, glyph: Glyph, key: &'static str| {
         view! {
@@ -202,7 +226,11 @@ pub fn MediaPage() -> impl IntoView {
 }
 
 #[component]
-fn LibraryView(assets: RwSignal<Option<Vec<Asset>>>, projects: RwSignal<Vec<Project>>, on_change: Callback<()>) -> impl IntoView {
+fn LibraryView(
+    assets: RwSignal<Option<Vec<Asset>>>,
+    projects: RwSignal<Vec<Project>>,
+    on_change: Callback<()>,
+) -> impl IntoView {
     let navigate = use_navigate();
     let kind = RwSignal::new(String::new());
     let query = RwSignal::new(String::new());
@@ -222,7 +250,12 @@ fn LibraryView(assets: RwSignal<Option<Vec<Asset>>>, projects: RwSignal<Vec<Proj
                 .flatten()
                 .filter(|a| k.is_empty() || a.kind == k)
                 .filter(|a| p.is_empty() || a.project_id == p)
-                .filter(|a| q.is_empty() || format!("{} {}", a.path, a.project_name).to_lowercase().contains(&q))
+                .filter(|a| {
+                    q.is_empty()
+                        || format!("{} {}", a.path, a.project_name)
+                            .to_lowercase()
+                            .contains(&q)
+                })
                 .cloned()
                 .collect::<Vec<_>>()
         })
@@ -256,7 +289,13 @@ fn LibraryView(assets: RwSignal<Option<Vec<Asset>>>, projects: RwSignal<Vec<Proj
         let navigate = navigate.clone();
         leptos::task::spawn_local(async move {
             match api::post::<_, Value>("/api/library/chat", &body).await {
-                Ok(v) => navigate(&format!("/projects/{}", v["project"]["id"].as_str().unwrap_or_default()), Default::default()),
+                Ok(v) => navigate(
+                    &format!(
+                        "/projects/{}",
+                        v["project"]["id"].as_str().unwrap_or_default()
+                    ),
+                    Default::default(),
+                ),
                 Err(e) => notice.set(Some(Err(e.to_string()))),
             }
         });
@@ -265,11 +304,18 @@ fn LibraryView(assets: RwSignal<Option<Vec<Asset>>>, projects: RwSignal<Vec<Proj
     let delete_selected = Callback::new(move |()| {
         confirm_delete.set(false);
         let picks: Vec<Asset> = visible.with_untracked(|l| {
-            l.iter().filter(|a| selected.with_untracked(|s| s.contains(&a.key()))).cloned().collect()
+            l.iter()
+                .filter(|a| selected.with_untracked(|s| s.contains(&a.key())))
+                .cloned()
+                .collect()
         });
         leptos::task::spawn_local(async move {
             for a in &picks {
-                let path = format!("/api/projects/{}/files/{}", api::seg(&a.project_id), api::file_path(&a.path));
+                let path = format!(
+                    "/api/projects/{}/files/{}",
+                    api::seg(&a.project_id),
+                    api::file_path(&a.path)
+                );
                 if let Err(e) = api::delete::<Value>(&path).await {
                     notice.set(Some(Err(e.to_string())));
                 }
@@ -278,7 +324,15 @@ fn LibraryView(assets: RwSignal<Option<Vec<Asset>>>, projects: RwSignal<Vec<Proj
             on_change.run(());
         });
     });
-    let toggle = move |key: String| selected.update(|s| if let Some(i) = s.iter().position(|k| *k == key) { s.remove(i); } else { s.push(key); });
+    let toggle = move |key: String| {
+        selected.update(|s| {
+            if let Some(i) = s.iter().position(|k| *k == key) {
+                s.remove(i);
+            } else {
+                s.push(key);
+            }
+        })
+    };
 
     view! {
         <div class="lib-toolbar">
@@ -368,7 +422,13 @@ fn LibraryView(assets: RwSignal<Option<Vec<Asset>>>, projects: RwSignal<Vec<Proj
 }
 
 #[component]
-fn AssetPreview(asset: Asset, index: usize, count: usize, preview: RwSignal<Option<usize>>, on_change: Callback<()>) -> impl IntoView {
+fn AssetPreview(
+    asset: Asset,
+    index: usize,
+    count: usize,
+    preview: RwSignal<Option<usize>>,
+    on_change: Callback<()>,
+) -> impl IntoView {
     let navigate = use_navigate();
     let src = asset.src();
     let stage = match asset.kind.as_str() {
@@ -377,7 +437,8 @@ fn AssetPreview(asset: Asset, index: usize, count: usize, preview: RwSignal<Opti
         _ => view! { <audio class="media-audio" data-testid="media-audio" src=src.clone() controls=true></audio> }.into_any(),
     };
     let pid = asset.project_id.clone();
-    let open_project = move |_| navigate(&format!("/projects/{}", api::seg(&pid)), Default::default());
+    let open_project =
+        move |_| navigate(&format!("/projects/{}", api::seg(&pid)), Default::default());
     let dl = {
         let src = src.clone();
         let name = asset.file_name();
@@ -396,7 +457,11 @@ fn AssetPreview(asset: Asset, index: usize, count: usize, preview: RwSignal<Opti
     let remove = {
         let a = asset.clone();
         move |_| {
-            let path = format!("/api/projects/{}/files/{}", api::seg(&a.project_id), api::file_path(&a.path));
+            let path = format!(
+                "/api/projects/{}/files/{}",
+                api::seg(&a.project_id),
+                api::file_path(&a.path)
+            );
             leptos::task::spawn_local(async move {
                 if api::delete::<Value>(&path).await.is_ok() {
                     preview.set(None);
@@ -431,7 +496,12 @@ fn AssetPreview(asset: Asset, index: usize, count: usize, preview: RwSignal<Opti
 }
 
 #[component]
-fn GenerateView(projects: RwSignal<Vec<Project>>, template: Option<String>, on_queued: Callback<()>, on_providers: Callback<()>) -> impl IntoView {
+fn GenerateView(
+    projects: RwSignal<Vec<Project>>,
+    template: Option<String>,
+    on_queued: Callback<()>,
+    on_providers: Callback<()>,
+) -> impl IntoView {
     let models = RwSignal::new(Vec::<Model>::new());
     let configured = RwSignal::new(Vec::<String>::new());
     let surface = RwSignal::new("image".to_owned());
@@ -449,7 +519,10 @@ fn GenerateView(projects: RwSignal<Vec<Project>>, template: Option<String>, on_q
         if let Ok(v) = api::get::<Value>("/api/media/models").await {
             models.set(serde_json::from_value(v["models"].clone()).unwrap_or_default());
             configured.set(
-                v["providers"].as_array().into_iter().flatten()
+                v["providers"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
                     .filter(|p| p["configured"] == true)
                     .filter_map(|p| p["id"].as_str().map(str::to_owned))
                     .collect(),
@@ -476,7 +549,10 @@ fn GenerateView(projects: RwSignal<Vec<Project>>, template: Option<String>, on_q
         let list = models.get();
         let current = model.get_untracked();
         if !list.iter().any(|m| m.surface == sf && m.id == current) {
-            let pick = list.iter().filter(|m| m.surface == sf).find(|m| configured.with_untracked(|c| c.contains(&m.provider)))
+            let pick = list
+                .iter()
+                .filter(|m| m.surface == sf)
+                .find(|m| configured.with_untracked(|c| c.contains(&m.provider)))
                 .or_else(|| list.iter().find(|m| m.surface == sf));
             if let Some(m) = pick {
                 model.set(m.id.clone());
@@ -485,7 +561,8 @@ fn GenerateView(projects: RwSignal<Vec<Project>>, template: Option<String>, on_q
     });
     let provider_ready = move || {
         let id = model.get();
-        models.with(|l| l.iter().find(|m| m.id == id).map(|m| m.provider.clone()))
+        models
+            .with(|l| l.iter().find(|m| m.id == id).map(|m| m.provider.clone()))
             .is_some_and(|p| configured.with(|c| c.contains(&p)))
     };
 
@@ -510,10 +587,23 @@ fn GenerateView(projects: RwSignal<Vec<Project>>, template: Option<String>, on_q
         leptos::task::spawn_local(async move {
             // The library project may not exist yet: uploading nothing would
             // fail, so ensure it through a tiny create-if-missing call.
-            if pid == LIBRARY_PROJECT && api::get::<Value>(&format!("/api/projects/{LIBRARY_PROJECT}")).await.is_err() {
-                let _ = api::post::<_, Value>("/api/projects", &json!({ "id": LIBRARY_PROJECT, "name": t(T::MediaLibraryProject) })).await;
+            if pid == LIBRARY_PROJECT
+                && api::get::<Value>(&format!("/api/projects/{LIBRARY_PROJECT}"))
+                    .await
+                    .is_err()
+            {
+                let _ = api::post::<_, Value>(
+                    "/api/projects",
+                    &json!({ "id": LIBRARY_PROJECT, "name": t(T::MediaLibraryProject) }),
+                )
+                .await;
             }
-            match api::post::<_, Value>(&format!("/api/projects/{}/media/tasks", api::seg(&pid)), &body).await {
+            match api::post::<_, Value>(
+                &format!("/api/projects/{}/media/tasks", api::seg(&pid)),
+                &body,
+            )
+            .await
+            {
                 Ok(_) => on_queued.run(()),
                 Err(e) => error.set(Some(e.to_string())),
             }
@@ -599,8 +689,18 @@ fn GenerateView(projects: RwSignal<Vec<Project>>, template: Option<String>, on_q
 }
 
 #[component]
-fn QueueView(tasks: RwSignal<Vec<Task>>, projects: RwSignal<Vec<Project>>, on_change: Callback<()>) -> impl IntoView {
-    let project_name = move |id: &str| projects.with(|l| l.iter().find(|p| p.id == id).map_or_else(|| id.to_owned(), |p| p.name.clone()));
+fn QueueView(
+    tasks: RwSignal<Vec<Task>>,
+    projects: RwSignal<Vec<Project>>,
+    on_change: Callback<()>,
+) -> impl IntoView {
+    let project_name = move |id: &str| {
+        projects.with(|l| {
+            l.iter()
+                .find(|p| p.id == id)
+                .map_or_else(|| id.to_owned(), |p| p.name.clone())
+        })
+    };
     view! {
         <ul class="task-list" data-testid="media-queue">
             {move || {
@@ -663,7 +763,20 @@ fn ProvidersView() -> impl IntoView {
     let load = move || {
         leptos::task::spawn_local(async move {
             if let Ok(v) = api::get::<Value>("/api/media/config").await {
-                urls.set(PROVIDERS.iter().map(|(id, _, _)| ((*id).to_owned(), v["providers"][id]["baseUrl"].as_str().unwrap_or_default().to_owned())).collect());
+                urls.set(
+                    PROVIDERS
+                        .iter()
+                        .map(|(id, _, _)| {
+                            (
+                                (*id).to_owned(),
+                                v["providers"][id]["baseUrl"]
+                                    .as_str()
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                            )
+                        })
+                        .collect(),
+                );
                 config.set(Some(v));
             }
         });
@@ -674,7 +787,10 @@ fn ProvidersView() -> impl IntoView {
         for (id, _, _) in PROVIDERS {
             let key = keys.with_untracked(|k| k.get(id).cloned().unwrap_or_default());
             let url = urls.with_untracked(|u| u.get(id).cloned().unwrap_or_default());
-            let model = config.with_untracked(|c| c.as_ref().and_then(|c| c["providers"][id]["model"].as_str().map(str::to_owned)));
+            let model = config.with_untracked(|c| {
+                c.as_ref()
+                    .and_then(|c| c["providers"][id]["model"].as_str().map(str::to_owned))
+            });
             providers.insert(id.to_owned(), json!({ "apiKey": key, "preserveApiKey": key.is_empty(), "baseUrl": url, "model": model }));
         }
         let body = json!({ "providers": providers });
@@ -750,9 +866,19 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
         status.set(None);
         let body = json!({ "fileName": "index.html", "fps": fps.get_untracked(), "output": "media/hyperframes.mp4" });
         leptos::task::spawn_local(async move {
-            match api::post::<_, Value>(&format!("/api/projects/{}/export/mp4", api::seg(&pid)), &body).await {
+            match api::post::<_, Value>(
+                &format!("/api/projects/{}/export/mp4", api::seg(&pid)),
+                &body,
+            )
+            .await
+            {
                 Ok(v) => {
-                    status.set(Some(Ok(tf(T::Mp4Saved, &[v["file"]["name"].as_str().unwrap_or("media/hyperframes.mp4")]))));
+                    status.set(Some(Ok(tf(
+                        T::Mp4Saved,
+                        &[v["file"]["name"]
+                            .as_str()
+                            .unwrap_or("media/hyperframes.mp4")],
+                    ))));
                     on_saved.run(());
                 }
                 Err(e) => status.set(Some(Err(e.to_string()))),

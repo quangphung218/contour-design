@@ -7,8 +7,10 @@
 //! - `POST   /api/plugins/:id/use` `{inputs, locale?, designSystemId?}`:
 //!   validates the inputs and creates a project bound to the plugin; the
 //!   first turn is the plugin's example brief with the inputs filled in.
-//! - `POST   /api/plugins/author` `{brief, locale?}`: a project whose
-//!   first turn asks the agent to write a plugin and install it.
+//! - `POST   /api/plugins/author` `{brief}` or `{source}`: a project whose
+//!   first turn asks the agent to write a plugin (or fetch the one at a
+//!   GitHub or archive link: the daemon itself never goes online) and
+//!   install it.
 //!
 //! A project bound to a plugin (`metadata.pluginId`, `pluginInputs`)
 //! applies it on every run that does not name another one
@@ -137,7 +139,11 @@ pub async fn use_plugin(
 /// `req` with the project's bound plugin filled in when it names none.
 #[must_use]
 pub fn project_plugin_request(req: &ChatRequest, project: &Project) -> Option<ChatRequest> {
-    if req.plugin_id.as_deref().is_some_and(|p| !p.trim().is_empty()) {
+    if req
+        .plugin_id
+        .as_deref()
+        .is_some_and(|p| !p.trim().is_empty())
+    {
         return None;
     }
     let extra = &project.metadata.as_ref()?.extra;
@@ -178,9 +184,36 @@ pub fn authoring_prompt(brief: &str) -> String {
     )
 }
 
+/// The first turn of an "Add plugin from link" project.
+#[must_use]
+pub fn import_prompt(source: &str) -> String {
+    format!(
+        "# Install an Open Design plugin from a link\n\n\
+         Fetch the plugin at {source} into `{AUTHORING_DIR}/` in the current project: \
+         `git clone --depth 1` for a GitHub repository (a `github:owner/repo[@ref][/path]` \
+         reference or a github.com URL, keeping only the plugin's folder), or download and \
+         unpack a `.zip` / `.tar.gz` archive. The folder must hold `SKILL.md` or \
+         `open-design.json`; if it does not, stop and say so.\n\n\
+         Then install it with `od plugin install \"$PWD/{AUTHORING_DIR}\"`, or if `od` is not on \
+         PATH: `curl -sS -X POST \"$OD_DAEMON_URL/api/plugins/install\" -H 'content-type: \
+         application/json' -d \"{{\\\"path\\\": \\\"$PWD/{AUTHORING_DIR}\\\"}}\"`. \
+         Report the plugin id and its declared capabilities."
+    )
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AuthorBody {
+    #[serde(default)]
     brief: String,
+    #[serde(default)]
+    source: String,
+}
+
+/// A link the agent may fetch: `github:…`, or an http(s) URL.
+fn valid_source(s: &str) -> bool {
+    (s.starts_with("github:") || s.starts_with("https://") || s.starts_with("http://"))
+        && s.len() <= 2048
+        && !s.chars().any(|c| c.is_whitespace() || c == '`' || c == '"')
 }
 
 pub async fn author(
@@ -188,16 +221,26 @@ pub async fn author(
     ApiJson(body): ApiJson<AuthorBody>,
 ) -> ApiResult<Json<Value>> {
     let brief = body.brief.trim().to_owned();
-    if brief.is_empty() {
-        return Err(ApiErr::bad_request("brief is required"));
-    }
-    let name: String = brief.chars().take(48).collect();
+    let source = body.source.trim().to_owned();
+    let (title, prompt) = if !source.is_empty() {
+        if !valid_source(&source) {
+            return Err(ApiErr::bad_request(
+                "source must be a github: reference or an http(s) link",
+            ));
+        }
+        (source.clone(), import_prompt(&source))
+    } else if !brief.is_empty() {
+        (brief.clone(), authoring_prompt(&brief))
+    } else {
+        return Err(ApiErr::bad_request("brief or source is required"));
+    };
+    let name: String = title.chars().take(48).collect();
     let req = CreateProjectRequest {
         id: None,
         name: format!("Plugin: {name}"),
         skill_id: None,
         design_system_id: None,
-        pending_prompt: Some(authoring_prompt(&brief)),
+        pending_prompt: Some(prompt),
         metadata: Some(ProjectMetadata {
             intent: Some("plugin-authoring".to_owned()),
             ..ProjectMetadata::default()
@@ -240,6 +283,19 @@ mod tests {
         };
         assert!(project_plugin_request(&named, &p).is_none());
         assert!(project_plugin_request(&req, &project(Map::new())).is_none());
+    }
+
+    #[test]
+    fn import_prompt_fetches_then_installs() {
+        let p = import_prompt("github:acme/plugins@main/recipe");
+        assert!(p.contains("github:acme/plugins@main/recipe"));
+        assert!(p.contains("git clone --depth 1"));
+        assert!(p.contains("od plugin install"));
+        assert!(valid_source("https://example.com/p.zip"));
+        assert!(valid_source("github:a/b"));
+        assert!(!valid_source("file:///etc"));
+        assert!(!valid_source("https://a b"));
+        assert!(!valid_source("https://x\"; rm -rf"));
     }
 
     #[test]

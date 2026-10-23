@@ -483,8 +483,9 @@ pub async fn showcase(
     let components = e.dir.join("components.html");
     let html = match tokio::fs::read(&components).await {
         Ok(bytes) => bytes,
-        Err(_) => design_kit::showcase_html(&e.summary.title, &read(&e.dir, "tokens.css"))
-            .into_bytes(),
+        Err(_) => {
+            design_kit::showcase_html(&e.summary.title, &read(&e.dir, "tokens.css")).into_bytes()
+        }
     };
     Ok(page(html, "text/html; charset=utf-8"))
 }
@@ -629,7 +630,8 @@ pub async fn copy(
         {
             m["id"] = json!(folder);
             m["name"] = json!(name);
-            m["source"] = json!({ "type": "local", "origin": format!("copied from {}", e.summary.id) });
+            m["source"] =
+                json!({ "type": "local", "origin": format!("copied from {}", e.summary.id) });
             let _ = std::fs::write(
                 &manifest_path,
                 serde_json::to_vec_pretty(&m).unwrap_or_default(),
@@ -682,10 +684,7 @@ fn package_files(dir: &std::path::Path) -> Vec<(String, PathBuf)> {
     out
 }
 
-pub async fn archive(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> ApiResult<Response> {
+pub async fn archive(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Response> {
     let e = entry(&state, &id)?;
     let folder = e
         .dir
@@ -883,14 +882,19 @@ pub async fn decide(
                 }
             }
         }
-        write_revision(&dir, &Revision {
-            files: Vec::new(),
-            ..r
-        })
+        write_revision(
+            &dir,
+            &Revision {
+                files: Vec::new(),
+                ..r
+            },
+        )
         .map_err(|err| ApiErr::internal(err.to_string()))
     })
     .await?;
-    Ok(Json(json!({ "revision": Revision { files: Vec::new(), ..out } })))
+    Ok(Json(
+        json!({ "revision": Revision { files: Vec::new(), ..out } }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1113,8 +1117,14 @@ mod tests {
 
     #[test]
     fn asset_names_are_sanitised_and_typed() {
-        assert_eq!(safe_asset_name("../../Logo Mark.svg").as_deref(), Some("Logo-Mark.svg"));
-        assert_eq!(safe_asset_name("Inter.woff2").as_deref(), Some("Inter.woff2"));
+        assert_eq!(
+            safe_asset_name("../../Logo Mark.svg").as_deref(),
+            Some("Logo-Mark.svg")
+        );
+        assert_eq!(
+            safe_asset_name("Inter.woff2").as_deref(),
+            Some("Inter.woff2")
+        );
         assert_eq!(safe_asset_name(".hidden.png"), None);
         assert_eq!(safe_asset_name("run.sh"), None);
         assert_eq!(asset_kind("brand-logo.png"), "logo");

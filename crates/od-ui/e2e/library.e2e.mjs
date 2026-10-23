@@ -274,6 +274,15 @@ try {
   assert.ok(authorBody.project.pendingPrompt.includes('# Create an Open Design plugin'));
   await page.waitForURL(/\/projects\//);
   results.pluginAuthor = 'ok';
+  await page.locator('nav a[href="/plugins"]').click();
+  await page.getByTestId('plugins-create').click();
+  await page.getByTestId('create-link').click();
+  await page.getByTestId('plugin-link').fill('github:acme/plugins/recipe');
+  const fetched = page.waitForResponse((r) => r.url().endsWith('/api/plugins/author'));
+  await page.getByTestId('plugin-fetch').click();
+  assert.ok((await (await fetched).json()).project.pendingPrompt.includes('git clone --depth 1'));
+  await page.waitForURL(/\/projects\//);
+  results.pluginLink = 'ok';
 
   // Skills: edit a bundled one (override), new skill, delete.
   await page.locator('nav a[href="/plugins"]').click();

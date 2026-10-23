@@ -105,7 +105,9 @@ pub fn Home() -> impl IntoView {
             brief: brief.get_untracked(),
             chip: chip.get_untracked(),
             design_system_id: design_system.get_untracked(),
-            template_id: template.get_untracked().or_else(|| skill_pick.get_untracked()),
+            template_id: template
+                .get_untracked()
+                .or_else(|| skill_pick.get_untracked()),
         };
         let req = intent.create_request(&skills.get_untracked().unwrap_or_default());
         busy.set(true);

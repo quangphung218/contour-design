@@ -3,15 +3,17 @@
 //! new tab, download); image and video prompt templates (Copy prompt,
 //! Generate); and templates the user saved from a project.
 
+use super::api;
 use super::export_menu::download;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::lib_ui::{Modal, copy_text, query_param};
-use super::api;
 use crate::i18n::{T, locale, t, tf};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
-use od_contracts::{DesignTemplatesResponse, Platform, Project, ProjectsResponse, SkillMode, SkillSummary};
+use od_contracts::{
+    DesignTemplatesResponse, Platform, Project, ProjectsResponse, SkillMode, SkillSummary,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -120,7 +122,9 @@ pub fn TemplatesPage() -> impl IntoView {
         api::get::<Value>("/api/prompt-templates")
             .await
             .ok()
-            .and_then(|v| serde_json::from_value::<Vec<PromptTemplate>>(v["promptTemplates"].clone()).ok())
+            .and_then(|v| {
+                serde_json::from_value::<Vec<PromptTemplate>>(v["promptTemplates"].clone()).ok()
+            })
             .unwrap_or_default()
     });
     let tab_button = move |k: Tab, label: T, key: &'static str| {
@@ -170,7 +174,11 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
         m
     });
     let scenarios = Memo::new(move |_| {
-        let mut m: Vec<String> = all().iter().map(|s| s.info.scenario.clone()).filter(|s| !s.is_empty()).collect();
+        let mut m: Vec<String> = all()
+            .iter()
+            .map(|s| s.info.scenario.clone())
+            .filter(|s| !s.is_empty())
+            .collect();
         m.sort();
         m.dedup();
         m
@@ -187,12 +195,18 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
                 _ => true,
             })
             .filter(|s| sc.is_empty() || s.info.scenario == sc)
-            .filter(|s| q.is_empty() || format!("{} {}", name_of(s), description_of(s)).to_lowercase().contains(&q))
+            .filter(|s| {
+                q.is_empty()
+                    || format!("{} {}", name_of(s), description_of(s))
+                        .to_lowercase()
+                        .contains(&q)
+            })
             .collect();
         list.sort_by(|a, b| {
             let fa = a.info.featured.unwrap_or(f64::MAX);
             let fb = b.info.featured.unwrap_or(f64::MAX);
-            fa.total_cmp(&fb).then_with(|| a.info.name.cmp(&b.info.name))
+            fa.total_cmp(&fb)
+                .then_with(|| a.info.name.cmp(&b.info.name))
         });
         list
     });
@@ -295,8 +309,19 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
             let navigate = navigate.clone();
             busy.set(true);
             leptos::task::spawn_local(async move {
-                match api::post::<_, Value>(&format!("/api/design-templates/{}/remix", api::seg(&id)), &json!({})).await {
-                    Ok(v) => navigate(&format!("/projects/{}", v["project"]["id"].as_str().unwrap_or_default()), Default::default()),
+                match api::post::<_, Value>(
+                    &format!("/api/design-templates/{}/remix", api::seg(&id)),
+                    &json!({}),
+                )
+                .await
+                {
+                    Ok(v) => navigate(
+                        &format!(
+                            "/projects/{}",
+                            v["project"]["id"].as_str().unwrap_or_default()
+                        ),
+                        Default::default(),
+                    ),
                     Err(e) => {
                         busy.set(false);
                         notice.set(Some(e.to_string()));
@@ -386,12 +411,22 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
 }
 
 #[component]
-fn PromptGallery(prompts: LocalResource<Vec<PromptTemplate>>, surface: &'static str) -> impl IntoView {
+fn PromptGallery(
+    prompts: LocalResource<Vec<PromptTemplate>>,
+    surface: &'static str,
+) -> impl IntoView {
     let navigate = use_navigate();
     let category = RwSignal::new(String::new());
     let query = RwSignal::new(String::new());
     let copied = RwSignal::new(None::<String>);
-    let mine = move || prompts.get().unwrap_or_default().into_iter().filter(|p| p.surface == surface).collect::<Vec<_>>();
+    let mine = move || {
+        prompts
+            .get()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| p.surface == surface)
+            .collect::<Vec<_>>()
+    };
     let categories = Memo::new(move |_| {
         let mut c: Vec<String> = mine().into_iter().map(|p| p.category).collect();
         c.sort();
