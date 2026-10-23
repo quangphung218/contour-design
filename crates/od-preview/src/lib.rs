@@ -4,14 +4,16 @@
 //! HTTP wiring lives in `od-server` (`routes/preview.rs`); this crate stays
 //! framework-free so it can be tested on its own.
 
+pub mod edit_key;
 pub mod events;
 pub mod inject;
 pub mod lint;
 pub mod scope;
 pub mod source_patch;
 
+pub use edit_key::{EDIT_KEY_TTL, EditKeys, is_edit_key_id};
 pub use events::{ChangeKind, ProjectEvent, ProjectEvents, Subscription, WatchOptions};
-pub use inject::{BRIDGE_JS, InjectError, MAX_INJECT_BYTES, inject_bridge};
+pub use inject::{BRIDGE_JS, InjectError, MAX_INJECT_BYTES, inject_bridge, inject_bridge_keyed};
 pub use scope::{PreviewScope, PreviewScopes, SCOPE_TTL, is_scope_token};
 
 /// `sandbox` attribute the host puts on the preview iframe (opaque origin).

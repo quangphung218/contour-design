@@ -73,6 +73,13 @@ pub struct Tools {
     pub snapshot: RwSignal<Option<Snapshot>>,
     /// The last run's deliverable check when it failed.
     pub deliverable: RwSignal<Option<DeliverableResponse>>,
+    /// Id of the main frame's current load (`raw?…&key=<id>`).
+    frame_kid: StoredValue<String>,
+    /// The load id whose key was asked for, so it is asked once.
+    claimed_kid: StoredValue<String>,
+    /// That load's edit key, once claimed: bridge messages that write the
+    /// source must carry it.
+    edit_key: StoredValue<Option<String>>,
 }
 
 impl Tools {
@@ -91,7 +98,19 @@ impl Tools {
             attachments: RwSignal::new(Vec::new()),
             snapshot: RwSignal::new(None),
             deliverable: RwSignal::new(None),
+            frame_kid: StoredValue::new(String::new()),
+            claimed_kid: StoredValue::new(String::new()),
+            edit_key: StoredValue::new(None),
         }
+    }
+
+    /// A fresh id for the next load of the main frame; the old key goes.
+    pub fn new_frame_kid(self) -> String {
+        let part = || (js_sys::Math::random() * f64::from(u32::MAX)) as u32;
+        let kid = format!("load-{:08x}{:08x}{:08x}", part(), part(), part());
+        self.frame_kid.set_value(kid.clone());
+        self.edit_key.set_value(None);
+        kid
     }
 
     /// Another file is shown: its edits, tweaks and lint start over.
@@ -190,11 +209,29 @@ fn drop_skipped(overrides: &mut Vec<Override>, skipped: &[pb::Skipped]) -> usize
     before - overrides.len()
 }
 
-/// A text edit the host should write: only while the text tool is on and
-/// for the file the bridge was told about. The artifact's own scripts share
-/// the bridge's window, so anything else may not be the user's.
-fn accepted_text_edit(e: &pb::TextEdit, tool: Option<Tool>, active: Option<&str>) -> bool {
-    tool == Some(Tool::EditText) && active.is_some() && e.doc.as_deref() == active
+/// Whether a bridge message carries the frame's edit key. The artifact's
+/// own scripts share the bridge's window but never see the key.
+fn keyed(msg_key: Option<&str>, key: Option<&str>) -> bool {
+    key.is_some() && msg_key == key
+}
+
+/// A text edit the host should write: from the bridge (keyed), only while
+/// the text tool is on and for the file the bridge was told about.
+fn accepted_text_edit(
+    e: &pb::TextEdit,
+    tool: Option<Tool>,
+    active: Option<&str>,
+    key: Option<&str>,
+) -> bool {
+    keyed(e.key.as_deref(), key)
+        && tool == Some(Tool::EditText)
+        && active.is_some()
+        && e.doc.as_deref() == active
+}
+
+#[derive(serde::Deserialize)]
+struct EditKeyResponse {
+    key: String,
 }
 
 /// The snapshot's image, if it is one: the URL is loaded by the host page.
@@ -270,16 +307,38 @@ impl StudioCtx {
         if let Some(p) = tools.palette.get_untracked() {
             bridge::post_main(&pb::palette(Some(&p)));
         }
-        if let Some(i) = tools.inspected.get_untracked() {
-            bridge::post_main(&pb::inspect(&i.selector));
+        let kid = tools.frame_kid.get_value();
+        if kid.is_empty() || tools.claimed_kid.get_value() == kid {
+            if let Some(i) = tools.inspected.get_untracked() {
+                bridge::post_main(&pb::inspect(&i.selector));
+            }
+            return;
         }
+        // Take this load's edit key, then re-read the inspected element
+        // (its answer counts only with the key).
+        tools.claimed_kid.set_value(kid.clone());
+        leptos::task::spawn_local(async move {
+            let url = format!("{}/edit-keys/{}", self.base(), api::seg(&kid));
+            if let Ok(r) = api::post::<_, EditKeyResponse>(&url, &serde_json::json!({})).await
+                && tools.frame_kid.get_value() == kid
+            {
+                tools.edit_key.set_value(Some(r.key));
+            }
+            if let Some(i) = tools.inspected.get_untracked() {
+                bridge::post_main(&pb::inspect(&i.selector));
+            }
+        });
     }
 
     /// Handles the tool messages of the main frame; `false` for others.
     pub fn on_tool_msg(self, msg: &BridgeMsg) -> bool {
         let tools = self.tools;
         match msg {
-            BridgeMsg::InspectResult(i) => tools.inspected.set(Some(i.clone())),
+            BridgeMsg::InspectResult(i) => {
+                if keyed(i.key.as_deref(), tools.edit_key.get_value().as_deref()) {
+                    tools.inspected.set(Some(i.clone()));
+                }
+            }
             BridgeMsg::InspectOverrides { css, .. } => tools.extracted.set(Some(css.clone())),
             BridgeMsg::InspectReplaySkipped { items } => {
                 let mut dropped = 0;
@@ -294,7 +353,13 @@ impl StudioCtx {
             }
             BridgeMsg::TextEdit(e) => {
                 let active = self.active_untracked();
-                if accepted_text_edit(e, tools.tool.get_untracked(), active.as_deref()) {
+                let key = tools.edit_key.get_value();
+                if accepted_text_edit(
+                    e,
+                    tools.tool.get_untracked(),
+                    active.as_deref(),
+                    key.as_deref(),
+                ) {
                     self.save_edits(
                         vec![SourceEdit {
                             selector: e.selector.clone(),
@@ -1270,29 +1335,71 @@ mod tests {
 
     #[test]
     fn text_edits_only_from_the_text_tool_on_the_shown_file() {
+        const K: Option<&str> = Some("k1");
         let e = |doc: Option<&str>| pb::TextEdit {
+            key: K.map(str::to_owned),
             selector: "h1".into(),
             before: "A".into(),
             text: "B".into(),
             doc: doc.map(str::to_owned),
         };
         let on = Some(Tool::EditText);
-        assert!(accepted_text_edit(&e(Some("a.html")), on, Some("a.html")));
+        assert!(accepted_text_edit(
+            &e(Some("a.html")),
+            on,
+            Some("a.html"),
+            K
+        ));
         // A script posting while no tool (or another) is on.
         assert!(!accepted_text_edit(
             &e(Some("a.html")),
             None,
-            Some("a.html")
+            Some("a.html"),
+            K
         ));
         assert!(!accepted_text_edit(
             &e(Some("a.html")),
             Some(Tool::Inspect),
-            Some("a.html")
+            Some("a.html"),
+            K
         ));
         // The edit of the file left behind, landing after a switch.
-        assert!(!accepted_text_edit(&e(Some("a.html")), on, Some("b.html")));
-        assert!(!accepted_text_edit(&e(None), on, Some("a.html")));
-        assert!(!accepted_text_edit(&e(None), on, None));
+        assert!(!accepted_text_edit(
+            &e(Some("a.html")),
+            on,
+            Some("b.html"),
+            K
+        ));
+        assert!(!accepted_text_edit(&e(None), on, Some("a.html"), K));
+        assert!(!accepted_text_edit(&e(None), on, None, K));
+    }
+
+    #[test]
+    fn only_the_bridge_holds_the_edit_key() {
+        let forged = pb::TextEdit {
+            key: None,
+            selector: "h1".into(),
+            before: "A".into(),
+            text: "B".into(),
+            doc: Some("a.html".into()),
+        };
+        let on = Some(Tool::EditText);
+        assert!(!accepted_text_edit(&forged, on, Some("a.html"), Some("k1")));
+        let guessed = pb::TextEdit {
+            key: Some("k2".into()),
+            ..forged.clone()
+        };
+        assert!(!accepted_text_edit(
+            &guessed,
+            on,
+            Some("a.html"),
+            Some("k1")
+        ));
+        // No key claimed yet: nothing is taken, not even a keyless edit.
+        assert!(!accepted_text_edit(&forged, on, Some("a.html"), None));
+        assert!(keyed(Some("k1"), Some("k1")));
+        assert!(!keyed(None, None));
+        assert!(!keyed(Some("k1"), None));
     }
 
     #[test]

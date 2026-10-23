@@ -34,6 +34,9 @@ pub struct Located {
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Inspected {
+    /// The frame's edit key: only the bridge has it (od-preview `edit_key`).
+    #[serde(default)]
+    pub key: Option<String>,
     pub selector: String,
     /// The selector no longer matches (the page reloaded or changed).
     #[serde(default)]
@@ -76,6 +79,9 @@ pub struct Skipped {
 /// Text changed in the preview (`od:text-edit`).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct TextEdit {
+    /// The frame's edit key: only the bridge has it (od-preview `edit_key`).
+    #[serde(default)]
+    pub key: Option<String>,
     pub selector: String,
     #[serde(default)]
     pub before: String,
@@ -438,6 +444,7 @@ mod tests {
                 r#"{"type":"od:text-edit","selector":"h1","odId":null,"tag":"h1","before":"A","text":"B","doc":"a.html"}"#
             ),
             Some(BridgeMsg::TextEdit(TextEdit {
+                key: None,
                 selector: "h1".into(),
                 before: "A".into(),
                 text: "B".into(),

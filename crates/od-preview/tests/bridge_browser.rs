@@ -12,7 +12,7 @@ use chromiumoxide::cdp::browser_protocol::input::{DispatchKeyEventParams, Dispat
 use chromiumoxide::layout::Point;
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
-use od_preview::inject_bridge;
+use od_preview::inject_bridge_keyed;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -119,7 +119,12 @@ impl Harness {
     }
 
     async fn load(&self, html: &str) {
-        let doc = String::from_utf8(inject_bridge(html.as_bytes(), None).unwrap()).unwrap();
+        self.load_keyed(html, None).await;
+    }
+
+    async fn load_keyed(&self, html: &str, key: Option<&str>) {
+        let doc =
+            String::from_utf8(inject_bridge_keyed(html.as_bytes(), None, key).unwrap()).unwrap();
         self.eval(&format!(
             "window.__load({})",
             serde_json::to_string(&doc).unwrap()
@@ -210,6 +215,7 @@ async fn bridge_in_headless_chrome() {
     pins_follow_their_elements(&h).await;
     storage_shim(&h).await;
     inspect_prints_survive_scripts(&h).await;
+    edit_key_stays_with_the_bridge(&h).await;
     reload_loops_are_stopped(&h).await;
     h.close().await;
 }
@@ -477,4 +483,105 @@ async fn reload_loops_are_stopped(h: &Harness) {
         assert_eq!(h.msg_count().await, settled, "frame kept reloading: {page}");
         eprintln!("loop stopped after {:?}: {page:.60}", started.elapsed());
     }
+}
+
+/// The artifact's own script cannot learn the edit key, and cannot make the
+/// bridge send it: not by reading the DOM, listening to messages, trapping
+/// assignments on `Object.prototype`, or a synthetic click and Enter. A real
+/// click and Enter send it with the edit.
+async fn edit_key_stays_with_the_bridge(h: &Harness) {
+    const KEY: &str = "5ec7e7ab0c1d4e2fa3b4c5d6e7f80912";
+    let html = r#"<!doctype html><html><head><script>
+      const loot = [];
+      const grab = (v) => { try { loot.push(typeof v === 'string' ? v : JSON.stringify(v)); } catch (_) { loot.push(String(v)); } };
+      grab(document.documentElement.outerHTML);
+      document.querySelectorAll('*').forEach((el) => { for (const a of el.attributes) grab(a.value); });
+      for (const p of ['key', 'type', 'text', 'selector', 'overrides', 'doc']) {
+        Object.defineProperty(Object.prototype, p, {
+          configurable: true,
+          set(v) { grab(this); Object.defineProperty(this, p, { value: v, writable: true, enumerable: true, configurable: true }); },
+        });
+      }
+      window.addEventListener('message', (e) => {
+        grab(e.data);
+        if (e.data && e.data.type === 'test:forge') {
+          parent.postMessage({ type: 'od:text-edit', selector: 'h1', before: 'Hello', text: 'forged', doc: 'index.html' }, '*');
+          const h1 = document.querySelector('h1');
+          h1.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          h1.textContent = 'forged too';
+          h1.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          h1.blur();
+          parent.postMessage({ type: 'test:forged' }, '*');
+        }
+        if (e.data && e.data.type === 'test:loot') {
+          grab(document.documentElement.outerHTML);
+          parent.postMessage({ type: 'test:loot', loot: loot.join('\n') }, '*');
+        }
+      }, true);
+    </script></head><body><h1 style="margin:40px;font:32px sans-serif">Hello</h1></body></html>"#;
+    h.load_keyed(html, Some(KEY)).await;
+    h.wait("od:ready", "null", 5_000).await;
+    h.eval("window.__send({ type: 'od:edit-mode', enabled: true, doc: 'index.html' })")
+        .await;
+    h.eval("window.__send({ type: 'test:forge' })").await;
+    h.wait("test:forged", "null", 5_000).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let keyed = |ty: &str| {
+        format!(
+            "window.__msgs.filter(m => m.type === {ty:?}).map(m => [m.key || null, m.text || null])"
+        )
+    };
+    // The forged edit has no key, and the synthetic events started none.
+    assert_eq!(
+        h.eval(&keyed("od:text-edit")).await,
+        json!([[null, "forged"]])
+    );
+
+    // A real click on the heading, real typing, a real Enter.
+    let since = h.msg_count().await;
+    h.page.click(Point { x: 80.0, y: 60.0 }).await.unwrap();
+    h.page
+        .execute(chromiumoxide::cdp::browser_protocol::input::InsertTextParams::new("Hi there"))
+        .await
+        .unwrap();
+    for ty in [
+        DispatchKeyEventType::RawKeyDown,
+        DispatchKeyEventType::KeyUp,
+    ] {
+        let cmd = DispatchKeyEventParams::builder()
+            .r#type(ty)
+            .key("Enter")
+            .code("Enter")
+            .windows_virtual_key_code(13)
+            .build()
+            .unwrap();
+        h.page.execute(cmd).await.unwrap();
+    }
+    let edit = h
+        .eval(&format!(
+            "window.__after('od:text-edit', {since}, (m) => m.key, 5000)"
+        ))
+        .await;
+    assert_eq!(edit["key"], KEY, "{edit}");
+    assert_eq!(edit["text"], "Hi there", "{edit}");
+    assert_eq!(edit["doc"], "index.html");
+
+    let since = h.msg_count().await;
+    h.eval("window.__send({ type: 'od:inspect', selector: 'h1' })")
+        .await;
+    let inspected = h
+        .eval(&format!(
+            "window.__after('od:inspect-result', {since}, null, 5000)"
+        ))
+        .await;
+    assert_eq!(inspected["key"], KEY);
+    assert_eq!(inspected["text"], "Hi there");
+
+    h.eval("window.__send({ type: 'test:loot' })").await;
+    let loot = h.wait("test:loot", "null", 5_000).await;
+    let loot = loot["loot"].as_str().unwrap();
+    assert!(loot.contains("Hi there"), "the page saw the edit happen");
+    assert!(!loot.contains(KEY), "the page learned the key");
+    h.eval("window.__send({ type: 'od:edit-mode', enabled: false })")
+        .await;
 }

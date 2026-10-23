@@ -7,6 +7,17 @@
  */
 (function () {
   'use strict';
+  // Edit key (od-preview `edit_key`): the daemon puts it on this tag; it is
+  // taken and removed before any author script can read the DOM. Only
+  // messages that carry it (text edits, inspect results) are trusted.
+  var EDIT_KEY = null;
+  try {
+    var own = document.currentScript;
+    if (own && own.hasAttribute('data-od-key')) {
+      EDIT_KEY = own.getAttribute('data-od-key');
+      own.removeAttribute('data-od-key');
+    }
+  } catch (_) {}
   if (window.__odBridge) return;
   try {
     Object.defineProperty(window, '__odBridge', { value: { version: 1 } });
@@ -21,6 +32,16 @@
     if (!host) return;
     var msg = payload || {};
     msg.type = type;
+    try {
+      host.postMessage(msg, '*');
+    } catch (_) {}
+  }
+
+  // A keyed message is built whole as one literal and posted straight to
+  // the host: an assignment onto it would run any setter an author script
+  // put on Object.prototype, handing that script the key.
+  function postKeyed(msg) {
+    if (!host) return;
     try {
       host.postMessage(msg, '*');
     } catch (_) {}
@@ -660,7 +681,7 @@
   function inspectResult(selector) {
     var el = find(selector);
     if (!el) {
-      post('od:inspect-result', { selector: selector, missing: true });
+      postKeyed({ type: 'od:inspect-result', key: EDIT_KEY, selector: selector, missing: true });
       return;
     }
     var cs = getComputedStyle(el);
@@ -674,11 +695,18 @@
       set[p] = own[p].value;
     });
     var info = describe(el);
-    info.selector = selector;
-    info.styles = styles;
-    info.overrides = set;
-    info.textOnly = isTextOnly(el);
-    post('od:inspect-result', info);
+    postKeyed({
+      type: 'od:inspect-result',
+      key: EDIT_KEY,
+      selector: selector,
+      odId: info.odId,
+      tag: info.tag,
+      text: info.text,
+      rect: info.rect,
+      styles: styles,
+      overrides: set,
+      textOnly: isTextOnly(el)
+    });
   }
 
   function setOverride(selector, prop, value) {
@@ -769,7 +797,9 @@
     }
     var text = el.textContent || '';
     if (text === cur.before) return;
-    post('od:text-edit', {
+    postKeyed({
+      type: 'od:text-edit',
+      key: EDIT_KEY,
       selector: cur.selector,
       odId: el.getAttribute('data-od-id'),
       tag: el.tagName.toLowerCase(),
@@ -801,8 +831,9 @@
     if (!editMode) finishEdit(true);
   }
 
+  // Only a real click starts an edit: a script's synthetic one does not.
   document.addEventListener('click', function (e) {
-    if (!editMode || selectMode) return;
+    if (!editMode || selectMode || !e.isTrusted) return;
     if (editing && editing.el.contains(e.target)) return;
     if (!isTextOnly(e.target)) return;
     e.preventDefault();
