@@ -48,6 +48,13 @@ const HOST: &str = r#"<!doctype html><html><head><style>body{margin:0}</style></
     if (e.source === frame.contentWindow) window.__msgs.push(e.data);
   });
   window.__load = (html) => { window.__msgs = []; frame.srcdoc = html; return true; };
+  // As bytes from a URL, like the daemon serves it (BOM, quirks mode).
+  window.__loadUrl = (html) => {
+    window.__msgs = [];
+    frame.removeAttribute('srcdoc');
+    frame.src = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+    return true;
+  };
   window.__send = (msg) => { frame.contentWindow.postMessage(msg, '*'); return true; };
   // First message of `type` at index >= since that passes `pred`.
   window.__after = (type, since, pred, ms) => new Promise((resolve, reject) => {
@@ -216,6 +223,7 @@ async fn bridge_in_headless_chrome() {
     storage_shim(&h).await;
     inspect_prints_survive_scripts(&h).await;
     edit_key_stays_with_the_bridge(&h).await;
+    bridge_runs_before_any_author_markup(&h).await;
     reload_loops_are_stopped(&h).await;
     h.close().await;
 }
@@ -462,6 +470,133 @@ async fn storage_shim(h: &Harness) {
     assert_eq!(got["ls"], "v1");
     assert_eq!(got["ss"], "v2");
     assert_eq!(got["n"], 1);
+}
+
+/// Steals what it can from the DOM now and from every later mutation, into
+/// `__k` of the outermost window it can reach. No `<` or `"`: it goes in
+/// attributes and in SVG scripts.
+const STEAL: &str = "(function(){var W=window;try{if(parent!==window&&parent.document)W=parent}catch(e){}\
+var K=W.__k=W.__k||[];function g(v){try{K.push(String(v))}catch(e){}}\
+function scan(n){try{if(n.attributes)for(var i=0;i!==n.attributes.length;i++)g(n.attributes[i].value);\
+if(n.nodeType===8||n.nodeType===3)g(n.data);if(n.content)scan(n.content);\
+for(var c=n.firstChild;c;c=c.nextSibling)scan(c)}catch(e){}}\
+var D=W.document;scan(D);g(D.documentElement?D.documentElement.outerHTML:'');\
+try{new MutationObserver(function(rs){rs.forEach(function(r){g(r.oldValue);r.addedNodes.forEach(scan);scan(r.target)})})\
+.observe(D,{subtree:true,childList:true,attributes:true,attributeOldValue:true,characterData:true})}catch(e){}})()";
+
+/// Every way an artifact can start, from both reviews of P1-2: the bridge
+/// runs first and keeps the key, the page reads nothing of it, and a
+/// doctype still sets standards mode.
+async fn bridge_runs_before_any_author_markup(h: &Harness) {
+    const KEY: &str = "0a9c632539dc4393834dafb3f50a283a";
+    let s = STEAL;
+    let iframe_onload = format!(r#"<iframe onload="{s}"></iframe>"#);
+    let starts = [
+        (
+            "head",
+            format!("<!doctype html><html><head><script>{s}</script></head><body>"),
+        ),
+        (
+            "no head/body, iframe onload",
+            format!("<!doctype html>{iframe_onload}"),
+        ),
+        ("no doctype, iframe onload", iframe_onload.clone()),
+        (
+            "svg script",
+            format!("<!doctype html><svg><script>{s}</script></svg>"),
+        ),
+        (
+            "math script",
+            format!("<!doctype html><math><script>{s}</script></math>"),
+        ),
+        (
+            "template script",
+            format!("<!doctype html><template><script>{s}</script></template>"),
+        ),
+        (
+            "noscript script",
+            format!("<!doctype html><noscript><script>{s}</script></noscript>"),
+        ),
+        (
+            "iframe srcdoc",
+            format!(r#"<!doctype html><iframe srcdoc="<script>{s}</script>"></iframe>"#),
+        ),
+        (
+            "document.write",
+            format!(r#"<!doctype html><script>document.write(`<script>{s}<\/script>`)</script>"#),
+        ),
+        (
+            "svg onload",
+            format!(r#"<!doctype html><svg onload="{s}"></svg><img src=x onerror="{s}">"#),
+        ),
+        (
+            "BOM, comment, doctype",
+            format!("\u{feff}<!-- c --><!DOCTYPE html>\n<!-- d -->{iframe_onload}"),
+        ),
+        (
+            "short comments",
+            format!("<!--><!---><!-- --!>{iframe_onload}"),
+        ),
+        (
+            "bang comment",
+            format!("<!--!>{iframe_onload}--><!---!>-->"),
+        ),
+        (
+            "xml prolog, svg",
+            format!(r#"<?xml version="1.0"?><svg><script>{s}</script></svg>"#),
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (name, start) in starts {
+        // Loads closer than the bridge's reload-loop gap would chain.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        let html = format!(
+            "{start}<p>Hi</p><script>{s};setTimeout(function(){{parent.postMessage({{type:'test:loot',\
+             loot:(window.__k||[]).join('\\n'),mode:document.compatMode}},'*')}},300)</script>"
+        );
+        let doc = String::from_utf8(inject_bridge_keyed(html.as_bytes(), None, Some(KEY)).unwrap())
+            .unwrap();
+        h.eval(&format!(
+            "window.__loadUrl({})",
+            serde_json::to_string(&doc).unwrap()
+        ))
+        .await;
+        let got = |ty: &str| format!("window.__after({ty:?}, 0, null, 5000).catch(() => null)");
+        let ready = h.eval(&got("od:ready")).await;
+        let loot = h.eval(&got("test:loot")).await;
+        let text = loot["loot"].as_str().unwrap_or_default();
+        let mut wrong = Vec::new();
+        if ready.is_null() {
+            wrong.push("the bridge did not run".to_owned());
+        }
+        if !text.contains("Hi") {
+            wrong.push("the page could not look".to_owned());
+        }
+        if text.contains(KEY) {
+            wrong.push("the page learned the key".to_owned());
+        }
+        let standards = start.to_ascii_lowercase().contains("<!doctype");
+        if (loot["mode"] == "CSS1Compat") != standards {
+            wrong.push(format!("mode {}", loot["mode"]));
+        }
+        if !ready.is_null() {
+            let since = h.msg_count().await;
+            h.eval("window.__send({ type: 'od:inspect', selector: 'p' })")
+                .await;
+            let inspected = h
+                .eval(&format!(
+                    "window.__after('od:inspect-result', {since}, null, 5000).catch(() => null)"
+                ))
+                .await;
+            if inspected["key"] != KEY {
+                wrong.push("the bridge lost its key".to_owned());
+            }
+        }
+        if !wrong.is_empty() {
+            failures.push(format!("{name}: {}", wrong.join(", ")));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 async fn reload_loops_are_stopped(h: &Harness) {

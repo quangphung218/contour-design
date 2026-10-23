@@ -1,7 +1,6 @@
-//! Streams HTML through `lol_html` to put the bridge script (and optionally a
-//! `<base href>`) ahead of every author script.
+//! Puts the bridge script (and optionally a `<base href>`) ahead of all
+//! author markup, so it runs before any author code.
 
-use lol_html::html_content::ContentType;
 use lol_html::{HtmlRewriter, Settings, element};
 use std::cell::Cell;
 
@@ -69,25 +68,58 @@ fn payload(base_href: Option<&str>, edit_key: Option<&str>) -> String {
     out
 }
 
-/// Byte offset just past a leading `<!doctype …>`, if any.
-fn after_doctype(html: &[u8]) -> usize {
-    let start = html
-        .iter()
-        .position(|b| !b.is_ascii_whitespace())
-        .unwrap_or(html.len());
-    let rest = &html[start..];
-    let is_doctype = rest.len() >= 9 && rest[..9].eq_ignore_ascii_case(b"<!doctype");
-    if !is_doctype {
-        return 0;
+/// Byte offset of the first token that can be author markup: past a BOM and
+/// any whitespace, comments (`<!--…-->`, `<!…>`, `<?…>`) and doctype, none
+/// of which can run script. Splicing the bridge here puts it ahead of every
+/// author element, in whatever context they open (`<svg>`, `<template>`, an
+/// `<iframe onload>`), without dropping the page into quirks mode.
+fn prolog_end(html: &[u8]) -> usize {
+    let mut at = if html.starts_with(b"\xEF\xBB\xBF") {
+        3
+    } else {
+        0
+    };
+    loop {
+        while html.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        let rest = &html[at..];
+        let len = if rest.starts_with(b"<!--") {
+            comment_len(rest)
+        } else if rest.starts_with(b"<!") || rest.starts_with(b"<?") {
+            // Doctype and bogus comments both end at the first `>`.
+            rest.iter().position(|&b| b == b'>').map(|i| i + 1)
+        } else {
+            return at;
+        };
+        match len {
+            Some(len) => at += len,
+            // Unclosed: the rest is one comment; nothing after it runs.
+            None => return at,
+        }
     }
-    rest.iter()
-        .position(|&b| b == b'>')
-        .map_or(0, |i| start + i + 1)
+}
+
+/// Length of the comment `rest` opens, ended as the HTML tokenizer ends it:
+/// `<!-->`, `<!--->`, else the first `-->` or `--!>`.
+fn comment_len(rest: &[u8]) -> Option<usize> {
+    let find = |from: usize, pat: &[u8]| {
+        rest.get(from..)?
+            .windows(pat.len())
+            .position(|w| w == pat)
+            .map(|i| from + i + pat.len())
+    };
+    // The `--` of `<!--` may close it too (`<!-->`, `<!--->`), but not as `--!>`.
+    match (find(2, b"-->"), find(4, b"--!>")) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
 /// Inserts the bridge (and `<base href>` when given and the author has none)
-/// before the first author script: at the start of `<head>`, else `<body>`,
-/// else right before the first `<script>`, else after the doctype.
+/// ahead of all author markup, right after the leading doctype and comments
+/// (see [`prolog_end`]). The parser opens `<head>` for it; the author's own
+/// `<html>`/`<head>` tags after it still apply.
 ///
 /// # Errors
 /// [`InjectError::TooLarge`] above [`MAX_INJECT_BYTES`]; rewrite errors.
@@ -112,30 +144,11 @@ pub fn inject_bridge_keyed(
         _ => None,
     };
     let payload = payload(base_href, edit_key);
-    let injected = Cell::new(false);
+    let at = prolog_end(html);
     let mut out = Vec::with_capacity(html.len() + payload.len());
-    {
-        let settings = Settings::new()
-            .append_element_content_handler(element!("head, body", |el| {
-                if !injected.replace(true) {
-                    el.prepend(&payload, ContentType::Html);
-                }
-                Ok(())
-            }))
-            .append_element_content_handler(element!("script", |el| {
-                if !injected.replace(true) {
-                    el.before(&payload, ContentType::Html);
-                }
-                Ok(())
-            }));
-        let mut rewriter = HtmlRewriter::new(settings, |chunk: &[u8]| out.extend_from_slice(chunk));
-        rewriter.write(html)?;
-        rewriter.end()?;
-    }
-    if !injected.get() {
-        let at = after_doctype(&out);
-        out.splice(at..at, payload.bytes());
-    }
+    out.extend_from_slice(&html[..at]);
+    out.extend_from_slice(payload.as_bytes());
+    out.extend_from_slice(&html[at..]);
     Ok(out)
 }
 
@@ -177,14 +190,64 @@ mod tests {
     #[test]
     fn body_only_and_fragment_documents() {
         let out = injected("<body><p>x</p><script>s()</script></body>", None);
-        assert!(bridge_at(&out) < out.find("<p>").unwrap());
+        assert!(out.starts_with("<script data-od-bridge>"));
 
         let out = injected("<!DOCTYPE html>\n<p>plain</p>", None);
-        assert!(out.starts_with("<!DOCTYPE html><script data-od-bridge>"));
+        assert!(out.starts_with("<!DOCTYPE html>\n<script data-od-bridge>"));
 
         let out = injected("<div>frag</div><script>s()</script>", None);
-        assert!(bridge_at(&out) < out.find("s()").unwrap());
-        assert!(out.starts_with("<div>frag</div>"));
+        assert!(out.starts_with("<script data-od-bridge>"));
+    }
+
+    /// P1-2: elements that run code (or hide a `<script>`) before the first
+    /// author script, with no `<head>` to anchor on.
+    #[test]
+    fn goes_before_any_author_markup() {
+        for (html, prolog) in [
+            ("<iframe onload=x()></iframe><script>s()</script>", ""),
+            (
+                "<!doctype html><svg><script>s()</script></svg>",
+                "<!doctype html>",
+            ),
+            ("<math><script>s()</script></math>", ""),
+            ("<template><script>s()</script></template>", ""),
+            ("<noscript><script>s()</script></noscript>", ""),
+            (
+                "\u{feff} <!-- c -->\n<!DOCTYPE html><!--d--><p>",
+                "\u{feff} <!-- c -->\n<!DOCTYPE html><!--d-->",
+            ),
+            ("<?xml version=\"1.0\"?><svg>", "<?xml version=\"1.0\"?>"),
+            ("<!doctype html \"x>y\"><p>", "<!doctype html \"x>"),
+        ] {
+            let out = injected(html, None);
+            assert!(
+                out.starts_with(&format!("{prolog}<script data-od-bridge>")),
+                "{html}: {out:.80}"
+            );
+        }
+    }
+
+    #[test]
+    fn comments_end_where_the_tokenizer_ends_them() {
+        for (html, prolog) in [
+            ("<!--><p>", "<!-->"),
+            ("<!---><p>", "<!--->"),
+            ("<!----><p>", "<!---->"),
+            ("<!-- a --!><p>", "<!-- a --!>"),
+            ("<!----!><p>", "<!----!>"),
+            // Not closed: `--!>` cannot reuse the opening dashes.
+            ("<!--!><p>-->x", "<!--!><p>-->"),
+            ("<!---!><p>-->x", "<!---!><p>-->"),
+            ("<!-- -- > --><p>", "<!-- -- > -->"),
+            // Unclosed: everything is comment, so the bridge goes before it.
+            ("<!-- <p>", ""),
+        ] {
+            let out = injected(html, None);
+            assert!(
+                out.starts_with(&format!("{prolog}<script data-od-bridge>")),
+                "{html}: {out:.80}"
+            );
+        }
     }
 
     #[test]
@@ -219,7 +282,7 @@ mod tests {
             String::from_utf8(inject_bridge_keyed(b"<head></head>", None, Some("k\"1")).unwrap())
                 .unwrap();
         assert!(
-            out.starts_with("<head><script data-od-bridge data-od-key=\"k&quot;1\">"),
+            out.starts_with("<script data-od-bridge data-od-key=\"k&quot;1\">"),
             "{out:.80}"
         );
     }
