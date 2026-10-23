@@ -221,7 +221,9 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
         ),
     );
     let runs = Runs::new(tmp.path().join("runs"));
-    let engine = RunEngine::new(EngineConfig::from_env().with_path_prefix(&mocks));
+    let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
+    config.probe_retry_after = Duration::ZERO;
+    let engine = RunEngine::new(config);
     for id in ["first", "second"] {
         let (run, _) = runs
             .create_or_reuse(RunMeta {
@@ -262,4 +264,64 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
         "{lines:?}"
     );
     assert!(lines[1].contains("--include-partial-messages"), "{lines:?}");
+}
+
+/// A CLI whose `--help` hangs costs one probe timeout, not one per run:
+/// the failure is remembered for a while.
+#[tokio::test]
+async fn a_failed_help_probe_is_not_retried_at_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mocks = tmp.path().join("mocks");
+    std::fs::create_dir_all(&mocks).unwrap();
+    let probes = tmp.path().join("probes.log");
+    write_mock(
+        &mocks,
+        "claude",
+        &format!(
+            r#"if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then
+  echo probe >> "{probes}"; exec sleep 5
+fi
+IFS= read -r line
+printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn","usage":{{"input_tokens":1}}}}\n'
+"#,
+            probes = probes.display()
+        ),
+    );
+    let runs = Runs::new(tmp.path().join("runs"));
+    let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
+    // Long enough for a first exec (macOS scans a new binary).
+    config.probe_timeout = Duration::from_millis(1500);
+    let engine = RunEngine::new(config);
+    for id in ["first", "second"] {
+        let (run, _) = runs
+            .create_or_reuse(RunMeta {
+                run_id: id.into(),
+                agent_id: "claude".into(),
+                ..RunMeta::default()
+            })
+            .unwrap();
+        let outcome = engine
+            .launch(LaunchSpec {
+                run: run.clone(),
+                def: &CLAUDE,
+                cwd: tmp.path().to_path_buf(),
+                prompt: "go".into(),
+                fallback_prompt: None,
+                model: None,
+                reasoning: None,
+                extra_dirs: Vec::new(),
+                resume_session_id: None,
+                permission: PermissionMode::Auto,
+                env: vec![("PATH".into(), engine.config().path.clone())],
+                project_id: None,
+                byok: None,
+                mcp: od_runtime::McpLaunch::default(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(outcome.status, RunStatus::Succeeded, "{id}");
+    }
+    let probed = std::fs::read_to_string(&probes).unwrap();
+    assert_eq!(probed.lines().count(), 1, "probed again at once");
 }
