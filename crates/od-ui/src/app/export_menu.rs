@@ -60,7 +60,7 @@ impl Format {
 }
 
 /// Saves `bytes` as `name` through a temporary object URL.
-fn download(bytes: &[u8], name: &str, mime: &str) -> Option<()> {
+pub(super) fn download(bytes: &[u8], name: &str, mime: &str) -> Option<()> {
     let array = js_sys::Uint8Array::from(bytes);
     let parts = js_sys::Array::of1(&array);
     let opts = web_sys::BlobPropertyBag::new();

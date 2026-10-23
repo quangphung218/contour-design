@@ -9,6 +9,9 @@
 # <question-form>; `slow` streams slowly so Stop can be tested; `plan` adds a
 # TodoWrite plan; `deck` writes a 3-slide deck.html (with speaker notes)
 # instead of index.html. Attached preview comments are acknowledged.
+# Chat/plan session modes answer "Mode: …" and write nothing; project
+# memory is echoed as "Memory: <first fact>"; a Design Jury prompt gets a
+# two-round jury run that ships.
 
 case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
@@ -32,8 +35,26 @@ say() {
   printf '{"type":"assistant","message":{"id":"m%s-%s","role":"assistant","content":[{"type":"text","text":"%s"}]}}\n' "$$" "$n" "$1"
 }
 
+end_turn() {
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null
+  exit 0
+}
+
 printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
 say "Turn $turn. Working on: $first "
+# Project memory: echo the first remembered fact.
+mem=$(printf '%s' "$line" | sed -n 's/.*## Project memory[^-]*\\n\\n- \([^\\"]*\).*/\1/p')
+[ -n "$mem" ] && say "Memory: $mem. "
+# Chat and plan modes answer without touching files.
+case "$line" in *"# Ask mode"*) say "Mode: chat."; end_turn;; esac
+case "$line" in *"# Plan mode"*) say "Mode: plan."; end_turn;; esac
+# Design Jury: two rounds, then ship (the daemon writes the file).
+case "$line" in *"# Critique Theater (active skill:"*)
+  printf '%s\n' '{"type":"assistant","message":{"id":"jury-1","role":"assistant","content":[{"type":"text","text":"<CRITIQUE_RUN version=\"1\" maxRounds=\"3\" threshold=\"8.0\" scale=\"10\"><ROUND n=\"1\"><PANELIST role=\"designer\"><NOTES>Draft.</NOTES><ARTIFACT><![CDATA[<h1 id=\"title\">Jury v1</h1>]]></ARTIFACT></PANELIST><PANELIST role=\"critic\" score=\"6\" must_fix=\"1\"><MUST_FIX>More contrast.</MUST_FIX></PANELIST><PANELIST role=\"brand\" score=\"7\"></PANELIST><PANELIST role=\"a11y\" score=\"6\"></PANELIST><PANELIST role=\"copy\" score=\"7\"></PANELIST><ROUND_END n=\"1\" decision=\"continue\"></ROUND_END></ROUND>"}]}}'
+  printf '%s\n' '{"type":"assistant","message":{"id":"jury-2","role":"assistant","content":[{"type":"text","text":"<ROUND n=\"2\"><PANELIST role=\"designer\"><NOTES>Fixed.</NOTES></PANELIST><PANELIST role=\"critic\" score=\"9\"></PANELIST><PANELIST role=\"brand\" score=\"8\"></PANELIST><PANELIST role=\"a11y\" score=\"8\"></PANELIST><PANELIST role=\"copy\" score=\"9\"></PANELIST><ROUND_END n=\"2\" decision=\"ship\"></ROUND_END></ROUND><SHIP round=\"2\"><ARTIFACT><![CDATA[<!doctype html><h1 id=\"title\">Jury final</h1>]]></ARTIFACT><SUMMARY>Shipped.</SUMMARY></SHIP></CRITIQUE_RUN>"}]}}'
+  end_turn
+;; esac
 case "$line" in *attached-preview-comments*)
   say "Saw preview comments. "
 ;; esac

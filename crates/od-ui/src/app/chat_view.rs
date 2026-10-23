@@ -75,6 +75,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     view! {
         <section class="chat" aria-label=t(T::Chat)>
             <ConversationBar ctx=ctx/>
+            <super::agent_w3::ChatTools ctx=ctx/>
             <div class="messages" node_ref=list_ref data-testid="messages">
                 {move || ctx.notice.get().map(|n| view! { <p class="error-text">{n}</p> })}
                 <For
@@ -354,6 +355,7 @@ fn AssistantView(
     view! {
         <div class="msg assistant" data-testid="assistant-msg" data-state=move || format!("{:?}", state()).to_lowercase()>
             {move || turn.with(|tn| (!tn.todos.is_empty()).then(|| view! { <PlanList todos=tn.todos.clone()/> }))}
+            <super::agent_w3::JuryTheater turn=turn/>
             {move || {
                 turn.with(|t| {
                     t.blocks
@@ -410,9 +412,13 @@ fn PlanList(todos: Vec<crate::chat::Todo>) -> impl IntoView {
     }
 }
 
-fn render_block(block: Block, turn: RwSignal<AssistantTurn>, is_last: Signal<bool>) -> AnyView {
+pub(super) fn render_block(
+    block: Block,
+    turn: RwSignal<AssistantTurn>,
+    is_last: Signal<bool>,
+) -> AnyView {
     match block {
-        Block::Text(text) => question_form::split(&text)
+        Block::Text(text) => question_form::split(&crate::chat::without_jury_protocol(&text))
             .into_iter()
             .map(|seg| match seg {
                 Segment::Text(t) => {

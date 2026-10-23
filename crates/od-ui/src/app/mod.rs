@@ -1,5 +1,6 @@
 //! The browser app: routes, shared context and pages.
 
+mod agent_w3;
 mod api;
 mod bridge;
 mod chat_view;

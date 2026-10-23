@@ -3,6 +3,7 @@
 //! tab, Ctrl+Tab cycle; arrows/Home/End drive a deck, Esc leaves present
 //! and comment modes (spec 1.2).
 
+use super::agent_w3::{SideChat, SideChatView, is_side_chat_title};
 use super::bridge::{self, Source};
 use super::chat_view::{ChatItem, ChatPane};
 use super::deck::{DeckBar, NotesPanel, ThumbRail};
@@ -25,8 +26,9 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use od_contracts::{
     CommentAttachment, CommentRect, CommentStatus, CommentsResponse, Conversation,
-    ConversationResponse, CreateVersionRequest, FileKind, FilesResponse, PreviewComment, Project,
-    ProjectFile, ProjectResponse, UpdateCommentRequest, VersionSource,
+    ConversationResponse, CreateVersionRequest, FileKind, FilesResponse, MemoryEntry,
+    PreviewComment, Project, ProjectFile, ProjectResponse, SessionMode, UpdateCommentRequest,
+    VersionSource,
 };
 use send_wrapper::SendWrapper;
 use serde_json::json;
@@ -108,6 +110,12 @@ pub struct StudioCtx {
     pub history_open: RwSignal<bool>,
     pub viewing: RwSignal<Option<ViewedVersion>>,
     /// Last slide shown per deck file, restored when the deck reloads.
+    /// Mode of the open conversation, sent with each run.
+    pub session_mode: RwSignal<SessionMode>,
+    /// The project's Design Jury switch.
+    pub jury: RwSignal<bool>,
+    pub memory: RwSignal<Vec<MemoryEntry>>,
+    pub side: SideChat,
     last_slide: StoredValue<Option<(String, u32)>>,
     run_stream: StoredValue<Option<SendWrapper<Sse>>>,
     project_stream: StoredValue<Option<SendWrapper<Sse>>>,
@@ -160,6 +168,7 @@ impl StudioCtx {
 
     /// Opens `path` in a tab (or switches to its tab).
     pub fn open_file(self, path: &str) {
+        self.side.open.set(false);
         self.tabs.update(|t| t.open(path));
         self.recent.update(|r| touch_recent(r, path));
         self.viewing.set(None);
@@ -269,6 +278,7 @@ impl StudioCtx {
                 .collect(),
             model,
             locale: Some(shell.locale.get_untracked().tag().to_owned()),
+            session_mode: Some(self.session_mode.get_untracked()),
             ..ChatRequest::default()
         };
         self.live_run.set(Some(String::new()));
@@ -365,6 +375,9 @@ impl StudioCtx {
                     self.refresh_files();
                 }
                 if let Some(status) = ended {
+                    if turn.with_untracked(|t| t.critique.is_some()) {
+                        self.settle_jury(turn);
+                    }
                     if status == RunStatus::Succeeded {
                         let files = turn.with_untracked(AssistantTurn::touched_files);
                         self.record_versions(files, prompt.get_value());
@@ -482,6 +495,10 @@ impl StudioCtx {
     /// Shows `cid`: its messages, its comments, and its live run if any.
     pub async fn open_conversation(self, cid: String) {
         self.conversation_id.set(Some(cid.clone()));
+        let mode = self
+            .conversations
+            .with_untracked(|list| list.iter().find(|c| c.id == cid).map(|c| c.session_mode));
+        self.session_mode.set(mode.unwrap_or_default());
         self.items.set(Vec::new());
         self.comments.set(Vec::new());
         let base = self.conversation_base(&cid);
@@ -724,12 +741,22 @@ impl StudioCtx {
         self.project.set(Some(project));
         self.refresh_files();
         self.watch_project();
+        self.load_w3();
 
         let conversations = api::get::<ConversationsResponse>(&format!("{base}/conversations"))
             .await
             .map(|r| r.conversations)
             .unwrap_or_default();
-        let first = conversations.first().map(|c| c.id.clone());
+        // The side chat keeps its own conversation out of the main pane.
+        let side = conversations
+            .iter()
+            .find(|c| is_side_chat_title(c.title.as_deref()))
+            .map(|c| c.id.clone());
+        self.side.conversation_id.set(side.clone());
+        let first = conversations
+            .iter()
+            .find(|c| Some(&c.id) != side.as_ref())
+            .map(|c| c.id.clone());
         self.conversations.set(conversations);
         if let Some(cid) = first {
             self.open_conversation(cid).await;
@@ -805,6 +832,10 @@ pub fn Studio() -> impl IntoView {
         switcher_open: RwSignal::new(false),
         history_open: RwSignal::new(false),
         viewing: RwSignal::new(None),
+        session_mode: RwSignal::new(SessionMode::default()),
+        jury: RwSignal::new(false),
+        memory: RwSignal::new(Vec::new()),
+        side: SideChat::new(),
         last_slide: StoredValue::new(None),
         run_stream: StoredValue::new(None),
         project_stream: StoredValue::new(None),
@@ -830,6 +861,7 @@ pub fn Studio() -> impl IntoView {
         messages.remove();
         ctx.run_stream.set_value(None);
         ctx.project_stream.set_value(None);
+        ctx.side.close_stream();
     });
 
     view! {
@@ -902,10 +934,16 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
         <div class="tabs" role="tablist" data-testid="tabs">
             {move || {
                 let tabs = ctx.tabs.get();
-                tabs.open
+                let side_open = ctx.side.open.get();
+                let side_tab = view! {
+                    <div class="tab side-tab" class:active=side_open role="tab" aria-selected=side_open.to_string() data-testid="side-chat-tab" title=t(T::SideChatHint)>
+                        <button class="tab-name" on:click=move |_| ctx.side.show(ctx)>{format!("💬 {}", t(T::SideChat))}</button>
+                    </div>
+                };
+                let files = tabs.open
                     .iter()
                     .map(|path| {
-                        let active = tabs.active.as_deref() == Some(path.as_str());
+                        let active = !side_open && tabs.active.as_deref() == Some(path.as_str());
                         let name = path.rsplit('/').next().unwrap_or(path).to_owned();
                         let open = path.clone();
                         let close = path.clone();
@@ -923,7 +961,8 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                             </div>
                         }
                     })
-                    .collect_view()
+                    .collect_view();
+                view! { {files}{side_tab} }
             }}
         </div>
     }
@@ -972,6 +1011,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     view! {
         <section class="preview" class:presenting=move || ctx.presenting.get() data-testid="preview-pane">
             <TabsBar ctx=ctx/>
+            <Show when=move || !ctx.side.open.get() fallback=move || view! { <SideChatView ctx=ctx/> }>
             <div class="pane-head">
                 <span class="pane-title mono">{move || ctx.active().unwrap_or_default()}</span>
                 <div class="segmented small">
@@ -1047,6 +1087,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 </Show>
             </div>
             <NotesPanel ctx=ctx/>
+            </Show>
         </section>
     }
 }

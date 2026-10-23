@@ -102,6 +102,11 @@ pub enum AgentEvent {
         tool_name: String,
         stopped: bool,
     },
+    /// Design Jury state, emitted by the daemon (not a CLI) as the
+    /// critique protocol streams in; the latest one wins.
+    Critique {
+        report: crate::CritiqueReport,
+    },
     /// A stdout line the parser did not recognise, bounded in length.
     Raw {
         line: String,

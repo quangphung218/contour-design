@@ -8,6 +8,7 @@
 
 pub mod artifact;
 pub mod byok;
+pub mod critique;
 pub mod def;
 pub mod detect;
 pub mod engine;

@@ -2,6 +2,7 @@
 //! (text, thinking, tool rows, notices). Pure data, tested natively.
 
 use crate::events::{AgentEvent, Message, RunFrame, RunStatus};
+use od_contracts::CritiqueReport;
 use serde_json::Value;
 
 /// Longest tool input summary shown on a tool row.
@@ -119,6 +120,22 @@ pub fn plan_progress(todos: &[Todo]) -> Option<(usize, usize, &Todo)> {
     }
 }
 
+/// Assistant prose without the Design Jury protocol, which the theater
+/// shows instead (`<CRITIQUE_RUN>` to its end, or to the end of the text
+/// while it still streams).
+#[must_use]
+pub fn without_jury_protocol(text: &str) -> std::borrow::Cow<'_, str> {
+    const OPEN: &str = "<CRITIQUE_RUN";
+    const CLOSE: &str = "</CRITIQUE_RUN>";
+    let Some(start) = text.find(OPEN) else {
+        return text.into();
+    };
+    let end = text[start..]
+        .find(CLOSE)
+        .map_or(text.len(), |i| start + i + CLOSE.len());
+    format!("{}{}", &text[..start], &text[end..]).into()
+}
+
 /// One assistant turn, built from its run's frames.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssistantTurn {
@@ -133,6 +150,8 @@ pub struct AssistantTurn {
     /// The run's project folder (from `start`), to make written paths
     /// project-relative.
     pub cwd: Option<String>,
+    /// Latest Design Jury state, when the run had the jury on.
+    pub critique: Option<CritiqueReport>,
 }
 
 impl Default for AssistantTurn {
@@ -152,6 +171,7 @@ impl AssistantTurn {
             status: None,
             todos: Vec::new(),
             cwd: None,
+            critique: None,
         }
     }
 
@@ -268,6 +288,7 @@ impl AssistantTurn {
                 crate::i18n::T::ToolLoopStopped,
                 &[&tool_name, &count.to_string()],
             ))),
+            AgentEvent::Critique { report } => self.critique = Some(report),
             // Usage, turn ends, raw lines, loop warnings: nothing to show.
             _ => {}
         }
@@ -574,5 +595,28 @@ mod tests {
                 .count(),
             SUMMARY_CHARS
         );
+    }
+
+    #[test]
+    fn jury_reports_fold_in_and_the_protocol_is_hidden() {
+        use od_contracts::{CritiqueReport, CritiqueStatus};
+        let mut turn = AssistantTurn::new();
+        let report = CritiqueReport {
+            status: CritiqueStatus::Shipped,
+            composite: Some(8.6),
+            ..CritiqueReport::default()
+        };
+        turn.apply(RunFrame::Agent(AgentEvent::Critique {
+            report: report.clone(),
+        }));
+        assert_eq!(turn.critique, Some(report));
+        assert_eq!(
+            without_jury_protocol(
+                "Intro <CRITIQUE_RUN v=\"1\"><ROUND n=\"1\">x</ROUND></CRITIQUE_RUN> done"
+            ),
+            "Intro  done"
+        );
+        assert_eq!(without_jury_protocol("a <CRITIQUE_RUN><ROUND"), "a ");
+        assert_eq!(without_jury_protocol("plain"), "plain");
     }
 }
