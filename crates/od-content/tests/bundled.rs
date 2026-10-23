@@ -221,3 +221,49 @@ fn typed_round_trip() {
         serde_json::from_value(serde_json::to_value(ds).unwrap()).unwrap();
     assert_eq!(&back, ds);
 }
+
+/// The `data-od-tweaks` declaration the preview bridge reads must reach
+/// the agent: in the designer charter of every design-mode prompt, and in
+/// the tweaks template when it is the active skill. The retired markers
+/// (`EDITMODE` comments, `__edit_mode_*` messages) are only named as
+/// things not to do.
+#[test]
+fn prompt_teaches_the_tweaks_declaration() {
+    use od_content::prompt::{PromptInput, compose_instructions};
+    let idx = index();
+    let tweaks = idx
+        .design_templates
+        .iter()
+        .find(|t| t.info.id == "tweaks")
+        .expect("tweaks template");
+
+    let plain = compose_instructions(&PromptInput::default());
+    assert!(plain.contains("## Tweaks (in-design controls)"));
+    assert!(plain.contains(r#"<script type="application/json" data-od-tweaks>"#));
+    assert!(plain.contains("window.addEventListener('od:tweak'"));
+    assert!(!plain.contains("/*EDITMODE-BEGIN*/"), "old marker example");
+    assert!(!plain.contains("TWEAK_DEFAULTS"), "old marker example");
+
+    let with_skill = compose_instructions(&PromptInput {
+        skills: &[tweaks],
+        ..PromptInput::default()
+    });
+    let skill = &with_skill[with_skill
+        .find("## Active skill — tweaks")
+        .expect("skill block")..];
+    assert!(skill.contains("## Host integration contract (REQUIRED)"));
+    assert!(skill.contains(r#"<script type="application/json" data-od-tweaks>"#));
+    assert!(skill.contains("window.__odBridge"));
+    assert!(
+        !skill.contains("{ type: '__edit_mode_available'"),
+        "old protocol"
+    );
+    assert!(!skill.contains("Protocol B"), "old protocol");
+
+    // Chat mode has no designer charter, so no tweaks contract either.
+    let chat = compose_instructions(&PromptInput {
+        session_mode: od_contracts::SessionMode::Chat,
+        ..PromptInput::default()
+    });
+    assert!(!chat.contains("data-od-tweaks"));
+}

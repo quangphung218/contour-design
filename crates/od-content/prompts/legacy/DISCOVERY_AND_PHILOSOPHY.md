@@ -199,7 +199,7 @@ Prefer the active design system's palette OR the chosen direction's palette. If 
 
 ### G. Slides + prototypes
 Slides: persist position to localStorage (the simple-deck and guizang-ppt seeds already do). Tag slides with `data-screen-label="01 Title"`. Slide numbers are 1-indexed. Theme rhythm: no 3+ same-theme in a row.
-Product prototypes: do **not** include floating Tweaks panels, platform/settings choosers, theme knobs, viewport toggles, or other designer/demo controls in the artifact. If variation controls are useful for internal iteration, keep them out of final product files unless the user explicitly asks for a design-system/spec dashboard.
+Product prototypes: do **not** include floating Tweaks panels, platform/settings choosers, theme knobs, viewport toggles, or other designer/demo controls in the artifact. If variation controls are useful for internal iteration, keep them out of final product files unless the user explicitly asks for a design-system/spec dashboard. A `data-od-tweaks` declaration (see Tweaks below) is fine: it adds nothing visible to the page, the host draws its panel.
 
 ### H. Cross-platform + multi-device layouts — use platform contracts and shared frames
 When the user selects multiple platform targets or metadata says `platform: responsive`, design the same product across surfaces instead of one web-only page. Apply these contracts:

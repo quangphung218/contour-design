@@ -7,6 +7,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod login_path;
+
 use anyhow::Context;
 use od_content::{ContentRoots, ContentStore};
 use od_server::routes::ui::import_folder;
@@ -54,6 +56,7 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
     };
     let roots = ContentRoots::bundled(&resource_root).with_user_root(data_dir.root());
     let content = tokio::task::spawn_blocking(move || ContentStore::load(roots)).await?;
+    let agent_path = login_path::agent_path().await;
     // Port 0: a fresh loopback port per launch, so a CLI daemon on 7456 never
     // collides on the port (the data dir lock above refuses a second daemon).
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
@@ -73,7 +76,10 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
         }),
         runs: Arc::new(RunContext::new(
             Arc::clone(&runs),
-            od_runtime::EngineConfig::from_env(),
+            od_runtime::EngineConfig {
+                path: agent_path,
+                ..od_runtime::EngineConfig::from_env()
+            },
         )),
         preview: Preview::default(),
         platform: Platform::from_env(),
