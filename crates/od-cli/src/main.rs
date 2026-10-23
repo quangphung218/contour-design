@@ -4,6 +4,7 @@
 mod client;
 mod exit;
 mod export_cmd;
+mod lint_cmd;
 mod mcp_cmd;
 mod media_cmd;
 mod plugin_cmd;
@@ -56,6 +57,8 @@ enum Command {
     Run(RunCommand),
     /// Export a project file (HTML, PDF, PPTX, image) or the project (ZIP).
     Export(export_cmd::ExportArgs),
+    /// Anti-slop lint of a project's HTML files; exit 1 at --fail-on.
+    Lint(lint_cmd::LintArgs),
     /// MCP stdio server for coding agents; `od mcp install <agent>`.
     Mcp(mcp_cmd::McpArgs),
     /// Queued image, video and audio generation; models and templates.
@@ -204,6 +207,9 @@ fn main() -> ExitCode {
         }
         Some(Command::Export(args)) => {
             Client::new(&cli.daemon_url).and_then(|c| export_cmd::run(&c, args, cli.json))
+        }
+        Some(Command::Lint(args)) => {
+            Client::new(&cli.daemon_url).and_then(|c| lint_cmd::run(&c, args, cli.json))
         }
         Some(Command::Mcp(args)) => return mcp_cmd::run(args, &cli.daemon_url, cli.json),
         Some(Command::Media(cmd)) => {
