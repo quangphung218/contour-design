@@ -30,7 +30,17 @@ fn models_for(agent: &str) -> &'static [&'static str] {
 /// Reasoning effort values the agent accepts (empty: no picker).
 fn reasoning_for(agent: &str) -> &'static [&'static str] {
     match agent {
-        "codex" => &["default", "none", "minimal", "low", "medium", "high", "xhigh"],
+        "codex" => &[
+            "default", "none", "minimal", "low", "medium", "high", "xhigh",
+        ],
+        _ => &[],
+    }
+}
+
+/// Service tiers the agent accepts, `(value, label)` (empty: no picker).
+fn tiers_for(agent: &str) -> &'static [(&'static str, T)] {
+    match agent {
+        "codex" => &[("default", T::TierDefault), ("priority", T::TierFast)],
         _ => &[],
     }
 }
@@ -60,6 +70,7 @@ pub fn SettingsPage() -> impl IntoView {
     let agent = RwSignal::new(None::<String>);
     let model = RwSignal::new(String::new());
     let reasoning = RwSignal::new(String::new());
+    let tier = RwSignal::new(String::new());
     let permission = RwSignal::new(PermissionMode::Auto);
     let theme = RwSignal::new(Theme::System);
     let language = RwSignal::new(shell.locale.get_untracked());
@@ -85,6 +96,13 @@ pub fn SettingsPage() -> impl IntoView {
                 .unwrap_or_default()
                 .to_owned(),
         );
+        tier.set(
+            per_agent
+                .get(&id)
+                .and_then(|m| m["serviceTier"].as_str())
+                .unwrap_or_default()
+                .to_owned(),
+        );
         api_mode.set(c.agent_id.as_deref() == Some("byok"));
         permission.set(c.agent_permission_mode);
         theme.set(c.theme);
@@ -98,11 +116,13 @@ pub fn SettingsPage() -> impl IntoView {
         if let Some(id) = agent.get_untracked().filter(|a| a != "byok") {
             let mut per_agent = obj(extra.get("agentModels"));
             let r = reasoning.get_untracked();
+            let st = tier.get_untracked();
             per_agent.insert(
                 id,
                 json!({
                     "model": model_value,
                     "reasoning": Some(r).filter(|r| !r.is_empty() && r != "default"),
+                    "serviceTier": Some(st).filter(|s| !s.is_empty() && s != "default"),
                 }),
             );
             extra.insert("agentModels".to_owned(), Value::Object(per_agent));
@@ -139,6 +159,13 @@ pub fn SettingsPage() -> impl IntoView {
                 entry
                     .as_ref()
                     .and_then(|e| e["reasoning"].as_str())
+                    .unwrap_or_default()
+                    .to_owned(),
+            );
+            tier.set(
+                entry
+                    .as_ref()
+                    .and_then(|e| e["serviceTier"].as_str())
                     .unwrap_or_default()
                     .to_owned(),
             );
@@ -283,6 +310,17 @@ pub fn SettingsPage() -> impl IntoView {
                                             </select>
                                         </label>
                                     </Show>
+                                    <Show when=move || !tiers_for(&agent.get().unwrap_or_default()).is_empty()>
+                                        <label class="field">
+                                            <span>{t(T::ServiceTier)}</span>
+                                            <select data-testid="service-tier" on:change=move |ev| tier.set(event_target_value(&ev))>
+                                                {move || tiers_for(&agent.get().unwrap_or_default()).iter().map(|(v, label)| {
+                                                    let v = *v;
+                                                    view! { <option value=v selected=move || tier.get() == v || (v == "default" && tier.get().is_empty())>{t(*label)}</option> }
+                                                }).collect_view()}
+                                            </select>
+                                        </label>
+                                    </Show>
                                 </div>
                                 <div class="row">
                                     <button class="btn" data-testid="agent-test" disabled=move || agent.get().is_none() on:click=run_agent_test>
@@ -417,7 +455,11 @@ fn AdvancedEnv(agent: RwSignal<Option<String>>) -> impl IntoView {
         data.with(|d| {
             d["keys"][&id]
                 .as_array()
-                .map(|a| a.iter().filter_map(|k| k.as_str().map(str::to_owned)).collect::<Vec<_>>())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|k| k.as_str().map(str::to_owned))
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default()
         })
     };
@@ -734,7 +776,11 @@ fn ProjectLocations() -> impl IntoView {
 /// Media providers: key, base URL and model per provider.
 #[component]
 fn MediaProviders() -> impl IntoView {
-    const PROVIDERS: [(&str, &str); 3] = [("openai", "OpenAI"), ("fal", "Fal.ai"), ("elevenlabs", "ElevenLabs")];
+    const PROVIDERS: [(&str, &str); 3] = [
+        ("openai", "OpenAI"),
+        ("fal", "Fal.ai"),
+        ("elevenlabs", "ElevenLabs"),
+    ];
     let stored = RwSignal::new(Value::Null);
     let edits = RwSignal::new(Map::<String, Value>::new());
     let state = RwSignal::new(None::<Result<(), String>>);
@@ -744,8 +790,21 @@ fn MediaProviders() -> impl IntoView {
         }
     });
     let field = move |id: &'static str, key: &'static str| {
-        edits.with(|e| e.get(id).and_then(|p| p.get(key)).and_then(Value::as_str).map(str::to_owned))
-            .unwrap_or_else(|| stored.with(|s| s["providers"][id][key].as_str().unwrap_or_default().to_owned()))
+        edits
+            .with(|e| {
+                e.get(id)
+                    .and_then(|p| p.get(key))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .unwrap_or_else(|| {
+                stored.with(|s| {
+                    s["providers"][id][key]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned()
+                })
+            })
     };
     let set = move |id: &'static str, key: &'static str, v: String| {
         edits.update(|e| {
@@ -760,13 +819,22 @@ fn MediaProviders() -> impl IntoView {
                 continue;
             }
             let configured = stored.with(|s| s["providers"][id]["source"] == "stored");
-            let key = edits.with(|e| e.get(id).and_then(|p| p["apiKey"].as_str()).map(str::to_owned)).unwrap_or_default();
-            providers.insert(id.to_owned(), json!({
-                "apiKey": key,
-                "preserveApiKey": key.is_empty() && configured,
-                "baseUrl": field(id, "baseUrl"),
-                "model": field(id, "model"),
-            }));
+            let key = edits
+                .with(|e| {
+                    e.get(id)
+                        .and_then(|p| p["apiKey"].as_str())
+                        .map(str::to_owned)
+                })
+                .unwrap_or_default();
+            providers.insert(
+                id.to_owned(),
+                json!({
+                    "apiKey": key,
+                    "preserveApiKey": key.is_empty() && configured,
+                    "baseUrl": field(id, "baseUrl"),
+                    "model": field(id, "model"),
+                }),
+            );
         }
         let body = json!({ "providers": providers });
         leptos::task::spawn_local(async move {

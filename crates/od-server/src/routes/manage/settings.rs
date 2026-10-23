@@ -45,6 +45,7 @@ pub const AGENT_CLI_ENV_KEYS: &[(&str, &[&str])] = &[
         "codex",
         &[
             "CODEX_HOME",
+            "CODEX_BIN",
             "OPENAI_BASE_URL",
             "CODEX_API_KEY",
             "OPENAI_API_KEY",
@@ -207,7 +208,10 @@ async fn test_agent(
         }
         cfg
     } else {
-        if od_runtime::detect::resolve_bin(def, &engine.config().path).is_none() {
+        let custom = custom_bin(state.store.data_dir().root(), def.id)
+            .filter(|b| od_runtime::detect::is_executable(b));
+        if custom.is_none() && od_runtime::detect::resolve_bin(def, &engine.config().path).is_none()
+        {
             return Ok(result(
                 false,
                 "agent_not_installed",
@@ -260,6 +264,8 @@ async fn test_agent(
         fallback_prompt: None,
         model: clean(req.model.as_deref()).filter(|m| m != "default"),
         reasoning: clean(req.reasoning.as_deref()).filter(|m| m != "default"),
+        service_tier: None,
+        bin: custom_bin(state.store.data_dir().root(), def.id),
         extra_dirs: Vec::new(),
         resume_session_id: None,
         permission: PermissionMode::Ask,
@@ -348,6 +354,20 @@ fn read_env(root: &Path) -> AgentEnv {
         .unwrap_or_default()
 }
 
+/// The executable the user picked for `agent` (`CODEX_BIN`).
+#[must_use]
+pub fn custom_bin(root: &Path, agent: &str) -> Option<std::path::PathBuf> {
+    let key = format!("{}_BIN", agent.to_ascii_uppercase());
+    if !allowed_keys(agent).contains(&key.as_str()) {
+        return None;
+    }
+    read_env(root)
+        .remove(agent)?
+        .remove(&key)
+        .filter(|v| Path::new(v).is_absolute())
+        .map(std::path::PathBuf::from)
+}
+
 /// The extra environment of `agent`'s runs.
 #[must_use]
 pub fn env_for(root: &Path, agent: &str) -> Vec<(OsString, OsString)> {
@@ -356,7 +376,8 @@ pub fn env_for(root: &Path, agent: &str) -> Vec<(OsString, OsString)> {
         .remove(agent)
         .unwrap_or_default()
         .into_iter()
-        .filter(|(k, v)| allowed.contains(&k.as_str()) && !v.is_empty())
+        // `CODEX_BIN` picks the executable; it is not the agent's env.
+        .filter(|(k, v)| allowed.contains(&k.as_str()) && !k.ends_with("_BIN") && !v.is_empty())
         .map(|(k, v)| (k.into(), v.into()))
         .collect()
 }

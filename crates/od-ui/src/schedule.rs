@@ -5,11 +5,26 @@
 /// A schedule as the form edits it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Preset {
-    Hourly { minute: u32 },
-    Daily { hour: u32, minute: u32, tz: String },
-    Weekdays { hour: u32, minute: u32, tz: String },
+    Hourly {
+        minute: u32,
+    },
+    Daily {
+        hour: u32,
+        minute: u32,
+        tz: String,
+    },
+    Weekdays {
+        hour: u32,
+        minute: u32,
+        tz: String,
+    },
     /// `weekday`: 0 = Sunday … 6 = Saturday.
-    Weekly { weekday: u32, hour: u32, minute: u32, tz: String },
+    Weekly {
+        weekday: u32,
+        hour: u32,
+        minute: u32,
+        tz: String,
+    },
     Custom(String),
 }
 
@@ -184,15 +199,28 @@ mod tests {
         let cases = [
             (Preset::Hourly { minute: 15 }, "15 * * * *"),
             (
-                Preset::Daily { hour: 9, minute: 0, tz: "Asia/Tokyo".into() },
+                Preset::Daily {
+                    hour: 9,
+                    minute: 0,
+                    tz: "Asia/Tokyo".into(),
+                },
                 "CRON_TZ=Asia/Tokyo 0 9 * * *",
             ),
             (
-                Preset::Weekdays { hour: 18, minute: 30, tz: String::new() },
+                Preset::Weekdays {
+                    hour: 18,
+                    minute: 30,
+                    tz: String::new(),
+                },
                 "30 18 * * 1-5",
             ),
             (
-                Preset::Weekly { weekday: 0, hour: 7, minute: 5, tz: "UTC".into() },
+                Preset::Weekly {
+                    weekday: 0,
+                    hour: 7,
+                    minute: 5,
+                    tz: "UTC".into(),
+                },
                 "CRON_TZ=UTC 5 7 * * 0",
             ),
         ];
@@ -200,18 +228,33 @@ mod tests {
             assert_eq!(preset.to_cron(), cron);
             assert_eq!(Preset::from_cron(cron), preset, "{cron}");
         }
-        assert_eq!(Preset::from_cron("*/15 9-17 * * *"), Preset::Custom("*/15 9-17 * * *".into()));
+        assert_eq!(
+            Preset::from_cron("*/15 9-17 * * *"),
+            Preset::Custom("*/15 9-17 * * *".into())
+        );
         assert_eq!(Preset::from_cron("@daily"), Preset::Custom("@daily".into()));
     }
 
     #[test]
     fn switching_kind_keeps_the_time() {
-        let daily = Preset::Daily { hour: 8, minute: 45, tz: "Europe/Berlin".into() };
+        let daily = Preset::Daily {
+            hour: 8,
+            minute: 45,
+            tz: "Europe/Berlin".into(),
+        };
         assert_eq!(
             daily.with_kind(Kind::Weekly, "UTC"),
-            Preset::Weekly { weekday: 1, hour: 8, minute: 45, tz: "Europe/Berlin".into() }
+            Preset::Weekly {
+                weekday: 1,
+                hour: 8,
+                minute: 45,
+                tz: "Europe/Berlin".into()
+            }
         );
-        assert_eq!(daily.with_kind(Kind::Hourly, "UTC"), Preset::Hourly { minute: 45 });
+        assert_eq!(
+            daily.with_kind(Kind::Hourly, "UTC"),
+            Preset::Hourly { minute: 45 }
+        );
         assert_eq!(parse_time("07:05"), Some((7, 5)));
         assert_eq!(parse_time("24:00"), None);
         assert_eq!(city("America/New_York"), "New York");

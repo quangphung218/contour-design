@@ -49,7 +49,10 @@ fn surface_label(s: MediaSurface) -> &'static str {
 /// "Prototype · 23 Oct" style default name.
 fn generated_name(tab: PanelTab) -> String {
     let date: String = js_sys::Date::new_0()
-        .to_locale_date_string(crate::i18n::locale().tag(), &wasm_bindgen::JsValue::UNDEFINED)
+        .to_locale_date_string(
+            crate::i18n::locale().tag(),
+            &wasm_bindgen::JsValue::UNDEFINED,
+        )
         .into();
     format!("{} · {date}", tab_label(tab))
 }
@@ -78,6 +81,13 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
             .map(|r| r.design_systems)
             .unwrap_or_default()
     });
+    let media_models = LocalResource::new(|| async {
+        api::get::<serde_json::Value>("/api/media/models")
+            .await
+            .ok()
+            .and_then(|v| v["models"].as_array().cloned())
+            .unwrap_or_default()
+    });
     let tab = move || choice.with(|c| c.tab);
     let set = move |f: &dyn Fn(&mut PanelChoice)| choice.update(|c| f(c));
 
@@ -102,7 +112,10 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
         });
     };
 
-    let toggle = move |label: T, testid: &'static str, get: fn(&PanelChoice) -> bool, put: fn(&mut PanelChoice, bool)| {
+    let toggle = move |label: T,
+                       testid: &'static str,
+                       get: fn(&PanelChoice) -> bool,
+                       put: fn(&mut PanelChoice, bool)| {
         view! {
             <label class="switch">
                 <input type="checkbox" data-testid=testid
@@ -239,9 +252,28 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                                 <button class="seg" data-testid=format!("panel-surface-{}", match s { MediaSurface::Image => "image", MediaSurface::Video => "video", MediaSurface::Audio => "audio" })
                                     aria-pressed=move || choice.with(|c| c.surface == s).to_string()
                                     class:active=move || choice.with(|c| c.surface == s)
-                                    on:click=move |_| choice.update(|c| c.surface = s)>{surface_label(s)}</button>
+                                    on:click=move |_| choice.update(|c| { c.surface = s; c.media_model = None; })>{surface_label(s)}</button>
                             }).collect_view()}
                         </div>
+                        <label class="field">
+                            <span>{t(T::MediaModel)}</span>
+                            <select data-testid="panel-media-model" on:change=move |ev| {
+                                let v = event_target_value(&ev);
+                                choice.update(|c| c.media_model = Some(v).filter(|v| !v.is_empty()));
+                            }>
+                                <option value="">{t(T::ProviderDefault)}</option>
+                                {move || {
+                                    let surface = choice.with(|c| c.surface.id());
+                                    media_models.get().unwrap_or_default().into_iter()
+                                        .filter(|m| m["surface"] == surface)
+                                        .map(|m| {
+                                            let id = m["id"].as_str().unwrap_or_default().to_owned();
+                                            let id2 = id.clone();
+                                            view! { <option value=id selected=move || choice.with(|c| c.media_model.as_deref() == Some(id2.as_str()))>{m["label"].as_str().unwrap_or_default().to_owned()}</option> }
+                                        }).collect_view()
+                                }}
+                            </select>
+                        </label>
                         <Show when=move || choice.with(|c| c.surface != MediaSurface::Audio)>
                             <label class="field">
                                 <span>{t(T::Aspect)}</span>

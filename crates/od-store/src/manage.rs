@@ -146,6 +146,31 @@ pub struct StoredRunStatus {
     /// The newest message of the project is an assistant turn asking a
     /// `<question-form>` that nobody answered yet.
     pub awaiting_input: bool,
+    /// The run succeeded but left work: an unfinished todo in its last
+    /// plan, or it stopped at the token limit.
+    pub incomplete: bool,
+}
+
+/// Whether a run's events end with work left (the original's
+/// `endedWithUnfinishedWork`).
+#[must_use]
+pub fn unfinished(events: &[serde_json::Value]) -> bool {
+    let stopped_short = events.iter().any(|e| {
+        e["type"] == "usage" && matches!(e["stopReason"].as_str(), Some("max_tokens" | "length"))
+    });
+    let last_plan = events.iter().rev().find(|e| {
+        e["type"] == "tool_use" && matches!(e["name"].as_str(), Some("TodoWrite" | "update_plan"))
+    });
+    let open_todo = last_plan.is_some_and(|e| {
+        let items = e["input"]["todos"]
+            .as_array()
+            .or_else(|| e["input"]["plan"].as_array());
+        items.is_some_and(|list| {
+            list.iter()
+                .any(|t| t["status"].as_str().is_some_and(|s| s != "completed"))
+        })
+    });
+    stopped_short || open_todo
 }
 
 fn asks_question(content: &str) -> bool {
@@ -238,25 +263,50 @@ impl Store {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT c.project_id, m.run_status, m.run_id, \
-                 COALESCE(m.ended_at, m.started_at, m.created_at) AS t \
+                 COALESCE(m.ended_at, m.started_at, m.created_at) AS t, m.id \
                  FROM messages m JOIN conversations c ON c.id = m.conversation_id \
                  WHERE m.run_status IS NOT NULL ORDER BY t, m.id",
             )?;
             let rows = stmt.query_map([], |r| {
-                Ok(StoredRunStatus {
-                    project_id: r.get(0)?,
-                    status: r.get(1)?,
-                    run_id: r.get(2)?,
-                    at: r.get(3)?,
-                    awaiting_input: false,
-                })
+                Ok((
+                    StoredRunStatus {
+                        project_id: r.get(0)?,
+                        status: r.get(1)?,
+                        run_id: r.get(2)?,
+                        at: r.get(3)?,
+                        awaiting_input: false,
+                        incomplete: false,
+                    },
+                    r.get::<_, String>(4)?,
+                ))
             })?;
             // Ascending order: the last row per project wins.
-            let mut latest: std::collections::BTreeMap<String, StoredRunStatus> =
+            let mut latest: std::collections::BTreeMap<String, (StoredRunStatus, String)> =
                 std::collections::BTreeMap::new();
             for row in rows {
                 let row = row?;
-                latest.insert(row.project_id.clone(), row);
+                latest.insert(row.0.project_id.clone(), row);
+            }
+            // Events of each project's latest succeeded run: inline and batched.
+            let mut events_of = conn.prepare(
+                "SELECT events_json FROM messages WHERE id = ?1 \
+                 UNION ALL SELECT events_json FROM message_event_batches WHERE message_id = ?1",
+            )?;
+            for (status, message_id) in latest.values_mut() {
+                if status.status != "succeeded" {
+                    continue;
+                }
+                let mut events: Vec<serde_json::Value> = Vec::new();
+                let chunks = events_of
+                    .query_map([message_id.as_str()], |r| r.get::<_, Option<String>>(0))?;
+                for chunk in chunks {
+                    if let Some(raw) = chunk? {
+                        if let Ok(serde_json::Value::Array(list)) = serde_json::from_str(&raw) {
+                            events.extend(list);
+                        }
+                    }
+                }
+                status.incomplete = unfinished(&events);
             }
             let mut stmt = conn.prepare(
                 "SELECT c.project_id, m.role, m.content FROM messages m \
@@ -278,7 +328,7 @@ impl Store {
             }
             Ok(latest
                 .into_values()
-                .map(|mut s| {
+                .map(|(mut s, _)| {
                     s.awaiting_input =
                         s.status == "succeeded" && newest.get(&s.project_id) == Some(&true);
                     s
@@ -402,6 +452,27 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unfinished_work_is_open_todos_or_a_token_stop() {
+        use serde_json::json;
+        let plan = |statuses: &[&str]| {
+            json!({"type": "tool_use", "name": "TodoWrite", "input": {"todos":
+                statuses.iter().map(|s| json!({"content": "x", "status": s})).collect::<Vec<_>>()}})
+        };
+        assert!(!unfinished(&[]));
+        assert!(unfinished(&[plan(&["completed", "in_progress"])]));
+        assert!(!unfinished(&[
+            plan(&["pending"]),
+            plan(&["completed", "completed"])
+        ]));
+        assert!(unfinished(&[
+            json!({"type": "usage", "stopReason": "max_tokens"})
+        ]));
+        assert!(!unfinished(&[
+            json!({"type": "usage", "stopReason": "end_turn"})
+        ]));
+    }
 
     #[test]
     fn like_escapes_wildcards() {

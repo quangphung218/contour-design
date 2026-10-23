@@ -57,7 +57,13 @@ pub fn Onboarding() -> impl IntoView {
         });
     });
     let agent_ready = move || matches!(test.get(), Some(TestState::Done(v)) if v["ok"] == true);
-    let ready = move || if use_key.get() { byok_ready.get() } else { agent_ready() };
+    let ready = move || {
+        if use_key.get() {
+            byok_ready.get()
+        } else {
+            agent_ready()
+        }
+    };
 
     let finish = move |agent: Option<String>| {
         let navigate = navigate.clone();

@@ -54,9 +54,9 @@ impl Prefs {
 }
 
 fn prefs(shell: Shell) -> Prefs {
-    shell
-        .config
-        .with_untracked(|c| Prefs::from_config(c.as_ref().and_then(|c| c.extra.get("notifications"))))
+    shell.config.with_untracked(|c| {
+        Prefs::from_config(c.as_ref().and_then(|c| c.extra.get("notifications")))
+    })
 }
 
 /// `(frequency Hz, start s, length s)` notes of a sound.
@@ -145,7 +145,11 @@ pub fn RunWatcher() -> impl IntoView {
             // First poll: only learn what is running.
             let Some(before) = before else { return };
             let p = prefs(shell);
-            for run in r.runs.iter().filter(|r| before.contains(&r.id) && !now.contains(&r.id)) {
+            for run in r
+                .runs
+                .iter()
+                .filter(|r| before.contains(&r.id) && !now.contains(&r.id))
+            {
                 let ok = match run.status {
                     RunStatus::Succeeded => true,
                     RunStatus::Failed => false,
@@ -153,7 +157,11 @@ pub fn RunWatcher() -> impl IntoView {
                     RunStatus::Canceled | RunStatus::Running => continue,
                 };
                 if p.sound {
-                    play(if ok { &p.success_sound } else { &p.failure_sound });
+                    play(if ok {
+                        &p.success_sound
+                    } else {
+                        &p.failure_sound
+                    });
                 }
                 if p.desktop && in_background() {
                     let (title, body) = if ok {
@@ -206,7 +214,10 @@ pub fn NotificationSettings() -> impl IntoView {
             desktop(t(T::NotifyDone), t(T::NotifyTestBody));
         }
     };
-    let sound_select = move |testid: &'static str, list: &'static [&'static str], get: fn(&Prefs) -> String, put: fn(&mut Prefs, String)| {
+    let sound_select = move |testid: &'static str,
+                             list: &'static [&'static str],
+                             get: fn(&Prefs) -> String,
+                             put: fn(&mut Prefs, String)| {
         view! {
             <select class="small select-auto" data-testid=testid on:change=move |ev| {
                 let mut next = current.get_untracked();
@@ -269,10 +280,18 @@ mod tests {
     fn defaults_and_unknown_sounds() {
         let p = Prefs::from_config(None);
         assert!(p.sound && p.desktop);
-        assert_eq!((p.success_sound.as_str(), p.failure_sound.as_str()), ("ding", "buzz"));
-        let p = Prefs::from_config(Some(&json!({"soundEnabled": false, "successSound": "boom", "failureSound": "thud"})));
+        assert_eq!(
+            (p.success_sound.as_str(), p.failure_sound.as_str()),
+            ("ding", "buzz")
+        );
+        let p = Prefs::from_config(Some(
+            &json!({"soundEnabled": false, "successSound": "boom", "failureSound": "thud"}),
+        ));
         assert!(!p.sound);
-        assert_eq!((p.success_sound.as_str(), p.failure_sound.as_str()), ("ding", "thud"));
+        assert_eq!(
+            (p.success_sound.as_str(), p.failure_sound.as_str()),
+            ("ding", "thud")
+        );
         assert_eq!(Prefs::from_config(Some(&p.to_value())), p);
     }
 }

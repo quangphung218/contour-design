@@ -434,6 +434,71 @@ async fn agent_test_runs_the_cli_once_and_settings_reach_runs() {
 }
 
 #[tokio::test]
+async fn codex_bin_and_service_tier_reach_the_codex_run() {
+    let d = common::daemon().await;
+    // A codex that is not on PATH: only CODEX_BIN finds it.
+    let own = d.tmp.path().join("own-bin");
+    std::fs::create_dir_all(&own).unwrap();
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../od-runtime/tests/fixtures/codex/turn-exec-json.jsonl");
+    let codex = write_mock(
+        &own,
+        "codex",
+        &format!(
+            "{PROBES}\necho \"$*\" >> \"{log}\"\ncat >/dev/null\ncat \"{fixture}\"\n",
+            log = own.join("argv.log").display(),
+            fixture = fixture.display()
+        ),
+    );
+    let r: Value = d
+        .post(
+            "/api/test/connection",
+            &json!({"mode": "agent", "agentId": "codex"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["kind"], "agent_not_installed");
+    let res = put(
+        &d,
+        "/api/agent-cli-env",
+        &json!({"env": {"codex": {"CODEX_BIN": codex.to_string_lossy()}}}),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let r: Value = d
+        .post(
+            "/api/test/connection",
+            &json!({"mode": "agent", "agentId": "codex"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["ok"], true, "{r}");
+
+    put(
+        &d,
+        "/api/app-config",
+        &json!({"agentModels": {"codex": {"serviceTier": "priority", "reasoning": "high"}}}),
+    )
+    .await;
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "codex", "projectId": project, "conversationId": conversation, "message": "hi"}))
+        .await;
+    wait_for("codex run", || async {
+        d.get_json(&format!("/api/runs/{}", run.run_id)).await["run"]["status"] != "running"
+    })
+    .await;
+    let argv = std::fs::read_to_string(own.join("argv.log")).unwrap();
+    let last = argv.lines().last().unwrap();
+    assert!(last.contains("service_tier=\"priority\""), "{last}");
+    assert!(last.contains("model_reasoning_effort=\"high\""), "{last}");
+}
+
+#[tokio::test]
 async fn project_locations_hold_new_projects_and_scan_finds_folders() {
     let d = common::daemon().await;
     // Not under the daemon's own temp dir: its `.tmpXXXX` name is hidden.

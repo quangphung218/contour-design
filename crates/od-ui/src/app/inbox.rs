@@ -19,7 +19,12 @@ const MAX_MESSAGES: usize = 100;
 
 fn id_set(key: &str) -> BTreeSet<String> {
     stored(key)
-        .map(|v| v.split(',').filter(|s| !s.is_empty()).map(str::to_owned).collect())
+        .map(|v| {
+            v.split(',')
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -47,7 +52,10 @@ pub fn Inbox() -> impl IntoView {
             .await
             .map(|r| r.projects.into_iter().map(|p| (p.id, p.name)).collect())
             .unwrap_or_default();
-        let runs = api::get::<RunsResponse>("/api/runs").await.map(|r| r.runs).unwrap_or_default();
+        let runs = api::get::<RunsResponse>("/api/runs")
+            .await
+            .map(|r| r.runs)
+            .unwrap_or_default();
         let mut list: Vec<Message> = runs
             .into_iter()
             .filter(|r| r.status.is_terminal())
@@ -74,7 +82,8 @@ pub fn Inbox() -> impl IntoView {
         save_set(READ_KEY, &read.get_untracked());
     };
     let mark_all = move |_| {
-        let ids: Vec<String> = messages.with_untracked(|m| m.iter().flatten().map(|m| m.id.clone()).collect());
+        let ids: Vec<String> =
+            messages.with_untracked(|m| m.iter().flatten().map(|m| m.id.clone()).collect());
         read.update(|s| s.extend(ids));
         save_set(READ_KEY, &read.get_untracked());
     };
@@ -90,7 +99,9 @@ pub fn Inbox() -> impl IntoView {
         messages.with(|m| {
             m.iter()
                 .flatten()
-                .filter(|m| !read.with(|r| r.contains(&m.id)) && !archived.with(|a| a.contains(&m.id)))
+                .filter(|m| {
+                    !read.with(|r| r.contains(&m.id)) && !archived.with(|a| a.contains(&m.id))
+                })
                 .count()
         })
     };

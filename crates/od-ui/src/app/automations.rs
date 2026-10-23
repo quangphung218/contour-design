@@ -72,22 +72,62 @@ struct Template {
 
 /// The original's built-in templates (prompts go to the agent as written).
 const TEMPLATES: [Template; 8] = [
-    Template { id: "memory-refresh", title: T::TplMemoryRefresh, desc: T::TplMemoryRefreshDesc, name: "Memory refresh",
-        prompt: "Review recent chats, PR comments, design feedback, and project changes. Extract durable preferences, repeated decisions, and workflow lessons. Propose concise memory updates with source links and separate one-off notes from reusable guidance." },
-    Template { id: "design-system-refresh", title: T::TplDesignSystem, desc: T::TplDesignSystemDesc, name: "Design system maintainer",
-        prompt: "Inspect recent generated artifacts, review feedback, and accepted revisions. Identify patterns that should become design-system tokens, component rules, examples, or anti-patterns. Draft precise updates to DESIGN.md and call out anything that needs human approval." },
-    Template { id: "live-artifact-registry", title: T::TplLiveArtifacts, desc: T::TplLiveArtifactsDesc, name: "Live artifact maintainer",
-        prompt: "List live artifacts for this project, find stale or failed refreshes, and update the highest-value artifact in place. Preserve artifact ids, summarize what changed, and flag artifacts that need connector access or human review." },
-    Template { id: "live-status-board", title: T::TplStatusBoard, desc: T::TplStatusBoardDesc, name: "Live status board",
-        prompt: "Maintain a single live artifact named `status_board.md`. On each run, update the sections for 'In flight', 'Shipped this week', 'Risks', and 'Decisions made'. Edit in place so the artifact stays stable." },
-    Template { id: "orbit-dashboard", title: T::TplActivity, desc: T::TplActivityDesc, name: "Connector activity dashboard",
-        prompt: "Use the selected connectors to build or refresh a live dashboard of recent activity. Group by people, projects, decisions, risks, and follow-ups. Prefer connected read-only tools, cite sources, and keep the dashboard refreshable." },
-    Template { id: "orbit-daily", title: T::TplDigest, desc: T::TplDigestDesc, name: "Daily connector digest",
-        prompt: "Survey every connected integration and produce a daily digest of what changed in the last 24 hours. Group the result by people, projects, decisions, and follow-ups. Save the output as a live artifact named `daily_digest.md` and update it in place on each run." },
-    Template { id: "release-notes", title: T::TplReleaseNotes, desc: T::TplReleaseNotesDesc, name: "Weekly release notes",
-        prompt: "Draft user-facing release notes covering merged PRs, updated artifacts, and design-system changes from the last 7 days. Group by 'New', 'Improved', and 'Fixed'. Include links when available and keep the copy user-readable." },
-    Template { id: "quality-regression-watch", title: T::TplRegression, desc: T::TplRegressionDesc, name: "Regression watch",
-        prompt: "Compare recent project changes against accepted artifacts, design-system rules, benchmarks, and traces. Flag regressions in behavior, layout, accessibility, or product intent. Suggest the smallest fix and cite the evidence." },
+    Template {
+        id: "memory-refresh",
+        title: T::TplMemoryRefresh,
+        desc: T::TplMemoryRefreshDesc,
+        name: "Memory refresh",
+        prompt: "Review recent chats, PR comments, design feedback, and project changes. Extract durable preferences, repeated decisions, and workflow lessons. Propose concise memory updates with source links and separate one-off notes from reusable guidance.",
+    },
+    Template {
+        id: "design-system-refresh",
+        title: T::TplDesignSystem,
+        desc: T::TplDesignSystemDesc,
+        name: "Design system maintainer",
+        prompt: "Inspect recent generated artifacts, review feedback, and accepted revisions. Identify patterns that should become design-system tokens, component rules, examples, or anti-patterns. Draft precise updates to DESIGN.md and call out anything that needs human approval.",
+    },
+    Template {
+        id: "live-artifact-registry",
+        title: T::TplLiveArtifacts,
+        desc: T::TplLiveArtifactsDesc,
+        name: "Live artifact maintainer",
+        prompt: "List live artifacts for this project, find stale or failed refreshes, and update the highest-value artifact in place. Preserve artifact ids, summarize what changed, and flag artifacts that need connector access or human review.",
+    },
+    Template {
+        id: "live-status-board",
+        title: T::TplStatusBoard,
+        desc: T::TplStatusBoardDesc,
+        name: "Live status board",
+        prompt: "Maintain a single live artifact named `status_board.md`. On each run, update the sections for 'In flight', 'Shipped this week', 'Risks', and 'Decisions made'. Edit in place so the artifact stays stable.",
+    },
+    Template {
+        id: "orbit-dashboard",
+        title: T::TplActivity,
+        desc: T::TplActivityDesc,
+        name: "Connector activity dashboard",
+        prompt: "Use the selected connectors to build or refresh a live dashboard of recent activity. Group by people, projects, decisions, risks, and follow-ups. Prefer connected read-only tools, cite sources, and keep the dashboard refreshable.",
+    },
+    Template {
+        id: "orbit-daily",
+        title: T::TplDigest,
+        desc: T::TplDigestDesc,
+        name: "Daily connector digest",
+        prompt: "Survey every connected integration and produce a daily digest of what changed in the last 24 hours. Group the result by people, projects, decisions, and follow-ups. Save the output as a live artifact named `daily_digest.md` and update it in place on each run.",
+    },
+    Template {
+        id: "release-notes",
+        title: T::TplReleaseNotes,
+        desc: T::TplReleaseNotesDesc,
+        name: "Weekly release notes",
+        prompt: "Draft user-facing release notes covering merged PRs, updated artifacts, and design-system changes from the last 7 days. Group by 'New', 'Improved', and 'Fixed'. Include links when available and keep the copy user-readable.",
+    },
+    Template {
+        id: "quality-regression-watch",
+        title: T::TplRegression,
+        desc: T::TplRegressionDesc,
+        name: "Regression watch",
+        prompt: "Compare recent project changes against accepted artifacts, design-system rules, benchmarks, and traces. Flag regressions in behavior, layout, accessibility, or product intent. Suggest the smallest fix and cite the evidence.",
+    },
 ];
 
 fn state_label(status: &str) -> &'static str {
@@ -149,12 +189,27 @@ fn zones() -> Vec<String> {
         .ok()
         .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
         .and_then(|f| f.call1(&intl, &"timeZone".into()).ok())
-        .map(|v| js_sys::Array::from(&v).iter().filter_map(|z| z.as_string()).collect::<Vec<_>>())
-        .unwrap_or_else(|| {
-            ["UTC", "Asia/Ho_Chi_Minh", "Asia/Shanghai", "Asia/Tokyo", "Asia/Singapore", "Europe/London", "Europe/Berlin", "America/New_York", "America/Los_Angeles"]
+        .map(|v| {
+            js_sys::Array::from(&v)
                 .iter()
-                .map(|z| (*z).to_owned())
-                .collect()
+                .filter_map(|z| z.as_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| {
+            [
+                "UTC",
+                "Asia/Ho_Chi_Minh",
+                "Asia/Shanghai",
+                "Asia/Tokyo",
+                "Asia/Singapore",
+                "Europe/London",
+                "Europe/Berlin",
+                "America/New_York",
+                "America/Los_Angeles",
+            ]
+            .iter()
+            .map(|z| (*z).to_owned())
+            .collect()
         });
     for z in all {
         if !out.contains(&z) {
@@ -183,9 +238,26 @@ fn weekday_name(d: u32) -> &'static str {
 fn describe(schedule: &str) -> String {
     match Preset::from_cron(schedule) {
         Preset::Hourly { minute } => tf(T::DescribeHourly, &[&format!("{minute:02}")]),
-        Preset::Daily { hour, minute, tz } => tf(T::DescribeDaily, &[&format_time(hour, minute), &city(&tz)]),
-        Preset::Weekdays { hour, minute, tz } => tf(T::DescribeWeekdays, &[&format_time(hour, minute), &city(&tz)]),
-        Preset::Weekly { weekday, hour, minute, tz } => tf(T::DescribeWeekly, &[weekday_name(weekday), &format_time(hour, minute), &city(&tz)]),
+        Preset::Daily { hour, minute, tz } => {
+            tf(T::DescribeDaily, &[&format_time(hour, minute), &city(&tz)])
+        }
+        Preset::Weekdays { hour, minute, tz } => tf(
+            T::DescribeWeekdays,
+            &[&format_time(hour, minute), &city(&tz)],
+        ),
+        Preset::Weekly {
+            weekday,
+            hour,
+            minute,
+            tz,
+        } => tf(
+            T::DescribeWeekly,
+            &[
+                weekday_name(weekday),
+                &format_time(hour, minute),
+                &city(&tz),
+            ],
+        ),
         Preset::Custom(raw) => raw,
     }
     .trim()
@@ -296,7 +368,11 @@ pub fn Automations() -> impl IntoView {
             return;
         }
         let edit = editing.get_untracked();
-        let agent = if edit.is_some() { None } else { shell.agent_id() };
+        let agent = if edit.is_some() {
+            None
+        } else {
+            shell.agent_id()
+        };
         if edit.is_none() && agent.is_none() {
             error.set(Some(t(T::NoAgentSelected).to_owned()));
             return;
@@ -304,7 +380,9 @@ pub fn Automations() -> impl IntoView {
         let body = form.body(agent);
         leptos::task::spawn_local(async move {
             let res = match &edit {
-                Some(id) => api::patch::<_, Value>(&format!("/api/routines/{}", api::seg(id)), &body).await,
+                Some(id) => {
+                    api::patch::<_, Value>(&format!("/api/routines/{}", api::seg(id)), &body).await
+                }
                 None => api::post::<_, Value>("/api/routines", &body).await,
             };
             match res {
@@ -331,12 +409,25 @@ pub fn Automations() -> impl IntoView {
     let on_edit = Callback::new(move |r: Routine| {
         form.fill(&r);
         editing.set(Some(r.id.clone()));
-        if let Some(el) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id("routine-form")) {
+        if let Some(el) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id("routine-form"))
+        {
             el.scroll_into_view();
         }
     });
-    let active = move || routines.with(|r| r.as_ref().map_or(0, |l| l.iter().filter(|r| r.enabled).count()));
-    let paused = move || routines.with(|r| r.as_ref().map_or(0, |l| l.iter().filter(|r| !r.enabled).count()));
+    let active = move || {
+        routines.with(|r| {
+            r.as_ref()
+                .map_or(0, |l| l.iter().filter(|r| r.enabled).count())
+        })
+    };
+    let paused = move || {
+        routines.with(|r| {
+            r.as_ref()
+                .map_or(0, |l| l.iter().filter(|r| !r.enabled).count())
+        })
+    };
 
     view! {
         <section class="page narrow" data-testid="automations">
@@ -471,18 +562,49 @@ fn SchedulePicker(form: Form) -> impl IntoView {
     let set_time = move |v: String| {
         let Some((h, m)) = parse_time(&v) else { return };
         let next = match form.preset.get_untracked() {
-            Preset::Daily { tz, .. } => Preset::Daily { hour: h, minute: m, tz },
-            Preset::Weekdays { tz, .. } => Preset::Weekdays { hour: h, minute: m, tz },
-            Preset::Weekly { weekday, tz, .. } => Preset::Weekly { weekday, hour: h, minute: m, tz },
+            Preset::Daily { tz, .. } => Preset::Daily {
+                hour: h,
+                minute: m,
+                tz,
+            },
+            Preset::Weekdays { tz, .. } => Preset::Weekdays {
+                hour: h,
+                minute: m,
+                tz,
+            },
+            Preset::Weekly { weekday, tz, .. } => Preset::Weekly {
+                weekday,
+                hour: h,
+                minute: m,
+                tz,
+            },
             other => other,
         };
         form.set_preset(next);
     };
     let set_tz = move |zone: String| {
         let next = match form.preset.get_untracked() {
-            Preset::Daily { hour, minute, .. } => Preset::Daily { hour, minute, tz: zone },
-            Preset::Weekdays { hour, minute, .. } => Preset::Weekdays { hour, minute, tz: zone },
-            Preset::Weekly { weekday, hour, minute, .. } => Preset::Weekly { weekday, hour, minute, tz: zone },
+            Preset::Daily { hour, minute, .. } => Preset::Daily {
+                hour,
+                minute,
+                tz: zone,
+            },
+            Preset::Weekdays { hour, minute, .. } => Preset::Weekdays {
+                hour,
+                minute,
+                tz: zone,
+            },
+            Preset::Weekly {
+                weekday,
+                hour,
+                minute,
+                ..
+            } => Preset::Weekly {
+                weekday,
+                hour,
+                minute,
+                tz: zone,
+            },
             other => other,
         };
         form.set_preset(next);
@@ -580,7 +702,9 @@ fn RoutineRow(
     let base = move || format!("/api/routines/{}", api::seg(&id.get_value()));
     let load_history = move || {
         leptos::task::spawn_local(async move {
-            if let Ok(r) = api::get::<RunsResponse>(&format!("{}/runs?limit={HISTORY}", base())).await {
+            if let Ok(r) =
+                api::get::<RunsResponse>(&format!("{}/runs?limit={HISTORY}", base())).await
+            {
                 history.set(Some(r.runs));
             }
         });

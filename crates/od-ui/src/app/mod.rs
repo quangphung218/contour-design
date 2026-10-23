@@ -3,8 +3,8 @@
 mod agent_w3;
 mod api;
 mod automations;
-mod byok_form;
 mod bridge;
+mod byok_form;
 mod chat_view;
 mod deck;
 mod desktop;

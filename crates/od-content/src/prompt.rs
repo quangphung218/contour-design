@@ -288,16 +288,19 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
 }
 
 /// New-project panel fields that make the metadata block worth writing.
-const PANEL_FIELDS: [&str; 11] = [
+const PANEL_FIELDS: [&str; 14] = [
     "platformTargets",
     "includeLandingPage",
     "includeOsWidgets",
     "speakerNotes",
     "animations",
     "templateLabel",
+    "imageModel",
     "imageAspect",
+    "videoModel",
     "videoAspect",
     "videoLength",
+    "audioModel",
     "audioKind",
     "audioDuration",
 ];
@@ -327,7 +330,10 @@ fn metadata_block(m: &ProjectMetadata) -> Option<String> {
         String::new(),
     ];
     if let Some(kind) = m.kind {
-        let kind = serde_json::to_value(kind).ok().map(|v| text(&v)).unwrap_or_default();
+        let kind = serde_json::to_value(kind)
+            .ok()
+            .map(|v| text(&v))
+            .unwrap_or_default();
         lines.push(format!("- **kind**: {kind}"));
     }
     if let Some(p) = &m.platform {
@@ -619,7 +625,8 @@ mod tests {
         };
         assert_eq!(metadata_block(&plain), None);
         let mut deck = plain.clone();
-        deck.extra.insert("speakerNotes".into(), serde_json::json!(true));
+        deck.extra
+            .insert("speakerNotes".into(), serde_json::json!(true));
         let block = metadata_block(&deck).unwrap_or_default();
         assert!(block.contains("## Project metadata"));
         assert!(block.contains("- **kind**: deck"));
@@ -630,9 +637,10 @@ mod tests {
             platform: Some("mobile-ios".into()),
             ..ProjectMetadata::default()
         };
-        proto
-            .extra
-            .insert("platformTargets".into(), serde_json::json!(["mobile-ios", "tablet"]));
+        proto.extra.insert(
+            "platformTargets".into(),
+            serde_json::json!(["mobile-ios", "tablet"]),
+        );
         let block = metadata_block(&proto).unwrap_or_default();
         assert!(block.contains("- **fidelity**: wireframe"));
         assert!(block.contains("- **platformTargets**: mobile-ios, tablet"));

@@ -77,7 +77,10 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
         .config
         .with_untracked(|c| c.as_ref().and_then(|c| c.extra.get("byok").cloned()))
         .unwrap_or(Value::Null);
-    let s_protocol = stored["protocol"].as_str().unwrap_or("anthropic").to_owned();
+    let s_protocol = stored["protocol"]
+        .as_str()
+        .unwrap_or("anthropic")
+        .to_owned();
     let s_base = stored["baseUrl"].as_str().map(str::to_owned);
     let has_key = stored["hasApiKey"] == true;
     let key_hint = stored["apiKeyHint"].as_str().unwrap_or_default().to_owned();
@@ -137,10 +140,12 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
         b["mode"] = json!("provider");
         test.set(Some(TestState::Running));
         leptos::task::spawn_local(async move {
-            test.set(Some(match api::post::<_, Value>("/api/test/connection", &b).await {
-                Ok(v) => TestState::Done(v),
-                Err(e) => TestState::Failed(e.to_string()),
-            }));
+            test.set(Some(
+                match api::post::<_, Value>("/api/test/connection", &b).await {
+                    Ok(v) => TestState::Done(v),
+                    Err(e) => TestState::Failed(e.to_string()),
+                },
+            ));
         });
     };
     let fetch = move |_| {
@@ -151,7 +156,11 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                 Ok(v) => {
                     let list: Vec<String> = v["models"]
                         .as_array()
-                        .map(|a| a.iter().filter_map(|m| m.as_str().map(str::to_owned)).collect())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|m| m.as_str().map(str::to_owned))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     fetch_state.set(Some(Ok(list.len())));
                     fetched.set(list);

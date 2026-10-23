@@ -85,7 +85,10 @@ fn ForwardedNote() -> impl IntoView {
             Some(Ok(list)) => list,
             _ => return None,
         };
-        let installed: Vec<_> = agents.into_iter().filter(|a| a.available && a.id != "byok").collect();
+        let installed: Vec<_> = agents
+            .into_iter()
+            .filter(|a| a.available && a.id != "byok")
+            .collect();
         let mut to: Vec<String> = Vec::new();
         let mut not: Vec<String> = Vec::new();
         let mut acp = false;
@@ -93,7 +96,11 @@ fn ForwardedNote() -> impl IntoView {
             match forwarding(&a.id) {
                 Some(stdio_only) => {
                     acp |= stdio_only;
-                    to.push(if stdio_only { tf(T::StdioOnly, &[&a.name]) } else { a.name.clone() });
+                    to.push(if stdio_only {
+                        tf(T::StdioOnly, &[&a.name])
+                    } else {
+                        a.name.clone()
+                    });
                 }
                 None => not.push(a.name.clone()),
             }
@@ -139,8 +146,11 @@ fn McpCatalog() -> impl IntoView {
     let state = RwSignal::new(None::<Result<String, String>>);
     let add = move |entry: Value| {
         leptos::task::spawn_local(async move {
-            let current = api::get::<Value>("/api/mcp/servers").await.unwrap_or(Value::Null);
-            let mut servers: Vec<Value> = current["servers"].as_array().cloned().unwrap_or_default();
+            let current = api::get::<Value>("/api/mcp/servers")
+                .await
+                .unwrap_or(Value::Null);
+            let mut servers: Vec<Value> =
+                current["servers"].as_array().cloned().unwrap_or_default();
             for s in &mut servers {
                 if let Some(o) = s.as_object_mut() {
                     o.remove("oauth");
@@ -207,7 +217,8 @@ fn McpCatalog() -> impl IntoView {
 /// A snippet per client, copy buttons, one-click install where possible.
 #[component]
 fn InstallIntoAgents() -> impl IntoView {
-    let info = LocalResource::new(|| async { api::get::<Value>("/api/mcp/install-info").await.ok() });
+    let info =
+        LocalResource::new(|| async { api::get::<Value>("/api/mcp/install-info").await.ok() });
     let client = RwSignal::new("claude".to_owned());
     let result = RwSignal::new(None::<Result<String, String>>);
     let install = move |uninstall: bool| {
@@ -215,11 +226,15 @@ fn InstallIntoAgents() -> impl IntoView {
         result.set(None);
         leptos::task::spawn_local(async move {
             let url = format!("/api/mcp/install/{}", api::seg(&id));
-            result.set(Some(match api::post::<_, Value>(&url, &json!({ "uninstall": uninstall })).await {
-                Ok(v) if v["ok"] == true => Ok(v["message"].as_str().unwrap_or_default().to_owned()),
-                Ok(v) => Err(v["message"].as_str().unwrap_or_default().to_owned()),
-                Err(e) => Err(e.to_string()),
-            }));
+            result.set(Some(
+                match api::post::<_, Value>(&url, &json!({ "uninstall": uninstall })).await {
+                    Ok(v) if v["ok"] == true => {
+                        Ok(v["message"].as_str().unwrap_or_default().to_owned())
+                    }
+                    Ok(v) => Err(v["message"].as_str().unwrap_or_default().to_owned()),
+                    Err(e) => Err(e.to_string()),
+                },
+            ));
         });
     };
     view! {
@@ -306,9 +321,13 @@ fn UseEverywhere() -> impl IntoView {
         (T::EverywhereHttp, T::EverywhereHttpBody, format!("curl -s {origin}/api/projects\ncurl -s -X POST {origin}/api/runs -H 'content-type: application/json' \\\n  -d '{{\"agentId\":\"claude\",\"projectId\":\"<id>\",\"message\":\"Add a pricing section\"}}'")),
         (T::EverywhereSkills, T::EverywhereSkillsBody, "od plugin list\nod plugin apply <plugin> -i name=value\nod mcp live-artifacts --project <id>".to_owned()),
     ];
-    let guide: String = std::iter::once(format!("# Open Design: use it everywhere\n\nDaemon: {origin}\n"))
-        .chain(sections.iter().map(|(title, body, code)| format!("\n## {}\n\n{}\n\n```sh\n{code}\n```\n", t(*title), t(*body))))
-        .collect();
+    let guide: String = std::iter::once(format!(
+        "# Open Design: use it everywhere\n\nDaemon: {origin}\n"
+    ))
+    .chain(sections.iter().map(|(title, body, code)| {
+        format!("\n## {}\n\n{}\n\n```sh\n{code}\n```\n", t(*title), t(*body))
+    }))
+    .collect();
     let copied = RwSignal::new(false);
     view! {
         <section class="settings-section" data-testid="use-everywhere">

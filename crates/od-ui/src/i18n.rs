@@ -175,6 +175,7 @@ messages! {
     StatusNotStarted => "Not started", "Chưa chạy";
     StatusRunning => "Running", "Đang chạy";
     StatusAwaitingInput => "Needs input", "Cần trả lời";
+    StatusIncomplete => "Incomplete", "Chưa xong";
     StatusSucceeded => "Completed", "Hoàn tất";
     StatusFailed => "Failed", "Lỗi";
     StatusCanceled => "Canceled", "Đã huỷ";
@@ -232,6 +233,7 @@ messages! {
     SurfaceImage => "Image", "Ảnh";
     SurfaceVideo => "Video", "Video";
     SurfaceAudio => "Audio", "Âm thanh";
+    MediaModel => "Model", "Model";
     Aspect => "Aspect", "Tỉ lệ";
     VideoLength => "Length", "Độ dài";
     Seconds => "{0}s", "{0} giây";
@@ -253,6 +255,9 @@ messages! {
     ModelSourceBuiltIn => "Built-in list", "Danh sách có sẵn";
     ModelSourceSuggested => "Suggested models", "Model gợi ý";
     ReasoningEffort => "Reasoning effort", "Mức suy luận";
+    ServiceTier => "Service tier", "Gói dịch vụ";
+    TierDefault => "Default", "Mặc định";
+    TierFast => "Fast", "Nhanh";
     Test => "Test", "Kiểm tra";
     TestRunning => "Testing connection…", "Đang kiểm tra kết nối…";
     TestSuccessCli => "{0} replied in {1} ms: '{2}'", "{0} trả lời sau {1} ms: '{2}'";
@@ -299,7 +304,7 @@ messages! {
     NotifyFailedBody => "The task ended with an error.", "Việc kết thúc với lỗi.";
     NotifyTestBody => "Notifications work.", "Thông báo đã hoạt động.";
     ProjectLocations => "Project locations", "Nơi lưu project";
-    ProjectLocationsHint => "Work bases that hold project folders. New projects are saved as one folder inside the default base.", "Các thư mục gốc chứa project. Project mới được lưu thành một thư mục bên trong thư mục mặc định.";
+    ProjectLocationsHint => "Work bases that hold project folders. Each new project gets its own folder inside the default base.", "Các thư mục gốc chứa project. Project mới được lưu thành một thư mục bên trong thư mục mặc định.";
     BuiltInLocation => "Open Design projects", "Project của Open Design";
     DefaultLocation => "Default", "Mặc định";
     MakeDefault => "Make default", "Đặt làm mặc định";

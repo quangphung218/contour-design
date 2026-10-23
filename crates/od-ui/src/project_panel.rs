@@ -77,6 +77,16 @@ pub enum MediaSurface {
 impl MediaSurface {
     pub const ALL: [Self; 3] = [Self::Image, Self::Video, Self::Audio];
 
+    /// The catalogue's `surface` value.
+    #[must_use]
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Image => "image",
+            Self::Video => "video",
+            Self::Audio => "audio",
+        }
+    }
+
     #[must_use]
     pub fn kind(self) -> ProjectKind {
         match self {
@@ -104,6 +114,8 @@ pub struct PanelChoice {
     pub template_id: Option<String>,
     pub template_label: Option<String>,
     pub surface: MediaSurface,
+    /// A media model id from `GET /api/media/models`; none = default.
+    pub media_model: Option<String>,
     pub aspect: String,
     pub video_length: u32,
     /// `speech` or `sfx`.
@@ -126,6 +138,7 @@ impl Default for PanelChoice {
             template_id: None,
             template_label: None,
             surface: MediaSurface::Image,
+            media_model: None,
             aspect: "1:1".to_owned(),
             video_length: 5,
             audio_kind: "speech".to_owned(),
@@ -147,7 +160,11 @@ impl PanelChoice {
         let mut extra = Map::new();
         extra.insert(
             "nameSource".to_owned(),
-            json!(if typed.is_empty() { "generated" } else { "user" }),
+            json!(if typed.is_empty() {
+                "generated"
+            } else {
+                "user"
+            }),
         );
         let mut meta = ProjectMetadata::default();
         if self.tab.has_platforms() {
@@ -205,6 +222,14 @@ impl PanelChoice {
             }
             PanelTab::Media => {
                 meta.kind = Some(self.surface.kind());
+                if let Some(model) = &self.media_model {
+                    let key = match self.surface {
+                        MediaSurface::Image => "imageModel",
+                        MediaSurface::Video => "videoModel",
+                        MediaSurface::Audio => "audioModel",
+                    };
+                    extra.insert(key.to_owned(), json!(model));
+                }
                 match self.surface {
                     MediaSurface::Image => {
                         extra.insert("imageAspect".to_owned(), json!(self.aspect));
@@ -215,7 +240,10 @@ impl PanelChoice {
                     }
                     MediaSurface::Audio => {
                         let sfx = self.audio_kind == "sfx";
-                        extra.insert("audioKind".to_owned(), json!(if sfx { "sfx" } else { "speech" }));
+                        extra.insert(
+                            "audioKind".to_owned(),
+                            json!(if sfx { "sfx" } else { "speech" }),
+                        );
                         let duration = if sfx {
                             self.audio_duration.min(SFX_MAX_SECONDS)
                         } else {
@@ -276,7 +304,10 @@ mod tests {
             include_os_widgets: true,
             ..PanelChoice::default()
         };
-        assert_eq!(meta(&web.create_request(&[], "x")).get("includeOsWidgets"), None);
+        assert_eq!(
+            meta(&web.create_request(&[], "x")).get("includeOsWidgets"),
+            None
+        );
     }
 
     #[test]
@@ -290,7 +321,10 @@ mod tests {
         let req = deck.create_request(&[], "x");
         assert_eq!(req.name, "Pitch");
         let m = meta(&req);
-        assert_eq!((m["kind"].clone(), m["speakerNotes"].clone()), (json!("deck"), json!(true)));
+        assert_eq!(
+            (m["kind"].clone(), m["speakerNotes"].clone()),
+            (json!("deck"), json!(true))
+        );
         assert!(m.get("platformTargets").is_none());
         let tpl = PanelChoice {
             tab: PanelTab::Template,
@@ -306,15 +340,23 @@ mod tests {
             surface: MediaSurface::Audio,
             audio_kind: "sfx".into(),
             audio_duration: 120,
+            media_model: Some("eleven-sfx".into()),
             ..PanelChoice::default()
         };
         let m = meta(&sfx.create_request(&[], "x"));
-        assert_eq!((m["kind"].clone(), m["audioDuration"].clone()), (json!("audio"), json!(30)));
+        assert_eq!(
+            (m["kind"].clone(), m["audioDuration"].clone()),
+            (json!("audio"), json!(30))
+        );
+        assert_eq!(m["audioModel"], "eleven-sfx");
         let live = PanelChoice {
             tab: PanelTab::LiveArtifact,
             ..PanelChoice::default()
         };
         let m = meta(&live.create_request(&[], "x"));
-        assert_eq!((m["intent"].clone(), m["fidelity"].clone()), (json!("live-artifact"), json!("high-fidelity")));
+        assert_eq!(
+            (m["intent"].clone(), m["fidelity"].clone()),
+            (json!("live-artifact"), json!("high-fidelity"))
+        );
     }
 }

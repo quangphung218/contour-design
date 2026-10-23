@@ -605,6 +605,12 @@ async fn prepare_and_launch(
                     let models = state.store.data_dir().app_setting("agentModels")?;
                     non_default(models.get(def.id)?.get("reasoning")?.as_str())
                 }),
+                service_tier: {
+                    // Settings ▸ Service tier, per agent.
+                    let models = state.store.data_dir().app_setting("agentModels");
+                    models.and_then(|m| non_default(m.get(def.id)?.get("serviceTier")?.as_str()))
+                },
+                bin: crate::routes::manage::settings::custom_bin(&data_root, def.id),
                 extra_dirs: Vec::new(),
                 resume_session_id: prepared.resume_session_id,
                 permission: prepared.permission,

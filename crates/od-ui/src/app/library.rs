@@ -30,7 +30,9 @@ pub fn DesignSystems() -> impl IntoView {
             .get()
             .unwrap_or_default()
             .into_iter()
-            .filter(|d: &DesignSystemSummary| matches(&query.get(), &[&d.title, &d.category, &d.summary]))
+            .filter(|d: &DesignSystemSummary| {
+                matches(&query.get(), &[&d.title, &d.category, &d.summary])
+            })
             .collect::<Vec<_>>()
     };
     view! {

@@ -15,6 +15,7 @@ pub enum RunState {
     NotStarted,
     Running,
     AwaitingInput,
+    Incomplete,
     Succeeded,
     Failed,
     Canceled,
@@ -22,10 +23,11 @@ pub enum RunState {
 
 impl RunState {
     /// Board column order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::NotStarted,
         Self::Running,
         Self::AwaitingInput,
+        Self::Incomplete,
         Self::Succeeded,
         Self::Failed,
         Self::Canceled,
@@ -36,6 +38,7 @@ impl RunState {
         match s {
             "running" | "queued" => Self::Running,
             "awaiting_input" => Self::AwaitingInput,
+            "incomplete" => Self::Incomplete,
             "succeeded" => Self::Succeeded,
             "failed" => Self::Failed,
             "canceled" => Self::Canceled,
@@ -49,6 +52,7 @@ impl RunState {
             Self::NotStarted => "not_started",
             Self::Running => "running",
             Self::AwaitingInput => "awaiting_input",
+            Self::Incomplete => "incomplete",
             Self::Succeeded => "succeeded",
             Self::Failed => "failed",
             Self::Canceled => "canceled",
@@ -61,6 +65,7 @@ impl RunState {
             Self::NotStarted => T::StatusNotStarted,
             Self::Running => T::StatusRunning,
             Self::AwaitingInput => T::StatusAwaitingInput,
+            Self::Incomplete => T::StatusIncomplete,
             Self::Succeeded => T::StatusSucceeded,
             Self::Failed => T::StatusFailed,
             Self::Canceled => T::StatusCanceled,
@@ -72,7 +77,7 @@ impl RunState {
     pub fn badge_class(self) -> &'static str {
         match self {
             Self::Running => "badge accent",
-            Self::AwaitingInput => "badge warning",
+            Self::AwaitingInput | Self::Incomplete => "badge warning",
             Self::Succeeded => "badge success",
             Self::Failed => "badge danger",
             Self::NotStarted | Self::Canceled => "badge outline",
@@ -129,8 +134,7 @@ impl Tag {
     pub fn of(project: &Project) -> Self {
         let meta = project.metadata.as_ref();
         let intent = meta.and_then(|m| m.intent.as_deref());
-        if intent == Some("live-artifact") || project.skill_id.as_deref() == Some("live-artifact")
-        {
+        if intent == Some("live-artifact") || project.skill_id.as_deref() == Some("live-artifact") {
             return Self::LiveArtifact;
         }
         if intent == Some("web-clone") {
@@ -247,7 +251,11 @@ pub fn filtered(list: &[Project], tag: Option<Tag>, query: &str, sort: Sort) -> 
 }
 
 pub fn stored(key: &str) -> Option<String> {
-    web_sys::window()?.local_storage().ok()??.get_item(key).ok()?
+    web_sys::window()?
+        .local_storage()
+        .ok()??
+        .get_item(key)
+        .ok()?
 }
 
 pub fn store(key: &str, value: &str) {
@@ -283,13 +291,26 @@ mod tests {
 
     #[test]
     fn tags_follow_the_original_precedence() {
-        assert_eq!(Tag::of(&project("a", 1, json!({"kind": "deck"}))), Tag::Slide);
         assert_eq!(
-            Tag::of(&project("a", 1, json!({"kind": "deck", "intent": "live-artifact"}))),
+            Tag::of(&project("a", 1, json!({"kind": "deck"}))),
+            Tag::Slide
+        );
+        assert_eq!(
+            Tag::of(&project(
+                "a",
+                1,
+                json!({"kind": "deck", "intent": "live-artifact"})
+            )),
             Tag::LiveArtifact
         );
-        assert_eq!(Tag::of(&project("a", 1, json!({"kind": "video"}))), Tag::Media);
-        assert_eq!(Tag::of(&project("a", 1, json!({"intent": "web-clone"}))), Tag::WebClone);
+        assert_eq!(
+            Tag::of(&project("a", 1, json!({"kind": "video"}))),
+            Tag::Media
+        );
+        assert_eq!(
+            Tag::of(&project("a", 1, json!({"intent": "web-clone"}))),
+            Tag::WebClone
+        );
         assert_eq!(Tag::of(&project("a", 1, json!(null))), Tag::Prototype);
     }
 
@@ -301,11 +322,26 @@ mod tests {
             project("Bakery", 2, json!({"kind": "prototype"})),
         ];
         let names = |v: Vec<Project>| v.into_iter().map(|p| p.name).collect::<Vec<_>>();
-        assert_eq!(names(filtered(&list, None, "", Sort::Newest)), ["Tea shop", "Bakery", "pitch"]);
-        assert_eq!(names(filtered(&list, None, "", Sort::Oldest)), ["pitch", "Bakery", "Tea shop"]);
-        assert_eq!(names(filtered(&list, None, "", Sort::Name)), ["Bakery", "pitch", "Tea shop"]);
-        assert_eq!(names(filtered(&list, Some(Tag::Slide), "", Sort::Name)), ["pitch"]);
-        assert_eq!(names(filtered(&list, None, "TEA", Sort::Name)), ["Tea shop"]);
+        assert_eq!(
+            names(filtered(&list, None, "", Sort::Newest)),
+            ["Tea shop", "Bakery", "pitch"]
+        );
+        assert_eq!(
+            names(filtered(&list, None, "", Sort::Oldest)),
+            ["pitch", "Bakery", "Tea shop"]
+        );
+        assert_eq!(
+            names(filtered(&list, None, "", Sort::Name)),
+            ["Bakery", "pitch", "Tea shop"]
+        );
+        assert_eq!(
+            names(filtered(&list, Some(Tag::Slide), "", Sort::Name)),
+            ["pitch"]
+        );
+        assert_eq!(
+            names(filtered(&list, None, "TEA", Sort::Name)),
+            ["Tea shop"]
+        );
         assert_eq!(RunState::parse("queued"), RunState::Running);
         assert_eq!(RunState::parse("?"), RunState::NotStarted);
     }

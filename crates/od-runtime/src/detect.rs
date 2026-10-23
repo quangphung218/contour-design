@@ -29,7 +29,9 @@ fn find_on_path(name: &str, path: &OsStr) -> Option<PathBuf> {
         .find(|candidate| is_executable(candidate))
 }
 
-fn is_executable(path: &Path) -> bool {
+/// A regular file with an execute bit (any file off Unix).
+#[must_use]
+pub fn is_executable(path: &Path) -> bool {
     let Ok(meta) = std::fs::metadata(path) else {
         return false;
     };

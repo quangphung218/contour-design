@@ -49,8 +49,8 @@ pub async fn search(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectStatus {
-    /// `not_started`, `running`, `awaiting_input`, `succeeded`, `failed`
-    /// or `canceled`.
+    /// `not_started`, `running`, `awaiting_input`, `incomplete`,
+    /// `succeeded`, `failed` or `canceled`.
     pub value: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<i64>,
@@ -100,6 +100,8 @@ pub async fn project_status(
             *slot = ProjectStatus {
                 value: if s.awaiting_input {
                     "awaiting_input"
+                } else if s.incomplete {
+                    "incomplete"
                 } else {
                     stored_value(&s.status)
                 },
