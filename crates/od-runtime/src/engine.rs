@@ -572,6 +572,7 @@ impl RunEngine {
             tracing::warn!(run = %run.id(), pgid, "agent left processes behind; stopping its group");
             process::terminate_group(pgid, self.config.kill_grace).await;
         }
+        process::release_group(pgid);
         run.set_process(None, None);
         let exit = exit.unwrap_or_default();
         att.exit_code = exit.code();

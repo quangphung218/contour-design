@@ -22,6 +22,8 @@ od-render-cdp = { path = "crates/od-render-cdp" }
 od-mcp = { path = "crates/od-mcp" }
 od-live = { path = "crates/od-live" }
 od-media = { path = "crates/od-media" }
+od-job = { path = "crates/od-job" }
+od-term = { path = "crates/od-term" }
 
 anyhow = "1"
 arc-swap = "1"

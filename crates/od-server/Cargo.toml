@@ -17,8 +17,9 @@ od-export.workspace = true
 od-render-cdp.workspace = true
 od-live.workspace = true
 od-media.workspace = true
+od-term.workspace = true
 anyhow.workspace = true
-axum.workspace = true
+axum = { workspace = true, features = ["ws"] }
 base64.workspace = true
 futures-util.workspace = true
 hex.workspace = true
@@ -37,6 +38,7 @@ uuid.workspace = true
 nix.workspace = true
 
 [dev-dependencies]
+tokio-tungstenite = "0.29"
 http-body-util.workspace = true
 lopdf.workspace = true
 reqwest.workspace = true
