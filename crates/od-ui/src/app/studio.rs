@@ -1056,6 +1056,7 @@ pub fn Studio() -> impl IntoView {
             </Show>
             <NoticeToast ctx=ctx/>
             <FilesToast/>
+            <super::project_actions::BrandReady ctx=ctx/>
         </div>
     }
 }

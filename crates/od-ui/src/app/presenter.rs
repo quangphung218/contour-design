@@ -259,14 +259,17 @@ pub fn Presenter() -> impl IntoView {
                 </div>
                 <aside class="presenter-side">
                     <span class="eyebrow">{t(T::NextSlide)}</span>
-                    <div class="presenter-next">
-                        {move || (active.get() + 1 < count.get()).then(|| {
-                            let i = active.get_untracked() + 1;
-                            view! {
+                    {move || if active.get() + 1 < count.get() {
+                        let i = active.get_untracked() + 1;
+                        view! {
+                            <div class="presenter-next">
                                 <iframe data-thumb=i.to_string() src=format!("{next_src}{i}") sandbox="allow-scripts" tabindex="-1" aria-hidden="true"></iframe>
-                            }
-                        })}
-                    </div>
+                            </div>
+                        }
+                        .into_any()
+                    } else {
+                        view! { <div class="presenter-next end" data-testid="presenter-end">{t(T::EndOfDeck)}</div> }.into_any()
+                    }}
                     <span class="eyebrow">{t(T::SpeakerNotes)}</span>
                     <div class="presenter-notes" data-testid="presenter-notes">
                         {move || match note() {

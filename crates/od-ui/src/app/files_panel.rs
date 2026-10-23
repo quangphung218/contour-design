@@ -63,6 +63,8 @@ pub struct FilesUi {
     pub launcher: RwSignal<bool>,
     /// Chat hidden: the workspace takes the window.
     pub focus: RwSignal<bool>,
+    /// Design system being made from this project.
+    pub ds_job: RwSignal<Option<super::project_actions::DsJob>>,
     /// Info toast (copied, uploaded…); errors go to the Studio notice.
     pub toast: RwSignal<Option<String>>,
     toast_seq: StoredValue<u32>,
@@ -85,6 +87,7 @@ impl FilesUi {
             dragging: RwSignal::new(false),
             launcher: RwSignal::new(false),
             focus: RwSignal::new(super::stored_flag(FOCUS_KEY).unwrap_or(false)),
+            ds_job: RwSignal::new(None),
             toast: RwSignal::new(None),
             toast_seq: StoredValue::new(0),
         }
@@ -119,7 +122,7 @@ impl FilesUi {
 
     /// Files and folders changed: both lists, and the selection keeps only
     /// what still exists.
-    fn changed(self, ctx: StudioCtx) {
+    pub fn changed(self, ctx: StudioCtx) {
         ctx.refresh_files();
         self.refresh(ctx);
         self.selected.update(|s| s.clear());
@@ -495,9 +498,7 @@ pub fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
                 <button class="icon-btn" aria-label=t(T::QuickOpen) data-tip=t(T::QuickOpen) data-tip-pos="left" data-testid="open-switcher" on:click=move |_| ctx.switcher_open.set(true)>
                     {icon(Glyph::Search)}
                 </button>
-                <button class="icon-btn" aria-label=t(T::RefreshFiles) data-tip=t(T::RefreshFiles) data-tip-pos="left" on:click=move |_| ui.changed(ctx)>
-                    {icon(Glyph::Refresh)}
-                </button>
+                <super::project_actions::ProjectMenu ctx=ctx/>
                 <button class="icon-btn" aria-label=t(T::HideFiles) data-tip=t(T::HideFiles) data-tip-pos="left" data-testid="hide-files" on:click=move |_| ctx.toggle_files()>
                     {icon(Glyph::SidebarUnfold)}
                 </button>

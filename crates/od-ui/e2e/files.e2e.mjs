@@ -15,6 +15,7 @@ import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { crc32 } from 'node:zlib';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 
@@ -73,6 +74,33 @@ addEventListener('keydown', function (e) {
 // 1×1 PNG.
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
+/** A ZIP of `files` ({name: text}), stored (no compression). */
+function zip(files) {
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const [name, text] of Object.entries(files)) {
+    const nameBuf = Buffer.from(name);
+    const body = Buffer.from(text);
+    const crc = crc32(body) >>> 0;
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(body.length, 18); local.writeUInt32LE(body.length, 22); local.writeUInt16LE(nameBuf.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(crc, 16); central.writeUInt32LE(body.length, 20); central.writeUInt32LE(body.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28); central.writeUInt32LE(offset, 42);
+    locals.push(local, nameBuf, body);
+    centrals.push(central, nameBuf);
+    offset += 30 + nameBuf.length + body.length;
+  }
+  const dir = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(centrals.length / 2, 8); end.writeUInt16LE(centrals.length / 2, 10);
+  end.writeUInt32LE(dir.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, dir, end]);
+}
+
 const data = mkdtempSync(join(tmpdir(), 'od-e2e-files-'));
 mkdirSync(OUT, { recursive: true });
 mkdirSync(SHOTS, { recursive: true });
@@ -95,6 +123,10 @@ try {
   await write('assets/logo.png', PNG, 'base64');
   await write('report.pdf', '%PDF-1.4\n%%EOF\n');
   await write('slides.pptx', 'not really a deck');
+  await write('pitch.pptx', zip({
+    'ppt/slides/slide1.xml': '<p:sld><a:p><a:r><a:t>Hello tea</a:t></a:r></a:p></p:sld>',
+    'ppt/slides/slide2.xml': '<p:sld><a:p><a:r><a:t>Prices &amp; hours</a:t></a:r></a:p></p:sld>',
+  }).toString('base64'), 'base64');
   const api = async (path) => (await fetch(`${BASE}/api/projects/${pid}${path}`)).json();
   const fileText = async (path) => (await fetch(`${BASE}/api/projects/${pid}/raw/${path}`)).text();
   const paths = async () => (await api('/files')).files.map((f) => f.path).sort();
@@ -307,7 +339,10 @@ try {
   download = page.waitForEvent('download');
   await page.getByTestId('doc-download').click();
   assert.equal((await download).suggestedFilename(), 'slides.pptx');
-  results.docViewer = 'pdf inline, office download';
+  await row('pitch.pptx').click();
+  await page.getByTestId('office-text').getByText('Prices & hours').waitFor();
+  await page.getByTestId('office-text').getByText('Slide 2').waitFor();
+  results.docViewer = 'pdf inline, office text, office download';
 
   // 10. Screenshot of the page: clipboard, chat, PNG.
   await row('index.html').click();
@@ -373,6 +408,7 @@ try {
   await presenter.getByTestId('presenter-next').click();
   await until(async () => (await pCounter.textContent()) === '3 / 3', 'presenter next');
   await until(async () => (await counter.textContent()) === '3 / 3', 'Studio follows the presenter');
+  await presenter.getByTestId('presenter-end').waitFor();
   await presenter.screenshot({ path: join(SHOTS, 'presenter-light.png') });
   await presenter.emulateMedia({ colorScheme: 'dark' });
   await sleep(150);
@@ -425,6 +461,58 @@ try {
   await page.getByTestId('terminal-tab').waitFor();
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), /Build it with React\./);
   results.export = 'markdown, file actions, template, handoff options';
+
+  // 12b. Image as JPEG and editable PPTX go through the local Chrome when
+  // there is one; without it the export says so (decisions.md #2).
+  const tryExport = async (testid, file) => {
+    await page.locator('.tab', { hasText: file }).locator('.tab-name').click();
+    await page.getByTestId('export').click();
+    const dl = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
+    await page.getByTestId(testid).click();
+    const status = page.getByTestId('export-status');
+    await until(async () => /Exported|Saved|Đã|failed|Chrome/i.test(await status.textContent()) && !/Exporting/.test(await status.textContent()), `${testid} done`, 60_000);
+    const text = await status.textContent();
+    const got = await Promise.race([dl, sleep(500).then(() => null)]);
+    return got ? `download ${got.suggestedFilename()}` : `message: ${text.trim().slice(0, 80)}`;
+  };
+  results.exportJpeg = await tryExport('export-jpg', 'index.html');
+  results.exportPptxEditable = await tryExport('export-pptx-editable', 'deck.html');
+  assert.ok(/download index\.jpg|Chrome/.test(results.exportJpeg), results.exportJpeg);
+  assert.ok(/download deck\.pptx|Chrome/.test(results.exportPptxEditable), results.exportPptxEditable);
+
+  // 12c. Finalize: the label follows DESIGN.md; the agent is asked for it.
+  await page.locator('.tab', { hasText: 'index.html' }).locator('.tab-name').click();
+  await page.getByTestId('export').click();
+  assert.match(await page.getByTestId('finalize').textContent(), /^Finalize design package/);
+  const runReq = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/runs');
+  await page.getByTestId('finalize').click();
+  assert.match((await runReq).postDataJSON().message, /^Finalize the design package: write DESIGN\.md/);
+  await until(async () => (await page.getByTestId('assistant-msg').last().getAttribute('data-state')) === 'succeeded', 'finalize turn end', 20_000);
+  await until(async () => (await (await fetch(`${BASE}/api/projects/${pid}/files`)).json()).files.length > 0, 'files after run');
+  await sleep(500);
+  await write('DESIGN.md', '# Spec');
+  await page.getByTestId('export').click();
+  await until(async () => /^Re-finalize DESIGN\.md$/.test((await page.getByTestId('finalize').textContent()).trim()), 'Re-finalize');
+  await page.locator('.menu-scrim').click();
+  await sleep(50);
+  await write('index.html', '<!doctype html><html><body><h1 id="title">Tea house</h1><p>Newer.</p></body></html>');
+  await page.getByTestId('export').click();
+  await until(async () => /older than the pages/.test(await page.getByTestId('finalize').textContent()), 'stale spec');
+  await page.locator('.menu-scrim').click();
+  results.finalize = 'prompt sent, labels follow DESIGN.md';
+
+  // 12d. A design system made from this project, then used by it.
+  await page.getByTestId('project-menu').click();
+  await page.getByTestId('project-ds').click();
+  await page.getByTestId('brand-progress').waitFor();
+  await page.getByTestId('brand-ready').waitFor({ timeout: 30_000 });
+  await shot('brand-ready');
+  await page.getByTestId('brand-use').click();
+  await toast.filter({ hasText: 'now uses the new design system' }).waitFor();
+  const proj = (await (await fetch(`${BASE}/api/projects/${pid}`)).json()).project;
+  assert.match(proj.designSystemId, /^user:/);
+  assert.equal(await page.getByTestId('brand-ready').count(), 0);
+  results.designSystemFromProject = proj.designSystemId;
 
   // 13. Shortcuts: tabs by Ctrl+PageUp/Down and Ctrl+Alt+arrows, continue
   // in CLI, comment by Ctrl+Enter, draw undo, focus workspace, settings,
@@ -499,6 +587,14 @@ try {
   await shot('files-new-menu-vi');
   await page.locator('.menu-scrim').click();
   results.vi = 'ok';
+
+  // 15. Duplicate the project from the files panel: the copy opens.
+  await page.getByTestId('project-menu').click();
+  await page.getByTestId('project-duplicate').click();
+  await page.waitForURL((u) => u.pathname.startsWith('/projects/') && !u.pathname.endsWith(pid));
+  await page.getByTestId('file-tree').waitFor();
+  await row('index.html').waitFor();
+  results.duplicate = 'ok';
 
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
   assert.deepEqual(external, [], `external requests: ${external.join(', ')}`);

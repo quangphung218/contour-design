@@ -967,7 +967,25 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 .presenter-current .preview-frame { flex: 1; height: auto; }
 .presenter-side { display: flex; flex-direction: column; gap: var(--space-2); min-height: 0; }
 .presenter-next { aspect-ratio: 16 / 10; border-radius: var(--radius-md); overflow: hidden; background: var(--color-paper); box-shadow: 0 0 0 1px var(--color-border); }
+.presenter-next.end { display: grid; place-items: center; background: var(--color-surface-sunken); color: var(--color-text-tertiary); font-size: var(--text-sm); }
 .presenter-next iframe { width: 400%; height: 400%; border: 0; transform: scale(0.25); transform-origin: 0 0; pointer-events: none; }
 .presenter-notes { flex: 1; min-height: 0; overflow: auto; padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-raised); box-shadow: 0 0 0 1px var(--color-border); font-size: var(--text-md); line-height: 1.6; }
 .presenter-nav { display: flex; gap: var(--space-2); }
 .presenter-nav .btn { flex: 1; justify-content: center; }
+
+/* ---------- design system from the project, Office text ---------- */
+.brand-ready {
+  position: fixed; right: var(--space-5); bottom: calc(var(--space-5) + 64px); z-index: var(--z-toast);
+  display: flex; gap: var(--space-3); align-items: flex-start; width: min(380px, calc(100vw - 2 * var(--space-5)));
+  padding: var(--space-3) var(--space-3-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg);
+  background: var(--color-surface-raised); box-shadow: var(--shadow-lg); font-size: var(--text-sm);
+  animation: toast-in var(--duration-base) var(--ease-emphasized);
+}
+.brand-ready strong { display: block; font-weight: var(--weight-semibold); }
+.brand-ready p { margin: var(--space-1) 0 var(--space-2); }
+.brand-ready.error .toast-ico { color: var(--color-danger); }
+.brand-ready .row.tight { gap: var(--space-1-5); }
+.office-text { align-self: stretch; width: 100%; overflow: auto; padding: var(--space-4) var(--space-5); background: var(--color-surface-raised); }
+.office-section + .office-section { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--color-border-subtle); }
+.office-section h3 { margin: 0 0 var(--space-2); }
+.office-body { margin: 0; white-space: pre-wrap; font-family: var(--font-sans); font-size: var(--text-sm); line-height: 1.6; tab-size: 4; }

@@ -22,6 +22,7 @@ mod palette;
 mod presenter;
 mod preview_comments;
 mod preview_tools;
+mod project_actions;
 mod projects;
 mod settings_page;
 mod shortcuts;

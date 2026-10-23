@@ -7,6 +7,8 @@
 //! - `POST /api/projects/:id/archive/selection`: ZIP of the chosen files.
 //! - `PUT  /api/projects/:id/content/*path`: overwrite an existing file at
 //!   exactly that path (HTML gets a manual version).
+//! - `GET  /api/projects/:id/office-text/*path`: text of a docx, pptx or
+//!   xlsx, per slide or sheet.
 //! - `POST /api/projects/:id/save-template`: an HTML file, bundled to one
 //!   file, becomes a user design template (`<data>/design-templates`).
 
@@ -20,7 +22,7 @@ use axum::response::Response;
 use axum::routing::{delete, get, post, put};
 use od_contracts::{
     ArchiveSelectionRequest, CreateFolderRequest, FileResponse, FolderResponse, FoldersResponse,
-    ProjectKind, SaveTemplateRequest, SaveTemplateResponse,
+    OfficeSection, OfficeTextResponse, ProjectKind, SaveTemplateRequest, SaveTemplateResponse,
 };
 use od_export::archive::{sanitize_filename, write_zip};
 use serde::Deserialize;
@@ -42,6 +44,55 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/projects/{id}/save-template", post(save_template))
         .route("/api/projects/{id}/content/{*path}", put(replace_content))
+        .route("/api/projects/{id}/office-text/{*path}", get(office_text))
+}
+
+/// Largest Office file read for its text.
+const MAX_OFFICE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// `GET office-text/<path>`: text of a Word, PowerPoint or Excel file, per
+/// slide or sheet, for the Studio viewer (no preview otherwise).
+async fn office_text(
+    State(state): State<AppState>,
+    Path((id, path)): Path<(String, String)>,
+) -> ApiResult<ApiJson<OfficeTextResponse>> {
+    if od_export::office::OfficeKind::of(&path).is_none() {
+        return Err(ApiErr::bad_request(
+            "not an Office file (docx, pptx or xlsx)",
+        ));
+    }
+    let (file, bytes) = state
+        .blocking(move |s| {
+            let (file, _) = s.stat_file(&id, &path)?;
+            if file.size > MAX_OFFICE_BYTES {
+                return Err(od_store::StoreError::BadRequest(
+                    "file too large to read".to_owned(),
+                ));
+            }
+            s.read_file(&id, &path)
+        })
+        .await?;
+    let (kind, sections) =
+        tokio::task::spawn_blocking(move || od_export::office::extract(&file.name, &bytes))
+            .await
+            .map_err(|e| ApiErr::internal(e.to_string()))?
+            .map_err(|e| {
+                ApiErr::new(
+                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                    od_contracts::ErrorCode::ValidationFailed,
+                    e.to_string(),
+                )
+            })?;
+    Ok(ApiJson(OfficeTextResponse {
+        kind: kind.as_str().to_owned(),
+        sections: sections
+            .into_iter()
+            .map(|s| OfficeSection {
+                title: s.title,
+                text: s.text,
+            })
+            .collect(),
+    }))
 }
 
 #[derive(Debug, Deserialize)]

@@ -344,3 +344,52 @@ async fn content_is_replaced_at_the_exact_path() {
         .unwrap();
     assert!(res.status().is_client_error());
 }
+
+#[tokio::test]
+async fn office_files_show_their_text() {
+    use std::io::Write;
+    let tmp = tempfile::tempdir().unwrap();
+    let app = router(state(tmp.path()));
+    let id = project(&app, &[]).await;
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    zip.start_file(
+        "ppt/slides/slide1.xml",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
+    zip.write_all(b"<p:sld><a:p><a:r><a:t>Hello tea</a:t></a:r></a:p></p:sld>")
+        .unwrap();
+    let pptx = zip.finish().unwrap().into_inner();
+    let dir = tmp.path().join(format!("data/projects/{id}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("Pitch deck.pptx"), &pptx).unwrap();
+    std::fs::write(dir.join("broken.docx"), b"not a zip").unwrap();
+    std::fs::write(dir.join("notes.txt"), b"x").unwrap();
+
+    let (s, b) = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{id}/office-text/Pitch%20deck.pptx"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{}", String::from_utf8_lossy(&b));
+    assert_eq!(
+        json_of(&b),
+        json!({"kind": "presentation", "sections": [{"title": "1", "text": "Hello tea"}]})
+    );
+    for (path, status) in [
+        ("broken.docx", StatusCode::UNPROCESSABLE_ENTITY),
+        ("notes.txt", StatusCode::BAD_REQUEST),
+        ("missing.xlsx", StatusCode::NOT_FOUND),
+    ] {
+        let (s, _) = call(
+            &app,
+            "GET",
+            &format!("/api/projects/{id}/office-text/{path}"),
+            None,
+        )
+        .await;
+        assert_eq!(s, status, "{path}");
+    }
+}

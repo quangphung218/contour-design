@@ -41,3 +41,18 @@ pub struct SaveTemplateResponse {
     /// Id of the new user design template.
     pub id: String,
 }
+
+/// `GET office-text/<path>`: the readable text of a docx, pptx or xlsx.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OfficeTextResponse {
+    /// `document`, `presentation` or `spreadsheet`.
+    pub kind: String,
+    pub sections: Vec<OfficeSection>,
+}
+
+/// A slide, a sheet, or the whole document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OfficeSection {
+    pub title: String,
+    pub text: String,
+}

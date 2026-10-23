@@ -12,7 +12,7 @@ use crate::file_tree as ft;
 use crate::i18n::{T, t, tf};
 use crate::markdown;
 use leptos::prelude::*;
-use od_contracts::{FileKind, ProjectFile};
+use od_contracts::{FileKind, OfficeTextResponse, ProjectFile};
 
 /// Quiet time before the editor saves, ms.
 const SAVE_DELAY_MS: u32 = 800;
@@ -345,6 +345,10 @@ pub fn DocView(ctx: StudioCtx, file: ProjectFile) -> impl IntoView {
         FileKind::Pdf => view! { <iframe class="doc-frame" data-testid="doc-frame" title=file.name.clone() src=url></iframe> }.into_any(),
         FileKind::Video => view! { <video class="doc-media" data-testid="doc-video" controls src=url></video> }.into_any(),
         FileKind::Audio => view! { <audio class="doc-audio" data-testid="doc-audio" controls src=url></audio> }.into_any(),
+        FileKind::Document | FileKind::Presentation | FileKind::Spreadsheet => view! {
+            <OfficeText ctx=ctx path=file.path.clone()/>
+        }
+        .into_any(),
         _ => view! {
             <div class="empty-state" data-testid="doc-unavailable">
                 <span class="empty-icon">{icon(Glyph::File)}</span>
@@ -364,6 +368,53 @@ pub fn DocView(ctx: StudioCtx, file: ProjectFile) -> impl IntoView {
             </div>
             <div class="doc-body">{body}</div>
         </div>
+    }
+}
+
+/// Text of a Word, PowerPoint or Excel file, per slide or sheet; files
+/// that cannot be read say so and keep Download and Open.
+#[component]
+fn OfficeText(ctx: StudioCtx, path: String) -> impl IntoView {
+    let url = format!("{}/office-text/{}", ctx.base(), api::file_path(&path));
+    let text = LocalResource::new(move || {
+        let url = url.clone();
+        async move {
+            api::get::<OfficeTextResponse>(&url)
+                .await
+                .map_err(|e| e.to_string())
+        }
+    });
+    move || match text.get() {
+        None => view! { <div class="skeleton code-skeleton"></div> }.into_any(),
+        Some(Err(e)) => view! {
+            <div class="empty-state" data-testid="doc-unavailable">
+                <span class="empty-icon">{icon(Glyph::File)}</span>
+                <strong>{t(T::PreviewUnavailable)}</strong>
+                <p>{t(T::PreviewUnavailableHint)}</p>
+                <p class="subtle">{e}</p>
+            </div>
+        }
+        .into_any(),
+        Some(Ok(doc)) => {
+            let label = match doc.kind.as_str() {
+                "presentation" => T::SlideN,
+                "spreadsheet" => T::SheetN,
+                _ => T::KindWordDoc,
+            };
+            let empty = doc.sections.iter().all(|s| s.text.trim().is_empty());
+            view! {
+                <div class="office-text" data-testid="office-text">
+                    {empty.then(|| view! { <p class="muted">{t(T::OfficeNoText)}</p> })}
+                    {doc.sections.into_iter().map(|s| view! {
+                        <section class="office-section">
+                            {(!s.title.is_empty()).then(|| view! { <h3 class="eyebrow">{tf(label, &[&s.title])}</h3> })}
+                            <pre class="office-body">{s.text}</pre>
+                        </section>
+                    }).collect_view()}
+                </div>
+            }
+            .into_any()
+        }
     }
 }
 
