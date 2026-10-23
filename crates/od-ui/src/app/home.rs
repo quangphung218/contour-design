@@ -390,6 +390,22 @@ pub fn Home() -> impl IntoView {
                 </div>
                 <div class="composer-foot">
                     <NewDesignSystem systems=systems selected=design_system/>
+                    <button class="btn ghost small" data-testid="action-create-plugin" on:click=move |_| {
+                        let plugin = sources.plugin("od-plugin-authoring");
+                        let mut text = String::new();
+                        if let Some(c) = plugin {
+                            text.push_str(&crate::mention::token(&c));
+                            super::composer::stage(context, c);
+                        }
+                        text.push_str(t(T::CreatePluginPrompt));
+                        brief.set(text);
+                        if let Some(el) = brief_ref.get_untracked() {
+                            let _ = el.focus();
+                        }
+                    }>
+                        {icon(Glyph::Plugin)}{t(T::CreatePlugin)}
+                    </button>
+                    <FromFolder/>
                     {move || working_dir.get().map(|d| {
                         let name = d.rsplit('/').next().unwrap_or(&d).to_owned();
                         view! {
@@ -778,6 +794,70 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>) -> impl IntoView {
             </button>
         </Show>
         <p class="menu-note subtle">{t(T::WorkingDirHint)}</p>
+    }
+}
+
+/// "From folder": a project over an existing folder (the files stay where
+/// they are), then the Studio.
+#[component]
+fn FromFolder() -> impl IntoView {
+    let navigate = use_navigate();
+    let typing = RwSignal::new(None::<String>);
+    let error = RwSignal::new(None::<String>);
+    let import = move |dir: String| {
+        let navigate = navigate.clone();
+        leptos::task::spawn_local(async move {
+            match api::post::<_, CreateProjectResponse>(
+                "/api/import/folder",
+                &serde_json::json!({ "baseDir": dir }),
+            )
+            .await
+            {
+                Ok(r) => navigate(&format!("/projects/{}", r.project.id), Default::default()),
+                Err(e) => error.set(Some(e.to_string())),
+            }
+        });
+    };
+    let import_pick = import.clone();
+    let import_typed = import.clone();
+    view! {
+        <span class="menu-wrap">
+            <button class="btn ghost small" data-testid="action-from-folder"
+                aria-expanded=move || typing.with(Option::is_some).to_string()
+                on:click=move |_| {
+                    if desktop::is_desktop() {
+                        let import = import_pick.clone();
+                        leptos::task::spawn_local(async move {
+                            if let Some(d) = desktop::pick_folder().await {
+                                import(d);
+                            }
+                        });
+                    } else {
+                        typing.update(|v| *v = if v.is_some() { None } else { Some(String::new()) });
+                    }
+                }>
+                {icon(Glyph::FolderOpen)}{t(T::FromFolder)}
+            </button>
+            {move || typing.get().map(|value| {
+                let import = import_typed.clone();
+                let import_key = import_typed.clone();
+                view! {
+                    <div class="popover left from-folder" data-testid="from-folder-form">
+                        <input class="input small mono" data-testid="from-folder-path" placeholder=t(T::FolderPathPlaceholder)
+                            aria-label=t(T::FolderPathLabel) prop:value=value
+                            on:input=move |ev| typing.set(Some(event_target_value(&ev)))
+                            on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" {
+                                import_key(typing.get_untracked().unwrap_or_default().trim().to_owned());
+                            }/>
+                        <button class="btn small primary" data-testid="from-folder-open"
+                            on:click=move |_| import(typing.get_untracked().unwrap_or_default().trim().to_owned())>
+                            {t(T::OpenFolder)}
+                        </button>
+                        {move || error.get().map(|e| view! { <p class="error-text small">{e}</p> })}
+                    </div>
+                }
+            })}
+        </span>
     }
 }
 

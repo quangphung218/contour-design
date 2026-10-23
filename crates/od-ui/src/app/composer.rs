@@ -320,6 +320,16 @@ impl Sources {
         out
     }
 
+    /// A listed plugin by id.
+    #[must_use]
+    pub fn plugin(self, id: &str) -> Option<Candidate> {
+        self.plugins
+            .get_untracked()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|c| c.id == id)
+    }
+
     fn mcp_ids(self) -> Vec<String> {
         self.of(MentionKind::Mcp)
             .into_iter()

@@ -169,6 +169,13 @@ try {
   await page.keyboard.press('Escape');
   results.workingDir = 'ok';
 
+  // 4b. "Create plugin" seeds the brief with the plugin authoring plugin.
+  await page.getByTestId('action-create-plugin').click();
+  assert.equal(await brief.inputValue(), '@od-plugin-authoring Create a plugin for: ');
+  await page.locator('[data-testid="context-chip"][data-kind="plugin"]', { hasText: 'od-plugin-authoring' }).locator('.chip-x').click();
+  assert.equal(await page.getByTestId('context-chip').count(), 0);
+  results.createPlugin = 'ok';
+
   // 5. @ mention a skill from the palette (keyboard) and a plugin from "+".
   await brief.fill('');
   await brief.pressSequentially('Clone it with @web-cl');
@@ -435,6 +442,16 @@ try {
   await page.keyboard.press('Escape');
   await composer.fill('');
   results.linkedFolders = 'ok';
+
+  // 17b. "From folder" on Home opens a project over an existing folder.
+  await page.goto(BASE + '/');
+  await page.getByTestId('action-from-folder').click();
+  await page.getByTestId('from-folder-path').fill(join(work, 'site'));
+  await page.getByTestId('from-folder-open').click();
+  await page.waitForURL((u) => u.pathname.startsWith('/projects/') && !u.pathname.endsWith(projectId));
+  const imported = (await api(`/api/projects/${page.url().split('/projects/')[1]}`)).project;
+  assert.equal(imported.metadata.baseDir, join(work, 'site'));
+  results.fromFolder = 'ok';
 
   // 18. Dark screenshots of the new pieces, then Vietnamese strings.
   await page.emulateMedia({ colorScheme: 'dark' });

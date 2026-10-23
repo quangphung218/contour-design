@@ -952,3 +952,5 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .example-prompt span { max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quote-btn { position: fixed; z-index: var(--z-popover); box-shadow: var(--shadow-md); animation: pop-in var(--duration-fast) var(--ease-emphasized); }
 .media-notes { width: 220px; height: var(--control-sm); }
+.from-folder { flex-direction: row; flex-wrap: wrap; gap: var(--space-1-5); padding: var(--space-2); min-width: 340px; }
+.from-folder .input { flex: 1; min-width: 0; }

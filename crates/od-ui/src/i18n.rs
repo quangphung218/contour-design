@@ -680,6 +680,9 @@ messages! {
     Tool3dPrompt => "Add an interactive Three.js scene (particles, depth or a product model) where it strengthens the page.", "Thêm một cảnh Three.js tương tác (hạt, chiều sâu hoặc mô hình sản phẩm) ở chỗ làm trang mạnh hơn.";
     QuoteSelection => "Quote", "Trích dẫn";
     MediaNotes => "Style notes", "Ghi chú phong cách";
+    CreatePlugin => "Create plugin", "Tạo plugin";
+    CreatePluginPrompt => "Create a plugin for: ", "Tạo một plugin cho: ";
+    FromFolder => "From folder", "Từ thư mục";
 }
 
 /// The current language's text for `key`.
