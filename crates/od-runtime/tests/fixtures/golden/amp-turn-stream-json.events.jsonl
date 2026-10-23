@@ -1,0 +1,8 @@
+{"type":"status","label":"initializing","sessionId":"T-amp-1"}
+{"type":"text_delta","delta":"Creating the page."}
+{"type":"tool_use","id":"toolu_1","name":"create_file","input":{"path":"/proj/index.html","content":"<html></html>"}}
+{"type":"turn_end","stopReason":"tool_use"}
+{"type":"tool_result","toolUseId":"toolu_1","content":"Created","isError":false}
+{"type":"text_delta","delta":"Done."}
+{"type":"turn_end","stopReason":"end_turn"}
+{"type":"usage","usage":null,"durationMs":0}

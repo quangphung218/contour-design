@@ -562,7 +562,7 @@ async fn prepare_and_launch(
         .await?;
 
     let resumed = prepared.resume_session_id.is_some();
-    let mcp = crate::routes::platform::mcp::for_agent(state, def.stream_format, run.id()).await;
+    let mcp = crate::routes::platform::mcp::for_agent(state, def.mcp, run.id()).await;
     let engine = &state.runs.engine;
     let launched = {
         // Held across the check and `launch` so a concurrent cancel either
@@ -979,6 +979,11 @@ pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
         .and_then(|v| od_runtime::byok::ByokConfig::from_value(&v))
         .is_some();
     ApiJson(AgentsResponse {
-        agents: od_runtime::detect::detect_all(path, byok).await,
+        agents: od_runtime::detect::detect_all_in(
+            path,
+            state.runs.engine.config().base_env.clone(),
+            byok,
+        )
+        .await,
     })
 }

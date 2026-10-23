@@ -747,11 +747,46 @@ fn QueueView(
     }
 }
 
-/// Provider display names and where their keys come from.
-const PROVIDERS: [(&str, &str, &str); 3] = [
+/// Provider display names and default base URLs, as the daemon's
+/// `od_media::Provider::ALL` (a save sends every one: `PUT
+/// /api/media/config` replaces the stored map).
+pub const PROVIDERS: [(&str, &str, &str); 15] = [
     ("openai", "OpenAI", "https://api.openai.com/v1"),
     ("fal", "fal.ai", "https://queue.fal.run"),
     ("elevenlabs", "ElevenLabs", "https://api.elevenlabs.io"),
+    // Track C3 providers.
+    (
+        "volcengine",
+        "Volcengine Ark (Doubao)",
+        "https://ark.cn-beijing.volces.com/api/v3",
+    ),
+    ("grok", "xAI Grok Imagine", "https://api.x.ai/v1"),
+    (
+        "nanobanana",
+        "Nano Banana",
+        "https://generativelanguage.googleapis.com",
+    ),
+    (
+        "imagerouter",
+        "ImageRouter",
+        "https://api.imagerouter.io/v1/openai",
+    ),
+    ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1"),
+    (
+        "custom-image",
+        "Custom Image API",
+        "http://127.0.0.1:8000/v1",
+    ),
+    (
+        "leonardo",
+        "Leonardo.ai",
+        "https://cloud.leonardo.ai/api/rest/v1",
+    ),
+    ("minimax", "MiniMax", "https://api.minimaxi.chat/v1"),
+    ("fishaudio", "FishAudio", "https://api.fish.audio"),
+    ("senseaudio", "SenseAudio", "https://api.senseaudio.cn"),
+    ("aihubmix", "AIHubMix", "https://aihubmix.com/v1"),
+    ("tavily", "Tavily Search", "https://api.tavily.com"),
 ];
 
 #[component]

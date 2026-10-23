@@ -1,3 +1,4 @@
+pub mod agent_setup;
 pub mod agent_w3;
 pub mod c2;
 pub mod chat_ops;

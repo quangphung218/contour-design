@@ -1,0 +1,7 @@
+Aider v0.86.1
+Model: deepseek/deepseek-chat with diff edit format
+Here is the page.
+<artifact identifier="landing" type="text/html" title="Landing">
+<!doctype html><html><body><h1>Hi</h1></body></html>
+</artifact>
+Tokens: 2.1k sent, 310 received.

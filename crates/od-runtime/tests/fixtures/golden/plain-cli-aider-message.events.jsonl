@@ -1,0 +1,7 @@
+{"type":"text_delta","delta":"Aider v0.86.1\n"}
+{"type":"text_delta","delta":"Model: deepseek/deepseek-chat with diff edit format\n"}
+{"type":"text_delta","delta":"Here is the page.\n"}
+{"type":"text_delta","delta":"<artifact identifier=\"landing\" type=\"text/html\" title=\"Landing\">\n"}
+{"type":"text_delta","delta":"<!doctype html><html><body><h1>Hi</h1></body></html>\n"}
+{"type":"text_delta","delta":"</artifact>\n"}
+{"type":"text_delta","delta":"Tokens: 2.1k sent, 310 received.\n"}

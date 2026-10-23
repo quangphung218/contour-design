@@ -1278,6 +1278,13 @@ messages! {
     ShortcutNextSlide => "Next slide", "Slide sau";
     ShortcutPrevSlide => "Previous slide", "Slide trước";
     ShortcutFirstLast => "First or last slide", "Slide đầu hoặc cuối";
+    // Track C3-runtimes: DeepSeek Harness connection setup.
+    DshSetupTitle => "Connect DeepSeek Harness", "Kết nối DeepSeek Harness";
+    DshSetupDescription => "Open Design will install its connection component through the dsh CLI on this computer.", "Open Design sẽ cài thành phần kết nối của mình qua dsh CLI trên máy này.";
+    DshSetupNote => "Only the Open Design profile component is installed. DeepSeek Harness remains user-installed and user-managed.", "Chỉ cài thành phần profile của Open Design. DeepSeek Harness vẫn do người dùng cài và quản lý.";
+    DshSetupConfirm => "Install and select", "Cài và chọn";
+    DshSetupInstalling => "Installing…", "Đang cài…";
+    DshSetupRequired => "Connection setup required", "Cần thiết lập kết nối";
     // Track B3-chat: Home composer, chat composer, transcript actions.
     HomeTitleCreate => "Let’s create {0}", "Cùng tạo {0}";
     HomeTitleWords => "prototypes,slide decks,documents", "prototype,slide deck,tài liệu";

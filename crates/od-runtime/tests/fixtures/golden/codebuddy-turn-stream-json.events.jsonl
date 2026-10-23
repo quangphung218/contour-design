@@ -1,0 +1,7 @@
+{"type":"status","label":"initializing","model":"claude-4.5-sonnet","sessionId":"cb-sess-1"}
+{"type":"thinking_delta","delta":"Small page."}
+{"type":"text_delta","delta":"Writing index.html."}
+{"type":"tool_use","id":"tu_1","name":"Write","input":{"file_path":"/proj/index.html","content":"<html></html>"}}
+{"type":"turn_end","stopReason":"tool_use"}
+{"type":"tool_result","toolUseId":"tu_1","content":"File created","isError":false}
+{"type":"usage","usage":{"input_tokens":50,"output_tokens":20},"costUsd":0.002,"durationMs":0}

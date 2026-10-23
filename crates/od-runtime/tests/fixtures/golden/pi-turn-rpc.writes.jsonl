@@ -1,0 +1,4 @@
+{"id":1,"type":"prompt","message":"Build a landing page"}
+{"id":2,"type":"get_state"}
+{"type":"extension_ui_response","id":"ui-1","confirmed":true}
+{"type":"extension_ui_response","id":"ui-2","value":"Keep"}

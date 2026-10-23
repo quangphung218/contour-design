@@ -128,6 +128,7 @@ fn limits() -> Limits {
     Limits {
         fal_poll_interval: Duration::from_millis(10),
         fal_max_poll: Duration::from_secs(5),
+        ..Limits::default()
     }
 }
 

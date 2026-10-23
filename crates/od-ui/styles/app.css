@@ -325,6 +325,18 @@ a.project-name:hover { color: var(--color-accent-text); }
 .agent-card.compact .agent-icon .ico { width: 15px; height: 15px; }
 .agent-card.compact .agent-name { font-weight: var(--weight-medium); font-size: var(--text-sm); color: var(--color-text-secondary); }
 .agent-card.compact .agent-detail { font-size: var(--text-2xs); }
+/* Track C3: an installed agent whose connection component is missing. */
+.agent-card.compact.needs-setup { cursor: pointer; border-style: dashed; border-color: var(--color-border-strong); }
+.agent-card.compact.needs-setup .agent-icon { color: var(--color-warning); }
+.agent-card.compact.needs-setup .agent-detail { color: var(--color-warning); }
+.dsh-setup-note {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
 .agent-skeleton { height: 64px; border-radius: var(--radius-lg); }
 
 /* ---------- settings ---------- */

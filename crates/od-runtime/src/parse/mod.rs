@@ -1,26 +1,32 @@
 //! Stream parsers: one stdout line in, zero or more [`AgentEvent`]s out.
 //!
-//! Protocol runtimes (ACP, dsh) are parsers too: they also queue the lines
+//! Protocol runtimes (ACP, dsh, Pi) are parsers too: they also queue the lines
 //! the engine writes back to the agent's stdin, say how to ask the agent to
 //! stop, and say when the prompt is complete.
 
 mod acp;
+mod antigravity;
 mod claude;
 mod codex;
 mod copilot;
 mod cursor;
 mod dsh;
 mod opencode;
+mod pi;
 mod plain;
+mod qoder;
 
 pub use acp::AcpSession;
+pub use antigravity::AntigravityParser;
 pub use claude::ClaudeParser;
 pub use codex::CodexParser;
 pub use copilot::CopilotParser;
 pub use cursor::CursorParser;
 pub use dsh::DshSession;
 pub use opencode::OpenCodeParser;
+pub use pi::{PI_PARENT_SESSION_FAILED, PiSession};
 pub use plain::PlainParser;
+pub use qoder::QoderParser;
 
 use crate::def::{PermissionMode, StreamFormat};
 use od_contracts::AgentEvent;
@@ -87,6 +93,9 @@ pub fn parser_for(format: StreamFormat, ctx: &SessionContext) -> Box<dyn StreamP
         StreamFormat::CursorStreamJson => Box::new(CursorParser::default()),
         StreamFormat::CopilotJson => Box::new(CopilotParser),
         StreamFormat::DshJsonl => Box::new(DshSession::new(ctx.clone())),
+        StreamFormat::QoderStreamJson => Box::new(QoderParser::default()),
+        StreamFormat::PiRpc => Box::new(PiSession::new(ctx.clone())),
+        StreamFormat::AntigravityJson => Box::new(AntigravityParser::default()),
         StreamFormat::Plain | StreamFormat::Byok => Box::new(PlainParser),
     }
 }

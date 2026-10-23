@@ -8,6 +8,7 @@ mod lint_cmd;
 mod mcp_cmd;
 mod media_cmd;
 mod plugin_cmd;
+mod research_cmd;
 
 use anyhow::Context;
 use base64::Engine;
@@ -71,6 +72,9 @@ enum Command {
     /// List, inspect, apply and validate plugins.
     #[command(subcommand)]
     Plugin(plugin_cmd::PluginCommand),
+    /// Web research (Tavily) with the key from Settings ▸ Media.
+    #[command(subcommand)]
+    Research(research_cmd::ResearchCommand),
 }
 
 #[derive(Debug, Subcommand)]
@@ -221,6 +225,9 @@ fn main() -> ExitCode {
         }
         Some(Command::Plugin(cmd)) => {
             Client::new(&cli.daemon_url).and_then(|c| plugin_cmd::run(&c, cmd, cli.json))
+        }
+        Some(Command::Research(cmd)) => {
+            Client::new(&cli.daemon_url).and_then(|c| research_cmd::run(&c, cmd, cli.json))
         }
     };
     match result {

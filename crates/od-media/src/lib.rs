@@ -1,14 +1,18 @@
 //! Media generation (spec 1.5, 4.2): images, video and audio from OpenAI,
-//! fal.ai and ElevenLabs with the user's own keys. The daemon writes the
+//! fal.ai, ElevenLabs and the providers of [`extra`] with the user's own
+//! keys, plus Tavily research ([`research`]). The daemon writes the
 //! bytes into the project; this crate only talks to providers and keeps
 //! `media-config.json`. Nothing is called without a key the user set.
 
 pub mod config;
+pub mod extra;
 pub mod provider;
+pub mod research;
 pub mod tasks;
 
 pub use config::{ConfigFile, Credentials, EnvLookup, KeySource, process_env};
 pub use provider::{Job, Limits, MediaError, ModelDef, Provider, Rendered, Surface, find_model};
+pub use research::{ResearchError, ResearchFindings, ResearchRequest};
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -42,7 +46,9 @@ pub struct Generated {
     pub bytes: Vec<u8>,
     pub model: String,
     pub surface: Surface,
-    pub provider: Provider,
+    /// Provider id (`openai`, `custom-image`, or the pending provider a
+    /// placeholder stood in for).
+    pub provider: &'static str,
     pub note: String,
 }
 
@@ -86,19 +92,45 @@ pub async fn generate(
     req: &GenerateRequest,
     limits: Limits,
 ) -> Result<Generated, MediaError> {
-    let def = find_model(req.model.trim(), req.surface)
-        .ok_or_else(|| MediaError::BadRequest(format!("unknown media model {:?}", req.model)))?;
-    let creds = config.credentials(def.provider, env);
+    let model = req.model.trim();
     let job = Job {
         surface: req.surface,
-        model: req.model.trim().to_owned(),
+        model: model.to_owned(),
         prompt: req.prompt.trim().to_owned(),
         aspect: req.aspect.clone(),
         length: req.length,
         duration: req.duration,
         voice: req.voice.clone(),
     };
-    let rendered = provider::render(http, def, &job, &creds, limits).await?;
+    let (rendered, provider) = match find_model(model, req.surface) {
+        Some(def) => render_or_stub(http, config, env, def, &job, limits).await?,
+        None => {
+            let pending = provider::PENDING_MODELS
+                .iter()
+                .find(|(id, _, surface)| *id == model && *surface == req.surface);
+            match pending {
+                Some((_, provider, _)) if limits.allow_stubs => (
+                    extra::stub(
+                        req.surface,
+                        model,
+                        &format!("provider '{provider}' integration pending"),
+                    ),
+                    *provider,
+                ),
+                Some(_) => {
+                    return Err(MediaError::BadRequest(format!(
+                        "provider not configured: {model}. Add your API key in Settings → Media to enable real generation."
+                    )));
+                }
+                None => {
+                    return Err(MediaError::BadRequest(format!(
+                        "unknown media model {:?}",
+                        req.model
+                    )));
+                }
+            }
+        }
+    };
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis());
@@ -113,9 +145,56 @@ pub async fn generate(
         bytes: rendered.bytes,
         model: job.model,
         surface: req.surface,
-        provider: def.provider,
+        provider,
         note: rendered.note,
     })
+}
+
+/// The provider call for `def`, or a placeholder in its place when it
+/// failed and [`Limits::allow_stubs`] is on.
+async fn render_or_stub(
+    http: &reqwest::Client,
+    config: &ConfigFile,
+    env: &EnvLookup,
+    def: ModelDef,
+    job: &Job,
+    limits: Limits,
+) -> Result<(Rendered, &'static str), MediaError> {
+    let mut creds = config.credentials(def.provider, env);
+    if def.provider == Provider::MiniMax && def.surface == Surface::Image {
+        // Image generation is on another MiniMax host than speech.
+        creds.base_url = env("OD_MINIMAX_IMAGE_BASE_URL").filter(|u| !u.trim().is_empty());
+    }
+    // A Custom Image API that names this OpenAI model takes it over.
+    let custom = (def.provider == Provider::OpenAi && def.surface == Surface::Image)
+        .then(|| config.credentials(Provider::CustomImage, env))
+        .filter(|c| extra::custom_image_overrides(c, def));
+    let (result, provider) = match custom {
+        Some(c) => (
+            extra::custom_image(http, def, job, &c).await,
+            Provider::CustomImage,
+        ),
+        None => (
+            provider::render(http, def, job, &creds, limits).await,
+            def.provider,
+        ),
+    };
+    match result {
+        Ok(r) => Ok((r, provider.id())),
+        Err(e) if limits.allow_stubs => {
+            tracing::warn!(provider = provider.id(), model = def.id, error = %e, "media provider failed; writing a placeholder");
+            let mut stub = extra::stub(def.surface, def.id, "placeholder");
+            stub.note = format!("[stub] [{} error → stub] {e}", provider.id());
+            Ok((stub, provider.id()))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// `OD_MEDIA_ALLOW_STUBS` is `1` or `true`.
+#[must_use]
+pub fn stubs_allowed(env: &EnvLookup) -> bool {
+    env("OD_MEDIA_ALLOW_STUBS").is_some_and(|v| v == "1" || v == "true")
 }
 
 /// `GET /api/media/models`: the catalogue with each provider's state.
@@ -130,7 +209,7 @@ pub fn models_json(config: &ConfigFile, env: &EnvLookup) -> Value {
             })
         })
         .collect();
-    json!({ "providers": providers, "models": provider::MODELS })
+    json!({ "providers": providers, "models": provider::all_models().collect::<Vec<_>>() })
 }
 
 #[cfg(test)]

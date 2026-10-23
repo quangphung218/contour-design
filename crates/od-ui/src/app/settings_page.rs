@@ -16,26 +16,7 @@ use serde_json::{Map, Value, json};
 /// Longest global rules, as the original.
 const MAX_RULES: usize = 5000;
 
-/// Built-in model choices per agent (the original's fallback lists);
-/// anything else is typed.
-fn models_for(agent: &str) -> &'static [&'static str] {
-    match agent {
-        "claude" => &["default", "opus", "sonnet", "haiku"],
-        "codex" => &["default", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
-        "opencode" => &["default", "anthropic/claude-sonnet-4-6", "openai/gpt-5.5"],
-        _ => &["default"],
-    }
-}
-
-/// Reasoning effort values the agent accepts (empty: no picker).
-fn reasoning_for(agent: &str) -> &'static [&'static str] {
-    match agent {
-        "codex" => &[
-            "default", "none", "minimal", "low", "medium", "high", "xhigh",
-        ],
-        _ => &[],
-    }
-}
+use crate::models::{models_for, reasoning_for};
 
 /// Service tiers the agent accepts, `(value, label)` (empty: no picker).
 fn tiers_for(agent: &str) -> &'static [(&'static str, T)] {
@@ -791,11 +772,7 @@ fn ProjectLocations() -> impl IntoView {
 /// Media providers: key, base URL and model per provider.
 #[component]
 fn MediaProviders() -> impl IntoView {
-    const PROVIDERS: [(&str, &str); 3] = [
-        ("openai", "OpenAI"),
-        ("fal", "Fal.ai"),
-        ("elevenlabs", "ElevenLabs"),
-    ];
+    let entries = super::media_page::PROVIDERS.map(|(id, label, _)| (id, label));
     let stored = RwSignal::new(Value::Null);
     let edits = RwSignal::new(Map::<String, Value>::new());
     let state = RwSignal::new(None::<Result<(), String>>);
@@ -829,7 +806,7 @@ fn MediaProviders() -> impl IntoView {
     };
     let save = move |clear: Option<&'static str>| {
         let mut providers = Map::new();
-        for (id, _) in PROVIDERS {
+        for (id, _) in entries {
             if clear == Some(id) {
                 continue;
             }
@@ -865,7 +842,7 @@ fn MediaProviders() -> impl IntoView {
     };
     view! {
         <div class="media-providers">
-            {PROVIDERS.into_iter().map(|(id, label)| view! {
+            {entries.into_iter().map(|(id, label)| view! {
                 <div class="card padded media-provider" data-testid="media-provider" data-provider=id>
                     <div class="row">
                         <strong class="grow">{label}</strong>
