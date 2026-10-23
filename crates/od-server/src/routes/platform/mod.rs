@@ -7,6 +7,7 @@
 //! loopback peer, name a loopback `Host`, and carry no `Origin` or a
 //! loopback one (no LAN origins, no API-token access from elsewhere).
 
+pub mod automations;
 pub mod terminals;
 
 use crate::error::ApiErr;
@@ -40,13 +41,13 @@ impl Platform {
 }
 
 /// Adds the platform routes to `api`.
-pub fn mount(api: Router<AppState>, _state: &AppState) -> Router<AppState> {
+pub fn mount(api: Router<AppState>, state: &AppState) -> Router<AppState> {
     let platform = Platform::from_env();
-    api.merge(
-        terminals::routes()
-            .layer(middleware::from_fn(loopback_only))
-            .layer(Extension(platform)),
-    )
+    let mut routes = terminals::routes().layer(Extension(platform));
+    if let Some(scheduler) = automations::scheduler(state) {
+        routes = routes.merge(automations::routes().layer(Extension(scheduler)));
+    }
+    api.merge(routes.layer(middleware::from_fn(loopback_only)))
 }
 
 fn is_loopback_name(host: &str) -> bool {
