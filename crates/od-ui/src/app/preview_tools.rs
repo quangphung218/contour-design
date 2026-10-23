@@ -126,20 +126,25 @@ pub fn rgb_to_hex(css: &str) -> Option<String> {
     (parts.len() == 3).then(|| format!("#{:02x}{:02x}{:02x}", parts[0], parts[1], parts[2]))
 }
 
-/// Groups overrides into one style edit per element.
+/// Groups overrides into one style edit per element, which the source
+/// takes only if its element has the tag and text the preview showed.
 pub fn style_edits(overrides: &[Override]) -> Vec<SourceEdit> {
-    let mut by_selector: BTreeMap<&str, BTreeMap<String, Option<String>>> = BTreeMap::new();
+    let mut by_selector: BTreeMap<&str, (&Override, BTreeMap<String, Option<String>>)> =
+        BTreeMap::new();
     for o in overrides {
         by_selector
             .entry(&o.selector)
-            .or_default()
+            .or_insert_with(|| (o, BTreeMap::new()))
+            .1
             .insert(o.prop.clone(), Some(o.value.clone()));
     }
     by_selector
         .into_iter()
-        .map(|(selector, style)| SourceEdit {
+        .map(|(selector, (first, style))| SourceEdit {
             selector: selector.to_owned(),
             style,
+            expect_tag: (!first.tag.is_empty()).then(|| first.tag.clone()),
+            expect_text: (!first.tag.is_empty()).then(|| first.text.clone()),
             ..SourceEdit::default()
         })
         .collect()
@@ -257,6 +262,14 @@ impl StudioCtx {
     }
 
     fn set_override(self, selector: &str, prop: &str, value: &str) {
+        let Some(el) = self
+            .tools
+            .inspected
+            .get_untracked()
+            .filter(|i| i.selector == selector && !i.missing)
+        else {
+            return;
+        };
         bridge::post_main(&pb::inspect_set(selector, prop, value));
         self.tools.overrides.update(|list| {
             list.retain(|o| !(o.selector == selector && o.prop == prop));
@@ -264,6 +277,8 @@ impl StudioCtx {
                 selector: selector.to_owned(),
                 prop: prop.to_owned(),
                 value: value.to_owned(),
+                tag: el.tag,
+                text: el.text,
             });
         });
     }
@@ -1099,6 +1114,8 @@ mod tests {
             selector: s.into(),
             prop: p.into(),
             value: v.into(),
+            tag: s.into(),
+            text: format!("{s} text"),
         };
         let edits = style_edits(&[
             o("h1", "color", "red"),
@@ -1110,6 +1127,8 @@ mod tests {
         assert_eq!(edits[0].style.len(), 2);
         assert_eq!(edits[0].style["color"].as_deref(), Some("red"));
         assert!(edits[0].text.is_none());
+        assert_eq!(edits[0].expect_tag.as_deref(), Some("h1"));
+        assert_eq!(edits[0].expect_text.as_deref(), Some("h1 text"));
     }
 
     #[test]

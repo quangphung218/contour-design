@@ -51,10 +51,16 @@ pub struct SourceEdit {
     /// New text of a text-only element.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
-    /// The element's text as the preview showed it before the edit. The
-    /// source element must still read the same, or the edit is refused.
+    /// The element's text as the preview showed it before the edit, without
+    /// the code of nested scripts and styles. The source element must still
+    /// read the same, or the edit is refused. A style edit may send only the
+    /// start of a long text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_text: Option<String>,
+    /// The element's tag as the preview showed it; the source element must
+    /// have it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_tag: Option<String>,
 }
 
 /// `POST /api/projects/:id/source-edits`.

@@ -5,9 +5,10 @@
 //!
 //! The browser's DOM is not the source: it adds implied `<html>`/`<body>`
 //! and runs author scripts. So an edit applies only when its selector hits
-//! exactly one source element, and a text edit only when that element is
-//! text-only and still reads what the preview showed. Anything else is
-//! refused rather than guessed.
+//! exactly one source element that still has the tag and reads the text
+//! the preview showed (`expect_tag`, `expect_text`), and a text edit only
+//! when that element is text-only. Anything else is refused rather than
+//! guessed.
 
 use lol_html::html_content::{ContentType, Element, TextChunk};
 use lol_html::{ElementContentHandlers, HtmlRewriter, Selector, Settings};
@@ -19,6 +20,9 @@ use std::cell::{Cell, RefCell};
 const RAW_TEXT_TAGS: [&str; 4] = ["script", "style", "template", "noscript"];
 /// Longest selector accepted (the bridge's paths stay far below).
 const MAX_SELECTOR_LEN: usize = 2048;
+/// A style edit's `expect_text` shorter than the element's text must be at
+/// least this long to count as its start (the bridge caps what it sends).
+const MIN_TEXT_PREFIX: usize = 64;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum PatchError {
@@ -32,6 +36,8 @@ pub enum PatchError {
     NotTextOnly,
     #[error("the source text changed since the preview loaded (found {found:?})")]
     TextMismatch { found: String },
+    #[error("the source element is a <{found}>, the preview's is not")]
+    TagMismatch { found: String },
     #[error("invalid style property {0:?}")]
     InvalidStyle(String),
     #[error("an edit needs a style change or new text")]
@@ -66,15 +72,25 @@ fn apply_edit(html: &str, edit: &SourceEdit) -> Result<String, PatchError> {
         check_style(prop, value.as_deref())?;
     }
     let target = locate(html, &edit.selector)?;
-    if edit.text.is_some() {
-        if target.descendants > 0 || RAW_TEXT_TAGS.contains(&target.tag.as_str()) {
-            return Err(PatchError::NotTextOnly);
-        }
-        if let Some(expected) = &edit.expect_text {
-            let found = normalize(&decode_entities(&target.text));
-            if found != normalize(expected) {
-                return Err(PatchError::TextMismatch { found });
-            }
+    if let Some(expected) = &edit.expect_tag
+        && !target.tag.eq_ignore_ascii_case(expected.trim())
+    {
+        return Err(PatchError::TagMismatch { found: target.tag });
+    }
+    if edit.text.is_some()
+        && (target.descendants > 0 || RAW_TEXT_TAGS.contains(&target.tag.as_str()))
+    {
+        return Err(PatchError::NotTextOnly);
+    }
+    if let Some(expected) = &edit.expect_text {
+        let found = normalize(&decode_entities(&target.text));
+        let expected = normalize(expected);
+        // A text edit replaces the whole text, so it must match whole.
+        let starts = edit.text.is_none()
+            && expected.chars().count() >= MIN_TEXT_PREFIX
+            && found.starts_with(&expected);
+        if found != expected && !starts {
+            return Err(PatchError::TextMismatch { found });
         }
     }
     rewrite(html, &target.selector, edit)
@@ -86,7 +102,8 @@ struct Target {
     selector: String,
     tag: String,
     descendants: usize,
-    /// Raw (entity-encoded) text inside the element.
+    /// Raw (entity-encoded) text inside the element, without the code of
+    /// nested `script`/`style`/… elements.
     text: String,
 }
 
@@ -97,20 +114,30 @@ fn parse(selector: &str) -> Result<Selector, PatchError> {
 }
 
 /// The bridge's selector, then the same path without the parts the browser
-/// may have implied (`html >`, then `head`/`body` right under it).
-fn candidates(selector: &str) -> Vec<String> {
+/// implied: `html >`, then `head`/`body` right under it, each dropped only
+/// when the source has no such element.
+fn candidates(html: &str, selector: &str) -> Result<Vec<String>, PatchError> {
     let mut out = vec![selector.to_owned()];
-    let mut rest = selector;
-    if let Some(r) = rest.strip_prefix("html > ") {
-        out.push(r.to_owned());
-        rest = r;
-        for implied in ["body:nth-of-type(1) > ", "head:nth-of-type(1) > "] {
-            if let Some(r) = rest.strip_prefix(implied) {
+    if let Some(rest) = selector.strip_prefix("html > ")
+        && !has_element(html, "html")?
+    {
+        out.push(rest.to_owned());
+        for (tag, implied) in [
+            ("body", "body:nth-of-type(1) > "),
+            ("head", "head:nth-of-type(1) > "),
+        ] {
+            if let Some(r) = rest.strip_prefix(implied)
+                && !has_element(html, tag)?
+            {
                 out.push(r.to_owned());
             }
         }
     }
-    out
+    Ok(out)
+}
+
+fn has_element(html: &str, tag: &str) -> Result<bool, PatchError> {
+    Ok(scan(html, tag)?.matches > 0)
 }
 
 fn locate(html: &str, selector: &str) -> Result<Target, PatchError> {
@@ -119,7 +146,7 @@ fn locate(html: &str, selector: &str) -> Result<Target, PatchError> {
         return Err(PatchError::InvalidSelector(selector.to_owned()));
     }
     let mut ambiguous = None;
-    for candidate in candidates(selector) {
+    for candidate in candidates(html, selector)? {
         let scan = scan(html, &candidate)?;
         match scan.matches {
             1 => return Ok(scan.target),
@@ -146,7 +173,9 @@ fn scan(html: &str, selector: &str) -> Result<Scan, PatchError> {
     let matches = Cell::new(0usize);
     let descendants = Cell::new(0usize);
     let tag = RefCell::new(String::new());
-    let text = RefCell::new(String::new());
+    // Text chunks of the target, and which of them are code: the handler of
+    // a nested raw-text element sees a chunk right after the target's.
+    let chunks = RefCell::new(Vec::<(String, bool)>::new());
     {
         let handlers = ElementContentHandlers::default()
             .element(|el: &mut Element<'_, '_>| {
@@ -158,19 +187,33 @@ fn scan(html: &str, selector: &str) -> Result<Scan, PatchError> {
             })
             .text(|t: &mut TextChunk<'_>| {
                 if matches.get() == 1 {
-                    text.borrow_mut().push_str(t.as_str());
+                    chunks.borrow_mut().push((t.as_str().to_owned(), false));
                 }
                 Ok(())
             });
+        let raw = || {
+            ElementContentHandlers::default().text(|_: &mut TextChunk<'_>| {
+                if matches.get() == 1
+                    && let Some(last) = chunks.borrow_mut().last_mut()
+                {
+                    last.1 = true;
+                }
+                Ok(())
+            })
+        };
         let nested = ElementContentHandlers::default().element(|_: &mut Element<'_, '_>| {
             if matches.get() == 1 {
                 descendants.set(descendants.get() + 1);
             }
             Ok(())
         });
-        let settings = Settings::new()
+        let mut settings = Settings::new()
             .append_element_content_handler((Cow::Owned(sel), handlers))
             .append_element_content_handler((Cow::Owned(inner), nested));
+        for code in RAW_TEXT_TAGS {
+            let sel = parse(&format!("{selector} {code}"))?;
+            settings = settings.append_element_content_handler((Cow::Owned(sel), raw()));
+        }
         let mut rewriter = HtmlRewriter::new(settings, |_: &[u8]| {});
         rewriter.write(html.as_bytes())?;
         rewriter.end()?;
@@ -181,7 +224,11 @@ fn scan(html: &str, selector: &str) -> Result<Scan, PatchError> {
             selector: selector.to_owned(),
             tag: tag.into_inner(),
             descendants: descendants.get(),
-            text: text.into_inner(),
+            text: chunks
+                .into_inner()
+                .into_iter()
+                .filter_map(|(t, code)| (!code).then_some(t))
+                .collect(),
         },
     })
 }
@@ -514,6 +561,94 @@ mod tests {
             ),
             Err(PatchError::Empty)
         );
+    }
+
+    fn styled(selector: &str, expect: &str) -> SourceEdit {
+        SourceEdit {
+            expect_text: Some(expect.to_owned()),
+            ..style_edit(selector, &[("color", Some("red"))])
+        }
+    }
+
+    #[test]
+    fn style_edit_refused_when_the_element_reads_differently() {
+        // A script prepended a <div>, so the browser's second <div> is the
+        // source's first: the path lands on #b, the text says #a.
+        let scripted = "<body><script>document.body.prepend(document.createElement('div'))\
+</script><div id=\"a\">A</div><div id=\"b\">B</div></body>";
+        let div2 = "html > body:nth-of-type(1) > div:nth-of-type(2)";
+        assert_eq!(
+            apply_edits(scripted, &[styled(div2, "A")]),
+            Err(PatchError::TextMismatch { found: "B".into() })
+        );
+        // `<p>` does not close in the source scan, so B and C nest in A.
+        let unclosed = "<p>A<p>B</p><p>C</p>";
+        let p2 = "html > body:nth-of-type(1) > p:nth-of-type(2)";
+        assert!(matches!(
+            apply_edits(unclosed, &[styled(p2, "B")]),
+            Err(PatchError::TextMismatch { .. })
+        ));
+        // The right element still takes the style.
+        let out = apply_edits(PAGE, &[styled(H1, "Tea & cake")]).unwrap();
+        assert!(
+            out.contains("<h1 id=\"title\" style=\"color: red; margin: 0\">"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn style_edit_checks_tag_and_reads_text_without_code() {
+        let edit = SourceEdit {
+            expect_tag: Some("h2".into()),
+            ..style_edit(H1, &[("color", Some("red"))])
+        };
+        assert_eq!(
+            apply_edits(PAGE, &[edit]),
+            Err(PatchError::TagMismatch { found: "h1".into() })
+        );
+        // The section's text leaves out its script, as the bridge does.
+        let page = "<section><h2>Hi</h2><script>let x = 1;</script><p>there</p></section>";
+        let section = "html > body:nth-of-type(1) > section:nth-of-type(1)";
+        assert_eq!(
+            apply_edits(page, &[styled(section, "Hithere")]).map(|_| ()),
+            Ok(())
+        );
+        // A long text may be sent capped; a short start is not enough.
+        let long = format!("<p>{}</p>", "word ".repeat(40));
+        let p1 = "html > body:nth-of-type(1) > p:nth-of-type(1)";
+        assert!(apply_edits(&long, &[styled(p1, &"word ".repeat(16))]).is_ok());
+        assert!(matches!(
+            apply_edits(&long, &[styled(p1, "word word")]),
+            Err(PatchError::TextMismatch { .. })
+        ));
+        // A text edit replaces the whole text: its start is not enough.
+        assert!(matches!(
+            apply_edits(&long, &[text_edit(p1, "x", Some(&"word ".repeat(16)))]),
+            Err(PatchError::TextMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn implied_parents_are_dropped_only_when_the_source_lacks_them() {
+        // The source has <html> and <body>; a script made the body's first
+        // <p>. The relaxed `p:nth-of-type(1)` would hit the nested one.
+        let edit = style_edit(
+            "html > body:nth-of-type(1) > p:nth-of-type(1)",
+            &[("color", Some("red"))],
+        );
+        for page in [
+            "<html><body><div><p>B</p></div></body></html>",
+            "<html><div><p>B</p></div></html>",
+            "<body><div><p>B</p></div></body>",
+        ] {
+            assert!(
+                matches!(
+                    apply_edits(page, std::slice::from_ref(&edit)),
+                    Err(PatchError::NotFound(_))
+                ),
+                "{page}"
+            );
+        }
     }
 
     #[test]

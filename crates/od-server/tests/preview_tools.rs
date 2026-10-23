@@ -136,6 +136,15 @@ async fn source_edits_write_back_as_manual_versions() {
             409,
         ),
         (json!({"selector": "h9", "style": {"color": "red"}}), 409),
+        // The path now lands on an element that reads differently.
+        (
+            json!({"selector": h1, "style": {"color": "red"}, "expectTag": "h1", "expectText": "Coffee"}),
+            409,
+        ),
+        (
+            json!({"selector": h1, "style": {"color": "red"}, "expectTag": "p", "expectText": "Green tea"}),
+            409,
+        ),
         (json!({"selector": h1, "style": {"color": "red;x:y"}}), 400),
         (json!({"selector": h1}), 400),
     ] {

@@ -95,7 +95,8 @@ fn patch_err(err: PatchError) -> ApiErr {
         PatchError::NotFound(_)
         | PatchError::Ambiguous { .. }
         | PatchError::NotTextOnly
-        | PatchError::TextMismatch { .. } => {
+        | PatchError::TextMismatch { .. }
+        | PatchError::TagMismatch { .. } => {
             ApiErr::new(StatusCode::CONFLICT, ErrorCode::Conflict, err.to_string())
         }
     }

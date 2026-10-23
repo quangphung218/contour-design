@@ -427,13 +427,32 @@
     return parts.join(' > ');
   }
 
+  var CODE_TAGS = /^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT)$/;
+
+  // The element's text as the source reads it: no script or style code,
+  // nothing of the bridge's own UI. Whitespace collapsed, capped.
+  function plainText(el) {
+    var out = '';
+    (function walk(n) {
+      for (var c = n.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType === 3) {
+          out += c.nodeValue;
+        } else if (c.nodeType === 1 && !CODE_TAGS.test(c.tagName.toUpperCase()) &&
+            !c.hasAttribute('data-od-bridge-ui')) {
+          walk(c);
+        }
+      }
+    })(el);
+    return out.replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+
   function describe(el) {
     var r = el.getBoundingClientRect();
     return {
       odId: el.getAttribute('data-od-id'),
       selector: selectorFor(el),
       tag: el.tagName.toLowerCase(),
-      text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+      text: plainText(el),
       rect: { x: r.left, y: r.top, width: r.width, height: r.height }
     };
   }
@@ -1009,8 +1028,14 @@
         }
         break;
       case 'od:inspect-replay':
+        // Only onto an element that still has the tag and text it had when
+        // the override was set: a script may have moved the path.
         (Array.isArray(data.items) ? data.items.slice(0, MAX_LOCATE) : []).forEach(function (it) {
-          if (it) setOverride(String(it.selector || ''), it.prop, it.value);
+          if (!it) return;
+          var el = find(String(it.selector || ''));
+          if (!el || (it.tag && (el.tagName.toLowerCase() !== String(it.tag) ||
+              plainText(el) !== String(it.text || '')))) return;
+          setOverride(String(it.selector || ''), it.prop, it.value);
         });
         break;
       case 'od:inspect-extract':

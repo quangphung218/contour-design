@@ -40,6 +40,9 @@ pub struct Inspected {
     pub missing: bool,
     #[serde(default)]
     pub tag: String,
+    /// Its text without script code, capped (the source check's print).
+    #[serde(default)]
+    pub text: String,
     #[serde(default)]
     pub styles: BTreeMap<String, String>,
     #[serde(default)]
@@ -48,12 +51,18 @@ pub struct Inspected {
     pub text_only: bool,
 }
 
-/// One inline style override, as set in the preview.
+/// One inline style override, as set in the preview, with the tag and
+/// text its element had then: the bridge replays it, and the source takes
+/// it, only on an element that still reads the same.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, serde::Serialize)]
 pub struct Override {
     pub selector: String,
     pub prop: String,
     pub value: String,
+    #[serde(default)]
+    pub tag: String,
+    #[serde(default)]
+    pub text: String,
 }
 
 /// Text changed in the preview (`od:text-edit`).
