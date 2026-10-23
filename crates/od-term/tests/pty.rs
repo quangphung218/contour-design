@@ -7,10 +7,15 @@ use od_term::{Output, TermConfig, TermStatus, Terminals};
 use std::time::Duration;
 
 fn terminals(max: usize) -> Terminals {
+    tracking_every(max, Duration::from_millis(200))
+}
+
+fn tracking_every(max: usize, track_every: Duration) -> Terminals {
     Terminals::new(TermConfig {
         shell: Some("/bin/sh".into()),
         max_sessions: max,
         kill_grace: Duration::from_millis(500),
+        track_every,
         ..TermConfig::default()
     })
 }
@@ -156,6 +161,89 @@ async fn closing_kills_background_jobs_that_ignore_sighup() {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+async fn gone_after_close(terms: &Terminals, id: &str, pids: &[i32], what: &str) {
+    assert!(terms.close(id).await);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while pids.iter().any(|&p| alive(p)) {
+        if tokio::time::Instant::now() > deadline {
+            for &p in pids {
+                let _ = nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(p),
+                    nix::sys::signal::Signal::SIGKILL,
+                );
+            }
+            panic!("{what} outlived its tab");
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// `setsid` takes a job out of the tab's session and off its TTY; its
+/// parent (here a forking `perl`, as a group leader cannot `setsid`) still
+/// descends from the shell.
+#[tokio::test]
+async fn closing_kills_jobs_that_left_the_session() {
+    let dir = tempfile::tempdir().unwrap();
+    // Found at close, not by the tracker.
+    let terms = tracking_every(4, Duration::from_secs(3600));
+    let s = terms.create("p1", dir.path(), None, None).unwrap();
+    let mut att = s.attach();
+    let mut seen = String::new();
+    s.write(
+        br"perl -MPOSIX -e 'if (my $p = fork) { waitpid($p, 0); exit } setsid(); $SIG{HUP}=q(IGNORE); print qq(S\x4aID=$$ .\n); exec q(sleep), 1004' &
+",
+    )
+    .unwrap();
+    read_until(&mut att.live, &mut seen, "SJID=").await;
+    read_until(&mut att.live, &mut seen, " .").await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let job = pid_after(&seen, "SJID=");
+    assert!(alive(job));
+    let shell = i32::try_from(s.pid().unwrap()).unwrap();
+    assert_ne!(
+        nix::unistd::getsid(Some(nix::unistd::Pid::from_raw(job)))
+            .unwrap()
+            .as_raw(),
+        shell,
+        "the job left the tab's session"
+    );
+    gone_after_close(&terms, s.id(), &[job], "the setsid job").await;
+}
+
+/// A job that left the session and whose parent has exited (it now
+/// belongs to init): the tab remembers it from while it ran.
+#[tokio::test]
+async fn closing_kills_session_leavers_whose_parent_is_gone() {
+    let dir = tempfile::tempdir().unwrap();
+    let terms = terminals(4);
+    let s = terms.create("p1", dir.path(), None, None).unwrap();
+    let mut att = s.attach();
+    let mut seen = String::new();
+    s.write(
+        br#"sh -c 'perl -MPOSIX -e "setsid(); \$SIG{HUP}=q(IGNORE); print qq(O\\x4aID=\$\$ .\\n); exec q(sleep), 1005" & sleep 1' &
+"#,
+    )
+    .unwrap();
+    read_until(&mut att.live, &mut seen, "OJID=").await;
+    read_until(&mut att.live, &mut seen, " .").await;
+    let job = pid_after(&seen, "OJID=");
+    // Its parent `sh` exits after 1 s; the job is reparented.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "ppid=", "-p", &job.to_string()])
+            .output()
+            .unwrap();
+        if String::from_utf8_lossy(&out.stdout).trim() == "1" {
+            break;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "never reparented");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(alive(job));
+    gone_after_close(&terms, s.id(), &[job], "the orphaned setsid job").await;
 }
 
 #[tokio::test]
