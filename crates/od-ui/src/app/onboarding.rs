@@ -213,6 +213,8 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
     let setup = super::dsh_setup::needs_setup(&agent);
     let cli_path = agent.path.clone();
     let setup_state = RwSignal::new(None::<super::dsh_setup::SetupState>);
+    // Only opening and closing rebuild the dialog, not its busy/error state.
+    let setup_open = Memo::new(move |_| setup_state.with(Option::is_some));
     let detail = if agent.available {
         agent.version.clone().map_or_else(
             || t(T::Installed).to_owned(),
@@ -257,7 +259,7 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
                 <span class="agent-check" aria-hidden="true">{icon(Glyph::CheckCircle)}</span>
             })}
         </button>
-        {move || setup_state.get().is_some().then(|| view! {
+        {move || setup_open.get().then(|| view! {
             <super::dsh_setup::DshSetupDialog state=setup_state picked=picked cli_path=cli_path.clone()/>
         })}
     }
