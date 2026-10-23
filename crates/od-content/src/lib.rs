@@ -7,6 +7,7 @@
 
 pub mod atoms;
 pub mod craft;
+pub mod design_kit;
 pub mod design_system_gen;
 pub mod design_systems;
 pub mod frontmatter;
@@ -18,6 +19,7 @@ pub mod prompt;
 pub mod prompt_templates;
 pub mod skills;
 mod text;
+pub mod user_content;
 
 pub use design_systems::DesignSystemEntry;
 pub use index::{ContentIndex, ContentRoots, ContentStore};

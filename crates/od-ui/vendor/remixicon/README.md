@@ -1,7 +1,7 @@
 # Remix Icon (vendored)
 
-The UI's icons are Remix Icon "line" glyphs (plus `stop-fill` and
-`checkbox-circle-fill`), copied unchanged from `remixicon@4.8.0`
+The UI's icons are Remix Icon "line" glyphs (plus `stop-fill`,
+`star-fill` and `checkbox-circle-fill`), copied unchanged from `remixicon@4.8.0`
 (`icons/<category>/<name>.svg`), Apache License 2.0 (`LICENSE`),
 Copyright Remix Design. Only the glyphs the UI uses are kept; each one is
 compiled into the WASM bundle by `src/app/icons.rs` (`include_str!`).
