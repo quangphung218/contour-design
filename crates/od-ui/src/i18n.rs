@@ -99,8 +99,14 @@ messages! {
     Delete => "Delete", "Xoá";
     Close => "Close", "Đóng";
     Refresh => "Refresh", "Làm mới";
-    DaemonUnreachable => "Cannot reach the daemon: {0}", "Không kết nối được daemon: {0}";
+    DaemonUnreachable => "Cannot reach the daemon. Check that the app is still running, then try again. ({0})", "Mất kết nối tới daemon. Kiểm tra app còn chạy rồi thử lại. ({0})";
     UnexpectedResponse => "Unexpected response: {0}", "Phản hồi không hợp lệ: {0}";
+    ErrBadRequest => "The request was not accepted", "Yêu cầu chưa hợp lệ";
+    ErrForbidden => "Not allowed", "Không có quyền";
+    ErrNotFound => "Not found", "Không tìm thấy";
+    ErrConflict => "Conflicts with a change in progress", "Đang vướng một thay đổi khác";
+    ErrTooLarge => "Too large", "Dữ liệu quá lớn";
+    ErrServer => "The daemon hit an error", "Daemon bị lỗi";
 
     // Home
     HomeTitle => "What do you want to design?", "Hôm nay thiết kế gì?";
@@ -144,7 +150,7 @@ messages! {
 
     // Onboarding
     OnboardingTitle => "Choose your coding agent", "Chọn coding agent";
-    OnboardingIntro => "Open Design drives a coding agent installed on this machine. Nothing leaves your computer except what the agent itself sends to its provider.", "Open Design điều khiển một coding agent cài sẵn trên máy. Không có dữ liệu nào rời khỏi máy, trừ những gì agent tự gửi tới provider của nó.";
+    OnboardingIntro => "Nét drives a coding agent installed on this machine. Nothing leaves your computer except what the agent itself sends to its provider.", "Nét điều khiển một coding agent cài sẵn trên máy. Không có dữ liệu nào rời khỏi máy, trừ những gì agent tự gửi tới provider của nó.";
     DetectingAgents => "Detecting agents…", "Đang tìm agent…";
     AgentDetectionUnavailable => "Agent detection unavailable: {0}", "Không dò được agent: {0}";
     NoAgentsFound => "No agents found. Install Claude Code or Codex, then refresh.", "Không tìm thấy agent nào. Cài Claude Code hoặc Codex rồi làm mới.";
@@ -177,7 +183,7 @@ messages! {
     RefreshFiles => "Refresh files", "Làm mới danh sách file";
     NoFilesYet => "No files yet", "Chưa có file";
     CloseTab => "Close tab", "Đóng tab";
-    QuickOpen => "Go to file (Ctrl/Cmd+P)", "Mở file (Ctrl/Cmd+P)";
+    QuickOpen => "Go to file", "Mở file";
     SwitcherPlaceholder => "Type a file name…", "Gõ tên file…";
     SwitcherEmpty => "No matching files", "Không có file khớp";
     RecentBadge => "recent", "gần đây";
@@ -450,12 +456,99 @@ messages! {
     DsDialogBody => "The agent writes DESIGN.md and tokens.css from this brief. The new system is selected when it is ready.", "Agent viết DESIGN.md và tokens.css theo mô tả này. Xong thì design system mới được chọn sẵn.";
     DsName => "Name", "Tên";
     DsBrief => "Brand brief", "Mô tả thương hiệu";
+
+    // Brand
+    Tagline => "Design with your agent, on your machine", "Thiết kế cùng agent, ngay trên máy";
+
+    // Studio layout and preview toolbar
+    HideFiles => "Hide files", "Ẩn danh sách file";
+    ShowFiles => "Show files", "Hiện danh sách file";
+    ToggleFilesPanel => "Show or hide files", "Hiện/ẩn danh sách file";
+    NoFilesYetHint => "Files the agent writes show up here.", "File agent ghi ra sẽ hiện ở đây.";
+    ViewAs => "View as", "Xem dạng";
+    Code => "Code", "Code";
+    TogglePreviewCode => "Switch preview and code", "Chuyển preview và code";
+    CodeCut => "Showing the first {0} of {1} lines.", "Đang hiện {0} trên {1} dòng đầu.";
+    Device => "Device", "Thiết bị";
+    Zoom => "Zoom", "Thu phóng";
+    ZoomIn => "Zoom in", "Phóng to";
+    ZoomOut => "Zoom out", "Thu nhỏ";
+    ZoomReset => "Reset zoom to 100%", "Về 100%";
+    Annotate => "Annotate and inspect", "Chú thích và soi phần tử";
+    PreviewWaitingTitle => "The agent is working", "Agent đang làm";
+    PreviewWaiting => "The page shows here as soon as the first HTML file is written.", "Trang sẽ hiện ở đây ngay khi file HTML đầu tiên được ghi.";
+    PreviewStep1 => "Describe what you want in the chat on the left.", "Mô tả thứ cần làm ở khung chat bên trái.";
+    PreviewStep2 => "The agent writes the files; this preview reloads by itself.", "Agent ghi file; preview tự tải lại.";
+    PreviewStep3 => "Comment on the page to ask for changes, then export.", "Bình luận lên trang để yêu cầu sửa, rồi xuất file.";
+
+    // Run status and next steps
+    ProjectLoadFailed => "This project could not be opened.", "Không mở được project này.";
+    RunStarting => "Starting the agent…", "Đang khởi động agent…";
+    RunWorking => "Working", "Đang chạy";
+    RunStep => "Step {0} of {1}", "Bước {0}/{1}";
+    RunDone => "Done", "Xong";
+    RunFilesWritten => "{0} file(s) written", "Đã ghi {0} file";
+    RunFailed => "Failed", "Lỗi";
+    RunFailedHint => "See the message above, then retry or check the agent in Settings.", "Xem thông báo ở trên, rồi thử lại hoặc kiểm tra agent trong Cài đặt.";
+    NextSteps => "Next", "Tiếp theo";
+    NextOpen => "View {0}", "Xem {0}";
+    NextComment => "Comment on the page", "Bình luận lên trang";
+    NextMobile => "Mobile version", "Bản mobile";
+    NextVariations => "Try variations", "Thử phương án khác";
+    NextRetry => "Retry", "Thử lại";
+    NextSettings => "Open Settings", "Mở Cài đặt";
+    FollowupMobile => "Make it work well on a 390px phone screen.", "Chỉnh cho hiển thị tốt trên màn hình điện thoại 390px.";
+    FollowupVariations => "Show me 3 different directions for this design.", "Đề xuất 3 hướng thiết kế khác nhau cho trang này.";
+    StarterLanding => "A landing page for a tea shop", "Landing page cho một tiệm trà";
+    StarterDashboard => "A sales dashboard with charts", "Dashboard doanh số có biểu đồ";
+    StarterDeck => "A 6-slide pitch deck", "Pitch deck 6 slide";
+
+    // Command palette and shortcuts
+    CommandPalette => "Command palette", "Bảng lệnh";
+    PaletteTrigger => "Search or run a command", "Tìm hoặc chạy lệnh";
+    PalettePlaceholder => "Type a command, a page, a project or a file…", "Gõ tên lệnh, trang, project hoặc file…";
+    PaletteEmpty => "Nothing matches \"{0}\".", "Không có gì khớp với \"{0}\".";
+    PaletteActions => "Command", "Lệnh";
+    PaletteStudio => "Studio", "Studio";
+    PaletteMove => "move", "chọn";
+    PaletteRun => "run", "chạy";
+    ThemeLightCommand => "Theme: light", "Giao diện: sáng";
+    ThemeDarkCommand => "Theme: dark", "Giao diện: tối";
+    ThemeSystemCommand => "Theme: follow the system", "Giao diện: theo hệ thống";
+    KeyboardShortcuts => "Keyboard shortcuts", "Phím tắt";
+    ShortcutsGeneral => "Everywhere", "Mọi nơi";
+    ShortcutsStudio => "Studio", "Studio";
+    ShortcutsChat => "Chat", "Chat";
+    ShortcutsDeck => "Slide deck", "Slide deck";
+    ShortcutEsc => "Close a dialog, leave a mode", "Đóng hộp thoại, thoát chế độ";
+    ShortcutPickTab => "Go to tab 1 to 9", "Sang tab 1 đến 9";
+    ShortcutCycleTabs => "Next tab", "Tab kế tiếp";
+    ShortcutZoom => "Zoom in, out, 100%", "Phóng to, thu nhỏ, 100%";
+    ShortcutNewLine => "New line", "Xuống dòng";
+    KeySpace => "Space", "Phím cách";
+    ShortcutNextSlide => "Next slide", "Slide sau";
+    ShortcutPrevSlide => "Previous slide", "Slide trước";
+    ShortcutFirstLast => "First or last slide", "Slide đầu hoặc cuối";
 }
 
 /// The current language's text for `key`.
 #[must_use]
 pub fn t(key: T) -> &'static str {
     key.text(locale())
+}
+
+/// Content text (template and skill descriptions, copied from the upstream
+/// app) with the upstream product name swapped for Nét. The files keep
+/// their original wording and attribution; only the UI shows the new name.
+#[must_use]
+pub fn rebrand(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.contains("OpenDesign") || text.contains("Open Design") {
+        text.replace("OpenDesign", "Nét")
+            .replace("Open Design", "Nét")
+            .into()
+    } else {
+        text.into()
+    }
 }
 
 /// [`t`] with `{0}`, `{1}`… replaced by `args`.
@@ -474,6 +567,18 @@ fn fill(template: &str, args: &[&str]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn content_text_shows_the_new_name() {
+        assert_eq!(
+            rebrand("Create refreshable OpenDesign artifacts, made with Open Design."),
+            "Create refreshable Nét artifacts, made with Nét."
+        );
+        assert!(matches!(
+            rebrand("A tea shop"),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
+
     use super::*;
 
     fn placeholders(s: &str) -> Vec<usize> {

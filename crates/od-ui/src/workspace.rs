@@ -89,6 +89,16 @@ pub fn touch_recent(recent: &mut Vec<String>, path: &str) {
     recent.truncate(RECENT_MAX);
 }
 
+/// Adds the `files` not already in `list`, keeping its order (a retry puts
+/// back the attachments of the message it resends).
+pub fn add_missing(list: &mut Vec<String>, files: Vec<String>) {
+    for f in files {
+        if !list.contains(&f) {
+            list.push(f);
+        }
+    }
+}
+
 /// A message waiting for the running turn to end.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Queued {
@@ -109,6 +119,13 @@ pub fn move_item<T>(items: &mut Vec<T>, from: usize, to: usize) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_retry_adds_back_only_the_missing_attachments() {
+        let mut list = vec!["a.png".to_owned()];
+        add_missing(&mut list, vec!["b.pdf".to_owned(), "a.png".to_owned()]);
+        assert_eq!(list, ["a.png", "b.pdf"]);
+    }
+
     use super::*;
 
     fn tabs(open: &[&str], active: &str) -> Tabs {

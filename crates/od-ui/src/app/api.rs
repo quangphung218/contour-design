@@ -1,6 +1,6 @@
 //! Same-origin JSON calls to the daemon.
 
-use crate::i18n::{T as Msg, tf};
+use crate::i18n::{T as Msg, t, tf};
 use gloo_net::http::{Request, Response};
 use od_contracts::ApiErrorResponse;
 use serde::Serialize;
@@ -16,12 +16,26 @@ pub struct HttpError {
 
 impl fmt::Display for HttpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.status == 0 {
-            write!(f, "{}", self.message)
-        } else {
-            write!(f, "{} (HTTP {})", self.message, self.status)
+        match (self.status, status_hint(self.status)) {
+            (0, _) => write!(f, "{}", self.message),
+            (status, Some(hint)) => write!(f, "{}: {} (HTTP {status})", t(hint), self.message),
+            (status, None) => write!(f, "{} (HTTP {status})", self.message),
         }
     }
+}
+
+/// What a failed status means, in the user's words; the daemon's own
+/// message (English, precise) follows it.
+fn status_hint(status: u16) -> Option<Msg> {
+    Some(match status {
+        400 | 422 => Msg::ErrBadRequest,
+        401 | 403 => Msg::ErrForbidden,
+        404 => Msg::ErrNotFound,
+        409 => Msg::ErrConflict,
+        413 => Msg::ErrTooLarge,
+        500..=599 => Msg::ErrServer,
+        _ => return None,
+    })
 }
 
 impl std::error::Error for HttpError {}
@@ -131,4 +145,24 @@ pub fn random_id() -> String {
         .and_then(|w| w.crypto().ok())
         .map(|c| c.random_uuid())
         .unwrap_or_else(|| format!("{:x}", (js_sys::Math::random() * 1e16) as u64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn errors_lead_with_what_went_wrong() {
+        let e = |status| HttpError {
+            status,
+            message: "project p1 not found".to_owned(),
+        };
+        assert_eq!(
+            e(404).to_string(),
+            "Not found: project p1 not found (HTTP 404)"
+        );
+        assert_eq!(status_hint(503), Some(Msg::ErrServer));
+        assert_eq!(e(418).to_string(), "project p1 not found (HTTP 418)");
+        assert_eq!(e(0).to_string(), "project p1 not found");
+    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "od-desktop"
-description = "Open Design desktop shell (Tauri 2): runs od-server in-process on a random loopback port"
+description = "Nét desktop shell (Tauri 2): runs od-server in-process on a random loopback port"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

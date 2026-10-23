@@ -16,7 +16,8 @@ Không dùng: gradient tím, emoji làm icon, ký tự làm icon (`↻ × ⤓ >_
 | `crates/od-ui/styles/components.css` | Component dùng lại (button, input, chip, card, tab, menu, dialog, toast, badge, tooltip, empty state, skeleton) |
 | `crates/od-ui/styles/app.css` | App shell và từng màn (Home, Projects, Studio, Settings…), chỉ ghép token và component |
 | `crates/od-ui/src/app/icons.rs` | `Glyph` + hàm `icon(glyph)` |
-| `crates/od-ui/vendor/remixicon/` | 78 icon SVG Remix Icon 4.8.0, Apache-2.0 |
+| `crates/od-ui/vendor/remixicon/` | 84 icon SVG Remix Icon 4.8.0, Apache-2.0 |
+| `crates/od-ui/assets/` | Favicon và mark Nét (sinh từ `assets/brand`, xem [`brand.md`](brand.md)) |
 | `crates/od-ui/vendor/fonts/` | Geist, Geist Mono (variable, woff2), SIL OFL 1.1 |
 
 Thứ tự nạp trong `index.html`: tokens → components → app. Component chỉ đọc biến CSS, không viết mã màu trực tiếp (ngoại lệ: nền giấy trắng của preview và vài màu trên nền đen của chế độ trình chiếu).
@@ -122,6 +123,21 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 
 ## App shell
 
-- Sidebar trái: Home, Projects, Automations, Settings (dưới cùng). Nút thu gọn thành rail 56px; lựa chọn lưu trong `localStorage` riêng cho Studio (`od.sidebar.studio-collapsed`, mặc định thu gọn) và các trang khác (`od.sidebar.collapsed`). Cửa sổ hẹp hơn 960px tự thành rail.
+- Sidebar trái: logo Nét, ô "Tìm hoặc chạy lệnh" (mở command palette), Home, Projects, Automations, rồi Phím tắt và Settings ở dưới cùng. Nút thu gọn thành rail 56px; lựa chọn lưu trong `localStorage` riêng cho Studio (`od.sidebar.studio-collapsed`, mặc định thu gọn) và các trang khác (`od.sidebar.collapsed`). Cửa sổ hẹp hơn 960px tự thành rail.
 - Nội dung nằm trong panel `.main` nổi trên nền canvas.
 - Desktop macOS: cửa sổ Tauri dùng title bar overlay (`TitleBarStyle::Overlay`, ẩn tiêu đề). UI phát hiện Tauri + macOS, đặt `data-shell="mac"` trên `<html>` và chừa dải `.titlebar` cao 38px làm vùng kéo cửa sổ (`data-tauri-drag-region`, quyền `core:window:allow-start-dragging`).
+
+## Studio
+
+- Ba vùng: chat bên trái, preview ở giữa (vùng chính), danh sách file bên phải. File thu gọn được (nút trên đầu cột file, `Cmd/Ctrl+B`, lưu ở `od.studio.files-open`).
+- Toolbar preview, trái sang phải: tải lại, đường dẫn file, `Preview | Code`, thiết bị (Desktop/Tablet/Phone), zoom (`- 100% +`), History, Export. Hàng dưới là nhóm chú thích và soi phần tử: Comment, Inspect, Edit text, Draw, Tweaks, Palette, Lint. Cửa sổ hẹp (container dưới 660px) thì ẩn chữ, giữ icon.
+- Code view của version đang xem là source của version đó. Bật bình luận thì tự về Preview. "Thử lại" gửi lại cả file đính kèm của tin gốc (lưu theo tin, cả khi tải lại lịch sử).
+- Zoom là `transform: scale` trên khung đã layout ở kích thước thiết bị (`zoom_box` + `zoomed` trong `studio.rs`), để WebKit và Chromium giống nhau và pin comment theo đúng chỗ.
+- Mỗi lượt của agent có một dòng trạng thái `[data-testid=run-state]` (`data-phase` = `starting | working | done | failed | stopped`; đang chạy theo plan thì hiện "Bước N/M"). Lượt cuối, khi không còn run nào, có hàng "Tiếp theo" (`next-steps`): xem file vừa ghi, bình luận lên trang, bản mobile, phương án khác; lỗi thì "Thử lại" và "Mở Cài đặt". Logic nằm ở `src/guide.rs`, test native.
+- Không tải được project (id sai, daemon tắt) thì lỗi nằm cố định đầu khung chat (`load-error`), kèm nút Thử lại; không hiện prompt mẫu. Các lỗi khác của Studio hiện thành toast đỏ ở giữa đáy (`data-testid=notice`), tự ẩn sau 8 giây. Lỗi HTTP mở đầu bằng câu dễ hiểu theo mã trạng thái (`status_hint` trong `api.rs`), sau đó là thông điệp gốc của daemon.
+
+## Command palette và phím tắt
+
+- `Cmd/Ctrl+K` mở command palette (`app/palette.rs`): lệnh (project mới, các trang, đổi theme, phím tắt), project, và khi đang ở Studio thì thêm lệnh Studio và file. Tìm mờ bằng `fuzzy::score`. `Cmd/Ctrl+P` vẫn là quick switcher chỉ cho file.
+- `?` (ngoài ô nhập) mở bảng phím tắt (`app/shortcuts.rs`). Thêm phím tắt mới thì thêm cả vào `GROUPS` ở đó.
+- Hộp thoại mở từ shell đóng ở task kế tiếp (`TimeoutFuture::new(0)`), không đóng ngay trong handler click: đóng ngay làm rơi listener mà chính cú click đó còn đi qua, wasm báo `closure invoked recursively or after being dropped`.

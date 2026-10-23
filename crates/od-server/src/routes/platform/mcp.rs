@@ -299,12 +299,12 @@ fn callback_page(status: StatusCode, ok: bool) -> Response {
     let (title, body) = if ok {
         (
             "Connected",
-            "The MCP server is connected. You can close this tab and return to Open Design.",
+            "The MCP server is connected. You can close this tab and return to Nét.",
         )
     } else {
         (
             "Sign-in failed",
-            "The MCP server could not be connected. Return to Open Design and try again.",
+            "The MCP server could not be connected. Return to Nét and try again.",
         )
     };
     let html = format!(

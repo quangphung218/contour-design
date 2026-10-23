@@ -586,7 +586,17 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
         })
     };
     view! {
-        <div class="tool-bar" data-testid="tool-bar">
+        <div class="tool-bar" data-testid="tool-bar" role="toolbar" aria-label=t(T::Annotate)>
+            <button
+                class="btn small ghost"
+                class:active=move || ctx.comment_mode.get()
+                data-testid="comment-mode"
+                aria-pressed=move || ctx.comment_mode.get().to_string()
+                on:click=move |_| ctx.set_comment_mode(!ctx.comment_mode.get_untracked())
+            >
+                {icon(Glyph::Comment)}
+                {t(T::CommentMode)}
+            </button>
             {tool_button(Tool::Inspect, T::ToolInspect, Glyph::Inspect, "inspect-mode")}
             {tool_button(Tool::EditText, T::ToolEditText, Glyph::EditText, "edit-mode")}
             {tool_button(Tool::Draw, T::ToolDraw, Glyph::Draw, "draw-mode")}

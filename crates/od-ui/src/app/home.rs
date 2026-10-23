@@ -175,7 +175,7 @@ pub fn Home() -> impl IntoView {
                                             let selected = design_system.get().as_deref() == Some(s.id.as_str());
                                             view! {
                                                 <option value=s.id.clone() selected=selected>
-                                                    {format!("{} · {}", s.title, s.category)}
+                                                    {format!("{} · {}", crate::i18n::rebrand(&s.title), s.category)}
                                                 </option>
                                             }
                                         })
@@ -398,10 +398,11 @@ fn template_name(s: &SkillSummary) -> String {
 }
 
 fn localized(map: Option<&std::collections::BTreeMap<String, String>>, fallback: &str) -> String {
-    map.and_then(|m| m.get(locale().tag()))
+    let text = map
+        .and_then(|m| m.get(locale().tag()))
         .filter(|v| !v.trim().is_empty())
-        .cloned()
-        .unwrap_or_else(|| fallback.to_owned())
+        .map_or(fallback, String::as_str);
+    crate::i18n::rebrand(text).into_owned()
 }
 
 /// One of four quiet cover tints, stable per template.

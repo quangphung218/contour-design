@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Open Design",
+  "productName": "Nét",
   "version": "0.1.0",
-  "identifier": "dev.open-design-rs.desktop",
+  "identifier": "dev.net.desktop",
   "build": {
     "frontendDist": "static"
   },

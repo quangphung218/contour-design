@@ -6,7 +6,8 @@ use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
 use super::preview_tools::{AttachmentChips, DeliverableWarning};
 use super::studio::{StudioCtx, conversation_title};
-use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, TurnState, plan_progress};
+use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, plan_progress};
+use crate::guide::{Followup, NextStep, RunPhase, next_steps, run_phase};
 use crate::i18n::{T, t, tf};
 use crate::markdown;
 use crate::question_form::{
@@ -21,6 +22,8 @@ use od_contracts::CommentStatus;
 pub struct ChatItem {
     pub id: String,
     pub kind: ItemKind,
+    /// Files sent with a user message (`attachments`), for a retry.
+    pub attachments: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -34,13 +37,21 @@ impl ChatItem {
         Self {
             id,
             kind: ItemKind::User(text),
+            attachments: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn with_attachments(mut self, attachments: Vec<String>) -> Self {
+        self.attachments = attachments;
+        self
     }
 
     pub fn assistant(id: String, turn: RwSignal<AssistantTurn>) -> Self {
         Self {
             id,
             kind: ItemKind::Assistant(turn),
+            attachments: Vec::new(),
         }
     }
 }
@@ -48,7 +59,7 @@ impl ChatItem {
 #[component]
 pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     let shell = Shell::get();
-    let draft = RwSignal::new(String::new());
+    let draft = ctx.draft;
     let list_ref = NodeRef::<leptos::html::Div>::new();
 
     // Keep the newest output in view while streaming.
@@ -79,7 +90,21 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             <ConversationBar ctx=ctx/>
             <super::agent_w3::ChatTools ctx=ctx/>
             <div class="messages" node_ref=list_ref data-testid="messages">
-                {move || ctx.notice.get().map(|n| view! { <p class="error-text">{n}</p> })}
+                {move || ctx.load_error.get().map(|e| view! {
+                    <div class="msg-error load-error" role="alert" data-testid="load-error">
+                        {icon(Glyph::Warning)}
+                        <div class="load-error-body">
+                            <strong>{t(T::ProjectLoadFailed)}</strong>
+                            <span>{e}</span>
+                            <div class="row">
+                                <button class="btn small" data-testid="load-retry" on:click=move |_| {
+                                    leptos::task::spawn_local(ctx.load(shell));
+                                }>{icon(Glyph::Refresh)}{t(T::NextRetry)}</button>
+                                <a class="btn small ghost" href="/projects">{icon(Glyph::Projects)}{t(T::AllProjects)}</a>
+                            </div>
+                        </div>
+                    </div>
+                })}
                 <For
                     each=move || ctx.items.get()
                     key=|item| item.id.clone()
@@ -96,11 +121,22 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         }
                     }
                 />
-                <Show when=move || ctx.items.with(Vec::is_empty)>
-                    <div class="empty-state compact chat-empty">
+                <Show when=move || ctx.items.with(Vec::is_empty) && ctx.load_error.with(Option::is_none)>
+                    <div class="empty-state compact chat-empty" data-testid="chat-empty">
                         <span class="empty-icon">{icon(Glyph::Chat)}</span>
                         <strong>{t(T::DescribeChangeTitle)}</strong>
                         <p>{t(T::DescribeChange)}</p>
+                        <div class="starter-prompts">
+                            {[T::StarterLanding, T::StarterDashboard, T::StarterDeck]
+                                .into_iter()
+                                .map(|key| view! {
+                                    <button class="chip" data-testid="starter-prompt" on:click=move |_| {
+                                        draft.set(t(key).to_owned());
+                                        focus_composer();
+                                    }>{icon(Glyph::Sparkle)}{t(key)}</button>
+                                })
+                                .collect_view()}
+                        </div>
                     </div>
                 </Show>
             </div>
@@ -383,16 +419,10 @@ fn AssistantView(
                         .collect_view()
                 })
             }}
-            {move || {
-                turn.with(|t| match t.state {
-                    TurnState::Pending | TurnState::Running => {
-                        let label = t.status.clone().unwrap_or_else(|| crate::i18n::t(T::Working).to_owned());
-                        Some(view! { <div class="run-status" role="status"><span class="spinner"></span>{label}</div> }.into_any())
-                    }
-                    TurnState::Canceled => Some(view! { <div class="run-status muted">{icon(Glyph::Stop)}{crate::i18n::t(T::Stopped)}</div> }.into_any()),
-                    TurnState::Succeeded | TurnState::Failed => None,
-                })
-            }}
+            <RunLine turn=turn/>
+            <Show when=move || is_last.get() && ctx.live_run.get().is_none()>
+                <NextSteps turn=turn item_id=item_id.get_value()/>
+            </Show>
             <Show when=move || !turn.with(|t| t.state.is_live()) && ctx.live_run.get().is_none()>
                 <div class="msg-actions">
                     <button
@@ -406,6 +436,129 @@ fn AssistantView(
                 </div>
             </Show>
         </div>
+    }
+}
+
+/// One status line per turn: starting, working (step N of M), done (files
+/// written), failed or stopped. `data-phase` mirrors it for tests.
+#[component]
+fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
+    move || {
+        turn.with(|tn| {
+            let (phase, glyph, label, detail) = match run_phase(tn) {
+                RunPhase::Starting => ("starting", None, t(T::RunStarting).to_owned(), None),
+                RunPhase::Working { step } => (
+                    "working",
+                    None,
+                    match step {
+                        Some((n, m)) => tf(T::RunStep, &[&n.to_string(), &m.to_string()]),
+                        None => t(T::RunWorking).to_owned(),
+                    },
+                    tn.status.clone(),
+                ),
+                RunPhase::Done { files } => (
+                    "done",
+                    Some(Glyph::CheckCircle),
+                    t(T::RunDone).to_owned(),
+                    (files > 0).then(|| tf(T::RunFilesWritten, &[&files.to_string()])),
+                ),
+                RunPhase::Failed => ("failed", Some(Glyph::Warning), t(T::RunFailed).to_owned(), Some(t(T::RunFailedHint).to_owned())),
+                RunPhase::Stopped => ("stopped", Some(Glyph::Stop), t(T::Stopped).to_owned(), None),
+            };
+            view! {
+                <div class=format!("run-status {phase}") role="status" data-testid="run-state" data-phase=phase>
+                    {match glyph {
+                        Some(g) => icon(g).into_any(),
+                        None => view! { <span class="spinner"></span> }.into_any(),
+                    }}
+                    <strong>{label}</strong>
+                    {detail.map(|d| view! { <span class="muted">{d}</span> })}
+                </div>
+            }
+        })
+    }
+}
+
+/// Suggested next steps under the latest finished turn.
+#[component]
+fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
+    let ctx = expect_context::<StudioCtx>();
+    let shell = Shell::get();
+    let navigate = leptos_router::hooks::use_navigate();
+    let item_id = StoredValue::new(item_id);
+    // The user message this turn answered, and its files, for a retry.
+    let asked = move || {
+        ctx.items.with_untracked(|items| {
+            let i = items.iter().position(|i| i.id == item_id.get_value())?;
+            items[..i].iter().rev().find_map(|i| match &i.kind {
+                ItemKind::User(text) => Some((text.clone(), i.attachments.clone())),
+                ItemKind::Assistant(_) => None,
+            })
+        })
+    };
+    move || {
+        let steps = turn.with(next_steps);
+        (!steps.is_empty()).then(|| {
+            let navigate = navigate.clone();
+            view! {
+                <div class="next-steps" data-testid="next-steps" aria-label=t(T::NextSteps)>
+                    <span class="next-label">{t(T::NextSteps)}</span>
+                    {steps
+                        .into_iter()
+                        .map(|step| {
+                            let navigate = navigate.clone();
+                            let (glyph, label, testid) = match &step {
+                                NextStep::Open(path) => (Glyph::Eye, tf(T::NextOpen, &[path.rsplit('/').next().unwrap_or(path)]), "next-open"),
+                                NextStep::Comment => (Glyph::Comment, t(T::NextComment).to_owned(), "next-comment"),
+                                NextStep::Prompt(Followup::Mobile) => (Glyph::Phone, t(T::NextMobile).to_owned(), "next-mobile"),
+                                NextStep::Prompt(Followup::Variations) => (Glyph::Sparkle, t(T::NextVariations).to_owned(), "next-variations"),
+                                NextStep::Retry => (Glyph::Refresh, t(T::NextRetry).to_owned(), "next-retry"),
+                                NextStep::Settings => (Glyph::Settings, t(T::NextSettings).to_owned(), "next-settings"),
+                            };
+                            let run = move |_| match &step {
+                                NextStep::Open(path) => {
+                                    ctx.open_file(path);
+                                    ctx.show_code.set(false);
+                                }
+                                NextStep::Comment => ctx.set_comment_mode(true),
+                                NextStep::Prompt(f) => {
+                                    let text = match f {
+                                        Followup::Mobile => t(T::FollowupMobile),
+                                        Followup::Variations => t(T::FollowupVariations),
+                                    };
+                                    ctx.draft.set(text.to_owned());
+                                    focus_composer();
+                                }
+                                NextStep::Retry => {
+                                    if let Some((text, files)) = asked() {
+                                        ctx.tools.attachments.update(|a| crate::workspace::add_missing(a, files));
+                                        ctx.send(text, shell);
+                                    }
+                                }
+                                NextStep::Settings => navigate("/settings", Default::default()),
+                            };
+                            view! {
+                                <button class="chip next-step" data-testid=testid on:click=run>
+                                    {icon(glyph)}{label}
+                                </button>
+                            }
+                        })
+                        .collect_view()}
+                </div>
+            }
+        })
+    }
+}
+
+/// Puts the caret in the chat composer.
+pub(super) fn focus_composer() {
+    use wasm_bindgen::JsCast;
+    if let Some(el) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector("[data-testid=composer]").ok().flatten())
+        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+    {
+        let _ = el.focus();
     }
 }
 

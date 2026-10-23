@@ -123,7 +123,8 @@ try {
       await sleep(800);
     } else {
       const list = await (await fetch(`${BASE}/api/projects`)).json();
-      projectUrl = `${BASE}/projects/${list.projects[0].id}`;
+      const tea = list.projects.find((p) => !p.name.startsWith('Empty'));
+      projectUrl = `${BASE}/projects/${tea.id}`;
     }
 
     await shot('projects', async () => {
@@ -177,6 +178,30 @@ try {
       await page.getByTestId('quick-switcher').waitFor();
     });
     await page.keyboard.press('Escape');
+    await shot('studio-palette', async () => {
+      await page.keyboard.press('ControlOrMeta+k');
+      await page.getByTestId('command-palette').waitFor();
+    });
+    await page.keyboard.press('Escape');
+    await shot('studio-shortcuts', async () => {
+      await page.getByTestId('open-shortcuts').click();
+      await page.getByTestId('shortcuts').waitFor();
+    });
+    await page.getByTestId('shortcuts-close').click();
+    await shot('studio-code', async () => {
+      await page.getByTestId('view-code').click();
+      await page.getByTestId('code-view').locator('.code-line').first().waitFor();
+    });
+    await page.getByTestId('view-preview').click();
+    await shot('studio-phone-zoom', async () => {
+      await page.getByRole('radio', { name: /^(Phone|Điện thoại)$/ }).click();
+      await page.getByTestId('zoom-in').click();
+      await page.getByTestId('hide-files').click();
+      await page.getByTestId('show-files').waitFor();
+    });
+    await page.getByTestId('zoom-reset').click();
+    await page.getByTestId('show-files').click();
+    await page.getByRole('radio', { name: /^(Desktop|Máy tính)$/ }).click();
     await shot('studio-deck', async () => {
       await page.locator('.file', { hasText: 'deck.html' }).click();
       await until(async () => (await page.getByTestId('deck-counter').textContent()) === '1 / 3', 'deck ready');
@@ -191,6 +216,14 @@ try {
     await shot('studio-side-chat', async () => {
       await page.getByTestId('side-chat-tab').click();
       await page.getByTestId('side-chat').waitFor();
+    });
+
+    await shot('studio-empty', async () => {
+      const r = await fetch(`${BASE}/api/projects`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `Empty ${scheme}` }) });
+      const { project } = await r.json();
+      await page.goto(`${BASE}/projects/${project.id}`);
+      await page.getByTestId('preview-empty').waitFor();
+      await page.getByTestId('chat-empty').waitFor();
     });
 
     await shot('settings', async () => {

@@ -70,6 +70,20 @@ pub async fn get_design_template(
 const EXAMPLE_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; \
      font-src data:; media-src data:; sandbox";
 
+/// Example pages copied from the upstream app name it (sample decks and
+/// dashboards about "OpenDesign"); the gallery thumbnails show Nét instead.
+/// The files on disk keep their original text.
+fn rebrand_example(html: Vec<u8>) -> Vec<u8> {
+    match String::from_utf8(html) {
+        Ok(text) if text.contains("OpenDesign") || text.contains("Open Design") => text
+            .replace("OpenDesign", "Nét")
+            .replace("Open Design", "Nét")
+            .into_bytes(),
+        Ok(text) => text.into_bytes(),
+        Err(e) => e.into_bytes(),
+    }
+}
+
 /// `GET /api/design-templates/:id/example`: the template's rendered
 /// example page, for the Home gallery thumbnails.
 pub async fn get_design_template_example(
@@ -85,6 +99,7 @@ pub async fn get_design_template_example(
     let html = tokio::fs::read(&path)
         .await
         .map_err(|_| ApiErr::not_found("design template example not found"))?;
+    let html = rebrand_example(html);
     Ok((
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
@@ -151,5 +166,20 @@ pub async fn get_craft(
             Err(ApiErr::not_found("craft section not found"))
         }
         Err(e) => Err(ApiErr::internal(e.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rebrand_example;
+
+    #[test]
+    fn gallery_examples_show_the_new_name() {
+        let out = rebrand_example(b"<b>Show HN: OpenDesign v2</b> by Open Design".to_vec());
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "<b>Show HN: Nét v2</b> by Nét"
+        );
+        assert_eq!(rebrand_example(vec![0xff, b'O']), vec![0xff, b'O']);
     }
 }
