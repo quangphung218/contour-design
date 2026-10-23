@@ -23,7 +23,14 @@ pub async fn create(
             "baseDir can only be set by folder import",
         ));
     }
-    let (project, conversation_id) = state.blocking(move |s| s.create_project(req)).await?;
+    let mut req = req;
+    let (project, conversation_id) = state
+        .blocking(move |s| {
+            // Settings ▸ Project locations: a custom default base.
+            crate::routes::manage::locations::place_in_default(s, &mut req)?;
+            s.create_project(req)
+        })
+        .await?;
     Ok(ApiJson(CreateProjectResponse {
         project,
         conversation_id,

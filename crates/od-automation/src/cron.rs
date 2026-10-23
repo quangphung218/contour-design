@@ -2,6 +2,8 @@
 //! month day-of-week`, with `*`, lists, ranges and steps, plus `@hourly`,
 //! `@daily`, `@weekly` and `@monthly`. Day-of-month and day-of-week follow
 //! Vixie cron: when both are restricted, either one matching is enough.
+//! A `CRON_TZ=<IANA zone> ` prefix (cronie's syntax) evaluates the fields
+//! in that zone instead of local time; Automations' presets use it.
 
 use chrono::{DateTime, Datelike, Duration, Local, LocalResult, NaiveDateTime, TimeZone, Timelike};
 use std::fmt;
@@ -27,6 +29,8 @@ pub struct Schedule {
     weekdays: u8,
     days_any: bool,
     weekdays_any: bool,
+    /// `CRON_TZ=` zone; `None` is local time.
+    tz: Option<chrono_tz::Tz>,
 }
 
 impl fmt::Debug for Schedule {
@@ -84,7 +88,19 @@ impl FromStr for Schedule {
         if source.is_empty() || source.len() > MAX_LEN {
             return Err(CronError("empty or too long".into()));
         }
-        let expanded = match source {
+        let (tz, rest) = match source.strip_prefix("CRON_TZ=") {
+            Some(rest) => {
+                let (zone, fields) = rest
+                    .split_once(char::is_whitespace)
+                    .ok_or_else(|| CronError("CRON_TZ= without fields".into()))?;
+                let tz = zone
+                    .parse::<chrono_tz::Tz>()
+                    .map_err(|_| CronError(format!("unknown time zone {zone:?}")))?;
+                (Some(tz), fields.trim())
+            }
+            None => (None, source),
+        };
+        let expanded = match rest {
             "@hourly" => "0 * * * *",
             "@daily" | "@midnight" => "0 0 * * *",
             "@weekly" => "0 0 * * 0",
@@ -118,6 +134,7 @@ impl FromStr for Schedule {
             weekdays: u8::try_from(weekdays).map_err(|_| CronError("field overflow".into()))?,
             days_any,
             weekdays_any,
+            tz,
         })
     }
 }
@@ -168,21 +185,38 @@ impl Schedule {
         None
     }
 
-    /// The next matching instant after `after` in local time. A minute
-    /// skipped by a DST jump is skipped; a repeated one fires once.
+    /// The `CRON_TZ=` zone, if any.
     #[must_use]
-    pub fn next_after(&self, after: DateTime<Local>) -> Option<DateTime<Local>> {
+    pub fn time_zone(&self) -> Option<chrono_tz::Tz> {
+        self.tz
+    }
+
+    /// The next matching instant after `after` in `zone`. A minute
+    /// skipped by a DST jump is skipped; a repeated one fires once.
+    fn next_in<Z: TimeZone>(&self, after: &DateTime<Z>, zone: &Z) -> Option<DateTime<Z>> {
         let mut t = after.naive_local();
         for _ in 0..1000 {
             t = self.next_naive_after(t)?;
-            match Local.from_local_datetime(&t) {
-                LocalResult::Single(d) | LocalResult::Ambiguous(d, _) if d > after => {
+            match zone.from_local_datetime(&t) {
+                LocalResult::Single(d) | LocalResult::Ambiguous(d, _) if d > *after => {
                     return Some(d);
                 }
                 _ => {}
             }
         }
         None
+    }
+
+    /// The next matching instant after `after`, in the schedule's zone
+    /// (local time without `CRON_TZ=`).
+    #[must_use]
+    pub fn next_after(&self, after: DateTime<Local>) -> Option<DateTime<Local>> {
+        match self.tz {
+            None => self.next_in(&after, &Local),
+            Some(tz) => self
+                .next_in(&after.with_timezone(&tz), &tz)
+                .map(|d| d.with_timezone(&Local)),
+        }
     }
 }
 
@@ -243,6 +277,25 @@ mod tests {
         assert!("0 30 31 2 *".parse::<Schedule>().is_err(), "hour 30");
         let never: Schedule = "0 0 31 2 *".parse().unwrap();
         assert_eq!(never.next_naive_after(at("2026-01-01 00:00")), None);
+    }
+
+    #[test]
+    fn cron_tz_prefix_uses_that_zone() {
+        let s: Schedule = "CRON_TZ=Asia/Tokyo 0 9 * * *".parse().unwrap();
+        assert_eq!(s.time_zone(), Some(chrono_tz::Asia::Tokyo));
+        let after = chrono::Utc
+            .with_ymd_and_hms(2026, 10, 23, 1, 0, 0)
+            .unwrap()
+            .with_timezone(&Local);
+        // 09:00 in Tokyo is 00:00 UTC; the next one after 01:00 UTC is a day later.
+        let next = s.next_after(after).unwrap().with_timezone(&chrono::Utc);
+        assert_eq!(
+            next.format("%Y-%m-%d %H:%M").to_string(),
+            "2026-10-24 00:00"
+        );
+        assert!("CRON_TZ=Mars/Base 0 9 * * *".parse::<Schedule>().is_err());
+        assert!("CRON_TZ=UTC".parse::<Schedule>().is_err());
+        assert_eq!(s.to_string(), "CRON_TZ=Asia/Tokyo 0 9 * * *");
     }
 
     #[test]

@@ -20,6 +20,7 @@ od-media.workspace = true
 od-term.workspace = true
 od-automation.workspace = true
 od-mcp-client.workspace = true
+od-mcp.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls-native-roots"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 anyhow.workspace = true
@@ -37,6 +38,7 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+zip.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
@@ -47,7 +49,6 @@ http-body-util.workspace = true
 lopdf.workspace = true
 reqwest.workspace = true
 tower.workspace = true
-zip.workspace = true
 
 [lints]
 workspace = true

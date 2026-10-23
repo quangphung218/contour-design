@@ -5,6 +5,7 @@ pub mod conversations;
 pub mod export;
 pub mod files;
 pub mod handoff;
+pub mod manage;
 pub mod media;
 pub mod platform;
 pub mod preview;

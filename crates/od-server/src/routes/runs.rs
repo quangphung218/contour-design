@@ -452,21 +452,28 @@ async fn prepare_and_launch(
             if let Some(fact) = od_store::memory_from_message(&req2.message) {
                 s.add_memory(&project2.id, &fact, od_contracts::MemorySource::Chat)?;
             }
+            // Settings ▸ Memory applies to every project, before its own.
             let memory: Vec<String> = s
-                .list_memory(&project2.id)?
+                .list_global_memory()?
                 .into_iter()
                 .map(|m| m.text)
+                .chain(s.list_memory(&project2.id)?.into_iter().map(|m| m.text))
                 .collect();
             let critique = critique_enabled(&project2, &skills).then(|| prompt::CritiqueBrief {
                 brand_name: ds.map_or("Unbranded", |d| d.summary.title.as_str()),
                 brand_body: ds.map_or("", |d| d.body.as_str()),
                 skill_id: skills.first().map_or("freeform", |s| s.info.id.as_str()),
             });
+            // Settings ▸ Instructions & rules (the original's customInstructions).
+            let user_instructions = s
+                .data_dir()
+                .app_setting("customInstructions")
+                .and_then(|v| v.as_str().map(str::to_owned));
             let instructions = prompt::compose_instructions(&PromptInput {
                 session_mode,
                 locale: req2.locale.as_deref(),
                 metadata: project2.metadata.as_ref(),
-                user_instructions: None,
+                user_instructions: user_instructions.as_deref(),
                 project_instructions: project2.custom_instructions.as_deref(),
                 design_system: ds,
                 craft: Some((craft_body.as_str(), craft_sections.as_slice())),
@@ -585,6 +592,7 @@ async fn prepare_and_launch(
                 },
             );
             env.extend(mcp.env);
+            env.extend(crate::routes::manage::settings::env_for(&data_root, def.id));
             Some(engine.launch(LaunchSpec {
                 run: Arc::clone(run),
                 def,
@@ -592,7 +600,11 @@ async fn prepare_and_launch(
                 prompt: prepared.prompt,
                 fallback_prompt: prepared.fallback_prompt,
                 model: model.clone(),
-                reasoning: non_default(req.reasoning.as_deref()),
+                reasoning: non_default(req.reasoning.as_deref()).or_else(|| {
+                    // Settings ▸ Reasoning effort, per agent.
+                    let models = state.store.data_dir().app_setting("agentModels")?;
+                    non_default(models.get(def.id)?.get("reasoning")?.as_str())
+                }),
                 extra_dirs: Vec::new(),
                 resume_session_id: prepared.resume_session_id,
                 permission: prepared.permission,

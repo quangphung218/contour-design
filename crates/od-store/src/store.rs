@@ -543,7 +543,7 @@ pub(crate) fn utf8(bytes: &[u8]) -> Result<&str> {
         .map_err(|_| StoreError::BadRequest("HTML file is not valid UTF-8".to_owned()))
 }
 
-fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
