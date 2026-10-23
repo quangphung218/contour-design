@@ -5,7 +5,8 @@
 //! - `PUT /api/mcp/servers` `{servers}` replaces the list; masked values
 //!   keep what was stored. Tokens of removed servers are dropped.
 //! - `POST /api/mcp/servers/:sid/test` connects and lists tools.
-//! - `POST /api/mcp/servers/:sid/oauth/start` → `{authorizeUrl}` to open.
+//! - `POST /api/mcp/servers/:sid/oauth/start` `{open?}` → `{authorizeUrl}`;
+//!   with `open: true` (desktop) the daemon opens it in the system browser.
 //! - `GET /api/mcp/oauth/callback` is the loopback redirect target.
 //! - `DELETE /api/mcp/servers/:sid/oauth` signs out.
 //!
@@ -209,11 +210,24 @@ pub struct OAuthStartResponse {
     pub authorize_url: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OAuthStartRequest {
+    #[serde(default)]
+    open: bool,
+}
+
 async fn oauth_start(
     State(state): State<AppState>,
     Extension(mcp): Extension<Mcp>,
     Path(sid): Path<String>,
+    body: axum::body::Bytes,
 ) -> ApiResult<ApiJson<OAuthStartResponse>> {
+    let req: OAuthStartRequest = if body.is_empty() {
+        OAuthStartRequest::default()
+    } else {
+        serde_json::from_slice(&body).map_err(|e| ApiErr::bad_request(e.to_string()))?
+    };
     let s = server(&mcp, &sid).await?;
     if s.auth != od_mcp_client::AuthMode::Oauth {
         return Err(ApiErr::bad_request("this server is not set to OAuth"));
@@ -240,6 +254,20 @@ async fn oauth_start(
     .await
     .map_err(api_err)?;
     tracing::info!(server = %s.id, "MCP OAuth started");
+    if req.open {
+        // `begin` already checked the URL is https (or loopback http).
+        let program = crate::routes::handoff::opener();
+        let mut child = tokio::process::Command::new(&program)
+            .arg(&authorize_url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| ApiErr::internal(format!("cannot run {program}: {e}")))?;
+        tokio::spawn(async move {
+            let _ = child.wait().await;
+        });
+    }
     Ok(ApiJson(OAuthStartResponse { authorize_url }))
 }
 
