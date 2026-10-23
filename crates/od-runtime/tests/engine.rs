@@ -279,7 +279,7 @@ async fn a_failed_help_probe_is_not_retried_at_once() {
         "claude",
         &format!(
             r#"if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then
-  echo probe >> "{probes}"; exec sleep 5
+  echo probe >> "{probes}"; exec sleep 30
 fi
 IFS= read -r line
 printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
@@ -289,10 +289,9 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
         ),
     );
     let runs = Runs::new(tmp.path().join("runs"));
-    let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
-    // Long enough for a first exec (macOS scans a new binary).
-    config.probe_timeout = Duration::from_millis(1500);
-    let engine = RunEngine::new(config);
+    // The default probe timeout: a shorter one can end the probe under load
+    // before the mock has even started, and then nothing was probed at all.
+    let engine = RunEngine::new(EngineConfig::from_env().with_path_prefix(&mocks));
     for id in ["first", "second"] {
         let (run, _) = runs
             .create_or_reuse(RunMeta {
