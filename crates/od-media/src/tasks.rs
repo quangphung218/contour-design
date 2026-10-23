@@ -231,12 +231,22 @@ impl TaskQueue {
         if cancel.is_cancelled() {
             return;
         }
+        // Or between the check and here: `cancel` persists before it fires
+        // the token, and the canceled record must stay canceled.
+        let mut started = false;
         let Some(record) = self.update(&id, |r| {
+            if r.status.is_terminal() {
+                return;
+            }
             r.status = TaskStatus::Running;
             r.started_at = Some(now_ms());
+            started = true;
         }) else {
             return;
         };
+        if !started {
+            return;
+        }
         let work = (self.inner.worker)(record);
         let outcome = tokio::select! {
             () = cancel.cancelled() => None,
@@ -491,6 +501,65 @@ mod tests {
             assert_eq!(*g.order.lock().unwrap(), ["0"], "the canceled task ran");
             assert_eq!(q.get(&b).unwrap().status, TaskStatus::Canceled);
         }
+    }
+
+    /// Frees the slot while a cancel of another task is being persisted:
+    /// the running task's token is canceled, so it leaves without waiting
+    /// for the queue's lock and the queued task takes the slot before its
+    /// own token is canceled.
+    struct SlowCancel {
+        inner: MemoryPersist,
+        free_slot: std::sync::OnceLock<CancellationToken>,
+    }
+
+    impl TaskPersist for SlowCancel {
+        fn save(&self, record: &TaskRecord) {
+            if record.status == TaskStatus::Canceled {
+                if let Some(token) = self.free_slot.get() {
+                    token.cancel();
+                    std::thread::sleep(Duration::from_millis(150));
+                }
+            }
+            self.inner.save(record);
+        }
+
+        fn load_all(&self) -> Vec<TaskRecord> {
+            self.inner.load_all()
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_slot_freed_on_another_thread_mid_cancel_never_runs_the_task() {
+        let g = gate();
+        let persist = Arc::new(SlowCancel {
+            inner: MemoryPersist::default(),
+            free_slot: std::sync::OnceLock::new(),
+        });
+        // Counts calls, not polls: a worker built for a canceled task is a bug
+        // even when `select!` happens to drop it unpolled.
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (inner, counted) = (gated(&g), Arc::clone(&calls));
+        let worker: Worker = Arc::new(move |r: TaskRecord| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            inner(r)
+        });
+        let q = TaskQueue::new(1, Arc::clone(&persist) as Arc<dyn TaskPersist>, worker);
+        let a = q.submit("p", json!({"n": 0})).id;
+        let b = q.submit("p", json!({"n": 1})).id;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(q.get(&a).unwrap().status, TaskStatus::Running);
+        let token = q.tasks().get(&a).unwrap().cancel.clone();
+        persist.free_slot.set(token).unwrap();
+        // Off the workers, so the woken tasks run while the cancel sleeps.
+        let (q2, b2) = (q.clone(), b.clone());
+        let canceled = tokio::task::spawn_blocking(move || q2.cancel(&b2))
+            .await
+            .unwrap();
+        assert_eq!(canceled.unwrap().status, TaskStatus::Canceled);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(q.get(&b).unwrap().status, TaskStatus::Canceled);
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "the canceled task ran");
+        assert_eq!(persist.load_all()[1].status, TaskStatus::Canceled);
     }
 
     #[tokio::test]
