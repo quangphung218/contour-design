@@ -527,10 +527,13 @@ async fn project_locations_hold_new_projects_and_scan_finds_folders() {
     assert_eq!(list["defaultId"], "work");
     assert_eq!(list["locations"][0]["id"], "default");
     assert_eq!(list["locations"][1]["path"], base_s.as_str());
+    // A parent of the data directory (not hidden, so only the overlap rule refuses it).
+    let data_parent = d.tmp.path().parent().unwrap().canonicalize().unwrap();
     for bad in [
         json!("relative/dir"),
         json!("/no/such/dir"),
         json!(d.data.to_string_lossy()),
+        json!(data_parent.to_string_lossy()),
     ] {
         let res = put(
             &d,
