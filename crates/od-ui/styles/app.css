@@ -399,7 +399,11 @@ a.project-name:hover { color: var(--color-accent-text); }
   font-size: var(--text-sm); font-weight: var(--weight-semibold);
 }
 .conversation-select:hover:not(:disabled) { background-color: var(--color-fill); }
-.chat-tools { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; padding: var(--space-1-5) var(--space-2); border-bottom: 1px solid var(--color-border-subtle); }
+.chat-tools { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; padding: var(--space-1-5) var(--space-2); border-bottom: 1px solid var(--color-border-subtle); container-type: inline-size; }
+/* A narrow chat keeps the tools on one line: icons, names in tooltips. */
+@container (max-width: 480px) {
+  .chat-tools .btn-label { display: none; }
+}
 .chat-tools .segmented { margin-right: var(--space-1); }
 .btn .count {
   display: inline-flex; align-items: center; justify-content: center;
@@ -417,7 +421,7 @@ a.project-name:hover { color: var(--color-accent-text); }
   border-bottom: 1px solid var(--color-border-subtle);
 }
 .warning-text .ico { margin-top: 2px; }
-.messages { flex: 1; overflow-y: auto; padding: var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+.messages { flex: 1; overflow-y: auto; padding: var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
 .chat-empty { margin: auto 0; }
 .msg { max-width: 100%; overflow-wrap: anywhere; animation: rise-in var(--duration-base) var(--ease-emphasized); }
 .msg.user {
@@ -482,7 +486,8 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .msg-error .ico { margin-top: 2px; }
 .run-status, .form-pending { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--text-sm); }
 .run-status .ico { width: var(--icon-sm); height: var(--icon-sm); }
-.msg-actions { display: flex; opacity: 0; transition: opacity var(--duration-fast) var(--ease-out); }
+.msg-actions { display: flex; height: 22px; margin-top: calc(-1 * var(--space-1)); opacity: 0; transition: opacity var(--duration-fast) var(--ease-out); }
+.msg-actions .btn.small { height: 22px; }
 .msg.assistant:hover .msg-actions, .msg-actions:focus-within { opacity: 1; }
 .msg-actions .btn { margin-left: calc(-1 * var(--space-2)); color: var(--color-text-tertiary); }
 .steered { display: flex; gap: var(--space-1-5); align-items: center; padding-left: var(--space-2); border-left: 2px solid var(--color-accent); font-size: var(--text-sm); color: var(--color-text-secondary); }

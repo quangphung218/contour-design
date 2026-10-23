@@ -94,6 +94,15 @@ pub(super) fn download(bytes: &[u8], name: &str, mime: &str) -> Option<()> {
     Some(())
 }
 
+/// Whether the toast that showed `shown` may close when its time is up:
+/// never while an export is still running, never over a newer message.
+fn toast_expired<T: PartialEq>(busy: bool, current: Option<&T>, shown: &T) -> bool {
+    if busy {
+        return false;
+    }
+    current == Some(shown)
+}
+
 fn stem(path: &str) -> &str {
     let name = path.rsplit('/').next().unwrap_or(path);
     name.rsplit_once('.').map_or(name, |(s, _)| s)
@@ -109,12 +118,11 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         let Some(shown) = status.get() else {
             return;
         };
-        if busy.get_untracked() {
-            return;
-        }
         leptos::task::spawn_local(async move {
             gloo_timers::future::TimeoutFuture::new(TOAST_MS).await;
-            if status.with_untracked(|s| s.as_ref() == Some(&shown)) {
+            let expired =
+                status.with_untracked(|s| toast_expired(busy.get_untracked(), s.as_ref(), &shown));
+            if expired {
                 status.set(None);
             }
         });
@@ -270,4 +278,31 @@ async fn copy_text(text: &str) -> Result<(), String> {
         .await
         .map(|_| ())
         .map_err(|e| format!("{e:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::toast_expired;
+
+    #[test]
+    fn a_toast_closes_only_over_itself_and_not_mid_export() {
+        assert!(toast_expired(
+            false,
+            Some(&"Prompt copied"),
+            &"Prompt copied"
+        ));
+        // A newer message keeps its own full time on screen.
+        assert!(!toast_expired(
+            false,
+            Some(&"Folder opened"),
+            &"Prompt copied"
+        ));
+        assert!(!toast_expired(false, None, &"Prompt copied"));
+        // "Exporting…" stays until the export ends, however long it takes.
+        assert!(!toast_expired(
+            true,
+            Some(&"Exporting pdf…"),
+            &"Exporting pdf…"
+        ));
+    }
 }

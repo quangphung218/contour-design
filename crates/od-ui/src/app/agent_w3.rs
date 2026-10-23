@@ -187,12 +187,13 @@ fn JuryToggle(ctx: StudioCtx) -> impl IntoView {
             class="btn small ghost"
             class:active=move || ctx.jury.get()
             data-testid="jury-toggle"
+            aria-label=t(T::DesignJury)
             title=t(T::JuryHint)
             aria-pressed=move || ctx.jury.get().to_string()
             on:click=toggle
         >
             {icon(Glyph::Jury)}
-            {t(T::DesignJury)}
+            <span class="btn-label">{t(T::DesignJury)}</span>
         </button>
     }
 }
@@ -235,6 +236,8 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
                 class="btn small ghost"
                 class:active=move || open.get()
                 data-testid="memory-toggle"
+                aria-label=t(T::Memory)
+                data-tip=t(T::Memory)
                 aria-expanded=move || open.get().to_string()
                 on:click=move |_| {
                     if !open.get_untracked() {
@@ -244,7 +247,7 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
                 }
             >
                 {icon(Glyph::Memory)}
-                {t(T::Memory)}
+                <span class="btn-label">{t(T::Memory)}</span>
                 <span class="count">{move || ctx.memory.with(Vec::len)}</span>
             </button>
             <Show when=move || open.get()>
