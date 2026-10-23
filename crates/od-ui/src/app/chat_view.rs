@@ -2,14 +2,19 @@
 //! forms, and the composer with its queue, plan pill and comment chips.
 
 use super::Shell;
+use super::composer::{
+    ContextChips, FilePicker, MentionArea, ModelPicker, PlusMenu, Sources, UploadState, UploadTray,
+    admit, upload_all,
+};
 use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
-use super::preview_tools::{AttachmentChips, DeliverableWarning};
+use super::preview_tools::DeliverableWarning;
 use super::studio::{StudioCtx, conversation_title};
 use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, plan_progress};
 use crate::guide::{Followup, NextStep, RunPhase, next_steps, run_phase};
 use crate::i18n::{T, t, tf};
 use crate::markdown;
+use crate::mention::{self, Outgoing};
 use crate::question_form::{
     self, Answers, Question, QuestionForm, QuestionKind, Segment, format_answers, missing_required,
 };
@@ -74,16 +79,66 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
         }
     });
 
+    let navigate = leptos_router::hooks::use_navigate();
+    let to_mcp = Callback::new(move |()| navigate("/settings#mcp", Default::default()));
     let send = move || {
+        if ctx
+            .chat
+            .uploads
+            .with_untracked(|u| u.iter().any(|x| x.state == UploadState::Uploading))
+        {
+            return;
+        }
         let text = draft.get_untracked();
         if text.trim().is_empty() {
             return;
         }
-        draft.set(String::new());
-        // While a run is going this queues the message.
-        ctx.send(text, shell);
+        match mention::outgoing(&text) {
+            Outgoing::OpenMcpSettings => {
+                draft.set(String::new());
+                to_mcp.run(());
+            }
+            Outgoing::Send(text) => {
+                draft.set(String::new());
+                // While a run is going this queues the message.
+                ctx.send(text, shell);
+            }
+        }
     };
     let send_key = send;
+    let sources = Sources::load();
+    let pick_files = RwSignal::new(0u32);
+    let stage_files = Callback::new(move |files: Vec<web_sys::File>| {
+        let (items, notice) = admit(files);
+        if let Some(n) = notice {
+            ctx.notice.set(Some(n));
+        }
+        if items.is_empty() {
+            return;
+        }
+        ctx.chat.uploads.update(|u| u.extend(items));
+        leptos::task::spawn_local(upload_all(
+            ctx.base(),
+            ctx.chat.uploads,
+            ctx.tools.attachments,
+        ));
+    });
+    let retry_upload = Callback::new(move |_id: String| {
+        leptos::task::spawn_local(upload_all(
+            ctx.base(),
+            ctx.chat.uploads,
+            ctx.tools.attachments,
+        ));
+    });
+    let mention_files = Signal::derive(move || {
+        ctx.files
+            .with(|f| f.iter().map(|f| f.path.clone()).collect::<Vec<_>>())
+    });
+    let uploading = move || {
+        ctx.chat
+            .uploads
+            .with(|u| u.iter().any(|x| x.state == UploadState::Uploading))
+    };
 
     view! {
         <section class="chat" aria-label=t(T::Chat)>
@@ -143,25 +198,46 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             <PlanPill ctx=ctx/>
             <QueueStack ctx=ctx/>
             <CommentChips ctx=ctx/>
-            <AttachmentChips ctx=ctx/>
+            <ContextChips context=ctx.chat.context draft=draft/>
+            <UploadTray
+                uploads=ctx.chat.uploads
+                ready=ctx.tools.attachments
+                base=Signal::derive(move || Some(ctx.base()))
+                on_retry=retry_upload
+            />
             <DeliverableWarning ctx=ctx/>
             <div class="composer">
-                <textarea
+                <MentionArea
+                    draft=draft
                     class="composer-input"
-                    data-testid="composer"
-                    aria-label=t(T::Chat)
-                    rows="3"
-                    placeholder=t(T::ComposerPlaceholder)
-                    prop:value=move || draft.get()
-                    on:input=move |ev| draft.set(event_target_value(&ev))
-                    on:keydown=move |ev: web_sys::KeyboardEvent| {
-                        if ev.key() == "Enter" && !ev.shift_key() && !ev.is_composing() {
-                            ev.prevent_default();
-                            send_key();
-                        }
-                    }
-                ></textarea>
+                    testid="composer"
+                    aria_label=t(T::Chat)
+                    placeholder=Signal::derive(|| t(T::ComposerPlaceholder).to_owned())
+                    rows=3
+                    sources=sources
+                    files=mention_files
+                    context=ctx.chat.context
+                    on_file=Callback::new(move |path: String| {
+                        ctx.tools.attachments.update(|a| crate::workspace::add_missing(a, vec![path]));
+                    })
+                    on_submit=Callback::new(move |()| send_key())
+                    on_files=stage_files
+                    on_mcp_settings=to_mcp
+                    on_notice=Callback::new(move |m: String| ctx.notice.set(Some(m)))
+                />
+                <FilePicker trigger=pick_files on_files=stage_files/>
                 <div class="composer-actions">
+                    <PlusMenu
+                        sources=sources
+                        context=ctx.chat.context
+                        draft=draft
+                        on_attach=Callback::new(move |()| pick_files.update(|n| *n += 1))
+                        up=true
+                    >
+                        <super::chat_ops::ContextFolders ctx=ctx/>
+                    </PlusMenu>
+                    <ModelPicker up=true/>
+                    <super::chat_ops::DesignSystemSwitch ctx=ctx/>
                     <Show when=move || ctx.live_run.get().is_some()>
                         <button class="btn small ghost danger" data-testid="stop" on:click=move |_| ctx.cancel()>
                             {icon(Glyph::Stop)}
@@ -177,7 +253,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                                 class=if live { "btn small send-btn queue" } else { "btn small primary send-btn" }
                                 data-testid="send"
                                 aria-label=label
-                                disabled=move || draft.with(|d| d.trim().is_empty())
+                                disabled=move || draft.with(|d| d.trim().is_empty()) || uploading()
                                 on:click=move |_| send()
                             >
                                 {icon(if live { Glyph::Queue } else { Glyph::Send })}
@@ -187,6 +263,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     }}
                 </div>
             </div>
+            <super::chat_ops::ChatResizer ctx=ctx/>
         </section>
     }
 }
@@ -232,7 +309,18 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
             >
                 {icon(Glyph::Add)}
             </button>
+            <super::chat_ops::ConversationMenu ctx=ctx/>
             <super::agent_w3::TranscriptMenu ctx=ctx/>
+            <button
+                class="icon-btn"
+                aria-label=t(T::CollapseChat)
+                data-tip=t(T::CollapseChat)
+                data-tip-pos="left"
+                data-testid="collapse-chat"
+                on:click=move |_| ctx.chat.collapsed.set(true)
+            >
+                {icon(Glyph::SidebarFold)}
+            </button>
         </div>
     }
 }
@@ -419,12 +507,16 @@ fn AssistantView(
                         .collect_view()
                 })
             }}
+            <super::chat_ops::TurnFiles turn=turn/>
             <RunLine turn=turn/>
             <Show when=move || is_last.get() && ctx.live_run.get().is_none()>
+                <super::chat_ops::ContinueTasks turn=turn/>
                 <NextSteps turn=turn item_id=item_id.get_value()/>
             </Show>
             <Show when=move || !turn.with(|t| t.state.is_live()) && ctx.live_run.get().is_none()>
+                <super::chat_ops::ReconnectTurn turn=turn/>
                 <div class="msg-actions">
+                    <super::chat_ops::CopyTurn turn=turn/>
                     <button
                         class="btn ghost small"
                         data-testid="fork"
@@ -552,10 +644,15 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
 
 /// Puts the caret in the chat composer.
 pub(super) fn focus_composer() {
+    focus_selector("[data-testid=composer]");
+}
+
+/// Focuses the first element matching `selector`.
+pub(super) fn focus_selector(selector: &str) {
     use wasm_bindgen::JsCast;
     if let Some(el) = web_sys::window()
         .and_then(|w| w.document())
-        .and_then(|d| d.query_selector("[data-testid=composer]").ok().flatten())
+        .and_then(|d| d.query_selector(selector).ok().flatten())
         .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
     {
         let _ = el.focus();

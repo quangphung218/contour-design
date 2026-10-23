@@ -4,10 +4,12 @@
 //! for the browser's UTF-16 caret).
 
 use crate::fuzzy;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// What a mention points at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MentionKind {
     /// A project file: attached to the next message.
     File,
@@ -33,23 +35,31 @@ impl MentionKind {
     }
 }
 
-/// One row of the palette.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One row of the palette; also what Home hands the Studio's first turn
+/// (`metadata.pendingContext`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Candidate {
     pub kind: MentionKind,
     pub id: String,
     /// What `@` inserts and what the row shows.
     pub label: String,
     /// Second line (description, folder).
+    #[serde(default)]
     pub detail: String,
     /// A plugin's input defaults, sent as `pluginInputs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inputs: Option<Map<String, Value>>,
 }
 
-/// A plugin row for the palette from one `/api/plugins` entry: `None` for a
-/// plugin that needs inputs without defaults (its own page asks for them).
+/// A plugin row for the palette from one `/api/plugins` entry: `None` for an
+/// atom, or a plugin that needs inputs without defaults (its own page asks
+/// for them).
 #[must_use]
 pub fn plugin_candidate(p: &Value) -> Option<Candidate> {
+    // Atoms are building blocks of other plugins, not something to apply.
+    if p["kind"].as_str() == Some("atom") {
+        return None;
+    }
     let id = p["id"].as_str()?.to_owned();
     let mut inputs = Map::new();
     for input in p["inputs"].as_array().into_iter().flatten() {
@@ -351,6 +361,8 @@ mod tests {
         let needs = serde_json::json!({ "id": "od-new-generation",
             "inputs": [{ "name": "topic", "required": true }] });
         assert_eq!(plugin_candidate(&needs), None);
+        let atom = serde_json::json!({ "id": "todo-write", "kind": "atom", "inputs": [] });
+        assert_eq!(plugin_candidate(&atom), None);
     }
 
     #[test]

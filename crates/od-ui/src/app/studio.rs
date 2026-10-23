@@ -169,6 +169,8 @@ pub struct StudioCtx {
     pub show_code: RwSignal<bool>,
     /// Preview zoom, percent (one of [`ZOOM_STEPS`]).
     pub zoom: RwSignal<u32>,
+    /// Composer context, uploads and the chat pane's size (track B3-chat).
+    pub chat: super::composer::ChatState,
     /// Last slide shown per deck file, restored when the deck reloads.
     last_slide: StoredValue<Option<(String, u32)>>,
     run_stream: StoredValue<Option<SendWrapper<Sse>>>,
@@ -318,9 +320,14 @@ impl StudioCtx {
             return;
         };
         let project = self.project.get_untracked();
-        let model = shell
-            .config
-            .with_untracked(|c| c.as_ref().and_then(|c| c.model.clone()));
+        let selection = shell.config.with_untracked(|c| {
+            c.as_ref()
+                .map(|c| crate::models::selection(c, &agent_id))
+                .unwrap_or_default()
+        });
+        // Mentioned skills, plugin and MCP servers still in the text.
+        let staged = self.chat.context.get_untracked();
+        let extras = crate::mention::extras(&staged, &text);
         let attached: Vec<PreviewComment> = self.comments.with_untracked(|c| {
             c.iter()
                 .filter(|c| c.status == CommentStatus::Attached)
@@ -329,7 +336,7 @@ impl StudioCtx {
         });
         let req = ChatRequest {
             agent_id,
-            message: text.clone(),
+            message: extras.message,
             project_id: self.project_id.get_value(),
             conversation_id: self.conversation_id.get_untracked(),
             user_message_id: Some(user_id),
@@ -342,11 +349,14 @@ impl StudioCtx {
                 .zip(1u32..)
                 .map(|(c, i)| CommentAttachment::from_comment(c, i))
                 .collect(),
-            model,
+            model: selection.model,
+            reasoning: selection.reasoning,
+            skill_ids: extras.skill_ids,
+            plugin_id: extras.plugin_id,
+            plugin_inputs: extras.plugin_inputs,
             locale: Some(shell.locale.get_untracked().tag().to_owned()),
             session_mode: Some(self.session_mode.get_untracked()),
             attachments: self.tools.attachments.get_untracked(),
-            ..ChatRequest::default()
         };
         self.tools.deliverable.set(None);
         self.live_run.set(Some(String::new()));
@@ -357,6 +367,9 @@ impl StudioCtx {
                     self.tools.attachments.update(|a| {
                         a.retain(|p| !req_attachments.contains(p));
                     });
+                    self.chat
+                        .context
+                        .update(|c| c.retain(|x| !staged.contains(x)));
                     self.conversation_id.set(Some(res.conversation_id));
                     turn.update(|t| t.run_id = Some(res.run_id.clone()));
                     self.attach(res.run_id, turn, Some(text));
@@ -875,9 +888,26 @@ impl StudioCtx {
             return;
         }
         if let Some(prompt) = pending.filter(|p| !p.trim().is_empty()) {
+            // Files and mentions staged on Home ride with the brief.
+            let mut meta = self
+                .project
+                .with_untracked(|p| p.as_ref().and_then(|p| p.metadata.clone()));
+            let staged = meta
+                .as_mut()
+                .map(super::composer::take_pending)
+                .unwrap_or_default();
             // Clear first so a reload never sends the brief twice.
-            let _ =
-                api::patch::<_, ProjectResponse>(&base, &json!({ "pendingPrompt": null })).await;
+            let mut patch = json!({ "pendingPrompt": null });
+            if staged.is_some() {
+                patch["metadata"] = json!(meta);
+            }
+            let _ = api::patch::<_, ProjectResponse>(&base, &patch).await;
+            if let Some((files, context)) = staged {
+                self.tools
+                    .attachments
+                    .update(|a| crate::workspace::add_missing(a, files));
+                self.chat.context.set(context);
+            }
             self.send(prompt, shell);
         }
     }
@@ -972,6 +1002,7 @@ pub fn Studio() -> impl IntoView {
         files_open: RwSignal::new(super::stored_flag(FILES_OPEN_KEY).unwrap_or(true)),
         show_code: RwSignal::new(false),
         zoom: RwSignal::new(100),
+        chat: super::composer::ChatState::new(),
         tools: Tools::new(),
         last_slide: StoredValue::new(None),
         run_stream: StoredValue::new(None),
@@ -1006,8 +1037,17 @@ pub fn Studio() -> impl IntoView {
     });
 
     view! {
-        <div class="studio">
+        <div
+            class="studio"
+            class:chat-collapsed=move || ctx.chat.collapsed.get()
+            style=move || ctx.chat.width.get().map(|w| format!("--chat-w:{w:.0}px"))
+        >
             <ChatPane ctx=ctx/>
+            <Show when=move || ctx.chat.collapsed.get()>
+                <button class="btn small show-chat" data-testid="show-chat" on:click=move |_| ctx.chat.collapsed.set(false)>
+                    {icon(Glyph::SidebarUnfold)}{t(T::ShowChat)}
+                </button>
+            </Show>
             <section class="workspace" class:files-closed=move || !ctx.files_open.get()>
                 <PreviewPane ctx=ctx/>
                 <Show when=move || ctx.files_open.get()>

@@ -659,6 +659,9 @@ messages! {
     ContinueRemaining => "Continue remaining tasks", "Làm tiếp phần còn lại";
     TaskNotFinished => "Task not finished yet: {0} item(s) left", "Việc chưa xong: còn {0} mục";
     Reconnect => "Reconnect", "Kết nối lại";
+    SearchList => "Search", "Tìm";
+    OpWrite => "Write", "Ghi";
+    OpEdit => "Edit", "Sửa";
 }
 
 /// The current language's text for `key`.
