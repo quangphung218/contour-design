@@ -84,7 +84,10 @@ fn check_lines(golden: &Path, actual: &str) {
 
 fn check_golden(name: &str, events: &[AgentEvent], writes: &[String]) {
     let golden = fixtures().join("golden");
-    check_lines(&golden.join(format!("{name}.events.jsonl")), &snapshot(events));
+    check_lines(
+        &golden.join(format!("{name}.events.jsonl")),
+        &snapshot(events),
+    );
     if !writes.is_empty() {
         check_lines(
             &golden.join(format!("{name}.writes.jsonl")),
@@ -226,14 +229,27 @@ fn pi_rpc_turn() {
     let (events, writes) = replay(StreamFormat::PiRpc, &ctx(), "pi/turn-rpc.jsonl");
     check_golden("pi-turn-rpc", &events, &writes);
     let sent = frames(&writes);
-    assert_eq!(sent[0], json!({"id": 1, "type": "prompt", "message": "Build a landing page"}));
+    assert_eq!(
+        sent[0],
+        json!({"id": 1, "type": "prompt", "message": "Build a landing page"})
+    );
     // get_state once the prompt is accepted; dialogs answered, notify not.
     assert_eq!(sent[1], json!({"id": 2, "type": "get_state"}));
     assert_eq!(sent[2]["type"], "extension_ui_response");
-    assert_eq!((sent[2]["id"].clone(), sent[2]["confirmed"].clone()), (json!("ui-1"), json!(true)));
-    assert_eq!((sent[3]["id"].clone(), sent[3]["value"].clone()), (json!("ui-2"), json!("Keep")));
+    assert_eq!(
+        (sent[2]["id"].clone(), sent[2]["confirmed"].clone()),
+        (json!("ui-1"), json!(true))
+    );
+    assert_eq!(
+        (sent[3]["id"].clone(), sent[3]["value"].clone()),
+        (json!("ui-2"), json!("Keep"))
+    );
     assert_eq!(sent.len(), 4);
-    assert_eq!(text(&events), "Writing index.html.", "nothing after agent_end");
+    assert_eq!(
+        text(&events),
+        "Writing index.html.",
+        "nothing after agent_end"
+    );
     assert_eq!(thinking(&events), "Hero first.");
     assert_eq!(
         tool_results(&events),
@@ -256,7 +272,11 @@ fn pi_rpc_turn() {
         parser.line(line, &mut out);
     }
     assert!(parser.completed());
-    assert_eq!(parser.abort_line(), None, "nothing to abort after agent_end");
+    assert_eq!(
+        parser.abort_line(),
+        None,
+        "nothing to abort after agent_end"
+    );
 }
 
 /// A resumed turn loads the stored session first and sends the prompt only
@@ -286,7 +306,10 @@ fn pi_resume_waits_for_the_parent_session() {
         r#"{"type":"response","id":1,"success":false,"error":"no such session"}"#,
         &mut out,
     );
-    assert!(rejected.take_writes().is_empty(), "no prompt after a rejected session");
+    assert!(
+        rejected.take_writes().is_empty(),
+        "no prompt after a rejected session"
+    );
     assert!(rejected.completed());
     assert!(out.iter().any(|e| matches!(e,
         AgentEvent::Error { code: Some(c), message, .. }
@@ -305,7 +328,10 @@ fn pi_resume_waits_for_the_parent_session() {
     assert_eq!(live.abort_line(), None);
     let mut out = Vec::new();
     live.finish(&mut out);
-    assert!(errors(&out).is_empty(), "an aborted run is not an early exit");
+    assert!(
+        errors(&out).is_empty(),
+        "an aborted run is not an early exit"
+    );
 }
 
 #[test]
@@ -343,7 +369,9 @@ fn antigravity_recorded_failures() {
     check_golden("antigravity-quota-exhausted", &events, &writes);
     assert_eq!(
         errors(&events),
-        ["Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 148h43m22s."]
+        [
+            "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 148h43m22s."
+        ]
     );
     let (events, writes) = replay(
         StreamFormat::AntigravityJson,
@@ -369,16 +397,16 @@ fn antigravity_recorded_failures() {
     assert_eq!(text(&out), "Hi");
     assert_eq!(tool_results(&out), [("g1".into(), true)]);
     assert!(errors(&out).is_empty(), "a warning is a status");
-    assert!(out.iter().any(|e| matches!(e, AgentEvent::Usage { usage: Some(u), .. } if u["output_tokens"] == 4)));
+    assert!(
+        out.iter().any(
+            |e| matches!(e, AgentEvent::Usage { usage: Some(u), .. } if u["output_tokens"] == 4)
+        )
+    );
 }
 
 #[test]
 fn amp_and_codebuddy_speak_claude_stream_json() {
-    let (events, writes) = replay(
-        def::AMP.stream_format,
-        &ctx(),
-        "amp/turn-stream-json.jsonl",
-    );
+    let (events, writes) = replay(def::AMP.stream_format, &ctx(), "amp/turn-stream-json.jsonl");
     check_golden("amp-turn-stream-json", &events, &writes);
     assert_eq!(text(&events), "Creating the page.Done.");
     assert_eq!(tool_results(&events), [("toolu_1".into(), false)]);
@@ -407,10 +435,19 @@ fn mimo_speaks_opencode_json() {
 
 #[test]
 fn plain_clis_stream_text() {
-    for d in [&def::AIDER, &def::DEEPSEEK_TUI, &def::GROK_BUILD, &def::ATOMCODE] {
+    for d in [
+        &def::AIDER,
+        &def::DEEPSEEK_TUI,
+        &def::GROK_BUILD,
+        &def::ATOMCODE,
+    ] {
         assert_eq!(d.stream_format, StreamFormat::Plain, "{}", d.id);
         let (events, writes) = replay(d.stream_format, &ctx(), "plain-cli/aider-message.txt");
-        assert!(text(&events).contains("<artifact identifier=\"landing\""), "{}", d.id);
+        assert!(
+            text(&events).contains("<artifact identifier=\"landing\""),
+            "{}",
+            d.id
+        );
         if d.id == "aider" {
             check_golden("plain-cli-aider-message", &events, &writes);
         }
@@ -455,13 +492,19 @@ fn every_adapter_argv_in_both_modes() {
         ..base.clone()
     };
 
-    assert_eq!(argv(&def::AMP, &base), "-x --stream-json --dangerously-allow-all");
+    assert_eq!(
+        argv(&def::AMP, &base),
+        "-x --stream-json --dangerously-allow-all"
+    );
     assert_eq!(argv(&def::AMP, &ask), "-x --stream-json");
     assert_eq!(
         argv(&def::AMP, &with("deep", None)),
         "-x --stream-json --dangerously-allow-all --mode deep"
     );
-    assert!(!argv(&def::AMP, &with("gpt-5", None)).contains("--mode"), "only Amp modes");
+    assert!(
+        !argv(&def::AMP, &with("gpt-5", None)).contains("--mode"),
+        "only Amp modes"
+    );
 
     let fresh = ArgvInput {
         new_session_id: Some("s-new"),
@@ -496,7 +539,10 @@ fn every_adapter_argv_in_both_modes() {
     );
 
     assert_eq!(argv(&def::MIMO, &base), "run --format json");
-    assert_eq!(argv(&def::MIMO, &with("mimo-v2", None)), "run --format json --model mimo-v2");
+    assert_eq!(
+        argv(&def::MIMO, &with("mimo-v2", None)),
+        "run --format json --model mimo-v2"
+    );
 
     assert_eq!(argv(&def::PI, &base), "--mode rpc");
     assert_eq!(
@@ -532,13 +578,19 @@ fn every_adapter_argv_in_both_modes() {
         "--prompt-file /tmp/od-prompt.md --no-plan --always-approve --model grok-4.3",
         "effort only on reasoning models"
     );
-    assert_eq!(argv(&def::GROK_BUILD, &ask), "--prompt-file /tmp/od-prompt.md --no-plan");
+    assert_eq!(
+        argv(&def::GROK_BUILD, &ask),
+        "--prompt-file /tmp/od-prompt.md --no-plan"
+    );
 
     assert_eq!(
         argv(&def::ATOMCODE, &with("glm-5.2", None)),
         "--prompt-file /tmp/od-prompt.md -y --model glm-5.2"
     );
-    assert_eq!(argv(&def::ATOMCODE, &ask), "--prompt-file /tmp/od-prompt.md");
+    assert_eq!(
+        argv(&def::ATOMCODE, &ask),
+        "--prompt-file /tmp/od-prompt.md"
+    );
 
     assert_eq!(
         argv(&def::ANTIGRAVITY, &with("Gemini 3.1 Pro (High)", None)),
@@ -597,7 +649,11 @@ fn adapters_are_wired_like_the_original() {
         find("mimo").mcp,
         McpInjection::OpenCodeEnv("MIMOCODE_CONFIG_CONTENT")
     );
-    assert_eq!(find("amp").mcp, McpInjection::None, "amp takes no --mcp-config");
+    assert_eq!(
+        find("amp").mcp,
+        McpInjection::None,
+        "amp takes no --mcp-config"
+    );
     assert_eq!(
         od_runtime::engine::agy_user_line("hi"),
         "{\"event\":\"user\",\"message\":{\"content\":\"hi\"}}\n"

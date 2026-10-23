@@ -68,8 +68,7 @@ pub async fn export(State(state): State<AppState>) -> ApiResult<impl IntoRespons
         .is_some();
     let engine = state.runs.engine.config();
     let agents =
-        od_runtime::detect::detect_all_in(engine.path.clone(), engine.base_env.clone(), byok)
-            .await;
+        od_runtime::detect::detect_all_in(engine.path.clone(), engine.base_env.clone(), byok).await;
     let runs: Vec<_> = state
         .runs
         .registry

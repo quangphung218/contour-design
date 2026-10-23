@@ -503,7 +503,11 @@ impl RunEngine {
         let def = spec.def;
         let mut att = Attempt::default();
         // Held until this attempt ends (see `crate::antigravity`).
-        let _model_lock = match (def.id == ANTIGRAVITY.id, non_default(spec.model.as_deref()), log_file) {
+        let _model_lock = match (
+            def.id == ANTIGRAVITY.id,
+            non_default(spec.model.as_deref()),
+            log_file,
+        ) {
             (true, Some(model), Some(log)) => Some(
                 crate::antigravity::select_model(
                     crate::antigravity::settings_path(&home_of(&spec.env)),

@@ -6,11 +6,13 @@
 //! - `/api/plugins*` ([`plugins`]); runs apply them via `pluginId`.
 //! - `/api/media/*`, `POST /api/projects/:id/media/generate` ([`generate`]).
 //! - `/api/prompt-templates*` ([`templates`]).
+//! - `POST /api/research/search` ([`research`], track C3).
 
 pub mod generate;
 pub mod live;
 pub mod mp4;
 pub mod plugins;
+pub mod research;
 pub mod templates;
 
 use crate::error::{ApiErr, ApiResult};
@@ -38,7 +40,10 @@ impl Default for Deps {
         Self {
             renderer: Arc::new(od_render_cdp::CdpRenderer::new()),
             env: Arc::new(od_media::process_env),
-            limits: Limits::default(),
+            limits: Limits {
+                allow_stubs: od_media::stubs_allowed(&od_media::process_env),
+                ..Limits::default()
+            },
         }
     }
 }
@@ -51,6 +56,7 @@ pub fn routes_with(deps: Deps) -> Router<AppState> {
     Router::new()
         .route("/api/projects/{id}/export/mp4", post(mp4::export_mp4))
         .layer(Extension(Arc::clone(&deps.renderer)))
+        .merge(research::routes().layer(Extension(deps.clone())))
         .merge(generate::routes().layer(Extension(deps)))
         .merge(live::routes())
         .merge(plugins::routes())

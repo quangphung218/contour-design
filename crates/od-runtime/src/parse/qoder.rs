@@ -32,10 +32,8 @@ fn non_empty<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
 fn error_message(error: &Value) -> String {
     match error {
         Value::String(s) if !s.is_empty() => s.clone(),
-        Value::Object(_) => str_field(error, "message").map_or_else(
-            || "Unknown Qoder error".to_owned(),
-            str::to_owned,
-        ),
+        Value::Object(_) => str_field(error, "message")
+            .map_or_else(|| "Unknown Qoder error".to_owned(), str::to_owned),
         _ => "Unknown Qoder error".to_owned(),
     }
 }

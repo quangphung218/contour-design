@@ -36,7 +36,10 @@ impl Default for Deps {
         Self {
             renderer: Arc::new(od_render_cdp::CdpRenderer::new()),
             env: Arc::new(od_media::process_env),
-            limits: Limits::default(),
+            limits: Limits {
+                allow_stubs: od_media::stubs_allowed(&od_media::process_env),
+                ..Limits::default()
+            },
             media_concurrency: std::env::var("OD_MEDIA_CONCURRENCY")
                 .ok()
                 .and_then(|v| v.trim().parse::<usize>().ok())

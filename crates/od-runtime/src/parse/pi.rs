@@ -124,8 +124,10 @@ impl PiSession {
         let id = raw.get("id").and_then(Value::as_u64);
         let ok = raw.get("success") == Some(&Value::Bool(true));
         let error = || {
-            raw.get("error")
-                .map_or_else(|| "unknown".to_owned(), |e| e.as_str().map_or_else(|| e.to_string(), str::to_owned))
+            raw.get("error").map_or_else(
+                || "unknown".to_owned(),
+                |e| e.as_str().map_or_else(|| e.to_string(), str::to_owned),
+            )
         };
         if id.is_some() && id == self.state_rpc {
             self.state_rpc = None;
@@ -374,9 +376,7 @@ fn changed_session(cwd: &Path, before: &HashMap<PathBuf, (SystemTime, u64)>) -> 
     let changed: Vec<PathBuf> = session_files(cwd)
         .into_iter()
         .filter(|(path, (mtime, size))| {
-            before
-                .get(path)
-                .is_none_or(|(m, s)| mtime > m || size != s)
+            before.get(path).is_none_or(|(m, s)| mtime > m || size != s)
         })
         .map(|(path, _)| path)
         .collect();

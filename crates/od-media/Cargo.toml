@@ -1,6 +1,6 @@
 [package]
 name = "od-media"
-description = "Media generation with the user's own keys: OpenAI Images, fal.ai, ElevenLabs; media-config.json"
+description = "Media generation and research with the user's own keys (OpenAI, fal.ai, ElevenLabs, Volcengine, xAI, Gemini, ImageRouter, OpenRouter, Leonardo, MiniMax, FishAudio, SenseAudio, AIHubMix, Tavily); media-config.json"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 base64.workspace = true
+hex.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls"] }
 serde.workspace = true
 serde_json.workspace = true

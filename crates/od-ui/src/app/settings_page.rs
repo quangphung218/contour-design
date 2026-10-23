@@ -759,11 +759,7 @@ fn ProjectLocations() -> impl IntoView {
 /// Media providers: key, base URL and model per provider.
 #[component]
 fn MediaProviders() -> impl IntoView {
-    const PROVIDERS: [(&str, &str); 3] = [
-        ("openai", "OpenAI"),
-        ("fal", "Fal.ai"),
-        ("elevenlabs", "ElevenLabs"),
-    ];
+    let entries = super::media_page::PROVIDERS.map(|(id, label, _)| (id, label));
     let stored = RwSignal::new(Value::Null);
     let edits = RwSignal::new(Map::<String, Value>::new());
     let state = RwSignal::new(None::<Result<(), String>>);
@@ -797,7 +793,7 @@ fn MediaProviders() -> impl IntoView {
     };
     let save = move |clear: Option<&'static str>| {
         let mut providers = Map::new();
-        for (id, _) in PROVIDERS {
+        for (id, _) in entries {
             if clear == Some(id) {
                 continue;
             }
@@ -833,7 +829,7 @@ fn MediaProviders() -> impl IntoView {
     };
     view! {
         <div class="media-providers">
-            {PROVIDERS.into_iter().map(|(id, label)| view! {
+            {entries.into_iter().map(|(id, label)| view! {
                 <div class="card padded media-provider" data-testid="media-provider" data-provider=id>
                     <div class="row">
                         <strong class="grow">{label}</strong>

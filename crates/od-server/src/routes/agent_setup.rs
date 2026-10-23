@@ -17,10 +17,7 @@ use od_runtime::dsh_companion::{self, SetupError};
 use serde_json::json;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route(
-        "/api/agents/{agent_id}/companion/install",
-        post(install),
-    )
+    Router::new().route("/api/agents/{agent_id}/companion/install", post(install))
 }
 
 /// One setup at a time: a second click waits for the first to finish.
@@ -48,9 +45,13 @@ async fn install(State(state): State<AppState>, Path(agent_id): Path<String>) ->
     let _one = setup_lock().lock().await;
     let engine = state.runs.engine.config();
     let bin = od_runtime::detect::resolve_bin(&DSH, &engine.path);
-    let result =
-        dsh_companion::install(bin.as_deref(), &bundle_dir(&state), &engine.path, &engine.base_env)
-            .await;
+    let result = dsh_companion::install(
+        bin.as_deref(),
+        &bundle_dir(&state),
+        &engine.path,
+        &engine.base_env,
+    )
+    .await;
     match result {
         Ok((action, version)) => {
             let agent =

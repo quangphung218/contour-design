@@ -36,7 +36,10 @@ pub fn write_model(path: &Path, model: &str) -> std::io::Result<()> {
         .and_then(|raw| serde_json::from_slice::<serde_json::Value>(&raw).ok())
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default();
-    obj.insert("model".to_owned(), serde_json::Value::String(model.to_owned()));
+    obj.insert(
+        "model".to_owned(),
+        serde_json::Value::String(model.to_owned()),
+    );
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -127,7 +130,10 @@ mod tests {
             async move { select_model(settings, "B".to_owned(), log_b).await }
         });
         tokio::time::sleep(Duration::from_millis(600)).await;
-        assert!(!second.is_finished(), "B wrote before A's agy read the file");
+        assert!(
+            !second.is_finished(),
+            "B wrote before A's agy read the file"
+        );
         let read = |p: &Path| {
             let v: serde_json::Value = serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap();
             v["model"].as_str().unwrap().to_owned()

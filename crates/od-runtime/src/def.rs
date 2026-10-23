@@ -813,7 +813,10 @@ fn aider_args(input: &ArgvInput<'_>) -> Vec<String> {
     if let Some(model) = non_default(input.model) {
         args.extend(["--model".to_owned(), model.to_owned()]);
     }
-    args.extend(["--message".to_owned(), input.prompt.unwrap_or_default().to_owned()]);
+    args.extend([
+        "--message".to_owned(),
+        input.prompt.unwrap_or_default().to_owned(),
+    ]);
     args
 }
 
@@ -831,7 +834,8 @@ fn deepseek_tui_args(input: &ArgvInput<'_>) -> Vec<String> {
 
 /// Grok takes `--effort` only on its reasoning models.
 fn grok_reasoning_model(model: Option<&str>) -> bool {
-    non_default(model).is_some_and(|m| m != "grok-build" && m.to_ascii_lowercase().contains("reasoning"))
+    non_default(model)
+        .is_some_and(|m| m != "grok-build" && m.to_ascii_lowercase().contains("reasoning"))
 }
 
 fn grok_build_args(input: &ArgvInput<'_>) -> Vec<String> {

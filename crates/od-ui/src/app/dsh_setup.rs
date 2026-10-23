@@ -48,23 +48,21 @@ pub fn DshSetupDialog(
             let installed = match api::post::<_, Value>(&path, &json!({})).await {
                 Ok(_) => api::get::<AgentsResponse>("/api/agents")
                     .await
-                    .map_err(|e| e.message)
-                    .and_then(|r| {
-                        let ok = r.agents.iter().any(|a| a.id == DSH_ID && a.available);
-                        shell.agents.set(Some(Ok(r.agents)));
-                        if ok {
-                            Ok(())
-                        } else {
-                            Err(t(T::DshSetupRequired).to_owned())
-                        }
-                    }),
+                    .map_err(|e| e.message),
                 Err(e) => Err(e.message),
             };
             match installed {
-                Ok(()) => {
+                Ok(r) if r.agents.iter().any(|a| a.id == DSH_ID && a.available) => {
                     picked.set(Some(DSH_ID.to_owned()));
                     state.set(None);
+                    // Last: the new list rebuilds the card that owns this
+                    // dialog.
+                    shell.agents.set(Some(Ok(r.agents)));
                 }
+                Ok(_) => state.set(Some(SetupState {
+                    busy: false,
+                    error: Some(t(T::DshSetupRequired).to_owned()),
+                })),
                 Err(error) => state.set(Some(SetupState {
                     busy: false,
                     error: Some(error),

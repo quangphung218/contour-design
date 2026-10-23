@@ -9,7 +9,9 @@
 
 use od_contracts::{FailureCategory, RunStatus, sse};
 use od_runs::{RunEvent, RunMeta, Runs};
-use od_runtime::def::{AIDER, ANTIGRAVITY, GROK_BUILD, MAX_PROMPT_ARG_BYTES, PI, QODER, RuntimeDef};
+use od_runtime::def::{
+    AIDER, ANTIGRAVITY, GROK_BUILD, MAX_PROMPT_ARG_BYTES, PI, QODER, RuntimeDef,
+};
 use od_runtime::{EngineConfig, LaunchSpec, PermissionMode, RunEngine};
 use serde_json::Value;
 use std::ffi::OsString;
@@ -128,7 +130,10 @@ async fn aider_gets_the_prompt_on_argv_and_its_artifact_becomes_a_file() {
     assert_eq!(outcome.status, RunStatus::Succeeded, "{outcome:?}");
     let log = h.log_text();
     let args: Vec<&str> = log.lines().filter_map(|l| l.strip_prefix("ARG:")).collect();
-    assert_eq!(&args[args.len() - 2..], ["--message", "Build a landing page"]);
+    assert_eq!(
+        &args[args.len() - 2..],
+        ["--message", "Build a landing page"]
+    );
     assert!(args.contains(&"--yes-always"));
     assert!(log.contains("STDIN:EOF"), "stdin is closed at once: {log}");
     let files: Vec<_> = std::fs::read_dir(&h.project)
@@ -241,7 +246,10 @@ async fn antigravity_gets_one_stdin_event_and_its_model_through_settings() {
             .as_str(),
     )
     .unwrap();
-    assert_eq!(stdin, serde_json::json!({"event": "user", "message": {"content": "Build a landing page"}}));
+    assert_eq!(
+        stdin,
+        serde_json::json!({"event": "user", "message": {"content": "Build a landing page"}})
+    );
     assert!(log.contains("STDIN:EOF"), "EOF after the one event: {log}");
     assert!(log.contains("MODEL:Gemini 3.1 Pro (High)"), "{log}");
     assert!(!log.contains("ARG:--model"), "agy has no --model");
@@ -305,7 +313,11 @@ async fn pi_rpc_turn_captures_its_session_and_resumes_it() {
                 .map_or_else(|_| l.to_owned(), |v| v["type"].as_str().unwrap().to_owned())
         })
         .collect();
-    assert_eq!(kinds, ["prompt", "get_state", "EOF"], "stdin closes after agent_end");
+    assert_eq!(
+        kinds,
+        ["prompt", "get_state", "EOF"],
+        "stdin closes after agent_end"
+    );
 
     std::fs::remove_file(h.log()).unwrap();
     let mut spec = h.spec("pi-2", &PI);

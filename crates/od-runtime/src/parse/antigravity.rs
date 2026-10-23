@@ -253,8 +253,8 @@ fn gemini(obj: &Value, out: &mut Vec<AgentEvent>) -> bool {
             true
         }
         "error" => {
-            let warning = str_field(obj, "severity")
-                .is_some_and(|s| s.eq_ignore_ascii_case("warning"));
+            let warning =
+                str_field(obj, "severity").is_some_and(|s| s.eq_ignore_ascii_case("warning"));
             let source = obj.get("message").or_else(|| obj.get("error"));
             if warning {
                 out.push(AgentEvent::Status {

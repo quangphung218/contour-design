@@ -74,7 +74,12 @@ pub fn parse_probe(stdout: &str) -> Option<String> {
         .flatten()
 }
 
-fn command(bin: &Path, args: &[&str], path: &OsStr, env: &[(OsString, OsString)]) -> tokio::process::Command {
+fn command(
+    bin: &Path,
+    args: &[&str],
+    path: &OsStr,
+    env: &[(OsString, OsString)],
+) -> tokio::process::Command {
     // The agents' environment, like a run of `dsh` gets.
     let mut cmd = tokio::process::Command::new(bin);
     cmd.args(args)
@@ -155,12 +160,14 @@ pub struct Bundle {
 pub fn read_bundle(dir: &Path) -> Result<Bundle, SetupError> {
     let invalid = |m: &str| SetupError::BundleInvalid(m.to_owned());
     let raw = std::fs::read(dir.join("manifest.json")).map_err(|_| {
-        invalid("This Open Design build does not contain the DeepSeek Harness connection component.")
+        invalid(
+            "This Open Design build does not contain the DeepSeek Harness connection component.",
+        )
     })?;
-    let m: Manifest =
-        serde_json::from_slice(&raw).map_err(|_| invalid("Invalid connection package manifest."))?;
-    let file_ok = Path::new(&m.file).file_name() == Some(OsStr::new(&m.file))
-        && m.file.ends_with(".tgz");
+    let m: Manifest = serde_json::from_slice(&raw)
+        .map_err(|_| invalid("Invalid connection package manifest."))?;
+    let file_ok =
+        Path::new(&m.file).file_name() == Some(OsStr::new(&m.file)) && m.file.ends_with(".tgz");
     let hash_ok = m.sha256.len() == 64
         && m.sha256
             .bytes()
@@ -238,7 +245,13 @@ pub async fn install(
     let spec = format!(".open-design/{file}");
     let out = tokio::time::timeout(
         INSTALL_TIMEOUT,
-        command(bin, &["plugin", "--profile", "open-design", "add", &spec], path, env).output(),
+        command(
+            bin,
+            &["plugin", "--profile", "open-design", "add", &spec],
+            path,
+            env,
+        )
+        .output(),
     )
     .await;
     match out {
@@ -283,11 +296,17 @@ mod tests {
     fn probe_output_must_be_one_compatible_frame() {
         let good = r#"{"v":1,"type":"probe","runtime":"open-design","protocol_version":1,"plugin_version":"0.1.0","capabilities":{}}"#;
         assert_eq!(parse_probe(good).as_deref(), Some("0.1.0"));
-        assert_eq!(parse_probe(&format!("\n{good}\n\n")).as_deref(), Some("0.1.0"));
+        assert_eq!(
+            parse_probe(&format!("\n{good}\n\n")).as_deref(),
+            Some("0.1.0")
+        );
         assert_eq!(parse_probe(&format!("{good}\n{good}")), None, "two frames");
         assert_eq!(parse_probe(&good.replace("probe\"", "ready\"")), None);
         assert_eq!(parse_probe(&good.replace("open-design", "other")), None);
-        assert_eq!(parse_probe(&good.replace("\"protocol_version\":1", "\"protocol_version\":2")), None);
+        assert_eq!(
+            parse_probe(&good.replace("\"protocol_version\":1", "\"protocol_version\":2")),
+            None
+        );
         assert_eq!(parse_probe("not json"), None);
         assert_eq!(parse_probe(""), None);
     }
@@ -295,7 +314,10 @@ mod tests {
     #[test]
     fn the_profile_follows_dsh_home_then_home() {
         let env = |pairs: &[(&str, &str)]| -> Vec<(OsString, OsString)> {
-            pairs.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect()
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).into(), (*v).into()))
+                .collect()
         };
         assert_eq!(
             profile_dir(&env(&[("HOME", "/h"), ("DSH_HOME", "/d")])),
@@ -311,7 +333,9 @@ mod tests {
     fn a_bundle_is_checked_before_use() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
-        assert!(matches!(read_bundle(dir), Err(SetupError::BundleInvalid(m)) if m.contains("does not contain")));
+        assert!(
+            matches!(read_bundle(dir), Err(SetupError::BundleInvalid(m)) if m.contains("does not contain"))
+        );
         let bytes = b"tarball bytes".to_vec();
         let sha = hex::encode(Sha256::digest(&bytes));
         std::fs::write(dir.join("p.tgz"), &bytes).unwrap();
@@ -320,10 +344,22 @@ mod tests {
         };
         std::fs::write(dir.join("manifest.json"), manifest("p.tgz", &sha)).unwrap();
         let b = read_bundle(dir).unwrap();
-        assert_eq!((b.version.as_str(), b.bytes.as_slice()), ("0.1.0", bytes.as_slice()));
+        assert_eq!(
+            (b.version.as_str(), b.bytes.as_slice()),
+            ("0.1.0", bytes.as_slice())
+        );
         std::fs::write(dir.join("manifest.json"), manifest("../p.tgz", &sha)).unwrap();
-        assert!(read_bundle(dir).is_err(), "the file is one name in the bundle");
-        std::fs::write(dir.join("manifest.json"), manifest("p.tgz", &"0".repeat(64))).unwrap();
-        assert!(matches!(read_bundle(dir), Err(SetupError::BundleInvalid(m)) if m.contains("integrity")));
+        assert!(
+            read_bundle(dir).is_err(),
+            "the file is one name in the bundle"
+        );
+        std::fs::write(
+            dir.join("manifest.json"),
+            manifest("p.tgz", &"0".repeat(64)),
+        )
+        .unwrap();
+        assert!(
+            matches!(read_bundle(dir), Err(SetupError::BundleInvalid(m)) if m.contains("integrity"))
+        );
     }
 }

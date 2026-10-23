@@ -103,7 +103,10 @@ async fn the_added_agents_are_detected() {
     assert_eq!(cb["supportsSteer"], true);
     assert_eq!(get("aider")["available"], false);
     assert_eq!(get("pi")["supportsResume"], true);
-    assert!(get("aider").get("needsSetup").is_none(), "only DeepSeek Harness has setup");
+    assert!(
+        get("aider").get("needsSetup").is_none(),
+        "only DeepSeek Harness has setup"
+    );
 }
 
 #[tokio::test]
@@ -224,11 +227,25 @@ async fn mcp_servers_reach_each_agent_its_own_way() {
         .unwrap();
     assert!(res.status().is_success());
     let log = d.tmp.path().join("agent.log");
-    let opencode_end = r#"echo '{"type":"text","sessionID":"s","part":{"type":"text","text":"ok"}}'"#;
-    write_mock(&d.mocks, "mimo", &mcp_mock(&log, "MIMOCODE_CONFIG_CONTENT", "cat > /dev/null", opencode_end));
+    let opencode_end =
+        r#"echo '{"type":"text","sessionID":"s","part":{"type":"text","text":"ok"}}'"#;
+    write_mock(
+        &d.mocks,
+        "mimo",
+        &mcp_mock(
+            &log,
+            "MIMOCODE_CONFIG_CONTENT",
+            "cat > /dev/null",
+            opencode_end,
+        ),
+    );
     let claude_end = r#"echo '{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"ok"}]}}'
 echo '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}'"#;
-    write_mock(&d.mocks, "amp", &mcp_mock(&log, "NONE", "cat > /dev/null", claude_end));
+    write_mock(
+        &d.mocks,
+        "amp",
+        &mcp_mock(&log, "NONE", "cat > /dev/null", claude_end),
+    );
     write_mock(
         &d.mocks,
         "codebuddy",
@@ -248,12 +265,22 @@ echo '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_t
             "mimo" => {
                 let env = text.lines().find_map(|l| l.strip_prefix("ENV:")).unwrap();
                 let doc: Value = serde_json::from_str(env).unwrap();
-                assert_eq!(doc["mcp"]["files"]["command"], json!(["/bin/true"]), "{text}");
-                assert!(text.contains("OPENCODE:\n"), "not OpenCode's variable: {text}");
+                assert_eq!(
+                    doc["mcp"]["files"]["command"],
+                    json!(["/bin/true"]),
+                    "{text}"
+                );
+                assert!(
+                    text.contains("OPENCODE:\n"),
+                    "not OpenCode's variable: {text}"
+                );
                 assert!(!text.contains("MCP_CONFIG"));
             }
             "amp" => assert!(!text.contains("MCP_CONFIG"), "amp takes no --mcp-config"),
-            _ => assert!(text.contains("MCP_CONFIG"), "codebuddy reads --mcp-config: {text}"),
+            _ => assert!(
+                text.contains("MCP_CONFIG"),
+                "codebuddy reads --mcp-config: {text}"
+            ),
         }
     }
 }
