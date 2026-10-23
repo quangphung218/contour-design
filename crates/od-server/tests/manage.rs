@@ -391,6 +391,59 @@ async fn byok_test_and_models_never_send_the_saved_key_elsewhere() {
     );
 }
 
+/// A saved agent key belongs to the base URL it was saved with: a new URL
+/// without a new key drops it, so the next run never sends it there.
+#[tokio::test]
+async fn a_new_agent_base_url_drops_the_saved_key() {
+    let d = common::daemon().await;
+    let key = |env: &Value, agent: &str, k: &str| env["env"][agent][k]["set"] == true;
+    let res = put(
+        &d,
+        "/api/agent-cli-env",
+        &json!({"env": {"claude": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9/a", "ANTHROPIC_API_KEY": "sk-ant-secret-1234"},
+                        "codex": {"OPENAI_BASE_URL": "http://127.0.0.1:9/a", "OPENAI_API_KEY": "sk-openai-1234", "CODEX_HOME": "/tmp/c"}}}),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    // The same URL again keeps the key.
+    let res = put(
+        &d,
+        "/api/agent-cli-env",
+        &json!({"env": {"claude": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9/a"}}}),
+    )
+    .await;
+    assert!(key(
+        &res.json().await.unwrap(),
+        "claude",
+        "ANTHROPIC_API_KEY"
+    ));
+    for patch in [
+        json!({"claude": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9/b"}}),
+        json!({"codex": {"OPENAI_BASE_URL": null}}),
+    ] {
+        let res = put(&d, "/api/agent-cli-env", &json!({ "env": patch })).await;
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+    let env = d.get_json("/api/agent-cli-env").await;
+    assert!(!key(&env, "claude", "ANTHROPIC_API_KEY"), "{env}");
+    assert!(!key(&env, "codex", "OPENAI_API_KEY"), "{env}");
+    assert_eq!(env["env"]["codex"]["CODEX_HOME"], "/tmp/c");
+    let stored = std::fs::read_to_string(d.data.join("agent-cli-env.json")).unwrap();
+    assert!(!stored.contains("sk-"), "{stored}");
+    // A new URL with its own key keeps that key.
+    let res = put(
+        &d,
+        "/api/agent-cli-env",
+        &json!({"env": {"claude": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9/c", "ANTHROPIC_API_KEY": "sk-ant-new-5678"}}}),
+    )
+    .await;
+    assert!(key(
+        &res.json().await.unwrap(),
+        "claude",
+        "ANTHROPIC_API_KEY"
+    ));
+}
+
 #[tokio::test]
 async fn agent_test_runs_the_cli_once_and_settings_reach_runs() {
     let d = common::daemon().await;

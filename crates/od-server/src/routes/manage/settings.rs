@@ -132,12 +132,9 @@ fn provider_config(state: &AppState, req: &TestRequest) -> ApiResult<ByokConfig>
             .store
             .data_dir()
             .app_setting(byok::APP_CONFIG_KEY)
-            .and_then(|stored| {
-                let stored_base = stored.get("baseUrl").and_then(Value::as_str);
-                same_base(stored_base, base_url.as_deref())
-                    .then(|| clean(stored.get("apiKey").and_then(Value::as_str)))
-                    .flatten()
-            }),
+            .and_then(|stored| ByokConfig::from_value(&stored))
+            .filter(|stored| same_base(stored.base_url.as_deref(), base_url.as_deref()))
+            .map(|stored| stored.api_key),
     };
     let api_key = api_key.ok_or_else(|| ApiErr::bad_request("an API key is required"))?;
     Ok(ByokConfig {
@@ -422,7 +419,8 @@ pub async fn get_agent_env(State(state): State<AppState>) -> ApiResult<ApiJson<V
 }
 
 /// `{env: {agent: {KEY: "value" | null}}}`: a string sets, `null` or `""`
-/// clears, a missing secret keeps the stored value.
+/// clears, a missing secret keeps the stored value, unless the agent's base
+/// URL changed: a saved key belongs to the URL it was saved with.
 pub async fn put_agent_env(
     State(state): State<AppState>,
     ApiJson(body): ApiJson<Value>,
@@ -442,6 +440,13 @@ pub async fn put_agent_env(
                 .as_object()
                 .ok_or_else(|| format!("env.{agent} must be an object"))?;
             let stored = env.entry(agent.clone()).or_default();
+            let bases = |m: &BTreeMap<String, String>| {
+                m.iter()
+                    .filter(|(k, _)| k.ends_with("_BASE_URL"))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<Vec<_>>()
+            };
+            let before = bases(stored);
             for (key, value) in vars {
                 if !allowed.contains(&key.as_str()) {
                     return Err(format!("{key} cannot be set for {agent}"));
@@ -463,6 +468,10 @@ pub async fn put_agent_env(
                     Value::Object(_) => {}
                     other => return Err(format!("{key} must be a string, got {other}")),
                 }
+            }
+            if bases(stored) != before {
+                stored
+                    .retain(|k, _| !is_secret(k) || matches!(vars.get(k), Some(Value::String(_))));
             }
             if stored.is_empty() {
                 env.remove(&agent);
