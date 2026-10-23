@@ -12,6 +12,10 @@ macro_rules! glyphs {
         pub enum Glyph { $($name),* }
 
         impl Glyph {
+            /// Every glyph, for tests.
+            #[cfg(test)]
+            const ALL: &[Self] = &[$(Self::$name),*];
+
             fn svg(self) -> &'static str {
                 match self {
                     $(Self::$name => include_str!(concat!("../../vendor/remixicon/icons/", $file, ".svg")),)*
@@ -114,7 +118,8 @@ mod tests {
 
     #[test]
     fn every_glyph_is_a_current_color_svg() {
-        for g in [Glyph::Add, Glyph::Stop, Glyph::Warning, Glyph::EditText] {
+        assert!(Glyph::ALL.len() > 70);
+        for &g in Glyph::ALL {
             let svg = g.svg();
             assert!(
                 svg.starts_with("<svg") && svg.contains("currentColor"),

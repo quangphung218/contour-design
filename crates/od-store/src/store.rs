@@ -75,6 +75,23 @@ impl Store {
         db::list_projects(&self.conn())
     }
 
+    /// [`Self::list_projects`] with each project's cover file
+    /// ([`Project::entry_file`]) filled in.
+    ///
+    /// # Errors
+    /// SQLite errors.
+    pub fn list_projects_with_entry(&self) -> Result<Vec<Project>> {
+        let mut projects = self.list_projects()?;
+        for p in &mut projects {
+            let preferred = p.metadata.as_ref().and_then(|m| m.entry_file.clone());
+            p.entry_file = self
+                .project_root(p)
+                .ok()
+                .and_then(|root| root.cover_html(preferred.as_deref()));
+        }
+        Ok(projects)
+    }
+
     /// # Errors
     /// [`StoreError::ProjectNotFound`] or SQLite errors.
     pub fn get_project(&self, id: &str) -> Result<Project> {
@@ -161,6 +178,7 @@ impl Store {
             custom_instructions: non_empty(req.custom_instructions),
             created_at: now,
             updated_at: now,
+            entry_file: None,
         };
         let root = self.project_root(&project)?;
         {

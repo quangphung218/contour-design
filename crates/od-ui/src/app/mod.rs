@@ -11,6 +11,7 @@ mod ds_create;
 mod export_menu;
 mod home;
 mod icons;
+mod lazy_frame;
 mod mcp_settings;
 mod onboarding;
 mod preview_comments;

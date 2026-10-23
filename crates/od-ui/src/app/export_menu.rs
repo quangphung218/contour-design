@@ -94,13 +94,14 @@ pub(super) fn download(bytes: &[u8], name: &str, mime: &str) -> Option<()> {
     Some(())
 }
 
-/// Whether the toast that showed `shown` may close when its time is up:
-/// never while an export is still running, never over a newer message.
-fn toast_expired<T: PartialEq>(busy: bool, current: Option<&T>, shown: &T) -> bool {
+/// Whether the toast numbered `shown` may close when its time is up:
+/// never while an export is still running, never over a newer message
+/// (each message gets a new number, even one with the same text).
+fn toast_expired(busy: bool, current: u32, shown: u32) -> bool {
     if busy {
         return false;
     }
-    current == Some(shown)
+    current == shown
 }
 
 fn stem(path: &str) -> &str {
@@ -113,16 +114,25 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     let open = RwSignal::new(false);
     let status = RwSignal::new(None::<Result<String, String>>);
     let busy = RwSignal::new(false);
+    // Numbers each message shown, so a timer only closes its own toast.
+    let shown_seq = RwSignal::new(0u32);
     // The result shows as a toast for a few seconds, then leaves.
     Effect::new(move |_| {
-        let Some(shown) = status.get() else {
+        if status.with(Option::is_none) {
             return;
-        };
+        }
+        let shown = shown_seq.get_untracked().wrapping_add(1);
+        shown_seq.set(shown);
         leptos::task::spawn_local(async move {
             gloo_timers::future::TimeoutFuture::new(TOAST_MS).await;
-            let expired =
-                status.with_untracked(|s| toast_expired(busy.get_untracked(), s.as_ref(), &shown));
-            if expired {
+            // The menu may be gone (the user left the Studio): its signals
+            // are disposed then, and reading them would panic.
+            let (Some(busy), Some(current)) =
+                (busy.try_get_untracked(), shown_seq.try_get_untracked())
+            else {
+                return;
+            };
+            if toast_expired(busy, current, shown) {
                 status.set(None);
             }
         });
@@ -286,23 +296,11 @@ mod tests {
 
     #[test]
     fn a_toast_closes_only_over_itself_and_not_mid_export() {
-        assert!(toast_expired(
-            false,
-            Some(&"Prompt copied"),
-            &"Prompt copied"
-        ));
-        // A newer message keeps its own full time on screen.
-        assert!(!toast_expired(
-            false,
-            Some(&"Folder opened"),
-            &"Prompt copied"
-        ));
-        assert!(!toast_expired(false, None, &"Prompt copied"));
+        assert!(toast_expired(false, 3, 3));
+        // A newer message, even with the same text, has its own number and
+        // keeps its full time on screen.
+        assert!(!toast_expired(false, 4, 3));
         // "Exporting…" stays until the export ends, however long it takes.
-        assert!(!toast_expired(
-            true,
-            Some(&"Exporting pdf…"),
-            &"Exporting pdf…"
-        ));
+        assert!(!toast_expired(true, 3, 3));
     }
 }

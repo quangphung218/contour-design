@@ -3,6 +3,7 @@
 
 use super::ds_create::NewDesignSystem;
 use super::icons::{Glyph, icon};
+use super::lazy_frame::LazyFrame;
 use super::projects::ProjectCard;
 use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
@@ -188,29 +189,26 @@ pub fn Home() -> impl IntoView {
                             <select
                                 data-testid="template"
                                 aria-label=t(T::Template)
+                                // A property, not `selected` on the options: an
+                                // option the user picked by hand ignores the
+                                // attribute, so the gallery could not move it.
+                                prop:value=move || {
+                                    chip_templates.track();
+                                    template.get().unwrap_or_default()
+                                }
                                 on:change=move |ev| {
                                     let v = event_target_value(&ev);
                                     template.set(Some(v).filter(|v| !v.is_empty()));
                                 }
                             >
-                                <option value="" selected=move || template.get().is_none()>
-                                    {t(T::DefaultTemplate)}
-                                </option>
+                                <option value="">{t(T::DefaultTemplate)}</option>
                                 {move || {
                                     chip_templates
                                         .get()
                                         .unwrap_or_default()
                                         .into_iter()
                                         .map(|s| {
-                                            let id = s.info.id.clone();
-                                            view! {
-                                                <option
-                                                    value=s.info.id.clone()
-                                                    selected=move || template.get().as_deref() == Some(id.as_str())
-                                                >
-                                                    {template_name(&s)}
-                                                </option>
-                                            }
+                                            view! { <option value=s.info.id.clone()>{template_name(&s)}</option> }
                                         })
                                         .collect_view()
                                 }}
@@ -339,16 +337,38 @@ fn TemplateCard(
     let tag = scenario_label(&template.info.scenario);
     let glyph = template_glyph(&template);
     let picked = template.clone();
+    let picked_key = template.clone();
+    let example = template.has_example.then(|| {
+        format!(
+            "/api/design-templates/{}/example",
+            api::seg(&template.info.id)
+        )
+    });
+    let thumb = example.is_some();
+    let label = name.clone();
     view! {
-        <button
+        // A div, not a button: the thumbnail frame may not sit in a button.
+        <div
             class="template-card"
             class:selected=is_selected.clone()
+            role="button"
+            tabindex="0"
             aria-pressed=move || is_selected().to_string()
+            aria-label=label
             data-testid="template-card"
             on:click=move |_| pick.run(picked.clone())
+            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                if ev.key() == "Enter" || ev.key() == " " {
+                    ev.prevent_default();
+                    pick.run(picked_key.clone());
+                }
+            }
         >
-            <span class=tint aria-hidden="true">
-                <span class="cover-glyph">{icon(glyph)}</span>
+            <span class=tint class:thumb-cover=thumb aria-hidden="true">
+                {match example {
+                    Some(src) => view! { <LazyFrame src=src/> }.into_any(),
+                    None => view! { <span class="cover-glyph">{icon(glyph)}</span> }.into_any(),
+                }}
                 <Show when=is_selected.clone()>
                     <span class="cover-check">{icon(Glyph::Check)}</span>
                 </Show>
@@ -358,7 +378,7 @@ fn TemplateCard(
                 <span class="template-desc">{description}</span>
                 {tag.map(|s| view! { <span class="template-meta">{s}</span> })}
             </span>
-        </button>
+        </div>
     }
 }
 
@@ -391,19 +411,35 @@ fn tint_of(id: &str) -> u32 {
         % 4
 }
 
+/// Placeholder icon for a template without a rendered example, from what
+/// it makes: video, deck, mobile screen, then its subject.
 fn template_glyph(s: &SkillSummary) -> Glyph {
+    let words = format!("{} {}", s.info.id, s.info.name).to_ascii_lowercase();
+    let has = |keys: &[&str]| keys.iter().any(|k| words.contains(k));
+    match s.info.mode {
+        od_contracts::SkillMode::Video => return Glyph::Present,
+        od_contracts::SkillMode::Deck => return Glyph::Deck,
+        _ => {}
+    }
     if s.info.platform == Some(Platform::Mobile) {
         return Glyph::Phone;
+    }
+    if has(&["research", "30days"]) {
+        return Glyph::Search;
+    }
+    if has(&["valuation", "dcf", "finance", "dashboard", "table"]) {
+        return Glyph::Grid;
+    }
+    if has(&["live"]) {
+        return Glyph::Refresh;
     }
     match s.info.scenario.as_str() {
         "marketing" | "sales" | "creator" => Glyph::Sparkle,
         "design" => Glyph::Palette,
-        "finance" | "operations" | "operation" => Glyph::Grid,
-        "education" | "research" | "policy" => Glyph::Notes,
+        "education" | "policy" => Glyph::Notes,
         "strategy" | "product" => Glyph::Plan,
         "engineering" | "ai" => Glyph::Braces,
         "personal" => Glyph::FileText,
-        _ if s.info.mode == od_contracts::SkillMode::Deck => Glyph::Deck,
         _ => Glyph::Desktop,
     }
 }

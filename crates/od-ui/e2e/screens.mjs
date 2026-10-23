@@ -85,7 +85,19 @@ try {
     await shot('home', async () => {
       await page.goto(BASE + '/');
       await until(async () => (await page.locator('[data-testid="template"] option').count()) > 1, 'templates');
+      // Gallery thumbnails load as they scroll into view.
+      await until(async () => (await page.locator('.template-card iframe').count()) >= 4, 'template thumbnails');
+      await sleep(1200);
     });
+    await shot('home-decks', async () => {
+      await page.locator('.chips [role="radio"]').nth(1).click();
+      await page.getByTestId('template-card').first().scrollIntoViewIfNeeded();
+      await page.getByRole('button', { name: /^Show all/ }).click();
+      await page.mouse.wheel(0, 300);
+      await until(async () => (await page.locator('.template-card iframe').count()) >= 8, 'deck thumbnails');
+      await sleep(1500);
+    });
+    await page.goto(BASE + '/');
     await shot('home-design-system-dialog', async () => {
       await page.getByTestId('ds-new').click();
       await page.getByTestId('ds-form').waitFor();
@@ -116,7 +128,8 @@ try {
 
     await shot('projects', async () => {
       await page.goto(BASE + '/projects');
-      await page.locator('.project-card').first().waitFor();
+      await page.locator('.project-card iframe').first().waitFor();
+      await sleep(800);
     });
 
     const openStudio = async () => {

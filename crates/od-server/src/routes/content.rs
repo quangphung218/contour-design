@@ -1,6 +1,8 @@
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::{Path, State};
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
 use od_content::SkillEntry;
 use od_contracts::{
     CraftDetail, CraftResponse, DesignSystemDetail, DesignSystemsResponse, DesignTemplatesResponse,
@@ -14,6 +16,7 @@ fn summaries(entries: &[SkillEntry]) -> Vec<SkillSummary> {
         .map(|e| SkillSummary {
             info: e.info.clone(),
             has_body: !e.body.is_empty(),
+            has_example: e.example_html().is_some(),
         })
         .collect()
 }
@@ -59,6 +62,39 @@ pub async fn get_design_template(
         .find_design_template(&id)
         .map(|e| ApiJson(detail(e)))
         .ok_or_else(|| ApiErr::not_found("design template not found"))
+}
+
+/// Inline styles and `data:` media only: no script runs and nothing is
+/// fetched (web fonts fall back to local ones), even when the page is
+/// opened on its own rather than in the sandboxed thumbnail frame.
+const EXAMPLE_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; \
+     font-src data:; media-src data:; sandbox";
+
+/// `GET /api/design-templates/:id/example`: the template's rendered
+/// example page, for the Home gallery thumbnails.
+pub async fn get_design_template_example(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Response> {
+    let path = state
+        .content
+        .snapshot()
+        .find_design_template(&id)
+        .and_then(SkillEntry::example_html)
+        .ok_or_else(|| ApiErr::not_found("design template example not found"))?;
+    let html = tokio::fs::read(&path)
+        .await
+        .map_err(|_| ApiErr::not_found("design template example not found"))?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CONTENT_SECURITY_POLICY, EXAMPLE_CSP),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        html,
+    )
+        .into_response())
 }
 
 pub async fn list_design_systems(State(state): State<AppState>) -> ApiJson<DesignSystemsResponse> {

@@ -247,6 +247,12 @@ a.project-card:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-
   pointer-events: none;
 }
 .cover-fill { position: absolute; inset: 0; border-radius: 0; }
+.lazy-frame { position: absolute; inset: 0; display: block; overflow: hidden; }
+.cover.thumb-cover { background-color: var(--color-paper); background-image: none; }
+.template-card .cover.thumb-cover::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 -24px 24px -24px rgb(60 46 24 / 0.10);
+}
 .project-card:hover .cover-glyph { color: var(--color-accent); }
 .project-body { display: flex; flex-direction: column; gap: var(--space-1-5); min-width: 0; padding: var(--space-3) var(--space-3-5) var(--space-3-5); }
 article.project-card .project-body { padding-bottom: var(--space-1); }

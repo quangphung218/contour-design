@@ -2,14 +2,15 @@
 //! "Open folder": the native picker on desktop, a path field in a browser.
 
 use super::icons::{Glyph, icon};
+use super::lazy_frame::LazyFrame;
 use super::{ago, api, desktop, kind_label};
 use crate::i18n::{T, t};
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use od_contracts::{
-    CreateProjectResponse, DuplicateProjectResponse, FilesResponse, OkResponse, Project,
-    ProjectResponse, ProjectsResponse,
+    CreateProjectResponse, DuplicateProjectResponse, OkResponse, Project, ProjectResponse,
+    ProjectsResponse,
 };
 use serde_json::json;
 
@@ -150,44 +151,26 @@ pub fn Projects() -> impl IntoView {
     }
 }
 
-/// A project's cover: its entry page rendered small (no scripts), else the
-/// kind's icon. Loads lazily, so long lists stay cheap.
+/// A project's cover: its entry page (`entryFile` from the list) rendered
+/// small once it scrolls into view, else the kind's icon.
 #[component]
 fn ProjectCover(project: Project) -> impl IntoView {
-    let entry = RwSignal::new(None::<Option<String>>);
-    let id = project.id.clone();
     let kind_glyph = match project.metadata.as_ref().and_then(|m| m.kind) {
         Some(od_contracts::ProjectKind::Deck) => Glyph::Deck,
         _ => Glyph::Prototype,
     };
-    let base = format!("/api/projects/{}", api::seg(&id));
-    let files_url = format!("{base}/files");
-    let stored = project.clone();
-    leptos::task::spawn_local(async move {
-        let found = api::get::<FilesResponse>(&files_url)
-            .await
-            .ok()
-            .and_then(|r| super::studio::pick_entry(Some(&stored), &r.files))
-            .filter(|p| super::studio::is_html_path(p));
-        entry.set(Some(found));
+    let src = project.entry_file.as_deref().map(|path| {
+        format!(
+            "/api/projects/{}/raw/{}",
+            api::seg(&project.id),
+            api::file_path(path)
+        )
     });
     view! {
         <span class="cover project-cover" aria-hidden="true">
-            {move || match entry.get() {
-                Some(Some(path)) => view! {
-                    // `loading` before `src`: the frame loads when scrolled to.
-                    <iframe
-                        class="cover-frame"
-                        prop:loading="lazy"
-                        sandbox=""
-                        src=format!("{base}/raw/{}", api::file_path(&path))
-                        tabindex="-1"
-                        title=""
-                    ></iframe>
-                }
-                    .into_any(),
-                Some(None) => view! { <span class="cover-glyph">{icon(kind_glyph)}</span> }.into_any(),
-                None => view! { <span class="skeleton cover-fill"></span> }.into_any(),
+            {match src {
+                Some(src) => view! { <LazyFrame src=src/> }.into_any(),
+                None => view! { <span class="cover-glyph">{icon(kind_glyph)}</span> }.into_any(),
             }}
         </span>
     }
