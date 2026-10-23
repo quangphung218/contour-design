@@ -235,6 +235,13 @@ async fn a_moved_folder_keeps_everything_in_it() {
         mv("archive/site/.env", "x").await.0,
         StatusCode::BAD_REQUEST
     );
+    for hidden in [".site", "x/.site"] {
+        assert_eq!(
+            mv("archive/site", hidden).await.0,
+            StatusCode::BAD_REQUEST,
+            "{hidden}"
+        );
+    }
     assert_eq!(mv("archive/a.md", "b.md").await.0, StatusCode::NOT_FOUND);
     assert_eq!(mv("nope", "x").await.0, StatusCode::NOT_FOUND);
     assert_eq!(mv("archive/site", "../up").await.0, StatusCode::BAD_REQUEST);
