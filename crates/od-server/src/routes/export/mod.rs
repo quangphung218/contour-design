@@ -228,7 +228,7 @@ impl ExportRequest {
     }
 }
 
-fn parse_body(body: &Bytes) -> ExportResult<ExportRequest> {
+pub(crate) fn parse_body(body: &Bytes) -> ExportResult<ExportRequest> {
     if body.iter().all(u8::is_ascii_whitespace) {
         return Ok(ExportRequest::default());
     }

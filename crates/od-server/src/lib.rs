@@ -82,7 +82,8 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::export::routes())
         .merge(routes::media::routes())
         .merge(routes::comments::routes())
-        .merge(routes::handoff::routes());
+        .merge(routes::handoff::routes())
+        .merge(routes::w3::routes(&state));
     let api = routes::preview::mount(api, state.preview.clone());
     api.layer(axum::middleware::from_fn_with_state(
         state.clone(),
