@@ -208,11 +208,15 @@ try {
   await put('/api/app-config', { agentId: 'qoder' });
   const proj = (await post('/api/projects', { name: 'Qoder chat' })).body;
   await page.goto(BASE + `/projects/${proj.project.id}`);
+  await page.getByTestId('chat-empty').waitFor();
+  await page.waitForLoadState('networkidle');
   await page.getByTestId('composer').fill('Say hello');
   await page.getByTestId('composer').press('Enter');
   const assistant = page.getByTestId('assistant-msg');
   await assistant.first().getByText('Qoder says hello from the mock.').waitFor({ timeout: 20_000 });
   await until(async () => (await assistant.first().getAttribute('data-state')) === 'succeeded', 'qoder turn end');
+  await page.reload();
+  await page.getByTestId('assistant-msg').first().getByText('Qoder says hello from the mock.').waitFor();
   results.qoderChat = 'ok';
 
   // 4. Settings ▸ media providers: every added provider has a card, and a
@@ -281,9 +285,8 @@ try {
     });
     await shot('media-page-providers', async (p) => {
       await p.goto(BASE + '/media');
-      const tab = p.getByTestId('media-tab-providers');
-      if (await tab.count()) await tab.click();
-      await p.locator('[data-testid="provider-volcengine"]').waitFor({ timeout: 5000 }).catch(() => {});
+      await p.getByTestId('media-tab-providers').click();
+      await p.locator('[data-testid="provider-volcengine"]').scrollIntoViewIfNeeded();
     });
     await ctx.close();
   }

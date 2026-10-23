@@ -27,3 +27,4 @@ node library.e2e.mjs
 node manage.e2e.mjs
 node chat.e2e.mjs
 node files.e2e.mjs
+node c3-runtimes.e2e.mjs
