@@ -260,6 +260,14 @@ cargo bench -p od-server --bench sse_latency      # độ trễ stdout của age
 cargo bench -p od-export --bench standalone       # export HTML tự chứa
 ```
 
+## Giới hạn đã biết
+
+- **Windows chưa chạy thật.** Job Object, ConPTY và app Tauri trên WebView2 mới qua compile-check.
+- **MCP server ngoài chỉ nối với Claude, ACP và OpenCode**, như app gốc. ACP chỉ nhận server stdio.
+- **Tiến trình tách hẳn khỏi cây có thể sống sót.** Helper của MCP stdio dùng double-fork, hay job trong terminal vừa `setsid` vừa mất tiến trình cha trong vòng 2 giây, sẽ không bị giết khi đóng tab hoặc tắt server. macOS không có subreaper để chặn hẳn.
+- **Sửa text trực tiếp chỉ áp cho phần tử chỉ chứa chữ.** Phần tử có thẻ con hoặc do script tạo ra thì trả 409 kèm lý do.
+- **Không có auto-update.** App build từ source: `git pull` rồi build lại.
+
 ## License
 
 Apache-2.0, như app gốc. Nội dung lấy từ OpenDesign và thư viện bên thứ ba (xterm.js, MIT) giữ license riêng; chi tiết trong [`NOTICE`](NOTICE).
