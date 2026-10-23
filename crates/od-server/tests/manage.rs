@@ -453,6 +453,43 @@ async fn a_new_agent_base_url_drops_the_saved_key() {
     ));
 }
 
+/// A config dir, Codex home or Codex binary can route the key elsewhere too:
+/// changing one drops the saved key like a new base URL does.
+#[tokio::test]
+async fn a_new_config_dir_home_or_binary_drops_the_saved_key() {
+    let d = common::daemon().await;
+    let key = |env: &Value, agent: &str, k: &str| env["env"][agent][k]["set"] == true;
+    for (agent, routing, secret) in [
+        ("claude", "CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"),
+        ("codex", "CODEX_HOME", "OPENAI_API_KEY"),
+        ("codex", "CODEX_BIN", "CODEX_API_KEY"),
+    ] {
+        let res = put(
+            &d,
+            "/api/agent-cli-env",
+            &json!({"env": {agent: {routing: "/tmp/a", secret: "sk-secret-1234"}}}),
+        )
+        .await;
+        assert!(key(&res.json().await.unwrap(), agent, secret));
+        let res = put(
+            &d,
+            "/api/agent-cli-env",
+            &json!({"env": {agent: {routing: "/tmp/a"}}}),
+        )
+        .await;
+        assert!(key(&res.json().await.unwrap(), agent, secret), "{routing}");
+        let res = put(
+            &d,
+            "/api/agent-cli-env",
+            &json!({"env": {agent: {routing: "/tmp/b"}}}),
+        )
+        .await;
+        assert!(!key(&res.json().await.unwrap(), agent, secret), "{routing}");
+    }
+    let stored = std::fs::read_to_string(d.data.join("agent-cli-env.json")).unwrap();
+    assert!(!stored.contains("sk-"), "{stored}");
+}
+
 #[tokio::test]
 async fn agent_test_runs_the_cli_once_and_settings_reach_runs() {
     let d = common::daemon().await;

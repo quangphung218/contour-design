@@ -59,6 +59,12 @@ fn is_secret(key: &str) -> bool {
     key.ends_with("_API_KEY") || key.ends_with("_TOKEN")
 }
 
+/// Keys that decide where a saved secret goes: a base URL, or a config dir,
+/// home or binary that can set its own.
+fn is_routing(key: &str) -> bool {
+    key.ends_with("_BASE_URL") || matches!(key, "CLAUDE_CONFIG_DIR" | "CODEX_HOME" | "CODEX_BIN")
+}
+
 fn allowed_keys(agent: &str) -> &'static [&'static str] {
     AGENT_CLI_ENV_KEYS
         .iter()
@@ -425,7 +431,8 @@ pub async fn get_agent_env(State(state): State<AppState>) -> ApiResult<ApiJson<V
 
 /// `{env: {agent: {KEY: "value" | null}}}`: a string sets, `null` or `""`
 /// clears, a missing secret keeps the stored value, unless the agent's base
-/// URL changed: a saved key belongs to the URL it was saved with.
+/// URL, config dir, home or binary changed: a saved key belongs to the
+/// route it was saved with.
 pub async fn put_agent_env(
     State(state): State<AppState>,
     ApiJson(body): ApiJson<Value>,
@@ -445,13 +452,13 @@ pub async fn put_agent_env(
                 .as_object()
                 .ok_or_else(|| format!("env.{agent} must be an object"))?;
             let stored = env.entry(agent.clone()).or_default();
-            let bases = |m: &BTreeMap<String, String>| {
+            let routes = |m: &BTreeMap<String, String>| {
                 m.iter()
-                    .filter(|(k, _)| k.ends_with("_BASE_URL"))
+                    .filter(|(k, _)| is_routing(k))
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect::<Vec<_>>()
             };
-            let before = bases(stored);
+            let before = routes(stored);
             for (key, value) in vars {
                 if !allowed.contains(&key.as_str()) {
                     return Err(format!("{key} cannot be set for {agent}"));
@@ -474,7 +481,7 @@ pub async fn put_agent_env(
                     other => return Err(format!("{key} must be a string, got {other}")),
                 }
             }
-            if bases(stored) != before {
+            if routes(stored) != before {
                 stored
                     .retain(|k, _| !is_secret(k) || matches!(vars.get(k), Some(Value::String(_))));
             }
