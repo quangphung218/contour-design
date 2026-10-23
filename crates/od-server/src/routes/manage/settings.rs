@@ -114,7 +114,7 @@ fn same_base(a: Option<&str>, b: Option<&str>) -> bool {
 }
 
 /// The BYOK config a test or model listing uses: the request's fields, with
-/// the stored key only when the base URL is the stored one.
+/// the stored key only when the protocol and base URL are the stored ones.
 fn provider_config(state: &AppState, req: &TestRequest) -> ApiResult<ByokConfig> {
     let protocol = match req.protocol.as_deref().map(str::trim) {
         Some("anthropic") => ByokProtocol::Anthropic,
@@ -133,7 +133,10 @@ fn provider_config(state: &AppState, req: &TestRequest) -> ApiResult<ByokConfig>
             .data_dir()
             .app_setting(byok::APP_CONFIG_KEY)
             .and_then(|stored| ByokConfig::from_value(&stored))
-            .filter(|stored| same_base(stored.base_url.as_deref(), base_url.as_deref()))
+            .filter(|stored| {
+                stored.protocol == protocol
+                    && same_base(stored.base_url.as_deref(), base_url.as_deref())
+            })
             .map(|stored| stored.api_key),
     };
     let api_key = api_key.ok_or_else(|| ApiErr::bad_request("an API key is required"))?;

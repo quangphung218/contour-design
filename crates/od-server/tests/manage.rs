@@ -373,6 +373,15 @@ async fn byok_test_and_models_never_send_the_saved_key_elsewhere() {
         other_seen.lock().unwrap().is_empty(),
         "another host never sees the key"
     );
+    // Nor another protocol at the same URL (empty URLs mean each
+    // protocol's own host).
+    let res = d
+        .post(
+            "/api/test/connection",
+            &json!({"mode": "provider", "protocol": "anthropic", "baseUrl": base}),
+        )
+        .await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 
     let models = d
         .post(
