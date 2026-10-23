@@ -126,8 +126,21 @@ pub fn rgb_to_hex(css: &str) -> Option<String> {
     (parts.len() == 3).then(|| format!("#{:02x}{:02x}{:02x}", parts[0], parts[1], parts[2]))
 }
 
+/// Longest element text the bridge sends as a print (`plainText`).
+const PRINT_CHARS: usize = 160;
+
+/// Whether `selector` names its element by its own `data-od-id`, which a
+/// script that rewrites the text does not move.
+fn anchored(selector: &str) -> bool {
+    selector
+        .rsplit(" > ")
+        .next()
+        .is_some_and(|last| last.starts_with("[data-od-id="))
+}
+
 /// Groups overrides into one style edit per element, which the source
-/// takes only if its element has the tag and text the preview showed.
+/// takes only if its element has the tag and text the preview showed (the
+/// tag alone for an element anchored by its `data-od-id`).
 pub fn style_edits(overrides: &[Override]) -> Vec<SourceEdit> {
     let mut by_selector: BTreeMap<&str, (&Override, BTreeMap<String, Option<String>>)> =
         BTreeMap::new();
@@ -144,10 +157,37 @@ pub fn style_edits(overrides: &[Override]) -> Vec<SourceEdit> {
             selector: selector.to_owned(),
             style,
             expect_tag: (!first.tag.is_empty()).then(|| first.tag.clone()),
-            expect_text: (!first.tag.is_empty()).then(|| first.text.clone()),
+            expect_text: (!first.tag.is_empty() && !anchored(selector)).then(|| first.text.clone()),
             ..SourceEdit::default()
         })
         .collect()
+}
+
+/// After a text edit was saved: the overrides of that element now expect
+/// its new text (as the bridge prints it), or the next style save fails.
+fn retext_overrides(overrides: &mut [Override], selector: &str, text: &str) {
+    let print: String = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(PRINT_CHARS)
+        .collect();
+    for o in overrides.iter_mut().filter(|o| o.selector == selector) {
+        o.text.clone_from(&print);
+    }
+}
+
+/// Removes the overrides the frame reported it could not replay; returns
+/// how many went.
+fn drop_skipped(overrides: &mut Vec<Override>, skipped: &[pb::Skipped]) -> usize {
+    let before = overrides.len();
+    overrides.retain(|o| {
+        !skipped
+            .iter()
+            .any(|s| s.selector == o.selector && s.prop == o.prop)
+    });
+    before - overrides.len()
 }
 
 /// A text edit the host should write: only while the text tool is on and
@@ -241,6 +281,17 @@ impl StudioCtx {
         match msg {
             BridgeMsg::InspectResult(i) => tools.inspected.set(Some(i.clone())),
             BridgeMsg::InspectOverrides { css, .. } => tools.extracted.set(Some(css.clone())),
+            BridgeMsg::InspectReplaySkipped { items } => {
+                let mut dropped = 0;
+                tools
+                    .overrides
+                    .update(|list| dropped = drop_skipped(list, items));
+                if dropped > 0 {
+                    tools
+                        .status
+                        .set(Some(tf(T::OverridesDropped, &[&dropped.to_string()])));
+                }
+            }
             BridgeMsg::TextEdit(e) => {
                 let active = self.active_untracked();
                 if accepted_text_edit(e, tools.tool.get_untracked(), active.as_deref()) {
@@ -340,6 +391,14 @@ impl StudioCtx {
                     if styles {
                         tools.overrides.set(Vec::new());
                         tools.extracted.set(None);
+                    } else {
+                        tools.overrides.update(|list| {
+                            for e in &req.edits {
+                                if let Some(text) = &e.text {
+                                    retext_overrides(list, &e.selector, text);
+                                }
+                            }
+                        });
                     }
                     tools.status.set(Some(tf(
                         T::SavedVersion,
@@ -1150,6 +1209,63 @@ mod tests {
         assert!(edits[0].text.is_none());
         assert_eq!(edits[0].expect_tag.as_deref(), Some("h1"));
         assert_eq!(edits[0].expect_text.as_deref(), Some("h1 text"));
+    }
+
+    fn ov(selector: &str, prop: &str, text: &str) -> Override {
+        Override {
+            selector: selector.into(),
+            prop: prop.into(),
+            value: "red".into(),
+            tag: "h1".into(),
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn an_element_anchored_by_its_od_id_is_checked_by_tag_only() {
+        // Scripts may change its text; the id still names it.
+        let edits = style_edits(&[
+            ov("[data-od-id=\"x\"]", "color", "Welcome"),
+            ov("[data-od-id=\"x\"] > h1:nth-of-type(1)", "color", "Hi"),
+        ]);
+        assert_eq!(edits[0].selector, "[data-od-id=\"x\"]");
+        assert_eq!(edits[0].expect_tag.as_deref(), Some("h1"));
+        assert_eq!(edits[0].expect_text, None);
+        assert_eq!(edits[1].expect_text.as_deref(), Some("Hi"));
+    }
+
+    #[test]
+    fn a_saved_text_edit_updates_the_overrides_of_its_element() {
+        let mut list = vec![ov("h1", "color", "Hello"), ov("p", "color", "Body")];
+        retext_overrides(&mut list, "h1", "  Hi\n there ");
+        assert_eq!(list[0].text, "Hi there");
+        assert_eq!(list[1].text, "Body");
+        let edits = style_edits(&list);
+        assert_eq!(edits[0].expect_text.as_deref(), Some("Hi there"));
+        // The print is capped like the bridge's.
+        retext_overrides(&mut list, "p", &"w".repeat(400));
+        assert_eq!(list[1].text.chars().count(), 160);
+    }
+
+    #[test]
+    fn overrides_the_frame_could_not_replay_are_dropped() {
+        let mut list = vec![
+            ov("h1", "color", "A"),
+            ov("h1", "margin", "A"),
+            ov("p", "color", "B"),
+        ];
+        let skipped = [pb::Skipped {
+            selector: "h1".into(),
+            prop: "color".into(),
+        }];
+        assert_eq!(drop_skipped(&mut list, &skipped), 1);
+        assert_eq!(
+            list.iter()
+                .map(|o| (o.selector.as_str(), o.prop.as_str()))
+                .collect::<Vec<_>>(),
+            [("h1", "margin"), ("p", "color")]
+        );
+        assert_eq!(drop_skipped(&mut list, &skipped), 0);
     }
 
     #[test]

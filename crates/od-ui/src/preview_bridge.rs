@@ -65,6 +65,14 @@ pub struct Override {
     pub text: String,
 }
 
+/// An unsaved override `od:inspect-replay` could not put back: its element
+/// no longer reads as it did.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Skipped {
+    pub selector: String,
+    pub prop: String,
+}
+
 /// Text changed in the preview (`od:text-edit`).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct TextEdit {
@@ -205,6 +213,11 @@ pub enum BridgeMsg {
         items: Vec<Override>,
         #[serde(default)]
         css: String,
+    },
+    #[serde(rename = "od:inspect-replay-skipped")]
+    InspectReplaySkipped {
+        #[serde(default)]
+        items: Vec<Skipped>,
     },
     #[serde(rename = "od:text-edit")]
     TextEdit(TextEdit),
@@ -430,6 +443,17 @@ mod tests {
                 text: "B".into(),
                 doc: Some("a.html".into()),
             }))
+        );
+        assert_eq!(
+            BridgeMsg::decode(
+                r#"{"type":"od:inspect-replay-skipped","items":[{"selector":"h1","prop":"color"}]}"#
+            ),
+            Some(BridgeMsg::InspectReplaySkipped {
+                items: vec![Skipped {
+                    selector: "h1".into(),
+                    prop: "color".into(),
+                }]
+            })
         );
         let Some(BridgeMsg::Tweaks { tweaks }) = BridgeMsg::decode(
             r##"{"type":"od:tweaks","tweaks":[{"id":"accent","type":"color","var":"--accent","default":"#c96442"},{"id":"bad","type":"dial"},{"id":"d","type":"select","options":["1",{"label":"Roomy","value":"1.4"}]}]}"##,

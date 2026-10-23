@@ -708,6 +708,31 @@
     if (!Object.keys(own).length) delete overrides[selector];
   }
 
+  // An element named by its own data-od-id keeps that name whatever a
+  // script does to its text; a path does not.
+  function anchored(selector) {
+    var steps = String(selector).split(' > ');
+    return steps[steps.length - 1].indexOf('[data-od-id=') === 0;
+  }
+
+  // Puts unsaved overrides back after a reload, only onto an element that
+  // still has the tag (and, unless anchored, the text) it had when the
+  // override was set: a script may have moved the path. The host hears of
+  // the ones left out.
+  function replay(items) {
+    var skipped = [];
+    items.forEach(function (it) {
+      if (!it) return;
+      var selector = String(it.selector || '');
+      var el = find(selector);
+      var same = el && (!it.tag || (el.tagName.toLowerCase() === String(it.tag) &&
+          (anchored(selector) || plainText(el) === String(it.text || ''))));
+      if (same) setOverride(selector, it.prop, it.value);
+      else skipped.push({ selector: selector, prop: String(it.prop || '') });
+    });
+    if (skipped.length) post('od:inspect-replay-skipped', { items: skipped });
+  }
+
   function extractOverrides() {
     var items = [];
     var css = '';
@@ -1031,15 +1056,7 @@
         }
         break;
       case 'od:inspect-replay':
-        // Only onto an element that still has the tag and text it had when
-        // the override was set: a script may have moved the path.
-        (Array.isArray(data.items) ? data.items.slice(0, MAX_LOCATE) : []).forEach(function (it) {
-          if (!it) return;
-          var el = find(String(it.selector || ''));
-          if (!el || (it.tag && (el.tagName.toLowerCase() !== String(it.tag) ||
-              plainText(el) !== String(it.text || '')))) return;
-          setOverride(String(it.selector || ''), it.prop, it.value);
-        });
+        replay(Array.isArray(data.items) ? data.items.slice(0, MAX_LOCATE) : []);
         break;
       case 'od:inspect-extract':
         extractOverrides();

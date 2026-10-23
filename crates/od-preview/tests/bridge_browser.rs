@@ -398,11 +398,50 @@ async fn inspect_prints_survive_scripts(h: &Harness) {
              prop: 'color', value: 'red', tag: 'div', text: {text:?} }}] }});"
         )
     };
-    // Set on #b, which the path pointed at before the script ran.
+    // Set on #b, which the path pointed at before the script ran: left
+    // out, and the host hears which one.
+    let since = h.msg_count().await;
     let stale = h.eval(&inspect(&replay("B"))).await;
     assert!(stale["overrides"].get("color").is_none(), "{stale}");
+    let skipped = h
+        .eval(&format!(
+            "window.__after('od:inspect-replay-skipped', {since}, null, 3000)"
+        ))
+        .await;
+    assert_eq!(
+        skipped["items"],
+        json!([{ "selector": div2, "prop": "color" }]),
+        "{skipped}"
+    );
+    let since = h.msg_count().await;
     let same = h.eval(&inspect(&replay("A"))).await;
     assert_eq!(same["overrides"]["color"], "red", "{same}");
+    let quiet = h
+        .eval(&format!(
+            "window.__msgs.slice({since}).some(m => m.type === 'od:inspect-replay-skipped')"
+        ))
+        .await;
+    assert_eq!(quiet, json!(false));
+
+    // An element anchored by its own data-od-id takes its override back
+    // even though a script rewrote its text.
+    h.load(
+        r#"<!doctype html><html><body><h1 data-od-id="x">Loading</h1>
+        <script>document.querySelector('h1').textContent = 'Welcome'</script></body></html>"#,
+    )
+    .await;
+    h.wait("od:ready", "null", 5_000).await;
+    let x = r#"[data-od-id="x"]"#;
+    let anchored = h
+        .eval(&format!(
+            "(async () => {{ const since = window.__msgs.length; \
+             window.__send({{ type: 'od:inspect-replay', items: [{{ selector: {x:?}, \
+             prop: 'color', value: 'red', tag: 'h1', text: 'Loading' }}] }}); \
+             window.__send({{ type: 'od:inspect', selector: {x:?} }}); \
+             return await window.__after('od:inspect-result', since, null, 5000); }})()"
+        ))
+        .await;
+    assert_eq!(anchored["overrides"]["color"], "red", "{anchored}");
 }
 
 async fn storage_shim(h: &Harness) {
