@@ -62,10 +62,10 @@ pub fn new_sketch(ctx: StudioCtx, ui: FilesUi, dir: String) {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Saved {
+enum SaveState {
     Clean,
     Saving,
-    Saved,
+    Done,
     Failed,
 }
 
@@ -78,7 +78,7 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
     let color = RwSignal::new(DRAW_COLORS[0]);
     let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
     let loaded = RwSignal::new(false);
-    let saved = RwSignal::new(Saved::Clean);
+    let saved = RwSignal::new(SaveState::Clean);
     let busy = RwSignal::new(false);
     let size = StoredValue::new((SketchFile::WIDTH, SketchFile::HEIGHT));
     let path = StoredValue::new(path);
@@ -105,7 +105,7 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
             if seq.try_get_value() != Some(n) {
                 return;
             }
-            saved.set(Saved::Saving);
+            saved.set(SaveState::Saving);
             let (width, height) = size.get_value();
             let file = SketchFile {
                 version: 1,
@@ -121,9 +121,9 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
             };
             if seq.try_get_value() == Some(n) {
                 saved.set(if res.is_ok() {
-                    Saved::Saved
+                    SaveState::Done
                 } else {
-                    Saved::Failed
+                    SaveState::Failed
                 });
             }
         });
@@ -171,10 +171,10 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
                 <span class="spacer"></span>
                 <span class="subtle sketch-status" data-testid="sketch-status">
                     {move || match saved.get() {
-                        Saved::Clean => String::new(),
-                        Saved::Saving => t(T::Saving).to_owned(),
-                        Saved::Saved => t(T::Saved).to_owned(),
-                        Saved::Failed => t(T::NotSaved).to_owned(),
+                        SaveState::Clean => String::new(),
+                        SaveState::Saving => t(T::Saving).to_owned(),
+                        SaveState::Done => t(T::Saved).to_owned(),
+                        SaveState::Failed => t(T::NotSaved).to_owned(),
                     }}
                 </span>
                 <button class="btn small primary" data-testid="sketch-to-chat"

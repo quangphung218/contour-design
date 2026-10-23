@@ -106,7 +106,7 @@ pub fn tree_rows(
             .iter()
             .filter(|f| is_inside(f, scope) && f.to_lowercase().contains(&query))
             .collect();
-        hits.sort_by(|a, b| a.cmp(b));
+        hits.sort();
         return hits
             .into_iter()
             .map(|f| Row::File {
