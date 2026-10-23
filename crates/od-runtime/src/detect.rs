@@ -118,9 +118,21 @@ pub async fn detect(def: &RuntimeDef, path: &OsStr, byok_configured: bool) -> Ag
         return info;
     };
     info.path = Some(bin.to_string_lossy().into_owned());
+    // A probe that failed is tried once more: a new binary's first exec
+    // can pass the limit on a loaded machine (macOS scans it).
     let (version, capabilities) = tokio::join!(
-        probe(&bin, def.version_args, path, PROBE_TIMEOUT),
-        probe_capabilities(def, &bin, path, PROBE_TIMEOUT)
+        async {
+            match probe(&bin, def.version_args, path, PROBE_TIMEOUT).await {
+                None => probe(&bin, def.version_args, path, PROBE_TIMEOUT).await,
+                some => some,
+            }
+        },
+        async {
+            match probe_capabilities(def, &bin, path, PROBE_TIMEOUT).await {
+                None => probe_capabilities(def, &bin, path, PROBE_TIMEOUT).await,
+                some => some,
+            }
+        }
     );
     info.available = true;
     info.version = version
