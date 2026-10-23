@@ -19,7 +19,7 @@ use od_content::design_system_gen::{self, GenError, GenerateRequest};
 use od_contracts::{ErrorCode, RunStatus};
 use od_runs::RunMeta;
 use od_runtime::env::{RunEnv, agent_env};
-use od_runtime::{LaunchSpec, PermissionMode};
+use od_runtime::{LaunchSpec, McpLaunch, PermissionMode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -199,6 +199,8 @@ pub async fn generate(
         env,
         project_id: None,
         byok: None,
+        // A design system draft runs without the user's external MCP servers.
+        mcp: McpLaunch::default(),
     });
     tokio::spawn(finish(
         state.clone(),
