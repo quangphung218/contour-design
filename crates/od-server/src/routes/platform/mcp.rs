@@ -152,9 +152,13 @@ async fn replace(
         Arc::clone(&mcp.tokens),
         next.clone(),
     );
+    // A token is kept only for a server still at the URL it was given for.
     tokio::task::spawn_blocking(move || {
         config::save(&path, &cfg)?;
-        tokens.retain(|id| cfg.find(id).is_some())
+        tokens.retain(|id| {
+            cfg.find(id)
+                .is_some_and(|s| old.find(id).is_some_and(|o| o.url == s.url))
+        })
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?

@@ -450,3 +450,59 @@ cat >/dev/null
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
+
+/// Pointing a server id at another URL drops its OAuth token and does not
+/// carry stored header values over: both were given for the old host.
+#[tokio::test]
+async fn a_new_url_drops_the_token_and_masked_headers() {
+    let d = common::daemon().await;
+    let server = |url: &str, key: &str| {
+        json!({"servers": [{"id": "images", "transport": "http", "url": url,
+            "auth": "oauth", "headers": {"X-Api-Key": key}}]})
+    };
+    let res = put_servers(&d, &server("https://a.example/mcp", "secret-a")).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let tokens_path = d.data.join("mcp-tokens.json");
+    std::fs::write(
+        &tokens_path,
+        json!({"servers": {"images": {"accessToken": "at-old", "tokenEndpoint": "https://a.example/token",
+            "clientId": "c", "resource": "https://a.example/mcp"}}})
+        .to_string(),
+    )
+    .unwrap();
+
+    // Same URL, header left masked: both kept.
+    let res = put_servers(
+        &d,
+        &server("https://a.example/mcp", od_mcp_client::config::MASK),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        std::fs::read_to_string(&tokens_path)
+            .unwrap()
+            .contains("at-old")
+    );
+
+    // New URL with the masked header: refused, nothing changes.
+    let res = put_servers(
+        &d,
+        &server("https://b.example/mcp", od_mcp_client::config::MASK),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        std::fs::read_to_string(&tokens_path)
+            .unwrap()
+            .contains("at-old")
+    );
+
+    // New URL, header typed again: saved, the old token gone.
+    let res = put_servers(&d, &server("https://b.example/mcp", "secret-b")).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        !std::fs::read_to_string(&tokens_path)
+            .unwrap()
+            .contains("at-old")
+    );
+}
