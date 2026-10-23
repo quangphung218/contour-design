@@ -103,17 +103,13 @@ fn prolog_end(html: &[u8]) -> usize {
 /// Length of the comment `rest` opens, ended as the HTML tokenizer ends it:
 /// `<!-->`, `<!--->`, else the first `-->` or `--!>`.
 fn comment_len(rest: &[u8]) -> Option<usize> {
-    let find = |from: usize, pat: &[u8]| {
-        rest.get(from..)?
-            .windows(pat.len())
-            .position(|w| w == pat)
-            .map(|i| from + i + pat.len())
-    };
-    // The `--` of `<!--` may close it too (`<!-->`, `<!--->`), but not as `--!>`.
-    match (find(2, b"-->"), find(4, b"--!>")) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        (a, b) => a.or(b),
-    }
+    // One pass over the `>`s: searching the rest of the file for each closer
+    // separately made a run of short comments quadratic. The `--` of `<!--`
+    // may close it too (`<!-->`, `<!--->`), but not as `--!>`.
+    (4..rest.len())
+        .filter(|&i| rest[i] == b'>')
+        .find(|&i| &rest[i - 2..i] == b"--" || (i >= 7 && &rest[i - 3..i] == b"--!"))
+        .map(|i| i + 1)
 }
 
 /// Inserts the bridge (and `<base href>` when given and the author has none)
@@ -246,6 +242,22 @@ mod tests {
             assert!(
                 out.starts_with(&format!("{prolog}<script data-od-bridge>")),
                 "{html}: {out:.80}"
+            );
+        }
+    }
+
+    #[test]
+    fn many_short_comments_scan_in_linear_time() {
+        // Each comment used to search the rest of the file for both closers:
+        // 400 KB of `<!---->` took 5 s (release) on the request path.
+        for unit in ["<!---->", "<!----!>"] {
+            let html = format!("{}<p>", unit.repeat(200_000 / unit.len()));
+            let started = std::time::Instant::now();
+            assert_eq!(prolog_end(html.as_bytes()), html.len() - 3, "{unit}");
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(1),
+                "{unit}: {:?}",
+                started.elapsed()
             );
         }
     }
