@@ -82,6 +82,7 @@ async fn handle(
     let raw = |b: &'static [u8]| b.into_response();
     match (method.as_str(), path.as_str()) {
         ("POST", "/oa/audio/speech") => raw(MP3),
+        ("POST", "/oa/images/generations") => json(json!({"data": [{"b64_json": b64(PNG)}]})),
         ("POST", "/ark/images/generations") => json(json!({"data": [{"b64_json": b64(PNG)}]})),
         ("POST", "/ark/contents/generations/tasks") => json(json!({"id": "t1"})),
         ("GET", "/ark/contents/generations/tasks/t1") => {
@@ -579,7 +580,24 @@ async fn guards_overrides_and_placeholders() {
         "{e}"
     );
 
-    // A Custom Image API naming an OpenAI model takes it over.
+    // A Custom Image API naming another model leaves OpenAI alone…
+    file.write(&json!({"providers": {
+        "openai": {"apiKey": "oa-key", "baseUrl": format!("{base}/oa")},
+        "custom-image": {"baseUrl": format!("{base}/custom/v1"), "model": "my-sdxl"},
+    }}))
+    .unwrap();
+    let g = generate(
+        &http,
+        &file,
+        &no_env,
+        &req("image", "gpt-image-1", json!({})),
+        limits(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(g.provider, "openai");
+    seen.lock().unwrap().calls.clear();
+    // …and one naming this OpenAI model takes it over.
     file.write(&json!({"providers": {
         "openai": {"apiKey": "oa-key", "baseUrl": format!("{base}/oa")},
         "custom-image": {"baseUrl": format!("{base}/custom/v1"), "model": "gpt-image-1"},
