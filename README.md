@@ -1,6 +1,8 @@
-# open-design-rs
+<p><img src="assets/brand/net-wordmark.svg" alt="Nét" height="48"></p>
 
-Bản viết lại [OpenDesign](https://github.com/nexu-io/open-design) (Apache-2.0) bằng Rust. App chạy hoàn toàn trên máy: không đăng nhập, không cloud, không telemetry. Một coding agent cài sẵn trên máy (Claude Code, Codex…) viết thiết kế HTML vào thư mục project; app hiển thị preview, lịch sử phiên bản và xuất file.
+**Nét**: thiết kế cùng agent, ngay trên máy (*Design with your agent, on your machine*).
+
+Repo `open-design-rs`: bản viết lại [OpenDesign](https://github.com/nexu-io/open-design) (Apache-2.0) bằng Rust, mang tên Nét. Tên crate và binary nội bộ (`od-*`, `od`) giữ nguyên. Logo, màu và cách dùng: [`docs/brand.md`](docs/brand.md). App chạy hoàn toàn trên máy: không đăng nhập, không cloud, không telemetry. Một coding agent cài sẵn trên máy (Claude Code, Codex…) viết thiết kế HTML vào thư mục project; app hiển thị preview, lịch sử phiên bản và xuất file.
 
 Có hai cách chạy, dùng chung một HTTP API:
 
@@ -66,7 +68,7 @@ Build app `.app` (macOS) bằng Tauri CLI, bản debug khoảng 3–5 phút lầ
 ```bash
 make ui-dist
 cd apps/desktop && npx --yes @tauri-apps/cli@2 build --debug
-open "$(cargo metadata --format-version 1 --no-deps | node -pe 'JSON.parse(require("fs").readFileSync(0)).target_directory')/debug/bundle/macos/Open Design.app"
+open "$(cargo metadata --format-version 1 --no-deps | node -pe 'JSON.parse(require("fs").readFileSync(0)).target_directory')/debug/bundle/macos/Nét.app"
 ```
 
 Bỏ `--debug` để build bản release (lâu hơn, file nhỏ hơn). Bundle chứa sẵn `content/` và UI.

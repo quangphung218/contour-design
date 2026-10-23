@@ -1,7 +1,9 @@
-//! Studio: chat on the left; files, tabs and live preview on the right.
+//! Studio: chat on the left, the live preview in the middle (the main
+//! area), the file tree on the right, collapsible.
 //! Keyboard: Cmd/Ctrl+P or +T quick switcher, +W close tab, +1–9 pick a
-//! tab, Ctrl+Tab cycle; arrows/Home/End drive a deck, Esc leaves present
-//! and comment modes (spec 1.2).
+//! tab, Ctrl+Tab cycle, Cmd/Ctrl+B files panel, Cmd/Ctrl+= / - / 0 zoom;
+//! arrows/Home/End drive a deck, Esc leaves present and comment modes
+//! (spec 1.2). Cmd/Ctrl+K (palette) and ? (shortcuts) are app-wide.
 
 use super::agent_w3::{SideChat, SideChatView, is_side_chat_title};
 use super::bridge::{self, Source};
@@ -73,6 +75,31 @@ impl Device {
     }
 }
 
+/// Zoom levels of the preview, percent.
+pub const ZOOM_STEPS: [u32; 7] = [50, 67, 75, 100, 125, 150, 200];
+
+/// The zoom step after `current` (`up`) or before it, clamped.
+#[must_use]
+pub fn zoom_step(current: u32, up: bool) -> u32 {
+    let i = ZOOM_STEPS
+        .iter()
+        .position(|&z| z >= current)
+        .unwrap_or(ZOOM_STEPS.len() - 1);
+    let i = if up {
+        (i + usize::from(ZOOM_STEPS[i] <= current)).min(ZOOM_STEPS.len() - 1)
+    } else {
+        i.saturating_sub(1)
+    };
+    ZOOM_STEPS[i]
+}
+
+fn at_max_zoom(zoom: u32) -> bool {
+    zoom_step(zoom, true) == zoom
+}
+
+/// `localStorage` key of the files panel state.
+const FILES_OPEN_KEY: &str = "od.studio.files-open";
+
 /// A file version shown in place of the live preview.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewedVersion {
@@ -93,6 +120,8 @@ pub struct StudioCtx {
     pub items: RwSignal<Vec<ChatItem>>,
     /// The run currently streaming, if any (`Some("")` while starting).
     pub live_run: RwSignal<Option<String>>,
+    /// The composer's text (next steps and starter prompts fill it).
+    pub draft: RwSignal<String>,
     /// Messages typed while a run was going, sent one by one after it.
     pub queue: RwSignal<Vec<Queued>>,
     pub files: RwSignal<Vec<ProjectFile>>,
@@ -132,6 +161,12 @@ pub struct StudioCtx {
     pub jury: RwSignal<bool>,
     pub memory: RwSignal<Vec<MemoryEntry>>,
     pub side: SideChat,
+    /// The file tree on the right; remembered in `localStorage`.
+    pub files_open: RwSignal<bool>,
+    /// Source of the active file instead of its rendering.
+    pub show_code: RwSignal<bool>,
+    /// Preview zoom, percent (one of [`ZOOM_STEPS`]).
+    pub zoom: RwSignal<u32>,
     /// Last slide shown per deck file, restored when the deck reloads.
     last_slide: StoredValue<Option<(String, u32)>>,
     run_stream: StoredValue<Option<SendWrapper<Sse>>>,
@@ -212,6 +247,16 @@ impl StudioCtx {
             }
             self.files.set(files);
         });
+    }
+
+    pub fn toggle_files(self) {
+        let next = !self.files_open.get_untracked();
+        self.files_open.set(next);
+        super::store_flag(FILES_OPEN_KEY, next);
+    }
+
+    pub fn zoom_by(self, up: bool) {
+        self.zoom.update(|z| *z = zoom_step(*z, up));
     }
 
     pub fn reload_preview(self) {
@@ -714,6 +759,22 @@ impl StudioCtx {
                     self.switcher_open.set(true);
                     true
                 }
+                "b" => {
+                    self.toggle_files();
+                    true
+                }
+                "=" | "+" => {
+                    self.zoom_by(true);
+                    true
+                }
+                "-" => {
+                    self.zoom_by(false);
+                    true
+                }
+                "0" => {
+                    self.zoom.set(100);
+                    true
+                }
                 "w" => {
                     if let Some(term) = self.active_term.get_untracked() {
                         terminal::close(self, term);
@@ -840,7 +901,7 @@ pub fn file_glyph(path: &str) -> Glyph {
 }
 
 /// Whether a key press belongs to a text field rather than the workspace.
-fn is_editing(ev: &web_sys::KeyboardEvent) -> bool {
+pub(super) fn is_editing(ev: &web_sys::KeyboardEvent) -> bool {
     use wasm_bindgen::JsCast;
     let Some(el) = ev
         .target()
@@ -873,6 +934,7 @@ pub fn Studio() -> impl IntoView {
         conversations: RwSignal::new(Vec::new()),
         items: RwSignal::new(Vec::new()),
         live_run: RwSignal::new(None),
+        draft: RwSignal::new(String::new()),
         queue: RwSignal::new(Vec::new()),
         files: RwSignal::new(Vec::new()),
         tabs: RwSignal::new(Tabs::default()),
@@ -897,6 +959,9 @@ pub fn Studio() -> impl IntoView {
         jury: RwSignal::new(false),
         memory: RwSignal::new(Vec::new()),
         side: SideChat::new(),
+        files_open: RwSignal::new(super::stored_flag(FILES_OPEN_KEY).unwrap_or(true)),
+        show_code: RwSignal::new(false),
+        zoom: RwSignal::new(100),
         tools: Tools::new(),
         last_slide: StoredValue::new(None),
         run_stream: StoredValue::new(None),
@@ -904,6 +969,8 @@ pub fn Studio() -> impl IntoView {
     };
     provide_context(ctx);
     preview_tools::watch_lint(ctx);
+    // The command palette offers this Studio's commands while it is open.
+    shell.studio.set(Some(ctx));
 
     // Wait for settings so the first turn uses the configured agent.
     let started = StoredValue::new(false);
@@ -925,18 +992,22 @@ pub fn Studio() -> impl IntoView {
         ctx.run_stream.set_value(None);
         ctx.project_stream.set_value(None);
         ctx.side.close_stream();
+        shell.studio.set(None);
     });
 
     view! {
         <div class="studio">
             <ChatPane ctx=ctx/>
-            <section class="workspace">
-                <FilesPanel ctx=ctx/>
+            <section class="workspace" class:files-closed=move || !ctx.files_open.get()>
                 <PreviewPane ctx=ctx/>
+                <Show when=move || ctx.files_open.get()>
+                    <FilesPanel ctx=ctx/>
+                </Show>
             </section>
             <Show when=move || ctx.switcher_open.get()>
                 <QuickSwitcher ctx=ctx/>
             </Show>
+            <NoticeToast ctx=ctx/>
         </div>
     }
 }
@@ -955,13 +1026,21 @@ fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
                 <button class="icon-btn" aria-label=t(T::RefreshFiles) data-tip=t(T::RefreshFiles) data-tip-pos="left" on:click=move |_| ctx.refresh_files()>
                     {icon(Glyph::Refresh)}
                 </button>
+                <button class="icon-btn" aria-label=t(T::HideFiles) data-tip=t(T::HideFiles) data-tip-pos="left" data-testid="hide-files" on:click=move |_| ctx.toggle_files()>
+                    {icon(Glyph::SidebarUnfold)}
+                </button>
             </div>
             <div class="files-label eyebrow">{t(T::Files)}</div>
             <ul class="file-tree" data-testid="file-tree">
                 {move || {
                     let files = ctx.files.get();
                     if files.is_empty() {
-                        return view! { <li class="empty small files-empty">{icon(Glyph::File)}{t(T::NoFilesYet)}</li> }.into_any();
+                        return view! {
+                            <li class="files-empty">
+                                <span class="files-empty-title">{icon(Glyph::File)}{t(T::NoFilesYet)}</span>
+                                <span class="subtle">{t(T::NoFilesYetHint)}</span>
+                            </li>
+                        }.into_any();
                     }
                     files
                         .into_iter()
@@ -1107,14 +1186,37 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             <Show when=move || !ctx.side.open.get() fallback=move || view! { <SideChatView ctx=ctx/> }>
             {move || ctx.active_term.get().map(|id| view! { <TerminalView id=id/> })}
             <div class="preview-main" style=move || if ctx.active_term.with(Option::is_some) { "display:none" } else { "display:contents" }>
-            <div class="pane-head preview-head">
+            <div class="pane-head preview-head" data-testid="preview-toolbar">
                 <button class="icon-btn" aria-label=t(T::ReloadPreview) data-tip=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>
                     {icon(Glyph::Refresh)}
                 </button>
                 <span class="pane-title path-title mono" title=move || ctx.active().unwrap_or_default()>
                     {move || ctx.active().unwrap_or_default()}
                 </span>
-                <div class="segmented small icons" role="radiogroup" aria-label=t(T::Preview)>
+                <div class="segmented small" role="radiogroup" aria-label=t(T::ViewAs)>
+                    <button
+                        class="seg"
+                        role="radio"
+                        data-testid="view-preview"
+                        aria-checked=move || (!ctx.show_code.get()).to_string()
+                        class:active=move || !ctx.show_code.get()
+                        on:click=move |_| ctx.show_code.set(false)
+                    >
+                        {icon(Glyph::Eye)}<span class="btn-label">{t(T::Preview)}</span>
+                    </button>
+                    <button
+                        class="seg"
+                        role="radio"
+                        data-testid="view-code"
+                        aria-checked=move || ctx.show_code.get().to_string()
+                        class:active=move || ctx.show_code.get()
+                        disabled=move || is_image() || ctx.active().is_none()
+                        on:click=move |_| ctx.show_code.set(true)
+                    >
+                        {icon(Glyph::Code)}<span class="btn-label">{t(T::Code)}</span>
+                    </button>
+                </div>
+                <div class="segmented small icons" role="radiogroup" aria-label=t(T::Device)>
                     {Device::ALL
                         .into_iter()
                         .map(|d| {
@@ -1126,6 +1228,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                                     aria-label=d.label()
                                     data-tip=d.label()
                                     class:active=move || device.get() == d
+                                    disabled=move || ctx.show_code.get()
                                     on:click=move |_| device.set(d)
                                 >
                                     {icon(d.glyph())}
@@ -1134,18 +1237,19 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         })
                         .collect_view()}
                 </div>
+                <div class="zoom" role="group" aria-label=t(T::Zoom)>
+                    <button class="icon-btn small" aria-label=t(T::ZoomOut) data-tip=t(T::ZoomOut) data-testid="zoom-out"
+                        disabled=move || ctx.show_code.get() || zoom_step(ctx.zoom.get(), false) == ctx.zoom.get()
+                        on:click=move |_| ctx.zoom_by(false)>{icon(Glyph::ZoomOut)}</button>
+                    <button class="zoom-value" data-tip=t(T::ZoomReset) aria-label=t(T::ZoomReset) data-testid="zoom-reset"
+                        disabled=move || ctx.show_code.get()
+                        on:click=move |_| ctx.zoom.set(100)>{move || format!("{}%", ctx.zoom.get())}</button>
+                    <button class="icon-btn small" aria-label=t(T::ZoomIn) data-tip=t(T::ZoomIn) data-testid="zoom-in"
+                        disabled=move || ctx.show_code.get() || at_max_zoom(ctx.zoom.get())
+                        on:click=move |_| ctx.zoom_by(true)>{icon(Glyph::ZoomIn)}</button>
+                </div>
                 <span class="head-divider" aria-hidden="true"></span>
                 <Show when=is_html>
-                    <button
-                        class="btn small ghost"
-                        class:active=move || ctx.comment_mode.get()
-                        data-testid="comment-mode"
-                        aria-pressed=move || ctx.comment_mode.get().to_string()
-                        on:click=move |_| ctx.set_comment_mode(!ctx.comment_mode.get_untracked())
-                    >
-                        {icon(Glyph::Comment)}
-                        {t(T::CommentMode)}
-                    </button>
                     <button
                         class="btn small ghost"
                         class:active=move || ctx.history_open.get()
@@ -1154,13 +1258,18 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         on:click=move |_| ctx.history_open.update(|o| *o = !*o)
                     >
                         {icon(Glyph::History)}
-                        {t(T::History)}
+                        <span class="btn-label">{t(T::History)}</span>
                     </button>
                 </Show>
                 <ExportMenu ctx=ctx/>
+                <Show when=move || !ctx.files_open.get()>
+                    <button class="icon-btn" aria-label=t(T::ShowFiles) data-tip=t(T::ShowFiles) data-tip-pos="left" data-testid="show-files" on:click=move |_| ctx.toggle_files()>
+                        {icon(Glyph::FilesPanel)}
+                    </button>
+                </Show>
             </div>
             <DeckBar ctx=ctx/>
-            <Show when=move || is_html() && ctx.viewing.with(Option::is_none)>
+            <Show when=move || is_html() && ctx.viewing.with(Option::is_none) && !ctx.show_code.get()>
                 <ToolBar ctx=ctx/>
             </Show>
             {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{icon(Glyph::Comment)}{t(T::CommentModeOn)}</p> })}
@@ -1168,22 +1277,19 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <ThumbRail ctx=ctx src=src/>
                 <div class="preview-stage">
                     {move || match (src.get(), ctx.viewing.get()) {
-                        (None, _) => view! {
-                            <div class="empty-state preview-empty">
-                                <span class="empty-icon">{icon(Glyph::Desktop)}</span>
-                                <strong>{t(T::PreviewEmptyTitle)}</strong>
-                                <p>{t(T::PreviewEmpty)}</p>
-                            </div>
-                        }.into_any(),
+                        (None, _) => view! { <PreviewEmpty ctx=ctx/> }.into_any(),
+                        (Some(_), _) if ctx.show_code.get() && !is_image() => view! { <CodeView ctx=ctx/> }.into_any(),
                         (Some(_), Some(v)) => view! {
+                            <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
                             <iframe
                                 class="preview-frame"
                                 data-testid="version-preview"
                                 title=tf(T::ViewingVersion, &[&v.version.to_string()])
                                 sandbox="allow-scripts"
                                 srcdoc=v.content
-                                style=move || format!("width:{}", device.get().width())
+                                style=move || zoomed(device.get(), ctx.zoom.get())
                             ></iframe>
+                            </div>
                         }.into_any(),
                         (Some(url), None) if is_image() => view! { <img class="preview-image" src=url alt=t(T::Preview)/> }.into_any(),
                         (Some(url), None) => {
@@ -1195,7 +1301,8 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                                 url
                             };
                             view! {
-                                <div class="frame-wrap" style=move || format!("width:{}", device.get().width())>
+                                <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
+                                <div class="frame-wrap" style=move || zoomed(device.get(), ctx.zoom.get())>
                                     // No allow-same-origin: artifact scripts run in an
                                     // opaque origin and cannot call the daemon API.
                                     <iframe
@@ -1207,6 +1314,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                                     ></iframe>
                                     <CommentLayer ctx=ctx/>
                                     {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
+                                </div>
                                 </div>
                             }.into_any()
                         }
@@ -1223,5 +1331,144 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             </div>
             </Show>
         </section>
+    }
+}
+
+/// The box a zoomed preview takes in the stage: its on-screen size.
+fn zoom_box(device: Device, zoom: u32) -> String {
+    match device {
+        Device::Desktop => "width:100%".to_owned(),
+        d => format!("width:calc({} * {zoom} / 100)", d.width()),
+    }
+}
+
+/// The frame inside [`zoom_box`]: laid out at the device size, scaled to
+/// fit. A transform, not CSS `zoom`, so WebKit and Chromium agree and the
+/// comment pins and drawing (local coordinates) follow it.
+fn zoomed(device: Device, zoom: u32) -> String {
+    if zoom == 100 {
+        return format!("width:{}", device.width());
+    }
+    let width = match device {
+        Device::Desktop => format!("calc(100% * 100 / {zoom})"),
+        d => d.width().to_owned(),
+    };
+    format!(
+        "width:{width};max-width:none;height:calc(100% * 100 / {zoom});transform:scale({});transform-origin:0 0",
+        f64::from(zoom) / 100.0
+    )
+}
+
+/// No file to show yet: what happens next and how to get there.
+#[component]
+fn PreviewEmpty(ctx: StudioCtx) -> impl IntoView {
+    let running = move || ctx.live_run.with(Option::is_some);
+    view! {
+        <div class="empty-state preview-empty" data-testid="preview-empty">
+            <span class="empty-icon">{move || if running() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::Desktop).into_any() }}</span>
+            <strong>{move || if running() { t(T::PreviewWaitingTitle) } else { t(T::PreviewEmptyTitle) }}</strong>
+            <p>{move || if running() { t(T::PreviewWaiting) } else { t(T::PreviewEmpty) }}</p>
+            <ol class="empty-steps">
+                <li>{t(T::PreviewStep1)}</li>
+                <li>{t(T::PreviewStep2)}</li>
+                <li>{t(T::PreviewStep3)}</li>
+            </ol>
+        </div>
+    }
+}
+
+/// How long an error notice stays, ms.
+const NOTICE_MS: u32 = 8000;
+
+/// Studio errors (stop, steer, load…) as a toast the user can close; it
+/// leaves by itself after [`NOTICE_MS`] unless a newer one replaced it.
+#[component]
+fn NoticeToast(ctx: StudioCtx) -> impl IntoView {
+    let shown = StoredValue::new(0u32);
+    Effect::new(move |_| {
+        if ctx.notice.with(Option::is_some) {
+            let n = shown.get_value().wrapping_add(1);
+            shown.set_value(n);
+            leptos::task::spawn_local(async move {
+                gloo_timers::future::TimeoutFuture::new(NOTICE_MS).await;
+                if shown.try_get_value() == Some(n) {
+                    ctx.notice.set(None);
+                }
+            });
+        }
+    });
+    view! {
+        <div class="toast-region notice" aria-live="assertive">
+            {move || ctx.notice.get().map(|text| view! {
+                <div class="toast error" role="alert" data-testid="notice">
+                    <span class="toast-ico">{icon(Glyph::Warning)}</span>
+                    <span class="toast-text">{text}</span>
+                    <button class="chip-x" aria-label=t(T::Close) on:click=move |_| ctx.notice.set(None)>{icon(Glyph::Close)}</button>
+                </div>
+            })}
+        </div>
+    }
+}
+
+/// Longest source shown in the code view; the rest is cut with a note.
+const CODE_LINES: usize = 4000;
+
+/// Read-only source of the active file, with line numbers.
+#[component]
+fn CodeView(ctx: StudioCtx) -> impl IntoView {
+    let text = LocalResource::new(move || {
+        let path = ctx.active();
+        let _rev = ctx.preview_rev.get();
+        async move {
+            let path = path?;
+            let raw = format!("{}/raw/{}", ctx.base(), api::file_path(&path));
+            Some(api::get_text(&raw).await.map_err(|e| e.to_string()))
+        }
+    });
+    view! {
+        <div class="code-view" data-testid="code-view">
+            {move || match text.get() {
+                None => view! { <div class="skeleton code-skeleton"></div> }.into_any(),
+                Some(None) => ().into_any(),
+                Some(Some(Err(e))) => view! { <p class="error-text" role="alert">{e}</p> }.into_any(),
+                Some(Some(Ok(src))) => {
+                    let total = src.lines().count();
+                    let lines = src
+                        .lines()
+                        .take(CODE_LINES)
+                        .map(|l| view! { <span class="code-line">{l.to_owned()}"\n"</span> })
+                        .collect_view();
+                    view! {
+                        <pre class="code-src mono"><code>{lines}</code></pre>
+                        {(total > CODE_LINES).then(|| view! { <p class="subtle code-cut">{tf(T::CodeCut, &[&CODE_LINES.to_string(), &total.to_string()])}</p> })}
+                    }.into_any()
+                }
+            }}
+        </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zoom_moves_one_step_and_stops_at_the_ends() {
+        assert_eq!(zoom_step(100, true), 125);
+        assert_eq!(zoom_step(100, false), 75);
+        assert_eq!(zoom_step(60, true), 67);
+        assert_eq!(zoom_step(60, false), 50);
+        assert_eq!(zoom_step(200, true), 200);
+        assert_eq!(zoom_step(50, false), 50);
+    }
+
+    #[test]
+    fn a_zoomed_frame_lays_out_at_device_size_and_scales() {
+        assert_eq!(zoomed(Device::Desktop, 100), "width:100%");
+        assert_eq!(
+            zoomed(Device::Phone, 50),
+            "width:390px;max-width:none;height:calc(100% * 100 / 50);transform:scale(0.5);transform-origin:0 0"
+        );
+        assert_eq!(zoom_box(Device::Phone, 50), "width:calc(390px * 50 / 100)");
     }
 }

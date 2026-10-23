@@ -1,4 +1,4 @@
-//! Open Design desktop shell (spec 5.1, 5.3).
+//! Nét desktop shell (spec 5.1, 5.3).
 //!
 //! Runs `od-server` inside this process on a random loopback port and points
 //! the window at it, so the UI talks to the same HTTP + SSE API as the CLI.
@@ -26,6 +26,8 @@ use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder}
 use tauri_plugin_dialog::DialogExt;
 
 const OPEN_FOLDER_MENU_ID: &str = "open-folder";
+/// Display name (window title, dialogs); `tauri.conf.json` `productName`.
+const APP_NAME: &str = "Nét";
 
 /// The in-process daemon.
 struct Daemon {
@@ -197,7 +199,7 @@ fn main() -> anyhow::Result<()> {
                     handle
                         .dialog()
                         .message(format!("{e:#}"))
-                        .title("Open Design")
+                        .title(APP_NAME)
                         .blocking_show();
                     return Err(e.into());
                 }
@@ -214,7 +216,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         ok
                     })
-                    .title("Open Design")
+                    .title(APP_NAME)
                     .inner_size(1360.0, 860.0)
                     .min_inner_size(900.0, 600.0);
             // The UI draws its own title strip under the traffic lights

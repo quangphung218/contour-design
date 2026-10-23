@@ -43,7 +43,8 @@ pub fn Onboarding() -> impl IntoView {
         <section class="page onboarding">
             <div class="onboarding-card card">
                 <header class="onboarding-head">
-                    <span class="brand-mark large" aria-hidden="true">{icon(Glyph::DesignSystem)}</span>
+                    {super::brand_mark("brand-mark large")}
+                    <p class="onboarding-brand"><strong>{super::APP_NAME}</strong><span class="muted">{t(T::Tagline)}</span></p>
                     <h1>{t(T::OnboardingTitle)}</h1>
                     <p class="muted">{t(T::OnboardingIntro)}</p>
                 </header>

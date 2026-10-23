@@ -3,7 +3,9 @@
 // brief → streamed text → the agent writes index.html → preview → second
 // turn reloads the preview → question form → plan pill, queue, steer, stop →
 // history after reload → preview comments sent with a turn → deck viewer
-// (next, thumbnails, notes, present, Esc) → quick switcher and tabs →
+// (next, thumbnails, notes, present, Esc) → quick switcher and tabs → run
+// status, next steps, files panel, code view, zoom, command palette and
+// shortcuts help →
 // version restore → fork → export and handoff → open folder → session mode,
 // memory, side chat, conversation export, Design Jury → terminal tab (echo,
 // top, vim, reattach, close) → routine run by the mock agent → MCP stdio server →
@@ -287,6 +289,61 @@ try {
   await until(async () => (await page.getByTestId('tab').count()) === 1, 'Ctrl+W closed a tab');
   await page.locator('.tab.active', { hasText: 'index.html' }).waitFor();
   results.quickSwitcher = 'ok';
+
+  // 11b. Run status and next steps, files panel, code view, zoom, then the
+  // command palette (Ctrl/Cmd+K) and the shortcuts help (?).
+  assert.equal(await assistant.last().getByTestId('run-state').getAttribute('data-phase'), 'done');
+  await assistant.last().getByTestId('next-steps').getByTestId('next-open').waitFor();
+  await assistant.last().getByTestId('next-mobile').click();
+  assert.match(await page.getByTestId('composer').inputValue(), /390px/);
+  await page.getByTestId('composer').fill('');
+  assert.equal(await assistant.first().getByTestId('next-steps').count(), 0, 'next steps only under the latest turn');
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('Control+b');
+  await until(async () => (await page.getByTestId('file-tree').count()) === 0, 'files panel hidden');
+  await page.getByTestId('show-files').click();
+  await page.getByTestId('file-tree').waitFor();
+  await page.getByTestId('view-code').click();
+  await page.getByTestId('code-view').getByText('Mock page').waitFor();
+  await page.getByTestId('view-preview').click();
+  await frame.locator('#title').waitFor();
+  await page.getByTestId('zoom-in').click();
+  assert.equal(await page.getByTestId('zoom-reset').textContent(), '125%');
+  await page.keyboard.press('Control+0');
+  assert.equal(await page.getByTestId('zoom-reset').textContent(), '100%');
+
+  const palette = async (query) => {
+    await page.keyboard.press('Control+k');
+    await page.getByTestId('command-palette').waitFor();
+    await page.getByTestId('palette-input').fill(query);
+  };
+  await palette('deck.h');
+  await page.getByTestId('palette-item').first().waitFor();
+  assert.match(await page.getByTestId('palette-item').first().textContent(), /deck\.html/);
+  await page.getByTestId('palette-input').press('Enter');
+  await until(async () => (await page.getByTestId('command-palette').count()) === 0, 'palette closed');
+  await page.locator('.tab.active', { hasText: 'deck.html' }).waitFor();
+  await palette('theme dark');
+  await page.getByTestId('palette-input').press('Enter');
+  await until(async () => (await page.locator('html').getAttribute('data-theme')) === 'dark', 'dark theme from the palette');
+  await palette('theme follow');
+  await page.getByTestId('palette-item').first().click();
+  await until(async () => (await page.locator('html').getAttribute('data-theme')) === null, 'system theme again');
+  await palette('nothing-matches-this');
+  await page.getByTestId('command-palette').getByText('Nothing matches').waitFor();
+  await page.keyboard.press('Escape');
+  await until(async () => (await page.getByTestId('command-palette').count()) === 0, 'Esc closes the palette');
+  await page.keyboard.press('?');
+  await page.getByTestId('shortcuts').locator('kbd', { hasText: /^(⌘|Ctrl\+)K$/ }).waitFor();
+  await page.keyboard.press('Escape');
+  await until(async () => (await page.getByTestId('shortcuts').count()) === 0, 'Esc closes the shortcuts');
+  await palette('settings');
+  await page.getByTestId('palette-input').press('Enter');
+  await page.waitForURL(BASE + '/settings');
+  await page.goBack();
+  await frame.locator('#title').waitFor();
+  await page.locator('.tab.active', { hasText: 'index.html' }).waitFor();
+  results.palette = 'ok';
 
   // 12. Version history: restore the first AI version of index.html.
   await page.getByTestId('history').click();

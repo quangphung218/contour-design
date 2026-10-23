@@ -15,7 +15,7 @@ pub mod store;
 pub mod versions;
 
 pub use chat::{AgentSession, NewTurn};
-pub use data_dir::{DATA_DIR_ENV, DataDir};
+pub use data_dir::{DATA_DIR_ENV, DATA_DIR_NAME, DataDir};
 pub use error::{Result, StoreError};
 pub use files::ProjectRoot;
 pub use memory::memory_from_message;

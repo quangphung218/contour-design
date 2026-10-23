@@ -24,7 +24,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[derive(Debug, Parser)]
-#[command(name = "od", version, about = "open-design-rs daemon and CLI")]
+#[command(
+    name = "od",
+    version,
+    about = "Nét: design with your agent, on your machine (daemon and CLI)"
+)]
 struct Cli {
     /// Daemon base URL for client commands.
     #[arg(

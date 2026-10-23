@@ -14,10 +14,12 @@ mod icons;
 mod lazy_frame;
 mod mcp_settings;
 mod onboarding;
+mod palette;
 mod preview_comments;
 mod preview_tools;
 mod projects;
 mod settings_page;
+mod shortcuts;
 mod sse;
 mod studio;
 mod switcher;
@@ -42,6 +44,12 @@ pub struct Shell {
     pub agents: RwSignal<Option<Result<Vec<AgentInfo>, String>>>,
     /// UI language; the whole app re-renders when it changes.
     pub locale: RwSignal<Locale>,
+    /// Command palette (Cmd/Ctrl+K) open.
+    pub palette: RwSignal<bool>,
+    /// Keyboard shortcuts help (`?`) open.
+    pub shortcuts: RwSignal<bool>,
+    /// The open Studio, whose commands the palette adds.
+    pub(crate) studio: RwSignal<Option<studio::StudioCtx>>,
 }
 
 impl Shell {
@@ -118,6 +126,9 @@ pub fn App() -> impl IntoView {
         config: RwSignal::new(None),
         agents: RwSignal::new(None),
         locale: RwSignal::new(locale_of(&AppConfig::default())),
+        palette: RwSignal::new(false),
+        shortcuts: RwSignal::new(false),
+        studio: RwSignal::new(None),
     };
     provide_context(shell);
     leptos::task::spawn_local(async move {
@@ -158,9 +169,35 @@ pub fn App() -> impl IntoView {
 #[component]
 fn Shelled() -> impl IntoView {
     let mac = is_mac_desktop();
+    let shell = Shell::get();
+    // App-wide keys: Cmd/Ctrl+K palette, `?` shortcuts help.
+    let keys = window_event_listener(leptos::ev::keydown, move |ev| {
+        let modifier = ev.ctrl_key() || ev.meta_key();
+        if modifier && !ev.alt_key() && !ev.shift_key() && ev.key().eq_ignore_ascii_case("k") {
+            ev.prevent_default();
+            shell.shortcuts.set(false);
+            shell.palette.update(|p| *p = !*p);
+        } else if ev.key() == "?"
+            && !modifier
+            && !studio::is_editing(&ev)
+            && !shell.palette.get_untracked()
+        {
+            ev.prevent_default();
+            shell.shortcuts.update(|s| *s = !*s);
+        } else if ev.key() == "Escape" && shell.shortcuts.get_untracked() {
+            shell.shortcuts.set(false);
+        }
+    });
+    on_cleanup(move || keys.remove());
     view! {
         <Router>
             <OnboardingGate/>
+            <Show when=move || shell.palette.get()>
+                <palette::CommandPalette/>
+            </Show>
+            <Show when=move || shell.shortcuts.get()>
+                <shortcuts::ShortcutsDialog/>
+            </Show>
             <div class="app">
                 {mac.then(|| view! { <div class="titlebar" data-tauri-drag-region=""></div> })}
                 <div class="app-body">
@@ -186,12 +223,12 @@ fn Shelled() -> impl IntoView {
 const SIDEBAR_KEY: &str = "od.sidebar.collapsed";
 const SIDEBAR_STUDIO_KEY: &str = "od.sidebar.studio-collapsed";
 
-fn stored_flag(key: &str) -> Option<bool> {
+pub(super) fn stored_flag(key: &str) -> Option<bool> {
     let storage = web_sys::window()?.local_storage().ok()??;
     storage.get_item(key).ok()?.map(|v| v == "1")
 }
 
-fn store_flag(key: &str, on: bool) {
+pub(super) fn store_flag(key: &str, on: bool) {
     if let Some(Ok(Some(storage))) = web_sys::window().map(|w| w.local_storage()) {
         let _ = storage.set_item(key, if on { "1" } else { "0" });
     }
@@ -201,6 +238,7 @@ fn store_flag(key: &str, on: bool) {
 /// icon rail; the choice is remembered per context (Studio or the rest).
 #[component]
 fn Sidebar() -> impl IntoView {
+    let shell = Shell::get();
     let location = use_location();
     let in_studio = Memo::new(move |_| {
         location
@@ -239,9 +277,9 @@ fn Sidebar() -> impl IntoView {
     view! {
         <aside class="sidebar" class:rail=rail>
             <div class="sidebar-top">
-                <A href="/" attr:class="brand" attr:aria-label="Open Design">
-                    <span class="brand-mark" aria-hidden="true">{icon(Glyph::DesignSystem)}</span>
-                    <span class="brand-name">"Open Design"</span>
+                <A href="/" attr:class="brand" attr:aria-label=APP_NAME>
+                    {brand_mark("brand-mark")}
+                    <span class="brand-name">{APP_NAME}</span>
                 </A>
                 <button
                     class="icon-btn sidebar-toggle"
@@ -253,15 +291,45 @@ fn Sidebar() -> impl IntoView {
                     {move || icon(if rail() { Glyph::SidebarUnfold } else { Glyph::SidebarFold })}
                 </button>
             </div>
+            <button
+                class="palette-trigger"
+                data-testid="open-palette"
+                aria-label=t(T::CommandPalette)
+                data-tip=tip(t(T::CommandPalette))
+                data-tip-pos="right"
+                on:click=move |_| shell.palette.set(true)
+            >
+                {icon(Glyph::Search)}
+                <span class="nav-label">{t(T::PaletteTrigger)}</span>
+                <kbd class="nav-label">{format!("{}K", shortcuts::modifier())}</kbd>
+            </button>
             <nav class="sidenav" aria-label=t(T::MainNavigation)>
                 {link("/", Glyph::Home, T::NavHome, true)}
                 {link("/projects", Glyph::Projects, T::NavProjects, false)}
                 {link("/automations", Glyph::Automations, T::NavAutomations, false)}
                 <span class="spacer"></span>
+                <button
+                    class="nav-link"
+                    data-testid="open-shortcuts"
+                    data-tip=tip(t(T::KeyboardShortcuts))
+                    data-tip-pos="right"
+                    on:click=move |_| shell.shortcuts.set(true)
+                >
+                    {icon(Glyph::Keyboard)}
+                    <span class="nav-label">{t(T::KeyboardShortcuts)}</span>
+                </button>
                 {link("/settings", Glyph::Settings, T::NavSettings, false)}
             </nav>
         </aside>
     }
+}
+
+/// Product name shown in the UI (docs/brand.md).
+pub(crate) const APP_NAME: &str = "Nét";
+
+/// The Nét mark (one stroke, `currentColor`) in a tile of class `class`.
+pub(crate) fn brand_mark(class: &'static str) -> impl IntoView {
+    view! { <span class=class aria-hidden="true" inner_html=include_str!("../../assets/net-mark.svg")></span> }
 }
 
 /// The Tauri window on macOS draws its traffic lights over the page
