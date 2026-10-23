@@ -1,0 +1,9 @@
+#!/bin/sh
+# Mock stdio MCP server for the UI e2e: answers initialize (id 1) and
+# tools/list (id 2) with one tool. Nothing leaves the machine.
+while IFS= read -r line; do
+  case "$line" in
+    *'"initialize"'*) echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"echo","version":"1"}}}';;
+    *'"tools/list"'*) echo '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"echo"}]}}';;
+  esac
+done

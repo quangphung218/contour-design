@@ -12,6 +12,7 @@ pub mod preview_bridge;
 pub mod question_form;
 pub mod settings;
 pub mod speaker_notes;
+pub mod term_screen;
 pub mod workspace;
 
 pub mod app;

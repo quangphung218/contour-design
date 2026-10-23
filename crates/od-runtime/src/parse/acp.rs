@@ -112,16 +112,17 @@ impl AcpSession {
 
     fn open_session(&mut self) {
         let cwd = self.cwd();
+        let mcp = self.ctx.mcp_servers.clone();
         match self.ctx.resume_session_id.clone() {
             Some(id) => self.request(
                 SESSION_ID,
                 "session/load",
-                json!({"sessionId": id, "cwd": cwd, "mcpServers": []}),
+                json!({"sessionId": id, "cwd": cwd, "mcpServers": mcp}),
             ),
             None => self.request(
                 SESSION_ID,
                 "session/new",
-                json!({"cwd": cwd, "mcpServers": []}),
+                json!({"cwd": cwd, "mcpServers": mcp}),
             ),
         }
     }
@@ -827,6 +828,28 @@ mod tests {
             {"optionId": "always", "name": "Always", "kind": "allow_always"},
             {"optionId": "deny", "name": "Deny", "kind": "reject_once"},
         ])
+    }
+
+    #[test]
+    fn session_new_carries_the_external_mcp_servers() {
+        let server = json!({"name": "fs", "command": "npx", "args": [], "env": []});
+        let mut s = AcpSession::new(SessionContext {
+            mcp_servers: vec![server.clone()],
+            ..SessionContext::default()
+        });
+        let mut out = Vec::new();
+        s.take_writes();
+        s.line(
+            r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}"#,
+            &mut out,
+        );
+        let writes = s.take_writes();
+        let new: Value = writes
+            .iter()
+            .filter_map(|w| serde_json::from_str::<Value>(w).ok())
+            .find(|w| w["method"] == "session/new")
+            .unwrap();
+        assert_eq!(new["params"]["mcpServers"], json!([server]));
     }
 
     #[test]

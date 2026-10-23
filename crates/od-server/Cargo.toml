@@ -17,8 +17,13 @@ od-export.workspace = true
 od-render-cdp.workspace = true
 od-live.workspace = true
 od-media.workspace = true
+od-term.workspace = true
+od-automation.workspace = true
+od-mcp-client.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls-native-roots"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 anyhow.workspace = true
-axum.workspace = true
+axum = { workspace = true, features = ["ws"] }
 base64.workspace = true
 futures-util.workspace = true
 hex.workspace = true
@@ -37,6 +42,7 @@ uuid.workspace = true
 nix.workspace = true
 
 [dev-dependencies]
+tokio-tungstenite = "0.29"
 http-body-util.workspace = true
 lopdf.workspace = true
 reqwest.workspace = true

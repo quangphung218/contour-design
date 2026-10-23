@@ -540,6 +540,7 @@ impl SideChat {
 
     /// Shows the side chat tab, loading its history the first time.
     pub fn show(self, ctx: StudioCtx) {
+        ctx.active_term.set(None);
         self.open.set(true);
         if self.loaded.get_value() {
             return;

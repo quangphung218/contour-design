@@ -12,6 +12,7 @@ use super::preview_comments::CommentLayer;
 use super::preview_tools::{self, DrawLayer, Tool, ToolBar, ToolPanel, Tools};
 use super::sse::Sse;
 use super::switcher::QuickSwitcher;
+use super::terminal::{self, TermTab, TerminalView};
 use super::versions::VersionsPanel;
 use super::{Shell, api};
 use crate::chat::{AssistantTurn, Block, TurnState};
@@ -88,6 +89,10 @@ pub struct StudioCtx {
     pub files: RwSignal<Vec<ProjectFile>>,
     /// Open file tabs; the active tab is the previewed file.
     pub tabs: RwSignal<Tabs>,
+    /// Terminal tabs, after the file tabs.
+    pub terms: RwSignal<Vec<TermTab>>,
+    /// The terminal shown instead of the preview, if any.
+    pub active_term: RwSignal<Option<String>>,
     /// Recently opened files, newest first (quick switcher).
     pub recent: RwSignal<Vec<String>>,
     /// Bumped to reload the preview iframe.
@@ -172,6 +177,7 @@ impl StudioCtx {
     /// Opens `path` in a tab (or switches to its tab).
     pub fn open_file(self, path: &str) {
         self.side.open.set(false);
+        self.active_term.set(None);
         self.tabs.update(|t| t.open(path));
         self.recent.update(|r| touch_recent(r, path));
         self.viewing.set(None);
@@ -700,7 +706,9 @@ impl StudioCtx {
                     true
                 }
                 "w" => {
-                    if let Some(active) = self.active_untracked() {
+                    if let Some(term) = self.active_term.get_untracked() {
+                        terminal::close(self, term);
+                    } else if let Some(active) = self.active_untracked() {
                         self.tabs.update(|t| t.close(&active));
                     }
                     true
@@ -764,6 +772,7 @@ impl StudioCtx {
         self.refresh_files();
         self.watch_project();
         self.load_w3();
+        terminal::restore(self);
 
         let conversations = api::get::<ConversationsResponse>(&format!("{base}/conversations"))
             .await
@@ -814,6 +823,7 @@ fn is_editing(ev: &web_sys::KeyboardEvent) -> bool {
     };
     matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT")
         || el.get_attribute("contenteditable").is_some()
+        || el.get_attribute("data-terminal").is_some()
 }
 
 fn fail(turn: RwSignal<AssistantTurn>, message: String) {
@@ -839,6 +849,8 @@ pub fn Studio() -> impl IntoView {
         queue: RwSignal::new(Vec::new()),
         files: RwSignal::new(Vec::new()),
         tabs: RwSignal::new(Tabs::default()),
+        terms: RwSignal::new(Vec::new()),
+        active_term: RwSignal::new(None),
         recent: RwSignal::new(Vec::new()),
         preview_rev: RwSignal::new(0),
         notice: RwSignal::new(None),
@@ -964,10 +976,11 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                         <button class="tab-name" on:click=move |_| ctx.side.show(ctx)>{format!("💬 {}", t(T::SideChat))}</button>
                     </div>
                 };
+                let term_active = ctx.active_term.with(Option::is_some);
                 let files = tabs.open
                     .iter()
                     .map(|path| {
-                        let active = !side_open && tabs.active.as_deref() == Some(path.as_str());
+                        let active = !side_open && !term_active && tabs.active.as_deref() == Some(path.as_str());
                         let name = path.rsplit('/').next().unwrap_or(path).to_owned();
                         let open = path.clone();
                         let close = path.clone();
@@ -988,6 +1001,35 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                     .collect_view();
                 view! { {files}{side_tab} }
             }}
+            {move || {
+                ctx.terms
+                    .get()
+                    .into_iter()
+                    .map(|term| {
+                        let active = !ctx.side.open.get() && ctx.active_term.with(|a| a.as_deref() == Some(term.id.as_str()));
+                        let (show, close) = (term.id.clone(), term.id.clone());
+                        view! {
+                            <div class="tab term-tab" class:active=active role="tab" aria-selected=active.to_string() data-testid="terminal-tab">
+                                <button class="tab-name" on:click=move |_| { ctx.side.open.set(false); ctx.active_term.set(Some(show.clone())); }>
+                                    {tf(T::TerminalTab, &[&term.number.to_string()])}
+                                </button>
+                                <button
+                                    class="tab-close"
+                                    title=t(T::CloseTerminal)
+                                    aria-label=t(T::CloseTerminal)
+                                    data-testid="terminal-close"
+                                    on:click=move |_| terminal::close(ctx, close.clone())
+                                >
+                                    "×"
+                                </button>
+                            </div>
+                        }
+                    })
+                    .collect_view()
+            }}
+            <button class="icon-btn tab-add" title=t(T::NewTerminal) aria-label=t(T::NewTerminal) data-testid="new-terminal" on:click=move |_| terminal::open(ctx)>
+                ">_"
+            </button>
         </div>
     }
 }
@@ -1036,6 +1078,8 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
         <section class="preview" class:presenting=move || ctx.presenting.get() data-testid="preview-pane">
             <TabsBar ctx=ctx/>
             <Show when=move || !ctx.side.open.get() fallback=move || view! { <SideChatView ctx=ctx/> }>
+            {move || ctx.active_term.get().map(|id| view! { <TerminalView id=id/> })}
+            <div class="preview-main" style=move || if ctx.active_term.with(Option::is_some) { "display:none" } else { "display:contents" }>
             <div class="pane-head">
                 <span class="pane-title mono">{move || ctx.active().unwrap_or_default()}</span>
                 <div class="segmented small">
@@ -1118,6 +1162,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 </Show>
             </div>
             <NotesPanel ctx=ctx/>
+            </div>
             </Show>
         </section>
     }

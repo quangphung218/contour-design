@@ -6,6 +6,7 @@ pub mod export;
 pub mod files;
 pub mod handoff;
 pub mod media;
+pub mod platform;
 pub mod preview;
 pub mod preview_tools;
 pub mod projects;

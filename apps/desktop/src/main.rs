@@ -18,6 +18,7 @@ use od_store::{DataDir, Store};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tauri::ipc::CapabilityBuilder;
 use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
@@ -128,6 +129,26 @@ fn open_folder_from_menu(app: &AppHandle) {
     });
 }
 
+/// IPC (the folder picker) for the main window, only while it shows the
+/// daemon's exact origin. The IPC origin is the requesting document's
+/// `Origin`, so sandboxed preview iframes (`Origin: null`) and pages of
+/// other loopback ports never match. Replaces a static
+/// `http://127.0.0.1:*` capability, which every local server shared.
+fn ui_capability(origin: &str) -> CapabilityBuilder {
+    CapabilityBuilder::new("daemon-ui")
+        .window("main")
+        .local(false)
+        .remote(format!("{origin}/*"))
+        .permission("core:default")
+        .permission("dialog:default")
+}
+
+/// The main window stays on the daemon's origin; anything else (a link in
+/// a design, a redirect) is refused rather than loaded with the app's IPC.
+fn allowed_navigation(url: &Url, origin: &str) -> bool {
+    url.origin().ascii_serialization() == origin
+}
+
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::default(app)?;
     let open = MenuItem::with_id(
@@ -173,7 +194,17 @@ fn main() -> anyhow::Result<()> {
                     return Err(e.into());
                 }
             };
+            let origin = daemon.url.origin().ascii_serialization();
+            app.add_capability(ui_capability(&origin))?;
+            let nav_origin = origin.clone();
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(daemon.url.clone()))
+                .on_navigation(move |url| {
+                    let ok = allowed_navigation(url, &nav_origin);
+                    if !ok {
+                        tracing::warn!(%url, "blocked a navigation away from the app");
+                    }
+                    ok
+                })
                 .title("Open Design")
                 .inner_size(1360.0, 860.0)
                 .min_inner_size(900.0, 600.0)
@@ -183,4 +214,26 @@ fn main() -> anyhow::Result<()> {
         })
         .run(tauri::generate_context!())
         .context("running the desktop app")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn navigation_stays_on_the_daemon_origin() {
+        let origin = "http://127.0.0.1:50123";
+        let ok = |u: &str| allowed_navigation(&Url::parse(u).unwrap(), origin);
+        assert!(ok("http://127.0.0.1:50123/projects/p1"));
+        assert!(ok("http://127.0.0.1:50123/api/projects/p1/raw/index.html"));
+        for bad in [
+            "http://127.0.0.1:7456/",
+            "http://localhost:50123/",
+            "https://127.0.0.1:50123/",
+            "https://evil.example/",
+            "file:///etc/passwd",
+        ] {
+            assert!(!ok(bad), "{bad}");
+        }
+    }
 }
