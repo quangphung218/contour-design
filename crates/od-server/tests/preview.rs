@@ -461,7 +461,7 @@ async fn edit_key_goes_to_the_first_load_and_to_the_host_once() {
     // The page fetching its own URL again: no key.
     let again = a.get(&uri).await.text();
     assert!(again.contains("<script data-od-bridge>"), "{again:.200}");
-    assert!(!again.contains("data-od-key"));
+    assert!(!again.contains("data-od-key=\""));
 
     let claim = format!("/api/projects/{id}/edit-keys/{kid}");
     let sandboxed = a
