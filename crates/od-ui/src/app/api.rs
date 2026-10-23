@@ -103,6 +103,21 @@ async fn decode<T: DeserializeOwned>(res: Response) -> ApiResult<T> {
     })
 }
 
+/// `PUT` of a text body (file content).
+pub async fn put_text<T: DeserializeOwned>(path: &str, body: &str) -> ApiResult<T> {
+    let req = Request::put(path)
+        .header("content-type", "text/plain; charset=utf-8")
+        .body(body)
+        .map_err(network)?;
+    decode(req.send().await.map_err(network)?).await
+}
+
+/// `POST` of a multipart form (uploads).
+pub async fn post_form<T: DeserializeOwned>(path: &str, form: web_sys::FormData) -> ApiResult<T> {
+    let req = Request::post(path).body(form).map_err(network)?;
+    decode(req.send().await.map_err(network)?).await
+}
+
 pub async fn get<T: DeserializeOwned>(path: &str) -> ApiResult<T> {
     decode(Request::get(path).send().await.map_err(network)?).await
 }

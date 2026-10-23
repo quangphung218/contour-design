@@ -131,6 +131,7 @@ pub fn open(path: &Path) -> Result<Connection> {
     conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;")?;
     migrate(&mut conn)?;
     crate::memory::ensure_schema(&conn)?;
+    crate::manage::ensure_schema(&conn)?;
     Ok(conn)
 }
 

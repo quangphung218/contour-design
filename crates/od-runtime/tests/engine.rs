@@ -52,6 +52,8 @@ sleep 300
             fallback_prompt: None,
             model: None,
             reasoning: None,
+            service_tier: None,
+            bin: None,
             extra_dirs: Vec::new(),
             resume_session_id: None,
             permission: PermissionMode::Auto,
@@ -159,6 +161,8 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
             fallback_prompt: None,
             model: None,
             reasoning: None,
+            service_tier: None,
+            bin: None,
             extra_dirs: Vec::new(),
             resume_session_id: None,
             permission: PermissionMode::Auto,
@@ -241,6 +245,8 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
                 fallback_prompt: None,
                 model: None,
                 reasoning: None,
+                service_tier: None,
+                bin: None,
                 extra_dirs: Vec::new(),
                 resume_session_id: None,
                 permission: PermissionMode::Auto,
@@ -309,6 +315,8 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
                 fallback_prompt: None,
                 model: None,
                 reasoning: None,
+                service_tier: None,
+                bin: None,
                 extra_dirs: Vec::new(),
                 resume_session_id: None,
                 permission: PermissionMode::Auto,
@@ -323,4 +331,30 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
     }
     let probed = std::fs::read_to_string(&probes).unwrap();
     assert_eq!(probed.lines().count(), 1, "probed again at once");
+}
+
+/// A first `--version` and help probe that time out (a new binary's first
+/// exec can pass the limit under load) are tried once more, so the agent
+/// list still shows the version and flags.
+#[tokio::test]
+async fn detection_tries_a_timed_out_probe_again() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mocks = tmp.path().join("mocks");
+    std::fs::create_dir_all(&mocks).unwrap();
+    write_mock(
+        &mocks,
+        "claude",
+        &format!(
+            r#"marker="{dir}/probed-$1-$2"
+if [ ! -f "$marker" ]; then /usr/bin/touch "$marker"; exec /bin/sleep 6; fi
+case "$1" in --version) echo "mock 1.0"; exit 0;; esac
+if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "--include-partial-messages"; exit 0; fi
+"#,
+            dir = tmp.path().display()
+        ),
+    );
+    let info = od_runtime::detect::detect(&CLAUDE, mocks.as_os_str(), false).await;
+    assert!(info.available);
+    assert_eq!(info.version.as_deref(), Some("mock 1.0"));
+    assert_eq!(info.capabilities, ["--include-partial-messages"]);
 }

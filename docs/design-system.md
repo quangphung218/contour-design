@@ -15,12 +15,13 @@ Không dùng: gradient tím, emoji làm icon, ký tự làm icon (`↻ × ⤓ >_
 | `crates/od-ui/styles/tokens.css` | Mọi token: `@font-face`, màu light/dark, type scale, spacing, radius, shadow, z-index, motion |
 | `crates/od-ui/styles/components.css` | Component dùng lại (button, input, chip, card, tab, menu, dialog, toast, badge, tooltip, empty state, skeleton) |
 | `crates/od-ui/styles/app.css` | App shell và từng màn (Home, Projects, Studio, Settings…), chỉ ghép token và component |
+| `crates/od-ui/styles/library.css` | Các màn thư viện (Design systems, Plugins, Media, Templates), nạp sau `app.css`, cũng chỉ ghép token và component |
 | `crates/od-ui/src/app/icons.rs` | `Glyph` + hàm `icon(glyph)` |
-| `crates/od-ui/vendor/remixicon/` | 84 icon SVG Remix Icon 4.8.0, Apache-2.0 |
+| `crates/od-ui/vendor/remixicon/` | 109 icon SVG Remix Icon 4.8.0, Apache-2.0 |
 | `crates/od-ui/assets/` | Favicon và mark Nét (sinh từ `assets/brand`, xem [`brand.md`](brand.md)) |
 | `crates/od-ui/vendor/fonts/` | Geist, Geist Mono (variable, woff2), SIL OFL 1.1 |
 
-Thứ tự nạp trong `index.html`: tokens → components → app. Component chỉ đọc biến CSS, không viết mã màu trực tiếp (ngoại lệ: nền giấy trắng của preview và vài màu trên nền đen của chế độ trình chiếu).
+Thứ tự nạp trong `index.html`: tokens → components → app → library. Component chỉ đọc biến CSS, không viết mã màu trực tiếp (ngoại lệ: nền giấy trắng của preview và vài màu trên nền đen của chế độ trình chiếu).
 
 ## Token
 
@@ -91,12 +92,13 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 | `.switch` | | `<label class="switch"><input type="checkbox"><span>…</span></label>` |
 | `.radio-row` | | Thẻ chọn có mô tả; viền accent khi `:checked` |
 | `.chip` | `active` / `aria-checked="true"` | Chọn loại đầu ra, câu trả lời form, chip bình luận đính kèm |
-| `.segmented` + `.seg` | `small`, `icons` | Một lựa chọn trong vài giá trị (chế độ phiên, thiết bị, theme) |
+| `.segmented` + `.seg` | `small`, `icons` | Một lựa chọn trong vài giá trị (chế độ phiên, thiết bị, theme, tab của màn thư viện). Đang chọn: `.active`, `aria-checked`, `aria-pressed` hoặc `aria-selected` |
 | `.badge` | `accent`, `success`, `warning`, `danger`, `outline` | Vuông góc nhỏ (`--radius-xs`), không dùng viên thuốc |
 | `.card` | `padded`, `interactive` | Chỉ dùng khi độ nổi nói lên thứ bậc; còn lại dùng khoảng trắng |
 | `.tabs` + `.tab` | `active` | `.tab-name` (có icon) + `.tab-close` (hiện khi hover hoặc active) |
 | `.menu-wrap` + `.menu` / `.popover` | `left` | `.menu-item` có icon, `.menu-sep` là tiêu đề nhóm |
-| `.overlay` + `.dialog` | `overlay.center` | `.dialog-head` (`.dialog-icon`), `.dialog-body`, `.dialog-foot`; `role="dialog"`, `aria-modal`, Esc và bấm nền để đóng |
+| `.overlay` + `.dialog` | `overlay.center` | `.dialog-head` (`.dialog-icon`), `.dialog-body`, `.dialog-foot`; `role="dialog"`, `aria-modal`, Esc và bấm nền để đóng. Dùng component `lib_ui::Modal`: nền là `.modal-backdrop` đứng cạnh dialog (không bọc dialog), vì nút bên trong đóng modal sẽ gỡ cây DOM khi click còn đang nổi bọt |
+| `lib_ui::ConfirmBar` | | Dòng xác nhận xoá ngay trên trang (nền `--color-danger-soft`). Không dùng `window.confirm`: hộp thoại chặn làm handler của app bị gọi lại khi đang chạy |
 | `.toast-region` + `.toast` | `error` | Kết quả export/handoff, tự ẩn sau 5 giây |
 | `[data-tip]` | `data-tip-pos="right|left|top"` | Tooltip CSS, hiện sau 350ms. Không dùng thêm `title` trên cùng phần tử |
 | `.empty-state` | `compact` | `.empty-icon` + `<strong>` + `<p>` + nút hành động nếu có |
@@ -123,7 +125,7 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 
 ## App shell
 
-- Sidebar trái: logo Nét, ô "Tìm hoặc chạy lệnh" (mở command palette), Home, Projects, Automations, rồi Phím tắt và Settings ở dưới cùng. Nút thu gọn thành rail 56px; lựa chọn lưu trong `localStorage` riêng cho Studio (`od.sidebar.studio-collapsed`, mặc định thu gọn) và các trang khác (`od.sidebar.collapsed`). Cửa sổ hẹp hơn 960px tự thành rail.
+- Sidebar trái: logo Nét, ô "Tìm hoặc chạy lệnh" (mở command palette), Home, Projects, Templates, Design systems, Plugins, Media, Automations, Integrations, Messages, rồi Phím tắt và Settings ở dưới cùng. Nút thu gọn thành rail 56px; lựa chọn lưu trong `localStorage` riêng cho Studio (`od.sidebar.studio-collapsed`, mặc định thu gọn) và các trang khác (`od.sidebar.collapsed`). Cửa sổ hẹp hơn 960px tự thành rail.
 - Nội dung nằm trong panel `.main` nổi trên nền canvas.
 - Desktop macOS: cửa sổ Tauri dùng title bar overlay (`TitleBarStyle::Overlay`, ẩn tiêu đề). UI phát hiện Tauri + macOS, đặt `data-shell="mac"` trên `<html>` và chừa dải `.titlebar` cao 38px làm vùng kéo cửa sổ (`data-tauri-drag-region`, quyền `core:window:allow-start-dragging`).
 
@@ -134,10 +136,23 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 - Code view của version đang xem là source của version đó. Bật bình luận thì tự về Preview. "Thử lại" gửi lại cả file đính kèm của tin gốc (lưu theo tin, cả khi tải lại lịch sử).
 - Zoom là `transform: scale` trên khung đã layout ở kích thước thiết bị (`zoom_box` + `zoomed` trong `studio.rs`), để WebKit và Chromium giống nhau và pin comment theo đúng chỗ.
 - Mỗi lượt của agent có một dòng trạng thái `[data-testid=run-state]` (`data-phase` = `starting | working | done | failed | stopped`; đang chạy theo plan thì hiện "Bước N/M"). Lượt cuối, khi không còn run nào, có hàng "Tiếp theo" (`next-steps`): xem file vừa ghi, bình luận lên trang, bản mobile, phương án khác; lỗi thì "Thử lại" và "Mở Cài đặt". Logic nằm ở `src/guide.rs`, test native.
+- Cột file (`app/files_panel.rs`, logic thuần ở `src/file_tree.rs`): cây thư mục thu gọn được (mở bằng click, double-click để vào thư mục, breadcrumb để ra), tìm file, xem theo loại (lọc chip, "Hiện thêm" mỗi 50 file), chọn nhiều (ZIP, chuyển, xoá), menu dòng (mở, tab mới, tải, chép đường dẫn, đổi tên, chuyển, xoá), nút "+" (tải lên, dán thành file, tài liệu/trang/sketch/thư mục mới), menu "…" (làm mới, tạo design system từ project, nhân bản). Thả file vào cột để tải lên. Trình sửa ghi file bằng `PUT /content/*path` (đúng tên, không qua sanitize).
+- Menu mở trong vùng cuộn (cây file, thanh tab, thanh deck) dùng `position: fixed` tính theo nút (`files_panel::anchor_style`) và lớp `.menu-scrim` để bấm ra ngoài là đóng; menu thường vẫn `absolute` như cũ.
+- File không phải trang HTML có view riêng thay cho iframe: Markdown (`doc_view.rs`, Soạn/Chia đôi/Xem trước, tự lưu sau 800 ms), sketch `*.sketch.json` (`sketch.rs`, dùng chung nét vẽ và undo với Draw), PDF/video/âm thanh (trình xem của trình duyệt), Word/PowerPoint/Excel (chữ trích bằng `od-export::office`). View riêng không bị dựng lại khi preview reload.
+- Deck: Present có menu (trong tab, toàn màn hình, tab mới, presenter view). Presenter view là route `/present/:id` mở cửa sổ riêng, đồng bộ slide với Studio qua `BroadcastChannel` (`presenter.rs`; slide do bên kia yêu cầu thì không phát lại, `deck::should_announce`).
 - Không tải được project (id sai, daemon tắt) thì lỗi nằm cố định đầu khung chat (`load-error`), kèm nút Thử lại; không hiện prompt mẫu. Các lỗi khác của Studio hiện thành toast đỏ ở giữa đáy (`data-testid=notice`), tự ẩn sau 8 giây. Lỗi HTTP mở đầu bằng câu dễ hiểu theo mã trạng thái (`status_hint` trong `api.rs`), sau đó là thông điệp gốc của daemon.
+
+## Composer (Home và Studio)
+
+- Dùng chung `app/composer.rs`: `MentionArea` (ô nhập + palette `@`/`/`, paste và kéo thả file), `PlusMenu` ("+": đính file, Plugins, Skills, MCP, design toolbox, mục riêng của trang qua `children`), `ContextChips`, `UploadTray`, `ModelPicker`. Logic thuần ở `src/mention.rs`, `src/models.rs`, `src/toolbox.rs`, `src/intent.rs`.
+- Menu và popover mở lên trên ở chat (`.menu.up`, `.popover.up`); đóng khi bấm ra ngoài hoặc Esc (`close_outside`).
+- Palette `@`: nhóm Design files, Plugins, Skills, MCP (`.menu-sep`), dòng đang chọn `aria-selected="true"`. File đính kèm: chip có thumbnail 24 px cho ảnh, `data-state` = `waiting | uploading | failed`.
+- Khung chat kéo được (`.chat-resizer`, mũi tên 16 px), thu gọn bằng nút trên thanh conversation, độ rộng lưu ở `od.studio.chat-width`. Thành phần tự gỡ chính nó trong handler (form đổi tên, hộp thoại xoá) đổi state ở task kế tiếp.
 
 ## Command palette và phím tắt
 
 - `Cmd/Ctrl+K` mở command palette (`app/palette.rs`): lệnh (project mới, các trang, đổi theme, phím tắt), project, và khi đang ở Studio thì thêm lệnh Studio và file. Tìm mờ bằng `fuzzy::score`. `Cmd/Ctrl+P` vẫn là quick switcher chỉ cho file.
 - `?` (ngoài ô nhập) mở bảng phím tắt (`app/shortcuts.rs`). Thêm phím tắt mới thì thêm cả vào `GROUPS` ở đó.
+- `Cmd/Ctrl+,` mở Settings, `Cmd/Ctrl+B` ngoài Studio thu gọn sidebar (trong Studio là ẩn/hiện cột file). Trong Studio: `Cmd/Ctrl+T` mở tab launcher, `Ctrl+PageUp/PageDown` và `Cmd/Ctrl+Alt+←/→` đổi tab, `Cmd/Ctrl+Shift+K` chép prompt bàn giao, `R` về slide đầu, `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` hoàn tác nét vẽ (`files_panel::on_studio_key`).
+- App desktop: menu Help (Phím tắt, Bảng lệnh, Mở thư mục dữ liệu) và Settings… gửi `od:menu` cho trang; theme của app đặt cả theme cửa sổ native (`desktop::set_theme`); cửa sổ mở bằng splash `apps/desktop/static/index.html` trong lúc daemon khởi động; file kéo thả vào cửa sổ đến trang dưới dạng drop HTML5.
 - Hộp thoại mở từ shell đóng ở task kế tiếp (`TimeoutFuture::new(0)`), không đóng ngay trong handler click: đóng ngay làm rơi listener mà chính cú click đó còn đi qua, wasm báo `closure invoked recursively or after being dropped`.

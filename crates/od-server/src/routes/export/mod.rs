@@ -317,7 +317,10 @@ pub(crate) async fn resolve_entry(
     Ok(entry)
 }
 
-async fn bundle(entry: &Entry, lenient: bool) -> ExportResult<od_export::StandaloneHtml> {
+pub(crate) async fn bundle(
+    entry: &Entry,
+    lenient: bool,
+) -> ExportResult<od_export::StandaloneHtml> {
     let source = StoreSource {
         root: entry.root.clone(),
     };
@@ -592,11 +595,12 @@ pub async fn export_image(
     let format = match req.image_format.as_deref() {
         None | Some("png") => ImageFormat::Png,
         Some("jpeg" | "jpg") => ImageFormat::Jpeg,
+        Some("webp") => ImageFormat::Webp,
         Some(other) => {
             return Err(ExportErr::new(
                 StatusCode::BAD_REQUEST,
                 ErrorCode::BadRequest,
-                format!("imageFormat must be png or jpeg, got {other:?}"),
+                format!("imageFormat must be png, jpeg or webp, got {other:?}"),
             ));
         }
     };
@@ -631,7 +635,7 @@ pub async fn export_image(
                 })?
         }
     };
-    // Slides are always PNG; JPEG applies to page captures.
+    // Slides are always PNG; JPEG and WebP apply to page captures.
     let (mime, ext) = if image.starts_with(b"\x89PNG") {
         ("image/png", "png")
     } else {

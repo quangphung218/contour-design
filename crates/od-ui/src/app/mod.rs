@@ -4,25 +4,46 @@ mod agent_w3;
 mod api;
 mod automations;
 mod bridge;
+mod byok_form;
+mod capture;
+mod chat_ops;
 mod chat_view;
+mod composer;
 mod deck;
 mod desktop;
+mod doc_view;
 mod ds_create;
+mod ds_page;
+mod export_extra;
 mod export_menu;
+mod files_panel;
 mod home;
 mod icons;
+mod inbox;
+mod integrations;
 mod lazy_frame;
+mod lib_ui;
+mod live_view;
+mod manage;
 mod mcp_settings;
+mod media_page;
+mod new_project;
+mod notify;
 mod onboarding;
 mod palette;
+mod plugins_page;
+mod presenter;
 mod preview_comments;
 mod preview_tools;
+mod project_actions;
 mod projects;
 mod settings_page;
 mod shortcuts;
+mod sketch;
 mod sse;
 mod studio;
 mod switcher;
+mod templates_page;
 mod terminal;
 mod versions;
 
@@ -67,6 +88,15 @@ impl Shell {
         Ok(())
     }
 
+    /// Re-reads settings after a route that writes them on its own (project
+    /// locations), so the next [`Shell::save_config`] does not send back
+    /// the old values.
+    pub async fn reload_config(self) {
+        if let Ok(config) = api::get::<AppConfig>("/api/app-config").await {
+            self.config.set(Some(config));
+        }
+    }
+
     /// Switches the language; a no-op (no re-render) when unchanged.
     fn set_locale(self, locale: Locale) {
         if self.locale.get_untracked() != locale {
@@ -109,6 +139,9 @@ fn locale_of(config: &AppConfig) -> Locale {
 }
 
 fn apply_theme(theme: Theme) {
+    if desktop::is_desktop() {
+        desktop::set_theme(theme.as_str());
+    }
     let root = web_sys::window()
         .and_then(|w| w.document())
         .and_then(|d| d.document_element());
@@ -186,9 +219,39 @@ fn Shelled() -> impl IntoView {
             shell.shortcuts.update(|s| *s = !*s);
         } else if ev.key() == "Escape" && shell.shortcuts.get_untracked() {
             shell.shortcuts.set(false);
+        } else if modifier && !ev.alt_key() && !ev.shift_key() && ev.key() == "," {
+            // Through the sidebar link, so the router handles it.
+            ev.prevent_default();
+            click_link("/settings");
+        } else if modifier
+            && !ev.alt_key()
+            && !ev.shift_key()
+            && ev.key().eq_ignore_ascii_case("b")
+            && shell.studio.with_untracked(Option::is_none)
+        {
+            // In the Studio, Cmd/Ctrl+B shows or hides the files instead.
+            ev.prevent_default();
+            if let Some(w) = web_sys::window() {
+                if let Ok(e) = web_sys::Event::new(TOGGLE_SIDEBAR_EVENT) {
+                    let _ = w.dispatch_event(&e);
+                }
+            }
         }
     });
-    on_cleanup(move || keys.remove());
+    // Desktop menu items the page carries out (Help, Settings).
+    let menu = window_event_listener(
+        leptos::ev::Custom::<web_sys::CustomEvent>::new("od:menu"),
+        move |ev| match ev.detail().as_string().as_deref() {
+            Some("shortcuts") => shell.shortcuts.set(true),
+            Some("palette") => shell.palette.set(true),
+            Some("settings") => click_link("/settings"),
+            _ => {}
+        },
+    );
+    on_cleanup(move || {
+        keys.remove();
+        menu.remove();
+    });
     view! {
         <Router>
             <OnboardingGate/>
@@ -198,6 +261,8 @@ fn Shelled() -> impl IntoView {
             <Show when=move || shell.shortcuts.get()>
                 <shortcuts::ShortcutsDialog/>
             </Show>
+            <ViewTracker/>
+            <notify::RunWatcher/>
             <div class="app">
                 {mac.then(|| view! { <div class="titlebar" data-tauri-drag-region=""></div> })}
                 <div class="app-body">
@@ -210,11 +275,36 @@ fn Shelled() -> impl IntoView {
                             <Route path=path!("/onboarding") view=onboarding::Onboarding/>
                             <Route path=path!("/settings") view=settings_page::SettingsPage/>
                             <Route path=path!("/automations") view=automations::Automations/>
+                            <Route path=path!("/design-systems") view=ds_page::DesignSystemsPage/>
+                            <Route path=path!("/plugins") view=plugins_page::PluginsPage/>
+                            <Route path=path!("/media") view=media_page::MediaPage/>
+                            <Route path=path!("/templates") view=templates_page::TemplatesPage/>
+                            <Route path=path!("/integrations") view=integrations::Integrations/>
+                            <Route path=path!("/inbox") view=inbox::Inbox/>
+                            <Route path=path!("/present/:id") view=presenter::Presenter/>
                         </Routes>
                     </main>
                 </div>
             </div>
         </Router>
+    }
+}
+
+/// Window event that toggles the sidebar (Cmd/Ctrl+B, desktop menu).
+const TOGGLE_SIDEBAR_EVENT: &str = "od:toggle-sidebar";
+
+/// Follows the sidebar link to `href` as if clicked.
+pub(crate) fn click_link(href: &str) {
+    let link = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| {
+            d.query_selector(&format!(".sidebar a[href=\"{href}\"]"))
+                .ok()
+                .flatten()
+        })
+        .and_then(|e| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(e).ok());
+    if let Some(a) = link {
+        a.click();
     }
 }
 
@@ -254,7 +344,7 @@ fn Sidebar() -> impl IntoView {
             collapsed.get()
         }
     };
-    let toggle = move |_| {
+    let toggle = move |_: ()| {
         let (signal, key) = if in_studio.get_untracked() {
             (studio_collapsed, SIDEBAR_STUDIO_KEY)
         } else {
@@ -264,6 +354,11 @@ fn Sidebar() -> impl IntoView {
         signal.set(next);
         store_flag(key, next);
     };
+    let toggle_key = window_event_listener(
+        leptos::ev::Custom::<web_sys::Event>::new(TOGGLE_SIDEBAR_EVENT),
+        move |_| toggle(()),
+    );
+    on_cleanup(move || toggle_key.remove());
     let tip = move |label: &'static str| move || rail().then_some(label);
     let link = move |href: &'static str, glyph: Glyph, label: T, exact: bool| {
         let label = t(label);
@@ -286,7 +381,7 @@ fn Sidebar() -> impl IntoView {
                     aria-label=move || if rail() { t(T::ExpandSidebar) } else { t(T::CollapseSidebar) }
                     data-tip=move || if rail() { t(T::ExpandSidebar) } else { t(T::CollapseSidebar) }
                     data-tip-pos="right"
-                    on:click=toggle
+                    on:click=move |_| toggle(())
                 >
                     {move || icon(if rail() { Glyph::SidebarUnfold } else { Glyph::SidebarFold })}
                 </button>
@@ -306,7 +401,13 @@ fn Sidebar() -> impl IntoView {
             <nav class="sidenav" aria-label=t(T::MainNavigation)>
                 {link("/", Glyph::Home, T::NavHome, true)}
                 {link("/projects", Glyph::Projects, T::NavProjects, false)}
+                {link("/templates", Glyph::Grid, T::NavTemplates, false)}
+                {link("/design-systems", Glyph::DesignSystem, T::NavDesignSystems, false)}
+                {link("/plugins", Glyph::Plugin, T::NavPlugins, false)}
+                {link("/media", Glyph::Image, T::NavMedia, false)}
                 {link("/automations", Glyph::Automations, T::NavAutomations, false)}
+                {link("/integrations", Glyph::Mcp, T::NavIntegrations, false)}
+                {link("/inbox", Glyph::Inbox, T::NavInbox, false)}
                 <span class="spacer"></span>
                 <button
                     class="nav-link"
@@ -350,6 +451,29 @@ fn is_mac_desktop() -> bool {
     on
 }
 
+/// Records each Studio visit for "Recently viewed".
+#[component]
+fn ViewTracker() -> impl IntoView {
+    let location = use_location();
+    Effect::new(move |_| {
+        let path = location.pathname.get();
+        let Some(id) = path
+            .strip_prefix("/projects/")
+            .map(|rest| rest.split('/').next().unwrap_or_default().to_owned())
+            .filter(|id| !id.is_empty())
+        else {
+            return;
+        };
+        leptos::task::spawn_local(async move {
+            let _ = api::post::<_, serde_json::Value>(
+                &format!("/api/projects/{}/viewed", api::seg(&id)),
+                &serde_json::json!({}),
+            )
+            .await;
+        });
+    });
+}
+
 /// Sends first-time users to onboarding once settings are known.
 #[component]
 fn OnboardingGate() -> impl IntoView {
@@ -364,16 +488,6 @@ fn OnboardingGate() -> impl IntoView {
             navigate("/onboarding", Default::default());
         }
     });
-}
-
-/// Label of a project's kind.
-pub(crate) fn kind_label(project: &od_contracts::Project) -> &'static str {
-    use od_contracts::ProjectKind;
-    match project.metadata.as_ref().and_then(|m| m.kind) {
-        Some(ProjectKind::Prototype) => t(T::KindPrototype),
-        Some(ProjectKind::Deck) => t(T::KindDeck),
-        _ => t(T::KindProject),
-    }
 }
 
 /// Relative "x min ago" from epoch milliseconds.

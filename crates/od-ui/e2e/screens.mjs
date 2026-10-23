@@ -238,6 +238,71 @@ try {
       await page.goto(BASE + '/automations');
       await page.getByTestId('automations').waitFor();
     });
+
+    // Library screens (track B1): design systems, plugins, media, templates.
+    if (scheme === 'light') {
+      await fetch(`${BASE}/api/design-systems/airbnb/copy`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"name":"Airbnb copy"}' });
+      const form = new FormData();
+      const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+      form.append('file', new Blob([png], { type: 'image/png' }), 'mood.png');
+      await fetch(`${BASE}/api/library/upload`, { method: 'POST', body: form });
+    }
+    await shot('design-systems', async () => {
+      await page.goto(BASE + '/design-systems?id=airbnb');
+      await page.getByTestId('kit-palette').waitFor();
+    });
+    await shot('design-systems-showcase', async () => {
+      await page.getByTestId('kit-tab-showcase').click();
+      await page.getByTestId('ds-showcase').waitFor();
+      await sleep(800);
+    });
+    await shot('design-systems-mine', async () => {
+      await page.goto(BASE + '/design-systems?id=user%3Aairbnb-copy');
+      await page.getByTestId('ds-review').waitFor();
+    });
+    await shot('design-systems-create', async () => {
+      await page.getByTestId('ds-page-create').click();
+      await page.getByTestId('dsc-source-website').click();
+    });
+    await shot('design-systems-brands', async () => {
+      await page.getByTestId('dsc-brands').click();
+      await page.getByTestId('brand-card').first().waitFor();
+    });
+    await shot('plugins', async () => {
+      await page.goto(BASE + '/plugins');
+      await page.getByTestId('plugin-row').first().waitFor();
+    });
+    await shot('plugin-detail', async () => {
+      await page.goto(BASE + '/plugins?plugin=od-media-generation');
+      await page.getByTestId('plugin-use-card').waitFor();
+    });
+    await shot('skills', async () => {
+      await page.goto(BASE + '/plugins?skill=');
+      await page.getByTestId('kind-skills').click();
+      await page.getByTestId('skill-row').first().waitFor();
+    });
+    await shot('media', async () => {
+      await page.goto(BASE + '/media');
+      await page.getByTestId('media-card').first().waitFor();
+    });
+    await shot('media-generate', async () => {
+      await page.getByTestId('media-tab-generate').click();
+      await page.getByTestId('media-generate').waitFor();
+    });
+    await shot('templates', async () => {
+      await page.goto(BASE + '/templates');
+      await until(async () => (await page.locator('.template-card iframe').count()) >= 4, 'template thumbnails');
+      await sleep(1200);
+    });
+    await shot('template-preview', async () => {
+      await page.getByTestId('tpl-card').first().click();
+      await page.getByTestId('tpl-frame').waitFor();
+      await sleep(1200);
+    });
+    await shot('templates-prompts', async () => {
+      await page.goto(BASE + '/templates?tab=image');
+      await page.getByTestId('prompt-card').first().waitFor();
+    });
     await context.close();
     // The next scheme starts on onboarding again.
     await fetch(`${BASE}/api/app-config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ onboardingCompleted: false }) });

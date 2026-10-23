@@ -448,6 +448,7 @@ impl Session {
         params = match format {
             ImageFormat::Png => params.format(CaptureScreenshotFormat::Png),
             ImageFormat::Jpeg => params.format(CaptureScreenshotFormat::Jpeg).quality(92),
+            ImageFormat::Webp => params.format(CaptureScreenshotFormat::Webp).quality(92),
         };
         let shot = self
             .page

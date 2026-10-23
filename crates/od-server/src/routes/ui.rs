@@ -5,7 +5,8 @@
 //!   `<data>/app-config.json`, written with mode `0600` because it holds
 //!   the BYOK API key. Responses never carry the key: `byok.apiKey` is
 //!   replaced by `hasApiKey` and `apiKeyHint` (last four characters), and a
-//!   `byok` patch without `apiKey` keeps the stored one.
+//!   `byok` patch without `apiKey` keeps the stored one while the protocol
+//!   and base URL stay the same.
 //! - `POST /api/import/folder`: a project pointing at an existing folder.
 //! - Everything else that is not `/api/*`: the static `od-ui` bundle, with
 //!   `index.html` as the SPA fallback.
@@ -139,7 +140,8 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
 
 /// Shallow merge: `null` removes a key, anything else replaces it. A
 /// `byok` object without `apiKey` keeps the stored key, so the UI can save
-/// the other fields without ever having seen it.
+/// the other fields without ever having seen it, but only while the
+/// protocol and base URL stay the ones it was saved with.
 fn merge_patch(config: &mut Map<String, Value>, patch: Map<String, Value>) {
     for (key, mut value) in patch {
         if value.is_null() {
@@ -147,7 +149,8 @@ fn merge_patch(config: &mut Map<String, Value>, patch: Map<String, Value>) {
             continue;
         }
         if key == BYOK_KEY {
-            let stored = config.get(BYOK_KEY).and_then(|b| b.get(API_KEY)).cloned();
+            let stored = config.get(BYOK_KEY).filter(|b| same_route(b, &value));
+            let stored = stored.and_then(|b| b.get(API_KEY)).cloned();
             if let (Some(obj), Some(stored)) = (value.as_object_mut(), stored) {
                 if !obj.contains_key(API_KEY) {
                     obj.insert(API_KEY.to_owned(), stored);
@@ -156,6 +159,20 @@ fn merge_patch(config: &mut Map<String, Value>, patch: Map<String, Value>) {
         }
         config.insert(key, value);
     }
+}
+
+/// Whether two `byok` objects send a key to the same place.
+fn same_route(a: &Value, b: &Value) -> bool {
+    fn protocol(v: &Value) -> Option<&str> {
+        match v.get("protocol").and_then(Value::as_str) {
+            Some("openai-compatible") => Some("openai"),
+            other => other,
+        }
+    }
+    fn base(v: &Value) -> Option<&str> {
+        v.get("baseUrl").and_then(Value::as_str)
+    }
+    protocol(a) == protocol(b) && crate::routes::manage::settings::same_base(base(a), base(b))
 }
 
 const BYOK_KEY: &str = od_runtime::byok::APP_CONFIG_KEY;
@@ -183,7 +200,7 @@ fn redacted(mut config: Map<String, Value>) -> Value {
 }
 
 /// Writes through a temp file created `0600`: the config holds the BYOK key.
-fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let tmp = path.with_extension("json.tmp");
     let mut options = std::fs::OpenOptions::new();
@@ -214,6 +231,24 @@ async fn get_config(State(state): State<AppState>) -> ApiResult<ApiJson<Value>> 
         })
         .await?;
     Ok(ApiJson(redacted(config)))
+}
+
+/// Merges `patch` (an object, see [`merge_patch`]) into the stored config
+/// from server code, under the same lock as `PUT /api/app-config`.
+///
+/// # Errors
+/// I/O errors; [`StoreError::BadRequest`] when `patch` is not an object.
+pub(crate) fn patch_config(store: &Store, patch: Value) -> Result<(), StoreError> {
+    let Value::Object(patch) = patch else {
+        return Err(StoreError::BadRequest("patch must be an object".to_owned()));
+    };
+    let _guard = CONFIG_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let path = config_path(store);
+    let mut config = read_config(&path)?;
+    merge_patch(&mut config, patch);
+    let bytes = serde_json::to_vec_pretty(&config)?;
+    write_atomic(&path, &bytes)?;
+    Ok(())
 }
 
 async fn put_config(

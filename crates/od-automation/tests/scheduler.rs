@@ -6,7 +6,7 @@
 use futures_util::FutureExt;
 use od_automation::{
     AutomationError, Launched, Launcher, NewRoutine, Routine, RoutinePatch, RoutineStore, RunEnd,
-    RunState, Scheduler, Trigger,
+    RunState, Scheduler, TargetMode, Trigger,
 };
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
@@ -38,6 +38,7 @@ impl Launcher for Mock {
             Ok(Launched {
                 run_id: format!("run-{n}"),
                 conversation_id: format!("conv-{n}"),
+                project_id: routine.project_id.clone(),
                 done: rx
                     .map(|r| {
                         r.unwrap_or(RunEnd {
@@ -56,6 +57,7 @@ fn new_routine(schedule: &str) -> NewRoutine {
     NewRoutine {
         name: "Nightly".into(),
         project_id: "p1".into(),
+        target_mode: TargetMode::Reuse,
         agent_id: "claude".into(),
         prompt: "Refresh the dashboard".into(),
         schedule: schedule.into(),
@@ -280,4 +282,68 @@ async fn a_crash_leaves_no_run_marked_running_and_resync_skips_missed_times() {
         sched.tick(now).await.unwrap().is_empty(),
         "the missed time is not caught up"
     );
+}
+
+#[test]
+fn create_each_run_needs_no_project_and_edits_switch_targets() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = RoutineStore::open(&tmp.path().join("a.sqlite")).unwrap();
+    let r = store
+        .create(
+            &NewRoutine {
+                project_id: String::new(),
+                target_mode: TargetMode::CreateEachRun,
+                ..new_routine("CRON_TZ=Europe/Berlin 30 8 * * 1-5")
+            },
+            |_| Some(1),
+        )
+        .unwrap();
+    assert_eq!(r.target_mode, TargetMode::CreateEachRun);
+    assert_eq!(r.project_id, "");
+    assert_eq!(r.schedule, "CRON_TZ=Europe/Berlin 30 8 * * 1-5");
+    // Back to one project: the id is required then.
+    let patch = RoutinePatch {
+        target_mode: Some(TargetMode::Reuse),
+        ..RoutinePatch::default()
+    };
+    assert!(matches!(
+        store.update(&r.id, &patch, |_| None),
+        Err(AutomationError::Invalid(_))
+    ));
+    let patch = RoutinePatch {
+        target_mode: Some(TargetMode::Reuse),
+        project_id: Some("p9".into()),
+        name: Some("Renamed".into()),
+        ..RoutinePatch::default()
+    };
+    let r = store.update(&r.id, &patch, |_| None).unwrap();
+    assert_eq!((r.project_id.as_str(), r.name.as_str()), ("p9", "Renamed"));
+    assert_eq!(r.target_mode, TargetMode::Reuse);
+}
+
+#[test]
+fn an_old_database_gains_the_new_columns() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("old.sqlite");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE routines (id TEXT PRIMARY KEY, name TEXT NOT NULL, project_id TEXT NOT NULL, \
+             agent_id TEXT NOT NULL, prompt TEXT NOT NULL, schedule TEXT NOT NULL, enabled INTEGER NOT NULL, \
+             next_run_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); \
+             CREATE TABLE routine_runs (id TEXT PRIMARY KEY, routine_id TEXT NOT NULL, trigger TEXT NOT NULL, \
+             status TEXT NOT NULL, run_id TEXT, conversation_id TEXT, error TEXT, started_at INTEGER NOT NULL, \
+             ended_at INTEGER); \
+             INSERT INTO routines VALUES ('r1', 'Old', 'p1', 'claude', 'x', '@daily', 1, NULL, 1, 1); \
+             INSERT INTO routine_runs VALUES ('h1', 'r1', 'manual', 'succeeded', 'run', 'c', NULL, 2, 3);",
+        )
+        .unwrap();
+    }
+    // Twice: the upgrade is idempotent.
+    drop(RoutineStore::open(&path).unwrap());
+    let store = RoutineStore::open(&path).unwrap();
+    let r = store.get("r1").unwrap();
+    assert_eq!(r.target_mode, TargetMode::Reuse);
+    let runs = store.runs("r1", 10).unwrap();
+    assert_eq!(runs[0].project_id, None);
 }

@@ -144,7 +144,8 @@ impl ConfigFile {
     /// `PUT /api/media/config`: `{providers: {id: {apiKey, preserveApiKey,
     /// baseUrl, model}}}` replaces the stored map. An empty `apiKey` with
     /// `preserveApiKey: true` keeps the stored key (the UI only has the
-    /// masked tail). Written with owner-only permissions.
+    /// masked tail) while `baseUrl` stays the same. Written with owner-only
+    /// permissions.
     ///
     /// # Errors
     /// Unknown providers, non-http(s) base URLs, I/O.
@@ -179,15 +180,20 @@ impl ConfigFile {
                     .unwrap_or_default()
                     .to_owned()
             };
+            let base_url = text("baseUrl");
             let mut api_key = text("apiKey");
             if api_key.is_empty() && entry.get("preserveApiKey") == Some(&Value::Bool(true)) {
+                // Only for the base URL it was saved with.
+                let same = |p: &&ProviderEntry| {
+                    p.base_url.trim_end_matches('/') == base_url.trim_end_matches('/')
+                };
                 api_key = prior
                     .providers
                     .get(provider.id())
+                    .filter(same)
                     .map(|p| p.api_key.clone())
                     .unwrap_or_default();
             }
-            let base_url = text("baseUrl");
             if !(base_url.is_empty()
                 || base_url.starts_with("https://")
                 || base_url.starts_with("http://"))
@@ -334,6 +340,33 @@ mod tests {
         );
     }
 
+    /// A saved key belongs to the base URL it was saved with: keeping it
+    /// while the URL changes would send it to the new host.
+    #[test]
+    fn a_new_base_url_drops_the_preserved_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = ConfigFile::in_dir(tmp.path());
+        let keep = |url: &str| {
+            file.write(&json!({ "providers": { "openai": { "apiKey": "", "preserveApiKey": true, "baseUrl": url } } }))
+                .unwrap();
+            file.credentials(Provider::OpenAi, &no_env)
+                .api_key
+                .is_some()
+        };
+        for (saved, next) in [
+            ("http://127.0.0.1:9/a", "http://127.0.0.1:9/b"),
+            ("http://127.0.0.1:9/a", ""),
+            ("", "http://127.0.0.1:9/a"),
+        ] {
+            file.write(&json!({ "providers": { "openai": { "apiKey": "sk-secret-1234", "baseUrl": saved } } }))
+                .unwrap();
+            assert!(keep(saved), "{saved:?}");
+            assert!(!keep(next), "{saved:?} -> {next:?}");
+        }
+        let text = std::fs::read_to_string(tmp.path().join(CONFIG_FILE)).unwrap();
+        assert!(!text.contains("sk-"), "{text}");
+    }
+
     #[test]
     fn keys_are_masked_preserved_and_overridden_by_env() {
         let tmp = tempfile::tempdir().unwrap();
@@ -350,11 +383,11 @@ mod tests {
         assert!(!masked.to_string().contains("sk-secret"));
 
         // The UI sends back the masked form: the key survives.
-        file.write(&json!({ "providers": { "openai": { "apiKey": "", "preserveApiKey": true, "model": "gpt-image-1" } } }))
+        file.write(&json!({ "providers": { "openai": { "apiKey": "", "preserveApiKey": true, "baseUrl": "http://127.0.0.1:9/v1/", "model": "gpt-image-1" } } }))
             .unwrap();
         let creds = file.credentials(Provider::OpenAi, &no_env);
         assert_eq!(creds.api_key.as_deref(), Some("sk-secret-1234"));
-        assert_eq!(creds.base_url, None);
+        assert_eq!(creds.base_url.as_deref(), Some("http://127.0.0.1:9/v1/"));
         assert_eq!(creds.model.as_deref(), Some("gpt-image-1"));
 
         let env = |k: &str| (k == "OPENAI_API_KEY").then(|| "sk-env".to_owned());

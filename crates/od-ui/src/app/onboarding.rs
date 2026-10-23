@@ -1,11 +1,17 @@
-//! First run: pick a local coding agent, or skip (spec 1.5, no cloud step).
+//! First run (spec 1.5, no cloud step), as the original's runtime setup:
+//! a local coding agent (picked, then tested once with a smoke prompt) or
+//! an API key (BYOK form with its own test). Continue waits until the
+//! chosen runtime answered; Skip is always there.
 
 use super::Shell;
+use super::api;
+use super::byok_form::{ByokForm, TestResultLine, TestState};
 use super::icons::{Glyph, icon};
 use crate::events::AgentInfo;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
+use serde_json::{Value, json};
 
 #[component]
 pub fn Onboarding() -> impl IntoView {
@@ -13,15 +19,51 @@ pub fn Onboarding() -> impl IntoView {
     let navigate = use_navigate();
     let picked = RwSignal::new(None::<String>);
     let error = RwSignal::new(None::<String>);
+    let use_key = RwSignal::new(false);
+    let test = RwSignal::new(None::<TestState>);
+    let byok_ready = RwSignal::new(false);
 
     // Preselect the first available agent once detection answers.
     Effect::new(move |_| {
         if picked.get_untracked().is_none() {
             if let Some(Ok(list)) = shell.agents.get() {
-                picked.set(list.iter().find(|a| a.available).map(|a| a.id.clone()));
+                picked.set(
+                    list.iter()
+                        .find(|a| a.available && a.id != "byok")
+                        .map(|a| a.id.clone()),
+                );
             }
         }
     });
+    // Test the picked agent once per pick (the original auto-tests).
+    let seq = StoredValue::new(0u32);
+    Effect::new(move |_| {
+        let Some(agent) = picked.get() else {
+            test.set(None);
+            return;
+        };
+        seq.update_value(|n| *n += 1);
+        let mine = seq.get_value();
+        test.set(Some(TestState::Running));
+        leptos::task::spawn_local(async move {
+            let body = json!({ "mode": "agent", "agentId": agent });
+            let res = match api::post::<_, Value>("/api/test/connection", &body).await {
+                Ok(v) => TestState::Done(v),
+                Err(e) => TestState::Failed(e.to_string()),
+            };
+            if seq.get_value() == mine {
+                test.set(Some(res));
+            }
+        });
+    });
+    let agent_ready = move || matches!(test.get(), Some(TestState::Done(v)) if v["ok"] == true);
+    let ready = move || {
+        if use_key.get() {
+            byok_ready.get()
+        } else {
+            agent_ready()
+        }
+    };
 
     let finish = move |agent: Option<String>| {
         let navigate = navigate.clone();
@@ -38,6 +80,7 @@ pub fn Onboarding() -> impl IntoView {
         });
     };
     let finish_skip = finish.clone();
+    let on_byok_saved = Callback::new(move |()| byok_ready.set(true));
 
     view! {
         <section class="page onboarding">
@@ -48,24 +91,49 @@ pub fn Onboarding() -> impl IntoView {
                     <h1>{t(T::OnboardingTitle)}</h1>
                     <p class="muted">{t(T::OnboardingIntro)}</p>
                 </header>
-                <AgentPicker picked=picked/>
+                <div class="segmented" role="tablist" aria-label=t(T::ExecutionMode)>
+                    <button class="seg" role="tab" data-testid="onboarding-local"
+                        aria-selected=move || (!use_key.get()).to_string() class:active=move || !use_key.get()
+                        on:click=move |_| use_key.set(false)>{icon(Glyph::Terminal)}{t(T::LocalAgent)}</button>
+                    <button class="seg" role="tab" data-testid="onboarding-byok"
+                        aria-selected=move || use_key.get().to_string() class:active=move || use_key.get()
+                        on:click=move |_| use_key.set(true)>{icon(Glyph::Key)}{t(T::UseApiKey)}</button>
+                </div>
+                <Show
+                    when=move || !use_key.get()
+                    fallback=move || view! {
+                        <p class="muted">{t(T::ByokIntro)}</p>
+                        <ByokForm on_saved=on_byok_saved/>
+                    }
+                >
+                    <p class="muted">{t(T::LocalAgentIntro)}</p>
+                    <AgentPicker picked=picked/>
+                    <div class="row">
+                        <TestResultLine state=test testid="onboarding-test"/>
+                    </div>
+                </Show>
                 {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 <div class="onboarding-foot">
-                    <button class="btn ghost" on:click=move |_| shell.reload_agents()>
-                        {icon(Glyph::Refresh)}
-                        {t(T::Refresh)}
-                    </button>
+                    <Show when=move || !use_key.get()>
+                        <button class="btn ghost" on:click=move |_| shell.reload_agents()>
+                            {icon(Glyph::Refresh)}
+                            {t(T::Refresh)}
+                        </button>
+                        <span class="muted small">{t(T::RescanHint)}</span>
+                    </Show>
                     <span class="spacer"></span>
                     <button class="btn ghost" on:click=move |_| finish_skip(None)>{t(T::SkipForNow)}</button>
-                    <button
-                        class="btn primary"
-                        data-testid="onboarding-continue"
-                        disabled=move || picked.get().is_none()
-                        on:click=move |_| finish(picked.get_untracked())
-                    >
-                        {t(T::Continue)}
-                        {icon(Glyph::ArrowRight)}
-                    </button>
+                    <span data-tip=move || (!ready()).then(|| t(if use_key.get() { T::GateByok } else { T::GateAgent }))>
+                        <button
+                            class="btn primary"
+                            data-testid="onboarding-continue"
+                            disabled=move || !ready()
+                            on:click=move |_| finish(if use_key.get_untracked() { Some("byok".to_owned()) } else { picked.get_untracked() })
+                        >
+                            {t(T::Continue)}
+                            {icon(Glyph::ArrowRight)}
+                        </button>
+                    </span>
                 </div>
             </div>
         </section>
@@ -73,7 +141,7 @@ pub fn Onboarding() -> impl IntoView {
 }
 
 /// Detected agents: installed ones as cards to pick, the others in a
-/// compact list below. Shared with Settings.
+/// compact list below. Shared with Settings. BYOK has its own form.
 #[component]
 pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
     let shell = Shell::get();
@@ -96,7 +164,10 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
         }
             .into_any(),
         Some(Ok(list)) => {
-            let (ready, missing): (Vec<_>, Vec<_>) = list.into_iter().partition(|a| a.available);
+            let (ready, missing): (Vec<_>, Vec<_>) = list
+                .into_iter()
+                .filter(|a| a.id != "byok")
+                .partition(|a| a.available);
             view! {
                 <div class="agent-list" role="radiogroup">
                     {ready.into_iter().map(|a| view! { <AgentCard agent=a picked=picked/> }).collect_view()}

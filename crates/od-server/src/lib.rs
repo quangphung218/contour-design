@@ -85,12 +85,16 @@ pub fn router(state: AppState) -> Router {
         .route("/api/runs/{id}/steer", post(runs::steer))
         .merge(routes::ui::routes())
         .merge(routes::export::routes())
+        .merge(routes::file_ops::routes())
         .merge(routes::media::routes())
         .merge(routes::comments::routes())
         .merge(routes::handoff::routes())
         .merge(routes::agent_w3::routes())
+        .merge(routes::chat_ops::routes())
         .merge(routes::preview_tools::routes())
-        .merge(routes::w3::routes(&state));
+        .merge(routes::w3::routes(&state))
+        .merge(routes::library::routes())
+        .merge(routes::manage::routes());
     let api = routes::preview::mount(api, state.preview.clone());
     let api = routes::platform::mount(api, &state);
     api.layer(axum::middleware::from_fn_with_state(

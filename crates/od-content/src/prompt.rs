@@ -193,14 +193,16 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
             ));
         }
     }
+    if let Some(block) = metadata.and_then(metadata_block) {
+        p.push(block);
+    }
     if let Some(block) = memory_block(input.memory) {
         p.push(block);
     }
     // 7. Active design system: USAGE.md → DESIGN.md → tokens.css.
     if let Some(ds) = ds.filter(|d| !d.body.trim().is_empty()) {
         let title = Some(ds.summary.title.as_str());
-        let usage = std::fs::read_to_string(ds.dir.join("USAGE.md"))
-            .ok()
+        let usage = crate::design_systems::read_package_file(&ds.dir, "USAGE.md")
             .filter(|u| !u.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_DESIGN_SYSTEM_USAGE.to_owned());
         p.push(format!(
@@ -213,8 +215,7 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
             titled("## Active design system", title),
             ds.body.trim()
         ));
-        if let Some(tokens) = std::fs::read_to_string(ds.dir.join("tokens.css"))
-            .ok()
+        if let Some(tokens) = crate::design_systems::read_package_file(&ds.dir, "tokens.css")
             .filter(|t| !t.trim().is_empty())
         {
             p.push(format!(
@@ -282,6 +283,80 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     // 14. Comment identity.
     p.push(format!("{SEP}{COMMENT_IDENTITY_EDIT_DIRECTIVE}"));
     p.concat()
+}
+
+/// Metadata keys of the new-project panel and the Home media picker, in
+/// the original's names, with the label the prompt shows.
+const META_FIELDS: [(&str, &str); 17] = [
+    ("platformTargets", "platformTargets"),
+    ("includeLandingPage", "includeLandingPage"),
+    ("includeOsWidgets", "includeOsWidgets"),
+    ("speakerNotes", "speakerNotes"),
+    ("animations", "animations"),
+    ("templateLabel", "templateLabel"),
+    ("imageModel", "imageModel"),
+    ("imageAspect", "aspectRatio"),
+    ("imageStyle", "styleNotes"),
+    ("imageResolution", "resolution"),
+    ("videoModel", "videoModel"),
+    ("videoAspect", "aspectRatio"),
+    ("videoLength", "lengthSeconds"),
+    ("videoResolution", "resolution"),
+    ("audioKind", "audioKind"),
+    ("audioModel", "audioModel"),
+    ("audioDuration", "durationSeconds"),
+];
+
+/// A field the user filled: trimmed, `None` when blank.
+fn set(v: Option<&str>) -> Option<&str> {
+    v.map(str::trim).filter(|v| !v.is_empty())
+}
+
+/// `## Project metadata`: the structured choices made when creating the
+/// project (new-project panel, Home chips and media picker), in the
+/// original's facts style. `None` when the project carries none of them.
+fn metadata_block(m: &ProjectMetadata) -> Option<String> {
+    let text = |v: &serde_json::Value| match v {
+        serde_json::Value::String(s) => s.trim().to_owned(),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(|i| i.as_str().map_or_else(|| i.to_string(), str::to_owned))
+            .collect::<Vec<_>>()
+            .join(", "),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    };
+    let mut lines: Vec<String> = Vec::new();
+    match set(m.intent.as_deref()) {
+        Some("live-artifact") => lines.push("- **intent**: live-artifact — the first output should be a live artifact (dashboard or report that refreshes), not a one-off static mockup.".to_owned()),
+        Some(intent) => lines.push(format!("- **intent**: {intent}")),
+        None => {}
+    }
+    for (label, value) in [("fidelity", &m.fidelity), ("platform", &m.platform)] {
+        if let Some(v) = set(value.as_deref()) {
+            lines.push(format!("- **{label}**: {v}"));
+        }
+    }
+    for (key, label) in META_FIELDS {
+        let value = m.extra.get(key).map(text).unwrap_or_default();
+        if !value.is_empty() {
+            lines.push(format!("- **{label}**: {value}"));
+        }
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    let kind = m
+        .kind
+        .and_then(|k| serde_json::to_value(k).ok())
+        .and_then(|v| v.as_str().map(str::to_owned));
+    if let Some(kind) = kind {
+        lines.insert(0, format!("- **kind**: {kind}"));
+    }
+    Some(format!(
+        "\n\n## Project metadata\nStructured choices from project creation. Known fields are authoritative. Missing fields are unresolved facts, not mandatory questions; infer reasonable defaults and clarify only material blockers.\n\n{}",
+        lines.join("\n")
+    ))
 }
 
 /// `## Project memory`: one bullet per remembered fact.
@@ -546,6 +621,104 @@ mod tests {
         assert!(out.contains("slide: 2\n"));
         assert!(out.contains("currentText: Hello\nhtmlHint: (none)\ncomment: Make it red\n"));
         assert!(out.ends_with("</attached-preview-comments>"));
+    }
+
+    #[test]
+    fn panel_metadata_becomes_facts_only_when_the_panel_set_it() {
+        let plain = ProjectMetadata {
+            kind: Some(ProjectKind::Deck),
+            ..ProjectMetadata::default()
+        };
+        assert_eq!(metadata_block(&plain), None);
+        let mut deck = plain.clone();
+        deck.extra
+            .insert("speakerNotes".into(), serde_json::json!(true));
+        let block = metadata_block(&deck).unwrap_or_default();
+        assert!(block.contains("## Project metadata"));
+        assert!(block.contains("- **kind**: deck"));
+        assert!(block.contains("- **speakerNotes**: true"));
+        let mut proto = ProjectMetadata {
+            kind: Some(ProjectKind::Prototype),
+            fidelity: Some("wireframe".into()),
+            platform: Some("mobile-ios".into()),
+            ..ProjectMetadata::default()
+        };
+        proto.extra.insert(
+            "platformTargets".into(),
+            serde_json::json!(["mobile-ios", "tablet"]),
+        );
+        let block = metadata_block(&proto).unwrap_or_default();
+        assert!(block.contains("- **fidelity**: wireframe"));
+        assert!(block.contains("- **platformTargets**: mobile-ios, tablet"));
+        let text = compose_instructions(&PromptInput {
+            metadata: Some(&proto),
+            ..PromptInput::default()
+        });
+        assert!(text.contains("## Project metadata"));
+    }
+
+    #[test]
+    fn metadata_block_lists_home_choices_only_when_present() {
+        let plain = ProjectMetadata {
+            kind: Some(ProjectKind::Deck),
+            ..ProjectMetadata::default()
+        };
+        assert_eq!(metadata_block(&plain), None);
+        let mut video = ProjectMetadata {
+            kind: Some(ProjectKind::Video),
+            intent: Some("motion-design".into()),
+            ..ProjectMetadata::default()
+        };
+        video
+            .extra
+            .insert("videoAspect".into(), serde_json::json!("9:16"));
+        video
+            .extra
+            .insert("videoLength".into(), serde_json::json!(5));
+        video
+            .extra
+            .insert("videoResolution".into(), serde_json::json!(""));
+        let block = metadata_block(&video).unwrap_or_default();
+        assert!(block.starts_with("\n\n## Project metadata\n"), "{block}");
+        assert!(
+            block.ends_with(
+                "- **kind**: video\n- **intent**: motion-design\n- **aspectRatio**: 9:16\n- **lengthSeconds**: 5"
+            ),
+            "{block}"
+        );
+        let text = compose_instructions(&PromptInput {
+            metadata: Some(&video),
+            ..PromptInput::default()
+        });
+        assert!(
+            pos(&text, "## Project metadata")
+                < pos(&text, "## Structured clarification on any turn")
+        );
+        assert_eq!(text.matches("## Project metadata").count(), 1, "once");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn design_system_files_never_follow_a_link_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        let secret = tmp.path().join("secret.css");
+        std::fs::write(&secret, ":root { --outside: 1; }").unwrap();
+        let dir = tmp.path().join("systems/acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("DESIGN.md"), "# Acme\n\nCalm.").unwrap();
+        for name in ["tokens.css", "USAGE.md"] {
+            std::os::unix::fs::symlink(&secret, dir.join(name)).unwrap();
+        }
+        let list = crate::design_systems::list_design_systems(
+            &tmp.path().join("systems"),
+            crate::design_systems::ListOptions::BUILT_IN,
+        );
+        let text = compose_instructions(&PromptInput {
+            design_system: list.first(),
+            ..PromptInput::default()
+        });
+        assert!(text.contains("## Active design system"));
+        assert!(!text.contains("--outside"));
     }
 
     fn pos(haystack: &str, needle: &str) -> usize {

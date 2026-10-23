@@ -363,6 +363,28 @@ impl Store {
         Ok(file)
     }
 
+    /// A new file at exactly `name` (see [`files::create_file_exact`]);
+    /// HTML gets a baseline version like [`Store::write_file`].
+    ///
+    /// # Errors
+    /// Project, path, conflict or I/O errors.
+    pub fn create_file_exact(
+        &self,
+        project_id: &str,
+        name: &str,
+        bytes: &[u8],
+    ) -> Result<ProjectFile> {
+        let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
+        let file = files::create_file_exact(&root, name, bytes)?;
+        if is_html_name(&file.name) {
+            if let Ok(text) = std::str::from_utf8(bytes) {
+                versions::ensure_current_version(&root.dir, &file.name, text, manual())?;
+            }
+        }
+        Ok(file)
+    }
+
     /// # Errors
     /// Project, path, conflict or I/O errors.
     pub fn rename_file(&self, project_id: &str, from: &str, to: &str) -> Result<ProjectFile> {
@@ -380,6 +402,75 @@ impl Store {
         let _guard = self.versions_guard();
         let rel = files::delete_file(&root, name)?;
         versions::mark_deleted(&root.dir, &rel)
+    }
+
+    /// Overwrites the existing file at exactly `name` (never renamed by the
+    /// sanitizer, so `My Deck.html` stays itself). An HTML file gets a
+    /// manual version labelled `label`.
+    ///
+    /// # Errors
+    /// Path errors, [`StoreError::FileNotFound`] when there is no such file
+    /// (new files go through [`Store::write_file`]), non-UTF-8 HTML.
+    pub fn replace_file(
+        &self,
+        project_id: &str,
+        name: &str,
+        bytes: &[u8],
+        label: &str,
+    ) -> Result<ProjectFile> {
+        let safe = validate_project_path(name)?;
+        if is_html_name(&safe) {
+            let text = std::str::from_utf8(bytes)
+                .map_err(|_| StoreError::BadRequest("HTML must be UTF-8".to_owned()))?
+                .to_owned();
+            return self
+                .edit_html::<StoreError>(project_id, &safe, label, |_| Ok(text))
+                .map(|(file, _)| file);
+        }
+        let root = self.root_for(project_id)?;
+        files::stat_file(&root, &safe)?;
+        files::write_file_exact(&root, &safe, bytes)
+    }
+
+    /// # Errors
+    /// [`StoreError::ProjectNotFound`] or I/O errors.
+    pub fn list_folders(&self, project_id: &str) -> Result<Vec<String>> {
+        files::list_folders(&self.root_for(project_id)?)
+    }
+
+    /// # Errors
+    /// Project, path, conflict or I/O errors.
+    pub fn create_folder(&self, project_id: &str, path: &str) -> Result<String> {
+        files::create_folder(&self.root_for(project_id)?, path)
+    }
+
+    /// Deletes a folder and closes the histories of the HTML files in it.
+    ///
+    /// # Errors
+    /// Project, path or I/O errors.
+    pub fn delete_folder(&self, project_id: &str, path: &str) -> Result<String> {
+        let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
+        let (rel, held) = files::delete_folder(&root, path)?;
+        for name in held.iter().filter(|n| is_html_name(n)) {
+            versions::mark_deleted(&root.dir, name)?;
+        }
+        Ok(rel)
+    }
+
+    /// Moves a folder with everything in it; the histories of its HTML
+    /// files follow. Returns the new path and how many listed files moved.
+    ///
+    /// # Errors
+    /// Project, path, conflict or I/O errors.
+    pub fn move_folder(&self, project_id: &str, from: &str, to: &str) -> Result<(String, usize)> {
+        let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
+        let (rel, renamed) = files::move_folder(&root, from, to)?;
+        for (old, new) in &renamed {
+            versions::rename_store(&root.dir, old, new)?;
+        }
+        Ok((rel, renamed.len()))
     }
 
     /// Stores an upload; HTML uploads get a baseline version.
@@ -543,7 +634,7 @@ pub(crate) fn utf8(bytes: &[u8]) -> Result<&str> {
         .map_err(|_| StoreError::BadRequest("HTML file is not valid UTF-8".to_owned()))
 }
 
-fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 

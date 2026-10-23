@@ -62,6 +62,47 @@ async fn byok_key_is_stored_0600_and_never_returned() {
     assert!(body.get("byok").is_none());
 }
 
+/// A saved BYOK key belongs to the protocol and base URL it was saved with:
+/// saving a new one without a key drops it, so the next run never sends it
+/// there.
+#[tokio::test]
+async fn a_new_byok_protocol_or_base_url_drops_the_saved_key() {
+    let d = daemon().await;
+    let path = d.data.join("app-config.json");
+    let save = |byok: Value| {
+        let d = &d;
+        async move {
+            let (status, body) = put_config(d, &json!({ "byok": byok })).await;
+            assert_eq!(status, 200, "{body}");
+            body["byok"]["hasApiKey"] == true
+        }
+    };
+    let a = "http://127.0.0.1:9/a";
+    assert!(save(json!({"protocol": "openai", "baseUrl": a, "apiKey": "sk-a-1234"})).await);
+    // The same route, spelled differently, keeps it.
+    assert!(
+        save(json!({"protocol": "openai-compatible", "baseUrl": "http://127.0.0.1:9/a/ "})).await
+    );
+    assert!(save(json!({"protocol": "openai", "baseUrl": a, "model": "m"})).await);
+
+    assert!(!save(json!({"protocol": "openai", "baseUrl": "http://127.0.0.1:9/b"})).await);
+    assert!(!std::fs::read_to_string(&path).unwrap().contains("sk-"));
+
+    assert!(save(json!({"protocol": "openai", "baseUrl": a, "apiKey": "sk-a-1234"})).await);
+    assert!(!save(json!({"protocol": "anthropic", "baseUrl": a})).await);
+    assert!(save(json!({"protocol": "anthropic", "apiKey": "sk-ant-5678"})).await);
+    assert!(!save(json!({"protocol": "anthropic", "baseUrl": a})).await);
+    // A new route with its own key keeps that key.
+    assert!(
+        save(
+            json!({"protocol": "openai", "baseUrl": "http://127.0.0.1:9/c", "apiKey": "sk-c-9999"})
+        )
+        .await
+    );
+    let stored: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(stored["byok"]["apiKey"], "sk-c-9999");
+}
+
 #[tokio::test]
 async fn agents_list_every_runtime_and_byok_follows_the_key() {
     let d = daemon().await;

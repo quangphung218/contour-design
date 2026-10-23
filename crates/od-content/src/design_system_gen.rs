@@ -4,7 +4,7 @@
 //! and moves the package into the user root (`<data>/design-systems`),
 //! where the index lists it as `user:<id>` next to the bundled ones.
 
-use crate::design_systems::{USER_ID_PREFIX, is_valid_id};
+use crate::design_systems::{USER_ID_PREFIX, is_valid_id, read_package_file};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -164,6 +164,68 @@ pub fn generation_prompt(req: &GenerateRequest) -> String {
     )
 }
 
+/// Where an agent finds the material a design system is derived from.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Sources {
+    /// Websites to study (a brand's site, a product page).
+    pub urls: Vec<String>,
+    /// A GitHub repository (`owner/repo` or its URL).
+    pub github: Option<String>,
+    /// A Figma file or frame URL.
+    pub figma: Option<String>,
+    /// Files the user attached, saved under `source/` in the working folder.
+    pub files: Vec<String>,
+}
+
+impl Sources {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.urls.is_empty()
+            && self.github.is_none()
+            && self.figma.is_none()
+            && self.files.is_empty()
+    }
+}
+
+/// The brief used when only sources were given.
+pub const SOURCES_ONLY_BRIEF: &str = "Derive the design system from the sources below: its colours, type, spacing, components and voice.";
+
+/// [`generation_prompt`] plus a `# Sources` section the agent studies
+/// first (it fetches URLs and clones repositories with its own tools).
+#[must_use]
+pub fn generation_prompt_with_sources(req: &GenerateRequest, sources: &Sources) -> String {
+    let mut out = generation_prompt(req);
+    if sources.is_empty() {
+        return out;
+    }
+    let mut lines = vec![
+        String::new(),
+        "# Sources".to_owned(),
+        String::new(),
+        "Study these before writing. Take real values (hex colours, font families, sizes, radii) from them; do not invent a palette they contradict.".to_owned(),
+        String::new(),
+    ];
+    for u in &sources.urls {
+        lines.push(format!("- Website: {u} (fetch the page and its CSS)"));
+    }
+    if let Some(g) = &sources.github {
+        lines.push(format!(
+            "- GitHub repository: {g} (clone it shallowly into a temporary folder outside the current one; read its theme, CSS variables, Tailwind config and components)"
+        ));
+    }
+    if let Some(f) = &sources.figma {
+        lines.push(format!(
+            "- Figma: {f} (use a Figma tool if you have one; otherwise rely on the other sources)"
+        ));
+    }
+    for f in &sources.files {
+        lines.push(format!("- Attached file: `source/{f}`"));
+    }
+    out.push_str(&lines.join("\n"));
+    out.push('\n');
+    out
+}
+
 /// Counts `## ` headings outside fenced code.
 fn count_h2(markdown: &str) -> usize {
     let mut fenced = false;
@@ -188,24 +250,37 @@ fn defines(css: &str, token: &str) -> bool {
     })
 }
 
+/// A non-empty file the agent wrote in `staging`; one that links out of it
+/// counts as missing.
+fn staged(staging: &Path, name: &'static str) -> Result<String, GenError> {
+    read_package_file(staging, name)
+        .filter(|t| !t.trim().is_empty())
+        .ok_or(GenError::Missing(name))
+}
+
+/// The package files read from `staging`, once: what was checked is what
+/// gets installed.
+struct Staged {
+    design: String,
+    tokens: String,
+}
+
 /// Checks the agent's files in `staging`.
 ///
 /// # Errors
 /// [`GenError::Missing`], [`GenError::TooFewSections`],
 /// [`GenError::MissingTokens`].
 pub fn check_staging(staging: &Path) -> Result<(), GenError> {
-    let design = std::fs::read_to_string(staging.join("DESIGN.md"))
-        .ok()
-        .filter(|d| !d.trim().is_empty())
-        .ok_or(GenError::Missing("DESIGN.md"))?;
+    read_checked(staging).map(|_| ())
+}
+
+fn read_checked(staging: &Path) -> Result<Staged, GenError> {
+    let design = staged(staging, "DESIGN.md")?;
     let found = count_h2(&design);
     if found < MIN_SECTIONS {
         return Err(GenError::TooFewSections { found });
     }
-    let tokens = std::fs::read_to_string(staging.join("tokens.css"))
-        .ok()
-        .filter(|t| !t.trim().is_empty())
-        .ok_or(GenError::Missing("tokens.css"))?;
+    let tokens = staged(staging, "tokens.css")?;
     let missing: Vec<String> = REQUIRED_TOKENS
         .iter()
         .filter(|t| !defines(&tokens, t))
@@ -214,7 +289,7 @@ pub fn check_staging(staging: &Path) -> Result<(), GenError> {
     if !missing.is_empty() {
         return Err(GenError::MissingTokens(missing));
     }
-    Ok(())
+    Ok(Staged { design, tokens })
 }
 
 /// A package [`install`] put in place.
@@ -257,7 +332,41 @@ pub fn install(
     user_root: &Path,
     req: &GenerateRequest,
 ) -> Result<Installed, GenError> {
-    check_staging(staging)?;
+    let files = read_checked(staging)?;
+    install_checked(&files, user_root, req, "generated from a brief by an agent")
+}
+
+/// Installs a package the user brought (pasted `DESIGN.md`, imported CSS
+/// variables): `tokens.css` must define the A1 tokens, `DESIGN.md` only has
+/// to exist (the original accepts any pasted document).
+///
+/// # Errors
+/// [`GenError::Missing`], [`GenError::MissingTokens`], [`GenError::Io`].
+pub fn install_imported(
+    staging: &Path,
+    user_root: &Path,
+    req: &GenerateRequest,
+    origin: &str,
+) -> Result<Installed, GenError> {
+    let design = staged(staging, "DESIGN.md")?;
+    let tokens = staged(staging, "tokens.css")?;
+    let missing: Vec<String> = REQUIRED_TOKENS
+        .iter()
+        .filter(|t| !defines(&tokens, t))
+        .map(|t| (*t).to_owned())
+        .collect();
+    if !missing.is_empty() {
+        return Err(GenError::MissingTokens(missing));
+    }
+    install_checked(&Staged { design, tokens }, user_root, req, origin)
+}
+
+fn install_checked(
+    files: &Staged,
+    user_root: &Path,
+    req: &GenerateRequest,
+    origin: &str,
+) -> Result<Installed, GenError> {
     std::fs::create_dir_all(user_root).map_err(io)?;
     // Build the package next to its destination, then rename: the index
     // never sees a half-written folder. Each job has its own (hidden,
@@ -269,7 +378,7 @@ pub fn install(
         JOB.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&tmp).map_err(io)?;
-    let built = build_and_place(staging, &tmp, user_root, req);
+    let built = build_and_place(files, &tmp, user_root, req, origin);
     if built.is_err() {
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -279,14 +388,14 @@ pub fn install(
 /// Fills `tmp` and renames it to a free `<slug>` folder; when another job
 /// takes that folder first, the next free one.
 fn build_and_place(
-    staging: &Path,
+    files: &Staged,
     tmp: &Path,
     user_root: &Path,
     req: &GenerateRequest,
+    origin: &str,
 ) -> Result<Installed, GenError> {
-    for file in ["DESIGN.md", "tokens.css"] {
-        std::fs::copy(staging.join(file), tmp.join(file)).map_err(io)?;
-    }
+    std::fs::write(tmp.join("DESIGN.md"), &files.design).map_err(io)?;
+    std::fs::write(tmp.join("tokens.css"), &files.tokens).map_err(io)?;
     let slug = slugify(&req.name);
     let category = req.category.clone().unwrap_or_else(|| "Custom".to_owned());
     let mut tries = 0;
@@ -304,7 +413,7 @@ fn build_and_place(
             "name": req.name,
             "category": category,
             "description": first_line(&req.brief),
-            "source": { "type": "local", "origin": "generated from a brief by an agent" },
+            "source": { "type": "local", "origin": origin },
             "files": { "design": "DESIGN.md", "tokens": "tokens.css" },
             "importMode": "normalized",
             "craft": { "applies": [], "suggested": ["color", "typography"], "exemptions": [] },
@@ -386,6 +495,30 @@ mod tests {
     }
 
     #[test]
+    fn sources_are_listed_after_the_files_to_write() {
+        let r = GenerateRequest::new("Tea", SOURCES_ONLY_BRIEF, None).unwrap();
+        assert_eq!(
+            generation_prompt_with_sources(&r, &Sources::default()),
+            generation_prompt(&r)
+        );
+        let p = generation_prompt_with_sources(
+            &r,
+            &Sources {
+                urls: vec!["https://tea.example".into()],
+                github: Some("acme/ui".into()),
+                figma: Some("https://www.figma.com/file/x".into()),
+                files: vec!["logo.png".into()],
+            },
+        );
+        let at = p.find("# Sources").unwrap();
+        assert!(p.find("# Files to write").unwrap() < at);
+        assert!(p.contains("- Website: https://tea.example"));
+        assert!(p.contains("- GitHub repository: acme/ui"));
+        assert!(p.contains("- Figma: https://www.figma.com/file/x"));
+        assert!(p.contains("`source/logo.png`"));
+    }
+
+    #[test]
     fn staging_checks() {
         let tmp = tempfile::tempdir().unwrap();
         let s = tmp.path();
@@ -414,6 +547,38 @@ mod tests {
         );
         std::fs::write(s.join("tokens.css"), TOKENS).unwrap();
         assert_eq!(check_staging(s), Ok(()));
+    }
+
+    /// The agent writes the staging folder: a `DESIGN.md` or `tokens.css`
+    /// that links out of it is missing, never read or copied in.
+    #[cfg(unix)]
+    #[test]
+    fn staging_files_never_follow_a_link_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("secret.md"), good_design("Leak")).unwrap();
+        std::fs::write(outside.join("secret.css"), TOKENS).unwrap();
+        let user = tmp.path().join("design-systems");
+        let req = GenerateRequest::new("Tea", "Warm.", None).unwrap();
+        for (file, target, real) in [
+            ("DESIGN.md", "secret.md", ("tokens.css", TOKENS.to_owned())),
+            (
+                "tokens.css",
+                "secret.css",
+                ("DESIGN.md", good_design("Tea")),
+            ),
+        ] {
+            let staging = tempfile::tempdir().unwrap();
+            let s = staging.path();
+            std::os::unix::fs::symlink(outside.join(target), s.join(file)).unwrap();
+            std::fs::write(s.join(real.0), &real.1).unwrap();
+            let missing = Err(GenError::Missing(file));
+            assert_eq!(check_staging(s), missing);
+            assert_eq!(install(s, &user, &req).map(|_| ()), missing);
+            assert_eq!(install_imported(s, &user, &req, "x").map(|_| ()), missing);
+        }
+        assert!(!user.exists());
     }
 
     /// Two jobs for the same name at once: each builds in its own folder,

@@ -1,4 +1,5 @@
-//! `od plugin` (spec 2.6): list, info, apply and validate plugins. `apply`
+//! `od plugin` (spec 2.6): list, info, apply, validate, install and
+//! uninstall plugins. `apply`
 //! enforces the headless capability gate (plugins-spec §9.1): a plugin
 //! that is not first-party and needs capabilities beyond `prompt:inject`
 //! that were not passed with `--grant-caps` exits with code 66 and a JSON
@@ -43,6 +44,11 @@ pub enum PluginCommand {
     Validate { dir: PathBuf },
     /// The first-party atom catalogue.
     Atoms,
+    /// Install a local plugin folder into the user plugins (replaces an
+    /// older copy with the same id).
+    Install { dir: PathBuf },
+    /// Remove a user plugin.
+    Uninstall { id: String },
 }
 
 fn pretty(v: &Value) -> anyhow::Result<()> {
@@ -208,6 +214,31 @@ pub fn run(client: &Client, cmd: PluginCommand, json_out: bool) -> anyhow::Resul
                 )
                 .into())
             }
+        }
+        PluginCommand::Install { dir } => {
+            let dir = std::fs::canonicalize(&dir)
+                .with_context(|| format!("{} does not exist", dir.display()))?;
+            let res: Value = client.send_json(
+                "POST",
+                &["api", "plugins", "install"],
+                &json!({ "path": dir.to_string_lossy() }),
+            )?;
+            if json_out {
+                return pretty(&res);
+            }
+            println!(
+                "installed {}",
+                res["plugin"]["id"].as_str().unwrap_or_default()
+            );
+            Ok(())
+        }
+        PluginCommand::Uninstall { id } => {
+            let res: Value = client.send_empty("POST", &["api", "plugins", &id, "uninstall"])?;
+            if json_out {
+                return pretty(&res);
+            }
+            println!("uninstalled {id}");
+            Ok(())
         }
         PluginCommand::Atoms => {
             let res: Value = client.get_json(&["api", "atoms"])?;

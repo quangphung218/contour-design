@@ -19,11 +19,34 @@ enum Format {
     Zip,
     Pdf,
     Png,
+    Jpeg,
+    Webp,
     Pptx,
+    PptxEditable,
+    Mp4,
+    Markdown,
 }
 
 impl Format {
-    const ALL: [Self; 5] = [Self::Html, Self::Zip, Self::Pdf, Self::Png, Self::Pptx];
+    const ALL: [Self; 10] = [
+        Self::Html,
+        Self::Zip,
+        Self::Pdf,
+        Self::Png,
+        Self::Jpeg,
+        Self::Webp,
+        Self::Pptx,
+        Self::PptxEditable,
+        Self::Mp4,
+        Self::Markdown,
+    ];
+
+    fn testid(self) -> String {
+        match self {
+            Self::PptxEditable => "export-pptx-editable".to_owned(),
+            f => format!("export-{}", f.ext()),
+        }
+    }
 
     fn label(self) -> &'static str {
         match self {
@@ -31,7 +54,12 @@ impl Format {
             Self::Zip => t(T::ExportZip),
             Self::Pdf => t(T::ExportPdf),
             Self::Png => t(T::ExportPng),
+            Self::Jpeg => t(T::ExportJpeg),
+            Self::Webp => t(T::ExportWebp),
             Self::Pptx => t(T::ExportPptx),
+            Self::PptxEditable => t(T::ExportPptxEditable),
+            Self::Mp4 => t(T::ExportMp4),
+            Self::Markdown => t(T::ExportMarkdown),
         }
     }
 
@@ -41,7 +69,11 @@ impl Format {
             Self::Zip => "zip",
             Self::Pdf => "pdf",
             Self::Png => "png",
-            Self::Pptx => "pptx",
+            Self::Jpeg => "jpg",
+            Self::Webp => "webp",
+            Self::Pptx | Self::PptxEditable => "pptx",
+            Self::Mp4 => "mp4",
+            Self::Markdown => "md",
         }
     }
 
@@ -51,7 +83,11 @@ impl Format {
             Self::Zip => "application/zip",
             Self::Pdf => "application/pdf",
             Self::Png => "image/png",
-            Self::Pptx => {
+            Self::Jpeg => "image/jpeg",
+            Self::Webp => "image/webp",
+            Self::Mp4 => "video/mp4",
+            Self::Markdown => "text/markdown",
+            Self::Pptx | Self::PptxEditable => {
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             }
         }
@@ -62,14 +98,27 @@ impl Format {
             Self::Html => Glyph::FileCode,
             Self::Zip => Glyph::Download,
             Self::Pdf => Glyph::FileText,
-            Self::Png => Glyph::FileImage,
-            Self::Pptx => Glyph::Deck,
+            Self::Png | Self::Jpeg | Self::Webp => Glyph::FileImage,
+            Self::Pptx | Self::PptxEditable => Glyph::Deck,
+            Self::Mp4 => Glyph::Play,
+            Self::Markdown => Glyph::Markdown,
         }
     }
 
-    /// Needs an HTML file to render (all but ZIP).
+    /// Needs a file to export (all but ZIP).
     fn needs_file(self) -> bool {
         self != Self::Zip
+    }
+
+    /// Whether the format applies to `path`: Markdown files export as
+    /// Markdown, everything else needs an HTML page.
+    fn fits(self, path: Option<&str>) -> bool {
+        match (self, path) {
+            (Self::Zip, _) => true,
+            (_, None) => false,
+            (Self::Markdown, Some(p)) => crate::file_tree::is_markdown(p),
+            (_, Some(p)) => super::studio::is_html_path(p),
+        }
     }
 }
 
@@ -112,6 +161,9 @@ fn stem(path: &str) -> &str {
 #[component]
 pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     let open = RwSignal::new(false);
+    let files_ui = super::files_panel::FilesUi::get();
+    let template_open = RwSignal::new(false);
+    let handoff_open = RwSignal::new(false);
     let status = RwSignal::new(None::<Result<String, String>>);
     let busy = RwSignal::new(false);
     // Numbers each message shown, so a timer only closes its own toast.
@@ -158,16 +210,26 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             let base = ctx.base();
             let res = match format {
                 Format::Zip => api::get_bytes(&format!("{base}/archive")).await,
+                Format::Markdown => {
+                    let path = file.clone().unwrap_or_default();
+                    api::get_bytes(&format!("{base}/raw/{}", api::file_path(&path))).await
+                }
                 _ => {
                     let kind = match format {
                         Format::Html => "html",
                         Format::Pdf => "pdf",
-                        Format::Png => "image",
+                        Format::Png | Format::Jpeg | Format::Webp => "image",
+                        Format::Mp4 => "mp4",
+                        Format::PptxEditable => "pptx-editable",
                         _ => "pptx",
                     };
                     let mut body = json!({ "fileName": file, "title": project });
                     if format == Format::Png {
                         body["imageFormat"] = json!("png");
+                    } else if format == Format::Jpeg {
+                        body["imageFormat"] = json!("jpeg");
+                    } else if format == Format::Webp {
+                        body["imageFormat"] = json!("webp");
                     }
                     api::post_bytes(&format!("{base}/export/{kind}"), &body).await
                 }
@@ -223,6 +285,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                 {icon(Glyph::ChevronDown)}
             </button>
             <Show when=move || open.get()>
+                <div class="menu-scrim" on:click=move |_| open.set(false)></div>
                 <div class="menu" role="menu" data-testid="export-menu">
                     {Format::ALL
                         .into_iter()
@@ -231,8 +294,8 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                                 <button
                                     class="menu-item"
                                     role="menuitem"
-                                    data-testid=format!("export-{}", f.ext())
-                                    disabled=move || f.needs_file() && ctx.active().is_none()
+                                    data-testid=f.testid()
+                                    disabled=move || !f.fits(ctx.active().as_deref())
                                     on:click=move |_| export(f)
                                 >
                                     {icon(f.glyph())}
@@ -241,6 +304,23 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                             }
                         })
                         .collect_view()}
+                    <div class="menu-sep">{t(T::FileSection)}</div>
+                    <button class="menu-item" role="menuitem" data-testid="file-new-tab" disabled=move || ctx.active().is_none()
+                        on:click=move |_| { open.set(false); if let Some(p) = ctx.active_untracked() { super::files_panel::open_in_new_tab(ctx, &p); } }>
+                        {icon(Glyph::ExternalLink)}{t(T::OpenInNewTab)}
+                    </button>
+                    <button class="menu-item" role="menuitem" data-testid="file-copy-path" disabled=move || ctx.active().is_none()
+                        on:click=move |_| { open.set(false); if let Some(p) = ctx.active_untracked() { super::files_panel::copy_path(ctx, files_ui, &p, true); } }>
+                        {icon(Glyph::Link)}{t(T::CopyFullPath)}
+                    </button>
+                    <button class="menu-item" role="menuitem" data-testid="file-download" disabled=move || ctx.active().is_none()
+                        on:click=move |_| { open.set(false); if let Some(p) = ctx.active_untracked() { super::files_panel::download_file(ctx, &p); } }>
+                        {icon(Glyph::Download)}{t(T::DownloadFile)}
+                    </button>
+                    <button class="menu-item" role="menuitem" data-testid="save-template" disabled=move || !ctx.active().is_some_and(|p| super::studio::is_html_path(&p))
+                        on:click=move |_| { open.set(false); template_open.set(true); }>
+                        {icon(Glyph::Grid)}{t(T::SaveAsTemplate)}
+                    </button>
                     <div class="menu-sep">{t(T::Handoff)}</div>
                     <button class="menu-item" role="menuitem" data-testid="handoff-open" on:click=open_folder>
                         {icon(Glyph::FolderOpen)}
@@ -249,8 +329,24 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                     <button class="menu-item" role="menuitem" data-testid="handoff-copy" on:click=copy_prompt>
                         {icon(Glyph::Handoff)}
                         {t(T::HandoffCopyPrompt)}
+                        <span class="menu-hint">{format!("{}⇧K", super::shortcuts::modifier())}</span>
+                    </button>
+                    <button class="menu-item" role="menuitem" data-testid="finalize" disabled=move || ctx.live_run.with(Option::is_some)
+                        on:click=move |_| { open.set(false); finalize(ctx); }>
+                        {icon(Glyph::Markdown)}
+                        {move || finalize_label(ctx)}
+                    </button>
+                    <button class="menu-item" role="menuitem" data-testid="handoff-options" on:click=move |_| { open.set(false); handoff_open.set(true); }>
+                        {icon(Glyph::Settings)}
+                        {t(T::HandoffChoose)}
                     </button>
                 </div>
+            </Show>
+            <Show when=move || template_open.get()>
+                <super::export_extra::SaveTemplateDialog ctx=ctx open=template_open status=status/>
+            </Show>
+            <Show when=move || handoff_open.get()>
+                <super::export_extra::HandoffDialog ctx=ctx open=handoff_open status=status/>
             </Show>
             <div class="toast-region" aria-live="polite">
                 {move || status.get().map(|s| {
@@ -278,8 +374,50 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
+/// DESIGN.md state of the project: missing, current, or older than the
+/// newest page (the spec is stale).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DesignMd {
+    Missing,
+    Current,
+    Stale,
+}
+
+pub(super) fn design_md_state(files: &[od_contracts::ProjectFile]) -> DesignMd {
+    let Some(spec) = files.iter().find(|f| f.path == DESIGN_MD) else {
+        return DesignMd::Missing;
+    };
+    let newest_page = files
+        .iter()
+        .filter(|f| super::studio::is_html_path(&f.path))
+        .map(|f| f.mtime)
+        .fold(f64::MIN, f64::max);
+    if newest_page > spec.mtime {
+        DesignMd::Stale
+    } else {
+        DesignMd::Current
+    }
+}
+
+/// The hand-off spec file at the project root.
+const DESIGN_MD: &str = "DESIGN.md";
+
+fn finalize_label(ctx: StudioCtx) -> &'static str {
+    match ctx.files.with(|f| design_md_state(f)) {
+        DesignMd::Missing => t(T::Finalize),
+        DesignMd::Current => t(T::Refinalize),
+        DesignMd::Stale => t(T::RefinalizeStale),
+    }
+}
+
+/// Asks the agent to write (or refresh) `DESIGN.md`, the design package a
+/// coding agent starts from.
+fn finalize(ctx: StudioCtx) {
+    ctx.send(t(T::FinalizePrompt).to_owned(), ctx.shell);
+}
+
 /// Copies `text` to the clipboard.
-async fn copy_text(text: &str) -> Result<(), String> {
+pub(super) async fn copy_text(text: &str) -> Result<(), String> {
     let clipboard = web_sys::window()
         .ok_or("no window")?
         .navigator()
@@ -292,7 +430,39 @@ async fn copy_text(text: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::toast_expired;
+    use super::{DesignMd, design_md_state, toast_expired};
+    use od_contracts::{FileKind, ProjectFile};
+
+    fn file(path: &str, mtime: f64) -> ProjectFile {
+        ProjectFile {
+            name: path.to_owned(),
+            path: path.to_owned(),
+            entry_type: "file".to_owned(),
+            size: 1,
+            mtime,
+            kind: FileKind::Text,
+            mime: "text/plain".to_owned(),
+            artifact_kind: None,
+            artifact_manifest: None,
+        }
+    }
+
+    #[test]
+    fn design_md_is_stale_once_a_page_is_newer() {
+        assert_eq!(
+            design_md_state(&[file("index.html", 5.0)]),
+            DesignMd::Missing
+        );
+        let spec = file("DESIGN.md", 10.0);
+        assert_eq!(
+            design_md_state(&[spec.clone(), file("index.html", 5.0)]),
+            DesignMd::Current
+        );
+        assert_eq!(
+            design_md_state(&[spec, file("a/b.html", 11.0)]),
+            DesignMd::Stale
+        );
+    }
 
     #[test]
     fn a_toast_closes_only_over_itself_and_not_mid_export() {

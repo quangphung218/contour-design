@@ -8,6 +8,7 @@
 
 pub mod artifact;
 pub mod byok;
+pub mod byok_probe;
 pub mod critique;
 pub mod def;
 pub mod detect;

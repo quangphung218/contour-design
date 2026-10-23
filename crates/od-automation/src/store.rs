@@ -37,6 +37,29 @@ CREATE TABLE IF NOT EXISTS routine_runs (
 CREATE INDEX IF NOT EXISTS idx_routine_runs_routine ON routine_runs(routine_id, started_at DESC);
 ";
 
+/// Columns added after the first release: `(table, column, definition)`,
+/// added when missing so old databases upgrade in place.
+const ADDED_COLUMNS: [(&str, &str, &str); 2] = [
+    ("routines", "target_mode", "TEXT NOT NULL DEFAULT 'reuse'"),
+    ("routine_runs", "project_id", "TEXT"),
+];
+
+fn add_missing_columns(conn: &Connection) -> rusqlite::Result<()> {
+    for (table, column, definition) in ADDED_COLUMNS {
+        let exists = conn
+            .prepare(&format!(
+                "SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?1"
+            ))?
+            .exists([column])?;
+        if !exists {
+            conn.execute_batch(&format!(
+                "ALTER TABLE {table} ADD COLUMN {column} {definition}"
+            ))?;
+        }
+    }
+    Ok(())
+}
+
 pub const MAX_NAME_CHARS: usize = 120;
 pub const MAX_PROMPT_CHARS: usize = 20_000;
 /// History rows kept per routine.
@@ -61,6 +84,34 @@ pub type Result<T> = std::result::Result<T, AutomationError>;
 pub enum Trigger {
     Schedule,
     Manual,
+}
+
+/// Where each run happens.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetMode {
+    /// A new conversation in `project_id`.
+    #[default]
+    Reuse,
+    /// A fresh project per run.
+    CreateEachRun,
+}
+
+impl TargetMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Reuse => "reuse",
+            Self::CreateEachRun => "create_each_run",
+        }
+    }
+
+    fn parse(s: &str) -> Self {
+        if s == "create_each_run" {
+            Self::CreateEachRun
+        } else {
+            Self::Reuse
+        }
+    }
 }
 
 /// One routine run in the history.
@@ -106,6 +157,9 @@ pub struct RoutineRun {
     pub status: RunState,
     pub run_id: Option<String>,
     pub conversation_id: Option<String>,
+    /// The project the run happened in (its own one for
+    /// [`TargetMode::CreateEachRun`]).
+    pub project_id: Option<String>,
     pub error: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
@@ -116,7 +170,9 @@ pub struct RoutineRun {
 pub struct Routine {
     pub id: String,
     pub name: String,
+    /// Empty for [`TargetMode::CreateEachRun`].
     pub project_id: String,
+    pub target_mode: TargetMode,
     pub agent_id: String,
     pub prompt: String,
     pub schedule: String,
@@ -132,7 +188,11 @@ pub struct Routine {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NewRoutine {
     pub name: String,
+    /// Required unless `target_mode` is `create_each_run`.
+    #[serde(default)]
     pub project_id: String,
+    #[serde(default)]
+    pub target_mode: TargetMode,
     pub agent_id: String,
     pub prompt: String,
     pub schedule: String,
@@ -149,6 +209,8 @@ fn yes() -> bool {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RoutinePatch {
     pub name: Option<String>,
+    pub project_id: Option<String>,
+    pub target_mode: Option<TargetMode>,
     pub agent_id: Option<String>,
     pub prompt: Option<String>,
     pub schedule: Option<String>,
@@ -191,14 +253,22 @@ pub fn check_id(kind: &str, id: &str) -> Result<String> {
     }
 }
 
+/// The stored project id: checked for [`TargetMode::Reuse`], empty for
+/// [`TargetMode::CreateEachRun`].
+fn target_project(mode: TargetMode, project_id: &str) -> Result<String> {
+    match mode {
+        TargetMode::Reuse => check_id("project", project_id),
+        TargetMode::CreateEachRun => Ok(String::new()),
+    }
+}
+
 pub fn parse_schedule(raw: &str) -> Result<Schedule> {
     raw.parse::<Schedule>()
         .map_err(|e| AutomationError::Invalid(e.to_string()))
 }
 
-const ROUTINE_COLUMNS: &str = "id, name, project_id, agent_id, prompt, schedule, enabled, next_run_at, created_at, updated_at";
-const RUN_COLUMNS: &str =
-    "id, routine_id, trigger, status, run_id, conversation_id, error, started_at, ended_at";
+const ROUTINE_COLUMNS: &str = "id, name, project_id, agent_id, prompt, schedule, enabled, next_run_at, created_at, updated_at, target_mode";
+const RUN_COLUMNS: &str = "id, routine_id, trigger, status, run_id, conversation_id, error, started_at, ended_at, project_id";
 
 fn routine_from_row(row: &Row<'_>) -> rusqlite::Result<Routine> {
     Ok(Routine {
@@ -212,6 +282,7 @@ fn routine_from_row(row: &Row<'_>) -> rusqlite::Result<Routine> {
         next_run_at: row.get(7)?,
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
+        target_mode: TargetMode::parse(&row.get::<_, String>(10)?),
         last_run: None,
     })
 }
@@ -233,6 +304,7 @@ fn run_from_row(row: &Row<'_>) -> rusqlite::Result<RoutineRun> {
         error: row.get(6)?,
         started_at: row.get(7)?,
         ended_at: row.get(8)?,
+        project_id: row.get(9)?,
     })
 }
 
@@ -258,6 +330,7 @@ impl RoutineStore {
         let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
+        add_missing_columns(&conn)?;
         conn.execute(
             "UPDATE routine_runs SET status = 'failed', error = 'interrupted: the daemon stopped', \
              ended_at = ?1 WHERE status = 'running'",
@@ -284,15 +357,15 @@ impl RoutineStore {
     ) -> Result<Routine> {
         let name = check_name(&new.name)?;
         let prompt = check_prompt(&new.prompt)?;
-        let project_id = check_id("project", &new.project_id)?;
+        let project_id = target_project(new.target_mode, &new.project_id)?;
         let agent_id = check_id("agent", &new.agent_id)?;
         let schedule = parse_schedule(&new.schedule)?;
         let now = now_ms();
         let next_run_at = if new.enabled { next(&schedule) } else { None };
         let id = uuid::Uuid::new_v4().to_string();
         self.conn().execute(
-            &format!("INSERT INTO routines ({ROUTINE_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)"),
-            params![id, name, project_id, agent_id, prompt, schedule.to_string(), new.enabled, next_run_at, now],
+            &format!("INSERT INTO routines ({ROUTINE_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)"),
+            params![id, name, project_id, agent_id, prompt, schedule.to_string(), new.enabled, next_run_at, now, new.target_mode.as_str()],
         )?;
         self.get(&id)
     }
@@ -367,6 +440,13 @@ impl RoutineStore {
         if let Some(agent) = &patch.agent_id {
             r.agent_id = check_id("agent", agent)?;
         }
+        if let Some(mode) = patch.target_mode {
+            r.target_mode = mode;
+        }
+        r.project_id = target_project(
+            r.target_mode,
+            patch.project_id.as_deref().unwrap_or(&r.project_id),
+        )?;
         let schedule = parse_schedule(patch.schedule.as_deref().unwrap_or(&r.schedule))?;
         r.schedule = schedule.to_string();
         let reschedule = patch.schedule.is_some() || patch.enabled.is_some();
@@ -378,8 +458,8 @@ impl RoutineStore {
         }
         self.conn().execute(
             "UPDATE routines SET name = ?2, agent_id = ?3, prompt = ?4, schedule = ?5, enabled = ?6, \
-             next_run_at = ?7, updated_at = ?8 WHERE id = ?1",
-            params![id, r.name, r.agent_id, r.prompt, r.schedule, r.enabled, r.next_run_at, now_ms()],
+             next_run_at = ?7, updated_at = ?8, project_id = ?9, target_mode = ?10 WHERE id = ?1",
+            params![id, r.name, r.agent_id, r.prompt, r.schedule, r.enabled, r.next_run_at, now_ms(), r.project_id, r.target_mode.as_str()],
         )?;
         self.get(id)
     }
@@ -425,13 +505,14 @@ impl RoutineStore {
             status,
             run_id: None,
             conversation_id: None,
+            project_id: None,
             error: None,
             started_at: now,
             ended_at: (status != RunState::Running).then_some(now),
         };
         let conn = self.conn();
         conn.execute(
-            &format!("INSERT INTO routine_runs ({RUN_COLUMNS}) VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, ?5, ?6)"),
+            &format!("INSERT INTO routine_runs ({RUN_COLUMNS}) VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, ?5, ?6, NULL)"),
             params![
                 run.id,
                 routine_id,
@@ -453,10 +534,16 @@ impl RoutineStore {
     ///
     /// # Errors
     /// SQLite errors.
-    pub fn attach_run(&self, id: &str, run_id: &str, conversation_id: &str) -> Result<()> {
+    pub fn attach_run(
+        &self,
+        id: &str,
+        run_id: &str,
+        conversation_id: &str,
+        project_id: &str,
+    ) -> Result<()> {
         self.conn().execute(
-            "UPDATE routine_runs SET run_id = ?2, conversation_id = ?3 WHERE id = ?1",
-            params![id, run_id, conversation_id],
+            "UPDATE routine_runs SET run_id = ?2, conversation_id = ?3, project_id = ?4 WHERE id = ?1",
+            params![id, run_id, conversation_id, project_id],
         )?;
         Ok(())
     }

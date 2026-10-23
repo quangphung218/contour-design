@@ -524,6 +524,7 @@ try {
   // reattaches with the scrollback, closing the tab ends the shell.
   await page.goto(projectUrl);
   await page.getByTestId('composer').waitFor();
+  await page.getByTestId('tab-launcher').click();
   await page.getByTestId('new-terminal').click();
   await page.getByTestId('terminal-tab').waitFor();
   const term = page.getByTestId('terminal');
@@ -619,7 +620,7 @@ try {
   assert.equal(cfg.locale, 'vi');
   assert.equal(await page.locator('html').getAttribute('lang'), 'vi');
   await page.goto(BASE + '/');
-  await page.locator('h1', { hasText: 'Hôm nay thiết kế gì?' }).waitFor();
+  await page.locator('h1', { hasText: 'Cùng tạo' }).waitFor();
   await page.screenshot({ path: OUT + 'home-dark-vi.png' });
   await page.goto(projectUrl);
   await page.getByTestId('composer').waitFor();

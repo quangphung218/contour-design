@@ -15,6 +15,9 @@
 # "Mode: …" and write nothing; project memory is echoed as "Memory: <first
 # fact>"; a Design Jury prompt gets a two-round jury run that ships.
 # Attached preview comments and attached files are acknowledged.
+# Library (track B1): a design system brief with a website source adds a
+# "Source" colour; a design system revision appends a section and moves
+# the accent; a run with an active plugin says "Plugin applied".
 
 case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
@@ -27,6 +30,15 @@ done
 
 IFS= read -r line
 
+# Settings / onboarding connection test: answer "ok", write nothing.
+case "$line" in *"Reply with only: ok"*)
+  printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+  printf '{"type":"assistant","message":{"id":"smoke-%s","role":"assistant","content":[{"type":"text","text":"ok"}]}}\n' "$$"
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null
+  exit 0
+;; esac
+
 # Design system generation (spec 1.4): write the two package files in the
 # staging folder (cwd) and stop.
 case "$line" in *"# Design system brief"*)
@@ -36,10 +48,19 @@ case "$line" in *"# Design system brief"*)
       printf '## %s\n\nText.\n\n' "$s"
     done
     printf -- '- **Leaf** `#2f6b3a`\n- **Cream** `#f6efe2`\n'
+    case "$line" in *"Website: https://"*) printf -- '- **Source** `#123456`\n';; esac
   } > DESIGN.md
   printf ':root { --bg: #f6efe2; --surface: #ffffff; --fg: #1d1b16; --accent: #2f6b3a; --font-display: Georgia, serif; --font-body: system-ui; }\n' > tokens.css
   printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
   printf '{"type":"assistant","message":{"id":"ds-%s","role":"assistant","content":[{"type":"text","text":"Wrote DESIGN.md and tokens.css."}]}}\n' "$$"
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null
+  exit 0
+;; esac
+case "$line" in *"# Design system revision"*)
+  printf '\n## Revised by the agent\n\nWarmer greens.\n' >> DESIGN.md
+  sed 's/--accent: [^;]*;/--accent: #aa5500;/' tokens.css > tokens.tmp && mv tokens.tmp tokens.css
+  printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
   printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
   cat >/dev/null
   exit 0
@@ -64,6 +85,7 @@ end_turn() {
 
 printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
 say "Turn $turn. Working on: $first "
+case "$line" in *"The user applied plugin **"*) say "Plugin applied. ";; esac
 # Project memory: echo the first remembered fact.
 mem=$(printf '%s' "$line" | sed -n 's/.*## Project memory[^-]*\\n\\n- \([^\\"]*\).*/\1/p')
 [ -n "$mem" ] && say "Memory: $mem. "

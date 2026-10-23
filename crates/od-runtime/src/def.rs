@@ -417,6 +417,8 @@ pub fn find(id: &str) -> Option<&'static RuntimeDef> {
 pub struct ArgvInput<'a> {
     pub model: Option<&'a str>,
     pub reasoning: Option<&'a str>,
+    /// Codex `service_tier` (`priority` is "Fast"); others ignore it.
+    pub service_tier: Option<&'a str>,
     pub cwd: Option<&'a std::path::Path>,
     pub extra_dirs: &'a [PathBuf],
     /// Continue this stored session.
@@ -608,6 +610,12 @@ fn codex_args(input: &ArgvInput<'_>) -> Vec<String> {
             format!("model_reasoning_effort=\"{effort}\""),
         ]);
     }
+    if let Some(tier) = non_default(input.service_tier).filter(|t| {
+        t.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    }) {
+        args.extend(["-c".to_owned(), format!("service_tier=\"{tier}\"")]);
+    }
     if let Some(id) = resume {
         // Positional SESSION_ID comes last; the prompt arrives on stdin.
         args.push(id.to_owned());
@@ -618,6 +626,29 @@ fn codex_args(input: &ArgvInput<'_>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_service_tier_is_a_config_override() {
+        let args = CODEX.build_args(&ArgvInput {
+            service_tier: Some("priority"),
+            ..ArgvInput::default()
+        });
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-c" && w[1] == "service_tier=\"priority\""),
+            "{args:?}"
+        );
+        for skip in [Some("default"), Some("bad\"tier"), None] {
+            let args = CODEX.build_args(&ArgvInput {
+                service_tier: skip,
+                ..ArgvInput::default()
+            });
+            assert!(
+                !args.iter().any(|a| a.starts_with("service_tier")),
+                "{skip:?}"
+            );
+        }
+    }
 
     #[test]
     fn claude_fresh_vs_resume() {
