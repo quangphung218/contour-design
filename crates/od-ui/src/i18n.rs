@@ -683,6 +683,8 @@ messages! {
     CreatePlugin => "Create plugin", "Tạo plugin";
     CreatePluginPrompt => "Create a plugin for: ", "Tạo một plugin cho: ";
     FromFolder => "From folder", "Từ thư mục";
+    ShortcutMention => "Mention a file, plugin, skill or MCP server", "Nhắc tới file, plugin, skill hoặc MCP server";
+    ShortcutSlash => "Commands (at the start of a line)", "Lệnh (ở đầu dòng)";
 }
 
 /// The current language's text for `key`.
