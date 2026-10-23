@@ -261,15 +261,19 @@ fn rewrite(html: &str, selector: &str, edit: &SourceEdit) -> Result<String, Patc
 }
 
 /// Property names are CSS identifiers; values cannot end the declaration
-/// or the attribute.
+/// or the attribute, or open a comment that swallows what follows.
 fn check_style(prop: &str, value: Option<&str>) -> Result<(), PatchError> {
     let name = prop.strip_prefix("--").unwrap_or(prop);
     let ok_name = !name.is_empty()
         && name.len() <= 64
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
         && !name.starts_with(|c: char| c.is_ascii_digit());
-    let ok_value =
-        value.is_none_or(|v| v.len() <= 512 && !v.contains([';', '{', '}', '<', '>', '\n', '\r']));
+    let ok_value = value.is_none_or(|v| {
+        v.len() <= 512
+            && !v.contains([';', '{', '}', '<', '>', '\n', '\r'])
+            && !v.contains("/*")
+            && !v.contains("*/")
+    });
     if ok_name && ok_value {
         Ok(())
     } else {
@@ -340,45 +344,10 @@ fn normalize(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Decodes the entities source text commonly carries, so it compares with
-/// what the browser rendered.
+/// Decodes the source text's character references (every HTML5 named
+/// one, and numeric ones), so it compares with what the browser rendered.
 fn decode_entities(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(amp) = rest.find('&') {
-        out.push_str(&rest[..amp]);
-        let tail = &rest[amp..];
-        let decoded = tail.find(';').filter(|&end| end <= 10).and_then(|end| {
-            let name = &tail[1..end];
-            let ch = match name {
-                "amp" => Some('&'),
-                "lt" => Some('<'),
-                "gt" => Some('>'),
-                "quot" => Some('"'),
-                "apos" => Some('\''),
-                "nbsp" => Some('\u{a0}'),
-                _ => name
-                    .strip_prefix("#x")
-                    .or_else(|| name.strip_prefix("#X"))
-                    .and_then(|h| u32::from_str_radix(h, 16).ok())
-                    .or_else(|| name.strip_prefix('#').and_then(|d| d.parse().ok()))
-                    .and_then(char::from_u32),
-            }?;
-            Some((ch, end + 1))
-        });
-        match decoded {
-            Some((ch, len)) => {
-                out.push(ch);
-                rest = &tail[len..];
-            }
-            None => {
-                out.push('&');
-                rest = &tail[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
+    html_escape::decode_html_entities(s).into_owned()
 }
 
 #[cfg(test)]
@@ -669,6 +638,28 @@ mod tests {
             merge_style("", &style_edit("x", &[("--accent", Some("#c96442"))])),
             "--accent: #c96442"
         );
+    }
+
+    #[test]
+    fn typographic_entities_and_comment_openers() {
+        // The browser shows every named entity decoded.
+        let page = "<p>A &mdash; B&rsquo;s &hellip;</p>";
+        let p1 = "html > body:nth-of-type(1) > p:nth-of-type(1)";
+        assert_eq!(
+            apply_edits(
+                page,
+                &[text_edit(p1, "C", Some("A \u{2014} B\u{2019}s \u{2026}"))]
+            ),
+            Ok("<p>C</p>".to_owned())
+        );
+        // A comment opener in a value would swallow the declarations after it.
+        for value in ["blue /*", "red */ x"] {
+            assert_eq!(
+                apply_edits(PAGE, &[style_edit(H1, &[("color", Some(value))])]),
+                Err(PatchError::InvalidStyle("color".into())),
+                "{value}"
+            );
+        }
     }
 
     #[test]

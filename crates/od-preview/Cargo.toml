@@ -10,6 +10,7 @@ license.workspace = true
 od-contracts.workspace = true
 od-store.workspace = true
 lol_html.workspace = true
+html-escape = "0.2"
 notify.workspace = true
 notify-debouncer-full.workspace = true
 regex.workspace = true

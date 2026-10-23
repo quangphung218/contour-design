@@ -3697,6 +3697,7 @@ version = "0.1.0"
 dependencies = [
  "chromiumoxide",
  "futures-util",
+ "html-escape",
  "lol_html",
  "notify",
  "notify-debouncer-full",
