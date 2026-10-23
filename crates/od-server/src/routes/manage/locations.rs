@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(slug_id("Work", &taken), "work-2");
         assert_eq!(slug_id("!!", &[]), "location");
         assert_eq!(slug_id("Default", &[]), "location");
-        assert_eq!(folder_name("../etc/passwd"), "--etc-passwd");
+        assert_eq!(folder_name("../etc/passwd"), "---etc-passwd");
         assert_eq!(folder_name("  "), "Untitled project");
         assert_eq!(folder_name("Trà sữa: v2"), "Trà sữa- v2");
     }

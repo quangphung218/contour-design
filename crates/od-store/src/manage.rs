@@ -308,24 +308,22 @@ impl Store {
                 }
                 status.incomplete = unfinished(&events);
             }
+            // Only each project's newest message is read, not every content.
             let mut stmt = conn.prepare(
-                "SELECT c.project_id, m.role, m.content FROM messages m \
-                 JOIN conversations c ON c.id = m.conversation_id \
-                 ORDER BY m.created_at, m.position",
+                "SELECT project_id, role, content FROM ( \
+                   SELECT c.project_id, m.role, m.content, ROW_NUMBER() OVER ( \
+                     PARTITION BY c.project_id ORDER BY m.created_at DESC, m.position DESC \
+                   ) AS rn FROM messages m JOIN conversations c ON c.id = m.conversation_id \
+                 ) WHERE rn = 1",
             )?;
             let rows = stmt.query_map([], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(1)? == "assistant" && asks_question(&r.get::<_, String>(2)?),
                 ))
             })?;
-            let mut newest: std::collections::BTreeMap<String, bool> =
-                std::collections::BTreeMap::new();
-            for row in rows {
-                let (project, role, content) = row?;
-                newest.insert(project, role == "assistant" && asks_question(&content));
-            }
+            let newest =
+                rows.collect::<rusqlite::Result<std::collections::BTreeMap<String, bool>>>()?;
             Ok(latest
                 .into_values()
                 .map(|(mut s, _)| {

@@ -28,7 +28,13 @@ pub async fn create(
         .blocking(move |s| {
             // Settings ▸ Project locations: a custom default base.
             crate::routes::manage::locations::place_in_default(s, &mut req)?;
-            s.create_project(req)
+            let placed = req.metadata.as_ref().and_then(|m| m.base_dir.clone());
+            s.create_project(req).inspect_err(|_| {
+                // The folder was made for this project only: drop it again.
+                if let Some(dir) = placed {
+                    let _ = std::fs::remove_dir(dir);
+                }
+            })
         })
         .await?;
     Ok(ApiJson(CreateProjectResponse {
