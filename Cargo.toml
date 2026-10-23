@@ -24,6 +24,7 @@ od-live = { path = "crates/od-live" }
 od-media = { path = "crates/od-media" }
 od-job = { path = "crates/od-job" }
 od-term = { path = "crates/od-term" }
+od-automation = { path = "crates/od-automation" }
 
 anyhow = "1"
 arc-swap = "1"

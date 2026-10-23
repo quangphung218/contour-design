@@ -3508,6 +3508,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "od-automation"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "od-cli"
 version = "0.1.0"
 dependencies = [
