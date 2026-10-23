@@ -3569,6 +3569,7 @@ dependencies = [
  "arc-swap",
  "criterion",
  "hex",
+ "nix 0.30.1",
  "od-contracts",
  "rayon",
  "regex",
