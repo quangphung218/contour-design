@@ -104,6 +104,24 @@ pub async fn list_tools(
         .map_err(|_| McpError::Protocol("timed out talking to the server".into()))?
 }
 
+/// Kills the server's process group when the exchange ends, however it
+/// ends: a timeout drops it mid-await, and `kill_on_drop` alone reaches
+/// only the direct child, not what it started (`npx` and its node).
+#[cfg(unix)]
+struct KillGroup(Option<i32>);
+
+#[cfg(unix)]
+impl Drop for KillGroup {
+    fn drop(&mut self) {
+        if let Some(pgid) = self.0.filter(|&p| p > 1) {
+            let _ = nix::sys::signal::killpg(
+                nix::unistd::Pid::from_raw(pgid),
+                nix::sys::signal::Signal::SIGKILL,
+            );
+        }
+    }
+}
+
 async fn stdio_tools(server: &McpServer) -> Result<Vec<ToolInfo>, McpError> {
     let program = server.command.as_deref().unwrap_or_default();
     let mut cmd = tokio::process::Command::new(program);
@@ -115,9 +133,13 @@ async fn stdio_tools(server: &McpServer) -> Result<Vec<ToolInfo>, McpError> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
     let mut child = cmd
         .spawn()
         .map_err(|e| McpError::Protocol(format!("could not start {program}: {e}")))?;
+    #[cfg(unix)]
+    let _group = KillGroup(child.id().and_then(|p| i32::try_from(p).ok()));
     let mut stdin = child
         .stdin
         .take()
@@ -339,5 +361,50 @@ mod tests {
         let msg = from_sse(body, 2).unwrap();
         assert_eq!(tools_of(&result_of(msg).unwrap())[0].name, "t");
         assert!(from_sse(body, 3).is_none());
+    }
+
+    /// Pids whose command line is exactly `sleep <secs>`.
+    #[cfg(unix)]
+    fn sleepers(secs: &str) -> String {
+        let out = std::process::Command::new("pgrep")
+            .args(["-f", &format!("^sleep {secs}$")])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    /// A test given up on (timeout, or the request dropped) also ends what
+    /// the server started: `npx` and its node, here `sh` and its `sleep`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_abandoned_stdio_server_leaves_no_children() {
+        let secs = (800_000 + std::process::id() % 100_000).to_string();
+        let server: McpServer = serde_json::from_value(json!({
+            "id": "slow",
+            "transport": "stdio",
+            "command": "/bin/sh",
+            "args": ["-c", format!("sleep {secs}; true")],
+        }))
+        .unwrap();
+        let http = reqwest::Client::new();
+        let res =
+            tokio::time::timeout(Duration::from_millis(500), list_tools(&server, &http, None))
+                .await;
+        assert!(res.is_err(), "the server never answers");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        let mut left = sleepers(&secs);
+        while !left.is_empty() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            left = sleepers(&secs);
+        }
+        if !left.is_empty() {
+            let _ = std::process::Command::new("pkill")
+                .args(["-9", "-f", &format!("^sleep {secs}$")])
+                .status();
+        }
+        assert!(
+            left.is_empty(),
+            "the server's child outlived the test: {left}"
+        );
     }
 }
