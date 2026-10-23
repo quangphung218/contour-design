@@ -104,21 +104,31 @@ pub async fn list_tools(
         .map_err(|_| McpError::Protocol("timed out talking to the server".into()))?
 }
 
-/// Kills the server's process group when the exchange ends, however it
-/// ends: a timeout drops it mid-await, and `kill_on_drop` alone reaches
-/// only the direct child, not what it started (`npx` and its node).
-#[cfg(unix)]
-struct KillGroup(Option<i32>);
+/// Kills the server's whole tree when the exchange ends, however it ends:
+/// a timeout drops it mid-await, and `kill_on_drop` alone reaches only the
+/// direct child, not what it started (`npx` and its node). On POSIX that
+/// is the server's process group plus the groups of its descendants (one
+/// that left with `setsid` is in neither); on Windows its Job Object.
+struct KillTree(Option<u32>);
 
-#[cfg(unix)]
-impl Drop for KillGroup {
+impl Drop for KillTree {
     fn drop(&mut self) {
-        if let Some(pgid) = self.0.filter(|&p| p > 1) {
-            let _ = nix::sys::signal::killpg(
-                nix::unistd::Pid::from_raw(pgid),
-                nix::sys::signal::Signal::SIGKILL,
-            );
+        let Some(pid) = self.0 else {
+            return;
+        };
+        #[cfg(unix)]
+        {
+            use nix::sys::signal::{Signal, killpg};
+            use nix::unistd::{Pid, getpgrp};
+            let own = getpgrp().as_raw();
+            let mut groups = od_job::descendant_groups(pid);
+            groups.extend(i32::try_from(pid));
+            for g in groups.into_iter().filter(|&g| g > 1 && g != own) {
+                let _ = killpg(Pid::from_raw(g), Signal::SIGKILL);
+            }
         }
+        #[cfg(windows)]
+        od_job::kill(pid);
     }
 }
 
@@ -138,8 +148,12 @@ async fn stdio_tools(server: &McpServer) -> Result<Vec<ToolInfo>, McpError> {
     let mut child = cmd
         .spawn()
         .map_err(|e| McpError::Protocol(format!("could not start {program}: {e}")))?;
-    #[cfg(unix)]
-    let _group = KillGroup(child.id().and_then(|p| i32::try_from(p).ok()));
+    #[cfg(windows)]
+    if let (Some(pid), Some(handle)) = (child.id(), child.raw_handle()) {
+        // Children it starts afterwards join the job.
+        let _ = od_job::track(pid, handle);
+    }
+    let _tree = KillTree(child.id());
     let mut stdin = child
         .stdin
         .take()
@@ -371,6 +385,43 @@ mod tests {
             .output()
             .unwrap();
         String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    /// A grandchild that left the server's group and session (`setsid`,
+    /// as daemonizing helpers do) ends with the server too.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_abandoned_stdio_server_leaves_no_session_leavers() {
+        let secs = (900_000 + std::process::id() % 100_000).to_string();
+        let server: McpServer = serde_json::from_value(json!({
+            "id": "detached",
+            "transport": "stdio",
+            "command": "/bin/sh",
+            "args": ["-c", format!("perl -MPOSIX -e 'setsid(); exec q(sleep), {secs}' & wait")],
+        }))
+        .unwrap();
+        let http = reqwest::Client::new();
+        let res = tokio::time::timeout(
+            Duration::from_millis(1000),
+            list_tools(&server, &http, None),
+        )
+        .await;
+        assert!(res.is_err(), "the server never answers");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        let mut left = sleepers(&secs);
+        while !left.is_empty() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            left = sleepers(&secs);
+        }
+        if !left.is_empty() {
+            let _ = std::process::Command::new("pkill")
+                .args(["-9", "-f", &format!("^sleep {secs}$")])
+                .status();
+        }
+        assert!(
+            left.is_empty(),
+            "the detached grandchild outlived the test: {left}"
+        );
     }
 
     /// A test given up on (timeout, or the request dropped) also ends what

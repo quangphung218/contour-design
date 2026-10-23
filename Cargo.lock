@@ -3662,6 +3662,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "nix 0.30.1",
+ "od-job",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

@@ -1,6 +1,6 @@
 [package]
 name = "od-job"
-description = "Windows Job Objects: stopping an agent or a terminal kills its whole process tree"
+description = "Stopping an agent, a terminal or an MCP server kills its whole process tree (Windows Job Objects, POSIX descendant groups)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

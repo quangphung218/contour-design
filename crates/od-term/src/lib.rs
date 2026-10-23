@@ -366,46 +366,12 @@ fn spawn_tracker(session: &Arc<Session>, every: Duration) {
     });
 }
 
-/// Process groups of every descendant of `root` (not `root` itself), from
-/// one `ps` listing of parent links.
+/// [`od_job::descendant_groups`] off the async threads.
 #[cfg(unix)]
 async fn descendant_groups(root: u32) -> Vec<i32> {
-    let Ok(out) = tokio::process::Command::new("ps")
-        .args(["-A", "-o", "pid=,ppid=,pgid="])
-        .output()
+    tokio::task::spawn_blocking(move || od_job::descendant_groups(root))
         .await
-    else {
-        return Vec::new();
-    };
-    let procs: Vec<(u32, u32, i32)> = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|line| {
-            let mut f = line.split_whitespace().map(str::parse::<i64>);
-            let (Some(Ok(pid)), Some(Ok(ppid)), Some(Ok(pgid))) = (f.next(), f.next(), f.next())
-            else {
-                return None;
-            };
-            Some((
-                u32::try_from(pid).ok()?,
-                u32::try_from(ppid).ok()?,
-                i32::try_from(pgid).ok()?,
-            ))
-        })
-        .collect();
-    let mut tree = BTreeSet::from([root]);
-    let mut groups = Vec::new();
-    // Parents may be listed after their children: repeat until stable.
-    loop {
-        let before = tree.len();
-        for &(pid, ppid, pgid) in &procs {
-            if tree.contains(&ppid) && tree.insert(pid) {
-                groups.push(pgid);
-            }
-        }
-        if tree.len() == before {
-            return groups;
-        }
-    }
+        .unwrap_or_default()
 }
 
 /// Process groups of everything whose controlling terminal is `tty` (a
