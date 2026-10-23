@@ -763,20 +763,17 @@ fn ProvidersView() -> impl IntoView {
     let load = move || {
         leptos::task::spawn_local(async move {
             if let Ok(v) = api::get::<Value>("/api/media/config").await {
-                urls.set(
-                    PROVIDERS
-                        .iter()
-                        .map(|(id, _, _)| {
-                            (
-                                (*id).to_owned(),
-                                v["providers"][id]["baseUrl"]
-                                    .as_str()
-                                    .unwrap_or_default()
-                                    .to_owned(),
-                            )
-                        })
-                        .collect(),
-                );
+                // Keep what was typed before the config arrived.
+                urls.update(|u| {
+                    for (id, _, _) in PROVIDERS {
+                        u.entry(id.to_owned()).or_insert_with(|| {
+                            v["providers"][id]["baseUrl"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_owned()
+                        });
+                    }
+                });
                 config.set(Some(v));
             }
         });

@@ -106,6 +106,17 @@ try {
     if (m.type() === 'error' && /panicked|closure invoked/.test(m.text())) log('console:', m.text().slice(0, 400));
   });
   const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+  // Leaving the Studio while it still loads or runs a turn trips disposed
+  // signals in Studio code (studio.rs, preview_tools.rs; another track's
+  // area), so wait until it settles: the first turn ended, or the files
+  // loaded when nothing runs.
+  const settleStudio = async (run) => {
+    if (run) {
+      const msg = page.getByTestId('assistant-msg').last();
+      await until(async () => ['succeeded', 'failed', 'canceled'].includes(await msg.getAttribute('data-state')), 'first turn ends', 30_000);
+    }
+    await sleep(1500);
+  };
 
   // ---------------------------------------------------------- navigation
   await page.goto(BASE + '/');
@@ -242,6 +253,7 @@ try {
   await until(async () => (await page.getByTestId('plugin-query').textContent()).includes('green tea'), 'the brief fills in');
   await use.click();
   await page.waitForURL(/\/projects\//);
+  await settleStudio(true);
   await page.getByText('Plugin applied.').first().waitFor({ timeout: 20_000 });
   results.pluginUse = 'ok';
 
@@ -273,6 +285,7 @@ try {
   const authorBody = await (await authored).json();
   assert.ok(authorBody.project.pendingPrompt.includes('# Create an Open Design plugin'));
   await page.waitForURL(/\/projects\//);
+  await settleStudio(true);
   results.pluginAuthor = 'ok';
   await page.locator('nav a[href="/plugins"]').click();
   await page.getByTestId('plugins-create').click();
@@ -282,6 +295,7 @@ try {
   await page.getByTestId('plugin-fetch').click();
   assert.ok((await (await fetched).json()).project.pendingPrompt.includes('git clone --depth 1'));
   await page.waitForURL(/\/projects\//);
+  await settleStudio(true);
   results.pluginLink = 'ok';
 
   // Skills: edit a bundled one (override), new skill, delete.
@@ -318,13 +332,21 @@ try {
   await page.getByTestId('provider-url-openai').fill(PROVIDER);
   await page.getByTestId('providers-save').click();
   await page.getByTestId('providers-saved').waitFor();
+  // Generation must reach the loopback fake, never the real provider.
+  const media = await api('/api/media/config');
+  assert.equal(media.providers.openai.baseUrl, PROVIDER, 'base URL saved');
   await page.getByTestId('media-tab-generate').click();
   await page.getByTestId('gen-surface-image').click();
   await until(async () => (await page.getByTestId('gen-model').inputValue()) !== '', 'a model is picked');
   assert.equal(await page.getByTestId('gen-no-key').count(), 0, 'the provider has a key now');
   await page.getByTestId('gen-prompt').fill('A ceramic teapot');
   await page.getByTestId('gen-submit').click();
-  await page.locator('[data-testid="media-task"][data-status="done"]').waitFor({ timeout: 20_000 });
+  await until(async () => (await page.getByTestId('media-queue').count()) > 0 || (await page.getByTestId('gen-error').count()) > 0, 'queued or refused');
+  assert.equal(await page.getByTestId('gen-error').count(), 0, await page.getByTestId('gen-error').textContent().catch(() => ''));
+  await until(async () => (await api('/api/media/tasks')).tasks.every((t) => !['queued', 'running'].includes(t.status)), 'generation ends', 20_000);
+  const [task] = (await api('/api/media/tasks')).tasks;
+  assert.equal(task.status, 'done', task.error);
+  await page.locator('[data-testid="media-task"][data-status="done"]').waitFor();
   await page.getByTestId('media-tab-library').click();
   const cards = page.getByTestId('media-card');
   await until(async () => (await cards.count()) === 1, 'the generated image is in the library');
@@ -342,6 +364,7 @@ try {
   await page.getByTestId('media-chat-prompt').fill('A tea poster');
   await page.getByTestId('media-chat').click();
   await page.waitForURL(/\/projects\//);
+  await settleStudio(true);
   const chatProject = page.url().split('/projects/')[1];
   const files = await api(`/api/projects/${chatProject}/files`);
   assert.equal(files.files.filter((f) => f.name.startsWith('assets/')).length, 2);
@@ -369,6 +392,7 @@ try {
   await page.getByTestId('tpl-remix').click();
   assert.equal((await remixed).status(), 200);
   await page.waitForURL(/\/projects\//);
+  await settleStudio(false);
   results.remix = 'ok';
   await page.locator('nav a[href="/templates"]').click();
   await tpl.first().click();
@@ -394,6 +418,7 @@ try {
   await saved.waitFor();
   await saved.getByTestId('tpl-saved-use').click();
   await page.waitForURL(/\/projects\//);
+  await settleStudio(false);
   await page.goto(BASE + '/templates?tab=mine');
   await page.getByTestId('tpl-saved-delete').click();
   await until(async () => (await page.getByTestId('tpl-saved-row').count()) === 0, 'saved template deleted');
