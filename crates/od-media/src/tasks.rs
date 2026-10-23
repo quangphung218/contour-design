@@ -491,6 +491,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_cancel_landing_as_work_finishes_wins() {
+        // The worker itself cancels its task just before returning Ok: the
+        // caller was told "canceled", so the result must not overwrite it.
+        let cell: Arc<std::sync::OnceLock<TaskQueue>> = Arc::default();
+        let c2 = Arc::clone(&cell);
+        let worker: Worker = Arc::new(move |r: TaskRecord| {
+            let c3 = Arc::clone(&c2);
+            Box::pin(async move {
+                let canceled = c3.get().unwrap().cancel(&r.id).unwrap();
+                assert_eq!(canceled.status, TaskStatus::Canceled);
+                Ok(json!({"name": "late.png"}))
+            })
+        });
+        let q = TaskQueue::new(1, Arc::new(MemoryPersist::default()), worker);
+        cell.set(q.clone()).unwrap();
+        let id = q.submit("p", json!({})).id;
+        settle().await;
+        let r = q.get(&id).unwrap();
+        assert_eq!(r.status, TaskStatus::Canceled);
+        assert!(r.result.is_none());
+    }
+
+    #[tokio::test]
     async fn wait_times_out_with_the_live_record() {
         let g = gate();
         let q = TaskQueue::new(1, Arc::new(MemoryPersist::default()), gated(&g));
