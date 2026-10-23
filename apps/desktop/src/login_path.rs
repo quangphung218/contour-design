@@ -30,19 +30,36 @@ const FALLBACK_DIRS: &[&str] = &[
 /// `$PATH` as the user's login shell sets it; `None` when the shell is
 /// missing, slow or prints nothing usable.
 pub async fn login_shell_path(shell: &OsStr) -> Option<String> {
+    use tokio::io::AsyncReadExt;
     let mut cmd = tokio::process::Command::new(shell);
     cmd.args(["-ilc", &format!("printf '{MARK}%s{MARK}' \"$PATH\"")])
         .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
-    let out = tokio::time::timeout(SHELL_TIMEOUT, cmd.output())
-        .await
-        .ok()?
-        .ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let (_, rest) = text.split_once(MARK)?;
-    let (path, _) = rest.split_once(MARK)?;
-    Some(path.to_owned()).filter(|p| !p.trim().is_empty())
+    let mut child = cmd.spawn().ok()?;
+    let mut stdout = child.stdout.take()?;
+    // Read up to the closing mark, not to EOF: a background job the rc
+    // files started can hold stdout open long after the shell is done.
+    let read = async {
+        let mut out = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            let n = stdout.read(&mut buf).await.ok()?;
+            if n == 0 {
+                return None;
+            }
+            out.extend_from_slice(&buf[..n]);
+            let text = String::from_utf8_lossy(&out);
+            if let Some((_, rest)) = text.split_once(MARK) {
+                if let Some((path, _)) = rest.split_once(MARK) {
+                    return Some(path.to_owned());
+                }
+            }
+        }
+    };
+    let path = tokio::time::timeout(SHELL_TIMEOUT, read).await.ok()??;
+    Some(path).filter(|p| !p.trim().is_empty())
 }
 
 /// `current`, then the login shell's entries, then the fallback folders;
@@ -134,5 +151,34 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(path.as_deref(), Some("/opt/tools/bin:/usr/bin"));
         assert_eq!(login_shell_path(OsStr::new("/no/such/shell")).await, None);
+    }
+
+    /// An rc file that starts a background job keeps the shell's stdout
+    /// open after the shell exits; the path is read as soon as it is out.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_rc_background_job_does_not_hold_the_path_back() {
+        let secs = (600_000 + std::process::id() % 100_000).to_string();
+        let dir = std::env::temp_dir().join(format!("od-login-bg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let shell = dir.join("fake-shell");
+        std::fs::write(
+            &shell,
+            format!(
+                "#!/bin/sh\nsleep {secs} &\nPATH=/opt/tools/bin\nexport PATH\nshift\neval \"$1\"\n"
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let started = std::time::Instant::now();
+        let path = login_shell_path(shell.as_os_str()).await;
+        let took = started.elapsed();
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", &format!("^sleep {secs}$")])
+            .status();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(path.as_deref(), Some("/opt/tools/bin"));
+        assert!(took < Duration::from_secs(2), "{took:?}");
     }
 }
