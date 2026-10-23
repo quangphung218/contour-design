@@ -1,5 +1,7 @@
 //! Spawning agents as process-group leaders and stopping the whole tree
-//! (spec 2.3, 5.4). POSIX only for now: `process_group(0)` + `killpg`.
+//! (spec 2.3, 5.4). POSIX: `process_group(0)` + `killpg`. Windows: each
+//! agent gets its own kill-on-close Job Object (`od-job`), tracked by the
+//! leader's pid, which stands in for the group id.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -38,7 +40,30 @@ pub fn spawn(spec: &SpawnSpec) -> std::io::Result<Child> {
         .kill_on_drop(false);
     #[cfg(unix)]
     cmd.process_group(0);
-    cmd.spawn()
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    let child = cmd.spawn()?;
+    #[cfg(windows)]
+    track_job(&child)?;
+    Ok(child)
+}
+
+/// `CREATE_NEW_PROCESS_GROUP`: the agent does not get the daemon's Ctrl+C.
+#[cfg(windows)]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+/// Puts a freshly spawned child into its own Job Object. On failure the
+/// child is killed: an agent whose tree cannot be stopped must not run.
+#[cfg(windows)]
+fn track_job(child: &Child) -> std::io::Result<()> {
+    let (Some(pid), Some(handle)) = (child.id(), child.raw_handle()) else {
+        return Ok(()); // already exited and reaped
+    };
+    od_job::track(pid, handle).inspect_err(|_| {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .status();
+    })
 }
 
 #[cfg(unix)]
@@ -61,10 +86,27 @@ pub fn group_alive(pgid: i32) -> bool {
     imp::signal_group(pgid, None)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+#[must_use]
+pub fn group_alive(pgid: i32) -> bool {
+    u32::try_from(pgid).is_ok_and(od_job::alive)
+}
+
+#[cfg(not(any(unix, windows)))]
 #[must_use]
 pub fn group_alive(_pgid: i32) -> bool {
     false
+}
+
+/// Drops the bookkeeping for a finished agent. Windows closes its job,
+/// which also ends anything still left in it; POSIX has nothing to free.
+pub fn release_group(pgid: i32) {
+    #[cfg(windows)]
+    if let Ok(pid) = u32::try_from(pgid) {
+        od_job::kill(pid);
+    }
+    #[cfg(not(windows))]
+    let _ = pgid;
 }
 
 /// Sends SIGTERM to the group, waits up to `grace` for it to disappear,
@@ -83,7 +125,20 @@ pub async fn terminate_group(pgid: i32, grace: Duration) -> bool {
     true
 }
 
-#[cfg(not(unix))]
+/// Windows has no SIGTERM for a console tree: closing the job kills it.
+/// Returns true when a live job was killed.
+#[cfg(windows)]
+pub async fn terminate_group(pgid: i32, grace: Duration) -> bool {
+    let Ok(pid) = u32::try_from(pgid) else {
+        return false;
+    };
+    let was_alive = od_job::alive(pid);
+    od_job::kill(pid);
+    wait_group_gone(pgid, grace).await;
+    was_alive
+}
+
+#[cfg(not(any(unix, windows)))]
 pub async fn terminate_group(_pgid: i32, _grace: Duration) -> bool {
     false
 }

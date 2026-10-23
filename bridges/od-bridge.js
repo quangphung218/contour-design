@@ -427,13 +427,32 @@
     return parts.join(' > ');
   }
 
+  var CODE_TAGS = /^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT)$/;
+
+  // The element's text as the source reads it: no script or style code,
+  // nothing of the bridge's own UI. Whitespace collapsed, capped.
+  function plainText(el) {
+    var out = '';
+    (function walk(n) {
+      for (var c = n.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType === 3) {
+          out += c.nodeValue;
+        } else if (c.nodeType === 1 && !CODE_TAGS.test(c.tagName.toUpperCase()) &&
+            !c.hasAttribute('data-od-bridge-ui')) {
+          walk(c);
+        }
+      }
+    })(el);
+    return out.replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+
   function describe(el) {
     var r = el.getBoundingClientRect();
     return {
       odId: el.getAttribute('data-od-id'),
       selector: selectorFor(el),
       tag: el.tagName.toLowerCase(),
-      text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+      text: plainText(el),
       rect: { x: r.left, y: r.top, width: r.width, height: r.height }
     };
   }
@@ -609,6 +628,361 @@
   }
 
   // ---------------------------------------------------------------------
+  // Inspect: read an element's computed style and override it inline.
+  // Each override remembers the inline value it replaced, so reset puts
+  // the element back exactly. Overrides are keyed by selector; the host
+  // replays its unsaved ones after a reload.
+  // ---------------------------------------------------------------------
+  var INSPECT_PROPS = [
+    'color', 'background-color', 'font-family', 'font-size', 'font-weight', 'line-height',
+    'letter-spacing', 'text-align', 'padding', 'margin', 'border', 'border-radius',
+    'width', 'height', 'opacity'
+  ];
+  var PROP_RE = /^-{0,2}[a-zA-Z][a-zA-Z0-9-]{0,63}$/;
+  var overrides = Object.create(null); // selector -> { prop -> {value, was, wasPriority} }
+
+  function find(selector) {
+    try {
+      return document.querySelector(String(selector));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function isTextOnly(el) {
+    if (!el || el.nodeType !== 1 || el.children.length) return false;
+    if (/^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|TEXTAREA|INPUT|SELECT|HTML|HEAD|BODY)$/.test(el.tagName)) {
+      return false;
+    }
+    return (el.textContent || '').trim().length > 0;
+  }
+
+  function inspectResult(selector) {
+    var el = find(selector);
+    if (!el) {
+      post('od:inspect-result', { selector: selector, missing: true });
+      return;
+    }
+    var cs = getComputedStyle(el);
+    var styles = {};
+    INSPECT_PROPS.forEach(function (p) {
+      styles[p] = cs.getPropertyValue(p);
+    });
+    var own = overrides[selector] || {};
+    var set = {};
+    Object.keys(own).forEach(function (p) {
+      set[p] = own[p].value;
+    });
+    var info = describe(el);
+    info.selector = selector;
+    info.styles = styles;
+    info.overrides = set;
+    info.textOnly = isTextOnly(el);
+    post('od:inspect-result', info);
+  }
+
+  function setOverride(selector, prop, value) {
+    var el = find(selector);
+    if (!el || !PROP_RE.test(String(prop))) return;
+    prop = String(prop).toLowerCase();
+    var own = overrides[selector] || (overrides[selector] = Object.create(null));
+    if (!own[prop]) {
+      own[prop] = { was: el.style.getPropertyValue(prop), wasPriority: el.style.getPropertyPriority(prop) };
+    }
+    own[prop].value = String(value);
+    el.style.setProperty(prop, own[prop].value);
+  }
+
+  function resetOverride(selector, prop) {
+    var own = overrides[selector];
+    if (!own) return;
+    var el = find(selector);
+    Object.keys(own).forEach(function (p) {
+      if (prop && p !== prop) return;
+      if (el) {
+        if (own[p].was) el.style.setProperty(p, own[p].was, own[p].wasPriority);
+        else el.style.removeProperty(p);
+      }
+      delete own[p];
+    });
+    if (!Object.keys(own).length) delete overrides[selector];
+  }
+
+  function extractOverrides() {
+    var items = [];
+    var css = '';
+    Object.keys(overrides).forEach(function (sel) {
+      var own = overrides[sel];
+      var body = Object.keys(own).map(function (p) {
+        items.push({ selector: sel, prop: p, value: own[p].value });
+        return '  ' + p + ': ' + own[p].value + ';';
+      });
+      if (body.length) css += sel + ' {\n' + body.join('\n') + '\n}\n';
+    });
+    post('od:inspect-overrides', { items: items, css: css });
+  }
+
+  // ---------------------------------------------------------------------
+  // Text edit: in edit mode a click on a text-only element makes it
+  // editable; Enter or leaving it commits, Esc restores. The host writes
+  // the change back to the source.
+  // ---------------------------------------------------------------------
+  var editMode = false;
+  var editDoc = null; // the host's file, echoed with each edit
+  var editing = null;
+
+  function finishEdit(commit) {
+    var cur = editing;
+    if (!cur) return;
+    editing = null;
+    var el = cur.el;
+    el.removeAttribute('contenteditable');
+    showOverlay(null);
+    if (!commit) {
+      el.textContent = cur.before;
+      return;
+    }
+    var text = el.textContent || '';
+    if (text === cur.before) return;
+    post('od:text-edit', {
+      selector: cur.selector,
+      odId: el.getAttribute('data-od-id'),
+      tag: el.tagName.toLowerCase(),
+      before: cur.before,
+      text: text,
+      doc: cur.doc
+    });
+  }
+
+  function startEdit(el) {
+    if (editing && editing.el === el) return;
+    finishEdit(true);
+    editing = { el: el, before: el.textContent || '', selector: selectorFor(el), doc: editDoc };
+    el.setAttribute('contenteditable', 'plaintext-only');
+    showOverlay(el);
+    el.focus();
+    try {
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (_) {}
+  }
+
+  function setEditMode(on, doc) {
+    editMode = !!on;
+    editDoc = typeof doc === 'string' ? doc : null;
+    if (!editMode) finishEdit(true);
+  }
+
+  document.addEventListener('click', function (e) {
+    if (!editMode || selectMode) return;
+    if (editing && editing.el.contains(e.target)) return;
+    if (!isTextOnly(e.target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    startEdit(e.target);
+  }, true);
+
+  document.addEventListener('keydown', function (e) {
+    if (!editing) return;
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      finishEdit(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      finishEdit(false);
+    }
+  }, true);
+
+  document.addEventListener('focusout', function (e) {
+    if (editing && e.target === editing.el) finishEdit(true);
+  }, true);
+
+  // ---------------------------------------------------------------------
+  // Palette: recolor the page in one of five presets. Chromatic colors
+  // take the preset's hue and keep their own lightness (and saturation,
+  // above a floor), so tints stay tints; mono-noir drops saturation.
+  // Root custom properties are recolored too. Everything set here is
+  // recorded and undone on the next swap.
+  // ---------------------------------------------------------------------
+  var PALETTES = {
+    coral: { hue: 10, floor: 0.55 },
+    electric: { hue: 262, floor: 0.55 },
+    'acid-forest': { hue: 142, floor: 0.55 },
+    risograph: { hue: 349, floor: 0.6 },
+    'mono-noir': { mono: true }
+  };
+  var PALETTE_WALK_LIMIT = 10000;
+  var paletteId = null;
+  var paletteUndo = [];
+  var colorProbe = null;
+
+  function rgbOf(value) {
+    var m = /^rgba?\(([^)]+)\)$/.exec(String(value || '').trim());
+    if (!m) return null;
+    var p = m[1].split(/[\s,/]+/).filter(Boolean).map(parseFloat);
+    if (p.length < 3) return null;
+    return { r: p[0] / 255, g: p[1] / 255, b: p[2] / 255, a: p.length > 3 ? p[3] : 1 };
+  }
+
+  function toHsl(c) {
+    var max = Math.max(c.r, c.g, c.b);
+    var min = Math.min(c.r, c.g, c.b);
+    var l = (max + min) / 2;
+    var d = max - min;
+    if (!d) return { h: 0, s: 0, l: l };
+    var s = d / (1 - Math.abs(2 * l - 1));
+    var h;
+    if (max === c.r) h = ((c.g - c.b) / d + 6) % 6;
+    else if (max === c.g) h = (c.b - c.r) / d + 2;
+    else h = (c.r - c.g) / d + 4;
+    return { h: h * 60, s: s, l: l };
+  }
+
+  function hslCss(h, s, l, a) {
+    var pct = function (x) {
+      return Math.round(Math.max(0, Math.min(1, x)) * 1000) / 10 + '%';
+    };
+    return 'hsl(' + Math.round(h) + ' ' + pct(s) + ' ' + pct(l) + (a < 1 ? ' / ' + a : '') + ')';
+  }
+
+  // The recolored value, or null for grays, near-black/white and faint paint.
+  function recolor(value, palette) {
+    var c = rgbOf(value);
+    if (!c || c.a < 0.3) return null;
+    var hsl = toHsl(c);
+    if (hsl.s < 0.08 || hsl.l < 0.04 || hsl.l > 0.98) return null;
+    if (palette.mono) return hslCss(0, 0, hsl.l, c.a);
+    return hslCss(palette.hue, Math.max(hsl.s, palette.floor * 0.7), hsl.l, c.a);
+  }
+
+  function computedColor(raw) {
+    if (!colorProbe) {
+      colorProbe = document.createElement('span');
+      colorProbe.setAttribute('data-od-bridge-ui', '');
+      colorProbe.style.display = 'none';
+      document.documentElement.appendChild(colorProbe);
+    }
+    colorProbe.style.color = '';
+    colorProbe.style.color = raw;
+    return colorProbe.style.color ? getComputedStyle(colorProbe).color : null;
+  }
+
+  function setInline(el, prop, value) {
+    paletteUndo.push({ el: el, prop: prop, was: el.style.getPropertyValue(prop), pri: el.style.getPropertyPriority(prop) });
+    el.style.setProperty(prop, value, 'important');
+  }
+
+  function rootTokens() {
+    var names = [];
+    var walk = function (rules) {
+      for (var i = 0; rules && i < rules.length; i++) {
+        var r = rules[i];
+        if (r.selectorText && /(^|,)\s*(:root|html|body)\s*(,|$)/.test(r.selectorText)) {
+          for (var j = 0; j < r.style.length; j++) {
+            if (r.style[j].indexOf('--') === 0) names.push(r.style[j]);
+          }
+        }
+        if (r.cssRules) walk(r.cssRules);
+      }
+    };
+    for (var s = 0; s < document.styleSheets.length; s++) {
+      try {
+        walk(document.styleSheets[s].cssRules);
+      } catch (_) {}
+    }
+    return names;
+  }
+
+  function applyPalette(id) {
+    for (var i = paletteUndo.length - 1; i >= 0; i--) {
+      var u = paletteUndo[i];
+      if (u.was) u.el.style.setProperty(u.prop, u.was, u.pri);
+      else u.el.style.removeProperty(u.prop);
+    }
+    paletteUndo = [];
+    var palette = PALETTES[id];
+    paletteId = palette ? id : null;
+    if (palette) {
+      var root = document.documentElement;
+      var cs = getComputedStyle(root);
+      rootTokens().forEach(function (name) {
+        var raw = cs.getPropertyValue(name).trim();
+        var next = raw && raw.indexOf('var(') < 0 ? recolor(computedColor(raw), palette) : null;
+        if (next) setInline(root, name, next);
+      });
+      var all = document.body ? document.body.getElementsByTagName('*') : [];
+      for (var k = 0; k < all.length && k < PALETTE_WALK_LIMIT; k++) {
+        var el = all[k];
+        if (el.hasAttribute('data-od-bridge-ui')) continue;
+        var st = getComputedStyle(el);
+        [['color', st.color], ['background-color', st.backgroundColor], ['border-color', st.borderTopColor],
+          ['fill', el.hasAttribute('fill') ? st.fill : ''], ['stroke', el.hasAttribute('stroke') ? st.stroke : '']]
+          .forEach(function (pair) {
+            var next = pair[1] ? recolor(pair[1], palette) : null;
+            if (next) setInline(el, pair[0], next);
+          });
+      }
+    }
+    post('od:palette-state', { id: paletteId });
+  }
+
+  // ---------------------------------------------------------------------
+  // Tweaks: the artifact declares its knobs as JSON in a
+  // `script[type="application/json"][data-od-tweaks]` element
+  // ({"tweaks": [...]}, see README.md) and the host draws the panel. A value lands on a root custom property
+  // (`var`) or a root attribute (`attr`); `od:tweak` fires on window too.
+  // ---------------------------------------------------------------------
+  var TWEAK_TYPES = { color: 1, range: 1, select: 1, toggle: 1, text: 1 };
+  var MAX_TWEAKS = 24;
+  var tweakDefs = [];
+
+  function readTweaks() {
+    var node = document.querySelector('script[type="application/json"][data-od-tweaks]');
+    if (!node) return [];
+    var list;
+    try {
+      var data = JSON.parse(node.textContent || 'null');
+      list = Array.isArray(data) ? data : data && data.tweaks;
+    } catch (_) {
+      return [];
+    }
+    if (!Array.isArray(list)) return [];
+    return list.filter(function (t) {
+      return t && typeof t.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(t.id) && TWEAK_TYPES[t.type] &&
+        ((typeof t.var === 'string' && /^--[A-Za-z0-9_-]{1,60}$/.test(t.var)) ||
+          (typeof t.attr === 'string' && /^data-[a-z0-9-]{1,40}$/.test(t.attr)));
+    }).slice(0, MAX_TWEAKS);
+  }
+
+  function setTweak(id, value) {
+    var def = null;
+    for (var i = 0; i < tweakDefs.length; i++) if (tweakDefs[i].id === id) def = tweakDefs[i];
+    if (!def) return;
+    var v = value;
+    if (def.type === 'toggle') {
+      var on = v === true || v === 'true';
+      v = on ? (def.on != null ? def.on : 'true') : (def.off != null ? def.off : 'false');
+    }
+    v = String(v).slice(0, 200);
+    if (def.type === 'range' && def.unit) v += String(def.unit);
+    if (def.var) document.documentElement.style.setProperty(def.var, v);
+    else document.documentElement.setAttribute(def.attr, v);
+    try {
+      window.dispatchEvent(new CustomEvent('od:tweak', { detail: { id: id, value: v } }));
+    } catch (_) {}
+  }
+
+  function announceTweaks() {
+    tweakDefs = readTweaks();
+    post('od:tweaks', { tweaks: tweakDefs });
+  }
+
+  // ---------------------------------------------------------------------
   // Host messages. Registered before any author listener, so a deck that
   // speaks `od:slide` itself is not driven twice.
   // ---------------------------------------------------------------------
@@ -639,6 +1013,49 @@
         lastSize = '';
         queueSize();
         break;
+      case 'od:inspect':
+        inspectResult(String(data.selector || ''));
+        break;
+      case 'od:inspect-set':
+        setOverride(String(data.selector || ''), data.prop, data.value);
+        inspectResult(String(data.selector || ''));
+        break;
+      case 'od:inspect-reset':
+        if (data.selector == null) {
+          Object.keys(overrides).forEach(function (sel) {
+            resetOverride(sel, null);
+          });
+        } else {
+          resetOverride(String(data.selector), data.prop ? String(data.prop) : null);
+          inspectResult(String(data.selector));
+        }
+        break;
+      case 'od:inspect-replay':
+        // Only onto an element that still has the tag and text it had when
+        // the override was set: a script may have moved the path.
+        (Array.isArray(data.items) ? data.items.slice(0, MAX_LOCATE) : []).forEach(function (it) {
+          if (!it) return;
+          var el = find(String(it.selector || ''));
+          if (!el || (it.tag && (el.tagName.toLowerCase() !== String(it.tag) ||
+              plainText(el) !== String(it.text || '')))) return;
+          setOverride(String(it.selector || ''), it.prop, it.value);
+        });
+        break;
+      case 'od:inspect-extract':
+        extractOverrides();
+        break;
+      case 'od:edit-mode':
+        setEditMode(data.enabled, data.doc);
+        break;
+      case 'od:palette':
+        applyPalette(typeof data.id === 'string' ? data.id : null);
+        break;
+      case 'od:tweaks-request':
+        announceTweaks();
+        break;
+      case 'od:tweak-set':
+        setTweak(String(data.id || ''), data.value);
+        break;
       default:
         break;
     }
@@ -647,10 +1064,14 @@
   function onReady() {
     post('od:ready', {
       protocolVersion: PROTOCOL_VERSION,
-      capabilities: ['deck', 'selection', 'locate', 'snapshot', 'size', 'redirect-guard', 'storage-shim']
+      capabilities: [
+        'deck', 'selection', 'locate', 'snapshot', 'size', 'redirect-guard', 'storage-shim',
+        'inspect', 'text-edit', 'palette', 'tweaks'
+      ]
     });
     watchSize();
     announceDeck();
+    announceTweaks();
   }
 
   if (document.readyState === 'loading') {

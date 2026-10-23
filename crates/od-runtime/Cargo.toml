@@ -23,6 +23,9 @@ uuid.workspace = true
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+od-job.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
 

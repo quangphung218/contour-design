@@ -8,7 +8,8 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long a `--version` or help probe may take.
+pub const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// First executable named `bin` (then each fallback) on `path`.
 #[must_use]
@@ -46,13 +47,13 @@ fn is_executable(path: &Path) -> bool {
 
 /// Runs `bin args…` with `PATH = path`; `None` when it could not run or
 /// timed out. Exit status is ignored: a CLI that rejects the flag still ran.
-async fn probe(bin: &Path, args: &[&str], path: &OsStr) -> Option<String> {
+async fn probe(bin: &Path, args: &[&str], path: &OsStr, timeout: Duration) -> Option<String> {
     let mut cmd = tokio::process::Command::new(bin);
     cmd.args(args)
         .env("PATH", path)
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
-    let out = tokio::time::timeout(PROBE_TIMEOUT, cmd.output())
+    let out = tokio::time::timeout(timeout, cmd.output())
         .await
         .ok()?
         .ok()?;
@@ -61,19 +62,26 @@ async fn probe(bin: &Path, args: &[&str], path: &OsStr) -> Option<String> {
     Some(text)
 }
 
-/// Help flags of `def` that `bin` advertises.
-pub async fn probe_capabilities(def: &RuntimeDef, bin: &Path, path: &OsStr) -> Vec<String> {
+/// Help flags of `def` that `bin` advertises; `None` when the help probe
+/// could not run or timed out (a first exec can be slow: macOS scans a
+/// new binary), so the caller can try again rather than keep "no flags".
+pub async fn probe_capabilities(
+    def: &RuntimeDef,
+    bin: &Path,
+    path: &OsStr,
+    timeout: Duration,
+) -> Option<Vec<String>> {
     if def.help_flags.is_empty() {
-        return Vec::new();
+        return Some(Vec::new());
     }
-    let Some(help) = probe(bin, def.help_args, path).await else {
-        return Vec::new();
-    };
-    def.help_flags
-        .iter()
-        .filter(|flag| help.contains(*flag))
-        .map(|flag| (*flag).to_owned())
-        .collect()
+    let help = probe(bin, def.help_args, path, timeout).await?;
+    Some(
+        def.help_flags
+            .iter()
+            .filter(|flag| help.contains(*flag))
+            .map(|flag| (*flag).to_owned())
+            .collect(),
+    )
 }
 
 fn unavailable(def: &RuntimeDef, error: Option<String>) -> AgentInfo {
@@ -109,15 +117,15 @@ pub async fn detect(def: &RuntimeDef, path: &OsStr, byok_configured: bool) -> Ag
     };
     info.path = Some(bin.to_string_lossy().into_owned());
     let (version, capabilities) = tokio::join!(
-        probe(&bin, def.version_args, path),
-        probe_capabilities(def, &bin, path)
+        probe(&bin, def.version_args, path, PROBE_TIMEOUT),
+        probe_capabilities(def, &bin, path, PROBE_TIMEOUT)
     );
     info.available = true;
     info.version = version
         .as_deref()
         .and_then(|v| v.lines().map(str::trim).find(|l| !l.is_empty()))
         .map(str::to_owned);
-    info.capabilities = capabilities;
+    info.capabilities = capabilities.unwrap_or_default();
     info
 }
 

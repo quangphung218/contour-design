@@ -16,6 +16,8 @@ pub enum Format {
     PdfVector,
     /// PowerPoint with one full-bleed image per slide.
     Pptx,
+    /// PowerPoint with native text boxes, shapes and pictures.
+    PptxEditable,
     /// PNG or JPEG: a slide, the stitched deck, or the full page.
     Image,
     /// ZIP of the project (or of --root).
@@ -75,6 +77,7 @@ pub fn run(client: &Client, args: ExportArgs, json: bool) -> anyhow::Result<()> 
             Format::Pdf => "pdf-image",
             Format::PdfVector => "pdf",
             Format::Pptx => "pptx",
+            Format::PptxEditable => "pptx-editable",
             Format::Image => "image",
             Format::Mp4 => "mp4",
             Format::Zip => unreachable!("handled above"),

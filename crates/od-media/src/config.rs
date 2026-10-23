@@ -149,6 +149,12 @@ impl ConfigFile {
     /// # Errors
     /// Unknown providers, non-http(s) base URLs, I/O.
     pub fn write(&self, body: &Value) -> Result<(), ConfigError> {
+        self.write_with(body, || {})
+    }
+
+    /// [`Self::write`] with a hook between reading the stored config and
+    /// writing the new one, where a racing PUT would slip in.
+    fn write_with(&self, body: &Value, after_read: impl FnOnce()) -> Result<(), ConfigError> {
         // Read-modify-write of one file: concurrent PUTs take turns.
         static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _guard = WRITE_LOCK
@@ -160,6 +166,7 @@ impl ConfigFile {
             .cloned()
             .unwrap_or_default();
         let prior = self.read();
+        after_read();
         let mut next = StoredConfig::default();
         for (id, entry) in incoming {
             let provider = Provider::parse(&id)
@@ -278,6 +285,53 @@ mod tests {
         let v: Value = serde_json::from_str(&text).unwrap();
         let key = v["providers"]["openai"]["apiKey"].as_str().unwrap();
         assert!(key.starts_with("sk-") && key.contains("-39"), "{key}");
+    }
+
+    /// Two PUTs race: A (keep the key, change the model) has read the old
+    /// key when B (new key) arrives. Without the lock B lands while A is
+    /// paused and A then writes the old key back: B's update is lost.
+    #[test]
+    fn a_racing_put_is_not_lost() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let tmp = tempfile::tempdir().unwrap();
+        let file = ConfigFile::in_dir(tmp.path());
+        file.write(&json!({ "providers": { "openai": { "apiKey": "sk-old-1111" } } }))
+            .unwrap();
+        let (read_tx, read_rx) = mpsc::channel::<()>();
+        let (b_done_tx, b_done_rx) = mpsc::channel::<()>();
+        let a = {
+            let file = file.clone();
+            std::thread::spawn(move || {
+                let body = json!({ "providers": { "openai": {
+                    "apiKey": "", "preserveApiKey": true, "model": "gpt-image-1"
+                } } });
+                file.write_with(&body, || {
+                    read_tx.send(()).unwrap();
+                    // B either finishes now (no lock: the race) or is
+                    // blocked behind A (lock held): wait a bounded time.
+                    let _ = b_done_rx.recv_timeout(Duration::from_millis(300));
+                })
+            })
+        };
+        read_rx.recv().unwrap();
+        let b = {
+            let file = file.clone();
+            std::thread::spawn(move || {
+                let res =
+                    file.write(&json!({ "providers": { "openai": { "apiKey": "sk-new-2222" } } }));
+                let _ = b_done_tx.send(());
+                res
+            })
+        };
+        a.join().unwrap().unwrap();
+        b.join().unwrap().unwrap();
+        let creds = file.credentials(Provider::OpenAi, &no_env);
+        assert_eq!(
+            creds.api_key.as_deref(),
+            Some("sk-new-2222"),
+            "the later PUT's key survives"
+        );
     }
 
     #[test]

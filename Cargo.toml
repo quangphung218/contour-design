@@ -22,6 +22,10 @@ od-render-cdp = { path = "crates/od-render-cdp" }
 od-mcp = { path = "crates/od-mcp" }
 od-live = { path = "crates/od-live" }
 od-media = { path = "crates/od-media" }
+od-job = { path = "crates/od-job" }
+od-term = { path = "crates/od-term" }
+od-automation = { path = "crates/od-automation" }
+od-mcp-client = { path = "crates/od-mcp-client" }
 
 anyhow = "1"
 arc-swap = "1"
@@ -41,6 +45,7 @@ nix = { version = "0.30", default-features = false, features = ["signal", "proce
 notify = "8"
 notify-debouncer-full = "0.7"
 png = "0.18"
+quick-xml = "0.38"
 rayon = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking"] }

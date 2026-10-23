@@ -242,6 +242,40 @@ impl Store {
             .ok_or(StoreError::ConversationNotFound)
     }
 
+    /// Changes a conversation's session mode or title. The next run of
+    /// the conversation uses the new mode.
+    ///
+    /// # Errors
+    /// [`StoreError::ConversationNotFound`] or SQLite errors.
+    pub fn update_conversation(
+        &self,
+        project_id: &str,
+        id: &str,
+        req: od_contracts::UpdateConversationRequest,
+    ) -> Result<Conversation> {
+        let mut conversation = self.get_conversation(project_id, id)?;
+        if let Some(mode) = req.session_mode {
+            conversation.session_mode = mode;
+        }
+        if let Some(title) = req.title {
+            conversation.title = Some(title.trim().to_owned()).filter(|t| !t.is_empty());
+        }
+        conversation.updated_at = crate::now_ms().max(conversation.updated_at);
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE conversations SET session_mode = ?2, title = ?3, updated_at = ?4 WHERE id = ?1",
+                params![
+                    id,
+                    mode_str(conversation.session_mode),
+                    conversation.title,
+                    conversation.updated_at
+                ],
+            )?;
+            Ok(())
+        })?;
+        Ok(conversation)
+    }
+
     /// The project's most recently updated conversation, created when the
     /// project has none.
     ///
@@ -513,6 +547,15 @@ impl Store {
             let last = last.and_then(|v| u64::try_from(v).ok()).unwrap_or(0);
             self.finish_assistant_message(id, content, RunStatus::Failed, last)?;
         }
+        // Comments a dead run was applying go back to the next turn.
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE preview_comments SET status = 'attached', updated_at = ?1 \
+                 WHERE status = 'applying'",
+                [crate::now_ms()],
+            )?;
+            Ok(())
+        })?;
         Ok(ids.len())
     }
 
@@ -755,5 +798,82 @@ mod tests {
             .unwrap_or_else(|e| panic!("{e}"));
         let moved = store.upsert_message(&other.id, "u1", MessageRole::User, "hijack", None);
         assert!(matches!(moved, Err(StoreError::BadRequest(_))));
+    }
+
+    #[test]
+    fn a_dead_run_hands_its_comments_back_and_mode_changes_stick() {
+        use od_contracts::{CommentStatus, CreateCommentRequest, UpdateConversationRequest};
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let store = Store::open(DataDir::new(tmp.path())).unwrap_or_else(|e| panic!("{e}"));
+        let (project, conv) = store
+            .create_project(CreateProjectRequest {
+                name: "p".into(),
+                ..CreateProjectRequest::default()
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        let comment = |status| {
+            store
+                .create_comment(
+                    &project.id,
+                    &conv,
+                    CreateCommentRequest {
+                        file_path: "index.html".into(),
+                        element_id: String::new(),
+                        selector: "h1".into(),
+                        label: String::new(),
+                        text: String::new(),
+                        position: od_contracts::CommentRect::default(),
+                        html_hint: String::new(),
+                        slide_index: None,
+                        note: "bigger".into(),
+                        status: Some(status),
+                    },
+                )
+                .unwrap_or_else(|e| panic!("{e}"))
+        };
+        let applying = comment(CommentStatus::Applying);
+        let resolved = comment(CommentStatus::Resolved);
+        store
+            .begin_turn(&NewTurn {
+                conversation_id: &conv,
+                user_message_id: "u1",
+                assistant_message_id: "a1",
+                content: "fix it",
+                attachments: &[],
+                agent_id: "claude",
+                run_id: "r1",
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(store.fail_interrupted_messages().ok(), Some(1));
+        let status = |id: &str| {
+            store
+                .list_comments(&project.id, &conv)
+                .unwrap_or_default()
+                .into_iter()
+                .find(|c| c.id == id)
+                .map(|c| c.status)
+        };
+        assert_eq!(status(&applying.id), Some(CommentStatus::Attached));
+        assert_eq!(status(&resolved.id), Some(CommentStatus::Resolved));
+
+        let changed = store
+            .update_conversation(
+                &project.id,
+                &conv,
+                UpdateConversationRequest {
+                    session_mode: Some(SessionMode::Plan),
+                    title: Some("  Plan  ".into()),
+                },
+            )
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(changed.title.as_deref(), Some("Plan"));
+        let read = store
+            .get_conversation(&project.id, &conv)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(read.session_mode, SessionMode::Plan);
+        assert!(matches!(
+            store.update_conversation(&project.id, "nope", UpdateConversationRequest::default()),
+            Err(StoreError::ConversationNotFound)
+        ));
     }
 }

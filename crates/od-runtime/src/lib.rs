@@ -8,6 +8,7 @@
 
 pub mod artifact;
 pub mod byok;
+pub mod critique;
 pub mod def;
 pub mod detect;
 pub mod engine;
@@ -19,5 +20,5 @@ pub mod stage;
 pub mod tokens;
 
 pub use def::{PermissionMode, RuntimeDef};
-pub use engine::{EngineConfig, LaunchSpec, RunEngine, RunOutcome, SteerError};
+pub use engine::{EngineConfig, LaunchSpec, McpLaunch, RunEngine, RunOutcome, SteerError};
 pub use tokens::ToolTokens;

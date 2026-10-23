@@ -62,6 +62,9 @@ pub async fn daemon_with(opts: Options) -> Daemon {
     engine.idle_timeout = opts.idle_timeout;
     engine.kill_grace = opts.kill_grace;
     engine.retry_base = Duration::from_millis(50);
+    // A mock's first exec can take seconds on a loaded Mac (it scans new
+    // binaries); tests assert the flags the help probe finds.
+    engine.probe_timeout = Duration::from_secs(60);
     engine.base_env.extend(
         opts.extra_env
             .into_iter()
@@ -82,6 +85,7 @@ pub async fn daemon_with(opts: Options) -> Daemon {
         }),
         runs: Arc::new(RunContext::new(Arc::clone(&runs), engine)),
         preview: od_server::Preview::default(),
+        platform: od_server::Platform::from_env(),
     };
     let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move {

@@ -83,7 +83,7 @@ async fn handoff(
     Ok(ApiJson(HandoffResponse { dir, prompt }))
 }
 
-fn opener() -> String {
+pub(crate) fn opener() -> String {
     if let Some(cmd) = std::env::var(OPEN_COMMAND_ENV)
         .ok()
         .filter(|c| !c.trim().is_empty())

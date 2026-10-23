@@ -123,6 +123,7 @@ pub fn SettingsPage() -> impl IntoView {
                     T::PermAskDetail,
                 )}
             </div>
+            <super::agent_w3::AskModeWarning/>
 
             <h2>{t(T::Appearance)}</h2>
             <div class="segmented" role="radiogroup" aria-label=t(T::Appearance)>
@@ -174,6 +175,9 @@ pub fn SettingsPage() -> impl IntoView {
                 }}
                 <button class="btn primary" data-testid="save-settings" on:click=save>{t(T::Save)}</button>
             </div>
+
+            // Saved on its own: the servers live in mcp-config.json.
+            <super::mcp_settings::McpSection/>
         </section>
     }
 }

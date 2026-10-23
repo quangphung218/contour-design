@@ -3,13 +3,16 @@
 //! tab, Ctrl+Tab cycle; arrows/Home/End drive a deck, Esc leaves present
 //! and comment modes (spec 1.2).
 
+use super::agent_w3::{SideChat, SideChatView, is_side_chat_title};
 use super::bridge::{self, Source};
 use super::chat_view::{ChatItem, ChatPane};
 use super::deck::{DeckBar, NotesPanel, ThumbRail};
 use super::export_menu::ExportMenu;
 use super::preview_comments::CommentLayer;
+use super::preview_tools::{self, DrawLayer, Tool, ToolBar, ToolPanel, Tools};
 use super::sse::Sse;
 use super::switcher::QuickSwitcher;
+use super::terminal::{self, TermTab, TerminalView};
 use super::versions::VersionsPanel;
 use super::{Shell, api};
 use crate::chat::{AssistantTurn, Block, TurnState};
@@ -25,8 +28,9 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use od_contracts::{
     CommentAttachment, CommentRect, CommentStatus, CommentsResponse, Conversation,
-    ConversationResponse, CreateVersionRequest, FileKind, FilesResponse, PreviewComment, Project,
-    ProjectFile, ProjectResponse, UpdateCommentRequest, VersionSource,
+    ConversationResponse, CreateVersionRequest, FileKind, FilesResponse, MemoryEntry,
+    PreviewComment, Project, ProjectFile, ProjectResponse, SessionMode, UpdateCommentRequest,
+    VersionSource,
 };
 use send_wrapper::SendWrapper;
 use serde_json::json;
@@ -85,6 +89,10 @@ pub struct StudioCtx {
     pub files: RwSignal<Vec<ProjectFile>>,
     /// Open file tabs; the active tab is the previewed file.
     pub tabs: RwSignal<Tabs>,
+    /// Terminal tabs, after the file tabs.
+    pub terms: RwSignal<Vec<TermTab>>,
+    /// The terminal shown instead of the preview, if any.
+    pub active_term: RwSignal<Option<String>>,
     /// Recently opened files, newest first (quick switcher).
     pub recent: RwSignal<Vec<String>>,
     /// Bumped to reload the preview iframe.
@@ -107,6 +115,14 @@ pub struct StudioCtx {
     pub switcher_open: RwSignal<bool>,
     pub history_open: RwSignal<bool>,
     pub viewing: RwSignal<Option<ViewedVersion>>,
+    /// Inspect, text edit, draw, tweaks, palette, lint (spec 1.2).
+    pub tools: Tools,
+    /// Mode of the open conversation, sent with each run.
+    pub session_mode: RwSignal<SessionMode>,
+    /// The project's Design Jury switch.
+    pub jury: RwSignal<bool>,
+    pub memory: RwSignal<Vec<MemoryEntry>>,
+    pub side: SideChat,
     /// Last slide shown per deck file, restored when the deck reloads.
     last_slide: StoredValue<Option<(String, u32)>>,
     run_stream: StoredValue<Option<SendWrapper<Sse>>>,
@@ -160,6 +176,8 @@ impl StudioCtx {
 
     /// Opens `path` in a tab (or switches to its tab).
     pub fn open_file(self, path: &str) {
+        self.side.open.set(false);
+        self.active_term.set(None);
         self.tabs.update(|t| t.open(path));
         self.recent.update(|r| touch_recent(r, path));
         self.viewing.set(None);
@@ -269,12 +287,19 @@ impl StudioCtx {
                 .collect(),
             model,
             locale: Some(shell.locale.get_untracked().tag().to_owned()),
+            session_mode: Some(self.session_mode.get_untracked()),
+            attachments: self.tools.attachments.get_untracked(),
             ..ChatRequest::default()
         };
+        self.tools.deliverable.set(None);
         self.live_run.set(Some(String::new()));
+        let req_attachments = req.attachments.clone();
         leptos::task::spawn_local(async move {
             match api::post::<_, CreateRunResponse>("/api/runs", &req).await {
                 Ok(res) => {
+                    self.tools.attachments.update(|a| {
+                        a.retain(|p| !req_attachments.contains(p));
+                    });
                     self.conversation_id.set(Some(res.conversation_id));
                     turn.update(|t| t.run_id = Some(res.run_id.clone()));
                     self.attach(res.run_id, turn, Some(text));
@@ -346,6 +371,7 @@ impl StudioCtx {
         self.live_run.set(Some(run_id.clone()));
         let url = format!("/api/runs/{}/events", api::seg(&run_id));
         let prompt = StoredValue::new(prompt);
+        let run = StoredValue::new(run_id);
         let stream = Sse::open(
             &url,
             &["start", "agent", "error", "end"],
@@ -365,9 +391,13 @@ impl StudioCtx {
                     self.refresh_files();
                 }
                 if let Some(status) = ended {
+                    if turn.with_untracked(|t| t.critique.is_some()) {
+                        self.settle_jury(turn);
+                    }
                     if status == RunStatus::Succeeded {
                         let files = turn.with_untracked(AssistantTurn::touched_files);
                         self.record_versions(files, prompt.get_value());
+                        self.check_deliverable(run.get_value());
                     }
                     self.finish_run(shell);
                 }
@@ -482,6 +512,10 @@ impl StudioCtx {
     /// Shows `cid`: its messages, its comments, and its live run if any.
     pub async fn open_conversation(self, cid: String) {
         self.conversation_id.set(Some(cid.clone()));
+        let mode = self
+            .conversations
+            .with_untracked(|list| list.iter().find(|c| c.id == cid).map(|c| c.session_mode));
+        self.session_mode.set(mode.unwrap_or_default());
         self.items.set(Vec::new());
         self.comments.set(Vec::new());
         let base = self.conversation_base(&cid);
@@ -593,6 +627,9 @@ impl StudioCtx {
     }
 
     pub fn set_comment_mode(self, on: bool) {
+        if on {
+            self.leave_tool();
+        }
         self.comment_mode.set(on);
         if !on {
             self.comment_draft.set(None);
@@ -612,6 +649,7 @@ impl StudioCtx {
                 }
                 self.pin_rects.set(HashMap::new());
                 self.frame_ready.update(|n| *n = n.wrapping_add(1));
+                self.tools_ready();
             }
             (Source::Main, BridgeMsg::Located { items }) => {
                 self.pin_rects.set(
@@ -644,10 +682,15 @@ impl StudioCtx {
             (Source::Main, BridgeMsg::Select(picked)) => {
                 if self.comment_mode.get_untracked() {
                     self.comment_draft.set(Some(picked));
+                } else if self.tools.tool.get_untracked() == Some(Tool::Inspect) {
+                    self.inspect(&picked.selector);
                 }
             }
             (Source::Thumb(i), BridgeMsg::DeckReady { .. }) => {
                 bridge::post_thumb(i, &Slide::Go(i).message());
+            }
+            (Source::Main, msg) => {
+                self.on_tool_msg(&msg);
             }
             _ => {}
         }
@@ -663,7 +706,9 @@ impl StudioCtx {
                     true
                 }
                 "w" => {
-                    if let Some(active) = self.active_untracked() {
+                    if let Some(term) = self.active_term.get_untracked() {
+                        terminal::close(self, term);
+                    } else if let Some(active) = self.active_untracked() {
                         self.tabs.update(|t| t.close(&active));
                     }
                     true
@@ -693,6 +738,8 @@ impl StudioCtx {
                 self.presenting.set(false);
             } else if self.comment_mode.get_untracked() {
                 self.set_comment_mode(false);
+            } else if self.tools.tool.get_untracked().is_some() {
+                self.set_tool(None);
             }
             return;
         }
@@ -724,12 +771,23 @@ impl StudioCtx {
         self.project.set(Some(project));
         self.refresh_files();
         self.watch_project();
+        self.load_w3();
+        terminal::restore(self);
 
         let conversations = api::get::<ConversationsResponse>(&format!("{base}/conversations"))
             .await
             .map(|r| r.conversations)
             .unwrap_or_default();
-        let first = conversations.first().map(|c| c.id.clone());
+        // The side chat keeps its own conversation out of the main pane.
+        let side = conversations
+            .iter()
+            .find(|c| is_side_chat_title(c.title.as_deref()))
+            .map(|c| c.id.clone());
+        self.side.conversation_id.set(side.clone());
+        let first = conversations
+            .iter()
+            .find(|c| Some(&c.id) != side.as_ref())
+            .map(|c| c.id.clone());
         self.conversations.set(conversations);
         if let Some(cid) = first {
             self.open_conversation(cid).await;
@@ -765,6 +823,7 @@ fn is_editing(ev: &web_sys::KeyboardEvent) -> bool {
     };
     matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT")
         || el.get_attribute("contenteditable").is_some()
+        || el.get_attribute("data-terminal").is_some()
 }
 
 fn fail(turn: RwSignal<AssistantTurn>, message: String) {
@@ -790,6 +849,8 @@ pub fn Studio() -> impl IntoView {
         queue: RwSignal::new(Vec::new()),
         files: RwSignal::new(Vec::new()),
         tabs: RwSignal::new(Tabs::default()),
+        terms: RwSignal::new(Vec::new()),
+        active_term: RwSignal::new(None),
         recent: RwSignal::new(Vec::new()),
         preview_rev: RwSignal::new(0),
         notice: RwSignal::new(None),
@@ -805,11 +866,17 @@ pub fn Studio() -> impl IntoView {
         switcher_open: RwSignal::new(false),
         history_open: RwSignal::new(false),
         viewing: RwSignal::new(None),
+        session_mode: RwSignal::new(SessionMode::default()),
+        jury: RwSignal::new(false),
+        memory: RwSignal::new(Vec::new()),
+        side: SideChat::new(),
+        tools: Tools::new(),
         last_slide: StoredValue::new(None),
         run_stream: StoredValue::new(None),
         project_stream: StoredValue::new(None),
     };
     provide_context(ctx);
+    preview_tools::watch_lint(ctx);
 
     // Wait for settings so the first turn uses the configured agent.
     let started = StoredValue::new(false);
@@ -830,6 +897,7 @@ pub fn Studio() -> impl IntoView {
         messages.remove();
         ctx.run_stream.set_value(None);
         ctx.project_stream.set_value(None);
+        ctx.side.close_stream();
     });
 
     view! {
@@ -902,10 +970,17 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
         <div class="tabs" role="tablist" data-testid="tabs">
             {move || {
                 let tabs = ctx.tabs.get();
-                tabs.open
+                let side_open = ctx.side.open.get();
+                let side_tab = view! {
+                    <div class="tab side-tab" class:active=side_open role="tab" aria-selected=side_open.to_string() data-testid="side-chat-tab" title=t(T::SideChatHint)>
+                        <button class="tab-name" on:click=move |_| ctx.side.show(ctx)>{format!("💬 {}", t(T::SideChat))}</button>
+                    </div>
+                };
+                let term_active = ctx.active_term.with(Option::is_some);
+                let files = tabs.open
                     .iter()
                     .map(|path| {
-                        let active = tabs.active.as_deref() == Some(path.as_str());
+                        let active = !side_open && !term_active && tabs.active.as_deref() == Some(path.as_str());
                         let name = path.rsplit('/').next().unwrap_or(path).to_owned();
                         let open = path.clone();
                         let close = path.clone();
@@ -923,8 +998,38 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                             </div>
                         }
                     })
+                    .collect_view();
+                view! { {files}{side_tab} }
+            }}
+            {move || {
+                ctx.terms
+                    .get()
+                    .into_iter()
+                    .map(|term| {
+                        let active = !ctx.side.open.get() && ctx.active_term.with(|a| a.as_deref() == Some(term.id.as_str()));
+                        let (show, close) = (term.id.clone(), term.id.clone());
+                        view! {
+                            <div class="tab term-tab" class:active=active role="tab" aria-selected=active.to_string() data-testid="terminal-tab">
+                                <button class="tab-name" on:click=move |_| { ctx.side.open.set(false); ctx.active_term.set(Some(show.clone())); }>
+                                    {tf(T::TerminalTab, &[&term.number.to_string()])}
+                                </button>
+                                <button
+                                    class="tab-close"
+                                    title=t(T::CloseTerminal)
+                                    aria-label=t(T::CloseTerminal)
+                                    data-testid="terminal-close"
+                                    on:click=move |_| terminal::close(ctx, close.clone())
+                                >
+                                    "×"
+                                </button>
+                            </div>
+                        }
+                    })
                     .collect_view()
             }}
+            <button class="icon-btn tab-add" title=t(T::NewTerminal) aria-label=t(T::NewTerminal) data-testid="new-terminal" on:click=move |_| terminal::open(ctx)>
+                ">_"
+            </button>
         </div>
     }
 }
@@ -972,6 +1077,9 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     view! {
         <section class="preview" class:presenting=move || ctx.presenting.get() data-testid="preview-pane">
             <TabsBar ctx=ctx/>
+            <Show when=move || !ctx.side.open.get() fallback=move || view! { <SideChatView ctx=ctx/> }>
+            {move || ctx.active_term.get().map(|id| view! { <TerminalView id=id/> })}
+            <div class="preview-main" style=move || if ctx.active_term.with(Option::is_some) { "display:none" } else { "display:contents" }>
             <div class="pane-head">
                 <span class="pane-title mono">{move || ctx.active().unwrap_or_default()}</span>
                 <div class="segmented small">
@@ -1009,6 +1117,9 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <button class="icon-btn" title=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>"↻"</button>
             </div>
             <DeckBar ctx=ctx/>
+            <Show when=move || is_html() && ctx.viewing.with(Option::is_none)>
+                <ToolBar ctx=ctx/>
+            </Show>
             {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{t(T::CommentModeOn)}</p> })}
             <div class="preview-body">
                 <ThumbRail ctx=ctx src=src/>
@@ -1038,6 +1149,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                                     src=url
                                 ></iframe>
                                 <CommentLayer ctx=ctx/>
+                                {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
                             </div>
                         }.into_any(),
                     }}
@@ -1045,8 +1157,13 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <Show when=move || ctx.history_open.get() && !ctx.presenting.get()>
                     <VersionsPanel ctx=ctx/>
                 </Show>
+                <Show when=move || !ctx.presenting.get()>
+                    <ToolPanel ctx=ctx/>
+                </Show>
             </div>
             <NotesPanel ctx=ctx/>
+            </div>
+            </Show>
         </section>
     }
 }

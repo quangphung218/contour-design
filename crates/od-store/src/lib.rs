@@ -6,8 +6,10 @@ pub mod chat;
 pub mod comments;
 pub mod data_dir;
 pub mod db;
+pub mod edit;
 pub mod error;
 pub mod files;
+pub mod memory;
 pub mod paths;
 pub mod store;
 pub mod versions;
@@ -16,6 +18,7 @@ pub use chat::{AgentSession, NewTurn};
 pub use data_dir::{DATA_DIR_ENV, DataDir};
 pub use error::{Result, StoreError};
 pub use files::ProjectRoot;
+pub use memory::memory_from_message;
 pub use store::{PROJECT_MANIFEST_PATH, Store};
 
 /// Current time as Unix epoch milliseconds.

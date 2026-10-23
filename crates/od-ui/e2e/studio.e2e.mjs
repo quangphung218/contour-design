@@ -4,8 +4,12 @@
 // turn reloads the preview → question form → plan pill, queue, steer, stop →
 // history after reload → preview comments sent with a turn → deck viewer
 // (next, thumbnails, notes, present, Esc) → quick switcher and tabs →
-// version restore → fork → export and handoff → open folder → settings and
-// Vietnamese. Every request leaving loopback is blocked and fails the test.
+// version restore → fork → export and handoff → open folder → session mode,
+// memory, side chat, conversation export, Design Jury → terminal tab (echo,
+// reattach, close) → routine run by the mock agent → MCP stdio server →
+// settings and Vietnamese → preview tools (lint, deliverable check, palette,
+// tweaks, inspect, text edit, drawn annotation) → Ask-mode warning. Every
+// request leaving loopback is blocked and fails the test.
 //
 // Run through ./run.sh (builds the bundle and `od` first).
 
@@ -55,7 +59,8 @@ mkdirSync(OUT, { recursive: true });
 const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
   stdio: ['ignore', 'inherit', 'inherit'],
   // `true` stands in for Finder/xdg-open so handoff never opens a window.
-  env: { ...process.env, OD_DATA_DIR: data, PATH: `${MOCK_AGENTS}:/usr/bin:/bin`, OD_OPEN_COMMAND: '/usr/bin/true' },
+  // SHELL: terminal tabs run a plain sh, not the developer's own rc files.
+  env: { ...process.env, OD_DATA_DIR: data, PATH: `${MOCK_AGENTS}:/usr/bin:/bin`, OD_OPEN_COMMAND: '/usr/bin/true', SHELL: '/bin/sh' },
 });
 let browser;
 const results = {};
@@ -309,6 +314,167 @@ try {
   rmSync(folder, { recursive: true, force: true });
   results.projects = 'ok';
 
+  // 15b. W3-agent: session mode, memory, side chat, conversation export
+  // and the Design Jury, on the tea shop project.
+  const projectId = new URL(projectUrl).pathname.split('/').pop();
+  const api = async (path, init) => (await fetch(`${BASE}/api/projects/${projectId}${path}`, init)).json();
+  await page.goto(projectUrl);
+  await assistant.first().waitFor();
+  const conversationsNow = (await api('/conversations')).conversations.map((c) => c.id);
+  await until(async () => conversationsNow.includes(await page.getByTestId('conversation').inputValue()), 'conversation open');
+  const mainCid = await page.getByTestId('conversation').inputValue();
+  const sendMain = async (text) => {
+    await page.getByTestId('composer').fill(text);
+    await page.getByTestId('composer').press('Enter');
+  };
+  const settledMain = async (before, label) => {
+    await until(async () => (await assistant.count()) === before + 1, `${label} started`);
+    await until(async () => (await assistant.last().getAttribute('data-state')) === 'succeeded', `${label} done`);
+    await page.getByTestId('stop').waitFor({ state: 'hidden' });
+  };
+  const mode = (m) => page.getByTestId('session-mode').locator(`[data-mode="${m}"]`);
+  const modeOf = async () => (await api('/conversations')).conversations.find((c) => c.id === mainCid)?.sessionMode;
+
+  await mode('chat').click();
+  await until(async () => (await modeOf()) === 'chat', 'chat mode saved');
+  let before = await assistant.count();
+  await sendMain('what font is that');
+  await settledMain(before, 'chat turn');
+  await assistant.last().getByText('Mode: chat.').waitFor();
+  assert.equal(runBodies.at(-1).sessionMode, 'chat');
+  await page.reload();
+  await mode('chat').and(page.locator('[aria-checked="true"]')).waitFor();
+  await mode('plan').click();
+  before = await assistant.count();
+  await sendMain('outline the next screen');
+  await settledMain(before, 'plan turn');
+  await assistant.last().getByText('Mode: plan.').waitFor();
+  assert.equal(await modeOf(), 'plan');
+  await mode('design').click();
+  await until(async () => (await modeOf()) === 'design', 'design mode saved');
+  results.sessionMode = 'ok';
+
+  await page.getByTestId('memory-toggle').click();
+  await page.getByTestId('memory-input').fill('Brand color is teal');
+  await page.getByTestId('memory-add').click();
+  await page.getByTestId('memory-item').filter({ hasText: 'Brand color is teal' }).waitFor();
+  await page.getByTestId('memory-toggle').click();
+  before = await assistant.count();
+  await sendMain('Remember that headings use Inter');
+  await settledMain(before, 'memory turn');
+  await assistant.last().getByText('Memory: Brand color is teal.').waitFor();
+  await page.getByTestId('memory-toggle').click();
+  await until(async () => (await page.getByTestId('memory-item').count()) === 2, 'chat fact remembered');
+  await page.getByTestId('memory-item').filter({ hasText: 'headings use Inter' }).getByText('from chat').waitFor();
+  await page.getByTestId('memory-item').filter({ hasText: 'Brand color' }).getByTestId('memory-delete').click();
+  await until(async () => (await page.getByTestId('memory-item').count()) === 1, 'memory deleted');
+  assert.deepEqual((await api('/memory')).memory.map((m) => m.text), ['headings use Inter']);
+  await page.getByTestId('memory-toggle').click();
+  results.memory = 'ok';
+
+  const mainCount = await assistant.count();
+  await page.getByTestId('side-chat-tab').click();
+  await page.getByTestId('side-composer').fill('is the hero too big?');
+  await page.getByTestId('side-composer').press('Enter');
+  const sideMsg = page.getByTestId('side-assistant-msg');
+  await sideMsg.last().getByText('Mode: chat.').waitFor();
+  await until(async () => (await sideMsg.last().getAttribute('data-state')) === 'succeeded', 'side turn done');
+  assert.equal(await assistant.count(), mainCount, 'the main chat is untouched');
+  assert.notEqual(runBodies.at(-1).conversationId, mainCid, 'own conversation');
+  await page.getByTestId('tab').first().locator('.tab-name').click();
+  await page.getByTestId('preview').waitFor();
+  await page.getByTestId('side-chat-tab').click();
+  assert.equal(await sideMsg.count(), 1, 'history kept across tabs');
+  await page.reload();
+  await page.getByTestId('composer').waitFor();
+  await until(async () => (await page.getByTestId('conversation').inputValue()) === mainCid, 'main conversation reopened');
+  await page.getByTestId('side-chat-tab').click();
+  await sideMsg.first().getByText('Mode: chat.').waitFor();
+  await page.getByTestId('tab').first().locator('.tab-name').click();
+  results.sideChat = 'ok';
+
+  await page.getByTestId('export-conversation').click();
+  const [mdDownload] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-md').click()]);
+  assert.match(mdDownload.suggestedFilename(), /^conversation-.+\.md$/);
+  const md = readFileSync(await mdDownload.path(), 'utf8');
+  assert.match(md, /## User\n\nwhat font is that/);
+  await page.getByTestId('export-conversation').click();
+  const [jsonDownload] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-json').click()]);
+  assert.equal(JSON.parse(readFileSync(await jsonDownload.path(), 'utf8')).conversation.id, mainCid);
+  results.transcriptExport = 'ok';
+
+  await page.getByTestId('jury-toggle').click();
+  await until(async () => (await api('/critique')).enabled === true, 'jury on');
+  before = await assistant.count();
+  await sendMain('poster for a jazz night');
+  await settledMain(before, 'jury turn');
+  const jury = assistant.last().getByTestId('jury');
+  await jury.getByTestId('jury-outcome').getByText('Shipped at round 2, composite 8.6').waitFor();
+  assert.equal(await jury.getByTestId('jury-lane').count(), 5);
+  assert.equal(await jury.getByTestId('jury-round').count(), 2);
+  assert.equal(await assistant.last().getByText('CRITIQUE_RUN').count(), 0, 'protocol text hidden');
+  await jury.getByTestId('jury-artifact').click();
+  await frame.locator('#title', { hasText: 'Jury final' }).waitFor();
+  await page.screenshot({ path: OUT + 'design-jury.png' });
+  await page.getByTestId('jury-toggle').click();
+  await until(async () => (await api('/critique')).enabled === false, 'jury off');
+  results.designJury = 'ok';
+  // 15c. Terminal tab: a shell in the project folder; type echo, reload
+  // reattaches with the scrollback, closing the tab ends the shell.
+  await page.goto(projectUrl);
+  await page.getByTestId('composer').waitFor();
+  await page.getByTestId('new-terminal').click();
+  await page.getByTestId('terminal-tab').waitFor();
+  const term = page.getByTestId('terminal');
+  await term.click();
+  await until(async () => (await term.textContent()).includes('$'), 'shell prompt');
+  await page.keyboard.type('echo e2e-$((6*7)); pwd');
+  await page.keyboard.press('Enter');
+  await until(async () => (await term.textContent()).includes('e2e-42'), 'echo output');
+  assert.match(await term.textContent(), new RegExp(`projects/${projectId}`), 'shell runs in the project folder');
+  await page.screenshot({ path: OUT + 'terminal.png' });
+  await page.reload();
+  await page.getByTestId('terminal-tab').click();
+  await until(async () => (await page.getByTestId('terminal').textContent()).includes('e2e-42'), 'scrollback replay');
+  await page.getByTestId('terminal-close').click();
+  await until(async () => {
+    const r = await (await fetch(`${BASE}/api/projects/${projectId}/terminals`)).json();
+    return r.terminals.length === 0;
+  }, 'terminal closed on the daemon');
+  results.terminal = 'ok';
+
+  // 15c. Automations: a routine run now goes through the mock agent and
+  // lands in the history and in its own conversation.
+  await page.goto(BASE + '/automations');
+  await page.getByTestId('routine-name').fill('Morning refresh');
+  await page.getByTestId('routine-project').selectOption(projectId);
+  await page.getByTestId('routine-prompt').fill('Routine refresh of the page');
+  await page.getByTestId('routine-schedule').fill('@daily');
+  await page.getByTestId('routine-add').click();
+  const routine = page.getByTestId('routine').filter({ hasText: 'Morning refresh' });
+  await routine.waitFor();
+  assert.match(await routine.textContent(), /Next run: /);
+  await routine.getByTestId('routine-run').click();
+  await routine.locator('[data-testid="routine-run-row"][data-status="succeeded"]').waitFor({ timeout: 20_000 });
+  const convs = await (await fetch(`${BASE}/api/projects/${projectId}/conversations`)).json();
+  assert.ok(convs.conversations.some((c) => (c.title || '').startsWith('Morning refresh · ')), 'routine conversation');
+  await page.screenshot({ path: OUT + 'automations.png' });
+  results.automations = 'ok';
+
+  // 15d. MCP servers: add a stdio server (mock on PATH), save, test.
+  await page.goto(BASE + '/settings');
+  await page.getByTestId('mcp-add').click();
+  await page.getByTestId('mcp-id').fill('echo');
+  await page.getByTestId('mcp-id').press('Tab');
+  await page.getByTestId('mcp-command').fill('mcp-echo');
+  await page.getByTestId('mcp-command').press('Tab');
+  await page.getByTestId('mcp-save').click();
+  await page.getByTestId('mcp-test').click();
+  await page.getByTestId('mcp-probe').getByText('Connected, 1 tools').waitFor();
+  const mcp = await (await fetch(`${BASE}/api/mcp/servers`)).json();
+  assert.equal(mcp.servers[0].id, 'echo');
+  results.mcp = 'ok';
+
   // 16. Settings persist and switch the theme; Vietnamese everywhere.
   await page.goto(BASE + '/settings');
   await page.getByText('Ask first').click();
@@ -338,6 +504,156 @@ try {
   await page.screenshot({ path: OUT + 'studio-vi.png' });
   results.settings = 'ok';
   results.vietnamese = 'ok';
+
+  // 16b. Preview tools (wave 3, still in Vietnamese): lint warns and goes to
+  // the agent, the deliverable check flags a turn that wrote nothing,
+  // palette, tweaks, inspect (set, reset, extract, save to source), text
+  // edit written back, drawn annotation sent with the next message.
+  const pid = projectUrl.split('/').pop();
+  const indexOnDisk = () => readFileSync(join(data, 'projects', pid, 'index.html'), 'utf8');
+  const lastAssistant = () => assistant.last();
+  const turnEnd = (label) => until(async () => (await lastAssistant().getAttribute('data-state')) === 'succeeded', label);
+  const cta = frame.locator('#cta');
+  const css = (loc, prop) => loc.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop);
+  const hue = (rgb) => {
+    const [r, g, b] = rgb.match(/\d+(\.\d+)?/g).slice(0, 3).map((x) => Number(x) / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    if (!d) return 0;
+    const h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return h * 60;
+  };
+  await page.getByTestId('composer').fill('a tweakable page');
+  await page.getByTestId('composer').press('Enter');
+  await turnEnd('tweak page turn');
+  await cta.waitFor();
+
+  // Lint: the badge counts findings, the panel lists them, the report goes
+  // to the agent as the next message.
+  await until(async () => Number(await page.getByTestId('lint-badge').getAttribute('data-count')) > 0, 'lint badge');
+  assert.match(await page.getByTestId('lint-badge').getAttribute('class'), /p0/);
+  await page.getByTestId('lint-badge').click();
+  await page.locator('[data-testid="lint-finding"][data-rule="emoji-icon"]').waitFor();
+  await page.getByTestId('lint-send').click();
+  await until(async () => runBodies[runBodies.length - 1].message.startsWith('<artifact-lint>'), 'lint sent');
+  assert.match(runBodies[runBodies.length - 1].message, /\[P0\] emoji-icon/);
+  await lastAssistant().getByText('Saw lint findings.').waitFor();
+  await turnEnd('lint turn end');
+  results.lint = 'ok';
+  // That turn wrote nothing: the deliverable check says so.
+  await page.getByTestId('deliverable-warning').waitFor();
+  results.deliverable = 'ok';
+  await page.getByTestId('lint-badge').click();
+
+  // Palette: electric moves chromatic paint to hue ~262; original restores.
+  const ctaBefore = await css(cta, 'background-color');
+  assert.equal(ctaBefore, 'rgb(201, 100, 66)');
+  await page.getByTestId('palette').selectOption('electric');
+  await until(async () => Math.abs(hue(await css(cta, 'background-color')) - 262) < 3, 'electric palette');
+  await page.getByTestId('palette').selectOption('mono-noir');
+  await until(async () => /^rgb\((\d+), \1, \1\)$/.test(await css(cta, 'background-color')), 'mono palette');
+  await page.getByTestId('palette').selectOption('');
+  await until(async () => (await css(cta, 'background-color')) === ctaBefore, 'palette restored');
+  results.palette = 'ok';
+
+  // Tweaks the page declares: accent color and a dark toggle.
+  await page.getByTestId('tweaks-toggle').click();
+  await page.getByTestId('tweaks-panel').waitFor();
+  await page.getByTestId('tweak-accent').fill('#0a7d3b');
+  await until(async () => (await css(cta, 'background-color')) === 'rgb(10, 125, 59)', 'accent tweak');
+  await page.getByTestId('tweak-dark').check();
+  await until(async () => (await frame.locator('html').getAttribute('data-theme')) === 'dark', 'dark tweak');
+  await page.getByTestId('tweaks-reset').click();
+  await until(async () => (await css(cta, 'background-color')) === ctaBefore, 'tweaks reset');
+  await page.getByTestId('tweaks-toggle').click();
+  results.tweaks = 'ok';
+
+  // Inspect: override color and font size, reset one, extract, save.
+  const title = frame.locator('#title');
+  await page.getByTestId('inspect-mode').click();
+  await page.waitForTimeout(150);
+  await title.click();
+  await page.getByTestId('inspect-color').waitFor();
+  await page.getByTestId('inspect-color').fill('rgb(10, 125, 59)');
+  await page.getByTestId('inspect-color').press('Tab');
+  await until(async () => (await css(title, 'color')) === 'rgb(10, 125, 59)', 'inspect color');
+  const sizeBefore = await css(title, 'font-size');
+  await page.getByTestId('inspect-font-size').fill('48px');
+  await page.getByTestId('inspect-font-size').press('Tab');
+  await until(async () => (await css(title, 'font-size')) === '48px', 'inspect font size');
+  await page.getByTestId('inspect-reset-font-size').click();
+  await until(async () => (await css(title, 'font-size')) === sizeBefore, 'font size reset');
+  await page.getByTestId('inspect-extract').click();
+  await page.getByTestId('inspect-css').getByText('color: rgb(10, 125, 59);').waitFor();
+  assert.doesNotMatch(await page.getByTestId('inspect-css').textContent(), /font-size/);
+  await page.getByTestId('inspect-save').click();
+  await page.getByTestId('tool-status').getByText('index.html').waitFor();
+  await until(async () => indexOnDisk().includes('<h1 id="title" style="color: rgb(10, 125, 59)">'), 'style saved to source');
+  let history = await (await fetch(`${BASE}/api/projects/${pid}/files/index.html/versions`)).json();
+  let latest = history.versions[history.versions.length - 1];
+  assert.equal(latest.source, 'manual');
+  assert.equal(latest.label, 'Edited in preview');
+  await page.getByTestId('inspect-mode').click();
+  results.inspect = 'ok';
+
+  // Text edit in place, written back as another manual version.
+  await until(async () => (await css(title, 'color')) === 'rgb(10, 125, 59)', 'reloaded with saved style');
+  await page.getByTestId('edit-mode').click();
+  await page.waitForTimeout(150);
+  await title.click();
+  await page.keyboard.type('Tea house');
+  await page.keyboard.press('Enter');
+  await until(async () => indexOnDisk().includes('style="color: rgb(10, 125, 59)">Tea house</h1>'), 'text saved to source');
+  await frame.locator('#title', { hasText: 'Tea house' }).waitFor();
+  history = await (await fetch(`${BASE}/api/projects/${pid}/files/index.html/versions`)).json();
+  latest = history.versions[history.versions.length - 1];
+  assert.equal(latest.source, 'manual');
+  await page.getByTestId('edit-mode').click();
+  results.textEdit = 'ok';
+
+  // Draw over the preview; the image rides along with the next message.
+  await page.getByTestId('draw-mode').click();
+  const box = await page.getByTestId('draw-canvas').boundingBox();
+  await page.mouse.move(box.x + 40, box.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 180, box.y + 90, { steps: 8 });
+  await page.mouse.up();
+  await page.getByTestId('draw-box').click();
+  await page.mouse.move(box.x + 60, box.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 220, box.y + 200, { steps: 4 });
+  await page.mouse.up();
+  await page.getByTestId('draw-attach').click();
+  await page.getByTestId('attachment-chip').waitFor();
+  const files = (await (await fetch(`${BASE}/api/projects/${pid}/files`)).json()).files;
+  const annotation = files.find((f) => f.path.startsWith('annotations/') && f.path.endsWith('.png'));
+  assert.ok(annotation, 'annotation stored in the project');
+  const png = Buffer.from(await (await fetch(`${BASE}/api/projects/${pid}/raw/${annotation.path}`)).arrayBuffer());
+  assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  results.annotationSnapshot = (await page.getByTestId('tool-status').textContent()).includes('không kèm') ? 'strokes only' : 'with page';
+  await page.getByTestId('composer').fill('see my sketch');
+  await page.getByTestId('composer').press('Enter');
+  await lastAssistant().getByText('Saw attached files.').waitFor();
+  assert.deepEqual(runBodies[runBodies.length - 1].attachments, [annotation.path]);
+  await until(async () => (await page.getByTestId('attachment-chip').count()) === 0, 'chip cleared after send');
+  await turnEnd('annotation turn end');
+  // The rewritten page has no slop left: the lint follows the reload.
+  await until(async () => (await page.getByTestId('lint-badge').getAttribute('data-count')) === '0', 'lint clean after rewrite');
+  await page.screenshot({ path: OUT + 'preview-tools.png' });
+  results.annotation = 'ok';
+  // 16c. Copilot or Qwen in "Ask first" mode can hang: the UI says so.
+  const putConfig = (body) => fetch(`${BASE}/api/app-config`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  assert.equal((await putConfig({ agentId: 'copilot', agentPermissionMode: 'ask' })).status, 200);
+  await page.goto(projectUrl);
+  await page.getByTestId('ask-mode-warning').waitFor();
+  await page.goto(BASE + '/settings');
+  await page.getByTestId('ask-mode-warning').waitFor();
+  assert.equal((await putConfig({ agentId: 'claude' })).status, 200);
+  await page.reload();
+  await page.locator('h1', { hasText: 'Cài đặt' }).waitFor();
+  assert.equal(await page.getByTestId('ask-mode-warning').count(), 0, 'claude does not hang');
+  results.askModeWarning = 'ok';
 
   // 17. Nothing left loopback during the whole scenario.
   assert.deepEqual(external, [], `external requests: ${external.join(', ')}`);

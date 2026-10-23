@@ -74,9 +74,17 @@ pub struct AppState {
     pub config: Arc<ServerConfig>,
     pub runs: Arc<RunContext>,
     pub preview: Preview,
+    /// Terminal tabs and the other platform routes' state.
+    pub platform: crate::routes::platform::Platform,
 }
 
 impl AppState {
+    /// Ends what the daemon started that would outlive it: the terminal
+    /// tabs' shells and their jobs. Call once the server stopped serving.
+    pub async fn shutdown(&self) {
+        self.platform.terminals.close_all().await;
+    }
+
     /// Runs blocking store work off the async runtime.
     pub async fn blocking<T, F>(&self, f: F) -> ApiResult<T>
     where

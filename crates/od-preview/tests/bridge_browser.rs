@@ -209,6 +209,7 @@ async fn bridge_in_headless_chrome() {
     selection_snapshot_and_size(&h).await;
     pins_follow_their_elements(&h).await;
     storage_shim(&h).await;
+    inspect_prints_survive_scripts(&h).await;
     reload_loops_are_stopped(&h).await;
     h.close().await;
 }
@@ -369,6 +370,39 @@ async fn pins_follow_their_elements(h: &Harness) {
         .await;
     let y = moved["items"][0]["rect"]["y"].as_f64().unwrap();
     assert!(y < 600.0, "{moved}");
+}
+
+/// The inspected text leaves out script code (as the source check does),
+/// and a replayed override lands only on an element that still reads the
+/// same: a script that inserts a sibling moves the path, not the style.
+async fn inspect_prints_survive_scripts(h: &Harness) {
+    let html = r#"<!doctype html><html><body>
+      <div id="a">A<script>var z = 1;</script></div><div id="b">B</div>
+      <script>document.body.prepend(document.createElement('div'))</script></body></html>"#;
+    h.load(html).await;
+    h.wait("od:ready", "null", 5_000).await;
+    let div2 = "html > body:nth-of-type(1) > div:nth-of-type(2)";
+    let inspect = |extra: &str| {
+        format!(
+            "(async () => {{ const since = window.__msgs.length; {extra}\
+             window.__send({{ type: 'od:inspect', selector: {div2:?} }});\
+             return await window.__after('od:inspect-result', since, null, 5000); }})()"
+        )
+    };
+    let first = h.eval(&inspect("")).await;
+    assert_eq!(first["tag"], "div", "{first}");
+    assert_eq!(first["text"], "A", "{first}");
+    let replay = |text: &str| {
+        format!(
+            "window.__send({{ type: 'od:inspect-replay', items: [{{ selector: {div2:?}, \
+             prop: 'color', value: 'red', tag: 'div', text: {text:?} }}] }});"
+        )
+    };
+    // Set on #b, which the path pointed at before the script ran.
+    let stale = h.eval(&inspect(&replay("B"))).await;
+    assert!(stale["overrides"].get("color").is_none(), "{stale}");
+    let same = h.eval(&inspect(&replay("A"))).await;
+    assert_eq!(same["overrides"]["color"], "red", "{same}");
 }
 
 async fn storage_shim(h: &Harness) {

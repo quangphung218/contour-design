@@ -36,6 +36,7 @@ fn state(tmp: &Path) -> AppState {
             od_runtime::EngineConfig::from_env(),
         )),
         preview: od_server::Preview::default(),
+        platform: od_server::Platform::from_env(),
     }
 }
 

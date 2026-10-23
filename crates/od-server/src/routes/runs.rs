@@ -313,6 +313,31 @@ struct Prepared {
     stable_hash: String,
     permission: PermissionMode,
     byok: Option<od_runtime::byok::ByokConfig>,
+    /// Design Jury on for this run.
+    critique: bool,
+}
+
+/// Design Jury for this run (spec 1.5): a skill that requires it or opts
+/// out decides; else the project's switch; else `OD_CRITIQUE_ENABLED`.
+fn critique_enabled(project: &od_contracts::Project, skills: &[&od_content::SkillEntry]) -> bool {
+    use od_contracts::CritiquePolicy;
+    let policies = skills.iter().filter_map(|s| s.info.critique_policy);
+    let mut decided = None;
+    for policy in policies {
+        match policy {
+            CritiquePolicy::Required => decided = Some(true),
+            CritiquePolicy::OptOut if decided.is_none() => decided = Some(false),
+            _ => {}
+        }
+    }
+    decided
+        .or_else(|| crate::routes::agent_w3::critique_switch(project))
+        .or_else(|| {
+            std::env::var(crate::routes::agent_w3::CRITIQUE_ENV)
+                .ok()
+                .map(|v| matches!(v.trim(), "1" | "true" | "on"))
+        })
+        .unwrap_or(false)
 }
 
 /// Records the turn, composes the prompt, decides on resume, stages
@@ -405,7 +430,38 @@ async fn prepare_and_launch(
                 });
             let (craft_body, craft_sections) =
                 od_content::craft::load_craft_sections(&content.craft_dir, &requested);
-            let session_mode = req2.session_mode.unwrap_or_default();
+            // The request's mode wins and sticks to the conversation;
+            // otherwise the conversation's own mode.
+            let session_mode = match req2.session_mode {
+                Some(mode) => {
+                    s.update_conversation(
+                        &project2.id,
+                        &conversation,
+                        od_contracts::UpdateConversationRequest {
+                            session_mode: Some(mode),
+                            title: None,
+                        },
+                    )?;
+                    mode
+                }
+                None => {
+                    s.get_conversation(&project2.id, &conversation)?
+                        .session_mode
+                }
+            };
+            if let Some(fact) = od_store::memory_from_message(&req2.message) {
+                s.add_memory(&project2.id, &fact, od_contracts::MemorySource::Chat)?;
+            }
+            let memory: Vec<String> = s
+                .list_memory(&project2.id)?
+                .into_iter()
+                .map(|m| m.text)
+                .collect();
+            let critique = critique_enabled(&project2, &skills).then(|| prompt::CritiqueBrief {
+                brand_name: ds.map_or("Unbranded", |d| d.summary.title.as_str()),
+                brand_body: ds.map_or("", |d| d.body.as_str()),
+                skill_id: skills.first().map_or("freeform", |s| s.info.id.as_str()),
+            });
             let instructions = prompt::compose_instructions(&PromptInput {
                 session_mode,
                 locale: req2.locale.as_deref(),
@@ -416,7 +472,10 @@ async fn prepare_and_launch(
                 craft: Some((craft_body.as_str(), craft_sections.as_slice())),
                 skills: &skills,
                 plugin_block: plugin.as_ref().map(|p| p.prompt_block.as_str()),
+                memory: &memory,
+                critique,
             });
+            let critique = critique.is_some() && session_mode == od_contracts::SessionMode::Design;
             let stable_hash = prompt::stable_hash(&instructions);
             let cwd_str = cwd.to_string_lossy().into_owned();
 
@@ -489,11 +548,13 @@ async fn prepare_and_launch(
                 stable_hash,
                 permission,
                 byok,
+                critique,
             })
         })
         .await?;
 
     let resumed = prepared.resume_session_id.is_some();
+    let mcp = crate::routes::platform::mcp::for_agent(state, def.stream_format, run.id()).await;
     let engine = &state.runs.engine;
     let launched = {
         // Held across the check and `launch` so a concurrent cancel either
@@ -509,7 +570,7 @@ async fn prepare_and_launch(
             );
             let od_bin = std::env::current_exe().ok();
             let data_root = state.store.data_dir().root().to_path_buf();
-            let env = agent_env(
+            let mut env = agent_env(
                 def,
                 &engine.config().base_env,
                 &engine.config().path,
@@ -523,6 +584,7 @@ async fn prepare_and_launch(
                     run_id: Some(run.id()),
                 },
             );
+            env.extend(mcp.env);
             Some(engine.launch(LaunchSpec {
                 run: Arc::clone(run),
                 def,
@@ -537,10 +599,14 @@ async fn prepare_and_launch(
                 env,
                 project_id: Some(project.id.clone()),
                 byok: prepared.byok,
+                mcp: mcp.launch,
             }))
         }
     };
     let Some(handle) = launched else {
+        if let Some(file) = &mcp.file {
+            let _ = std::fs::remove_file(file);
+        }
         end_unlaunched(
             state,
             run,
@@ -565,6 +631,8 @@ async fn prepare_and_launch(
             model,
             cwd: prepared.cwd.to_string_lossy().into_owned(),
             stable_hash: prepared.stable_hash,
+            critique: prepared.critique,
+            mcp_file: mcp.file,
         },
     ));
     Ok(resumed)
@@ -579,6 +647,9 @@ struct Finalize {
     model: Option<String>,
     cwd: String,
     stable_hash: String,
+    critique: bool,
+    /// The run's MCP config (holds tokens); removed when the run ends.
+    mcp_file: Option<PathBuf>,
 }
 
 /// Agent payloads that are only meaningful live.
@@ -602,6 +673,7 @@ async fn persist_run(
     let mut seq = 0i64;
     let mut last_id = 0u64;
     let mut tick = tokio::time::interval(BATCH_INTERVAL);
+    let mut jury = fin.critique.then(od_runtime::critique::CritiqueReader::new);
     loop {
         let flush = tokio::select! {
             ev = sub.next() => match ev {
@@ -609,6 +681,12 @@ async fn persist_run(
                     last_id = ev.id;
                     if ev.event == sse::AGENT && persisted(&ev.data) {
                         pending.push(ev.data.clone());
+                    }
+                    if let (Some(reader), Some(delta)) = (jury.as_mut(), text_delta(&ev)) {
+                        if let Some(report) = reader.push(delta) {
+                            // Comes back through `sub` and is persisted then.
+                            run.emit(sse::AGENT, critique_event(&report));
+                        }
                     }
                     pending.len() >= BATCH_MAX
                 }
@@ -651,9 +729,44 @@ async fn persist_run(
         }
     };
     state.runs.tokens.revoke_run(run.id());
+    if let Some(file) = &fin.mcp_file {
+        let _ = std::fs::remove_file(file);
+    }
     let status = run.status();
+    let verdict = jury
+        .as_mut()
+        .and_then(od_runtime::critique::CritiqueReader::finish);
+    let run_id = run.id().to_owned();
     let res = state
         .blocking(move |s| {
+            // The jury's file and report are extras: failing them must not
+            // leave the message running.
+            if let Some((mut report, artifact)) = verdict {
+                if let Some(html) = artifact.filter(|_| status == RunStatus::Succeeded) {
+                    let path = format!(
+                        "critique/{}.html",
+                        run_id.chars().take(8).collect::<String>()
+                    );
+                    match s.write_file(&fin.project_id, &path, html.as_bytes(), true, None) {
+                        Ok(_) => report.artifact_path = Some(path),
+                        Err(err) => {
+                            tracing::warn!(run = %run_id, error = %err, "critique artifact write failed");
+                            report.degraded_reason =
+                                Some(format!("the shipped artifact could not be saved: {err}"));
+                        }
+                    }
+                }
+                // The settled report closes the stored events.
+                if let Err(err) = s.append_event_batch(
+                    &fin.assistant_message_id,
+                    &run_id,
+                    i64::MAX,
+                    &[critique_event(&report)],
+                    last_id,
+                ) {
+                    tracing::warn!(run = %run_id, error = %err, "critique report write failed");
+                }
+            }
             s.finish_assistant_message(&fin.assistant_message_id, &outcome.text, status, last_id)?;
             set_comments(
                 s,
@@ -683,6 +796,21 @@ async fn persist_run(
     if let Err(err) = res {
         tracing::warn!(run = %run.id(), error = %err.message, "finalizing the message failed");
     }
+}
+
+fn text_delta(ev: &od_runs::RunEvent) -> Option<&str> {
+    if ev.event != sse::AGENT || ev.data.get("type").and_then(Value::as_str) != Some("text_delta") {
+        return None;
+    }
+    ev.data.get("delta").and_then(Value::as_str)
+}
+
+/// The `agent` payload carrying a Design Jury report.
+fn critique_event(report: &od_contracts::CritiqueReport) -> Value {
+    serde_json::to_value(od_contracts::AgentEvent::Critique {
+        report: report.clone(),
+    })
+    .unwrap_or(Value::Null)
 }
 
 #[derive(Debug, Default, Deserialize)]

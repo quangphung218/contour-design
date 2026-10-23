@@ -2,8 +2,11 @@
 //! other subcommand is a thin client of the daemon's HTTP API.
 
 mod client;
+mod exit;
 mod export_cmd;
 mod mcp_cmd;
+mod media_cmd;
+mod plugin_cmd;
 
 use anyhow::Context;
 use base64::Engine;
@@ -55,6 +58,12 @@ enum Command {
     Export(export_cmd::ExportArgs),
     /// MCP stdio server for coding agents; `od mcp install <agent>`.
     Mcp(mcp_cmd::McpArgs),
+    /// Queued image, video and audio generation; models and templates.
+    #[command(subcommand)]
+    Media(media_cmd::MediaCommand),
+    /// List, inspect, apply and validate plugins.
+    #[command(subcommand)]
+    Plugin(plugin_cmd::PluginCommand),
 }
 
 #[derive(Debug, Subcommand)]
@@ -197,13 +206,27 @@ fn main() -> ExitCode {
             Client::new(&cli.daemon_url).and_then(|c| export_cmd::run(&c, args, cli.json))
         }
         Some(Command::Mcp(args)) => return mcp_cmd::run(args, &cli.daemon_url, cli.json),
+        Some(Command::Media(cmd)) => {
+            Client::new(&cli.daemon_url).and_then(|c| media_cmd::run(&c, cmd, cli.json))
+        }
+        Some(Command::Plugin(cmd)) => {
+            Client::new(&cli.daemon_url).and_then(|c| plugin_cmd::run(&c, cmd, cli.json))
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
-        Err(err) => {
-            eprintln!("error: {err:#}");
-            ExitCode::FAILURE
-        }
+        Err(err) => match err.downcast_ref::<exit::Exit>() {
+            Some(e) => {
+                if !e.printed {
+                    eprintln!("error: {}", e.message);
+                }
+                ExitCode::from(e.code)
+            }
+            None => {
+                eprintln!("error: {err:#}");
+                ExitCode::FAILURE
+            }
+        },
     }
 }
 

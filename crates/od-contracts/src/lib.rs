@@ -4,18 +4,22 @@
 //! and fixtures keep working. Every type here is plain data: no I/O, no
 //! validation beyond what serde enforces.
 
+pub mod agent_w3;
 pub mod comments;
 pub mod content;
 pub mod error;
 pub mod files;
+pub mod preview_tools;
 pub mod projects;
 pub mod runs;
 pub mod system;
 
+pub use agent_w3::*;
 pub use comments::*;
 pub use content::*;
 pub use error::*;
 pub use files::*;
+pub use preview_tools::*;
 pub use projects::*;
 pub use runs::*;
 pub use system::*;

@@ -1,0 +1,13 @@
+[package]
+name = "od-job"
+description = "Windows Job Objects: stopping an agent or a terminal kills its whole process tree"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+win32job = "2"
+
+[lints]
+workspace = true

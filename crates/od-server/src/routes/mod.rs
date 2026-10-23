@@ -1,3 +1,4 @@
+pub mod agent_w3;
 pub mod comments;
 pub mod content;
 pub mod conversations;
@@ -5,9 +6,12 @@ pub mod export;
 pub mod files;
 pub mod handoff;
 pub mod media;
+pub mod platform;
 pub mod preview;
+pub mod preview_tools;
 pub mod projects;
 pub mod raw;
 pub mod runs;
 pub mod system;
 pub mod ui;
+pub mod w3;

@@ -53,6 +53,8 @@ pub struct EngineConfig {
     /// First retry delay; doubled for rate limits, capped at 8 s.
     pub retry_base: Duration,
     pub tool_loop: ToolLoopLimits,
+    /// Limit of the help probe that finds a CLI's optional flags.
+    pub probe_timeout: Duration,
 }
 
 impl EngineConfig {
@@ -66,6 +68,7 @@ impl EngineConfig {
             kill_grace: KILL_GRACE,
             retry_base: Duration::from_millis(500),
             tool_loop: ToolLoopLimits::default(),
+            probe_timeout: detect::PROBE_TIMEOUT,
         }
     }
 
@@ -99,6 +102,17 @@ pub struct LaunchSpec {
     pub project_id: Option<String>,
     /// Provider settings for [`crate::def::BYOK`]; ignored by CLI runtimes.
     pub byok: Option<ByokConfig>,
+    /// External MCP servers for this run (see [`McpLaunch`]).
+    pub mcp: McpLaunch,
+}
+
+/// How the run's external MCP servers reach the agent: extra argv (Claude
+/// `--mcp-config <file>`) and the ACP `session/new` `mcpServers`. Env-based
+/// wiring (OpenCode) travels in [`LaunchSpec::env`].
+#[derive(Debug, Clone, Default)]
+pub struct McpLaunch {
+    pub args: Vec<String>,
+    pub acp_servers: Vec<serde_json::Value>,
 }
 
 /// How a run ended, for whoever persists messages and sessions.
@@ -242,7 +256,13 @@ impl RunEngine {
         {
             return found.clone();
         }
-        let caps = detect::probe_capabilities(def, bin, &self.config.path).await;
+        let probed =
+            detect::probe_capabilities(def, bin, &self.config.path, self.config.probe_timeout)
+                .await;
+        // A failed probe is not "no flags": the next run probes again.
+        let Some(caps) = probed else {
+            return Vec::new();
+        };
         self.capabilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -306,7 +326,7 @@ impl RunEngine {
                 (SessionIdSource::Minted, None) => Some(uuid::Uuid::new_v4().to_string()),
                 (SessionIdSource::Captured | SessionIdSource::None, None) => None,
             };
-            let args = def.build_args(&ArgvInput {
+            let mut args = def.build_args(&ArgvInput {
                 model: spec.model.as_deref(),
                 reasoning: spec.reasoning.as_deref(),
                 cwd: Some(&spec.cwd),
@@ -316,6 +336,7 @@ impl RunEngine {
                 permission: spec.permission,
                 capabilities: &capabilities,
             });
+            args.extend(spec.mcp.args.iter().cloned());
             let attempt = if is_byok {
                 self.attempt_byok(&spec, active, &prompt).await
             } else {
@@ -430,6 +451,7 @@ impl RunEngine {
                 permission: spec.permission,
                 request_id: uuid::Uuid::new_v4().to_string(),
                 acp_turn_end_completes: def.acp_turn_end_completes,
+                mcp_servers: spec.mcp.acp_servers.clone(),
             },
         );
         let mut child = match process::spawn(&spawn) {
@@ -572,6 +594,7 @@ impl RunEngine {
             tracing::warn!(run = %run.id(), pgid, "agent left processes behind; stopping its group");
             process::terminate_group(pgid, self.config.kill_grace).await;
         }
+        process::release_group(pgid);
         run.set_process(None, None);
         let exit = exit.unwrap_or_default();
         att.exit_code = exit.code();

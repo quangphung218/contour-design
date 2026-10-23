@@ -13,5 +13,13 @@ target_dir="$(cargo metadata --format-version 1 --no-deps --manifest-path "$root
 
 cd "$here"
 [ -d node_modules/playwright ] || npm ci --no-audit --no-fund
-OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$here/mock-agent" \
-  OD_RESOURCE_ROOT="$root/content" node studio.e2e.mjs
+export OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$here/mock-agent" \
+  OD_RESOURCE_ROOT="$root/content"
+# A fixed port collides when two worktrees run the e2e at once; pick a free
+# one (the design-system scenario uses the next port) unless one is given.
+if [ -z "${OD_E2E_PORT:-}" ]; then
+  OD_E2E_PORT="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
+  export OD_E2E_PORT
+fi
+node studio.e2e.mjs
+node design-system.e2e.mjs

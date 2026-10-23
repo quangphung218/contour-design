@@ -130,6 +130,7 @@ pub fn open(path: &Path) -> Result<Connection> {
     let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
     conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;")?;
     migrate(&mut conn)?;
+    crate::memory::ensure_schema(&conn)?;
     Ok(conn)
 }
 
