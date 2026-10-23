@@ -138,6 +138,24 @@ fn locale_of(config: &AppConfig) -> Locale {
         .unwrap_or_default()
 }
 
+/// Fetches `locales/<tag>.txt` (copied next to the bundle) and installs
+/// it. A failed fetch installs an empty table: the app shows English
+/// rather than retrying on every render.
+async fn load_dict(locale: Locale) {
+    let path = format!("/locales/{}.txt", locale.tag());
+    let text = match api::get_text(&path).await {
+        Ok(text) => text,
+        Err(e) => {
+            leptos::logging::warn!("{path}: {e}");
+            String::new()
+        }
+    };
+    let unknown = i18n::install_dict(locale, text);
+    if !unknown.is_empty() {
+        leptos::logging::warn!("{path}: unknown keys {unknown:?}");
+    }
+}
+
 fn apply_theme(theme: Theme) {
     if desktop::is_desktop() {
         desktop::set_theme(theme.as_str());
@@ -182,18 +200,37 @@ pub fn App() -> impl IntoView {
     // Strings are read once per render: a language change rebuilds the app.
     // Wait for settings (a local call) so the first paint is already in the
     // user's language. A memo: saving settings must not rebuild the app.
+    // A language outside en/vi first fetches its strings file; until it
+    // arrives the app shows the previous language (English on first paint).
     let ready = Memo::new(move |_| shell.config.with(Option::is_some));
+    let dict_loaded = RwSignal::new(0u32);
+    Effect::new(move |_| {
+        let wanted = shell.locale.get();
+        if !i18n::has_dict(wanted) {
+            leptos::task::spawn_local(async move {
+                load_dict(wanted).await;
+                dict_loaded.update(|n| *n += 1);
+            });
+        }
+    });
     move || {
         if !ready.get() {
             return None;
         }
-        let locale = shell.locale.get();
+        dict_loaded.track();
+        let wanted = shell.locale.get();
+        let locale = if i18n::has_dict(wanted) {
+            wanted
+        } else {
+            i18n::locale()
+        };
         i18n::set_locale(locale);
         if let Some(root) = web_sys::window()
             .and_then(|w| w.document())
             .and_then(|d| d.document_element())
         {
             let _ = root.set_attribute("lang", locale.tag());
+            let _ = root.set_attribute("dir", if locale.is_rtl() { "rtl" } else { "ltr" });
         }
         Some(view! { <Shelled/> })
     }

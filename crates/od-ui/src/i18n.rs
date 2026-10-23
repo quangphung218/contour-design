@@ -1,55 +1,115 @@
-//! UI strings in English and Vietnamese (spec 1.5 i18n: en and vi first).
+//! UI strings (spec 1.5 i18n): English and Vietnamese built in, the other
+//! languages of the original app loaded on demand.
 //!
 //! Every visible string goes through [`t`] or [`tf`]. The table is one
-//! macro call, so a key without both translations does not compile.
+//! macro call, so a key without both en and vi does not compile.
 //! Vietnamese follows the vi-VN UI conventions: impersonal, kiểu mới tone
 //! marks, product terms (agent, preview, deck, template…) kept in English.
+//!
+//! The other languages live in `locales/<tag>.txt` (`Key = text` lines),
+//! served next to the bundle and fetched when picked, so they do not grow
+//! the wasm. A key a file lacks falls back to English.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::rc::Rc;
 
-/// A UI language.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub enum Locale {
-    #[default]
-    En,
-    Vi,
+macro_rules! locales {
+    ($($variant:ident => $tag:literal, $name:literal;)*) => {
+        /// A UI language.
+        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+        pub enum Locale {
+            #[default]
+            $($variant),*
+        }
+
+        impl Locale {
+            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+
+            /// BCP 47 tag, also the value stored as `locale` in app settings.
+            #[must_use]
+            pub fn tag(self) -> &'static str {
+                match self { $(Self::$variant => $tag),* }
+            }
+
+            /// The language's own name, for the picker.
+            #[must_use]
+            pub fn native_name(self) -> &'static str {
+                match self { $(Self::$variant => $name),* }
+            }
+        }
+    };
+}
+
+// Same set and order as the original app's `LOCALES`, plus Vietnamese.
+locales! {
+    En => "en", "English";
+    Vi => "vi", "Tiếng Việt";
+    Id => "id", "Bahasa Indonesia";
+    De => "de", "Deutsch";
+    ZhCn => "zh-CN", "简体中文";
+    ZhTw => "zh-TW", "繁體中文";
+    PtBr => "pt-BR", "Português (Brasil)";
+    EsEs => "es-ES", "Español (España)";
+    Ru => "ru", "Русский";
+    Fa => "fa", "فارسی";
+    Ar => "ar", "العربية";
+    Ja => "ja", "日本語";
+    Ko => "ko", "한국어";
+    Pl => "pl", "Polski";
+    Hu => "hu", "Magyar";
+    Fr => "fr", "Français";
+    Uk => "uk", "Українська";
+    Tr => "tr", "Türkçe";
+    Th => "th", "ภาษาไทย";
+    It => "it", "Italiano";
 }
 
 impl Locale {
-    pub const ALL: [Self; 2] = [Self::En, Self::Vi];
-
-    /// BCP 47 tag, also the value stored as `locale` in app settings.
-    #[must_use]
-    pub fn tag(self) -> &'static str {
-        match self {
-            Self::En => "en",
-            Self::Vi => "vi",
-        }
-    }
-
-    /// The language's own name, for the picker.
-    #[must_use]
-    pub fn native_name(self) -> &'static str {
-        match self {
-            Self::En => "English",
-            Self::Vi => "Tiếng Việt",
-        }
-    }
-
-    /// `vi`, `vi-VN`… map to Vietnamese; anything else to English.
+    /// Exact tag first, then Chinese by script or region, then the first
+    /// language with the same primary subtag (`de-AT` → `de`, `pt` →
+    /// `pt-BR`); anything else is English. Mirrors the original
+    /// `resolveSystemLocale`.
     #[must_use]
     pub fn parse(tag: &str) -> Self {
-        let primary = tag.split(['-', '_']).next().unwrap_or("");
-        if primary.eq_ignore_ascii_case("vi") {
-            Self::Vi
-        } else {
-            Self::En
+        let tag = tag.trim();
+        if let Some(exact) = Self::ALL.iter().find(|l| l.tag().eq_ignore_ascii_case(tag)) {
+            return *exact;
         }
+        let lower = tag.to_ascii_lowercase().replace('_', "-");
+        let mut parts = lower.split('-');
+        let language = parts.next().unwrap_or("");
+        if language == "zh" {
+            return match parts.next() {
+                Some("hant" | "tw" | "hk" | "mo") => Self::ZhTw,
+                _ => Self::ZhCn,
+            };
+        }
+        Self::ALL
+            .iter()
+            .find(|l| l.tag().split('-').next() == Some(language))
+            .copied()
+            .unwrap_or(Self::En)
+    }
+
+    /// Whether the strings come from a `locales/<tag>.txt` file.
+    #[must_use]
+    pub fn is_loaded_on_demand(self) -> bool {
+        !matches!(self, Self::En | Self::Vi)
+    }
+
+    /// Arabic and Persian run right to left (`<html dir>`).
+    #[must_use]
+    pub fn is_rtl(self) -> bool {
+        matches!(self, Self::Ar | Self::Fa)
     }
 }
 
 thread_local! {
     static CURRENT: Cell<Locale> = const { Cell::new(Locale::En) };
+    /// Parsed `locales/<tag>.txt` files, by locale; slots follow [`T::ALL`].
+    static DICTS: RefCell<HashMap<Locale, Rc<[Option<&'static str>]>>> =
+        RefCell::new(HashMap::new());
 }
 
 /// Sets the language [`t`] uses. The app re-renders after a change.
@@ -62,6 +122,65 @@ pub fn locale() -> Locale {
     CURRENT.with(Cell::get)
 }
 
+/// Whether `locale`'s strings are ready ([`install_dict`] ran, or built in).
+#[must_use]
+pub fn has_dict(locale: Locale) -> bool {
+    !locale.is_loaded_on_demand() || DICTS.with(|d| d.borrow().contains_key(&locale))
+}
+
+/// Parses a `locales/<tag>.txt` file and keeps it for `locale`. Returns
+/// the lines that name no key (a stale file), for logging.
+pub fn install_dict(locale: Locale, text: String) -> Vec<String> {
+    // Loaded at most once per language for the page's life, so leaking
+    // the text keeps every string `'static` like the built-in ones.
+    let text: &'static str = Box::leak(text.into_boxed_str());
+    let (slots, unknown) = parse_dict(text);
+    DICTS.with(|d| d.borrow_mut().insert(locale, slots.into()));
+    unknown
+}
+
+/// `Key = text` lines (`#` comments and blank lines skipped) into one slot
+/// per [`T::ALL`] key, plus the keys that do not exist. `\n` in a text is
+/// a line break.
+fn parse_dict(text: &'static str) -> (Vec<Option<&'static str>>, Vec<String>) {
+    let index: HashMap<&str, usize> = T::ALL
+        .iter()
+        .enumerate()
+        .map(|(i, k)| (k.name(), i))
+        .collect();
+    let mut slots = vec![None; T::ALL.len()];
+    let mut unknown = Vec::new();
+    for line in text.lines() {
+        let line = line.trim_end_matches('\r');
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once(" = ") else {
+            unknown.push(line.to_owned());
+            continue;
+        };
+        let Some(&i) = index.get(key.trim()) else {
+            unknown.push(key.trim().to_owned());
+            continue;
+        };
+        let value = value.trim();
+        slots[i] = Some(if value.contains("\\n") {
+            &*Box::leak(value.replace("\\n", "\n").into_boxed_str())
+        } else {
+            value
+        });
+    }
+    (slots, unknown)
+}
+
+fn lookup(locale: Locale, key: T) -> Option<&'static str> {
+    DICTS.with(|d| {
+        d.borrow()
+            .get(&locale)
+            .and_then(|slots| slots.get(key as usize).copied().flatten())
+    })
+}
+
 macro_rules! messages {
     ($($key:ident => $en:literal, $vi:literal;)*) => {
         /// A UI string key.
@@ -71,11 +190,20 @@ macro_rules! messages {
         impl T {
             pub const ALL: &'static [T] = &[$(T::$key),*];
 
+            /// The key's name, as written in `locales/<tag>.txt`.
+            #[must_use]
+            pub fn name(self) -> &'static str {
+                match self { $(T::$key => stringify!($key)),* }
+            }
+
+            /// The text in `locale`; English when that language's file
+            /// is not loaded or lacks the key.
             #[must_use]
             pub fn text(self, locale: Locale) -> &'static str {
                 match locale {
                     Locale::En => match self { $(T::$key => $en),* },
                     Locale::Vi => match self { $(T::$key => $vi),* },
+                    other => lookup(other, self).unwrap_or_else(|| self.text(Locale::En)),
                 }
             }
         }
@@ -1525,5 +1653,124 @@ mod tests {
         assert_eq!(tf(T::StepOf, &["2", "5"]), "Bước 2/5");
         set_locale(Locale::En);
         assert_eq!(tf(T::StepOf, &["2", "5"]), "Step 2/5");
+    }
+
+    #[test]
+    fn locale_parse_follows_the_original_resolver() {
+        for (tag, want) in [
+            ("de-AT", Locale::De),
+            ("pt", Locale::PtBr),
+            ("pt-PT", Locale::PtBr),
+            ("es-MX", Locale::EsEs),
+            ("zh", Locale::ZhCn),
+            ("zh-Hans-CN", Locale::ZhCn),
+            ("zh-Hant", Locale::ZhTw),
+            ("zh-HK", Locale::ZhTw),
+            ("zh_TW", Locale::ZhTw),
+            ("ZH-cn", Locale::ZhCn),
+            ("fa-IR", Locale::Fa),
+            ("ja-JP", Locale::Ja),
+            ("xx", Locale::En),
+        ] {
+            assert_eq!(Locale::parse(tag), want, "{tag}");
+        }
+        for l in Locale::ALL {
+            assert_eq!(Locale::parse(l.tag()), *l, "round trip {l:?}");
+        }
+        assert_eq!(Locale::ALL.len(), 20, "en, vi and the original's 18 others");
+        assert!(Locale::Ar.is_rtl() && Locale::Fa.is_rtl() && !Locale::De.is_rtl());
+    }
+
+    #[test]
+    fn a_loaded_language_falls_back_to_english_per_key() {
+        assert!(!has_dict(Locale::Hu));
+        assert_eq!(T::NavHome.text(Locale::Hu), "Home", "not loaded yet");
+        let unknown = install_dict(
+            Locale::Hu,
+            "# comment\n\nNavHome = Kezdőlap\nNoSuchKey = x\nnot a line\nPasteDesignMdPlaceholder = a\\nb\n".to_owned(),
+        );
+        assert!(has_dict(Locale::Hu));
+        assert_eq!(unknown, ["NoSuchKey", "not a line"]);
+        assert_eq!(T::NavHome.text(Locale::Hu), "Kezdőlap");
+        assert_eq!(T::NavSettings.text(Locale::Hu), "Settings", "missing key");
+        assert_eq!(T::PasteDesignMdPlaceholder.text(Locale::Hu), "a\nb");
+        set_locale(Locale::Hu);
+        assert_eq!(t(T::NavHome), "Kezdőlap");
+        set_locale(Locale::En);
+    }
+
+    /// Display width: East Asian wide characters count twice.
+    fn width(s: &str) -> usize {
+        s.chars()
+            .map(|c| match c as u32 {
+                0x1100..=0x115F
+                | 0x2E80..=0xA4CF
+                | 0xAC00..=0xD7A3
+                | 0xF900..=0xFAFF
+                | 0xFE30..=0xFE4F
+                | 0xFF00..=0xFF60
+                | 0xFFE0..=0xFFE6 => 2,
+                _ => 1,
+            })
+            .sum()
+    }
+
+    /// Every language file: present, every key translated once, same
+    /// placeholders as English, no em dash, and no string so much longer
+    /// than English that it breaks the layout built around it.
+    #[test]
+    fn every_language_file_is_complete_and_fits() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let mut failures = Vec::new();
+        for &locale in Locale::ALL.iter().filter(|l| l.is_loaded_on_demand()) {
+            let path = dir.join(format!("{}.txt", locale.tag()));
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                failures.push(format!("{}: missing", path.display()));
+                continue;
+            };
+            let text: &'static str = Box::leak(text.into_boxed_str());
+            let (slots, unknown) = parse_dict(text);
+            let tag = locale.tag();
+            for u in unknown {
+                failures.push(format!("{tag}: unknown key or bad line {u:?}"));
+            }
+            let mut seen = std::collections::HashSet::new();
+            for line in text
+                .lines()
+                .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            {
+                if let Some((k, _)) = line.split_once(" = ") {
+                    if !seen.insert(k.trim()) {
+                        failures.push(format!("{tag}: {k} twice"));
+                    }
+                }
+            }
+            for (key, slot) in T::ALL.iter().zip(&slots) {
+                let en = key.text(Locale::En);
+                let Some(text) = slot else {
+                    failures.push(format!("{tag}: {} untranslated", key.name()));
+                    continue;
+                };
+                if text.trim().is_empty() || placeholders(text) != placeholders(en) {
+                    failures.push(format!("{tag}: {} placeholders: {text}", key.name()));
+                }
+                if text.contains('\u{2014}') {
+                    failures.push(format!("{tag}: {} has an em dash", key.name()));
+                }
+                let (we, wt) = (width(en), width(text));
+                if wt > (2 * we).max(we + 12) {
+                    failures.push(format!(
+                        "{tag}: {} too long ({wt} vs {we}): {text}",
+                        key.name()
+                    ));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} problems:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
     }
 }

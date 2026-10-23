@@ -383,7 +383,8 @@ pub fn SettingsPage() -> impl IntoView {
                                 on:change=move |ev| language.set(Locale::parse(&event_target_value(&ev)))
                             >
                                 {Locale::ALL
-                                    .into_iter()
+                                    .iter()
+                                    .copied()
                                     .map(|l| {
                                         view! {
                                             <option value=l.tag() selected=move || language.get() == l>

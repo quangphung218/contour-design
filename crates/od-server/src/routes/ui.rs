@@ -413,7 +413,8 @@ async fn serve_static(dist: Arc<PathBuf>, req: Request) -> Response {
     let file = dist_file(&dist, path)
         .filter(|f| f.is_file())
         .unwrap_or_else(|| index.clone());
-    let is_index = file == index;
+    // Language files (`locales/<tag>.txt`) keep their names across builds.
+    let revalidate = file == index || path.starts_with("/locales/");
     match tokio::fs::read(&file).await {
         Ok(bytes) => {
             let mut res = Response::new(Body::from(bytes));
@@ -422,10 +423,10 @@ async fn serve_static(dist: Arc<PathBuf>, req: Request) -> Response {
                 header::CONTENT_TYPE,
                 HeaderValue::from_static(content_type(&file)),
             );
-            // trunk fingerprints assets, so only index.html may change.
+            // trunk fingerprints assets, so only these may change.
             headers.insert(
                 header::CACHE_CONTROL,
-                HeaderValue::from_static(if is_index {
+                HeaderValue::from_static(if revalidate {
                     "no-cache"
                 } else {
                     "public, max-age=31536000, immutable"
