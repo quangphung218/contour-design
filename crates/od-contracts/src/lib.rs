@@ -5,6 +5,7 @@
 //! validation beyond what serde enforces.
 
 pub mod agent_w3;
+pub mod c2;
 pub mod comments;
 pub mod content;
 pub mod error;
@@ -16,6 +17,7 @@ pub mod runs;
 pub mod system;
 
 pub use agent_w3::*;
+pub use c2::*;
 pub use comments::*;
 pub use content::*;
 pub use error::*;

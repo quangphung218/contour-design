@@ -152,6 +152,8 @@ pub struct AssistantTurn {
     pub cwd: Option<String>,
     /// Latest Design Jury state, when the run had the jury on.
     pub critique: Option<CritiqueReport>,
+    /// Media the agent generated during the run (track C2), in start order.
+    pub media: Vec<od_contracts::MediaTask>,
 }
 
 impl Default for AssistantTurn {
@@ -172,6 +174,7 @@ impl AssistantTurn {
             todos: Vec::new(),
             cwd: None,
             critique: None,
+            media: Vec::new(),
         }
     }
 
@@ -289,6 +292,12 @@ impl AssistantTurn {
                 &[&tool_name, &count.to_string()],
             ))),
             AgentEvent::Critique { report } => self.critique = Some(report),
+            AgentEvent::Media { task } => {
+                match self.media.iter_mut().find(|m| m.task_id == task.task_id) {
+                    Some(slot) => *slot = task,
+                    None => self.media.push(task),
+                }
+            }
             // Usage, turn ends, raw lines, loop warnings: nothing to show.
             _ => {}
         }
@@ -627,6 +636,42 @@ mod tests {
                 .chars()
                 .count(),
             SUMMARY_CHARS
+        );
+    }
+
+    #[test]
+    fn media_tasks_fold_in_by_id_in_start_order() {
+        use od_contracts::{MediaTask, MediaTaskStatus};
+        let task = |id: &str, status| MediaTask {
+            task_id: id.into(),
+            surface: "image".into(),
+            model: "gpt-image-1".into(),
+            status,
+            progress: Vec::new(),
+            file: None,
+            error: None,
+            started_at: 0,
+            ended_at: None,
+        };
+        let mut turn = AssistantTurn::new();
+        for t in [
+            task("a", MediaTaskStatus::Running),
+            task("b", MediaTaskStatus::Running),
+            task("a", MediaTaskStatus::Done),
+        ] {
+            turn.apply(RunFrame::Agent(AgentEvent::Media { task: t }));
+        }
+        let got: Vec<(&str, MediaTaskStatus)> = turn
+            .media
+            .iter()
+            .map(|m| (m.task_id.as_str(), m.status))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("a", MediaTaskStatus::Done),
+                ("b", MediaTaskStatus::Running)
+            ]
         );
     }
 

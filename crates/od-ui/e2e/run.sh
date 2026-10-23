@@ -27,3 +27,5 @@ node library.e2e.mjs
 node manage.e2e.mjs
 node chat.e2e.mjs
 node files.e2e.mjs
+# Wave C tracks: port OD_E2E_PORT + track number (C2 = +7).
+node c2.e2e.mjs

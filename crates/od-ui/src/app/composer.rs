@@ -228,6 +228,9 @@ pub struct Sources {
     skills: LocalResource<Vec<Candidate>>,
     plugins: LocalResource<Vec<Candidate>>,
     mcp: LocalResource<Vec<Candidate>>,
+    /// Media library assets (track C2), offered where the composer can
+    /// import them.
+    library: LocalResource<Vec<Candidate>>,
 }
 
 impl Sources {
@@ -287,10 +290,18 @@ impl Sources {
                 })
                 .unwrap_or_default()
         });
+        let library = LocalResource::new(|| async {
+            super::library_picker::load_assets()
+                .await
+                .into_iter()
+                .map(|a| mention::library_candidate(&a.project_id, &a.path, &a.project_name))
+                .collect()
+        });
         Self {
             skills,
             plugins,
             mcp,
+            library,
         }
     }
 
@@ -299,11 +310,12 @@ impl Sources {
             MentionKind::Skill => self.skills.get().unwrap_or_default(),
             MentionKind::Plugin => self.plugins.get().unwrap_or_default(),
             MentionKind::Mcp => self.mcp.get().unwrap_or_default(),
+            MentionKind::Library => self.library.get().unwrap_or_default(),
             MentionKind::File => Vec::new(),
         }
     }
 
-    fn all(self, files: &[String]) -> Vec<Candidate> {
+    fn all(self, files: &[String], library: bool) -> Vec<Candidate> {
         let mut out: Vec<Candidate> = files
             .iter()
             .map(|p| Candidate {
@@ -316,6 +328,9 @@ impl Sources {
             .collect();
         for kind in [MentionKind::Plugin, MentionKind::Skill, MentionKind::Mcp] {
             out.extend(self.of(kind));
+        }
+        if library {
+            out.extend(self.of(MentionKind::Library));
         }
         out
     }
@@ -353,6 +368,7 @@ fn kind_label(kind: MentionKind) -> &'static str {
         MentionKind::Skill => t(T::MenuSkills),
         MentionKind::Plugin => t(T::MenuPlugins),
         MentionKind::Mcp => t(T::MenuMcp),
+        MentionKind::Library => t(T::MentionLibrary),
     }
 }
 
@@ -362,6 +378,7 @@ fn kind_glyph(kind: MentionKind) -> Glyph {
         MentionKind::Skill => Glyph::Magic,
         MentionKind::Plugin => Glyph::Plugin,
         MentionKind::Mcp => Glyph::Mcp,
+        MentionKind::Library => Glyph::Image,
     }
 }
 
@@ -371,6 +388,7 @@ fn kind_key(kind: MentionKind) -> &'static str {
         MentionKind::Skill => "skill",
         MentionKind::Plugin => "plugin",
         MentionKind::Mcp => "mcp",
+        MentionKind::Library => "library",
     }
 }
 
@@ -405,6 +423,10 @@ pub fn MentionArea(
     on_notice: Callback<String>,
     #[prop(optional)] node_ref: Option<NodeRef<Textarea>>,
     #[prop(optional)] on_focus: Option<Callback<bool>>,
+    /// Library assets picked with `@` (track C2); without it the palette
+    /// offers no library rows.
+    #[prop(optional)]
+    on_library: Option<Callback<Vec<super::library_picker::LibraryAsset>>>,
 ) -> impl IntoView {
     let area = node_ref.unwrap_or_default();
     let open = RwSignal::new(None::<(bool, Trigger)>);
@@ -421,7 +443,7 @@ pub fn MentionArea(
                 .map(Row::Command)
                 .collect()
         } else {
-            let all = files.with(|f| sources.all(f));
+            let all = files.with(|f| sources.all(f, on_library.is_some()));
             mention::rank(&trigger.query, &all)
                 .into_iter()
                 .map(Row::Mention)
@@ -469,6 +491,8 @@ pub fn MentionArea(
             return;
         };
         let insert = match &row {
+            // An asset becomes an attachment chip, not text.
+            Row::Mention(c) if c.kind == MentionKind::Library => String::new(),
             Row::Mention(c) => mention::token(c),
             Row::Command(cmd) => mention::slash_insert(cmd),
         };
@@ -481,6 +505,18 @@ pub fn MentionArea(
                 return;
             }
             Row::Mention(c) if c.kind == MentionKind::File => on_file.run(c.id.clone()),
+            Row::Mention(c) if c.kind == MentionKind::Library => {
+                if let (Some(cb), Some((project_id, path))) = (on_library, mention::library_ref(&c))
+                {
+                    cb.run(vec![super::library_picker::LibraryAsset {
+                        project_id: project_id.to_owned(),
+                        project_name: c.detail.clone(),
+                        path: path.to_owned(),
+                        kind: String::new(),
+                        mtime: 0.0,
+                    }]);
+                }
+            }
             Row::Mention(c) => stage(context, c),
             Row::Command(_) => {}
         }
@@ -932,9 +968,13 @@ pub fn PlusMenu(
     /// Offer the design toolbox (Studio).
     #[prop(optional)]
     toolbox: bool,
+    /// "Import from library" (track C2): the picked assets.
+    #[prop(optional)]
+    on_library: Option<Callback<Vec<super::library_picker::LibraryAsset>>>,
     #[prop(optional)] children: Option<ChildrenFn>,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
+    let picker = RwSignal::new(false);
     let view_of = RwSignal::new(PlusView::Main);
     let search = RwSignal::new(String::new());
     let wrap = NodeRef::<Div>::new();
@@ -979,6 +1019,12 @@ pub fn PlusMenu(
                                     on:click=move |_| { open.set(false); on_attach.run(()); }>
                                     {icon(Glyph::Attachment)}{t(T::AttachFiles)}
                                 </button>
+                                {on_library.is_some().then(|| view! {
+                                    <button type="button" class="menu-item" role="menuitem" data-testid="plus-library"
+                                        on:click=move |_| { open.set(false); picker.set(true); }>
+                                        {icon(Glyph::Image)}{t(T::ImportFromLibrary)}
+                                    </button>
+                                })}
                                 {[MentionKind::Plugin, MentionKind::Skill, MentionKind::Mcp].into_iter().map(|k| view! {
                                     <button type="button" class="menu-item" role="menuitem" data-testid=format!("plus-{}", kind_key(k))
                                         on:click=move |_| { search.set(String::new()); view_of.set(PlusView::List(k)); }>
@@ -1063,6 +1109,17 @@ pub fn PlusMenu(
                     }}
                 </div>
             </Show>
+            {move || (picker.get() && on_library.is_some()).then(|| view! {
+                <super::library_picker::LibraryPicker
+                    on_close=Callback::new(move |()| picker.set(false))
+                    on_pick=Callback::new(move |assets| {
+                        picker.set(false);
+                        if let Some(cb) = on_library {
+                            cb.run(assets);
+                        }
+                    })
+                />
+            })}
         </div>
     }
 }

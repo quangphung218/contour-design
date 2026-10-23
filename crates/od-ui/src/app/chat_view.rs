@@ -161,6 +161,19 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
         quote.set(picked);
     };
 
+    // Track C2: library assets are copied into the project and attached.
+    let import_library = Callback::new(move |assets: Vec<super::library_picker::LibraryAsset>| {
+        let project = ctx.project_id.get_value();
+        leptos::task::spawn_local(async move {
+            match super::library_picker::apply_to_project(&project, &assets).await {
+                Ok(paths) => ctx
+                    .tools
+                    .attachments
+                    .update(|a| crate::workspace::add_missing(a, paths)),
+                Err(e) => ctx.notice.set(Some(e)),
+            }
+        });
+    });
     view! {
         <section class="chat" aria-label=t(T::Chat)>
             <ConversationBar ctx=ctx/>
@@ -277,6 +290,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     on_files=stage_files
                     on_mcp_settings=to_mcp
                     on_notice=Callback::new(move |m: String| ctx.notice.set(Some(m)))
+                    on_library=import_library
                 />
                 <FilePicker trigger=pick_files on_files=stage_files/>
                 <div class="composer-actions">
@@ -287,6 +301,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         on_attach=Callback::new(move |()| pick_files.update(|n| *n += 1))
                         up=true
                         toolbox=true
+                        on_library=import_library
                     >
                         <super::chat_ops::ContextFolders ctx=ctx/>
                     </PlusMenu>
@@ -552,6 +567,7 @@ fn AssistantView(
         <div class="msg assistant" data-testid="assistant-msg" data-state=move || format!("{:?}", state()).to_lowercase()>
             {move || turn.with(|tn| (!tn.todos.is_empty()).then(|| view! { <PlanList todos=tn.todos.clone()/> }))}
             <super::agent_w3::JuryTheater turn=turn/>
+            <super::media_rows::MediaRows turn=turn/>
             {move || {
                 turn.with(|t| {
                     t.blocks

@@ -91,24 +91,52 @@ async fn run(
     deps: &Deps,
     project_id: String,
     req: GenerateRequest,
+    run_id: Option<&str>,
 ) -> ApiResult<Json<Value>> {
     // The project must exist before a paid provider call.
     let pid = project_id.clone();
     state.blocking(move |s| s.get_project(&pid)).await?;
-    let http = od_media::provider::http_client()?;
-    let generated = od_media::generate(
-        &http,
-        &config_file(state),
-        deps.env.as_ref(),
-        &req,
-        deps.limits,
-    )
-    .await?;
+    let surface = serde_json::to_value(req.surface)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default();
+    // Track C2: the run's chat shows this generation as it goes.
+    let mut progress =
+        crate::routes::c2::media::Progress::start(state, run_id, &surface, &req.model);
+    let res = async {
+        let http = od_media::provider::http_client()?;
+        let generated = od_media::generate(
+            &http,
+            &config_file(state),
+            deps.env.as_ref(),
+            &req,
+            deps.limits,
+        )
+        .await?;
+        progress.line(format!("Writing {}", generated.name));
+        Ok::<_, ApiErr>(generated)
+    }
+    .await;
+    let generated = match res {
+        Ok(g) => g,
+        Err(e) => {
+            progress.failed(&e.message);
+            return Err(e);
+        }
+    };
     let note = generated.note.clone();
     let (name, bytes) = (generated.name.clone(), generated.bytes);
-    let file = state
+    let file = match state
         .blocking(move |s| s.write_file(&project_id, &name, &bytes, true, None))
-        .await?;
+        .await
+    {
+        Ok(f) => f,
+        Err(e) => {
+            progress.failed(&e.message);
+            return Err(e);
+        }
+    };
+    progress.done(&file.name);
     tracing::info!(model = %generated.model, file = %file.name, "media generated");
     Ok(Json(json!({
         "file": file,
@@ -138,7 +166,7 @@ pub async fn generate(
     ApiJson(body): ApiJson<Value>,
 ) -> ApiResult<Json<Value>> {
     let req = parse(body)?;
-    run(&state, &deps, id, req).await
+    run(&state, &deps, id, req, None).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -166,5 +194,5 @@ pub async fn tool_generate(
         .project_id
         .ok_or_else(|| ApiErr::bad_request("projectId is required"))?;
     let req = parse(body.rest)?;
-    run(&state, &deps, project, req).await
+    run(&state, &deps, project, req, caller.run_id.as_deref()).await
 }

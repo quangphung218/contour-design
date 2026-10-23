@@ -45,7 +45,12 @@ pub async fn add(
     ApiJson(req): ApiJson<NewMemory>,
 ) -> ApiResult<ApiJson<MemoryResponse>> {
     let memory = state
-        .blocking(move |s| s.add_global_memory(&req.kind, &req.text))
+        .blocking(move |s| {
+            let entry = s.add_global_memory(&req.kind, &req.text)?;
+            // A saved MEMORY.md links the new entry, so it is injected.
+            od_store::memory_index::MemoryFiles::in_data_dir(s.data_dir().root()).link(&entry)?;
+            Ok(entry)
+        })
         .await?;
     Ok(ApiJson(MemoryResponse { memory }))
 }
@@ -54,7 +59,14 @@ pub async fn remove(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<ApiJson<od_contracts::OkResponse>> {
-    if state.blocking(move |s| s.delete_global_memory(&id)).await? {
+    let removed = state
+        .blocking(move |s| {
+            let removed = s.delete_global_memory(&id)?;
+            od_store::memory_index::MemoryFiles::in_data_dir(s.data_dir().root()).unlink(&id)?;
+            Ok(removed)
+        })
+        .await?;
+    if removed {
         Ok(ApiJson(od_contracts::OkResponse { ok: true }))
     } else {
         Err(ApiErr::not_found("memory not found"))

@@ -19,18 +19,27 @@ pub enum MentionKind {
     Plugin,
     /// An MCP server: the message asks the agent to use its tools.
     Mcp,
+    /// A media library asset (track C2): copied into the project and
+    /// attached, like "Import from library" in "+".
+    Library,
 }
 
 impl MentionKind {
     /// Sections in palette order.
-    pub const ALL: [Self; 4] = [Self::File, Self::Plugin, Self::Skill, Self::Mcp];
+    pub const ALL: [Self; 5] = [
+        Self::File,
+        Self::Plugin,
+        Self::Skill,
+        Self::Mcp,
+        Self::Library,
+    ];
 
     /// Most rows a section shows (the original's caps).
     #[must_use]
     pub fn cap(self) -> usize {
         match self {
             Self::File => 12,
-            Self::Plugin | Self::Skill | Self::Mcp => 8,
+            Self::Plugin | Self::Skill | Self::Mcp | Self::Library => 8,
         }
     }
 }
@@ -201,6 +210,27 @@ pub fn rank(query: &str, candidates: &[Candidate]) -> Vec<Candidate> {
     out
 }
 
+/// A library asset's palette row: `id` is `<projectId>:<path>` (project
+/// ids never hold a colon), the label its file name.
+#[must_use]
+pub fn library_candidate(project_id: &str, path: &str, project_name: &str) -> Candidate {
+    Candidate {
+        kind: MentionKind::Library,
+        id: format!("{project_id}:{path}"),
+        label: path.rsplit('/').next().unwrap_or(path).to_owned(),
+        detail: project_name.to_owned(),
+        inputs: None,
+    }
+}
+
+/// The `(projectId, path)` of a library row.
+#[must_use]
+pub fn library_ref(c: &Candidate) -> Option<(&str, &str)> {
+    (c.kind == MentionKind::Library)
+        .then(|| c.id.split_once(':'))
+        .flatten()
+}
+
 /// The text a mention leaves in the draft.
 #[must_use]
 pub fn token(c: &Candidate) -> String {
@@ -336,6 +366,19 @@ pub fn utf16_offset(text: &str, byte: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn library_rows_round_trip_their_asset_and_rank_last() {
+        let c = library_candidate("p1", "assets/hero shot.png", "Launch");
+        assert_eq!(
+            (c.label.as_str(), c.detail.as_str()),
+            ("hero shot.png", "Launch")
+        );
+        assert_eq!(library_ref(&c), Some(("p1", "assets/hero shot.png")));
+        assert_eq!(library_ref(&cand(MentionKind::File, "p1:x")), None);
+        let rows = rank("", &[c, cand(MentionKind::Mcp, "github")]);
+        assert_eq!(rows.last().map(|r| r.kind), Some(MentionKind::Library));
+    }
 
     fn cand(kind: MentionKind, id: &str) -> Candidate {
         Candidate {
