@@ -120,6 +120,44 @@ async fn closing_kills_the_shell_its_foreground_job_and_background_jobs() {
     }
 }
 
+/// A background job in a group of its own that ignores SIGHUP: neither
+/// the shell's group nor the foreground one, but still the tab's session.
+#[tokio::test]
+async fn closing_kills_background_jobs_that_ignore_sighup() {
+    let dir = tempfile::tempdir().unwrap();
+    let terms = terminals(4);
+    let s = terms.create("p1", dir.path(), None, None).unwrap();
+    let mut att = s.attach();
+    let mut seen = String::new();
+    s.write(b"set -m; (trap '' HUP; exec sleep 1003) & echo B\"\"H=$! .\r")
+        .unwrap();
+    read_until(&mut att.live, &mut seen, "BH=").await;
+    read_until(&mut att.live, &mut seen, ".").await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let bg = pid_after(&seen, "BH=");
+    assert!(alive(bg));
+    let shell = i32::try_from(s.pid().unwrap()).unwrap();
+    assert_ne!(
+        nix::unistd::getpgid(Some(nix::unistd::Pid::from_raw(bg)))
+            .unwrap()
+            .as_raw(),
+        shell
+    );
+
+    assert!(terms.close(s.id()).await);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while alive(bg) {
+        if tokio::time::Instant::now() > deadline {
+            let _ = nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(bg),
+                nix::sys::signal::Signal::SIGKILL,
+            );
+            panic!("the background job outlived its tab");
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 #[tokio::test]
 async fn limit_and_bad_cwd_are_refused() {
     let dir = tempfile::tempdir().unwrap();

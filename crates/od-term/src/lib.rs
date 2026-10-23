@@ -4,10 +4,10 @@
 //! - Sessions live in memory only; a daemon restart ends them.
 //! - Output fans out to every attached client. A bounded scrollback lets a
 //!   reconnecting client (page reload) replay what it missed.
-//! - Closing a session kills the shell's whole tree: on POSIX the shell
-//!   and the terminal's foreground job get SIGHUP, then SIGKILL after a
-//!   grace period; on Windows the shell runs in its own kill-on-close Job
-//!   Object (`od-job`).
+//! - Closing a session kills the shell's whole tree: on POSIX the process
+//!   groups of the shell, the terminal's foreground job and every other job
+//!   on the tab's TTY get SIGHUP, then SIGKILL after a grace period; on
+//!   Windows the shell runs in its own kill-on-close Job Object (`od-job`).
 //!
 //! The HTTP side (loopback-only WebSocket behind the daemon's guards) is
 //! in `od-server`.
@@ -267,14 +267,17 @@ impl Session {
 
     /// Ends the shell and everything it started.
     async fn kill(&self, grace: Duration) {
-        // EOF on stdin first: a shell at its prompt exits by itself.
-        lock(&self.writer).take();
         let Some(pid) = self.pid else {
+            lock(&self.writer).take();
             return;
         };
+        // Read before the shell can exit: its jobs lose the TTY with it.
+        #[cfg(unix)]
+        let groups = self.process_groups(pid).await;
+        // EOF on stdin first: a shell at its prompt exits by itself.
+        lock(&self.writer).take();
         #[cfg(unix)]
         {
-            let groups = self.process_groups(pid);
             signal_groups(&groups, nix::sys::signal::Signal::SIGHUP);
             if !self.wait_exit(grace).await || groups_alive(&groups) {
                 signal_groups(&groups, nix::sys::signal::Signal::SIGKILL);
@@ -290,18 +293,46 @@ impl Session {
         let _ = (pid, grace);
     }
 
-    /// The shell's own group plus the terminal's foreground job, which job
-    /// control puts in a group of its own.
+    /// The shell's own group, the terminal's foreground job and the other
+    /// jobs on the tab's TTY: job control puts each in a group of its own.
     #[cfg(unix)]
-    fn process_groups(&self, pid: u32) -> Vec<i32> {
+    async fn process_groups(&self, pid: u32) -> Vec<i32> {
         let mut groups: Vec<i32> = i32::try_from(pid).into_iter().collect();
-        if let Some(fg) = lock(&self.master).process_group_leader() {
-            if fg > 1 && !groups.contains(&fg) {
-                groups.push(fg);
-            }
+        let (fg, tty) = {
+            let master = lock(&self.master);
+            (master.process_group_leader(), master.tty_name())
+        };
+        if let Some(tty) = tty {
+            groups.extend(tty_groups(&tty).await);
         }
+        groups.extend(fg);
+        groups.retain(|&g| g > 1);
+        groups.sort_unstable();
+        groups.dedup();
         groups
     }
+}
+
+/// Process groups of everything whose controlling terminal is `tty` (a
+/// job a script put in the background keeps it; one that left the session
+/// with `setsid` does not).
+#[cfg(unix)]
+async fn tty_groups(tty: &Path) -> Vec<i32> {
+    let name = tty.strip_prefix("/dev").unwrap_or(tty);
+    let Ok(out) = tokio::process::Command::new("ps")
+        .arg("-o")
+        .arg("pgid=")
+        .arg("-t")
+        .arg(name)
+        .output()
+        .await
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .filter_map(|g| g.parse().ok())
+        .collect()
 }
 
 #[cfg(unix)]
