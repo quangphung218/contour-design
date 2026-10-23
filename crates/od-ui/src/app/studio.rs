@@ -1243,7 +1243,9 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
         (Some(_), Some(count)) => super::deck::load_notes(ctx, count),
         _ => ctx.notes.set(Vec::new()),
     });
-    let is_image = move || {
+    // A memo: a files refresh (any upload) must not rebuild the frame and
+    // what sits on it (comment draft, drawing) unless this flips.
+    let image_shown = Memo::new(move |_| {
         let path = ctx.active();
         ctx.files.with(|files| {
             files
@@ -1251,7 +1253,8 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 .find(|f| Some(&f.path) == path.as_ref())
                 .is_some_and(|f| matches!(f.kind, FileKind::Image))
         })
-    };
+    });
+    let is_image = move || image_shown.get();
     let is_html = move || ctx.active().is_some_and(|p| is_html_path(&p));
     // Markdown, sketches and documents have their own views, kept across
     // preview reloads (an auto-save reloads the preview).

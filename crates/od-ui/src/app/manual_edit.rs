@@ -187,6 +187,14 @@ impl StudioCtx {
             if m.read_seq.try_get_value() != Some(seq) {
                 return;
             }
+            // A read again of the same source (a reload, a key claimed)
+            // keeps what the user typed; a changed element refills.
+            let same = m
+                .element
+                .with_untracked(|was| matches!((was, &res), (Some(Ok(a)), Ok(b)) if a == b));
+            if same {
+                return;
+            }
             if let Ok(el) = &res {
                 m.fill(el);
             }

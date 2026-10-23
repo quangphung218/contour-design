@@ -324,10 +324,7 @@ impl StudioCtx {
         let tools = self.tools;
         match tools.tool.get_untracked() {
             Some(Tool::Inspect) => bridge::post_main(&pb::select_mode(true)),
-            Some(Tool::Manual) => {
-                bridge::post_main(&pb::select_mode(true));
-                self.manual_ready();
-            }
+            Some(Tool::Manual) => bridge::post_main(&pb::select_mode(true)),
             Some(Tool::EditText) => {
                 let doc = self.active_untracked();
                 bridge::post_main(&pb::edit_mode(true, doc.as_deref()));
@@ -342,10 +339,17 @@ impl StudioCtx {
             bridge::post_main(&pb::palette(Some(&p)));
         }
         let kid = tools.frame_kid.get_value();
+        // Manual edit's layers and element answer only with the key.
+        let manual = move || {
+            if tools.tool.get_untracked() == Some(Tool::Manual) {
+                self.manual_ready();
+            }
+        };
         if kid.is_empty() || tools.claimed_kid.get_value() == kid {
             if let Some(i) = tools.inspected.get_untracked() {
                 bridge::post_main(&pb::inspect(&i.selector));
             }
+            manual();
             return;
         }
         // Take this load's edit key, then re-read the inspected element
@@ -361,6 +365,7 @@ impl StudioCtx {
             if let Some(i) = tools.inspected.get_untracked() {
                 bridge::post_main(&pb::inspect(&i.selector));
             }
+            manual();
         });
     }
 
