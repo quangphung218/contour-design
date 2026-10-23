@@ -560,6 +560,21 @@ impl RoutineStore {
         Ok(())
     }
 
+    /// One run of any routine.
+    ///
+    /// # Errors
+    /// [`AutomationError::NotFound`], SQLite errors.
+    pub fn run(&self, id: &str) -> Result<RoutineRun> {
+        self.conn()
+            .query_row(
+                &format!("SELECT {RUN_COLUMNS} FROM routine_runs WHERE id = ?1"),
+                [id],
+                run_from_row,
+            )
+            .optional()?
+            .ok_or(AutomationError::NotFound)
+    }
+
     /// History, newest first.
     ///
     /// # Errors

@@ -193,3 +193,38 @@ async fn missing_bundle_explains_how_to_build() {
     assert_eq!(s, StatusCode::NOT_FOUND);
     assert!(String::from_utf8_lossy(&b).contains("trunk build"));
 }
+
+// Track C4-depth: language files keep their names across builds, so they
+// must be revalidated, unlike the fingerprinted bundle.
+#[tokio::test]
+async fn language_files_are_revalidated() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dist = tmp.path().join("dist");
+    std::fs::create_dir_all(dist.join("locales")).unwrap();
+    std::fs::write(dist.join("index.html"), "<!doctype html>app").unwrap();
+    std::fs::write(dist.join("locales/de.txt"), "NavHome = Startseite\n").unwrap();
+    std::fs::write(dist.join("od-ui-abc.js"), "x").unwrap();
+    let app = Router::new()
+        .merge(routes_with_dist(dist))
+        .with_state(state(tmp.path()));
+    let get = |uri: &'static str| {
+        let app = app.clone();
+        async move {
+            app.oneshot(Request::get(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap()
+        }
+    };
+    let res = get("/locales/de.txt").await;
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers()[header::CONTENT_TYPE],
+        "text/plain; charset=utf-8"
+    );
+    assert_eq!(res.headers()[header::CACHE_CONTROL], "no-cache");
+    let res = get("/od-ui-abc.js").await;
+    assert_eq!(
+        res.headers()[header::CACHE_CONTROL],
+        "public, max-age=31536000, immutable"
+    );
+}

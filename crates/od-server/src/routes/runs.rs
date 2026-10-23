@@ -637,6 +637,7 @@ async fn prepare_and_launch(
         .await;
         return Ok(resumed);
     };
+    crate::routes::genui::raise_for_run(state, run, req, project).await;
     tokio::spawn(persist_run(
         state.clone(),
         Arc::clone(run),

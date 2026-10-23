@@ -10,6 +10,7 @@ pub mod comment_board;
 pub mod events;
 pub mod file_tree;
 pub mod fuzzy;
+pub mod genui;
 pub mod guide;
 pub mod handoff;
 pub mod highlight;

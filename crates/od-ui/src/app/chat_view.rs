@@ -261,6 +261,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     {icon(Glyph::Comment)}{t(T::QuoteSelection)}
                 </button>
             })}
+            <super::genui_view::GenuiSurfaces ctx=ctx/>
             <PlanPill ctx=ctx/>
             <QueueStack ctx=ctx/>
             <CommentChips ctx=ctx/>
