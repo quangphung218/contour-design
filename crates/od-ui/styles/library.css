@@ -190,3 +190,13 @@
   .kit-module:first-child { grid-column: auto; }
   .lib-search .input { width: 100%; }
 }
+.lib-tabs { width: fit-content; max-width: 100%; overflow-x: auto; }
+.seg-label { display: inline-flex; align-items: center; gap: var(--space-1-5); }
+.seg-label .ico { width: var(--icon-sm); height: var(--icon-sm); }
+.ds-summary { margin: calc(-1 * var(--space-2)) 0 0; max-width: 72ch; }
+.media-grid > .empty-state, .lib-template-grid > .empty, .prompt-grid > .empty-state { grid-column: 1 / -1; }
+.lib-page .page-title { flex: 1; }
+.confirm-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; border-color: var(--color-danger); background: var(--color-danger-soft); }
+.confirm-bar .confirm { padding-left: 0; }
+.modal-backdrop { position: absolute; inset: 0; }
+.overlay > .dialog { position: relative; }

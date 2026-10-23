@@ -10,6 +10,11 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 /// A modal dialog: Esc and a click on the backdrop close it.
+///
+/// The backdrop is a sibling of the dialog, not its parent, and only the
+/// dialog listens for keys: a button inside that closes the modal (or
+/// navigates away) removes it while its click is still bubbling, and no
+/// listener of the removed tree may run after that.
 #[component]
 pub fn Modal(
     title: String,
@@ -21,16 +26,16 @@ pub fn Modal(
     children: Children,
 ) -> impl IntoView {
     let label = title.clone();
+    // Focus the dialog so Esc reaches it right away.
+    let dialog = NodeRef::<leptos::html::Div>::new();
+    Effect::new(move |_| {
+        if let Some(el) = dialog.get() {
+            let _ = el.focus();
+        }
+    });
     view! {
-        <div
-            class="overlay center"
-            on:click=move |_| on_close.run(())
-            on:keydown=move |ev: web_sys::KeyboardEvent| {
-                if ev.key() == "Escape" {
-                    on_close.run(());
-                }
-            }
-        >
+        <div class="overlay center">
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| on_close.run(())></div>
             <div
                 class="dialog"
                 class:lib-wide=wide
@@ -39,7 +44,13 @@ pub fn Modal(
                 aria-label=label
                 data-testid=testid
                 tabindex="-1"
-                on:click=|ev| ev.stop_propagation()
+                node_ref=dialog
+                on:keydown=move |ev: web_sys::KeyboardEvent| {
+                    if ev.key() == "Escape" {
+                        ev.stop_propagation();
+                        on_close.run(());
+                    }
+                }
             >
                 <div class="dialog-head">
                     <span class="dialog-icon">{icon(glyph)}</span>
@@ -53,6 +64,35 @@ pub fn Modal(
                 </div>
                 {children()}
             </div>
+        </div>
+    }
+}
+
+/// Whether a key event comes from inside a modal dialog (page shortcuts
+/// ignore those).
+#[must_use]
+pub fn from_dialog(ev: &web_sys::Event) -> bool {
+    ev.target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        .and_then(|el| el.closest(".dialog").ok().flatten())
+        .is_some()
+}
+
+/// An inline "are you sure" line (the Projects page pattern; a blocking
+/// `window.confirm` would re-enter the app's event handlers).
+#[component]
+pub fn ConfirmBar(
+    message: String,
+    on_confirm: Callback<()>,
+    on_cancel: Callback<()>,
+    #[prop(into)] testid: &'static str,
+) -> impl IntoView {
+    let label = message.clone();
+    view! {
+        <div class="card padded confirm-bar" role="alertdialog" aria-label=label data-testid=testid>
+            <span class="confirm grow">{message}</span>
+            <button class="btn small" on:click=move |_| on_cancel.run(())>{t(T::Cancel)}</button>
+            <button class="btn small danger" data-testid=format!("{testid}-yes") on:click=move |_| on_confirm.run(())>{t(T::Delete)}</button>
         </div>
     }
 }

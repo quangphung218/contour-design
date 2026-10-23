@@ -129,22 +129,21 @@ pub fn NewDesignSystem(
             </button>
             <Show when=move || !open.get()>{status}</Show>
             <Show when=move || open.get()>
-                <div
-                    class="overlay center"
-                    on:click=move |_| open.set(false)
-                    on:keydown=move |ev: web_sys::KeyboardEvent| {
-                        if ev.key() == "Escape" {
-                            open.set(false);
-                        }
-                    }
-                >
+                // The backdrop is the dialog's sibling: Cancel removes the
+                // dialog while its click bubbles (see `lib_ui::Modal`).
+                <div class="overlay center">
+                    <div class="modal-backdrop" aria-hidden="true" on:click=move |_| open.set(false)></div>
                     <div
                         class="dialog"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="ds-dialog-title"
                         data-testid="ds-form"
-                        on:click=|ev| ev.stop_propagation()
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Escape" {
+                                open.set(false);
+                            }
+                        }
                     >
                         <div class="dialog-head">
                             <span class="dialog-icon">{icon(Glyph::Sparkle)}</span>

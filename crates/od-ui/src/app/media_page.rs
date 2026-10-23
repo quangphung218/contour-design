@@ -161,8 +161,8 @@ pub fn MediaPage() -> impl IntoView {
 
     let tab_button = move |k: Tab, label: T, glyph: Glyph, key: &'static str| {
         view! {
-            <button class="tab" role="tab" data-testid=format!("media-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() on:click=move |_| tab.set(k)>
-                <span class="tab-name">{icon(glyph)}{t(label)}
+            <button class="seg" role="tab" data-testid=format!("media-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() on:click=move |_| tab.set(k)>
+                <span class="seg-label">{icon(glyph)}{t(label)}
                     {(k == Tab::Queue).then(|| view! { <Show when=move || { active() > 0 }><span class="badge accent">{active}</span></Show> })}
                 </span>
             </button>
@@ -178,7 +178,7 @@ pub fn MediaPage() -> impl IntoView {
                 </div>
                 <button class="btn primary" data-testid="media-new" on:click=move |_| tab.set(Tab::Generate)>{icon(Glyph::Sparkle)}{t(T::GenerateMedia)}</button>
             </header>
-            <div class="tabs lib-tabs" role="tablist">
+            <div class="segmented lib-tabs" role="tablist">
                 {tab_button(Tab::Library, T::Library, Glyph::Grid, "library")}
                 {tab_button(Tab::Generate, T::Generate, Glyph::Sparkle, "generate")}
                 {tab_button(Tab::Queue, T::MediaQueue, Glyph::Queue, "queue")}
@@ -261,16 +261,12 @@ fn LibraryView(assets: RwSignal<Option<Vec<Asset>>>, projects: RwSignal<Vec<Proj
             }
         });
     };
-    let delete_selected = move |_| {
+    let confirm_delete = RwSignal::new(false);
+    let delete_selected = Callback::new(move |()| {
+        confirm_delete.set(false);
         let picks: Vec<Asset> = visible.with_untracked(|l| {
             l.iter().filter(|a| selected.with_untracked(|s| s.contains(&a.key()))).cloned().collect()
         });
-        let ok = web_sys::window()
-            .and_then(|w| w.confirm_with_message(&tf(T::DeleteAssetsConfirm, &[&picks.len().to_string()])).ok())
-            .unwrap_or(false);
-        if !ok {
-            return;
-        }
         leptos::task::spawn_local(async move {
             for a in &picks {
                 let path = format!("/api/projects/{}/files/{}", api::seg(&a.project_id), api::file_path(&a.path));
@@ -281,7 +277,7 @@ fn LibraryView(assets: RwSignal<Option<Vec<Asset>>>, projects: RwSignal<Vec<Proj
             selected.set(Vec::new());
             on_change.run(());
         });
-    };
+    });
     let toggle = move |key: String| selected.update(|s| if let Some(i) = s.iter().position(|k| *k == key) { s.remove(i); } else { s.push(key); });
 
     view! {
@@ -314,9 +310,13 @@ fn LibraryView(assets: RwSignal<Option<Vec<Asset>>>, projects: RwSignal<Vec<Proj
                 <input class="input small grow" data-testid="media-chat-prompt" placeholder=t(T::ChatToDesignPlaceholder)
                     prop:value=move || chat_prompt.get() on:input=move |ev| chat_prompt.set(event_target_value(&ev))/>
                 <button class="btn small primary" data-testid="media-chat" on:click=chat.clone()>{icon(Glyph::Chat)}{t(T::ChatToDesign)}</button>
-                <button class="btn small ghost danger" data-testid="media-delete" on:click=delete_selected>{icon(Glyph::Delete)}{t(T::Delete)}</button>
+                <button class="btn small ghost danger" data-testid="media-delete" on:click=move |_| confirm_delete.set(true)>{icon(Glyph::Delete)}{t(T::Delete)}</button>
                 <button class="btn small ghost" on:click=move |_| selected.set(Vec::new())>{t(T::ClearSelection)}</button>
             </div>
+        </Show>
+        <Show when=move || confirm_delete.get()>
+            <super::lib_ui::ConfirmBar message=tf(T::DeleteAssetsConfirm, &[&selected.with(Vec::len).to_string()]) testid="media-delete-confirm"
+                on_confirm=delete_selected on_cancel=Callback::new(move |()| confirm_delete.set(false))/>
         </Show>
         <div class="media-grid" data-testid="media-grid">
             {move || match assets.get() {
@@ -748,7 +748,7 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
         }
         busy.set(true);
         status.set(None);
-        let body = json!({ "fps": fps.get_untracked(), "output": "media/hyperframes.mp4" });
+        let body = json!({ "fileName": "index.html", "fps": fps.get_untracked(), "output": "media/hyperframes.mp4" });
         leptos::task::spawn_local(async move {
             match api::post::<_, Value>(&format!("/api/projects/{}/export/mp4", api::seg(&pid)), &body).await {
                 Ok(v) => {

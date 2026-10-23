@@ -70,6 +70,10 @@ pub fn DesignSystemsPage() -> impl IntoView {
             match api::get::<DesignSystemsResponse>("/api/design-systems").await {
                 Ok(r) => {
                     if let Some(id) = select {
+                        // Show the system asked for, whatever the filters were.
+                        query.set(String::new());
+                        category.set(String::new());
+                        surface.set(None);
                         if let Some(s) = r.design_systems.iter().find(|s| s.id == id) {
                             scope.set(if is_mine(s) { Scope::Mine } else { Scope::Presets });
                         }
@@ -141,7 +145,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
     let scope_tab = move |sc: Scope, label: T| {
         view! {
             <button
-                class="tab"
+                class="seg"
                 role="tab"
                 class:active=move || scope.get() == sc
                 aria-selected=move || (scope.get() == sc).to_string()
@@ -152,7 +156,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
                     surface.set(None);
                 }
             >
-                <span class="tab-name">{t(label)}<span class="count-badge">{move || count(sc)}</span></span>
+                <span class="seg-label">{t(label)}<span class="count-badge">{move || count(sc)}</span></span>
             </button>
         }
     };
@@ -168,7 +172,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
                     {icon(Glyph::Add)}{t(T::Create)}
                 </button>
             </header>
-            <div class="tabs lib-tabs" role="tablist">
+            <div class="segmented lib-tabs" role="tablist">
                 {scope_tab(Scope::Mine, T::DsYourSystems)}
                 {scope_tab(Scope::Presets, T::DsPresets)}
             </div>
@@ -606,7 +610,7 @@ fn DsDetail(
                 .target()
                 .and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(t).ok())
                 .is_some_and(|el| matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT"));
-            if in_field || editing.with_untracked(Option::is_some) {
+            if in_field || editing.with_untracked(Option::is_some) || super::lib_ui::from_dialog(&ev) {
                 return;
             }
             match ev.key().as_str() {
@@ -710,17 +714,11 @@ fn DsDetail(
             post(ds_url(&id, "status"), json!({ "status": next }), t(T::Saved), true);
         }
     };
+    let confirm_delete = RwSignal::new(false);
     let delete_system = {
         let id = id.clone();
-        let title = summary.title.clone();
-        move |_| {
-            menu.set(false);
-            let ok = web_sys::window()
-                .and_then(|w| w.confirm_with_message(&tf(T::DsDeleteConfirm, &[&title])).ok())
-                .unwrap_or(false);
-            if !ok {
-                return;
-            }
+        Callback::new(move |()| {
+            confirm_delete.set(false);
             let id = id.clone();
             leptos::task::spawn_local(async move {
                 match api::post::<_, Value>(&ds_url(&id, "delete"), &json!({})).await {
@@ -728,7 +726,7 @@ fn DsDetail(
                     Err(e) => say(Err(e.to_string())),
                 }
             });
-        }
+        })
     };
     let use_in_project = {
         let id = id.clone();
@@ -775,6 +773,7 @@ fn DsDetail(
 
     let draft = mine && summary.status == DesignSystemStatus::Draft;
     let title = summary.title.clone();
+    let delete_message = tf(T::DsDeleteConfirm, &[&title]);
     let showcase_src = ds_url(&id, "showcase");
     let showcase_full = showcase_src.clone();
     let id_assets = id.clone();
@@ -799,7 +798,6 @@ fn DsDetail(
                             <span class="badge accent">{t(T::ChatDefault)}</span>
                         </Show>
                     </div>
-                    {(!summary.summary.is_empty()).then(|| view! { <p class="muted">{summary.summary.clone()}</p> })}
                 </div>
                 <div class="row wrap ds-actions">
                     <button class="btn small" data-testid="ds-use" on:click=use_in_project>{icon(Glyph::ArrowRight)}{t(T::UseInNewProject)}</button>
@@ -832,13 +830,18 @@ fn DsDetail(
                                         {icon(Glyph::CheckCircle)}
                                         {if summary.status == DesignSystemStatus::Published { t(T::MarkDraft) } else { t(T::Publish) }}
                                     </button>
-                                    <button class="menu-item danger" role="menuitem" data-testid="ds-delete" on:click=delete_system.clone()>{icon(Glyph::Delete)}{t(T::Delete)}</button>
+                                    <button class="menu-item danger" role="menuitem" data-testid="ds-delete" on:click=move |_| { menu.set(false); confirm_delete.set(true); }>{icon(Glyph::Delete)}{t(T::Delete)}</button>
                                 })}
                             </div>
                         </Show>
                     </div>
                 </div>
             </header>
+            {(!summary.summary.is_empty()).then(|| view! { <p class="muted ds-summary">{summary.summary.clone()}</p> })}
+            <Show when=move || confirm_delete.get()>
+                <super::lib_ui::ConfirmBar message=delete_message.clone() testid="ds-delete-confirm"
+                    on_confirm=delete_system on_cancel=Callback::new(move |()| confirm_delete.set(false))/>
+            </Show>
             {move || notice.get().map(|n| match n {
                 Ok(m) => view! { <p class="ok-text" role="status" data-testid="ds-notice">{icon(Glyph::Check)}{m}</p> }.into_any(),
                 Err(e) => view! { <p class="error-text" role="alert" data-testid="ds-notice">{e}</p> }.into_any(),
@@ -884,15 +887,17 @@ fn DsDetail(
                 Some(Ok(k)) => k.revisions.iter().filter(|r| matches!(r.status.as_str(), "running" | "pending" | "failed")).cloned().collect::<Vec<_>>(),
                 _ => Vec::new(),
             }).into_iter().map(|r| view! { <RevisionCard revision=r decide=decide/> }).collect_view()}
-            <div class="tabs kit-tabs" role="tablist">
+            <div class="row kit-tabs">
+                <div class="segmented" role="tablist">
                 {[(KitTab::Kit, T::KitTab, "kit"), (KitTab::Showcase, T::Showcase, "showcase"), (KitTab::Tokens, T::Tokens, "tokens"), (KitTab::Design, T::DesignMd, "design-md")]
                     .into_iter()
                     .map(|(k, label, key)| view! {
-                        <button class="tab" role="tab" data-testid=format!("kit-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() on:click=move |_| tab.set(k)>
-                            <span class="tab-name">{t(label)}</span>
+                        <button class="seg" role="tab" data-testid=format!("kit-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() on:click=move |_| tab.set(k)>
+                            <span class="seg-label">{t(label)}</span>
                         </button>
                     })
                     .collect_view()}
+                </div>
                 <span class="spacer"></span>
                 <span class="subtle small kit-keys">{if mine { t(T::KitKeysMine) } else { t(T::KitKeys) }}</span>
             </div>

@@ -125,8 +125,8 @@ pub fn TemplatesPage() -> impl IntoView {
     });
     let tab_button = move |k: Tab, label: T, key: &'static str| {
         view! {
-            <button class="tab" role="tab" data-testid=format!("tpl-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() on:click=move |_| tab.set(k)>
-                <span class="tab-name">{t(label)}</span>
+            <button class="seg" role="tab" data-testid=format!("tpl-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() on:click=move |_| tab.set(k)>
+                <span class="seg-label">{t(label)}</span>
             </button>
         }
     };
@@ -138,7 +138,7 @@ pub fn TemplatesPage() -> impl IntoView {
                     <p class="page-sub">{t(T::TemplatesPageSub)}</p>
                 </div>
             </header>
-            <div class="tabs lib-tabs" role="tablist">
+            <div class="segmented lib-tabs" role="tablist">
                 {tab_button(Tab::Design, T::DesignTemplates, "design")}
                 {tab_button(Tab::Image, T::ImagePrompts, "image")}
                 {tab_button(Tab::Video, T::VideoPrompts, "video")}

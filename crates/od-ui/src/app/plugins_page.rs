@@ -158,12 +158,14 @@ pub fn PluginsPage() -> impl IntoView {
                 let Some(list) = plugins.get() else {
                     return (0..5).map(|_| view! { <li class="skeleton lib-row-skeleton"></li> }).collect_view().into_any();
                 };
-                let rows: Vec<Value> = list
+                let mut rows: Vec<Value> = list
                     .into_iter()
                     .filter(|p| plugin_personal(p) == personal)
                     .filter(|p| cat.is_empty() || plugin_category(p) == cat)
                     .filter(|p| hit(&q, &s(p, "title"), &s(p, "description")))
                     .collect();
+                // Scenarios (what a user runs) before atoms (their steps).
+                rows.sort_by_key(|p| p["kind"] != "scenario");
                 if rows.is_empty() {
                     return empty(personal).into_any();
                 }
@@ -270,7 +272,9 @@ fn PluginRow(plugin: Value, open: RwSignal<Option<Open>>) -> impl IntoView {
             <button class="plugin-row-main" on:click=move |_| open.set(Some(Open::Plugin(id_open.clone())))>
                 <span class="lib-row-title">{title.clone()}<span class="badge outline">{s(&plugin, "kind")}</span></span>
                 <span class="lib-row-sub">{s(&plugin, "description")}</span>
-                <span class="subtle small">{tf(T::PluginStats, &[&skills.to_string(), &atoms.to_string(), &inputs.to_string()])}</span>
+                {(skills + atoms + inputs > 0).then(|| view! {
+                    <span class="subtle small">{tf(T::PluginStats, &[&skills.to_string(), &atoms.to_string(), &inputs.to_string()])}</span>
+                })}
             </button>
             <button class="btn small" data-testid="plugin-try" on:click=move |_| open.set(Some(Open::Plugin(id_use.clone())))>{t(T::TryIt)}</button>
         </li>
@@ -457,15 +461,11 @@ fn PluginDetail(id: String, on_back: Callback<()>, on_change: Callback<Option<Op
             });
         }
     };
+    let confirm_uninstall = RwSignal::new(false);
     let uninstall = {
         let id = id.clone();
-        move |_| {
-            let ok = web_sys::window()
-                .and_then(|w| w.confirm_with_message(&tf(T::UninstallConfirm, &[&id])).ok())
-                .unwrap_or(false);
-            if !ok {
-                return;
-            }
+        Callback::new(move |()| {
+            confirm_uninstall.set(false);
             let id = id.clone();
             leptos::task::spawn_local(async move {
                 match api::post::<_, Value>(&format!("/api/plugins/{}/uninstall", api::seg(&id)), &json!({})).await {
@@ -473,7 +473,7 @@ fn PluginDetail(id: String, on_back: Callback<()>, on_change: Callback<Option<Op
                     Err(e) => notice.set(Some(Err(e.to_string()))),
                 }
             });
-        }
+        })
     };
 
     view! {
@@ -493,7 +493,6 @@ fn PluginDetail(id: String, on_back: Callback<()>, on_change: Callback<Option<Op
                     let can_use = move || values.with(|m| fields_ok.iter().all(|f| f.satisfied(m)));
                     let fields_q = fields.clone();
                     let use_plugin = use_plugin.clone();
-                    let uninstall = uninstall.clone();
                     let author = p["manifest"]["author"]["name"].as_str().map(str::to_owned);
                     let stages: Vec<(String, String)> = p["pipeline"]["stages"].as_array().into_iter().flatten().map(|st| {
                         let atoms: Vec<String> = st["atoms"].as_array().into_iter().flatten().filter_map(|a| a.as_str().map(str::to_owned)).collect();
@@ -521,9 +520,13 @@ fn PluginDetail(id: String, on_back: Callback<()>, on_change: Callback<Option<Op
                                 <p class="muted">{description}</p>
                             </div>
                             {personal.then(|| view! {
-                                <button class="btn small ghost danger" data-testid="plugin-uninstall" on:click=uninstall>{icon(Glyph::Delete)}{t(T::Uninstall)}</button>
+                                <button class="btn small ghost danger" data-testid="plugin-uninstall" on:click=move |_| confirm_uninstall.set(true)>{icon(Glyph::Delete)}{t(T::Uninstall)}</button>
                             })}
                         </header>
+                        <Show when=move || confirm_uninstall.get()>
+                            <super::lib_ui::ConfirmBar message=tf(T::UninstallConfirm, &[&pid]) testid="plugin-uninstall-confirm"
+                                on_confirm=uninstall on_cancel=Callback::new(move |()| confirm_uninstall.set(false))/>
+                        </Show>
                         {move || notice.get().map(|n| match n {
                             Ok(m) => view! { <p class="ok-text" role="status">{m}</p> }.into_any(),
                             Err(e) => view! { <p class="error-text" role="alert" data-testid="plugin-error">{e}</p> }.into_any(),
