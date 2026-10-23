@@ -16,17 +16,38 @@ pub fn is_desktop() -> bool {
     internals().is_some()
 }
 
-/// Opens the native folder picker. `None` when cancelled or not on desktop.
-pub async fn pick_folder() -> Option<String> {
+/// Calls Tauri command `cmd` with `args` (an object, or undefined).
+fn invoke(cmd: &str, args: &JsValue) -> Option<js_sys::Promise> {
     let tauri = internals()?;
     let invoke = js_sys::Reflect::get(&tauri, &JsValue::from_str("invoke"))
         .ok()?
         .dyn_into::<js_sys::Function>()
         .ok()?;
-    let promise = invoke
-        .call1(&tauri, &JsValue::from_str("pick_folder"))
+    invoke
+        .call2(&tauri, &JsValue::from_str(cmd), args)
         .ok()?
         .dyn_into::<js_sys::Promise>()
-        .ok()?;
+        .ok()
+}
+
+/// Opens the native folder picker. `None` when cancelled or not on desktop.
+pub async fn pick_folder() -> Option<String> {
+    let promise = invoke("pick_folder", &JsValue::UNDEFINED)?;
     JsFuture::from(promise).await.ok()?.as_string()
+}
+
+/// Gives the native window the app's theme (`light`, `dark`, `system`),
+/// so its title bar matches. Does nothing outside the desktop app.
+pub fn set_theme(theme: &str) {
+    let args = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("theme"),
+        &JsValue::from_str(theme),
+    );
+    if let Some(promise) = invoke("set_theme", &args) {
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = JsFuture::from(promise).await;
+        });
+    }
 }

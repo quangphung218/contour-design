@@ -1,7 +1,43 @@
 <!doctype html>
 <html lang="vi">
-  <head><meta charset="utf-8" /><title>Nét</title></head>
-  <body style="font: 14px system-ui; color: #6b6862; display: grid; place-items: center; height: 100vh; margin: 0">
-    Đang mở Nét…
+  <head>
+    <meta charset="utf-8" />
+    <title>Nét</title>
+    <!-- Splash while the in-process daemon starts (main.rs). Colors are the
+         od-ui tokens: canvas, accent, on-accent, secondary text. -->
+    <style>
+      :root { --canvas: #f2f1ed; --accent: #2a7560; --on-accent: #ffffff; --muted: #6b6862; }
+      @media (prefers-color-scheme: dark) {
+        :root { --canvas: #131210; --accent: #4fae8c; --on-accent: #0c1a14; --muted: #a39f97; }
+      }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: grid; place-items: center; background: var(--canvas); color: var(--muted);
+        font: 13.5px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-user-select: none; user-select: none;
+      }
+      main { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+      .mark {
+        width: 64px; height: 64px; border-radius: 16px; display: grid; place-items: center;
+        background: var(--accent); color: var(--on-accent);
+        box-shadow: 0 8px 24px rgb(60 46 24 / 0.18);
+        animation: rise 280ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      .mark svg { width: 40px; height: 40px; }
+      .mark path { stroke-dasharray: 120; stroke-dashoffset: 120; animation: draw 900ms 120ms cubic-bezier(0.2, 0, 0, 1) forwards; }
+      @keyframes draw { to { stroke-dashoffset: 0; } }
+      @keyframes rise { from { opacity: 0; transform: scale(0.96); } }
+      @media (prefers-reduced-motion: reduce) {
+        .mark, .mark path { animation: none; stroke-dashoffset: 0; }
+      }
+    </style>
+  </head>
+  <body data-tauri-drag-region>
+    <main>
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48"><path d="M10 32V14a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v8L21 18l4 18 4-8 9-6" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span>Đang mở Nét…</span>
+    </main>
   </body>
 </html>

@@ -4,6 +4,7 @@ pub mod comments;
 pub mod content;
 pub mod conversations;
 pub mod export;
+pub mod file_ops;
 pub mod files;
 pub mod handoff;
 pub mod library;

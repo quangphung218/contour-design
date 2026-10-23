@@ -6,13 +6,17 @@ mod automations;
 mod bridge;
 mod byok_form;
 mod chat_ops;
+mod capture;
 mod chat_view;
 mod composer;
 mod deck;
 mod desktop;
+mod doc_view;
 mod ds_create;
 mod ds_page;
+mod export_extra;
 mod export_menu;
+mod files_panel;
 mod home;
 mod icons;
 mod inbox;
@@ -20,6 +24,7 @@ mod integrations;
 mod lazy_frame;
 mod lib_ui;
 mod manage;
+mod live_view;
 mod mcp_settings;
 mod media_page;
 mod new_project;
@@ -27,11 +32,14 @@ mod notify;
 mod onboarding;
 mod palette;
 mod plugins_page;
+mod presenter;
 mod preview_comments;
 mod preview_tools;
+mod project_actions;
 mod projects;
 mod settings_page;
 mod shortcuts;
+mod sketch;
 mod sse;
 mod studio;
 mod switcher;
@@ -122,6 +130,9 @@ fn locale_of(config: &AppConfig) -> Locale {
 }
 
 fn apply_theme(theme: Theme) {
+    if desktop::is_desktop() {
+        desktop::set_theme(theme.as_str());
+    }
     let root = web_sys::window()
         .and_then(|w| w.document())
         .and_then(|d| d.document_element());
@@ -199,9 +210,39 @@ fn Shelled() -> impl IntoView {
             shell.shortcuts.update(|s| *s = !*s);
         } else if ev.key() == "Escape" && shell.shortcuts.get_untracked() {
             shell.shortcuts.set(false);
+        } else if modifier && !ev.alt_key() && !ev.shift_key() && ev.key() == "," {
+            // Through the sidebar link, so the router handles it.
+            ev.prevent_default();
+            click_link("/settings");
+        } else if modifier
+            && !ev.alt_key()
+            && !ev.shift_key()
+            && ev.key().eq_ignore_ascii_case("b")
+            && shell.studio.with_untracked(Option::is_none)
+        {
+            // In the Studio, Cmd/Ctrl+B shows or hides the files instead.
+            ev.prevent_default();
+            if let Some(w) = web_sys::window() {
+                if let Ok(e) = web_sys::Event::new(TOGGLE_SIDEBAR_EVENT) {
+                    let _ = w.dispatch_event(&e);
+                }
+            }
         }
     });
-    on_cleanup(move || keys.remove());
+    // Desktop menu items the page carries out (Help, Settings).
+    let menu = window_event_listener(
+        leptos::ev::Custom::<web_sys::CustomEvent>::new("od:menu"),
+        move |ev| match ev.detail().as_string().as_deref() {
+            Some("shortcuts") => shell.shortcuts.set(true),
+            Some("palette") => shell.palette.set(true),
+            Some("settings") => click_link("/settings"),
+            _ => {}
+        },
+    );
+    on_cleanup(move || {
+        keys.remove();
+        menu.remove();
+    });
     view! {
         <Router>
             <OnboardingGate/>
@@ -231,11 +272,30 @@ fn Shelled() -> impl IntoView {
                             <Route path=path!("/templates") view=templates_page::TemplatesPage/>
                             <Route path=path!("/integrations") view=integrations::Integrations/>
                             <Route path=path!("/inbox") view=inbox::Inbox/>
+                            <Route path=path!("/present/:id") view=presenter::Presenter/>
                         </Routes>
                     </main>
                 </div>
             </div>
         </Router>
+    }
+}
+
+/// Window event that toggles the sidebar (Cmd/Ctrl+B, desktop menu).
+const TOGGLE_SIDEBAR_EVENT: &str = "od:toggle-sidebar";
+
+/// Follows the sidebar link to `href` as if clicked.
+pub(crate) fn click_link(href: &str) {
+    let link = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| {
+            d.query_selector(&format!(".sidebar a[href=\"{href}\"]"))
+                .ok()
+                .flatten()
+        })
+        .and_then(|e| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(e).ok());
+    if let Some(a) = link {
+        a.click();
     }
 }
 
@@ -275,7 +335,7 @@ fn Sidebar() -> impl IntoView {
             collapsed.get()
         }
     };
-    let toggle = move |_| {
+    let toggle = move |_: ()| {
         let (signal, key) = if in_studio.get_untracked() {
             (studio_collapsed, SIDEBAR_STUDIO_KEY)
         } else {
@@ -285,6 +345,11 @@ fn Sidebar() -> impl IntoView {
         signal.set(next);
         store_flag(key, next);
     };
+    let toggle_key = window_event_listener(
+        leptos::ev::Custom::<web_sys::Event>::new(TOGGLE_SIDEBAR_EVENT),
+        move |_| toggle(()),
+    );
+    on_cleanup(move || toggle_key.remove());
     let tip = move |label: &'static str| move || rail().then_some(label);
     let link = move |href: &'static str, glyph: Glyph, label: T, exact: bool| {
         let label = t(label);
@@ -307,7 +372,7 @@ fn Sidebar() -> impl IntoView {
                     aria-label=move || if rail() { t(T::ExpandSidebar) } else { t(T::CollapseSidebar) }
                     data-tip=move || if rail() { t(T::ExpandSidebar) } else { t(T::CollapseSidebar) }
                     data-tip-pos="right"
-                    on:click=toggle
+                    on:click=move |_| toggle(())
                 >
                     {move || icon(if rail() { Glyph::SidebarUnfold } else { Glyph::SidebarFold })}
                 </button>
