@@ -1,5 +1,6 @@
 //! Home: brief box, output chips, design system and template pickers.
 
+use super::ds_create::NewDesignSystem;
 use super::{Shell, ago, api, kind_label};
 use crate::i18n::{T, t};
 use crate::intent::{Chip, HomeIntent, templates_for};
@@ -187,6 +188,7 @@ pub fn Home() -> impl IntoView {
                         </select>
                     </label>
                 </div>
+                <NewDesignSystem systems=systems selected=design_system/>
                 {move || error.get().map(|e| view! { <p class="error-text">{e}</p> })}
             </div>
             <div class="section-head">

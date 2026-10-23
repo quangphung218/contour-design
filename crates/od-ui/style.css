@@ -150,6 +150,11 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .chip.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
 .pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .picker { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.ds-create { margin-top: 10px; }
+.ds-create-form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.ds-create-form .btn { align-self: flex-end; }
+.ds-status { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.ds-status.ok { color: var(--ok); }
 .swatches { display: flex; gap: 3px; height: 8px; }
 .swatches i { flex: 1; border-radius: 2px; }
 .section-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 36px; }

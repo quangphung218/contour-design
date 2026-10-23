@@ -5,6 +5,7 @@ mod bridge;
 mod chat_view;
 mod deck;
 mod desktop;
+mod ds_create;
 mod export_menu;
 mod home;
 mod onboarding;
