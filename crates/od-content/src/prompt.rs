@@ -254,10 +254,6 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     if !ask {
         p.push(format!("\n\n{SEMANTIC_OUTPUT_FILE_NAMES}"));
     }
-    // 9b. Structured choices from project creation (Home chips, media picker).
-    if let Some(block) = metadata.and_then(metadata_block) {
-        p.push(block);
-    }
     // 10. Active plugin, next to the skill it extends.
     if let Some(block) = input.plugin_block.filter(|b| !b.trim().is_empty()) {
         p.push(block.to_owned());
@@ -700,6 +696,7 @@ mod tests {
             pos(&text, "## Project metadata")
                 < pos(&text, "## Structured clarification on any turn")
         );
+        assert_eq!(text.matches("## Project metadata").count(), 1, "once");
     }
 
     fn pos(haystack: &str, needle: &str) -> usize {
