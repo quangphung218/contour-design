@@ -215,7 +215,7 @@ fn ImportPanel(rev: MemoryRev) -> impl IntoView {
         });
     };
     view! {
-        <div class="memory-panel card padded" data-testid="memory-import">
+        <div class="memory-tool card padded" data-testid="memory-import">
             <p class="muted small">{t(T::MemoryImportHint)}</p>
             <textarea class="input mono" rows="5" data-testid="memory-import-text"
                 placeholder=t(T::MemoryImportPlaceholder)
@@ -307,7 +307,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
         });
     };
     view! {
-        <div class="memory-panel card padded" data-testid="memory-index">
+        <div class="memory-tool card padded" data-testid="memory-index">
             <div class="row">
                 <strong class="grow">{t(T::MemoryIndexTitle)}</strong>
                 <span class="muted small mono" title=move || root.get()>{move || root.get()}</span>

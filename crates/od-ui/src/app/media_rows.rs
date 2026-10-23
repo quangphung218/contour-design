@@ -85,7 +85,7 @@ fn media_row_view(ctx: StudioCtx, row: Row, live: bool) -> impl IntoView {
                 let open = p.clone();
                 let src = thumb(&p);
                 view! {
-                    <button class="media-thumb small" aria-label=p.clone() on:click=move |_| ctx.open_file(&open)>
+                    <button class="media-row-thumb small" aria-label=p.clone() on:click=move |_| ctx.open_file(&open)>
                         {match src {
                             Some(s) => view! { <img src=s alt=""/> }.into_any(),
                             None => icon(cell_glyph(&row.surface)).into_any(),
@@ -98,7 +98,7 @@ fn media_row_view(ctx: StudioCtx, row: Row, live: bool) -> impl IntoView {
             <div class="media-row collapsed" data-testid="media-row" data-state="done" data-surface=row.surface.clone()>
                 {icon(cell_glyph(&row.surface))}
                 <span class="media-row-label">{format!("{} · {}", batch_label(&row.surface), count_label(&row.surface, total))}</span>
-                <span class="media-thumbs">{thumbs}</span>
+                <span class="media-row-thumbs">{thumbs}</span>
                 <span class="muted small mono">{elapsed}</span>
             </div>
         }

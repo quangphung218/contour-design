@@ -171,7 +171,7 @@ pub fn LibraryPicker(
                         </div>
                     }.into_any(),
                     Some(_) => view! {
-                        <div class="library-grid" role="listbox" aria-multiselectable="true">
+                        <div class="libpick-grid" role="listbox" aria-multiselectable="true">
                             {shown.get().into_iter().map(|a| {
                                 let key = a.key();
                                 let (k_sel, k_click) = (key.clone(), key);
@@ -182,7 +182,7 @@ pub fn LibraryPicker(
                                     icon(kind_glyph(&a.kind)).into_any()
                                 };
                                 view! {
-                                    <button type="button" class="library-card" role="option" data-testid="library-asset" data-project=a.project_id.clone()
+                                    <button type="button" class="libpick-card" role="option" data-testid="library-asset" data-project=a.project_id.clone()
                                         aria-selected=move || selected().to_string()
                                         title=a.path.clone()
                                         on:click=move |_| picked.update(|p| {
@@ -192,10 +192,10 @@ pub fn LibraryPicker(
                                                 p.push(k_click.clone());
                                             }
                                         })>
-                                        <span class="library-thumb">{thumb}</span>
+                                        <span class="libpick-thumb">{thumb}</span>
                                         <span class="badge">{a.kind.clone()}</span>
-                                        <span class="library-check" aria-hidden="true">{icon(Glyph::CheckCircle)}</span>
-                                        <span class="library-name">{a.name().to_owned()}</span>
+                                        <span class="libpick-check" aria-hidden="true">{icon(Glyph::CheckCircle)}</span>
+                                        <span class="libpick-name">{a.name().to_owned()}</span>
                                     </button>
                                 }
                             }).collect_view()}
