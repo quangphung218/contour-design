@@ -1,21 +1,20 @@
-// UI e2e, track C3-runtimes: the DeepSeek Harness card that needs its
-// connection component, the setup dialog (a failed install shows the
-// daemon's message, a retry installs and selects the agent); a chat turn
+// UI e2e, track C3-runtimes: the DeepSeek Harness card and its setup
+// dialog (install commands, the bundled guide, detect again: first no
+// `dsh`, then no profile, then selected once both are there); a chat turn
 // through one of the added CLIs (a mock `qodercli` speaking Qoder's
 // stream-json); Settings ▸ media providers listing the added providers and
 // keeping every key on save; Tavily research through the daemon. Then
 // light and dark screenshots of the new screens.
 //
-// Port: OD_E2E_PORT + 8 (OD_E2E_C3_PORT overrides). Mock CLIs and the
-// connection bundle live in temp folders; DSH_HOME and HOME are temp too.
+// Port: OD_E2E_PORT + 8 (OD_E2E_C3_PORT overrides). Mock CLIs live in a
+// temp folder; DSH_HOME and HOME are temp too.
 // Every request leaving loopback is blocked and fails the test. Run
 // through ./run.sh.
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -61,8 +60,8 @@ const data = join(scratch, 'data');
 const home = join(scratch, 'home');
 const dshHome = join(scratch, 'dsh-home');
 const mocks = join(scratch, 'mocks');
-const bundle = join(scratch, 'bundle');
-for (const d of [data, home, dshHome, mocks, bundle]) mkdirSync(d, { recursive: true });
+const profile = join(dshHome, 'profiles', 'open-design');
+for (const d of [data, home, dshHome, mocks]) mkdirSync(d, { recursive: true });
 mkdirSync(OUT, { recursive: true });
 mkdirSync(SHOTS, { recursive: true });
 
@@ -70,9 +69,9 @@ const mock = (name, body) => {
   writeFileSync(join(mocks, name), `#!/bin/sh\n${body}`);
   chmodSync(join(mocks, name), 0o755);
 };
-// `dsh`: compatible once the profile has a package.json; `plugin add`
-// fails while $DSH_HOME/fail exists.
-mock('dsh', `
+// `dsh`, which the user "installs" during step 2: compatible once the
+// profile has a package.json.
+const DSH = `
 case "$1" in --version) echo "0.1.2-rc.1"; exit 0;; esac
 prof="$DSH_HOME/profiles/open-design"
 if [ "$3" = "--probe" ]; then
@@ -80,13 +79,7 @@ if [ "$3" = "--probe" ]; then
   echo '{"v":1,"type":"probe","runtime":"open-design","protocol_version":1,"plugin_version":"0.1.0","capabilities":{}}'
   exit 0
 fi
-if [ "$1" = "plugin" ] && [ "$4" = "add" ]; then
-  [ -f "$DSH_HOME/fail" ] && { echo "pnpm: network unreachable" >&2; exit 1; }
-  echo '{"name":"@open-design/dsh-runtime"}' > "$prof/package.json"
-  echo "$5" > "$DSH_HOME/added"
-  exit 0
-fi
-`);
+`;
 // `qodercli -p --output-format stream-json`: thinking, text, result.
 mock('qodercli', `
 case "$1" in --version) echo "qodercli 0.1.48"; exit 0;; esac
@@ -96,17 +89,6 @@ echo '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"H
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Qoder says hello from the mock."}]}}'
 echo '{"type":"result","is_error":false,"duration_ms":10,"usage":{"input_tokens":3,"output_tokens":4}}'
 `);
-const tarball = Buffer.from('fake dsh-runtime tarball');
-writeFileSync(join(bundle, 'dsh-runtime-0.1.0.tgz'), tarball);
-writeFileSync(join(bundle, 'manifest.json'), JSON.stringify({
-  schemaVersion: 1,
-  packageName: '@open-design/dsh-runtime',
-  version: '0.1.0',
-  file: 'dsh-runtime-0.1.0.tgz',
-  sha256: createHash('sha256').update(tarball).digest('hex'),
-}));
-writeFileSync(join(dshHome, 'fail'), '1');
-
 // Tavily on loopback.
 const tavilySeen = [];
 const tavily = createServer((req, res) => {
@@ -128,7 +110,6 @@ const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
     OD_DATA_DIR: data,
     HOME: home,
     DSH_HOME: dshHome,
-    OD_DSH_RUNTIME_DIR: bundle,
     PATH: `${mocks}:${MOCK_AGENTS}:/usr/bin:/bin`,
     OD_OPEN_COMMAND: '/usr/bin/true',
     SHELL: '/bin/sh',
@@ -163,7 +144,7 @@ try {
     if (m.type() === 'error' && m.text().includes('panicked at')) pageErrors.push(m.text().slice(0, 500));
   });
 
-  // 1. The added agents are detected; DeepSeek Harness needs setup.
+  // 1. The added agents are detected; DeepSeek Harness is not installed.
   const agents = (await api('/api/agents')).body.agents;
   for (const id of ['aider', 'amp', 'pi', 'qoder', 'mimo', 'codebuddy', 'atomcode', 'grok-build', 'antigravity', 'deepseek']) {
     assert.ok(agents.some((a) => a.id === id), `${id} listed`);
@@ -171,34 +152,54 @@ try {
   assert.equal(agents.find((a) => a.id === 'qoder').available, true);
   const dsh = agents.find((a) => a.id === 'deepseek-harness');
   assert.equal(dsh.available, false);
-  assert.equal(dsh.needsSetup, true);
+  assert.equal(dsh.path ?? null, null);
   results.detection = 'ok';
 
-  // 2. Settings: the card opens the setup dialog; a failed install shows
-  // the daemon's message and changes nothing; the retry installs and
-  // selects the agent.
+  // 2. Settings: the card opens the setup dialog with the install
+  // commands and the guide; detecting again says what is still missing
+  // and changes nothing, then selects the agent once dsh and its profile
+  // are installed.
   await page.goto(BASE + '/settings');
   const card = page.locator('[data-agent="deepseek-harness"]');
   await card.waitFor();
   assert.equal(await card.getAttribute('data-needs-setup'), 'true');
-  assert.match(await card.textContent(), /Connection setup required/);
-  assert.equal(await card.isDisabled(), false, 'a card that needs setup is clickable');
+  assert.equal(await card.isDisabled(), false, 'the DeepSeek Harness card is clickable');
   await card.click();
   const dialog = page.getByTestId('deepseek-harness-setup-dialog');
   await dialog.waitFor();
-  assert.match(await dialog.textContent(), /Connect DeepSeek Harness/);
-  assert.match(await dialog.textContent(), /Only the Open Design profile component is installed/);
-  await page.getByTestId('deepseek-harness-setup-confirm').click();
-  await page.getByTestId('deepseek-harness-setup-error').waitFor();
-  assert.match(await page.getByTestId('deepseek-harness-setup-error').textContent(), /could not install the OpenDesign connection component/);
-  assert.equal((await api('/api/app-config')).body.agentId, 'claude', 'a failed setup changes no selection');
+  assert.match(await dialog.textContent(), /Set up DeepSeek Harness/);
+  const installs = page.getByTestId('deepseek-harness-install-command');
+  assert.equal(await installs.count(), 2);
+  assert.match(await installs.first().textContent(), /curl -fsSL 'https:\/\/open-design\.ai\/install-dsh\.sh\?version=1' \| sh/);
+  assert.match(await page.getByTestId('deepseek-harness-profile-command').textContent(), /dsh plugin --profile open-design add/);
+  assert.equal(await page.getByTestId('deepseek-harness-guide').getAttribute('href'), '/docs#deepseek-harness');
+  const detect = page.getByTestId('deepseek-harness-setup-detect');
+  const error = page.getByTestId('deepseek-harness-setup-error');
+  await detect.click();
+  await error.waitFor();
+  assert.match(await error.textContent(), /dsh is still not found on PATH/);
+  assert.equal((await api('/api/app-config')).body.agentId, 'claude', 'a failed detection changes no selection');
+  mock('dsh', DSH);
+  await detect.click();
+  await page.getByTestId('deepseek-harness-cli-found').waitFor();
+  assert.equal(await installs.count(), 0, 'found: no install commands');
+  assert.match(await error.textContent(), /open-design profile is missing/);
   await page.screenshot({ path: OUT + 'dsh-setup-error.png' });
-  rmSync(join(dshHome, 'fail'));
-  await page.getByTestId('deepseek-harness-setup-confirm').click();
+  // The guide link opens the bundled docs at the DeepSeek Harness section.
+  await page.getByTestId('deepseek-harness-guide').click();
+  await dialog.waitFor({ state: 'detached' });
+  const section = page.locator('.docs-body h2#deepseek-harness');
+  await section.waitFor();
+  await until(async () => (await section.boundingBox()).y < 900, 'the guide opens at its section');
+  assert.match(await page.locator('.docs-body').textContent(), /dsh --profile open-design --probe/);
+  await page.goto(BASE + '/settings');
+  await card.click();
+  await page.getByTestId('deepseek-harness-cli-found').waitFor();
+  mkdirSync(profile, { recursive: true });
+  writeFileSync(join(profile, 'package.json'), '{"name":"@open-design/dsh-runtime"}');
+  await detect.click();
   await dialog.waitFor({ state: 'detached' });
   await page.locator('[data-agent="deepseek-harness"].active').waitFor();
-  const sha = createHash('sha256').update(tarball).digest('hex');
-  assert.equal(readFileSync(join(dshHome, 'added'), 'utf8').trim(), `.open-design/${sha}.tgz`);
   assert.equal((await api('/api/agents')).body.agents.find((a) => a.id === 'deepseek-harness').available, true);
   await page.getByTestId('save-settings').click();
   await until(async () => (await api('/api/app-config')).body.agentId === 'deepseek-harness', 'agent saved');
@@ -252,7 +253,6 @@ try {
   results.research = 'ok';
 
   // 6. Light and dark screenshots: the card, the dialog, media providers.
-  writeFileSync(join(dshHome, 'fail'), '1');
   rmSync(join(dshHome, 'profiles'), { recursive: true, force: true });
   for (const scheme of ['light', 'dark']) {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme });
@@ -276,7 +276,7 @@ try {
       await p.getByTestId('deepseek-harness-setup-dialog').waitFor();
     });
     await shot('dsh-setup-error', async (p) => {
-      await p.getByTestId('deepseek-harness-setup-confirm').click();
+      await p.getByTestId('deepseek-harness-setup-detect').click();
       await p.getByTestId('deepseek-harness-setup-error').waitFor();
     });
     await shot('settings-media-providers', async (p) => {

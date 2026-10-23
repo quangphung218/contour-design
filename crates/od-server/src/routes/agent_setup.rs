@@ -1,7 +1,9 @@
-//! Agent connection setup (track C3; the original's
-//! `POST /api/agents/:agentId/companion/install`): installs the bundled
-//! DeepSeek Harness `open-design` profile component with the user's own
-//! `dsh` (see [`od_runtime::dsh_companion`]). Mounted with one `merge` in
+//! Agent connection setup (track C3): `POST /api/agents/:agentId/detect`
+//! detects one agent again, so a setup dialog can check the user's own
+//! install without rescanning every CLI. The original installs a bundled
+//! DeepSeek Harness component here; this app does not ship it, and the
+//! user installs `dsh` and its `open-design` profile themselves (see
+//! [`od_runtime::dsh_companion`]). Mounted with one `merge` in
 //! [`crate::router`].
 
 use crate::error::ApiErr;
@@ -9,68 +11,25 @@ use crate::state::AppState;
 use axum::Json;
 use axum::Router;
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
-use od_runtime::def::DSH;
-use od_runtime::dsh_companion::{self, SetupError};
 use serde_json::json;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/api/agents/{agent_id}/companion/install", post(install))
+    Router::new().route("/api/agents/{agent_id}/detect", post(detect))
 }
 
-/// One setup at a time: a second click waits for the first to finish.
-fn setup_lock() -> &'static tokio::sync::Mutex<()> {
-    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
-    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
-}
-
-/// The bundle folder: `OD_DSH_RUNTIME_DIR` (for builds that ship it
-/// elsewhere), else `<resources>/agent-runtimes/deepseek-harness`.
-fn bundle_dir(state: &AppState) -> std::path::PathBuf {
-    std::env::var_os("OD_DSH_RUNTIME_DIR")
-        .filter(|v| !v.is_empty())
-        .map_or_else(
-            || state.config.resource_root.join(dsh_companion::BUNDLE_DIR),
-            std::path::PathBuf::from,
-        )
-}
-
-async fn install(State(state): State<AppState>, Path(agent_id): Path<String>) -> Response {
-    if agent_id != DSH.id {
-        return ApiErr::bad_request("This agent has no Open Design connection component.")
-            .into_response();
-    }
-    let _one = setup_lock().lock().await;
+async fn detect(State(state): State<AppState>, Path(agent_id): Path<String>) -> Response {
+    let Some(def) = od_runtime::def::find(&agent_id) else {
+        return ApiErr::not_found("Unknown agent.").into_response();
+    };
     let engine = state.runs.engine.config();
-    let bin = od_runtime::detect::resolve_bin(&DSH, &engine.path);
-    let result = dsh_companion::install(
-        bin.as_deref(),
-        &bundle_dir(&state),
+    let agent = od_runtime::detect::detect_in(
+        def,
         &engine.path,
         &engine.base_env,
+        super::runs::byok_configured(&state),
     )
     .await;
-    match result {
-        Ok((action, version)) => {
-            let agent =
-                od_runtime::detect::detect_in(&DSH, &engine.path, &engine.base_env, false).await;
-            Json(json!({
-                "ok": true,
-                "action": action.as_str(),
-                "agent": agent,
-                "packageVersion": version,
-            }))
-            .into_response()
-        }
-        Err(e) => {
-            let status = if e == SetupError::AgentNotInstalled {
-                StatusCode::CONFLICT
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            ApiErr::new(status, e.code(), e.to_string()).into_response()
-        }
-    }
+    Json(json!({ "agent": agent })).into_response()
 }

@@ -1407,11 +1407,18 @@ messages! {
     ShortcutPrevSlide => "Previous slide", "Slide trước";
     ShortcutFirstLast => "First or last slide", "Slide đầu hoặc cuối";
     // Track C3-runtimes: DeepSeek Harness connection setup.
-    DshSetupTitle => "Connect DeepSeek Harness", "Kết nối DeepSeek Harness";
-    DshSetupDescription => "Open Design will install its connection component through the dsh CLI on this computer.", "Open Design sẽ cài thành phần kết nối của mình qua dsh CLI trên máy này.";
-    DshSetupNote => "Only the Open Design profile component is installed. DeepSeek Harness remains user-installed and user-managed.", "Chỉ cài thành phần profile của Open Design. DeepSeek Harness vẫn do người dùng cài và quản lý.";
-    DshSetupConfirm => "Install and select", "Cài và chọn";
-    DshSetupInstalling => "Installing…", "Đang cài…";
+    DshSetupTitle => "Set up DeepSeek Harness", "Thiết lập DeepSeek Harness";
+    DshSetupDescription => "Open Design runs the dsh CLI on this computer through its open-design profile. Install both, then detect again.", "Open Design chạy dsh CLI trên máy này qua profile open-design. Cài cả hai rồi phát hiện lại.";
+    DshStepCli => "1. Install the dsh CLI", "1. Cài dsh CLI";
+    DshCliFound => "dsh found: {0}", "Đã thấy dsh: {0}";
+    DshStepProfile => "2. Add the open-design profile", "2. Thêm profile open-design";
+    DshStepProfileHint => "Build the profile package from the Open Design source, then add it with dsh.", "Build gói profile từ mã nguồn Open Design rồi thêm bằng dsh.";
+    DshSetupNote => "DeepSeek Harness and its profile stay installed and managed by you. The guide has every step.", "DeepSeek Harness và profile do người dùng tự cài và quản lý. Hướng dẫn có đủ các bước.";
+    DshSetupGuide => "Open the setup guide", "Mở hướng dẫn cài";
+    DshSetupDetect => "Detect again", "Phát hiện lại";
+    DshSetupDetecting => "Detecting…", "Đang phát hiện…";
+    DshSetupNoCli => "dsh is still not found on PATH. Install it, or add its folder to PATH, then detect again.", "Vẫn chưa thấy dsh trên PATH. Cài dsh hoặc thêm thư mục của nó vào PATH rồi phát hiện lại.";
+    DshSetupNoProfile => "The open-design profile is missing or does not pass the compatibility check yet.", "Profile open-design chưa có hoặc chưa qua bước kiểm tra tương thích.";
     DshSetupRequired => "Connection setup required", "Cần thiết lập kết nối";
     // Track B3-chat: Home composer, chat composer, transcript actions.
     HomeTitleCreate => "Let’s create {0}", "Cùng tạo {0}";

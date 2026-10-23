@@ -30,6 +30,22 @@ Tạo từ website, repo GitHub, file, DESIGN.md hay biến CSS dán vào, hoặ
 
 Settings ▸ Bộ nhớ giữ những điều mọi project cần tuân theo. Tắt bộ nhớ bằng công tắc chính. Memory hooks chọn phần nào tự chạy: hồ sơ, viết lại yêu cầu ngắn, tự kiểm theo quy tắc và học từ chat. **Nhập** đọc các mục từ file Markdown; **Sửa MEMORY.md** chọn mục nào vào prompt. Trong chat, mở đầu tin nhắn bằng "Ghi nhớ rằng…" để lưu một điều cho project đó.
 
+## DeepSeek Harness {#deepseek-harness}
+
+Nét chạy `dsh` CLI của người dùng qua profile `open-design`. Nét không tự cài cái nào.
+
+1. Cài `dsh`. Bộ cài khởi tạo cài luôn Node.js và pnpm bản tương thích, rồi mở web UI của Harness để lưu DeepSeek API key:
+   - macOS / Linux: `curl -fsSL 'https://open-design.ai/install-dsh.sh?version=1' | sh`
+   - Windows PowerShell: `& ([scriptblock]::Create((irm 'https://open-design.ai/install-dsh.ps1?version=1')))`
+2. Thêm profile `open-design`. Build gói của nó từ mã nguồn Open Design (`packages/dsh-runtime`) rồi thêm bằng `dsh`:
+   - `pnpm --filter @open-design/dsh-runtime build`
+   - `pnpm -C packages/dsh-runtime pack --pack-destination <thư-mục>`
+   - `dsh plugin --profile open-design add <thư-mục>/open-design-dsh-runtime-0.1.0.tgz`
+   - `dsh --profile open-design --probe` in ra một dòng JSON khi profile chạy được.
+3. Quay lại Nét, mở thẻ DeepSeek Harness và bấm **Phát hiện lại**. Agent được chọn ngay khi qua bước kiểm tra.
+
+Profile nằm ở `~/.dsh/profiles/open-design`, hoặc trong `$DSH_HOME` nếu biến này được đặt.
+
 ## Bàn phím
 
 - `Cmd/Ctrl+K` bảng lệnh, `?` mọi phím tắt, `Cmd/Ctrl+,` Settings.

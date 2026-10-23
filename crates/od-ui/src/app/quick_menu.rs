@@ -182,7 +182,7 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
                             let tag = event_target_value(&ev);
                             save(Box::new(move |c| c.locale = Some(tag)));
                         }>
-                        {Locale::ALL.into_iter().map(|l| view! {
+                        {Locale::ALL.iter().copied().map(|l| view! {
                             <option value=l.tag() selected=move || shell.locale.get() == l>{l.native_name()}</option>
                         }).collect_view()}
                     </select>

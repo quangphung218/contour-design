@@ -971,19 +971,23 @@ pub async fn steer(
 }
 
 /// `GET /api/agents`: fresh detection, never cached on disk.
-pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
-    let path = state.runs.engine.config().path.clone();
-    let byok = state
+/// Whether a BYOK key is saved, which makes the BYOK agent available.
+pub(crate) fn byok_configured(state: &AppState) -> bool {
+    state
         .store
         .data_dir()
         .app_setting(od_runtime::byok::APP_CONFIG_KEY)
         .and_then(|v| od_runtime::byok::ByokConfig::from_value(&v))
-        .is_some();
+        .is_some()
+}
+
+pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
+    let path = state.runs.engine.config().path.clone();
     ApiJson(AgentsResponse {
         agents: od_runtime::detect::detect_all_in(
             path,
             state.runs.engine.config().base_env.clone(),
-            byok,
+            byok_configured(&state),
         )
         .await,
     })

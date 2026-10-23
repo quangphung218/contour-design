@@ -1,8 +1,8 @@
 //! Track C3 through the daemon: the ten added agents in `GET /api/agents`,
 //! DeepSeek Harness connection setup (`needsSetup`, then
-//! `POST /api/agents/deepseek-harness/companion/install` with a mock `dsh`
-//! and a test bundle), and how runs hand MCP servers to MiMo, Codebuddy
-//! and Amp.
+//! `POST /api/agents/deepseek-harness/detect` once the user has installed
+//! a mock `dsh` and its profile), and how runs hand MCP servers to MiMo,
+//! Codebuddy and Amp.
 
 #![allow(clippy::unwrap_used)] // tests fail loudly by design
 #![cfg(unix)]
@@ -11,7 +11,6 @@ mod common;
 
 use common::{Options, PROBES, write_mock};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 const ADDED: [&str; 10] = [
     "grok-build",
@@ -27,42 +26,17 @@ const ADDED: [&str; 10] = [
 ];
 
 /// A mock `dsh`: `--probe` answers only once the profile has a
-/// `package.json`; `plugin … add <spec>` logs the spec and the bytes it
-/// was given, then creates the profile (or fails with `MOCK_FAIL`).
+/// `package.json`, with an incompatible protocol under `MOCK_OLD`.
 const DSH_MOCK: &str = r#"
 case "$1" in --version) echo "0.1.2-rc.1"; exit 0;; esac
 prof="${DSH_HOME:-$HOME/.dsh}/profiles/open-design"
 if [ "$3" = "--probe" ]; then
   [ -f "$prof/package.json" ] || exit 3
-  echo '{"v":1,"type":"probe","runtime":"open-design","protocol_version":1,"plugin_version":"0.1.0","capabilities":{}}'
-  exit 0
-fi
-if [ "$1" = "plugin" ] && [ "$4" = "add" ]; then
-  echo "ADD:$5" >> "$DSH_HOME/dsh.log"
-  cat "$prof/$5" >> "$DSH_HOME/dsh.log"; echo >> "$DSH_HOME/dsh.log"
-  [ -n "$MOCK_FAIL" ] && { echo "pnpm failed" >&2; exit 1; }
-  echo '{"name":"@open-design/dsh-runtime"}' > "$prof/package.json"
+  [ -f "$prof/old" ] && v=2 || v=1
+  echo '{"v":1,"type":"probe","runtime":"open-design","protocol_version":'$v',"plugin_version":"0.1.0","capabilities":{}}'
   exit 0
 fi
 "#;
-
-fn bundle(resources: &std::path::Path, bytes: &[u8]) {
-    let dir = resources.join("agent-runtimes/deepseek-harness");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("dsh-runtime-0.1.0.tgz"), bytes).unwrap();
-    std::fs::write(
-        dir.join("manifest.json"),
-        json!({
-            "schemaVersion": 1,
-            "packageName": "@open-design/dsh-runtime",
-            "version": "0.1.0",
-            "file": "dsh-runtime-0.1.0.tgz",
-            "sha256": hex::encode(Sha256::digest(bytes)),
-        })
-        .to_string(),
-    )
-    .unwrap();
-}
 
 async fn agent(d: &common::Daemon, id: &str) -> Value {
     let agents = d.get_json("/api/agents").await;
@@ -75,9 +49,9 @@ async fn agent(d: &common::Daemon, id: &str) -> Value {
         .clone()
 }
 
-async fn install(d: &common::Daemon, id: &str) -> (u16, Value) {
+async fn detect(d: &common::Daemon, id: &str) -> (u16, Value) {
     let res = d
-        .post(&format!("/api/agents/{id}/companion/install"), &json!({}))
+        .post(&format!("/api/agents/{id}/detect"), &json!({}))
         .await;
     (res.status().as_u16(), res.json().await.unwrap())
 }
@@ -110,93 +84,51 @@ async fn the_added_agents_are_detected() {
 }
 
 #[tokio::test]
-async fn deepseek_harness_setup_installs_the_bundled_component() {
+async fn deepseek_harness_is_detected_again_once_the_user_sets_it_up() {
     let tmp = tempfile::tempdir().unwrap();
-    let resources = tmp.path().join("resources");
     let dsh_home = tmp.path().join("dsh-home");
-    std::fs::create_dir_all(&dsh_home).unwrap();
+    let profile = dsh_home.join("profiles/open-design");
+    std::fs::create_dir_all(&profile).unwrap();
     let d = common::daemon_with(Options {
-        content_root: Some(resources.clone()),
         extra_env: vec![("DSH_HOME".into(), dsh_home.to_string_lossy().into_owned())],
         ..Options::default()
     })
     .await;
-    // No dsh on PATH: nothing to set up with.
-    bundle(&resources, b"bundle-v1");
-    let (status, body) = install(&d, "deepseek-harness").await;
-    assert_eq!(status, 409, "{body}");
-    assert_eq!(body["error"]["code"], "AGENT_NOT_INSTALLED");
-
-    write_mock(&d.mocks, "dsh", DSH_MOCK);
-    let before = agent(&d, "deepseek-harness").await;
-    assert_eq!(before["available"], false);
-    assert_eq!(before["needsSetup"], true, "{before}");
-    assert!(before["path"].is_string());
-
-    // An altered tarball is refused before dsh is asked anything.
-    std::fs::write(
-        resources.join("agent-runtimes/deepseek-harness/dsh-runtime-0.1.0.tgz"),
-        b"tampered",
-    )
-    .unwrap();
-    let (status, body) = install(&d, "deepseek-harness").await;
-    assert_eq!(status, 500);
-    assert_eq!(body["error"]["code"], "BUNDLED_COMPANION_INVALID");
-    assert!(!dsh_home.join("dsh.log").exists());
-
-    bundle(&resources, b"bundle-v1");
-    let (status, body) = install(&d, "deepseek-harness").await;
+    // No dsh on PATH: the dialog shows how to install it.
+    let (status, body) = detect(&d, "deepseek-harness").await;
     assert_eq!(status, 200, "{body}");
-    assert_eq!(body["action"], "installed");
-    assert_eq!(body["packageVersion"], "0.1.0");
-    assert_eq!(body["agent"]["available"], true);
-    let log = std::fs::read_to_string(dsh_home.join("dsh.log")).unwrap();
-    let sha = hex::encode(Sha256::digest(b"bundle-v1"));
-    assert!(
-        log.contains(&format!("ADD:.open-design/{sha}.tgz\nbundle-v1")),
-        "a relative spec to the verified bytes: {log}"
-    );
-    let after = agent(&d, "deepseek-harness").await;
-    assert_eq!(after["available"], true);
-    assert!(after.get("needsSetup").is_none());
+    assert_eq!(body["agent"]["available"], false);
+    assert!(body["agent"]["path"].is_null());
+    assert!(body["agent"].get("needsSetup").is_none());
 
-    // Set up already: nothing is reinstalled.
-    let (status, body) = install(&d, "deepseek-harness").await;
-    assert_eq!(status, 200);
-    assert_eq!(body["action"], "already-compatible");
-    assert_eq!(
-        std::fs::read_to_string(dsh_home.join("dsh.log"))
-            .unwrap()
-            .matches("ADD:")
-            .count(),
-        1
-    );
-
-    let (status, _) = install(&d, "claude").await;
-    assert_eq!(status, 400, "only DeepSeek Harness has a component");
-}
-
-#[tokio::test]
-async fn a_failed_dsh_install_reports_and_changes_nothing() {
-    let tmp = tempfile::tempdir().unwrap();
-    let resources = tmp.path().join("resources");
-    let dsh_home = tmp.path().join("dsh-home");
-    std::fs::create_dir_all(&dsh_home).unwrap();
-    let d = common::daemon_with(Options {
-        content_root: Some(resources.clone()),
-        extra_env: vec![
-            ("DSH_HOME".into(), dsh_home.to_string_lossy().into_owned()),
-            ("MOCK_FAIL".into(), "1".into()),
-        ],
-        ..Options::default()
-    })
-    .await;
-    bundle(&resources, b"bundle-v1");
+    // dsh installed, its open-design profile not yet.
     write_mock(&d.mocks, "dsh", DSH_MOCK);
-    let (status, body) = install(&d, "deepseek-harness").await;
-    assert_eq!(status, 500, "{body}");
-    assert_eq!(body["error"]["code"], "COMPANION_INSTALL_FAILED");
-    assert_eq!(agent(&d, "deepseek-harness").await["needsSetup"], true);
+    let (_, body) = detect(&d, "deepseek-harness").await;
+    assert_eq!(body["agent"]["available"], false);
+    assert_eq!(body["agent"]["needsSetup"], true, "{body}");
+    assert!(body["agent"]["path"].is_string());
+
+    // A profile whose protocol does not match is still not available.
+    std::fs::write(profile.join("package.json"), "{}").unwrap();
+    std::fs::write(profile.join("old"), "").unwrap();
+    let (_, body) = detect(&d, "deepseek-harness").await;
+    assert_eq!(body["agent"]["needsSetup"], true, "{body}");
+
+    std::fs::remove_file(profile.join("old")).unwrap();
+    let (_, body) = detect(&d, "deepseek-harness").await;
+    assert_eq!(body["agent"]["available"], true, "{body}");
+    assert_eq!(body["agent"]["version"], "0.1.2-rc.1");
+    assert!(body["agent"].get("needsSetup").is_none());
+    assert_eq!(agent(&d, "deepseek-harness").await["available"], true);
+
+    // Any agent can be detected alone; an unknown one is a 404.
+    let (status, body) = detect(&d, "claude").await;
+    assert_eq!(
+        (status, body["agent"]["id"].as_str()),
+        (200, Some("claude"))
+    );
+    let (status, _) = detect(&d, "no-such-agent").await;
+    assert_eq!(status, 404);
 }
 
 /// Logs the env var `var` and whether `--mcp-config` was passed. `read`

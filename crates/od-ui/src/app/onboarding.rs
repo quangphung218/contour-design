@@ -208,16 +208,17 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
 pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl IntoView {
     let id = agent.id.clone();
     let id_check = id.clone();
-    // Installed, but its connection component is missing: the card opens
-    // the setup dialog instead of being a dead entry.
+    // DeepSeek Harness not available yet: the card opens the setup dialog
+    // instead of being a dead entry.
     let setup = super::dsh_setup::needs_setup(&agent);
+    let cli_path = agent.path.clone();
     let setup_state = RwSignal::new(None::<super::dsh_setup::SetupState>);
     let detail = if agent.available {
         agent.version.clone().map_or_else(
             || t(T::Installed).to_owned(),
             |v| tf(T::InstalledVersion, &[&v]),
         )
-    } else if setup {
+    } else if agent.needs_setup {
         t(T::DshSetupRequired).to_owned()
     } else {
         agent
@@ -257,7 +258,7 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
             })}
         </button>
         {move || setup_state.get().is_some().then(|| view! {
-            <super::dsh_setup::DshSetupDialog state=setup_state picked=picked/>
+            <super::dsh_setup::DshSetupDialog state=setup_state picked=picked cli_path=cli_path.clone()/>
         })}
     }
 }

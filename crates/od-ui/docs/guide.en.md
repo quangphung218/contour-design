@@ -30,6 +30,22 @@ Create one from a website, a GitHub repository, files, a pasted DESIGN.md or CSS
 
 Settings ▸ Memory holds facts every project should respect. Turn memory off with the main switch. The memory hooks choose what runs on their own: your profile, rewriting short requests, self-checking against your rules and learning from chats. **Import** reads facts from a Markdown file; **Edit MEMORY.md** chooses which facts reach the prompt. In a chat, start a message with "Remember that…" to save a fact for that project.
 
+## DeepSeek Harness {#deepseek-harness}
+
+Nét runs your own `dsh` CLI through its `open-design` profile. It does not install either one.
+
+1. Install `dsh`. The bootstrap installer also installs a compatible Node.js and pnpm, then opens the Harness web UI, where you save your DeepSeek API key:
+   - macOS / Linux: `curl -fsSL 'https://open-design.ai/install-dsh.sh?version=1' | sh`
+   - Windows PowerShell: `& ([scriptblock]::Create((irm 'https://open-design.ai/install-dsh.ps1?version=1')))`
+2. Add the `open-design` profile. Build its package from the Open Design source (`packages/dsh-runtime`), then add it with `dsh`:
+   - `pnpm --filter @open-design/dsh-runtime build`
+   - `pnpm -C packages/dsh-runtime pack --pack-destination <folder>`
+   - `dsh plugin --profile open-design add <folder>/open-design-dsh-runtime-0.1.0.tgz`
+   - `dsh --profile open-design --probe` prints one line of JSON when the profile works.
+3. Back in Nét, open the DeepSeek Harness card and choose **Detect again**. The agent is selected as soon as it passes the check.
+
+The profile lives in `~/.dsh/profiles/open-design`, or under `$DSH_HOME` when that is set.
+
 ## Keyboard
 
 - `Cmd/Ctrl+K` command palette, `?` all shortcuts, `Cmd/Ctrl+,` Settings.
