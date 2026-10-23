@@ -131,9 +131,10 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 
 - Ba vùng: chat bên trái, preview ở giữa (vùng chính), danh sách file bên phải. File thu gọn được (nút trên đầu cột file, `Cmd/Ctrl+B`, lưu ở `od.studio.files-open`).
 - Toolbar preview, trái sang phải: tải lại, đường dẫn file, `Preview | Code`, thiết bị (Desktop/Tablet/Phone), zoom (`- 100% +`), History, Export. Hàng dưới là nhóm chú thích và soi phần tử: Comment, Inspect, Edit text, Draw, Tweaks, Palette, Lint. Cửa sổ hẹp (container dưới 660px) thì ẩn chữ, giữ icon.
+- Code view của version đang xem là source của version đó. Bật bình luận thì tự về Preview. "Thử lại" gửi lại cả file đính kèm của tin gốc (lưu theo tin, cả khi tải lại lịch sử).
 - Zoom là `transform: scale` trên khung đã layout ở kích thước thiết bị (`zoom_box` + `zoomed` trong `studio.rs`), để WebKit và Chromium giống nhau và pin comment theo đúng chỗ.
 - Mỗi lượt của agent có một dòng trạng thái `[data-testid=run-state]` (`data-phase` = `starting | working | done | failed | stopped`; đang chạy theo plan thì hiện "Bước N/M"). Lượt cuối, khi không còn run nào, có hàng "Tiếp theo" (`next-steps`): xem file vừa ghi, bình luận lên trang, bản mobile, phương án khác; lỗi thì "Thử lại" và "Mở Cài đặt". Logic nằm ở `src/guide.rs`, test native.
-- Lỗi của Studio hiện thành toast đỏ ở giữa đáy (`data-testid=notice`), tự ẩn sau 8 giây. Lỗi HTTP mở đầu bằng câu dễ hiểu theo mã trạng thái (`status_hint` trong `api.rs`), sau đó là thông điệp gốc của daemon.
+- Không tải được project (id sai, daemon tắt) thì lỗi nằm cố định đầu khung chat (`load-error`), kèm nút Thử lại; không hiện prompt mẫu. Các lỗi khác của Studio hiện thành toast đỏ ở giữa đáy (`data-testid=notice`), tự ẩn sau 8 giây. Lỗi HTTP mở đầu bằng câu dễ hiểu theo mã trạng thái (`status_hint` trong `api.rs`), sau đó là thông điệp gốc của daemon.
 
 ## Command palette và phím tắt
 

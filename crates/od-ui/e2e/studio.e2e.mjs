@@ -305,7 +305,11 @@ try {
   await page.getByTestId('file-tree').waitFor();
   await page.getByTestId('view-code').click();
   await page.getByTestId('code-view').getByText('Mock page').waitFor();
-  await page.getByTestId('view-preview').click();
+  // Commenting from the code view goes back to the page.
+  await assistant.last().getByTestId('next-comment').click();
+  await until(async () => (await page.getByTestId('code-view').count()) === 0, 'comment leaves the code view');
+  assert.equal(await page.getByTestId('comment-mode').getAttribute('aria-pressed'), 'true');
+  await page.getByTestId('comment-mode').click();
   await frame.locator('#title').waitFor();
   await page.getByTestId('zoom-in').click();
   assert.equal(await page.getByTestId('zoom-reset').textContent(), '125%');
@@ -348,6 +352,14 @@ try {
   // 12. Version history: restore the first AI version of index.html.
   await page.getByTestId('history').click();
   await page.locator('[data-testid="version"][data-version="1"]').waitFor();
+  // The code view of a version on view is that version's source.
+  await page.locator('[data-testid="version"][data-version="1"]').getByTestId('version-view').click();
+  await page.getByTestId('version-preview').waitFor();
+  await page.getByTestId('view-code').click();
+  await page.getByTestId('code-view').getByText('Mock page v1').waitFor();
+  assert.doesNotMatch(await page.getByTestId('code-view').textContent(), /Mock page v[2-9]/);
+  await page.getByTestId('view-preview').click();
+  await page.getByTestId('version-preview').waitFor();
   assert.ok((await page.getByTestId('version').count()) >= 5, 'one version per turn that wrote index.html');
   await page.locator('[data-testid="version"][data-version="1"]').getByTestId('version-restore').click();
   await frame.locator('#title', { hasText: 'Mock page v1' }).waitFor();
@@ -766,6 +778,17 @@ try {
   await page.locator('h1', { hasText: 'Cài đặt' }).waitFor();
   assert.equal(await page.getByTestId('ask-mode-warning').count(), 0, 'claude does not hang');
   results.askModeWarning = 'ok';
+
+  // 16b. A Studio whose project cannot load keeps saying so (no toast that
+  // times out), with a retry, and offers no starter prompts.
+  await page.goto(BASE + '/projects/does-not-exist');
+  await page.getByTestId('load-error').waitFor();
+  await sleep(9000);
+  assert.equal(await page.getByTestId('load-error').count(), 1, 'load error still shown after 9 s');
+  assert.equal(await page.getByTestId('chat-empty').count(), 0);
+  await page.getByTestId('load-retry').click();
+  await page.getByTestId('load-error').waitFor();
+  results.loadError = 'ok';
 
   // 17. Nothing left loopback during the whole scenario.
   assert.deepEqual(external, [], `external requests: ${external.join(', ')}`);

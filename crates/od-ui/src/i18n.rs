@@ -482,6 +482,7 @@ messages! {
     PreviewStep3 => "Comment on the page to ask for changes, then export.", "Bình luận lên trang để yêu cầu sửa, rồi xuất file.";
 
     // Run status and next steps
+    ProjectLoadFailed => "This project could not be opened.", "Không mở được project này.";
     RunStarting => "Starting the agent…", "Đang khởi động agent…";
     RunWorking => "Working", "Đang chạy";
     RunStep => "Step {0} of {1}", "Bước {0}/{1}";
@@ -524,6 +525,7 @@ messages! {
     ShortcutCycleTabs => "Next tab", "Tab kế tiếp";
     ShortcutZoom => "Zoom in, out, 100%", "Phóng to, thu nhỏ, 100%";
     ShortcutNewLine => "New line", "Xuống dòng";
+    KeySpace => "Space", "Phím cách";
     ShortcutNextSlide => "Next slide", "Slide sau";
     ShortcutPrevSlide => "Previous slide", "Slide trước";
     ShortcutFirstLast => "First or last slide", "Slide đầu hoặc cuối";

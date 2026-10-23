@@ -857,3 +857,7 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .onboarding-brand { display: flex; flex-direction: column; gap: 2px; margin: 0; }
 .onboarding-brand strong { font-size: var(--text-md); }
 .toast-region.notice { right: auto; left: 50%; transform: translateX(-50%); }
+.load-error { align-items: flex-start; }
+.load-error-body { display: flex; flex-direction: column; gap: var(--space-1-5); min-width: 0; }
+.load-error-body span { overflow-wrap: anywhere; }
+.load-error .row { display: flex; gap: var(--space-1-5); margin-top: var(--space-1); }

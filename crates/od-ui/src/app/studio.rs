@@ -136,6 +136,8 @@ pub struct StudioCtx {
     /// Bumped to reload the preview iframe.
     pub preview_rev: RwSignal<u32>,
     pub notice: RwSignal<Option<String>>,
+    /// The project could not be loaded; shown until a retry succeeds.
+    pub load_error: RwSignal<Option<String>>,
     pub comments: RwSignal<Vec<PreviewComment>>,
     pub comment_mode: RwSignal<bool>,
     /// The element picked in comment mode, waiting for its note.
@@ -306,8 +308,9 @@ impl StudioCtx {
         let user_id = api::random_id();
         let assistant_id = api::random_id();
         let turn = RwSignal::new(AssistantTurn::new());
+        let files = self.tools.attachments.get_untracked();
         self.items.update(|items| {
-            items.push(ChatItem::user(user_id.clone(), text.clone()));
+            items.push(ChatItem::user(user_id.clone(), text.clone()).with_attachments(files));
             items.push(ChatItem::assistant(assistant_id.clone(), turn));
         });
         let Some(agent_id) = shell.agent_id() else {
@@ -584,7 +587,8 @@ impl StudioCtx {
             .messages
             .iter()
             .map(|m| match m.role {
-                MessageRole::User => ChatItem::user(m.id.clone(), m.content.clone()),
+                MessageRole::User => ChatItem::user(m.id.clone(), m.content.clone())
+                    .with_attachments(m.attachments.clone()),
                 MessageRole::Assistant => {
                     let turn = RwSignal::new(AssistantTurn::from_stored(m));
                     if turn.with_untracked(|t| t.state.is_live()) {
@@ -683,6 +687,8 @@ impl StudioCtx {
     pub fn set_comment_mode(self, on: bool) {
         if on {
             self.leave_tool();
+            // Comments are placed on the rendered page.
+            self.show_code.set(false);
         }
         self.comment_mode.set(on);
         if !on {
@@ -828,15 +834,18 @@ impl StudioCtx {
     }
 
     /// Loads history, resumes a live run, then sends a pending prompt.
-    async fn load(self, shell: Shell) {
+    pub async fn load(self, shell: Shell) {
         let base = self.base();
         let project = match api::get::<ProjectResponse>(&base).await {
             Ok(r) => r.project,
             Err(e) => {
-                self.notice.set(Some(e.to_string()));
+                // Not a toast: without its project the Studio is unusable,
+                // so the error stays until a retry loads it.
+                self.load_error.set(Some(e.to_string()));
                 return;
             }
         };
+        self.load_error.set(None);
         let pending = project.pending_prompt.clone();
         self.project.set(Some(project));
         self.refresh_files();
@@ -943,6 +952,7 @@ pub fn Studio() -> impl IntoView {
         recent: RwSignal::new(Vec::new()),
         preview_rev: RwSignal::new(0),
         notice: RwSignal::new(None),
+        load_error: RwSignal::new(None),
         comments: RwSignal::new(Vec::new()),
         comment_mode: RwSignal::new(false),
         comment_draft: RwSignal::new(None),
@@ -1278,7 +1288,9 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <div class="preview-stage">
                     {move || match (src.get(), ctx.viewing.get()) {
                         (None, _) => view! { <PreviewEmpty ctx=ctx/> }.into_any(),
-                        (Some(_), _) if ctx.show_code.get() && !is_image() => view! { <CodeView ctx=ctx/> }.into_any(),
+                        // A version on view shows its own source, not the live file's.
+                        (Some(_), Some(v)) if ctx.show_code.get() => view! { <CodeView ctx=ctx version=Some(v.content)/> }.into_any(),
+                        (Some(_), None) if ctx.show_code.get() && !is_image() => view! { <CodeView ctx=ctx version=None/> }.into_any(),
                         (Some(_), Some(v)) => view! {
                             <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
                             <iframe
@@ -1413,13 +1425,19 @@ fn NoticeToast(ctx: StudioCtx) -> impl IntoView {
 /// Longest source shown in the code view; the rest is cut with a note.
 const CODE_LINES: usize = 4000;
 
-/// Read-only source of the active file, with line numbers.
+/// Read-only source of the active file, with line numbers; `version` is
+/// the content of the version on view, shown instead of the live file.
 #[component]
-fn CodeView(ctx: StudioCtx) -> impl IntoView {
+fn CodeView(ctx: StudioCtx, version: Option<String>) -> impl IntoView {
+    let version = StoredValue::new(version);
     let text = LocalResource::new(move || {
         let path = ctx.active();
         let _rev = ctx.preview_rev.get();
+        let shown = version.get_value();
         async move {
+            if let Some(src) = shown {
+                return Some(Ok(src));
+            }
             let path = path?;
             let raw = format!("{}/raw/{}", ctx.base(), api::file_path(&path));
             Some(api::get_text(&raw).await.map_err(|e| e.to_string()))

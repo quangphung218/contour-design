@@ -22,6 +22,8 @@ use od_contracts::CommentStatus;
 pub struct ChatItem {
     pub id: String,
     pub kind: ItemKind,
+    /// Files sent with a user message (`attachments`), for a retry.
+    pub attachments: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -35,13 +37,21 @@ impl ChatItem {
         Self {
             id,
             kind: ItemKind::User(text),
+            attachments: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn with_attachments(mut self, attachments: Vec<String>) -> Self {
+        self.attachments = attachments;
+        self
     }
 
     pub fn assistant(id: String, turn: RwSignal<AssistantTurn>) -> Self {
         Self {
             id,
             kind: ItemKind::Assistant(turn),
+            attachments: Vec::new(),
         }
     }
 }
@@ -80,6 +90,21 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             <ConversationBar ctx=ctx/>
             <super::agent_w3::ChatTools ctx=ctx/>
             <div class="messages" node_ref=list_ref data-testid="messages">
+                {move || ctx.load_error.get().map(|e| view! {
+                    <div class="msg-error load-error" role="alert" data-testid="load-error">
+                        {icon(Glyph::Warning)}
+                        <div class="load-error-body">
+                            <strong>{t(T::ProjectLoadFailed)}</strong>
+                            <span>{e}</span>
+                            <div class="row">
+                                <button class="btn small" data-testid="load-retry" on:click=move |_| {
+                                    leptos::task::spawn_local(ctx.load(shell));
+                                }>{icon(Glyph::Refresh)}{t(T::NextRetry)}</button>
+                                <a class="btn small ghost" href="/projects">{icon(Glyph::Projects)}{t(T::AllProjects)}</a>
+                            </div>
+                        </div>
+                    </div>
+                })}
                 <For
                     each=move || ctx.items.get()
                     key=|item| item.id.clone()
@@ -96,7 +121,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         }
                     }
                 />
-                <Show when=move || ctx.items.with(Vec::is_empty)>
+                <Show when=move || ctx.items.with(Vec::is_empty) && ctx.load_error.with(Option::is_none)>
                     <div class="empty-state compact chat-empty" data-testid="chat-empty">
                         <span class="empty-icon">{icon(Glyph::Chat)}</span>
                         <strong>{t(T::DescribeChangeTitle)}</strong>
@@ -461,12 +486,12 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     let shell = Shell::get();
     let navigate = leptos_router::hooks::use_navigate();
     let item_id = StoredValue::new(item_id);
-    // The user message this turn answered, for a retry.
+    // The user message this turn answered, and its files, for a retry.
     let asked = move || {
         ctx.items.with_untracked(|items| {
             let i = items.iter().position(|i| i.id == item_id.get_value())?;
             items[..i].iter().rev().find_map(|i| match &i.kind {
-                ItemKind::User(text) => Some(text.clone()),
+                ItemKind::User(text) => Some((text.clone(), i.attachments.clone())),
                 ItemKind::Assistant(_) => None,
             })
         })
@@ -505,7 +530,8 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                     focus_composer();
                                 }
                                 NextStep::Retry => {
-                                    if let Some(text) = asked() {
+                                    if let Some((text, files)) = asked() {
+                                        ctx.tools.attachments.update(|a| crate::workspace::add_missing(a, files));
                                         ctx.send(text, shell);
                                     }
                                 }

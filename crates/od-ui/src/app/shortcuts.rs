@@ -41,7 +41,7 @@ const GROUPS: [(T, &[(&str, T)]); 4] = [
     (
         T::ShortcutsDeck,
         &[
-            ("→ / Space", T::ShortcutNextSlide),
+            ("→ / {space}", T::ShortcutNextSlide),
             ("←", T::ShortcutPrevSlide),
             ("Home / End", T::ShortcutFirstLast),
         ],
@@ -97,7 +97,7 @@ pub fn ShortcutsDialog() -> impl IntoView {
                                         .map(|(keys, label)| view! {
                                             <div class="shortcut-row">
                                                 <dt>{t(*label)}</dt>
-                                                <dd><kbd>{keys.replace("{m}", m)}</kbd></dd>
+                                                <dd><kbd>{keys.replace("{m}", m).replace("{space}", t(T::KeySpace))}</kbd></dd>
                                             </div>
                                         })
                                         .collect_view()}

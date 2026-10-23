@@ -175,7 +175,7 @@ pub fn Home() -> impl IntoView {
                                             let selected = design_system.get().as_deref() == Some(s.id.as_str());
                                             view! {
                                                 <option value=s.id.clone() selected=selected>
-                                                    {format!("{} · {}", s.title, s.category)}
+                                                    {format!("{} · {}", crate::i18n::rebrand(&s.title), s.category)}
                                                 </option>
                                             }
                                         })
