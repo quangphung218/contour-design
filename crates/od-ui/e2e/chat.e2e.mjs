@@ -127,6 +127,7 @@ try {
   await page.getByTestId('media-aspect').selectOption('9:16');
   await page.getByTestId('media-duration').selectOption('8');
   await page.getByTestId('media-resolution').selectOption('4k');
+  assert.ok((await page.locator('[data-testid="media-model"] option').count()) > 1, 'video models listed');
   await page.locator('[data-testid="chip"][data-chip="video"][aria-checked="true"]').waitFor();
   const examples = page.getByTestId('example-prompt');
   assert.equal(await examples.count(), 3);
@@ -138,6 +139,12 @@ try {
   await page.getByTestId('media-audio-kind').selectOption('sfx');
   const durations = await page.locator('[data-testid="media-duration"] option').allTextContents();
   assert.deepEqual(durations, ['5s', '10s', '15s', '30s']);
+  // Image: model and style notes.
+  await page.getByTestId('chip-more').click();
+  await page.locator('[data-testid="chip-option"][data-chip="image"]').click();
+  await page.getByTestId('media-model').selectOption('gpt-image-2');
+  await page.getByTestId('media-notes').fill('soft light');
+  await page.getByTestId('media-notes').press('Tab');
   await page.locator('[data-testid="chip"][data-chip="prototype"]').click();
   assert.equal(await page.getByTestId('media-bar').count(), 0, 'no media picker for prototypes');
   await page.getByTestId('chip-more').click();

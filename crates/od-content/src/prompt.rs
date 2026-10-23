@@ -290,14 +290,17 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
 
 /// Metadata keys of the Home media picker, in the original's names, with
 /// the label the prompt shows.
-const MEDIA_FIELDS: [(&str, &str); 8] = [
+const MEDIA_FIELDS: [(&str, &str); 11] = [
+    ("imageModel", "imageModel"),
     ("imageAspect", "aspectRatio"),
+    ("imageStyle", "styleNotes"),
     ("imageResolution", "resolution"),
     ("videoModel", "videoModel"),
     ("videoAspect", "aspectRatio"),
     ("videoLength", "lengthSeconds"),
     ("videoResolution", "resolution"),
     ("audioKind", "audioKind"),
+    ("audioModel", "audioModel"),
     ("audioDuration", "durationSeconds"),
 ];
 

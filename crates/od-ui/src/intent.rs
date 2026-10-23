@@ -35,6 +35,10 @@ pub struct MediaSpec {
     pub durations: &'static [u32],
     /// Speech, sound effect.
     pub audio_kind: bool,
+    /// Media model of this surface (`/api/media/models`).
+    pub model: Option<&'static str>,
+    /// Free style notes.
+    pub notes: bool,
 }
 
 pub const ASPECTS: [&str; 5] = ["1:1", "16:9", "9:16", "4:3", "3:4"];
@@ -165,17 +169,22 @@ impl Chip {
             resolution: false,
             durations: &[],
             audio_kind: false,
+            model: None,
+            notes: false,
         };
         match self {
             Self::Image => Some(MediaSpec {
                 aspect: true,
                 resolution: true,
+                model: Some("image"),
+                notes: true,
                 ..none
             }),
             Self::Video => Some(MediaSpec {
                 aspect: true,
                 resolution: true,
                 durations: VIDEO_SECONDS,
+                model: Some("video"),
                 ..none
             }),
             Self::Motion | Self::HyperFrames => Some(MediaSpec {
@@ -186,6 +195,7 @@ impl Chip {
             Self::Audio => Some(MediaSpec {
                 durations: AUDIO_SECONDS,
                 audio_kind: true,
+                model: Some("audio"),
                 ..none
             }),
             _ => None,
@@ -200,6 +210,9 @@ pub struct MediaOptions {
     pub resolution: Option<String>,
     pub duration: Option<u32>,
     pub audio_kind: Option<String>,
+    /// Media model id; `None` lets the agent pick.
+    pub model: Option<String>,
+    pub notes: Option<String>,
 }
 
 impl MediaOptions {
@@ -219,6 +232,8 @@ impl MediaOptions {
             resolution: spec.resolution.then(|| "2k".to_owned()),
             duration: duration.filter(|_| !spec.durations.is_empty()),
             audio_kind: spec.audio_kind.then(|| "speech".to_owned()),
+            model: None,
+            notes: None,
         }
     }
 
@@ -246,12 +261,29 @@ impl MediaOptions {
     /// Writes the choices into `metadata.extra` under the original's keys
     /// (`imageAspect`, `videoLength`, `audioDuration`…).
     fn write(&self, chip: Chip, extra: &mut Map<String, Value>) {
-        let (aspect, resolution, length) = match chip.kind() {
-            ProjectKind::Image => ("imageAspect", "imageResolution", None),
-            ProjectKind::Video => ("videoAspect", "videoResolution", Some("videoLength")),
-            ProjectKind::Audio => ("", "", Some("audioDuration")),
+        let (aspect, resolution, length, model) = match chip.kind() {
+            ProjectKind::Image => ("imageAspect", "imageResolution", None, "imageModel"),
+            ProjectKind::Video => (
+                "videoAspect",
+                "videoResolution",
+                Some("videoLength"),
+                "videoModel",
+            ),
+            ProjectKind::Audio => ("", "", Some("audioDuration"), "audioModel"),
             _ => return,
         };
+        let text = |v: &Option<String>| {
+            v.as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+        };
+        if let Some(m) = text(&self.model) {
+            extra.insert(model.to_owned(), json!(m));
+        }
+        if let Some(n) = text(&self.notes).filter(|_| chip.kind() == ProjectKind::Image) {
+            extra.insert("imageStyle".to_owned(), json!(n));
+        }
         if let Some(a) = self.aspect.as_ref().filter(|_| !aspect.is_empty()) {
             extra.insert(aspect.to_owned(), json!(a));
         }
@@ -632,6 +664,15 @@ mod tests {
         assert_eq!(audio.durations(Chip::Audio), [5, 10, 15, 30]);
         let mut extra = Map::new();
         audio.write(Chip::Audio, &mut extra);
+        let mut image = MediaOptions::defaults(Chip::Image);
+        image.model = Some("gpt-image-2".into());
+        image.notes = Some("  soft light ".into());
+        let mut img = Map::new();
+        image.write(Chip::Image, &mut img);
+        assert_eq!(
+            Value::Object(img),
+            json!({ "imageAspect": "16:9", "imageResolution": "2k", "imageModel": "gpt-image-2", "imageStyle": "soft light" })
+        );
         assert_eq!(
             Value::Object(extra),
             json!({ "audioDuration": 30, "audioKind": "sfx" })

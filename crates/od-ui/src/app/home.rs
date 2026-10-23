@@ -522,6 +522,26 @@ fn ChipRow(
 /// Ratio, resolution, duration and audio type for media chips.
 #[component]
 fn MediaBar(chip: RwSignal<Chip>, media: RwSignal<MediaOptions>) -> impl IntoView {
+    // `(surface, id, label)` of the media catalogue.
+    let catalogue = LocalResource::new(|| async {
+        api::get::<serde_json::Value>("/api/media/models")
+            .await
+            .map(|v| {
+                v["models"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|m| {
+                        Some((
+                            m["surface"].as_str()?.to_owned(),
+                            m["id"].as_str()?.to_owned(),
+                            m["label"].as_str().unwrap_or_default().to_owned(),
+                        ))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    });
     move || {
         let c = chip.get();
         let spec = c.media()?;
@@ -546,6 +566,22 @@ fn MediaBar(chip: RwSignal<Chip>, media: RwSignal<MediaOptions>) -> impl IntoVie
         };
         Some(view! {
             <div class="media-bar" data-testid="media-bar">
+                {spec.model.map(|surface| {
+                    let mut values = vec![(String::new(), t(T::DefaultChoice).to_owned())];
+                    values.extend(
+                        catalogue
+                            .get()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter(|(s, _, _)| s == surface)
+                            .map(|(_, id, label)| (id, label)),
+                    );
+                    select(
+                        "media-model", Glyph::Agent, T::Model, values,
+                        opts.model.clone().unwrap_or_default(),
+                        Callback::new(move |v: String| media.update(|m| m.model = Some(v).filter(|v| !v.is_empty()))),
+                    )
+                })}
                 {spec.aspect.then(|| select(
                     "media-aspect", Glyph::AspectRatio, T::MediaRatio,
                     ASPECTS.iter().map(|a| ((*a).to_owned(), (*a).to_owned())).collect(),
@@ -564,6 +600,19 @@ fn MediaBar(chip: RwSignal<Chip>, media: RwSignal<MediaOptions>) -> impl IntoVie
                     opts.audio_kind.clone().unwrap_or_default(),
                     Callback::new(move |v: String| media.update(|m| m.set_audio_kind(&v))),
                 ))}
+                {spec.notes.then(|| view! {
+                    <input
+                        class="input small media-notes"
+                        data-testid="media-notes"
+                        placeholder=t(T::MediaNotes)
+                        aria-label=t(T::MediaNotes)
+                        prop:value=opts.notes.clone().unwrap_or_default()
+                        on:change=move |ev| {
+                            let v = event_target_value(&ev);
+                            media.update(|m| m.notes = Some(v));
+                        }
+                    />
+                })}
                 {(!spec.durations.is_empty()).then(|| select(
                     "media-duration", Glyph::Queue, T::MediaDuration,
                     opts.durations(c).into_iter().map(|d| (d.to_string(), tf(T::SecondsN, &[&d.to_string()]))).collect(),
