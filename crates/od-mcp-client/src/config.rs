@@ -227,28 +227,31 @@ impl McpConfig {
         self.servers.iter().find(|s| s.id == id)
     }
 
-    /// Restores masked values from `old` (same server id and key).
+    /// Restores masked values from `old` (same server id and key). Headers
+    /// only while the URL stays, env only while the command stays: they
+    /// were given for that host or program.
     ///
     /// # Errors
     /// [`McpError::Invalid`] when a masked value has nothing to restore.
     pub fn unmask(&mut self, old: &Self) -> Result<(), McpError> {
         for s in &mut self.servers {
             let prev = old.find(&s.id);
+            let same_url = prev.filter(|p| p.url == s.url);
+            let same_command = prev.filter(|p| p.command == s.command);
             let restore = |m: &mut BTreeMap<String, String>,
                            prev: Option<&BTreeMap<String, String>>|
              -> Result<(), McpError> {
                 for (k, v) in m.iter_mut() {
                     if v == MASK {
-                        *v = prev
-                            .and_then(|p| p.get(k))
-                            .cloned()
-                            .ok_or_else(|| invalid(format!("no stored value for {k:?}")))?;
+                        *v = prev.and_then(|p| p.get(k)).cloned().ok_or_else(|| {
+                            invalid(format!("no stored value for {k:?}: enter it again"))
+                        })?;
                     }
                 }
                 Ok(())
             };
-            restore(&mut s.env, prev.map(|p| &p.env))?;
-            restore(&mut s.headers, prev.map(|p| &p.headers))?;
+            restore(&mut s.env, same_command.map(|p| &p.env))?;
+            restore(&mut s.headers, same_url.map(|p| &p.headers))?;
         }
         Ok(())
     }
@@ -329,4 +332,39 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         let _ = std::fs::remove_file(&tmp);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(json: serde_json::Value) -> McpConfig {
+        serde_json::from_value(json).expect("config")
+    }
+
+    #[test]
+    fn masked_values_come_back_only_for_the_same_host_or_program() {
+        let old = cfg(serde_json::json!({"servers": [
+            {"id": "h", "transport": "http", "url": "https://a.example/mcp", "headers": {"K": "ka"}},
+            {"id": "s", "transport": "stdio", "command": "srv-a", "env": {"T": "ta"}}
+        ]}));
+        let mut same = old.masked_all();
+        same.unmask(&old).expect("same host and program");
+        assert_eq!(same, old);
+
+        let mut moved = old.masked_all();
+        moved.servers[0].url = Some("https://b.example/mcp".into());
+        assert!(moved.unmask(&old).is_err(), "header for another host");
+        let mut swapped = old.masked_all();
+        swapped.servers[1].command = Some("srv-b".into());
+        assert!(swapped.unmask(&old).is_err(), "env for another program");
+    }
+
+    impl McpConfig {
+        fn masked_all(&self) -> Self {
+            Self {
+                servers: self.servers.iter().map(McpServer::masked).collect(),
+            }
+        }
+    }
 }

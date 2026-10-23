@@ -6,6 +6,9 @@
 //! - `GET /api/projects/:id/raw/<path>?bridge=1` (and the scoped route with
 //!   the same query) returns HTML ≤ 2 MiB with the bridge injected; `raw`
 //!   also gets a `<base href>` pointing at the project's live scope.
+//!   `raw?bridge=1&key=<id>` also hands the bridge a fresh edit key the
+//!   first time `<id>` is served; `POST /api/projects/:id/edit-keys/<id>`
+//!   gives it to the host, once (see `od_preview::edit_key`).
 //! - `GET /api/projects/:id/events` streams `ready`, `file-changed` and
 //!   `conversation-created` over SSE.
 
@@ -20,12 +23,12 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Extension, middleware};
 use od_contracts::ErrorCode;
 use od_preview::{
     MAX_INJECT_BYTES, PREVIEW_CSP, PREVIEW_IFRAME_SANDBOX, PreviewUrlResponse, ProjectEvent,
-    encode_path, encode_segment, inject_bridge, is_scope_token,
+    encode_path, encode_segment, inject_bridge_keyed, is_edit_key_id, is_scope_token,
 };
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -40,12 +43,21 @@ pub fn mount(api: Router<AppState>, preview: Preview) -> Router<AppState> {
     api.route("/api/projects/{id}/preview-url", get(preview_url))
         .route("/api/projects/{id}/preview/{scope}/{*path}", get(scoped))
         .route("/api/projects/{id}/events", get(events))
+        .route("/api/projects/{id}/edit-keys/{kid}", post(claim_edit_key))
         .layer(middleware::from_fn_with_state(preview.clone(), raw_bridge))
         .layer(Extension(preview))
 }
 
 fn wants_bridge(query: Option<&str>) -> bool {
     query.is_some_and(|q| q.split('&').any(|kv| kv == "bridge=1" || kv == "bridge"))
+}
+
+/// The load id in `key=<id>`, if well formed.
+fn edit_key_id(query: Option<&str>) -> Option<&str> {
+    query?
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("key="))
+        .filter(|id| is_edit_key_id(id))
 }
 
 /// Injected bytes differ from the file, so file validators and ranges no
@@ -76,9 +88,14 @@ fn raw_target(path: &str) -> Option<(&str, &str)> {
     (!id.is_empty() && !file.is_empty()).then_some((id, file))
 }
 
-/// Rewrites a 200 HTML response to carry the bridge. Larger documents and
-/// other responses pass through.
-async fn with_bridge(res: Response, base_href: Option<&str>) -> Response {
+/// Rewrites a 200 HTML response to carry the bridge (and the edit key
+/// `issue` gives, asked only when the bridge goes in). Larger documents
+/// and other responses pass through.
+async fn with_bridge(
+    res: Response,
+    base_href: Option<&str>,
+    issue: impl FnOnce() -> Option<String>,
+) -> Response {
     if res.status() != StatusCode::OK || !is_html(res.headers()) {
         return res;
     }
@@ -98,7 +115,7 @@ async fn with_bridge(res: Response, base_href: Option<&str>) -> Response {
         Ok(bytes) => bytes,
         Err(err) => return ApiErr::internal(format!("reading HTML: {err}")).into_response(),
     };
-    let html = match inject_bridge(&bytes, base_href) {
+    let html = match inject_bridge_keyed(&bytes, base_href, issue().as_deref()) {
         Ok(html) => html,
         Err(err) => {
             tracing::warn!(error = %err, "bridge injection failed; serving the file as is");
@@ -135,9 +152,36 @@ async fn raw_bridge(State(preview): State<Preview>, mut req: Request, next: Next
     } else {
         format!("/api/projects/{id}/preview/{}/{dir}/", scope.token)
     };
+    let kid = edit_key_id(req.uri().query()).map(str::to_owned);
+    let id = id.to_owned();
     strip_validators(req.headers_mut());
     let res = next.run(req).await;
-    with_bridge(res, Some(&base_href)).await
+    with_bridge(res, Some(&base_href), || {
+        kid.and_then(|kid| preview.edit_keys.issue(&id, &kid))
+    })
+    .await
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct EditKeyResponse {
+    key: String,
+}
+
+/// The host takes the key its load was given. The origin guard refuses
+/// this POST from sandboxed frames (`Origin: null`).
+pub async fn claim_edit_key(
+    Extension(preview): Extension<Preview>,
+    Path((id, kid)): Path<(String, String)>,
+) -> ApiResult<Response> {
+    let key = preview
+        .edit_keys
+        .claim(&id, &kid)
+        .ok_or_else(|| ApiErr::not_found("edit key not found, expired or already taken"))?;
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        ApiJson(EditKeyResponse { key }),
+    )
+        .into_response())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -192,7 +236,7 @@ pub async fn scoped(
     }
     let mut res = raw::raw(State(state), Path((id, path)), headers).await?;
     if bridge {
-        res = with_bridge(res, None).await;
+        res = with_bridge(res, None, || None).await;
     }
     let headers = res.headers_mut();
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));

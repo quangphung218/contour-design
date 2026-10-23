@@ -211,6 +211,17 @@ fn main() -> anyhow::Result<()> {
                 .min_inner_size(900.0, 600.0)
                 .build()?;
             app.manage(daemon);
+            // SIGTERM (logout, `kill`) and Ctrl-C quit through `RunEvent::Exit`,
+            // which ends the terminal tabs' shells.
+            tauri::async_runtime::spawn(async move {
+                match od_server::shutdown_signal() {
+                    Ok(stop) => {
+                        stop.await;
+                        handle.exit(0);
+                    }
+                    Err(e) => tracing::warn!(error = %e, "no SIGTERM handler"),
+                }
+            });
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -221,14 +232,46 @@ fn main() -> anyhow::Result<()> {
                 if let Some(daemon) = app.try_state::<Daemon>() {
                     tauri::async_runtime::block_on(daemon.state.shutdown());
                 }
+                remove_webview_temp(&std::env::temp_dir());
             }
         });
     Ok(())
 }
 
+/// The webview (WebKit on macOS) keeps caches in `<tmp>/<executable
+/// name>`; nothing there outlives the app.
+fn remove_webview_temp(tmp: &std::path::Path) {
+    let Some(name) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.file_stem().map(std::ffi::OsStr::to_owned))
+    else {
+        return;
+    };
+    let dir = tmp.join(name);
+    if dir.is_dir() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_webview_temp_folder_goes_on_exit() {
+        let tmp = std::env::temp_dir().join(format!("od-desktop-test-{}", std::process::id()));
+        let name = std::env::current_exe()
+            .unwrap()
+            .file_stem()
+            .unwrap()
+            .to_owned();
+        std::fs::create_dir_all(tmp.join(&name).join("WebKit")).unwrap();
+        std::fs::create_dir_all(tmp.join("other")).unwrap();
+        remove_webview_temp(&tmp);
+        assert!(!tmp.join(&name).exists());
+        assert!(tmp.join("other").exists());
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
 
     #[test]
     fn navigation_stays_on_the_daemon_origin() {

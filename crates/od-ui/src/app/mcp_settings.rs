@@ -35,6 +35,9 @@ fn for_save(v: &Value) -> Value {
 pub fn McpSection() -> impl IntoView {
     let servers = RwSignal::new(Vec::<Value>::new());
     let status = RwSignal::new(None::<Result<(), String>>);
+    // While a save is in flight the daemon still has the old list: a test
+    // then would probe a server it does not know yet.
+    let saving = RwSignal::new(false);
     let reload = move || {
         leptos::task::spawn_local(async move {
             if let Ok(r) = api::get::<Value>("/api/mcp/servers").await {
@@ -46,6 +49,7 @@ pub fn McpSection() -> impl IntoView {
     let save = move |_| {
         let body =
             json!({"servers": servers.get_untracked().iter().map(for_save).collect::<Vec<_>>()});
+        saving.set(true);
         leptos::task::spawn_local(async move {
             match api::put::<_, Value>("/api/mcp/servers", &body).await {
                 Ok(r) => {
@@ -54,8 +58,10 @@ pub fn McpSection() -> impl IntoView {
                 }
                 Err(e) => status.set(Some(Err(e.to_string()))),
             }
+            saving.set(false);
         });
     };
+    let rows = Memo::new(move |_| servers.with(Vec::len));
     let add = move |_| {
         servers.update(|s| {
             let n = s.len() + 1;
@@ -67,12 +73,14 @@ pub fn McpSection() -> impl IntoView {
         <h2>{t(T::McpTitle)}</h2>
         <p class="muted">{t(T::McpIntro)}</p>
         <div class="mcp-list" data-testid="mcp-servers">
+            // Rows are rebuilt only when their number changes: an edit or a
+            // save must not reset a row (and the test result it shows).
             {move || {
-                let list = servers.get();
-                if list.is_empty() {
+                let count = rows.get();
+                if count == 0 {
                     return view! { <p class="empty small">{t(T::McpNoServers)}</p> }.into_any();
                 }
-                (0..list.len()).map(|i| view! { <McpRow servers=servers index=i/> }).collect_view().into_any()
+                (0..count).map(|i| view! { <McpRow servers=servers index=i saving=saving/> }).collect_view().into_any()
             }}
         </div>
         <div class="row end">
@@ -82,13 +90,13 @@ pub fn McpSection() -> impl IntoView {
                 None => ().into_any(),
             }}
             <button class="btn" data-testid="mcp-add" on:click=add>{t(T::McpAdd)}</button>
-            <button class="btn primary" data-testid="mcp-save" on:click=save>{t(T::Save)}</button>
+            <button class="btn primary" data-testid="mcp-save" disabled=move || saving.get() on:click=save>{t(T::Save)}</button>
         </div>
     }
 }
 
 #[component]
-fn McpRow(servers: RwSignal<Vec<Value>>, index: usize) -> impl IntoView {
+fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -> impl IntoView {
     let probe = RwSignal::new(None::<Probe>);
     let get = move |key: &'static str| {
         move || servers.with(|s| s.get(index).map(|v| field(v, key)).unwrap_or_default())
@@ -219,7 +227,7 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize) -> impl IntoView {
                 </label>
             </Show>
             <div class="row">
-                <button class="btn small" data-testid="mcp-test" on:click=test>{t(T::McpTest)}</button>
+                <button class="btn small" data-testid="mcp-test" disabled=move || saving.get() on:click=test>{t(T::McpTest)}</button>
                 <Show when=move || is_http() && oauth()>
                     {move || if connected() {
                         view! {

@@ -26,6 +26,15 @@ use serde_json::json;
 /// warn in the UI).
 const ASK_MODE_HANGS: [&str; 2] = ["copilot", "qwen"];
 
+/// A side-chat turn runs in chat mode whatever its conversation was
+/// switched to in the main pane: a side question never edits files.
+fn side_turn(req: ChatRequest) -> ChatRequest {
+    ChatRequest {
+        session_mode: Some(SessionMode::Chat),
+        ..req
+    }
+}
+
 fn mode_label(mode: SessionMode) -> (&'static str, &'static str) {
     match mode {
         SessionMode::Design => (t(T::ModeDesign), t(T::ModeDesignHint)),
@@ -621,7 +630,7 @@ impl SideChat {
                 locale: Some(shell.locale.get_untracked().tag().to_owned()),
                 ..ChatRequest::default()
             };
-            match api::post::<_, CreateRunResponse>("/api/runs", &req).await {
+            match api::post::<_, CreateRunResponse>("/api/runs", &side_turn(req)).await {
                 Ok(res) => self.attach(ctx, res.run_id, turn),
                 Err(e) => {
                     fail(turn, e.to_string());
@@ -770,5 +779,22 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
                 </div>
             </div>
         </section>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn side_turns_are_pinned_to_chat_mode() {
+        let req = ChatRequest {
+            session_mode: Some(SessionMode::Design),
+            message: "why?".into(),
+            ..ChatRequest::default()
+        };
+        let sent = side_turn(req);
+        assert_eq!(sent.session_mode, Some(SessionMode::Chat));
+        assert_eq!(sent.message, "why?");
     }
 }

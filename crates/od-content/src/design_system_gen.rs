@@ -7,6 +7,7 @@
 use crate::design_systems::{USER_ID_PREFIX, is_valid_id};
 use serde_json::json;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// H2 sections the agent is asked to write (spec 3.5: at least seven).
 pub const SECTIONS: [&str; 9] = [
@@ -228,6 +229,9 @@ fn io(e: std::io::Error) -> GenError {
     GenError::Io(e.to_string())
 }
 
+/// How often a job looks for the next free folder when others take it.
+const MAX_PLACE_TRIES: usize = 64;
+
 /// First free folder name `<slug>`, `<slug>-2`, … under `root`.
 fn free_folder(root: &Path, slug: &str) -> PathBuf {
     (1..)
@@ -255,46 +259,89 @@ pub fn install(
 ) -> Result<Installed, GenError> {
     check_staging(staging)?;
     std::fs::create_dir_all(user_root).map_err(io)?;
-    let slug = slugify(&req.name);
-    let dest = free_folder(user_root, &slug);
-    let id = dest
-        .file_name()
-        .and_then(|n| n.to_str())
-        .filter(|n| is_valid_id(n))
-        .ok_or_else(|| GenError::Io("bad folder name".to_owned()))?
-        .to_owned();
     // Build the package next to its destination, then rename: the index
-    // never sees a half-written folder.
-    let tmp = user_root.join(format!(".{id}.installing"));
-    if tmp.exists() {
-        std::fs::remove_dir_all(&tmp).map_err(io)?;
-    }
+    // never sees a half-written folder. Each job has its own (hidden,
+    // never listed) folder, so two jobs for one name do not collide.
+    static JOB: AtomicU64 = AtomicU64::new(0);
+    let tmp = user_root.join(format!(
+        ".installing-{}-{}",
+        std::process::id(),
+        JOB.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&tmp).map_err(io)?;
+    let built = build_and_place(staging, &tmp, user_root, req);
+    if built.is_err() {
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+    built
+}
+
+/// Fills `tmp` and renames it to a free `<slug>` folder; when another job
+/// takes that folder first, the next free one.
+fn build_and_place(
+    staging: &Path,
+    tmp: &Path,
+    user_root: &Path,
+    req: &GenerateRequest,
+) -> Result<Installed, GenError> {
     for file in ["DESIGN.md", "tokens.css"] {
         std::fs::copy(staging.join(file), tmp.join(file)).map_err(io)?;
     }
+    let slug = slugify(&req.name);
     let category = req.category.clone().unwrap_or_else(|| "Custom".to_owned());
-    let manifest = json!({
-        "schemaVersion": "od-design-system-project/v1",
-        "id": id,
-        "name": req.name,
-        "category": category,
-        "description": first_line(&req.brief),
-        "source": { "type": "local", "origin": "generated from a brief by an agent" },
-        "files": { "design": "DESIGN.md", "tokens": "tokens.css" },
-        "importMode": "normalized",
-        "craft": { "applies": [], "suggested": ["color", "typography"], "exemptions": [] },
-    });
-    let metadata = json!({ "title": req.name, "category": category, "status": "draft" });
-    for (file, value) in [("manifest.json", manifest), ("metadata.json", metadata)] {
-        let text = serde_json::to_string_pretty(&value).map_err(|e| GenError::Io(e.to_string()))?;
-        std::fs::write(tmp.join(file), text).map_err(io)?;
+    let mut tries = 0;
+    loop {
+        let dest = free_folder(user_root, &slug);
+        let id = dest
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| is_valid_id(n))
+            .ok_or_else(|| GenError::Io("bad folder name".to_owned()))?
+            .to_owned();
+        let manifest = json!({
+            "schemaVersion": "od-design-system-project/v1",
+            "id": id,
+            "name": req.name,
+            "category": category,
+            "description": first_line(&req.brief),
+            "source": { "type": "local", "origin": "generated from a brief by an agent" },
+            "files": { "design": "DESIGN.md", "tokens": "tokens.css" },
+            "importMode": "normalized",
+            "craft": { "applies": [], "suggested": ["color", "typography"], "exemptions": [] },
+        });
+        let metadata = json!({ "title": req.name, "category": category, "status": "draft" });
+        for (file, value) in [("manifest.json", manifest), ("metadata.json", metadata)] {
+            let text =
+                serde_json::to_string_pretty(&value).map_err(|e| GenError::Io(e.to_string()))?;
+            std::fs::write(tmp.join(file), text).map_err(io)?;
+        }
+        // Claim the folder: another job may have made it in the meantime.
+        if std::fs::create_dir(&dest).is_err() {
+            tries += 1;
+            if tries > MAX_PLACE_TRIES {
+                return Err(GenError::Io(format!("no free folder for {slug}")));
+            }
+            continue;
+        }
+        // `DESIGN.md` goes last: the index lists a folder only once it has
+        // one, so it never sees a half-moved package.
+        let moved = ["tokens.css", "manifest.json", "metadata.json", "DESIGN.md"]
+            .iter()
+            .try_for_each(|f| std::fs::rename(tmp.join(f), dest.join(f)));
+        return match moved {
+            Ok(()) => {
+                let _ = std::fs::remove_dir(tmp);
+                Ok(Installed {
+                    id: format!("{USER_ID_PREFIX}{id}"),
+                    dir: dest,
+                })
+            }
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&dest);
+                Err(io(e))
+            }
+        };
     }
-    std::fs::rename(&tmp, &dest).map_err(io)?;
-    Ok(Installed {
-        id: format!("{USER_ID_PREFIX}{id}"),
-        dir: dest,
-    })
 }
 
 fn first_line(brief: &str) -> String {
@@ -367,6 +414,65 @@ mod tests {
         );
         std::fs::write(s.join("tokens.css"), TOKENS).unwrap();
         assert_eq!(check_staging(s), Ok(()));
+    }
+
+    /// Two jobs for the same name at once: each builds in its own folder,
+    /// both land, and a half-built folder never shows in the list.
+    #[test]
+    fn concurrent_installs_of_one_name_both_land() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("design-systems");
+        std::fs::create_dir_all(user.join(".tra-da.installing")).unwrap();
+        std::fs::write(
+            user.join(".tra-da.installing/DESIGN.md"),
+            good_design("Trà Đá"),
+        )
+        .unwrap();
+        let req = GenerateRequest::new("Trà Đá", "Street tea stall.", None).unwrap();
+        let barrier = std::sync::Barrier::new(8);
+        let results: Vec<Result<Installed, GenError>> = std::thread::scope(|scope| {
+            let jobs: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        let staging = tempfile::tempdir().unwrap();
+                        std::fs::write(staging.path().join("DESIGN.md"), good_design("Trà Đá"))
+                            .unwrap();
+                        std::fs::write(staging.path().join("tokens.css"), TOKENS).unwrap();
+                        barrier.wait();
+                        install(staging.path(), &user, &req)
+                    })
+                })
+                .collect();
+            jobs.into_iter().map(|j| j.join().unwrap()).collect()
+        });
+        let mut ids: Vec<String> = results.into_iter().map(|r| r.unwrap().id).collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), 8, "{ids:?}");
+        let left: Vec<String> = std::fs::read_dir(&user)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(".installing-"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        let listed = list_design_systems(&user, ListOptions::USER);
+        assert_eq!(listed.len(), 8);
+        assert!(
+            listed.iter().all(|d| !d.summary.id.starts_with("user:.")),
+            "{:?}",
+            listed.iter().map(|d| &d.summary.id).collect::<Vec<_>>()
+        );
+        for d in &listed {
+            let manifest: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(d.dir.join("manifest.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                format!("user:{}", manifest["id"].as_str().unwrap()),
+                d.summary.id,
+                "manifest id matches its folder"
+            );
+        }
     }
 
     #[test]

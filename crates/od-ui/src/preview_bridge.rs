@@ -34,6 +34,9 @@ pub struct Located {
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Inspected {
+    /// The frame's edit key: only the bridge has it (od-preview `edit_key`).
+    #[serde(default)]
+    pub key: Option<String>,
     pub selector: String,
     /// The selector no longer matches (the page reloaded or changed).
     #[serde(default)]
@@ -65,9 +68,20 @@ pub struct Override {
     pub text: String,
 }
 
+/// An unsaved override `od:inspect-replay` could not put back: its element
+/// no longer reads as it did.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Skipped {
+    pub selector: String,
+    pub prop: String,
+}
+
 /// Text changed in the preview (`od:text-edit`).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct TextEdit {
+    /// The frame's edit key: only the bridge has it (od-preview `edit_key`).
+    #[serde(default)]
+    pub key: Option<String>,
     pub selector: String,
     #[serde(default)]
     pub before: String,
@@ -205,6 +219,11 @@ pub enum BridgeMsg {
         items: Vec<Override>,
         #[serde(default)]
         css: String,
+    },
+    #[serde(rename = "od:inspect-replay-skipped")]
+    InspectReplaySkipped {
+        #[serde(default)]
+        items: Vec<Skipped>,
     },
     #[serde(rename = "od:text-edit")]
     TextEdit(TextEdit),
@@ -425,11 +444,23 @@ mod tests {
                 r#"{"type":"od:text-edit","selector":"h1","odId":null,"tag":"h1","before":"A","text":"B","doc":"a.html"}"#
             ),
             Some(BridgeMsg::TextEdit(TextEdit {
+                key: None,
                 selector: "h1".into(),
                 before: "A".into(),
                 text: "B".into(),
                 doc: Some("a.html".into()),
             }))
+        );
+        assert_eq!(
+            BridgeMsg::decode(
+                r#"{"type":"od:inspect-replay-skipped","items":[{"selector":"h1","prop":"color"}]}"#
+            ),
+            Some(BridgeMsg::InspectReplaySkipped {
+                items: vec![Skipped {
+                    selector: "h1".into(),
+                    prop: "color".into(),
+                }]
+            })
         );
         let Some(BridgeMsg::Tweaks { tweaks }) = BridgeMsg::decode(
             r##"{"type":"od:tweaks","tweaks":[{"id":"accent","type":"color","var":"--accent","default":"#c96442"},{"id":"bad","type":"dial"},{"id":"d","type":"select","options":["1",{"label":"Roomy","value":"1.4"}]}]}"##,

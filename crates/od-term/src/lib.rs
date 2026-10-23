@@ -5,16 +5,19 @@
 //! - Output fans out to every attached client. A bounded scrollback lets a
 //!   reconnecting client (page reload) replay what it missed.
 //! - Closing a session kills the shell's whole tree: on POSIX the process
-//!   groups of the shell, the terminal's foreground job and every other job
-//!   on the tab's TTY get SIGHUP, then SIGKILL after a grace period; on
-//!   Windows the shell runs in its own kill-on-close Job Object (`od-job`).
+//!   groups of the shell, the terminal's foreground job, every other job
+//!   on the tab's TTY and every descendant of the shell (a job that left
+//!   the session with `setsid`) get SIGHUP, then SIGKILL after a grace
+//!   period. Descendants are also noted while the tab runs, so one whose
+//!   parent exited (it now belongs to init) is still found. On Windows the
+//!   shell runs in its own kill-on-close Job Object (`od-job`).
 //!
 //! The HTTP side (loopback-only WebSocket behind the daemon's guards) is
 //! in `od-server`.
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::Serialize;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -53,6 +56,9 @@ pub struct TermConfig {
     pub scrollback_bytes: usize,
     /// Wait between the polite hang-up and the hard kill.
     pub kill_grace: Duration,
+    /// How often a running tab notes the process groups of the shell's
+    /// descendants (POSIX).
+    pub track_every: Duration,
 }
 
 impl Default for TermConfig {
@@ -62,6 +68,7 @@ impl Default for TermConfig {
             max_sessions: 16,
             scrollback_bytes: 256 * 1024,
             kill_grace: Duration::from_secs(2),
+            track_every: Duration::from_secs(2),
         }
     }
 }
@@ -153,6 +160,9 @@ pub struct Session {
     out: Mutex<Scrollback>,
     tx: broadcast::Sender<Output>,
     exit: watch::Sender<Option<TermExit>>,
+    /// Process groups of the shell's descendants seen while it ran, still
+    /// alive at the last look (POSIX).
+    tracked: Mutex<BTreeSet<i32>>,
 }
 
 impl std::fmt::Debug for Session {
@@ -293,8 +303,9 @@ impl Session {
         let _ = (pid, grace);
     }
 
-    /// The shell's own group, the terminal's foreground job and the other
-    /// jobs on the tab's TTY: job control puts each in a group of its own.
+    /// The shell's own group, the terminal's foreground job, the other jobs
+    /// on the tab's TTY (job control puts each in a group of its own), the
+    /// groups of the shell's descendants now and those noted earlier.
     #[cfg(unix)]
     async fn process_groups(&self, pid: u32) -> Vec<i32> {
         let mut groups: Vec<i32> = i32::try_from(pid).into_iter().collect();
@@ -306,11 +317,61 @@ impl Session {
             groups.extend(tty_groups(&tty).await);
         }
         groups.extend(fg);
-        groups.retain(|&g| g > 1);
+        groups.extend(descendant_groups(pid).await);
+        groups.extend(self.tracked_groups());
+        let own = nix::unistd::getpgrp().as_raw();
+        groups.retain(|&g| g > 1 && g != own);
         groups.sort_unstable();
         groups.dedup();
         groups
     }
+
+    /// Notes the groups of the shell's descendants and forgets the ones
+    /// that ended (so a reused group id is not killed later).
+    #[cfg(unix)]
+    async fn track(&self, pid: u32) {
+        let now = descendant_groups(pid).await;
+        let mut tracked = lock(&self.tracked);
+        tracked.extend(now);
+        tracked.retain(|&g| groups_alive(&[g]));
+    }
+
+    #[cfg(unix)]
+    fn tracked_groups(&self) -> Vec<i32> {
+        lock(&self.tracked).iter().copied().collect()
+    }
+}
+
+/// While the shell runs, notes its descendants' process groups every
+/// `every`: a job that left the session and lost its parent is found by
+/// nothing else.
+#[cfg(unix)]
+fn spawn_tracker(session: &Arc<Session>, every: Duration) {
+    let Some(pid) = session.pid else {
+        return;
+    };
+    let weak = Arc::downgrade(session);
+    let mut exit = session.exit.subscribe();
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                () = tokio::time::sleep(every) => {}
+                _ = exit.wait_for(Option::is_some) => return,
+            }
+            let Some(session) = weak.upgrade() else {
+                return;
+            };
+            session.track(pid).await;
+        }
+    });
+}
+
+/// [`od_job::descendant_groups`] off the async threads.
+#[cfg(unix)]
+async fn descendant_groups(root: u32) -> Vec<i32> {
+    tokio::task::spawn_blocking(move || od_job::descendant_groups(root))
+        .await
+        .unwrap_or_default()
 }
 
 /// Process groups of everything whose controlling terminal is `tty` (a
@@ -516,7 +577,10 @@ fn spawn_session(
         }),
         tx,
         exit,
+        tracked: Mutex::default(),
     });
+    #[cfg(unix)]
+    spawn_tracker(&session, cfg.track_every);
     let drained = Arc::new((Mutex::new(false), Condvar::new()));
     {
         let session = Arc::clone(&session);
@@ -608,5 +672,33 @@ mod tests {
     fn sizes_are_clamped() {
         assert_eq!(clamp_size(None, None), (80, 24));
         assert_eq!(clamp_size(Some(0), Some(5000)), (1, MAX_DIMENSION));
+    }
+
+    /// A noted group is forgotten once it ends: its id may be reused by a
+    /// stranger by the time the tab closes.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_tracker_forgets_groups_that_ended() {
+        let dir = std::env::temp_dir();
+        let terms = Terminals::new(TermConfig {
+            shell: Some("/bin/sh".into()),
+            track_every: Duration::from_millis(100),
+            ..TermConfig::default()
+        });
+        let s = terms.create("p", &dir, None, None).unwrap();
+        s.write(b"sleep 1 &\r").unwrap();
+        let until = |want: bool| {
+            let s = Arc::clone(&s);
+            async move {
+                let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+                while s.tracked_groups().is_empty() == want {
+                    assert!(tokio::time::Instant::now() < deadline, "tracked: {want}");
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            }
+        };
+        until(true).await;
+        until(false).await;
+        terms.close_all().await;
     }
 }

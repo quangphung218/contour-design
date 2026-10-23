@@ -48,14 +48,22 @@ fn has_authored_base(html: &[u8]) -> Result<bool, InjectError> {
     Ok(found.get())
 }
 
-fn payload(base_href: Option<&str>) -> String {
+fn payload(base_href: Option<&str>, edit_key: Option<&str>) -> String {
     let mut out = String::with_capacity(BRIDGE_JS.len() + 128);
     if let Some(href) = base_href {
         out.push_str("<base href=\"");
         out.push_str(&escape_attr(href));
         out.push_str("\" data-od-preview-base>");
     }
-    out.push_str("<script data-od-bridge>");
+    match edit_key {
+        // The bridge reads and removes it before any author script runs.
+        Some(key) => {
+            out.push_str("<script data-od-bridge data-od-key=\"");
+            out.push_str(&escape_attr(key));
+            out.push_str("\">");
+        }
+        None => out.push_str("<script data-od-bridge>"),
+    }
     out.push_str(BRIDGE_JS);
     out.push_str("</script>");
     out
@@ -84,6 +92,18 @@ fn after_doctype(html: &[u8]) -> usize {
 /// # Errors
 /// [`InjectError::TooLarge`] above [`MAX_INJECT_BYTES`]; rewrite errors.
 pub fn inject_bridge(html: &[u8], base_href: Option<&str>) -> Result<Vec<u8>, InjectError> {
+    inject_bridge_keyed(html, base_href, None)
+}
+
+/// [`inject_bridge`], handing the bridge an edit key (see [`crate::edit_key`]).
+///
+/// # Errors
+/// As [`inject_bridge`].
+pub fn inject_bridge_keyed(
+    html: &[u8],
+    base_href: Option<&str>,
+    edit_key: Option<&str>,
+) -> Result<Vec<u8>, InjectError> {
     if html.len() > MAX_INJECT_BYTES {
         return Err(InjectError::TooLarge(html.len()));
     }
@@ -91,7 +111,7 @@ pub fn inject_bridge(html: &[u8], base_href: Option<&str>) -> Result<Vec<u8>, In
         Some(href) if !has_authored_base(html)? => Some(href),
         _ => None,
     };
-    let payload = payload(base_href);
+    let payload = payload(base_href, edit_key);
     let injected = Cell::new(false);
     let mut out = Vec::with_capacity(html.len() + payload.len());
     {
@@ -191,6 +211,17 @@ mod tests {
         let out = injected("<head><base href=\"https://x/\"></head>", Some("/p/"));
         assert!(!out.contains("data-od-preview-base"));
         assert!(out.contains("data-od-bridge"));
+    }
+
+    #[test]
+    fn edit_key_rides_on_the_bridge_tag() {
+        let out =
+            String::from_utf8(inject_bridge_keyed(b"<head></head>", None, Some("k\"1")).unwrap())
+                .unwrap();
+        assert!(
+            out.starts_with("<head><script data-od-bridge data-od-key=\"k&quot;1\">"),
+            "{out:.80}"
+        );
     }
 
     #[test]

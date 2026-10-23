@@ -1,6 +1,6 @@
 use crate::error::{ApiErr, ApiResult};
 use od_content::ContentStore;
-use od_preview::{PreviewScopes, ProjectEvents};
+use od_preview::{EditKeys, PreviewScopes, ProjectEvents};
 use od_runs::Runs;
 use od_runtime::{EngineConfig, RunEngine, ToolTokens};
 use od_store::{Store, StoreError};
@@ -63,6 +63,7 @@ impl RunContext {
 #[derive(Clone, Default)]
 pub struct Preview {
     pub scopes: Arc<PreviewScopes>,
+    pub edit_keys: Arc<EditKeys>,
     pub events: Arc<ProjectEvents>,
 }
 
