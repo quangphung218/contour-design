@@ -363,6 +363,28 @@ impl Store {
         Ok(file)
     }
 
+    /// A new file at exactly `name` (see [`files::create_file_exact`]);
+    /// HTML gets a baseline version like [`Store::write_file`].
+    ///
+    /// # Errors
+    /// Project, path, conflict or I/O errors.
+    pub fn create_file_exact(
+        &self,
+        project_id: &str,
+        name: &str,
+        bytes: &[u8],
+    ) -> Result<ProjectFile> {
+        let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
+        let file = files::create_file_exact(&root, name, bytes)?;
+        if is_html_name(&file.name) {
+            if let Ok(text) = std::str::from_utf8(bytes) {
+                versions::ensure_current_version(&root.dir, &file.name, text, manual())?;
+            }
+        }
+        Ok(file)
+    }
+
     /// # Errors
     /// Project, path, conflict or I/O errors.
     pub fn rename_file(&self, project_id: &str, from: &str, to: &str) -> Result<ProjectFile> {

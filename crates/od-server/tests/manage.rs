@@ -209,6 +209,65 @@ async fn claude_design_zip_becomes_a_project() {
     assert_eq!(before, after, "failed imports leave no project");
 }
 
+#[tokio::test]
+async fn zip_entries_keep_their_names() {
+    let d = common::daemon().await;
+    let bytes = zip_of(&[
+        ("Landing Page.html", b"<img src=\"assets/hero image.png\">"),
+        ("assets/hero image.png", b"png"),
+        (".git/config", b"x"),
+    ]);
+    let res = import_zip(&d, "Tea Shop.zip", bytes).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let body: Value = res.json().await.unwrap();
+    // The entry and relative links name files that exist; hidden folders
+    // still land under a visible name.
+    assert_eq!(body["entryFile"], "Landing Page.html");
+    assert_eq!(
+        body["project"]["metadata"]["entryFile"],
+        "Landing Page.html"
+    );
+    assert_eq!(
+        body["files"],
+        json!(["Landing Page.html", "assets/hero image.png", "_git/config"])
+    );
+    let id = body["project"]["id"].as_str().unwrap().to_owned();
+    let files = d.get_json(&format!("/api/projects/{id}/files")).await;
+    let mut names: Vec<&str> = files["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["name"].as_str())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        ["Landing Page.html", "_git/config", "assets/hero image.png"]
+    );
+
+    // Two entries naming one file (case-insensitive disks) are refused,
+    // not merged.
+    let before = d.get_json("/api/projects").await["projects"]
+        .as_array()
+        .unwrap()
+        .len();
+    let bytes = zip_of(&[("My Page.html", b"<b>a</b>"), ("my page.html", b"<b>b</b>")]);
+    let res = import_zip(&d, "dupes.zip", bytes).await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    // APFS also folds Unicode forms (é and e + U+0301): the second write
+    // finds the file taken.
+    let bytes = zip_of(&[("caf\u{e9}.html", b"a"), ("cafe\u{301}.html", b"b")]);
+    let res = import_zip(&d, "forms.zip", bytes).await;
+    if cfg!(target_os = "macos") {
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+    let after = d.get_json("/api/projects").await["projects"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(before, after);
+}
+
 /// A fake OpenAI/Anthropic endpoint on loopback recording the auth it saw.
 async fn fake_provider() -> (String, Arc<Mutex<Vec<String>>>) {
     let seen = Arc::new(Mutex::new(Vec::new()));

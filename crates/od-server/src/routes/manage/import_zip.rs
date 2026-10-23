@@ -2,7 +2,10 @@
 //! `.zip` export) becomes a new project, like the original's importer.
 //!
 //! Entries go through the store's path validation (no `..`, absolute or
-//! reserved paths); stored and deflate entries only, no encryption, at most
+//! reserved paths) and keep their names, so the pages' relative links
+//! resolve; only hidden segments are renamed (`.git` becomes `_git`).
+//! Entries naming one file on a case-insensitive disk are refused. Stored
+//! and deflate entries only, no encryption, at most
 //! [`MAX_FILES`] files, [`MAX_FILE_BYTES`] each and [`MAX_TOTAL_BYTES`] in
 //! all. The entry file is `index.html` at the root, else the first
 //! root-level HTML file, else the first HTML file anywhere; an archive
@@ -13,9 +16,11 @@ use crate::state::AppState;
 use axum::body::Bytes;
 use axum::extract::{Multipart, State};
 use od_contracts::{CreateProjectRequest, Project, ProjectKind, ProjectMetadata};
+use od_store::paths::{sanitize_name, validate_project_path};
 use od_store::{Store, StoreError};
 use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::io::{Cursor, Read};
 
 pub const MAX_FILES: usize = 5000;
@@ -47,6 +52,21 @@ pub fn entry_file(paths: &[String]) -> Option<String> {
         .or_else(|| paths.iter().filter(root).find(|p| is_html(p)))
         .or_else(|| paths.iter().find(|p| is_html(p)))
         .cloned()
+}
+
+/// Where entry `raw` is stored: its validated path, hidden segments renamed.
+fn stored_path(raw: &str) -> Result<String, StoreError> {
+    Ok(validate_project_path(raw)?
+        .split('/')
+        .map(|s| {
+            if s.starts_with('.') {
+                sanitize_name(s)
+            } else {
+                s.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/"))
 }
 
 /// Reads every file entry, enforcing the limits.
@@ -123,7 +143,16 @@ pub fn import(
         return Err(bad("the file must be a .zip".to_owned()));
     }
     let entries = read_entries(bytes).map_err(bad)?;
-    let paths: Vec<String> = entries.iter().map(|(p, _)| p.clone()).collect();
+    let paths = entries
+        .iter()
+        .map(|(p, _)| stored_path(p))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut seen = HashMap::with_capacity(paths.len());
+    for path in &paths {
+        if let Some(first) = seen.insert(path.to_lowercase(), path) {
+            return Err(bad(format!("{first} and {path} name the same file")));
+        }
+    }
     let entry =
         entry_file(&paths).ok_or_else(|| bad("the archive has no HTML file to open".to_owned()))?;
     let stem = file_name[..file_name.len() - ".zip".len()].trim();
@@ -148,8 +177,8 @@ pub fn import(
     })?;
     let written = (|| {
         let mut files = Vec::with_capacity(entries.len());
-        for (path, data) in &entries {
-            files.push(store.write_file(&project.id, path, data, true, None)?.name);
+        for (path, (_, data)) in paths.iter().zip(&entries) {
+            files.push(store.create_file_exact(&project.id, path, data)?.name);
         }
         store.update_conversation(
             &project.id,

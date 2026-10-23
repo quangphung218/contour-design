@@ -289,6 +289,17 @@ pub fn write_file_exact(root: &ProjectRoot, name: &str, bytes: &[u8]) -> Result<
     write_named(root, exact, bytes, true, None)
 }
 
+/// Creates `name` at exactly that path (validated, not sanitized), never
+/// overwriting: an import keeps the names its pages link to.
+///
+/// # Errors
+/// Path or I/O errors, [`StoreError::FileExists`] when the path is taken.
+pub fn create_file_exact(root: &ProjectRoot, name: &str, bytes: &[u8]) -> Result<ProjectFile> {
+    assert_visible_for_import(name, root.imported)?;
+    let exact = validate_project_path(name)?;
+    write_named(root, exact, bytes, false, None)
+}
+
 fn write_named(
     root: &ProjectRoot,
     rel: String,
