@@ -563,6 +563,7 @@ pub fn MentionArea(
         >
             <textarea
                 class=class
+                data-od-composer=""
                 data-testid=testid
                 aria-label=aria_label
                 rows=rows
@@ -882,6 +883,29 @@ pub fn close_outside(open: RwSignal<bool>, wrap: NodeRef<Div>) {
 enum PlusView {
     Main,
     List(MentionKind),
+    Toolbox,
+}
+
+/// Seeds the composer with a design toolbox action: its request, and a
+/// mention of the bundled skill that fits it.
+pub fn apply_toolbox(
+    action: &crate::toolbox::Action,
+    sources: Sources,
+    context: RwSignal<Vec<Candidate>>,
+    draft: RwSignal<String>,
+) {
+    let skills = sources.skills.get_untracked().unwrap_or_default();
+    let ids: Vec<String> = skills.iter().map(|c| c.id.clone()).collect();
+    let skill = crate::toolbox::skill_for(action, &ids)
+        .and_then(|id| skills.iter().find(|c| c.id == id).cloned());
+    let mut text = String::new();
+    if let Some(c) = skill {
+        text.push_str(&mention::token(&c));
+        stage(context, c);
+    }
+    text.push_str(t(action.prompt));
+    draft.set(text);
+    super::chat_view::focus_selector("[data-od-composer]");
 }
 
 /// "+": attach files, mention a plugin, skill or MCP server, and the
@@ -895,6 +919,9 @@ pub fn PlusMenu(
     /// Open the menu above the button (chat composer at the bottom).
     #[prop(optional)]
     up: bool,
+    /// Offer the design toolbox (Studio).
+    #[prop(optional)]
+    toolbox: bool,
     #[prop(optional)] children: Option<ChildrenFn>,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
@@ -949,9 +976,31 @@ pub fn PlusMenu(
                                         <span class="menu-hint">{icon(Glyph::ChevronRight)}</span>
                                     </button>
                                 }).collect_view()}
+                                {toolbox.then(|| view! {
+                                    <button type="button" class="menu-item" role="menuitem" data-testid="plus-toolbox"
+                                        on:click=move |_| view_of.set(PlusView::Toolbox)>
+                                        {icon(Glyph::Sparkle)}{t(T::DesignToolbox)}
+                                        <span class="menu-hint">{icon(Glyph::ChevronRight)}</span>
+                                    </button>
+                                })}
                                 {children.with_value(|c| c.as_ref().map(|c| view! { <div class="menu-sep" role="presentation"></div>{c()} }))}
                             }.into_any()
                         }
+                        PlusView::Toolbox => view! {
+                            <button type="button" class="menu-item" on:click=move |_| view_of.set(PlusView::Main)>
+                                {icon(Glyph::ChevronLeft)}<strong>{t(T::DesignToolbox)}</strong>
+                            </button>
+                            {crate::toolbox::ACTIONS.iter().map(|a| view! {
+                                <button type="button" class="menu-item" role="menuitem" data-testid="toolbox-action" data-action=a.id
+                                    title=t(a.prompt)
+                                    on:click=move |_| {
+                                        open.set(false);
+                                        apply_toolbox(a, sources, context, draft);
+                                    }>
+                                    {icon(Glyph::Sparkle)}{t(a.title)}
+                                </button>
+                            }).collect_view()}
+                        }.into_any(),
                         PlusView::List(kind) => {
                             let items = move || {
                                 let q = search.get();

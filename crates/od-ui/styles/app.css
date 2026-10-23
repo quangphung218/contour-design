@@ -950,3 +950,4 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .home-examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); margin-top: var(--space-3); }
 .home-examples .eyebrow { margin-right: var(--space-1); }
 .example-prompt span { max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quote-btn { position: fixed; z-index: var(--z-popover); box-shadow: var(--shadow-md); animation: pop-in var(--duration-fast) var(--ease-emphasized); }

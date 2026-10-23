@@ -4,7 +4,7 @@
 // staged files) → the first turn carries them → Studio composer (attach by
 // button, paste and drop, @ file, / commands, model picker, design system
 // switch) → turn actions (files from this turn, copy, continue remaining
-// tasks, reconnect) → conversation rename and delete → chat pane collapse
+// tasks, design toolbox, quote, reconnect) → conversation rename and delete → chat pane collapse
 // and resize → linked folders and project references → Vietnamese.
 // Screenshots (light and dark) go to $OD_SHOTS or test-results/. Every
 // request leaving loopback is blocked and fails the test.
@@ -309,6 +309,40 @@ try {
   assert.match(copied, /^Turn \d+\. Working on: Continue the remaining/);
   assert.ok(!copied.includes('tool_use'));
   results.turnActions = 'ok';
+
+  // 13b. Design toolbox from "+" and from the next-step card: a request
+  // plus a mention of the bundled skill that fits it.
+  const clearContext = async () => {
+    await composer.fill('');
+    while ((await page.getByTestId('context-chip').count()) > 0) {
+      await page.getByTestId('context-chip').first().locator('.chip-x').click();
+    }
+  };
+  await page.getByTestId('plus-menu').click();
+  await page.getByTestId('plus-toolbox').click();
+  await page.locator('[data-testid="toolbox-action"][data-action="motion"]').click();
+  assert.match(await composer.inputValue(), /^@emilkowalski-motion Add entrance/);
+  await page.locator('[data-testid="context-chip"][data-kind="skill"]', { hasText: 'emilkowalski-motion' }).waitFor();
+  await clearContext();
+  await page.locator('[data-testid="next-toolbox"][data-action="visual-polish"]').click();
+  assert.match(await composer.inputValue(), /^@impeccable-design-polish Audit visual hierarchy/);
+  await clearContext();
+  results.toolbox = 'ok';
+
+  // 13c. Quote a selection from the transcript.
+  await page.evaluate(() => {
+    const p = [...document.querySelectorAll('[data-testid=assistant-msg] .md p')].pop();
+    const range = document.createRange();
+    range.selectNodeContents(p);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    p.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  });
+  await page.getByTestId('quote-selection').click();
+  assert.match(await composer.inputValue(), /^> Wrote index\.html \(v5\)\.\n\n$/);
+  await composer.fill('');
+  results.quote = 'ok';
   await page.screenshot({ path: OUT + 'b3-studio-light.png' });
 
   // 14. Reconnect after the run stream drops.

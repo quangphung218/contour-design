@@ -661,6 +661,24 @@ messages! {
     SearchList => "Search", "Tìm";
     OpWrite => "Write", "Ghi";
     OpEdit => "Edit", "Sửa";
+    DesignToolbox => "Design toolbox", "Hộp công cụ thiết kế";
+    ToolMatch => "Match next step", "Gợi ý bước tiếp theo";
+    ToolMatchPrompt => "Define the taste bar for this design first, then pick the skills, files and tools that fit the next step and do it.", "Xác định chuẩn thẩm mỹ cho bản thiết kế này trước, rồi chọn skill, file và công cụ hợp với bước tiếp theo và làm luôn.";
+    ToolIcons => "Find or replace icons", "Tìm hoặc thay icon";
+    ToolIconsPrompt => "Find, generate or swap the icons on this page with one consistent style (SVG, Lucide-like line icons).", "Tìm, tạo hoặc thay icon trên trang này theo một phong cách thống nhất (SVG, icon nét kiểu Lucide).";
+    ToolMotion => "Add animation", "Thêm chuyển động";
+    ToolMotionPrompt => "Add entrance, scroll, state-transition and micro-interaction motion to the current page. Respect prefers-reduced-motion.", "Thêm chuyển động khi xuất hiện, khi cuộn, khi đổi trạng thái và tương tác nhỏ cho trang hiện tại. Tôn trọng prefers-reduced-motion.";
+    ToolTaste => "Remove AI feel", "Bỏ cảm giác AI";
+    ToolTastePrompt => "Remove the template feel: AI gradients, cheap card stacks, generic icons and vague copy. Keep the content.", "Bỏ cảm giác template: gradient kiểu AI, chồng card rẻ tiền, icon chung chung và chữ mơ hồ. Giữ nguyên nội dung.";
+    ToolPolish => "Polish for shipping", "Hoàn thiện để giao";
+    ToolPolishPrompt => "Audit visual hierarchy, type, spacing, responsive behaviour and accessibility, then fix what falls short.", "Rà thứ bậc thị giác, chữ, khoảng cách, responsive và khả năng truy cập, rồi sửa chỗ chưa đạt.";
+    ToolImages => "Generate images", "Tạo ảnh";
+    ToolImagesPrompt => "Generate section images, references or a moodboard for the current page and place them in it.", "Tạo ảnh cho các phần, ảnh tham khảo hoặc moodboard cho trang hiện tại và đặt vào trang.";
+    ToolCharts => "Generate charts", "Tạo biểu đồ";
+    ToolChartsPrompt => "Add charts or diagrams that explain the data on this page, styled to match it.", "Thêm biểu đồ hoặc sơ đồ giải thích dữ liệu trên trang này, cùng phong cách với trang.";
+    Tool3d => "3D scene", "Cảnh 3D";
+    Tool3dPrompt => "Add an interactive Three.js scene (particles, depth or a product model) where it strengthens the page.", "Thêm một cảnh Three.js tương tác (hạt, chiều sâu hoặc mô hình sản phẩm) ở chỗ làm trang mạnh hơn.";
+    QuoteSelection => "Quote", "Trích dẫn";
 }
 
 /// The current language's text for `key`.

@@ -139,12 +139,40 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             .uploads
             .with(|u| u.iter().any(|x| x.state == UploadState::Uploading))
     };
+    provide_context(sources);
+    // "Quote": text selected in the transcript goes into the composer.
+    let quote = RwSignal::new(None::<(f64, f64, String)>);
+    let read_selection = move || {
+        let sel = web_sys::window().and_then(|w| w.get_selection().ok().flatten());
+        let picked = sel.and_then(|sel| {
+            let text: String = sel.to_string().into();
+            let text = text.trim().to_owned();
+            if text.is_empty() || sel.range_count() == 0 {
+                return None;
+            }
+            let inside = sel
+                .anchor_node()
+                .and_then(|n| n.parent_element())
+                .and_then(|e| e.closest(".msg").ok().flatten())
+                .is_some();
+            let rect = sel.get_range_at(0).ok()?.get_bounding_client_rect();
+            inside.then(|| (rect.left(), rect.top(), text))
+        });
+        quote.set(picked);
+    };
 
     view! {
         <section class="chat" aria-label=t(T::Chat)>
             <ConversationBar ctx=ctx/>
             <super::agent_w3::ChatTools ctx=ctx/>
-            <div class="messages" node_ref=list_ref data-testid="messages">
+            <div
+                class="messages"
+                node_ref=list_ref
+                data-testid="messages"
+                on:mouseup=move |_| read_selection()
+                on:keyup=move |_| read_selection()
+                on:scroll=move |_| quote.set(None)
+            >
                 {move || ctx.load_error.get().map(|e| view! {
                     <div class="msg-error load-error" role="alert" data-testid="load-error">
                         {icon(Glyph::Warning)}
@@ -195,6 +223,31 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     </div>
                 </Show>
             </div>
+            {move || quote.get().map(|(x, y, text)| view! {
+                <button
+                    class="btn small quote-btn"
+                    data-testid="quote-selection"
+                    style=format!("left:{x:.0}px;top:{:.0}px", (y - 36.0).max(4.0))
+                    on:mousedown=|ev| ev.prevent_default()
+                    on:click=move |_| {
+                        let quoted: String = text.lines().map(|l| format!("> {l}\n")).collect();
+                        draft.update(|d| {
+                            if !d.trim().is_empty() {
+                                d.push_str("\n\n");
+                            }
+                            d.push_str(&quoted);
+                            d.push('\n');
+                        });
+                        if let Some(sel) = web_sys::window().and_then(|w| w.get_selection().ok().flatten()) {
+                            let _ = sel.remove_all_ranges();
+                        }
+                        quote.set(None);
+                        focus_composer();
+                    }
+                >
+                    {icon(Glyph::Comment)}{t(T::QuoteSelection)}
+                </button>
+            })}
             <PlanPill ctx=ctx/>
             <QueueStack ctx=ctx/>
             <CommentChips ctx=ctx/>
@@ -233,6 +286,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         draft=draft
                         on_attach=Callback::new(move |()| pick_files.update(|n| *n += 1))
                         up=true
+                        toolbox=true
                     >
                         <super::chat_ops::ContextFolders ctx=ctx/>
                     </PlusMenu>
@@ -575,6 +629,7 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
 #[component]
 fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     let ctx = expect_context::<StudioCtx>();
+    let sources = use_context::<Sources>();
     let shell = Shell::get();
     let navigate = leptos_router::hooks::use_navigate();
     let item_id = StoredValue::new(item_id);
@@ -590,6 +645,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     };
     move || {
         let steps = turn.with(next_steps);
+        let wrote_page = steps.iter().any(|s| matches!(s, NextStep::Open(_))) && sources.is_some();
         (!steps.is_empty()).then(|| {
             let navigate = navigate.clone();
             view! {
@@ -636,6 +692,14 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                             }
                         })
                         .collect_view()}
+                    {wrote_page.then(|| crate::toolbox::FEATURED.iter().filter_map(|id| crate::toolbox::find(id)).map(|a| view! {
+                        <button class="chip next-step" data-testid="next-toolbox" data-action=a.id
+                            on:click=move |_| if let Some(sources) = sources {
+                                super::composer::apply_toolbox(a, sources, ctx.chat.context, ctx.draft);
+                            }>
+                            {icon(Glyph::Sparkle)}{t(a.title)}
+                        </button>
+                    }).collect_view())}
                 </div>
             }
         })
