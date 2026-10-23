@@ -62,6 +62,9 @@ pub async fn daemon_with(opts: Options) -> Daemon {
     engine.idle_timeout = opts.idle_timeout;
     engine.kill_grace = opts.kill_grace;
     engine.retry_base = Duration::from_millis(50);
+    // A mock's first exec can take seconds on a loaded Mac (it scans new
+    // binaries); tests assert the flags the help probe finds.
+    engine.probe_timeout = Duration::from_secs(60);
     engine.base_env.extend(
         opts.extra_env
             .into_iter()

@@ -53,6 +53,8 @@ pub struct EngineConfig {
     /// First retry delay; doubled for rate limits, capped at 8 s.
     pub retry_base: Duration,
     pub tool_loop: ToolLoopLimits,
+    /// Limit of the help probe that finds a CLI's optional flags.
+    pub probe_timeout: Duration,
 }
 
 impl EngineConfig {
@@ -66,6 +68,7 @@ impl EngineConfig {
             kill_grace: KILL_GRACE,
             retry_base: Duration::from_millis(500),
             tool_loop: ToolLoopLimits::default(),
+            probe_timeout: detect::PROBE_TIMEOUT,
         }
     }
 
@@ -253,7 +256,13 @@ impl RunEngine {
         {
             return found.clone();
         }
-        let caps = detect::probe_capabilities(def, bin, &self.config.path).await;
+        let probed =
+            detect::probe_capabilities(def, bin, &self.config.path, self.config.probe_timeout)
+                .await;
+        // A failed probe is not "no flags": the next run probes again.
+        let Some(caps) = probed else {
+            return Vec::new();
+        };
         self.capabilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

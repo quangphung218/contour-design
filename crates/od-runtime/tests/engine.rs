@@ -194,3 +194,72 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
             .unwrap();
     assert!(state["pgid"].is_null(), "{state}");
 }
+
+/// The first help probe times out (a first exec can be slow under load):
+/// that run goes without the optional flag, the next one probes again.
+#[tokio::test]
+async fn a_help_probe_that_timed_out_is_tried_again() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mocks = tmp.path().join("mocks");
+    std::fs::create_dir_all(&mocks).unwrap();
+    let (marker, argv) = (tmp.path().join("probed"), tmp.path().join("argv.log"));
+    write_mock(
+        &mocks,
+        "claude",
+        &format!(
+            r#"if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then
+  if [ ! -f "{marker}" ]; then touch "{marker}"; exec sleep 6; fi
+  echo "--include-partial-messages"; exit 0
+fi
+echo "$@" >> "{argv}"
+IFS= read -r line
+printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn","usage":{{"input_tokens":1}}}}\n'
+"#,
+            marker = marker.display(),
+            argv = argv.display()
+        ),
+    );
+    let runs = Runs::new(tmp.path().join("runs"));
+    let engine = RunEngine::new(EngineConfig::from_env().with_path_prefix(&mocks));
+    for id in ["first", "second"] {
+        let (run, _) = runs
+            .create_or_reuse(RunMeta {
+                run_id: id.into(),
+                agent_id: "claude".into(),
+                ..RunMeta::default()
+            })
+            .unwrap();
+        let outcome = engine
+            .launch(LaunchSpec {
+                run: run.clone(),
+                def: &CLAUDE,
+                cwd: tmp.path().to_path_buf(),
+                prompt: "go".into(),
+                fallback_prompt: None,
+                model: None,
+                reasoning: None,
+                extra_dirs: Vec::new(),
+                resume_session_id: None,
+                permission: PermissionMode::Auto,
+                env: vec![("PATH".into(), engine.config().path.clone())],
+                project_id: None,
+                byok: None,
+                mcp: od_runtime::McpLaunch::default(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(outcome.status, RunStatus::Succeeded, "{id}");
+    }
+    let lines: Vec<String> = std::fs::read_to_string(&argv)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(
+        !lines[0].contains("--include-partial-messages"),
+        "{lines:?}"
+    );
+    assert!(lines[1].contains("--include-partial-messages"), "{lines:?}");
+}
