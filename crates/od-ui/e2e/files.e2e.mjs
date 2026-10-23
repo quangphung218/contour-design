@@ -127,6 +127,23 @@ try {
     'ppt/slides/slide1.xml': '<p:sld><a:p><a:r><a:t>Hello tea</a:t></a:r></a:p></p:sld>',
     'ppt/slides/slide2.xml': '<p:sld><a:p><a:r><a:t>Prices &amp; hours</a:t></a:r></a:p></p:sld>',
   }).toString('base64'), 'base64');
+  await write('sales.json', JSON.stringify({ total: 1 }));
+  const liveRes = await fetch(`${BASE}/api/tools/live-artifacts/create`, json({
+    projectId: pid,
+    templateHtml: '<p>Total: {{data.total}}</p>',
+    input: {
+      title: 'Sales board',
+      document: {
+        dataJson: { total: 1 },
+        sourceJson: {
+          type: 'daemon_tool', toolName: 'project_files.read_json', input: { path: 'sales.json' },
+          outputMapping: { dataPaths: [{ from: 'json.total', to: 'total' }] },
+          refreshPermission: 'manual_refresh_granted_for_read_only',
+        },
+      },
+    },
+  }));
+  assert.equal(liveRes.status, 200, await liveRes.clone().text());
   const api = async (path) => (await fetch(`${BASE}/api/projects/${pid}${path}`)).json();
   const fileText = async (path) => (await fetch(`${BASE}/api/projects/${pid}/raw/${path}`)).text();
   const paths = async () => (await api('/files')).files.map((f) => f.path).sort();
@@ -258,7 +275,7 @@ try {
   assert.equal(await page.locator('[data-testid="file-row"]').count(), 1);
   await page.getByTestId('files-search').fill('');
   await page.getByTestId('files-view-kind').click();
-  await until(async () => (await page.getByTestId('kind-group').count()) === 3, 'kind groups');
+  await until(async () => (await page.getByTestId('kind-group').count()) >= 3, 'kind groups');
   await shot('files-by-kind');
   await page.getByTestId('kind-filter').getByText('Images').click();
   await until(async () => (await page.getByTestId('kind-group').count()) === 1, 'filtered to images');
@@ -343,6 +360,26 @@ try {
   await page.getByTestId('office-text').getByText('Prices & hours').waitFor();
   await page.getByTestId('office-text').getByText('Slide 2').waitFor();
   results.docViewer = 'pdf inline, office text, office download';
+
+  // 9b. Live artifact: preview, template, data, refresh and its history.
+  await page.getByTestId('live-row').filter({ hasText: 'Sales board' }).click();
+  await page.locator('.tab.active', { hasText: 'Sales board' }).waitFor();
+  const live = page.frameLocator('iframe[data-testid="live-preview"]');
+  await live.getByText('Total: 1').waitFor();
+  await page.getByTestId('live-view').getByRole('radio', { name: 'Code' }).click();
+  await page.getByTestId('live-code').getByText('{{data.total}}').waitFor();
+  await page.getByTestId('live-view').getByRole('radio', { name: 'Data' }).click();
+  assert.match(await page.getByTestId('live-data').textContent(), /"total": 1/);
+  await write('sales.json', JSON.stringify({ total: 7 }));
+  await page.getByTestId('live-refresh').click();
+  await page.getByTestId('live-message').filter({ hasText: 'Refreshed' }).waitFor();
+  await until(async () => /"total": 7/.test(await page.getByTestId('live-data').textContent()), 'data refreshed');
+  await page.getByTestId('live-view').getByRole('radio', { name: 'Refresh history' }).click();
+  await page.getByTestId('live-history').locator('.badge', { hasText: 'succeeded' }).waitFor();
+  await page.getByTestId('live-view').getByRole('radio', { name: 'Preview' }).click();
+  await page.frameLocator('iframe[data-testid="live-preview"]').getByText('Total: 7').waitFor();
+  await shot('live-artifact');
+  results.liveArtifact = 'preview, code, data, refresh, history';
 
   // 10. Screenshot of the page: clipboard, chat, PNG.
   await row('index.html').click();
@@ -476,7 +513,9 @@ try {
     return got ? `download ${got.suggestedFilename()}` : `message: ${text.trim().slice(0, 80)}`;
   };
   results.exportJpeg = await tryExport('export-jpg', 'index.html');
+  results.exportWebp = await tryExport('export-webp', 'index.html');
   results.exportPptxEditable = await tryExport('export-pptx-editable', 'deck.html');
+  assert.ok(/download index\.webp|Chrome/.test(results.exportWebp), results.exportWebp);
   assert.ok(/download index\.jpg|Chrome/.test(results.exportJpeg), results.exportJpeg);
   assert.ok(/download deck\.pptx|Chrome/.test(results.exportPptxEditable), results.exportPptxEditable);
 

@@ -181,6 +181,8 @@ pub struct StudioCtx {
     last_slide: StoredValue<Option<(String, u32)>>,
     /// A restore in flight: (file, slide, states left to wait for).
     restoring: StoredValue<Option<(String, u32, u8)>>,
+    /// Number of the latest file list request; older answers are dropped.
+    files_seq: StoredValue<u32>,
     run_stream: StoredValue<Option<SendWrapper<Sse>>>,
     project_stream: StoredValue<Option<SendWrapper<Sse>>>,
 }
@@ -240,15 +242,26 @@ impl StudioCtx {
     }
 
     pub fn refresh_files(self) {
+        let seq = self.files_seq.get_value().wrapping_add(1);
+        self.files_seq.set_value(seq);
         leptos::task::spawn_local(async move {
             let Ok(res) = api::get::<FilesResponse>(&format!("{}/files", self.base())).await else {
                 return;
             };
+            // A slower, older answer must not undo a newer one (an upload
+            // and the watcher's event both refresh).
+            if self.files_seq.try_get_value() != Some(seq) {
+                return;
+            }
             let mut files: Vec<ProjectFile> =
                 res.files.into_iter().filter(is_previewable).collect();
             files.sort_by(|a, b| a.path.cmp(&b.path));
-            self.tabs
-                .update(|t| t.retain_existing(|p| files.iter().any(|f| f.path == p)));
+            // Live artifact tabs are not files.
+            self.tabs.update(|t| {
+                t.retain_existing(|p| {
+                    super::live_view::is_live(p) || files.iter().any(|f| f.path == p)
+                })
+            });
             if self.active_untracked().is_none() {
                 let entry = self
                     .project
@@ -1004,6 +1017,7 @@ pub fn Studio() -> impl IntoView {
         tools: Tools::new(),
         last_slide: StoredValue::new(None),
         restoring: StoredValue::new(None),
+        files_seq: StoredValue::new(0),
         run_stream: StoredValue::new(None),
         project_stream: StoredValue::new(None),
     };
@@ -1063,6 +1077,7 @@ pub fn Studio() -> impl IntoView {
 
 #[component]
 fn TabsBar(ctx: StudioCtx) -> impl IntoView {
+    let files_ui = FilesUi::get();
     view! {
         <div class="tabs" role="tablist" data-testid="tabs">
             {move || {
@@ -1078,12 +1093,17 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                     .iter()
                     .map(|path| {
                         let active = !side_open && !term_active && tabs.active.as_deref() == Some(path.as_str());
-                        let name = path.rsplit('/').next().unwrap_or(path).to_owned();
+                        let live = super::live_view::is_live(path);
+                        let name = if live {
+                            super::live_view::tab_label(files_ui, path)
+                        } else {
+                            path.rsplit('/').next().unwrap_or(path).to_owned()
+                        };
                         let open = path.clone();
                         let close = path.clone();
                         view! {
                             <div class="tab" class:active=active role="tab" aria-selected=active.to_string() data-testid="tab" title=path.clone()>
-                                <button class="tab-name" on:click=move |_| ctx.open_file(&open)>{icon(file_glyph(&name))}{name.clone()}</button>
+                                <button class="tab-name" on:click=move |_| ctx.open_file(&open)>{icon(if live { Glyph::Sparkle } else { file_glyph(&name) })}{name.clone()}</button>
                                 <button
                                     class="tab-close"
                                     aria-label=t(T::CloseTab)
@@ -1173,10 +1193,13 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     // Markdown, sketches and documents have their own views, kept across
     // preview reloads (an auto-save reloads the preview).
     let special = Memo::new(move |_| {
+        let path = ctx.active()?;
+        if super::live_view::is_live(&path) {
+            return Some(Special::Live(path));
+        }
         if ctx.show_code.get() || ctx.viewing.with(Option::is_some) {
             return None;
         }
-        let path = ctx.active()?;
         if is_markdown(&path) {
             return Some(Special::Markdown(path));
         }
@@ -1340,6 +1363,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                     {move || match special.get() {
                         Some(Special::Markdown(path)) => view! { <MarkdownView ctx=ctx path=path/> }.into_any(),
                         Some(Special::Sketch(path)) => view! { <SketchView ctx=ctx path=path/> }.into_any(),
+                        Some(Special::Live(path)) => view! { <super::live_view::LiveView ctx=ctx path=path/> }.into_any(),
                         Some(Special::Doc(path)) => match ctx.files.with_untracked(|f| f.iter().find(|f| f.path == path).cloned()) {
                             Some(file) => view! { <DocView ctx=ctx file=file/> }.into_any(),
                             None => ().into_any(),
@@ -1364,6 +1388,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
 /// A file shown by its own view instead of the preview frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Special {
+    Live(String),
     Markdown(String),
     Sketch(String),
     Doc(String),

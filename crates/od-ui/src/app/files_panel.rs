@@ -63,6 +63,8 @@ pub struct FilesUi {
     pub launcher: RwSignal<bool>,
     /// Chat hidden: the workspace takes the window.
     pub focus: RwSignal<bool>,
+    /// The project's live artifacts (summaries from the daemon).
+    pub live: RwSignal<Vec<serde_json::Value>>,
     /// Design system being made from this project.
     pub ds_job: RwSignal<Option<super::project_actions::DsJob>>,
     /// Info toast (copied, uploaded…); errors go to the Studio notice.
@@ -88,6 +90,7 @@ impl FilesUi {
             launcher: RwSignal::new(false),
             focus: RwSignal::new(super::stored_flag(FOCUS_KEY).unwrap_or(false)),
             ds_job: RwSignal::new(None),
+            live: RwSignal::new(Vec::new()),
             toast: RwSignal::new(None),
             toast_seq: StoredValue::new(0),
         }
@@ -111,8 +114,10 @@ impl FilesUi {
         });
     }
 
-    /// Re-reads the folder list (empty folders are not in the file list).
+    /// Re-reads the folder list (empty folders are not in the file list)
+    /// and the live artifacts.
     pub fn refresh(self, ctx: StudioCtx) {
+        super::live_view::refresh_list(ctx, self);
         leptos::task::spawn_local(async move {
             if let Ok(r) = api::get::<FoldersResponse>(&format!("{}/folders", ctx.base())).await {
                 self.folders.set(r.folders);
@@ -527,6 +532,9 @@ pub fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
                 </div>
             </div>
             <SelectionBar ctx=ctx ui=ui/>
+            <Show when=move || ui.query.with(|q| q.trim().is_empty()) && ui.scope.with(String::is_empty)>
+                <super::live_view::LiveList ctx=ctx/>
+            </Show>
             {move || if ui.by_kind.get() {
                 view! { <KindView ctx=ctx ui=ui/> }.into_any()
             } else {

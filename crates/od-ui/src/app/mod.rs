@@ -16,6 +16,7 @@ mod files_panel;
 mod home;
 mod icons;
 mod lazy_frame;
+mod live_view;
 mod mcp_settings;
 mod onboarding;
 mod palette;

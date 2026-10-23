@@ -25,6 +25,7 @@ pub fn routes() -> Router<AppState> {
             get(get_one).patch(patch).delete(delete),
         )
         .route("/api/live-artifacts/{aid}/preview", get(preview))
+        .route("/api/live-artifacts/{aid}/template", get(template))
         .route("/api/live-artifacts/{aid}/refreshes", get(refreshes))
         .route("/api/live-artifacts/{aid}/refresh", post(refresh))
         .route("/api/tools/live-artifacts/create", post(tool_create))
@@ -135,6 +136,22 @@ pub async fn preview(
         HeaderValue::from_static(LIVE_PREVIEW_CSP),
     );
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(res)
+}
+
+/// The template source, for the Studio's code view (`text/plain`).
+pub async fn template(
+    State(state): State<AppState>,
+    Path(aid): Path<String>,
+    Query(q): Query<ProjectQuery>,
+) -> ApiResult<Response> {
+    let (_, store) = open(&state, q.project_id).await?;
+    let html = live(store, move |s| s.template_html(&aid)).await?;
+    let mut res = html.into_response();
+    res.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
     Ok(res)
 }
 

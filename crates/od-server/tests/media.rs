@@ -427,6 +427,21 @@ async fn live_artifacts_over_http() {
         .await;
     assert_eq!(preview.status, StatusCode::OK);
     assert_eq!(String::from_utf8_lossy(&preview.body), "<p>Total: 1</p>");
+    // The template source, for the Studio's code view; unknown ids 404.
+    let template = h
+        .get(&format!(
+            "/api/live-artifacts/{aid}/template?projectId={id}"
+        ))
+        .await;
+    assert_eq!(template.status, StatusCode::OK);
+    assert_eq!(
+        String::from_utf8_lossy(&template.body),
+        "<p>Total: {{data.total}}</p>"
+    );
+    let missing = h
+        .get(&format!("/api/live-artifacts/nope/template?projectId={id}"))
+        .await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
     let csp = preview.headers[header::CONTENT_SECURITY_POLICY]
         .to_str()
         .unwrap();

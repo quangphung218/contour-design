@@ -20,6 +20,7 @@ enum Format {
     Pdf,
     Png,
     Jpeg,
+    Webp,
     Pptx,
     PptxEditable,
     Mp4,
@@ -27,12 +28,13 @@ enum Format {
 }
 
 impl Format {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Html,
         Self::Zip,
         Self::Pdf,
         Self::Png,
         Self::Jpeg,
+        Self::Webp,
         Self::Pptx,
         Self::PptxEditable,
         Self::Mp4,
@@ -53,6 +55,7 @@ impl Format {
             Self::Pdf => t(T::ExportPdf),
             Self::Png => t(T::ExportPng),
             Self::Jpeg => t(T::ExportJpeg),
+            Self::Webp => t(T::ExportWebp),
             Self::Pptx => t(T::ExportPptx),
             Self::PptxEditable => t(T::ExportPptxEditable),
             Self::Mp4 => t(T::ExportMp4),
@@ -67,6 +70,7 @@ impl Format {
             Self::Pdf => "pdf",
             Self::Png => "png",
             Self::Jpeg => "jpg",
+            Self::Webp => "webp",
             Self::Pptx | Self::PptxEditable => "pptx",
             Self::Mp4 => "mp4",
             Self::Markdown => "md",
@@ -80,6 +84,7 @@ impl Format {
             Self::Pdf => "application/pdf",
             Self::Png => "image/png",
             Self::Jpeg => "image/jpeg",
+            Self::Webp => "image/webp",
             Self::Mp4 => "video/mp4",
             Self::Markdown => "text/markdown",
             Self::Pptx | Self::PptxEditable => {
@@ -93,7 +98,7 @@ impl Format {
             Self::Html => Glyph::FileCode,
             Self::Zip => Glyph::Download,
             Self::Pdf => Glyph::FileText,
-            Self::Png | Self::Jpeg => Glyph::FileImage,
+            Self::Png | Self::Jpeg | Self::Webp => Glyph::FileImage,
             Self::Pptx | Self::PptxEditable => Glyph::Deck,
             Self::Mp4 => Glyph::Play,
             Self::Markdown => Glyph::Markdown,
@@ -213,7 +218,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                     let kind = match format {
                         Format::Html => "html",
                         Format::Pdf => "pdf",
-                        Format::Png | Format::Jpeg => "image",
+                        Format::Png | Format::Jpeg | Format::Webp => "image",
                         Format::Mp4 => "mp4",
                         Format::PptxEditable => "pptx-editable",
                         _ => "pptx",
@@ -223,6 +228,8 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                         body["imageFormat"] = json!("png");
                     } else if format == Format::Jpeg {
                         body["imageFormat"] = json!("jpeg");
+                    } else if format == Format::Webp {
+                        body["imageFormat"] = json!("webp");
                     }
                     api::post_bytes(&format!("{base}/export/{kind}"), &body).await
                 }

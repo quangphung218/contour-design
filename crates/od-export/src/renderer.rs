@@ -31,6 +31,7 @@ pub enum ImageFormat {
     #[default]
     Png,
     Jpeg,
+    Webp,
 }
 
 impl ImageFormat {
@@ -39,6 +40,7 @@ impl ImageFormat {
         match self {
             Self::Png => "image/png",
             Self::Jpeg => "image/jpeg",
+            Self::Webp => "image/webp",
         }
     }
 
@@ -47,6 +49,7 @@ impl ImageFormat {
         match self {
             Self::Png => "png",
             Self::Jpeg => "jpg",
+            Self::Webp => "webp",
         }
     }
 }

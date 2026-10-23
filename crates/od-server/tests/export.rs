@@ -12,8 +12,8 @@ use od_content::{ContentRoots, ContentStore};
 use od_contracts::CreateProjectRequest;
 use od_export::image::{png_size, solid_png};
 use od_export::{
-    CaptureOptions, DeckMode, FrameOptions, RenderError, RenderResult, RenderTarget, Renderer,
-    Slides,
+    CaptureOptions, DeckMode, FrameOptions, ImageFormat, RenderError, RenderResult, RenderTarget,
+    Renderer, Slides,
 };
 use od_server::routes::export::routes_with;
 use od_server::{AppState, ServerConfig};
@@ -94,11 +94,15 @@ impl Renderer for Fake {
     fn capture_page<'a>(
         &'a self,
         target: &'a RenderTarget,
-        _: CaptureOptions,
+        opts: CaptureOptions,
     ) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
         Box::pin(async move {
             self.load(target)?;
-            Ok(solid_png(target.width, 2_000, [1, 2, 3]).unwrap())
+            // Chrome answers in the asked format; a WebP header stands in.
+            Ok(match opts.format {
+                ImageFormat::Webp => b"RIFF\0\0\0\0WEBPVP8 ".to_vec(),
+                _ => solid_png(target.width, 2_000, [1, 2, 3]).unwrap(),
+            })
         })
     }
 }
@@ -510,6 +514,23 @@ async fn pptx_needs_a_deck_and_renderer_errors_are_clear() {
         )
         .await;
     assert_eq!(png_size(&r.body), Some((1920, 2_000)));
+    // WebP for a page; other formats are refused.
+    let r = h
+        .post(
+            &format!("/api/projects/{id}/export/image"),
+            json!({ "fileName": "page.html", "imageFormat": "webp" }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.header(header::CONTENT_TYPE), "image/webp");
+    assert!(r.header(header::CONTENT_DISPOSITION).contains("page.webp"));
+    let r = h
+        .post(
+            &format!("/api/projects/{id}/export/image"),
+            json!({ "fileName": "page.html", "imageFormat": "gif" }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
 
     let h = harness_with(Fake {
         unavailable: true,

@@ -259,6 +259,15 @@ impl LiveStore {
     ///
     /// # Errors
     /// [`LiveError::NotFound`], render or I/O errors.
+    /// The artifact's template source (`template.html`).
+    ///
+    /// # Errors
+    /// [`LiveError::NotFound`] for an unknown id, I/O errors.
+    pub fn template_html(&self, id: &str) -> Result<String> {
+        self.get(id)?;
+        Ok(fs::read_to_string(self.paths(id)?.file(TEMPLATE_FILE))?)
+    }
+
     pub fn preview_html(&self, id: &str) -> Result<String> {
         let artifact = self.get(id)?;
         let paths = self.paths(id)?;

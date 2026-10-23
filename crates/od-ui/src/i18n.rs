@@ -587,6 +587,7 @@ messages! {
     NotesPlaceholder => "Speaker notes for this slide…", "Ghi chú cho slide này…";
     NotesSaveFailed => "Could not save the notes: {0}", "Không lưu được ghi chú: {0}";
     ExportJpeg => "JPEG image", "Ảnh JPEG";
+    ExportWebp => "WebP image", "Ảnh WebP";
     ExportMp4 => "MP4 video (HyperFrames)", "Video MP4 (HyperFrames)";
     FileSection => "This file", "File này";
     SaveAsTemplate => "Save as template…", "Lưu thành template…";
@@ -630,6 +631,17 @@ messages! {
     Refinalize => "Re-finalize DESIGN.md", "Chốt lại DESIGN.md";
     RefinalizeStale => "Re-finalize DESIGN.md (older than the pages)", "Chốt lại DESIGN.md (cũ hơn các trang)";
     FinalizePrompt => "Finalize the design package: write DESIGN.md at the project root for a coding agent who will build this design. Cover the screens and their purpose, layout and grid, colors and type (exact values), spacing, components and their states, motion, copy and voice, and the assets used. Base it on the current pages and this conversation; keep it accurate and concise.", "Chốt gói thiết kế: viết DESIGN.md ở gốc project cho coding agent sẽ dựng thiết kế này. Gồm các màn hình và mục đích, bố cục và lưới, màu và chữ (giá trị chính xác), khoảng cách, component và các trạng thái, chuyển động, câu chữ và giọng văn, asset đang dùng. Dựa trên các trang hiện có và cuộc trò chuyện này; chính xác và ngắn gọn.";
+    LiveArtifacts => "Live artifacts", "Live artifact";
+    LiveData => "Data", "Dữ liệu";
+    LiveHistory => "Refresh history", "Lịch sử làm mới";
+    LiveRefreshing => "Refreshing…", "Đang làm mới…";
+    LiveUpToDate => "Up to date", "Đã cập nhật";
+    LiveRefreshFailed => "Refresh failed", "Làm mới không thành công";
+    LiveNotRefreshable => "Not refreshable", "Không làm mới được";
+    LiveReady => "Ready to refresh", "Sẵn sàng làm mới";
+    LiveRefreshed => "Refreshed: data and preview updated", "Đã làm mới: dữ liệu và preview đã cập nhật";
+    LiveRefreshError => "Refresh failed: {0}", "Làm mới không thành công: {0}";
+    LiveNoHistory => "No refreshes yet.", "Chưa làm mới lần nào.";
     ContinueInCliCopied => "Prompt copied: paste it into a coding agent in the terminal", "Đã chép prompt: dán vào coding agent trong terminal";
     ToggleFilesPanel => "Show or hide files", "Hiện/ẩn danh sách file";
     NoFilesYetHint => "Files the agent writes show up here.", "File agent ghi ra sẽ hiện ở đây.";
