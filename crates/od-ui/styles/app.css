@@ -1246,9 +1246,10 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 
 /* ---- Track C4-depth: evolution proposals (Automations) ---- */
 .crystallize-btn { margin-left: var(--space-2); }
-.proposals { margin-top: var(--space-8); }
+.proposals { margin-top: var(--space-10); }
 .proposals-head { align-items: flex-start; gap: var(--space-3); }
-.proposals-head .list-title { margin-bottom: var(--space-1); }
+.proposals-head .list-title { margin: 0 0 var(--space-1); }
+.proposals-head .badge { margin-top: var(--space-1); }
 .proposal-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
 .proposal { padding: var(--space-4) var(--space-5); }
 .proposal-head { align-items: center; gap: var(--space-2); }
@@ -1259,3 +1260,21 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 .proposal-preview summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus-ring); border-radius: var(--radius-xs); }
 .proposal-preview pre { margin: var(--space-2) 0 0; padding: var(--space-3); max-height: 240px; overflow: auto; white-space: pre-wrap; background: var(--color-surface-sunken); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); }
 .proposals .success-text { display: flex; align-items: center; gap: var(--space-1); color: var(--color-success); margin: var(--space-2) 0; }
+
+/* ---- Track C4-depth: GenUI surfaces over the chat composer ---- */
+.genui-stack { display: flex; flex-direction: column; gap: var(--space-2); margin: 0 0 var(--space-2); max-height: 50vh; overflow-y: auto; }
+.genui-surface { padding: var(--space-3) var(--space-4); border-color: var(--color-accent); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: var(--space-2); }
+.genui-head { display: flex; align-items: center; gap: var(--space-1-5); color: var(--color-accent-text); font-weight: var(--weight-medium); }
+.genui-prompt { margin: 0; font-size: var(--text-base); color: var(--color-text); }
+.genui-surface p { margin: 0; }
+.genui-actions { gap: var(--space-2); }
+.genui-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1-5); max-height: 200px; overflow-y: auto; }
+.genui-files code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.genui-reason { resize: vertical; }
+.genui-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.genui-memory { margin: 0 0 var(--space-2); }
+.genui-memory-list { list-style: none; margin: var(--space-1) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.genui-memory-list li { align-items: center; gap: var(--space-2); }
+/* Long labels (German, Russian…) keep their line; the selects wrap below. */
+.notification-settings .switch.grow { flex: 1 0 auto; }
+.notification-settings .switch > span { display: inline-flex; align-items: center; gap: var(--space-1-5); white-space: nowrap; }

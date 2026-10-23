@@ -1576,6 +1576,40 @@ messages! {
     ProposalPreview => "Preview", "Xem trước";
     ProposalSkillApplied => "Saved as skill {0}.", "Đã lưu thành skill {0}.";
     ProposalMemoryApplied => "Saved to memory.", "Đã lưu vào memory.";
+    // Track C4-depth: GenUI surfaces in the chat.
+    GenuiWaiting => "A plugin is waiting for an answer", "Plugin đang chờ trả lời";
+    GenuiContinue => "Continue", "Tiếp tục";
+    GenuiAuthorize => "Authorize", "Cấp quyền";
+    GenuiSkip => "Skip", "Bỏ qua";
+    GenuiAcceptAll => "Accept all", "Nhận tất cả";
+    GenuiRejectAll => "Reject all", "Bỏ tất cả";
+    GenuiPartial => "Pick per file", "Chọn từng file";
+    GenuiAccept => "Accept", "Nhận";
+    GenuiReject => "Reject", "Bỏ";
+    GenuiSubmit => "Submit", "Gửi";
+    GenuiSubmitPartial => "Submit partial decision", "Gửi lựa chọn từng file";
+    GenuiPatchNotes => "Notes for the patch author (optional)", "Ghi chú cho người viết patch (không bắt buộc)";
+    GenuiConfirmDefault => "The plugin needs your confirmation to continue.", "Plugin cần xác nhận để chạy tiếp.";
+    GenuiAuthorizeDefault => "Authorize {0} to continue.", "Cấp quyền cho {0} để chạy tiếp.";
+    GenuiTheConnection => "the connection", "kết nối";
+    GenuiConnectorHint => "Connector: {0}", "Connector: {0}";
+    GenuiMcpHint => "MCP server: {0}", "MCP server: {0}";
+    GenuiReviewDefault => "Review the diff and choose how to proceed.", "Xem diff rồi chọn cách xử lý.";
+    GenuiFilesTouched => "{0} files touched.", "{0} file đã sửa.";
+    GenuiNoFileList => "No file list yet: the decision covers every file.", "Chưa có danh sách file: lựa chọn áp cho mọi file.";
+    GenuiPickEach => "Pick accept or reject for: {0}", "Chọn nhận hoặc bỏ cho: {0}";
+    GenuiAnswerDefault => "The plugin needs an answer to continue.", "Plugin cần câu trả lời để chạy tiếp.";
+    GenuiJsonPlaceholder => "Answer as JSON or plain text", "Trả lời bằng JSON hoặc chữ thường";
+    GenuiFieldRequired => "{0} is required.", "Cần điền {0}.";
+    GenuiFieldNumber => "{0} must be a number.", "{0} phải là số.";
+    GenuiFieldWhole => "{0} must be a whole number.", "{0} phải là số nguyên.";
+    GenuiFieldRange => "{0} is out of range.", "{0} nằm ngoài khoảng cho phép.";
+    GenuiAnswerFailed => "Could not send the answer: {0}", "Không gửi được câu trả lời: {0}";
+    GenuiRemembered => "Remembered answers ({0})", "Câu trả lời đã nhớ ({0})";
+    GenuiRememberedHint => "Plugins reuse these answers without asking again.", "Plugin dùng lại các câu trả lời này mà không hỏi lại.";
+    GenuiRevoke => "Revoke", "Thu hồi";
+    GenuiTierProject => "project", "project";
+    GenuiTierConversation => "conversation", "cuộc trò chuyện";
 }
 
 /// The current language's text for `key`.

@@ -17,6 +17,7 @@ mod ds_page;
 mod export_extra;
 mod export_menu;
 mod files_panel;
+mod genui_view;
 mod home;
 mod icons;
 mod inbox;
@@ -200,10 +201,13 @@ pub fn App() -> impl IntoView {
     // Strings are read once per render: a language change rebuilds the app.
     // Wait for settings (a local call) so the first paint is already in the
     // user's language. A memo: saving settings must not rebuild the app.
-    // A language outside en/vi first fetches its strings file; until it
-    // arrives the app shows the previous language (English on first paint).
+    // A language outside en/vi first fetches its strings file. The first
+    // paint waits for it (painting English, then rebuilding, would drop
+    // the first screen's pending requests); a later switch keeps showing
+    // the previous language until the file arrives.
     let ready = Memo::new(move |_| shell.config.with(Option::is_some));
     let dict_loaded = RwSignal::new(0u32);
+    let painted = StoredValue::new(false);
     Effect::new(move |_| {
         let wanted = shell.locale.get();
         if !i18n::has_dict(wanted) {
@@ -221,9 +225,12 @@ pub fn App() -> impl IntoView {
         let wanted = shell.locale.get();
         let locale = if i18n::has_dict(wanted) {
             wanted
-        } else {
+        } else if painted.get_value() {
             i18n::locale()
+        } else {
+            return None;
         };
+        painted.set_value(true);
         i18n::set_locale(locale);
         if let Some(root) = web_sys::window()
             .and_then(|w| w.document())

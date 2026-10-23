@@ -140,8 +140,12 @@ pub fn RunWatcher() -> impl IntoView {
                 .filter(|r| r.status == RunStatus::Running)
                 .map(|r| r.id.clone())
                 .collect();
-            let before = running.get_value();
-            running.set_value(Some(now.clone()));
+            // The app rebuilds on a language switch; a poll that answers
+            // after that finds this watcher gone.
+            let Some(before) = running.try_get_value() else {
+                return;
+            };
+            running.try_set_value(Some(now.clone()));
             // First poll: only learn what is running.
             let Some(before) = before else { return };
             let p = prefs(shell);

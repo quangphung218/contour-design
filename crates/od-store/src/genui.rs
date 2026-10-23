@@ -313,6 +313,8 @@ impl GenuiStore {
     /// # Errors
     /// [`GenuiError::NotPending`]; SQLite errors.
     pub fn respond(&self, a: Answer<'_>, now: i64) -> Result<SurfaceRow> {
+        // The connection lock spans the lookup and the write: two answers
+        // to one surface cannot both find it pending.
         let conn = self.conn();
         let pending: Option<String> = conn
             .query_row(
@@ -322,16 +324,12 @@ impl GenuiStore {
                 |r| r.get(0),
             )
             .optional()?;
-        let id = pending.ok_or_else(|| GenuiError::NotPending)?;
-        // Only a still-pending row takes the answer.
-        let changed = conn.execute(
+        let id = pending.ok_or(GenuiError::NotPending)?;
+        conn.execute(
             "UPDATE genui_surfaces SET value_json = ?2, status = 'resolved', responded_by = ?3, \
-             responded_at = ?4 WHERE id = ?1 AND status = 'pending'",
+             responded_at = ?4 WHERE id = ?1",
             params![id, a.value.to_string(), a.responded_by, now],
         )?;
-        if changed == 0 {
-            return Err(GenuiError::NotPending);
-        }
         Self::by_id(&conn, &id)
     }
 
