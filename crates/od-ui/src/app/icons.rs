@@ -60,7 +60,6 @@ glyphs! {
     FileCode => "file-code-line",
     FileImage => "image-line",
     FileText => "file-text-line",
-    Filter => "filter-3-line",
     FolderOpen => "folder-open-line",
     Fork => "git-branch-line",
     Fullscreen => "fullscreen-line",

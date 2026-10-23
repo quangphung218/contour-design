@@ -8,12 +8,16 @@ mod chat_view;
 mod deck;
 mod desktop;
 mod ds_create;
+mod ds_page;
 mod export_menu;
 mod home;
 mod icons;
 mod lazy_frame;
+mod lib_ui;
 mod mcp_settings;
+mod media_page;
 mod onboarding;
+mod plugins_page;
 mod preview_comments;
 mod preview_tools;
 mod projects;
@@ -21,6 +25,7 @@ mod settings_page;
 mod sse;
 mod studio;
 mod switcher;
+mod templates_page;
 mod terminal;
 mod versions;
 
@@ -173,6 +178,10 @@ fn Shelled() -> impl IntoView {
                             <Route path=path!("/onboarding") view=onboarding::Onboarding/>
                             <Route path=path!("/settings") view=settings_page::SettingsPage/>
                             <Route path=path!("/automations") view=automations::Automations/>
+                            <Route path=path!("/design-systems") view=ds_page::DesignSystemsPage/>
+                            <Route path=path!("/plugins") view=plugins_page::PluginsPage/>
+                            <Route path=path!("/media") view=media_page::MediaPage/>
+                            <Route path=path!("/templates") view=templates_page::TemplatesPage/>
                         </Routes>
                     </main>
                 </div>
@@ -257,6 +266,10 @@ fn Sidebar() -> impl IntoView {
                 {link("/", Glyph::Home, T::NavHome, true)}
                 {link("/projects", Glyph::Projects, T::NavProjects, false)}
                 {link("/automations", Glyph::Automations, T::NavAutomations, false)}
+                {link("/design-systems", Glyph::DesignSystem, T::NavDesignSystems, false)}
+                {link("/plugins", Glyph::Plugin, T::NavPlugins, false)}
+                {link("/media", Glyph::Image, T::NavMedia, false)}
+                {link("/templates", Glyph::Grid, T::NavTemplates, false)}
                 <span class="spacer"></span>
                 {link("/settings", Glyph::Settings, T::NavSettings, false)}
             </nav>

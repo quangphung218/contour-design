@@ -1,6 +1,7 @@
 //! `od plugin` and `od media` (spec 2.6) against the real daemon router in
 //! this process: bundled plugins, a restricted user plugin behind the
-//! capability gate (exit 66), folder validation, and queued media
+//! capability gate (exit 66), folder validation, install and uninstall,
+//! and queued media
 //! generation against a loopback fake provider.
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
@@ -191,6 +192,26 @@ async fn plugin_commands() {
             .contains("unknown atom"),
         "{report}"
     );
+
+    // install / uninstall a local folder.
+    let src = tempfile::tempdir().unwrap();
+    let dir = src.path().join("tea-cards");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("open-design.json"),
+        json!({"name": "tea-cards", "title": "Tea cards", "od": {"kind": "scenario"}}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(dir.join("SKILL.md"), "---\nname: tea-cards\n---\nCards.\n").unwrap();
+    let out = od(&d, &["plugin", "install", dir.to_str().unwrap()]).await;
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out).trim(), "installed tea-cards");
+    let out = od(&d, &["plugin", "list"]).await;
+    assert!(stdout(&out).lines().any(|l| l.starts_with("tea-cards\t")));
+    let out = od(&d, &["plugin", "uninstall", "tea-cards"]).await;
+    assert!(out.status.success(), "{}", stderr(&out));
+    let out = od(&d, &["plugin", "uninstall", "od-new-generation"]).await;
+    assert!(!out.status.success(), "bundled plugins stay");
 }
 
 /// Fake OpenAI images endpoint; prompts containing `slow` take 2 s.
