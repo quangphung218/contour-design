@@ -124,7 +124,9 @@ pub enum UntilError {
     Empty,
     #[error("expected a comparison operator in {0:?}")]
     NoOperator(String),
-    #[error("unknown signal {0:?}; supported: critique.score, iterations, user.confirmed, preview.ok, build.passing, tests.passing")]
+    #[error(
+        "unknown signal {0:?}; supported: critique.score, iterations, user.confirmed, preview.ok, build.passing, tests.passing"
+    )]
     UnknownSignal(String),
     #[error("signal {signal:?} expects true/false, got {got:?}")]
     ExpectedBool { signal: String, got: String },
@@ -582,7 +584,10 @@ mod tests {
             preview_ok: Some(false),
             ..Signals::default()
         }));
-        assert!(matches!(parse_until("critique.score"), Err(UntilError::NoOperator(_))));
+        assert!(matches!(
+            parse_until("critique.score"),
+            Err(UntilError::NoOperator(_))
+        ));
         assert!(parse_until("iterations<2").unwrap().satisfied(&Signals {
             iterations: 1,
             ..Signals::default()
@@ -626,7 +631,10 @@ mod tests {
 
         let cases = [
             (json!({}), PipelineError::Shape),
-            (json!({"stages": [{"atoms": ["todo-write"]}]}), PipelineError::MissingId(1)),
+            (
+                json!({"stages": [{"atoms": ["todo-write"]}]}),
+                PipelineError::MissingId(1),
+            ),
             (
                 json!({"stages": [{"id": "a", "atoms": ["todo-write"]}, {"id": "a", "atoms": ["file-read"]}]}),
                 PipelineError::DuplicateId("a".into()),
@@ -637,7 +645,10 @@ mod tests {
             ),
             (
                 json!({"stages": [{"id": "a", "atoms": ["shell-anything"]}]}),
-                PipelineError::UnknownAtom { stage: "a".into(), atom: "shell-anything".into() },
+                PipelineError::UnknownAtom {
+                    stage: "a".into(),
+                    atom: "shell-anything".into(),
+                },
             ),
             (
                 json!({"stages": [{"id": "a", "atoms": ["todo-write"], "repeat": true}]}),
@@ -648,7 +659,9 @@ mod tests {
             assert_eq!(Pipeline::parse(&raw).unwrap_err(), want, "{raw}");
         }
         assert!(matches!(
-            Pipeline::parse(&json!({"stages": [{"id": "a", "atoms": ["todo-write"], "repeat": true, "until": "nope"}]})),
+            Pipeline::parse(
+                &json!({"stages": [{"id": "a", "atoms": ["todo-write"], "repeat": true, "until": "nope"}]})
+            ),
             Err(PipelineError::Until { .. })
         ));
     }
@@ -683,9 +696,24 @@ mod tests {
         assert_eq!(
             outcomes,
             vec![
-                StageOutcome { stage_id: "generate".into(), iterations: 1, converged: true, termination: Termination::NoLoop },
-                StageOutcome { stage_id: "critique".into(), iterations: 3, converged: true, termination: Termination::UntilSatisfied },
-                StageOutcome { stage_id: "polish".into(), iterations: 3, converged: false, termination: Termination::IterationCap },
+                StageOutcome {
+                    stage_id: "generate".into(),
+                    iterations: 1,
+                    converged: true,
+                    termination: Termination::NoLoop
+                },
+                StageOutcome {
+                    stage_id: "critique".into(),
+                    iterations: 3,
+                    converged: true,
+                    termination: Termination::UntilSatisfied
+                },
+                StageOutcome {
+                    stage_id: "polish".into(),
+                    iterations: 3,
+                    converged: false,
+                    termination: Termination::IterationCap
+                },
             ]
         );
         assert_eq!(calls.len(), 7);

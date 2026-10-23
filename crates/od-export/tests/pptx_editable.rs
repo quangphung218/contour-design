@@ -41,14 +41,24 @@ fn fixture() -> (Vec<SlideLayout>, Vec<u8>) {
             background: Some("rgb(246, 239, 226)".into()),
             elements: vec![
                 Element::Shape {
-                    rect: Rect { x: 80.0, y: 80.0, w: 800.0, h: 400.0 },
+                    rect: Rect {
+                        x: 80.0,
+                        y: 80.0,
+                        w: 800.0,
+                        h: 400.0,
+                    },
                     fill: Some("rgb(47, 107, 58)".into()),
                     line: Some("rgba(0, 0, 0, 0.5)".into()),
                     line_width: 2.0,
                     radius: 24.0,
                 },
                 Element::Text {
-                    rect: Rect { x: 120.0, y: 120.0, w: 720.0, h: 160.0 },
+                    rect: Rect {
+                        x: 120.0,
+                        y: 120.0,
+                        w: 720.0,
+                        h: 160.0,
+                    },
                     paragraphs: vec![Paragraph {
                         align: Some("center".into()),
                         line_height: Some(1.2),
@@ -61,7 +71,12 @@ fn fixture() -> (Vec<SlideLayout>, Vec<u8>) {
                 },
                 // Nothing to draw: skipped, ids stay dense.
                 Element::Shape {
-                    rect: Rect { x: 0.0, y: 0.0, w: 10.0, h: 10.0 },
+                    rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        w: 10.0,
+                        h: 10.0,
+                    },
                     fill: Some("transparent".into()),
                     line: None,
                     line_width: 0.0,
@@ -75,15 +90,30 @@ fn fixture() -> (Vec<SlideLayout>, Vec<u8>) {
             background: None,
             elements: vec![
                 Element::Image {
-                    rect: Rect { x: 960.0, y: 0.0, w: 960.0, h: 720.0 },
+                    rect: Rect {
+                        x: 960.0,
+                        y: 0.0,
+                        w: 960.0,
+                        h: 720.0,
+                    },
                     src,
                 },
                 Element::Image {
-                    rect: Rect { x: 0.0, y: 0.0, w: 10.0, h: 10.0 },
+                    rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        w: 10.0,
+                        h: 10.0,
+                    },
                     src: "https://cdn.example/not-embedded.png".into(),
                 },
                 Element::Text {
-                    rect: Rect { x: 80.0, y: 800.0, w: 1200.0, h: 200.0 },
+                    rect: Rect {
+                        x: 80.0,
+                        y: 800.0,
+                        w: 1200.0,
+                        h: 200.0,
+                    },
                     paragraphs: vec![Paragraph {
                         align: None,
                         line_height: None,
@@ -148,7 +178,9 @@ fn count(names: &[String], tag: &str) -> usize {
 }
 
 fn golden(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden")
+        .join(name)
 }
 
 #[test]
@@ -187,7 +219,10 @@ fn editable_pptx_structure_and_golden() {
     assert!(s1.contains(r#"<a:srgbClr val="2F6B3A"/>"#));
     assert!(s1.contains(r#"<a:alpha val="50000"/>"#));
     assert!(s1.contains(r#"<p:cNvSpPr txBox="1"/>"#));
-    assert!(s1.contains(r#"sz="3600" b="1""#), "72 px on a 1920 px slide is 36 pt");
+    assert!(
+        s1.contains(r#"sz="3600" b="1""#),
+        "72 px on a 1920 px slide is 36 pt"
+    );
     assert!(s1.contains(r#"anchor="ctr""#) && s1.contains(r#"algn="ctr""#));
     assert!(s1.contains(r#"<a:latin typeface="Inter"/>"#));
 
@@ -201,7 +236,10 @@ fn editable_pptx_structure_and_golden() {
     assert!(s2.contains(r#"<a:blip r:embed="rId2"/>"#));
     let rels = String::from_utf8(parts["ppt/slides/_rels/slide2.xml.rels"].clone()).unwrap();
     assert!(rels.contains(r#"Id="rId2""#) && rels.contains("../media/slide2-image1.png"));
-    assert_eq!(parts["ppt/media/slide2-image1.png"], png, "the real image bytes");
+    assert_eq!(
+        parts["ppt/media/slide2-image1.png"], png,
+        "the real image bytes"
+    );
     assert_eq!(
         parts.keys().filter(|k| k.starts_with("ppt/media/")).count(),
         1
@@ -214,8 +252,12 @@ fn editable_pptx_structure_and_golden() {
         if std::env::var("OD_UPDATE_GOLDEN").as_deref() == Ok("1") {
             std::fs::write(&path, xml).unwrap();
         }
-        let want = std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("missing golden {}; run with OD_UPDATE_GOLDEN=1", path.display()));
+        let want = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+            panic!(
+                "missing golden {}; run with OD_UPDATE_GOLDEN=1",
+                path.display()
+            )
+        });
         assert_eq!(xml, &want, "{name} differs from the golden file");
     }
 
@@ -244,7 +286,13 @@ fn libreoffice_opens(pptx: &[u8]) {
     let profile = format!("file://{}", dir.path().join("profile").display());
     let out = std::process::Command::new(bin)
         .arg(format!("-env:UserInstallation={profile}"))
-        .args(["--headless", "--norestore", "--convert-to", "pdf", "--outdir"])
+        .args([
+            "--headless",
+            "--norestore",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+        ])
         .arg(dir.path())
         .arg(&input)
         .output()

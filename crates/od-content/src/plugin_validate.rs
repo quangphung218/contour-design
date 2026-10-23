@@ -106,7 +106,12 @@ pub fn validate_plugin_dir(dir: &Path) -> Validation {
     }
 }
 
-fn check(p: &PluginEntry, has_manifest: bool, errors: &mut Vec<String>, warnings: &mut Vec<String>) {
+fn check(
+    p: &PluginEntry,
+    has_manifest: bool,
+    errors: &mut Vec<String>,
+    warnings: &mut Vec<String>,
+) {
     if !has_manifest {
         warnings.push(format!("no {MANIFEST}: the plugin loads as a plain skill"));
     }
@@ -214,7 +219,11 @@ mod tests {
 
     #[test]
     fn capability_gate() {
-        let req = vec!["prompt:inject".to_owned(), "fs:read".to_owned(), "mcp".to_owned()];
+        let req = vec![
+            "prompt:inject".to_owned(),
+            "fs:read".to_owned(),
+            "mcp".to_owned(),
+        ];
         assert_eq!(
             missing_capabilities(&req, &["fs:read".to_owned()], false),
             ["mcp"]

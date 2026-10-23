@@ -343,11 +343,19 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let s = tmp.path();
         assert_eq!(check_staging(s), Err(GenError::Missing("DESIGN.md")));
-        std::fs::write(s.join("DESIGN.md"), "# X\n\n## One\n\n```\n## not a heading\n```\n").unwrap();
+        std::fs::write(
+            s.join("DESIGN.md"),
+            "# X\n\n## One\n\n```\n## not a heading\n```\n",
+        )
+        .unwrap();
         assert_eq!(check_staging(s), Err(GenError::TooFewSections { found: 1 }));
         std::fs::write(s.join("DESIGN.md"), good_design("X")).unwrap();
         assert_eq!(check_staging(s), Err(GenError::Missing("tokens.css")));
-        std::fs::write(s.join("tokens.css"), ":root { --bg: #fff; --bg-2: #eee; --fg: #000; }").unwrap();
+        std::fs::write(
+            s.join("tokens.css"),
+            ":root { --bg: #fff; --bg-2: #eee; --fg: #000; }",
+        )
+        .unwrap();
         assert_eq!(
             check_staging(s),
             Err(GenError::MissingTokens(vec![
@@ -380,13 +388,21 @@ mod tests {
         assert_eq!(first.summary.title, "Trà Đá");
         assert_eq!(first.summary.category, "Custom");
         assert_eq!(first.summary.summary, "Street tea stall.");
-        assert!(first.manifest.is_some(), "manifest passes the v1 schema check");
-        assert!(first.summary.swatches.contains(&"#2f6b3a".to_owned()), "{:?}", first.summary.swatches);
-        assert!(!first.dir.join("notes.txt").exists());
         assert!(
-            std::fs::read_dir(&user)
-                .unwrap()
-                .all(|e| !e.unwrap().file_name().to_string_lossy().ends_with(".installing"))
+            first.manifest.is_some(),
+            "manifest passes the v1 schema check"
         );
+        assert!(
+            first.summary.swatches.contains(&"#2f6b3a".to_owned()),
+            "{:?}",
+            first.summary.swatches
+        );
+        assert!(!first.dir.join("notes.txt").exists());
+        assert!(std::fs::read_dir(&user).unwrap().all(|e| {
+            !e.unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".installing")
+        }));
     }
 }

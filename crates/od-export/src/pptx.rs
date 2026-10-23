@@ -32,7 +32,8 @@ pub enum PptxError {
 pub(crate) const NS: &str = r#"xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main""#;
 pub(crate) const XML_DECL: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#;
 pub(crate) const REL_NS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
-pub(crate) const R_DOC: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+pub(crate) const R_DOC: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 pub(crate) const EMPTY_TREE: &str = r#"<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>"#;
 
 pub(crate) fn escape(text: &str) -> String {

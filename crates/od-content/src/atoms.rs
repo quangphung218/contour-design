@@ -63,9 +63,19 @@ pub const ATOMS: &[Atom] = &[
         "Host-owned visual catalog when explicitly requested.",
         GEN_TUNE,
     ),
-    atom("todo-write", "Todo write", "TodoWrite-driven plan.", ALL_KINDS),
+    atom(
+        "todo-write",
+        "Todo write",
+        "TodoWrite-driven plan.",
+        ALL_KINDS,
+    ),
     atom("file-read", "File read", "Read project files.", ALL_KINDS),
-    atom("file-write", "File write", "Write project files.", ALL_KINDS),
+    atom(
+        "file-write",
+        "File write",
+        "Write project files.",
+        ALL_KINDS,
+    ),
     atom("file-edit", "File edit", "Edit project files.", ALL_KINDS),
     atom(
         "research-search",
@@ -97,12 +107,7 @@ pub const ATOMS: &[Atom] = &[
         "Create/refresh live artifacts.",
         GEN_TUNE,
     ),
-    atom(
-        "connector",
-        "Connector",
-        "Connector tool calls.",
-        GEN_TUNE,
-    ),
+    atom("connector", "Connector", "Connector tool calls.", GEN_TUNE),
     atom(
         "critique-theater",
         "Critique theater",
@@ -188,9 +193,6 @@ mod tests {
         assert_eq!(ATOMS.len(), 22);
         assert!(is_known_atom("critique-theater"));
         assert!(!is_known_atom("rm-rf"));
-        assert_eq!(
-            find_atom("build-test").map(|a| a.task_kinds),
-            Some(CODE)
-        );
+        assert_eq!(find_atom("build-test").map(|a| a.task_kinds), Some(CODE));
     }
 }

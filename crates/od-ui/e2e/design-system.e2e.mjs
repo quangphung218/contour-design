@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 
 const BIN = process.env.OD_E2E_BIN;
 const MOCK_AGENTS = process.env.OD_MOCK_AGENTS;
-const PORT = Number(process.env.OD_E2E_DS_PORT || 17462);
+const PORT = Number(process.env.OD_E2E_DS_PORT || Number(process.env.OD_E2E_PORT || 17461) + 1);
 const BASE = `http://127.0.0.1:${PORT}`;
 const OUT = new URL('./test-results/', import.meta.url).pathname;
 assert.ok(BIN, 'OD_E2E_BIN must point at the built `od` binary');

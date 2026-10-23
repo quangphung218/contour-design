@@ -189,7 +189,9 @@ pub async fn generate(
         cwd: staging.clone(),
         prompt: design_system_gen::generation_prompt(&req),
         fallback_prompt: None,
-        model: body.model.filter(|m| !m.trim().is_empty() && m != "default"),
+        model: body
+            .model
+            .filter(|m| !m.trim().is_empty() && m != "default"),
         reasoning: None,
         extra_dirs: Vec::new(),
         resume_session_id: None,
@@ -198,7 +200,14 @@ pub async fn generate(
         project_id: None,
         byok: None,
     });
-    tokio::spawn(finish(state.clone(), Arc::clone(&jobs), job_id, staging, req, handle));
+    tokio::spawn(finish(
+        state.clone(),
+        Arc::clone(&jobs),
+        job_id,
+        staging,
+        req,
+        handle,
+    ));
     Ok((StatusCode::ACCEPTED, Json(json!({ "job": job }))))
 }
 

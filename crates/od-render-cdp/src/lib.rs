@@ -614,21 +614,22 @@ impl CdpRenderer {
 
     async fn layouts(&self, target: &RenderTarget) -> RenderResult<Vec<SlideLayout>> {
         let mut s = self.open(target).await?;
-        let result = async {
-            let info = s.settle().await?;
-            is_deck(DeckMode::Deck, &info)?;
-            s.fit_to_slides(&info).await?;
-            let mut out = Vec::with_capacity(info.slides);
-            for i in 0..info.slides {
-                s.eval(&script::show_slide(i, s.width, s.height)).await?;
-                let raw = s.eval(od_export::pptx_editable::LAYOUT_SCRIPT).await?;
-                out.push(serde_json::from_value(raw).map_err(|e| {
-                    RenderError::Failed(format!("measuring slide {}: {e}", i + 1))
-                })?);
+        let result =
+            async {
+                let info = s.settle().await?;
+                is_deck(DeckMode::Deck, &info)?;
+                s.fit_to_slides(&info).await?;
+                let mut out = Vec::with_capacity(info.slides);
+                for i in 0..info.slides {
+                    s.eval(&script::show_slide(i, s.width, s.height)).await?;
+                    let raw = s.eval(od_export::pptx_editable::LAYOUT_SCRIPT).await?;
+                    out.push(serde_json::from_value(raw).map_err(|e| {
+                        RenderError::Failed(format!("measuring slide {}: {e}", i + 1))
+                    })?);
+                }
+                Ok(out)
             }
-            Ok(out)
-        }
-        .await;
+            .await;
         s.close().await;
         result
     }

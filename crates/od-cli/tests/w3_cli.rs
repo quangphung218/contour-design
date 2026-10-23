@@ -37,7 +37,11 @@ async fn daemon() -> Daemon {
         json!({"name": "needs-mcp", "version": "1.0.0", "od": {"kind": "scenario", "capabilities": ["prompt:inject", "mcp"]}}).to_string(),
     )
     .unwrap();
-    std::fs::write(plugin.join("SKILL.md"), "---\nname: needs-mcp\n---\nUse the MCP server.\n").unwrap();
+    std::fs::write(
+        plugin.join("SKILL.md"),
+        "---\nname: needs-mcp\n---\nUse the MCP server.\n",
+    )
+    .unwrap();
     let store = Store::open(DataDir::new(&data)).unwrap();
     let runs = od_server::open_runs(&store, &od_server::DaemonLock::acquire(&data).unwrap())
         .await
@@ -90,23 +94,50 @@ async fn plugin_commands() {
     let d = daemon().await;
     let out = od(&d, &["plugin", "list", "--kind", "scenario"]).await;
     assert!(out.status.success(), "{}", stderr(&out));
-    assert!(stdout(&out).lines().any(|l| l.starts_with("od-new-generation\tscenario\t")));
+    assert!(
+        stdout(&out)
+            .lines()
+            .any(|l| l.starts_with("od-new-generation\tscenario\t"))
+    );
     assert!(stdout(&out).lines().any(|l| l.starts_with("needs-mcp\t")));
 
     let out = od(&d, &["plugin", "info", "od-new-generation"]).await;
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);
     assert!(text.contains("source:       bundled"), "{text}");
-    assert!(text.contains("stage 4:      critique [critique-theater] until critique.score>=4 || iterations>=3"), "{text}");
+    assert!(
+        text.contains(
+            "stage 4:      critique [critique-theater] until critique.score>=4 || iterations>=3"
+        ),
+        "{text}"
+    );
     assert!(text.contains("input:        topic (required)"));
 
-    let out = od(&d, &["plugin", "apply", "od-new-generation", "-i", "artifactKind=deck", "-i", "audience=VCs", "-i", "topic=tea"]).await;
+    let out = od(
+        &d,
+        &[
+            "plugin",
+            "apply",
+            "od-new-generation",
+            "-i",
+            "artifactKind=deck",
+            "-i",
+            "audience=VCs",
+            "-i",
+            "topic=tea",
+        ],
+    )
+    .await;
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(stdout(&out).starts_with("Generate a deck for VCs on tea."));
     assert!(stdout(&out).contains("## Plugin pipeline"));
     let out = od(&d, &["plugin", "apply", "od-new-generation"]).await;
     assert_eq!(out.status.code(), Some(1));
-    assert!(stderr(&out).contains("missing required plugin inputs"), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("missing required plugin inputs"),
+        "{}",
+        stderr(&out)
+    );
 
     // Restricted user plugin: exit 66 with a JSON error until `mcp` is granted.
     let out = od(&d, &["plugin", "apply", "needs-mcp"]).await;
@@ -114,7 +145,17 @@ async fn plugin_commands() {
     let err: Value = serde_json::from_str(stderr(&out).trim()).unwrap();
     assert_eq!(err["error"]["code"], "capabilities-required");
     assert_eq!(err["error"]["data"]["missing"], json!(["mcp"]));
-    let out = od(&d, &["plugin", "apply", "needs-mcp", "--grant-caps", "fs:read,mcp"]).await;
+    let out = od(
+        &d,
+        &[
+            "plugin",
+            "apply",
+            "needs-mcp",
+            "--grant-caps",
+            "fs:read,mcp",
+        ],
+    )
+    .await;
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(stdout(&out).contains("Use the MCP server."));
 
@@ -123,7 +164,8 @@ async fn plugin_commands() {
     assert_eq!(atoms["atoms"].as_array().unwrap().len(), 22);
 
     // validate: a good folder passes, a broken one exits 1 with reasons.
-    let good = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../content/plugins/_official/scenarios/od-new-generation");
+    let good = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../content/plugins/_official/scenarios/od-new-generation");
     let out = od(&d, &["plugin", "validate", good.to_str().unwrap()]).await;
     assert!(out.status.success(), "{}{}", stdout(&out), stderr(&out));
     assert!(stdout(&out).contains("ok od-new-generation"));
@@ -133,11 +175,21 @@ async fn plugin_commands() {
         json!({"name": "bad", "od": {"kind": "scenario", "pipeline": {"stages": [{"id": "x", "atoms": ["nope"]}]}}}).to_string(),
     )
     .unwrap();
-    let out = od(&d, &["--json", "plugin", "validate", bad.path().to_str().unwrap()]).await;
+    let out = od(
+        &d,
+        &["--json", "plugin", "validate", bad.path().to_str().unwrap()],
+    )
+    .await;
     assert_eq!(out.status.code(), Some(1));
     let report: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(report["ok"], false);
-    assert!(report["errors"][0].as_str().unwrap().contains("unknown atom"), "{report}");
+    assert!(
+        report["errors"][0]
+            .as_str()
+            .unwrap()
+            .contains("unknown atom"),
+        "{report}"
+    );
 }
 
 /// Fake OpenAI images endpoint; prompts containing `slow` take 2 s.
@@ -179,14 +231,50 @@ async fn media_commands() {
     let pid = project.id.as_str();
     let dir = d.state.store.project_root(&project).unwrap().dir;
 
-    let out = od(&d, &["media", "generate", "--project", pid, "--surface", "image", "--model", "gpt-image-1", "--prompt", "a red square", "--output", "hero"]).await;
+    let out = od(
+        &d,
+        &[
+            "media",
+            "generate",
+            "--project",
+            pid,
+            "--surface",
+            "image",
+            "--model",
+            "gpt-image-1",
+            "--prompt",
+            "a red square",
+            "--output",
+            "hero",
+        ],
+    )
+    .await;
     assert!(out.status.success(), "{}", stderr(&out));
     let line = stdout(&out);
     assert!(line.trim_end().ends_with("\tdone\thero.png"), "{line}");
     assert!(dir.join("hero.png").is_file());
 
     // Queue without waiting, cancel, then `wait` reports the cancel (exit 1).
-    let out = od(&d, &["--json", "media", "generate", "--project", pid, "--surface", "image", "--model", "gpt-image-1", "--prompt", "slow one", "--output", "slow", "--no-wait"]).await;
+    let out = od(
+        &d,
+        &[
+            "--json",
+            "media",
+            "generate",
+            "--project",
+            pid,
+            "--surface",
+            "image",
+            "--model",
+            "gpt-image-1",
+            "--prompt",
+            "slow one",
+            "--output",
+            "slow",
+            "--no-wait",
+        ],
+    )
+    .await;
     assert!(out.status.success(), "{}", stderr(&out));
     let task: Value = serde_json::from_slice(&out.stdout).unwrap();
     let id = task["id"].as_str().unwrap();
@@ -196,17 +284,41 @@ async fn media_commands() {
     assert_eq!(out.status.code(), Some(1));
     assert!(stderr(&out).contains("task canceled"), "{}", stderr(&out));
     tokio::time::sleep(Duration::from_millis(2500)).await;
-    assert!(!dir.join("slow.png").exists(), "a canceled task writes nothing");
+    assert!(
+        !dir.join("slow.png").exists(),
+        "a canceled task writes nothing"
+    );
 
     let out = od(&d, &["media", "tasks", "--project", pid]).await;
     let lines: Vec<String> = stdout(&out).lines().map(str::to_owned).collect();
     assert_eq!(lines.len(), 2, "{lines:?}");
-    let out = od(&d, &["media", "generate", "--project", pid, "--surface", "image", "--model", "no-such-model"]).await;
+    let out = od(
+        &d,
+        &[
+            "media",
+            "generate",
+            "--project",
+            pid,
+            "--surface",
+            "image",
+            "--model",
+            "no-such-model",
+        ],
+    )
+    .await;
     assert_eq!(out.status.code(), Some(1));
-    assert!(stderr(&out).contains("unknown media model"), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("unknown media model"),
+        "{}",
+        stderr(&out)
+    );
 
     let out = od(&d, &["media", "models"]).await;
-    assert!(stdout(&out).contains("provider\topenai\tkey set"), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("provider\topenai\tkey set"),
+        "{}",
+        stdout(&out)
+    );
     let out = od(&d, &["media", "templates", "--surface", "image"]).await;
     assert!(out.status.success());
     assert!(stdout(&out).lines().count() > 10);

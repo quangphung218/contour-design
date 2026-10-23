@@ -2,7 +2,9 @@
 //! slides measured by the renderer become native text boxes, shapes and
 //! pictures. Same body as the other `export/*` routes.
 
-use crate::routes::export::{ExportErr, ExportResult, attachment, internal, parse_body, resolve_entry, scratch};
+use crate::routes::export::{
+    ExportErr, ExportResult, attachment, internal, parse_body, resolve_entry, scratch,
+};
 use crate::state::AppState;
 use axum::body::Bytes;
 use axum::extract::{Path, State};

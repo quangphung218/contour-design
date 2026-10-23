@@ -62,10 +62,15 @@ pub fn NewDesignSystem(
                 };
                 match v["job"]["status"].as_str() {
                     Some("succeeded") => {
-                        let id = v["job"]["designSystemId"].as_str().unwrap_or_default().to_owned();
+                        let id = v["job"]["designSystemId"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_owned();
                         systems.refetch();
                         selected.set(Some(id));
-                        phase.set(Phase::Done(v["job"]["name"].as_str().unwrap_or_default().to_owned()));
+                        phase.set(Phase::Done(
+                            v["job"]["name"].as_str().unwrap_or_default().to_owned(),
+                        ));
                         name.set(String::new());
                         brief.set(String::new());
                         open.set(false);

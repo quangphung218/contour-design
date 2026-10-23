@@ -113,8 +113,15 @@ pub fn run(client: &Client, cmd: PluginCommand, json_out: bool) -> anyhow::Resul
             println!("source:       {}", p["source"].as_str().unwrap_or(""));
             println!("capabilities: {}", strings(&p["capabilities"]).join(", "));
             for input in p["inputs"].as_array().into_iter().flatten() {
-                let required = if input["required"] == true { " (required)" } else { "" };
-                println!("input:        {}{required}", input["name"].as_str().unwrap_or(""));
+                let required = if input["required"] == true {
+                    " (required)"
+                } else {
+                    ""
+                };
+                println!(
+                    "input:        {}{required}",
+                    input["name"].as_str().unwrap_or("")
+                );
             }
             for (i, s) in pipeline["pipeline"]["stages"]
                 .as_array()
@@ -178,7 +185,9 @@ pub fn run(client: &Client, cmd: PluginCommand, json_out: bool) -> anyhow::Resul
         PluginCommand::Validate { dir } => {
             let report = validate_plugin_dir(&dir);
             if json_out {
-                pretty(&json!({ "ok": report.ok(), "id": report.id, "errors": report.errors, "warnings": report.warnings }))?;
+                pretty(
+                    &json!({ "ok": report.ok(), "id": report.id, "errors": report.errors, "warnings": report.warnings }),
+                )?;
             } else {
                 for w in &report.warnings {
                     println!("warning: {w}");

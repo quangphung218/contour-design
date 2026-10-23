@@ -14,6 +14,18 @@ cargo run -p od-cli --bin od -- run cancel <run-id>
 ```
 
 `od run watch <run-id> [--after N]` in event của run dạng NDJSON (`{id, event, data}`), thoát 0 khi run `succeeded`.
+
+```bash
+cargo run -p od-cli --bin od -- media generate --project <id> --surface image --model gpt-image-1 --prompt "…" [--no-wait]
+cargo run -p od-cli --bin od -- media wait|cancel <task-id>      # media tasks [--project], models, templates
+cargo run -p od-cli --bin od -- plugin list|info|atoms
+cargo run -p od-cli --bin od -- plugin apply <id> -i key=value [--grant-caps mcp,fs:read]   # thiếu capability: exit 66
+cargo run -p od-cli --bin od -- plugin validate <thư-mục-plugin>
+cargo run -p od-cli --bin od -- export <project-id> deck.html --format pptx-editable
+```
+
+Media chạy qua hàng đợi (`OD_MEDIA_CONCURRENCY`, mặc định 2): task `queued` được chạy lại sau restart, task đang `running` thành `interrupted` (không gọi provider lần hai).
+Design system mới: Home → "New design system…" (hoặc `POST /api/design-systems/generate`), agent viết `DESIGN.md` + `tokens.css`, package lưu ở `<OD_DATA_DIR>/design-systems/<id>` và hiện là `user:<id>`.
 Quyền agent: mặc định tự duyệt; ghi `{"agent_permission_mode": "ask"}` vào `<OD_DATA_DIR>/app-config.json` để siết lại.
 
 Biến môi trường: `OD_DATA_DIR` (dữ liệu), `OD_RESOURCE_ROOT` (thư mục `content/`), `OD_PORT`, `OD_HOST`,

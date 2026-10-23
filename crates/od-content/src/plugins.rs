@@ -403,10 +403,7 @@ impl PluginEntry {
                 .filter_map(|s| s.id.clone())
                 .collect(),
             design_system_id: self.context.design_system.clone(),
-            pipeline: self
-                .pipeline
-                .as_ref()
-                .and_then(|p| Pipeline::parse(p).ok()),
+            pipeline: self.pipeline.as_ref().and_then(|p| Pipeline::parse(p).ok()),
             prompt_block: String::new(),
         };
         applied.prompt_block = render_block(&applied, &self.body);

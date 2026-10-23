@@ -68,7 +68,11 @@ fn print_task(task: &Value, json_out: bool) -> anyhow::Result<()> {
     }
     let id = task["id"].as_str().unwrap_or("");
     let status = task["status"].as_str().unwrap_or("");
-    match (status, task["result"]["name"].as_str(), task["error"].as_str()) {
+    match (
+        status,
+        task["result"]["name"].as_str(),
+        task["error"].as_str(),
+    ) {
         ("done", Some(name), _) => println!("{id}\t{status}\t{name}"),
         (_, _, Some(err)) => println!("{id}\t{status}\t{err}"),
         _ => println!("{id}\t{status}"),
@@ -81,7 +85,11 @@ fn wait(client: &Client, id: &str, timeout: Duration) -> anyhow::Result<Value> {
     let started = Instant::now();
     loop {
         let left = timeout.saturating_sub(started.elapsed());
-        let step = left.min(Duration::from_secs(25)).as_millis().max(1).to_string();
+        let step = left
+            .min(Duration::from_secs(25))
+            .as_millis()
+            .max(1)
+            .to_string();
         let res: Value =
             client.get_json_query(&["api", "media", "tasks", id], &[("waitMs", step.as_str())])?;
         let task = res["task"].clone();
@@ -152,7 +160,8 @@ pub fn run(client: &Client, cmd: MediaCommand, json_out: bool) -> anyhow::Result
             Ok(())
         }
         MediaCommand::Cancel { task } => {
-            let res: Value = client.send_empty("POST", &["api", "media", "tasks", &task, "cancel"])?;
+            let res: Value =
+                client.send_empty("POST", &["api", "media", "tasks", &task, "cancel"])?;
             print_task(&res["task"], json_out)
         }
         MediaCommand::Models => {
@@ -162,7 +171,11 @@ pub fn run(client: &Client, cmd: MediaCommand, json_out: bool) -> anyhow::Result
                 return Ok(());
             }
             for p in res["providers"].as_array().into_iter().flatten() {
-                let state = if p["configured"] == true { "key set" } else { "no key" };
+                let state = if p["configured"] == true {
+                    "key set"
+                } else {
+                    "no key"
+                };
                 println!("provider\t{}\t{state}", p["id"].as_str().unwrap_or(""));
             }
             for m in res["models"].as_array().into_iter().flatten() {

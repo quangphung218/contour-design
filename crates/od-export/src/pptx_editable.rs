@@ -404,7 +404,11 @@ pub fn decode_data_image(src: &str) -> Option<(&'static str, Vec<u8>)> {
     if !meta.ends_with(";base64") {
         return None;
     }
-    let ext = match meta.trim_end_matches(";base64").to_ascii_lowercase().as_str() {
+    let ext = match meta
+        .trim_end_matches(";base64")
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "image/png" => "png",
         "image/jpeg" | "image/jpg" => "jpeg",
         "image/gif" => "gif",
@@ -477,7 +481,12 @@ fn slide_xml(layout: &SlideLayout, scale: Scale, slide_no: usize) -> (String, Ve
         .background
         .as_deref()
         .and_then(parse_color)
-        .map(|c| format!("<p:bg><p:bgPr>{}<a:effectLst/></p:bgPr></p:bg>", solid_fill(c)))
+        .map(|c| {
+            format!(
+                "<p:bg><p:bgPr>{}<a:effectLst/></p:bgPr></p:bg>",
+                solid_fill(c)
+            )
+        })
         .unwrap_or_default();
     let xml = format!(
         r#"{XML_DECL}<p:sld {NS}><p:cSld>{bg}<p:spTree>{EMPTY_TREE}{tree}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"#
@@ -572,13 +581,25 @@ pub fn layouts_to_pptx(layouts: &[SlideLayout], title: &str) -> Result<Vec<u8>, 
         r#"{XML_DECL}<p:presentation {NS} saveSubsetFonts="1"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>"#
     );
     let mut pres_rels: Vec<(String, String, String)> = vec![
-        ("rId1".into(), format!("{R_DOC}/slideMaster"), "slideMasters/slideMaster1.xml".into()),
-        ("rId2".into(), format!("{R_DOC}/theme"), "theme/theme1.xml".into()),
+        (
+            "rId1".into(),
+            format!("{R_DOC}/slideMaster"),
+            "slideMasters/slideMaster1.xml".into(),
+        ),
+        (
+            "rId2".into(),
+            format!("{R_DOC}/theme"),
+            "theme/theme1.xml".into(),
+        ),
     ];
     for i in 1..=n {
         let rid = format!("rId{}", i + 2);
         let _ = write!(presentation, r#"<p:sldId id="{}" r:id="{rid}"/>"#, 255 + i);
-        pres_rels.push((rid, format!("{R_DOC}/slide"), format!("slides/slide{i}.xml")));
+        pres_rels.push((
+            rid,
+            format!("{R_DOC}/slide"),
+            format!("slides/slide{i}.xml"),
+        ));
     }
     let _ = write!(
         presentation,
@@ -589,7 +610,11 @@ pub fn layouts_to_pptx(layouts: &[SlideLayout], title: &str) -> Result<Vec<u8>, 
         .iter()
         .map(|(id, k, t)| (id.as_str(), k.clone(), t.clone()))
         .collect();
-    put("ppt/_rels/presentation.xml.rels", rels(&pres_rels).as_bytes(), opts)?;
+    put(
+        "ppt/_rels/presentation.xml.rels",
+        rels(&pres_rels).as_bytes(),
+        opts,
+    )?;
     put(
         "ppt/slideMasters/slideMaster1.xml",
         format!(
@@ -601,8 +626,16 @@ pub fn layouts_to_pptx(layouts: &[SlideLayout], title: &str) -> Result<Vec<u8>, 
     put(
         "ppt/slideMasters/_rels/slideMaster1.xml.rels",
         rels(&[
-            ("rId1", format!("{R_DOC}/slideLayout"), "../slideLayouts/slideLayout1.xml".into()),
-            ("rId2", format!("{R_DOC}/theme"), "../theme/theme1.xml".into()),
+            (
+                "rId1",
+                format!("{R_DOC}/slideLayout"),
+                "../slideLayouts/slideLayout1.xml".into(),
+            ),
+            (
+                "rId2",
+                format!("{R_DOC}/theme"),
+                "../theme/theme1.xml".into(),
+            ),
         ])
         .as_bytes(),
         opts,
@@ -646,12 +679,15 @@ pub fn layouts_to_pptx(layouts: &[SlideLayout], title: &str) -> Result<Vec<u8>, 
             .iter()
             .map(|(id, k, t)| (id.as_str(), k.clone(), t.clone()))
             .collect();
-        put(&format!("ppt/slides/_rels/slide{i}.xml.rels"), rels(&entries).as_bytes(), opts)?;
+        put(
+            &format!("ppt/slides/_rels/slide{i}.xml.rels"),
+            rels(&entries).as_bytes(),
+            opts,
+        )?;
         for m in media {
             put(&format!("ppt/media/{}", m.name), &m.bytes, stored)?;
         }
     }
-    drop(put);
     Ok(zip.finish()?.into_inner())
 }
 
@@ -676,7 +712,10 @@ mod tests {
         assert!(parse_color("rgba(0, 0, 0, 0)").is_none());
         assert!(parse_color("transparent").is_none());
         assert!(parse_color("#12").is_none());
-        assert_eq!(solid_fill(parse_color("rgba(16,32,48,0.25)").unwrap()), r#"<a:solidFill><a:srgbClr val="102030"><a:alpha val="25000"/></a:srgbClr></a:solidFill>"#);
+        assert_eq!(
+            solid_fill(parse_color("rgba(16,32,48,0.25)").unwrap()),
+            r#"<a:solidFill><a:srgbClr val="102030"><a:alpha val="25000"/></a:srgbClr></a:solidFill>"#
+        );
     }
 
     #[test]
@@ -697,13 +736,23 @@ mod tests {
         }]);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].runs.len(), 1);
-        assert_eq!(out[1].runs.iter().map(|r| r.text.as_str()).collect::<String>(), "two three");
+        assert_eq!(
+            out[1]
+                .runs
+                .iter()
+                .map(|r| r.text.as_str())
+                .collect::<String>(),
+            "two three"
+        );
         assert!(out[1].runs.iter().all(|r| r.bold));
     }
 
     #[test]
     fn data_images() {
-        assert_eq!(decode_data_image("data:image/png;base64,AAEC").unwrap(), ("png", vec![0, 1, 2]));
+        assert_eq!(
+            decode_data_image("data:image/png;base64,AAEC").unwrap(),
+            ("png", vec![0, 1, 2])
+        );
         assert!(decode_data_image("data:image/svg+xml;base64,AAEC").is_none());
         assert!(decode_data_image("data:image/png,raw").is_none());
         assert!(decode_data_image("https://x/y.png").is_none());
@@ -711,13 +760,19 @@ mod tests {
 
     #[test]
     fn rejects_empty_and_sizeless() {
-        assert!(matches!(layouts_to_pptx(&[], "x"), Err(EditableError::Empty)));
+        assert!(matches!(
+            layouts_to_pptx(&[], "x"),
+            Err(EditableError::Empty)
+        ));
         let bad = SlideLayout {
             width: 0.0,
             height: 10.0,
             background: None,
             elements: vec![],
         };
-        assert!(matches!(layouts_to_pptx(&[bad], "x"), Err(EditableError::BadSize(1))));
+        assert!(matches!(
+            layouts_to_pptx(&[bad], "x"),
+            Err(EditableError::BadSize(1))
+        ));
     }
 }

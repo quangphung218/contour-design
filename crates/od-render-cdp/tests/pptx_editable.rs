@@ -14,7 +14,8 @@ use od_export::{RenderTarget, Renderer};
 use od_render_cdp::{CdpRenderer, find_chrome};
 
 fn deck() -> String {
-    let png = base64::engine::general_purpose::STANDARD.encode(solid_png(4, 4, [10, 120, 200]).unwrap());
+    let png =
+        base64::engine::general_purpose::STANDARD.encode(solid_png(4, 4, [10, 120, 200]).unwrap());
     format!(
         r##"<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{{margin:0;background:#101010}}
@@ -66,16 +67,26 @@ async fn chrome_measures_slides_into_native_objects() {
     assert_eq!((s1.width, s1.height), (1920.0, 1080.0));
     assert_eq!(s1.background.as_deref(), Some("rgb(246, 239, 226)"));
     let t1 = texts(&s1.elements);
-    assert_eq!(t1, ["HELLO TEA", "Fresh leaves, daily"], "{:#?}", s1.elements);
+    assert_eq!(
+        t1,
+        ["HELLO TEA", "Fresh leaves, daily"],
+        "{:#?}",
+        s1.elements
+    );
     let card = s1
         .elements
         .iter()
         .find_map(|e| match e {
-            Element::Shape { rect, fill, radius, .. } => Some((*rect, fill.clone(), *radius)),
+            Element::Shape {
+                rect, fill, radius, ..
+            } => Some((*rect, fill.clone(), *radius)),
             _ => None,
         })
         .unwrap();
-    assert_eq!((card.0.x, card.0.y, card.0.w, card.0.h), (100.0, 300.0, 700.0, 300.0));
+    assert_eq!(
+        (card.0.x, card.0.y, card.0.w, card.0.h),
+        (100.0, 300.0, 700.0, 300.0)
+    );
     assert_eq!(card.1.as_deref(), Some("rgb(47, 107, 58)"));
     assert_eq!(card.2, 24.0);
     let runs = s1
@@ -90,7 +101,10 @@ async fn chrome_measures_slides_into_native_objects() {
         .unwrap();
     assert!(runs.iter().any(|r| r.text == "leaves" && r.bold));
     assert!(runs.iter().any(|r| r.text == "daily" && r.italic));
-    assert!(runs.iter().all(|r| r.color.as_deref() == Some("rgb(255, 255, 255)")));
+    assert!(
+        runs.iter()
+            .all(|r| r.color.as_deref() == Some("rgb(255, 255, 255)"))
+    );
 
     let s2 = &layouts[1];
     let images: Vec<&str> = s2
@@ -102,7 +116,11 @@ async fn chrome_measures_slides_into_native_objects() {
         })
         .collect();
     assert_eq!(images.len(), 2, "img + svg: {:#?}", s2.elements);
-    assert!(images.iter().all(|s| s.starts_with("data:image/png;base64,")));
+    assert!(
+        images
+            .iter()
+            .all(|s| s.starts_with("data:image/png;base64,"))
+    );
     assert_eq!(texts(&s2.elements), ["Line one\nLine two"]);
 
     let pptx = layouts_to_pptx(&layouts, "deck").unwrap();
@@ -115,7 +133,11 @@ async fn chrome_measures_slides_into_native_objects() {
         .count();
     assert_eq!(media, 2);
     let mut slide1 = String::new();
-    std::io::Read::read_to_string(&mut zip.by_name("ppt/slides/slide1.xml").unwrap(), &mut slide1).unwrap();
+    std::io::Read::read_to_string(
+        &mut zip.by_name("ppt/slides/slide1.xml").unwrap(),
+        &mut slide1,
+    )
+    .unwrap();
     assert!(!slide1.contains("secret notes"));
     assert!(slide1.contains("<a:t>HELLO TEA</a:t>"));
 }

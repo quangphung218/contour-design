@@ -145,7 +145,9 @@ fn next_created_at() -> i64 {
     static LAST: AtomicI64 = AtomicI64::new(0);
     let now = now_ms();
     let prev = LAST
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |last| Some(now.max(last + 1)))
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |last| {
+            Some(now.max(last + 1))
+        })
         .unwrap_or(now);
     now.max(prev + 1)
 }
@@ -360,10 +362,7 @@ mod tests {
                 let now = gate.running.fetch_add(1, Ordering::SeqCst) + 1;
                 let _running = Running(&gate.running);
                 gate.peak.fetch_max(now, Ordering::SeqCst);
-                gate.order
-                    .lock()
-                    .unwrap()
-                    .push(r.request["n"].to_string());
+                gate.order.lock().unwrap().push(r.request["n"].to_string());
                 gate.release.notified().await;
                 if r.request["fail"] == json!(true) {
                     Err("provider said no".to_owned())
@@ -468,7 +467,11 @@ mod tests {
         let stored = persist.load_all();
         assert_eq!(
             stored.iter().map(|r| r.status).collect::<Vec<_>>(),
-            [TaskStatus::Interrupted, TaskStatus::Done, TaskStatus::Canceled]
+            [
+                TaskStatus::Interrupted,
+                TaskStatus::Done,
+                TaskStatus::Canceled
+            ]
         );
     }
 

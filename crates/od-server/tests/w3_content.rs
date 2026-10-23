@@ -40,7 +40,8 @@ async fn daemon() -> Daemon {
 /// `$1`-style switches come from the brief: `no-tokens` skips tokens.css,
 /// `crash` exits 1.
 fn design_agent(d: &Daemon) {
-    let mut design = String::from("# Tea House\\n\\n> Category: Food\\n\\nWarm tea shop palette.\\n\\n");
+    let mut design =
+        String::from("# Tea House\\n\\n> Category: Food\\n\\nWarm tea shop palette.\\n\\n");
     for s in od_content::design_system_gen::SECTIONS {
         design.push_str(&format!("## {s}\\n\\nText.\\n\\n"));
     }
@@ -116,7 +117,10 @@ async fn design_system_from_a_brief_lists_next_to_bundled() {
     assert!(one.to_string().contains("Warm tea shop palette"), "{one}");
     let dir = d.data.join("design-systems/tea-house");
     assert!(dir.join("manifest.json").is_file() && dir.join("tokens.css").is_file());
-    assert!(!dir.join("notes.txt").exists(), "only package files are kept");
+    assert!(
+        !dir.join("notes.txt").exists(),
+        "only package files are kept"
+    );
     assert!(
         std::fs::read_dir(d.data.join("design-system-jobs"))
             .unwrap()
@@ -127,7 +131,10 @@ async fn design_system_from_a_brief_lists_next_to_bundled() {
 
     // A second one with the same name gets its own folder.
     let res: Value = d
-        .post("/api/design-systems/generate", &json!({"name": "Tea House", "brief": "Again."}))
+        .post(
+            "/api/design-systems/generate",
+            &json!({"name": "Tea House", "brief": "Again."}),
+        )
         .await
         .json()
         .await
@@ -144,7 +151,10 @@ async fn design_system_generation_failures() {
     design_agent(&d);
     for (brief, why) in [("no-tokens please", "tokens.css"), ("crash now", "failed")] {
         let res: Value = d
-            .post("/api/design-systems/generate", &json!({"name": "Broken", "brief": brief}))
+            .post(
+                "/api/design-systems/generate",
+                &json!({"name": "Broken", "brief": brief}),
+            )
             .await
             .json()
             .await
@@ -155,14 +165,23 @@ async fn design_system_generation_failures() {
     }
     assert!(!d.data.join("design-systems/broken").exists());
     let res = d
-        .post("/api/design-systems/generate", &json!({"name": " ", "brief": "x"}))
+        .post(
+            "/api/design-systems/generate",
+            &json!({"name": " ", "brief": "x"}),
+        )
         .await;
     assert_eq!(res.status(), 400);
     let res = d
-        .post("/api/design-systems/generate", &json!({"name": "A", "brief": "x", "agentId": "nope"}))
+        .post(
+            "/api/design-systems/generate",
+            &json!({"name": "A", "brief": "x", "agentId": "nope"}),
+        )
         .await;
     assert_eq!(res.status(), 400);
-    assert_eq!(d.get_json("/api/design-systems/jobs/nope").await["error"]["code"], "NOT_FOUND");
+    assert_eq!(
+        d.get_json("/api/design-systems/jobs/nope").await["error"]["code"],
+        "NOT_FOUND"
+    );
 }
 
 #[tokio::test]
@@ -189,7 +208,9 @@ async fn atoms_and_plugin_pipelines() {
         .unwrap();
     let block = applied["appliedPlugin"]["promptBlock"].as_str().unwrap();
     assert!(block.contains("## Plugin pipeline"), "{block}");
-    assert!(block.contains("4. **critique**: `critique-theater` (repeat until `critique.score>=4 || iterations>=3`)"));
+    assert!(block.contains(
+        "4. **critique**: `critique-theater` (repeat until `critique.score>=4 || iterations>=3`)"
+    ));
     let missing = d.get_json("/api/plugins/nope/pipeline").await;
     assert_eq!(missing["error"]["code"], "NOT_FOUND");
 }
@@ -202,7 +223,11 @@ async fn atoms_and_plugin_pipelines() {
 struct FakeLayouts;
 
 impl Renderer for FakeLayouts {
-    fn render_slides<'a>(&'a self, _: &'a RenderTarget, _: DeckMode) -> BoxFuture<'a, RenderResult<Slides>> {
+    fn render_slides<'a>(
+        &'a self,
+        _: &'a RenderTarget,
+        _: DeckMode,
+    ) -> BoxFuture<'a, RenderResult<Slides>> {
         Box::pin(async { Err(RenderError::Unsupported("slides")) })
     }
     fn render_frames<'a>(
@@ -213,22 +238,42 @@ impl Renderer for FakeLayouts {
     ) -> BoxFuture<'a, RenderResult<FrameSet>> {
         Box::pin(async { Err(RenderError::Unsupported("frames")) })
     }
-    fn print_pdf<'a>(&'a self, _: &'a RenderTarget, _: DeckMode) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
+    fn print_pdf<'a>(
+        &'a self,
+        _: &'a RenderTarget,
+        _: DeckMode,
+    ) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
         Box::pin(async { Err(RenderError::Unsupported("pdf")) })
     }
-    fn capture_page<'a>(&'a self, _: &'a RenderTarget, _: CaptureOptions) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
+    fn capture_page<'a>(
+        &'a self,
+        _: &'a RenderTarget,
+        _: CaptureOptions,
+    ) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
         Box::pin(async { Err(RenderError::Unsupported("capture")) })
     }
-    fn extract_layouts<'a>(&'a self, target: &'a RenderTarget) -> BoxFuture<'a, RenderResult<Vec<SlideLayout>>> {
+    fn extract_layouts<'a>(
+        &'a self,
+        target: &'a RenderTarget,
+    ) -> BoxFuture<'a, RenderResult<Vec<SlideLayout>>> {
         Box::pin(async move {
             // The renderer gets the bundled copy, not the project file.
-            assert!(std::fs::read_to_string(&target.html_path).unwrap().contains("Deck"));
+            assert!(
+                std::fs::read_to_string(&target.html_path)
+                    .unwrap()
+                    .contains("Deck")
+            );
             let slide = |t: &str| SlideLayout {
                 width: 1920.0,
                 height: 1080.0,
                 background: Some("#ffffff".into()),
                 elements: vec![Element::Text {
-                    rect: Rect { x: 10.0, y: 10.0, w: 500.0, h: 100.0 },
+                    rect: Rect {
+                        x: 10.0,
+                        y: 10.0,
+                        w: 500.0,
+                        h: 100.0,
+                    },
                     paragraphs: vec![Paragraph {
                         align: None,
                         line_height: None,
@@ -308,32 +353,91 @@ async fn media_tasks_queue_cancel_and_restore() {
     .unwrap();
     let (project, _) = d.project().await;
     let base = serve(&d, deps(Arc::new(FakeLayouts), 1)).await;
-    let submit = |prompt: &str, output: &str| {
-        json!({"surface": "image", "model": "gpt-image-1", "prompt": prompt, "output": output})
-    };
+    let submit = |prompt: &str, output: &str| json!({"surface": "image", "model": "gpt-image-1", "prompt": prompt, "output": output});
 
-    let (s, bad) = call(&d, "POST", &format!("{base}/api/projects/{project}/media/tasks"), Some(json!({"surface": "image"}))).await;
+    let (s, bad) = call(
+        &d,
+        "POST",
+        &format!("{base}/api/projects/{project}/media/tasks"),
+        Some(json!({"surface": "image"})),
+    )
+    .await;
     assert_eq!(s, 400, "{bad}");
-    let (s, _) = call(&d, "POST", &format!("{base}/api/projects/{project}/media/tasks"), Some(submit("x", "a"))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("{base}/api/projects/{project}/media/tasks"),
+        Some(submit("x", "a")),
+    )
+    .await;
     assert_eq!(s, 202);
-    let (s, _) = call(&d, "POST", &format!("{base}/api/projects/nope/media/tasks"), Some(submit("x", "a"))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("{base}/api/projects/nope/media/tasks"),
+        Some(submit("x", "a")),
+    )
+    .await;
     assert_eq!(s, 404);
 
     // One slot: the slow task runs, the next waits and is canceled.
-    let (_, slow) = call(&d, "POST", &format!("{base}/api/projects/{project}/media/tasks"), Some(submit("slow red", "slow"))).await;
-    let (_, queued) = call(&d, "POST", &format!("{base}/api/projects/{project}/media/tasks"), Some(submit("quick", "quick"))).await;
+    let (_, slow) = call(
+        &d,
+        "POST",
+        &format!("{base}/api/projects/{project}/media/tasks"),
+        Some(submit("slow red", "slow")),
+    )
+    .await;
+    let (_, queued) = call(
+        &d,
+        "POST",
+        &format!("{base}/api/projects/{project}/media/tasks"),
+        Some(submit("quick", "quick")),
+    )
+    .await;
     let slow_id = slow["task"]["id"].as_str().unwrap();
     let queued_id = queued["task"]["id"].as_str().unwrap();
-    let (_, c) = call(&d, "POST", &format!("{base}/api/media/tasks/{queued_id}/cancel"), None).await;
+    let (_, c) = call(
+        &d,
+        "POST",
+        &format!("{base}/api/media/tasks/{queued_id}/cancel"),
+        None,
+    )
+    .await;
     assert_eq!(c["task"]["status"], "canceled");
-    let (_, done) = call(&d, "GET", &format!("{base}/api/media/tasks/{slow_id}?waitMs=5000"), None).await;
+    let (_, done) = call(
+        &d,
+        "GET",
+        &format!("{base}/api/media/tasks/{slow_id}?waitMs=5000"),
+        None,
+    )
+    .await;
     assert_eq!(done["task"]["status"], "done", "{done}");
     assert_eq!(done["task"]["result"]["name"], "slow.png");
-    let dir = d.state.store.project_root(&d.state.store.get_project(&project).unwrap()).unwrap().dir;
+    let dir = d
+        .state
+        .store
+        .project_root(&d.state.store.get_project(&project).unwrap())
+        .unwrap()
+        .dir;
     assert!(dir.join("slow.png").is_file());
-    assert!(!dir.join("quick.png").exists(), "the canceled task never ran");
-    let (_, list) = call(&d, "GET", &format!("{base}/api/media/tasks?projectId={project}"), None).await;
-    let statuses: Vec<&str> = list["tasks"].as_array().unwrap().iter().map(|t| t["status"].as_str().unwrap()).collect();
+    assert!(
+        !dir.join("quick.png").exists(),
+        "the canceled task never ran"
+    );
+    let (_, list) = call(
+        &d,
+        "GET",
+        &format!("{base}/api/media/tasks?projectId={project}"),
+        None,
+    )
+    .await;
+    let statuses: Vec<&str> = list["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["status"].as_str().unwrap())
+        .collect();
     assert_eq!(statuses, ["done", "done", "canceled"]);
     let (s, _) = call(&d, "GET", &format!("{base}/api/media/tasks/nope"), None).await;
     assert_eq!(s, 404);
@@ -354,12 +458,27 @@ async fn media_tasks_queue_cancel_and_restore() {
     persist.save(&left("t-queued", TaskStatus::Queued, "restored"));
     persist.save(&left("t-running", TaskStatus::Running, "lost"));
     let base2 = serve(&d, deps(Arc::new(FakeLayouts), 2)).await;
-    let (_, r) = call(&d, "GET", &format!("{base2}/api/media/tasks/t-queued?waitMs=5000"), None).await;
+    let (_, r) = call(
+        &d,
+        "GET",
+        &format!("{base2}/api/media/tasks/t-queued?waitMs=5000"),
+        None,
+    )
+    .await;
     assert_eq!(r["task"]["status"], "done", "{r}");
     assert!(dir.join("restored.png").is_file());
-    let (_, r) = call(&d, "GET", &format!("{base2}/api/media/tasks/t-running"), None).await;
+    let (_, r) = call(
+        &d,
+        "GET",
+        &format!("{base2}/api/media/tasks/t-running"),
+        None,
+    )
+    .await;
     assert_eq!(r["task"]["status"], "interrupted");
-    assert!(!dir.join("lost.png").exists(), "an interrupted task is not repeated");
+    assert!(
+        !dir.join("lost.png").exists(),
+        "an interrupted task is not repeated"
+    );
     let stored: Vec<(String, TaskStatus)> = persist
         .load_all()
         .into_iter()
@@ -368,7 +487,10 @@ async fn media_tasks_queue_cancel_and_restore() {
         .collect();
     assert_eq!(
         stored,
-        [("t-queued".into(), TaskStatus::Done), ("t-running".into(), TaskStatus::Interrupted)]
+        [
+            ("t-queued".into(), TaskStatus::Done),
+            ("t-running".into(), TaskStatus::Interrupted)
+        ]
     );
 }
 
@@ -378,19 +500,32 @@ async fn editable_pptx_route() {
     let (project, _) = d.project().await;
     d.state
         .store
-        .write_file(&project, "deck.html", b"<!doctype html><h1>Deck</h1>", true, None)
+        .write_file(
+            &project,
+            "deck.html",
+            b"<!doctype html><h1>Deck</h1>",
+            true,
+            None,
+        )
         .unwrap();
     let base = serve(&d, deps(Arc::new(FakeLayouts), 1)).await;
     let res = d
         .http
-        .post(format!("{base}/api/projects/{project}/export/pptx-editable"))
+        .post(format!(
+            "{base}/api/projects/{project}/export/pptx-editable"
+        ))
         .json(&json!({"fileName": "deck.html", "title": "Tea deck"}))
         .send()
         .await
         .unwrap();
     assert_eq!(res.status(), 200);
     assert_eq!(res.headers()["content-type"], od_export::pptx::PPTX_MIME);
-    assert!(res.headers()["content-disposition"].to_str().unwrap().contains("Tea deck.pptx"));
+    assert!(
+        res.headers()["content-disposition"]
+            .to_str()
+            .unwrap()
+            .contains("Tea deck.pptx")
+    );
     let bytes = res.bytes().await.unwrap();
     assert_eq!(od_export::pptx::count_slides(&bytes).unwrap(), (3, 3));
 
@@ -398,22 +533,51 @@ async fn editable_pptx_route() {
     // layouts answers 501.
     struct NoLayouts;
     impl Renderer for NoLayouts {
-        fn render_slides<'a>(&'a self, _: &'a RenderTarget, _: DeckMode) -> BoxFuture<'a, RenderResult<Slides>> {
+        fn render_slides<'a>(
+            &'a self,
+            _: &'a RenderTarget,
+            _: DeckMode,
+        ) -> BoxFuture<'a, RenderResult<Slides>> {
             Box::pin(async { Err(RenderError::Unsupported("slides")) })
         }
-        fn render_frames<'a>(&'a self, _: &'a RenderTarget, _: FrameOptions, _: &'a Path) -> BoxFuture<'a, RenderResult<FrameSet>> {
+        fn render_frames<'a>(
+            &'a self,
+            _: &'a RenderTarget,
+            _: FrameOptions,
+            _: &'a Path,
+        ) -> BoxFuture<'a, RenderResult<FrameSet>> {
             Box::pin(async { Err(RenderError::Unsupported("frames")) })
         }
-        fn print_pdf<'a>(&'a self, _: &'a RenderTarget, _: DeckMode) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
+        fn print_pdf<'a>(
+            &'a self,
+            _: &'a RenderTarget,
+            _: DeckMode,
+        ) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
             Box::pin(async { Err(RenderError::Unsupported("pdf")) })
         }
-        fn capture_page<'a>(&'a self, _: &'a RenderTarget, _: CaptureOptions) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
+        fn capture_page<'a>(
+            &'a self,
+            _: &'a RenderTarget,
+            _: CaptureOptions,
+        ) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
             Box::pin(async { Err(RenderError::Unsupported("capture")) })
         }
     }
     let base = serve(&d, deps(Arc::new(NoLayouts), 1)).await;
-    let (s, v) = call(&d, "POST", &format!("{base}/api/projects/{project}/export/pptx-editable"), Some(json!({"fileName": "deck.html"}))).await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        &format!("{base}/api/projects/{project}/export/pptx-editable"),
+        Some(json!({"fileName": "deck.html"})),
+    )
+    .await;
     assert_eq!(s, 501, "{v}");
-    let (s, _) = call(&d, "POST", &format!("{base}/api/projects/{project}/export/pptx-editable"), Some(json!({"fileName": "missing.html"}))).await;
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("{base}/api/projects/{project}/export/pptx-editable"),
+        Some(json!({"fileName": "missing.html"})),
+    )
+    .await;
     assert_eq!(s, 404);
 }
