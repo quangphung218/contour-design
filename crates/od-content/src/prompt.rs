@@ -193,6 +193,9 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
             ));
         }
     }
+    if let Some(block) = metadata.and_then(metadata_block) {
+        p.push(block);
+    }
     if let Some(block) = memory_block(input.memory) {
         p.push(block);
     }
@@ -282,6 +285,66 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     // 14. Comment identity.
     p.push(format!("{SEP}{COMMENT_IDENTITY_EDIT_DIRECTIVE}"));
     p.concat()
+}
+
+/// New-project panel fields that make the metadata block worth writing.
+const PANEL_FIELDS: [&str; 11] = [
+    "platformTargets",
+    "includeLandingPage",
+    "includeOsWidgets",
+    "speakerNotes",
+    "animations",
+    "templateLabel",
+    "imageAspect",
+    "videoAspect",
+    "videoLength",
+    "audioKind",
+    "audioDuration",
+];
+
+/// `## Project metadata`: the structured choices of the new-project panel
+/// (the original's facts style). `None` for projects made without it.
+fn metadata_block(m: &ProjectMetadata) -> Option<String> {
+    let extra = |k: &str| m.extra.get(k).filter(|v| !v.is_null());
+    let from_panel = m.fidelity.is_some()
+        || m.intent.as_deref() == Some("live-artifact")
+        || PANEL_FIELDS.iter().any(|k| extra(k).is_some());
+    if !from_panel {
+        return None;
+    }
+    let text = |v: &serde_json::Value| match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(|i| i.as_str().map_or_else(|| i.to_string(), str::to_owned))
+            .collect::<Vec<_>>()
+            .join(", "),
+        other => other.to_string(),
+    };
+    let mut lines = vec![
+        "\n\n## Project metadata".to_owned(),
+        "Structured choices from project creation. Known fields are authoritative. Missing fields are unresolved facts, not mandatory questions; infer reasonable defaults and clarify only material blockers.".to_owned(),
+        String::new(),
+    ];
+    if let Some(kind) = m.kind {
+        let kind = serde_json::to_value(kind).ok().map(|v| text(&v)).unwrap_or_default();
+        lines.push(format!("- **kind**: {kind}"));
+    }
+    if let Some(p) = &m.platform {
+        lines.push(format!("- **platform**: {p}"));
+    }
+    for key in PANEL_FIELDS {
+        if let Some(v) = extra(key) {
+            lines.push(format!("- **{key}**: {}", text(v)));
+        }
+    }
+    if let Some(f) = &m.fidelity {
+        lines.push(format!("- **fidelity**: {f}"));
+    }
+    if m.intent.as_deref() == Some("live-artifact") {
+        lines.push("- **intent**: live-artifact — the first output should be a live artifact (dashboard or report that refreshes), not a one-off static mockup.".to_owned());
+    }
+    Some(lines.join("\n"))
 }
 
 /// `## Project memory`: one bullet per remembered fact.
@@ -546,6 +609,38 @@ mod tests {
         assert!(out.contains("slide: 2\n"));
         assert!(out.contains("currentText: Hello\nhtmlHint: (none)\ncomment: Make it red\n"));
         assert!(out.ends_with("</attached-preview-comments>"));
+    }
+
+    #[test]
+    fn panel_metadata_becomes_facts_only_when_the_panel_set_it() {
+        let plain = ProjectMetadata {
+            kind: Some(ProjectKind::Deck),
+            ..ProjectMetadata::default()
+        };
+        assert_eq!(metadata_block(&plain), None);
+        let mut deck = plain.clone();
+        deck.extra.insert("speakerNotes".into(), serde_json::json!(true));
+        let block = metadata_block(&deck).unwrap_or_default();
+        assert!(block.contains("## Project metadata"));
+        assert!(block.contains("- **kind**: deck"));
+        assert!(block.contains("- **speakerNotes**: true"));
+        let mut proto = ProjectMetadata {
+            kind: Some(ProjectKind::Prototype),
+            fidelity: Some("wireframe".into()),
+            platform: Some("mobile-ios".into()),
+            ..ProjectMetadata::default()
+        };
+        proto
+            .extra
+            .insert("platformTargets".into(), serde_json::json!(["mobile-ios", "tablet"]));
+        let block = metadata_block(&proto).unwrap_or_default();
+        assert!(block.contains("- **fidelity**: wireframe"));
+        assert!(block.contains("- **platformTargets**: mobile-ios, tablet"));
+        let text = compose_instructions(&PromptInput {
+            metadata: Some(&proto),
+            ..PromptInput::default()
+        });
+        assert!(text.contains("## Project metadata"));
     }
 
     fn pos(haystack: &str, needle: &str) -> usize {

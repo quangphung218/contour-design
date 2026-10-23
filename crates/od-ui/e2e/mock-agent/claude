@@ -27,6 +27,15 @@ done
 
 IFS= read -r line
 
+# Settings / onboarding connection test: answer "ok", write nothing.
+case "$line" in *"Reply with only: ok"*)
+  printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+  printf '{"type":"assistant","message":{"id":"smoke-%s","role":"assistant","content":[{"type":"text","text":"ok"}]}}\n' "$$"
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null
+  exit 0
+;; esac
+
 # Design system generation (spec 1.4): write the two package files in the
 # staging folder (cwd) and stop.
 case "$line" in *"# Design system brief"*)

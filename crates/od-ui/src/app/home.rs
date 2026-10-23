@@ -4,20 +4,16 @@
 use super::ds_create::NewDesignSystem;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
-use super::projects::ProjectCard;
 use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::{Chip, HomeIntent, templates_for};
 use leptos::prelude::*;
-use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use od_contracts::{
     CreateProjectResponse, DesignSystemSummary, DesignSystemsResponse, DesignTemplatesResponse,
-    Platform, ProjectsResponse, SkillSummary, SkillsResponse,
+    Platform, SkillSummary, SkillsResponse,
 };
 
-/// How many recent projects Home lists.
-const RECENT: usize = 6;
 /// Templates shown before "Show all".
 const GALLERY: usize = 8;
 
@@ -50,15 +46,6 @@ pub fn Home() -> impl IntoView {
             .await
             .map(|r| r.design_systems)
             .unwrap_or_default()
-    });
-    let recent = LocalResource::new(|| async {
-        let mut list = api::get::<ProjectsResponse>("/api/projects")
-            .await
-            .map(|r| r.projects)
-            .unwrap_or_default();
-        list.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        list.truncate(RECENT);
-        list
     });
 
     let chip_templates = Signal::derive(move || -> Option<Vec<SkillSummary>> {
@@ -238,35 +225,7 @@ pub fn Home() -> impl IntoView {
 
                 <Gallery templates=chip_templates selected=template pick=pick_template/>
 
-                <section class="home-section">
-                    <div class="section-head">
-                        <h2>{t(T::RecentProjects)}</h2>
-                        <A href="/projects" attr:class="btn ghost small">
-                            {t(T::AllProjects)}
-                            {icon(Glyph::ChevronRight)}
-                        </A>
-                    </div>
-                    <div class="project-grid">
-                        {move || match recent.get() {
-                            None => (0..3)
-                                .map(|_| view! { <div class="skeleton card-skeleton"></div> })
-                                .collect_view()
-                                .into_any(),
-                            Some(list) if list.is_empty() => view! {
-                                <div class="empty-state compact">
-                                    <span class="empty-icon">{icon(Glyph::Projects)}</span>
-                                    <p>{t(T::NoProjectsFirstBrief)}</p>
-                                </div>
-                            }
-                                .into_any(),
-                            Some(list) => list
-                                .into_iter()
-                                .map(|p| view! { <ProjectCard project=p/> })
-                                .collect_view()
-                                .into_any(),
-                        }}
-                    </div>
-                </section>
+                <super::projects::RecentStrip/>
             </div>
         </section>
     }
