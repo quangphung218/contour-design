@@ -51,10 +51,12 @@ impl ListOptions<'_> {
 }
 
 /// Lists every package folder with a `DESIGN.md`, sorted by folder name.
+/// Hidden folders (an install in progress) are not packages.
 #[must_use]
 pub fn list_design_systems(root: &Path, opts: ListOptions<'_>) -> Vec<DesignSystemEntry> {
     sorted_dir_entries(root)
         .par_iter()
+        .filter(|(name, _)| !name.starts_with('.'))
         .filter_map(|(name, dir)| load_one(name, dir, opts))
         .collect()
 }
