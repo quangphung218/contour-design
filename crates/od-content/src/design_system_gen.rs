@@ -4,7 +4,7 @@
 //! and moves the package into the user root (`<data>/design-systems`),
 //! where the index lists it as `user:<id>` next to the bundled ones.
 
-use crate::design_systems::{USER_ID_PREFIX, is_valid_id};
+use crate::design_systems::{USER_ID_PREFIX, is_valid_id, read_package_file};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -250,24 +250,37 @@ fn defines(css: &str, token: &str) -> bool {
     })
 }
 
+/// A non-empty file the agent wrote in `staging`; one that links out of it
+/// counts as missing.
+fn staged(staging: &Path, name: &'static str) -> Result<String, GenError> {
+    read_package_file(staging, name)
+        .filter(|t| !t.trim().is_empty())
+        .ok_or(GenError::Missing(name))
+}
+
+/// The package files read from `staging`, once: what was checked is what
+/// gets installed.
+struct Staged {
+    design: String,
+    tokens: String,
+}
+
 /// Checks the agent's files in `staging`.
 ///
 /// # Errors
 /// [`GenError::Missing`], [`GenError::TooFewSections`],
 /// [`GenError::MissingTokens`].
 pub fn check_staging(staging: &Path) -> Result<(), GenError> {
-    let design = std::fs::read_to_string(staging.join("DESIGN.md"))
-        .ok()
-        .filter(|d| !d.trim().is_empty())
-        .ok_or(GenError::Missing("DESIGN.md"))?;
+    read_checked(staging).map(|_| ())
+}
+
+fn read_checked(staging: &Path) -> Result<Staged, GenError> {
+    let design = staged(staging, "DESIGN.md")?;
     let found = count_h2(&design);
     if found < MIN_SECTIONS {
         return Err(GenError::TooFewSections { found });
     }
-    let tokens = std::fs::read_to_string(staging.join("tokens.css"))
-        .ok()
-        .filter(|t| !t.trim().is_empty())
-        .ok_or(GenError::Missing("tokens.css"))?;
+    let tokens = staged(staging, "tokens.css")?;
     let missing: Vec<String> = REQUIRED_TOKENS
         .iter()
         .filter(|t| !defines(&tokens, t))
@@ -276,7 +289,7 @@ pub fn check_staging(staging: &Path) -> Result<(), GenError> {
     if !missing.is_empty() {
         return Err(GenError::MissingTokens(missing));
     }
-    Ok(())
+    Ok(Staged { design, tokens })
 }
 
 /// A package [`install`] put in place.
@@ -319,13 +332,8 @@ pub fn install(
     user_root: &Path,
     req: &GenerateRequest,
 ) -> Result<Installed, GenError> {
-    check_staging(staging)?;
-    install_checked(
-        staging,
-        user_root,
-        req,
-        "generated from a brief by an agent",
-    )
+    let files = read_checked(staging)?;
+    install_checked(&files, user_root, req, "generated from a brief by an agent")
 }
 
 /// Installs a package the user brought (pasted `DESIGN.md`, imported CSS
@@ -340,14 +348,8 @@ pub fn install_imported(
     req: &GenerateRequest,
     origin: &str,
 ) -> Result<Installed, GenError> {
-    let design = std::fs::read_to_string(staging.join("DESIGN.md")).unwrap_or_default();
-    if design.trim().is_empty() {
-        return Err(GenError::Missing("DESIGN.md"));
-    }
-    let tokens = std::fs::read_to_string(staging.join("tokens.css"))
-        .ok()
-        .filter(|t| !t.trim().is_empty())
-        .ok_or(GenError::Missing("tokens.css"))?;
+    let design = staged(staging, "DESIGN.md")?;
+    let tokens = staged(staging, "tokens.css")?;
     let missing: Vec<String> = REQUIRED_TOKENS
         .iter()
         .filter(|t| !defines(&tokens, t))
@@ -356,11 +358,11 @@ pub fn install_imported(
     if !missing.is_empty() {
         return Err(GenError::MissingTokens(missing));
     }
-    install_checked(staging, user_root, req, origin)
+    install_checked(&Staged { design, tokens }, user_root, req, origin)
 }
 
 fn install_checked(
-    staging: &Path,
+    files: &Staged,
     user_root: &Path,
     req: &GenerateRequest,
     origin: &str,
@@ -376,7 +378,7 @@ fn install_checked(
         JOB.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&tmp).map_err(io)?;
-    let built = build_and_place(staging, &tmp, user_root, req, origin);
+    let built = build_and_place(files, &tmp, user_root, req, origin);
     if built.is_err() {
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -386,15 +388,14 @@ fn install_checked(
 /// Fills `tmp` and renames it to a free `<slug>` folder; when another job
 /// takes that folder first, the next free one.
 fn build_and_place(
-    staging: &Path,
+    files: &Staged,
     tmp: &Path,
     user_root: &Path,
     req: &GenerateRequest,
     origin: &str,
 ) -> Result<Installed, GenError> {
-    for file in ["DESIGN.md", "tokens.css"] {
-        std::fs::copy(staging.join(file), tmp.join(file)).map_err(io)?;
-    }
+    std::fs::write(tmp.join("DESIGN.md"), &files.design).map_err(io)?;
+    std::fs::write(tmp.join("tokens.css"), &files.tokens).map_err(io)?;
     let slug = slugify(&req.name);
     let category = req.category.clone().unwrap_or_else(|| "Custom".to_owned());
     let mut tries = 0;
@@ -546,6 +547,38 @@ mod tests {
         );
         std::fs::write(s.join("tokens.css"), TOKENS).unwrap();
         assert_eq!(check_staging(s), Ok(()));
+    }
+
+    /// The agent writes the staging folder: a `DESIGN.md` or `tokens.css`
+    /// that links out of it is missing, never read or copied in.
+    #[cfg(unix)]
+    #[test]
+    fn staging_files_never_follow_a_link_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("secret.md"), good_design("Leak")).unwrap();
+        std::fs::write(outside.join("secret.css"), TOKENS).unwrap();
+        let user = tmp.path().join("design-systems");
+        let req = GenerateRequest::new("Tea", "Warm.", None).unwrap();
+        for (file, target, real) in [
+            ("DESIGN.md", "secret.md", ("tokens.css", TOKENS.to_owned())),
+            (
+                "tokens.css",
+                "secret.css",
+                ("DESIGN.md", good_design("Tea")),
+            ),
+        ] {
+            let staging = tempfile::tempdir().unwrap();
+            let s = staging.path();
+            std::os::unix::fs::symlink(outside.join(target), s.join(file)).unwrap();
+            std::fs::write(s.join(real.0), &real.1).unwrap();
+            let missing = Err(GenError::Missing(file));
+            assert_eq!(check_staging(s), missing);
+            assert_eq!(install(s, &user, &req).map(|_| ()), missing);
+            assert_eq!(install_imported(s, &user, &req, "x").map(|_| ()), missing);
+        }
+        assert!(!user.exists());
     }
 
     /// Two jobs for the same name at once: each builds in its own folder,
