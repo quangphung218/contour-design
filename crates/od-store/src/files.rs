@@ -513,6 +513,59 @@ pub fn delete_folder(root: &ProjectRoot, path: &str) -> Result<(String, Vec<Stri
     Ok((rel, held.into_iter().map(|f| f.name).collect()))
 }
 
+/// Moves folder `from` to exactly `to` with one rename, so everything in
+/// it moves: hidden files, ignored trees, empty folders, symlinks (as
+/// links). Returns the new project path and the `(old, new)` names of the
+/// listed files it held, so their histories can follow.
+///
+/// # Errors
+/// Path errors, [`StoreError::FileNotFound`] when `from` is not a folder
+/// (a symlink is not one), [`StoreError::ReservedPath`] for hidden folders,
+/// [`StoreError::FileExists`] when `to` exists, [`StoreError::BadRequest`]
+/// for a move into itself.
+pub fn move_folder(
+    root: &ProjectRoot,
+    from: &str,
+    to: &str,
+) -> Result<(String, Vec<(String, String)>)> {
+    let from = validate_project_path(from)?;
+    let to = validate_project_path(to)?;
+    if [&from, &to]
+        .iter()
+        .any(|p| p.split('/').any(|s| s.starts_with('.')))
+    {
+        return Err(StoreError::ReservedPath);
+    }
+    let source = root.resolve(&from)?;
+    let meta = fs::symlink_metadata(root.dir.join(&from)).map_err(StoreError::from_file_io)?;
+    if !meta.is_dir() {
+        return Err(StoreError::FileNotFound);
+    }
+    let target = root.resolve(&to)?;
+    if target.starts_with(&source) {
+        return Err(StoreError::BadRequest(
+            "a folder cannot move into itself".to_owned(),
+        ));
+    }
+    if fs::symlink_metadata(&target).is_ok() {
+        return Err(StoreError::FileExists);
+    }
+    let mut held = Vec::new();
+    collect(&source, &from, &mut held)?;
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(&source, &target)?;
+    let renamed = held
+        .into_iter()
+        .map(|f| {
+            let new = format!("{to}{}", &f.name[from.len()..]);
+            (f.name, new)
+        })
+        .collect();
+    Ok((to, renamed))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

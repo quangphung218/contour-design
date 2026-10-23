@@ -436,6 +436,21 @@ impl Store {
         Ok(rel)
     }
 
+    /// Moves a folder with everything in it; the histories of its HTML
+    /// files follow. Returns the new path and how many listed files moved.
+    ///
+    /// # Errors
+    /// Project, path, conflict or I/O errors.
+    pub fn move_folder(&self, project_id: &str, from: &str, to: &str) -> Result<(String, usize)> {
+        let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
+        let (rel, renamed) = files::move_folder(&root, from, to)?;
+        for (old, new) in &renamed {
+            versions::rename_store(&root.dir, old, new)?;
+        }
+        Ok((rel, renamed.len()))
+    }
+
     /// Stores an upload; HTML uploads get a baseline version.
     ///
     /// # Errors

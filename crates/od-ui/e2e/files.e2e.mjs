@@ -13,7 +13,7 @@
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { crc32 } from 'node:zlib';
 import { join } from 'node:path';
@@ -128,6 +128,14 @@ try {
     'ppt/slides/slide2.xml': '<p:sld><a:p><a:r><a:t>Prices &amp; hours</a:t></a:r></a:p></p:sld>',
   }).toString('base64'), 'base64');
   await write('sales.json', JSON.stringify({ total: 1 }));
+  // A folder with what the files list skips: a hidden file, an ignored
+  // tree, an empty folder. Moving it must keep all of them.
+  await write('site/page.html', '<p>site</p>');
+  const projectDir = join(data, 'projects', pid);
+  writeFileSync(join(projectDir, 'site/.notes'), 'hidden');
+  mkdirSync(join(projectDir, 'site/dist'), { recursive: true });
+  writeFileSync(join(projectDir, 'site/dist/app.js'), 'go()');
+  mkdirSync(join(projectDir, 'site/empty'), { recursive: true });
   const liveRes = await fetch(`${BASE}/api/tools/live-artifacts/create`, json({
     projectId: pid,
     templateHtml: '<p>Total: {{data.total}}</p>',
@@ -220,7 +228,7 @@ try {
   await page.getByTestId('file-dialog-name').fill('refs');
   await page.getByTestId('file-dialog-confirm').click();
   await folder('refs').waitFor();
-  assert.deepEqual((await api('/folders')).folders, ['assets', 'docs', 'refs']);
+  assert.deepEqual((await api('/folders')).folders, ['assets', 'docs', 'refs', 'site', 'site/empty']);
   await rowMenu('notes.txt', 'row-rename');
   await page.getByTestId('file-dialog-name').fill('notes-2.txt');
   await page.getByTestId('file-dialog-confirm').click();
@@ -289,7 +297,20 @@ try {
   await row('index.html').waitFor();
   results.views = 'search, kind filter, breadcrumb';
 
-  // 6. Folder delete through its menu.
+  // 6. Folder move keeps every file in it, then folder delete, both
+  // through the folder menu.
+  await folder('site').hover();
+  await page.locator('.file-row', { has: folder('site') }).getByTestId('row-menu').click();
+  await page.getByTestId('row-move-folder').click();
+  await page.getByTestId('file-dialog-dest').selectOption('refs');
+  await page.getByTestId('file-dialog-confirm').click();
+  await toast.filter({ hasText: 'Moved 1 file(s) to refs' }).waitFor();
+  assert.ok(!existsSync(join(projectDir, 'site')), 'old folder gone');
+  assert.equal(readFileSync(join(projectDir, 'refs/site/page.html'), 'utf8'), '<p>site</p>');
+  assert.equal(readFileSync(join(projectDir, 'refs/site/.notes'), 'utf8'), 'hidden');
+  assert.equal(readFileSync(join(projectDir, 'refs/site/dist/app.js'), 'utf8'), 'go()');
+  assert.ok(statSync(join(projectDir, 'refs/site/empty')).isDirectory(), 'empty folder kept');
+  results.folderMove = 'hidden, ignored and empty kept';
   await folder('refs').hover();
   await page.locator('.file-row', { has: folder('refs') }).getByTestId('row-menu').click();
   await page.getByTestId('row-delete-folder').click();

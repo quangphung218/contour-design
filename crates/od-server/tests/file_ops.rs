@@ -161,6 +161,89 @@ async fn folders_are_created_listed_and_deleted_with_their_files() {
 }
 
 #[tokio::test]
+async fn a_moved_folder_keeps_everything_in_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = router(state(tmp.path()));
+    let id = project(
+        &app,
+        &[("site/index.html", "<h1>hi</h1>"), ("archive/a.md", "# A")],
+    )
+    .await;
+    // What the files list never shows: hidden files, ignored trees, empty
+    // folders, symlinks (kept as links, not followed).
+    let dir = tmp.path().join("data/projects").join(&id);
+    std::fs::write(dir.join("site/.env"), "SECRET=1").unwrap();
+    std::fs::create_dir_all(dir.join("site/dist")).unwrap();
+    std::fs::write(dir.join("site/dist/app.js"), "go()").unwrap();
+    std::fs::create_dir_all(dir.join("site/node_modules/x")).unwrap();
+    std::fs::write(dir.join("site/node_modules/x/i.js"), "x").unwrap();
+    std::fs::create_dir_all(dir.join("site/empty")).unwrap();
+    std::os::unix::fs::symlink("index.html", dir.join("site/link")).unwrap();
+
+    let (s, b) = call(
+        &app,
+        "POST",
+        &format!("/api/projects/{id}/move-folder"),
+        Some(json!({"from": "site", "to": "archive/site"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{}", String::from_utf8_lossy(&b));
+    assert_eq!(json_of(&b), json!({"folder": "archive/site", "files": 1}));
+    assert!(!dir.join("site").exists());
+    let moved = dir.join("archive/site");
+    for (path, text) in [
+        ("index.html", "<h1>hi</h1>"),
+        (".env", "SECRET=1"),
+        ("dist/app.js", "go()"),
+        ("node_modules/x/i.js", "x"),
+    ] {
+        assert_eq!(
+            std::fs::read_to_string(moved.join(path)).unwrap(),
+            text,
+            "{path}"
+        );
+    }
+    assert!(moved.join("empty").is_dir());
+    let link = std::fs::symlink_metadata(moved.join("link")).unwrap();
+    assert!(link.file_type().is_symlink());
+    // The page history moves with it.
+    let (s, b) = call(
+        &app,
+        "GET",
+        &format!("/api/projects/{id}/files/archive/site/index.html/versions"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{}", String::from_utf8_lossy(&b));
+    assert_eq!(
+        json_of(&b)["versions"].as_array().unwrap().len(),
+        1,
+        "{b:?}"
+    );
+
+    let uri = format!("/api/projects/{id}/move-folder");
+    let mv = |from: &str, to: &str| call(&app, "POST", &uri, Some(json!({"from": from, "to": to})));
+    // A taken target, a folder into itself, hidden or missing sources and
+    // escapes are refused, and nothing moves.
+    std::fs::create_dir_all(dir.join("other")).unwrap();
+    assert_eq!(mv("archive/site", "other").await.0, StatusCode::CONFLICT);
+    assert_eq!(
+        mv("archive", "archive/site/archive").await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        mv("archive/site/.env", "x").await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(mv("archive/a.md", "b.md").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(mv("nope", "x").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(mv("archive/site", "../up").await.0, StatusCode::BAD_REQUEST);
+    std::os::unix::fs::symlink("other", dir.join("alias")).unwrap();
+    assert_eq!(mv("alias", "moved-alias").await.0, StatusCode::NOT_FOUND);
+    assert!(dir.join("other").is_dir() && moved.join("dist/app.js").is_file());
+}
+
+#[tokio::test]
 async fn a_selection_zip_holds_exactly_the_chosen_files() {
     let tmp = tempfile::tempdir().unwrap();
     let app = router(state(tmp.path()));

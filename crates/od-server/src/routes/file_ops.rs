@@ -4,6 +4,7 @@
 //! - `GET/POST /api/projects/:id/folders`: list folders (empty ones too),
 //!   create one.
 //! - `DELETE /api/projects/:id/folders/*path`: a folder and its files.
+//! - `POST /api/projects/:id/move-folder {from, to}`: a folder, whole.
 //! - `POST /api/projects/:id/archive/selection`: ZIP of the chosen files.
 //! - `PUT  /api/projects/:id/content/*path`: overwrite an existing file at
 //!   exactly that path (HTML gets a manual version).
@@ -22,7 +23,8 @@ use axum::response::Response;
 use axum::routing::{delete, get, post, put};
 use od_contracts::{
     ArchiveSelectionRequest, CreateFolderRequest, FileResponse, FolderResponse, FoldersResponse,
-    OfficeSection, OfficeTextResponse, ProjectKind, SaveTemplateRequest, SaveTemplateResponse,
+    MoveFolderRequest, MoveFolderResponse, OfficeSection, OfficeTextResponse, ProjectKind,
+    SaveTemplateRequest, SaveTemplateResponse,
 };
 use od_export::archive::{sanitize_filename, write_zip};
 use serde::Deserialize;
@@ -38,6 +40,7 @@ pub fn routes() -> Router<AppState> {
             get(list_folders).post(create_folder),
         )
         .route("/api/projects/{id}/folders/{*path}", delete(delete_folder))
+        .route("/api/projects/{id}/move-folder", post(move_folder))
         .route(
             "/api/projects/{id}/archive/selection",
             post(archive_selection),
@@ -145,6 +148,19 @@ async fn delete_folder(
 ) -> ApiResult<ApiJson<FolderResponse>> {
     let folder = state.blocking(move |s| s.delete_folder(&id, &path)).await?;
     Ok(ApiJson(FolderResponse { folder }))
+}
+
+/// One rename for the whole folder: a file-by-file move would leave behind
+/// (and a delete would then lose) what the files list skips.
+async fn move_folder(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(req): ApiJson<MoveFolderRequest>,
+) -> ApiResult<ApiJson<MoveFolderResponse>> {
+    let (folder, files) = state
+        .blocking(move |s| s.move_folder(&id, &req.from, &req.to))
+        .await?;
+    Ok(ApiJson(MoveFolderResponse { folder, files }))
 }
 
 /// A ZIP of the selected files under their project paths, named after the

@@ -20,6 +20,20 @@ pub struct FolderResponse {
     pub folder: String,
 }
 
+/// `POST move-folder`: folder `from` becomes exactly `to`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveFolderRequest {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveFolderResponse {
+    pub folder: String,
+    /// Listed files that moved with it.
+    pub files: usize,
+}
+
 /// `POST archive/selection`: a ZIP of these files, paths kept.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveSelectionRequest {

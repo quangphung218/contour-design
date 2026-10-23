@@ -15,7 +15,8 @@ use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use od_contracts::{
     ArchiveSelectionRequest, CreateFolderRequest, FileKind, FileResponse, FolderResponse,
-    FoldersResponse, HandoffResponse, OkResponse, ProjectFile, UploadResponse, WriteFileRequest,
+    FoldersResponse, HandoffResponse, MoveFolderRequest, MoveFolderResponse, OkResponse,
+    ProjectFile, UploadResponse, WriteFileRequest,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -881,7 +882,7 @@ fn RowMenu(ctx: StudioCtx, ui: FilesUi, key: String) -> impl IntoView {
                         });
                     }>{icon(Glyph::Download)}{t(T::DownloadZip)}</button>
                     <button class="menu-item" role="menuitem" on:click=move |_| { close(); copy_path(ctx, ui, &d5, false); }>{icon(Glyph::Link)}{t(T::CopyPath)}</button>
-                    <button class="menu-item" role="menuitem" on:click=move |_| { close(); ui.dialog.set(Some(Dialog::Move(vec![format!("{d6}/")]))); }>{icon(Glyph::FolderMove)}{t(T::MoveTo)}</button>
+                    <button class="menu-item" role="menuitem" data-testid="row-move-folder" on:click=move |_| { close(); ui.dialog.set(Some(Dialog::Move(vec![format!("{d6}/")]))); }>{icon(Glyph::FolderMove)}{t(T::MoveTo)}</button>
                     <div class="menu-sep"></div>
                     <button class="menu-item danger" role="menuitem" data-testid="row-delete-folder" on:click=move |_| { close(); ui.dialog.set(Some(Dialog::DeleteFolder(dir.clone()))); }>{icon(Glyph::Delete)}{t(T::DeleteFolder)}</button>
                 }
@@ -926,49 +927,34 @@ fn RowMenu(ctx: StudioCtx, ui: FilesUi, key: String) -> impl IntoView {
     }
 }
 
-/// Moves `items` (files, folders ending in `/`) into folder `dest`.
+/// Moves `items` (files, folders ending in `/`) into folder `dest`. A
+/// folder moves whole on the server: what the files list skips (hidden
+/// files, `dist/`, empty folders) moves with it.
 async fn move_items(ctx: StudioCtx, items: Vec<String>, dest: String) -> Result<usize, String> {
-    let files = ctx.files.get_untracked();
     let mut moved = 0;
     for item in &items {
-        let (pairs, old_dir): (Vec<(String, String)>, Option<&str>) = match folder_of(item) {
+        match folder_of(item) {
             Some(dir) => {
-                let target = ft::join(&dest, ft::base(dir));
-                (
-                    files
-                        .iter()
-                        .filter(|f| ft::is_inside(&f.path, dir))
-                        .map(|f| (f.path.clone(), format!("{target}{}", &f.path[dir.len()..])))
-                        .collect(),
-                    Some(dir),
+                let r = api::post::<_, MoveFolderResponse>(
+                    &format!("{}/move-folder", ctx.base()),
+                    &MoveFolderRequest {
+                        from: dir.to_owned(),
+                        to: ft::join(&dest, ft::base(dir)),
+                    },
                 )
+                .await
+                .map_err(|e| e.to_string())?;
+                moved += r.files;
             }
-            None => (vec![(item.clone(), ft::join(&dest, ft::base(item)))], None),
-        };
-        for (from, to) in pairs {
-            api::post::<_, FileResponse>(
-                &format!("{}/files/rename", ctx.base()),
-                &json!({ "from": from, "to": to }),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            moved += 1;
-        }
-        if let Some(dir) = old_dir {
-            let target = ft::join(&dest, ft::base(dir));
-            // Keep empty subfolders too, then drop the old folder.
-            let _ = api::post::<_, FolderResponse>(
-                &format!("{}/folders", ctx.base()),
-                &CreateFolderRequest { path: target },
-            )
-            .await;
-            api::delete::<FolderResponse>(&format!(
-                "{}/folders/{}",
-                ctx.base(),
-                api::file_path(dir)
-            ))
-            .await
-            .map_err(|e| e.to_string())?;
+            None => {
+                api::post::<_, FileResponse>(
+                    &format!("{}/files/rename", ctx.base()),
+                    &json!({ "from": item, "to": ft::join(&dest, ft::base(item)) }),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                moved += 1;
+            }
         }
     }
     Ok(moved)
