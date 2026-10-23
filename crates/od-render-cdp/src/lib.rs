@@ -24,6 +24,7 @@ use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
 use od_export::hyperframes::{MAX_FPS, frame_count};
+use od_export::pptx_editable::SlideLayout;
 use od_export::renderer::{MAX_PAGE_HEIGHT, frame_file_name};
 use od_export::{
     CaptureOptions, DeckMode, FrameOptions, FrameSet, ImageFormat, RenderError, RenderResult,
@@ -611,6 +612,27 @@ impl CdpRenderer {
         result
     }
 
+    async fn layouts(&self, target: &RenderTarget) -> RenderResult<Vec<SlideLayout>> {
+        let mut s = self.open(target).await?;
+        let result = async {
+            let info = s.settle().await?;
+            is_deck(DeckMode::Deck, &info)?;
+            s.fit_to_slides(&info).await?;
+            let mut out = Vec::with_capacity(info.slides);
+            for i in 0..info.slides {
+                s.eval(&script::show_slide(i, s.width, s.height)).await?;
+                let raw = s.eval(od_export::pptx_editable::LAYOUT_SCRIPT).await?;
+                out.push(serde_json::from_value(raw).map_err(|e| {
+                    RenderError::Failed(format!("measuring slide {}: {e}", i + 1))
+                })?);
+            }
+            Ok(out)
+        }
+        .await;
+        s.close().await;
+        result
+    }
+
     /// Loads `target`, waits for it to settle, and returns the value of `js`
     /// (awaited if it is a promise). For diagnostics and tests.
     ///
@@ -660,6 +682,13 @@ impl Renderer for CdpRenderer {
         options: CaptureOptions,
     ) -> BoxFuture<'a, RenderResult<Vec<u8>>> {
         Box::pin(self.capture(target, options))
+    }
+
+    fn extract_layouts<'a>(
+        &'a self,
+        target: &'a RenderTarget,
+    ) -> BoxFuture<'a, RenderResult<Vec<SlideLayout>>> {
+        Box::pin(self.layouts(target))
     }
 }
 

@@ -3552,6 +3552,7 @@ dependencies = [
  "lol_html",
  "lopdf",
  "png 0.18.1",
+ "quick-xml",
  "regex",
  "serde",
  "serde_json",
