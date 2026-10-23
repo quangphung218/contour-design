@@ -4,16 +4,18 @@
 use super::ds_create::NewDesignSystem;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
+use super::lib_ui::query_param;
 use super::projects::ProjectCard;
 use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::{Chip, HomeIntent, templates_for};
+use crate::settings::AppConfig;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use od_contracts::{
     CreateProjectResponse, DesignSystemSummary, DesignSystemsResponse, DesignTemplatesResponse,
-    Platform, ProjectsResponse, SkillSummary, SkillsResponse,
+    Platform, ProjectsResponse, SkillMode, SkillSummary, SkillsResponse,
 };
 
 /// How many recent projects Home lists.
@@ -23,12 +25,21 @@ const GALLERY: usize = 8;
 
 #[component]
 pub fn Home() -> impl IntoView {
-    let _shell = Shell::get();
+    let shell = Shell::get();
     let navigate = use_navigate();
     let brief = RwSignal::new(String::new());
     let chip = RwSignal::new(Chip::Prototype);
-    let design_system = RwSignal::new(None::<String>);
+    // `?ds=` from the Design systems page, else the default for new chats.
+    let design_system = RwSignal::new(query_param("ds").or_else(|| {
+        shell
+            .config
+            .with_untracked(|c| c.as_ref().and_then(AppConfig::default_design_system))
+    }));
     let template = RwSignal::new(None::<String>);
+    // `?skill=` from the Plugins page: the project runs that skill.
+    let skill_pick = RwSignal::new(query_param("skill"));
+    // `?template=` from the Templates page, applied once the list loads.
+    let wanted_template = StoredValue::new(query_param("template"));
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
     let brief_ref = NodeRef::<leptos::html::Textarea>::new();
@@ -61,6 +72,27 @@ pub fn Home() -> impl IntoView {
         list
     });
 
+    Effect::new(move |_| {
+        let Some(list) = templates.get() else {
+            return;
+        };
+        let Some(id) = wanted_template.get_value() else {
+            return;
+        };
+        wanted_template.set_value(None);
+        if let Some(s) = list.iter().find(|s| s.info.id == id) {
+            chip.set(if s.info.mode == SkillMode::Deck {
+                Chip::Deck
+            } else {
+                Chip::Prototype
+            });
+            template.set(Some(id));
+            if brief.with_untracked(|b| b.trim().is_empty()) {
+                brief.set(s.info.example_prompt.clone());
+            }
+        }
+    });
+
     let chip_templates = Signal::derive(move || -> Option<Vec<SkillSummary>> {
         templates.get().map(|t| templates_for(chip.get(), &t))
     });
@@ -73,7 +105,9 @@ pub fn Home() -> impl IntoView {
             brief: brief.get_untracked(),
             chip: chip.get_untracked(),
             design_system_id: design_system.get_untracked(),
-            template_id: template.get_untracked(),
+            template_id: template
+                .get_untracked()
+                .or_else(|| skill_pick.get_untracked()),
         };
         let req = intent.create_request(&skills.get_untracked().unwrap_or_default());
         busy.set(true);
@@ -231,6 +265,15 @@ pub fn Home() -> impl IntoView {
                 </div>
                 <div class="composer-foot">
                     <NewDesignSystem systems=systems selected=design_system/>
+                    {move || skill_pick.get().map(|id| view! {
+                        <span class="chip active" data-testid="home-skill">
+                            {icon(Glyph::Book)}
+                            {tf(T::UsingSkill, &[&id])}
+                            <button class="icon-btn small" aria-label=t(T::Remove) on:click=move |_| skill_pick.set(None)>
+                                {icon(Glyph::Close)}
+                            </button>
+                        </span>
+                    })}
                     <span class="spacer"></span>
                     <span class="subtle small">{t(T::CreateHint)}</span>
                 </div>

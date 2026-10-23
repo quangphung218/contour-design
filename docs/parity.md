@@ -1,6 +1,6 @@
 # Parity open-design-rs so với OpenDesign
 
-- Bản Rust: `open-design-rs` main `7681914` (2026-10-23).
+- Bản Rust: `open-design-rs` main `7681914` (2026-10-23); cập nhật sau track B1-library (Design systems, Plugins/Skills, Media, Templates/Examples).
 - App gốc: `~/Documents/GitHub/open-design` (đọc source, chủ yếu `apps/web/src/i18n/locales/en.ts` và `apps/web/src/components/`).
 - Cách chấm: **100** có đủ, **50** một phần (ghi thiếu gì), **0** không có, **N/A** bỏ có chủ đích (spec 1.6, decisions.md). % nhóm là trung bình điểm, không tính N/A. Mỗi mục nặng như nhau, nút nhỏ và luồng lớn cùng một trọng số.
 - Tính năng chỉ có ở API hoặc CLI `od`, không có trên UI: chấm 50.
@@ -14,24 +14,24 @@
 | Agent runtimes | 8 | 5 | 1 | 2 | 1 | 69 |
 | Studio-preview | 26 | 11 | 9 | 6 | 1 | 60 |
 | Desktop shell | 9 | 5 | 0 | 4 | 1 | 56 |
-| Templates/Examples | 6 | 2 | 2 | 2 | 1 | 50 |
+| Templates/Examples | 6 | 6 | 0 | 0 | 1 | 100 |
 | Export | 11 | 4 | 2 | 5 | 1 | 45 |
 | Studio-chat | 32 | 12 | 4 | 16 | 1 | 44 |
 | MCP | 8 | 3 | 1 | 4 | 0 | 44 |
-| Phím tắt | 17 | 6 | 3 | 8 | 0 | 44 |
+| Phím tắt | 17 | 7 | 3 | 7 | 0 | 50 |
 | Home | 18 | 4 | 6 | 8 | 2 | 39 |
 | Automations | 8 | 2 | 2 | 4 | 0 | 38 |
 | Settings | 15 | 3 | 5 | 7 | 1 | 37 |
 | Projects | 14 | 3 | 3 | 8 | 1 | 32 |
 | Studio-files/tabs | 16 | 3 | 2 | 11 | 0 | 25 |
-| Design systems | 13 | 2 | 1 | 10 | 1 | 19 |
-| Media | 6 | 0 | 2 | 4 | 0 | 17 |
-| Plugins/Skills | 8 | 0 | 2 | 6 | 1 | 12 |
-| **Tổng** | **215** | **65** | **45** | **105** | **12** | **40,7** |
+| Design systems | 12 | 12 | 0 | 0 | 1 | 100 |
+| Media | 6 | 3 | 2 | 1 | 0 | 67 |
+| Plugins/Skills | 8 | 6 | 0 | 2 | 1 | 75 |
+| **Tổng** | **215** | **90** | **40** | **85** | **12** | **51,2** |
 
 Đọc nhanh:
 - **Luồng lõi đã chạy tốt**: brief → agent → preview → comment/inspect/edit text → version → export (HTML, ZIP, PDF, PNG, PPTX). Phần preview (60%) và runtime agent (69%) gần app gốc nhất.
-- **Thiếu nặng ở các màn "thư viện"**: Design systems, Plugins/Skills, Media, Library gần như chỉ có API/CLI, không có màn UI.
+- **Màn "thư viện" đã có (track B1-library)**: Design systems, Plugins/Skills, Media (thư viện, sinh, hàng đợi), Templates. Còn thiếu: registry/marketplace plugin, rail plugin trong composer, Web Clipper, player âm thanh trong chat, thêm provider media.
 - **Thiếu thao tác file**: không upload, không đính file vào chat, không menu file. Đây là chỗ người dùng vấp đầu tiên.
 
 ## 15 khoảng trống đáng làm nhất
@@ -52,11 +52,11 @@ Xếp theo giá trị cho người dùng chia công sức. Giờ là ước lư�
 | 10 | Zoom preview, chụp màn hình vào clipboard và vào chat | `FileViewer.tsx:2393,17308`, en:3164,3196 | 4–5 | od-ui, od-preview |
 | 11 | Model picker thật (dropdown, reasoning effort) và đổi model ngay trong composer | `InlineModelSwitcher.tsx`, `AvatarMenu.tsx` | 4–6 | od-ui, od-runtime |
 | 12 | Projects: tìm, lọc, sắp xếp, Cmd/Ctrl+K | `ProjectSearchModal.tsx`, en:1196-1240 | 4–6 | od-ui, od-store |
-| 13 | Trang Design systems: duyệt, kit view (showcase, tokens, DESIGN.md), đặt mặc định | `DesignSystemsTab.tsx`, `DesignKitView.tsx`, en:4489-4530 | 10–14 | od-ui, od-content, od-server |
+| 13 | ~~Trang Design systems: duyệt, kit view (showcase, tokens, DESIGN.md), đặt mặc định~~ (xong, B1-library) | `DesignSystemsTab.tsx`, `DesignKitView.tsx`, en:4489-4530 | 10–14 | od-ui, od-content, od-server |
 | 14 | Thêm chip đầu ra: Document, Wireframe, Mobile app (skill đã có trong content) | `home-hero/chips.ts`, en:1060-1110 | 6–8 | od-ui (`intent.rs`), od-content |
-| 15 | Trang Plugins/Skills: danh sách, chi tiết, "Use" có form input | `PluginsView.tsx`, `PluginDetailView.tsx`, `PluginInputsForm.tsx` | 12–16 | od-ui, od-server, od-content |
+| 15 | ~~Trang Plugins/Skills: danh sách, chi tiết, "Use" có form input~~ (xong, B1-library) | `PluginsView.tsx`, `PluginDetailView.tsx`, `PluginInputsForm.tsx` | 12–16 | od-ui, od-server, od-content |
 
-Còn đáng cân nhắc sau 15 mục trên: tạo design system từ URL/GitHub (8–10 giờ, od-job), viewer live artifact (6–8 giờ, od-live), sửa automation và lịch preset (2–3 giờ, od-automation), tab browser tích hợp (lớn, cần Tauri webview).
+Còn đáng cân nhắc sau 15 mục trên (tạo design system từ URL/GitHub đã xong ở B1-library): viewer live artifact (6–8 giờ, od-live), sửa automation và lịch preset (2–3 giờ, od-automation), tab browser tích hợp (lớn, cần Tauri webview).
 
 ## Bảng đầy đủ
 
@@ -185,35 +185,35 @@ Còn đáng cân nhắc sau 15 mục trên: tạo design system từ URL/GitHub 
 | Export | MP4 HyperFrames | 50 | API `/export/mp4` + CLI `od export`; không có trong menu UI |
 | Export | Open in new tab, copy path, download file | 0 | Không có |
 | Export | Deploy Vercel/Cloudflare, social share, quick share | N/A | Deploy/share: BỎ |
-| Design systems | Trang Design systems (Your systems, presets, lọc) | 0 | API `/api/design-systems` có; không có màn duyệt |
+| Design systems | Trang Design systems (Your systems, presets, lọc) | 100 | `crates/od-ui/src/app/ds_page.rs`: Của tôi / Preset có sẵn (đếm), tìm, lọc bề mặt và nhóm, danh sách + chi tiết; route `/design-systems` |
 | Design systems | Chọn design system khi tạo project | 100 | `home.rs` |
 | Design systems | Tạo DS từ mô tả thương hiệu | 100 | `crates/od-ui/src/app/ds_create.rs:24`; `(audit run) shots/home-design-system-dialog-light.png` |
-| Design systems | Tạo DS từ URL, GitHub, file, Figma, paste DESIGN.md, copy DS có sẵn | 0 | Chỉ có nguồn là mô tả chữ |
-| Design systems | "Start from a brand" picker | 0 | Không có |
-| Design systems | Tiến trình sinh theo pha | 50 | Chỉ có "Generating…" |
-| Design systems | Review (Looks good / Needs work), revision accept/reject | 0 | Không có |
-| Design systems | Kit view (Showcase, Tokens, DESIGN.md), brand detail, preview modal | 0 | Không có |
-| Design systems | Sửa/copy/lưu DESIGN.md, upload font/logo | 0 | Không có |
-| Design systems | Default for new chats | 0 | Không có |
-| Design systems | Download DS, Edit with agent | 0 | Không có |
-| Design systems | Import DS từ GitHub/shadcn trong Settings | 0 | Không có |
-| Design systems | Rebuild token contract, điểm chất lượng | 0 | Không có |
+| Design systems | Tạo DS từ URL, GitHub, file, Figma, paste DESIGN.md, copy DS có sẵn | 100 | `ds_create.rs` `CreateFlow`: website, GitHub, Figma, file đính kèm qua agent (`POST /api/design-systems/generate` có `urls/github/figma/files`); DESIGN.md hoặc biến CSS dán vào cài thẳng (`POST /api/design-systems/import`); chép bộ có sẵn (`/copy`). Figma đọc qua công cụ Figma của agent, không giải mã file `.fig` |
+| Design systems | "Start from a brand" picker | 100 | `ds_create.rs` `BrandPicker`, `GET /api/design-systems/brands` (36 thương hiệu, ô chữ tắt thay favicon vì không mạng ngoài); chọn là thêm website làm nguồn |
+| Design systems | Tiến trình sinh theo pha | 100 | Job có `phase` (sources, design, tokens, checking) đọc từ file agent đã ghi (`routes/w3/design_systems.rs`); UI hiện 4 bước |
+| Design systems | Review (Looks good / Needs work), revision accept/reject | 100 | `ds_page.rs`: Ổn rồi = xuất bản; Cần sửa → agent sửa bản sao (`POST …/revisions`), duyệt Nhận/Bỏ (`POST …/revisions/:rid`) |
+| Design systems | Kit view (Showcase, Tokens, DESIGN.md), brand detail, preview modal | 100 | Tab Kit (bảng màu, kiểu chữ, token contract, asset, trang preview), Showcase (`components.html` hoặc trang dựng từ token), Tokens, DESIGN.md; xem lớn trong modal (`GET …/kit`, `…/showcase`) |
+| Design systems | Sửa/copy/lưu DESIGN.md, upload font/logo | 100 | `PUT …/design-md`, chép clipboard, `POST …/assets` (logo, ảnh, font vào `assets/`), xoá asset |
+| Design systems | Default for new chats | 100 | `designSystemId` trong app-config; Home chọn sẵn (`home.rs`); chỉ preset hoặc bộ đã xuất bản |
+| Design systems | Download DS, Edit with agent | 100 | `GET …/archive` (ZIP); `POST …/workspace` mở project trỏ thẳng vào thư mục package |
+| Design systems | Import DS từ GitHub/shadcn trong Settings | 100 | Đặt ở luồng Tạo của trang Design systems: GitHub qua agent clone, theme shadcn/Tailwind dán vào chuyển thành token (`design_kit::tokens_from_css_vars`); không tải registry shadcn vì daemon không ra mạng |
+| Design systems | Rebuild token contract, điểm chất lượng | 100 | `od-content/src/design_kit.rs` `score` (công thức gốc, 4 hạng), `rebuild_tokens` tạo revision chờ duyệt (`POST …/token-contract/rebuild`) |
 | Design systems | Publish, share/sync to team | N/A | Publish/team: BỎ |
-| Plugins/Skills | Danh sách, chi tiết plugin | 50 | API `/api/plugins`, CLI `od plugin list/inspect` (`crates/od-cli/src/plugin_cmd.rs:18`); không có màn UI |
-| Plugins/Skills | Dùng plugin (Use, Remix) | 50 | CLI `od plugin apply`, API `/apply`, `/pipeline`; UI không có |
-| Plugins/Skills | Form input plugin | 0 | Không có |
-| Plugins/Skills | Thêm plugin (từ prompt, link, folder), install/uninstall | 0 | Không có |
-| Plugins/Skills | Registry sources, trust, marketplace | 0 | Không có (spec P2) |
-| Plugins/Skills | Danh sách, chi tiết skill | 0 | API `/api/skills` có; UI không có |
-| Plugins/Skills | Sửa skill (tạo, sửa, xoá, user override) | 0 | Không có |
-| Plugins/Skills | Plugin rail trong composer | 0 | Không có |
+| Plugins/Skills | Danh sách, chi tiết plugin | 100 | `crates/od-ui/src/app/plugins_page.rs`: Chính thức/Cá nhân, tìm, nhóm; chi tiết: brief mẫu, input, workflow, context, quyền, nguồn |
+| Plugins/Skills | Dùng plugin (Use, Remix) | 100 | `POST /api/plugins/:id/use` tạo project gắn plugin (mọi run trong project áp plugin, `library/plugins.rs::project_plugin_request`); Remix ví dụ ở trang Templates |
+| Plugins/Skills | Form input plugin | 100 | `plugins_page.rs` `InputsForm`: select, number, boolean, text, string; bắt buộc có dấu *, nút Dùng khoá tới khi đủ |
+| Plugins/Skills | Thêm plugin (từ prompt, link, folder), install/uninstall | 100 | Tạo bằng agent và từ link (`POST /api/plugins/author`, agent tải về rồi `od plugin install`), cài từ thư mục (`POST /api/plugins/install`, CLI `od plugin install`), gỡ (`/uninstall`) |
+| Plugins/Skills | Registry sources, trust, marketplace | 0 | Không có (spec P2): registry và marketplace tải manifest từ mạng, daemon không ra mạng (decisions.md); trust chỉ có ở cổng capability của CLI (`od plugin apply`, exit 66) |
+| Plugins/Skills | Danh sách, chi tiết skill | 100 | Tab Skill của trang Plugins: danh sách, chi tiết nguyên văn SKILL.md, Dùng (Home chọn sẵn skill) |
+| Plugins/Skills | Sửa skill (tạo, sửa, xoá, user override) | 100 | `POST /api/skills`, `PUT/DELETE /api/skills/:id` (`od-content/src/user_content.rs`); sửa skill có sẵn tạo bản riêng giữ metadata `od:` |
+| Plugins/Skills | Plugin rail trong composer | 0 | Không có: composer chat thuộc track Studio; app gốc cũng tắt rail (`ChatComposer.tsx` `showRail={false}`), plugin vào chat qua menu công cụ |
 | Plugins/Skills | Publish/contribute plugin, share with team | N/A | Publish/community/team: BỎ |
-| Templates/Examples | Gallery có lọc (loại, surface, nhóm ngành) | 50 | Gallery có nhãn nhóm (`home.rs:277`); không có bộ lọc |
+| Templates/Examples | Gallery có lọc (loại, surface, nhóm ngành) | 100 | `crates/od-ui/src/app/templates_page.rs`: loại, nền tảng, ngành, tìm |
 | Templates/Examples | Thẻ template có preview sống | 100 | `crates/od-ui/src/app/lazy_frame.rs:17`, thumbnail iframe |
 | Templates/Examples | Dùng template để tạo | 100 | `home.rs:324` |
-| Templates/Examples | Preview modal (fullscreen, Remix, export) | 0 | Không có |
-| Templates/Examples | Prompt template ảnh/video (Copy prompt) | 50 | API `/api/prompt-templates` + CLI `od media`; UI không có |
-| Templates/Examples | Template do user lưu | 0 | Không có |
+| Templates/Examples | Preview modal (fullscreen, Remix, export) | 100 | Toàn màn hình, Remix (`POST /api/design-templates/:id/remix`), mở tab mới, tải HTML, Dùng template; PDF/ZIP qua Export của project sau Remix |
+| Templates/Examples | Prompt template ảnh/video (Copy prompt) | 100 | Tab Prompt ảnh/video: Chép prompt, Sinh (mở trang Media điền sẵn) |
+| Templates/Examples | Template do user lưu | 100 | `/api/templates` (bảng `templates`): lưu project, liệt kê, dùng, xoá (tab Template của tôi) |
 | Templates/Examples | Community gallery, share template | N/A | Community/share: BỎ |
 | Settings | Chọn agent + rescan | 100 | `crates/od-ui/src/app/settings_page.rs`; `(audit run) shots/settings-light.png` |
 | Settings | Model, reasoning effort, service tier | 50 | Ô text Model; thiếu dropdown, reasoning, service tier |
@@ -248,12 +248,12 @@ Còn đáng cân nhắc sau 15 mục trên: tạo design system từ URL/GitHub 
 | MCP | Ghi chú forward tới agent nào | 0 | Không có |
 | MCP | Connectors (Composio) | 0 | Không có (spec P2 "cân nhắc BỎ", chưa chốt) |
 | MCP | Use everywhere (hướng dẫn CLI + MCP) | 0 | Không có |
-| Media | Provider media | 50 | `crates/od-media/src/provider.rs`: OpenAI, fal, Stability, ElevenLabs; app gốc khoảng 23 |
-| Media | Project ảnh/video/audio trong UI (model, aspect, voice) | 0 | Chỉ API + CLI `od media` |
-| Media | Audio player trong chat | 0 | Không có |
-| Media | Library (lọc, upload, Chat to design) | 0 | Không có |
-| Media | Web Clipper | 0 | Không có |
-| Media | HyperFrames → MP4 | 50 | API + CLI, không có trong UI |
+| Media | Provider media | 50 | `crates/od-media/src/provider.rs`: OpenAI, fal, ElevenLabs (base URL tuỳ chỉnh nên dùng được gateway tương thích OpenAI); cấu hình key và base URL ở tab Provider của trang Media; app gốc 16 provider tích hợp thật |
+| Media | Project ảnh/video/audio trong UI (model, aspect, voice) | 100 | `crates/od-ui/src/app/media_page.rs` tab Sinh: ảnh/video/âm thanh, model, tỉ lệ, thời lượng, giọng, lưu vào project; qua hàng đợi `/api/media/tasks` |
+| Media | Audio player trong chat | 50 | Có player ở thư viện và hàng đợi Media; trong chat chưa có (khung chat Studio thuộc track khác) |
+| Media | Library (lọc, upload, Chat to design) | 100 | `GET /api/library/assets`, `POST /api/library/upload`, `POST /api/library/chat`; lọc loại, tìm, project, xem lớn, tải, xoá |
+| Media | Web Clipper | 0 | Không có: extension trình duyệt riêng (`clipper/` app gốc), cần endpoint ingest nhận origin extension; UI Library của app gốc đang tắt (`LIBRARY_UI_VISIBLE = false`) |
+| Media | HyperFrames → MP4 | 100 | Tab HyperFrames ra MP4 của trang Media (`POST /api/projects/:id/export/mp4`, lưu vào project) |
 | Automations | Trang Automations | 100 | `crates/od-ui/src/app/automations.rs:80`; `(audit run) shots/automations-light.png` |
 | Automations | Tạo automation (tên, prompt, lịch, project) | 50 | Lịch nhập cron tay, không preset Hourly/Daily, không timezone, không "tạo project mới mỗi lần" |
 | Automations | Thao tác dòng: Run now, bật/tắt, xoá, mở conversation, sửa | 50 | `automations.rs:196`; thiếu Edit |
@@ -288,4 +288,4 @@ Còn đáng cân nhắc sau 15 mục trên: tạo design system từ URL/GitHub 
 | Phím tắt | Cmd/Ctrl+Z trong draw | 0 | Không có undo |
 | Phím tắt | Deck: →, ←, PageUp/Down, Home, End, R | 50 | `studio.rs:755-762`; thiếu R |
 | Phím tắt | Esc đóng modal, present, mode | 100 | `studio.rs:745` |
-| Phím tắt | Phím trong DS kit (E/C/U/R/⌫) | 0 | Không có DS kit |
+| Phím tắt | Phím trong DS kit (E/C/U/R/⌫) | 100 | `ds_page.rs` (E sửa, C chép, U tải lên, R dựng lại token, ⌫ xoá asset đang chọn) |

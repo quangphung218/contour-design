@@ -164,6 +164,68 @@ pub fn generation_prompt(req: &GenerateRequest) -> String {
     )
 }
 
+/// Where an agent finds the material a design system is derived from.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Sources {
+    /// Websites to study (a brand's site, a product page).
+    pub urls: Vec<String>,
+    /// A GitHub repository (`owner/repo` or its URL).
+    pub github: Option<String>,
+    /// A Figma file or frame URL.
+    pub figma: Option<String>,
+    /// Files the user attached, saved under `source/` in the working folder.
+    pub files: Vec<String>,
+}
+
+impl Sources {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.urls.is_empty()
+            && self.github.is_none()
+            && self.figma.is_none()
+            && self.files.is_empty()
+    }
+}
+
+/// The brief used when only sources were given.
+pub const SOURCES_ONLY_BRIEF: &str = "Derive the design system from the sources below: its colours, type, spacing, components and voice.";
+
+/// [`generation_prompt`] plus a `# Sources` section the agent studies
+/// first (it fetches URLs and clones repositories with its own tools).
+#[must_use]
+pub fn generation_prompt_with_sources(req: &GenerateRequest, sources: &Sources) -> String {
+    let mut out = generation_prompt(req);
+    if sources.is_empty() {
+        return out;
+    }
+    let mut lines = vec![
+        String::new(),
+        "# Sources".to_owned(),
+        String::new(),
+        "Study these before writing. Take real values (hex colours, font families, sizes, radii) from them; do not invent a palette they contradict.".to_owned(),
+        String::new(),
+    ];
+    for u in &sources.urls {
+        lines.push(format!("- Website: {u} (fetch the page and its CSS)"));
+    }
+    if let Some(g) = &sources.github {
+        lines.push(format!(
+            "- GitHub repository: {g} (clone it shallowly into a temporary folder outside the current one; read its theme, CSS variables, Tailwind config and components)"
+        ));
+    }
+    if let Some(f) = &sources.figma {
+        lines.push(format!(
+            "- Figma: {f} (use a Figma tool if you have one; otherwise rely on the other sources)"
+        ));
+    }
+    for f in &sources.files {
+        lines.push(format!("- Attached file: `source/{f}`"));
+    }
+    out.push_str(&lines.join("\n"));
+    out.push('\n');
+    out
+}
+
 /// Counts `## ` headings outside fenced code.
 fn count_h2(markdown: &str) -> usize {
     let mut fenced = false;
@@ -258,6 +320,51 @@ pub fn install(
     req: &GenerateRequest,
 ) -> Result<Installed, GenError> {
     check_staging(staging)?;
+    install_checked(
+        staging,
+        user_root,
+        req,
+        "generated from a brief by an agent",
+    )
+}
+
+/// Installs a package the user brought (pasted `DESIGN.md`, imported CSS
+/// variables): `tokens.css` must define the A1 tokens, `DESIGN.md` only has
+/// to exist (the original accepts any pasted document).
+///
+/// # Errors
+/// [`GenError::Missing`], [`GenError::MissingTokens`], [`GenError::Io`].
+pub fn install_imported(
+    staging: &Path,
+    user_root: &Path,
+    req: &GenerateRequest,
+    origin: &str,
+) -> Result<Installed, GenError> {
+    let design = std::fs::read_to_string(staging.join("DESIGN.md")).unwrap_or_default();
+    if design.trim().is_empty() {
+        return Err(GenError::Missing("DESIGN.md"));
+    }
+    let tokens = std::fs::read_to_string(staging.join("tokens.css"))
+        .ok()
+        .filter(|t| !t.trim().is_empty())
+        .ok_or(GenError::Missing("tokens.css"))?;
+    let missing: Vec<String> = REQUIRED_TOKENS
+        .iter()
+        .filter(|t| !defines(&tokens, t))
+        .map(|t| (*t).to_owned())
+        .collect();
+    if !missing.is_empty() {
+        return Err(GenError::MissingTokens(missing));
+    }
+    install_checked(staging, user_root, req, origin)
+}
+
+fn install_checked(
+    staging: &Path,
+    user_root: &Path,
+    req: &GenerateRequest,
+    origin: &str,
+) -> Result<Installed, GenError> {
     std::fs::create_dir_all(user_root).map_err(io)?;
     // Build the package next to its destination, then rename: the index
     // never sees a half-written folder. Each job has its own (hidden,
@@ -269,7 +376,7 @@ pub fn install(
         JOB.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&tmp).map_err(io)?;
-    let built = build_and_place(staging, &tmp, user_root, req);
+    let built = build_and_place(staging, &tmp, user_root, req, origin);
     if built.is_err() {
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -283,6 +390,7 @@ fn build_and_place(
     tmp: &Path,
     user_root: &Path,
     req: &GenerateRequest,
+    origin: &str,
 ) -> Result<Installed, GenError> {
     for file in ["DESIGN.md", "tokens.css"] {
         std::fs::copy(staging.join(file), tmp.join(file)).map_err(io)?;
@@ -304,7 +412,7 @@ fn build_and_place(
             "name": req.name,
             "category": category,
             "description": first_line(&req.brief),
-            "source": { "type": "local", "origin": "generated from a brief by an agent" },
+            "source": { "type": "local", "origin": origin },
             "files": { "design": "DESIGN.md", "tokens": "tokens.css" },
             "importMode": "normalized",
             "craft": { "applies": [], "suggested": ["color", "typography"], "exemptions": [] },
@@ -383,6 +491,30 @@ mod tests {
         assert!(p.contains("# Design system brief"));
         assert!(p.contains("## 9. Anti-patterns"));
         assert!(p.contains("`--font-body`"));
+    }
+
+    #[test]
+    fn sources_are_listed_after_the_files_to_write() {
+        let r = GenerateRequest::new("Tea", SOURCES_ONLY_BRIEF, None).unwrap();
+        assert_eq!(
+            generation_prompt_with_sources(&r, &Sources::default()),
+            generation_prompt(&r)
+        );
+        let p = generation_prompt_with_sources(
+            &r,
+            &Sources {
+                urls: vec!["https://tea.example".into()],
+                github: Some("acme/ui".into()),
+                figma: Some("https://www.figma.com/file/x".into()),
+                files: vec!["logo.png".into()],
+            },
+        );
+        let at = p.find("# Sources").unwrap();
+        assert!(p.find("# Files to write").unwrap() < at);
+        assert!(p.contains("- Website: https://tea.example"));
+        assert!(p.contains("- GitHub repository: acme/ui"));
+        assert!(p.contains("- Figma: https://www.figma.com/file/x"));
+        assert!(p.contains("`source/logo.png`"));
     }
 
     #[test]

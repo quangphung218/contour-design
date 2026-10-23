@@ -518,9 +518,10 @@ impl StudioCtx {
             let res = api::get::<LintResponse>(&url)
                 .await
                 .map_err(|e| tf(T::LintFailed, &[&e.to_string()]));
-            // A reload may start a new lint before this one answers.
-            if tools.lint_seq.get_value() == seq {
-                tools.lint.set(Some(res));
+            // A reload may start a new lint before this one answers, and
+            // leaving the Studio disposes the tools (`try_`: no panic).
+            if tools.lint_seq.try_get_value() == Some(seq) {
+                let _ = tools.lint.try_set(Some(res));
             }
         });
     }
@@ -531,7 +532,7 @@ impl StudioCtx {
         leptos::task::spawn_local(async move {
             let url = format!("/api/runs/{}/deliverable", api::seg(&run_id));
             if let Ok(d) = api::get::<DeliverableResponse>(&url).await {
-                tools.deliverable.set((!d.valid).then_some(d));
+                let _ = tools.deliverable.try_set((!d.valid).then_some(d));
             }
         });
     }

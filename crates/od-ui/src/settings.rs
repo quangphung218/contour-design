@@ -65,7 +65,21 @@ pub struct AppConfig {
     pub extra: Map<String, Value>,
 }
 
+/// Setting key of the design system new projects start with (the
+/// original's `designSystemId`).
+pub const DEFAULT_DESIGN_SYSTEM_KEY: &str = "designSystemId";
+
 impl AppConfig {
+    /// The design system new chats default to.
+    #[must_use]
+    pub fn default_design_system(&self) -> Option<String> {
+        self.extra
+            .get(DEFAULT_DESIGN_SYSTEM_KEY)
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    }
+
     /// `PUT` body: every known field, with `null` clearing empty options so
     /// a blank model really resets to the agent's default.
     #[must_use]
