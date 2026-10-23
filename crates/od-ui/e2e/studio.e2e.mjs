@@ -6,7 +6,7 @@
 // (next, thumbnails, notes, present, Esc) → quick switcher and tabs →
 // version restore → fork → export and handoff → open folder → session mode,
 // memory, side chat, conversation export, Design Jury → terminal tab (echo,
-// reattach, close) → routine run by the mock agent → MCP stdio server →
+// top, vim, reattach, close) → routine run by the mock agent → MCP stdio server →
 // settings and Vietnamese → preview tools (lint, deliverable check, palette,
 // tweaks, inspect, text edit, drawn annotation) → Ask-mode warning. Every
 // request leaving loopback is blocked and fails the test.
@@ -433,6 +433,29 @@ try {
   await until(async () => (await term.textContent()).includes('e2e-42'), 'echo output');
   assert.match(await term.textContent(), new RegExp(`projects/${projectId}`), 'shell runs in the project folder');
   await page.screenshot({ path: OUT + 'terminal.png' });
+  // Full-screen programs (xterm.js): top takes over the alternate screen at
+  // the pane's size, q gives the shell's screen back.
+  await page.keyboard.type('top -s 1');
+  await page.keyboard.press('Enter');
+  await until(async () => /PID[\s\S]*COMMAND/.test(await term.textContent()), 'top screen');
+  assert.ok(!(await term.textContent()).includes('e2e-42'), 'top draws on the alternate screen');
+  await page.screenshot({ path: OUT + 'terminal-top.png' });
+  await page.keyboard.press('q');
+  await until(async () => (await term.textContent()).includes('e2e-42'), 'shell screen back after top');
+  // vim: insert, Esc, :wq writes the file into the project folder.
+  await page.keyboard.type('vi -u NONE -N vim-e2e.txt');
+  await page.keyboard.press('Enter');
+  await until(async () => (await term.textContent()).includes('~'), 'vim screen');
+  await page.keyboard.type('ihello from vim');
+  await page.keyboard.press('Escape');
+  await page.screenshot({ path: OUT + 'terminal-vim.png' });
+  await page.keyboard.type(':wq');
+  await page.keyboard.press('Enter');
+  await until(async () => {
+    const r = await fetch(`${BASE}/api/projects/${projectId}/raw/vim-e2e.txt`);
+    return r.ok && (await r.text()).trim() === 'hello from vim';
+  }, 'vim wrote the file');
+  await until(async () => (await term.textContent()).includes('e2e-42'), 'shell screen back after vim');
   await page.reload();
   await page.getByTestId('terminal-tab').click();
   await until(async () => (await page.getByTestId('terminal').textContent()).includes('e2e-42'), 'scrollback replay');

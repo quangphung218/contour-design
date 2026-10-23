@@ -32,3 +32,7 @@ M6 track W2-media, lấy từ OpenDesign commit e03d5c2:
   image/profile-avatar-seedream-high-fashion-dreamy-portrait.json,
   image/social-media-post-seedream-squishcraft-kids-clay-ad.json,
   và ảnh image/notion-team-dashboard-live-artifact.preview.png. API không trả URL ảnh preview (CDN bên thứ ba).
+
+W4 terminal: crates/od-ui/vendor/xterm/ là xterm.js đóng gói cục bộ (không tải từ CDN):
+- xterm.js, xterm.css từ @xterm/xterm 6.0.0, MIT, Copyright The xterm.js authors, SourceLair, Christopher Jeffrey (LICENSE).
+- addon-fit.js từ @xterm/addon-fit 0.11.0, MIT, Copyright The xterm.js authors (LICENSE.addon-fit).
