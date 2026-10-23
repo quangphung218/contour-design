@@ -225,10 +225,13 @@ fn run(html: &str, selector: &str, handlers: ElementContentHandlers<'_>) -> Resu
     Ok(())
 }
 
+/// Start of an element and, once its end tag is seen, its end.
+type Span = (usize, Option<usize>);
+
 /// Byte span of the one element `selector` matches: its start tag through
 /// its end tag (the start tag alone for a void element).
 fn span(html: &str, selector: &str) -> Result<(usize, usize), PatchError> {
-    let found: Rc<Cell<Option<(usize, Option<usize>)>>> = Rc::new(Cell::new(None));
+    let found: Rc<Cell<Option<Span>>> = Rc::new(Cell::new(None));
     let seen = Rc::clone(&found);
     let handlers = ElementContentHandlers::default().element(move |el: &mut Element<'_, '_>| {
         let start = el.source_location().bytes();
