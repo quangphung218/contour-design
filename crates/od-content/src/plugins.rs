@@ -1,11 +1,12 @@
 //! Bundled plugins as presets (spec 1.4, 3.6): the first-party atoms and
 //! scenarios under `plugins/_official/`, plus user plugins in
 //! `<data>/plugins/` (same id shadows bundled). Read-only: no marketplace,
-//! no install from the network, no pipeline runner. Applying a plugin
+//! no install from the network. Applying a plugin
 //! validates its inputs and renders the `## Active plugin` block that the
 //! prompt composer places after the active skill (spec 2.4 block 10).
 
 use crate::frontmatter;
+use crate::pipeline::Pipeline;
 use crate::text::sorted_dir_entries;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -283,6 +284,10 @@ pub struct AppliedPlugin {
     pub skill_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub design_system_id: Option<String>,
+    /// `od.pipeline`, validated ([`crate::pipeline`]); `None` when absent
+    /// or invalid (`od plugin validate` reports why).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pipeline: Option<Pipeline>,
     /// `## Active plugin` / `## Plugin inputs` / `## Plugin atoms`, plus
     /// the plugin's own instructions.
     pub prompt_block: String,
@@ -398,6 +403,10 @@ impl PluginEntry {
                 .filter_map(|s| s.id.clone())
                 .collect(),
             design_system_id: self.context.design_system.clone(),
+            pipeline: self
+                .pipeline
+                .as_ref()
+                .and_then(|p| Pipeline::parse(p).ok()),
             prompt_block: String::new(),
         };
         applied.prompt_block = render_block(&applied, &self.body);
@@ -456,6 +465,23 @@ pub fn render_block(p: &AppliedPlugin, instructions: &str) -> String {
         ]);
         lines.extend(p.atoms.iter().map(|a| format!("- `{a}`")));
     }
+    if let Some(pipeline) = &p.pipeline {
+        lines.extend([
+            String::new(),
+            "## Plugin pipeline".to_owned(),
+            String::new(),
+            "Work through these stages in order:".to_owned(),
+            String::new(),
+        ]);
+        for (i, stage) in pipeline.stages.iter().enumerate() {
+            let atoms: Vec<String> = stage.atoms.iter().map(|a| format!("`{a}`")).collect();
+            let mut line = format!("{}. **{}**: {}", i + 1, stage.id, atoms.join(", "));
+            if let (true, Some(until)) = (stage.repeat, stage.until.as_deref()) {
+                line.push_str(&format!(" (repeat until `{until}`)"));
+            }
+            lines.push(line);
+        }
+    }
     let instructions = instructions.trim();
     if !instructions.is_empty() {
         lines.extend([
@@ -513,7 +539,7 @@ mod tests {
         assert_eq!(a.craft_requires, ["color"]);
         assert_eq!(
             a.prompt_block,
-            "\n\n## Active plugin\n\nThe user applied plugin **Bản demo** (`demo@1.2.0`).\n\nDoes a demo.\n\nThe plugin's example brief is: _Make a deck about rust_\n\n## Plugin inputs\n\nTreat these as authoritative answers to questions the plugin author baked into the brief — do not re-ask the user about them.\n\n- **extra**: a, b\n- **kind**: deck\n- **topic**: rust\n\n## Plugin atoms\n\nThe plugin opted into these workflow atoms; prefer them over ad-hoc shortcuts:\n\n- `todo-write`\n\n## Plugin instructions\n\n# Demo\n\nDo the thing."
+            "\n\n## Active plugin\n\nThe user applied plugin **Bản demo** (`demo@1.2.0`).\n\nDoes a demo.\n\nThe plugin's example brief is: _Make a deck about rust_\n\n## Plugin inputs\n\nTreat these as authoritative answers to questions the plugin author baked into the brief — do not re-ask the user about them.\n\n- **extra**: a, b\n- **kind**: deck\n- **topic**: rust\n\n## Plugin atoms\n\nThe plugin opted into these workflow atoms; prefer them over ad-hoc shortcuts:\n\n- `todo-write`\n\n## Plugin pipeline\n\nWork through these stages in order:\n\n1. **plan**: `todo-write`\n\n## Plugin instructions\n\n# Demo\n\nDo the thing."
         );
     }
 
