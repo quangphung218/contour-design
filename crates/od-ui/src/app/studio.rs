@@ -27,6 +27,7 @@ use crate::events::{
     MessagesResponse, RunFrame, RunStatus, decode_frame,
 };
 use crate::file_tree::is_markdown;
+use crate::highlight::{Lang, highlight};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Picked, Slide};
 use crate::workspace::{Queued, Tabs, touch_recent};
@@ -144,6 +145,8 @@ pub struct StudioCtx {
     /// Bumped to reload the preview iframe.
     pub preview_rev: RwSignal<u32>,
     pub notice: RwSignal<Option<String>>,
+    /// The project's event stream dropped and is reconnecting.
+    pub link_down: RwSignal<bool>,
     /// The project could not be loaded; shown until a retry succeeds.
     pub load_error: RwSignal<Option<String>>,
     pub comments: RwSignal<Vec<PreviewComment>>,
@@ -189,7 +192,7 @@ pub struct StudioCtx {
     project_stream: StoredValue<Option<SendWrapper<Sse>>>,
 }
 
-fn is_previewable(f: &ProjectFile) -> bool {
+pub(super) fn is_previewable(f: &ProjectFile) -> bool {
     !f.path.starts_with('.') && !f.path.contains("/.")
 }
 
@@ -573,7 +576,8 @@ impl StudioCtx {
                 }
             },
             || {},
-        );
+        )
+        .map(|s| s.on_connection(move |up| self.on_project_link(up)));
         self.project_stream.set_value(stream.map(SendWrapper::new));
     }
 
@@ -1024,6 +1028,7 @@ pub fn Studio() -> impl IntoView {
         recent: RwSignal::new(Vec::new()),
         preview_rev: RwSignal::new(0),
         notice: RwSignal::new(None),
+        link_down: RwSignal::new(false),
         load_error: RwSignal::new(None),
         comments: RwSignal::new(Vec::new()),
         comment_mode: RwSignal::new(false),
@@ -1110,6 +1115,7 @@ pub fn Studio() -> impl IntoView {
                 <QuickSwitcher ctx=ctx/>
             </Show>
             <NoticeToast ctx=ctx/>
+            <super::recovery_tip::WorkspaceRecoveryTip ctx=ctx/>
             <FilesToast/>
             <super::project_actions::BrandReady ctx=ctx/>
         </div>
@@ -1401,6 +1407,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             <div class="preview-body">
                 <ThumbRail ctx=ctx src=src/>
                 <div class="preview-stage">
+                    <super::first_hint::FirstArtifactHint ctx=ctx/>
                     {move || match special.get() {
                         Some(Special::Markdown(path)) => view! { <MarkdownView ctx=ctx path=path/> }.into_any(),
                         Some(Special::Sketch(path)) => view! { <SketchView ctx=ctx path=path/> }.into_any(),
@@ -1514,7 +1521,8 @@ fn NoticeToast(ctx: StudioCtx) -> impl IntoView {
 /// Longest source shown in the code view; the rest is cut with a note.
 const CODE_LINES: usize = 4000;
 
-/// Read-only source of the active file, with line numbers; `version` is
+/// Read-only source of the active file, with line numbers and syntax
+/// colors (`crate::highlight`); `version` is
 /// the content of the version on view, shown instead of the live file.
 #[component]
 fn CodeView(ctx: StudioCtx, version: Option<String>) -> impl IntoView {
@@ -1539,11 +1547,19 @@ fn CodeView(ctx: StudioCtx, version: Option<String>) -> impl IntoView {
                 Some(None) => ().into_any(),
                 Some(Some(Err(e))) => view! { <p class="error-text" role="alert">{e}</p> }.into_any(),
                 Some(Some(Ok(src))) => {
-                    let total = src.lines().count();
-                    let lines = src
-                        .lines()
+                    let lang = Lang::for_path(&ctx.active_untracked().unwrap_or_default());
+                    let colored = highlight(&src, lang);
+                    let total = colored.len();
+                    let lines = colored
+                        .into_iter()
                         .take(CODE_LINES)
-                        .map(|l| view! { <span class="code-line">{l.to_owned()}"\n"</span> })
+                        .map(|line| {
+                            let parts = line
+                                .into_iter()
+                                .map(|(tok, part)| view! { <span class=tok.class()>{part.to_owned()}</span> })
+                                .collect_view();
+                            view! { <span class="code-line">{parts}"\n"</span> }
+                        })
                         .collect_view();
                     view! {
                         <pre class="code-src mono"><code>{lines}</code></pre>

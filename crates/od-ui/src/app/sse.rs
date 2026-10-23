@@ -59,6 +59,30 @@ impl Sse {
         })
     }
 
+    /// Also calls `on_link(true)` when the connection opens (again) and
+    /// `on_link(false)` when it drops, retried or not.
+    #[must_use]
+    pub fn on_connection(mut self, on_link: impl Fn(bool) + 'static) -> Self {
+        let on_link = std::rc::Rc::new(on_link);
+        for (name, up) in [("open", true), ("error", false)] {
+            let cb = std::rc::Rc::clone(&on_link);
+            let handler: Handler = Closure::new(move |ev: Event| {
+                // A run's own `error` event is a message, not a drop.
+                if ev.dyn_ref::<MessageEvent>().is_none() {
+                    cb(up);
+                }
+            });
+            if self
+                .source
+                .add_event_listener_with_callback(name, handler.as_ref().unchecked_ref())
+                .is_ok()
+            {
+                self._handlers.push(handler);
+            }
+        }
+        self
+    }
+
     pub fn close(&self) {
         self.source.close();
     }

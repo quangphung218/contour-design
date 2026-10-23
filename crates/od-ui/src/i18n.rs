@@ -1429,6 +1429,12 @@ messages! {
     FromFolder => "From folder", "Từ thư mục";
     ShortcutMention => "Mention a file, plugin, skill or MCP server", "Nhắc tới file, plugin, skill hoặc MCP server";
     ShortcutSlash => "Commands (at the start of a line)", "Lệnh (ở đầu dòng)";
+    // Track C1-preview: manual edit, comments tab, code colors, hints.
+    FirstArtifactTitle => "Your first design is ready", "Bản thiết kế đầu tiên đã xong";
+    FirstArtifactBody => "Edit and annotate it right in the preview, then export when you are happy.", "Sửa và chú thích ngay trên preview, ưng rồi thì export.";
+    FirstArtifactDismiss => "Got it", "Đã hiểu";
+    WorkspaceRecovering => "Connection to Nét interrupted. Reconnecting automatically…", "Mất kết nối tới Nét. Đang tự kết nối lại…";
+    // ---- end of track C1-preview ----
 }
 
 /// The current language's text for `key`.
