@@ -89,6 +89,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::comments::routes())
         .merge(routes::handoff::routes())
         .merge(routes::agent_w3::routes())
+        .merge(routes::chat_ops::routes())
         .merge(routes::preview_tools::routes())
         .merge(routes::w3::routes(&state));
     let api = routes::preview::mount(api, state.preview.clone());

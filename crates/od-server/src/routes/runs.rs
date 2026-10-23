@@ -593,7 +593,7 @@ async fn prepare_and_launch(
                 fallback_prompt: prepared.fallback_prompt,
                 model: model.clone(),
                 reasoning: non_default(req.reasoning.as_deref()),
-                extra_dirs: Vec::new(),
+                extra_dirs: super::chat_ops::linked_dirs(&state.store, &project),
                 resume_session_id: prepared.resume_session_id,
                 permission: prepared.permission,
                 env,
