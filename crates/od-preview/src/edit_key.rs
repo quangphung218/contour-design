@@ -7,7 +7,7 @@
 //! runs and removes it from the DOM. The host claims the key once, by a
 //! POST the guard refuses to sandboxed frames, and from then on accepts
 //! only bridge messages that carry it. A later load with the same id gets
-//! no key, and a claimed id is gone.
+//! no key, and a claimed id stays spent until its TTL.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -30,7 +30,9 @@ pub fn is_edit_key_id(id: &str) -> bool {
 #[derive(Debug)]
 struct Entry {
     project_id: String,
-    key: String,
+    /// Taken by the claim; the spent id stays until its TTL so a reload
+    /// with it gets no new key.
+    key: Option<String>,
     issued_at: i64,
 }
 
@@ -89,7 +91,7 @@ impl EditKeys {
             id.to_owned(),
             Entry {
                 project_id: project_id.to_owned(),
-                key: key.clone(),
+                key: Some(key.clone()),
                 issued_at: now,
             },
         );
@@ -100,11 +102,11 @@ impl EditKeys {
     pub fn claim(&self, project_id: &str, id: &str) -> Option<String> {
         let now = od_store::now_ms();
         let mut entries = self.lock();
-        let entry = entries.get(id)?;
+        let entry = entries.get_mut(id)?;
         if entry.project_id != project_id || now.saturating_sub(entry.issued_at) >= self.ttl_ms {
             return None;
         }
-        entries.remove(id).map(|e| e.key)
+        entry.key.take()
     }
 }
 
@@ -124,6 +126,8 @@ mod tests {
         assert_eq!(keys.claim("p2", ID), None, "another project");
         assert_eq!(keys.claim("p1", ID).as_deref(), Some(key.as_str()));
         assert_eq!(keys.claim("p1", ID), None);
+        // A claimed id stays spent: a reload with it gets no new key.
+        assert_eq!(keys.issue("p1", ID), None);
         assert_ne!(keys.issue("p1", "load-fedcba9876543210"), Some(key));
     }
 
