@@ -398,6 +398,7 @@ pub fn Home() -> impl IntoView {
                             super::composer::stage(context, c);
                         }
                         text.push_str(t(T::CreatePluginPrompt));
+                        text.push(' ');
                         brief.set(text);
                         if let Some(el) = brief_ref.get_untracked() {
                             let _ = el.focus();

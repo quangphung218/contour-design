@@ -681,7 +681,7 @@ messages! {
     QuoteSelection => "Quote", "Trích dẫn";
     MediaNotes => "Style notes", "Ghi chú phong cách";
     CreatePlugin => "Create plugin", "Tạo plugin";
-    CreatePluginPrompt => "Create a plugin for: ", "Tạo một plugin cho: ";
+    CreatePluginPrompt => "Create a plugin for:", "Tạo một plugin cho:";
     FromFolder => "From folder", "Từ thư mục";
     ShortcutMention => "Mention a file, plugin, skill or MCP server", "Nhắc tới file, plugin, skill hoặc MCP server";
     ShortcutSlash => "Commands (at the start of a line)", "Lệnh (ở đầu dòng)";
