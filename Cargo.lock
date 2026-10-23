@@ -3722,6 +3722,7 @@ dependencies = [
  "chromiumoxide",
  "futures-util",
  "lopdf",
+ "nix 0.30.1",
  "od-export",
  "png 0.18.1",
  "serde_json",

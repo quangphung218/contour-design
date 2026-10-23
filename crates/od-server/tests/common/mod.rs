@@ -58,7 +58,11 @@ pub async fn daemon_with(opts: Options) -> Daemon {
     let runs = od_server::open_runs(&store, &od_server::DaemonLock::acquire(&data).unwrap())
         .await
         .unwrap();
-    let mut engine = EngineConfig::from_env().with_path_prefix(&mocks);
+    let mut engine = EngineConfig::from_env();
+    // Mocks and the system tools only: agent CLIs installed on this machine
+    // (Homebrew, npm) are never found, not even for a `--version` probe.
+    engine.path =
+        std::env::join_paths([mocks.as_path(), Path::new("/usr/bin"), Path::new("/bin")]).unwrap();
     engine.idle_timeout = opts.idle_timeout;
     engine.kill_grace = opts.kill_grace;
     engine.retry_base = Duration::from_millis(50);

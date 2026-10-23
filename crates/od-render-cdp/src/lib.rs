@@ -185,14 +185,132 @@ struct Session {
     gate: Option<tokio::task::JoinHandle<()>>,
     width: u32,
     height: u32,
-    _profile: tempfile::TempDir,
+    /// Dropped last: after the browser, so its processes are gone first.
+    _profile: Profile,
 }
+
+/// Prefix of browser profile folders in the temp dir.
+const PROFILE_PREFIX: &str = "od-chrome-";
+/// A profile folder without a browser lock this old is left over.
+const STALE_PROFILE: Duration = Duration::from_secs(60 * 60);
+
+/// A throwaway browser profile. Removed only once no process started with
+/// it is left: a Chrome helper still exiting would write it back (the
+/// browser is killed on drop, not waited for).
+struct Profile(Option<tempfile::TempDir>);
+
+impl Profile {
+    fn new() -> std::io::Result<Self> {
+        sweep_stale_profiles(&std::env::temp_dir());
+        let dir = tempfile::Builder::new().prefix(PROFILE_PREFIX).tempdir()?;
+        Ok(Self(Some(dir)))
+    }
+
+    fn path(&self) -> &Path {
+        self.0
+            .as_ref()
+            .map_or(Path::new(""), tempfile::TempDir::path)
+    }
+}
+
+impl Drop for Profile {
+    fn drop(&mut self) {
+        if let Some(dir) = self.0.take() {
+            end_profile_users(dir.path());
+            let path = dir.path().to_path_buf();
+            if dir.close().is_err() || path.exists() {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+        }
+    }
+}
+
+/// Pids of the processes started with `--user-data-dir=<dir>` (Chrome and
+/// every helper it spawns).
+#[cfg(unix)]
+fn profile_users(dir: &Path) -> Vec<i32> {
+    let flag = format!("--user-data-dir={}", dir.display());
+    let Ok(out) = std::process::Command::new("ps")
+        .args(["-A", "-ww", "-o", "pid=,args="])
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| l.contains(&flag))
+        .filter_map(|l| l.split_whitespace().next()?.parse().ok())
+        .collect()
+}
+
+/// Kills what still runs with `dir` as its profile and waits (≤ 3 s) for
+/// it to be gone.
+#[cfg(unix)]
+fn end_profile_users(dir: &Path) {
+    use nix::sys::signal::{Signal, kill};
+    use nix::unistd::Pid;
+    for _ in 0..60 {
+        let users = profile_users(dir);
+        if users.is_empty() {
+            return;
+        }
+        for pid in users {
+            let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[cfg(not(unix))]
+fn end_profile_users(_dir: &Path) {}
+
+/// Removes profile folders a render killed with its process left in `tmp`:
+/// no process uses them and their lock names a dead browser, or they have
+/// no lock and are older than [`STALE_PROFILE`].
+#[cfg(unix)]
+fn sweep_stale_profiles(tmp: &Path) {
+    let Ok(entries) = std::fs::read_dir(tmp) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let dir = entry.path();
+        let is_profile = entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(PROFILE_PREFIX)
+            && entry.file_type().is_ok_and(|t| t.is_dir());
+        if !is_profile || !profile_users(&dir).is_empty() {
+            continue;
+        }
+        // `SingletonLock` → `<host>-<pid>` of the browser using it.
+        let stale = match std::fs::read_link(dir.join("SingletonLock")) {
+            Ok(target) => target
+                .to_string_lossy()
+                .rsplit('-')
+                .next()
+                .and_then(|p| p.parse::<i32>().ok())
+                .is_some_and(|pid| {
+                    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err()
+                }),
+            Err(_) => entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|m| m.elapsed().ok())
+                .is_some_and(|age| age > STALE_PROFILE),
+        };
+        if stale {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn sweep_stale_profiles(_tmp: &Path) {}
 
 impl Session {
     async fn open(exe: &Path, target: &RenderTarget) -> RenderResult<Self> {
-        let profile = tempfile::Builder::new()
-            .prefix("od-chrome-")
-            .tempdir()
+        let profile = Profile::new()
             .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))?;
         let config = BrowserConfig::builder()
             .chrome_executable(exe)
