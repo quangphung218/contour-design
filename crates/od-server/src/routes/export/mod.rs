@@ -317,7 +317,10 @@ pub(crate) async fn resolve_entry(
     Ok(entry)
 }
 
-async fn bundle(entry: &Entry, lenient: bool) -> ExportResult<od_export::StandaloneHtml> {
+pub(crate) async fn bundle(
+    entry: &Entry,
+    lenient: bool,
+) -> ExportResult<od_export::StandaloneHtml> {
     let source = StoreSource {
         root: entry.root.clone(),
     };

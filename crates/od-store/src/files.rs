@@ -440,6 +440,79 @@ pub fn upload_file(
     Err(StoreError::FileExists)
 }
 
+/// Every folder in the project, sorted, skipping the same hidden and
+/// generated trees as [`list_files`]. Empty folders are listed too, so a
+/// folder made in the files panel shows before anything is put in it.
+///
+/// # Errors
+/// I/O errors other than a missing project folder.
+pub fn list_folders(root: &ProjectRoot) -> Result<Vec<String>> {
+    fn walk(dir: &Path, rel_dir: &str, out: &mut Vec<String>) -> Result<()> {
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(err) => return Err(err.into()),
+        };
+        for entry in entries {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || is_ignored_dir_name(&name) || !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let rel = if rel_dir.is_empty() {
+                name
+            } else {
+                format!("{rel_dir}/{name}")
+            };
+            walk(&entry.path(), &rel, out)?;
+            out.push(rel);
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(&root.dir, "", &mut out)?;
+    out.sort();
+    Ok(out)
+}
+
+/// Creates folder `path` (sanitized like file names) and its parents.
+///
+/// # Errors
+/// Path errors, [`StoreError::FileExists`] when a file holds the name.
+pub fn create_folder(root: &ProjectRoot, path: &str) -> Result<String> {
+    assert_visible_for_import(path, root.imported)?;
+    let rel = sanitize_path(path)?;
+    root.ensure_exists()?;
+    let full = root.resolve(&rel)?;
+    if full.exists() && !full.is_dir() {
+        return Err(StoreError::FileExists);
+    }
+    fs::create_dir_all(&full)?;
+    Ok(rel)
+}
+
+/// Deletes folder `path` with everything in it. Returns its project path
+/// and the files it held, so their histories can be closed.
+///
+/// # Errors
+/// Path errors, [`StoreError::FileNotFound`] when it is not a folder,
+/// [`StoreError::ReservedPath`] for hidden folders (app state lives there).
+pub fn delete_folder(root: &ProjectRoot, path: &str) -> Result<(String, Vec<String>)> {
+    let rel = validate_project_path(path)?;
+    if rel.split('/').any(|s| s.starts_with('.')) {
+        return Err(StoreError::ReservedPath);
+    }
+    let full = root.resolve(&rel)?;
+    let meta = fs::symlink_metadata(&full).map_err(StoreError::from_file_io)?;
+    if !meta.is_dir() {
+        return Err(StoreError::FileNotFound);
+    }
+    let mut held = Vec::new();
+    collect(&full, &rel, &mut held)?;
+    fs::remove_dir_all(&full)?;
+    Ok((rel, held.into_iter().map(|f| f.name).collect()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,5 +594,62 @@ mod tests {
             .map(|f| f.name)
             .collect();
         assert_eq!(names, ["index.html"]);
+    }
+
+    fn managed(tmp: &tempfile::TempDir) -> ProjectRoot {
+        ProjectRoot {
+            dir: tmp.path().to_path_buf(),
+            imported: false,
+        }
+    }
+
+    #[test]
+    fn folders_are_listed_even_when_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = managed(&tmp);
+        assert_eq!(
+            create_folder(&root, "assets/My Icons").unwrap(),
+            "assets/My-Icons"
+        );
+        create_folder(&root, "notes").unwrap();
+        fs::create_dir_all(tmp.path().join(".od/versions")).unwrap();
+        fs::create_dir_all(tmp.path().join("node_modules/x")).unwrap();
+        assert_eq!(
+            list_folders(&root).unwrap(),
+            ["assets", "assets/My-Icons", "notes"]
+        );
+        fs::write(tmp.path().join("page.html"), b"<p>").unwrap();
+        assert!(matches!(
+            create_folder(&root, "page.html"),
+            Err(StoreError::FileExists)
+        ));
+        assert!(create_folder(&root, "../out").is_err());
+    }
+
+    #[test]
+    fn deleting_a_folder_reports_its_files_and_spares_app_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = managed(&tmp);
+        fs::create_dir_all(tmp.path().join("a/b")).unwrap();
+        fs::write(tmp.path().join("a/one.html"), b"1").unwrap();
+        fs::write(tmp.path().join("a/b/two.css"), b"2").unwrap();
+        let (rel, mut held) = delete_folder(&root, "a").unwrap();
+        held.sort();
+        assert_eq!(rel, "a");
+        assert_eq!(held, ["a/b/two.css", "a/one.html"]);
+        assert!(!tmp.path().join("a").exists());
+
+        fs::create_dir_all(tmp.path().join(".od")).unwrap();
+        assert!(matches!(
+            delete_folder(&root, ".od"),
+            Err(StoreError::ReservedPath)
+        ));
+        assert!(tmp.path().join(".od").exists());
+        fs::write(tmp.path().join("f.txt"), b"x").unwrap();
+        assert!(matches!(
+            delete_folder(&root, "f.txt"),
+            Err(StoreError::FileNotFound)
+        ));
+        assert!(delete_folder(&root, "").is_err());
     }
 }

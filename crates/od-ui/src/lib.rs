@@ -4,6 +4,7 @@
 
 pub mod chat;
 pub mod events;
+pub mod file_tree;
 pub mod fuzzy;
 pub mod guide;
 pub mod i18n;

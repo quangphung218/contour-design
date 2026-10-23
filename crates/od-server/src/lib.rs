@@ -85,6 +85,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/runs/{id}/steer", post(runs::steer))
         .merge(routes::ui::routes())
         .merge(routes::export::routes())
+        .merge(routes::file_ops::routes())
         .merge(routes::media::routes())
         .merge(routes::comments::routes())
         .merge(routes::handoff::routes())

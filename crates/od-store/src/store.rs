@@ -382,6 +382,32 @@ impl Store {
         versions::mark_deleted(&root.dir, &rel)
     }
 
+    /// # Errors
+    /// [`StoreError::ProjectNotFound`] or I/O errors.
+    pub fn list_folders(&self, project_id: &str) -> Result<Vec<String>> {
+        files::list_folders(&self.root_for(project_id)?)
+    }
+
+    /// # Errors
+    /// Project, path, conflict or I/O errors.
+    pub fn create_folder(&self, project_id: &str, path: &str) -> Result<String> {
+        files::create_folder(&self.root_for(project_id)?, path)
+    }
+
+    /// Deletes a folder and closes the histories of the HTML files in it.
+    ///
+    /// # Errors
+    /// Project, path or I/O errors.
+    pub fn delete_folder(&self, project_id: &str, path: &str) -> Result<String> {
+        let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
+        let (rel, held) = files::delete_folder(&root, path)?;
+        for name in held.iter().filter(|n| is_html_name(n)) {
+            versions::mark_deleted(&root.dir, name)?;
+        }
+        Ok(rel)
+    }
+
     /// Stores an upload; HTML uploads get a baseline version.
     ///
     /// # Errors
