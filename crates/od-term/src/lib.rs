@@ -707,4 +707,32 @@ mod tests {
         assert_eq!(clamp_size(None, None), (80, 24));
         assert_eq!(clamp_size(Some(0), Some(5000)), (1, MAX_DIMENSION));
     }
+
+    /// A noted group is forgotten once it ends: its id may be reused by a
+    /// stranger by the time the tab closes.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_tracker_forgets_groups_that_ended() {
+        let dir = std::env::temp_dir();
+        let terms = Terminals::new(TermConfig {
+            shell: Some("/bin/sh".into()),
+            track_every: Duration::from_millis(100),
+            ..TermConfig::default()
+        });
+        let s = terms.create("p", &dir, None, None).unwrap();
+        s.write(b"sleep 1 &\r").unwrap();
+        let until = |want: bool| {
+            let s = Arc::clone(&s);
+            async move {
+                let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+                while s.tracked_groups().is_empty() == want {
+                    assert!(tokio::time::Instant::now() < deadline, "tracked: {want}");
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            }
+        };
+        until(true).await;
+        until(false).await;
+        terms.close_all().await;
+    }
 }
