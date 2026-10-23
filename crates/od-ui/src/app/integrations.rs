@@ -42,12 +42,11 @@ pub fn Integrations() -> impl IntoView {
     let tab = RwSignal::new(Tab::Mcp);
     let tab_button = move |tb: Tab, glyph: Glyph, label: T, hint: T, testid: &'static str| {
         view! {
-            <button class="tab" role="tab" data-testid=testid
+            <button class="seg" role="tab" data-testid=testid data-tip=t(hint)
                 aria-selected=move || (tab.get() == tb).to_string()
                 class:active=move || tab.get() == tb
                 on:click=move |_| tab.set(tb)>
-                <span class="tab-name">{icon(glyph)}{t(label)}</span>
-                <span class="muted small">{t(hint)}</span>
+                {icon(glyph)}{t(label)}
             </button>
         }
     };
@@ -59,7 +58,7 @@ pub fn Integrations() -> impl IntoView {
                     <p class="page-sub">{t(T::IntegrationsIntro)}</p>
                 </div>
             </header>
-            <div class="tabs integration-tabs" role="tablist">
+            <div class="segmented integration-tabs" role="tablist">
                 {tab_button(Tab::Mcp, Glyph::Mcp, T::McpTitle, T::ExternalTools, "tab-mcp")}
                 {tab_button(Tab::Agents, Glyph::Agent, T::ConnectAgents, T::ConnectAgentsShort, "tab-agents")}
                 {tab_button(Tab::Everywhere, Glyph::Globe, T::UseEverywhere, T::UseEverywhereShort, "tab-everywhere")}

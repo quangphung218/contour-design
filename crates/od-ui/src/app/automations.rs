@@ -505,7 +505,7 @@ fn SchedulePicker(form: Form) -> impl IntoView {
                 <Show when=move || kind() == Kind::Hourly>
                     <label class="field">
                         <span>{t(T::FieldMinute)}</span>
-                        <input class="input small" type="number" min="0" max="59" data-testid="schedule-minute"
+                        <input class="input" type="number" min="0" max="59" data-testid="schedule-minute"
                             prop:value=move || match form.preset.get() { Preset::Hourly { minute } => minute.to_string(), _ => "0".to_owned() }
                             on:change=move |ev| {
                                 let m = event_target_value(&ev).parse::<u32>().unwrap_or(0).min(59);
@@ -516,7 +516,7 @@ fn SchedulePicker(form: Form) -> impl IntoView {
                 <Show when=move || matches!(kind(), Kind::Daily | Kind::Weekdays | Kind::Weekly)>
                     <label class="field">
                         <span>{t(T::FieldTime)}</span>
-                        <input class="input small" type="time" data-testid="schedule-time"
+                        <input class="input" type="time" data-testid="schedule-time"
                             prop:value=time on:change=move |ev| set_time(event_target_value(&ev))/>
                     </label>
                     <label class="field grow">

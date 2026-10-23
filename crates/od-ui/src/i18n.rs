@@ -715,7 +715,7 @@ messages! {
     TerminalHint => "Click here and type. The shell runs in the project folder.", "Bấm vào đây rồi gõ. Shell chạy trong thư mục project.";
     CloseTerminal => "Close terminal", "Đóng terminal";
     NavAutomations => "Automations", "Tự động hoá";
-    AutomationsIntro => "Run a prompt in a project on a schedule, in this computer's local time.", "Chạy một prompt trong project theo lịch, tính theo giờ máy.";
+    AutomationsIntro => "Run a prompt on a schedule, in one project or in a fresh project each time.", "Chạy một prompt theo lịch, trong một project hoặc trong project mới mỗi lần.";
     RoutineName => "Name", "Tên";
     RoutineProject => "Project", "Project";
     RoutinePrompt => "Prompt", "Prompt";
