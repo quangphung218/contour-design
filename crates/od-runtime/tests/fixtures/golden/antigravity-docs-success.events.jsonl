@@ -1,0 +1,5 @@
+{"type":"status","label":"initializing","sessionId":"c3b66b04-872b-4fbe-a3a4-058a026ef20a"}
+{"type":"tool_use","id":"edb1c8c1-50ba-4f3f-87eb-412d0e9d47c3:4","name":"run_command","input":{"CommandLine":"echo hello_headless_demo"}}
+{"type":"tool_result","toolUseId":"edb1c8c1-50ba-4f3f-87eb-412d0e9d47c3:4","content":"hello_headless_demo\r\n","isError":false}
+{"type":"text_delta","delta":"Git rebase..."}
+{"type":"usage","usage":{"input_tokens":10418,"output_tokens":589,"thought_tokens":551,"cached_read_tokens":8113},"durationMs":0}

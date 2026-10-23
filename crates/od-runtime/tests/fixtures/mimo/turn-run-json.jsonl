@@ -1,0 +1,4 @@
+{"type":"step_start","timestamp":1,"sessionID":"ses_mimo1","part":{"type":"step-start"}}
+{"type":"text","timestamp":2,"sessionID":"ses_mimo1","part":{"type":"text","text":"Writing the page."}}
+{"type":"tool_use","timestamp":3,"sessionID":"ses_mimo1","part":{"type":"tool","tool":"write","callID":"call_m1","state":{"status":"completed","input":{"filePath":"/proj/index.html","content":"<html></html>"},"output":"ok"}}}
+{"type":"step_finish","timestamp":4,"sessionID":"ses_mimo1","part":{"type":"step-finish","reason":"stop","cost":0.001,"tokens":{"input":40,"output":9,"reasoning":0,"cache":{"read":0,"write":0}}}}

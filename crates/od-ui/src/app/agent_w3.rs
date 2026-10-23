@@ -25,7 +25,17 @@ use serde_json::json;
 /// Agents whose CLI can block on an approval prompt the daemon never
 /// answers when the permission mode is "ask" (decision: keep the runtime,
 /// warn in the UI).
-const ASK_MODE_HANGS: [&str; 2] = ["copilot", "qwen"];
+const ASK_MODE_HANGS: [&str; 9] = [
+    "copilot",
+    "qwen",
+    "amp",
+    "qoder",
+    "aider",
+    "deepseek",
+    "grok-build",
+    "atomcode",
+    "antigravity",
+];
 
 /// A side-chat turn runs in chat mode whatever its conversation was
 /// switched to in the main pane: a side question never edits files.

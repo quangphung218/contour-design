@@ -1,0 +1,7 @@
+{"type":"system","subtype":"init","model":"performance","session_id":"qd-sess-1","qodercli_version":"0.1.48","cwd":"/proj"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Plan the hero first."},{"type":"thinking","thinking":" Then the footer."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Writing index.html. "},{"type":"tool_use","id":"t1","name":"Write","input":{"file_path":"/proj/index.html"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}
+{"type":"assistant","message":{"role":"assistant","content":"Done — ✓ 完成."}}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":4210,"total_cost_usd":0.0042,"stop_reason":"end_turn","usage":{"input_tokens":1200,"output_tokens":340}}
+not json at all

@@ -14,6 +14,7 @@ mod desktop;
 mod doc_view;
 mod ds_create;
 mod ds_page;
+mod dsh_setup;
 mod export_extra;
 mod export_menu;
 mod files_panel;

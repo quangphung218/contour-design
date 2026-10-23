@@ -66,8 +66,10 @@ pub async fn export(State(state): State<AppState>) -> ApiResult<impl IntoRespons
         .app_setting(od_runtime::byok::APP_CONFIG_KEY)
         .and_then(|v| od_runtime::byok::ByokConfig::from_value(&v))
         .is_some();
+    let engine = state.runs.engine.config();
     let agents =
-        od_runtime::detect::detect_all(state.runs.engine.config().path.clone(), byok).await;
+        od_runtime::detect::detect_all_in(engine.path.clone(), engine.base_env.clone(), byok)
+            .await;
     let runs: Vec<_> = state
         .runs
         .registry

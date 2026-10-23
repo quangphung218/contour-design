@@ -191,11 +191,17 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
 pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl IntoView {
     let id = agent.id.clone();
     let id_check = id.clone();
+    // Installed, but its connection component is missing: the card opens
+    // the setup dialog instead of being a dead entry.
+    let setup = super::dsh_setup::needs_setup(&agent);
+    let setup_state = RwSignal::new(None::<super::dsh_setup::SetupState>);
     let detail = if agent.available {
         agent.version.clone().map_or_else(
             || t(T::Installed).to_owned(),
             |v| tf(T::InstalledVersion, &[&v]),
         )
+    } else if setup {
+        t(T::DshSetupRequired).to_owned()
     } else {
         agent
             .error
@@ -209,14 +215,22 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
         <button
             class="agent-card"
             class:compact=!available
+            class:needs-setup=setup
             class:active=selected.clone()
-            disabled=!available
+            disabled=!available && !setup
             role="radio"
             aria-checked=move || selected().to_string()
             data-agent=agent.id.clone()
-            on:click=move |_| picked.set(Some(id.clone()))
+            data-needs-setup=setup.then_some("true")
+            on:click=move |_| {
+                if setup {
+                    setup_state.set(Some(super::dsh_setup::SetupState::default()));
+                } else {
+                    picked.set(Some(id.clone()));
+                }
+            }
         >
-            <span class="agent-icon">{icon(if available { Glyph::Agent } else { Glyph::Download })}</span>
+            <span class="agent-icon">{icon(if available { Glyph::Agent } else if setup { Glyph::Settings } else { Glyph::Download })}</span>
             <span class="agent-text">
                 <span class="agent-name">{agent.name.clone()}</span>
                 <span class="agent-detail" title=detail_title>{detail}</span>
@@ -225,5 +239,8 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
                 <span class="agent-check" aria-hidden="true">{icon(Glyph::CheckCircle)}</span>
             })}
         </button>
+        {move || setup_state.get().is_some().then(|| view! {
+            <super::dsh_setup::DshSetupDialog state=setup_state picked=picked/>
+        })}
     }
 }

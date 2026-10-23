@@ -35,6 +35,14 @@ pub enum ErrorCode {
     UnsupportedMediaType,
     /// Export: Chrome is missing or the render failed.
     UpstreamUnavailable,
+    /// Agent setup: the agent's own CLI is not installed.
+    AgentNotInstalled,
+    /// Agent setup: the bundled connection component is missing or altered.
+    BundledCompanionInvalid,
+    /// Agent setup: the agent's CLI could not install the component.
+    CompanionInstallFailed,
+    /// Agent setup: installed, but the compatibility check still fails.
+    CompanionStillIncompatible,
 }
 
 /// Error payload: `{ "error": { "code": "...", "message": "..." } }`.

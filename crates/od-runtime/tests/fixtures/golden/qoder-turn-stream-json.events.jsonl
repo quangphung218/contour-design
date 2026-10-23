@@ -1,0 +1,9 @@
+{"type":"status","label":"initializing","model":"performance","sessionId":"qd-sess-1"}
+{"type":"thinking_start"}
+{"type":"thinking_delta","delta":"Plan the hero first."}
+{"type":"thinking_delta","delta":" Then the footer."}
+{"type":"text_delta","delta":"Writing index.html. "}
+{"type":"raw","line":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"ok\"}]}}"}
+{"type":"text_delta","delta":"Done — ✓ 完成."}
+{"type":"usage","usage":{"input_tokens":1200,"output_tokens":340},"costUsd":0.0042,"durationMs":0,"stopReason":"end_turn"}
+{"type":"raw","line":"not json at all"}

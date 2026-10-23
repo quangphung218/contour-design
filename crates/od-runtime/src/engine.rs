@@ -4,7 +4,8 @@
 
 use crate::byok::{self, ByokConfig, ByokRequest};
 use crate::def::{
-    ArgvInput, PermissionMode, PromptInput, RuntimeDef, SessionIdSource, StreamFormat,
+    ANTIGRAVITY, ArgvInput, MAX_PROMPT_ARG_BYTES, PermissionMode, PromptInput, RuntimeDef,
+    SessionIdSource, StreamFormat,
 };
 use crate::guard::{ToolLoopGuard, ToolLoopLimits, Verdict};
 use crate::parse::{SessionContext, StreamParser, parser_for};
@@ -354,6 +355,32 @@ impl RunEngine {
                 (SessionIdSource::Minted, None) => Some(uuid::Uuid::new_v4().to_string()),
                 (SessionIdSource::Captured | SessionIdSource::None, None) => None,
             };
+            if def.prompt_input == PromptInput::Argv && prompt.len() > MAX_PROMPT_ARG_BYTES {
+                let message = format!(
+                    "the prompt is {} bytes, but {} takes it on the command line (at most {} \
+                     bytes); reduce the skills or design-system context, or pick an agent that \
+                     reads the prompt from stdin",
+                    prompt.len(),
+                    def.name,
+                    MAX_PROMPT_ARG_BYTES
+                );
+                return finish(
+                    run,
+                    Finish::failed(FailureCategory::SpawnFailed, message, None),
+                    &[],
+                );
+            }
+            let files = match PromptFiles::stage(def, &prompt) {
+                Ok(files) => files,
+                Err(err) => {
+                    let message = format!("could not stage the prompt file: {err}");
+                    return finish(
+                        run,
+                        Finish::failed(FailureCategory::SpawnFailed, message, None),
+                        &[],
+                    );
+                }
+            };
             let mut args = def.build_args(&ArgvInput {
                 model: spec.model.as_deref(),
                 reasoning: spec.reasoning.as_deref(),
@@ -364,6 +391,9 @@ impl RunEngine {
                 new_session_id: session_id.as_deref(),
                 permission: spec.permission,
                 capabilities: &capabilities,
+                prompt: Some(&prompt),
+                prompt_file: files.prompt.as_deref(),
+                log_file: files.log.as_deref(),
             });
             args.extend(spec.mcp.args.iter().cloned());
             let attempt = if is_byok {
@@ -380,9 +410,11 @@ impl RunEngine {
                     },
                     &prompt,
                     resume.as_deref(),
+                    files.log.as_deref(),
                 )
                 .await
             };
+            drop(files);
             let session = attempt.session_id.clone().or(session_id);
             if attempt.canceled {
                 let mut f = Finish::canceled(attempt.exit_code, attempt.signal.clone());
@@ -465,10 +497,23 @@ impl RunEngine {
         spawn: SpawnSpec,
         prompt: &str,
         resume: Option<&str>,
+        log_file: Option<&Path>,
     ) -> Attempt {
         let run = &spec.run;
         let def = spec.def;
         let mut att = Attempt::default();
+        // Held until this attempt ends (see `crate::antigravity`).
+        let _model_lock = match (def.id == ANTIGRAVITY.id, non_default(spec.model.as_deref()), log_file) {
+            (true, Some(model), Some(log)) => Some(
+                crate::antigravity::select_model(
+                    crate::antigravity::settings_path(&home_of(&spec.env)),
+                    model.to_owned(),
+                    log.to_path_buf(),
+                )
+                .await,
+            ),
+            _ => None,
+        };
         let mut parser: Box<dyn StreamParser> = parser_for(
             def.stream_format,
             &SessionContext {
@@ -512,12 +557,14 @@ impl RunEngine {
             let payload = match def.prompt_input {
                 PromptInput::StreamJsonStdin => stream_json_user_line(prompt),
                 PromptInput::TextStdin => prompt.to_owned(),
-                // The protocol session writes its own requests.
-                PromptInput::Rpc => String::new(),
+                PromptInput::AgyStdin => agy_user_line(prompt),
+                // The protocol session writes its own requests; argv and
+                // file prompts leave stdin empty.
+                PromptInput::Rpc | PromptInput::Argv | PromptInput::File => String::new(),
             };
             let wrote =
                 stdin.write_all(payload.as_bytes()).await.is_ok() && stdin.flush().await.is_ok();
-            if wrote && def.prompt_input != PromptInput::TextStdin {
+            if wrote && def.prompt_input.keeps_stdin() {
                 // Held open for steering until the turn ends, or for the
                 // protocol until the prompt completes.
                 *active.stdin.lock().await = Some(stdin);
@@ -934,6 +981,76 @@ fn write_artifacts(run: &Run, cwd: &Path, att: &mut Attempt) -> Result<(), Strin
         }
     }
     Ok(())
+}
+
+/// One Antigravity stream-json `user` event (`encodeAntigravityStdinPrompt`).
+#[must_use]
+pub fn agy_user_line(text: &str) -> String {
+    let mut line = json!({"event": "user", "message": {"content": text}}).to_string();
+    line.push('\n');
+    line
+}
+
+fn non_default(value: Option<&str>) -> Option<&str> {
+    value
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && *v != "default")
+}
+
+/// `HOME` of the agent's environment, else the daemon's.
+fn home_of(env: &[(OsString, OsString)]) -> PathBuf {
+    env.iter()
+        .find(|(k, _)| k == "HOME")
+        .map(|(_, v)| PathBuf::from(v))
+        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+        .unwrap_or_default()
+}
+
+/// Per-attempt temp files: the staged prompt (`--prompt-file` runtimes)
+/// and the agent's own log (Antigravity). Removed when dropped.
+#[derive(Debug, Default)]
+struct PromptFiles {
+    prompt: Option<PathBuf>,
+    log: Option<PathBuf>,
+}
+
+impl PromptFiles {
+    fn stage(def: &RuntimeDef, prompt: &str) -> std::io::Result<Self> {
+        let mut files = Self::default();
+        let name = |kind: &str| {
+            std::env::temp_dir().join(format!("od-{}-{kind}-{}", def.id, uuid::Uuid::new_v4()))
+        };
+        if def.prompt_input == PromptInput::File {
+            let path = name("prompt.md");
+            write_private(&path, prompt.as_bytes())?;
+            files.prompt = Some(path);
+        }
+        if def.id == ANTIGRAVITY.id {
+            files.log = Some(name("agy.log"));
+        }
+        Ok(files)
+    }
+}
+
+impl Drop for PromptFiles {
+    fn drop(&mut self) {
+        for path in [&self.prompt, &self.log].into_iter().flatten() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// A new file only the user can read (the prompt carries project context).
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)?.write_all(bytes)
 }
 
 /// One stream-json user message line.
