@@ -220,6 +220,37 @@ async fn foreign_origins_hosts_and_bodies_are_refused() {
             .unwrap();
         assert_eq!(res.status(), StatusCode::FORBIDDEN, "{peer:?}");
     }
+
+    // A web origin allowed for the API (`OD_ALLOWED_ORIGINS`) still may not
+    // open terminals: these routes take loopback origins only.
+    let mut state = d.state.clone();
+    let mut config = (*state.config).clone();
+    config.allowed_origins = vec!["https://studio.example".to_owned()];
+    state.config = std::sync::Arc::new(config);
+    let req = |origin: &str| {
+        let mut req = Request::get(format!("/api/projects/{project}/terminals"))
+            .header(header::HOST, format!("127.0.0.1:{port}"))
+            .header(header::ORIGIN, origin)
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut()
+            .insert(ConnectInfo("127.0.0.1:5000".parse::<SocketAddr>().unwrap()));
+        req
+    };
+    let res = od_server::router(state.clone())
+        .oneshot(req("https://studio.example"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    let res = od_server::router(state)
+        .oneshot(req(&format!("http://127.0.0.1:{port}")))
+        .await
+        .unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "the app's own origin still works"
+    );
     let res = d
         .http
         .delete(format!("{}/api/terminals/{tid}", d.base))

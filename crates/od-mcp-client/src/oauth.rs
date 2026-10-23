@@ -558,4 +558,25 @@ mod tests {
         assert!(flows.take("other").is_none());
         assert!(!format!("{:?}", flows).contains("\"v\""));
     }
+
+    #[test]
+    fn an_expired_flow_is_refused() {
+        let flows = Flows::default();
+        let old = std::time::Instant::now()
+            .checked_sub(FLOW_TTL + Duration::from_secs(1))
+            .unwrap();
+        flows.pending.lock().unwrap().insert(
+            "st".into(),
+            PendingFlow {
+                server_id: "s".into(),
+                verifier: "v".into(),
+                client_id: "c".into(),
+                token_endpoint: "https://a/t".into(),
+                redirect_uri: "http://127.0.0.1/cb".into(),
+                resource: "https://a/mcp".into(),
+                started: old,
+            },
+        );
+        assert!(flows.take("st").is_none());
+    }
 }

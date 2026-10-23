@@ -434,7 +434,14 @@ cat >/dev/null
         "the run's MCP config was removed"
     );
 
-    // Sign out, then removing the server drops its token too.
+    // Removing the server drops its token; signing out is idempotent.
+    let res = put_servers(&d, &json!({"servers": [{"id": "files", "transport": "stdio", "command": bin, "env": {"MCP_ROOT": "docs"}}]})).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        !std::fs::read_to_string(&tokens_path)
+            .unwrap()
+            .contains("at-2")
+    );
     let res = d
         .http
         .delete(format!("{}/api/mcp/servers/images/oauth", d.base))
@@ -442,9 +449,4 @@ cat >/dev/null
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert!(
-        !std::fs::read_to_string(&tokens_path)
-            .unwrap()
-            .contains("at-2")
-    );
 }
