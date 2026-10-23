@@ -4,8 +4,9 @@
 // turn reloads the preview → question form → plan pill, queue, steer, stop →
 // history after reload → preview comments sent with a turn → deck viewer
 // (next, thumbnails, notes, present, Esc) → quick switcher and tabs →
-// version restore → fork → export and handoff → open folder → settings and
-// Vietnamese. Every request leaving loopback is blocked and fails the test.
+// version restore → fork → export and handoff → open folder → terminal tab
+// (echo, reattach, close) → routine run by the mock agent → MCP stdio server
+// → settings and Vietnamese. Every request leaving loopback is blocked and fails the test.
 //
 // Run through ./run.sh (builds the bundle and `od` first).
 
@@ -55,7 +56,8 @@ mkdirSync(OUT, { recursive: true });
 const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
   stdio: ['ignore', 'inherit', 'inherit'],
   // `true` stands in for Finder/xdg-open so handoff never opens a window.
-  env: { ...process.env, OD_DATA_DIR: data, PATH: `${MOCK_AGENTS}:/usr/bin:/bin`, OD_OPEN_COMMAND: '/usr/bin/true' },
+  // SHELL: terminal tabs run a plain sh, not the developer's own rc files.
+  env: { ...process.env, OD_DATA_DIR: data, PATH: `${MOCK_AGENTS}:/usr/bin:/bin`, OD_OPEN_COMMAND: '/usr/bin/true', SHELL: '/bin/sh' },
 });
 let browser;
 const results = {};
@@ -308,6 +310,63 @@ try {
   await frame.locator('#title', { hasText: 'From my folder' }).waitFor();
   rmSync(folder, { recursive: true, force: true });
   results.projects = 'ok';
+
+  // 15b. Terminal tab: a shell in the project folder; type echo, reload
+  // reattaches with the scrollback, closing the tab ends the shell.
+  const projectId = new URL(projectUrl).pathname.split('/').pop();
+  await page.goto(projectUrl);
+  await page.getByTestId('composer').waitFor();
+  await page.getByTestId('new-terminal').click();
+  await page.getByTestId('terminal-tab').waitFor();
+  const term = page.getByTestId('terminal');
+  await term.click();
+  await until(async () => (await term.textContent()).includes('$'), 'shell prompt');
+  await page.keyboard.type('echo e2e-$((6*7)); pwd');
+  await page.keyboard.press('Enter');
+  await until(async () => (await term.textContent()).includes('e2e-42'), 'echo output');
+  assert.match(await term.textContent(), new RegExp(`projects/${projectId}`), 'shell runs in the project folder');
+  await page.screenshot({ path: OUT + 'terminal.png' });
+  await page.reload();
+  await page.getByTestId('terminal-tab').click();
+  await until(async () => (await page.getByTestId('terminal').textContent()).includes('e2e-42'), 'scrollback replay');
+  await page.getByTestId('terminal-close').click();
+  await until(async () => {
+    const r = await (await fetch(`${BASE}/api/projects/${projectId}/terminals`)).json();
+    return r.terminals.length === 0;
+  }, 'terminal closed on the daemon');
+  results.terminal = 'ok';
+
+  // 15c. Automations: a routine run now goes through the mock agent and
+  // lands in the history and in its own conversation.
+  await page.goto(BASE + '/automations');
+  await page.getByTestId('routine-name').fill('Morning refresh');
+  await page.getByTestId('routine-project').selectOption(projectId);
+  await page.getByTestId('routine-prompt').fill('Routine refresh of the page');
+  await page.getByTestId('routine-schedule').fill('@daily');
+  await page.getByTestId('routine-add').click();
+  const routine = page.getByTestId('routine').filter({ hasText: 'Morning refresh' });
+  await routine.waitFor();
+  assert.match(await routine.textContent(), /Next run: /);
+  await routine.getByTestId('routine-run').click();
+  await routine.locator('[data-testid="routine-run-row"][data-status="succeeded"]').waitFor({ timeout: 20_000 });
+  const convs = await (await fetch(`${BASE}/api/projects/${projectId}/conversations`)).json();
+  assert.ok(convs.conversations.some((c) => (c.title || '').startsWith('Morning refresh · ')), 'routine conversation');
+  await page.screenshot({ path: OUT + 'automations.png' });
+  results.automations = 'ok';
+
+  // 15d. MCP servers: add a stdio server (mock on PATH), save, test.
+  await page.goto(BASE + '/settings');
+  await page.getByTestId('mcp-add').click();
+  await page.getByTestId('mcp-id').fill('echo');
+  await page.getByTestId('mcp-id').press('Tab');
+  await page.getByTestId('mcp-command').fill('mcp-echo');
+  await page.getByTestId('mcp-command').press('Tab');
+  await page.getByTestId('mcp-save').click();
+  await page.getByTestId('mcp-test').click();
+  await page.getByTestId('mcp-probe').getByText('Connected, 1 tools').waitFor();
+  const mcp = await (await fetch(`${BASE}/api/mcp/servers`)).json();
+  assert.equal(mcp.servers[0].id, 'echo');
+  results.mcp = 'ok';
 
   // 16. Settings persist and switch the theme; Vietnamese everywhere.
   await page.goto(BASE + '/settings');

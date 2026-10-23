@@ -1,12 +1,14 @@
 //! The browser app: routes, shared context and pages.
 
 mod api;
+mod automations;
 mod bridge;
 mod chat_view;
 mod deck;
 mod desktop;
 mod export_menu;
 mod home;
+mod mcp_settings;
 mod onboarding;
 mod preview_comments;
 mod projects;
@@ -14,6 +16,7 @@ mod settings_page;
 mod sse;
 mod studio;
 mod switcher;
+mod terminal;
 mod versions;
 
 use crate::events::{AgentInfo, AgentsResponse};
@@ -159,6 +162,7 @@ fn Shelled() -> impl IntoView {
                 <nav class="topnav">
                     <A href="/" exact=true>{t(T::NavHome)}</A>
                     <A href="/projects">{t(T::NavProjects)}</A>
+                    <A href="/automations">{t(T::NavAutomations)}</A>
                     <A href="/settings">{t(T::NavSettings)}</A>
                 </nav>
             </header>
@@ -169,6 +173,7 @@ fn Shelled() -> impl IntoView {
                     <Route path=path!("/projects/:id") view=studio::Studio/>
                     <Route path=path!("/onboarding") view=onboarding::Onboarding/>
                     <Route path=path!("/settings") view=settings_page::SettingsPage/>
+                    <Route path=path!("/automations") view=automations::Automations/>
                 </Routes>
             </main>
         </Router>

@@ -276,6 +276,53 @@ messages! {
     Edit => "Edit", "Sửa";
     StepOf => "Step {0}/{1}", "Bước {0}/{1}";
     Plan => "Plan", "Kế hoạch";
+
+    // W3 platform: terminal tabs, automations, MCP servers
+    NewTerminal => "New terminal", "Terminal mới";
+    TerminalTab => "Terminal {0}", "Terminal {0}";
+    TerminalExited => "[process exited with code {0}]", "[tiến trình đã thoát, mã {0}]";
+    TerminalFailed => "Could not open a terminal: {0}", "Không mở được terminal: {0}";
+    TerminalHint => "Click here and type. The shell runs in the project folder.", "Bấm vào đây rồi gõ. Shell chạy trong thư mục project.";
+    CloseTerminal => "Close terminal", "Đóng terminal";
+    NavAutomations => "Automations", "Tự động hoá";
+    AutomationsIntro => "Run a prompt in a project on a schedule, in this computer's local time.", "Chạy một prompt trong project theo lịch, tính theo giờ máy.";
+    RoutineName => "Name", "Tên";
+    RoutineProject => "Project", "Project";
+    RoutinePrompt => "Prompt", "Prompt";
+    RoutineSchedule => "Schedule", "Lịch chạy";
+    RoutineScheduleHint => "minute hour day month weekday, e.g. 0 9 * * 1-5, or @daily", "phút giờ ngày tháng thứ, ví dụ 0 9 * * 1-5, hoặc @daily";
+    RoutineAdd => "Add routine", "Thêm routine";
+    RoutineEnabled => "On", "Bật";
+    RoutineRunNow => "Run now", "Chạy ngay";
+    RoutineNextRun => "Next run: {0}", "Lần chạy tới: {0}";
+    RoutineNotScheduled => "Not scheduled", "Chưa lên lịch";
+    RoutineNoRuns => "No runs yet.", "Chưa chạy lần nào.";
+    NoRoutines => "No routines yet.", "Chưa có routine nào.";
+    RunStateRunning => "running", "đang chạy";
+    RunStateSucceeded => "succeeded", "thành công";
+    RunStateFailed => "failed", "lỗi";
+    RunStateCanceled => "canceled", "đã huỷ";
+    RunStateSkipped => "skipped: the previous run was still going", "bỏ qua: lần trước chưa xong";
+    TriggerManual => "manual", "chạy tay";
+    TriggerSchedule => "scheduled", "theo lịch";
+    OpenConversation => "Open", "Mở";
+    McpTitle => "MCP servers", "MCP server";
+    McpIntro => "External MCP servers the agent can use. Keys and tokens stay on this computer.", "MCP server ngoài mà agent dùng được. Key và token chỉ lưu trên máy này.";
+    McpAdd => "Add server", "Thêm server";
+    McpId => "Id", "Id";
+    McpCommand => "Command", "Lệnh";
+    McpArgs => "Arguments, one per line", "Tham số, mỗi dòng một tham số";
+    McpUrl => "URL", "URL";
+    McpUseOauth => "Sign in with OAuth", "Đăng nhập bằng OAuth";
+    McpTest => "Test", "Kiểm tra";
+    McpTestOk => "Connected, {0} tools", "Đã kết nối, {0} tool";
+    McpNeedsAuth => "Sign-in required", "Cần đăng nhập";
+    McpConnect => "Sign in", "Đăng nhập";
+    McpSignedIn => "Signed in", "Đã đăng nhập";
+    McpSignOut => "Sign out", "Đăng xuất";
+    McpFinishInBrowser => "Finish signing in in the browser, then test again.", "Đăng nhập xong trong trình duyệt rồi bấm Kiểm tra lại.";
+    McpNoServers => "No MCP servers yet.", "Chưa có MCP server nào.";
+    Remove => "Remove", "Gỡ";
 }
 
 /// The current language's text for `key`.

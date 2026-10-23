@@ -174,6 +174,9 @@ pub fn SettingsPage() -> impl IntoView {
                 }}
                 <button class="btn primary" data-testid="save-settings" on:click=save>{t(T::Save)}</button>
             </div>
+
+            // Saved on its own: the servers live in mcp-config.json.
+            <super::mcp_settings::McpSection/>
         </section>
     }
 }

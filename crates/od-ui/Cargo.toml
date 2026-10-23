@@ -21,6 +21,7 @@ serde_json.workspace = true
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
+    "BinaryType",
     "Blob",
     "BlobPropertyBag",
     "Clipboard",
@@ -38,6 +39,7 @@ web-sys = { version = "0.3", features = [
     "Navigator",
     "NodeList",
     "Url",
+    "WebSocket",
     "Window",
 ] }
 
