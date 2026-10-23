@@ -281,14 +281,14 @@ impl Source {
 
 /// Steps a generation job goes through, in order ([`step_index`] maps the
 /// job's `phase` onto them).
-const STEPS: [T; 4] = [
+pub(super) const STEPS: [T; 4] = [
     T::PhaseSources,
     T::PhaseDesign,
     T::PhaseTokens,
     T::PhaseChecking,
 ];
 
-fn step_index(phase: &str) -> usize {
+pub(super) fn step_index(phase: &str) -> usize {
     match phase {
         "sources" => 0,
         "design" => 1,

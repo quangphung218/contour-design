@@ -107,6 +107,11 @@ pub enum AgentEvent {
     Critique {
         report: crate::CritiqueReport,
     },
+    /// A media generation of this run (track C2), emitted by the daemon
+    /// when the agent calls the media tool; the latest per task wins.
+    Media {
+        task: crate::MediaTask,
+    },
     /// A stdout line the parser did not recognise, bounded in length.
     Raw {
         line: String,

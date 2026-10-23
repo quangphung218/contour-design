@@ -13,26 +13,33 @@ mod composer;
 mod deck;
 mod desktop;
 mod doc_view;
+mod docs_page;
 mod ds_create;
 mod ds_page;
 mod export_extra;
 mod export_menu;
 mod files_panel;
 mod first_hint;
+mod font_banner;
 mod home;
+mod home_tabs;
 mod icons;
 mod inbox;
 mod integrations;
 mod lazy_frame;
 mod lib_ui;
+mod library_picker;
 mod live_view;
 mod manage;
 mod manual_edit;
 mod mcp_settings;
 mod media_page;
+mod media_rows;
+mod memory_settings;
 mod new_project;
 mod notify;
 mod onboarding;
+mod onboarding_brand;
 mod palette;
 mod plugins_page;
 mod presenter;
@@ -41,6 +48,7 @@ mod preview_tools;
 mod project_actions;
 mod projects;
 mod recovery_tip;
+mod quick_menu;
 mod settings_page;
 mod shortcuts;
 mod sketch;
@@ -267,6 +275,7 @@ fn Shelled() -> impl IntoView {
             </Show>
             <ViewTracker/>
             <notify::RunWatcher/>
+            <memory_settings::MemoryToast/>
             <div class="app">
                 {mac.then(|| view! { <div class="titlebar" data-tauri-drag-region=""></div> })}
                 <div class="app-body">
@@ -286,6 +295,7 @@ fn Shelled() -> impl IntoView {
                             <Route path=path!("/integrations") view=integrations::Integrations/>
                             <Route path=path!("/inbox") view=inbox::Inbox/>
                             <Route path=path!("/present/:id") view=presenter::Presenter/>
+                            <Route path=path!("/docs") view=docs_page::DocsPage/>
                         </Routes>
                     </main>
                 </div>
@@ -413,6 +423,7 @@ fn Sidebar() -> impl IntoView {
                 {link("/integrations", Glyph::Mcp, T::NavIntegrations, false)}
                 {link("/inbox", Glyph::Inbox, T::NavInbox, false)}
                 <span class="spacer"></span>
+                <quick_menu::QuickMenu rail=Signal::derive(rail)/>
                 <button
                     class="nav-link"
                     data-testid="open-shortcuts"

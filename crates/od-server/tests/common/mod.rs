@@ -241,6 +241,14 @@ pub struct SseReader {
 }
 
 impl SseReader {
+    /// Reads any SSE response (not only a run's).
+    pub fn new(res: reqwest::Response) -> Self {
+        Self {
+            res,
+            buf: String::new(),
+        }
+    }
+
     pub async fn next(&mut self) -> Option<SseEvent> {
         loop {
             if let Some(end) = self.buf.find("\n\n") {

@@ -25,10 +25,12 @@ enum Format {
     PptxEditable,
     Mp4,
     Markdown,
+    /// A React component's own source (track C2).
+    Jsx,
 }
 
 impl Format {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Html,
         Self::Zip,
         Self::Pdf,
@@ -39,6 +41,7 @@ impl Format {
         Self::PptxEditable,
         Self::Mp4,
         Self::Markdown,
+        Self::Jsx,
     ];
 
     fn testid(self) -> String {
@@ -60,6 +63,7 @@ impl Format {
             Self::PptxEditable => t(T::ExportPptxEditable),
             Self::Mp4 => t(T::ExportMp4),
             Self::Markdown => t(T::ExportMarkdown),
+            Self::Jsx => t(T::ExportJsx),
         }
     }
 
@@ -74,6 +78,7 @@ impl Format {
             Self::Pptx | Self::PptxEditable => "pptx",
             Self::Mp4 => "mp4",
             Self::Markdown => "md",
+            Self::Jsx => "jsx",
         }
     }
 
@@ -87,6 +92,7 @@ impl Format {
             Self::Webp => "image/webp",
             Self::Mp4 => "video/mp4",
             Self::Markdown => "text/markdown",
+            Self::Jsx => "text/jsx;charset=utf-8",
             Self::Pptx | Self::PptxEditable => {
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             }
@@ -102,6 +108,7 @@ impl Format {
             Self::Pptx | Self::PptxEditable => Glyph::Deck,
             Self::Mp4 => Glyph::Play,
             Self::Markdown => Glyph::Markdown,
+            Self::Jsx => Glyph::FileCode,
         }
     }
 
@@ -117,6 +124,7 @@ impl Format {
             (Self::Zip, _) => true,
             (_, None) => false,
             (Self::Markdown, Some(p)) => crate::file_tree::is_markdown(p),
+            (Self::Jsx, Some(p)) => crate::jsx_export::is_component(p),
             (_, Some(p)) => super::studio::is_html_path(p),
         }
     }
@@ -201,6 +209,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             .with_untracked(|p| p.as_ref().map(|p| p.name.clone()))
             .unwrap_or_else(|| "project".to_owned());
         let name = match &file {
+            Some(f) if format == Format::Jsx => crate::jsx_export::download_name(f),
             Some(f) if format.needs_file() => format!("{}.{}", stem(f), format.ext()),
             _ => format!("{project}.{}", format.ext()),
         };
@@ -210,7 +219,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             let base = ctx.base();
             let res = match format {
                 Format::Zip => api::get_bytes(&format!("{base}/archive")).await,
-                Format::Markdown => {
+                Format::Markdown | Format::Jsx => {
                     let path = file.clone().unwrap_or_default();
                     api::get_bytes(&format!("{base}/raw/{}", api::file_path(&path))).await
                 }

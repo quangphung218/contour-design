@@ -90,6 +90,8 @@ pub fn parse(text: &str, done: bool) -> Option<(CritiqueReport, Option<String>)>
 
     let mut round: Option<u32> = None;
     let mut last_artifact: Option<usize> = None;
+    // The newest draft of each round, for an interrupted run's fallback.
+    let mut round_artifacts: Vec<(u32, usize)> = Vec::new();
     let mut ship_artifact: Option<usize> = None;
     let mut open_panelist = false;
     let mut shipped = false;
@@ -114,6 +116,9 @@ pub fn parse(text: &str, done: bool) -> Option<(CritiqueReport, Option<String>)>
                 pos += close + "</PANELIST>".len();
                 if let Some(i) = artifact_ref(inner) {
                     last_artifact = Some(i);
+                    if let Some(n) = round {
+                        round_artifacts.push((n, i));
+                    }
                 }
                 let (Some(n), Some(role)) = (round, attr(tag, "role").and_then(PanelRole::parse))
                 else {
@@ -192,9 +197,31 @@ pub fn parse(text: &str, done: bool) -> Option<(CritiqueReport, Option<String>)>
             CritiqueStatus::Interrupted
         };
     }
+    // Interrupted after a closed round: the best one ships as the fallback,
+    // with the newest draft written up to that round.
+    let fallback = (done && !shipped && report.status == CritiqueStatus::Interrupted)
+        .then(|| {
+            let best = report
+                .rounds
+                .iter()
+                .filter(|r| r.closed)
+                .filter_map(|r| r.composite.map(|c| (r.n, c)))
+                .fold(None::<(u32, f64)>, |acc, (n, c)| match acc {
+                    Some((_, a)) if a >= c => acc,
+                    _ => Some((n, c)),
+                })?;
+            report.ship_round = Some(best.0);
+            round_artifacts
+                .iter()
+                .rev()
+                .find(|(n, _)| *n <= best.0)
+                .map(|(_, i)| *i)
+        })
+        .flatten();
     let artifact = shipped
         .then(|| ship_artifact.or(last_artifact))
         .flatten()
+        .or(fallback)
         .and_then(|i| artifacts.get(i).cloned())
         .map(|a| a.trim().to_owned())
         .filter(|a| !a.is_empty());
@@ -424,7 +451,14 @@ mod tests {
         let (report, artifact) = parse(ROUND_1, true).unwrap();
         assert_eq!(report.status, CritiqueStatus::Interrupted);
         assert_eq!(report.composite, Some(6.0), "best round so far");
-        assert_eq!(artifact, None);
+        // Interrupted after a closed round: its draft ships as the fallback.
+        assert_eq!(report.ship_round, Some(1));
+        assert_eq!(artifact.as_deref(), Some("<h1>v1 <b>draft</b></h1>"));
+        // Before any round closed there is nothing to ship.
+        let open = &ROUND_1[..ROUND_1.find("<ROUND_END").unwrap()];
+        let (report, artifact) = parse(open, true).unwrap();
+        assert_eq!(report.status, CritiqueStatus::Interrupted);
+        assert_eq!((report.ship_round, artifact), (None, None));
 
         let cut = &ROUND_2[..ROUND_2.find("</PANELIST>").unwrap()];
         let (report, _) = parse(&format!("{ROUND_1}{cut}"), true).unwrap();

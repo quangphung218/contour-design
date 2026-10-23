@@ -66,6 +66,7 @@ fn obj(v: Option<&Value>) -> Map<String, Value> {
 
 #[component]
 pub fn SettingsPage() -> impl IntoView {
+    provide_context(super::memory_settings::MemoryRev(RwSignal::new(0)));
     let shell = Shell::get();
     let agent = RwSignal::new(None::<String>);
     let model = RwSignal::new(String::new());
@@ -419,7 +420,10 @@ pub fn SettingsPage() -> impl IntoView {
                     </section>
                     <section class="settings-section" id="settings-memory">
                         {section_head(Glyph::Memory, T::GlobalMemory, T::GlobalMemoryHint)}
+                        // Track C2: switch, hooks, import and MEMORY.md around the list.
+                        <super::memory_settings::MemoryControls/>
                         <GlobalMemory/>
+                        <super::memory_settings::MemoryAdvanced/>
                     </section>
                     <section class="settings-section" id="settings-media">
                         {section_head(Glyph::FileImage, T::MediaProviders, T::MediaProvidersHint)}
@@ -573,7 +577,7 @@ fn GlobalRules() -> impl IntoView {
     }
 }
 
-fn memory_kind_label(kind: &str) -> &'static str {
+pub(super) fn memory_kind_label(kind: &str) -> &'static str {
     t(match kind {
         "feedback" => T::MemoryFeedback,
         "project" => T::MemoryProject,
@@ -588,6 +592,7 @@ fn memory_kind_label(kind: &str) -> &'static str {
 #[component]
 fn GlobalMemory() -> impl IntoView {
     let list = RwSignal::new(Vec::<Value>::new());
+    let rev = expect_context::<super::memory_settings::MemoryRev>();
     let kind = RwSignal::new("user".to_owned());
     let text = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
@@ -598,6 +603,14 @@ fn GlobalMemory() -> impl IntoView {
             }
         });
     };
+    // An import saved entries: list them.
+    Effect::new(move |prev: Option<u32>| {
+        let n = rev.0.get();
+        if prev.is_some() {
+            reload();
+        }
+        n
+    });
     reload();
     let add = move || {
         let body = json!({ "kind": kind.get_untracked(), "text": text.get_untracked() });
@@ -606,7 +619,7 @@ fn GlobalMemory() -> impl IntoView {
                 Ok(_) => {
                     text.set(String::new());
                     error.set(None);
-                    reload();
+                    rev.0.update(|n| *n += 1);
                 }
                 Err(e) => error.set(Some(e.to_string())),
             }
@@ -627,7 +640,7 @@ fn GlobalMemory() -> impl IntoView {
                             let id = id.clone();
                             leptos::task::spawn_local(async move {
                                 let _ = api::delete::<Value>(&format!("/api/memory/{}", api::seg(&id))).await;
-                                reload();
+                                rev.0.update(|n| *n += 1);
                             });
                         };
                         view! {
