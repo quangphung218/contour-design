@@ -888,6 +888,7 @@ mod tests {
                         slide_index: None,
                         note: "bigger".into(),
                         status: Some(status),
+                        attachments: Vec::new(),
                     },
                 )
                 .unwrap_or_else(|e| panic!("{e}"))

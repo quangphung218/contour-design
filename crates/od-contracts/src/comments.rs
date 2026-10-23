@@ -70,6 +70,9 @@ pub struct PreviewComment {
     pub slide_index: Option<u32>,
     pub note: String,
     pub status: CommentStatus,
+    /// Images attached to the note (project files), in order.
+    #[serde(default)]
+    pub attachments: Vec<CommentImage>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -95,6 +98,21 @@ pub struct CreateCommentRequest {
     pub note: String,
     #[serde(default)]
     pub status: Option<CommentStatus>,
+    /// Project paths of images to attach (at most
+    /// [`MAX_COMMENT_IMAGES`]); each must be an image file in the project.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<String>,
+}
+
+/// Most images one comment carries.
+pub const MAX_COMMENT_IMAGES: usize = 4;
+
+/// An image attached to a comment: a project file.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommentImage {
+    pub path: String,
+    /// File name shown in the UI.
+    pub name: String,
 }
 
 /// `PATCH …/comments/:commentId`. Absent fields stay as they are.
@@ -141,6 +159,9 @@ pub struct CommentAttachment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slide_index: Option<u32>,
     pub comment: String,
+    /// Project paths of the images attached to the comment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<String>,
 }
 
 impl CommentAttachment {
@@ -159,6 +180,7 @@ impl CommentAttachment {
             html_hint: comment.html_hint.clone(),
             slide_index: comment.slide_index,
             comment: comment.note.clone(),
+            images: comment.attachments.iter().map(|a| a.path.clone()).collect(),
         }
     }
 }

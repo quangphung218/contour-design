@@ -22,6 +22,7 @@ use super::terminal::{self, TermTab, TerminalView};
 use super::versions::VersionsPanel;
 use super::{Shell, api};
 use crate::chat::{AssistantTurn, Block, TurnState};
+use crate::comment_board::{AnchorState, attached_images};
 use crate::events::{
     ChatRequest, ConversationsResponse, CreateRunResponse, FileChanged, MessageRole,
     MessagesResponse, RunFrame, RunStatus, decode_frame,
@@ -156,6 +157,8 @@ pub struct StudioCtx {
     /// Where each shown comment's element is now (`od:located`), so pins
     /// follow scroll and reflow; missing ids fall back to the stored box.
     pub pin_rects: RwSignal<HashMap<String, CommentRect>>,
+    /// Anchor state of each located comment (Comments tab).
+    pub anchors: RwSignal<HashMap<String, AnchorState>>,
     /// Bumped on every `od:ready`: the new document needs `od:locate`.
     pub frame_ready: RwSignal<u32>,
     /// Set once the previewed file turns out to be a deck.
@@ -382,7 +385,16 @@ impl StudioCtx {
             plugin_inputs: extras.plugin_inputs,
             locale: Some(shell.locale.get_untracked().tag().to_owned()),
             session_mode: Some(self.session_mode.get_untracked()),
-            attachments: self.tools.attachments.get_untracked(),
+            attachments: {
+                // Images on the attached comments go along too.
+                let mut files = self.tools.attachments.get_untracked();
+                for path in attached_images(&attached) {
+                    if !files.contains(&path) {
+                        files.push(path);
+                    }
+                }
+                files
+            },
         };
         self.tools.deliverable.set(None);
         self.live_run.set(Some(String::new()));
@@ -752,6 +764,7 @@ impl StudioCtx {
                 self.tools_ready();
             }
             (Source::Main, BridgeMsg::Located { items }) => {
+                self.on_located(&items);
                 self.pin_rects.set(
                     items
                         .into_iter()
@@ -801,6 +814,8 @@ impl StudioCtx {
                     self.comment_draft.set(Some(picked));
                 } else if self.tools.tool.get_untracked() == Some(Tool::Inspect) {
                     self.inspect(&picked.selector);
+                } else if self.tools.tool.get_untracked() == Some(Tool::Manual) {
+                    self.manual_select(&picked.selector);
                 }
             }
             (Source::Thumb(i), BridgeMsg::DeckReady { .. }) => {
@@ -1034,6 +1049,7 @@ pub fn Studio() -> impl IntoView {
         comment_mode: RwSignal::new(false),
         comment_draft: RwSignal::new(None),
         pin_rects: RwSignal::new(HashMap::new()),
+        anchors: RwSignal::new(HashMap::new()),
         frame_ready: RwSignal::new(0),
         deck: RwSignal::new(None),
         notes: RwSignal::new(Vec::new()),

@@ -592,10 +592,37 @@ impl Store {
         version_id: &str,
         prompt: Option<String>,
     ) -> Result<(ProjectFile, FileVersion)> {
+        self.restore_version_if(project_id, name, version_id, prompt, None)
+    }
+
+    /// [`Self::restore_version`], only while the file still reads as the
+    /// version `expect` (when given): an undo never overwrites a change
+    /// made since (an agent's write, another tab's edit).
+    ///
+    /// # Errors
+    /// [`StoreError::Conflict`] when the file moved on; those of
+    /// [`Self::restore_version`].
+    pub fn restore_version_if(
+        &self,
+        project_id: &str,
+        name: &str,
+        version_id: &str,
+        prompt: Option<String>,
+        expect: Option<&str>,
+    ) -> Result<(ProjectFile, FileVersion)> {
         let root = self.root_for(project_id)?;
         let safe = validate_project_path(name)?;
         let _guard = self.versions_guard();
         let (restored, content) = versions::read_version(&root.dir, &safe, version_id)?;
+        if let Some(expect) = expect {
+            let (_, expected) = versions::read_version(&root.dir, &safe, expect)?;
+            let (_, now) = files::read_file(&root, &safe)?;
+            if now != expected.as_bytes() {
+                return Err(StoreError::Conflict(
+                    "the file changed since this edit; reload to see it".into(),
+                ));
+            }
+        }
         // Exact name: the file may carry characters the sanitizer would
         // rewrite (`My Page.html`), and restore must hit that same file.
         let file = files::write_file_exact(&root, &safe, content.as_bytes())?;

@@ -25,12 +25,28 @@ impl Store {
         label: &str,
         edit: impl FnOnce(&str) -> Result<String, E>,
     ) -> Result<(ProjectFile, FileVersion), E> {
+        self.edit_html_tracked(project_id, name, label, edit)
+            .map(|(file, version, _)| (file, version))
+    }
+
+    /// [`Self::edit_html`], also returning the version that holds the text
+    /// from before the edit (manual edit's undo restores it).
+    ///
+    /// # Errors
+    /// As [`Self::edit_html`].
+    pub fn edit_html_tracked<E: From<StoreError>>(
+        &self,
+        project_id: &str,
+        name: &str,
+        label: &str,
+        edit: impl FnOnce(&str) -> Result<String, E>,
+    ) -> Result<(ProjectFile, FileVersion, FileVersion), E> {
         let root = self.root_for(project_id)?;
         let safe = validate_project_path(name)?;
         let _guard = self.versions_guard();
         let (_, bytes) = files::read_file(&root, &safe)?;
         let before = utf8(&bytes)?;
-        versions::ensure_current_version(&root.dir, &safe, before, manual())?;
+        let previous = versions::ensure_current_version(&root.dir, &safe, before, manual())?;
         let after = edit(before)?;
         let file = files::write_file_exact(&root, &safe, after.as_bytes())?;
         let version = versions::create_version(
@@ -44,6 +60,6 @@ impl Store {
                 ..NewVersion::default()
             },
         )?;
-        Ok((file, version))
+        Ok((file, version, previous))
     }
 }

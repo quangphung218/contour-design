@@ -593,6 +593,9 @@ pub fn with_comment_attachments(
             or(&c.html_hint, "(none)"),
             c.comment.trim(),
         ));
+        if !c.images.is_empty() {
+            out.push_str(&format!("images: {}\n", c.images.join(", ")));
+        }
     }
     out.push_str("</attached-preview-comments>");
     out
@@ -621,6 +624,14 @@ mod tests {
         assert!(out.contains("slide: 2\n"));
         assert!(out.contains("currentText: Hello\nhtmlHint: (none)\ncomment: Make it red\n"));
         assert!(out.ends_with("</attached-preview-comments>"));
+        assert!(!out.contains("images:"));
+        let shot = od_contracts::CommentAttachment {
+            images: vec!["shots/a.png".into(), "shots/b.png".into()],
+            comment: "Like this".into(),
+            ..od_contracts::CommentAttachment::default()
+        };
+        let out = with_comment_attachments("Fix", &[shot]);
+        assert!(out.contains("comment: Like this\nimages: shots/a.png, shots/b.png\n"));
     }
 
     #[test]

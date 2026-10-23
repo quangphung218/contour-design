@@ -4,6 +4,7 @@
 
 pub mod byok;
 pub mod chat;
+pub mod comment_board;
 pub mod events;
 pub mod file_tree;
 pub mod fuzzy;
@@ -12,6 +13,7 @@ pub mod handoff;
 pub mod highlight;
 pub mod i18n;
 pub mod intent;
+pub mod manual_model;
 pub mod markdown;
 pub mod mention;
 pub mod models;

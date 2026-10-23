@@ -27,6 +27,8 @@ window, so a page cannot drive itself through the protocol.
 | `od:palette` | `id`: `coral` `electric` `acid-forest` `risograph` `mono-noir`, or `null` | Recolors the page, or restores it; replies `od:palette-state` |
 | `od:tweaks-request` | | Replies `od:tweaks` |
 | `od:tweak-set` | `id`, `value` | Sets a declared tweak |
+| `od:mark` | `selector` (or `null`), `scroll?` | Outlines one element (scrolled into view with `scroll`) until the next mark |
+| `od:layers-request` | | Replies `od:layers` |
 
 ## Bridge → host
 
@@ -39,7 +41,7 @@ window, so a page cannot drive itself through the protocol.
 | `od:hover`, `od:select` | `odId`, `selector`, `tag`, `text`, `rect` | Selection mode |
 | `od:snapshot-result` | `requestId`, `width`, `height`, `format`, `dataUrl` (or `error`, `rasterError`) | After `od:snapshot` |
 | `od:size` | `width`, `height` | Content size changed |
-| `od:located` | `items`: `[{id, rect}]` (`rect` null when the selector matches nothing) | After `od:locate`, scroll, resize |
+| `od:located` | `items`: `[{id, rect, text}]` (`rect` null when the selector matches nothing; `text` as `od:select` prints it) | After `od:locate`, scroll, resize |
 | `od:redirect-loop-blocked` | `hops` | The page reloaded itself more than 15 times, each < 1 s apart |
 | `od:inspect-result` | `key`, `selector`, `tag`, `text`, `rect`, `styles` (computed), `overrides`, `textOnly`; or `key`, `selector`, `missing: true` | After `od:inspect`, `od:inspect-set`, `od:inspect-reset` |
 | `od:inspect-replay-skipped` | `items`: `[{selector, prop}]` | Overrides `od:inspect-replay` left out; the host drops them |
@@ -47,6 +49,7 @@ window, so a page cannot drive itself through the protocol.
 | `od:text-edit` | `key`, `selector`, `odId`, `tag`, `before`, `text`, `doc` | A text edit was committed (Enter or blur) and changed the text |
 | `od:palette-state` | `id` (or `null`) | After `od:palette` |
 | `od:tweaks` | `tweaks`: the valid declared tweaks (may be empty) | Each document load, and after `od:tweaks-request` |
+| `od:layers` | `key`, `items`: `[{selector, odId, tag, kind, label, depth, hidden}]` (≤ 400, depth ≤ 12; `kind` is `link`, `image`, `text` or `container`) | After `od:layers-request` |
 
 ## How each part works
 
@@ -56,6 +59,7 @@ window, so a page cannot drive itself through the protocol.
 - **Inspect**: computed style of a fixed property list. An override is an inline `style.setProperty`; the bridge keeps the inline value it replaced, so a reset restores the element exactly. The host writes overrides back to the source with `POST /api/projects/:id/source-edits`, sending the tag and text (`expectTag`, `expectText`) the element had, so a path a script shifted onto another element is refused (409). The text leaves out `script`/`style` code, as the source check does.
 - **Text edit**: only text-only elements (no child elements; not `script`, `style`, form fields) become `contenteditable="plaintext-only"` on click. Enter or leaving the element commits, Esc restores. The host writes the text back with `expectText` = the text before, so a source that moved on is refused (409), never overwritten. The host takes an edit only while its text tool is on and for the file it named in `od:edit-mode` (the artifact's scripts share the bridge's window). Only a trusted (real) click starts an edit.
 - **Edit key**: the artifact's scripts share the bridge's window, so they can post anything the bridge can. The host loads the frame with `raw?bridge=1&key=<id>`; the daemon puts a fresh secret on the bridge's own tag (`data-od-key`) for the first load of `<id>` only, and the bridge takes and removes it before any author script runs. The host claims the key once (`POST /api/projects/:id/edit-keys/<id>`, refused to `Origin: null`) and acts on `od:text-edit` and `od:inspect-result` only when they carry it. Keyed messages are built as one literal and posted directly, so no setter an author put on `Object.prototype` sees them.
+- **Layers**: the body's elements depth first, without `script`/`style`/`template`/`noscript`, `br`, the bridge's UI, and visible leaves smaller than 4px; `hidden` is inherited from a hidden ancestor. SVG and `select` contents are not listed. The host shows them as the manual-edit layer tree and reads the picked one from the source (`POST /api/projects/:id/source-element`).
 - **Palette**: each chromatic color (computed `color`, `background-color`, `border-color`, `fill`, `stroke`, plus custom properties declared on `:root`/`html`/`body`) takes the preset's hue and keeps its lightness, and its saturation above a floor; grays, near-black and near-white stay. `mono-noir` drops saturation. Every change is recorded and undone on the next swap.
 - **Tweaks**: the artifact declares its knobs as JSON in a `script[type="application/json"][data-od-tweaks]` element: `{"tweaks": [{"id", "type", "label?", "var" | "attr", "default?", …}]}`. `type` is `color`, `range` (`min`, `max`, `step`, `unit?`), `select` (`options`: strings or `{label, value}`), `toggle` (`on?`, `off?`, default `"true"`/`"false"`) or `text`. A value lands on the root custom property `var` (`--name`) or the root attribute `attr` (`data-*`), and the bridge fires `od:tweak` (`detail: {id, value}`) on `window` for script-driven knobs. At most 24 tweaks.
 - **Snapshot**: clones the DOM with computed styles inlined (scripts and bridge UI dropped) and wraps it in an SVG `foreignObject`. No screenshot API.

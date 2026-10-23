@@ -9,17 +9,32 @@
 //! the preview showed (`expect_tag`, `expect_text`), and a text edit only
 //! when that element is text-only. Anything else is refused rather than
 //! guessed.
+//!
+//! Manual edit adds attribute changes, a replacement for the element's
+//! whole HTML and removal. Those two splice the source at the element's
+//! exact byte span (start tag to end tag), so the rest stays byte-identical
+//! and an element whose end tag the source leaves implied is refused.
 
-use lol_html::html_content::{ContentType, Element, TextChunk};
-use lol_html::{ElementContentHandlers, HtmlRewriter, Selector, Settings};
-use od_contracts::SourceEdit;
+use lol_html::html_content::{ContentType, Element, EndTag, TextChunk};
+use lol_html::{DocumentContentHandlers, ElementContentHandlers, HtmlRewriter, Selector, Settings};
+use od_contracts::{SourceAttribute, SourceEdit, SourceElementResponse};
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 /// Elements whose text is code, never prose.
 const RAW_TEXT_TAGS: [&str; 4] = ["script", "style", "template", "noscript"];
 /// Longest selector accepted (the bridge's paths stay far below).
 const MAX_SELECTOR_LEN: usize = 2048;
+/// Longest attribute value and replacement HTML accepted.
+const MAX_ATTR_VALUE: usize = 64 * 1024;
+const MAX_OUTER_HTML: usize = 512 * 1024;
+/// The attribute edits and comments find elements by; it never changes.
+const ANCHOR_ATTR: &str = "data-od-id";
+/// Elements that are not drawn on the page.
+const UNRENDERED_TAGS: [&str; 10] = [
+    "html", "head", "body", "script", "style", "template", "noscript", "meta", "link", "title",
+];
 /// A style edit's `expect_text` shorter than the element's text must be at
 /// least this long to count as its start (the bridge caps what it sends).
 const MIN_TEXT_PREFIX: usize = 64;
@@ -40,8 +55,22 @@ pub enum PatchError {
     TagMismatch { found: String },
     #[error("invalid style property {0:?}")]
     InvalidStyle(String),
-    #[error("an edit needs a style change or new text")]
+    #[error("an edit needs a style change, new text, attributes, new HTML or a removal")]
     Empty,
+    #[error("invalid attribute {0:?}")]
+    InvalidAttribute(String),
+    #[error("{0:?} cannot be changed here: edits and comments find the element by it")]
+    ProtectedAttribute(String),
+    #[error("{0}")]
+    InvalidEdit(&'static str),
+    #[error("the replacement must be exactly one element ({0})")]
+    InvalidHtml(&'static str),
+    #[error("the source leaves this element's end tag implied; edit it in the source")]
+    NoEndTag,
+    #[error("<{0}> cannot be removed")]
+    NotRemovable(String),
+    #[error("the page's last visible element cannot be removed")]
+    LastElement,
     #[error("HTML rewrite failed: {0}")]
     Rewrite(String),
 }
@@ -65,35 +94,305 @@ pub fn apply_edits(html: &str, edits: &[SourceEdit]) -> Result<String, PatchErro
 }
 
 fn apply_edit(html: &str, edit: &SourceEdit) -> Result<String, PatchError> {
-    if edit.style.is_empty() && edit.text.is_none() {
+    let whole = edit.outer_html.is_some() || edit.remove;
+    let changes = !edit.style.is_empty() || edit.text.is_some() || !edit.attributes.is_empty();
+    if !whole && !changes {
         return Err(PatchError::Empty);
+    }
+    if (whole && changes) || (edit.outer_html.is_some() && edit.remove) {
+        return Err(PatchError::InvalidEdit(
+            "new HTML or a removal goes alone in its edit",
+        ));
     }
     for (prop, value) in &edit.style {
         check_style(prop, value.as_deref())?;
     }
-    let target = locate(html, &edit.selector)?;
-    if let Some(expected) = &edit.expect_tag
-        && !target.tag.eq_ignore_ascii_case(expected.trim())
-    {
-        return Err(PatchError::TagMismatch { found: target.tag });
+    for (name, value) in &edit.attributes {
+        check_attribute(name, value.as_deref())?;
+        if name.eq_ignore_ascii_case("style") && !edit.style.is_empty() {
+            return Err(PatchError::InvalidEdit(
+                "set the style attribute or style properties, not both",
+            ));
+        }
     }
+    // A text edit replaces the whole text, so it must match whole.
+    let target = checked_target(
+        html,
+        &edit.selector,
+        edit.expect_tag.as_deref(),
+        edit.expect_text.as_deref(),
+        edit.text.is_some(),
+    )?;
     if edit.text.is_some()
         && (target.descendants > 0 || RAW_TEXT_TAGS.contains(&target.tag.as_str()))
     {
         return Err(PatchError::NotTextOnly);
     }
-    if let Some(expected) = &edit.expect_text {
+    if let Some(new) = &edit.outer_html {
+        let (start, end) = span(html, &target.selector)?;
+        let replacement = one_root(new, anchor_of(html, &target.selector)?.as_deref())?;
+        return Ok(format!("{}{replacement}{}", &html[..start], &html[end..]));
+    }
+    if edit.remove {
+        if ["html", "head", "body"].contains(&target.tag.as_str()) {
+            return Err(PatchError::NotRemovable(target.tag));
+        }
+        let (start, end) = span(html, &target.selector)?;
+        let out = format!("{}{}", &html[..start], &html[end..]);
+        if rendered_count(&out)? == 0 {
+            return Err(PatchError::LastElement);
+        }
+        return Ok(out);
+    }
+    rewrite(html, &target.selector, edit, target.chunks > 0)
+}
+
+/// The one source element `selector` names, checked against the tag and
+/// text the preview showed. `whole_text`: the text must match whole, not
+/// just its start.
+fn checked_target(
+    html: &str,
+    selector: &str,
+    expect_tag: Option<&str>,
+    expect_text: Option<&str>,
+    whole_text: bool,
+) -> Result<Target, PatchError> {
+    let target = locate(html, selector)?;
+    if let Some(expected) = expect_tag
+        && !target.tag.eq_ignore_ascii_case(expected.trim())
+    {
+        return Err(PatchError::TagMismatch { found: target.tag });
+    }
+    if let Some(expected) = expect_text {
         let found = normalize(&decode_entities(&target.text));
         let expected = normalize(expected);
-        // A text edit replaces the whole text, so it must match whole.
-        let starts = edit.text.is_none()
+        let starts = !whole_text
             && expected.chars().count() >= MIN_TEXT_PREFIX
             && found.starts_with(&expected);
         if found != expected && !starts {
             return Err(PatchError::TextMismatch { found });
         }
     }
-    rewrite(html, &target.selector, edit, target.chunks > 0)
+    Ok(target)
+}
+
+/// One element as the source has it (manual edit reads it before showing
+/// its attributes and HTML).
+///
+/// # Errors
+/// As [`apply_edits`] for a selector that does not name exactly one
+/// element that still reads as expected; [`PatchError::NoEndTag`].
+pub fn read_element(
+    html: &str,
+    selector: &str,
+    expect_tag: Option<&str>,
+    expect_text: Option<&str>,
+) -> Result<SourceElementResponse, PatchError> {
+    let target = checked_target(html, selector, expect_tag, expect_text, false)?;
+    let (start, end) = span(html, &target.selector)?;
+    let attributes = RefCell::new(Vec::new());
+    {
+        let handlers = ElementContentHandlers::default().element(|el: &mut Element<'_, '_>| {
+            *attributes.borrow_mut() = el
+                .attributes()
+                .iter()
+                .map(|a| SourceAttribute {
+                    name: a.name(),
+                    value: decode_entities(&a.value()),
+                })
+                .collect();
+            Ok(())
+        });
+        run(html, &target.selector, handlers)?;
+    }
+    let text_only = target.descendants == 0 && !RAW_TEXT_TAGS.contains(&target.tag.as_str());
+    Ok(SourceElementResponse {
+        text: normalize(&decode_entities(&target.text)),
+        tag: target.tag,
+        attributes: attributes.into_inner(),
+        outer_html: html[start..end].to_owned(),
+        text_only,
+    })
+}
+
+/// Runs `handlers` on the elements `selector` matches, output dropped.
+fn run(html: &str, selector: &str, handlers: ElementContentHandlers<'_>) -> Result<(), PatchError> {
+    let settings =
+        Settings::new().append_element_content_handler((Cow::Owned(parse(selector)?), handlers));
+    let mut rewriter = HtmlRewriter::new(settings, |_: &[u8]| {});
+    rewriter.write(html.as_bytes())?;
+    rewriter.end()?;
+    Ok(())
+}
+
+/// Byte span of the one element `selector` matches: its start tag through
+/// its end tag (the start tag alone for a void element).
+fn span(html: &str, selector: &str) -> Result<(usize, usize), PatchError> {
+    let found: Rc<Cell<Option<(usize, Option<usize>)>>> = Rc::new(Cell::new(None));
+    let seen = Rc::clone(&found);
+    let handlers = ElementContentHandlers::default().element(move |el: &mut Element<'_, '_>| {
+        let start = el.source_location().bytes();
+        if !el.can_have_content() || el.is_self_closing() {
+            seen.set(Some((start.start, Some(start.end))));
+            return Ok(());
+        }
+        seen.set(Some((start.start, None)));
+        let close = Rc::clone(&seen);
+        let tag = el.tag_name();
+        if let Some(handlers) = el.end_tag_handlers() {
+            handlers.push(Box::new(move |end: &mut EndTag<'_>| {
+                let at = end.source_location().bytes();
+                // An implied end tag has no bytes of its own: the handler
+                // then runs on the parent's end tag (or none).
+                if let Some((s, None)) = close.get()
+                    && at.end > at.start
+                    && end.name().eq_ignore_ascii_case(&tag)
+                {
+                    close.set(Some((s, Some(at.end))));
+                }
+                Ok(())
+            }));
+        }
+        Ok(())
+    });
+    run(html, selector, handlers)?;
+    match found.get() {
+        Some((start, Some(end))) if end <= html.len() => Ok((start, end)),
+        Some(_) => Err(PatchError::NoEndTag),
+        None => Err(PatchError::NotFound(selector.to_owned())),
+    }
+}
+
+/// The element's `data-od-id`, if it has one.
+fn anchor_of(html: &str, selector: &str) -> Result<Option<String>, PatchError> {
+    let anchor = RefCell::new(None);
+    run(
+        html,
+        selector,
+        ElementContentHandlers::default().element(|el: &mut Element<'_, '_>| {
+            *anchor.borrow_mut() = el.get_attribute(ANCHOR_ATTR);
+            Ok(())
+        }),
+    )?;
+    Ok(anchor.into_inner())
+}
+
+/// `html` when it is exactly one element (comments and whitespace around
+/// it allowed) that closes; the old element's `data-od-id` goes on the new
+/// root when it has none, so edits and comments still find it.
+fn one_root(html: &str, anchor: Option<&str>) -> Result<String, PatchError> {
+    if html.len() > MAX_OUTER_HTML {
+        return Err(PatchError::InvalidHtml("too long"));
+    }
+    let depth = Rc::new(Cell::new(0usize));
+    let roots = Cell::new(0usize);
+    let stray_text = Cell::new(false);
+    let mut out = Vec::with_capacity(html.len() + 32);
+    {
+        let level = Rc::clone(&depth);
+        let handlers = ElementContentHandlers::default().element(|el: &mut Element<'_, '_>| {
+            if level.get() == 0 {
+                roots.set(roots.get() + 1);
+                if roots.get() == 1
+                    && let Some(id) = anchor
+                    && el.get_attribute(ANCHOR_ATTR).is_none()
+                {
+                    el.set_attribute(ANCHOR_ATTR, id)?;
+                }
+            }
+            if el.can_have_content() && !el.is_self_closing() {
+                level.set(level.get() + 1);
+                let up = Rc::clone(&level);
+                if let Some(handlers) = el.end_tag_handlers() {
+                    handlers.push(Box::new(move |_: &mut EndTag<'_>| {
+                        up.set(up.get().saturating_sub(1));
+                        Ok(())
+                    }));
+                }
+            }
+            Ok(())
+        });
+        let text_depth = Rc::clone(&depth);
+        let stray = &stray_text;
+        let text = DocumentContentHandlers::default().text(move |t: &mut TextChunk<'_>| {
+            if text_depth.get() == 0 && !t.as_str().trim().is_empty() {
+                stray.set(true);
+            }
+            Ok(())
+        });
+        let settings = Settings::new()
+            .append_element_content_handler((Cow::Owned(parse("*")?), handlers))
+            .append_document_content_handler(text);
+        let mut rewriter = HtmlRewriter::new(settings, |c: &[u8]| out.extend_from_slice(c));
+        rewriter.write(html.as_bytes())?;
+        rewriter.end()?;
+    }
+    match roots.get() {
+        0 => return Err(PatchError::InvalidHtml("no element")),
+        1 => {}
+        _ => return Err(PatchError::InvalidHtml("several elements")),
+    }
+    if stray_text.get() {
+        return Err(PatchError::InvalidHtml("text outside the element"));
+    }
+    if depth.get() != 0 {
+        return Err(PatchError::InvalidHtml("an element is not closed"));
+    }
+    String::from_utf8(out).map_err(|e| PatchError::Rewrite(e.to_string()))
+}
+
+/// How many drawn elements the page has (outside `<head>`).
+fn rendered_count(html: &str) -> Result<usize, PatchError> {
+    let in_head = Rc::new(Cell::new(false));
+    let count = Cell::new(0usize);
+    {
+        let head = Rc::clone(&in_head);
+        let head_handlers =
+            ElementContentHandlers::default().element(move |el: &mut Element<'_, '_>| {
+                head.set(true);
+                let out = Rc::clone(&head);
+                if let Some(handlers) = el.end_tag_handlers() {
+                    handlers.push(Box::new(move |_: &mut EndTag<'_>| {
+                        out.set(false);
+                        Ok(())
+                    }));
+                }
+                Ok(())
+            });
+        let all = ElementContentHandlers::default().element(|el: &mut Element<'_, '_>| {
+            if !in_head.get() && !UNRENDERED_TAGS.contains(&el.tag_name().as_str()) {
+                count.set(count.get() + 1);
+            }
+            Ok(())
+        });
+        let settings = Settings::new()
+            .append_element_content_handler((Cow::Owned(parse("head")?), head_handlers))
+            .append_element_content_handler((Cow::Owned(parse("*")?), all));
+        let mut rewriter = HtmlRewriter::new(settings, |_: &[u8]| {});
+        rewriter.write(html.as_bytes())?;
+        rewriter.end()?;
+    }
+    Ok(count.get())
+}
+
+/// Attribute names as the HTML parser reads them (no quotes, `=`, `>` or
+/// spaces); `data-od-id` never changes; values have a size cap.
+fn check_attribute(name: &str, value: Option<&str>) -> Result<(), PatchError> {
+    let ok_name = name.len() <= 128
+        && name
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_' || b == b':')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b':' | b'.' | b'-'));
+    if !ok_name || value.is_some_and(|v| v.len() > MAX_ATTR_VALUE) {
+        return Err(PatchError::InvalidAttribute(name.to_owned()));
+    }
+    if name.eq_ignore_ascii_case(ANCHOR_ATTR) {
+        return Err(PatchError::ProtectedAttribute(name.to_owned()));
+    }
+    Ok(())
 }
 
 /// The one source element an edit addresses.
@@ -266,6 +565,12 @@ fn rewrite(
                         el.remove_attribute("style");
                     } else {
                         el.set_attribute("style", &merged)?;
+                    }
+                }
+                for (name, value) in &edit.attributes {
+                    match value {
+                        Some(v) => el.set_attribute(name, v)?,
+                        None => el.remove_attribute(name),
                     }
                 }
                 if let Some(text) = &edit.text
@@ -722,6 +1027,207 @@ mod tests {
                 "{value}"
             );
         }
+    }
+
+    fn attrs(pairs: &[(&str, Option<&str>)]) -> SourceEdit {
+        SourceEdit {
+            selector: H1.into(),
+            attributes: style(pairs),
+            ..SourceEdit::default()
+        }
+    }
+
+    #[test]
+    fn sets_and_removes_attributes() {
+        let out = apply_edits(
+            PAGE,
+            &[attrs(&[
+                ("id", None),
+                ("title", Some("A \"quote\"")),
+                ("data-x", Some("1")),
+            ])],
+        )
+        .unwrap();
+        assert!(
+            out.contains(
+                "<h1 style=\"color: red; margin: 0\" data-x=\"1\" title=\"A &quot;quote&quot;\">"
+            ),
+            "{out}"
+        );
+        for bad in ["", "a b", "x\"y", "1a", "a>b"] {
+            assert_eq!(
+                apply_edits(PAGE, &[attrs(&[(bad, Some("v"))])]),
+                Err(PatchError::InvalidAttribute(bad.into())),
+                "{bad:?}"
+            );
+        }
+        // The anchor of edits and comments never changes, set or removed.
+        for value in [Some("other"), None] {
+            assert_eq!(
+                apply_edits(PAGE, &[attrs(&[("data-od-id", value)])]),
+                Err(PatchError::ProtectedAttribute("data-od-id".into()))
+            );
+        }
+        let both = SourceEdit {
+            style: style(&[("color", Some("blue"))]),
+            ..attrs(&[("style", Some("x: y"))])
+        };
+        assert!(matches!(
+            apply_edits(PAGE, &[both]),
+            Err(PatchError::InvalidEdit(_))
+        ));
+        // A link: new text and href in one edit.
+        let link = "<p><a href=\"/a\">Go</a></p>";
+        let a = "html > body:nth-of-type(1) > p:nth-of-type(1) > a:nth-of-type(1)";
+        let out = apply_edits(
+            link,
+            &[SourceEdit {
+                selector: a.into(),
+                text: Some("Next".into()),
+                expect_text: Some("Go".into()),
+                attributes: style(&[("href", Some("/b"))]),
+                ..SourceEdit::default()
+            }],
+        )
+        .unwrap();
+        assert_eq!(out, "<p><a href=\"/b\">Next</a></p>");
+    }
+
+    fn whole(selector: &str, html: Option<&str>) -> SourceEdit {
+        SourceEdit {
+            selector: selector.into(),
+            outer_html: html.map(str::to_owned),
+            remove: html.is_none(),
+            ..SourceEdit::default()
+        }
+    }
+
+    const HERO: &str = "[data-od-id=\"hero\"]";
+
+    #[test]
+    fn replaces_an_elements_html_byte_exactly() {
+        let out = apply_edits(
+            PAGE,
+            &[whole(HERO, Some("<div class=\"x\"><h3>New</h3></div>"))],
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            PAGE.replace(
+                "<section data-od-id=\"hero\"><h2>Hero</h2></section>",
+                "<div class=\"x\" data-od-id=\"hero\"><h3>New</h3></div>"
+            ),
+            "the anchor moves to the new root; the rest stays byte for byte"
+        );
+        // A root that brings its own anchor keeps it; comments around are fine.
+        let own = apply_edits(
+            PAGE,
+            &[whole(HERO, Some(" <!-- c --><p data-od-id=\"p1\">P</p>\n"))],
+        )
+        .unwrap();
+        assert!(
+            own.contains("<!-- c --><p data-od-id=\"p1\">P</p>"),
+            "{own}"
+        );
+        for (html, why) in [
+            ("<p>a</p><p>b</p>", "several elements"),
+            ("just text", "no element"),
+            ("<p>a</p> tail", "text outside the element"),
+            ("<div><p>a</p>", "an element is not closed"),
+        ] {
+            assert_eq!(
+                apply_edits(PAGE, &[whole(HERO, Some(html))]),
+                Err(PatchError::InvalidHtml(why)),
+                "{html}"
+            );
+        }
+        // Void elements have no end tag to look for.
+        let img = "<p><img src=\"a.png\" alt=\"A\"><br></p>";
+        let sel = "html > body:nth-of-type(1) > p:nth-of-type(1) > img:nth-of-type(1)";
+        assert_eq!(
+            apply_edits(img, &[whole(sel, Some("<img src=\"b.png\">"))]),
+            Ok("<p><img src=\"b.png\"><br></p>".into())
+        );
+        // An implied end tag gives no span to replace.
+        let open = "<ul><li>One<li>Two</ul>";
+        let li = "html > body:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(1)";
+        assert_eq!(
+            apply_edits(open, &[whole(li, Some("<li>X</li>"))]),
+            Err(PatchError::NoEndTag)
+        );
+        // New HTML goes alone.
+        let mixed = SourceEdit {
+            text: Some("x".into()),
+            ..whole(HERO, Some("<p>x</p>"))
+        };
+        assert!(matches!(
+            apply_edits(PAGE, &[mixed]),
+            Err(PatchError::InvalidEdit(_))
+        ));
+    }
+
+    #[test]
+    fn removes_elements_but_never_the_last_one() {
+        let out = apply_edits(PAGE, &[whole(HERO, None)]).unwrap();
+        assert_eq!(
+            out,
+            PAGE.replace("<section data-od-id=\"hero\"><h2>Hero</h2></section>", "")
+        );
+        let body = "html > body:nth-of-type(1)";
+        assert_eq!(
+            apply_edits(PAGE, &[whole(body, None)]),
+            Err(PatchError::NotRemovable("body".into()))
+        );
+        let one = "<!doctype html><html><head><title>T</title></head><body><main>M</main><script>1</script></body></html>";
+        let main = "html > body:nth-of-type(1) > main:nth-of-type(1)";
+        assert_eq!(
+            apply_edits(one, &[whole(main, None)]),
+            Err(PatchError::LastElement)
+        );
+        // Removal checks the element as the preview showed it.
+        let edit = SourceEdit {
+            expect_tag: Some("div".into()),
+            ..whole(HERO, None)
+        };
+        assert!(matches!(
+            apply_edits(PAGE, &[edit]),
+            Err(PatchError::TagMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn reads_one_element_from_the_source() {
+        let el = read_element(PAGE, H1, Some("h1"), Some("Tea & cake")).unwrap();
+        assert_eq!(el.tag, "h1");
+        assert_eq!(
+            el.attributes,
+            [
+                SourceAttribute {
+                    name: "id".into(),
+                    value: "title".into()
+                },
+                SourceAttribute {
+                    name: "style".into(),
+                    value: "color: red; margin: 0".into()
+                },
+            ]
+        );
+        assert_eq!(
+            el.outer_html,
+            "<h1 id=\"title\" style=\"color: red; margin: 0\">Tea &amp; cake</h1>"
+        );
+        assert_eq!(el.text, "Tea & cake");
+        assert!(el.text_only);
+        let hero = read_element(PAGE, HERO, None, None).unwrap();
+        assert_eq!(
+            hero.outer_html,
+            "<section data-od-id=\"hero\"><h2>Hero</h2></section>"
+        );
+        assert!(!hero.text_only);
+        assert!(matches!(
+            read_element(PAGE, H1, None, Some("Other")),
+            Err(PatchError::TextMismatch { .. })
+        ));
     }
 
     #[test]

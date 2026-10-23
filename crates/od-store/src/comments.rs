@@ -1,10 +1,12 @@
 //! Preview comments (`preview_comments`, spec 3.3), scoped to a conversation.
 
 use crate::error::{Result, StoreError};
+use crate::files;
 use crate::paths::validate_project_path;
 use crate::store::Store;
 use od_contracts::{
-    CommentRect, CommentStatus, CreateCommentRequest, PreviewComment, UpdateCommentRequest,
+    CommentImage, CommentRect, CommentStatus, CreateCommentRequest, FileKind, MAX_COMMENT_IMAGES,
+    PreviewComment, UpdateCommentRequest,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
@@ -15,6 +17,50 @@ const MAX_HINT: usize = 400;
 
 const COLUMNS: &str = "id, project_id, conversation_id, file_path, element_id, selector, label, \
      text, position_json, html_hint, slide_index, note, status, created_at, updated_at";
+
+/// Images attached to comments, kept beside `preview_comments` (created
+/// on open, so it needs no numbered migration).
+const SCHEMA: &str = r"
+CREATE TABLE IF NOT EXISTS preview_comment_images (
+  comment_id TEXT NOT NULL REFERENCES preview_comments(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  PRIMARY KEY (comment_id, position)
+);
+";
+
+pub(crate) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(SCHEMA)
+}
+
+/// Every comment's images, in order (one query for the whole list).
+fn attach_images(conn: &Connection, comments: &mut [PreviewComment]) -> Result<()> {
+    if comments.is_empty() {
+        return Ok(());
+    }
+    let mut stmt = conn.prepare(
+        "SELECT comment_id, path, name FROM preview_comment_images \
+         WHERE comment_id IN (SELECT id FROM preview_comments WHERE conversation_id = ?1) \
+         ORDER BY comment_id, position",
+    )?;
+    let rows = stmt.query_map([&comments[0].conversation_id], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            CommentImage {
+                path: r.get(1)?,
+                name: r.get(2)?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (id, image) = row?;
+        if let Some(c) = comments.iter_mut().find(|c| c.id == id) {
+            c.attachments.push(image);
+        }
+    }
+    Ok(())
+}
 
 fn clip(s: &str, max: usize) -> String {
     s.trim().chars().take(max).collect()
@@ -38,6 +84,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<PreviewComment> {
         slide_index: slide.and_then(|s| u32::try_from(s).ok()),
         note: row.get(11)?,
         status: CommentStatus::parse(&status),
+        attachments: Vec::new(),
         created_at: row.get(13)?,
         updated_at: row.get(14)?,
     })
@@ -70,7 +117,9 @@ impl Store {
                  ORDER BY created_at, rowid"
             ))?;
             let rows = stmt.query_map([conversation_id], from_row)?;
-            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+            let mut comments = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+            attach_images(conn, &mut comments)?;
+            Ok(comments)
         })
     }
 
@@ -92,6 +141,7 @@ impl Store {
         if req.selector.trim().is_empty() {
             return Err(StoreError::BadRequest("selector required".into()));
         }
+        let attachments = self.comment_images(project_id, &req.attachments)?;
         let now = crate::now_ms();
         let comment = PreviewComment {
             id: uuid::Uuid::new_v4().to_string(),
@@ -107,6 +157,7 @@ impl Store {
             slide_index: req.slide_index,
             note,
             status: req.status.unwrap_or_default(),
+            attachments,
             created_at: now,
             updated_at: now,
         };
@@ -134,9 +185,49 @@ impl Store {
                     now,
                 ],
             )?;
+            for (i, image) in comment.attachments.iter().enumerate() {
+                conn.execute(
+                    "INSERT INTO preview_comment_images (comment_id, position, path, name) \
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![comment.id, i as i64, image.path, image.name],
+                )?;
+            }
             Ok(())
         })?;
         Ok(comment)
+    }
+
+    /// Checks the images a new comment attaches: at most
+    /// [`MAX_COMMENT_IMAGES`], each an image file of the project.
+    fn comment_images(&self, project_id: &str, paths: &[String]) -> Result<Vec<CommentImage>> {
+        if paths.len() > MAX_COMMENT_IMAGES {
+            return Err(StoreError::BadRequest(format!(
+                "at most {MAX_COMMENT_IMAGES} images per comment"
+            )));
+        }
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        let root = self.root_for(project_id)?;
+        paths
+            .iter()
+            .map(|raw| {
+                let path = validate_project_path(raw)?;
+                let (file, _) = files::stat_file(&root, &path)?;
+                if file.kind != FileKind::Image {
+                    return Err(StoreError::BadRequest(format!("{path} is not an image")));
+                }
+                Ok(CommentImage {
+                    name: file
+                        .name
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(&file.name)
+                        .to_owned(),
+                    path: file.path,
+                })
+            })
+            .collect()
     }
 
     /// # Errors
@@ -163,6 +254,7 @@ impl Store {
                 comment.status = status;
             }
             comment.updated_at = crate::now_ms();
+            attach_images(conn, std::slice::from_mut(&mut comment))?;
             conn.execute(
                 "UPDATE preview_comments SET note = ?2, status = ?3, updated_at = ?4 WHERE id = ?1",
                 params![
@@ -266,6 +358,68 @@ mod tests {
             s.delete_comment(&p, &c, &made.id),
             Err(StoreError::CommentNotFound)
         ));
+    }
+
+    #[test]
+    fn images_attach_in_order_and_must_be_project_images() {
+        let (_tmp, s, p, c) = store();
+        for name in ["shots/a.png", "shots/b.jpg", "notes.txt"] {
+            s.write_file(&p, name, b"x", true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        let with = |paths: &[&str]| CreateCommentRequest {
+            attachments: paths.iter().map(|p| (*p).to_owned()).collect(),
+            ..req("See the shot")
+        };
+        let made = s
+            .create_comment(&p, &c, with(&["shots/b.jpg", "shots/a.png"]))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let names: Vec<_> = made.attachments.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["b.jpg", "a.png"]);
+        let plain = s
+            .create_comment(&p, &c, req("No image"))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let listed = s.list_comments(&p, &c).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(listed, vec![made.clone(), plain]);
+        // An update keeps them; a delete takes them along.
+        let updated = s
+            .update_comment(
+                &p,
+                &c,
+                &made.id,
+                UpdateCommentRequest {
+                    note: Some("Still".into()),
+                    status: None,
+                },
+            )
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(updated.attachments, made.attachments);
+        s.delete_comment(&p, &c, &made.id)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let left: i64 = s
+            .with_conn(|conn| {
+                Ok(
+                    conn.query_row("SELECT COUNT(*) FROM preview_comment_images", [], |r| {
+                        r.get(0)
+                    })?,
+                )
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(left, 0);
+        // Not an image, not there, outside the project, too many.
+        for bad in [
+            vec!["notes.txt"],
+            vec!["shots/missing.png"],
+            vec!["../x.png"],
+            vec!["shots/a.png"; MAX_COMMENT_IMAGES + 1],
+        ] {
+            assert!(s.create_comment(&p, &c, with(&bad)).is_err(), "{bad:?}");
+        }
+        assert_eq!(
+            s.list_comments(&p, &c).map(|l| l.len()).ok(),
+            Some(1),
+            "a refused comment is not stored"
+        );
     }
 
     #[test]
