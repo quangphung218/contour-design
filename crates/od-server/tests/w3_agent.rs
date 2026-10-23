@@ -354,6 +354,54 @@ async fn the_design_jury_streams_scores_and_ships_the_artifact() {
     );
 }
 
+/// The shipped artifact cannot be written (a plain file is named
+/// `critique`): the run still settles, and the report says why it has no
+/// file.
+#[tokio::test]
+async fn a_jury_artifact_that_cannot_be_written_still_settles_the_run() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
+    std::fs::write(d.mocks.join("reply.jsonl"), jury_reply()).unwrap();
+    let (project, conversation) = d.project().await;
+    let blocker = d
+        .post(
+            &format!("/api/projects/{project}/files"),
+            &json!({"name": "critique", "content": "not a folder"}),
+        )
+        .await;
+    assert!(blocker.status().is_success(), "{}", blocker.status());
+    d.http
+        .put(format!("{}/api/projects/{project}/critique", d.base))
+        .json(&json!({"enabled": true}))
+        .send()
+        .await
+        .unwrap();
+    run_turn(
+        &d,
+        json!({"agentId": "claude", "projectId": project, "conversationId": conversation,
+               "message": "poster"}),
+    )
+    .await;
+    let messages = d.settled_messages(&project, &conversation).await;
+    assert_eq!(messages[1]["runStatus"], "succeeded", "{:?}", messages[1]);
+    let stored = messages[1]["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .rev()
+        .find(|e| e["type"] == "critique")
+        .unwrap()
+        .clone();
+    assert_eq!(stored["report"]["status"], "shipped", "{stored}");
+    assert!(stored["report"].get("artifactPath").is_none(), "{stored}");
+    assert!(
+        stored["report"]["degradedReason"]
+            .as_str()
+            .is_some_and(|r| !r.is_empty()),
+        "{stored}"
+    );
+}
+
 /// A daemon that died mid-run left its comments `applying`; the next
 /// daemon on the folder hands them back to the next turn.
 #[tokio::test]

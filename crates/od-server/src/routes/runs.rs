@@ -739,23 +739,33 @@ async fn persist_run(
     let run_id = run.id().to_owned();
     let res = state
         .blocking(move |s| {
+            // The jury's file and report are extras: failing them must not
+            // leave the message running.
             if let Some((mut report, artifact)) = verdict {
                 if let Some(html) = artifact.filter(|_| status == RunStatus::Succeeded) {
                     let path = format!(
                         "critique/{}.html",
                         run_id.chars().take(8).collect::<String>()
                     );
-                    s.write_file(&fin.project_id, &path, html.as_bytes(), true, None)?;
-                    report.artifact_path = Some(path);
+                    match s.write_file(&fin.project_id, &path, html.as_bytes(), true, None) {
+                        Ok(_) => report.artifact_path = Some(path),
+                        Err(err) => {
+                            tracing::warn!(run = %run_id, error = %err, "critique artifact write failed");
+                            report.degraded_reason =
+                                Some(format!("the shipped artifact could not be saved: {err}"));
+                        }
+                    }
                 }
                 // The settled report closes the stored events.
-                s.append_event_batch(
+                if let Err(err) = s.append_event_batch(
                     &fin.assistant_message_id,
                     &run_id,
                     i64::MAX,
                     &[critique_event(&report)],
                     last_id,
-                )?;
+                ) {
+                    tracing::warn!(run = %run_id, error = %err, "critique report write failed");
+                }
             }
             s.finish_assistant_message(&fin.assistant_message_id, &outcome.text, status, last_id)?;
             set_comments(
