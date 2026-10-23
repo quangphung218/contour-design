@@ -627,7 +627,6 @@ messages! {
     LinkLocalCode => "Link local code", "Liên kết code trên máy";
     LinkedFolders => "Linked folders", "Thư mục đã liên kết";
     Unlink => "Unlink {0}", "Bỏ liên kết {0}";
-    FolderLinked => "Linked {0}: the agent can read it from the next message.", "Đã liên kết {0}: agent đọc được từ tin nhắn sau.";
     MentionEmpty => "Search files, plugins, skills and MCP servers.", "Tìm file, plugin, skill và MCP server.";
     MentionNoResults => "No results for “{0}”.", "Không có kết quả cho “{0}”.";
     MentionFiles => "Design files", "File thiết kế";

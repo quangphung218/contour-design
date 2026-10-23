@@ -505,13 +505,10 @@ pub fn ContextFolders(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
+/// Links a picked folder; it then shows under "Linked folders" in "+".
 async fn finish_link(ctx: StudioCtx, dir: String) {
-    match link_dir(ctx, dir).await {
-        Ok(path) => {
-            let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
-            ctx.notice.set(Some(tf(T::FolderLinked, &[&name])));
-        }
-        Err(e) => ctx.notice.set(Some(e)),
+    if let Err(e) = link_dir(ctx, dir).await {
+        ctx.notice.set(Some(e));
     }
 }
 
@@ -538,11 +535,7 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
         }
         leptos::task::spawn_local(async move {
             match link_dir(ctx, dir).await {
-                Ok(p) => {
-                    let name = p.rsplit('/').next().unwrap_or(&p).to_owned();
-                    ctx.notice.set(Some(tf(T::FolderLinked, &[&name])));
-                    close.run(());
-                }
+                Ok(_) => close.run(()),
                 Err(e) => error.set(Some(e)),
             }
         });

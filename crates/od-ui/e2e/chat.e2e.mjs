@@ -176,7 +176,11 @@ try {
   await page.getByTestId('plus-item').first().click();
   await page.locator('[data-testid="context-chip"][data-kind="plugin"]').waitFor();
   results.homeMentions = 'ok';
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByTestId('plus-menu').click();
+  await sleep(400);
   await page.screenshot({ path: OUT + 'b3-home-light.png' });
+  await page.keyboard.press('Escape');
 
   // 6. A file staged on Home goes up once the project exists.
   await page.getByTestId('file-input').setInputFiles({ name: 'ref.png', mimeType: 'image/png', buffer: PNG });
@@ -233,6 +237,8 @@ try {
   await lastTurnDone(2);
   assert.deepEqual([...runBodies[1].attachments].sort(), ['button.png', 'dropped.txt', 'pasted.png']);
   assert.equal(await page.getByTestId('attachment-chip').count(), 0, 'sent files leave the tray');
+  const names = (await api(`/api/projects/${projectId}/files`)).files.map((f) => f.path);
+  assert.ok(!names.includes('dropped-1.txt') && !names.includes('pasted-1.png'), `each file uploaded once: ${names}`);
   results.attach = 'ok';
 
   // 8. @ a project file attaches it.
@@ -392,6 +398,7 @@ try {
   // 18. Dark screenshots of the new pieces, then Vietnamese strings.
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.getByTestId('plus-menu').click();
+  await sleep(400); // pop-in animation
   await page.screenshot({ path: OUT + 'b3-studio-dark.png' });
   await page.keyboard.press('Escape');
   await page.goto(BASE + '/');
@@ -399,6 +406,7 @@ try {
   await page.locator('[data-testid="chip-option"][data-chip="image"]').click();
   await page.getByTestId('brief').pressSequentially('@');
   await page.getByTestId('mention-palette').waitFor();
+  await sleep(400);
   await page.screenshot({ path: OUT + 'b3-home-dark.png' });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.getByTestId('brief').press('Escape');

@@ -179,8 +179,12 @@ pub async fn upload_all(
             .cloned()
             .collect()
     });
-    for item in todo {
+    // Claimed before the first await, so a second batch started meanwhile
+    // (paste, then drop) does not upload these again.
+    for item in &todo {
         set_state(uploads, &item.id, UploadState::Uploading);
+    }
+    for item in todo {
         let result = upload(&base, &item.file).await;
         let still = uploads.with_untracked(|u| u.iter().any(|x| x.id == item.id));
         if !still {
@@ -1147,5 +1151,33 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
                 </div>
             </Show>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn take_pending_removes_what_home_staged() {
+        let mut meta: od_contracts::ProjectMetadata = serde_json::from_value(json!({
+            "kind": "video",
+            "videoLength": 8,
+            "pendingAttachments": ["ref.png"],
+            "pendingContext": [{ "kind": "skill", "id": "web-clone", "label": "web-clone" }]
+        }))
+        .unwrap_or_default();
+        let (files, context) = take_pending(&mut meta).unwrap_or_default();
+        assert_eq!(files, ["ref.png"]);
+        assert_eq!(context.len(), 1);
+        assert_eq!(context[0].kind, MentionKind::Skill);
+        assert_eq!(
+            meta.extra.get("videoLength"),
+            Some(&json!(8)),
+            "other keys kept"
+        );
+        assert!(!meta.extra.contains_key(PENDING_ATTACHMENTS));
+        assert_eq!(take_pending(&mut meta), None);
     }
 }
