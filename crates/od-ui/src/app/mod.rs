@@ -88,6 +88,15 @@ impl Shell {
         Ok(())
     }
 
+    /// Re-reads settings after a route that writes them on its own (project
+    /// locations), so the next [`Shell::save_config`] does not send back
+    /// the old values.
+    pub async fn reload_config(self) {
+        if let Ok(config) = api::get::<AppConfig>("/api/app-config").await {
+            self.config.set(Some(config));
+        }
+    }
+
     /// Switches the language; a no-op (no re-render) when unchanged.
     fn set_locale(self, locale: Locale) {
         if self.locale.get_untracked() != locale {

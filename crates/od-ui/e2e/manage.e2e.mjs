@@ -334,8 +334,17 @@ try {
   await page.getByTestId('location-state').getByText('Scan complete').waitFor();
   const placed = (await post('/api/projects', { name: 'In location' })).body.project;
   assert.equal(placed.metadata.baseDir, join(locationDir, 'In location'));
+  // Locations save apart from the settings form: after a reload (the app
+  // config now holds the location), saving the form must not bring the
+  // old default back.
+  await page.reload();
+  await loc.waitFor();
   await page.locator('[data-testid="location"]').first().getByTestId('location-default').click();
   await until(async () => (await api('/api/project-locations')).body.defaultId === 'default', 'default back');
+  const formSaved = page.waitForResponse((r) => r.url().endsWith('/api/app-config') && r.request().method() === 'PUT');
+  await page.getByTestId('save-settings').click();
+  await formSaved;
+  assert.equal((await api('/api/project-locations')).body.defaultId, 'default', 'form save kept the new default');
   const openai = page.locator('[data-testid="media-provider"][data-provider="openai"]');
   await openai.getByTestId('media-key').fill('sk-media-1234');
   await page.getByTestId('media-save').click();

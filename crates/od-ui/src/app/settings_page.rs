@@ -660,6 +660,7 @@ fn GlobalMemory() -> impl IntoView {
 /// Project locations: work bases for new projects, the default one, scan.
 #[component]
 fn ProjectLocations() -> impl IntoView {
+    let shell = Shell::get();
     let locations = RwSignal::new(Vec::<Value>::new());
     let default_id = RwSignal::new("default".to_owned());
     let path = RwSignal::new(String::new());
@@ -680,6 +681,7 @@ fn ProjectLocations() -> impl IntoView {
             match api::put::<_, Value>("/api/project-locations", &body).await {
                 Ok(v) => {
                     apply(v);
+                    shell.reload_config().await;
                     path.set(String::new());
                     state.set(Some(Ok(t(T::Saved).to_owned())));
                 }
