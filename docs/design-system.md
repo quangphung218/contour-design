@@ -136,6 +136,13 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 - Mỗi lượt của agent có một dòng trạng thái `[data-testid=run-state]` (`data-phase` = `starting | working | done | failed | stopped`; đang chạy theo plan thì hiện "Bước N/M"). Lượt cuối, khi không còn run nào, có hàng "Tiếp theo" (`next-steps`): xem file vừa ghi, bình luận lên trang, bản mobile, phương án khác; lỗi thì "Thử lại" và "Mở Cài đặt". Logic nằm ở `src/guide.rs`, test native.
 - Không tải được project (id sai, daemon tắt) thì lỗi nằm cố định đầu khung chat (`load-error`), kèm nút Thử lại; không hiện prompt mẫu. Các lỗi khác của Studio hiện thành toast đỏ ở giữa đáy (`data-testid=notice`), tự ẩn sau 8 giây. Lỗi HTTP mở đầu bằng câu dễ hiểu theo mã trạng thái (`status_hint` trong `api.rs`), sau đó là thông điệp gốc của daemon.
 
+## Composer (Home và Studio)
+
+- Dùng chung `app/composer.rs`: `MentionArea` (ô nhập + palette `@`/`/`, paste và kéo thả file), `PlusMenu` ("+": đính file, Plugins, Skills, MCP, design toolbox, mục riêng của trang qua `children`), `ContextChips`, `UploadTray`, `ModelPicker`. Logic thuần ở `src/mention.rs`, `src/models.rs`, `src/toolbox.rs`, `src/intent.rs`.
+- Menu và popover mở lên trên ở chat (`.menu.up`, `.popover.up`); đóng khi bấm ra ngoài hoặc Esc (`close_outside`).
+- Palette `@`: nhóm Design files, Plugins, Skills, MCP (`.menu-sep`), dòng đang chọn `aria-selected="true"`. File đính kèm: chip có thumbnail 24 px cho ảnh, `data-state` = `waiting | uploading | failed`.
+- Khung chat kéo được (`.chat-resizer`, mũi tên 16 px), thu gọn bằng nút trên thanh conversation, độ rộng lưu ở `od.studio.chat-width`. Thành phần tự gỡ chính nó trong handler (form đổi tên, hộp thoại xoá) đổi state ở task kế tiếp.
+
 ## Command palette và phím tắt
 
 - `Cmd/Ctrl+K` mở command palette (`app/palette.rs`): lệnh (project mới, các trang, đổi theme, phím tắt), project, và khi đang ở Studio thì thêm lệnh Studio và file. Tìm mờ bằng `fuzzy::score`. `Cmd/Ctrl+P` vẫn là quick switcher chỉ cho file.

@@ -1,6 +1,6 @@
 # Parity open-design-rs so với OpenDesign
 
-- Bản Rust: `open-design-rs` main `7681914` (2026-10-23).
+- Bản Rust: `open-design-rs` main `7681914` (2026-10-23). Nhóm Studio-chat, composer Home (chip, +, @, media, thư mục làm việc, tiêu đề) và phím `@`/`/` chấm lại sau track B3-chat (branch `b3-chat`, 2026-10-23).
 - App gốc: `~/Documents/GitHub/open-design` (đọc source, chủ yếu `apps/web/src/i18n/locales/en.ts` và `apps/web/src/components/`).
 - Cách chấm: **100** có đủ, **50** một phần (ghi thiếu gì), **0** không có, **N/A** bỏ có chủ đích (spec 1.6, decisions.md). % nhóm là trung bình điểm, không tính N/A. Mỗi mục nặng như nhau, nút nhỏ và luồng lớn cùng một trọng số.
 - Tính năng chỉ có ở API hoặc CLI `od`, không có trên UI: chấm 50.
@@ -11,15 +11,15 @@
 
 | Nhóm | Số mục | Đủ | Một phần | Không có | N/A | % |
 |---|---|---|---|---|---|---|
+| Studio-chat | 32 | 27 | 2 | 3 | 1 | 88 |
+| Home | 18 | 10 | 5 | 3 | 2 | 69 |
 | Agent runtimes | 8 | 5 | 1 | 2 | 1 | 69 |
 | Studio-preview | 26 | 11 | 9 | 6 | 1 | 60 |
 | Desktop shell | 9 | 5 | 0 | 4 | 1 | 56 |
 | Templates/Examples | 6 | 2 | 2 | 2 | 1 | 50 |
+| Phím tắt | 17 | 7 | 3 | 7 | 0 | 50 |
 | Export | 11 | 4 | 2 | 5 | 1 | 45 |
-| Studio-chat | 32 | 12 | 4 | 16 | 1 | 44 |
 | MCP | 8 | 3 | 1 | 4 | 0 | 44 |
-| Phím tắt | 17 | 6 | 3 | 8 | 0 | 44 |
-| Home | 18 | 4 | 6 | 8 | 2 | 39 |
 | Automations | 8 | 2 | 2 | 4 | 0 | 38 |
 | Settings | 15 | 3 | 5 | 7 | 1 | 37 |
 | Projects | 14 | 3 | 3 | 8 | 1 | 32 |
@@ -27,7 +27,7 @@
 | Design systems | 13 | 2 | 1 | 10 | 1 | 19 |
 | Media | 6 | 0 | 2 | 4 | 0 | 17 |
 | Plugins/Skills | 8 | 0 | 2 | 6 | 1 | 12 |
-| **Tổng** | **215** | **65** | **45** | **105** | **12** | **40,7** |
+| **Tổng** | **215** | **87** | **42** | **86** | **12** | **50,2** |
 
 Đọc nhanh:
 - **Luồng lõi đã chạy tốt**: brief → agent → preview → comment/inspect/edit text → version → export (HTML, ZIP, PDF, PNG, PPTX). Phần preview (60%) và runtime agent (69%) gần app gốc nhất.
@@ -63,15 +63,15 @@ Còn đáng cân nhắc sau 15 mục trên: tạo design system từ URL/GitHub 
 | Nhóm | Tính năng (app gốc) | Điểm | Bản Rust: bằng chứng / thiếu gì |
 |---|---|---|---|
 | Home | Ô brief, Enter tạo project và gửi lượt đầu | 100 | `crates/od-ui/src/app/home.rs:123`; ảnh `(audit run) shots/home-light.png` |
-| Home | Chip loại đầu ra (Prototype, Website clone, Wireframe, Mobile app, Slide deck, Document, Image, Video, Audio, Motion, HyperFrames, WebGL, Live artifact) | 50 | Chỉ Prototype và Slide deck (`crates/od-ui/src/intent.rs:9`) |
-| Home | Chip hành động (Create design system, Create plugin, From Figma, From folder, From template) | 50 | Có "New design system…" (`home.rs:4`, `ds_create.rs:24`) và chọn template; không có Create plugin, From Figma; From folder chỉ ở trang Projects |
+| Home | Chip loại đầu ra (Prototype, Website clone, Wireframe, Mobile app, Slide deck, Document, Image, Video, Audio, Motion, HyperFrames, WebGL, Live artifact) | 100 | 13 chip (`crates/od-ui/src/intent.rs` `Chip`), 3 chip chính + "Thêm"; mỗi chip chọn skill/template riêng, `metadata.intent`/`fidelity`/`platform`; `crates/od-ui/e2e/chat.e2e.mjs` bước 3 |
+| Home | Chip hành động (Create design system, Create plugin, From Figma, From folder, From template) | 50 | Có New design system, chọn template, Create plugin (gắn `@od-plugin-authoring`), From folder (`home.rs` `FromFolder`); thiếu From Figma (cần Figma API, mạng ngoài) |
 | Home | Chọn design system lúc tạo | 100 | `home.rs` picker; `(audit run) shots/home-light.png` |
 | Home | Chọn template + gallery "Start from a template" | 100 | `home.rs:286`, 57 template, Show all; `(audit run) shots/home-decks-light.png` |
-| Home | Tiêu đề xoay chữ, carousel placeholder, ví dụ prompt | 0 | Tiêu đề và placeholder tĩnh |
-| Home | Menu "+" thêm ngữ cảnh (đính file, plugin, connector, MCP) | 0 | Không có |
-| Home | Tìm ngữ cảnh bằng @ (file, plugin, skill, MCP) | 0 | Không có |
-| Home | Picker media ở chân composer (Ratio, Duration, Resolution, Notes) | 0 | Không có (chỉ có 2 chip) |
-| Home | Working directory picker (chọn, đổi, thư mục gần đây) | 0 | Không có trên Home; project luôn tạo trong data dir |
+| Home | Tiêu đề xoay chữ, carousel placeholder, ví dụ prompt | 100 | "Let’s create {word}" xoay 10 giây, ghim theo chip; placeholder gõ chữ theo kịch bản của chip (`intent.rs` `SCENARIOS`, `typewriter`), Enter khi trống dùng kịch bản; ví dụ prompt theo chip; `crates/od-ui/e2e/chat.e2e.mjs` bước 2–3 |
+| Home | Menu "+" thêm ngữ cảnh (đính file, plugin, connector, MCP) | 100 | `crates/od-ui/src/app/composer.rs` `PlusMenu`: đính file, Plugins, Skills, MCP (+ Add MCP server), thư mục làm việc; connector không có trong sản phẩm (Connectors chưa chốt, xem nhóm MCP); `crates/od-ui/e2e/chat.e2e.mjs` bước 4–6 |
+| Home | Tìm ngữ cảnh bằng @ (file, plugin, skill, MCP) | 100 | `composer.rs` `MentionArea` + `src/mention.rs`: plugin, skill, MCP (file ở Studio), phím lên/xuống/Enter/Tab/Esc; mention đi kèm lượt đầu (`metadata.pendingContext`); `crates/od-ui/e2e/chat.e2e.mjs` bước 5 |
+| Home | Picker media ở chân composer (Ratio, Duration, Resolution, Notes) | 100 | `home.rs` `MediaBar`: Model (`/api/media/models`), Ratio, Resolution, Duration, Audio type, Style notes; ghi vào metadata (`imageAspect`, `videoLength`…) và khối `## Project metadata` của prompt (`od-content/src/prompt.rs`); `crates/od-ui/e2e/chat.e2e.mjs` bước 3 |
+| Home | Working directory picker (chọn, đổi, thư mục gần đây) | 100 | "+" ▸ Thư mục làm việc: chọn (dialog native trên desktop, ô đường dẫn trên web), đổi, gần đây (`recentLinkedDirs`), bỏ; kiểm tra bằng `POST /api/linked-dirs/check`; agent nhận `--add-dir` (`metadata.linkedDirs`); `crates/od-ui/e2e/chat.e2e.mjs` bước 4 |
 | Home | Thẻ "Recommended for you" | 0 | Không có |
 | Home | Dải project gần đây (+ lọc owner/type) | 50 | `home.rs:243`; không có lọc |
 | Home | Rail trái (Home, Projects, Automations, Plugins, Design systems, Integrations, thu gọn) | 50 | `crates/od-ui/src/app/mod.rs:203`: Home, Projects, Automations, Settings, thu gọn; thiếu Plugins, Design systems, Integrations |
@@ -99,35 +99,35 @@ Còn đáng cân nhắc sau 15 mục trên: tạo design system từ URL/GitHub 
 | Projects | Team space, invite, presence, sync thiết bị | N/A | Team/cloud: BỎ |
 | Studio-chat | Stream lượt assistant: text, thinking, tool row, Markdown | 100 | `crates/od-ui/src/app/chat_view.rs:444-466`; `(audit run) shots/studio-light.png` |
 | Studio-chat | Stop | 100 | `chat_view.rs` nút Stop → `ctx.cancel()` |
-| Studio-chat | Danh sách conversation: tạo, đổi tên, xoá | 50 | `chat_view.rs:159-190`: dropdown + New; thiếu rename/delete |
+| Studio-chat | Danh sách conversation: tạo, đổi tên, xoá | 100 | `crates/od-ui/src/app/chat_ops.rs` `ConversationMenu`: đổi tên, xoá có xác nhận (`DELETE /api/projects/:id/conversations/:cid`, 409 khi đang chạy); `crates/od-ui/e2e/chat.e2e.mjs` bước 15 |
 | Studio-chat | Fork từ một tin | 100 | `chat_view.rs:403` |
 | Studio-chat | Session mode (Ask/Plan/Design) | 100 | `crates/od-ui/src/app/agent_w3.rs` (Design/Chat/Plan) |
-| Studio-chat | Đính file, upload trong composer | 0 | Daemon có `POST /api/projects/{id}/upload`; UI không có nút đính file, không nhận paste/drop ảnh |
-| Studio-chat | Tham chiếu project khác, link local code | 0 | Không có |
-| Studio-chat | Import Figma (.fig, URL) | 0 | Không có |
-| Studio-chat | Import từ Library | 0 | Không có |
-| Studio-chat | Đổi design system ngay trong composer | 0 | DS chỉ chọn lúc tạo (`studio.rs:291` đọc từ project) |
-| Studio-chat | Palette @ mention | 0 | Không có |
-| Studio-chat | Slash command (/mcp, /search) | 0 | Không có |
-| Studio-chat | Inline model switcher (CLI/BYOK, agent, model) | 0 | Chỉ đổi trong Settings |
+| Studio-chat | Đính file, upload trong composer | 100 | Nút "+" ▸ Attach files, paste ảnh, kéo thả (từ chối thư mục), tối đa 12 file/200 MB, thumbnail + xem ảnh, thử lại khi lỗi (`composer.rs`); `crates/od-ui/e2e/chat.e2e.mjs` bước 7 |
+| Studio-chat | Tham chiếu project khác, link local code | 100 | "+" ▸ Link local code, Reference another project (`chat_ops.rs` `ContextFolders`), danh sách thư mục đã liên kết + bỏ liên kết; `crates/od-ui/e2e/chat.e2e.mjs` bước 17 |
+| Studio-chat | Import Figma (.fig, URL) | 0 | Không làm: cần Figma API (mạng ngoài, decisions.md) hoặc trình đọc .fig |
+| Studio-chat | Import từ Library | 0 | Không làm: Library thuộc track B1 (chưa có trên main); app gốc cũng ẩn sau feature flag |
+| Studio-chat | Đổi design system ngay trong composer | 100 | `chat_ops.rs` `DesignSystemSwitch` (PATCH project, lượt sau dùng ngay); `crates/od-ui/e2e/chat.e2e.mjs` bước 11 |
+| Studio-chat | Palette @ mention | 100 | `MentionArea`: file, plugin, skill, MCP; file thành đính kèm, skill → `skillIds`, plugin → `pluginId`, MCP → dòng yêu cầu dùng tool; `crates/od-ui/e2e/chat.e2e.mjs` bước 8 |
+| Studio-chat | Slash command (/mcp, /search) | 100 | `/mcp` mở cài đặt MCP, `/mcp <id>`, `/search <query>` (`src/mention.rs`); `crates/od-ui/e2e/chat.e2e.mjs` bước 9 |
+| Studio-chat | Inline model switcher (CLI/BYOK, agent, model) | 100 | `composer.rs` `ModelPicker`: agent, model (danh sách + tự nhập), reasoning effort; lưu `agentModels` như app gốc, gửi `model`/`reasoning`; `crates/od-ui/e2e/chat.e2e.mjs` bước 10 |
 | Studio-chat | Queue: sửa, kéo thả, steer | 100 | `chat_view.rs:229-293` |
-| Studio-chat | Quote to chat | 0 | Không có |
+| Studio-chat | Quote to chat | 100 | Bôi đen trong transcript ▸ nút Quote chèn `> …` vào composer (`chat_view.rs`); `crates/od-ui/e2e/chat.e2e.mjs` bước 13c |
 | Studio-chat | Trạng thái run (Working, Thinking) | 100 | `chat_view.rs:459` |
 | Studio-chat | Todo list + plan pill "bước N/M" | 100 | `chat_view.rs:107,413`; `(audit run) shots/studio-light.png` |
-| Studio-chat | Dòng sinh media, audio player | 0 | Không có |
-| Studio-chat | "Files from this turn" (Open/Download) | 50 | Chỉ có dòng chữ "Wrote index.html (v1)"; không có nút mở/tải |
-| Studio-chat | Copy tin nhắn | 0 | Không có |
-| Studio-chat | "Continue remaining tasks" | 0 | Không có |
+| Studio-chat | Dòng sinh media, audio player | 50 | Audio player cho file âm thanh trong "Files from this turn"; chưa có dòng tiến trình sinh media (daemon không phát sự kiện đó) |
+| Studio-chat | "Files from this turn" (Open/Download) | 100 | `chat_ops.rs` `TurnFiles`: Write/Edit, Open, Download, "+N more"; `crates/od-ui/e2e/chat.e2e.mjs` bước 13 |
+| Studio-chat | Copy tin nhắn | 100 | `CopyTurn` (bỏ tool, thinking, form), "Copied" 2 giây; `crates/od-ui/e2e/chat.e2e.mjs` bước 13 |
+| Studio-chat | "Continue remaining tasks" | 100 | `ContinueTasks` + `guide::continue_prompt` (câu chữ như app gốc); `crates/od-ui/e2e/chat.e2e.mjs` bước 12 |
 | Studio-chat | Question form | 100 | `crates/od-ui/src/question_form.rs`, `chat_view.rs:489` |
 | Studio-chat | GenUI surface (Authorize, Accept all…) | 0 | Không có |
-| Studio-chat | Next-step actions, suggested next steps | 0 | Không có (daemon không phát `next_steps`) |
-| Studio-chat | Design toolbox follow-up (Match, Icons, Motion, Polish…) | 0 | Không có |
+| Studio-chat | Next-step actions, suggested next steps | 100 | Brand-ux đã làm (`chat_view.rs` `NextSteps`, `src/guide.rs`), B3 kiểm lại; gợi ý tính ở client, không từ daemon; B3 thêm 2 hành động toolbox |
+| Studio-chat | Design toolbox follow-up (Match, Icons, Motion, Polish…) | 100 | "+" ▸ Design toolbox (8 hành động, `src/toolbox.rs`) và 2 hành động nổi bật ở hàng Tiếp theo; gắn skill phù hợp + điền yêu cầu; `crates/od-ui/e2e/chat.e2e.mjs` bước 13b |
 | Studio-chat | Design Jury (critique theater) | 50 | `agent_w3.rs:163,427`: bật, vòng, 5 vai, điểm; thiếu Interrupt, Replay |
-| Studio-chat | Lỗi run, reconnect, retry | 50 | Báo "Lost the connection"; không có thẻ lỗi có nút Reconnect/Retry |
+| Studio-chat | Lỗi run, reconnect, retry | 100 | Thử lại (brand-ux) + Kết nối lại khi mất stream (`chat_ops.rs` `ReconnectTurn`); `crates/od-ui/e2e/chat.e2e.mjs` bước 14 |
 | Studio-chat | Xuất log/conversation | 100 | `agent_w3.rs:319-350` (Markdown, JSON) |
 | Studio-chat | Memory của project (+ "Remember that…") | 100 | `agent_w3.rs:202`; `(audit run) shots/studio-memory-light.png` |
 | Studio-chat | Side chat | 100 | `agent_w3.rs:724`; `(audit run) shots/studio-side-chat-light.png` |
-| Studio-chat | Thu gọn/resize pane chat | 0 | Không có |
+| Studio-chat | Thu gọn/resize pane chat | 100 | Nút thu gọn + "Show chat"; kéo hoặc phím mũi tên 16 px, 345 px đến max(720, nửa), workspace giữ 400 px, lưu `od.studio.chat-width`; `crates/od-ui/e2e/chat.e2e.mjs` bước 16 |
 | Studio-chat | Cảnh báo deliverable sau run | 100 | `crates/od-ui/src/app/preview_tools.rs:1214` |
 | Studio-chat | Thumbs feedback, share to community, support dialog, balance gate | N/A | Telemetry/share/community/billing: BỎ |
 | Studio-preview | Preview HTML sandbox + live reload | 100 | `crates/od-ui/src/app/studio.rs:1170-1200`, project SSE `studio.rs:479` |
@@ -283,7 +283,7 @@ Còn đáng cân nhắc sau 15 mục trên: tạo design system từ URL/GitHub 
 | Phím tắt | Cmd/Ctrl+1…9 | 100 | `studio.rs:725` |
 | Phím tắt | Cmd/Ctrl+Shift+K Continue in CLI | 0 | Không có |
 | Phím tắt | Enter / Shift+Enter gửi, xuống dòng | 100 | `chat_view.rs:121` |
-| Phím tắt | @ và / trong composer | 0 | Không có |
+| Phím tắt | @ và / trong composer | 100 | `MentionArea` ở Home và Studio; `crates/od-ui/e2e/chat.e2e.mjs` bước 5, 9 |
 | Phím tắt | Cmd/Ctrl+Enter gửi comment | 50 | Comment gửi bằng Enter (`preview_comments.rs:177`) |
 | Phím tắt | Cmd/Ctrl+Z trong draw | 0 | Không có undo |
 | Phím tắt | Deck: →, ←, PageUp/Down, Home, End, R | 50 | `studio.rs:755-762`; thiếu R |
