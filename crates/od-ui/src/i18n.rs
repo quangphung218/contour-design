@@ -1557,6 +1557,25 @@ messages! {
     FromFolder => "From folder", "Từ thư mục";
     ShortcutMention => "Mention a file, plugin, skill or MCP server", "Nhắc tới file, plugin, skill hoặc MCP server";
     ShortcutSlash => "Commands (at the start of a line)", "Lệnh (ở đầu dòng)";
+
+    // Track C4-depth: Crystallize and evolution proposals (Automations).
+    Crystallize => "Crystallize", "Đúc kết";
+    Crystallizing => "Crystallizing…", "Đang đúc kết…";
+    CrystallizeTitle => "Draft skill and memory proposals from this run", "Soạn đề xuất skill và memory từ lượt chạy này";
+    CrystallizeFailed => "Crystallize failed: {0}", "Đúc kết không được: {0}";
+    CrystallizeNoProposals => "Crystallize finished, but no proposals were returned.", "Đã đúc kết nhưng không có đề xuất nào.";
+    ProposalsTitle => "Evolution proposals", "Đề xuất tiến hoá";
+    ProposalsSub => "Review automation output before it changes memory, skills or design systems.", "Duyệt kết quả của automation trước khi nó đổi memory, skill hay design system.";
+    ProposalsPending => "{0} pending", "{0} chờ duyệt";
+    ProposalApply => "Apply", "Áp dụng";
+    ProposalReject => "Reject", "Bỏ";
+    ProposalsDismissReason => "Dismissed in Automations", "Bỏ ở trang Automations";
+    ProposalTargetMemory => "Memory", "Memory";
+    ProposalTargetSkill => "Skill", "Skill";
+    ProposalActionCreate => "Create", "Tạo mới";
+    ProposalPreview => "Preview", "Xem trước";
+    ProposalSkillApplied => "Saved as skill {0}.", "Đã lưu thành skill {0}.";
+    ProposalMemoryApplied => "Saved to memory.", "Đã lưu vào memory.";
 }
 
 /// The current language's text for `key`.

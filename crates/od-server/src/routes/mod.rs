@@ -6,6 +6,7 @@ pub mod conversations;
 pub mod export;
 pub mod file_ops;
 pub mod files;
+pub mod genui;
 pub mod handoff;
 pub mod library;
 pub mod manage;

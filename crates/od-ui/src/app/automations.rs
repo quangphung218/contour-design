@@ -2,6 +2,8 @@
 //! project or in a fresh project per run. Schedule presets (hourly, daily,
 //! weekdays, weekly) with a time zone, or a cron line; templates; edit,
 //! pause, run now, delete; the run history with duration and links.
+//! A succeeded run can be crystallized into skill and memory proposals,
+//! reviewed in "Evolution proposals" (track C4-depth).
 
 use super::icons::{Glyph, icon};
 use super::manage::local_time;
@@ -59,6 +61,42 @@ struct RoutinesResponse {
 #[derive(Debug, Deserialize)]
 struct RunsResponse {
     runs: Vec<RoutineRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProposalPatch {
+    after: String,
+    #[serde(default)]
+    diff_summary: String,
+}
+
+/// An evolution proposal (`/api/automation-proposals`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Proposal {
+    id: String,
+    title: String,
+    summary: String,
+    target_kind: String,
+    action: String,
+    review_policy: String,
+    patch: ProposalPatch,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProposalsResponse {
+    proposals: Vec<Proposal>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CrystallizeResponse {
+    proposals: Vec<Proposal>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApplyResponse {
+    result: Value,
 }
 
 /// A template: id, title, description, default name, prompt.
@@ -334,6 +372,18 @@ pub fn Automations() -> impl IntoView {
     let error = RwSignal::new(None::<String>);
     let form = Form::new();
     let editing = RwSignal::new(None::<String>);
+    let proposals = RwSignal::new(Vec::<Proposal>::new());
+    let load_proposals = Callback::new(move |()| {
+        leptos::task::spawn_local(async move {
+            if let Ok(r) =
+                api::get::<ProposalsResponse>("/api/automation-proposals?status=pending-review")
+                    .await
+            {
+                proposals.set(r.proposals);
+            }
+        });
+    });
+    load_proposals.run(());
 
     let reload = move || {
         leptos::task::spawn_local(async move {
@@ -524,13 +574,103 @@ pub fn Automations() -> impl IntoView {
                         <ul class="routine-list">
                             {list.into_iter().map(|r| {
                                 let project_name = names.iter().find(|p| p.id == r.project_id).map(|p| p.name.clone());
-                                view! { <RoutineRow routine=r project_name=project_name reload=reload on_edit=on_edit/> }
+                                view! { <RoutineRow routine=r project_name=project_name reload=reload on_edit=on_edit on_crystallized=load_proposals/> }
                             }).collect_view()}
                         </ul>
                     }.into_any()
                 }
             }}
+            <ProposalsSection proposals=proposals reload=load_proposals/>
         </section>
+    }
+}
+
+/// Pending evolution proposals with Apply / Reject; hidden when none.
+#[component]
+fn ProposalsSection(proposals: RwSignal<Vec<Proposal>>, reload: Callback<()>) -> impl IntoView {
+    let busy = RwSignal::new(None::<String>);
+    let note = RwSignal::new(None::<Result<String, String>>);
+    let review = move |id: String, apply: bool| {
+        busy.set(Some(id.clone()));
+        note.set(None);
+        leptos::task::spawn_local(async move {
+            let base = format!("/api/automation-proposals/{}", api::seg(&id));
+            let res = if apply {
+                api::post::<_, ApplyResponse>(&format!("{base}/apply"), &json!({}))
+                    .await
+                    .map(|r| match r.result.get("skillId").and_then(Value::as_str) {
+                        Some(skill) => Some(tf(T::ProposalSkillApplied, &[skill])),
+                        None => Some(t(T::ProposalMemoryApplied).to_owned()),
+                    })
+            } else {
+                let body = json!({"reason": t(T::ProposalsDismissReason)});
+                api::post::<_, Value>(&format!("{base}/reject"), &body)
+                    .await
+                    .map(|_| None)
+            };
+            busy.set(None);
+            match res {
+                Ok(done) => note.set(done.map(Ok)),
+                Err(e) => note.set(Some(Err(e.to_string()))),
+            }
+            reload.run(());
+        });
+    };
+    view! {
+        <Show when=move || !proposals.with(Vec::is_empty) || note.with(Option::is_some)>
+            <section class="proposals" data-testid="proposals" aria-label=t(T::ProposalsTitle)>
+                <div class="row proposals-head">
+                    <div class="grow">
+                        <h2 class="list-title">{t(T::ProposalsTitle)}</h2>
+                        <p class="muted small">{t(T::ProposalsSub)}</p>
+                    </div>
+                    <span class="badge accent" data-testid="proposals-count">
+                        {move || tf(T::ProposalsPending, &[&proposals.with(Vec::len).to_string()])}
+                    </span>
+                </div>
+                {move || note.get().map(|n| match n {
+                    Ok(m) => view! { <p class="small success-text" data-testid="proposal-note">{icon(Glyph::CheckCircle)}{m}</p> }.into_any(),
+                    Err(e) => view! { <p class="small error-text" data-testid="proposal-note">{e}</p> }.into_any(),
+                })}
+                <ul class="proposal-list">
+                    <For each=move || proposals.get() key=|p| p.id.clone() let:p>
+                        {
+                            let is_skill = p.target_kind == "skill";
+                            let id = StoredValue::new(p.id.clone());
+                            let pending = move || busy.get().as_deref() == Some(id.get_value().as_str());
+                            view! {
+                                <li class="card proposal" data-testid="proposal" data-kind=p.target_kind.clone()>
+                                    <div class="row proposal-head">
+                                        <span class="routine-icon">{icon(if is_skill { Glyph::Magic } else { Glyph::Memory })}</span>
+                                        <div class="grow proposal-text">
+                                            <strong class="proposal-title">{p.title.clone()}</strong>
+                                            <span class="small subtle">
+                                                {t(if is_skill { T::ProposalTargetSkill } else { T::ProposalTargetMemory })}
+                                                " · "{if p.action == "create" { t(T::ProposalActionCreate).to_owned() } else { p.action.clone() }}
+                                                " · "{p.review_policy.clone()}
+                                            </span>
+                                        </div>
+                                        <button class="btn small primary" data-testid="proposal-apply" disabled=pending
+                                            on:click=move |_| review(id.get_value(), true)>
+                                            {icon(Glyph::Check)}{t(T::ProposalApply)}
+                                        </button>
+                                        <button class="btn small ghost danger" data-testid="proposal-reject" disabled=pending
+                                            on:click=move |_| review(id.get_value(), false)>
+                                            {t(T::ProposalReject)}
+                                        </button>
+                                    </div>
+                                    <p class="small prompt-preview">{p.summary.clone()}</p>
+                                    <details class="proposal-preview">
+                                        <summary class="small">{t(T::ProposalPreview)}" · "{p.patch.diff_summary.clone()}</summary>
+                                        <pre class="mono small">{p.patch.after.clone()}</pre>
+                                    </details>
+                                </li>
+                            }
+                        }
+                    </For>
+                </ul>
+            </section>
+        </Show>
     }
 }
 
@@ -693,8 +833,10 @@ fn RoutineRow(
     project_name: Option<String>,
     reload: impl Fn() + Copy + Send + Sync + 'static,
     on_edit: Callback<Routine>,
+    on_crystallized: Callback<()>,
 ) -> impl IntoView {
     let id = StoredValue::new(routine.id.clone());
+    let crystallizing = RwSignal::new(None::<String>);
     let history = RwSignal::new(None::<Vec<RoutineRun>>);
     let show_history = RwSignal::new(true);
     let confirming = RwSignal::new(false);
@@ -730,6 +872,21 @@ fn RoutineRow(
                 }
                 Err(e) => failure.set(Some(e.to_string())),
             }
+        });
+    };
+    let crystallize = move |run_id: String| {
+        crystallizing.set(Some(run_id.clone()));
+        leptos::task::spawn_local(async move {
+            let path = format!("{}/runs/{}/crystallize", base(), api::seg(&run_id));
+            match api::post::<_, CrystallizeResponse>(&path, &json!({})).await {
+                Ok(r) if r.proposals.is_empty() => {
+                    failure.set(Some(t(T::CrystallizeNoProposals).to_owned()));
+                }
+                Ok(_) => failure.set(None),
+                Err(e) => failure.set(Some(tf(T::CrystallizeFailed, &[&e.to_string()]))),
+            }
+            crystallizing.set(None);
+            on_crystallized.run(());
         });
     };
     let remove = move |_| {
@@ -808,6 +965,18 @@ fn RoutineRow(
                                 " · "{trigger_label(&run.trigger)}" · "{local_time(run.started_at)}" · "{duration_label(&run)}
                                 {run.error.clone().map(|e| view! { <span class="error-text">" · "{e}</span> })}
                                 {href.map(|h| view! { " · " <A href=h>{t(T::OpenConversation)}</A> })}
+                                {(run.status == "succeeded").then(|| {
+                                    let run_id = StoredValue::new(run.id.clone());
+                                    let busy = move || crystallizing.get().as_deref() == Some(run_id.get_value().as_str());
+                                    view! {
+                                        <button class="btn ghost small crystallize-btn" data-testid="routine-crystallize"
+                                            data-tip=t(T::CrystallizeTitle) disabled=busy
+                                            on:click=move |_| crystallize(run_id.get_value())>
+                                            {icon(Glyph::Sparkle)}
+                                            {move || if busy() { t(T::Crystallizing) } else { t(T::Crystallize) }}
+                                        </button>
+                                    }
+                                })}
                             </li>
                         }
                     }).collect_view().into_any()

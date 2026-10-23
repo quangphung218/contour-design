@@ -12,6 +12,7 @@
 //! run is computed from the current time.
 
 pub mod cron;
+pub mod evolution;
 pub mod store;
 
 use chrono::{DateTime, Local, TimeZone};
