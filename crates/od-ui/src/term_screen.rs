@@ -7,7 +7,7 @@
 pub const MAX_LINES: usize = 2000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum Esc {
+enum Parse {
     #[default]
     None,
     /// After ESC.
@@ -23,7 +23,7 @@ enum Esc {
 pub struct Screen {
     lines: Vec<Vec<char>>,
     col: usize,
-    esc: Esc,
+    esc: Parse,
     params: String,
     /// Bytes of an incomplete UTF-8 sequence from the last chunk.
     pending: Vec<u8>,
@@ -34,7 +34,7 @@ impl Default for Screen {
         Self {
             lines: vec![Vec::new()],
             col: 0,
-            esc: Esc::None,
+            esc: Parse::None,
             params: String::new(),
             pending: Vec::new(),
         }
@@ -73,42 +73,42 @@ impl Screen {
 
     fn put(&mut self, c: char) {
         match self.esc {
-            Esc::Start => {
+            Parse::Start => {
                 self.esc = match c {
                     '[' => {
                         self.params.clear();
-                        Esc::Csi
+                        Parse::Csi
                     }
-                    ']' => Esc::Osc,
-                    _ => Esc::None,
+                    ']' => Parse::Osc,
+                    _ => Parse::None,
                 };
                 return;
             }
-            Esc::Csi => {
+            Parse::Csi => {
                 if ('\u{40}'..='\u{7e}').contains(&c) {
-                    self.esc = Esc::None;
+                    self.esc = Parse::None;
                     self.csi(c);
                 } else {
                     self.params.push(c);
                 }
                 return;
             }
-            Esc::Osc => {
+            Parse::Osc => {
                 self.esc = match c {
-                    '\u{7}' => Esc::None,
-                    '\u{1b}' => Esc::OscEsc,
-                    _ => Esc::Osc,
+                    '\u{7}' => Parse::None,
+                    '\u{1b}' => Parse::OscEsc,
+                    _ => Parse::Osc,
                 };
                 return;
             }
-            Esc::OscEsc => {
-                self.esc = Esc::None;
+            Parse::OscEsc => {
+                self.esc = Parse::None;
                 return;
             }
-            Esc::None => {}
+            Parse::None => {}
         }
         match c {
-            '\u{1b}' => self.esc = Esc::Start,
+            '\u{1b}' => self.esc = Parse::Start,
             '\r' => self.col = 0,
             '\n' => {
                 self.lines.push(Vec::new());

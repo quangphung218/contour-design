@@ -94,11 +94,12 @@ async fn closing_kills_the_shell_its_foreground_job_and_background_jobs() {
     let shell = i32::try_from(s.pid().unwrap()).unwrap();
     let mut att = s.attach();
     let mut seen = String::new();
-    // `B""G=` in the typed line keeps the echo from matching `BG=`.
+    // `B""G=` in the typed line keeps the echo from matching `BG=`. The
+    // foreground job ignores SIGHUP, so only the SIGKILL step ends it.
     s.write(b"set +H; sleep 1001 & echo B\"\"G=$! .\r").unwrap();
     read_until(&mut att.live, &mut seen, "BG=").await;
     read_until(&mut att.live, &mut seen, ".").await;
-    s.write(b"sh -c 'echo F\"\"G=$$ .; exec sleep 1002'\r")
+    s.write(b"sh -c 'trap \"\" HUP; echo F\"\"G=$$ .; exec sleep 1002'\r")
         .unwrap();
     read_until(&mut att.live, &mut seen, "FG=").await;
     tokio::time::sleep(Duration::from_millis(200)).await;
