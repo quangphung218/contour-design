@@ -276,6 +276,44 @@ messages! {
     Edit => "Edit", "Sửa";
     StepOf => "Step {0}/{1}", "Bước {0}/{1}";
     Plan => "Plan", "Kế hoạch";
+
+    // W3-agent: session mode, side chat, memory, Design Jury, transcript
+    SessionMode => "Session mode", "Chế độ phiên";
+    ModeDesign => "Design", "Thiết kế";
+    ModeChat => "Chat", "Hỏi đáp";
+    ModePlan => "Plan", "Lập kế hoạch";
+    ModeDesignHint => "Build and edit the design", "Dựng và sửa thiết kế";
+    ModeChatHint => "Talk it through; no file changes", "Trao đổi, không sửa file";
+    ModePlanHint => "Write a plan first, then build", "Viết kế hoạch trước rồi mới dựng";
+    SideChat => "Side chat", "Chat phụ";
+    SideChatHint => "Ask the same agent on the side; the main chat keeps its place.", "Hỏi cùng agent ở một luồng riêng, chat chính vẫn giữ nguyên.";
+    SideChatPlaceholder => "Ask a quick question…  (Enter to send)", "Hỏi nhanh một câu…  (Enter để gửi)";
+    Memory => "Memory", "Ghi nhớ";
+    MemoryHint => "The agent reads these facts on every turn of this project. Start a message with “Remember that…” to add one from the chat.", "Agent đọc các ghi nhớ này ở mọi lượt của project. Mở đầu tin nhắn bằng “Ghi nhớ:” để thêm ngay từ chat.";
+    MemoryEmpty => "Nothing remembered yet.", "Chưa có ghi nhớ nào.";
+    MemoryPlaceholder => "Add a fact, e.g. Brand color is teal", "Thêm ghi nhớ, ví dụ: màu thương hiệu là xanh ngọc";
+    MemoryAdd => "Add", "Thêm";
+    MemoryClear => "Forget all", "Xoá hết";
+    MemoryFromChat => "from chat", "từ chat";
+    DesignJury => "Design Jury", "Hội đồng thiết kế";
+    JuryHint => "Five reviewers score each draft; the agent revises until the composite clears 8.0.", "Năm giám khảo chấm từng bản nháp; agent sửa tới khi điểm tổng đạt 8.0.";
+    JuryRound => "Round {0}", "Vòng {0}";
+    JuryReviewing => "The jury is reviewing…", "Hội đồng đang chấm…";
+    JuryShipped => "Shipped at round {0}, composite {1}", "Chốt ở vòng {0}, điểm tổng {1}";
+    JuryBelow => "Below the threshold at round {0}, composite {1}", "Chưa đạt ngưỡng ở vòng {0}, điểm tổng {1}";
+    JuryInterrupted => "Interrupted, best composite {0}", "Bị ngắt, điểm tổng cao nhất {0}";
+    JuryDegraded => "The jury could not score this run ({0})", "Hội đồng không chấm được lượt này ({0})";
+    JuryMustFix => "{0} to fix", "{0} chỗ phải sửa";
+    JuryOpenArtifact => "Open the shipped file", "Mở file đã chốt";
+    RoleDesigner => "Designer", "Thiết kế";
+    RoleCritic => "Critic", "Phê bình";
+    RoleBrand => "Brand", "Thương hiệu";
+    RoleA11y => "Accessibility", "Trợ năng";
+    RoleCopy => "Copy", "Nội dung";
+    AskModeWarning => "{0} in “Ask first” mode can wait for an approval nobody can give and hang until the idle timeout. If a run stalls, switch Permissions to Automatic in Settings.", "{0} ở chế độ “Hỏi trước” có thể chờ một lần duyệt không ai duyệt được và treo tới hết idle timeout. Nếu run bị treo, đổi Quyền sang Tự động trong Cài đặt.";
+    ExportConversation => "Export conversation", "Xuất hội thoại";
+    ExportMarkdown => "Markdown (.md)", "Markdown (.md)";
+    ExportJson => "JSON (.json)", "JSON (.json)";
 }
 
 /// The current language's text for `key`.

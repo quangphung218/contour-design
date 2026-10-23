@@ -4,8 +4,9 @@
 // turn reloads the preview → question form → plan pill, queue, steer, stop →
 // history after reload → preview comments sent with a turn → deck viewer
 // (next, thumbnails, notes, present, Esc) → quick switcher and tabs →
-// version restore → fork → export and handoff → open folder → settings and
-// Vietnamese. Every request leaving loopback is blocked and fails the test.
+// version restore → fork → export and handoff → open folder → session mode,
+// memory, side chat, conversation export, Design Jury → settings and
+// Vietnamese → Ask-mode warning. Every request leaving loopback is blocked and fails the test.
 //
 // Run through ./run.sh (builds the bundle and `od` first).
 
@@ -309,6 +310,112 @@ try {
   rmSync(folder, { recursive: true, force: true });
   results.projects = 'ok';
 
+  // 15b. W3-agent: session mode, memory, side chat, conversation export
+  // and the Design Jury, on the tea shop project.
+  const projectId = new URL(projectUrl).pathname.split('/').pop();
+  const api = async (path, init) => (await fetch(`${BASE}/api/projects/${projectId}${path}`, init)).json();
+  await page.goto(projectUrl);
+  await assistant.first().waitFor();
+  const conversationsNow = (await api('/conversations')).conversations.map((c) => c.id);
+  await until(async () => conversationsNow.includes(await page.getByTestId('conversation').inputValue()), 'conversation open');
+  const mainCid = await page.getByTestId('conversation').inputValue();
+  const sendMain = async (text) => {
+    await page.getByTestId('composer').fill(text);
+    await page.getByTestId('composer').press('Enter');
+  };
+  const settledMain = async (before, label) => {
+    await until(async () => (await assistant.count()) === before + 1, `${label} started`);
+    await until(async () => (await assistant.last().getAttribute('data-state')) === 'succeeded', `${label} done`);
+    await page.getByTestId('stop').waitFor({ state: 'hidden' });
+  };
+  const mode = (m) => page.getByTestId('session-mode').locator(`[data-mode="${m}"]`);
+  const modeOf = async () => (await api('/conversations')).conversations.find((c) => c.id === mainCid)?.sessionMode;
+
+  await mode('chat').click();
+  await until(async () => (await modeOf()) === 'chat', 'chat mode saved');
+  let before = await assistant.count();
+  await sendMain('what font is that');
+  await settledMain(before, 'chat turn');
+  await assistant.last().getByText('Mode: chat.').waitFor();
+  assert.equal(runBodies.at(-1).sessionMode, 'chat');
+  await page.reload();
+  await mode('chat').and(page.locator('[aria-checked="true"]')).waitFor();
+  await mode('plan').click();
+  before = await assistant.count();
+  await sendMain('outline the next screen');
+  await settledMain(before, 'plan turn');
+  await assistant.last().getByText('Mode: plan.').waitFor();
+  assert.equal(await modeOf(), 'plan');
+  await mode('design').click();
+  await until(async () => (await modeOf()) === 'design', 'design mode saved');
+  results.sessionMode = 'ok';
+
+  await page.getByTestId('memory-toggle').click();
+  await page.getByTestId('memory-input').fill('Brand color is teal');
+  await page.getByTestId('memory-add').click();
+  await page.getByTestId('memory-item').filter({ hasText: 'Brand color is teal' }).waitFor();
+  await page.getByTestId('memory-toggle').click();
+  before = await assistant.count();
+  await sendMain('Remember that headings use Inter');
+  await settledMain(before, 'memory turn');
+  await assistant.last().getByText('Memory: Brand color is teal.').waitFor();
+  await page.getByTestId('memory-toggle').click();
+  await until(async () => (await page.getByTestId('memory-item').count()) === 2, 'chat fact remembered');
+  await page.getByTestId('memory-item').filter({ hasText: 'headings use Inter' }).getByText('from chat').waitFor();
+  await page.getByTestId('memory-item').filter({ hasText: 'Brand color' }).getByTestId('memory-delete').click();
+  await until(async () => (await page.getByTestId('memory-item').count()) === 1, 'memory deleted');
+  assert.deepEqual((await api('/memory')).memory.map((m) => m.text), ['headings use Inter']);
+  await page.getByTestId('memory-toggle').click();
+  results.memory = 'ok';
+
+  const mainCount = await assistant.count();
+  await page.getByTestId('side-chat-tab').click();
+  await page.getByTestId('side-composer').fill('is the hero too big?');
+  await page.getByTestId('side-composer').press('Enter');
+  const sideMsg = page.getByTestId('side-assistant-msg');
+  await sideMsg.last().getByText('Mode: chat.').waitFor();
+  await until(async () => (await sideMsg.last().getAttribute('data-state')) === 'succeeded', 'side turn done');
+  assert.equal(await assistant.count(), mainCount, 'the main chat is untouched');
+  assert.notEqual(runBodies.at(-1).conversationId, mainCid, 'own conversation');
+  await page.getByTestId('tab').first().locator('.tab-name').click();
+  await page.getByTestId('preview').waitFor();
+  await page.getByTestId('side-chat-tab').click();
+  assert.equal(await sideMsg.count(), 1, 'history kept across tabs');
+  await page.reload();
+  await page.getByTestId('composer').waitFor();
+  await until(async () => (await page.getByTestId('conversation').inputValue()) === mainCid, 'main conversation reopened');
+  await page.getByTestId('side-chat-tab').click();
+  await sideMsg.first().getByText('Mode: chat.').waitFor();
+  await page.getByTestId('tab').first().locator('.tab-name').click();
+  results.sideChat = 'ok';
+
+  await page.getByTestId('export-conversation').click();
+  const [mdDownload] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-md').click()]);
+  assert.match(mdDownload.suggestedFilename(), /^conversation-.+\.md$/);
+  const md = readFileSync(await mdDownload.path(), 'utf8');
+  assert.match(md, /## User\n\nwhat font is that/);
+  await page.getByTestId('export-conversation').click();
+  const [jsonDownload] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-json').click()]);
+  assert.equal(JSON.parse(readFileSync(await jsonDownload.path(), 'utf8')).conversation.id, mainCid);
+  results.transcriptExport = 'ok';
+
+  await page.getByTestId('jury-toggle').click();
+  await until(async () => (await api('/critique')).enabled === true, 'jury on');
+  before = await assistant.count();
+  await sendMain('poster for a jazz night');
+  await settledMain(before, 'jury turn');
+  const jury = assistant.last().getByTestId('jury');
+  await jury.getByTestId('jury-outcome').getByText('Shipped at round 2, composite 8.6').waitFor();
+  assert.equal(await jury.getByTestId('jury-lane').count(), 5);
+  assert.equal(await jury.getByTestId('jury-round').count(), 2);
+  assert.equal(await assistant.last().getByText('CRITIQUE_RUN').count(), 0, 'protocol text hidden');
+  await jury.getByTestId('jury-artifact').click();
+  await frame.locator('#title', { hasText: 'Jury final' }).waitFor();
+  await page.screenshot({ path: OUT + 'design-jury.png' });
+  await page.getByTestId('jury-toggle').click();
+  await until(async () => (await api('/critique')).enabled === false, 'jury off');
+  results.designJury = 'ok';
+
   // 16. Settings persist and switch the theme; Vietnamese everywhere.
   await page.goto(BASE + '/settings');
   await page.getByText('Ask first').click();
@@ -338,6 +445,21 @@ try {
   await page.screenshot({ path: OUT + 'studio-vi.png' });
   results.settings = 'ok';
   results.vietnamese = 'ok';
+
+  // 16b. Copilot or Qwen in "Ask first" mode can hang: the UI says so.
+  const putConfig = (body) => fetch(`${BASE}/api/app-config`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  assert.equal((await putConfig({ agentId: 'copilot', agentPermissionMode: 'ask' })).status, 200);
+  await page.goto(projectUrl);
+  await page.getByTestId('ask-mode-warning').waitFor();
+  await page.goto(BASE + '/settings');
+  await page.getByTestId('ask-mode-warning').waitFor();
+  assert.equal((await putConfig({ agentId: 'claude' })).status, 200);
+  await page.reload();
+  await page.locator('h1', { hasText: 'Cài đặt' }).waitFor();
+  assert.equal(await page.getByTestId('ask-mode-warning').count(), 0, 'claude does not hang');
+  results.askModeWarning = 'ok';
 
   // 17. Nothing left loopback during the whole scenario.
   assert.deepEqual(external, [], `external requests: ${external.join(', ')}`);

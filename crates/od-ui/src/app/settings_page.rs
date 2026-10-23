@@ -123,6 +123,7 @@ pub fn SettingsPage() -> impl IntoView {
                     T::PermAskDetail,
                 )}
             </div>
+            <super::agent_w3::AskModeWarning/>
 
             <h2>{t(T::Appearance)}</h2>
             <div class="segmented" role="radiogroup" aria-label=t(T::Appearance)>

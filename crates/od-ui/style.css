@@ -342,3 +342,29 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .preview.presenting .deck-bar .btn, .preview.presenting .deck-bar .icon-btn { background: transparent; color: #eee; border-color: rgb(255 255 255 / 0.35); }
 .preview.presenting .deck-bar .btn.active { background: rgb(255 255 255 / 0.15); }
 .preview.presenting .notes-panel { background: #111; color: #eee; border-color: #333; }
+
+/* W3-agent: session mode, memory, Design Jury, side chat */
+.chat-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.chat-tools .menu-wrap { gap: 0; }
+.warning-text { margin: 0; padding: 6px 12px; font-size: 12.5px; color: var(--text); background: var(--danger-soft); border-bottom: 1px solid var(--border); }
+.memory-panel { left: 0; right: auto; width: 320px; padding: 10px; gap: 8px; }
+.memory-panel .row .input { flex: 1; min-width: 0; }
+.small-text { margin: 0; font-size: 12px; }
+.memory-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.memory-item { display: flex; gap: 6px; align-items: center; padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; }
+.memory-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.small-chip { padding: 0 8px; font-size: 11px; cursor: default; }
+.jury { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin: 6px 0; background: var(--bg); display: flex; flex-direction: column; gap: 6px; }
+.jury-head { display: flex; justify-content: space-between; align-items: baseline; }
+.jury-lanes { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.jury-lane { display: grid; grid-template-columns: 110px 1fr auto; gap: 8px; align-items: center; font-size: 12.5px; }
+.jury-role { color: var(--muted); }
+.jury-fix { font-size: 11px; color: var(--danger); }
+.jury-ticker { display: flex; flex-wrap: wrap; gap: 6px; }
+.jury-round { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); }
+.jury-round.pass { background: var(--accent-soft); }
+.jury-status { margin: 0; display: flex; gap: 6px; align-items: center; font-size: 12.5px; }
+.jury-status.shipped { color: var(--ok); }
+.jury-status.below_threshold, .jury-status.interrupted, .jury-status.degraded { color: var(--danger); }
+.side-tab .tab-name { font-weight: 500; }
+.side-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
