@@ -279,7 +279,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
 }
 
 /// Copies `text` to the clipboard.
-async fn copy_text(text: &str) -> Result<(), String> {
+pub(super) async fn copy_text(text: &str) -> Result<(), String> {
     let clipboard = web_sys::window()
         .ok_or("no window")?
         .navigator()

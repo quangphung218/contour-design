@@ -613,7 +613,7 @@ async fn prepare_and_launch(
                     models.and_then(|m| non_default(m.get(def.id)?.get("serviceTier")?.as_str()))
                 },
                 bin: crate::routes::manage::settings::custom_bin(&data_root, def.id),
-                extra_dirs: Vec::new(),
+                extra_dirs: super::chat_ops::linked_dirs(&state.store, project),
                 resume_session_id: prepared.resume_session_id,
                 permission: prepared.permission,
                 env,

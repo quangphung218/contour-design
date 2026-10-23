@@ -122,6 +122,12 @@ pub async fn patch<B: Serialize, T: DeserializeOwned>(path: &str, body: &B) -> A
     decode(req.send().await.map_err(network)?).await
 }
 
+/// `POST` a multipart form (uploads).
+pub async fn post_form<T: DeserializeOwned>(path: &str, form: web_sys::FormData) -> ApiResult<T> {
+    let req = Request::post(path).body(form).map_err(network)?;
+    decode(req.send().await.map_err(network)?).await
+}
+
 pub async fn delete<T: DeserializeOwned>(path: &str) -> ApiResult<T> {
     decode(Request::delete(path).send().await.map_err(network)?).await
 }

@@ -1184,42 +1184,6 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-/// Annotation images that go with the next message.
-#[component]
-pub fn AttachmentChips(ctx: StudioCtx) -> impl IntoView {
-    let tools = ctx.tools;
-    move || {
-        let files = tools.attachments.get();
-        (!files.is_empty()).then(|| {
-            view! {
-                <div class="comment-chips" aria-label=t(T::FilesAttached)>
-                    {files
-                        .into_iter()
-                        .map(|path| {
-                            let remove = path.clone();
-                            let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
-                            view! {
-                                <span class="chip comment-chip" data-testid="attachment-chip" title=path.clone()>
-                                    {icon(Glyph::Attachment)}
-                                    {name}
-                                    <button
-                                        class="chip-x"
-                                        title=t(T::Detach)
-                                        aria-label=t(T::Detach)
-                                        on:click=move |_| tools.attachments.update(|a| a.retain(|p| p != &remove))
-                                    >
-                                        {icon(Glyph::Close)}
-                                    </button>
-                                </span>
-                            }
-                        })
-                        .collect_view()}
-                </div>
-            }
-        })
-    }
-}
-
 /// Warning when the last run did not deliver its entry file.
 #[component]
 pub fn DeliverableWarning(ctx: StudioCtx) -> impl IntoView {

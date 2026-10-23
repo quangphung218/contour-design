@@ -254,6 +254,10 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     if !ask {
         p.push(format!("\n\n{SEMANTIC_OUTPUT_FILE_NAMES}"));
     }
+    // 9b. Structured choices from project creation (Home chips, media picker).
+    if let Some(block) = metadata.and_then(metadata_block) {
+        p.push(block);
+    }
     // 10. Active plugin, next to the skill it extends.
     if let Some(block) = input.plugin_block.filter(|b| !b.trim().is_empty()) {
         p.push(block.to_owned());
@@ -287,70 +291,78 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     p.concat()
 }
 
-/// New-project panel fields that make the metadata block worth writing.
-const PANEL_FIELDS: [&str; 14] = [
-    "platformTargets",
-    "includeLandingPage",
-    "includeOsWidgets",
-    "speakerNotes",
-    "animations",
-    "templateLabel",
-    "imageModel",
-    "imageAspect",
-    "videoModel",
-    "videoAspect",
-    "videoLength",
-    "audioModel",
-    "audioKind",
-    "audioDuration",
+/// Metadata keys of the new-project panel and the Home media picker, in
+/// the original's names, with the label the prompt shows.
+const META_FIELDS: [(&str, &str); 17] = [
+    ("platformTargets", "platformTargets"),
+    ("includeLandingPage", "includeLandingPage"),
+    ("includeOsWidgets", "includeOsWidgets"),
+    ("speakerNotes", "speakerNotes"),
+    ("animations", "animations"),
+    ("templateLabel", "templateLabel"),
+    ("imageModel", "imageModel"),
+    ("imageAspect", "aspectRatio"),
+    ("imageStyle", "styleNotes"),
+    ("imageResolution", "resolution"),
+    ("videoModel", "videoModel"),
+    ("videoAspect", "aspectRatio"),
+    ("videoLength", "lengthSeconds"),
+    ("videoResolution", "resolution"),
+    ("audioKind", "audioKind"),
+    ("audioModel", "audioModel"),
+    ("audioDuration", "durationSeconds"),
 ];
 
-/// `## Project metadata`: the structured choices of the new-project panel
-/// (the original's facts style). `None` for projects made without it.
+/// A field the user filled: trimmed, `None` when blank.
+fn set(v: Option<&str>) -> Option<&str> {
+    v.map(str::trim).filter(|v| !v.is_empty())
+}
+
+/// `## Project metadata`: the structured choices made when creating the
+/// project (new-project panel, Home chips and media picker), in the
+/// original's facts style. `None` when the project carries none of them.
 fn metadata_block(m: &ProjectMetadata) -> Option<String> {
-    let extra = |k: &str| m.extra.get(k).filter(|v| !v.is_null());
-    let from_panel = m.fidelity.is_some()
-        || m.intent.as_deref() == Some("live-artifact")
-        || PANEL_FIELDS.iter().any(|k| extra(k).is_some());
-    if !from_panel {
-        return None;
-    }
     let text = |v: &serde_json::Value| match v {
-        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::String(s) => s.trim().to_owned(),
         serde_json::Value::Array(items) => items
             .iter()
             .map(|i| i.as_str().map_or_else(|| i.to_string(), str::to_owned))
             .collect::<Vec<_>>()
             .join(", "),
+        serde_json::Value::Null => String::new(),
         other => other.to_string(),
     };
-    let mut lines = vec![
-        "\n\n## Project metadata".to_owned(),
-        "Structured choices from project creation. Known fields are authoritative. Missing fields are unresolved facts, not mandatory questions; infer reasonable defaults and clarify only material blockers.".to_owned(),
-        String::new(),
-    ];
-    if let Some(kind) = m.kind {
-        let kind = serde_json::to_value(kind)
-            .ok()
-            .map(|v| text(&v))
-            .unwrap_or_default();
-        lines.push(format!("- **kind**: {kind}"));
+    let mut lines: Vec<String> = Vec::new();
+    match set(m.intent.as_deref()) {
+        Some("live-artifact") => lines.push("- **intent**: live-artifact — the first output should be a live artifact (dashboard or report that refreshes), not a one-off static mockup.".to_owned()),
+        Some(intent) => lines.push(format!("- **intent**: {intent}")),
+        None => {}
     }
-    if let Some(p) = &m.platform {
-        lines.push(format!("- **platform**: {p}"));
-    }
-    for key in PANEL_FIELDS {
-        if let Some(v) = extra(key) {
-            lines.push(format!("- **{key}**: {}", text(v)));
+    for (label, value) in [("fidelity", &m.fidelity), ("platform", &m.platform)] {
+        if let Some(v) = set(value.as_deref()) {
+            lines.push(format!("- **{label}**: {v}"));
         }
     }
-    if let Some(f) = &m.fidelity {
-        lines.push(format!("- **fidelity**: {f}"));
+    for (key, label) in META_FIELDS {
+        let value = m.extra.get(key).map(text).unwrap_or_default();
+        if !value.is_empty() {
+            lines.push(format!("- **{label}**: {value}"));
+        }
     }
-    if m.intent.as_deref() == Some("live-artifact") {
-        lines.push("- **intent**: live-artifact — the first output should be a live artifact (dashboard or report that refreshes), not a one-off static mockup.".to_owned());
+    if lines.is_empty() {
+        return None;
     }
-    Some(lines.join("\n"))
+    let kind = m
+        .kind
+        .and_then(|k| serde_json::to_value(k).ok())
+        .and_then(|v| v.as_str().map(str::to_owned));
+    if let Some(kind) = kind {
+        lines.insert(0, format!("- **kind**: {kind}"));
+    }
+    Some(format!(
+        "\n\n## Project metadata\nStructured choices from project creation. Known fields are authoritative. Missing fields are unresolved facts, not mandatory questions; infer reasonable defaults and clarify only material blockers.\n\n{}",
+        lines.join("\n")
+    ))
 }
 
 /// `## Project memory`: one bullet per remembered fact.
@@ -649,6 +661,45 @@ mod tests {
             ..PromptInput::default()
         });
         assert!(text.contains("## Project metadata"));
+    }
+
+    #[test]
+    fn metadata_block_lists_home_choices_only_when_present() {
+        let plain = ProjectMetadata {
+            kind: Some(ProjectKind::Deck),
+            ..ProjectMetadata::default()
+        };
+        assert_eq!(metadata_block(&plain), None);
+        let mut video = ProjectMetadata {
+            kind: Some(ProjectKind::Video),
+            intent: Some("motion-design".into()),
+            ..ProjectMetadata::default()
+        };
+        video
+            .extra
+            .insert("videoAspect".into(), serde_json::json!("9:16"));
+        video
+            .extra
+            .insert("videoLength".into(), serde_json::json!(5));
+        video
+            .extra
+            .insert("videoResolution".into(), serde_json::json!(""));
+        let block = metadata_block(&video).unwrap_or_default();
+        assert!(block.starts_with("\n\n## Project metadata\n"), "{block}");
+        assert!(
+            block.ends_with(
+                "- **kind**: video\n- **intent**: motion-design\n- **aspectRatio**: 9:16\n- **lengthSeconds**: 5"
+            ),
+            "{block}"
+        );
+        let text = compose_instructions(&PromptInput {
+            metadata: Some(&video),
+            ..PromptInput::default()
+        });
+        assert!(
+            pos(&text, "## Project metadata")
+                < pos(&text, "## Structured clarification on any turn")
+        );
     }
 
     fn pos(haystack: &str, needle: &str) -> usize {

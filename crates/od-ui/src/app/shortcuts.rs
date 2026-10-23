@@ -36,7 +36,12 @@ const GROUPS: [(T, &[(&str, T)]); 4] = [
     ),
     (
         T::ShortcutsChat,
-        &[("Enter", T::Send), ("Shift+Enter", T::ShortcutNewLine)],
+        &[
+            ("Enter", T::Send),
+            ("Shift+Enter", T::ShortcutNewLine),
+            ("@", T::ShortcutMention),
+            ("/", T::ShortcutSlash),
+        ],
     ),
     (
         T::ShortcutsDeck,

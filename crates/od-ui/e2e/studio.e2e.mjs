@@ -619,7 +619,7 @@ try {
   assert.equal(cfg.locale, 'vi');
   assert.equal(await page.locator('html').getAttribute('lang'), 'vi');
   await page.goto(BASE + '/');
-  await page.locator('h1', { hasText: 'Hôm nay thiết kế gì?' }).waitFor();
+  await page.locator('h1', { hasText: 'Cùng tạo' }).waitFor();
   await page.screenshot({ path: OUT + 'home-dark-vi.png' });
   await page.goto(projectUrl);
   await page.getByTestId('composer').waitFor();

@@ -1,13 +1,22 @@
 //! Home: brief composer (output chips, design system and template pickers),
 //! the template gallery for the chosen output type, and recent projects.
 
+use super::composer::{
+    ContextChips, FilePicker, MentionArea, PENDING_ATTACHMENTS, PENDING_CONTEXT, PlusMenu, Sources,
+    Upload, UploadTray, admit, close_outside, upload_all,
+};
+use super::desktop;
 use super::ds_create::NewDesignSystem;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::lib_ui::query_param;
 use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
-use crate::intent::{Chip, HomeIntent, templates_for};
+use crate::intent::{
+    ASPECTS, AUDIO_KINDS, Chip, HomeIntent, MediaOptions, RESOLUTIONS, push_recent_dir,
+    scenarios_for, templates_for, typewriter,
+};
+use crate::mention::Candidate;
 use crate::settings::AppConfig;
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
@@ -25,6 +34,9 @@ pub fn Home() -> impl IntoView {
     let navigate = use_navigate();
     let brief = RwSignal::new(String::new());
     let chip = RwSignal::new(Chip::Prototype);
+    // The title rotates until a chip is picked by hand.
+    let chip_picked = RwSignal::new(false);
+    let media = RwSignal::new(MediaOptions::defaults(Chip::Prototype));
     // `?ds=` from the Design systems page, else the default for new chats.
     let design_system = RwSignal::new(query_param("ds").or_else(|| {
         shell
@@ -36,9 +48,16 @@ pub fn Home() -> impl IntoView {
     let skill_pick = RwSignal::new(query_param("skill"));
     // `?template=` from the Templates page, applied once the list loads.
     let wanted_template = StoredValue::new(query_param("template"));
+    let working_dir = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
     let brief_ref = NodeRef::<leptos::html::Textarea>::new();
+    let focused = RwSignal::new(false);
+    let uploads = RwSignal::new(Vec::<Upload>::new());
+    let uploaded = RwSignal::new(Vec::<String>::new());
+    let context = RwSignal::new(Vec::<Candidate>::new());
+    let sources = Sources::load();
+    let pick_files = RwSignal::new(0u32);
 
     let skills = LocalResource::new(|| async {
         api::get::<SkillsResponse>("/api/skills")
@@ -84,30 +103,157 @@ pub fn Home() -> impl IntoView {
         templates.get().map(|t| templates_for(chip.get(), &t))
     });
 
+    // Placeholder carousel: types a scenario of the chosen chip while the
+    // brief is empty and unfocused (frozen under reduced motion).
+    let scenario = RwSignal::new(0usize);
+    let typed = RwSignal::new(None::<usize>);
+    let reduced = web_sys::window()
+        .and_then(|w| {
+            w.match_media("(prefers-reduced-motion: reduce)")
+                .ok()
+                .flatten()
+        })
+        .is_some_and(|m| m.matches());
+    let carousel_on = move || brief.with(|b| b.is_empty()) && !focused.get() && !busy.get();
+    let scenario_text = move || {
+        let list = scenarios_for(chip_picked.get().then(|| chip.get()));
+        list.get(scenario.get() % list.len().max(1))
+            .map(|k| t(*k).to_owned())
+            .unwrap_or_default()
+    };
+    let title_word = RwSignal::new(0usize);
+    let frame = leptos::prelude::set_interval_with_handle(
+        move || {
+            if reduced {
+                return;
+            }
+            if carousel_on() {
+                let text = scenario_text();
+                let step = typed.get_untracked().map_or(0, |s| s + 1);
+                match typewriter(&text, step) {
+                    Some(_) => typed.set(Some(step)),
+                    None => {
+                        typed.set(Some(0));
+                        scenario.update(|n| *n += 1);
+                    }
+                }
+            }
+        },
+        std::time::Duration::from_millis(42),
+    )
+    .ok();
+    let words = leptos::prelude::set_interval_with_handle(
+        move || {
+            if !reduced && !chip_picked.get_untracked() {
+                title_word.update(|n| *n += 1);
+            }
+        },
+        std::time::Duration::from_secs(10),
+    )
+    .ok();
+    on_cleanup(move || {
+        if let Some(h) = frame {
+            h.clear();
+        }
+        if let Some(h) = words {
+            h.clear();
+        }
+    });
+    let placeholder = Signal::derive(move || {
+        if !carousel_on() {
+            return t(T::BriefPlaceholder).to_owned();
+        }
+        let text = scenario_text();
+        let n = typed.get().and_then(|s| typewriter(&text, s)).unwrap_or(0);
+        if reduced || n == 0 {
+            return text;
+        }
+        text.chars().take(n).collect()
+    });
+
+    let set_chip = move |c: Chip| {
+        chip.set(c);
+        chip_picked.set(true);
+        template.set(None);
+        media.set(MediaOptions::defaults(c));
+        scenario.set(0);
+        typed.set(None);
+    };
+
     let submit = move || {
-        if busy.get_untracked() || brief.with_untracked(|b| b.trim().is_empty()) {
+        if busy.get_untracked() {
             return;
         }
+        // An empty brief starts the scenario the placeholder shows.
+        let mut text = brief.get_untracked();
+        if text.trim().is_empty() {
+            if !carousel_on() {
+                return;
+            }
+            text = scenario_text();
+            if let Some((_, c)) = crate::intent::SCENARIOS.iter().find(|(k, _)| t(*k) == text) {
+                if !chip_picked.get_untracked() {
+                    chip.set(*c);
+                    media.set(MediaOptions::defaults(*c));
+                }
+            }
+        }
+        if text.trim().is_empty() {
+            return;
+        }
+        let staged = context.get_untracked();
+        let extras = crate::mention::extras(&staged, &text);
         let intent = HomeIntent {
-            brief: brief.get_untracked(),
+            brief: text,
             chip: chip.get_untracked(),
             design_system_id: design_system.get_untracked(),
             template_id: template
                 .get_untracked()
                 .or_else(|| skill_pick.get_untracked()),
+            media: media.get_untracked(),
+            linked_dirs: working_dir.get_untracked().into_iter().collect(),
         };
-        let req = intent.create_request(&skills.get_untracked().unwrap_or_default());
+        let mut all = skills.get_untracked().unwrap_or_default();
+        all.extend(templates.get_untracked().unwrap_or_default());
+        let req = intent.create_request(&all);
         busy.set(true);
         error.set(None);
         let navigate = navigate.clone();
         leptos::task::spawn_local(async move {
-            match api::post::<_, CreateProjectResponse>("/api/projects", &req).await {
-                Ok(res) => navigate(&format!("/projects/{}", res.project.id), Default::default()),
+            let res = match api::post::<_, CreateProjectResponse>("/api/projects", &req).await {
+                Ok(res) => res,
                 Err(e) => {
                     error.set(Some(e.to_string()));
                     busy.set(false);
+                    return;
                 }
+            };
+            let base = format!("/api/projects/{}", api::seg(&res.project.id));
+            if !uploads.with_untracked(Vec::is_empty) {
+                upload_all(base.clone(), uploads, uploaded).await;
             }
+            let files = uploaded.get_untracked();
+            let live: Vec<Candidate> = staged
+                .into_iter()
+                .filter(|c| extras.message.contains(&format!("@{}", c.label)))
+                .collect();
+            if !files.is_empty() || !live.is_empty() {
+                let mut meta = res.project.metadata.clone().unwrap_or_default();
+                if !files.is_empty() {
+                    meta.extra
+                        .insert(PENDING_ATTACHMENTS.to_owned(), serde_json::json!(files));
+                }
+                if !live.is_empty() {
+                    meta.extra
+                        .insert(PENDING_CONTEXT.to_owned(), serde_json::json!(live));
+                }
+                let _ = api::patch::<_, serde_json::Value>(
+                    &base,
+                    &serde_json::json!({ "metadata": meta }),
+                )
+                .await;
+            }
+            navigate(&format!("/projects/{}", res.project.id), Default::default());
         });
     };
     let submit_key = submit.clone();
@@ -123,58 +269,70 @@ pub fn Home() -> impl IntoView {
             let _ = el.focus();
         }
     });
+    let stage_files = Callback::new(move |files: Vec<web_sys::File>| {
+        let (items, notice) = admit(files);
+        error.set(notice);
+        uploads.update(|u| u.extend(items));
+    });
+
+    let title = move || {
+        if chip_picked.get() {
+            return tf(
+                T::HomeTitleCreate,
+                &[&t(chip.get().label_key()).to_lowercase()],
+            );
+        }
+        let words: Vec<&str> = t(T::HomeTitleWords).split(',').collect();
+        let word = words
+            .get(title_word.get() % words.len().max(1))
+            .copied()
+            .unwrap_or_default();
+        tf(T::HomeTitleCreate, &[word])
+    };
 
     view! {
         <section class="home">
             <div class="home-inner">
                 <header class="home-hero">
-                    <h1 class="home-title">{t(T::HomeTitle)}</h1>
+                    <h1 class="home-title" data-testid="home-title">{title}</h1>
                     <p class="home-sub">{t(T::HomeSubtitle)}</p>
                 </header>
                 <div class="composer-card">
-                    <textarea
+                    <ContextChips context=context draft=brief/>
+                    <UploadTray uploads=uploads ready=uploaded base=Signal::derive(|| None::<String>) on_retry=Callback::new(|_id: String| {})/>
+                    <MentionArea
+                        draft=brief
                         class="brief"
-                        data-testid="brief"
-                        rows="3"
-                        node_ref=brief_ref
-                        aria-label=t(T::HomeTitle)
-                        placeholder=t(T::BriefPlaceholder)
-                        prop:value=move || brief.get()
-                        on:input=move |ev| brief.set(event_target_value(&ev))
-                        on:keydown=move |ev: web_sys::KeyboardEvent| {
-                            if ev.key() == "Enter" && !ev.shift_key() && !ev.is_composing() {
-                                ev.prevent_default();
-                                submit_key();
+                        testid="brief"
+                        aria_label=t(T::HomeTitle)
+                        placeholder=placeholder
+                        rows=3
+                        sources=sources
+                        files=Signal::derive(Vec::new)
+                        context=context
+                        on_file=Callback::new(|_p: String| {})
+                        on_submit=Callback::new(move |()| submit_key())
+                        on_files=stage_files
+                        on_mcp_settings=Callback::new(move |()| {
+                            if let Some(w) = web_sys::window() {
+                                let _ = w.location().set_href("/settings#mcp");
                             }
-                        }
-                    ></textarea>
+                        })
+                        on_notice=Callback::new(move |m: String| error.set(Some(m)))
+                        node_ref=brief_ref
+                        on_focus=Callback::new(move |f: bool| focused.set(f))
+                    />
+                    <FilePicker trigger=pick_files on_files=stage_files/>
                     <div class="composer-bar">
-                        <div class="chips" role="radiogroup" aria-label=t(T::OutputType)>
-                            {Chip::ALL
-                                .into_iter()
-                                .map(|c| {
-                                    let (glyph, label) = match c {
-                                        Chip::Prototype => (Glyph::Prototype, t(T::ChipPrototype)),
-                                        Chip::Deck => (Glyph::Deck, t(T::ChipDeck)),
-                                    };
-                                    view! {
-                                        <button
-                                            class="chip"
-                                            class:active=move || chip.get() == c
-                                            role="radio"
-                                            aria-checked=move || (chip.get() == c).to_string()
-                                            on:click=move |_| {
-                                                chip.set(c);
-                                                template.set(None);
-                                            }
-                                        >
-                                            {icon(glyph)}
-                                            {label}
-                                        </button>
-                                    }
-                                })
-                                .collect_view()}
-                        </div>
+                        <PlusMenu
+                            sources=sources
+                            context=context
+                            draft=brief
+                            on_attach=Callback::new(move |()| pick_files.update(|n| *n += 1))
+                        >
+                            <WorkingDirItems dir=working_dir/>
+                        </PlusMenu>
+                        <ChipRow chip=chip picked=chip_picked set_chip=Callback::new(set_chip)/>
                         <span class="bar-divider" aria-hidden="true"></span>
                         <label class="picker">
                             {icon(Glyph::DesignSystem)}
@@ -239,7 +397,7 @@ pub fn Home() -> impl IntoView {
                         <button
                             class="btn primary send-btn"
                             data-testid="create"
-                            disabled=move || busy.get() || brief.with(|b| b.trim().is_empty())
+                            disabled=move || busy.get() || (brief.with(|b| b.trim().is_empty()) && !carousel_on())
                             on:click=move |_| submit()
                         >
                             {move || if busy.get() {
@@ -249,6 +407,7 @@ pub fn Home() -> impl IntoView {
                             }}
                         </button>
                     </div>
+                    <MediaBar chip=chip media=media/>
                 </div>
                 <div class="composer-foot">
                     <NewDesignSystem systems=systems selected=design_system/>
@@ -261,10 +420,39 @@ pub fn Home() -> impl IntoView {
                             </button>
                         </span>
                     })}
+                    <button class="btn ghost small" data-testid="action-create-plugin" on:click=move |_| {
+                        let plugin = sources.plugin("od-plugin-authoring");
+                        let mut text = String::new();
+                        if let Some(c) = plugin {
+                            text.push_str(&crate::mention::token(&c));
+                            super::composer::stage(context, c);
+                        }
+                        text.push_str(t(T::CreatePluginPrompt));
+                        text.push(' ');
+                        brief.set(text);
+                        if let Some(el) = brief_ref.get_untracked() {
+                            let _ = el.focus();
+                        }
+                    }>
+                        {icon(Glyph::Plugin)}{t(T::CreatePlugin)}
+                    </button>
+                    <FromFolder/>
+                    {move || working_dir.get().map(|d| {
+                        let name = d.rsplit('/').next().unwrap_or(&d).to_owned();
+                        view! {
+                            <span class="chip comment-chip" data-testid="working-dir-chip" title=d.clone()>
+                                {icon(Glyph::Folder)}{name.clone()}
+                                <button type="button" class="chip-x" aria-label=t(T::WorkingDirClear) on:click=move |_| working_dir.set(None)>
+                                    {icon(Glyph::Close)}
+                                </button>
+                            </span>
+                        }
+                    })}
                     <span class="spacer"></span>
-                    <span class="subtle small">{t(T::CreateHint)}</span>
+                    <span class="subtle small" title=t(T::CarouselHint)>{t(T::CreateHint)}</span>
                 </div>
                 {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
+                <Examples chip=chip brief=brief brief_ref=brief_ref/>
 
                 <Gallery templates=chip_templates selected=template pick=pick_template/>
 
@@ -273,6 +461,411 @@ pub fn Home() -> impl IntoView {
         </section>
     }
 }
+
+fn chip_glyph(c: Chip) -> Glyph {
+    match c {
+        Chip::Prototype => Glyph::Prototype,
+        Chip::WebClone => Glyph::Globe,
+        Chip::Wireframe => Glyph::Wireframe,
+        Chip::MobileApp => Glyph::Phone,
+        Chip::Deck => Glyph::Deck,
+        Chip::Document => Glyph::FileText,
+        Chip::Image => Glyph::FileImage,
+        Chip::Video => Glyph::Video,
+        Chip::Audio => Glyph::Audio,
+        Chip::Motion => Glyph::Film,
+        Chip::HyperFrames => Glyph::Play,
+        Chip::WebGl => Glyph::Cube,
+        Chip::LiveArtifact => Glyph::Pulse,
+    }
+}
+
+/// The primary output chips, the rest under "More" (the picked one joins
+/// the row).
+#[component]
+fn ChipRow(
+    chip: RwSignal<Chip>,
+    picked: RwSignal<bool>,
+    set_chip: Callback<Chip>,
+) -> impl IntoView {
+    let open = RwSignal::new(false);
+    let wrap = NodeRef::<leptos::html::Div>::new();
+    close_outside(open, wrap);
+    let chip_button = move |c: Chip| {
+        view! {
+            <button
+                class="chip"
+                class:active=move || chip.get() == c
+                role="radio"
+                data-testid="chip"
+                data-chip=c.key()
+                aria-checked=move || (chip.get() == c).to_string()
+                on:click=move |_| set_chip.run(c)
+            >
+                {icon(chip_glyph(c))}
+                {t(c.label_key())}
+            </button>
+        }
+    };
+    view! {
+        <div class="chips" role="radiogroup" aria-label=t(T::OutputType)>
+            {Chip::PRIMARY.into_iter().map(chip_button).collect_view()}
+            {move || {
+                let c = chip.get();
+                (picked.get() && !Chip::PRIMARY.contains(&c)).then(|| chip_button(c))
+            }}
+            <div class="menu-wrap" node_ref=wrap>
+                <button class="chip" data-testid="chip-more" aria-expanded=move || open.get().to_string()
+                    on:click=move |_| open.update(|o| *o = !*o)>
+                    {icon(Glyph::More)}{t(T::ChipMore)}
+                </button>
+                <Show when=move || open.get()>
+                    <div class="menu left" role="menu" data-testid="chip-menu">
+                        {Chip::ALL[Chip::PRIMARY.len()..].iter().map(|&c| view! {
+                            <button class="menu-item" role="menuitemradio" data-testid="chip-option" data-chip=c.key()
+                                aria-checked=move || (chip.get() == c).to_string()
+                                on:click=move |_| { open.set(false); set_chip.run(c); }>
+                                {icon(chip_glyph(c))}{t(c.label_key())}
+                                <Show when=move || chip.get() == c>
+                                    <span class="menu-hint">{icon(Glyph::Check)}</span>
+                                </Show>
+                            </button>
+                        }).collect_view()}
+                    </div>
+                </Show>
+            </div>
+        </div>
+    }
+}
+
+/// Ratio, resolution, duration and audio type for media chips.
+#[component]
+fn MediaBar(chip: RwSignal<Chip>, media: RwSignal<MediaOptions>) -> impl IntoView {
+    // `(surface, id, label)` of the media catalogue.
+    let catalogue = LocalResource::new(|| async {
+        api::get::<serde_json::Value>("/api/media/models")
+            .await
+            .map(|v| {
+                v["models"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|m| {
+                        Some((
+                            m["surface"].as_str()?.to_owned(),
+                            m["id"].as_str()?.to_owned(),
+                            m["label"].as_str().unwrap_or_default().to_owned(),
+                        ))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    });
+    move || {
+        let c = chip.get();
+        let spec = c.media()?;
+        let opts = media.get();
+        let select = |testid: &'static str,
+                      glyph: Glyph,
+                      label: T,
+                      values: Vec<(String, String)>,
+                      current: String,
+                      set: Callback<String>| {
+            view! {
+                <label class="picker" data-tip=t(label) data-tip-pos="top">
+                    {icon(glyph)}
+                    <select data-testid=testid aria-label=t(label) on:change=move |ev| set.run(event_target_value(&ev))>
+                        {values.into_iter().map(|(v, l)| {
+                            let selected = v == current;
+                            view! { <option value=v selected=selected>{l}</option> }
+                        }).collect_view()}
+                    </select>
+                </label>
+            }
+        };
+        Some(view! {
+            <div class="media-bar" data-testid="media-bar">
+                {spec.model.map(|surface| {
+                    let mut values = vec![(String::new(), t(T::DefaultChoice).to_owned())];
+                    values.extend(
+                        catalogue
+                            .get()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter(|(s, _, _)| s == surface)
+                            .map(|(_, id, label)| (id, label)),
+                    );
+                    select(
+                        "media-model", Glyph::Agent, T::Model, values,
+                        opts.model.clone().unwrap_or_default(),
+                        Callback::new(move |v: String| media.update(|m| m.model = Some(v).filter(|v| !v.is_empty()))),
+                    )
+                })}
+                {spec.aspect.then(|| select(
+                    "media-aspect", Glyph::AspectRatio, T::MediaRatio,
+                    ASPECTS.iter().map(|a| ((*a).to_owned(), (*a).to_owned())).collect(),
+                    opts.aspect.clone().unwrap_or_default(),
+                    Callback::new(move |v: String| media.update(|m| m.aspect = Some(v))),
+                ))}
+                {spec.resolution.then(|| select(
+                    "media-resolution", Glyph::Hd, T::MediaResolution,
+                    RESOLUTIONS.iter().map(|r| ((*r).to_owned(), r.to_uppercase())).collect(),
+                    opts.resolution.clone().unwrap_or_default(),
+                    Callback::new(move |v: String| media.update(|m| m.resolution = Some(v))),
+                ))}
+                {spec.audio_kind.then(|| select(
+                    "media-audio-kind", Glyph::Audio, T::MediaAudioKind,
+                    AUDIO_KINDS.iter().map(|k| ((*k).to_owned(), t(if *k == "sfx" { T::AudioSfx } else { T::AudioSpeech }).to_owned())).collect(),
+                    opts.audio_kind.clone().unwrap_or_default(),
+                    Callback::new(move |v: String| media.update(|m| m.set_audio_kind(&v))),
+                ))}
+                {spec.notes.then(|| view! {
+                    <input
+                        class="input small media-notes"
+                        data-testid="media-notes"
+                        placeholder=t(T::MediaNotes)
+                        aria-label=t(T::MediaNotes)
+                        prop:value=opts.notes.clone().unwrap_or_default()
+                        on:change=move |ev| {
+                            let v = event_target_value(&ev);
+                            media.update(|m| m.notes = Some(v));
+                        }
+                    />
+                })}
+                {(!spec.durations.is_empty()).then(|| select(
+                    "media-duration", Glyph::Queue, T::MediaDuration,
+                    opts.durations(c).into_iter().map(|d| (d.to_string(), tf(T::SecondsN, &[&d.to_string()]))).collect(),
+                    opts.duration.map(|d| d.to_string()).unwrap_or_default(),
+                    Callback::new(move |v: String| media.update(|m| m.duration = v.parse().ok())),
+                ))}
+            </div>
+        })
+    }
+}
+
+/// Example prompts for the chosen chip; a click fills the brief.
+#[component]
+fn Examples(
+    chip: RwSignal<Chip>,
+    brief: RwSignal<String>,
+    brief_ref: NodeRef<leptos::html::Textarea>,
+) -> impl IntoView {
+    move || {
+        let list = chip.get().examples();
+        view! {
+            <div class="home-examples" aria-label=t(T::ExamplesTitle)>
+                <span class="eyebrow">{t(T::ExamplesTitle)}</span>
+                {list.iter().map(|&k| view! {
+                    <button class="chip example-prompt" data-testid="example-prompt" on:click=move |_| {
+                        brief.set(t(k).to_owned());
+                        if let Some(el) = brief_ref.get_untracked() {
+                            let _ = el.focus();
+                        }
+                    }>{icon(Glyph::Sparkle)}<span>{t(k)}</span></button>
+                }).collect_view()}
+            </div>
+        }
+    }
+}
+
+/// Working directory items of the Home "+" menu: choose or change the
+/// folder, recent folders, remove it.
+#[component]
+fn WorkingDirItems(dir: RwSignal<Option<String>>) -> impl IntoView {
+    let shell = Shell::get();
+    let typing = RwSignal::new(None::<String>);
+    let error = RwSignal::new(None::<String>);
+    // Recent folders that still exist, checked when the menu opens.
+    let recents = LocalResource::new(move || {
+        let stored: Vec<String> = shell
+            .config
+            .with(|c| {
+                c.as_ref()
+                    .and_then(|c| c.extra.get(RECENT_DIRS_KEY).cloned())
+            })
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        async move {
+            if stored.is_empty() {
+                return Vec::new();
+            }
+            api::post::<_, serde_json::Value>(
+                "/api/linked-dirs/check",
+                &serde_json::json!({ "paths": stored }),
+            )
+            .await
+            .map(|v| {
+                v["dirs"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|d| d["path"].as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+        }
+    });
+    let choose = move |path: String| {
+        leptos::task::spawn_local(async move {
+            let checked = api::post::<_, serde_json::Value>(
+                "/api/linked-dirs/check",
+                &serde_json::json!({ "paths": [path] }),
+            )
+            .await;
+            let entry = checked
+                .as_ref()
+                .ok()
+                .map(|v| v["dirs"][0].clone())
+                .unwrap_or_default();
+            let Some(canonical) = entry["path"].as_str().map(str::to_owned) else {
+                error.set(Some(checked.err().map_or_else(
+                    || entry["error"].as_str().unwrap_or_default().to_owned(),
+                    |e| e.to_string(),
+                )));
+                return;
+            };
+            error.set(None);
+            typing.set(None);
+            dir.set(Some(canonical.clone()));
+            if let Some(mut config) = shell.config.get_untracked() {
+                let mut list: Vec<String> = config
+                    .extra
+                    .get(RECENT_DIRS_KEY)
+                    .cloned()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
+                push_recent_dir(&mut list, &canonical);
+                config
+                    .extra
+                    .insert(RECENT_DIRS_KEY.to_owned(), serde_json::json!(list));
+                let _ = shell.save_config(config).await;
+            }
+        });
+    };
+    let pick = move |_| {
+        if desktop::is_desktop() {
+            leptos::task::spawn_local(async move {
+                if let Some(d) = desktop::pick_folder().await {
+                    choose(d);
+                }
+            });
+        } else {
+            typing.set(Some(String::new()));
+        }
+    };
+    view! {
+        <div class="menu-sep" role="presentation">{t(T::WorkingDir)}</div>
+        <button type="button" class="menu-item" role="menuitem" data-testid="working-dir-pick" on:click=pick>
+            {icon(Glyph::FolderOpen)}
+            {move || if dir.with(Option::is_some) { t(T::WorkingDirReplace) } else { t(T::WorkingDirPick) }}
+        </button>
+        {move || typing.get().map(|value| view! {
+            <div class="working-dir-field">
+                <input class="input small mono" data-testid="working-dir-path" placeholder=t(T::FolderPathPlaceholder)
+                    aria-label=t(T::FolderPathLabel) prop:value=value
+                    on:input=move |ev| typing.set(Some(event_target_value(&ev)))
+                    on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" {
+                        ev.prevent_default();
+                        choose(typing.get_untracked().unwrap_or_default().trim().to_owned());
+                    }/>
+                <button type="button" class="btn small primary" data-testid="working-dir-use"
+                    on:click=move |_| choose(typing.get_untracked().unwrap_or_default().trim().to_owned())>
+                    {t(T::WorkingDirUse)}
+                </button>
+            </div>
+        })}
+        {move || error.get().map(|e| view! { <p class="error-text small">{e}</p> })}
+        {move || {
+            let list = recents.get().unwrap_or_default();
+            (!list.is_empty()).then(|| view! {
+                <div class="menu-sep" role="presentation">{t(T::WorkingDirRecent)}</div>
+                {list.into_iter().map(|d| {
+                    let name = d.rsplit('/').next().unwrap_or(&d).to_owned();
+                    let pick = d.clone();
+                    view! {
+                        <button type="button" class="menu-item" role="menuitem" data-testid="working-dir-recent" title=d.clone()
+                            on:click=move |_| choose(pick.clone())>
+                            {icon(Glyph::History)}<span class="mention-label">{name}</span>
+                        </button>
+                    }
+                }).collect_view()}
+            })
+        }}
+        <Show when=move || dir.with(Option::is_some)>
+            <button type="button" class="menu-item" role="menuitem" data-testid="working-dir-clear" on:click=move |_| dir.set(None)>
+                {icon(Glyph::Close)}{t(T::WorkingDirClear)}
+            </button>
+        </Show>
+        <p class="menu-note subtle">{t(T::WorkingDirHint)}</p>
+    }
+}
+
+/// "From folder": a project over an existing folder (the files stay where
+/// they are), then the Studio.
+#[component]
+fn FromFolder() -> impl IntoView {
+    let navigate = use_navigate();
+    let typing = RwSignal::new(None::<String>);
+    let error = RwSignal::new(None::<String>);
+    let import = move |dir: String| {
+        let navigate = navigate.clone();
+        leptos::task::spawn_local(async move {
+            match api::post::<_, CreateProjectResponse>(
+                "/api/import/folder",
+                &serde_json::json!({ "baseDir": dir }),
+            )
+            .await
+            {
+                Ok(r) => navigate(&format!("/projects/{}", r.project.id), Default::default()),
+                Err(e) => error.set(Some(e.to_string())),
+            }
+        });
+    };
+    let import_pick = import.clone();
+    let import_typed = import.clone();
+    view! {
+        <span class="menu-wrap">
+            <button class="btn ghost small" data-testid="action-from-folder"
+                aria-expanded=move || typing.with(Option::is_some).to_string()
+                on:click=move |_| {
+                    if desktop::is_desktop() {
+                        let import = import_pick.clone();
+                        leptos::task::spawn_local(async move {
+                            if let Some(d) = desktop::pick_folder().await {
+                                import(d);
+                            }
+                        });
+                    } else {
+                        typing.update(|v| *v = if v.is_some() { None } else { Some(String::new()) });
+                    }
+                }>
+                {icon(Glyph::FolderOpen)}{t(T::FromFolder)}
+            </button>
+            {move || typing.get().map(|value| {
+                let import = import_typed.clone();
+                let import_key = import_typed.clone();
+                view! {
+                    <div class="popover left from-folder" data-testid="from-folder-form">
+                        <input class="input small mono" data-testid="from-folder-path" placeholder=t(T::FolderPathPlaceholder)
+                            aria-label=t(T::FolderPathLabel) prop:value=value
+                            on:input=move |ev| typing.set(Some(event_target_value(&ev)))
+                            on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" {
+                                import_key(typing.get_untracked().unwrap_or_default().trim().to_owned());
+                            }/>
+                        <button class="btn small primary" data-testid="from-folder-open"
+                            on:click=move |_| import(typing.get_untracked().unwrap_or_default().trim().to_owned())>
+                            {t(T::OpenFolder)}
+                        </button>
+                        {move || error.get().map(|e| view! { <p class="error-text small">{e}</p> })}
+                    </div>
+                }
+            })}
+        </span>
+    }
+}
+
+/// Settings key of the recent working folders (the original's name).
+const RECENT_DIRS_KEY: &str = "recentLinkedDirs";
 
 /// Featured templates of the chosen output type; a card picks it.
 #[component]

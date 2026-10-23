@@ -276,6 +276,21 @@ impl Store {
         Ok(conversation)
     }
 
+    /// Deletes a conversation; its messages, comments and agent sessions go
+    /// with it (`ON DELETE CASCADE`). Returns the project's conversations
+    /// left, newest first.
+    ///
+    /// # Errors
+    /// [`StoreError::ConversationNotFound`] or SQLite errors.
+    pub fn delete_conversation(&self, project_id: &str, id: &str) -> Result<Vec<Conversation>> {
+        self.get_conversation(project_id, id)?;
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM conversations WHERE id = ?1", [id])?;
+            Ok(())
+        })?;
+        self.list_conversations(project_id)
+    }
+
     /// The project's most recently updated conversation, created when the
     /// project has none.
     ///
@@ -720,6 +735,52 @@ mod tests {
             Some(4),
             "the source is untouched"
         );
+    }
+
+    #[test]
+    fn delete_conversation_takes_its_messages_and_stays_in_its_project() {
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let store = Store::open(DataDir::new(tmp.path())).unwrap_or_else(|e| panic!("{e}"));
+        let new_project = || {
+            store
+                .create_project(CreateProjectRequest {
+                    name: "p".into(),
+                    ..CreateProjectRequest::default()
+                })
+                .unwrap_or_else(|e| panic!("{e}"))
+        };
+        let (project, conv) = new_project();
+        let (other, _) = new_project();
+        store
+            .begin_turn(&NewTurn {
+                conversation_id: &conv,
+                user_message_id: "u1",
+                assistant_message_id: "a1",
+                content: "hi",
+                attachments: &[],
+                agent_id: "claude",
+                run_id: "r1",
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        let second = store
+            .create_conversation(&project.id, CreateConversationRequest::default())
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(matches!(
+            store.delete_conversation(&other.id, &conv),
+            Err(StoreError::ConversationNotFound)
+        ));
+        let left = store
+            .delete_conversation(&project.id, &conv)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            left.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+            [second.id.as_str()]
+        );
+        assert_eq!(store.list_messages(&conv).map(|m| m.len()).ok(), Some(0));
+        assert!(matches!(
+            store.delete_conversation(&project.id, &conv),
+            Err(StoreError::ConversationNotFound)
+        ));
     }
 
     #[test]

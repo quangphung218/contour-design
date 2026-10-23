@@ -117,6 +117,20 @@ pub fn move_item<T>(items: &mut Vec<T>, from: usize, to: usize) {
     items.insert(to, item);
 }
 
+/// Narrowest chat pane, px (the original's split layout).
+pub const CHAT_MIN: f64 = 345.0;
+/// Room the workspace keeps next to the chat, px.
+const WORKSPACE_MIN: f64 = 400.0;
+
+/// The chat pane width for a drag to `want` px in a split `total` px wide:
+/// at least [`CHAT_MIN`], at most 720 or half the split (whichever is
+/// larger), and never squeezing the workspace under 400 px.
+#[must_use]
+pub fn clamp_chat_width(want: f64, total: f64) -> f64 {
+    let max = 720f64.max(total / 2.0).min(total - WORKSPACE_MIN);
+    want.min(max).max(CHAT_MIN)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -196,5 +210,23 @@ mod tests {
         assert_eq!(q, [1, 2, 3]);
         move_item(&mut q, 5, 0);
         assert_eq!(q, [1, 2, 3]);
+    }
+
+    #[test]
+    fn chat_width_stays_in_bounds() {
+        assert_eq!(clamp_chat_width(100.0, 1400.0), CHAT_MIN);
+        assert_eq!(clamp_chat_width(500.0, 1400.0), 500.0);
+        assert_eq!(clamp_chat_width(900.0, 1400.0), 720.0);
+        assert_eq!(clamp_chat_width(1500.0, 2400.0), 1200.0);
+        assert_eq!(
+            clamp_chat_width(900.0, 1000.0),
+            600.0,
+            "workspace keeps 400"
+        );
+        assert_eq!(
+            clamp_chat_width(900.0, 600.0),
+            CHAT_MIN,
+            "never under the minimum"
+        );
     }
 }

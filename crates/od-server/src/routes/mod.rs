@@ -1,4 +1,5 @@
 pub mod agent_w3;
+pub mod chat_ops;
 pub mod comments;
 pub mod content;
 pub mod conversations;
