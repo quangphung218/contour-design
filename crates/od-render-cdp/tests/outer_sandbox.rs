@@ -78,7 +78,15 @@ fn rendering_inside_an_outer_sandbox() {
         "OD_CHROME_NO_SANDBOX=1 must render:\n{out}"
     );
 
-    let (in_time, ok, out) = inner(&[("OD_CHROME_NO_SANDBOX", "0")], Duration::from_secs(150));
+    let log = tempfile::tempdir().unwrap();
+    let args = log.path().join("args.txt");
+    let (in_time, ok, out) = inner(
+        &[
+            ("OD_CHROME_NO_SANDBOX", "0"),
+            ("OD_RECORD_ARGS", args.to_str().unwrap()),
+        ],
+        Duration::from_secs(150),
+    );
     assert!(
         in_time,
         "without OD_CHROME_NO_SANDBOX the export must fail fast, not hang"
@@ -88,6 +96,12 @@ fn rendering_inside_an_outer_sandbox() {
         out.contains("RENDERED")
             || out.contains("FAILED: ") && out.contains("OD_CHROME_NO_SANDBOX"),
         "the error must name OD_CHROME_NO_SANDBOX:\n{out}"
+    );
+    // The product never turns Chrome's sandbox off by itself.
+    let argv = std::fs::read_to_string(&args).unwrap();
+    assert!(
+        !argv.lines().any(|a| a.contains("no-sandbox")),
+        "launched with --no-sandbox without the opt-in: {argv}"
     );
 }
 
@@ -101,7 +115,22 @@ async fn inner_render() {
     let dir = tempfile::tempdir().unwrap();
     let page = dir.path().join("page.html");
     std::fs::write(&page, "<!doctype html><h1>Inside</h1>").unwrap();
-    let renderer = CdpRenderer::with_executable(chrome);
+    // OD_RECORD_ARGS: launch through a wrapper that writes Chrome's argv.
+    let exe = match std::env::var("OD_RECORD_ARGS") {
+        Ok(log) => {
+            use std::os::unix::fs::PermissionsExt;
+            let wrapper = dir.path().join("recording-chrome");
+            let script = format!(
+                "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > '{log}'\nexec '{}' \"$@\"\n",
+                chrome.display()
+            );
+            std::fs::write(&wrapper, script).unwrap();
+            std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+            wrapper
+        }
+        Err(_) => chrome,
+    };
+    let renderer = CdpRenderer::with_executable(exe);
     match renderer
         .print_pdf(&RenderTarget::new(page), DeckMode::Page)
         .await

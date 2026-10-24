@@ -95,7 +95,7 @@ Install Chrome, or point at a browser with `OD_CHROME_PATH`:
 export OD_CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ```
 
-### Export hangs, then says Chrome "did not show the page within 60 s"
+### Export fails: Chrome "did not show the page within 60 s"
 
 Chrome started but could not start its own sandbox, which happens when
 Contour or `od` itself runs inside another sandbox (macOS `sandbox-exec`,
@@ -106,8 +106,11 @@ never renders. Only in that setup, let Chrome run without its sandbox:
 OD_CHROME_NO_SANDBOX=1 od daemon start
 ```
 
-Do not set it elsewhere: Chrome's sandbox is what isolates the HTML an
-agent wrote while it is rendered.
+**Security:** this turns off Chrome's sandbox, which isolates the HTML an
+agent wrote while it is rendered. Set it only when the outer sandbox already
+contains the process, never as a general fix. Contour never turns it on by
+itself; without it, export fails with this error instead of hanging. If
+Chrome cannot start at all, export fails at once with "cannot start".
 
 ### MP4 export fails
 

@@ -37,11 +37,14 @@ use std::time::Duration;
 /// Environment variable naming the browser executable.
 pub const CHROME_PATH_ENV: &str = "OD_CHROME_PATH";
 
-/// `1` launches Chrome with `--no-sandbox`. Only for processes that already
-/// run inside a sandbox Chrome cannot nest its own in (macOS `sandbox-exec`,
-/// some containers): there Chrome's renderers never start and every page
-/// command waits for its timeout. Chrome renders agent-written HTML, so
-/// its sandbox stays on everywhere else.
+/// `1` launches Chrome with `--no-sandbox`, the only way that happens.
+///
+/// Security: this removes Chrome's isolation of the agent-written HTML it
+/// renders. It exists for processes that already run inside a sandbox
+/// Chrome cannot nest its own in (macOS `sandbox-exec`, some containers),
+/// where Chrome cannot render at all. The product never sets it or falls
+/// back to it: a browser that cannot start or render is an error
+/// (`scripts/tests/chrome_sandbox_test.sh`, `tests/launch_failure.rs`).
 pub const NO_SANDBOX_ENV: &str = "OD_CHROME_NO_SANDBOX";
 
 /// Longest wait for a launched browser to show the page. Normally under two
@@ -182,6 +185,8 @@ impl CdpRenderer {
     }
 
     /// Launches without Chrome's own sandbox, as [`NO_SANDBOX_ENV`] does.
+    /// For tests and embedders that already sandbox the process; product
+    /// code never calls it (see [`NO_SANDBOX_ENV`] for the risk).
     #[must_use]
     pub fn without_chrome_sandbox(mut self) -> Self {
         self.no_sandbox = true;
@@ -201,8 +206,9 @@ impl CdpRenderer {
         {
             Ok(session) => session,
             Err(_) => Err(RenderError::Unavailable(format!(
-                "{} started but did not show the page within {} s; if this process runs inside \
-                 a sandbox (sandbox-exec, a container), set {NO_SANDBOX_ENV}=1",
+                "{} started but did not show the page within {} s. Inside another sandbox \
+                 (sandbox-exec, a container) Chrome cannot start its own; only there, \
+                 {NO_SANDBOX_ENV}=1 runs it without (this removes Chrome's isolation of the page)",
                 exe.display(),
                 OPEN_TIMEOUT.as_secs()
             ))),
@@ -217,8 +223,9 @@ fn no_sandbox_from_env() -> bool {
 /// Whether Chrome at `exe` can start its own sandbox in this process's
 /// environment. It cannot inside another sandbox (macOS `sandbox-exec`),
 /// where it prints "Failed to initialize sandbox" and never renders. Runs
-/// one headless `about:blank` (about a second); tests use it to decide on
-/// [`CdpRenderer::without_chrome_sandbox`].
+/// one headless `about:blank` (about a second). Only tests call it, to
+/// decide on [`CdpRenderer::without_chrome_sandbox`]; the product never
+/// probes and never falls back to running without the sandbox.
 #[must_use]
 pub fn chrome_sandbox_works(exe: &Path) -> bool {
     use std::io::Read;
