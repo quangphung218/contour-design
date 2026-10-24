@@ -20,6 +20,12 @@ pub fn DocsPage() -> impl IntoView {
             _ => GUIDE_EN,
         })
     };
+    // Opened from onboarding (agent setup): a way back to it.
+    let onboarding = move || {
+        shell
+            .config
+            .with(|c| c.as_ref().is_some_and(|c| !c.onboarding_completed))
+    };
     // A link to a section (`/docs#deepseek-harness`) opens at it.
     let body = NodeRef::<leptos::html::Article>::new();
     Effect::new(move |_| {
@@ -41,6 +47,9 @@ pub fn DocsPage() -> impl IntoView {
                 <div class="page-title">
                     <h1>{icon(Glyph::Book)}{t(T::Documentation)}</h1>
                 </div>
+                {move || onboarding().then(|| view! {
+                    <a class="btn ghost small" href="/onboarding" data-testid="docs-back">{t(T::BackToList)}</a>
+                })}
                 <button class="btn ghost small" data-testid="docs-report" on:click=move |_| super::quick_menu::request_report()>{icon(Glyph::Warning)}{t(T::ReportIssue)}</button>
             </header>
             <article class="docs-body md-preview card" node_ref=body inner_html=html></article>

@@ -92,10 +92,18 @@ pub fn DshSetupDialog(
 ) -> impl IntoView {
     let shell = Shell::get();
     let cli_path = RwSignal::new(cli_path);
+    // The last detection that found the agent still unavailable: the card
+    // takes it on close, so it reopens showing what was found.
+    let detected = RwSignal::new(None::<AgentInfo>);
     let busy = move || state.with(|s| s.as_ref().is_some_and(|s| s.busy));
     let close = Callback::new(move |()| {
-        if !busy() {
-            state.set(None);
+        if busy() {
+            return;
+        }
+        let found = detected.get_untracked();
+        state.set(None);
+        if let Some(agent) = found {
+            replace_agent(shell, agent);
         }
     });
     let detect = move |_| {
@@ -114,16 +122,11 @@ pub fn DshSetupDialog(
                     state.set(None);
                     // Last: the new list rebuilds the card that owns this
                     // dialog.
-                    shell.agents.update(|list| {
-                        if let Some(Ok(agents)) = list {
-                            if let Some(a) = agents.iter_mut().find(|a| a.id == DSH_ID) {
-                                *a = agent;
-                            }
-                        }
-                    });
+                    replace_agent(shell, agent);
                 }
                 Ok(Detected { agent }) => {
                     cli_path.set(agent.path.clone());
+                    detected.set(Some(agent.clone()));
                     state.set(Some(SetupState {
                         busy: false,
                         error: Some(still_missing(&agent)),
@@ -165,7 +168,7 @@ pub fn DshSetupDialog(
                 </section>
                 <p class="dsh-setup-note">
                     {t(T::DshSetupNote)}" "
-                    <a href=GUIDE_LINK data-testid="deepseek-harness-guide" on:click=move |_| state.set(None)>
+                    <a href=GUIDE_LINK data-testid="deepseek-harness-guide" on:click=move |_| close.run(())>
                         {icon(Glyph::Book)}{t(T::DshSetupGuide)}
                     </a>
                 </p>
@@ -191,6 +194,18 @@ pub fn DshSetupDialog(
             </div>
         </Modal>
     }
+}
+
+/// Puts a fresh detection of `agent` in the shell's list, which rebuilds
+/// its card.
+fn replace_agent(shell: Shell, agent: AgentInfo) {
+    shell.agents.update(|list| {
+        if let Some(Ok(agents)) = list {
+            if let Some(a) = agents.iter_mut().find(|a| a.id == agent.id) {
+                *a = agent;
+            }
+        }
+    });
 }
 
 /// Whether `agent`'s card should open the setup dialog instead of

@@ -185,6 +185,13 @@ try {
   assert.equal(await installs.count(), 0, 'found: no install commands');
   assert.match(await error.textContent(), /open-design profile is missing/);
   await page.screenshot({ path: OUT + 'dsh-setup-error.png' });
+  // Closed and opened again, the dialog and the card keep what was found.
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await dialog.waitFor({ state: 'detached' });
+  assert.match(await card.textContent(), /Connection setup required/);
+  await card.click();
+  await page.getByTestId('deepseek-harness-cli-found').waitFor({ timeout: 5_000 });
+  assert.equal(await installs.count(), 0, 'reopened: dsh is still known');
   // The guide link opens the bundled docs at the DeepSeek Harness section.
   await page.getByTestId('deepseek-harness-guide').click();
   await dialog.waitFor({ state: 'detached' });
@@ -252,7 +259,24 @@ try {
   assert.ok(tavilySeen.some((s) => s.endsWith('Bearer tvly-e2e-1')), tavilySeen.join(' | '));
   results.research = 'ok';
 
-  // 6. Light and dark screenshots: the card, the dialog, media providers.
+  // 6. Onboarding not done yet: the guide link still opens the guide, which
+  // leads back to onboarding.
+  rmSync(join(dshHome, 'profiles'), { recursive: true, force: true });
+  await put('/api/app-config', { onboardingCompleted: false });
+  await page.goto(BASE + '/onboarding');
+  await page.locator('[data-agent="deepseek-harness"]').click();
+  await dialog.waitFor();
+  await page.getByTestId('deepseek-harness-guide').click();
+  await page.locator('.docs-body h2#deepseek-harness').waitFor();
+  await sleep(500);
+  assert.equal(new URL(page.url()).pathname, '/docs', 'onboarding lets the guide open');
+  await page.getByTestId('docs-back').click();
+  await page.locator('[data-agent="deepseek-harness"]').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/onboarding');
+  await put('/api/app-config', { onboardingCompleted: true });
+  results.guideFromOnboarding = 'ok';
+
+  // 7. Light and dark screenshots: the card, the dialog, media providers.
   rmSync(join(dshHome, 'profiles'), { recursive: true, force: true });
   for (const scheme of ['light', 'dark']) {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme });

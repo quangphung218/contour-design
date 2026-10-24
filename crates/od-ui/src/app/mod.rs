@@ -544,7 +544,9 @@ fn OnboardingGate() -> impl IntoView {
         let done = shell
             .config
             .with(|c| c.as_ref().map(|c| c.onboarding_completed));
-        if done == Some(false) && location.pathname.get() != "/onboarding" {
+        // The bundled guide stays reachable: onboarding's agent setup links it.
+        let path = location.pathname.get();
+        if done == Some(false) && path != "/onboarding" && path != "/docs" {
             navigate("/onboarding", Default::default());
         }
     });
