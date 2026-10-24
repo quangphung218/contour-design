@@ -234,7 +234,14 @@ pub fn chrome_sandbox_works(exe: &Path) -> bool {
     let Ok(profile) = Profile::new() else {
         return false;
     };
-    let Ok(mut child) = std::process::Command::new(exe)
+    let Ok(tmp) = profile.tmp() else {
+        return false;
+    };
+    let mut cmd = std::process::Command::new(exe);
+    if let Some(tmp) = tmp {
+        cmd.env("TMPDIR", tmp);
+    }
+    let Ok(mut child) = cmd
         .args([
             "--headless=new",
             "--no-first-run",
@@ -308,6 +315,20 @@ impl Profile {
         self.0
             .as_ref()
             .map_or(Path::new(""), tempfile::TempDir::path)
+    }
+
+    /// Chrome's `TMPDIR` on Linux, inside the profile: there Chrome puts
+    /// its singleton socket folder (`com.google.Chrome.*`) and shared-memory
+    /// files in the temp dir and leaves them when killed; this way they go
+    /// with the profile. macOS leaves nothing there, and its temp path is
+    /// long enough that a deeper socket could pass the 104-byte limit.
+    fn tmp(&self) -> std::io::Result<Option<PathBuf>> {
+        if !cfg!(target_os = "linux") {
+            return Ok(None);
+        }
+        let tmp = self.path().join("tmp");
+        std::fs::create_dir_all(&tmp)?;
+        Ok(Some(tmp))
     }
 }
 
@@ -410,9 +431,15 @@ impl Session {
     async fn open(exe: &Path, target: &RenderTarget, no_sandbox: bool) -> RenderResult<Self> {
         let profile = Profile::new()
             .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))?;
+        let tmp = profile
+            .tmp()
+            .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))?;
         let mut config = BrowserConfig::builder();
         if no_sandbox {
             config = config.no_sandbox();
+        }
+        if let Some(tmp) = tmp {
+            config = config.env("TMPDIR", tmp.to_string_lossy());
         }
         let config = config
             .chrome_executable(exe)
