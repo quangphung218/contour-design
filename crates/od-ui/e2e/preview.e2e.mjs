@@ -350,6 +350,7 @@ try {
     return [last.getBoundingClientRect().right, head.getBoundingClientRect().right];
   });
   assert.ok(edges[0] <= edges[1], `toolbar button cut at 1024: ${edges}`);
+  assert.ok(await page.getByTestId('zoom-reset').isVisible(), 'zoom level and reset stay at 1024');
   assert.equal(await page.locator('.sidebar a.nav-link:not([aria-label])').count(), 0, 'rail links have a name');
   await shot('toolbar-1024');
   await page.setViewportSize({ width: 390, height: 844 });
@@ -365,6 +366,7 @@ try {
       .filter((r) => r.top < box.bottom && (r.right > box.right + 1 || r.bottom > box.bottom + 1)).length;
   });
   assert.equal(cut, 0, 'example chips show whole or not at all');
+  assert.equal(await page.getByTestId('quick-menu').getAttribute('aria-label'), null, 'open sidebar: the quick menu is named by its visible text');
   results.narrow = 'ok';
 
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
