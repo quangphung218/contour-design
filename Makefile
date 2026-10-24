@@ -21,7 +21,7 @@ BUNDLE_DIR = $(CARGO_TARGET_DIR)/$(1)/bundle
 
 .DEFAULT_GOAL := help
 .PHONY: help setup dev run check test e2e lint fmt clippy clippy-wasm deny ui-dist ui-release \
-	app-debug app-release dmg install clean version ci links commitlint
+	app-debug app-release dmg install clean version ci links commitlint test-scripts
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -40,9 +40,13 @@ check: ui-dist ## fmt --check + clippy -D warnings + test (the pre-commit gate)
 	cargo fmt --all --check
 	cargo clippy --workspace --all-targets -- -D warnings
 	cargo test --workspace
+	@$(MAKE) --no-print-directory test-scripts
 
-test: ui-dist ## Run the workspace tests
+test: ui-dist test-scripts ## Run the workspace tests and the script tests
 	cargo test --workspace
+
+test-scripts: ## Tests for the release scripts (scripts/tests)
+	@for t in scripts/tests/*_test.sh; do $$t || exit 1; done
 
 e2e: ## Playwright e2e against a real daemon and a mock agent
 	$(UI)/e2e/run.sh

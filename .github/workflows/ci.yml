@@ -140,7 +140,7 @@ jobs:
           command: check licenses advisories bans sources
 
   docs:
-    name: docs links + workflow lint
+    name: docs links, script tests, workflow lint
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -148,6 +148,7 @@ jobs:
         with:
           persist-credentials: false
       - run: scripts/check-links.sh
+      - run: make test-scripts
       - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: actionlint
