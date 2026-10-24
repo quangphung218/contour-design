@@ -142,7 +142,7 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
                 data-testid="quick-menu"
                 aria-haspopup="menu"
                 aria-expanded=move || open.get().to_string()
-                aria-label=t(T::QuickSettings)
+                aria-label=move || rail.get().then(|| t(T::QuickSettings))
                 data-tip=move || rail.get().then(|| t(T::QuickSettings))
                 data-tip-pos="right"
                 on:click=move |_| open.update(|o| *o = !*o)

@@ -827,9 +827,11 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   .preview-body > .versions { position: absolute; top: 0; right: 0; bottom: 0; z-index: var(--z-raised); width: min(316px, 100%); box-shadow: var(--shadow-lg); }
 }
 /* 1024 window with the file column closed: the last button (Show files)
-   must not run past the edge. The zoom keeps its -/+ buttons. */
+   must not run past the edge. The dividers go; the zoom value stays, since
+   it is the reset button and the only readout of the level. */
 @container preview (max-width: 680px) {
-  .preview-head .head-divider, .preview-head .zoom-value { display: none; }
+  .preview-head .head-divider { display: none; }
+  .preview-head .zoom-value { min-width: 38px; padding: 0; }
 }
 @container preview (max-width: 560px) {
   .preview-head { flex-wrap: wrap; height: auto; min-height: 44px; padding-block: var(--space-1); }
