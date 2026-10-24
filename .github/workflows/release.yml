@@ -1,0 +1,188 @@
+# Release: a `v*` tag builds the desktop bundles and opens a draft GitHub
+# Release with the matching CHANGELOG.md section and SHA256SUMS.
+# docs/release.md walks through the whole process.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)build, e.g. v0.1.0
+        required: true
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  # Keep in sync with the Makefile (TAURI_CLI_VERSION).
+  TAURI_CLI_VERSION: 2.12.4
+
+jobs:
+  check:
+    name: tag matches Cargo.toml and CHANGELOG.md
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - name: Compare versions
+        run: |
+          version="$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/version=/,"");print;exit}' Cargo.toml)"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $version (run make version V=...)"
+            exit 1
+          fi
+          scripts/release-notes.sh "$TAG" > /dev/null
+
+  bundle:
+    name: bundle (${{ matrix.name }})
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-universal
+            os: macos-15
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin,wasm32-unknown-unknown
+            args: --target universal-apple-darwin --bundles app,dmg
+            out: target/universal-apple-darwin/release/bundle
+            best_effort: false
+          # Ubuntu 22.04 keeps the AppImage loadable on older glibc.
+          - name: linux-x64
+            os: ubuntu-22.04
+            rust_targets: wasm32-unknown-unknown
+            args: --bundles appimage,deb
+            out: target/release/bundle
+            best_effort: false
+          # Windows is not tested yet (README, Known limitations): best effort.
+          - name: windows-x64
+            os: windows-2025
+            rust_targets: wasm32-unknown-unknown
+            args: --bundles msi
+            out: target/release/bundle
+            best_effort: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.best_effort }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust_targets }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-${{ matrix.name }}
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: trunk
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: scripts/linux-deps.sh
+      - name: UI bundle (release)
+        working-directory: crates/od-ui
+        run: trunk build --release
+      # Signing and notarisation (macOS) are optional. The secrets reach only
+      # this step's environment; empty ones are unset so Tauri builds an
+      # unsigned bundle, and nothing is printed.
+      - name: Tauri bundle
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+        run: |
+          signing=(APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY)
+          notarising=(APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID)
+          all_set() { for name in "$@"; do [ -n "${!name}" ] || return 1; done; }
+          if [ "$RUNNER_OS" = macOS ]; then
+            if ! all_set "${signing[@]}"; then
+              echo "::warning::macOS signing secrets are not set; building an unsigned bundle (docs/release.md, Signing)"
+              unset "${signing[@]}" "${notarising[@]}"
+            elif ! all_set "${notarising[@]}"; then
+              echo "::warning::notarisation secrets are not set; the bundle is signed but not notarised"
+              unset "${notarising[@]}"
+            fi
+          else
+            unset "${signing[@]}" "${notarising[@]}"
+          fi
+          npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build ${{ matrix.args }}
+      - name: Collect files
+        shell: bash
+        run: |
+          mkdir -p dist-release
+          find "${{ matrix.out }}" -maxdepth 2 -type f \
+            \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' \) \
+            -exec cp {} dist-release/ \;
+          ls -l dist-release
+          test -n "$(ls dist-release)"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-${{ matrix.name }}
+          path: dist-release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: draft GitHub Release
+    needs: bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: bundle-*
+          path: dist-release
+          merge-multiple: true
+      - name: Checksums and notes
+        run: |
+          cd dist-release
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+          cd ..
+          scripts/release-notes.sh "$TAG" > release-notes.md
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            # Re-runs may refresh a draft; a published release is never rewritten.
+            if [ "$draft" != true ]; then
+              echo "::error::release $TAG is already published; its files are not replaced"
+              exit 1
+            fi
+            gh release upload "$TAG" dist-release/* --clobber
+            gh release edit "$TAG" --notes-file release-notes.md
+          else
+            gh release create "$TAG" dist-release/* --draft --verify-tag \
+              --title "Contour $TAG" --notes-file release-notes.md
+          fi

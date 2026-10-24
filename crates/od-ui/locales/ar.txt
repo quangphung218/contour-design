@@ -1,4 +1,4 @@
-# Nét UI strings: العربية (ar). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: العربية (ar). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = الرئيسية
 NavProjects = المشاريع
@@ -224,7 +224,7 @@ NotifyFailedBody = انتهت المهمة بخطأ.
 NotifyTestBody = الإشعارات تعمل.
 ProjectLocations = مواقع المشاريع
 ProjectLocationsHint = قواعد عمل تحتوي على مجلدات المشاريع. يحصل كل مشروع جديد على مجلد خاص داخل القاعدة الافتراضية.
-BuiltInLocation = مشاريع Nét
+BuiltInLocation = مشاريع Contour
 DefaultLocation = افتراضي
 MakeDefault = تعيين كافتراضي
 AddFolder = إضافة مجلد
@@ -325,14 +325,14 @@ TplRegression = مراقبة التراجعات
 TplRegressionDesc = رصد التراجعات مقارنةً بالأعمال المعتمدة.
 # Integrations
 NavIntegrations = عمليات الدمج
-IntegrationsIntro = أدوات خارجية للوكيل، وNét داخل وكلاء برمجة آخرين.
+IntegrationsIntro = أدوات خارجية للوكيل، وContour داخل وكلاء برمجة آخرين.
 ExternalTools = الأدوات الخارجية
-ConnectAgents = ربط Nét بوكيل البرمجة لديك
+ConnectAgents = ربط Contour بوكيل البرمجة لديك
 ConnectAgentsShort = وكلاء البرمجة
-ConnectAgentsHint = سجّل خادم Nét MCP في وكيل آخر ليقرأ تصاميمك ويعدّلها.
+ConnectAgentsHint = سجّل خادم Contour MCP في وكيل آخر ليقرأ تصاميمك ويعدّلها.
 UseEverywhere = استخدمه في كل مكان
 UseEverywhereShort = CLI وHTTP وMCP
-UseEverywhereHint = شغّل Nét من الطرفية أو من سكربت أو من وكيل آخر.
+UseEverywhereHint = شغّل Contour من الطرفية أو من سكربت أو من وكيل آخر.
 EverywhereCli = CLI · od
 EverywhereCliBody = شغّل daemon واعرض المشاريع ونفّذ جولة وكيل وصدّر من الطرفية.
 EverywhereMcp = خادم MCP
@@ -403,7 +403,7 @@ GateByok = احفظ مزوّدًا اجتاز الاختبار للمتابعة.
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = اختر وكيل البرمجة
-OnboardingIntro = يشغّل Nét وكيل برمجة مثبّتًا على هذا الجهاز. لا يغادر جهازك شيء سوى ما يرسله الوكيل نفسه إلى مزوّده.
+OnboardingIntro = يشغّل Contour وكيل برمجة مثبّتًا على هذا الجهاز. لا يغادر جهازك شيء سوى ما يرسله الوكيل نفسه إلى مزوّده.
 DetectingAgents = جارٍ اكتشاف الوكلاء…
 AgentDetectionUnavailable = اكتشاف الوكلاء غير متاح: {0}
 NoAgentsFound = لم يُعثر على وكلاء. ثبّت Claude Code أو Codex ثم حدّث.
@@ -1382,7 +1382,7 @@ GenuiTierProject = المشروع
 GenuiTierConversation = المحادثة
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = إعداد DeepSeek Harness
-DshSetupDescription = يشغّل Nét أداة dsh CLI على هذا الحاسوب عبر ملف open-design. ثبّت الاثنين ثم أعد الكشف.
+DshSetupDescription = يشغّل Contour أداة dsh CLI على هذا الحاسوب عبر ملف open-design. ثبّت الاثنين ثم أعد الكشف.
 DshStepCli = 1. ثبّت dsh CLI
 DshCliFound = تم العثور على dsh: {0}
 DshStepProfile = 2. أضف ملف open-design
@@ -1397,7 +1397,7 @@ DshSetupRequired = الاتصال يحتاج إلى إعداد
 FirstArtifactTitle = تصميمك الأول جاهز
 FirstArtifactBody = عدّله وعلّق عليه مباشرة في المعاينة، ثم صدّره عندما يعجبك.
 FirstArtifactDismiss = حسنًا
-WorkspaceRecovering = انقطع الاتصال بـ Nét. جارٍ إعادة الاتصال تلقائيًا…
+WorkspaceRecovering = انقطع الاتصال بـ Contour. جارٍ إعادة الاتصال تلقائيًا…
 ToolManualEdit = تعديل العنصر
 ManualEditHint = انقر عنصرًا في المعاينة أو اختر طبقة ثم غيّره. يُحفظ كل تغيير كإصدار.
 CommentsTab = كل التعليقات

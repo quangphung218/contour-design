@@ -394,7 +394,7 @@ try {
   await page.getByTestId('quick-report').click();
   await page.getByTestId('report-notice').getByText('Diagnostics copied', { exact: false }).waitFor();
   const clip = await page.evaluate(() => navigator.clipboard.readText());
-  assert.match(clip, /### Nét diagnostics/);
+  assert.match(clip, /### Contour diagnostics/);
   assert.ok(!clip.includes('sk-e2e'), 'no secret in the report');
   await page.getByTestId('quick-menu').click();
   await page.getByTestId('quick-docs').click();

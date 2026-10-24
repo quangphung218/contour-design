@@ -75,7 +75,7 @@ pub fn http_client() -> Result<reqwest::Client, McpError> {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(20))
-        .user_agent(concat!("open-design-rs/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("contour/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| McpError::Http(e.to_string()))
 }
@@ -219,7 +219,7 @@ async fn register(
     redirect_uri: &str,
 ) -> Result<String, McpError> {
     let body = serde_json::json!({
-        "client_name": "Nét (local)",
+        "client_name": "Contour (local)",
         "redirect_uris": [redirect_uri],
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],

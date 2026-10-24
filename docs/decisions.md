@@ -1,19 +1,20 @@
-# Quyết định thiết kế
+# Design decisions
 
-Chốt 2026-10-22 (Atlat, được anh giao toàn quyền). Trả lời 4 câu hỏi ở `spec.md` mục 5.6, cộng các ràng buộc chung.
+Settled 2026-10-22 (Atlat, with full authority delegated by the owner). Answers the 4 open questions in `spec.md` §5.6, plus general constraints.
 
-| # | Câu hỏi | Chốt | Vì sao |
+| # | Question | Decision | Why |
 |---|---|---|---|
-| 1 | Quyền của agent | Mặc định giống app gốc: agent tự duyệt (`bypassPermissions` cho Claude, cờ tương đương cho CLI khác), cwd = thư mục project. Settings có công tắc `agent_permission_mode = auto | ask` (ask: Claude dùng `acceptEdits`, CLI khác bỏ cờ tự duyệt). | App local một người dùng; chạy không cần trả lời từng lệnh là trải nghiệm chính. Công tắc để người dùng siết lại khi cần. |
-| 2 | Chrome cho export | Chỉ dùng Chrome/Edge/Chromium có sẵn trên máy (tìm theo đường dẫn chuẩn + `OD_CHROME_PATH`). Không tự tải Chromium. Không có thì PDF rơi về in của webview, chụp ảnh báo lỗi rõ "cần Chrome". | Không có mạng ra ngoài ngầm; máy anh đã có Chrome. |
-| 3 | Design system mang tên thương hiệu | Ship nguyên (app local, không phát hành công khai), giữ attribution và LICENSE con, có `NOTICE`. | Không phân phối nên rủi ro thương hiệu không đáng kể; giữ giá trị nội dung. |
-| 4 | Bộ prompt | Chỉ bản legacy (`apps/daemon/src/prompts/` của app gốc), viết lại bằng Rust. Không có rollout/A-B. | Cấu trúc rõ, gọn một chỗ. |
+| 1 | Agent permissions | Default matches the original app: the agent self-approves (`bypassPermissions` for Claude, the equivalent flag for other CLIs), cwd = project folder. Settings has a switch `agent_permission_mode = auto | ask` (ask: Claude uses `acceptEdits`, other CLIs drop the self-approve flag). | Local single-user app; running without answering every command is the core experience. The switch lets users tighten it when needed. |
+| 2 | Chrome for export | Use only the Chrome/Edge/Chromium already installed (found via standard paths + `OD_CHROME_PATH`). Never auto-download Chromium. Without one, PDF falls back to webview printing and screenshots fail with a clear "Chrome required" error. | No hidden outbound network; the owner's machine already has Chrome. |
+| 3 | Brand-named design systems | Ship as is (local app, not publicly released), keep attribution and nested LICENSE files, include `NOTICE`. | Not distributed, so brand risk is negligible; keeps the content's value. |
+| 4 | Prompt set | Legacy set only (`apps/daemon/src/prompts/` of the original app), rewritten in Rust. No rollout/A-B. | Clear structure, all in one place. |
+| 5 | Product name (2026-10-24, owner) | The app is **Contour** (was "Nét"): UI in every locale, window and menus, CLI help, bundle `Contour.app`, identifier `dev.contour.desktop`, data folder `contour` under the platform data dir. The first run moves an existing `open-design-rs` data folder to `contour` and leaves a symlink at the old path (Unix). Crates and binaries keep their `od-*` / `od` names, and env vars keep the `OD_` prefix. | A global name that reads the same in every language. Renaming 20 crates, the `od` binary and the `OD_*` variables would touch every import, script, MCP config and agent prompt for no user-visible gain, and would break installs that already call `od`. |
 
-## Ràng buộc chung
-- **Không đăng nhập, không cloud, không telemetry, không mạng ra ngoài** trừ gọi agent/provider người dùng cấu hình. Test e2e chặn mọi request ra ngoài loopback.
-- **Stack**: Cargo workspace, edition 2024, tokio, axum, rusqlite (bundled), Leptos CSR (UI), Tauri 2 (shell). Layout crate theo `spec.md` 5.2.
-- **Hiệu năng**: bám bảng mục tiêu `spec.md` 5.5; mỗi mốc có bench cho phần mình đụng.
-- **Code Rust** theo skill `rust-skills` (`.claude/skills/rust-skills`).
-- **Máy dev 16 GB**: `.cargo/config.toml` giới hạn `jobs = 4`; test chạy tuần tự khi nặng.
-- **Content** (skills, design-templates, design-systems, craft…) copy từ app gốc theo bảng `spec.md` 3.7, giữ mọi LICENSE con; loại prompt-template không rõ license và font không có license.
-- **Repo không có remote**: merge vào `main` local sau cổng review của Atlat.
+## General constraints
+- **No login, no cloud, no telemetry, no outbound network** except calls to the agent/provider the user configures. E2e tests block every request outside loopback.
+- **Stack**: Cargo workspace, edition 2024, tokio, axum, rusqlite (bundled), Leptos CSR (UI), Tauri 2 (shell). Crate layout per `spec.md` §5.2.
+- **Performance**: follow the target table in `spec.md` §5.5; each milestone has benches for the parts it touches.
+- **Rust code** follows the `rust-skills` skill (`.claude/skills/rust-skills`).
+- **16 GB dev machine**: `.cargo/config.toml` caps `jobs = 4`; heavy tests run serially.
+- **Content** (skills, design-templates, design-systems, craft…) is copied from the original app per the table in `spec.md` §3.7, keeping every nested LICENSE; prompt templates with unclear licenses and unlicensed fonts are excluded.
+- **Repository**: `quangphung218/contour-design` on GitHub (private). Work merges into `main` after Atlat's review gate; Atlat creates the remote and pushes.

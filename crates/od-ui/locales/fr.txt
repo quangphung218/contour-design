@@ -1,4 +1,4 @@
-# Nét UI strings: Français (fr). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: Français (fr). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = Accueil
 NavProjects = Projets
@@ -224,7 +224,7 @@ NotifyFailedBody = La tâche s'est terminée avec une erreur.
 NotifyTestBody = Les notifications fonctionnent.
 ProjectLocations = Emplacements de projets
 ProjectLocationsHint = Dossiers de travail qui contiennent les dossiers de projets. Chaque nouveau projet a son propre dossier dans la base par défaut.
-BuiltInLocation = Projets Nét
+BuiltInLocation = Projets Contour
 DefaultLocation = Par défaut
 MakeDefault = Définir par défaut
 AddFolder = Ajouter un dossier
@@ -325,14 +325,14 @@ TplRegression = Veille des régressions
 TplRegressionDesc = Signale les régressions par rapport au travail accepté.
 # Integrations
 NavIntegrations = Intégrations
-IntegrationsIntro = Outils externes pour l'agent, et Nét dans d'autres agents de code.
+IntegrationsIntro = Outils externes pour l'agent, et Contour dans d'autres agents de code.
 ExternalTools = Outils externes
-ConnectAgents = Connecter Nét à votre agent de code
+ConnectAgents = Connecter Contour à votre agent de code
 ConnectAgentsShort = Agents de code
-ConnectAgentsHint = Enregistrez le serveur MCP d'Nét dans un autre agent pour qu'il puisse lire et modifier vos designs.
+ConnectAgentsHint = Enregistrez le serveur MCP d'Contour dans un autre agent pour qu'il puisse lire et modifier vos designs.
 UseEverywhere = Utiliser partout
 UseEverywhereShort = CLI, HTTP, MCP
-UseEverywhereHint = Pilotez Nét depuis un terminal, un script ou un autre agent.
+UseEverywhereHint = Pilotez Contour depuis un terminal, un script ou un autre agent.
 EverywhereCli = CLI · od
 EverywhereCliBody = Démarrez le daemon, listez les projets, lancez un tour d'agent et exportez depuis un terminal.
 EverywhereMcp = Serveur MCP
@@ -403,7 +403,7 @@ GateByok = Enregistrez un fournisseur qui a réussi le test pour continuer.
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = Choisissez votre agent de code
-OnboardingIntro = Nét pilote un agent de code installé sur cette machine. Rien ne quitte votre ordinateur, hormis ce que l'agent envoie lui-même à son fournisseur.
+OnboardingIntro = Contour pilote un agent de code installé sur cette machine. Rien ne quitte votre ordinateur, hormis ce que l'agent envoie lui-même à son fournisseur.
 DetectingAgents = Détection des agents…
 AgentDetectionUnavailable = Détection des agents indisponible : {0}
 NoAgentsFound = Aucun agent trouvé. Installez Claude Code ou Codex, puis actualisez.
@@ -1329,7 +1329,7 @@ ShortcutMention = Mentionner un fichier, plugin, skill ou serveur MCP
 ShortcutSlash = Commandes (en début de ligne)
 # / The current language's text for `key`.
 # / Content text (template and skill descriptions, copied from the upstream
-# / app) with the upstream product name swapped for Nét. The files keep
+# / app) with the upstream product name swapped for Contour. The files keep
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
@@ -1389,7 +1389,7 @@ GenuiTierProject = projet
 GenuiTierConversation = conversation
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = Configurer DeepSeek Harness
-DshSetupDescription = Nét exécute la CLI dsh sur cet ordinateur via son profil open-design. Installez les deux, puis détectez à nouveau.
+DshSetupDescription = Contour exécute la CLI dsh sur cet ordinateur via son profil open-design. Installez les deux, puis détectez à nouveau.
 DshStepCli = 1. Installer la CLI dsh
 DshCliFound = dsh trouvé : {0}
 DshStepProfile = 2. Ajouter le profil open-design
@@ -1404,7 +1404,7 @@ DshSetupRequired = Configuration de la connexion requise
 FirstArtifactTitle = Votre premier design est prêt
 FirstArtifactBody = Modifiez-le et annotez-le directement dans l'aperçu, puis exportez-le quand il vous plaît.
 FirstArtifactDismiss = Compris
-WorkspaceRecovering = Connexion à Nét interrompue. Reconnexion automatique…
+WorkspaceRecovering = Connexion à Contour interrompue. Reconnexion automatique…
 ToolManualEdit = Modifier l’élément
 ManualEditHint = Cliquez sur un élément dans l'aperçu ou choisissez un calque, puis modifiez-le. Chaque changement est enregistré comme version.
 CommentsTab = Tous les commentaires

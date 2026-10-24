@@ -283,7 +283,7 @@ try {
   const authored = page.waitForResponse((r) => r.url().endsWith('/api/plugins/author'));
   await page.getByTestId('plugin-author').click();
   const authorBody = await (await authored).json();
-  assert.ok(authorBody.project.pendingPrompt.includes('# Create an Open Design plugin'));
+  assert.ok(authorBody.project.pendingPrompt.includes('# Create a Contour plugin'));
   await page.waitForURL(/\/projects\//);
   await settleStudio(true);
   results.pluginAuthor = 'ok';

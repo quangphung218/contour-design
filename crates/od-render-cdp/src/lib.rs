@@ -37,11 +37,28 @@ use std::time::Duration;
 /// Environment variable naming the browser executable.
 pub const CHROME_PATH_ENV: &str = "OD_CHROME_PATH";
 
+/// `1` launches Chrome with `--no-sandbox`, the only way that happens.
+///
+/// Security: this removes Chrome's isolation of the agent-written HTML it
+/// renders. It exists for processes that already run inside a sandbox
+/// Chrome cannot nest its own in (macOS `sandbox-exec`, some containers),
+/// where Chrome cannot render at all. The product never sets it or falls
+/// back to it: a browser that cannot start or render is an error
+/// (`scripts/tests/chrome_sandbox_test.sh`, `tests/launch_failure.rs`).
+pub const NO_SANDBOX_ENV: &str = "OD_CHROME_NO_SANDBOX";
+
+/// Longest wait for a launched browser to show the page. Normally under two
+/// seconds; past this the browser is taken as unable to render here.
+const OPEN_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Smallest and largest slide edge we trust from measurement.
 const SLIDE_MIN_PX: u32 = 320;
 const SLIDE_MAX_PX: u32 = 7_680;
 /// Whole frame capture must finish within 5 minutes (original limit).
 pub const FRAME_CAPTURE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+/// How long a closed browser gets to exit before it is killed.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Most frames one capture writes (one hour at 30 fps).
 pub const MAX_FRAMES: u64 = 108_000;
 /// Deck PDF page width (spec 4.2: 13.333 × 7.5 in).
@@ -144,19 +161,36 @@ fn find_on_path() -> Option<PathBuf> {
 pub struct CdpRenderer {
     /// Fixed executable; `None` runs [`find_chrome`] on each call.
     executable: Option<PathBuf>,
+    /// Launch with `--no-sandbox` ([`NO_SANDBOX_ENV`]).
+    no_sandbox: bool,
 }
 
 impl CdpRenderer {
+    /// Finds Chrome on each call; [`NO_SANDBOX_ENV`] is read here.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            executable: None,
+            no_sandbox: no_sandbox_from_env(),
+        }
     }
 
+    /// A fixed browser executable; [`NO_SANDBOX_ENV`] is read here.
     #[must_use]
     pub fn with_executable(path: impl Into<PathBuf>) -> Self {
         Self {
             executable: Some(path.into()),
+            no_sandbox: no_sandbox_from_env(),
         }
+    }
+
+    /// Launches without Chrome's own sandbox, as [`NO_SANDBOX_ENV`] does.
+    /// For tests and embedders that already sandbox the process; product
+    /// code never calls it (see [`NO_SANDBOX_ENV`] for the risk).
+    #[must_use]
+    pub fn without_chrome_sandbox(mut self) -> Self {
+        self.no_sandbox = true;
+        self
     }
 
     fn executable(&self) -> RenderResult<PathBuf> {
@@ -168,8 +202,72 @@ impl CdpRenderer {
 
     async fn open(&self, target: &RenderTarget) -> RenderResult<Session> {
         let exe = self.executable()?;
-        Session::open(&exe, target).await
+        match tokio::time::timeout(OPEN_TIMEOUT, Session::open(&exe, target, self.no_sandbox)).await
+        {
+            Ok(session) => session,
+            Err(_) => Err(RenderError::Unavailable(format!(
+                "{} started but did not show the page within {} s. Inside another sandbox \
+                 (sandbox-exec, a container) Chrome cannot start its own; only there, \
+                 {NO_SANDBOX_ENV}=1 runs it without (this removes Chrome's isolation of the page)",
+                exe.display(),
+                OPEN_TIMEOUT.as_secs()
+            ))),
+        }
     }
+}
+
+fn no_sandbox_from_env() -> bool {
+    std::env::var(NO_SANDBOX_ENV).as_deref() == Ok("1")
+}
+
+/// Whether Chrome at `exe` can start its own sandbox in this process's
+/// environment. It cannot inside another sandbox (macOS `sandbox-exec`),
+/// where it prints "Failed to initialize sandbox" and never renders. Runs
+/// one headless `about:blank` (about a second). Only tests call it, to
+/// decide on [`CdpRenderer::without_chrome_sandbox`]; the product never
+/// probes and never falls back to running without the sandbox.
+#[must_use]
+pub fn chrome_sandbox_works(exe: &Path) -> bool {
+    use std::io::Read;
+    // A Profile, not a bare temp dir: Chrome's helpers outlive it briefly
+    // and would write the folder back after it was removed.
+    let Ok(profile) = Profile::new() else {
+        return false;
+    };
+    let Ok(mut child) = std::process::Command::new(exe)
+        .args([
+            "--headless=new",
+            "--no-first-run",
+            "--disable-gpu",
+            "--dump-dom",
+            "about:blank",
+        ])
+        .arg(format!("--user-data-dir={}", profile.path().display()))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    else {
+        return false;
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let exited = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break false;
+            }
+        }
+    };
+    let mut err = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut err);
+    }
+    exited && !err.contains("Failed to initialize sandbox")
 }
 
 fn failed(context: &str) -> impl Fn(chromiumoxide::error::CdpError) -> RenderError + '_ {
@@ -309,24 +407,30 @@ fn sweep_stale_profiles(tmp: &Path) {
 fn sweep_stale_profiles(_tmp: &Path) {}
 
 impl Session {
-    async fn open(exe: &Path, target: &RenderTarget) -> RenderResult<Self> {
+    async fn open(exe: &Path, target: &RenderTarget, no_sandbox: bool) -> RenderResult<Self> {
         let profile = Profile::new()
             .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))?;
-        let config = BrowserConfig::builder()
+        let mut config = BrowserConfig::builder();
+        if no_sandbox {
+            config = config.no_sandbox();
+        }
+        let config = config
             .chrome_executable(exe)
             .new_headless_mode()
             .user_data_dir(profile.path())
             .viewport(None)
             .launch_timeout(Duration::from_secs(30))
             .request_timeout(Duration::from_secs(120))
+            // Keys without `--`: chromiumoxide adds it (`--x` would reach
+            // Chrome as `----x`, which it ignores; tests/launch_flags.rs).
             // No outbound network: only localhost resolves.
-            .arg("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost")
-            .arg("--no-first-run")
-            .arg("--no-default-browser-check")
-            .arg("--disable-sync")
-            .arg("--disable-component-update")
-            .arg("--disable-domain-reliability")
-            .arg("--metrics-recording-only")
+            .arg(("host-resolver-rules", "MAP * ~NOTFOUND , EXCLUDE localhost"))
+            .arg("no-first-run")
+            .arg("no-default-browser-check")
+            .arg("disable-sync")
+            .arg("disable-component-update")
+            .arg("disable-domain-reliability")
+            .arg("metrics-recording-only")
             .build()
             .map_err(|e| RenderError::Unavailable(format!("browser config: {e}")))?;
         let (browser, mut handler) = Browser::launch(config).await.map_err(|e| {
@@ -484,12 +588,21 @@ impl Session {
         Ok(())
     }
 
+    /// Asks the browser to quit and waits for it, at most [`CLOSE_TIMEOUT`]:
+    /// waiting without a bound once held an export until the CLI gave up
+    /// after 600 s. A browser still running then is killed when `self`
+    /// drops (chromiumoxide spawns it with `kill_on_drop`).
     async fn close(mut self) {
         if let Some(gate) = self.gate.take() {
             gate.abort();
         }
-        let _ = self.browser.close().await;
-        let _ = self.browser.wait().await;
+        let quit = async {
+            let _ = self.browser.close().await;
+            let _ = self.browser.wait().await;
+        };
+        if tokio::time::timeout(CLOSE_TIMEOUT, quit).await.is_err() {
+            tracing::warn!("the browser did not exit after closing; killing it");
+        }
         self.handler.abort();
     }
 }

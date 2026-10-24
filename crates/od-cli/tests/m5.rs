@@ -565,7 +565,14 @@ fn start_daemon() -> Daemon {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(tmp.path().join("resources/skills")).unwrap();
     let port = free_port();
-    let child = Command::new(OD)
+    let mut cmd = Command::new(OD);
+    // Inside another sandbox (the Atlat gate runs `make check` under
+    // sandbox-exec) Chrome cannot start its own and PDF export hangs; the
+    // test opts out there, as a user would with OD_CHROME_NO_SANDBOX=1.
+    if !od_render_cdp::find_chrome().is_ok_and(|c| od_render_cdp::chrome_sandbox_works(&c)) {
+        cmd.env(od_render_cdp::NO_SANDBOX_ENV, "1");
+    }
+    let child = cmd
         .args(["daemon", "start", "--port", &port.to_string()])
         .env("OD_DATA_DIR", tmp.path().join("data"))
         .env("OD_RESOURCE_ROOT", tmp.path().join("resources"))

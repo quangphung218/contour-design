@@ -1,4 +1,4 @@
-//! Nét UI (spec 5.3): a Leptos CSR app compiled to WASM by trunk and
+//! Contour UI (spec 5.3): a Leptos CSR app compiled to WASM by trunk and
 //! served by the daemon. Pure state lives in the top-level modules and is
 //! tested natively; the browser-only parts live under [`app`].
 

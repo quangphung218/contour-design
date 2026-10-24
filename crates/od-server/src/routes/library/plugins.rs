@@ -165,7 +165,7 @@ pub const AUTHORING_DIR: &str = "generated-plugin";
 #[must_use]
 pub fn authoring_prompt(brief: &str) -> String {
     format!(
-        "# Create an Open Design plugin\n\n\
+        "# Create a Contour plugin\n\n\
          {brief}\n\n\
          ## What to write\n\n\
          Write a plugin folder `{AUTHORING_DIR}/` in the current project:\n\n\
@@ -188,7 +188,7 @@ pub fn authoring_prompt(brief: &str) -> String {
 #[must_use]
 pub fn import_prompt(source: &str) -> String {
     format!(
-        "# Install an Open Design plugin from a link\n\n\
+        "# Install a Contour plugin from a link\n\n\
          Fetch the plugin at {source} into `{AUTHORING_DIR}/` in the current project: \
          `git clone --depth 1` for a GitHub repository (a `github:owner/repo[@ref][/path]` \
          reference or a github.com URL, keeping only the plugin's folder), or download and \

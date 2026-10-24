@@ -7,11 +7,13 @@
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
+mod common;
+
 use base64::Engine;
 use od_export::image::solid_png;
 use od_export::pptx_editable::{Element, layouts_to_pptx};
 use od_export::{RenderTarget, Renderer};
-use od_render_cdp::{CdpRenderer, find_chrome};
+use od_render_cdp::find_chrome;
 
 fn deck() -> String {
     let png =
@@ -54,7 +56,7 @@ async fn chrome_measures_slides_into_native_objects() {
         eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
         return;
     }
-    let renderer = CdpRenderer::with_executable(find_chrome().expect("Chrome is required"));
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deck.html");
     std::fs::write(&path, deck()).unwrap();

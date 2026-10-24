@@ -441,7 +441,7 @@ messages! {
     NotifyTestBody => "Notifications work.", "Thông báo đã hoạt động.";
     ProjectLocations => "Project locations", "Nơi lưu project";
     ProjectLocationsHint => "Work bases that hold project folders. Each new project gets its own folder inside the default base.", "Các thư mục gốc chứa project. Project mới được lưu thành một thư mục bên trong thư mục mặc định.";
-    BuiltInLocation => "Nét projects", "Project của Nét";
+    BuiltInLocation => "Contour projects", "Project của Contour";
     DefaultLocation => "Default", "Mặc định";
     MakeDefault => "Make default", "Đặt làm mặc định";
     AddFolder => "Add folder", "Thêm thư mục";
@@ -542,14 +542,14 @@ messages! {
     TplRegressionDesc => "Flag regressions against accepted work.", "Báo lỗi lùi so với bản đã duyệt.";
     // Integrations
     NavIntegrations => "Integrations", "Tích hợp";
-    IntegrationsIntro => "External tools for the agent, and Nét inside other coding agents.", "Công cụ ngoài cho agent, và dùng Nét trong các agent khác.";
+    IntegrationsIntro => "External tools for the agent, and Contour inside other coding agents.", "Công cụ ngoài cho agent, và dùng Contour trong các agent khác.";
     ExternalTools => "External tools", "Công cụ ngoài";
-    ConnectAgents => "Connect Nét to your coding agent", "Kết nối Nét với agent";
+    ConnectAgents => "Connect Contour to your coding agent", "Kết nối Contour với agent";
     ConnectAgentsShort => "Coding agents", "Agent lập trình";
-    ConnectAgentsHint => "Register the Nét MCP server in another agent so it can read and edit your designs.", "Đăng ký MCP server của Nét trong agent khác để agent đó đọc và sửa design.";
+    ConnectAgentsHint => "Register the Contour MCP server in another agent so it can read and edit your designs.", "Đăng ký MCP server của Contour trong agent khác để agent đó đọc và sửa design.";
     UseEverywhere => "Use everywhere", "Dùng ở mọi nơi";
     UseEverywhereShort => "CLI, HTTP, MCP", "CLI, HTTP, MCP";
-    UseEverywhereHint => "Drive Nét from a terminal, a script or another agent.", "Điều khiển Nét từ terminal, script hoặc agent khác.";
+    UseEverywhereHint => "Drive Contour from a terminal, a script or another agent.", "Điều khiển Contour từ terminal, script hoặc agent khác.";
     EverywhereCli => "CLI · od", "CLI · od";
     EverywhereCliBody => "Start the daemon, list projects, run an agent turn and export from a terminal.", "Chạy daemon, xem project, chạy một lượt agent và export từ terminal.";
     EverywhereMcp => "MCP server", "MCP server";
@@ -620,7 +620,7 @@ messages! {
     // ---- end of management screens ----
     // Onboarding
     OnboardingTitle => "Choose your coding agent", "Chọn coding agent";
-    OnboardingIntro => "Nét drives a coding agent installed on this machine. Nothing leaves your computer except what the agent itself sends to its provider.", "Nét điều khiển một coding agent cài sẵn trên máy. Không có dữ liệu nào rời khỏi máy, trừ những gì agent tự gửi tới provider của nó.";
+    OnboardingIntro => "Contour drives a coding agent installed on this machine. Nothing leaves your computer except what the agent itself sends to its provider.", "Contour điều khiển một coding agent cài sẵn trên máy. Không có dữ liệu nào rời khỏi máy, trừ những gì agent tự gửi tới provider của nó.";
     DetectingAgents => "Detecting agents…", "Đang tìm agent…";
     AgentDetectionUnavailable => "Agent detection unavailable: {0}", "Không dò được agent: {0}";
     NoAgentsFound => "No agents found. Install Claude Code or Codex, then refresh.", "Không tìm thấy agent nào. Cài Claude Code hoặc Codex rồi làm mới.";
@@ -1412,7 +1412,7 @@ messages! {
     ShortcutFirstLast => "First or last slide", "Slide đầu hoặc cuối";
     // Track C3-runtimes: DeepSeek Harness connection setup.
     DshSetupTitle => "Set up DeepSeek Harness", "Thiết lập DeepSeek Harness";
-    DshSetupDescription => "Nét runs the dsh CLI on this computer through its open-design profile. Install both, then detect again.", "Nét chạy dsh CLI trên máy này qua profile open-design. Cài cả hai rồi phát hiện lại.";
+    DshSetupDescription => "Contour runs the dsh CLI on this computer through its open-design profile. Install both, then detect again.", "Contour chạy dsh CLI trên máy này qua profile open-design. Cài cả hai rồi phát hiện lại.";
     DshStepCli => "1. Install the dsh CLI", "1. Cài dsh CLI";
     DshCliFound => "dsh found: {0}", "Đã thấy dsh: {0}";
     DshStepProfile => "2. Add the open-design profile", "2. Thêm profile open-design";
@@ -1579,7 +1579,7 @@ messages! {
     FirstArtifactTitle => "Your first design is ready", "Bản thiết kế đầu tiên đã xong";
     FirstArtifactBody => "Edit and annotate it right in the preview, then export when you are happy.", "Sửa và chú thích ngay trên preview, ưng rồi thì export.";
     FirstArtifactDismiss => "Got it", "Đã hiểu";
-    WorkspaceRecovering => "Connection to Nét interrupted. Reconnecting automatically…", "Mất kết nối tới Nét. Đang tự kết nối lại…";
+    WorkspaceRecovering => "Connection to Contour interrupted. Reconnecting automatically…", "Mất kết nối tới Contour. Đang tự kết nối lại…";
     ToolManualEdit => "Edit element", "Sửa phần tử";
     ManualEditHint => "Click an element in the preview or pick a layer, then change it. Each change is saved as a version.", "Bấm một phần tử trên preview hoặc chọn một layer rồi sửa. Mỗi lần sửa được lưu thành một version.";
     CommentsTab => "All comments", "Mọi bình luận";
@@ -1811,14 +1811,14 @@ pub fn t(key: T) -> &'static str {
 }
 
 /// Content text (template and skill descriptions, copied from the upstream
-/// app) with the upstream product name swapped for Nét. The files keep
+/// app) with the upstream product name swapped for Contour. The files keep
 /// their original wording and attribution; only the UI shows the new name.
 #[must_use]
 pub fn rebrand(text: &str) -> std::borrow::Cow<'_, str> {
     if names_original_app(text) {
-        text.replace("OpenDesign", "Nét")
-            .replace("Open Design", "Nét")
-            .replace("Open-Design", "Nét")
+        text.replace("OpenDesign", "Contour")
+            .replace("Open Design", "Contour")
+            .replace("Open-Design", "Contour")
             .into()
     } else {
         text.into()
@@ -1855,7 +1855,7 @@ mod tests {
     fn content_text_shows_the_new_name() {
         assert_eq!(
             rebrand("Create refreshable OpenDesign artifacts, made with Open Design."),
-            "Create refreshable Nét artifacts, made with Nét."
+            "Create refreshable Contour artifacts, made with Contour."
         );
         assert!(matches!(
             rebrand("A tea shop"),
@@ -1864,6 +1864,43 @@ mod tests {
     }
 
     use super::*;
+
+    /// A name the UI must not show: the upstream app's, or Contour's
+    /// previous name "Nét" (composed or decomposed accent).
+    fn retired_name(text: &str) -> bool {
+        names_original_app(text) || ["N\u{e9}t", "Ne\u{301}t"].iter().any(|n| text.contains(n))
+    }
+
+    #[test]
+    fn the_retired_names_are_caught() {
+        for text in [
+            "Open Design",
+            "OpenDesign",
+            "Open-Design",
+            "Mở Nét…",
+            "Ne\u{301}t projects",
+        ] {
+            assert!(retired_name(text), "{text}");
+        }
+        for text in ["Contour projects", "nét vẽ", "the open-design profile"] {
+            assert!(!retired_name(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_in_app_guide_uses_the_current_name() {
+        for (tag, guide) in [
+            ("en", include_str!("../docs/guide.en.md")),
+            ("vi", include_str!("../docs/guide.vi.md")),
+        ] {
+            // The dsh profile is called `open-design`; only names count.
+            let hits: Vec<&str> = guide.lines().filter(|l| retired_name(l)).collect();
+            assert!(
+                hits.is_empty(),
+                "guide.{tag}.md shows a retired name: {hits:?}"
+            );
+        }
+    }
 
     fn placeholders(s: &str) -> Vec<usize> {
         let mut v: Vec<usize> = (0..10)
@@ -1882,8 +1919,8 @@ mod tests {
             assert_eq!(placeholders(en), placeholders(vi), "{key:?}");
             assert_eq!(vi, vi.trim(), "{key:?} has stray whitespace");
             assert!(
-                !names_original_app(en) && !names_original_app(vi),
-                "{key:?} shows the old name"
+                !retired_name(en) && !retired_name(vi),
+                "{key:?} shows a retired name"
             );
         }
     }
@@ -2017,8 +2054,8 @@ mod tests {
                 if text.contains('\u{2014}') {
                     failures.push(format!("{tag}: {} has an em dash", key.name()));
                 }
-                if names_original_app(text) {
-                    failures.push(format!("{tag}: {} shows the old name", key.name()));
+                if retired_name(text) {
+                    failures.push(format!("{tag}: {} shows a retired name", key.name()));
                 }
                 let (we, wt) = (width(en), width(text));
                 if wt > (2 * we).max(we + 12) {

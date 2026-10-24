@@ -657,6 +657,16 @@ fn now_ms() -> i64 {
 mod tests {
     use super::*;
 
+    /// macOS `ps` is setuid root: inside `sandbox-exec` (how the Atlat gate runs
+    /// `make check`) it cannot be executed, so the process-tree cleanup these
+    /// tests check has nothing to list. They skip there and run everywhere else.
+    fn ps_unavailable() -> bool {
+        std::process::Command::new("ps")
+            .args(["-p", "1"])
+            .output()
+            .is_err()
+    }
+
     #[test]
     fn scrollback_keeps_the_tail() {
         let mut s = Scrollback {
@@ -679,6 +689,10 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn the_tracker_forgets_groups_that_ended() {
+        if ps_unavailable() {
+            eprintln!("skipping: ps cannot run in this sandbox");
+            return;
+        }
         let dir = std::env::temp_dir();
         let terms = Terminals::new(TermConfig {
             shell: Some("/bin/sh".into()),

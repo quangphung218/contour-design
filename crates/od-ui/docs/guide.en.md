@@ -1,11 +1,11 @@
-# Nét guide
+# Contour guide
 
-Nét turns a description into a design: pages, prototypes, slide decks, documents, images and video. Everything runs on this computer. A coding agent you already use (Claude Code, Codex, Gemini CLI…) or your own API key does the work; nothing is uploaded unless you configure a provider.
+Contour turns a description into a design: pages, prototypes, slide decks, documents, images and video. Everything runs on this computer. A coding agent you already use (Claude Code, Codex, Gemini CLI…) or your own API key does the work; nothing is uploaded unless you configure a provider.
 
 ## Getting started
 
-1. **Pick an agent.** On first run, choose an installed agent and let Nét test it, or paste an API key.
-2. **Bring your brand (optional).** Give your website and Nét extracts a design system (palette, type, components). New projects start with it.
+1. **Pick an agent.** On first run, choose an installed agent and let Contour test it, or paste an API key.
+2. **Bring your brand (optional).** Give your website and Contour extracts a design system (palette, type, components). New projects start with it.
 3. **Describe what you want** on Home and press Create. The Studio opens and the agent starts.
 
 ## Home
@@ -32,17 +32,17 @@ Settings ▸ Memory holds facts every project should respect. Turn memory off wi
 
 ## DeepSeek Harness {#deepseek-harness}
 
-Nét runs your own `dsh` CLI through its `open-design` profile. It does not install either one.
+Contour runs your own `dsh` CLI through its `open-design` profile. It does not install either one.
 
 1. Install `dsh`. The bootstrap installer also installs a compatible Node.js and pnpm, then opens the Harness web UI, where you save your DeepSeek API key:
    - macOS / Linux: `curl -fsSL 'https://open-design.ai/install-dsh.sh?version=1' | sh`
    - Windows PowerShell: `& ([scriptblock]::Create((irm 'https://open-design.ai/install-dsh.ps1?version=1')))`
-2. Add the `open-design` profile. Build its package from the Open Design source (`packages/dsh-runtime`), then add it with `dsh`:
+2. Add the `open-design` profile. Build its package from the upstream source (`nexu-io/open-design`, `packages/dsh-runtime`), then add it with `dsh`:
    - `pnpm --filter @open-design/dsh-runtime build`
    - `pnpm -C packages/dsh-runtime pack --pack-destination <folder>`
    - `dsh plugin --profile open-design add <folder>/open-design-dsh-runtime-0.1.0.tgz`
    - `dsh --profile open-design --probe` prints one line of JSON when the profile works.
-3. Back in Nét, open the DeepSeek Harness card and choose **Detect again**. The agent is selected as soon as it passes the check.
+3. Back in Contour, open the DeepSeek Harness card and choose **Detect again**. The agent is selected as soon as it passes the check.
 
 The profile lives in `~/.dsh/profiles/open-design`, or under `$DSH_HOME` when that is set.
 

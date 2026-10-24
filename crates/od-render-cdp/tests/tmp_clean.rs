@@ -8,8 +8,10 @@
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
+mod common;
+
 use od_export::{DeckMode, RenderTarget, Renderer};
-use od_render_cdp::{CdpRenderer, find_chrome};
+use od_render_cdp::find_chrome;
 use std::time::Duration;
 
 const INNER: &str = "OD_TMP_CLEAN_INNER";
@@ -19,6 +21,17 @@ fn renders_leave_tmpdir_empty() {
     if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1")
         || std::env::var_os(INNER).is_some()
     {
+        return;
+    }
+    // Removing a profile ends Chrome's helpers found with `ps`, which is
+    // setuid root on macOS and cannot run inside sandbox-exec (the Atlat
+    // gate); a helper still exiting there may write the folder back.
+    if std::process::Command::new("ps")
+        .args(["-p", "1"])
+        .output()
+        .is_err()
+    {
+        eprintln!("skipping: ps cannot run in this sandbox");
         return;
     }
     let outer = tempfile::tempdir().unwrap();
@@ -80,7 +93,7 @@ async fn inner_renders() {
     if std::env::var_os(INNER).is_none() {
         return;
     }
-    let renderer = CdpRenderer::with_executable(find_chrome().expect("Chrome is required"));
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
     let dir = tempfile::tempdir().unwrap();
     let page = dir.path().join("page.html");
     std::fs::write(&page, "<!doctype html><h1>Hi</h1>").unwrap();

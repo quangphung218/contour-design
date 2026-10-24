@@ -1,4 +1,4 @@
-# Nét UI strings: Deutsch (de). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: Deutsch (de). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = Startseite
 NavProjects = Projekte
@@ -224,7 +224,7 @@ NotifyFailedBody = Die Aufgabe wurde mit einem Fehler beendet.
 NotifyTestBody = Benachrichtigungen funktionieren.
 ProjectLocations = Projektorte
 ProjectLocationsHint = Arbeitsbasen mit Projektordnern. Jedes neue Projekt erhält einen eigenen Ordner in der Standardbasis.
-BuiltInLocation = Nét-Projekte
+BuiltInLocation = Contour-Projekte
 DefaultLocation = Standard
 MakeDefault = Als Standard
 AddFolder = Ordner hinzufügen
@@ -325,14 +325,14 @@ TplRegression = Regressionsüberwachung
 TplRegressionDesc = Regressionen gegenüber akzeptierter Arbeit melden.
 # Integrations
 NavIntegrations = Integrationen
-IntegrationsIntro = Externe Tools für den Agent und Nét in anderen Coding-Agents.
+IntegrationsIntro = Externe Tools für den Agent und Contour in anderen Coding-Agents.
 ExternalTools = Externe Tools
-ConnectAgents = Nét mit deinem Coding-Agent verbinden
+ConnectAgents = Contour mit deinem Coding-Agent verbinden
 ConnectAgentsShort = Coding-Agents
-ConnectAgentsHint = Registriere den Nét-MCP-Server in einem anderen Agent, damit er deine Designs lesen und bearbeiten kann.
+ConnectAgentsHint = Registriere den Contour-MCP-Server in einem anderen Agent, damit er deine Designs lesen und bearbeiten kann.
 UseEverywhere = Überall verwenden
 UseEverywhereShort = CLI, HTTP, MCP
-UseEverywhereHint = Steuere Nét über ein Terminal, ein Skript oder einen anderen Agent.
+UseEverywhereHint = Steuere Contour über ein Terminal, ein Skript oder einen anderen Agent.
 EverywhereCli = CLI · od
 EverywhereCliBody = Daemon starten, Projekte auflisten, einen Agent-Schritt ausführen und aus dem Terminal exportieren.
 EverywhereMcp = MCP-Server
@@ -403,7 +403,7 @@ GateByok = Speichere einen Anbieter, der den Test bestanden hat, um fortzufahren
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = Wähle deinen Coding-Agent
-OnboardingIntro = Nét steuert einen auf diesem Rechner installierten Coding-Agent. Nichts verlässt deinen Computer, außer was der Agent selbst an seinen Anbieter sendet.
+OnboardingIntro = Contour steuert einen auf diesem Rechner installierten Coding-Agent. Nichts verlässt deinen Computer, außer was der Agent selbst an seinen Anbieter sendet.
 DetectingAgents = Agents werden erkannt…
 AgentDetectionUnavailable = Agent-Erkennung nicht verfügbar: {0}
 NoAgentsFound = Keine Agents gefunden. Installiere Claude Code oder Codex und aktualisiere dann.
@@ -1383,7 +1383,7 @@ GenuiTierProject = Projekt
 GenuiTierConversation = Unterhaltung
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = DeepSeek Harness einrichten
-DshSetupDescription = Nét führt die dsh CLI auf diesem Computer über das Profil open-design aus. Installiere beides und erkenne dann erneut.
+DshSetupDescription = Contour führt die dsh CLI auf diesem Computer über das Profil open-design aus. Installiere beides und erkenne dann erneut.
 DshStepCli = 1. dsh CLI installieren
 DshCliFound = dsh gefunden: {0}
 DshStepProfile = 2. Profil open-design hinzufügen
@@ -1398,7 +1398,7 @@ DshSetupRequired = Verbindung muss eingerichtet werden
 FirstArtifactTitle = Dein erster Entwurf ist fertig
 FirstArtifactBody = Bearbeite und kommentiere ihn direkt in der Vorschau und exportiere ihn, wenn er dir gefällt.
 FirstArtifactDismiss = Verstanden
-WorkspaceRecovering = Verbindung zu Nét unterbrochen. Verbindet sich automatisch neu…
+WorkspaceRecovering = Verbindung zu Contour unterbrochen. Verbindet sich automatisch neu…
 ToolManualEdit = Element bearbeiten
 ManualEditHint = Klicke in der Vorschau auf ein Element oder wähle eine Ebene und ändere es. Jede Änderung wird als Version gespeichert.
 CommentsTab = Alle Kommentare

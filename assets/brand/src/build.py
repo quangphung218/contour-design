@@ -1,10 +1,10 @@
-"""Writes the Nét brand SVGs (assets/brand/*.svg) from one mark path.
+"""Writes the Contour brand SVGs (assets/brand/*.svg) from one mark path.
 
     python3 assets/brand/src/build.py [glyphs.json]
 
 The wordmark outlines come from Geist SemiBold (SIL OFL 1.1, vendored in
-crates/od-ui/vendor/fonts), extracted once into src/net-glyphs.json by
-src/glyphs.py (needs fonttools + brotli). PNGs and the app icon set are
+crates/od-ui/vendor/fonts), extracted once into src/contour-glyphs.json by
+src/glyphs.py (needs fonttools, brotli, uharfbuzz). PNGs and the app icon set are
 rendered from these SVGs by src/render.mjs.
 """
 import json, math, os, sys
@@ -38,22 +38,24 @@ def write(name, text):
         f.write(text)
 
 def mark_files():
-    write("net-mark.svg", svg(48, 48, path(ACCENT), "Nét"))
-    write("net-mark-dark.svg", svg(48, 48, path(ACCENT_DARK), "Nét"))
-    write("net-mark-mono.svg", svg(48, 48, path("currentColor"), "Nét"))
-    write("net-mark-small.svg", svg(48, 48, path(ACCENT, STROKE_SMALL), "Nét"))
+    write("contour-mark.svg", svg(48, 48, path(ACCENT), "Contour"))
+    write("contour-mark-dark.svg", svg(48, 48, path(ACCENT_DARK), "Contour"))
+    write("contour-mark-mono.svg", svg(48, 48, path("currentColor"), "Contour"))
+    write("contour-mark-small.svg", svg(48, 48, path(ACCENT, STROKE_SMALL), "Contour"))
 
 def wordmark_files(glyphs):
     # Cap height = 24 grid units, baseline on the pointer's lowest point.
+    # The ink of the first letter starts at x=58 (a 18-unit gap after the
+    # mark); the box ends 2 units after the ink of the last letter.
     scale = 24 / glyphs["cap"]
-    x0, base = 58 - 80 * scale, 36
-    width = math.ceil(58 + glyphs["advance"] * scale - 80 * scale + 2)
+    x0, base = 58 - glyphs["xmin"] * scale, 36
+    width = math.ceil(58 + (glyphs["xmax"] - glyphs["xmin"]) * scale + 2)
     text = (lambda c: f'<path transform="translate({x0:.2f} {base}) scale({scale:.5f})" '
             f'fill="{c}" d="{glyphs["d"]}"/>')
-    for name, mark, ink in [("net-wordmark.svg", ACCENT, INK),
-                            ("net-wordmark-dark.svg", ACCENT_DARK, INK_DARK),
-                            ("net-wordmark-mono.svg", "currentColor", "currentColor")]:
-        write(name, svg(width, 48, path(mark) + text(ink), "Nét"))
+    for name, mark, ink in [("contour-wordmark.svg", ACCENT, INK),
+                            ("contour-wordmark-dark.svg", ACCENT_DARK, INK_DARK),
+                            ("contour-wordmark-mono.svg", "currentColor", "currentColor")]:
+        write(name, svg(width, 48, path(mark) + text(ink), "Contour"))
 
 def squircle(x, y, size, n=5.0, steps=256):
     """macOS-style superellipse |x|^n + |y|^n = 1, as a closed path."""
@@ -82,21 +84,21 @@ def app_icon(width):
 <path d="{body}" fill="url(#bg)" filter="url(#sh)"/>
 <path d="{body}" fill="url(#hi)"/>
 <path d="{body}" fill="none" stroke="#fff" stroke-opacity=".10" stroke-width="2"/>
-<g transform="translate({tx:.1f} {ty:.1f}) scale({s})">{path("#ffffff", width)}</g>""", "Nét")
+<g transform="translate({tx:.1f} {ty:.1f}) scale({s})">{path("#ffffff", width)}</g>""", "Contour")
 
 def favicon():
     # Browser tabs: rounded tile so it reads on light and dark tab strips.
     return svg(32, 32, f"""<rect width="32" height="32" rx="7" fill="{ACCENT}"/>
-<g transform="translate(16 15.6) scale(0.5) translate(-24 -23)">{path("#ffffff", 5.2)}</g>""", "Nét")
+<g transform="translate(16 15.6) scale(0.5) translate(-24 -23)">{path("#ffffff", 5.2)}</g>""", "Contour")
 
 if __name__ == "__main__":
-    glyphs = json.load(open(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "net-glyphs.json")))
+    glyphs = json.load(open(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "contour-glyphs.json")))
     mark_files()
     wordmark_files(glyphs)
-    write("net-app-icon.svg", app_icon(STROKE))
-    write("net-app-icon-small.svg", app_icon(STROKE_SMALL * 1.15))
-    write("net-favicon.svg", favicon())
+    write("contour-app-icon.svg", app_icon(STROKE))
+    write("contour-app-icon-small.svg", app_icon(STROKE_SMALL * 1.15))
+    write("contour-favicon.svg", favicon())
     # od-ui sidebar/onboarding mark: decorative (the link carries the name),
     # so no <title> tooltip.
-    with open(os.path.join(OUT, "../../crates/od-ui/assets/net-mark.svg"), "w") as f:
+    with open(os.path.join(OUT, "../../crates/od-ui/assets/contour-mark.svg"), "w") as f:
         f.write(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">{path("currentColor")}</svg>\n')

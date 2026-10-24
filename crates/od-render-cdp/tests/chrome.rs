@@ -8,12 +8,14 @@
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
+mod common;
+
 use od_export::image::{decode_rgb, png_size, solid_png};
 use od_export::standalone;
 use od_export::{
     AssetMeta, AssetSource, CaptureOptions, DeckMode, Options, RenderTarget, Renderer,
 };
-use od_render_cdp::{CdpRenderer, find_chrome};
+use od_render_cdp::find_chrome;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -98,7 +100,7 @@ async fn chrome_exports() {
         return;
     }
     let chrome = find_chrome().expect("Chrome/Edge/Chromium is required for these tests");
-    let renderer = CdpRenderer::with_executable(chrome);
+    let renderer = common::renderer(&chrome);
     let dir = tempfile::tempdir().unwrap();
 
     // --- Deck: one PNG per slide, 1920×1080, the right slide each time.

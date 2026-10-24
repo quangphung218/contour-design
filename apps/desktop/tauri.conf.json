@@ -1,8 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Nét",
-  "version": "0.1.0",
-  "identifier": "dev.net.desktop",
+  "productName": "Contour",
+  "identifier": "dev.contour.desktop",
   "build": {
     "frontendDist": "static"
   },

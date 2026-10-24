@@ -1,4 +1,4 @@
-//! HTTP API of the open-design-rs daemon.
+//! HTTP API of the Contour daemon.
 //!
 //! Binds loopback by default. Binding elsewhere requires `OD_API_TOKEN`.
 //! Browser requests pass the origin guard (spec 2.2).

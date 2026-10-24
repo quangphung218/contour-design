@@ -134,7 +134,7 @@ async fn health_and_version() {
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.json()["ok"], true);
     let r = h.get("/api/version").await;
-    assert_eq!(r.json()["name"], "open-design-rs");
+    assert_eq!(r.json()["name"], "contour");
 }
 
 #[tokio::test]

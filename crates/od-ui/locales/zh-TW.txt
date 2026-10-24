@@ -1,4 +1,4 @@
-# Nét UI strings: 繁體中文 (zh-TW). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: 繁體中文 (zh-TW). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = 首頁
 NavProjects = 專案
@@ -224,7 +224,7 @@ NotifyFailedBody = 任務因錯誤而結束。
 NotifyTestBody = 通知運作正常。
 ProjectLocations = 專案位置
 ProjectLocationsHint = 存放專案資料夾的根目錄。每個新專案都會在預設根目錄內建立自己的資料夾。
-BuiltInLocation = Nét 專案
+BuiltInLocation = Contour 專案
 DefaultLocation = 預設
 MakeDefault = 設為預設
 AddFolder = 新增資料夾
@@ -325,14 +325,14 @@ TplRegression = 迴歸監控
 TplRegressionDesc = 標出與已採用成果相比的迴歸問題。
 # Integrations
 NavIntegrations = 整合
-IntegrationsIntro = 提供 Agent 使用的外部工具，並讓 Nét 可在其他程式設計 Agent 中使用。
+IntegrationsIntro = 提供 Agent 使用的外部工具，並讓 Contour 可在其他程式設計 Agent 中使用。
 ExternalTools = 外部工具
-ConnectAgents = 將 Nét 連接到你的程式設計 Agent
+ConnectAgents = 將 Contour 連接到你的程式設計 Agent
 ConnectAgentsShort = 程式設計 Agent
-ConnectAgentsHint = 在其他 Agent 中註冊 Nét MCP 伺服器，讓它能讀取並編輯你的設計。
+ConnectAgentsHint = 在其他 Agent 中註冊 Contour MCP 伺服器，讓它能讀取並編輯你的設計。
 UseEverywhere = 隨處使用
 UseEverywhereShort = CLI、HTTP、MCP
-UseEverywhereHint = 從終端機、指令碼或其他 Agent 操作 Nét。
+UseEverywhereHint = 從終端機、指令碼或其他 Agent 操作 Contour。
 EverywhereCli = CLI · od
 EverywhereCliBody = 在終端機啟動背景服務、列出專案、執行 Agent 一輪並匯出。
 EverywhereMcp = MCP 伺服器
@@ -403,7 +403,7 @@ GateByok = 儲存通過測試的供應商後即可繼續。
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = 選擇你的程式設計 Agent
-OnboardingIntro = Nét 會驅動安裝在這台電腦上的程式設計 Agent。除了 Agent 自己傳給其供應商的內容外，沒有任何資料會離開你的電腦。
+OnboardingIntro = Contour 會驅動安裝在這台電腦上的程式設計 Agent。除了 Agent 自己傳給其供應商的內容外，沒有任何資料會離開你的電腦。
 DetectingAgents = 正在偵測 Agent…
 AgentDetectionUnavailable = 無法偵測 Agent：{0}
 NoAgentsFound = 找不到 Agent。請安裝 Claude Code 或 Codex，然後重新整理。
@@ -1382,7 +1382,7 @@ GenuiTierProject = 專案
 GenuiTierConversation = 對話
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = 設定 DeepSeek Harness
-DshSetupDescription = Nét 會透過 open-design 設定檔，在這台電腦上執行 dsh CLI。請先安裝兩者，再重新偵測。
+DshSetupDescription = Contour 會透過 open-design 設定檔，在這台電腦上執行 dsh CLI。請先安裝兩者，再重新偵測。
 DshStepCli = 1. 安裝 dsh CLI
 DshCliFound = 已找到 dsh：{0}
 DshStepProfile = 2. 新增 open-design 設定檔
@@ -1397,7 +1397,7 @@ DshSetupRequired = 需要設定連線
 FirstArtifactTitle = 你的第一個設計完成了
 FirstArtifactBody = 直接在預覽中編輯與標註，滿意後再匯出。
 FirstArtifactDismiss = 知道了
-WorkspaceRecovering = 與 Nét 的連線中斷，正在自動重新連線…
+WorkspaceRecovering = 與 Contour 的連線中斷，正在自動重新連線…
 ToolManualEdit = 編輯元素
 ManualEditHint = 點選預覽中的元素或選擇圖層，然後修改。每次修改都會儲存為一個版本。
 CommentsTab = 全部留言

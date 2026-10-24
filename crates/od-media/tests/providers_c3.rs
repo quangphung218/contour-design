@@ -419,7 +419,7 @@ async fn every_provider_speaks_its_protocol() {
         let (_, h, b) = call(&s, "POST /or/chat/completions");
         assert_eq!(b["model"], "google/gemini-2.5-flash-image");
         assert_eq!(b["modalities"], json!(["image", "text"]));
-        assert_eq!(h["x-title"], "OpenDesign");
+        assert_eq!(h["x-title"], "Contour");
         let (_, _, v) = call(&s, "POST /or/videos");
         assert_eq!(
             (v["model"].clone(), v["resolution"].clone()),

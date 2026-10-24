@@ -1,65 +1,90 @@
-# Thương hiệu Nét
+# The Contour brand
 
-**Nét**: thiết kế cùng agent, ngay trên máy (en: *Design with your agent, on your machine*).
+**Contour**: design with your agent, on your machine.
 
-Tên repo, crate và binary (`open-design-rs`, `od-*`, `od`) giữ nguyên. Chỉ tên hiển thị đổi: cửa sổ, menu, sidebar, onboarding, CLI help, README. Tên và logo OpenDesign không xuất hiện trong UI; ghi công cho app gốc nằm ở `NOTICE` và `README.md`.
+Crate and binary names (`od-*`, `od`) and the `OD_*` environment variables stay as they are (docs/decisions.md §5). The display name is Contour: window, menus, sidebar, onboarding, CLI help, README. The OpenDesign name and logo never appear in the UI; credit to the original app lives in `NOTICE` and `README.md`.
 
-## Ý nghĩa
+## Meaning
 
-"Nét" là nét vẽ: một đường liền, không nhấc bút. Mark là **một nét duy nhất** vẽ cạnh trái và cạnh trên của một khung (artboard), đi xuống cạnh phải rồi gập vào trong thành con trỏ chuột, mũi nhọn chỉ về góc khung. Khung là thứ được thiết kế, con trỏ là agent và người dùng cùng làm trên đó.
+A contour is the outline that defines a shape: the first line a designer draws. The mark is **one continuous contour line**. It traces the left and top edges of a frame (the artboard), runs down the right edge, then folds inward into a cursor whose tip points at the frame's corner. The frame is the thing being designed; the cursor is you and your agent working on it together.
 
-## File
+## Name
 
-| File | Dùng cho |
+- Always "Contour", with a capital C, in every UI string, doc and store listing. Never "CONTOUR" or "contour" as the product name.
+- Never "OpenDesign" or "Open Design" in the UI or for this product.
+- Internal names do not change: crates `od-*`, binary `od`. Lowercase `contour` appears only in identifiers: file names (`contour-*.svg`), the data folder, the bundle id `dev.contour.desktop` and the repo `contour-design`.
+
+## Files
+
+| File | Used for |
 |---|---|
-| `assets/brand/net-mark.svg` | Mark màu accent, nền sáng |
-| `assets/brand/net-mark-dark.svg` | Mark cho nền tối |
-| `assets/brand/net-mark-mono.svg` | Đơn sắc, `currentColor` (in, khắc, icon hệ thống) |
-| `assets/brand/net-mark-small.svg` | Nét dày hơn cho 16–32 px |
-| `assets/brand/net-wordmark{,-dark,-mono}.svg` | Mark + chữ "Nét" (đã outline, không cần font) |
-| `assets/brand/net-app-icon.svg` | Icon app 1024: squircle kiểu macOS, lề an toàn 100 px |
-| `assets/brand/net-favicon.svg` | Favicon tab trình duyệt (ô bo góc 32 px) |
-| `assets/brand/png/` | PNG 16, 32, 48, 64, 128, 256, 512, 1024 của mark, mark tối và icon app |
-| `apps/desktop/icons/` | Bộ icon Tauri: `32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.png`, `icon.icns`, `icon.ico` |
-| `crates/od-ui/assets/` | Favicon và mark trong sidebar/onboarding của UI |
+| `assets/brand/contour-mark.svg` | Accent-colour mark, light backgrounds |
+| `assets/brand/contour-mark-dark.svg` | Mark for dark backgrounds |
+| `assets/brand/contour-mark-mono.svg` | Monochrome, `currentColor` (print, engraving, system icons) |
+| `assets/brand/contour-mark-small.svg` | Thicker stroke for 16–32 px |
+| `assets/brand/contour-wordmark.svg` | Mark + the word "Contour" (outlined, no font needed), light backgrounds |
+| `assets/brand/contour-wordmark-dark.svg` | Wordmark for dark backgrounds |
+| `assets/brand/contour-wordmark-mono.svg` | Wordmark in `currentColor` |
+| `assets/brand/contour-app-icon.svg`, `contour-app-icon-small.svg` | 1024 app icon: macOS-style squircle, 100 px safe margin (small: heavier stroke for 16–32 px renders) |
+| `assets/brand/contour-favicon.svg` | Browser tab favicon (32 px rounded tile) |
+| `assets/brand/png/contour-{mark,mark-dark,app-icon}-{16,32,48,64,128,256,512,1024}.png` | PNG renders of the mark, dark mark and app icon |
+| `apps/desktop/icons/` | Tauri icon set: `32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.png`, `icon.icns`, `icon.ico` (names fixed by `tauri.conf.json`) |
+| `crates/od-ui/assets/contour-mark.svg` | Decorative mark in the UI sidebar and onboarding (no `<title>`) |
+| `crates/od-ui/assets/favicon.svg`, `favicon-32.png` | UI favicon (copy of `contour-favicon.svg` and its 32 px render) |
+| `assets/brand/src/` | Sources: `build.py`, `glyphs.py`, `contour-glyphs.json`, `render.mjs` |
 
-Sinh lại toàn bộ từ một nguồn:
+## Regenerate
 
-```bash
-python3 assets/brand/src/build.py                          # SVG từ path trong build.py
-(cd crates/od-ui/e2e && node ../../../assets/brand/src/render.mjs)   # PNG, icns (iconutil), ico, favicon
-```
+The mark's path is the `MARK` constant in `assets/brand/src/build.py`; edit it there, never hand-edit individual SVGs.
 
-Path của mark nằm ở hằng `MARK` trong `build.py`; sửa ở đó, không sửa tay từng SVG. Chữ của wordmark là Geist SemiBold (SIL OFL 1.1, cùng font của UI), outline sẵn trong `src/net-glyphs.json` bằng `src/glyphs.py` (cần `fonttools`, `brotli`).
+1. Wordmark outlines (only when the font or the name changes). The lettering is Geist SemiBold (SIL OFL 1.1, the same font as the UI), shaped with the font's own kerning plus -2% em tracking. Needs `fonttools`, `brotli` and `uharfbuzz`:
 
-## Màu
+   ```bash
+   python3 -m venv /tmp/brand-venv && /tmp/brand-venv/bin/pip install fonttools brotli uharfbuzz
+   /tmp/brand-venv/bin/python assets/brand/src/glyphs.py crates/od-ui/vendor/fonts/Geist-Variable.woff2 Contour 600 > assets/brand/src/contour-glyphs.json
+   ```
 
-Mark dùng đúng accent của design system (`docs/design-system.md`), không thêm màu mới.
+2. SVGs (standard library only):
 
-| Vai trò | Light | Dark |
+   ```bash
+   python3 assets/brand/src/build.py
+   ```
+
+3. PNGs, the Tauri icon set (`icon.icns` via `iconutil`, macOS only), `icon.ico` and the UI favicon. Needs Playwright from `crates/od-ui/e2e` (`npm ci` there first). Only needed when the mark or the app icon changes:
+
+   ```bash
+   (cd crates/od-ui/e2e && node ../../../assets/brand/src/render.mjs)
+   ```
+
+## Colour
+
+The mark uses exactly the design system accent (`docs/design-system.md`); no new colours.
+
+| Role | Light | Dark |
 |---|---|---|
 | Mark | `#2a7560` (`--color-accent`) | `#4fae8c` |
-| Chữ wordmark | `#1c1b18` (`--color-text`) | `#edebe5` |
-| Nền icon app | gradient dọc `#358a71` → `#1f5f4d`, mark trắng | như light |
+| Wordmark text | `#1c1b18` (`--color-text`) | `#edebe5` |
+| App icon background | vertical gradient `#358a71` → `#1f5f4d`, white mark | same as light |
 
-## Hình học và khoảng trống
+## Geometry and clear space
 
-- Lưới 48. Nét dày 3.6 (bản small 4.6), đầu nét và góc gập bo tròn.
-- Khoảng trống tối thiểu quanh mark: **1/4 chiều cao mark** mỗi phía. Wordmark: bằng chiều cao chữ "N".
-- Cỡ nhỏ nhất: mark 16 px (dùng bản small), wordmark cao 20 px.
-- Icon app: thân 824×824 trong khung 1024, lề 100 px cho bóng đổ, mark chiếm khoảng 50% thân.
+- 48 grid. Stroke width 3.6 (4.6 for the small version), round caps and round fold corners.
+- Wordmark: cap height 24 grid units, baseline on the cursor's lowest point (y 36), letters start 18 units after the mark.
+- Minimum clear space around the mark: **1/4 of the mark height** on each side. Wordmark: the height of the letter "C".
+- Minimum size: mark 16 px (use the small version), wordmark 20 px tall.
+- App icon: 824×824 body in a 1024 frame, 100 px margin for the shadow, mark fills about 50% of the body.
 
-## Cách dùng
+## Usage
 
-- Sidebar và onboarding: mark đơn sắc trên ô accent (`brand_mark()` trong `crates/od-ui/src/app/mod.rs`).
-- Tài liệu, README: wordmark (`net-wordmark.svg`), nền tối dùng bản `-dark`.
-- Một màu duy nhất (in, dập nổi): bản `-mono`.
+- Sidebar and onboarding: monochrome mark on an accent tile (`brand_mark()` in `crates/od-ui/src/app/mod.rs`).
+- Docs, README: the wordmark (`contour-wordmark.svg`); on dark backgrounds use the `-dark` version.
+- Single-colour use (print, embossing): the `-mono` version.
 
-## Không nên
+## Don'ts
 
-- Không đổi màu mark sang màu khác accent, không thêm gradient lên mark (gradient chỉ là nền icon app).
-- Không xoay, kéo méo, đổ bóng hay viền thêm cho mark.
-- Không tách khung và con trỏ thành hai hình; ý của mark là một nét liền.
-- Không đặt mark accent lên nền accent hoặc nền nhiều chi tiết; dùng bản mono trắng.
-- Không viết tên thành "NET", "Net" hay "nét" trong UI; luôn là "Nét".
-- Không dùng tên hoặc logo OpenDesign cho sản phẩm này.
+- Do not recolour the mark to anything other than the accent, and do not put a gradient on the mark (the gradient is only the app icon background).
+- Do not rotate, distort, or add shadows or outlines to the mark.
+- Do not split the frame and the cursor into two shapes; the point of the mark is one continuous contour line.
+- Do not place the accent mark on an accent or busy background; use the white mono version.
+- Do not retype the wordmark in a live font; use the outlined SVG.
+- Do not use the OpenDesign name or logo for this product.

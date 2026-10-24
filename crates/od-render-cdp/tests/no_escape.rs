@@ -6,9 +6,11 @@
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
+mod common;
+
 use od_export::image::decode_rgb;
 use od_export::{CaptureOptions, RenderTarget, Renderer};
-use od_render_cdp::{CdpRenderer, find_chrome};
+use od_render_cdp::find_chrome;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -25,7 +27,7 @@ async fn page_cannot_frame_local_files_or_reach_ip_literals() {
         eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
         return;
     }
-    let renderer = CdpRenderer::with_executable(find_chrome().expect("Chrome is required"));
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
 
     // A file outside the export: solid red if it ever shows.
     let outside = tempfile::tempdir().unwrap();

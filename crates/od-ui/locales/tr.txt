@@ -1,4 +1,4 @@
-# Nét UI strings: Türkçe (tr). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: Türkçe (tr). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = Ana sayfa
 NavProjects = Projeler
@@ -223,7 +223,7 @@ NotifyFailedBody = Görev bir hatayla sona erdi.
 NotifyTestBody = Bildirimler çalışıyor.
 ProjectLocations = Proje konumları
 ProjectLocationsHint = Proje klasörlerini barındıran çalışma dizinleri. Her yeni proje, varsayılan dizinin içinde kendi klasörünü alır.
-BuiltInLocation = Nét projeleri
+BuiltInLocation = Contour projeleri
 DefaultLocation = Varsayılan
 MakeDefault = Varsayılan yap
 AddFolder = Klasör ekle
@@ -324,14 +324,14 @@ TplRegression = Regresyon takibi
 TplRegressionDesc = Kabul edilen işe göre regresyonları işaretle.
 # Integrations
 NavIntegrations = Entegrasyonlar
-IntegrationsIntro = Agent için harici araçlar ve diğer kodlama agent'larının içinde Nét.
+IntegrationsIntro = Agent için harici araçlar ve diğer kodlama agent'larının içinde Contour.
 ExternalTools = Harici araçlar
-ConnectAgents = Nét'ı kodlama agent'ınıza bağlayın
+ConnectAgents = Contour'ı kodlama agent'ınıza bağlayın
 ConnectAgentsShort = Kodlama agent'ları
-ConnectAgentsHint = Nét MCP sunucusunu başka bir agent'a kaydedin; tasarımlarınızı okuyup düzenleyebilsin.
+ConnectAgentsHint = Contour MCP sunucusunu başka bir agent'a kaydedin; tasarımlarınızı okuyup düzenleyebilsin.
 UseEverywhere = Her yerde kullan
 UseEverywhereShort = CLI, HTTP, MCP
-UseEverywhereHint = Nét'ı terminalden, bir betikten veya başka bir agent'tan yönetin.
+UseEverywhereHint = Contour'ı terminalden, bir betikten veya başka bir agent'tan yönetin.
 EverywhereCli = CLI · od
 EverywhereCliBody = Terminalden daemon'ı başlatın, projeleri listeleyin, agent turu çalıştırın ve dışa aktarın.
 EverywhereMcp = MCP sunucusu
@@ -402,7 +402,7 @@ GateByok = Devam etmek için testi geçen bir sağlayıcıyı kaydedin.
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = Kodlama agent'ınızı seçin
-OnboardingIntro = Nét, bu bilgisayarda kurulu bir kodlama agent'ını yönetir. Agent'ın kendi sağlayıcısına gönderdikleri dışında hiçbir şey bilgisayarınızdan çıkmaz.
+OnboardingIntro = Contour, bu bilgisayarda kurulu bir kodlama agent'ını yönetir. Agent'ın kendi sağlayıcısına gönderdikleri dışında hiçbir şey bilgisayarınızdan çıkmaz.
 DetectingAgents = Agent'lar algılanıyor…
 AgentDetectionUnavailable = Agent algılama kullanılamıyor: {0}
 NoAgentsFound = Agent bulunamadı. Claude Code veya Codex kurup yenileyin.
@@ -1328,7 +1328,7 @@ ShortcutMention = Dosya, plugin, skill veya MCP sunucusundan bahset
 ShortcutSlash = Komutlar (satır başında)
 # / The current language's text for `key`.
 # / Content text (template and skill descriptions, copied from the upstream
-# / app) with the upstream product name swapped for Nét. The files keep
+# / app) with the upstream product name swapped for Contour. The files keep
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
@@ -1387,7 +1387,7 @@ GenuiTierProject = proje
 GenuiTierConversation = konuşma
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = DeepSeek Harness kurulumu
-DshSetupDescription = Nét, dsh CLI'ı bu bilgisayarda open-design profiliyle çalıştırır. İkisini de kurun, sonra yeniden algılayın.
+DshSetupDescription = Contour, dsh CLI'ı bu bilgisayarda open-design profiliyle çalıştırır. İkisini de kurun, sonra yeniden algılayın.
 DshStepCli = 1. dsh CLI'ı kurun
 DshCliFound = dsh bulundu: {0}
 DshStepProfile = 2. open-design profilini ekleyin
@@ -1402,7 +1402,7 @@ DshSetupRequired = Bağlantı kurulumu gerekli
 FirstArtifactTitle = İlk tasarımınız hazır
 FirstArtifactBody = Önizlemede doğrudan düzenleyin ve not ekleyin, memnun kalınca dışa aktarın.
 FirstArtifactDismiss = Anladım
-WorkspaceRecovering = Nét bağlantısı kesildi. Otomatik olarak yeniden bağlanılıyor…
+WorkspaceRecovering = Contour bağlantısı kesildi. Otomatik olarak yeniden bağlanılıyor…
 ToolManualEdit = Öğeyi düzenle
 ManualEditHint = Önizlemede bir öğeye tıklayın veya katman seçip değiştirin. Her değişiklik bir sürüm olarak kaydedilir.
 CommentsTab = Tüm yorumlar

@@ -1,4 +1,4 @@
-# Nét UI strings: Español (España) (es-ES). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: Español (España) (es-ES). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = Inicio
 NavProjects = Proyectos
@@ -224,7 +224,7 @@ NotifyFailedBody = La tarea terminó con un error.
 NotifyTestBody = Las notificaciones funcionan.
 ProjectLocations = Ubicaciones de proyectos
 ProjectLocationsHint = Carpetas base que contienen proyectos. Cada proyecto nuevo tiene su propia carpeta dentro de la base predeterminada.
-BuiltInLocation = Proyectos de Nét
+BuiltInLocation = Proyectos de Contour
 DefaultLocation = Predeterminada
 MakeDefault = Hacer predeterminada
 AddFolder = Añadir carpeta
@@ -325,14 +325,14 @@ TplRegression = Vigilar regresiones
 TplRegressionDesc = Señala regresiones respecto al trabajo aceptado.
 # Integrations
 NavIntegrations = Integraciones
-IntegrationsIntro = Herramientas externas para el agente y Nét dentro de otros agentes de programación.
+IntegrationsIntro = Herramientas externas para el agente y Contour dentro de otros agentes de programación.
 ExternalTools = Herramientas externas
-ConnectAgents = Conecta Nét con tu agente de programación
+ConnectAgents = Conecta Contour con tu agente de programación
 ConnectAgentsShort = Agentes de código
-ConnectAgentsHint = Registra el servidor MCP de Nét en otro agente para que pueda leer y editar tus diseños.
+ConnectAgentsHint = Registra el servidor MCP de Contour en otro agente para que pueda leer y editar tus diseños.
 UseEverywhere = Úsalo donde quieras
 UseEverywhereShort = CLI, HTTP, MCP
-UseEverywhereHint = Controla Nét desde un terminal, un script u otro agente.
+UseEverywhereHint = Controla Contour desde un terminal, un script u otro agente.
 EverywhereCli = CLI · od
 EverywhereCliBody = Inicia el daemon, lista proyectos, ejecuta un turno del agente y exporta desde un terminal.
 EverywhereMcp = Servidor MCP
@@ -403,7 +403,7 @@ GateByok = Guarda un proveedor que haya pasado la prueba para continuar.
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = Elige tu agente de programación
-OnboardingIntro = Nét maneja un agente de programación instalado en este equipo. Nada sale de tu ordenador salvo lo que el propio agente envía a su proveedor.
+OnboardingIntro = Contour maneja un agente de programación instalado en este equipo. Nada sale de tu ordenador salvo lo que el propio agente envía a su proveedor.
 DetectingAgents = Detectando agentes…
 AgentDetectionUnavailable = Detección de agentes no disponible: {0}
 NoAgentsFound = No se encontró ningún agente. Instala Claude Code o Codex y actualiza.
@@ -1329,7 +1329,7 @@ ShortcutMention = Mencionar un archivo, plugin, skill o servidor MCP
 ShortcutSlash = Comandos (al principio de una línea)
 # / The current language's text for `key`.
 # / Content text (template and skill descriptions, copied from the upstream
-# / app) with the upstream product name swapped for Nét. The files keep
+# / app) with the upstream product name swapped for Contour. The files keep
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
@@ -1389,7 +1389,7 @@ GenuiTierProject = proyecto
 GenuiTierConversation = conversación
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = Configurar DeepSeek Harness
-DshSetupDescription = Nét ejecuta la CLI dsh de este equipo con su perfil open-design. Instala ambos y vuelve a detectar.
+DshSetupDescription = Contour ejecuta la CLI dsh de este equipo con su perfil open-design. Instala ambos y vuelve a detectar.
 DshStepCli = 1. Instala la CLI dsh
 DshCliFound = dsh encontrado: {0}
 DshStepProfile = 2. Añade el perfil open-design
@@ -1404,7 +1404,7 @@ DshSetupRequired = Configuración de conexión necesaria
 FirstArtifactTitle = Tu primer diseño está listo
 FirstArtifactBody = Edítalo y anótalo en la vista previa y expórtalo cuando te guste.
 FirstArtifactDismiss = Entendido
-WorkspaceRecovering = Conexión con Nét interrumpida. Reconectando automáticamente…
+WorkspaceRecovering = Conexión con Contour interrumpida. Reconectando automáticamente…
 ToolManualEdit = Editar elemento
 ManualEditHint = Haz clic en un elemento de la vista previa o elige una capa y cámbialo. Cada cambio se guarda como versión.
 CommentsTab = Todos los comentarios

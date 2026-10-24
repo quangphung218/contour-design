@@ -10,7 +10,7 @@ pub const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:7456";
 
 #[derive(Debug, thiserror::Error)]
 pub enum DaemonError {
-    #[error("cannot reach the OpenDesign daemon at {0} (start it with `od`)")]
+    #[error("cannot reach the Contour daemon at {0} (start it with `od`)")]
     Unreachable(String),
     #[error("daemon {status} on {path}: {message}")]
     Status {

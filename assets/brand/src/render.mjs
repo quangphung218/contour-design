@@ -28,20 +28,20 @@ const pick = (base, size) => (size <= 32 ? `${base}-small.svg` : `${base}.svg`);
 
 mkdirSync(join(brand, 'png'), { recursive: true });
 for (const size of SIZES) {
-  await png(pick('net-mark', size), size, join(brand, 'png', `net-mark-${size}.png`));
-  await png('net-mark-dark.svg', size, join(brand, 'png', `net-mark-dark-${size}.png`));
-  await png(pick('net-app-icon', size), size, join(brand, 'png', `net-app-icon-${size}.png`));
+  await png(pick('contour-mark', size), size, join(brand, 'png', `contour-mark-${size}.png`));
+  await png('contour-mark-dark.svg', size, join(brand, 'png', `contour-mark-dark-${size}.png`));
+  await png(pick('contour-app-icon', size), size, join(brand, 'png', `contour-app-icon-${size}.png`));
 }
 
 // Tauri icon set (apps/desktop/icons) from the app icon renders.
 const icons = join(root, 'apps/desktop/icons');
-const p = (s) => join(brand, 'png', `net-app-icon-${s}.png`);
+const p = (s) => join(brand, 'png', `contour-app-icon-${s}.png`);
 copyFileSync(p(32), join(icons, '32x32.png'));
 copyFileSync(p(128), join(icons, '128x128.png'));
 copyFileSync(p(256), join(icons, '128x128@2x.png'));
 copyFileSync(p(512), join(icons, 'icon.png'));
 
-const set = join(tmpdir(), `net-${process.pid}.iconset`);
+const set = join(tmpdir(), `contour-${process.pid}.iconset`);
 mkdirSync(set, { recursive: true });
 for (const s of [16, 32, 128, 256, 512]) {
   copyFileSync(p(s), join(set, `icon_${s}x${s}.png`));
@@ -65,7 +65,7 @@ ico.forEach(([s, data], i) => {
 writeFileSync(join(icons, 'icon.ico'), Buffer.concat([head, ...ico.map(([, d]) => d)]));
 
 // od-ui favicon (served by the daemon next to the bundle) 
-copyFileSync(join(brand, 'net-favicon.svg'), join(root, 'crates/od-ui/assets/favicon.svg'));
-await png('net-favicon.svg', 32, join(root, 'crates/od-ui/assets/favicon-32.png'));
+copyFileSync(join(brand, 'contour-favicon.svg'), join(root, 'crates/od-ui/assets/favicon.svg'));
+await png('contour-favicon.svg', 32, join(root, 'crates/od-ui/assets/favicon-32.png'));
 await browser.close();
 console.log('rendered', SIZES.length * 3, 'PNGs, icon.icns, icon.ico, favicon');

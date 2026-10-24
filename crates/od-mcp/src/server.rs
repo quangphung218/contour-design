@@ -22,8 +22,8 @@ pub const IDLE_EXIT: Duration = Duration::from_secs(30 * 60);
 
 pub const FOCUS_URI: &str = "od://focus/active";
 
-const INSTRUCTIONS: &str = "OpenDesign (local). Read and write design projects, and commission OpenDesign's own agent with start_run. \
-Most tools take an optional project; when omitted they use the project the user has open in OpenDesign (active for about 5 minutes after the last interaction). \
+const INSTRUCTIONS: &str = "Contour (local). Read and write design projects, and commission Contour's own agent with start_run. \
+Most tools take an optional project; when omitted they use the project the user has open in Contour (active for about 5 minutes after the last interaction). \
 For a new artifact: collect_brief, confirm_brief, create_project, start_run, then poll get_run.";
 
 /// Seconds since start of the last request, for the idle exit.
@@ -89,7 +89,7 @@ impl OdMcp {
     async fn resources(&self) -> Vec<Value> {
         let mut out = vec![json!({
             "uri": FOCUS_URI,
-            "name": "Active OpenDesign project",
+            "name": "Active Contour project",
             "description": "Project and file the user has open right now (JSON).",
             "mimeType": "application/json",
         })];

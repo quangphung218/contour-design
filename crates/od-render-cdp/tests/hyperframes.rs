@@ -8,12 +8,14 @@
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
+mod common;
+
 use od_export::hyperframes::composition;
 use od_export::image::{decode_rgb, png_size};
 use od_export::renderer::frame_file_name;
 use od_export::{FrameOptions, RenderTarget, Renderer};
 use od_render_cdp::ffmpeg::{encode_mp4, find_ffmpeg};
-use od_render_cdp::{CdpRenderer, find_chrome};
+use od_render_cdp::find_chrome;
 use serde_json::Value;
 
 /// Odd size on purpose: the encoder pads to 642×362. The timeline is a
@@ -91,7 +93,7 @@ async fn composition_becomes_a_60_frame_h264_mp4() {
         eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
         return;
     }
-    let renderer = CdpRenderer::with_executable(find_chrome().expect("Chrome is required"));
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
     let ffmpeg = find_ffmpeg().expect("ffmpeg is required");
     let dir = tempfile::tempdir().unwrap();
     let html = dir.path().join("index.html");
@@ -160,7 +162,7 @@ async fn a_composition_without_timelines_does_not_wait_15_s() {
         eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
         return;
     }
-    let renderer = CdpRenderer::with_executable(find_chrome().expect("Chrome is required"));
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
     let dir = tempfile::tempdir().unwrap();
     let html = dir.path().join("index.html");
     std::fs::write(&html, CSS_ONLY).unwrap();

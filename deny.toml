@@ -1,0 +1,54 @@
+# cargo-deny: licenses, security advisories, duplicate/banned crates, sources.
+# Run with `make deny`. CI runs the same check.
+
+[graph]
+all-features = false
+
+[advisories]
+# RustSec advisories for crates in Cargo.lock. Vulnerabilities fail the check;
+# "unmaintained" only fails for crates the workspace depends on directly
+# (paste, proc-macro-error*, unic-* arrive through Leptos and GTK).
+unmaintained = "workspace"
+yanked = "deny"
+# Each ignore names the only path that pulls the crate in. Drop it once
+# Tauri moves to a fixed version (cargo update -p <crate> && make deny).
+ignore = [
+    # quick-xml 0.38 via plist (Tauri): parses the app's own Info.plist and
+    # bundle metadata, never user input. Fixed in quick-xml 0.41.
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml via plist/Tauri, trusted build-time input only" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml via plist/Tauri, trusted build-time input only" },
+    # time 0.3.45 via cookie and plist (Tauri). The fix (0.3.47) needs a newer
+    # Rust than the workspace MSRV 1.85; no RFC 2822 parsing of user input.
+    { id = "RUSTSEC-2026-0009", reason = "time via Tauri cookie/plist, no RFC 2822 parsing of user input; fix needs MSRV > 1.85" },
+]
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+]
+
+[licenses.private]
+# Workspace crates are not published.
+ignore = true
+
+[bans]
+multiple-versions = "allow"
+# Workspace crates depend on each other by path only (never published).
+wildcards = "allow"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

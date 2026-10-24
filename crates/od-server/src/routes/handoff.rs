@@ -40,7 +40,7 @@ pub fn handoff_prompt(project: &Project, dir: &str, files: &[ProjectFile]) -> St
         });
     let mut out = format!(
         "Implement the design \"{}\" in this codebase.\n\n\
-         The design was made with Nét. Its files are in `{dir}`.\n",
+         The design was made with Contour. Its files are in `{dir}`.\n",
         project.name
     );
     if let Some(entry) = entry {

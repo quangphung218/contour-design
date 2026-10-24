@@ -25,7 +25,7 @@ pub fn summary_text(
     configured: Option<&str>,
     runs: &[od_contracts::RunInfo],
 ) -> String {
-    let mut out = String::from("### Nét diagnostics\n\n");
+    let mut out = String::from("### Contour diagnostics\n\n");
     let _ = writeln!(out, "- Version: {}", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(
         out,
