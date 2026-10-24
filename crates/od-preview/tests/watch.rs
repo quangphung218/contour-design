@@ -6,6 +6,11 @@
 use od_preview::{ChangeKind, ProjectEvent, ProjectEvents, Subscription, WatchOptions};
 use std::time::{Duration, Instant};
 
+/// One test at a time: these time a watcher, and six of them at once on a
+/// small CI runner took the median write→event latency from ~220 ms to
+/// ~300+ ms, with FSEvents still delivering each write within 20 ms.
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn native() -> ProjectEvents {
     ProjectEvents::new(WatchOptions {
         force_polling: false,
@@ -34,6 +39,7 @@ async fn quiet(sub: &mut Subscription) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn write_reaches_subscriber_within_300ms() {
+    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let hub = native();
     let mut sub = hub.subscribe("p1", dir.path()).unwrap();
@@ -76,6 +82,7 @@ async fn write_reaches_subscriber_within_300ms() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn burst_of_writes_settles_into_one_event() {
+    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let hub = native();
     let mut sub = hub.subscribe("p1", dir.path()).unwrap();
@@ -109,6 +116,7 @@ async fn burst_of_writes_settles_into_one_event() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unlink_nested_paths_and_ignored_files() {
+    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("deck")).unwrap();
     std::fs::create_dir_all(dir.path().join(".open-design")).unwrap();
@@ -137,6 +145,7 @@ async fn unlink_nested_paths_and_ignored_files() {
 /// that open, and a reload per read would reload the preview forever.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reading_a_file_is_not_a_change() {
+    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("index.html"), "x").unwrap();
     let hub = native();
@@ -155,6 +164,7 @@ async fn reading_a_file_is_not_a_change() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn watcher_is_shared_and_closed_with_last_subscriber() {
+    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let hub = native();
     let mut a = hub.subscribe("p1", dir.path()).unwrap();
@@ -196,6 +206,7 @@ async fn watcher_is_shared_and_closed_with_last_subscriber() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn polling_fallback_reports_changes() {
+    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let hub = ProjectEvents::new(WatchOptions {
         force_polling: true,
