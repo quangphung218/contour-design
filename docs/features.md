@@ -356,6 +356,7 @@ daemon, `od <command> --help` lists the options.
 | `OD_RESOURCE_ROOT` | the `content/` folder (skills, templates, design systems) | next to the binary, then the source tree |
 | `OD_UI_DIST` | built UI folder | `ui/` next to the binary, then `crates/od-ui/dist` |
 | `OD_CHROME_PATH` | Chrome/Edge/Chromium for export | found automatically |
+| `OD_CHROME_NO_SANDBOX` | `1` starts Chrome without its own sandbox; only when Contour itself already runs inside one (`sandbox-exec`, some containers) | off |
 | `OD_FFMPEG_PATH` | `ffmpeg` for MP4 | `PATH`, Homebrew |
 | `OD_TERMINAL_SHELL` | shell of terminal tabs | `$SHELL` |
 | `OD_MEDIA_CONCURRENCY` | media tasks in parallel | `2` |

@@ -29,6 +29,7 @@ tracing-subscriber.workspace = true
 axum.workspace = true
 lopdf.workspace = true
 od-export.workspace = true
+od-render-cdp.workspace = true
 od-runs.workspace = true
 od-runtime.workspace = true
 od-store.workspace = true

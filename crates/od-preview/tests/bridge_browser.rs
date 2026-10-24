@@ -92,7 +92,12 @@ impl Harness {
             return None;
         };
         let profile = tempfile::tempdir().unwrap();
-        let config = BrowserConfig::builder()
+        let mut config = BrowserConfig::builder();
+        // Inside another sandbox (sandbox-exec) Chrome cannot start its own.
+        if !od_render_cdp::chrome_sandbox_works(&chrome) {
+            config = config.no_sandbox();
+        }
+        let config = config
             .chrome_executable(chrome)
             .user_data_dir(profile.path())
             .new_headless_mode()

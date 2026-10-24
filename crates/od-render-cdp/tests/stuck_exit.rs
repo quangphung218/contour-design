@@ -9,8 +9,10 @@
 #![cfg(unix)]
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
+mod common;
+
 use od_export::{DeckMode, RenderTarget, Renderer};
-use od_render_cdp::{CdpRenderer, find_chrome};
+use od_render_cdp::find_chrome;
 use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
 
@@ -35,7 +37,7 @@ async fn a_browser_that_never_exits_does_not_hang_the_export() {
     let page = dir.path().join("page.html");
     std::fs::write(&page, "<!doctype html><h1>Stuck</h1>").unwrap();
 
-    let renderer = CdpRenderer::with_executable(&wrapper);
+    let renderer = common::renderer(&wrapper);
     let started = Instant::now();
     let pdf = tokio::time::timeout(
         Duration::from_secs(90),

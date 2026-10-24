@@ -8,8 +8,10 @@
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
+mod common;
+
 use od_export::{DeckMode, RenderTarget, Renderer};
-use od_render_cdp::{CdpRenderer, find_chrome};
+use od_render_cdp::find_chrome;
 use std::time::Duration;
 
 const INNER: &str = "OD_TMP_CLEAN_INNER";
@@ -80,7 +82,7 @@ async fn inner_renders() {
     if std::env::var_os(INNER).is_none() {
         return;
     }
-    let renderer = CdpRenderer::with_executable(find_chrome().expect("Chrome is required"));
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
     let dir = tempfile::tempdir().unwrap();
     let page = dir.path().join("page.html");
     std::fs::write(&page, "<!doctype html><h1>Hi</h1>").unwrap();

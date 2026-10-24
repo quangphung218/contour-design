@@ -95,6 +95,20 @@ Install Chrome, or point at a browser with `OD_CHROME_PATH`:
 export OD_CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ```
 
+### Export hangs, then says Chrome "did not show the page within 60 s"
+
+Chrome started but could not start its own sandbox, which happens when
+Contour or `od` itself runs inside another sandbox (macOS `sandbox-exec`,
+some containers). Chrome then prints `Failed to initialize sandbox` and
+never renders. Only in that setup, let Chrome run without its sandbox:
+
+```bash
+OD_CHROME_NO_SANDBOX=1 od daemon start
+```
+
+Do not set it elsewhere: Chrome's sandbox is what isolates the HTML an
+agent wrote while it is rendered.
+
 ### MP4 export fails
 
 It needs `ffmpeg` on `PATH`, in Homebrew's folder, or at `OD_FFMPEG_PATH`:
