@@ -63,6 +63,15 @@ jobs:
       - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: trunk
+      # The debug build of every test binary outgrows the ~14 GB free on the
+      # Linux runner ("No space left on device"); drop toolchains we never use.
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL
+          df -h /
       - name: Linux packages
         if: runner.os == 'Linux'
         run: scripts/linux-deps.sh
@@ -149,10 +158,18 @@ jobs:
           persist-credentials: false
       - run: scripts/check-links.sh
       - run: make test-scripts
-      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
-        with:
-          tool: actionlint
-      - run: actionlint
+      # install-action no longer ships actionlint (its cargo-binstall fallback
+      # finds no such crate), so take the upstream release, checksum pinned.
+      - name: actionlint
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          tgz="actionlint_${VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/${tgz}"
+          echo "${SHA256}  ${tgz}" | sha256sum -c -
+          tar -xzf "$tgz" actionlint
+          ./actionlint
 
   commitlint:
     name: commit messages
