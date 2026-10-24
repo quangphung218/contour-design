@@ -687,3 +687,32 @@ async fn the_issue_summary_lists_facts_without_secrets() {
     assert!(!text.contains("sk-secret"), "{text}");
     assert!(v["logDir"].as_str().unwrap().ends_with("runs"));
 }
+
+#[tokio::test]
+async fn a_memory_index_that_cannot_be_written_does_not_fail_the_run() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
+    let (project, conversation) = d.project().await;
+    let patch = json!({"chatExtractionEnabled": true});
+    send(&d, reqwest::Method::PATCH, "/api/memory/config", &patch).await;
+    let index = json!({"index": "# Memory\n"});
+    let (status, _) = send(&d, reqwest::Method::PUT, "/api/memory/index", &index).await;
+    assert_eq!(status, 200);
+    let dir = d.data.join(od_store::memory_index::MEMORY_DIR);
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    turn(
+        &d,
+        &project,
+        &conversation,
+        "I prefer serif headings everywhere",
+    )
+    .await;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let memories = d.get_json("/api/memory").await;
+    assert_eq!(
+        memories["memories"].as_array().unwrap().len(),
+        1,
+        "{memories}"
+    );
+}

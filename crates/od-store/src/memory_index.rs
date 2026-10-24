@@ -8,6 +8,7 @@
 
 use crate::manage::GlobalMemory;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Folder under the data dir.
@@ -107,9 +108,25 @@ impl MemoryFiles {
             .unwrap_or_default()
     }
 
+    /// One writer at a time per memory folder: `link`/`unlink` read, edit
+    /// and write the index, and two runs may learn a fact at once.
+    fn guard(&self) -> std::sync::MutexGuard<'static, ()> {
+        type Locks = std::sync::Mutex<HashMap<PathBuf, &'static std::sync::Mutex<()>>>;
+        static LOCKS: std::sync::OnceLock<Locks> = std::sync::OnceLock::new();
+        let lock = *LOCKS
+            .get_or_init(Locks::default)
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(self.dir.clone())
+            .or_insert_with(|| Box::leak(Box::default()));
+        lock.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// # Errors
     /// I/O errors.
     pub fn write_config(&self, config: &MemoryConfig) -> std::io::Result<()> {
+        let _g = self.guard();
         std::fs::create_dir_all(&self.dir)?;
         let bytes = serde_json::to_vec_pretty(config).map_err(std::io::Error::other)?;
         write_atomic(&self.dir.join(CONFIG_FILE), &bytes)
@@ -131,6 +148,11 @@ impl MemoryFiles {
     /// # Errors
     /// I/O errors.
     pub fn write_index(&self, index: &str) -> std::io::Result<()> {
+        let _g = self.guard();
+        self.write_index_locked(index)
+    }
+
+    fn write_index_locked(&self, index: &str) -> std::io::Result<()> {
         std::fs::create_dir_all(&self.dir)?;
         write_atomic(&self.dir.join(INDEX_FILE), index.as_bytes())
     }
@@ -140,8 +162,9 @@ impl MemoryFiles {
     /// # Errors
     /// I/O errors.
     pub fn link(&self, entry: &GlobalMemory) -> std::io::Result<()> {
+        let _g = self.guard();
         match self.stored_index() {
-            Some(index) => self.write_index(&with_line(&index, entry)),
+            Some(index) => self.write_index_locked(&with_line(&index, entry)),
             None => Ok(()),
         }
     }
@@ -151,17 +174,25 @@ impl MemoryFiles {
     /// # Errors
     /// I/O errors.
     pub fn unlink(&self, id: &str) -> std::io::Result<()> {
+        let _g = self.guard();
         match self.stored_index() {
-            Some(index) => self.write_index(&without_line(&index, id)),
+            Some(index) => self.write_index_locked(&without_line(&index, id)),
             None => Ok(()),
         }
     }
 }
 
+/// Writes through a temp file of its own (pid + counter), so a writer
+/// never renames another one's half-written file.
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(tmp, path)
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("{}.{n}.tmp", std::process::id()));
+    let written = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
 }
 
 /// The index line of `entry`.
@@ -434,6 +465,31 @@ mod tests {
             text: text.to_owned(),
             created_at: 0,
         }
+    }
+
+    #[test]
+    fn concurrent_links_all_land_in_the_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let files = MemoryFiles::in_data_dir(tmp.path());
+        files.write_index("# Memory\n").unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let threads: Vec<_> = (0..8)
+            .map(|i| {
+                let (files, barrier) = (files.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    (0..5)
+                        .map(|j| files.link(&entry(&format!("e{i}-{j}"), "user", "fact")))
+                        .collect::<std::io::Result<Vec<()>>>()
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap().unwrap();
+        }
+        let index = files.stored_index().unwrap();
+        let linked = index.lines().filter_map(linked_id).count();
+        assert_eq!(linked, 40, "{index}");
     }
 
     #[test]

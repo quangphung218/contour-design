@@ -89,7 +89,11 @@ pub fn prepare_turn(s: &Store, project_id: &str, message: &str) -> Result<TurnMe
             // A full list is not this turn's failure.
             if !known {
                 if let Ok(entry) = s.add_global_memory(&kind, &text) {
-                    files.link(&entry)?;
+                    // The fact is saved; an index that could not take its
+                    // line is not this run's failure.
+                    if let Err(e) = files.link(&entry) {
+                        tracing::warn!(error = %e, id = %entry.id, "linking a learned memory in MEMORY.md");
+                    }
                     learned += 1;
                 }
             }
