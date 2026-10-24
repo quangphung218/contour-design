@@ -7,8 +7,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
-repository = "https://github.com/quangphung218/net-design"
-homepage = "https://github.com/quangphung218/net-design"
+repository = "https://github.com/quangphung218/contour-design"
+homepage = "https://github.com/quangphung218/contour-design"
 
 [workspace.dependencies]
 od-contracts = { path = "crates/od-contracts" }

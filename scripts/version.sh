@@ -15,6 +15,8 @@ old="$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsu
 [ "$old" != "$v" ] || { echo "already at $v" >&2; exit 1; }
 grep -q '^## \[Unreleased\]' CHANGELOG.md || { echo "CHANGELOG.md has no '## [Unreleased]' section" >&2; exit 1; }
 grep -q "^## \[$v\]" CHANGELOG.md && { echo "CHANGELOG.md already has a [$v] section" >&2; exit 1; }
+unreleased="$(awk '/^## \[Unreleased\]/{p=1;next} p && (/^## \[/ || /^\[[^]]+\]: /){exit} p' CHANGELOG.md)"
+[ -n "$(printf '%s' "$unreleased" | tr -d '[:space:]')" ] || { echo "CHANGELOG.md: nothing under [Unreleased] to release" >&2; exit 1; }
 
 # Cargo.toml: only the version line inside [workspace.package].
 awk -v v="$v" '/^\[workspace.package\]/{p=1} /^\[/ && !/^\[workspace.package\]/{p=0}
@@ -28,11 +30,11 @@ cargo update --workspace --offline --quiet 2>/dev/null || cargo update --workspa
 # CHANGELOG.md: new empty Unreleased on top, the old one becomes [v] - today,
 # and the compare links at the bottom move along.
 today="$(date +%Y-%m-%d)"
-repo="https://github.com/quangphung218/net-design"
+repo="https://github.com/quangphung218/contour-design"
 awk -v v="$v" -v d="$today" -v old="$old" -v repo="$repo" '
   /^## \[Unreleased\]/ && !done { print; print ""; print "## [" v "] - " d; done=1; next }
   /^\[Unreleased\]:/ { print "[Unreleased]: " repo "/compare/v" v "...HEAD"; print "[" v "]: " repo "/compare/v" old "...v" v; next }
   { print }' CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 
 echo "version $old -> $v (Cargo.toml, Cargo.lock, CHANGELOG.md)"
-echo "next: review the [$v] notes, commit 'chore(release): v$v', then git tag -a v$v -m v$v"
+echo "next: review the [$v] notes, commit 'build(release): v$v', merge, then tag v$v (docs/release.md)"
