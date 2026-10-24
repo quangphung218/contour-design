@@ -288,7 +288,7 @@ mod tests {
     }
 
     /// The old folder is wherever builds before the rename put it (main at
-    /// f681fa2: `<HOME or XDG>/.local/share/open-design-rs` on every OS but
+    /// ac5d8d7: `<HOME or XDG>/.local/share/open-design-rs` on every OS but
     /// macOS, `./.od` without HOME), not next to the new one on Windows.
     #[test]
     fn legacy_root_is_where_old_builds_wrote() {

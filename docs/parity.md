@@ -1,18 +1,18 @@
-# Contour parity with OpenDesign — last measured on main `94dd674`, updated on branch `final-polish`
+# Contour parity with OpenDesign — last measured on main `f4c455b`, updated on branch `final-polish`
 
-> **`final-polish` update (2026-10-24): 100%.** The last two rows are done: #119 Export JSX (preview renders `.jsx/.tsx`, plus "Export React component as HTML", compiled in-page with bundled React 18.3.1 + Sucrase, no CDN) is now 100; #177 BYOK presets reach 26/26 with Azure OpenAI (protocol `azure`: resource endpoint, deployment, `api-version`, key in `api-key`). Evidence is in those two rows and in the "Wave C live run results" section. Everything below keeps the figures measured at `94dd674`, except the summary table, the "Quick read" section and those two rows.
+> **`final-polish` update (2026-10-24): 100%.** The last two rows are done: #119 Export JSX (preview renders `.jsx/.tsx`, plus "Export React component as HTML", compiled in-page with bundled React 18.3.1 + Sucrase, no CDN) is now 100; #177 BYOK presets reach 26/26 with Azure OpenAI (protocol `azure`: resource endpoint, deployment, `api-version`, key in `api-key`). Evidence is in those two rows and in the "Wave C live run results" section. Everything below keeps the figures measured at `f4c455b`, except the summary table, the "Quick read" section and those two rows.
 
-- Rust version: `main` HEAD `94dd674` (merge `waveC-integrate`, 2026-10-24): wave C comprises C1-preview, C2-chat-home, C3-runtimes, C4-depth.
-- Two baselines: **40.7%** (`docs/parity.md` at `8c9df6a`, 215 scored rows) and **90.9%** (version `eb4eee2` measured at `dc7938a` after wave B, 214 scored rows). Same catalogue, same scoring, same row order.
+- Rust version: `main` HEAD `f4c455b` (merge `waveC-integrate`, 2026-10-24): wave C comprises C1-preview, C2-chat-home, C3-runtimes, C4-depth.
+- Two baselines: **40.7%** (`docs/parity.md` at `53f04bc`, 215 scored rows) and **90.9%** (version `cf5effa` measured at `c4fb1c7` after wave B, 214 scored rows). Same catalogue, same scoring, same row order.
 - Original app: `~/Documents/GitHub/open-design` (read-only).
 - Scoring: **100** complete, **50** partial (notes what is missing), **0** absent, **N/A** deliberately dropped. A group's % is the mean score, excluding N/A. Every row has equal weight. Available only via API/CLI, not in the UI: 50.
 - Catalogue changes: per the settled decisions (Connectors, Orbit, Figma, marketplace, pet, browser tab, Web Clipper, xAI OAuth, auto-update are N/A), **7 rows became N/A**: #18 Pet, #43 Figma import, #108 Browser tab, #142 Registry/marketplace, #191 Web Clipper, #199 Orbit, #209 Pet window. Connectors (#185) and auto-update (#210) were already N/A. Rows #3 (action chips) and #14 (entry tabs) are partly Figma/Connectors: that part is dropped and the row is scored on the rest. Hence "Now" scores **207 rows**, versus 214 in wave B.
-- Live run: debug `od` daemon (`~/.cache/odrs-target-open-design-rs/debug/od`, built 08:52 from `94dd674`, `CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2`) + UI bundle built with `trunk build --dist` into the run directory + mock agent, with a temporary data dir that each scenario creates and deletes. Ran the repo's 10 Playwright scenarios (exactly as `crates/od-ui/e2e/run.sh`) from a copy outside the repo, sequentially: studio, design-system, library, manage, chat, files, preview, c2, c3-runtimes, c4-depth. **10/10 PASS**, `externalRequests: 0` in every scenario that counts it. 161 screenshots (light and dark) in `shots/`, logs in `logs/`.
-- Evidence marked `e2e <scenario> step N` was actually run in this measurement; the rest is code reading (file:line at `94dd674`). Line numbers for rows whose score did not change were mapped automatically from `dc7938a` to `94dd674` via `git diff` hunks (114 rows had shifted line numbers); 22 spots were checked by hand.
+- Live run: debug `od` daemon (`~/.cache/odrs-target-open-design-rs/debug/od`, built 08:52 from `f4c455b`, `CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2`) + UI bundle built with `trunk build --dist` into the run directory + mock agent, with a temporary data dir that each scenario creates and deletes. Ran the repo's 10 Playwright scenarios (exactly as `crates/od-ui/e2e/run.sh`) from a copy outside the repo, sequentially: studio, design-system, library, manage, chat, files, preview, c2, c3-runtimes, c4-depth. **10/10 PASS**, `externalRequests: 0` in every scenario that counts it. 161 screenshots (light and dark) in `shots/`, logs in `logs/`.
+- Evidence marked `e2e <scenario> step N` was actually run in this measurement; the rest is code reading (file:line at `f4c455b`). Line numbers for rows whose score did not change were mapped automatically from `c4fb1c7` to `f4c455b` via `git diff` hunks (114 rows had shifted line numbers); 22 spots were checked by hand.
 
 ## Summary
 
-| Group | Scored rows | Complete | Partial | Absent | N/A | 40.7% (`8c9df6a`) | 90.9% (wave B) | Now | Gain vs wave B |
+| Group | Scored rows | Complete | Partial | Absent | N/A | 40.7% (`53f04bc`) | 90.9% (wave B) | Now | Gain vs wave B |
 |---|---|---|---|---|---|---|---|---|---|
 | Projects | 14 | 14 | 0 | 0 | 1 | 32 | 100 | 100 | 0 |
 | Design systems | 13 | 13 | 0 | 0 | 1 | 19 | 100 | 100 | 0 |
@@ -33,7 +33,7 @@
 | **Total** | **207** | **207** | **0** | **0** | **20** | **40.7** | **90.9** | **100** | **+9.1** |
 
 Quick read:
-- **Up from 90.9% to 100%** (207/207 scored rows at 100). 16/16 groups at 100%. At `94dd674` it was 99.8%; `final-polish` finished #119.
+- **Up from 90.9% to 100%** (207/207 scored rows at 100). 16/16 groups at 100%. At `f4c455b` it was 99.8%; `final-polish` finished #119.
 - Like-for-like: dropping the 7 newly N/A rows from the wave B version puts wave B at 93.7% (19,400/207). The real gain from wave C code is **+6.1 points**; the rest comes from settling N/A.
 - **No row is below 100 any more.** #119 Export JSX has the full "Export React component as HTML", and preview renders the component as the original app does.
 - Row #177 (BYOK presets) is now 26/26: Azure OpenAI was added, so its 100 is no longer generous scoring.
@@ -47,7 +47,7 @@ Quick read:
 
 ## New rows (in the original app, missing from the old catalogue; not counted in %)
 
-| Group | Feature (original app) | Wave B | Now | Rust version at `94dd674` |
+| Group | Feature (original app) | Wave B | Now | Rust version at `f4c455b` |
 |---|---|---|---|---|
 | Studio-preview | One-time hint on the first artifact (`FirstArtifactHint.tsx`) | 0 | 100 | `crates/od-ui/src/app/first_hint.rs:61-71`; e2e preview step 1; `shots/c1/first-artifact-hint-light.png` |
 | Design systems | Missing brand font files banner (`MissingBrandFontsBanner.tsx`) | 0 | 100 | `crates/od-ui/src/app/font_banner.rs:33-42` (Upload, Keep), `crates/od-ui/src/brand_fonts.rs`; e2e c2 step 11; `shots/c2-font-banner-light.png` |
@@ -83,7 +83,7 @@ The first c4-depth run FAILED at step 1 ("timed out waiting for German Home link
 
 ## Full table
 
-| # | Group | Feature (original app) | 40.7% | 90.9% | Now | Evidence (HEAD 94dd674) / what is missing |
+| # | Group | Feature (original app) | 40.7% | 90.9% | Now | Evidence (HEAD f4c455b) / what is missing |
 |---|---|---|---|---|---|---|
 | 1 | Home | Brief box; Enter creates the project and sends the first turn | 100 | 100 | 100 | `crates/od-ui/src/app/home.rs:412` (create button), Enter sends the first turn; e2e chat step 6, studio step 2 |
 | 2 | Home | Output-type chips (Prototype, Website clone, Wireframe, Mobile app, Slide deck, Document, Image, Video, Audio, Motion, HyperFrames, WebGL, Live artifact) | 50 | 100 | 100 | 13 chips `crates/od-ui/src/intent.rs:13`; `crates/od-ui/src/app/home.rs:522,540`; e2e chat step 3; `(audit run) shots/b3-home-light.png` |

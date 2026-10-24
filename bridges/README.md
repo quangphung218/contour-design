@@ -2,7 +2,7 @@
 
 `od-bridge.js` is injected by `od-preview` at the top of every bridged preview
 document (before any author script). It is written from scratch for
-open-design-rs; nothing is copied from the original app.
+Contour; nothing is copied from the original app.
 
 The host and the bridge talk with `window.postMessage`. Every `type` starts
 with `od:`. The bridge only accepts messages whose `source` is its parent
