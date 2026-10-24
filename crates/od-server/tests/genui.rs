@@ -280,3 +280,104 @@ async fn bundled_code_migration_asks_for_a_diff_review() {
         "{ids:?}"
     );
 }
+
+#[tokio::test]
+async fn the_diff_review_never_follows_links_out_of_the_project() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude());
+    let dir = d.data.join("plugins/surface-demo");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("open-design.json"), PLUGIN).unwrap();
+    d.state.content.reload();
+    let (project, conversation) = d.project().await;
+    let root = d
+        .state
+        .store
+        .project_root(&d.state.store.get_project(&project).unwrap())
+        .unwrap()
+        .dir;
+    // The agent links `review` and `plan` to folders outside the project.
+    let outside = tempfile::tempdir().unwrap();
+    let (review, plan) = (outside.path().join("review"), outside.path().join("plan"));
+    std::fs::create_dir_all(&review).unwrap();
+    std::fs::create_dir_all(plan.join("receipts")).unwrap();
+    std::fs::write(review.join("decision.json"), "ORIGINAL").unwrap();
+    std::fs::write(
+        plan.join("receipts/step-1.json"),
+        r#"{"step":"step-1","files":["OUTSIDE-MARKER"]}"#,
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(&review, root.join("review")).unwrap();
+    std::os::unix::fs::symlink(&plan, root.join("plan")).unwrap();
+
+    let run = d
+        .start(
+            json!({ "agentId": "claude", "projectId": project, "conversationId": conversation,
+                       "message": "migrate", "pluginId": "surface-demo" }),
+        )
+        .await;
+    let events = d.events(&run.run_id, None).await;
+    let surface = events
+        .iter()
+        .find(|e| e.data["surfaceId"] == "__auto_diff_review_review")
+        .unwrap();
+    assert_eq!(
+        surface.data["payload"]["context"]["touchedFiles"],
+        json!([]),
+        "receipts outside the project are not read"
+    );
+    let res = d
+        .post(
+            &format!(
+                "/api/runs/{}/genui/__auto_diff_review_review/respond",
+                run.run_id
+            ),
+            &json!({ "value": {"decision": "accept"} }),
+        )
+        .await;
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["diffReviewBridge"]["ok"], false, "{body}");
+    assert_eq!(
+        std::fs::read_to_string(review.join("decision.json")).unwrap(),
+        "ORIGINAL"
+    );
+}
+
+#[tokio::test]
+async fn a_receipt_linked_out_of_the_project_is_not_read() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude());
+    let dir = d.data.join("plugins/surface-demo");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("open-design.json"), PLUGIN).unwrap();
+    d.state.content.reload();
+    let (project, conversation) = d.project().await;
+    let root = d
+        .state
+        .store
+        .project_root(&d.state.store.get_project(&project).unwrap())
+        .unwrap()
+        .dir;
+    let outside = tempfile::tempdir().unwrap();
+    let secret = outside.path().join("step-9.json");
+    std::fs::write(&secret, r#"{"files":["OUTSIDE-MARKER"]}"#).unwrap();
+    let receipts = root.join("plan/receipts");
+    std::fs::create_dir_all(&receipts).unwrap();
+    std::fs::write(receipts.join("step-1.json"), r#"{"files":["src/app.js"]}"#).unwrap();
+    std::os::unix::fs::symlink(&secret, receipts.join("step-2.json")).unwrap();
+    let run = d
+        .start(
+            json!({ "agentId": "claude", "projectId": project, "conversationId": conversation,
+                       "message": "migrate", "pluginId": "surface-demo" }),
+        )
+        .await;
+    let events = d.events(&run.run_id, None).await;
+    let surface = events
+        .iter()
+        .find(|e| e.data["surfaceId"] == "__auto_diff_review_review")
+        .unwrap();
+    assert_eq!(
+        surface.data["payload"]["context"]["touchedFiles"],
+        json!(["src/app.js"])
+    );
+}

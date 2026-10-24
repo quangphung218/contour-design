@@ -162,16 +162,23 @@ pub fn plugin_surfaces(manifest: &serde_json::Map<String, Value>) -> Vec<Value> 
 }
 
 /// Files the plugin's patch steps touched (`plan/receipts/step-*.json`),
-/// for the diff-review checklist.
+/// for the diff-review checklist. The agent writes that folder, so it is
+/// resolved inside the project and only regular files are read: a link
+/// out of the project is not followed.
 fn touched_files(cwd: &FsPath) -> Vec<String> {
-    let Ok(dir) = std::fs::read_dir(cwd.join("plan/receipts")) else {
+    let Ok(dir) = od_store::paths::resolve_safe_real(cwd, "plan/receipts")
+        .map_err(|e| e.to_string())
+        .and_then(|d| std::fs::read_dir(d).map_err(|e| e.to_string()))
+    else {
         return Vec::new();
     };
     let mut files: Vec<String> = dir
         .filter_map(Result::ok)
         .filter(|e| {
             let n = e.file_name().to_string_lossy().into_owned();
-            n.starts_with("step-") && n.ends_with(".json")
+            n.starts_with("step-")
+                && n.ends_with(".json")
+                && e.file_type().is_ok_and(|t| t.is_file())
         })
         .filter_map(|e| std::fs::read(e.path()).ok())
         .filter_map(|b| serde_json::from_slice::<Value>(&b).ok())
@@ -458,15 +465,29 @@ fn diff_review_bridge(
         let files = touched_files(&cwd);
         let reviewer = if by == "user" { "user" } else { "agent" };
         let decision = decision_file(&row.value, &files, reviewer)?;
-        let dir = cwd.join("review");
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let text = serde_json::to_string_pretty(&decision).map_err(|e| e.to_string())?;
-        std::fs::write(dir.join("decision.json"), text + "\n").map_err(|e| e.to_string())
+        write_in_project(&cwd, "review/decision.json", &(text + "\n"))
     };
     match write() {
         Ok(()) => json!({ "ok": true }),
         Err(error) => json!({ "ok": false, "error": error }),
     }
+}
+
+/// Writes `rel` under the project `cwd` through a temp file and a rename.
+/// The agent controls the folder, so the path is resolved inside the
+/// project first (a link out of it is refused), and the rename replaces a
+/// link at the target instead of writing through it.
+fn write_in_project(cwd: &FsPath, rel: &str, text: &str) -> Result<(), String> {
+    let target = od_store::paths::resolve_safe_real(cwd, rel).map_err(|e| e.to_string())?;
+    let dir = target.parent().ok_or("no parent folder")?;
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let tmp = dir.join(format!(".od-write.{}.tmp", uuid::Uuid::new_v4().simple()));
+    let written = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, &target));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written.map_err(|e| e.to_string())
 }
 
 async fn for_project(
