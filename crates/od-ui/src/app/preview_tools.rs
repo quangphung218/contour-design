@@ -584,22 +584,24 @@ impl StudioCtx {
     }
 }
 
-/// The tool buttons, palette menu and lint badge under the preview head
-/// (HTML files only), with the hint and status lines.
+/// The tool buttons, palette pick and lint badge, one row of icons with
+/// tooltips in the preview head (HTML files only). [`ToolHints`] shows the
+/// open tool's hint and status under the head.
 #[component]
 pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
     let tools = ctx.tools;
     let tool_button = move |tool: Tool, label: T, glyph: Glyph, testid: &'static str| {
         view! {
             <button
-                class="btn small ghost"
+                class="icon-btn"
                 class:active=move || tools.tool.get() == Some(tool)
                 data-testid=testid
+                aria-label=t(label)
+                data-tip=t(label)
                 aria-pressed=move || (tools.tool.get() == Some(tool)).to_string()
                 on:click=move |_| ctx.toggle_tool(tool)
             >
                 {icon(glyph)}
-                {t(label)}
             </button>
         }
     };
@@ -624,25 +626,36 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
                     class:active=move || tools.tool.get() == Some(Tool::Lint)
                     data-testid="lint-badge"
                     data-count=n.to_string()
+                    aria-label=label.clone()
+                    data-tip=label
+                    data-tip-pos="left"
                     on:click=move |_| ctx.toggle_tool(Tool::Lint)
                 >
                     {icon(if n == 0 { Glyph::LintOk } else { Glyph::Warning })}
-                    {label}
+                    {(n > 0).then(|| view! { <span class="lint-count">{n}</span> })}
                 </button>
             }
         })
     };
+    let palette_tip = move || {
+        let name = tools.palette.get().map_or_else(
+            || t(T::PaletteOriginal).to_owned(),
+            |id| palette_label(&id).to_owned(),
+        );
+        format!("{}: {name}", t(T::PaletteLabel))
+    };
     view! {
         <div class="tool-bar" data-testid="tool-bar" role="toolbar" aria-label=t(T::Annotate)>
             <button
-                class="btn small ghost"
+                class="icon-btn"
                 class:active=move || ctx.comment_mode.get()
                 data-testid="comment-mode"
+                aria-label=t(T::CommentMode)
+                data-tip=t(T::CommentMode)
                 aria-pressed=move || ctx.comment_mode.get().to_string()
                 on:click=move |_| ctx.set_comment_mode(!ctx.comment_mode.get_untracked())
             >
                 {icon(Glyph::Comment)}
-                {t(T::CommentMode)}
             </button>
             <super::comments_panel::CommentsToggle ctx=ctx/>
             {tool_button(Tool::Inspect, T::ToolInspect, Glyph::Inspect, "inspect-mode")}
@@ -653,13 +666,16 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
             <Show when=move || tools.tweaks.with(|t| !t.is_empty())>
                 {tool_button(Tool::Tweaks, T::ToolTweaks, Glyph::Tweaks, "tweaks-toggle")}
             </Show>
-            <span class="head-divider" aria-hidden="true"></span>
-            <label class="palette-pick small">
+            // The select covers the icon: one control, the native list.
+            <label
+                class="palette-pick icon-btn"
+                class:active=move || tools.palette.with(Option::is_some)
+                data-tip=palette_tip
+            >
                 {icon(Glyph::Palette)}
-                <span class="muted">{t(T::PaletteLabel)}</span>
                 <select
-                    class="input small"
                     data-testid="palette"
+                    aria-label=palette_tip
                     prop:value=move || tools.palette.get().unwrap_or_default()
                     on:change=move |ev| {
                         let v = event_target_value(&ev);
@@ -673,9 +689,16 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
                         .collect_view()}
                 </select>
             </label>
-            <span class="spacer"></span>
             {lint_badge}
         </div>
+    }
+}
+
+/// The open tool's hint and status lines, under the preview head.
+#[component]
+pub fn ToolHints(ctx: StudioCtx) -> impl IntoView {
+    let tools = ctx.tools;
+    view! {
         {move || {
             let hint = match tools.tool.get() {
                 Some(Tool::Inspect) => Some(t(T::InspectHint)),
@@ -1279,9 +1302,9 @@ pub(super) fn draw_controls(
 ) -> impl IntoView {
     view! {
         <div class="segmented small">
-            <button class="seg" class:active=move || pen.get() == Pen::Free data-testid="draw-pen" on:click=move |_| pen.set(Pen::Free)>{icon(Glyph::Draw)}{t(T::DrawPen)}</button>
-            <button class="seg" class:active=move || pen.get() == Pen::Box data-testid="draw-box" on:click=move |_| pen.set(Pen::Box)>{icon(Glyph::Rectangle)}{t(T::DrawBox)}</button>
-            <button class="seg" class:active=move || pen.get() == Pen::Text data-testid="draw-text" on:click=move |_| pen.set(Pen::Text)>{icon(Glyph::EditText)}{t(T::DrawText)}</button>
+            <button class="seg" class:active=move || pen.get() == Pen::Free data-testid="draw-pen" aria-label=t(T::DrawPen) on:click=move |_| pen.set(Pen::Free)>{icon(Glyph::Draw)}<span class="btn-label">{t(T::DrawPen)}</span></button>
+            <button class="seg" class:active=move || pen.get() == Pen::Box data-testid="draw-box" aria-label=t(T::DrawBox) on:click=move |_| pen.set(Pen::Box)>{icon(Glyph::Rectangle)}<span class="btn-label">{t(T::DrawBox)}</span></button>
+            <button class="seg" class:active=move || pen.get() == Pen::Text data-testid="draw-text" aria-label=t(T::DrawText) on:click=move |_| pen.set(Pen::Text)>{icon(Glyph::EditText)}<span class="btn-label">{t(T::DrawText)}</span></button>
         </div>
         {DRAW_COLORS
             .into_iter()
@@ -1302,7 +1325,7 @@ pub(super) fn draw_controls(
         <button class="icon-btn small" aria-label=t(T::Redo) data-tip=t(T::Redo) data-testid="draw-redo"
             disabled=move || history.with(|h| !h.can_redo())
             on:click=move |_| history.update(History::redo)>{icon(Glyph::Redo)}</button>
-        <button class="btn small ghost" data-testid="draw-clear" on:click=move |_| history.update(History::clear)>{icon(Glyph::Delete)}{t(T::DrawClear)}</button>
+        <button class="btn small ghost" data-testid="draw-clear" aria-label=t(T::DrawClear) on:click=move |_| history.update(History::clear)>{icon(Glyph::Delete)}<span class="btn-label">{t(T::DrawClear)}</span></button>
     }
 }
 

@@ -35,7 +35,11 @@ async fn api_key_is_not_sent_to_a_redirect_target() {
         "HTTP/1.1 307 Temporary Redirect\r\nlocation: {other}/v1/messages\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
     ))
     .await;
-    for protocol in [ByokProtocol::Anthropic, ByokProtocol::OpenAi] {
+    for protocol in [
+        ByokProtocol::Anthropic,
+        ByokProtocol::OpenAi,
+        ByokProtocol::Azure,
+    ] {
         let (tx, _rx) = tokio::sync::mpsc::channel(16);
         let _ = stream(
             ByokRequest {
@@ -45,6 +49,7 @@ async fn api_key_is_not_sent_to_a_redirect_target() {
                     base_url: Some(base.clone()),
                     model: None,
                     max_tokens: None,
+                    api_version: None,
                 },
                 model: None,
                 prompt: "hi".into(),

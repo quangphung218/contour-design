@@ -71,9 +71,10 @@ const EXAMPLE_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-sr
      font-src data:; media-src data:; sandbox";
 
 /// Example pages copied from the upstream app name it (sample decks and
-/// dashboards about "OpenDesign"); the gallery thumbnails show Nét instead.
+/// dashboards about "OpenDesign"); the gallery thumbnails and design system
+/// previews show Nét instead.
 /// The files on disk keep their original text.
-fn rebrand_example(html: Vec<u8>) -> Vec<u8> {
+pub(crate) fn rebrand_example(html: Vec<u8>) -> Vec<u8> {
     match String::from_utf8(html) {
         Ok(text) if text.contains("OpenDesign") || text.contains("Open Design") => text
             .replace("OpenDesign", "Nét")

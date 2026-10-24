@@ -50,14 +50,15 @@ pub fn CommentsToggle(ctx: StudioCtx) -> impl IntoView {
     };
     view! {
         <button
-            class="btn small ghost"
+            class="icon-btn comments-toggle"
             class:active=move || tools.tool.get() == Some(Tool::Comments)
             data-testid="comments-tab"
+            aria-label=t(T::CommentsTab)
+            data-tip=t(T::CommentsTab)
             aria-pressed=move || (tools.tool.get() == Some(Tool::Comments)).to_string()
             on:click=move |_| ctx.toggle_tool(Tool::Comments)
         >
             {icon(Glyph::Board)}
-            {t(T::CommentsTab)}
             {move || match open() {
                 0 => None,
                 n => Some(view! { <span class="count-badge" data-testid="comments-count">{n}</span> }),

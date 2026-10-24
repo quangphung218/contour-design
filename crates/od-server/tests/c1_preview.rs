@@ -254,3 +254,50 @@ async fn manual_edits_read_and_write_the_source_with_undo() {
         "{labels:?}"
     );
 }
+
+#[tokio::test]
+async fn a_component_file_renders_as_a_self_contained_page() {
+    let d = daemon().await;
+    let (project, _) = d.project().await;
+    write(
+        &d,
+        &project,
+        "ui/PricingCard.tsx",
+        "import { useState } from 'react';\nexport default function Card(p: { n?: number }) { const [n] = useState(p.n ?? 2); return <b>{n}</b>; }\n",
+    )
+    .await;
+    write(&d, &project, "index.html", "<p>page</p>").await;
+    let res = d
+        .http
+        .get(format!(
+            "{}/api/projects/{project}/react/ui/PricingCard.tsx",
+            d.base
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 200);
+    let csp = res.headers()["content-security-policy"]
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(csp.starts_with("sandbox allow-scripts") && csp.contains("connect-src 'none'"));
+    let html = res.text().await.unwrap();
+    assert!(html.contains("<title>PricingCard</title>"));
+    assert!(html.contains("const { useState } = window.React;"));
+    assert!(html.contains("(Card);"));
+    assert!(!html.contains("<script src"), "everything is inlined");
+    for (path, status) in [
+        ("index.html", 400),
+        ("ui/Missing.jsx", 404),
+        ("../x.jsx", 404),
+    ] {
+        let res = d
+            .http
+            .get(format!("{}/api/projects/{project}/react/{path}", d.base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status().as_u16(), status, "{path}");
+    }
+}

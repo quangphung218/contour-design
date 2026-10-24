@@ -95,14 +95,15 @@ function zip(files) {
   return Buffer.concat([...locals, cd, end]);
 }
 
-// Fake OpenAI-compatible provider on loopback.
+// Fake OpenAI-compatible provider on loopback; Azure deployments too
+// (key in `api-key`).
 const providerSeen = [];
 const provider = createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
-    providerSeen.push(`${req.method} ${req.url} ${req.headers.authorization || ''}`);
-    const ok = req.headers.authorization === 'Bearer sk-e2e-good';
+    providerSeen.push(`${req.method} ${req.url} ${req.headers.authorization || ''}${req.headers['api-key'] ? `api-key ${req.headers['api-key']}` : ''}`);
+    const ok = req.headers.authorization === 'Bearer sk-e2e-good' || req.headers['api-key'] === 'az-e2e-good';
     res.setHeader('content-type', 'application/json');
     if (!ok) {
       res.statusCode = 401;
@@ -162,7 +163,33 @@ try {
   assert.match(await page.getByTestId('onboarding-test').textContent(), /Claude Code replied in \d+ ms: 'ok'/);
   await page.getByTestId('onboarding-byok').click();
   assert.equal(await page.getByTestId('onboarding-continue').isDisabled(), true, 'BYOK continue waits for a saved provider');
+  // Azure OpenAI: the resource endpoint, a deployment and its api-version.
+  await page.getByTestId('byok-preset').selectOption('azure');
+  assert.equal(await page.getByTestId('byok-base-url').inputValue(), '');
+  await page.getByTestId('byok-base-url').fill(PROVIDER.replace(/\/v1$/, ''));
+  await page.getByTestId('byok-key').fill('az-e2e-good');
+  await page.getByTestId('byok-model').fill('design');
+  await page.getByTestId('byok-api-version').fill('2025-01-01-preview');
+  await page.getByTestId('byok-test').click();
+  await page.getByTestId('byok-test-result').getByText(/Connected\. Replied in \d+ ms: 'ok'/).waitFor();
+  assert.equal(providerSeen.at(-1), 'POST /openai/deployments/design/chat/completions?api-version=2025-01-01-preview api-key az-e2e-good');
+  // Saved with its version; an emptied field clears it on the next save.
+  await page.getByTestId('byok-save').click();
+  await until(async () => (await api('/api/app-config')).body.byok?.apiVersion === '2025-01-01-preview', 'azure version saved');
+  await page.getByTestId('byok-api-version').fill('');
+  await page.getByTestId('byok-save').click();
+  await until(async () => (await api('/api/app-config')).body.byok?.apiVersion == null, 'azure version cleared');
+  assert.equal((await api('/api/app-config')).body.byok.protocol, 'azure');
+  // No endpoint, nothing to save (and the daemon refuses it too).
+  await page.getByTestId('byok-base-url').fill('');
+  assert.equal(await page.getByTestId('byok-save').isDisabled(), true);
+  const noBase = await api('/api/app-config', { method: 'PUT', body: JSON.stringify({ byok: { protocol: 'azure', apiKey: 'k' } }) });
+  assert.equal(noBase.status, 400);
+  await api('/api/app-config', { method: 'PUT', body: JSON.stringify({ byok: null, agentId: 'claude' }) });
+  results.byokAzure = 'ok';
   await page.getByTestId('byok-preset').selectOption('openai');
+  assert.equal(await page.getByTestId('byok-api-version').count(), 0);
+  await page.getByTestId('byok-key').fill('');
   await page.getByTestId('byok-base-url').fill(PROVIDER);
   await page.getByTestId('byok-key').fill(' sk-e2e-bad\n');
   await page.getByText('Removed spaces and hidden characters').waitFor();

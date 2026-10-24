@@ -91,6 +91,9 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
         }
         let text = draft.get_untracked();
         if text.trim().is_empty() {
+            if untrack(|| ctx.has_attached()) {
+                ctx.send(t(T::SendAttachedOnly).to_owned(), shell);
+            }
             return;
         }
         match mention::outgoing(&text) {
@@ -323,7 +326,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                                 class=if live { "btn small send-btn queue" } else { "btn small primary send-btn" }
                                 data-testid="send"
                                 aria-label=label
-                                disabled=move || draft.with(|d| d.trim().is_empty()) || uploading()
+                                disabled=move || (draft.with(|d| d.trim().is_empty()) && !ctx.has_attached()) || uploading()
                                 on:click=move |_| send()
                             >
                                 {icon(if live { Glyph::Queue } else { Glyph::Send })}
@@ -794,22 +797,35 @@ pub(super) fn render_block(
             </details>
         }
         .into_any(),
-        Block::Tool(call) => view! { <ToolRow call=call/> }.into_any(),
+        Block::Tool(call) => {
+            let live = Signal::derive(move || turn.with(|t| t.state.is_live()));
+            view! { <ToolRow call=call live=live/> }.into_any()
+        }
         Block::Error(message) => view! { <div class="msg-error" role="alert">{icon(Glyph::Warning)}<span>{message}</span></div> }.into_any(),
         Block::Steered(text) => view! { <div class="steered">{icon(Glyph::ArrowRight)}{tf(T::Steered, &[&text])}</div> }.into_any(),
     }
 }
 
+/// One tool call. A call still without a result once the run is over
+/// (the agent never reported back) stops spinning and shows a plain ring.
 #[component]
-fn ToolRow(call: ToolCall) -> impl IntoView {
-    let (glyph, class) = match call.result {
-        None => (Glyph::Loader, "tool running"),
-        Some(false) => (Glyph::Check, "tool ok"),
-        Some(true) => (Glyph::Failed, "tool failed"),
+fn ToolRow(call: ToolCall, live: Signal<bool>) -> impl IntoView {
+    let result = call.result;
+    let class = move || match result {
+        None if live.get() => "tool running",
+        None => "tool ended",
+        Some(false) => "tool ok",
+        Some(true) => "tool failed",
+    };
+    let mark = move || match result {
+        None if live.get() => icon(Glyph::Loader).into_any(),
+        None => view! { <span class="plan-ring"></span> }.into_any(),
+        Some(false) => icon(Glyph::Check).into_any(),
+        Some(true) => icon(Glyph::Failed).into_any(),
     };
     view! {
         <div class=class>
-            <span class="tool-icon">{icon(glyph)}</span>
+            <span class="tool-icon">{mark}</span>
             <span class="tool-name">{call.name}</span>
             <span class="tool-summary mono">{call.summary}</span>
         </div>

@@ -400,6 +400,123 @@ async fn byok_test_and_models_never_send_the_saved_key_elsewhere() {
     );
 }
 
+/// Azure OpenAI over loopback: the test call goes to the deployment URL
+/// with its `api-version` and the key in `api-key`, never as a bearer.
+#[tokio::test]
+async fn byok_azure_tests_a_deployment() {
+    let d = common::daemon().await;
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = Arc::clone(&seen);
+    let app = Router::new().route(
+        "/openai/deployments/{dep}/chat/completions",
+        post(
+            move |axum::extract::Path(dep): axum::extract::Path<String>,
+                  axum::extract::RawQuery(query): axum::extract::RawQuery,
+                  headers: HeaderMap,
+                  body: String| {
+                let log = Arc::clone(&log);
+                async move {
+                    let header = |k: &str| {
+                        headers
+                            .get(k)
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or_default()
+                            .to_owned()
+                    };
+                    log.lock().unwrap().push(format!(
+                        "{dep} {} key={} auth={}",
+                        query.unwrap_or_default(),
+                        header("api-key"),
+                        header("authorization")
+                    ));
+                    let v: Value = serde_json::from_str(&body).unwrap();
+                    assert!(v.get("model").is_none(), "the URL names the deployment");
+                    if header("api-key") != "az-good" {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            r#"{"error":{"message":"bad key"}}"#.to_owned(),
+                        );
+                    }
+                    (
+                        StatusCode::OK,
+                        json!({"choices": [{"message": {"content": "ok"}}]}).to_string(),
+                    )
+                }
+            },
+        ),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let test = |body: Value| {
+        let d = &d;
+        async move {
+            let res = d.post("/api/test/connection", &body).await;
+            assert_eq!(res.status(), StatusCode::OK);
+            res.json::<Value>().await.unwrap()
+        }
+    };
+    let r = test(json!({"mode": "provider", "protocol": "azure", "baseUrl": base, "apiKey": "az-good", "model": "design", "apiVersion": "2025-01-01-preview"})).await;
+    assert_eq!(
+        (r["ok"].clone(), r["sample"].clone()),
+        (json!(true), json!("ok")),
+        "{r}"
+    );
+    let r = test(json!({"mode": "provider", "protocol": "azure", "baseUrl": base, "apiKey": "az-bad", "model": "design"})).await;
+    assert_eq!(r["kind"], "auth_failed");
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [
+            "design api-version=2025-01-01-preview key=az-good auth=",
+            "design api-version=2024-10-21 key=az-bad auth=",
+        ]
+    );
+    // No endpoint: Azure has no shared host to fall back to.
+    let r =
+        test(json!({"mode": "provider", "protocol": "azure", "apiKey": "k", "model": "design"}))
+            .await;
+    assert_eq!(r["kind"], "invalid_base_url");
+    // The config saves with its api-version; the model list says why it has none.
+    let res = put(
+        &d,
+        "/api/app-config",
+        &json!({"byok": {"protocol": "azure", "apiKey": "az-good", "baseUrl": base, "model": "design", "apiVersion": "2025-01-01-preview"}}),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let cfg = d.get_json("/api/app-config").await;
+    assert_eq!(cfg["byok"]["apiVersion"], "2025-01-01-preview");
+    // `null` clears it (the form sends that for an emptied field).
+    let res = put(
+        &d,
+        "/api/app-config",
+        &json!({"byok": {"protocol": "azure", "baseUrl": base, "model": "design", "apiVersion": null}}),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let cfg = d.get_json("/api/app-config").await;
+    assert!(cfg["byok"]["apiVersion"].is_null(), "{cfg}");
+    assert_eq!(cfg["byok"]["hasApiKey"], true, "the key stays");
+    // Azure without an endpoint is refused: a run could never reach it.
+    for no_base in [json!(null), json!(" ")] {
+        let res = put(
+            &d,
+            "/api/app-config",
+            &json!({"byok": {"protocol": "azure", "apiKey": "k", "baseUrl": no_base}}),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+    let res = d
+        .post(
+            "/api/provider/models",
+            &json!({"protocol": "azure", "baseUrl": base}),
+        )
+        .await;
+    assert_ne!(res.status(), StatusCode::OK);
+}
+
 /// A saved agent key belongs to the base URL it was saved with: a new URL
 /// without a new key drops it, so the next run never sends it there.
 #[tokio::test]

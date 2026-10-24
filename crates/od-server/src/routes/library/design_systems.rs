@@ -35,6 +35,7 @@
 
 use super::write_and_reload;
 use crate::error::{ApiErr, ApiJson, ApiResult};
+use crate::routes::content::rebrand_example;
 use crate::state::AppState;
 use axum::extract::{Multipart, Path, State};
 use axum::http::{StatusCode, header};
@@ -504,7 +505,7 @@ pub async fn showcase(
             design_kit::showcase_html(&e.summary.title, &read(&e.dir, "tokens.css")).into_bytes()
         }
     };
-    Ok(page(html, "text/html; charset=utf-8"))
+    Ok(page(rebrand_example(html), "text/html; charset=utf-8"))
 }
 
 pub async fn file(
@@ -519,7 +520,13 @@ pub async fn file(
     let bytes = tokio::fs::read(&target)
         .await
         .map_err(|_| ApiErr::not_found("file not found"))?;
-    Ok(page(bytes, mime_of(&path)))
+    let mime = mime_of(&path);
+    let bytes = if mime.starts_with("text/") {
+        rebrand_example(bytes)
+    } else {
+        bytes
+    };
+    Ok(page(bytes, mime))
 }
 
 // ------------------------------------------------------------------- writes

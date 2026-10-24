@@ -421,6 +421,8 @@ messages! {
     ShowKey => "Show key", "Hiện key";
     HideKey => "Hide key", "Ẩn key";
     FetchModels => "Fetch models", "Lấy danh sách model";
+    ApiVersion => "API version", "Phiên bản API";
+    AzureDeployment => "Deployment", "Deployment";
     FetchedModels => "Fetched {0} models.", "Đã lấy {0} model.";
     SaveProvider => "Save and use", "Lưu và dùng";
     Notifications => "Notifications", "Thông báo";
@@ -439,7 +441,7 @@ messages! {
     NotifyTestBody => "Notifications work.", "Thông báo đã hoạt động.";
     ProjectLocations => "Project locations", "Nơi lưu project";
     ProjectLocationsHint => "Work bases that hold project folders. Each new project gets its own folder inside the default base.", "Các thư mục gốc chứa project. Project mới được lưu thành một thư mục bên trong thư mục mặc định.";
-    BuiltInLocation => "Open Design projects", "Project của Open Design";
+    BuiltInLocation => "Nét projects", "Project của Nét";
     DefaultLocation => "Default", "Mặc định";
     MakeDefault => "Make default", "Đặt làm mặc định";
     AddFolder => "Add folder", "Thêm thư mục";
@@ -540,14 +542,14 @@ messages! {
     TplRegressionDesc => "Flag regressions against accepted work.", "Báo lỗi lùi so với bản đã duyệt.";
     // Integrations
     NavIntegrations => "Integrations", "Tích hợp";
-    IntegrationsIntro => "External tools for the agent, and Open Design inside other coding agents.", "Công cụ ngoài cho agent, và dùng Open Design trong các agent khác.";
+    IntegrationsIntro => "External tools for the agent, and Nét inside other coding agents.", "Công cụ ngoài cho agent, và dùng Nét trong các agent khác.";
     ExternalTools => "External tools", "Công cụ ngoài";
-    ConnectAgents => "Connect Open Design to your coding agent", "Kết nối Open Design với agent";
+    ConnectAgents => "Connect Nét to your coding agent", "Kết nối Nét với agent";
     ConnectAgentsShort => "Coding agents", "Agent lập trình";
-    ConnectAgentsHint => "Register the Open Design MCP server in another agent so it can read and edit your designs.", "Đăng ký MCP server của Open Design trong agent khác để agent đó đọc và sửa design.";
+    ConnectAgentsHint => "Register the Nét MCP server in another agent so it can read and edit your designs.", "Đăng ký MCP server của Nét trong agent khác để agent đó đọc và sửa design.";
     UseEverywhere => "Use everywhere", "Dùng ở mọi nơi";
     UseEverywhereShort => "CLI, HTTP, MCP", "CLI, HTTP, MCP";
-    UseEverywhereHint => "Drive Open Design from a terminal, a script or another agent.", "Điều khiển Open Design từ terminal, script hoặc agent khác.";
+    UseEverywhereHint => "Drive Nét from a terminal, a script or another agent.", "Điều khiển Nét từ terminal, script hoặc agent khác.";
     EverywhereCli => "CLI · od", "CLI · od";
     EverywhereCliBody => "Start the daemon, list projects, run an agent turn and export from a terminal.", "Chạy daemon, xem project, chạy một lượt agent và export từ terminal.";
     EverywhereMcp => "MCP server", "MCP server";
@@ -676,7 +678,7 @@ messages! {
     SlideN => "Slide {0}", "Slide {0}";
 
     // Studio: comments
-    CommentMode => "Comment", "Bình luận";
+    CommentMode => "Add comment", "Thêm bình luận";
     CommentModeOn => "Click an element to comment", "Bấm vào một phần tử để bình luận";
     CommentPlaceholder => "What should change here?", "Cần sửa gì ở đây?";
     AddComment => "Add comment", "Thêm bình luận";
@@ -781,6 +783,7 @@ messages! {
     DescribeChange => "Describe what to build or change.", "Mô tả thứ cần làm hoặc cần sửa.";
     ComposerPlaceholder => "Ask for a change…  (Enter to send, Shift+Enter for a new line)", "Nhập yêu cầu sửa…  (Enter để gửi, Shift+Enter để xuống dòng)";
     Send => "Send", "Gửi";
+    SendAttachedOnly => "Apply the attached comments and drawings.", "Áp dụng các bình luận và hình vẽ đính kèm.";
     Queue => "Queue", "Xếp hàng";
     Stop => "Stop", "Dừng";
     Stopped => "Stopped", "Đã dừng";
@@ -910,6 +913,7 @@ messages! {
     SelectPlaceholder => "Select…", "Chọn…";
     SelectItem => "Select", "Chọn";
     ClearSelection => "Clear selection", "Bỏ chọn";
+    ClearSearch => "Clear search", "Xoá tìm kiếm";
     DeleteNamed => "Delete {0}", "Xoá {0}";
     Kind => "Kind", "Loại";
     Desktop => "Desktop", "Desktop";
@@ -1408,11 +1412,11 @@ messages! {
     ShortcutFirstLast => "First or last slide", "Slide đầu hoặc cuối";
     // Track C3-runtimes: DeepSeek Harness connection setup.
     DshSetupTitle => "Set up DeepSeek Harness", "Thiết lập DeepSeek Harness";
-    DshSetupDescription => "Open Design runs the dsh CLI on this computer through its open-design profile. Install both, then detect again.", "Open Design chạy dsh CLI trên máy này qua profile open-design. Cài cả hai rồi phát hiện lại.";
+    DshSetupDescription => "Nét runs the dsh CLI on this computer through its open-design profile. Install both, then detect again.", "Nét chạy dsh CLI trên máy này qua profile open-design. Cài cả hai rồi phát hiện lại.";
     DshStepCli => "1. Install the dsh CLI", "1. Cài dsh CLI";
     DshCliFound => "dsh found: {0}", "Đã thấy dsh: {0}";
     DshStepProfile => "2. Add the open-design profile", "2. Thêm profile open-design";
-    DshStepProfileHint => "Build the profile package from the Open Design source, then add it with dsh.", "Build gói profile từ mã nguồn Open Design rồi thêm bằng dsh.";
+    DshStepProfileHint => "Build the profile package from the open-design source, then add it with dsh.", "Build gói profile từ mã nguồn open-design rồi thêm bằng dsh.";
     DshSetupNote => "DeepSeek Harness and its profile stay installed and managed by you. The guide has every step.", "DeepSeek Harness và profile do người dùng tự cài và quản lý. Hướng dẫn có đủ các bước.";
     DshSetupGuide => "Open the setup guide", "Mở hướng dẫn cài";
     DshSetupDetect => "Detect again", "Phát hiện lại";
@@ -1576,9 +1580,9 @@ messages! {
     FirstArtifactBody => "Edit and annotate it right in the preview, then export when you are happy.", "Sửa và chú thích ngay trên preview, ưng rồi thì export.";
     FirstArtifactDismiss => "Got it", "Đã hiểu";
     WorkspaceRecovering => "Connection to Nét interrupted. Reconnecting automatically…", "Mất kết nối tới Nét. Đang tự kết nối lại…";
-    ToolManualEdit => "Edit", "Sửa";
+    ToolManualEdit => "Edit element", "Sửa phần tử";
     ManualEditHint => "Click an element in the preview or pick a layer, then change it. Each change is saved as a version.", "Bấm một phần tử trên preview hoặc chọn một layer rồi sửa. Mỗi lần sửa được lưu thành một version.";
-    CommentsTab => "Comments", "Comment";
+    CommentsTab => "All comments", "Mọi bình luận";
     CommentsFilterOpen => "Open", "Đang mở";
     CommentsFilterResolved => "Resolved", "Đã xong";
     CommentsNone => "No comments on this file yet. Turn on Comment and click an element.", "File này chưa có comment. Bật Comment rồi bấm vào một phần tử.";
@@ -1739,6 +1743,7 @@ messages! {
     ReportCopiedDir => "Diagnostics copied to the clipboard. Logs: {0}", "Đã chép thông tin chẩn đoán vào clipboard. Log: {0}";
     ReportManual => "The clipboard is not available here. Select the text, copy it and paste it where you report the issue. The log folder is open.", "Không dùng được clipboard ở đây. Chọn đoạn chữ, chép và dán vào nơi báo lỗi. Thư mục log đã được mở.";
     ExportJsx => "Export as JSX", "Export dạng JSX";
+    ExportJsxHtml => "Export React component as HTML", "Xuất component React thành HTML";
     FontsMissingTitle => "Brand font files missing", "Thiếu file font thương hiệu";
     FontsMissingBody => "Typography previews use substitute fonts until brand font files are added.", "Phần xem trước kiểu chữ đang dùng font thay thế cho tới khi thêm file font thương hiệu.";
     FontsMissingAdd => "Add brand font files", "Thêm file font thương hiệu";
@@ -1810,13 +1815,24 @@ pub fn t(key: T) -> &'static str {
 /// their original wording and attribution; only the UI shows the new name.
 #[must_use]
 pub fn rebrand(text: &str) -> std::borrow::Cow<'_, str> {
-    if text.contains("OpenDesign") || text.contains("Open Design") {
+    if names_original_app(text) {
         text.replace("OpenDesign", "Nét")
             .replace("Open Design", "Nét")
+            .replace("Open-Design", "Nét")
             .into()
     } else {
         text.into()
     }
+}
+
+/// Whether `text` names the original app (`docs/brand.md`: never in the
+/// UI). The lowercase `open-design` profile and manifest names are
+/// identifiers, not the name.
+#[must_use]
+pub fn names_original_app(text: &str) -> bool {
+    ["OpenDesign", "Open Design", "Open-Design"]
+        .iter()
+        .any(|n| text.contains(n))
 }
 
 /// [`t`] with `{0}`, `{1}`… replaced by `args`.
@@ -1865,6 +1881,10 @@ mod tests {
             assert!(!en.trim().is_empty() && !vi.trim().is_empty(), "{key:?}");
             assert_eq!(placeholders(en), placeholders(vi), "{key:?}");
             assert_eq!(vi, vi.trim(), "{key:?} has stray whitespace");
+            assert!(
+                !names_original_app(en) && !names_original_app(vi),
+                "{key:?} shows the old name"
+            );
         }
     }
 
@@ -1996,6 +2016,9 @@ mod tests {
                 }
                 if text.contains('\u{2014}') {
                     failures.push(format!("{tag}: {} has an em dash", key.name()));
+                }
+                if names_original_app(text) {
+                    failures.push(format!("{tag}: {} shows the old name", key.name()));
                 }
                 let (we, wt) = (width(en), width(text));
                 if wt > (2 * we).max(we + 12) {

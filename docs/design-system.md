@@ -132,7 +132,10 @@ Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói tron
 ## Studio
 
 - Ba vùng: chat bên trái, preview ở giữa (vùng chính), danh sách file bên phải. File thu gọn được (nút trên đầu cột file, `Cmd/Ctrl+B`, lưu ở `od.studio.files-open`).
-- Toolbar preview, trái sang phải: tải lại, đường dẫn file, `Preview | Code`, thiết bị (Desktop/Tablet/Phone), zoom (`- 100% +`), History, Export. Hàng dưới là nhóm chú thích và soi phần tử: Comment, Inspect, Edit text, Draw, Tweaks, Palette, Lint. Cửa sổ hẹp (container dưới 660px) thì ẩn chữ, giữ icon.
+- Hàng tab: tab file, Side chat, "+", rồi bên phải History (icon) và Export. Export là nút chính (`primary`) khi đang mở một file: đây là đích của luồng chính.
+- Toolbar preview là **một hàng icon có tooltip** (`data-tip`, `aria-label`), trái sang phải: tải lại, `Preview | Code`, thiết bị, đường dẫn file (co lại được), nhóm công cụ (Thêm bình luận, Mọi bình luận kèm số đếm, Inspect, Sửa chữ, Sửa phần tử, Draw, Screenshot, Tweaks, Palette, Lint), zoom. Palette là `select` trong suốt phủ lên icon. Hint và trạng thái của công cụ đang mở nằm ở dải dưới toolbar (`ToolHints`).
+- Khổ hẹp (`@container preview`): dưới 860px ẩn chữ của `Preview | Code` và thanh Draw; dưới 760px panel công cụ và History nổi đè lên preview thay vì ép preview; dưới 560px toolbar xuống hàng. Cửa sổ dưới 1100px mở Studio với cột file thu gọn (cho tới khi người dùng mở, lưu ở `od.studio.files-open`).
+- Thanh Draw nằm ở đáy trang, không che tiêu đề; hẹp thì tự xuống hàng.
 - Code view của version đang xem là source của version đó. Bật bình luận thì tự về Preview. "Thử lại" gửi lại cả file đính kèm của tin gốc (lưu theo tin, cả khi tải lại lịch sử).
 - Zoom là `transform: scale` trên khung đã layout ở kích thước thiết bị (`zoom_box` + `zoomed` trong `studio.rs`), để WebKit và Chromium giống nhau và pin comment theo đúng chỗ.
 - Mỗi lượt của agent có một dòng trạng thái `[data-testid=run-state]` (`data-phase` = `starting | working | done | failed | stopped`; đang chạy theo plan thì hiện "Bước N/M"). Lượt cuối, khi không còn run nào, có hàng "Tiếp theo" (`next-steps`): xem file vừa ghi, bình luận lên trang, bản mobile, phương án khác; lỗi thì "Thử lại" và "Mở Cài đặt". Logic nằm ở `src/guide.rs`, test native.

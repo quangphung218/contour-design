@@ -298,7 +298,9 @@ try {
   await lastTurnDone(4);
   assert.equal(runBodies[3].model, 'claude-sonnet-x');
   assert.equal(runBodies[3].designSystemId, dsValue);
-  await page.getByTestId('continue-tasks').getByText('2 item(s) left', { exact: false }).waitFor();
+  // The turn says Done, so only the button stays (no "not finished" line).
+  await until(async () => (await page.getByTestId('continue-tasks').getAttribute('data-left')) === '2', 'continue tasks');
+  assert.equal(await page.getByTestId('continue-tasks').getByText('left', { exact: false }).count(), 0);
   results.modelAndDs = 'ok';
   await page.getByTestId('continue-remaining').click();
   await lastTurnDone(5);

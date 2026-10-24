@@ -77,10 +77,11 @@ impl RunState {
     pub fn badge_class(self) -> &'static str {
         match self {
             Self::Running => "badge accent",
-            Self::AwaitingInput | Self::Incomplete => "badge warning",
+            Self::AwaitingInput => "badge warning",
             Self::Succeeded => "badge success",
             Self::Failed => "badge danger",
-            Self::NotStarted | Self::Canceled => "badge outline",
+            // A run that ended with plan items open is not a problem to flag.
+            Self::NotStarted | Self::Incomplete | Self::Canceled => "badge outline",
         }
     }
 }

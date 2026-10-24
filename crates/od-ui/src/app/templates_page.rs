@@ -92,12 +92,13 @@ fn name_of(s: &SkillSummary) -> String {
 }
 
 fn description_of(s: &SkillSummary) -> String {
-    s.info
+    let text = s
+        .info
         .description_i18n
         .as_ref()
         .and_then(|m| m.get(locale().tag()))
-        .cloned()
-        .unwrap_or_else(|| s.info.description.clone())
+        .unwrap_or(&s.info.description);
+    crate::i18n::rebrand(text).into_owned()
 }
 
 fn example_url(id: &str) -> String {

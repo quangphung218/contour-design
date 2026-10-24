@@ -333,9 +333,39 @@ try {
   await row('page.html').click();
   await page.getByTestId('manual-edit-mode').click();
   await page.getByTestId('manual-edit-panel').getByText('Bấm một phần tử trên preview hoặc chọn một layer.').waitFor();
-  await page.getByTestId('comments-tab').getByText('Comment').waitFor();
+  assert.equal(await page.getByTestId('comments-tab').getAttribute('aria-label'), 'Mọi bình luận');
   await shot('manual-edit-vi');
   results.vi = 'ok';
+
+  // 7. Narrow windows: at 1024 the toolbar's last button stays inside the
+  // preview head; rail links keep a name; on a phone-wide window Home hides
+  // its examples, and at desktop width no example chip is cut.
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.reload();
+  await frame.locator('body').waitFor();
+  await sleep(400);
+  const edges = await page.evaluate(() => {
+    const head = document.querySelector('[data-testid="preview-toolbar"]');
+    const last = [...head.children].filter((e) => e.offsetParent).at(-1);
+    return [last.getBoundingClientRect().right, head.getBoundingClientRect().right];
+  });
+  assert.ok(edges[0] <= edges[1], `toolbar button cut at 1024: ${edges}`);
+  assert.equal(await page.locator('.sidebar a.nav-link:not([aria-label])').count(), 0, 'rail links have a name');
+  await shot('toolbar-1024');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(BASE + '/');
+  await page.getByTestId('brief').waitFor();
+  assert.equal(await page.locator('.home-examples').isVisible(), false, 'no squeezed examples on a phone-wide window');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator('.example-prompt').first().waitFor();
+  const cut = await page.evaluate(() => {
+    const box = document.querySelector('.home-examples').getBoundingClientRect();
+    return [...document.querySelectorAll('.example-prompt')]
+      .map((c) => c.getBoundingClientRect())
+      .filter((r) => r.top < box.bottom && (r.right > box.right + 1 || r.bottom > box.bottom + 1)).length;
+  });
+  assert.equal(cut, 0, 'example chips show whole or not at all');
+  results.narrow = 'ok';
 
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
   assert.deepEqual(external, [], `external requests: ${external.join(', ')}`);

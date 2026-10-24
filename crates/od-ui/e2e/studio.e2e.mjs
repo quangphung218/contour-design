@@ -625,7 +625,7 @@ try {
   await page.goto(projectUrl);
   await page.getByTestId('composer').waitFor();
   assert.match(await page.getByTestId('composer').getAttribute('placeholder'), /Enter để gửi/);
-  await page.getByTestId('history').getByText('Lịch sử').waitFor();
+  await until(async () => (await page.getByTestId('history').getAttribute('aria-label')) === 'Lịch sử', 'history label in Vietnamese');
   await page.screenshot({ path: OUT + 'studio-vi.png' });
   results.settings = 'ok';
   results.vietnamese = 'ok';

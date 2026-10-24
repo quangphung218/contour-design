@@ -351,7 +351,7 @@ fn LibraryView(
                 {move || projects.get().into_iter().map(|p| view! { <option value=p.id.clone()>{p.name.clone()}</option> }).collect_view()}
             </select>
             <span class="spacer"></span>
-            <input type="file" class="visually-hidden" multiple accept="image/*,video/*,audio/*" node_ref=upload_ref data-testid="media-upload-input" on:change=on_upload/>
+            <input type="file" class="visually-hidden" aria-label=t(T::UploadFiles) multiple accept="image/*,video/*,audio/*" node_ref=upload_ref data-testid="media-upload-input" on:change=on_upload/>
             <button class="btn small" data-testid="media-upload" on:click=move |_| { if let Some(i) = upload_ref.get_untracked() { i.click(); } }>{icon(Glyph::Upload)}{t(T::Upload)}</button>
         </div>
         {move || notice.get().map(|n| match n {

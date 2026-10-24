@@ -3,10 +3,7 @@
 //! provider's model list. Both talk only to the configured endpoint and
 //! never follow redirects (custom auth headers would travel along).
 
-use crate::byok::{
-    ANTHROPIC_BASE_URL, ANTHROPIC_DEFAULT_MODEL, ANTHROPIC_VERSION, ByokConfig, ByokProtocol,
-    OPENAI_BASE_URL, OPENAI_DEFAULT_MODEL,
-};
+use crate::byok::{AZURE_NEEDS_BASE, ByokConfig, ByokProtocol, azure_chat_url, azure_versioned};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -73,14 +70,10 @@ pub fn normalize_base_url(raw: &str) -> Result<String, String> {
 }
 
 fn base(config: &ByokConfig) -> String {
-    let default = match config.protocol {
-        ByokProtocol::Anthropic => ANTHROPIC_BASE_URL,
-        ByokProtocol::OpenAi => OPENAI_BASE_URL,
-    };
     config
         .base_url
         .as_deref()
-        .unwrap_or(default)
+        .unwrap_or(config.protocol.default_base_url())
         .trim_end_matches('/')
         .to_owned()
 }
@@ -100,15 +93,6 @@ fn client(timeout: Duration) -> Result<reqwest::Client, String> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| e.to_string())
-}
-
-fn authed(builder: reqwest::RequestBuilder, config: &ByokConfig) -> reqwest::RequestBuilder {
-    match config.protocol {
-        ByokProtocol::Anthropic => builder
-            .header("x-api-key", &config.api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION),
-        ByokProtocol::OpenAi => builder.bearer_auth(&config.api_key),
-    }
 }
 
 fn error_detail(body: &str) -> String {
@@ -151,7 +135,7 @@ fn reply_text(protocol: ByokProtocol, v: &Value) -> String {
                     .collect::<String>()
             })
             .unwrap_or_default(),
-        ByokProtocol::OpenAi => v
+        ByokProtocol::OpenAi | ByokProtocol::Azure => v
             .pointer("/choices/0/message/content")
             .and_then(Value::as_str)
             .unwrap_or_default()
@@ -162,13 +146,10 @@ fn reply_text(protocol: ByokProtocol, v: &Value) -> String {
 /// Sends one small completion and reports how it went. Never errors: every
 /// failure is a [`TestResult`] with `ok: false`.
 pub async fn test_connection(config: &ByokConfig, timeout: Duration) -> TestResult {
-    let model = config.model.clone().unwrap_or_else(|| {
-        match config.protocol {
-            ByokProtocol::Anthropic => ANTHROPIC_DEFAULT_MODEL,
-            ByokProtocol::OpenAi => OPENAI_DEFAULT_MODEL,
-        }
-        .to_owned()
-    });
+    let model = config
+        .model
+        .clone()
+        .unwrap_or_else(|| config.protocol.default_model().to_owned());
     let started = Instant::now();
     let elapsed = |s: Instant| u64::try_from(s.elapsed().as_millis()).unwrap_or(u64::MAX);
     let fail = |kind: TestKind, status: Option<u16>, detail: String, ms: u64| TestResult {
@@ -187,6 +168,14 @@ pub async fn test_connection(config: &ByokConfig, timeout: Duration) -> TestResu
         },
         None => base(config),
     };
+    if base.is_empty() {
+        return fail(
+            TestKind::InvalidBaseUrl,
+            None,
+            AZURE_NEEDS_BASE.to_owned(),
+            0,
+        );
+    }
     let (url, body) = match config.protocol {
         ByokProtocol::Anthropic => (
             anthropic_url(&base, "messages"),
@@ -204,12 +193,25 @@ pub async fn test_connection(config: &ByokConfig, timeout: Duration) -> TestResu
                 "messages": [{"role": "user", "content": SMOKE_PROMPT}],
             }),
         ),
+        ByokProtocol::Azure => {
+            let mut body = json!({
+                "max_tokens": SMOKE_MAX_TOKENS,
+                "messages": [{"role": "user", "content": SMOKE_PROMPT}],
+            });
+            if azure_versioned(&base) {
+                body["model"] = json!(model);
+            }
+            (
+                azure_chat_url(&base, &model, config.api_version.as_deref()),
+                body,
+            )
+        }
     };
     let http = match client(timeout) {
         Ok(c) => c,
         Err(e) => return fail(TestKind::Unknown, None, e, 0),
     };
-    let res = authed(http.post(&url), config).json(&body).send().await;
+    let res = config.authed(http.post(&url)).json(&body).send().await;
     let res = match res {
         Ok(r) => r,
         Err(e) if e.is_timeout() => {
@@ -265,9 +267,18 @@ pub async fn list_models(config: &ByokConfig, timeout: Duration) -> Result<Vec<S
     let url = match config.protocol {
         ByokProtocol::Anthropic => anthropic_url(&base, "models?limit=1000"),
         ByokProtocol::OpenAi => format!("{base}/models"),
+        // The model field is a deployment name, which only the Azure
+        // portal lists; the resource's model list would mislead.
+        ByokProtocol::Azure => {
+            return Err(
+                "Azure OpenAI uses deployment names: type the deployment from the Azure portal"
+                    .to_owned(),
+            );
+        }
     };
     let http = client(timeout)?;
-    let res = authed(http.get(&url), config)
+    let res = config
+        .authed(http.get(&url))
         .send()
         .await
         .map_err(|e| format!("could not reach {url}: {e}"))?;
