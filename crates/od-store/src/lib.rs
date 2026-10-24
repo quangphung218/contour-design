@@ -1,4 +1,4 @@
-//! Persistent state for open-design-rs: the SQLite database, the data
+//! Persistent state for Contour: the SQLite database, the data
 //! directory layout, project folders, file version history, and the safe
 //! path resolution every file operation goes through.
 
@@ -18,7 +18,9 @@ pub mod store;
 pub mod versions;
 
 pub use chat::{AgentSession, NewTurn};
-pub use data_dir::{DATA_DIR_ENV, DATA_DIR_NAME, DataDir};
+pub use data_dir::{
+    DATA_DIR_ENV, DATA_DIR_NAME, DataDir, LEGACY_DATA_DIR_NAME, migrate_legacy_root,
+};
 pub use error::{Result, StoreError};
 pub use files::ProjectRoot;
 pub use memory::memory_from_message;
