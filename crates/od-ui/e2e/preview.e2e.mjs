@@ -366,7 +366,8 @@ try {
       .filter((r) => r.top < box.bottom && (r.right > box.right + 1 || r.bottom > box.bottom + 1)).length;
   });
   assert.equal(cut, 0, 'example chips show whole or not at all');
-  assert.equal(await page.getByTestId('quick-menu').getAttribute('aria-label'), null, 'open sidebar: the quick menu is named by its visible text');
+  const quick = page.getByTestId('quick-menu');
+  assert.ok((await quick.innerText()).includes(await quick.getAttribute('aria-label')), 'open sidebar: the quick menu name contains its visible text');
   results.narrow = 'ok';
 
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);

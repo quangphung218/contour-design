@@ -616,7 +616,6 @@ pub fn MentionArea(
                 node_ref=area
                 placeholder=move || placeholder.get()
                 aria-autocomplete="list"
-                aria-expanded=move || open.with(Option::is_some).to_string()
                 prop:value=move || draft.get()
                 on:input=move |ev| {
                     draft.set(event_target_value(&ev));
