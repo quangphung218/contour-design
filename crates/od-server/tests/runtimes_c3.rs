@@ -216,3 +216,69 @@ echo '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_t
         }
     }
 }
+
+/// A `dsh` whose probe hangs and leaves a child behind; the child's pid
+/// goes to `$DSH_HOME/child.pid`.
+const DSH_HANGS: &str = r#"
+case "$1" in --version) echo "0.1.2"; exit 0;; esac
+if [ "$3" = "--probe" ]; then
+  sleep 60 &
+  echo $! > "$DSH_HOME/child.pid"
+  wait
+fi
+"#;
+
+#[tokio::test]
+async fn a_hung_dsh_probe_is_killed_with_everything_it_started() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dsh_home = tmp.path().join("dsh-home");
+    let profile = dsh_home.join("profiles/open-design");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::fs::write(profile.join("package.json"), "{}").unwrap();
+    let d = common::daemon_with(Options {
+        extra_env: vec![("DSH_HOME".into(), dsh_home.to_string_lossy().into_owned())],
+        ..Options::default()
+    })
+    .await;
+    write_mock(&d.mocks, "dsh", DSH_HANGS);
+    let (_, body) = detect(&d, "deepseek-harness").await;
+    assert_eq!(body["agent"]["available"], false, "{body}");
+    assert!(
+        body["agent"]["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("probe timed out")),
+        "{body}"
+    );
+    let pid = std::fs::read_to_string(dsh_home.join("child.pid")).unwrap();
+    let alive = || {
+        std::process::Command::new("kill")
+            .args(["-0", pid.trim()])
+            .status()
+            .unwrap()
+            .success()
+    };
+    for _ in 0..40 {
+        if !alive() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!("the probe's child {} outlived the timeout", pid.trim());
+}
+
+#[tokio::test]
+async fn byok_is_detected_once_a_key_is_saved() {
+    let d = common::daemon().await;
+    let (_, body) = detect(&d, "byok").await;
+    assert_eq!(body["agent"]["available"], false, "{body}");
+    let res = d
+        .http
+        .put(format!("{}/api/app-config", d.base))
+        .json(&json!({ "byok": {"protocol": "anthropic", "apiKey": "sk-ant-e2e-1234"} }))
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status().is_success(), "{}", res.text().await.unwrap());
+    let (_, body) = detect(&d, "byok").await;
+    assert_eq!(body["agent"]["available"], true, "{body}");
+}

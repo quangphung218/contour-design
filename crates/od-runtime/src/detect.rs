@@ -51,14 +51,8 @@ pub fn is_executable(path: &Path) -> bool {
 /// timed out. Exit status is ignored: a CLI that rejects the flag still ran.
 async fn probe(bin: &Path, args: &[&str], path: &OsStr, timeout: Duration) -> Option<String> {
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.args(args)
-        .env("PATH", path)
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    let out = tokio::time::timeout(timeout, cmd.output())
-        .await
-        .ok()?
-        .ok()?;
+    cmd.args(args).env("PATH", path);
+    let out = crate::process::probe_output(cmd, timeout).await.ok()?;
     let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&out.stderr));
     Some(text)
@@ -148,10 +142,12 @@ pub async fn detect_in(
         }
     );
     info.available = true;
-    if def.id == DSH.id && crate::dsh_companion::probe(&bin, path, env).await.is_none() {
-        info.available = false;
-        info.needs_setup = true;
-        info.error = Some("the Open Design connection component is not set up".to_owned());
+    if def.id == DSH.id {
+        if let Err(e) = crate::dsh_companion::probe(&bin, path, env).await {
+            info.available = false;
+            info.needs_setup = true;
+            info.error = Some(e.to_string());
+        }
     }
     info.version = version
         .as_deref()

@@ -14,8 +14,6 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// The component's package name.
-pub const PACKAGE_NAME: &str = "@open-design/dsh-runtime";
 /// Limit of the `--probe` call.
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -68,36 +66,44 @@ pub fn parse_probe(stdout: &str) -> Option<String> {
         .flatten()
 }
 
-fn command(
-    bin: &Path,
-    args: &[&str],
-    path: &OsStr,
-    env: &[(OsString, OsString)],
-) -> tokio::process::Command {
-    // The agents' environment, like a run of `dsh` gets.
-    let mut cmd = tokio::process::Command::new(bin);
-    cmd.args(args)
-        .envs(env.iter().map(|(k, v)| (k, v)))
-        .env("PATH", path)
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    cmd
+/// Why the compatibility probe did not pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ProbeFailure {
+    #[error("the Open Design connection component is not set up")]
+    NoProfile,
+    #[error("the Open Design connection probe timed out")]
+    TimedOut,
+    #[error("the Open Design connection component did not pass the compatibility check")]
+    Incompatible,
 }
 
-/// Runs the compatibility probe; `None` when the profile is missing (the
-/// probe would create it) or the answer is not a compatible frame.
-pub async fn probe(bin: &Path, path: &OsStr, env: &[(OsString, OsString)]) -> Option<String> {
+/// Runs the compatibility probe with the agents' environment (`env`),
+/// like a run of `dsh` gets, and returns the component version.
+///
+/// # Errors
+/// [`ProbeFailure::NoProfile`] when the profile is missing (the probe
+/// would create it), [`ProbeFailure::TimedOut`] past [`PROBE_TIMEOUT`]
+/// (the probe's whole process group is killed), else
+/// [`ProbeFailure::Incompatible`].
+pub async fn probe(
+    bin: &Path,
+    path: &OsStr,
+    env: &[(OsString, OsString)],
+) -> Result<String, ProbeFailure> {
     if !has_profile(env) {
-        return None;
+        return Err(ProbeFailure::NoProfile);
     }
-    let out = tokio::time::timeout(
-        PROBE_TIMEOUT,
-        command(bin, &["--profile", "open-design", "--probe"], path, env).output(),
-    )
-    .await
-    .ok()?
-    .ok()?;
-    parse_probe(&String::from_utf8_lossy(&out.stdout))
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.args(["--profile", "open-design", "--probe"])
+        .envs(env.iter().map(|(k, v)| (k, v)))
+        .env("PATH", path);
+    match crate::process::probe_output(cmd, PROBE_TIMEOUT).await {
+        Ok(out) => {
+            parse_probe(&String::from_utf8_lossy(&out.stdout)).ok_or(ProbeFailure::Incompatible)
+        }
+        Err(crate::process::ProbeError::TimedOut) => Err(ProbeFailure::TimedOut),
+        Err(crate::process::ProbeError::Spawn(_)) => Err(ProbeFailure::Incompatible),
+    }
 }
 
 #[cfg(test)]

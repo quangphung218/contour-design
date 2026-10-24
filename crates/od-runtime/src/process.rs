@@ -66,6 +66,58 @@ fn track_job(child: &Child) -> std::io::Result<()> {
     })
 }
 
+/// Why a short probe gave no output.
+#[derive(Debug)]
+pub enum ProbeError {
+    /// It ran past its limit; its whole group was killed.
+    TimedOut,
+    /// It could not be started.
+    Spawn(std::io::Error),
+}
+
+/// Runs a short-lived probe (`--version`, `--probe`) as the leader of its
+/// own process group and collects its output. Whatever happens, the group
+/// is killed before this returns, so nothing the probe started (a stray
+/// background child) outlives it.
+///
+/// # Errors
+/// [`ProbeError::TimedOut`] past `timeout`, [`ProbeError::Spawn`] when it
+/// could not run.
+pub async fn probe_output(
+    mut cmd: Command,
+    timeout: Duration,
+) -> Result<std::process::Output, ProbeError> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    let child = cmd.spawn().map_err(ProbeError::Spawn)?;
+    #[cfg(windows)]
+    track_job(&child).map_err(ProbeError::Spawn)?;
+    let pgid = child.id().and_then(|id| i32::try_from(id).ok());
+    let out = tokio::time::timeout(timeout, child.wait_with_output()).await;
+    if let Some(pgid) = pgid {
+        kill_group_now(pgid);
+    }
+    match out {
+        Ok(Ok(out)) => Ok(out),
+        Ok(Err(e)) => Err(ProbeError::Spawn(e)),
+        Err(_) => Err(ProbeError::TimedOut),
+    }
+}
+
+/// SIGKILLs a group at once (Windows: closes its job).
+fn kill_group_now(pgid: i32) {
+    #[cfg(unix)]
+    imp::signal_group(pgid, imp::KILL);
+    #[cfg(not(unix))]
+    release_group(pgid);
+}
+
 #[cfg(unix)]
 mod imp {
     use nix::sys::signal::{Signal, killpg};
