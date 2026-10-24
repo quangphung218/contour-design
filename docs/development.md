@@ -247,7 +247,7 @@ cargo bench -p od-export --bench standalone       # standalone HTML export
 | Job | Runs on | Steps |
 |---|---|---|
 | fmt + clippy | Ubuntu | `make lint` |
-| test | macOS, Ubuntu | `make test` |
+| test | macOS, Ubuntu | ffmpeg (MP4 export tests), `make test` |
 | build (windows) | Windows | `trunk build`, `cargo build --workspace --all-targets` (no tests yet) |
 | e2e | Ubuntu | `make e2e`, screenshots uploaded on failure |
 | cargo-deny | Ubuntu | licences, advisories, bans, sources (`deny.toml`) |

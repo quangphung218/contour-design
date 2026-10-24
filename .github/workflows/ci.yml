@@ -75,6 +75,15 @@ jobs:
       - name: Linux packages
         if: runner.os == 'Linux'
         run: scripts/linux-deps.sh
+      # The MP4 export tests need ffmpeg and ffprobe, and fail without them.
+      - name: ffmpeg
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install ffmpeg
+          else
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -version | head -n1
       - run: make test
 
   # Windows is compile-checked only: Job Object, ConPTY and WebView2 are not
