@@ -1,4 +1,4 @@
-//! Bundled and user content for open-design-rs: skills, design templates,
+//! Bundled and user content for Contour: skills, design templates,
 //! design systems, craft rules and bundled plugins.
 //!
 //! Loading is "discovery, not validation": unreadable entries are skipped,

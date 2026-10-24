@@ -1,6 +1,6 @@
 [package]
 name = "od-server"
-description = "HTTP API of the open-design-rs daemon (axum, loopback by default)"
+description = "HTTP API of the Contour daemon (axum, loopback by default)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

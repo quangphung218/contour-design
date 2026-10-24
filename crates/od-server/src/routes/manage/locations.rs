@@ -68,7 +68,7 @@ fn listing(store: &Store) -> LocationsResponse {
     let default_id = default_id(store, &custom);
     let mut locations = vec![Location {
         id: DEFAULT_ID.to_owned(),
-        name: "Nét projects".to_owned(),
+        name: "Contour projects".to_owned(),
         path: store
             .data_dir()
             .projects_dir()

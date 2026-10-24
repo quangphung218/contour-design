@@ -8,7 +8,7 @@ set -euo pipefail
 dir="$1"
 {
   echo '/*!'
-  echo ' * Sucrase 3.35.0 bundled for Nét (React component previews and exports), with:'
+  echo ' * Sucrase 3.35.0 bundled for Contour (React component previews and exports), with:'
   echo ' * lines-and-columns 1.2.4 (MIT), ts-interface-checker 0.1.13 (Apache-2.0),'
   echo ' * @jridgewell/gen-mapping 0.3.13, @jridgewell/resolve-uri 3.1.2,'
   echo ' * @jridgewell/sourcemap-codec 1.6.0, @jridgewell/trace-mapping 0.3.31 (MIT).'

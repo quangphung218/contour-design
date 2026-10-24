@@ -28,7 +28,7 @@ use std::process::ExitCode;
 #[command(
     name = "od",
     version,
-    about = "Nét: design with your agent, on your machine (daemon and CLI)"
+    about = "Contour: design with your agent, on your machine (daemon and CLI)"
 )]
 struct Cli {
     /// Daemon base URL for client commands.

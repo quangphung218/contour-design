@@ -72,13 +72,13 @@ const EXAMPLE_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-sr
 
 /// Example pages copied from the upstream app name it (sample decks and
 /// dashboards about "OpenDesign"); the gallery thumbnails and design system
-/// previews show Nét instead.
+/// previews show Contour instead.
 /// The files on disk keep their original text.
 pub(crate) fn rebrand_example(html: Vec<u8>) -> Vec<u8> {
     match String::from_utf8(html) {
         Ok(text) if text.contains("OpenDesign") || text.contains("Open Design") => text
-            .replace("OpenDesign", "Nét")
-            .replace("Open Design", "Nét")
+            .replace("OpenDesign", "Contour")
+            .replace("Open Design", "Contour")
             .into_bytes(),
         Ok(text) => text.into_bytes(),
         Err(e) => e.into_bytes(),
@@ -179,7 +179,7 @@ mod tests {
         let out = rebrand_example(b"<b>Show HN: OpenDesign v2</b> by Open Design".to_vec());
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "<b>Show HN: Nét v2</b> by Nét"
+            "<b>Show HN: Contour v2</b> by Contour"
         );
         assert_eq!(rebrand_example(vec![0xff, b'O']), vec![0xff, b'O']);
     }

@@ -116,7 +116,7 @@ async fn replace_content(
     let label = q
         .label
         .filter(|l| !l.trim().is_empty())
-        .unwrap_or_else(|| "Edited in Nét".to_owned());
+        .unwrap_or_else(|| "Edited in Contour".to_owned());
     let file = state
         .blocking(move |s| s.replace_file(&id, &path, &body, &label))
         .await?;

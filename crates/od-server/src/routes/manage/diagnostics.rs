@@ -89,7 +89,7 @@ pub async fn export(State(state): State<AppState>) -> ApiResult<impl IntoRespons
         add(
             "summary/manifest.json",
             &pretty(&json!({
-                "name": "open-design-rs",
+                "name": "contour",
                 "version": env!("CARGO_PKG_VERSION"),
                 "platform": std::env::consts::OS,
                 "arch": std::env::consts::ARCH,

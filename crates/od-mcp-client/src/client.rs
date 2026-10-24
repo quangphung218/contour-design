@@ -38,7 +38,7 @@ fn initialize(id: u64) -> Value {
         json!({
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": {"name": "open-design-rs", "version": env!("CARGO_PKG_VERSION")},
+            "clientInfo": {"name": "contour", "version": env!("CARGO_PKG_VERSION")},
         }),
     )
 }

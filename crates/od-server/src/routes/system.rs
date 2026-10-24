@@ -20,7 +20,7 @@ pub async fn version() -> impl IntoResponse {
         NO_STORE,
         ApiJson(AppVersionResponse {
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            name: "open-design-rs".to_owned(),
+            name: "contour".to_owned(),
             platform: std::env::consts::OS.to_owned(),
             arch: std::env::consts::ARCH.to_owned(),
         }),

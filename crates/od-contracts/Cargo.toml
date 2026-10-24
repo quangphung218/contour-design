@@ -1,6 +1,6 @@
 [package]
 name = "od-contracts"
-description = "Serde DTOs shared by the open-design-rs daemon, CLI and UI"
+description = "Serde DTOs shared by the Contour daemon, CLI and UI"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

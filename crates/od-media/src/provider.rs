@@ -742,7 +742,7 @@ fn client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(10 * 60))
         .connect_timeout(Duration::from_secs(30))
-        .user_agent(concat!("open-design-rs/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("contour/", env!("CARGO_PKG_VERSION")))
 }
 
 /// Shared client for provider APIs: generous timeout (image models take
