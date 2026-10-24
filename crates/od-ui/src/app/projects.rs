@@ -342,6 +342,9 @@ pub fn Projects() -> impl IntoView {
                         type="file"
                         accept=".zip,application/zip"
                         class="visually-hidden"
+                        tabindex="-1"
+                        aria-hidden="true"
+                        aria-label=t(T::ImportZip)
                         data-testid="import-zip-input"
                         node_ref=zip_input
                         on:change=on_zip

@@ -300,6 +300,7 @@ try {
 
   // Claude Design ZIP import.
   await page.goto(BASE + '/projects');
+  assert.equal(await page.getByTestId('import-zip-input').getAttribute('aria-label'), 'Import ZIP', 'the hidden ZIP input has a name (axe label)');
   await page.getByTestId('import-zip-input').setInputFiles({
     name: 'Cafe export.zip',
     mimeType: 'application/zip',
