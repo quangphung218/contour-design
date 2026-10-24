@@ -1,4 +1,4 @@
-//! Nét desktop shell (spec 5.1, 5.3).
+//! Contour desktop shell (spec 5.1, 5.3).
 //!
 //! Runs `od-server` inside this process on a random loopback port and points
 //! the window at it, so the UI talks to the same HTTP + SSE API as the CLI.
@@ -34,7 +34,7 @@ const DATA_FOLDER_MENU_ID: &str = "help-data-folder";
 const DOCS_MENU_ID: &str = "help-docs";
 const REPORT_MENU_ID: &str = "help-report-issue";
 /// Display name (window title, dialogs); `tauri.conf.json` `productName`.
-const APP_NAME: &str = "Nét";
+const APP_NAME: &str = "Contour";
 
 /// The in-process daemon.
 struct Daemon {
