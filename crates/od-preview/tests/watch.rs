@@ -69,7 +69,7 @@ async fn burst_of_writes_settles_into_one_event() {
 
     // Why three tries: under heavy I/O, FSEvents can hand over a write after
     // the debouncer already flushed, which splits one burst in two. That is
-    // the OS, not the debouncer (the Atlat gate saw it once at cc00a22; it
+    // the OS, not the debouncer (the Atlat gate saw it once at 740f0b5; it
     // never reproduced in 93 runs, idle or at load 24). Without debouncing
     // every try yields several events, so the test still fails: a 25 ms
     // DEBOUNCE splits all three. The trade-off: a debouncer that splits

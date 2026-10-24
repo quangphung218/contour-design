@@ -1,5 +1,5 @@
 /*
- * open-design-rs preview bridge (spec 4.1). Written from scratch; injected by
+ * Contour preview bridge (spec 4.1). Written from scratch; injected by
  * od-preview before any author script. Talks to the host frame with
  * window.postMessage; every message type starts with `od:` (see README.md).
  *
