@@ -537,7 +537,7 @@ try {
   await page.screenshot({ path: OUT + 'terminal.png' });
   // Full-screen programs (xterm.js): top takes over the alternate screen at
   // the pane's size, q gives the shell's screen back.
-  await page.keyboard.type('top -s 1');
+  await page.keyboard.type('top');
   await page.keyboard.press('Enter');
   await until(async () => /PID[\s\S]*COMMAND/.test(await term.textContent()), 'top screen');
   assert.ok(!(await term.textContent()).includes('e2e-42'), 'top draws on the alternate screen');
