@@ -1,0 +1,59 @@
+name: Bug report
+description: Something in Contour does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Security problems go through SECURITY.md, not here.
+        Help ▸ Report Issue in the desktop app copies a diagnostics summary you can paste below.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`od --version`, or About in the desktop app"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options: [Desktop app, Daemon + browser, CLI (od), MCP server]
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 26.1 (arm64)
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent
+      description: Which coding agent or BYOK provider, with its version
+      placeholder: Claude Code 2.1.259
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and diagnostics
+      description: Daemon output with RUST_LOG=debug (docs/troubleshooting.md). Remove API keys and tokens.
+      render: text
