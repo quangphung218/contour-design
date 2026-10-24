@@ -219,11 +219,12 @@ pub fn NotificationSettings() -> impl IntoView {
         }
     };
     let sound_select = move |testid: &'static str,
+                             label: &'static str,
                              list: &'static [&'static str],
                              get: fn(&Prefs) -> String,
                              put: fn(&mut Prefs, String)| {
         view! {
-            <select class="small select-auto" data-testid=testid on:change=move |ev| {
+            <select class="small select-auto" data-testid=testid aria-label=label on:change=move |ev| {
                 let mut next = current.get_untracked();
                 put(&mut next, event_target_value(&ev));
                 play(&get(&next));
@@ -245,9 +246,9 @@ pub fn NotificationSettings() -> impl IntoView {
                     <span>{icon(Glyph::Sound)}{t(T::CompletionSound)}</span>
                 </label>
                 <span class="muted small">{t(T::SuccessSound)}</span>
-                {sound_select("notify-success-sound", &SUCCESS_SOUNDS, |p| p.success_sound.clone(), |p, v| p.success_sound = v)}
+                {sound_select("notify-success-sound", t(T::SuccessSound), &SUCCESS_SOUNDS, |p| p.success_sound.clone(), |p, v| p.success_sound = v)}
                 <span class="muted small">{t(T::FailureSound)}</span>
-                {sound_select("notify-failure-sound", &FAILURE_SOUNDS, |p| p.failure_sound.clone(), |p, v| p.failure_sound = v)}
+                {sound_select("notify-failure-sound", t(T::FailureSound), &FAILURE_SOUNDS, |p| p.failure_sound.clone(), |p, v| p.failure_sound = v)}
             </div>
             <label class="switch">
                 <input type="checkbox" data-testid="notify-desktop" prop:checked=move || current.with(|c| c.desktop)
