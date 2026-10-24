@@ -41,8 +41,10 @@ After pulling UI changes, rebuild it: `rm -rf crates/od-ui/dist && make ui-dist`
 
 They are not. The first start of Contour moves
 `~/Library/Application Support/open-design-rs` (Linux:
-`~/.local/share/open-design-rs`) to `.../contour` and leaves a symlink at
-the old name. Check:
+`~/.local/share/open-design-rs`; Windows: `%HOME%\.local\share\open-design-rs`)
+to `.../contour` and leaves a symlink at the old name. If the old folder was
+itself a symlink (data on another drive), the link is moved and `contour`
+points at the same place. Check:
 
 ```bash
 ls -la ~/Library/Application\ Support/ | grep -E "contour|open-design-rs"
@@ -51,7 +53,9 @@ ls -la ~/Library/Application\ Support/ | grep -E "contour|open-design-rs"
 If both folders exist as real folders (the new one was created before the
 move could happen), Contour uses `contour` and leaves `open-design-rs`
 untouched. Quit Contour and every `od` daemon, then move the projects
-yourself or start once with `OD_DATA_DIR` pointing at the old folder.
+yourself or start once with `OD_DATA_DIR` pointing at the old folder. On
+Windows, builds started without `HOME` kept their data in `.od` inside the
+folder they were started from; Contour does not move that one.
 
 ## Agents
 

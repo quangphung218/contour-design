@@ -3829,6 +3829,7 @@ name = "od-store"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "nix 0.30.1",
  "od-contracts",
  "rusqlite",
  "serde",

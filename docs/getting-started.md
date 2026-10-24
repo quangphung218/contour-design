@@ -88,9 +88,12 @@ Projects, runs and settings are in one data folder:
 | Windows | `%APPDATA%\contour` |
 
 Set `OD_DATA_DIR` to use another folder. Help ▸ Show Data Folder opens it.
-If you used Contour when it was still called *Nét* (data in
-`open-design-rs`), the first start moves that folder to `contour` and leaves
-a link at the old path; nothing is copied or deleted.
+If you used Contour when it was still called *Nét*, the first start moves
+the old `open-design-rs` folder to `contour` and leaves a link at the old
+path; nothing is copied or deleted. Old builds kept it next to the new
+folder on macOS and Linux, and in `%HOME%\.local\share\open-design-rs` on
+Windows when `HOME` was set. Without `HOME` they used `.od` in the folder
+they were started from; that one is not moved, so point `OD_DATA_DIR` at it.
 
 ## Next
 
