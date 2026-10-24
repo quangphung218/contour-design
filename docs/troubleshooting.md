@@ -42,7 +42,9 @@ After pulling UI changes, rebuild it: `rm -rf crates/od-ui/dist && make ui-dist`
 They are not. The first start of Contour moves
 `~/Library/Application Support/open-design-rs` (Linux:
 `~/.local/share/open-design-rs`; Windows: `%HOME%\.local\share\open-design-rs`)
-to `.../contour` and leaves a symlink at the old name. If the old folder was
+to `.../contour`, and on macOS and Linux leaves a symlink at the old name
+(Windows gets no link: an old build started again there sees an empty
+folder, so run only Contour after the move). If the old folder was
 itself a symlink (data on another drive), the link is moved and `contour`
 points at the same place. Check:
 

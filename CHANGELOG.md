@@ -40,7 +40,8 @@ that runs entirely on your machine, at feature parity with the original app
 - **UI** in 20 languages, light and dark themes, keyboard shortcuts and a
   command palette.
 - **Data folder migration**: the first run moves an existing
-  `open-design-rs` data folder to `contour` and leaves a link at the old path.
+  `open-design-rs` data folder to `contour`, leaving a link at the old path
+  on macOS and Linux.
 - **Project tooling**: `make help` targets for setup, dev, test, e2e, lint,
   bundles, install and versioning; GitHub Actions for CI and releases;
   cargo-deny policy; docs for users and contributors.
