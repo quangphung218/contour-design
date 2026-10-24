@@ -688,6 +688,8 @@ async fn the_issue_summary_lists_facts_without_secrets() {
     assert!(v["logDir"].as_str().unwrap().ends_with("runs"));
 }
 
+// Read-only by Unix mode bits.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_memory_index_that_cannot_be_written_does_not_fail_the_run() {
     use std::os::unix::fs::PermissionsExt;

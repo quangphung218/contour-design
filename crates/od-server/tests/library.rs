@@ -575,6 +575,7 @@ async fn wait<F: Fn(&Value) -> bool>(d: &Daemon, path: &str, done: F) -> Value {
 }
 
 /// A user package from pasted CSS, and its folder on disk.
+#[cfg(unix)]
 async fn css_package(d: &Daemon, name: &str) -> (String, PathBuf) {
     let (s, v) = call(
         d,
@@ -592,6 +593,8 @@ async fn css_package(d: &Daemon, name: &str) -> (String, PathBuf) {
 
 /// A symlink planted in a package (an agent editing it in place can make
 /// one) never takes a route's read or write outside the package.
+// Escapes are planted as symlinks, so Unix only.
+#[cfg(unix)]
 #[tokio::test]
 async fn design_system_routes_stay_inside_the_package() {
     let d = daemon().await;
