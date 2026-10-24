@@ -112,7 +112,7 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
     vec![
         tool(
             "collect_brief",
-            "Start an Contour brief for a new artifact. Returns the questions to ask (each with stable option values and a recommended default) plus an internal draft id and nonce for confirm_brief. Never show the draft id or nonce to the user.",
+            "Start a Contour brief for a new artifact. Returns the questions to ask (each with stable option values and a recommended default) plus an internal draft id and nonce for confirm_brief. Never show the draft id or nonce to the user.",
             json!({
                 "artifactType": { "type": "string", "enum": ARTIFACT_TYPES, "description": "Artifact workflow whose brief should be collected." },
                 "projectTitle": { "type": "string", "description": "Concise human-readable project title." },
