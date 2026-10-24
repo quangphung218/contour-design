@@ -1,161 +1,161 @@
-# Design system của od-ui
+# od-ui design system
 
-Giao diện od-ui (Leptos CSR, `crates/od-ui`) dùng một design system riêng, viết bằng CSS thuần, không framework. Tài liệu này ghi token, component và quy tắc dùng. Sửa giao diện thì đọc hết trước khi viết CSS mới.
+The od-ui interface (Leptos CSR, `crates/od-ui`) uses its own design system, written in plain CSS with no framework. This document records the tokens, components and usage rules. Before changing the UI, read all of it before writing new CSS.
 
-## Hướng thiết kế
+## Design direction
 
-App desktop cho người làm thiết kế, tinh tế kiểu Linear/Raycast: nền neutral ấm, một màu accent xanh lá, chữ phân cấp bằng cỡ + độ đậm + màu, mật độ vừa, bo góc và đổ bóng nhẹ, đủ trạng thái hover/focus/active/disabled, dark mode đầy đủ, chuyển động ngắn.
+A desktop app for designers, refined in the Linear/Raycast vein: warm neutral backgrounds, a single green accent, text hierarchy through size + weight + colour, medium density, soft radii and shadows, complete hover/focus/active/disabled states, full dark mode, short motion.
 
-Không dùng: gradient tím, emoji làm icon, ký tự làm icon (`↻ × ⤓ >_`), dấu gạch dài `—` trong chuỗi UI, font tải từ mạng.
+Never use: purple gradients, emoji as icons, characters as icons (`↻ × ⤓ >_`), the em dash `—` in UI strings, fonts loaded from the network.
 
-## File
+## Files
 
-| File | Nội dung |
+| File | Contents |
 |---|---|
-| `crates/od-ui/styles/tokens.css` | Mọi token: `@font-face`, màu light/dark, type scale, spacing, radius, shadow, z-index, motion |
-| `crates/od-ui/styles/components.css` | Component dùng lại (button, input, chip, card, tab, menu, dialog, toast, badge, tooltip, empty state, skeleton) |
-| `crates/od-ui/styles/app.css` | App shell và từng màn (Home, Projects, Studio, Settings…), chỉ ghép token và component |
-| `crates/od-ui/styles/library.css` | Các màn thư viện (Design systems, Plugins, Media, Templates), nạp sau `app.css`, cũng chỉ ghép token và component |
-| `crates/od-ui/src/app/icons.rs` | `Glyph` + hàm `icon(glyph)` |
-| `crates/od-ui/vendor/remixicon/` | 109 icon SVG Remix Icon 4.8.0, Apache-2.0 |
-| `crates/od-ui/assets/` | Favicon và mark Nét (sinh từ `assets/brand`, xem [`brand.md`](brand.md)) |
+| `crates/od-ui/styles/tokens.css` | All tokens: `@font-face`, light/dark colours, type scale, spacing, radius, shadow, z-index, motion |
+| `crates/od-ui/styles/components.css` | Reusable components (button, input, chip, card, tab, menu, dialog, toast, badge, tooltip, empty state, skeleton) |
+| `crates/od-ui/styles/app.css` | App shell and each screen (Home, Projects, Studio, Settings…), composed only from tokens and components |
+| `crates/od-ui/styles/library.css` | Library screens (Design systems, Plugins, Media, Templates), loaded after `app.css`, also composed only from tokens and components |
+| `crates/od-ui/src/app/icons.rs` | `Glyph` + the `icon(glyph)` function |
+| `crates/od-ui/vendor/remixicon/` | 109 Remix Icon 4.8.0 SVG icons, Apache-2.0 |
+| `crates/od-ui/assets/` | Favicon and the Contour mark (generated from `assets/brand`, see [`brand.md`](brand.md)) |
 | `crates/od-ui/vendor/fonts/` | Geist, Geist Mono (variable, woff2), SIL OFL 1.1 |
 
-Thứ tự nạp trong `index.html`: tokens → components → app → library. Component chỉ đọc biến CSS, không viết mã màu trực tiếp (ngoại lệ: nền giấy trắng của preview và vài màu trên nền đen của chế độ trình chiếu).
+Load order in `index.html`: tokens → components → app → library. Components only read CSS variables and never hard-code colour values (exceptions: the white paper background of the preview and a few colours on the black background of presentation mode).
 
-## Token
+## Tokens
 
-### Màu (vai trò, không phải tên màu)
+### Colour (roles, not colour names)
 
-Light là mặc định. Dark theo hệ thống (`prefers-color-scheme`), trừ khi Settings chọn cố định: `App` đặt `data-theme="light|dark"` trên `<html>`. Khối dark khai báo hai lần trong `tokens.css` (theo hệ thống và chọn tay), sửa thì sửa cả hai.
+Light is the default. Dark follows the system (`prefers-color-scheme`) unless Settings pins a theme: `App` sets `data-theme="light|dark"` on `<html>`. The dark block is declared twice in `tokens.css` (system and manual choice); edit both together.
 
-| Token | Dùng cho | Light | Dark |
+| Token | Used for | Light | Dark |
 |---|---|---|---|
-| `--color-canvas` | Nền cửa sổ, sau sidebar | `#f2f1ed` | `#131210` |
-| `--color-surface` | Panel chính (`.main`), pane | `#fcfcfa` | `#1a1917` |
+| `--color-canvas` | Window background, behind the sidebar | `#f2f1ed` | `#131210` |
+| `--color-surface` | Main panel (`.main`), panes | `#fcfcfa` | `#1a1917` |
 | `--color-surface-raised` | Card, input, menu, dialog | `#ffffff` | `#22211e` |
-| `--color-surface-sunken` | Vùng lõm: cây file, thanh composer, code | `#f6f5f1` | `#161513` |
-| `--color-fill` / `-strong` | Nền hover / pressed của item trong suốt | `#eeece6` / `#e5e2da` | `#272622` / `#312f2b` |
-| `--color-border` / `-subtle` / `-strong` | Viền thường / phân cách trong card / hover | | |
-| `--color-text` / `-secondary` / `-tertiary` / `-disabled` | Bốn mức chữ | `#1c1b18` … | `#edebe5` … |
-| `--color-accent` (+ `-hover`, `-pressed`) | Nút chính, trạng thái đang chọn, icon active | `#2a7560` | `#4fae8c` |
-| `--color-on-accent` | Chữ trên nền accent | `#ffffff` | `#0c1a14` |
-| `--color-accent-soft` / `--color-accent-text` | Nền + chữ của thứ đang chọn (chip, tab, file, mode hint) | | |
-| `--color-success` / `-warning` / `-danger` (+ `-soft`) | Trạng thái. Không dùng làm màu trang trí | | |
+| `--color-surface-sunken` | Recessed areas: file tree, composer bar, code | `#f6f5f1` | `#161513` |
+| `--color-fill` / `-strong` | Hover / pressed background of transparent items | `#eeece6` / `#e5e2da` | `#272622` / `#312f2b` |
+| `--color-border` / `-subtle` / `-strong` | Normal border / divider inside a card / hover | | |
+| `--color-text` / `-secondary` / `-tertiary` / `-disabled` | Four text levels | `#1c1b18` … | `#edebe5` … |
+| `--color-accent` (+ `-hover`, `-pressed`) | Primary button, selected state, active icon | `#2a7560` | `#4fae8c` |
+| `--color-on-accent` | Text on an accent background | `#ffffff` | `#0c1a14` |
+| `--color-accent-soft` / `--color-accent-text` | Background + text of the selected thing (chip, tab, file, mode hint) | | |
+| `--color-success` / `-warning` / `-danger` (+ `-soft`) | Status. Never used as decoration | | |
 | `--color-inverse` / `--color-on-inverse` | Tooltip, toast | | |
-| `--color-stage` | Nền sau preview, terminal pane | | |
-| `--color-paper` | Nền iframe preview (luôn trắng như trang thật) | | |
-| `--color-terminal` | Nền xterm | | |
-| `--color-cover-0..3`, `--color-cover-dot` | Bốn tông nền bìa card template, chấm hoạ tiết | | |
-| `--color-focus-ring` | Vòng focus 3px | | |
+| `--color-stage` | Background behind the preview, terminal pane | | |
+| `--color-paper` | Preview iframe background (always white, like a real page) | | |
+| `--color-terminal` | xterm background | | |
+| `--color-cover-0..3`, `--color-cover-dot` | Four cover tones for template cards, pattern dots | | |
+| `--color-focus-ring` | 3px focus ring | | |
 
-Một accent duy nhất. Neutral cùng một họ xám ấm, không trộn xám lạnh. Bóng đổ nhuốm nâu ấm (`rgb(60 46 24 / …)`), không dùng đen thuần.
+One accent only. Neutrals come from a single warm-grey family; never mix in cool greys. Shadows are tinted warm brown (`rgb(60 46 24 / …)`), never pure black.
 
-### Chữ
+### Type
 
-Font: `--font-sans` = Geist, `--font-mono` = Geist Mono, đều đóng gói trong bundle (`/fonts/`), có fallback font hệ thống. Không tải Google Fonts.
+Fonts: `--font-sans` = Geist, `--font-mono` = Geist Mono, both bundled (`/fonts/`) with system font fallbacks. No Google Fonts.
 
-| Token | px | Dùng cho |
+| Token | px | Used for |
 |---|---|---|
-| `--text-2xs` | 10.5 | badge, số trên thumbnail |
-| `--text-xs` | 11.5 | meta, đường dẫn, chú thích |
-| `--text-sm` | 12.5 | nút nhỏ, label field, danh sách dày |
-| `--text-base` | 13.5 | chữ mặc định |
+| `--text-2xs` | 10.5 | badges, numbers on thumbnails |
+| `--text-xs` | 11.5 | meta, paths, captions |
+| `--text-sm` | 12.5 | small buttons, field labels, dense lists |
+| `--text-base` | 13.5 | default text |
 | `--text-md` | 15 | h2, brief |
-| `--text-lg` | 17 | tiêu đề dialog |
+| `--text-lg` | 17 | dialog titles |
 | `--text-xl` | 21 | |
-| `--text-2xl` | 28 | h1 trang |
-| `--text-3xl` | 36 | tiêu đề Home |
+| `--text-2xl` | 28 | page h1 |
+| `--text-3xl` | 36 | Home title |
 
-Độ đậm: 400 chữ thường, 500 nút và label, 600 tiêu đề. Tiêu đề lớn dùng `--tracking-tight`. Số liệu dùng `font-variant-numeric: tabular-nums`.
+Weights: 400 body text, 500 buttons and labels, 600 headings. Large headings use `--tracking-tight`. Figures use `font-variant-numeric: tabular-nums`.
 
-### Khoảng cách, kích thước, bo góc
+### Spacing, sizing, radius
 
-- Lưới 4px: `--space-1` (4) … `--space-16` (64), thêm `-0-5`, `-1-5`, `-2-5`, `-3-5` cho chỗ cần chỉnh nửa bước.
-- Chiều cao control: `--control-xs` 22, `--control-sm` 28, `--control-md` 32, `--control-lg` 40. Icon: 14 / 16 / 20.
-- Bo góc: trong chặt, ngoài mềm. `--radius-xs` 4 (badge, kbd), `-sm` 6 (nút nhỏ, item menu), `-md` 8 (nút, input), `-lg` 12 (card, panel chính), `-xl` 16 (dialog, composer), `-full` (chip, nút gửi).
+- 4px grid: `--space-1` (4) … `--space-16` (64), plus `-0-5`, `-1-5`, `-2-5`, `-3-5` where a half step is needed.
+- Control heights: `--control-xs` 22, `--control-sm` 28, `--control-md` 32, `--control-lg` 40. Icons: 14 / 16 / 20.
+- Radius: tight inside, soft outside. `--radius-xs` 4 (badge, kbd), `-sm` 6 (small button, menu item), `-md` 8 (button, input), `-lg` 12 (card, main panel), `-xl` 16 (dialog, composer), `-full` (chip, send button).
 
-### Bóng đổ, lớp, chuyển động
+### Shadow, layers, motion
 
-- Bóng: `--shadow-xs` (nút, input), `-sm` (tab active, panel), `-md` (card khi hover, composer), `-lg` (menu, dialog, toast). `--shadow-accent` cho nút chính.
-- Lớp: `--z-raised` 10, `--z-sticky` 20, `--z-popover` 40, `--z-present` 50, `--z-overlay` 60, `--z-modal` 70, `--z-toast` 80, `--z-tooltip` 90. Không viết số z-index trực tiếp.
-- Chuyển động: `--duration-instant` 80ms, `-fast` 140ms, `-base` 200ms, `-slow` 280ms; easing `--ease-out`, `--ease-in-out`, `--ease-emphasized`. Chỉ animate `transform`, `opacity`, màu và bóng. `prefers-reduced-motion: reduce` đưa mọi duration về 0 và tắt spinner quay.
+- Shadows: `--shadow-xs` (button, input), `-sm` (active tab, panel), `-md` (card on hover, composer), `-lg` (menu, dialog, toast). `--shadow-accent` for the primary button.
+- Layers: `--z-raised` 10, `--z-sticky` 20, `--z-popover` 40, `--z-present` 50, `--z-overlay` 60, `--z-modal` 70, `--z-toast` 80, `--z-tooltip` 90. Never write raw z-index numbers.
+- Motion: `--duration-instant` 80ms, `-fast` 140ms, `-base` 200ms, `-slow` 280ms; easing `--ease-out`, `--ease-in-out`, `--ease-emphasized`. Animate only `transform`, `opacity`, colour and shadow. `prefers-reduced-motion: reduce` sets every duration to 0 and stops spinners.
 
-## Component
+## Components
 
-| Class | Biến thể | Ghi chú |
+| Class | Variants | Notes |
 |---|---|---|
-| `.btn` | `primary`, `ghost`, `danger`, `ghost danger`, `subtle-btn`, `active` / `aria-pressed="true"`; cỡ `small`, `large`; `round` | Icon đặt trước chữ: `{icon(Glyph::X)}{t(..)}`. Biến thể đổi biến `--btn-bg`, `--btn-fg`, `--btn-border`, `--btn-bg-hover` |
-| `.icon-btn` | `small`, `danger`, `active` / `aria-expanded` | Bắt buộc có `aria-label`; thường kèm `data-tip` |
-| `.input`, `select`, `textarea.input` | `small` | Focus: viền accent + vòng `--color-focus-ring`. `select` có mũi tên vẽ bằng gradient |
-| `.field` | | `<label class="field"><span>Label</span><input …><span class="muted">gợi ý</span></label>` |
+| `.btn` | `primary`, `ghost`, `danger`, `ghost danger`, `subtle-btn`, `active` / `aria-pressed="true"`; sizes `small`, `large`; `round` | Icon goes before the label: `{icon(Glyph::X)}{t(..)}`. Variants change the `--btn-bg`, `--btn-fg`, `--btn-border`, `--btn-bg-hover` variables |
+| `.icon-btn` | `small`, `danger`, `active` / `aria-expanded` | `aria-label` is required; usually paired with `data-tip` |
+| `.input`, `select`, `textarea.input` | `small` | Focus: accent border + `--color-focus-ring` ring. `select` has an arrow drawn with a gradient |
+| `.field` | | `<label class="field"><span>Label</span><input …><span class="muted">hint</span></label>` |
 | `.switch` | | `<label class="switch"><input type="checkbox"><span>…</span></label>` |
-| `.radio-row` | | Thẻ chọn có mô tả; viền accent khi `:checked` |
-| `.chip` | `active` / `aria-checked="true"` | Chọn loại đầu ra, câu trả lời form, chip bình luận đính kèm |
-| `.segmented` + `.seg` | `small`, `icons` | Một lựa chọn trong vài giá trị (chế độ phiên, thiết bị, theme, tab của màn thư viện). Đang chọn: `.active`, `aria-checked`, `aria-pressed` hoặc `aria-selected` |
-| `.badge` | `accent`, `success`, `warning`, `danger`, `outline` | Vuông góc nhỏ (`--radius-xs`), không dùng viên thuốc |
-| `.card` | `padded`, `interactive` | Chỉ dùng khi độ nổi nói lên thứ bậc; còn lại dùng khoảng trắng |
-| `.tabs` + `.tab` | `active` | `.tab-name` (có icon) + `.tab-close` (hiện khi hover hoặc active) |
-| `.menu-wrap` + `.menu` / `.popover` | `left` | `.menu-item` có icon, `.menu-sep` là tiêu đề nhóm |
-| `.overlay` + `.dialog` | `overlay.center` | `.dialog-head` (`.dialog-icon`), `.dialog-body`, `.dialog-foot`; `role="dialog"`, `aria-modal`, Esc và bấm nền để đóng. Dùng component `lib_ui::Modal`: nền là `.modal-backdrop` đứng cạnh dialog (không bọc dialog), vì nút bên trong đóng modal sẽ gỡ cây DOM khi click còn đang nổi bọt |
-| `lib_ui::ConfirmBar` | | Dòng xác nhận xoá ngay trên trang (nền `--color-danger-soft`). Không dùng `window.confirm`: hộp thoại chặn làm handler của app bị gọi lại khi đang chạy |
-| `.toast-region` + `.toast` | `error` | Kết quả export/handoff, tự ẩn sau 5 giây |
-| `[data-tip]` | `data-tip-pos="right|left|top"` | Tooltip CSS, hiện sau 350ms. Không dùng thêm `title` trên cùng phần tử |
-| `.empty-state` | `compact` | `.empty-icon` + `<strong>` + `<p>` + nút hành động nếu có |
-| `.skeleton` | | Khối chờ tải đúng hình dạng nội dung (card, agent, template) |
-| `.spinner` | `on-accent` | Chỉ cho việc đang chạy thật (run, export, tạo design system) |
-| `kbd` | | Phím tắt |
+| `.radio-row` | | Selectable card with a description; accent border when `:checked` |
+| `.chip` | `active` / `aria-checked="true"` | Picking an output type, form answers, attached comment chips |
+| `.segmented` + `.seg` | `small`, `icons` | One choice among a few values (session mode, device, theme, library screen tabs). Selected: `.active`, `aria-checked`, `aria-pressed` or `aria-selected` |
+| `.badge` | `accent`, `success`, `warning`, `danger`, `outline` | Small square corners (`--radius-xs`), never a pill |
+| `.card` | `padded`, `interactive` | Use only when elevation signals hierarchy; otherwise use whitespace |
+| `.tabs` + `.tab` | `active` | `.tab-name` (with icon) + `.tab-close` (shown on hover or when active) |
+| `.menu-wrap` + `.menu` / `.popover` | `left` | `.menu-item` has an icon, `.menu-sep` is a group heading |
+| `.overlay` + `.dialog` | `overlay.center` | `.dialog-head` (`.dialog-icon`), `.dialog-body`, `.dialog-foot`; `role="dialog"`, `aria-modal`, Esc and backdrop click to close. Use the `lib_ui::Modal` component: the backdrop is a `.modal-backdrop` sibling of the dialog (it does not wrap the dialog), because a button inside that closes the modal removes the DOM tree while the click is still bubbling |
+| `lib_ui::ConfirmBar` | | Inline delete confirmation on the page (`--color-danger-soft` background). Never use `window.confirm`: the blocking dialog makes app handlers re-enter while they are still running |
+| `.toast-region` + `.toast` | `error` | Export/handoff results, auto-hide after 5 seconds |
+| `[data-tip]` | `data-tip-pos="right|left|top"` | CSS tooltip, shown after 350ms. Do not also put `title` on the same element |
+| `.empty-state` | `compact` | `.empty-icon` + `<strong>` + `<p>` + an action button if any |
+| `.skeleton` | | Loading placeholder shaped like the content (card, agent, template) |
+| `.spinner` | `on-accent` | Only for work that is really running (run, export, design system creation) |
+| `kbd` | | Keyboard shortcuts |
 
-## Icon
+## Icons
 
-- Bộ duy nhất: Remix Icon, kiểu "line" (thêm `stop-fill`, `checkbox-circle-fill`). Không trộn bộ khác, không tự vẽ path.
-- Dùng: `use super::icons::{Glyph, icon};` rồi `{icon(Glyph::History)}`. SVG được `include_str!` vào bundle; tô bằng `currentColor`, cỡ theo class `.ico` (16px, hoặc `ico-sm` 14 / `ico-lg` 20).
-- Icon luôn `aria-hidden`; tên cho trình đọc màn hình nằm ở nút (`aria-label` hoặc chữ hiện).
-- Thêm icon: `npm pack remixicon@4.8.0`, chép SVG vào `vendor/remixicon/icons/`, thêm một dòng trong `glyphs!` ở `icons.rs`. Không nâng lên 4.9+ (đổi license).
+- One set only: Remix Icon, "line" style (plus `stop-fill`, `checkbox-circle-fill`). Do not mix sets or hand-draw paths.
+- Usage: `use super::icons::{Glyph, icon};` then `{icon(Glyph::History)}`. SVGs are `include_str!`-ed into the bundle, painted with `currentColor`, sized by the `.ico` class (16px, or `ico-sm` 14 / `ico-lg` 20).
+- Icons are always `aria-hidden`; the screen-reader name lives on the button (`aria-label` or visible text).
+- Adding an icon: `npm pack remixicon@4.8.0`, copy the SVG into `vendor/remixicon/icons/`, add one line to `glyphs!` in `icons.rs`. Do not upgrade to 4.9+ (license change).
 
-## Quy tắc
+## Rules
 
-1. Màu, cỡ chữ, khoảng cách, bo góc, bóng, z-index, thời gian chuyển động: chỉ lấy từ token.
-2. Mọi phần tử bấm được có đủ bốn trạng thái: hover, focus-visible (vòng `--color-focus-ring`), active (lún nhẹ `scale(0.985)` hoặc nền đậm hơn), disabled (mờ 50%, `cursor: not-allowed`).
-3. Nút chỉ có icon phải có `aria-label`. Thứ đang bật dùng `aria-pressed` / `aria-checked` / `aria-current`, CSS đọc chính các thuộc tính đó.
-4. Chuỗi UI qua `t()` / `tf()` trong `src/i18n.rs`, đủ en + vi. Không đặt `—` trong chuỗi UI.
-5. Một accent. Màu success/warning/danger chỉ cho trạng thái thật.
-6. Kiểm tra cả light và dark trước khi xong: `crates/od-ui/e2e/screens.mjs` chụp mọi màn chính ở 1440x900 cho cả hai chế độ.
-7. Đổi markup thì giữ nguyên mọi `data-testid`; e2e (`crates/od-ui/e2e/run.sh`) dựa vào chúng.
+1. Colour, font size, spacing, radius, shadow, z-index, motion duration: tokens only.
+2. Every clickable element has all four states: hover, focus-visible (`--color-focus-ring` ring), active (slight press `scale(0.985)` or a darker background), disabled (50% opacity, `cursor: not-allowed`).
+3. Icon-only buttons must have `aria-label`. Toggled-on things use `aria-pressed` / `aria-checked` / `aria-current`, and CSS reads those same attributes.
+4. UI strings go through `t()` / `tf()` in `src/i18n.rs`, with both en + vi. No `—` in UI strings.
+5. One accent. Success/warning/danger colours only for real status.
+6. Check both light and dark before finishing: `crates/od-ui/e2e/screens.mjs` captures every main screen at 1440x900 in both modes.
+7. When changing markup, keep every `data-testid`; e2e (`crates/od-ui/e2e/run.sh`) depends on them.
 
 ## App shell
 
-- Sidebar trái: logo Nét, ô "Tìm hoặc chạy lệnh" (mở command palette), Home, Projects, Templates, Design systems, Plugins, Media, Automations, Integrations, Messages, rồi Phím tắt và Settings ở dưới cùng. Nút thu gọn thành rail 56px; lựa chọn lưu trong `localStorage` riêng cho Studio (`od.sidebar.studio-collapsed`, mặc định thu gọn) và các trang khác (`od.sidebar.collapsed`). Cửa sổ hẹp hơn 960px tự thành rail.
-- Nội dung nằm trong panel `.main` nổi trên nền canvas.
-- Desktop macOS: cửa sổ Tauri dùng title bar overlay (`TitleBarStyle::Overlay`, ẩn tiêu đề). UI phát hiện Tauri + macOS, đặt `data-shell="mac"` trên `<html>` và chừa dải `.titlebar` cao 38px làm vùng kéo cửa sổ (`data-tauri-drag-region`, quyền `core:window:allow-start-dragging`).
+- Left sidebar: Contour logo, the "Tìm hoặc chạy lệnh" (Search or run a command) box (opens the command palette), Home, Projects, Templates, Design systems, Plugins, Media, Automations, Integrations, Messages, then Keyboard shortcuts and Settings at the bottom. It collapses to a 56px rail; the choice is stored in `localStorage` separately for Studio (`od.sidebar.studio-collapsed`, collapsed by default) and other pages (`od.sidebar.collapsed`). Windows narrower than 960px become a rail automatically.
+- Content sits in the `.main` panel floating over the canvas background.
+- macOS desktop: the Tauri window uses an overlay title bar (`TitleBarStyle::Overlay`, title hidden). The UI detects Tauri + macOS, sets `data-shell="mac"` on `<html>` and reserves a 38px-high `.titlebar` strip as the window drag region (`data-tauri-drag-region`, permission `core:window:allow-start-dragging`).
 
 ## Studio
 
-- Ba vùng: chat bên trái, preview ở giữa (vùng chính), danh sách file bên phải. File thu gọn được (nút trên đầu cột file, `Cmd/Ctrl+B`, lưu ở `od.studio.files-open`).
-- Hàng tab: tab file, Side chat, "+", rồi bên phải History (icon) và Export. Export là nút chính (`primary`) khi đang mở một file: đây là đích của luồng chính.
-- Toolbar preview là **một hàng icon có tooltip** (`data-tip`, `aria-label`), trái sang phải: tải lại, `Preview | Code`, thiết bị, đường dẫn file (co lại được), nhóm công cụ (Thêm bình luận, Mọi bình luận kèm số đếm, Inspect, Sửa chữ, Sửa phần tử, Draw, Screenshot, Tweaks, Palette, Lint), zoom. Palette là `select` trong suốt phủ lên icon. Hint và trạng thái của công cụ đang mở nằm ở dải dưới toolbar (`ToolHints`).
-- Khổ hẹp (`@container preview`): dưới 860px ẩn chữ của `Preview | Code` và thanh Draw; dưới 760px panel công cụ và History nổi đè lên preview thay vì ép preview; dưới 560px toolbar xuống hàng. Cửa sổ dưới 1100px mở Studio với cột file thu gọn (cho tới khi người dùng mở, lưu ở `od.studio.files-open`).
-- Thanh Draw nằm ở đáy trang, không che tiêu đề; hẹp thì tự xuống hàng.
-- Code view của version đang xem là source của version đó. Bật bình luận thì tự về Preview. "Thử lại" gửi lại cả file đính kèm của tin gốc (lưu theo tin, cả khi tải lại lịch sử).
-- Zoom là `transform: scale` trên khung đã layout ở kích thước thiết bị (`zoom_box` + `zoomed` trong `studio.rs`), để WebKit và Chromium giống nhau và pin comment theo đúng chỗ.
-- Mỗi lượt của agent có một dòng trạng thái `[data-testid=run-state]` (`data-phase` = `starting | working | done | failed | stopped`; đang chạy theo plan thì hiện "Bước N/M"). Lượt cuối, khi không còn run nào, có hàng "Tiếp theo" (`next-steps`): xem file vừa ghi, bình luận lên trang, bản mobile, phương án khác; lỗi thì "Thử lại" và "Mở Cài đặt". Logic nằm ở `src/guide.rs`, test native.
-- Cột file (`app/files_panel.rs`, logic thuần ở `src/file_tree.rs`): cây thư mục thu gọn được (mở bằng click, double-click để vào thư mục, breadcrumb để ra), tìm file, xem theo loại (lọc chip, "Hiện thêm" mỗi 50 file), chọn nhiều (ZIP, chuyển, xoá), menu dòng (mở, tab mới, tải, chép đường dẫn, đổi tên, chuyển, xoá), nút "+" (tải lên, dán thành file, tài liệu/trang/sketch/thư mục mới), menu "…" (làm mới, tạo design system từ project, nhân bản). Thả file vào cột để tải lên. Trình sửa ghi file bằng `PUT /content/*path` (đúng tên, không qua sanitize).
-- Menu mở trong vùng cuộn (cây file, thanh tab, thanh deck) dùng `position: fixed` tính theo nút (`files_panel::anchor_style`) và lớp `.menu-scrim` để bấm ra ngoài là đóng; menu thường vẫn `absolute` như cũ.
-- File không phải trang HTML có view riêng thay cho iframe: Markdown (`doc_view.rs`, Soạn/Chia đôi/Xem trước, tự lưu sau 800 ms), sketch `*.sketch.json` (`sketch.rs`, dùng chung nét vẽ và undo với Draw), PDF/video/âm thanh (trình xem của trình duyệt), Word/PowerPoint/Excel (chữ trích bằng `od-export::office`). View riêng không bị dựng lại khi preview reload.
-- Deck: Present có menu (trong tab, toàn màn hình, tab mới, presenter view). Presenter view là route `/present/:id` mở cửa sổ riêng, đồng bộ slide với Studio qua `BroadcastChannel` (`presenter.rs`; slide do bên kia yêu cầu thì không phát lại, `deck::should_announce`).
-- Không tải được project (id sai, daemon tắt) thì lỗi nằm cố định đầu khung chat (`load-error`), kèm nút Thử lại; không hiện prompt mẫu. Các lỗi khác của Studio hiện thành toast đỏ ở giữa đáy (`data-testid=notice`), tự ẩn sau 8 giây. Lỗi HTTP mở đầu bằng câu dễ hiểu theo mã trạng thái (`status_hint` trong `api.rs`), sau đó là thông điệp gốc của daemon.
+- Three areas: chat on the left, preview in the middle (the main area), file list on the right. The file column collapses (button at the top of the column, `Cmd/Ctrl+B`, stored in `od.studio.files-open`).
+- Tab row: file tabs, Side chat, "+", then on the right History (icon) and Export. Export is the primary button (`primary`) while a file is open: it is the goal of the main flow.
+- The preview toolbar is **a single row of icons with tooltips** (`data-tip`, `aria-label`), left to right: reload, `Preview | Code`, device, file path (shrinkable), tool group (Add comment, All comments with a count, Inspect, Edit text, Edit element, Draw, Screenshot, Tweaks, Palette, Lint), zoom. Palette is a transparent `select` laid over its icon. Hints and status for the open tool sit in a strip below the toolbar (`ToolHints`).
+- Narrow widths (`@container preview`): below 860px the `Preview | Code` labels and the Draw bar text are hidden; below 760px the tool panels and History float over the preview instead of squeezing it; below 560px the toolbar wraps. Windows below 1100px open Studio with the file column collapsed (until the user opens it, stored in `od.studio.files-open`).
+- The Draw bar sits at the bottom of the page and does not cover the title; it wraps when narrow.
+- The code view of the version being viewed shows that version's source. Turning on comments switches back to Preview. "Thử lại" (Retry) resends the original message's attachments too (stored per message, even after history reloads).
+- Zoom is `transform: scale` on a frame laid out at device size (`zoom_box` + `zoomed` in `studio.rs`), so WebKit and Chromium match and comment pins land in the right place.
+- Each agent turn has a status line `[data-testid=run-state]` (`data-phase` = `starting | working | done | failed | stopped`; when following a plan it shows "Bước N/M" (Step N/M)). The last turn, once no run is active, has a "Tiếp theo" (Next) row (`next-steps`): view the file just written, comment on the page, mobile version, another variation; on error, "Thử lại" (Retry) and "Mở Cài đặt" (Open Settings). Logic lives in `src/guide.rs`, tested natively.
+- File column (`app/files_panel.rs`, pure logic in `src/file_tree.rs`): collapsible folder tree (click to expand, double-click to enter a folder, breadcrumb to leave), file search, view by type (chip filters, "Hiện thêm" (Show more) every 50 files), multi-select (ZIP, move, delete), row menu (open, new tab, download, copy path, rename, move, delete), "+" button (upload, paste as file, new document/page/sketch/folder), "…" menu (refresh, create design system from project, duplicate). Drop files onto the column to upload. The editor writes files with `PUT /content/*path` (exact name, no sanitizing).
+- Menus opened inside scroll areas (file tree, tab bar, deck bar) use `position: fixed` computed from the button (`files_panel::anchor_style`) plus a `.menu-scrim` layer so clicking outside closes them; ordinary menus stay `absolute`.
+- Non-HTML files get their own view instead of the iframe: Markdown (`doc_view.rs`, Soạn/Chia đôi/Xem trước (Editor/Split/Preview), autosave after 800 ms), sketch `*.sketch.json` (`sketch.rs`, shares strokes and undo with Draw), PDF/video/audio (the browser's viewer), Word/PowerPoint/Excel (text extracted with `od-export::office`). These views are not rebuilt when the preview reloads.
+- Deck: Present has a menu (in tab, fullscreen, new tab, presenter view). Presenter view is the `/present/:id` route opened in its own window, syncing slides with Studio over `BroadcastChannel` (`presenter.rs`; a slide requested by the other side is not re-broadcast, `deck::should_announce`).
+- If the project cannot load (bad id, daemon down), the error is pinned at the top of the chat pane (`load-error`) with a Retry button, and no sample prompts are shown. Other Studio errors appear as a red toast at bottom centre (`data-testid=notice`), auto-hiding after 8 seconds. HTTP errors start with a plain-language sentence based on the status code (`status_hint` in `api.rs`), followed by the daemon's original message.
 
-## Composer (Home và Studio)
+## Composer (Home and Studio)
 
-- Dùng chung `app/composer.rs`: `MentionArea` (ô nhập + palette `@`/`/`, paste và kéo thả file), `PlusMenu` ("+": đính file, Plugins, Skills, MCP, design toolbox, mục riêng của trang qua `children`), `ContextChips`, `UploadTray`, `ModelPicker`. Logic thuần ở `src/mention.rs`, `src/models.rs`, `src/toolbox.rs`, `src/intent.rs`.
-- Menu và popover mở lên trên ở chat (`.menu.up`, `.popover.up`); đóng khi bấm ra ngoài hoặc Esc (`close_outside`).
-- Palette `@`: nhóm Design files, Plugins, Skills, MCP (`.menu-sep`), dòng đang chọn `aria-selected="true"`. File đính kèm: chip có thumbnail 24 px cho ảnh, `data-state` = `waiting | uploading | failed`.
-- Khung chat kéo được (`.chat-resizer`, mũi tên 16 px), thu gọn bằng nút trên thanh conversation, độ rộng lưu ở `od.studio.chat-width`. Thành phần tự gỡ chính nó trong handler (form đổi tên, hộp thoại xoá) đổi state ở task kế tiếp.
+- Shared `app/composer.rs`: `MentionArea` (input + `@`/`/` palette, file paste and drag-and-drop), `PlusMenu` ("+": attach file, Plugins, Skills, MCP, design toolbox, page-specific items via `children`), `ContextChips`, `UploadTray`, `ModelPicker`. Pure logic in `src/mention.rs`, `src/models.rs`, `src/toolbox.rs`, `src/intent.rs`.
+- Menus and popovers open upward in chat (`.menu.up`, `.popover.up`); they close on outside click or Esc (`close_outside`).
+- `@` palette: groups Design files, Plugins, Skills, MCP (`.menu-sep`), selected row `aria-selected="true"`. Attachments: chips with a 24 px thumbnail for images, `data-state` = `waiting | uploading | failed`.
+- The chat pane is resizable (`.chat-resizer`, 16 px arrows), collapsible from a button on the conversation bar, width stored in `od.studio.chat-width`. Components that remove themselves inside their own handler (rename form, delete dialog) change state on the next task.
 
-## Command palette và phím tắt
+## Command palette and keyboard shortcuts
 
-- `Cmd/Ctrl+K` mở command palette (`app/palette.rs`): lệnh (project mới, các trang, đổi theme, phím tắt), project, và khi đang ở Studio thì thêm lệnh Studio và file. Tìm mờ bằng `fuzzy::score`. `Cmd/Ctrl+P` vẫn là quick switcher chỉ cho file.
-- `?` (ngoài ô nhập) mở bảng phím tắt (`app/shortcuts.rs`). Thêm phím tắt mới thì thêm cả vào `GROUPS` ở đó.
-- `Cmd/Ctrl+,` mở Settings, `Cmd/Ctrl+B` ngoài Studio thu gọn sidebar (trong Studio là ẩn/hiện cột file). Trong Studio: `Cmd/Ctrl+T` mở tab launcher, `Ctrl+PageUp/PageDown` và `Cmd/Ctrl+Alt+←/→` đổi tab, `Cmd/Ctrl+Shift+K` chép prompt bàn giao, `R` về slide đầu, `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` hoàn tác nét vẽ (`files_panel::on_studio_key`).
-- App desktop: menu Help (Phím tắt, Bảng lệnh, Mở thư mục dữ liệu) và Settings… gửi `od:menu` cho trang; theme của app đặt cả theme cửa sổ native (`desktop::set_theme`); cửa sổ mở bằng splash `apps/desktop/static/index.html` trong lúc daemon khởi động; file kéo thả vào cửa sổ đến trang dưới dạng drop HTML5.
-- Hộp thoại mở từ shell đóng ở task kế tiếp (`TimeoutFuture::new(0)`), không đóng ngay trong handler click: đóng ngay làm rơi listener mà chính cú click đó còn đi qua, wasm báo `closure invoked recursively or after being dropped`.
+- `Cmd/Ctrl+K` opens the command palette (`app/palette.rs`): commands (new project, pages, toggle theme, shortcuts), projects, and in Studio also Studio commands and files. Fuzzy search via `fuzzy::score`. `Cmd/Ctrl+P` remains the file-only quick switcher.
+- `?` (outside text inputs) opens the shortcuts sheet (`app/shortcuts.rs`). When adding a shortcut, also add it to `GROUPS` there.
+- `Cmd/Ctrl+,` opens Settings; `Cmd/Ctrl+B` outside Studio collapses the sidebar (in Studio it hides/shows the file column). In Studio: `Cmd/Ctrl+T` opens the tab launcher, `Ctrl+PageUp/PageDown` and `Cmd/Ctrl+Alt+←/→` switch tabs, `Cmd/Ctrl+Shift+K` copies the handoff prompt, `R` returns to the first slide, `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` undo/redo strokes (`files_panel::on_studio_key`).
+- Desktop app: the Help menu (Keyboard shortcuts, Command palette, Open data folder) and Settings… send `od:menu` to the page; the app theme also sets the native window theme (`desktop::set_theme`); the window opens on the splash `apps/desktop/static/index.html` while the daemon starts; files dropped onto the window reach the page as HTML5 drops.
+- Dialogs opened from the shell close on the next task (`TimeoutFuture::new(0)`), not directly in the click handler: closing immediately drops a listener that the same click is still passing through, and wasm reports `closure invoked recursively or after being dropped`.

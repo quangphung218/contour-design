@@ -1,53 +1,53 @@
-open-design-rs
-Bản viết lại bằng Rust của OpenDesign (https://github.com/nexu-io/open-design), Copyright nexu-io và cộng tác viên, Apache License 2.0.
-Nội dung trong content/ (skills, design-templates, design-systems, craft…) lấy từ OpenDesign commit e03d5c2; mỗi thư mục con giữ file LICENSE gốc nếu có.
+Contour (contour-design)
+A Rust rewrite of OpenDesign (https://github.com/nexu-io/open-design), Copyright nexu-io and contributors, Apache License 2.0.
+Content in content/ (skills, design-templates, design-systems, craft…) comes from OpenDesign commit e03d5c2; each subdirectory keeps its original LICENSE file where one exists.
 
-Nội dung đã copy (git archive tại e03d5c2, chỉ file được git theo dõi):
-- content/craft/            13 file (11 mục craft + README.md + FUTURE_SECTIONS.md)
-- content/skills/           169 thư mục
-- content/design-templates/ 115 thư mục
-- content/design-systems/   152 package + _schema; giữ tên thương hiệu và attribution theo docs/decisions.md mục 3
-- 73 file LICENSE con được giữ nguyên chỗ.
+Copied content (git archive at e03d5c2, git-tracked files only):
+- content/craft/            13 files (11 craft entries + README.md + FUTURE_SECTIONS.md)
+- content/skills/           169 directories
+- content/design-templates/ 115 directories
+- content/design-systems/   152 packages + _schema; brand names and attribution kept per docs/decisions.md §3
+- 73 nested LICENSE files kept in place.
 
-Đã loại hoặc chưa copy:
-- Font: không có file font (.woff/.woff2/.ttf/.otf/.eot) nào trong 4 thư mục trên, nên không phải loại gì.
-- prompt-templates/: xem mục M6 bên dưới.
-- plugins/_official/ examples, image/video-templates, design-systems: chưa copy.
-  Khi copy examples/ phải loại font không có license (examples/open-design-homepage/assets/fonts) và font hash trong video-templates/*/source/fonts.
+Excluded or not yet copied:
+- Fonts: the 4 directories above contain no font files (.woff/.woff2/.ttf/.otf/.eot), so nothing had to be excluded.
+- prompt-templates/: see M6 below.
+- plugins/_official/ examples, image/video-templates, design-systems: not yet copied.
+  When copying examples/, exclude the unlicensed fonts (examples/open-design-homepage/assets/fonts) and the hashed fonts in video-templates/*/source/fonts.
 
-Dữ liệu test: crates/od-content/tests/fixtures/original-*.json là output của loader TypeScript gốc (Apache-2.0) chạy trên content/ ở trên.
+Test data: crates/od-content/tests/fixtures/original-*.json is the output of the original TypeScript loader (Apache-2.0) run over the content/ above.
 
-M2 (run engine), lấy từ OpenDesign commit e03d5c2 (Apache-2.0):
-- crates/od-runtime/tests/fixtures/claude-cli-recordings/: 6 bản ghi stdout thật của Claude Code 2.1.259 + README, chép nguyên từ apps/daemon/tests/fixtures/claude-cli-recordings/.
-- crates/od-runtime/tests/fixtures/codex/turn-exec-json.jsonl: bản ghi `codex exec --json`, chép từ apps/daemon/tests/fixtures/codex-app-server/.
-- crates/od-content/prompts/legacy/*.md: văn bản prompt bộ legacy (apps/daemon/src/prompts/, packages/contracts/src/prompts/), render với execution profile `filesystem`; bản Rust chỉ ghép lại theo thứ tự spec 2.4.
+M2 (run engine), from OpenDesign commit e03d5c2 (Apache-2.0):
+- crates/od-runtime/tests/fixtures/claude-cli-recordings/: 6 real stdout recordings of Claude Code 2.1.259 + README, copied verbatim from apps/daemon/tests/fixtures/claude-cli-recordings/.
+- crates/od-runtime/tests/fixtures/codex/turn-exec-json.jsonl: a `codex exec --json` recording, copied from apps/daemon/tests/fixtures/codex-app-server/.
+- crates/od-content/prompts/legacy/*.md: prompt text of the legacy set (apps/daemon/src/prompts/, packages/contracts/src/prompts/), rendered with the `filesystem` execution profile; the Rust version only reassembles it in the order of spec 2.4.
 
-M6 track W2-media, lấy từ OpenDesign commit e03d5c2:
-- content/plugins/_official/atoms/ (13) và scenarios/ (10): manifest ghi license MIT, tác giả OpenDesign (nexu-io).
-  Không copy scenario od-next-strategy (rollout), od-share-to-community (share), od-tune-collab (collab),
-  od-figma-migration (cần connector Figma qua mạng).
-- content/prompt-templates/image (46) và video (58) = 104 file JSON. Mỗi file giữ khối `source`
-  (repo, license, author, url) để ghi công: 72 file CC-BY-4.0 (ghi công tác giả theo `source.author`/`source.url`),
-  31 Apache-2.0, 1 MIT. Đã loại 2 file license "Original X post" (không rõ license):
+M6 track W2-media, from OpenDesign commit e03d5c2:
+- content/plugins/_official/atoms/ (13) and scenarios/ (10): manifests state license MIT, author OpenDesign (nexu-io).
+  Scenarios not copied: od-next-strategy (rollout), od-share-to-community (share), od-tune-collab (collab),
+  od-figma-migration (needs a Figma connector over the network).
+- content/prompt-templates/image (46) and video (58) = 104 JSON files. Each file keeps its `source` block
+  (repo, license, author, url) for attribution: 72 files CC-BY-4.0 (author credited via `source.author`/`source.url`),
+  31 Apache-2.0, 1 MIT. Excluded 2 files licensed "Original X post" (unclear license):
   image/profile-avatar-seedream-high-fashion-dreamy-portrait.json,
   image/social-media-post-seedream-squishcraft-kids-clay-ad.json,
-  và ảnh image/notion-team-dashboard-live-artifact.preview.png. API không trả URL ảnh preview (CDN bên thứ ba).
+  and the image image/notion-team-dashboard-live-artifact.preview.png. The API does not return preview image URLs (third-party CDN).
 
-W4 terminal: crates/od-ui/vendor/xterm/ là xterm.js đóng gói cục bộ (không tải từ CDN):
-- xterm.js, xterm.css từ @xterm/xterm 6.0.0, MIT, Copyright The xterm.js authors, SourceLair, Christopher Jeffrey (LICENSE).
-- addon-fit.js từ @xterm/addon-fit 0.11.0, MIT, Copyright The xterm.js authors (LICENSE.addon-fit).
+W4 terminal: crates/od-ui/vendor/xterm/ is xterm.js bundled locally (not loaded from a CDN):
+- xterm.js, xterm.css from @xterm/xterm 6.0.0, MIT, Copyright The xterm.js authors, SourceLair, Christopher Jeffrey (LICENSE).
+- addon-fit.js from @xterm/addon-fit 0.11.0, MIT, Copyright The xterm.js authors (LICENSE.addon-fit).
 
-Export JSX (#119): crates/od-preview/vendor/react-runtime/ là runtime React đóng gói cục bộ (không tải từ CDN), được inline vào trang preview `.jsx/.tsx` và vào file "Export React component as HTML". Text license đầy đủ ở licenses/ và đi kèm file xuất ra.
-- react.production.min.js từ react 18.3.1 và react-dom.production.min.js từ react-dom 18.3.1, MIT, Copyright (c) Facebook, Inc. and its affiliates.
-- sucrase.min.js là sucrase 3.35.0 (MIT, Copyright (c) 2012-2018 various contributors) đóng gói bằng esbuild cùng lines-and-columns 1.2.4 (MIT, Copyright (c) 2015 Brian Donovan), ts-interface-checker 0.1.13 (Apache-2.0, tác giả Dmitry S, Grist Labs), @jridgewell/gen-mapping 0.3.13, resolve-uri 3.1.2, sourcemap-codec 1.6.0, trace-mapping 0.3.31 (MIT, Copyright Justin Ridgewell). Lệnh build: build-sucrase.sh.
+Export JSX (#119): crates/od-preview/vendor/react-runtime/ is a React runtime bundled locally (not loaded from a CDN), inlined into the `.jsx/.tsx` preview page and into the "Export React component as HTML" file. Full license texts are in licenses/ and ship with the exported file.
+- react.production.min.js from react 18.3.1 and react-dom.production.min.js from react-dom 18.3.1, MIT, Copyright (c) Facebook, Inc. and its affiliates.
+- sucrase.min.js is sucrase 3.35.0 (MIT, Copyright (c) 2012-2018 various contributors) bundled with esbuild together with lines-and-columns 1.2.4 (MIT, Copyright (c) 2015 Brian Donovan), ts-interface-checker 0.1.13 (Apache-2.0, author Dmitry S, Grist Labs), @jridgewell/gen-mapping 0.3.13, resolve-uri 3.1.2, sourcemap-codec 1.6.0, trace-mapping 0.3.31 (MIT, Copyright Justin Ridgewell). Build command: build-sucrase.sh.
 
-W4 tweaks: đã sửa văn bản gốc để agent khai báo tweaks theo định dạng bridge bản Rust đọc (`data-od-tweaks`):
-- crates/od-content/prompts/legacy/OFFICIAL_DESIGNER_PROMPT.md mục "Tweaks (in-design controls)" (thay marker EDITMODE),
-  DISCOVERY_AND_PHILOSOPHY.md thêm một câu.
-- content/design-templates/tweaks/: SKILL.md mục "Host integration contract", assets/wrap.html và example.html thêm khối khai báo.
+W4 tweaks: the original text was edited so agents declare tweaks in the format the Rust bridge reads (`data-od-tweaks`):
+- crates/od-content/prompts/legacy/OFFICIAL_DESIGNER_PROMPT.md section "Tweaks (in-design controls)" (replaces the EDITMODE marker),
+  DISCOVERY_AND_PHILOSOPHY.md gains one sentence.
+- content/design-templates/tweaks/: SKILL.md section "Host integration contract", assets/wrap.html and example.html gain the declaration block.
 
-UI redesign: icon và font đóng gói cục bộ trong crates/od-ui/vendor/ (không tải từ CDN hay Google Fonts):
-- remixicon/icons/: 78 file SVG chép nguyên từ remixicon 4.8.0, Apache License 2.0, Copyright Remix Design (remixicon/LICENSE).
-  Bản 4.9.0 trở đi đổi sang "Remix Icon License v1.0", nên giữ 4.8.0.
-- fonts/Geist-Variable.woff2, fonts/GeistMono-Variable.woff2 từ geist 1.8.2, SIL Open Font License 1.1,
+UI redesign: icons and fonts bundled locally in crates/od-ui/vendor/ (not loaded from a CDN or Google Fonts):
+- remixicon/icons/: 78 SVG files copied verbatim from remixicon 4.8.0, Apache License 2.0, Copyright Remix Design (remixicon/LICENSE).
+  Version 4.9.0 onward switched to the "Remix Icon License v1.0", so 4.8.0 is kept.
+- fonts/Geist-Variable.woff2, fonts/GeistMono-Variable.woff2 from geist 1.8.2, SIL Open Font License 1.1,
   Copyright (c) 2023 Vercel, in collaboration with basement.studio (fonts/OFL.txt).

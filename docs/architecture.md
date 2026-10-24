@@ -1,48 +1,48 @@
-# Kiến trúc
+# Architecture
 
-Tóm tắt một trang. Chi tiết hành vi ở [`spec.md`](spec.md) (mục 5 là đề xuất kiến trúc gốc), quyết định đã chốt ở [`decisions.md`](decisions.md).
+A one-page summary. Behaviour details are in [`spec.md`](spec.md) (§5 is the original architecture proposal); settled decisions are in [`decisions.md`](decisions.md).
 
-## Một API, ba client
+## One API, three clients
 
 ```
- trình duyệt ─┐                        ┌─ od-store   (SQLite + thư mục project)
- app desktop ─┼─ HTTP / SSE / WS ─ od-server ─┼─ od-runs    (event của run)
+ browser     ─┐                        ┌─ od-store   (SQLite + project folders)
+ desktop app ─┼─ HTTP / SSE / WS ─ od-server ─┼─ od-runs    (run events)
  CLI, MCP ────┘   127.0.0.1                 ├─ od-runtime (spawn agent CLI / BYOK)
                                             ├─ od-preview, od-export, od-render-cdp
                                             └─ od-term, od-automation, od-media, od-mcp-client
 ```
 
-- **Daemon** (`od-server`, chạy bởi `od` hoặc nhúng trong app desktop) giữ toàn bộ trạng thái; client không giữ gì riêng. Mặc định chỉ bind loopback; bind ra ngoài thì bắt buộc `OD_API_TOKEN`. Middleware chặn origin lạ.
-- **UI** (`od-ui`) là Leptos CSR biên dịch ra WASM, được chính daemon phục vụ như file tĩnh. UI chỉ gọi `/api/*`, không có đường tắt nào khác.
-- **CLI** `od` và **MCP server** (`od mcp`) là client mỏng của cùng API (luật dual-track: tính năng nào có trong UI cũng gọi được từ CLI/agent).
-- **App desktop** (`apps/desktop`, Tauri 2) chạy `od-server` trong process ở port loopback ngẫu nhiên và mở một webview trỏ vào đó. Tauri chỉ lo phần native: hộp thoại chọn thư mục, menu. Capability IPC chỉ cấp cho đúng origin của daemon.
+- **Daemon** (`od-server`, run by `od` or embedded in the desktop app) holds all state; clients keep nothing of their own. It binds loopback only by default; binding externally requires `OD_API_TOKEN`. Middleware rejects unknown origins.
+- **UI** (`od-ui`) is Leptos CSR compiled to WASM and served by the daemon itself as static files. The UI only calls `/api/*`; there is no other shortcut.
+- **CLI** `od` and the **MCP server** (`od mcp`) are thin clients of the same API (dual-track rule: every feature in the UI is also callable from the CLI/agent).
+- **Desktop app** (`apps/desktop`, Tauri 2) runs `od-server` in-process on a random loopback port and opens a webview pointing at it. Tauri only handles the native parts: folder picker dialog, menus. The IPC capability is granted only to the daemon's exact origin.
 
-## Luồng một run
+## Lifecycle of a run
 
-1. UI hoặc CLI gửi `POST /api/runs` (project, agent, message).
-2. `od-content` ghép prompt legacy: chống prompt injection → chế độ → discovery → charter designer → design system → craft → skill/template → plugin → các override (spec 2.4).
-3. `od-runtime` tìm agent trên `PATH`, dựng tham số theo định nghĩa dữ liệu của agent (cờ quyền, resume, model), spawn trong process group với cwd là thư mục project và env đã lọc `OD_*`.
-4. Parser theo định dạng stream của agent (Claude stream-json, Codex exec-json, ACP, text) đổi stdout thành `AgentEvent`.
-5. `od-runs` ghi event vào ring buffer và `events.jsonl`, phát qua SSE `GET /api/runs/:id/events` (nối lại bằng `Last-Event-ID`).
-6. Agent ghi file thẳng vào thư mục project. `od-preview` theo dõi thư mục và báo UI tải lại preview; file HTML có lịch sử version theo nguồn (AI, sửa tay, restore).
-7. Hết run: `state.json` ghi trạng thái cuối. UI gọi `GET /api/runs/:id/deliverable` để kiểm run có thật sự tạo file đầu ra; lint artifact chạy khi người dùng, agent hoặc `od lint` yêu cầu.
+1. The UI or CLI sends `POST /api/runs` (project, agent, message).
+2. `od-content` assembles the legacy prompt: prompt-injection guard → mode → discovery → designer charter → design system → craft → skill/template → plugin → overrides (spec §2.4).
+3. `od-runtime` finds the agent on `PATH`, builds arguments from the agent's data definition (permission flags, resume, model), and spawns it in a process group with the project folder as cwd and an `OD_*`-filtered env.
+4. A parser for the agent's stream format (Claude stream-json, Codex exec-json, ACP, text) turns stdout into `AgentEvent`s.
+5. `od-runs` writes events to a ring buffer and `events.jsonl`, and streams them over SSE `GET /api/runs/:id/events` (resumable with `Last-Event-ID`).
+6. The agent writes files straight into the project folder. `od-preview` watches the folder and tells the UI to reload the preview; HTML files have version history by source (AI, manual edit, restore).
+7. End of run: `state.json` records the final state. The UI calls `GET /api/runs/:id/deliverable` to check whether the run really produced an output file; artifact lint runs when the user, the agent or `od lint` asks for it.
 
 ## Preview
 
-Preview là iframe sandbox. `od-preview` chèn `bridges/od-bridge.js` vào HTML trước mọi script của tác giả; bridge nói chuyện với UI bằng `postMessage` (`od:*`): chọn phần tử để comment, inspect và sửa style/text (ghi ngược vào source), palette, tweaks (artifact khai báo bằng khối `script[type="application/json"][data-od-tweaks]`), deck. Giao thức đầy đủ ở [`bridges/README.md`](../bridges/README.md).
+The preview is a sandboxed iframe. `od-preview` injects `bridges/od-bridge.js` into the HTML before any author script; the bridge talks to the UI via `postMessage` (`od:*`): element picking for comments, inspecting and editing style/text (written back to source), palette, tweaks (declared by the artifact in a `script[type="application/json"][data-od-tweaks]` block), deck. The full protocol is in [`bridges/README.md`](../bridges/README.md).
 
-## Dữ liệu
+## Data
 
-`OD_DATA_DIR` chứa `app.sqlite` (project, conversation, message, file version), `projects/<id>/` (file của project, trừ project mở từ thư mục có sẵn), `runs/<id>/` (`events.jsonl`, `state.json`), `app-config.json` và các file secret `0600` (BYOK, MCP). Một file khoá `daemon.lock` bảo đảm mỗi thư mục dữ liệu chỉ có một daemon.
+`OD_DATA_DIR` holds `app.sqlite` (projects, conversations, messages, file versions), `projects/<id>/` (project files, except projects opened from an existing folder), `runs/<id>/` (`events.jsonl`, `state.json`), `app-config.json` and `0600` secret files (BYOK, MCP). A `daemon.lock` lock file ensures one daemon per data directory.
 
-## Tiến trình con
+## Child processes
 
-Agent, tab terminal và MCP server stdio đều chạy trong process group riêng (Windows: Job Object qua `od-job`). Huỷ run, đóng tab hay tắt daemon/app đều dừng cả cây tiến trình: SIGTERM, chờ, rồi SIGKILL.
+Agents, terminal tabs and stdio MCP servers each run in their own process group (Windows: a Job Object via `od-job`). Cancelling a run, closing a tab or shutting down the daemon/app stops the whole process tree: SIGTERM, wait, then SIGKILL.
 
 ## Export
 
-`od-export` làm những gì không cần trình duyệt (HTML tự chứa, ZIP, ghép PDF/PPTX từ ảnh). Phần cần render đi qua trait `Renderer`, hiện thực bằng `od-render-cdp` với Chrome/Edge/Chromium có sẵn trên máy; MP4 thêm `ffmpeg`.
+`od-export` does everything that needs no browser (self-contained HTML, ZIP, assembling PDF/PPTX from images). Anything that needs rendering goes through the `Renderer` trait, implemented by `od-render-cdp` using the Chrome/Edge/Chromium already installed on the machine; MP4 also needs `ffmpeg`.
 
-## Nội dung
+## Content
 
-`content/` (skill, design template, design system, craft, plugin, prompt template) được index lúc khởi động (`od-content`), cộng thư mục người dùng dưới `OD_DATA_DIR`. App desktop đóng gói `content/` trong bundle. Nguồn gốc và license ở [`NOTICE`](../NOTICE).
+`content/` (skills, design templates, design systems, craft, plugins, prompt templates) is indexed at startup (`od-content`), together with user folders under `OD_DATA_DIR`. The desktop app bundles `content/`. Provenance and licenses are in [`NOTICE`](../NOTICE).
