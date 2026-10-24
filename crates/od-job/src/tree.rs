@@ -49,6 +49,16 @@ fn groups_below(root: u32, listing: &str) -> Vec<i32> {
 mod tests {
     use super::*;
 
+    /// macOS `ps` is setuid root: inside `sandbox-exec` (how the Atlat gate runs
+    /// `make check`) it cannot be executed, so the process-tree cleanup these
+    /// tests check has nothing to list. They skip there and run everywhere else.
+    fn ps_unavailable() -> bool {
+        std::process::Command::new("ps")
+            .args(["-p", "1"])
+            .output()
+            .is_err()
+    }
+
     #[test]
     fn walks_children_listed_in_any_order() {
         let listing = "  1     0     1\n 30    20    30\n 20    10    10\n 10     1    10\n 40     1    40\nbad\n";
@@ -60,6 +70,10 @@ mod tests {
 
     #[test]
     fn finds_a_live_child() {
+        if ps_unavailable() {
+            eprintln!("skipping: ps cannot run in this sandbox");
+            return;
+        }
         let mut child = Command::new("sleep").arg("5").spawn().expect("spawn sleep");
         let groups = descendant_groups(std::process::id());
         let _ = child.kill();

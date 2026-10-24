@@ -6,6 +6,16 @@
 use od_term::{Output, TermConfig, TermStatus, Terminals};
 use std::time::Duration;
 
+/// macOS `ps` is setuid root: inside `sandbox-exec` (how the Atlat gate runs
+/// `make check`) it cannot be executed, so the process-tree cleanup these
+/// tests check has nothing to list. They skip there and run everywhere else.
+fn ps_unavailable() -> bool {
+    std::process::Command::new("ps")
+        .args(["-p", "1"])
+        .output()
+        .is_err()
+}
+
 fn terminals(max: usize) -> Terminals {
     tracking_every(max, Duration::from_millis(200))
 }
@@ -129,6 +139,10 @@ async fn closing_kills_the_shell_its_foreground_job_and_background_jobs() {
 /// the shell's group nor the foreground one, but still the tab's session.
 #[tokio::test]
 async fn closing_kills_background_jobs_that_ignore_sighup() {
+    if ps_unavailable() {
+        eprintln!("skipping: ps cannot run in this sandbox");
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let terms = terminals(4);
     let s = terms.create("p1", dir.path(), None, None).unwrap();
@@ -185,6 +199,10 @@ async fn gone_after_close(terms: &Terminals, id: &str, pids: &[i32], what: &str)
 /// descends from the shell.
 #[tokio::test]
 async fn closing_kills_jobs_that_left_the_session() {
+    if ps_unavailable() {
+        eprintln!("skipping: ps cannot run in this sandbox");
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     // Found at close, not by the tracker.
     let terms = tracking_every(4, Duration::from_secs(3600));
@@ -216,6 +234,10 @@ async fn closing_kills_jobs_that_left_the_session() {
 /// belongs to init): the tab remembers it from while it ran.
 #[tokio::test]
 async fn closing_kills_session_leavers_whose_parent_is_gone() {
+    if ps_unavailable() {
+        eprintln!("skipping: ps cannot run in this sandbox");
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let terms = terminals(4);
     let s = terms.create("p1", dir.path(), None, None).unwrap();

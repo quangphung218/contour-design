@@ -23,6 +23,17 @@ fn renders_leave_tmpdir_empty() {
     {
         return;
     }
+    // Removing a profile ends Chrome's helpers found with `ps`, which is
+    // setuid root on macOS and cannot run inside sandbox-exec (the Atlat
+    // gate); a helper still exiting there may write the folder back.
+    if std::process::Command::new("ps")
+        .args(["-p", "1"])
+        .output()
+        .is_err()
+    {
+        eprintln!("skipping: ps cannot run in this sandbox");
+        return;
+    }
     let outer = tempfile::tempdir().unwrap();
     let private = outer.path().join("tmp");
     std::fs::create_dir(&private).unwrap();

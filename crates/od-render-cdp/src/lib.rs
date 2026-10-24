@@ -222,7 +222,9 @@ fn no_sandbox_from_env() -> bool {
 #[must_use]
 pub fn chrome_sandbox_works(exe: &Path) -> bool {
     use std::io::Read;
-    let Ok(profile) = tempfile::Builder::new().prefix(PROFILE_PREFIX).tempdir() else {
+    // A Profile, not a bare temp dir: Chrome's helpers outlive it briefly
+    // and would write the folder back after it was removed.
+    let Ok(profile) = Profile::new() else {
         return false;
     };
     let Ok(mut child) = std::process::Command::new(exe)
