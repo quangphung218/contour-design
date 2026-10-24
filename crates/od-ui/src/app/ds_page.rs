@@ -974,6 +974,13 @@ fn DsDetail(
                 Some(Err(e)) => view! { <p class="error-text">{e}</p> }.into_any(),
                 Some(Ok(k)) => match tab.get() {
                     KitTab::Kit => view! {
+                        // Track C2: no brand font files yet.
+                        <super::font_banner::MissingBrandFontsBanner
+                            id=id_assets.clone()
+                            editable=mine
+                            asset_names=k.assets.iter().map(|a| a.name.clone()).collect()
+                            on_upload=Callback::new(move |()| pick_upload())
+                        />
                         <KitOverview kit=k.clone() id=id_assets.clone() mine=mine focused_asset=focused_asset
                             on_upload=Callback::new(move |()| pick_upload())
                             on_rebuild=Callback::new({ let rebuild = rebuild.clone(); move |()| rebuild() })

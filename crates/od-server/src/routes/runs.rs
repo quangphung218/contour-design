@@ -451,16 +451,11 @@ async fn prepare_and_launch(
                         .session_mode
                 }
             };
-            if let Some(fact) = od_store::memory_from_message(&req2.message) {
-                s.add_memory(&project2.id, &fact, od_contracts::MemorySource::Chat)?;
-            }
-            // Settings ▸ Memory applies to every project, before its own.
-            let memory: Vec<String> = s
-                .list_global_memory()?
-                .into_iter()
-                .map(|m| m.text)
-                .chain(s.list_memory(&project2.id)?.into_iter().map(|m| m.text))
-                .collect();
+            // "Remember…" and Settings ▸ Memory (switch, MEMORY.md, hooks):
+            // global facts first, then the project's (track C2).
+            let turn_memory =
+                crate::routes::c2::memory::prepare_turn(s, &project2.id, &req2.message)?;
+            let memory = turn_memory.facts;
             let critique = critique_enabled(&project2, &skills).then(|| prompt::CritiqueBrief {
                 brand_name: ds.map_or("Unbranded", |d| d.summary.title.as_str()),
                 brand_body: ds.map_or("", |d| d.body.as_str()),
@@ -471,6 +466,10 @@ async fn prepare_and_launch(
                 .data_dir()
                 .app_setting("customInstructions")
                 .and_then(|v| v.as_str().map(str::to_owned));
+            let user_instructions = match (user_instructions, turn_memory.hooks) {
+                (Some(u), Some(h)) => Some(format!("{u}\n\n{h}")),
+                (u, h) => u.or(h),
+            };
             let instructions = prompt::compose_instructions(&PromptInput {
                 session_mode,
                 locale: req2.locale.as_deref(),
@@ -563,7 +562,7 @@ async fn prepare_and_launch(
         .await?;
 
     let resumed = prepared.resume_session_id.is_some();
-    let mcp = crate::routes::platform::mcp::for_agent(state, def.stream_format, run.id()).await;
+    let mcp = crate::routes::platform::mcp::for_agent(state, def.mcp, run.id()).await;
     let engine = &state.runs.engine;
     let launched = {
         // Held across the check and `launch` so a concurrent cancel either
@@ -638,6 +637,7 @@ async fn prepare_and_launch(
         .await;
         return Ok(resumed);
     };
+    crate::routes::genui::raise_for_run(state, run, req, project).await;
     tokio::spawn(persist_run(
         state.clone(),
         Arc::clone(run),
@@ -762,7 +762,11 @@ async fn persist_run(
             // The jury's file and report are extras: failing them must not
             // leave the message running.
             if let Some((mut report, artifact)) = verdict {
-                if let Some(html) = artifact.filter(|_| status == RunStatus::Succeeded) {
+                // An interrupted jury ships its best closed round (track C2).
+                let ships = status == RunStatus::Succeeded
+                    || (status == RunStatus::Canceled
+                        && report.status == od_contracts::CritiqueStatus::Interrupted);
+                if let Some(html) = artifact.filter(|_| ships) {
                     let path = format!(
                         "critique/{}.html",
                         run_id.chars().take(8).collect::<String>()
@@ -967,15 +971,24 @@ pub async fn steer(
 }
 
 /// `GET /api/agents`: fresh detection, never cached on disk.
-pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
-    let path = state.runs.engine.config().path.clone();
-    let byok = state
+/// Whether a BYOK key is saved, which makes the BYOK agent available.
+pub(crate) fn byok_configured(state: &AppState) -> bool {
+    state
         .store
         .data_dir()
         .app_setting(od_runtime::byok::APP_CONFIG_KEY)
         .and_then(|v| od_runtime::byok::ByokConfig::from_value(&v))
-        .is_some();
+        .is_some()
+}
+
+pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
+    let path = state.runs.engine.config().path.clone();
     ApiJson(AgentsResponse {
-        agents: od_runtime::detect::detect_all(path, byok).await,
+        agents: od_runtime::detect::detect_all_in(
+            path,
+            state.runs.engine.config().base_env.clone(),
+            byok_configured(&state),
+        )
+        .await,
     })
 }

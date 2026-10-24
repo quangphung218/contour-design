@@ -327,6 +327,9 @@ pub async fn generate(
     Ok((StatusCode::ACCEPTED, Json(json!({ "job": job }))))
 }
 
+/// Longest the package install after a run may take.
+const INSTALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Waits for the agent, installs its package, reloads the index.
 async fn finish(
     state: AppState,
@@ -342,14 +345,21 @@ async fn finish(
             let user_root = state.store.data_dir().root().join("design-systems");
             let staging2 = staging.clone();
             let content = Arc::clone(&state.content);
-            tokio::task::spawn_blocking(move || {
+            let install = tokio::task::spawn_blocking(move || {
                 let installed = design_system_gen::install(&staging2, &user_root, &req)
                     .map_err(|e| e.to_string())?;
                 content.reload();
                 Ok(installed.id)
-            })
-            .await
-            .unwrap_or_else(|e| Err(e.to_string()))
+            });
+            // Reads are non-blocking regular files only; the limit keeps a
+            // job from staying `Running` should a filesystem stall anyway.
+            match tokio::time::timeout(INSTALL_TIMEOUT, install).await {
+                Ok(joined) => joined.unwrap_or_else(|e| Err(e.to_string())),
+                Err(_) => Err(format!(
+                    "installing the package took longer than {} s",
+                    INSTALL_TIMEOUT.as_secs()
+                )),
+            }
         }
         Ok(o) => Err(format!("the agent run {}", o.status.as_str())),
         Err(e) => Err(format!("the agent run failed: {e}")),

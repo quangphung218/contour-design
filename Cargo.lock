@@ -3569,6 +3569,7 @@ dependencies = [
  "arc-swap",
  "criterion",
  "hex",
+ "nix 0.30.1",
  "od-contracts",
  "rayon",
  "regex",
@@ -3692,6 +3693,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "hex",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

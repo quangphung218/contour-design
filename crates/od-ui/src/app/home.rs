@@ -290,6 +290,17 @@ pub fn Home() -> impl IntoView {
         tf(T::HomeTitleCreate, &[word])
     };
 
+    // Track C2: no project yet, so library assets go up with the first
+    // turn like attached files.
+    let import_library = Callback::new(move |assets: Vec<super::library_picker::LibraryAsset>| {
+        leptos::task::spawn_local(async move {
+            match super::library_picker::as_files(&assets).await {
+                Ok(files) => stage_files.run(files),
+                Err(e) => error.set(Some(e)),
+            }
+        });
+    });
+
     view! {
         <section class="home">
             <div class="home-inner">
@@ -321,6 +332,7 @@ pub fn Home() -> impl IntoView {
                         on_notice=Callback::new(move |m: String| error.set(Some(m)))
                         node_ref=brief_ref
                         on_focus=Callback::new(move |f: bool| focused.set(f))
+                        on_library=import_library
                     />
                     <FilePicker trigger=pick_files on_files=stage_files/>
                     <div class="composer-bar">
@@ -329,6 +341,7 @@ pub fn Home() -> impl IntoView {
                             context=context
                             draft=brief
                             on_attach=Callback::new(move |()| pick_files.update(|n| *n += 1))
+                            on_library=import_library
                         >
                             <WorkingDirItems dir=working_dir/>
                         </PlusMenu>
@@ -454,7 +467,16 @@ pub fn Home() -> impl IntoView {
                 {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 <Examples chip=chip brief=brief brief_ref=brief_ref/>
 
-                <Gallery templates=chip_templates selected=template pick=pick_template/>
+                // Track C2: a starter suggestion and the entry tabs.
+                <super::home_tabs::Recommended brief=brief set_chip=Callback::new(set_chip) brief_ref=brief_ref/>
+                <super::home_tabs::HomeTabs
+                    templates=move || view! { <Gallery templates=chip_templates selected=template pick=pick_template/> }
+                    systems=systems
+                    design_system=design_system
+                    brief=brief
+                    set_chip=Callback::new(set_chip)
+                    brief_ref=brief_ref
+                />
 
                 <super::projects::RecentStrip/>
             </div>

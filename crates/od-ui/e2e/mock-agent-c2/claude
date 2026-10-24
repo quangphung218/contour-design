@@ -1,0 +1,44 @@
+#!/bin/sh
+# Track C2-chat-home mock `claude` (c2.e2e.mjs puts this folder before
+# ../mock-agent on the daemon's PATH). Two requests of its own, everything
+# else goes to the shared mock unchanged:
+# - `c2-media`: calls the daemon's media tool twice with the run token
+#   (the second prompt makes the fake provider fail), then answers.
+# - `c2-jury-slow`: a Design Jury that closes round 1 and then thinks
+#   until it is interrupted.
+shared="$(cd "$(dirname "$0")/../mock-agent" && pwd)/claude"
+case "$1" in --version) exec "$shared" "$@";; esac
+if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then exec "$shared" "$@"; fi
+
+sid=""; prev=""
+for a in "$@"; do
+  case "$prev" in --session-id|--resume) sid="$a";; esac
+  prev="$a"
+done
+IFS= read -r line
+
+init() { printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"; }
+say() { printf '{"type":"assistant","message":{"id":"c2-%s-%s","role":"assistant","content":[{"type":"text","text":"%s"}]}}\n' "$$" "$1" "$2"; }
+
+case "$line" in *c2-media*)
+  init
+  for p in "a red square:art/one.png" "please fail:art/two.png"; do
+    prompt="${p%%:*}"; out="${p#*:}"
+    /usr/bin/curl -s -X POST "$OD_DAEMON_URL/api/tools/media/generate" \
+      -H "authorization: Bearer $OD_TOOL_TOKEN" -H 'content-type: application/json' \
+      -d "{\"surface\":\"image\",\"model\":\"gpt-image-1\",\"prompt\":\"$prompt\",\"output\":\"$out\"}" >/dev/null
+  done
+  say m "Made the images."
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null
+  exit 0
+;; esac
+
+case "$line" in *c2-jury-slow*)
+  init
+  printf '%s\n' '{"type":"assistant","message":{"id":"c2-j1","role":"assistant","content":[{"type":"text","text":"<CRITIQUE_RUN version=\"1\" maxRounds=\"3\" threshold=\"8.0\" scale=\"10\"><ROUND n=\"1\"><PANELIST role=\"designer\"><NOTES>Draft.</NOTES><ARTIFACT><![CDATA[<h1 id=\"title\">Jury round one</h1>]]></ARTIFACT></PANELIST><PANELIST role=\"critic\" score=\"6\" must_fix=\"1\"><MUST_FIX>More contrast.</MUST_FIX></PANELIST><PANELIST role=\"brand\" score=\"7\"></PANELIST><PANELIST role=\"a11y\" score=\"6\"></PANELIST><PANELIST role=\"copy\" score=\"7\"></PANELIST><ROUND_END n=\"1\" decision=\"continue\"></ROUND_END></ROUND><ROUND n=\"2\"><PANELIST role=\"designer\"><NOTES>Trying again.</NOTES></PANELIST>"}]}}'
+  sleep 60
+  exit 0
+;; esac
+
+{ printf '%s\n' "$line"; cat; } | exec "$shared" "$@"

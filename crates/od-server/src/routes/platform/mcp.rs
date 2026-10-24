@@ -24,7 +24,7 @@ use od_mcp_client::client::ToolInfo;
 use od_mcp_client::oauth::{self, Flows};
 use od_mcp_client::{McpConfig, McpError, McpServer, OAuthStatus, TokenStore, config, wiring};
 use od_runtime::McpLaunch;
-use od_runtime::def::StreamFormat;
+use od_runtime::def::McpInjection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -362,7 +362,7 @@ pub struct AgentWiring {
 
 /// The enabled servers in the format of `format`'s agent. Problems are
 /// logged and the run goes on without external servers.
-pub async fn for_agent(state: &AppState, format: StreamFormat, run_id: &str) -> AgentWiring {
+pub async fn for_agent(state: &AppState, injection: McpInjection, run_id: &str) -> AgentWiring {
     let root = state.store.data_dir().root().to_path_buf();
     let cfg = match config::load(&od_mcp_client::config_path(&root)) {
         Ok(cfg) if cfg.servers.iter().any(|s| s.enabled) => cfg,
@@ -387,8 +387,8 @@ pub async fn for_agent(state: &AppState, format: StreamFormat, run_id: &str) -> 
     }
     let built = wiring::build(&cfg.servers, &bearer);
     let mut out = AgentWiring::default();
-    match format {
-        StreamFormat::ClaudeStreamJson => {
+    match injection {
+        McpInjection::ClaudeConfig => {
             if let Some(doc) = &built.claude {
                 match wiring::write_run_config(&root, run_id, doc) {
                     Ok(path) => {
@@ -402,14 +402,13 @@ pub async fn for_agent(state: &AppState, format: StreamFormat, run_id: &str) -> 
                 }
             }
         }
-        StreamFormat::Acp => out.launch.acp_servers = built.acp,
-        StreamFormat::OpenCodeJson => {
+        McpInjection::Acp => out.launch.acp_servers = built.acp,
+        McpInjection::OpenCodeEnv(var) => {
             if let Some(doc) = &built.opencode {
-                out.env
-                    .push(("OPENCODE_CONFIG_CONTENT".into(), doc.to_string().into()));
+                out.env.push((var.into(), doc.to_string().into()));
             }
         }
-        _ => {}
+        McpInjection::None => {}
     }
     out
 }

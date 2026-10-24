@@ -9,6 +9,7 @@
 //! local site, no API-token access from elsewhere).
 
 pub mod automations;
+pub mod evolution;
 pub mod mcp;
 pub mod terminals;
 
@@ -48,6 +49,7 @@ impl Platform {
 pub fn mount(api: Router<AppState>, state: &AppState) -> Router<AppState> {
     let mut routes = terminals::routes().layer(Extension(state.platform.clone()));
     if let Some(scheduler) = automations::scheduler(state) {
+        routes = routes.merge(evolution::routes(state).layer(Extension(Arc::clone(&scheduler))));
         routes = routes.merge(automations::routes().layer(Extension(scheduler)));
     }
     if let Some(mcp) = mcp::Mcp::new(state) {

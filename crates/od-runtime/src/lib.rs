@@ -6,12 +6,14 @@
 //! [`od_contracts::AgentEvent`], steering, cancel escalation, idle timeout,
 //! retry, resume fallback and the tool-loop guard.
 
+pub mod antigravity;
 pub mod artifact;
 pub mod byok;
 pub mod byok_probe;
 pub mod critique;
 pub mod def;
 pub mod detect;
+pub mod dsh_companion;
 pub mod engine;
 pub mod env;
 pub mod guard;

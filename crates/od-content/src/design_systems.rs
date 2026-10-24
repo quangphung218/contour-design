@@ -72,16 +72,41 @@ pub fn is_valid_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
+/// Largest package file [`read_package_file`] reads.
+pub const MAX_PACKAGE_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
 /// The text of package file `name`, unless a symlink takes it outside
-/// `dir`: an agent editing a user package in place can plant one. Same
-/// rule as the store's project files.
+/// `dir`: an agent editing a user package in place can plant one. A link
+/// to a sibling file is followed. The file is checked and read through one
+/// descriptor opened without following links, so swapping it for a link
+/// after the check reads nothing; only a regular file is read (a FIFO
+/// would block the reader forever), up to [`MAX_PACKAGE_FILE_BYTES`].
 #[must_use]
 pub fn read_package_file(dir: &Path, name: &str) -> Option<String> {
+    use std::io::Read;
     let real = std::fs::canonicalize(dir.join(name)).ok()?;
-    if !real.starts_with(std::fs::canonicalize(dir).ok()?) {
+    if real.parent()? != std::fs::canonicalize(dir).ok()? {
         return None;
     }
-    std::fs::read_to_string(real).ok()
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // ELOOP on a link planted after `canonicalize`; a FIFO opens
+        // without waiting for a writer and is refused below.
+        options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
+    }
+    let file = options.open(&real).ok()?;
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > MAX_PACKAGE_FILE_BYTES {
+        return None;
+    }
+    let mut text = String::new();
+    file.take(MAX_PACKAGE_FILE_BYTES)
+        .read_to_string(&mut text)
+        .ok()?;
+    Some(text)
 }
 
 #[derive(Debug, Default)]
@@ -553,5 +578,65 @@ mod tests {
         std::fs::write(dir.join("real.md"), "# Acme\n").unwrap();
         std::os::unix::fs::symlink("real.md", dir.join("DESIGN.md")).unwrap();
         assert_eq!(list_design_systems(&root, ListOptions::BUILT_IN).len(), 1);
+    }
+
+    /// The reviewer's race: a file swapped for a link to outside between
+    /// the check and the read must never be read.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_swapped_for_a_link_mid_read_is_never_followed() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside.md");
+        std::fs::write(&outside, "FAKE-MARKER\n").unwrap();
+        let dir = tmp.path().join("staging");
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("DESIGN.md");
+        std::fs::write(&target, "# Real\n").unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let swapper = {
+            let (dir, outside, stop) = (dir.clone(), outside.clone(), Arc::clone(&stop));
+            std::thread::spawn(move || {
+                let (real, link) = (dir.join(".real"), dir.join(".link"));
+                while !stop.load(Ordering::Relaxed) {
+                    let _ = std::fs::write(&real, "# Real\n");
+                    let _ = std::fs::rename(&real, dir.join("DESIGN.md"));
+                    let _ = std::fs::remove_file(&link);
+                    let _ = std::os::unix::fs::symlink(&outside, &link);
+                    let _ = std::fs::rename(&link, dir.join("DESIGN.md"));
+                }
+            })
+        };
+        let mut leaked = 0;
+        for _ in 0..20_000 {
+            if read_package_file(&dir, "DESIGN.md").is_some_and(|t| t.contains("FAKE-MARKER")) {
+                leaked += 1;
+            }
+        }
+        stop.store(true, Ordering::Relaxed);
+        swapper.join().unwrap();
+        assert_eq!(leaked, 0);
+    }
+
+    /// A FIFO in place of a package file reads as missing, at once.
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_is_not_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        nix::unistd::mkfifo(&dir.join("DESIGN.md"), nix::sys::stat::Mode::S_IRWXU).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || tx.send(read_package_file(&dir, "DESIGN.md")));
+        let got = rx.recv_timeout(std::time::Duration::from_secs(5));
+        assert_eq!(got, Ok(None), "reading a FIFO must not block");
+    }
+
+    #[test]
+    fn an_oversized_file_is_not_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = std::fs::File::create(tmp.path().join("DESIGN.md")).unwrap();
+        file.set_len(MAX_PACKAGE_FILE_BYTES + 1).unwrap();
+        assert_eq!(read_package_file(tmp.path(), "DESIGN.md"), None);
     }
 }

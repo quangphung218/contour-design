@@ -1,0 +1,4 @@
+{"type":"status","label":"initializing","model":"lite","sessionId":"qd-sess-2"}
+{"type":"error","message":"quota exceeded"}
+{"type":"usage","usage":null,"stopReason":"error","isError":true}
+{"type":"error","message":"Qoder account quota exceeded","terminal":true}

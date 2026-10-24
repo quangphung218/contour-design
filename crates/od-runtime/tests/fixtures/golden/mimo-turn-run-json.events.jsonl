@@ -1,0 +1,5 @@
+{"type":"status","label":"running","sessionId":"ses_mimo1"}
+{"type":"text_delta","delta":"Writing the page."}
+{"type":"tool_use","id":"call_m1","name":"Write","input":{"filePath":"/proj/index.html","content":"<html></html>","file_path":"/proj/index.html"}}
+{"type":"tool_result","toolUseId":"call_m1","content":"ok","isError":false}
+{"type":"usage","usage":{"input_tokens":40,"output_tokens":9,"thought_tokens":0,"cached_read_tokens":0,"cached_write_tokens":0},"costUsd":0.001,"stopReason":"stop"}

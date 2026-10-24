@@ -22,6 +22,9 @@ pub fn Onboarding() -> impl IntoView {
     let use_key = RwSignal::new(false);
     let test = RwSignal::new(None::<TestState>);
     let byok_ready = RwSignal::new(false);
+    // Track C2: step 2, a design system extracted from the brand's site.
+    let brand = RwSignal::new(super::onboarding_brand::BrandState::Idle);
+    let extracting = move || matches!(brand.get(), super::onboarding_brand::BrandState::Running(_));
 
     // Preselect the first available agent once detection answers.
     Effect::new(move |_| {
@@ -72,6 +75,13 @@ pub fn Onboarding() -> impl IntoView {
             if agent.is_some() {
                 next.agent_id = agent;
             }
+            // The extracted system becomes the default for new projects.
+            if let super::onboarding_brand::BrandState::Done(id, _) = brand.get_untracked() {
+                next.extra.insert(
+                    crate::settings::DEFAULT_DESIGN_SYSTEM_KEY.to_owned(),
+                    serde_json::json!(id),
+                );
+            }
             next.onboarding_completed = true;
             match shell.save_config(next).await {
                 Ok(()) => navigate("/", Default::default()),
@@ -112,6 +122,7 @@ pub fn Onboarding() -> impl IntoView {
                         <TestResultLine state=test testid="onboarding-test"/>
                     </div>
                 </Show>
+                <super::onboarding_brand::BrandStep state=brand/>
                 {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 <div class="onboarding-foot">
                     <Show when=move || !use_key.get()>
@@ -123,11 +134,17 @@ pub fn Onboarding() -> impl IntoView {
                     </Show>
                     <span class="spacer"></span>
                     <button class="btn ghost" on:click=move |_| finish_skip(None)>{t(T::SkipForNow)}</button>
-                    <span data-tip=move || (!ready()).then(|| t(if use_key.get() { T::GateByok } else { T::GateAgent }))>
+                    <span data-tip=move || {
+                        if extracting() {
+                            Some(t(T::BrandStepWait))
+                        } else {
+                            (!ready()).then(|| t(if use_key.get() { T::GateByok } else { T::GateAgent }))
+                        }
+                    }>
                         <button
                             class="btn primary"
                             data-testid="onboarding-continue"
-                            disabled=move || !ready()
+                            disabled=move || !ready() || extracting()
                             on:click=move |_| finish(if use_key.get_untracked() { Some("byok".to_owned()) } else { picked.get_untracked() })
                         >
                             {t(T::Continue)}
@@ -191,11 +208,20 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
 pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl IntoView {
     let id = agent.id.clone();
     let id_check = id.clone();
+    // DeepSeek Harness not available yet: the card opens the setup dialog
+    // instead of being a dead entry.
+    let setup = super::dsh_setup::needs_setup(&agent);
+    let cli_path = agent.path.clone();
+    let setup_state = RwSignal::new(None::<super::dsh_setup::SetupState>);
+    // Only opening and closing rebuild the dialog, not its busy/error state.
+    let setup_open = Memo::new(move |_| setup_state.with(Option::is_some));
     let detail = if agent.available {
         agent.version.clone().map_or_else(
             || t(T::Installed).to_owned(),
             |v| tf(T::InstalledVersion, &[&v]),
         )
+    } else if agent.needs_setup {
+        t(T::DshSetupRequired).to_owned()
     } else {
         agent
             .error
@@ -209,14 +235,22 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
         <button
             class="agent-card"
             class:compact=!available
+            class:needs-setup=setup
             class:active=selected.clone()
-            disabled=!available
+            disabled=!available && !setup
             role="radio"
             aria-checked=move || selected().to_string()
             data-agent=agent.id.clone()
-            on:click=move |_| picked.set(Some(id.clone()))
+            data-needs-setup=setup.then_some("true")
+            on:click=move |_| {
+                if setup {
+                    setup_state.set(Some(super::dsh_setup::SetupState::default()));
+                } else {
+                    picked.set(Some(id.clone()));
+                }
+            }
         >
-            <span class="agent-icon">{icon(if available { Glyph::Agent } else { Glyph::Download })}</span>
+            <span class="agent-icon">{icon(if available { Glyph::Agent } else if setup { Glyph::Settings } else { Glyph::Download })}</span>
             <span class="agent-text">
                 <span class="agent-name">{agent.name.clone()}</span>
                 <span class="agent-detail" title=detail_title>{detail}</span>
@@ -225,5 +259,8 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
                 <span class="agent-check" aria-hidden="true">{icon(Glyph::CheckCircle)}</span>
             })}
         </button>
+        {move || setup_open.get().then(|| view! {
+            <super::dsh_setup::DshSetupDialog state=setup_state picked=picked cli_path=cli_path.clone()/>
+        })}
     }
 }

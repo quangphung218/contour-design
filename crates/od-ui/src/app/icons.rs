@@ -154,6 +154,8 @@ glyphs! {
     ZoomIn => "zoom-in-line",
     ZoomOut => "zoom-out-line",
     Zip => "file-zip-line",
+    // Track C1-preview.
+    ManualEdit => "edit-line",
 }
 
 /// An inline icon, hidden from assistive tech: the control around it

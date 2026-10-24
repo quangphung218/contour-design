@@ -31,6 +31,8 @@ const SHORTCUTS_MENU_ID: &str = "help-shortcuts";
 const PALETTE_MENU_ID: &str = "help-palette";
 const SETTINGS_MENU_ID: &str = "app-settings";
 const DATA_FOLDER_MENU_ID: &str = "help-data-folder";
+const DOCS_MENU_ID: &str = "help-docs";
+const REPORT_MENU_ID: &str = "help-report-issue";
 /// Display name (window title, dialogs); `tauri.conf.json` `productName`.
 const APP_NAME: &str = "Nét";
 
@@ -225,6 +227,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         true,
         None::<&str>,
     )?;
+    // Help ▸ Documentation opens the guide bundled in the UI; Report Issue
+    // copies a diagnostics summary and opens the log folder (no network).
+    let docs = MenuItem::with_id(app, DOCS_MENU_ID, "Documentation", true, None::<&str>)?;
+    let report = MenuItem::with_id(app, REPORT_MENU_ID, "Report Issue", true, None::<&str>)?;
+    let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
     // macOS: Settings goes in the app menu, after About.
     #[cfg(target_os = "macos")]
     if let Some(app_menu) = menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
@@ -232,7 +239,12 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     }
     #[cfg(not(target_os = "macos"))]
     project.append(&settings)?;
-    let help = Submenu::with_items(app, "Help", true, &[&shortcuts, &palette, &data])?;
+    let help = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[&docs, &separator, &report, &data, &shortcuts, &palette],
+    )?;
     menu.append(&help)?;
     Ok(menu)
 }
@@ -272,6 +284,8 @@ fn main() -> anyhow::Result<()> {
             PALETTE_MENU_ID => ui_action(app, "palette"),
             SETTINGS_MENU_ID => ui_action(app, "settings"),
             DATA_FOLDER_MENU_ID => show_data_folder(app),
+            DOCS_MENU_ID => ui_action(app, "docs"),
+            REPORT_MENU_ID => ui_action(app, "report-issue"),
             _ => {}
         })
         .setup(|app| {

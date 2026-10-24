@@ -2,7 +2,7 @@
 //! probe `--version`, then the help flags. Each probe is isolated, so one
 //! broken CLI never empties the list. Nothing is cached on disk.
 
-use crate::def::{RuntimeDef, SessionIdSource, StreamFormat};
+use crate::def::{DSH, RuntimeDef, SessionIdSource, StreamFormat};
 use od_contracts::AgentInfo;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -51,14 +51,8 @@ pub fn is_executable(path: &Path) -> bool {
 /// timed out. Exit status is ignored: a CLI that rejects the flag still ran.
 async fn probe(bin: &Path, args: &[&str], path: &OsStr, timeout: Duration) -> Option<String> {
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.args(args)
-        .env("PATH", path)
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    let out = tokio::time::timeout(timeout, cmd.output())
-        .await
-        .ok()?
-        .ok()?;
+    cmd.args(args).env("PATH", path);
+    let out = crate::process::probe_output(cmd, timeout).await.ok()?;
     let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&out.stderr));
     Some(text)
@@ -98,12 +92,25 @@ fn unavailable(def: &RuntimeDef, error: Option<String>) -> AgentInfo {
         supports_resume: def.session != SessionIdSource::None,
         supports_steer: def.supports_steer(),
         error,
+        needs_setup: false,
     }
 }
 
-/// Detects one agent. BYOK has no binary: it is available when a key is
-/// configured (`byok_configured`).
+/// Detects one agent with the daemon's own environment.
 pub async fn detect(def: &RuntimeDef, path: &OsStr, byok_configured: bool) -> AgentInfo {
+    detect_in(def, path, &[], byok_configured).await
+}
+
+/// Detects one agent. BYOK has no binary: it is available when a key is
+/// configured (`byok_configured`). DeepSeek Harness also needs its
+/// `open-design` profile to answer the compatibility probe; `env` (the
+/// agents' base environment) says where the profile lives.
+pub async fn detect_in(
+    def: &RuntimeDef,
+    path: &OsStr,
+    env: &[(OsString, OsString)],
+    byok_configured: bool,
+) -> AgentInfo {
     if def.stream_format == StreamFormat::Byok {
         let mut info = unavailable(def, Some("no API key configured".to_owned()));
         if byok_configured {
@@ -135,6 +142,13 @@ pub async fn detect(def: &RuntimeDef, path: &OsStr, byok_configured: bool) -> Ag
         }
     );
     info.available = true;
+    if def.id == DSH.id {
+        if let Err(e) = crate::dsh_companion::probe(&bin, path, env).await {
+            info.available = false;
+            info.needs_setup = true;
+            info.error = Some(e.to_string());
+        }
+    }
     info.version = version
         .as_deref()
         .and_then(|v| v.lines().map(str::trim).find(|l| !l.is_empty()))
@@ -145,11 +159,22 @@ pub async fn detect(def: &RuntimeDef, path: &OsStr, byok_configured: bool) -> Ag
 
 /// Detects every built-in agent (and BYOK) concurrently.
 pub async fn detect_all(path: OsString, byok_configured: bool) -> Vec<AgentInfo> {
+    detect_all_in(path, Vec::new(), byok_configured).await
+}
+
+/// [`detect_all`] with the agents' base environment (see [`detect_in`]).
+pub async fn detect_all_in(
+    path: OsString,
+    env: Vec<(OsString, OsString)>,
+    byok_configured: bool,
+) -> Vec<AgentInfo> {
+    let env = std::sync::Arc::new(env);
     let tasks: Vec<_> = crate::def::ALL
         .into_iter()
         .map(|def| {
             let path = path.clone();
-            tokio::spawn(async move { detect(def, &path, byok_configured).await })
+            let env = std::sync::Arc::clone(&env);
+            tokio::spawn(async move { detect_in(def, &path, &env, byok_configured).await })
         })
         .collect();
     let mut out = Vec::with_capacity(tasks.len());

@@ -118,7 +118,15 @@ pub async fn post(
             let req: RestoreVersionRequest = json_or_default(&body)?;
             let (file, vid) = (file.to_owned(), vid.to_owned());
             let (file, version) = state
-                .blocking(move |s| s.restore_version(&id, &file, &vid, req.prompt))
+                .blocking(move |s| {
+                    s.restore_version_if(
+                        &id,
+                        &file,
+                        &vid,
+                        req.prompt,
+                        req.expect_version_id.as_deref(),
+                    )
+                })
                 .await?;
             Ok(ApiJson(RestoreVersionResponse { file, version }).into_response())
         }

@@ -23,6 +23,12 @@ pub enum StreamFormat {
     CopilotJson,
     /// DeepSeek Harness `--stdio` profile protocol (JSONL commands/frames).
     DshJsonl,
+    /// `qodercli -p --output-format stream-json`.
+    QoderStreamJson,
+    /// `pi --mode rpc`: JSON commands on stdin, typed events on stdout.
+    PiRpc,
+    /// Antigravity `agy --output-format stream-json` (`event` frames).
+    AntigravityJson,
     /// Raw text on stdout; `<artifact>` blocks become files at the end.
     Plain,
     /// No process: the daemon streams the provider API with the user's key
@@ -38,9 +44,42 @@ pub enum PromptInput {
     StreamJsonStdin,
     /// The whole prompt as text on stdin, then EOF (all-or-nothing).
     TextStdin,
-    /// A protocol session (ACP, dsh): the parser writes the requests,
+    /// A protocol session (ACP, dsh, Pi): the parser writes the requests,
     /// stdin stays open until the protocol says the prompt is done.
     Rpc,
+    /// The prompt is an argv value (Aider `--message`, DeepSeek TUI's
+    /// positional); refused above [`MAX_PROMPT_ARG_BYTES`].
+    Argv,
+    /// The prompt is staged in a temp file whose path goes on argv
+    /// (`--prompt-file`).
+    File,
+    /// One Antigravity stream-json `user` event on stdin, then EOF.
+    AgyStdin,
+}
+
+impl PromptInput {
+    /// Whether stdin stays open after the prompt (steering or a protocol).
+    #[must_use]
+    pub fn keeps_stdin(self) -> bool {
+        matches!(self, Self::StreamJsonStdin | Self::Rpc)
+    }
+}
+
+/// Longest prompt sent on argv: under Windows' ~32 KB command line with
+/// room for the other flags (`maxPromptArgBytes` of the original).
+pub const MAX_PROMPT_ARG_BYTES: usize = 30_000;
+
+/// How a run's external MCP servers reach the agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpInjection {
+    /// Not forwarded.
+    None,
+    /// A `{"mcpServers": …}` file passed with `--mcp-config`.
+    ClaudeConfig,
+    /// The ACP `session/new` `mcpServers` (stdio only).
+    Acp,
+    /// An OpenCode-shaped config document in this environment variable.
+    OpenCodeEnv(&'static str),
 }
 
 /// Where a resumable session id comes from.
@@ -107,6 +146,7 @@ pub struct RuntimeDef {
     /// ACP: a `turn_end` session update completes the prompt (Kiro never
     /// answers `session/prompt` on its own).
     pub acp_turn_end_completes: bool,
+    pub mcp: McpInjection,
 }
 
 /// Capability flag that makes Claude stream partial messages.
@@ -132,6 +172,7 @@ pub const CLAUDE: RuntimeDef = RuntimeDef {
     args: &[],
     ask_args: &[],
     acp_turn_end_completes: false,
+    mcp: McpInjection::ClaudeConfig,
 };
 
 pub const CODEX: RuntimeDef = RuntimeDef {
@@ -155,6 +196,7 @@ pub const CODEX: RuntimeDef = RuntimeDef {
     args: &[],
     ask_args: &[],
     acp_turn_end_completes: false,
+    mcp: McpInjection::None,
 };
 
 /// Shared shape of the ACP family; each agent overrides id, name, bin and
@@ -182,6 +224,7 @@ const ACP_BASE: RuntimeDef = RuntimeDef {
     args: &["acp"],
     ask_args: &["acp"],
     acp_turn_end_completes: false,
+    mcp: McpInjection::Acp,
 };
 
 pub const KIMI: RuntimeDef = RuntimeDef {
@@ -291,6 +334,7 @@ pub const OPENCODE: RuntimeDef = RuntimeDef {
     args: &[],
     ask_args: &[],
     acp_turn_end_completes: false,
+    mcp: McpInjection::OpenCodeEnv("OPENCODE_CONFIG_CONTENT"),
 };
 
 /// Cursor Agent's workspace-trust flag (detected from `--help`).
@@ -313,6 +357,7 @@ pub const CURSOR: RuntimeDef = RuntimeDef {
     args: &[],
     ask_args: &[],
     acp_turn_end_completes: false,
+    mcp: McpInjection::None,
 };
 
 pub const COPILOT: RuntimeDef = RuntimeDef {
@@ -333,6 +378,7 @@ pub const COPILOT: RuntimeDef = RuntimeDef {
     args: &[],
     ask_args: &[],
     acp_turn_end_completes: false,
+    mcp: McpInjection::None,
 };
 
 pub const DSH: RuntimeDef = RuntimeDef {
@@ -352,6 +398,7 @@ pub const DSH: RuntimeDef = RuntimeDef {
     args: &["--profile", "open-design", "--stdio"],
     ask_args: &["--profile", "open-design", "--stdio"],
     acp_turn_end_completes: false,
+    mcp: McpInjection::None,
 };
 
 /// Qwen Code, the plain-text runtime: stdout is the answer and its
@@ -373,6 +420,136 @@ pub const QWEN: RuntimeDef = RuntimeDef {
     args: &["--yolo"],
     ask_args: &[],
     acp_turn_end_completes: false,
+    mcp: McpInjection::None,
+};
+
+/// Shared shape of the headless CLIs whose stdout is the answer text
+/// (`streamFormat: 'plain'`); each overrides how the prompt arrives.
+const PLAIN_BASE: RuntimeDef = RuntimeDef {
+    id: "",
+    name: "",
+    bin: "",
+    fallback_bins: &[],
+    stream_format: StreamFormat::Plain,
+    prompt_input: PromptInput::TextStdin,
+    session: SessionIdSource::None,
+    version_args: &["--version"],
+    help_args: &[],
+    help_flags: &[],
+    extra_env: &[],
+    idle_timeout: Duration::from_secs(600),
+    resume_failure_markers: &[],
+    args: &[],
+    ask_args: &[],
+    acp_turn_end_completes: false,
+    mcp: McpInjection::None,
+};
+
+/// xAI's Grok Build CLI (`defs/grok-build.ts`): prompt file, plain text.
+pub const GROK_BUILD: RuntimeDef = RuntimeDef {
+    id: "grok-build",
+    name: "Grok Build",
+    bin: "grok",
+    prompt_input: PromptInput::File,
+    ..PLAIN_BASE
+};
+
+/// Qoder CLI print mode with its own stream-json records.
+pub const QODER: RuntimeDef = RuntimeDef {
+    id: "qoder",
+    name: "Qoder CLI",
+    bin: "qodercli",
+    stream_format: StreamFormat::QoderStreamJson,
+    ..PLAIN_BASE
+};
+
+/// Amp's headless mode prints Claude Code's stream-json; the prompt is
+/// plain text on stdin.
+pub const AMP: RuntimeDef = RuntimeDef {
+    id: "amp",
+    name: "Amp",
+    bin: "amp",
+    stream_format: StreamFormat::ClaudeStreamJson,
+    ..PLAIN_BASE
+};
+
+/// Pi in RPC mode; its session file path is the resumable session.
+pub const PI: RuntimeDef = RuntimeDef {
+    id: "pi",
+    name: "Pi",
+    bin: "pi",
+    stream_format: StreamFormat::PiRpc,
+    prompt_input: PromptInput::Rpc,
+    session: SessionIdSource::Captured,
+    resume_failure_markers: &["PI_PARENT_SESSION_FAILED", "parent session rejected"],
+    ..PLAIN_BASE
+};
+
+/// DeepSeek TUI's `exec --auto <prompt>` (the dispatcher is also shipped
+/// as `codewhale`).
+pub const DEEPSEEK_TUI: RuntimeDef = RuntimeDef {
+    id: "deepseek",
+    name: "DeepSeek TUI",
+    bin: "deepseek",
+    fallback_bins: &["codewhale"],
+    prompt_input: PromptInput::Argv,
+    ..PLAIN_BASE
+};
+
+pub const AIDER: RuntimeDef = RuntimeDef {
+    id: "aider",
+    name: "Aider",
+    bin: "aider",
+    prompt_input: PromptInput::Argv,
+    ..PLAIN_BASE
+};
+
+/// Antigravity's skip-permissions flag (detected from `--help`).
+pub const ANTIGRAVITY_SKIP_PERMISSIONS_FLAG: &str = "--dangerously-skip-permissions";
+
+/// Google Antigravity `agy`: one stream-json `user` event on stdin.
+pub const ANTIGRAVITY: RuntimeDef = RuntimeDef {
+    id: "antigravity",
+    name: "Antigravity",
+    bin: "agy",
+    stream_format: StreamFormat::AntigravityJson,
+    prompt_input: PromptInput::AgyStdin,
+    help_args: &["--help"],
+    help_flags: &[ANTIGRAVITY_SKIP_PERMISSIONS_FLAG],
+    ..PLAIN_BASE
+};
+
+/// Codebuddy's partial-message and extra-directory flags (from `-p --help`).
+pub const CODEBUDDY_ADD_DIR_FLAG: &str = "--add-dir";
+
+/// Codebuddy Code: a Claude Code-compatible CLI, same stream both ways.
+pub const CODEBUDDY: RuntimeDef = RuntimeDef {
+    id: "codebuddy",
+    name: "Codebuddy Code",
+    bin: "codebuddy",
+    fallback_bins: &["cbc"],
+    help_args: &["-p", "--help"],
+    help_flags: &[CLAUDE_PARTIAL_FLAG, CODEBUDDY_ADD_DIR_FLAG],
+    extra_env: &[],
+    ..CLAUDE
+};
+
+/// MiMo Code: OpenCode's `run --format json` events and MCP config shape.
+pub const MIMO: RuntimeDef = RuntimeDef {
+    id: "mimo",
+    name: "MiMo Code",
+    bin: "mimo",
+    stream_format: StreamFormat::OpenCodeJson,
+    mcp: McpInjection::OpenCodeEnv("MIMOCODE_CONFIG_CONTENT"),
+    ..PLAIN_BASE
+};
+
+pub const ATOMCODE: RuntimeDef = RuntimeDef {
+    id: "atomcode",
+    name: "AtomCode CLI",
+    bin: "atomcode",
+    prompt_input: PromptInput::File,
+    ..PLAIN_BASE
 };
 
 /// Bring-your-own-key: no CLI, the daemon calls the provider API.
@@ -393,19 +570,48 @@ pub const BYOK: RuntimeDef = RuntimeDef {
     args: &[],
     ask_args: &[],
     acp_turn_end_completes: false,
+    mcp: McpInjection::None,
 };
 
 /// Every built-in runtime, in port order (spec 2.3).
-pub const BUILTIN: [&RuntimeDef; 15] = [
-    &CLAUDE, &CODEX, &KIMI, &HERMES, &KIRO, &KILO, &VIBE, &TRAE, &REASONIX, &DEVIN, &OPENCODE,
-    &CURSOR, &COPILOT, &DSH, &QWEN,
+pub const BUILTIN: [&RuntimeDef; 25] = [
+    &CLAUDE,
+    &CODEX,
+    &KIMI,
+    &HERMES,
+    &KIRO,
+    &KILO,
+    &VIBE,
+    &TRAE,
+    &REASONIX,
+    &DEVIN,
+    &OPENCODE,
+    &CURSOR,
+    &COPILOT,
+    &DSH,
+    &QWEN,
+    &GROK_BUILD,
+    &QODER,
+    &AMP,
+    &PI,
+    &DEEPSEEK_TUI,
+    &AIDER,
+    &ANTIGRAVITY,
+    &CODEBUDDY,
+    &MIMO,
+    &ATOMCODE,
 ];
 
 /// [`BUILTIN`] plus [`BYOK`], which has no binary to detect.
-pub const ALL: [&RuntimeDef; 16] = [
-    &CLAUDE, &CODEX, &KIMI, &HERMES, &KIRO, &KILO, &VIBE, &TRAE, &REASONIX, &DEVIN, &OPENCODE,
-    &CURSOR, &COPILOT, &DSH, &QWEN, &BYOK,
-];
+pub const ALL: [&RuntimeDef; 26] = {
+    let mut all = [&BYOK; 26];
+    let mut i = 0;
+    while i < BUILTIN.len() {
+        all[i] = BUILTIN[i];
+        i += 1;
+    }
+    all
+};
 
 #[must_use]
 pub fn find(id: &str) -> Option<&'static RuntimeDef> {
@@ -428,6 +634,12 @@ pub struct ArgvInput<'a> {
     pub permission: PermissionMode,
     /// Detected help flags (see [`RuntimeDef::help_flags`]).
     pub capabilities: &'a [String],
+    /// The prompt, for [`PromptInput::Argv`] runtimes.
+    pub prompt: Option<&'a str>,
+    /// The staged prompt, for [`PromptInput::File`] runtimes.
+    pub prompt_file: Option<&'a std::path::Path>,
+    /// Where the agent writes its own log (Antigravity `--log-file`).
+    pub log_file: Option<&'a std::path::Path>,
 }
 
 fn non_default(value: Option<&str>) -> Option<&str> {
@@ -443,6 +655,19 @@ impl RuntimeDef {
     /// The argv after the binary.
     #[must_use]
     pub fn build_args(&self, input: &ArgvInput<'_>) -> Vec<String> {
+        match self.id {
+            "amp" => return amp_args(input),
+            "codebuddy" => return codebuddy_args(input),
+            "qoder" => return qoder_args(input),
+            "mimo" => return mimo_args(input),
+            "pi" => return pi_args(input),
+            "aider" => return aider_args(input),
+            "deepseek" => return deepseek_tui_args(input),
+            "grok-build" => return grok_build_args(input),
+            "atomcode" => return atomcode_args(input),
+            "antigravity" => return antigravity_args(input),
+            _ => {}
+        }
         match self.stream_format {
             StreamFormat::ClaudeStreamJson => claude_args(input),
             StreamFormat::CodexExecJson => codex_args(input),
@@ -458,7 +683,10 @@ impl RuntimeDef {
                 }
                 args
             }
-            StreamFormat::Byok => Vec::new(),
+            StreamFormat::QoderStreamJson
+            | StreamFormat::PiRpc
+            | StreamFormat::AntigravityJson
+            | StreamFormat::Byok => Vec::new(),
         }
     }
 
@@ -469,6 +697,206 @@ impl RuntimeDef {
         };
         args.iter().map(|a| (*a).to_owned()).collect()
     }
+}
+
+fn owned(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| (*s).to_owned()).collect()
+}
+
+fn path_arg(p: &std::path::Path) -> String {
+    p.to_string_lossy().into_owned()
+}
+
+fn auto(input: &ArgvInput<'_>) -> bool {
+    input.permission == PermissionMode::Auto
+}
+
+/// Amp picks its model through `--mode`; other ids are meaningless.
+const AMP_MODES: [&str; 3] = ["deep", "smart", "rush"];
+
+fn amp_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = owned(&["-x", "--stream-json"]);
+    if auto(input) {
+        args.push("--dangerously-allow-all".to_owned());
+    }
+    if let Some(mode) = non_default(input.model).filter(|m| AMP_MODES.contains(m)) {
+        args.extend(["--mode".to_owned(), mode.to_owned()]);
+    }
+    args
+}
+
+fn codebuddy_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let has = |flag: &str| input.capabilities.iter().any(|c| c == flag);
+    let mut args = owned(&[
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+    ]);
+    if has(CLAUDE_PARTIAL_FLAG) {
+        args.push(CLAUDE_PARTIAL_FLAG.to_owned());
+    }
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    if let Some(effort) = non_default(input.reasoning) {
+        args.extend(["--effort".to_owned(), effort.to_owned()]);
+    }
+    if !input.extra_dirs.is_empty() && has(CODEBUDDY_ADD_DIR_FLAG) {
+        args.push(CODEBUDDY_ADD_DIR_FLAG.to_owned());
+        args.extend(input.extra_dirs.iter().map(|d| path_arg(d)));
+    }
+    match (input.resume_session_id, input.new_session_id) {
+        (Some(id), _) => args.extend(["--resume".to_owned(), id.to_owned()]),
+        (None, Some(id)) => args.extend(["--session-id".to_owned(), id.to_owned()]),
+        (None, None) => {}
+    }
+    let mode = if auto(input) {
+        "bypassPermissions"
+    } else {
+        "acceptEdits"
+    };
+    args.extend(["--permission-mode".to_owned(), mode.to_owned()]);
+    args
+}
+
+fn qoder_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = owned(&["-p", "--output-format", "stream-json"]);
+    if auto(input) {
+        args.push("--yolo".to_owned());
+    }
+    if let Some(cwd) = input.cwd {
+        args.extend(["-w".to_owned(), path_arg(cwd)]);
+    }
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    for dir in input.extra_dirs.iter().filter(|d| d.is_absolute()) {
+        args.extend(["--add-dir".to_owned(), path_arg(dir)]);
+    }
+    args
+}
+
+fn mimo_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = owned(&["run", "--format", "json"]);
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    args
+}
+
+fn pi_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = owned(&["--mode", "rpc"]);
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    if let Some(level) = non_default(input.reasoning) {
+        args.extend(["--thinking".to_owned(), level.to_owned()]);
+    }
+    args
+}
+
+fn aider_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = Vec::new();
+    if auto(input) {
+        args.push("--yes-always".to_owned());
+    }
+    args.extend(owned(&[
+        "--no-pretty",
+        "--no-git",
+        "--no-auto-commits",
+        "--no-suggest-shell-commands",
+        "--no-show-model-warnings",
+    ]));
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    args.extend([
+        "--message".to_owned(),
+        input.prompt.unwrap_or_default().to_owned(),
+    ]);
+    args
+}
+
+fn deepseek_tui_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = vec!["exec".to_owned()];
+    if auto(input) {
+        args.push("--auto".to_owned());
+    }
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    args.push(input.prompt.unwrap_or_default().to_owned());
+    args
+}
+
+/// Grok takes `--effort` only on its reasoning models.
+fn grok_reasoning_model(model: Option<&str>) -> bool {
+    non_default(model)
+        .is_some_and(|m| m != "grok-build" && m.to_ascii_lowercase().contains("reasoning"))
+}
+
+fn grok_build_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(file) = input.prompt_file {
+        args.extend(["--prompt-file".to_owned(), path_arg(file)]);
+    }
+    // Plan mode off and tools approved: otherwise a write is canceled
+    // while the CLI still exits 0.
+    args.push("--no-plan".to_owned());
+    if auto(input) {
+        args.push("--always-approve".to_owned());
+    }
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    if let Some(effort) = input.reasoning.filter(|r| !r.is_empty()) {
+        if grok_reasoning_model(input.model) {
+            args.extend(["--effort".to_owned(), effort.to_owned()]);
+        }
+    }
+    args
+}
+
+fn atomcode_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(file) = input.prompt_file {
+        args.extend(["--prompt-file".to_owned(), path_arg(file)]);
+    }
+    if auto(input) {
+        args.push("-y".to_owned());
+    }
+    if let Some(model) = non_default(input.model) {
+        args.extend(["--model".to_owned(), model.to_owned()]);
+    }
+    args
+}
+
+/// `agy` has no `--model`: the model goes through its settings file (see
+/// [`crate::antigravity`]).
+fn antigravity_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let mut args = Vec::new();
+    // First, so the model override and auth errors land in the log.
+    if let Some(log) = input.log_file {
+        args.extend(["--log-file".to_owned(), path_arg(log)]);
+    }
+    if auto(input)
+        && input
+            .capabilities
+            .iter()
+            .any(|c| c == ANTIGRAVITY_SKIP_PERMISSIONS_FLAG)
+    {
+        args.push(ANTIGRAVITY_SKIP_PERMISSIONS_FLAG.to_owned());
+    }
+    args.extend(owned(&[
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+    ]));
+    args
 }
 
 fn opencode_args(input: &ArgvInput<'_>) -> Vec<String> {

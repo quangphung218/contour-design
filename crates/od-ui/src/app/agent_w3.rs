@@ -25,7 +25,17 @@ use serde_json::json;
 /// Agents whose CLI can block on an approval prompt the daemon never
 /// answers when the permission mode is "ask" (decision: keep the runtime,
 /// warn in the UI).
-const ASK_MODE_HANGS: [&str; 2] = ["copilot", "qwen"];
+const ASK_MODE_HANGS: [&str; 9] = [
+    "copilot",
+    "qwen",
+    "amp",
+    "qoder",
+    "aider",
+    "deepseek",
+    "grok-build",
+    "atomcode",
+    "antigravity",
+];
 
 /// A side-chat turn runs in chat mode whatever its conversation was
 /// switched to in the main pane: a side question never edits files.
@@ -425,14 +435,130 @@ fn score(v: f64) -> String {
 /// round, the composite per round against the threshold, and the outcome.
 #[component]
 pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
+    use crate::jury_replay::{self, Speed};
     let ctx = expect_context::<StudioCtx>();
+    // Track C2: Interrupt (button or Esc) and a client-side Replay.
+    let pending = RwSignal::new(false);
+    let replay = RwSignal::new(None::<usize>);
+    let speed = RwSignal::new(Speed::Fast);
+    let tick = StoredValue::new(0u32);
+    let interrupt = move || {
+        let (running, run_id) = turn.with_untracked(|t| {
+            let running = t.state.is_live()
+                && t.critique
+                    .as_ref()
+                    .is_some_and(|c| c.status == CritiqueStatus::Running);
+            (running, t.run_id.clone())
+        });
+        let Some(run_id) = run_id.filter(|_| running && !pending.get_untracked()) else {
+            return;
+        };
+        pending.set(true);
+        let path = format!("{}/critique/{}/interrupt", ctx.base(), api::seg(&run_id));
+        leptos::task::spawn_local(async move {
+            // Only a refusal re-enables it: the run's end settles the theater.
+            if let Err(e) = api::post::<_, serde_json::Value>(&path, &serde_json::json!({})).await {
+                pending.set(false);
+                ctx.notice.set(Some(e.to_string()));
+            }
+        });
+    };
+    let esc = window_event_listener(leptos::ev::keydown, move |ev| {
+        if ev.key() != "Escape" || super::studio::is_editing(&ev) {
+            return;
+        }
+        let dialog_open = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.query_selector("[role=dialog]").ok().flatten())
+            .is_some();
+        if !dialog_open {
+            interrupt();
+        }
+    });
+    on_cleanup(move || esc.remove());
+    // Steps the replay at the chosen speed; a newer step cancels an older.
+    Effect::new(move |_| {
+        let (Some(at), speed) = (replay.get(), speed.get()) else {
+            return;
+        };
+        let len = turn.with_untracked(|t| {
+            t.critique
+                .as_ref()
+                .map_or(0, |r| jury_replay::frames(r).len())
+        });
+        tick.update_value(|n| *n += 1);
+        let mine = tick.get_value();
+        let Some(to) = jury_replay::next(at, len, speed) else {
+            return;
+        };
+        leptos::task::spawn_local(async move {
+            if speed == Speed::Fast {
+                gloo_timers::future::TimeoutFuture::new(Speed::FAST_MS).await;
+            }
+            if tick.get_value() == mine && replay.get_untracked().is_some() {
+                replay.set(Some(to));
+            }
+        });
+    });
     move || {
         let (report, live) = turn.with(|t| Some((t.critique.clone()?, t.state.is_live())))?;
-        Some(theater(ctx, report, live))
+        if let Some(at) = replay.get() {
+            let frames = jury_replay::frames(&report);
+            let frame = frames.get(at).cloned().unwrap_or(report);
+            let bar = view! {
+                <span class="jury-controls">
+                    <span class="badge outline">{t(T::JuryReadOnly)}</span>
+                    <select class="small select-auto" data-testid="jury-replay-speed" aria-label=t(T::JuryReplaySpeed)
+                        on:change=move |ev| speed.set(Speed::parse(&event_target_value(&ev)))>
+                        {Speed::ALL.into_iter().map(|s| view! {
+                            <option value=s.key() selected=move || speed.get() == s>{t(match s {
+                                Speed::Paused => T::JuryPaused,
+                                Speed::Fast => T::JuryFast,
+                                Speed::Instant => T::JuryInstant,
+                            })}</option>
+                        }).collect_view()}
+                    </select>
+                    <span class="muted small mono" data-testid="jury-replay-step">{format!("{}/{}", at + 1, frames.len())}</span>
+                    <button class="btn ghost small" data-testid="jury-replay-close" on:click=move |_| replay.set(None)>
+                        {icon(Glyph::Close)}{t(T::JuryReplayExit)}
+                    </button>
+                </span>
+            }
+            .into_any();
+            return Some(theater(ctx, frame, true, bar, true));
+        }
+        let running = live && report.status == CritiqueStatus::Running;
+        let can_replay = !live && !report.rounds.is_empty();
+        let controls = view! {
+            <span class="jury-controls">
+                {running.then(|| view! {
+                    <button class="btn ghost small danger" data-testid="jury-interrupt"
+                        disabled=move || pending.get()
+                        on:click=move |_| interrupt()>
+                        {icon(Glyph::Stop)}
+                        {move || if pending.get() { t(T::JuryInterrupting) } else { t(T::JuryInterrupt) }}
+                    </button>
+                })}
+                {can_replay.then(|| view! {
+                    <button class="btn ghost small" data-testid="jury-replay"
+                        on:click=move |_| { speed.set(Speed::Fast); replay.set(Some(0)); }>
+                        {icon(Glyph::Play)}{t(T::JuryReplay)}
+                    </button>
+                })}
+            </span>
+        }
+        .into_any();
+        Some(theater(ctx, report, live, controls, false))
     }
 }
 
-fn theater(ctx: StudioCtx, report: CritiqueReport, live: bool) -> impl IntoView {
+fn theater(
+    ctx: StudioCtx,
+    report: CritiqueReport,
+    live: bool,
+    controls: AnyView,
+    replaying: bool,
+) -> impl IntoView {
     // A stream that ended before the settled report arrived.
     let status = if !live && report.status == CritiqueStatus::Running {
         CritiqueStatus::Interrupted
@@ -502,9 +628,10 @@ fn theater(ctx: StudioCtx, report: CritiqueReport, live: bool) -> impl IntoView 
         .collect_view();
     let artifact = report.artifact_path.clone();
     view! {
-        <section class="jury" data-testid="jury" data-status=serde_status(status)>
+        <section class="jury" data-testid="jury" data-status=serde_status(status) data-replay=replaying.to_string()>
             <header class="jury-head">
                 <strong>{icon(Glyph::Jury)}{t(T::DesignJury)}</strong>
+                {controls}
                 <span class="muted">{format!("≥ {}", score(report.threshold))}</span>
             </header>
             <ul class="jury-lanes">{lanes}</ul>

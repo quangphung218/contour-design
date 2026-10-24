@@ -128,6 +128,7 @@ fn harness() -> Harness {
         limits: od_media::Limits {
             fal_poll_interval: std::time::Duration::from_millis(10),
             fal_max_poll: std::time::Duration::from_secs(5),
+            ..od_media::Limits::default()
         },
     };
     let app = routes_with(deps).with_state(state.clone());
@@ -717,9 +718,12 @@ async fn media_config_and_generation_write_into_the_project() {
         })
         .collect();
     assert_eq!(
-        configured,
+        configured[..3],
         [("openai", true), ("fal", false), ("elevenlabs", true)]
     );
+    // Track C3 added twelve more, none configured here.
+    assert_eq!(configured.len(), 15);
+    assert!(configured[3..].iter().all(|(_, on)| !on));
     assert!(models["models"].as_array().unwrap().len() >= 15);
     let res = h
         .post(

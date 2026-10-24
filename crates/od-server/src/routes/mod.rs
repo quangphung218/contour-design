@@ -1,4 +1,6 @@
+pub mod agent_setup;
 pub mod agent_w3;
+pub mod c2;
 pub mod chat_ops;
 pub mod comments;
 pub mod content;
@@ -6,9 +8,11 @@ pub mod conversations;
 pub mod export;
 pub mod file_ops;
 pub mod files;
+pub mod genui;
 pub mod handoff;
 pub mod library;
 pub mod manage;
+pub mod manual_edit;
 pub mod media;
 pub mod platform;
 pub mod preview;

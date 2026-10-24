@@ -22,7 +22,7 @@ enum Tab {
 #[must_use]
 pub fn forwarding(agent: &str) -> Option<bool> {
     match agent {
-        "claude" | "opencode" => Some(false),
+        "claude" | "opencode" | "codebuddy" | "mimo" => Some(false),
         // ACP adapters take stdio servers only.
         "kimi" | "hermes" | "kiro" | "kilo" | "vibe" | "trae-cli" | "reasonix" | "devin" => {
             Some(true)

@@ -26,6 +26,16 @@ pub fn to_html(md: &str) -> String {
     out
 }
 
+/// [`to_html`] for the bundled guide, whose headings carry `{#id}`
+/// anchors that links point at.
+#[must_use]
+pub fn guide_html(md: &str) -> String {
+    let opts = Options::ENABLE_TABLES | Options::ENABLE_HEADING_ATTRIBUTES;
+    let mut out = String::with_capacity(md.len() * 3 / 2);
+    html::push_html(&mut out, Parser::new_ext(md, opts));
+    out
+}
+
 /// Points relative `<img src>` of rendered Markdown at `base` (the
 /// document's folder as a URL ending in `/`), so a document's images show.
 #[must_use]
@@ -58,6 +68,20 @@ fn is_safe_url(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_guide_has_heading_anchors() {
+        assert_eq!(
+            guide_html("## DeepSeek Harness {#deepseek-harness}"),
+            "<h2 id=\"deepseek-harness\">DeepSeek Harness</h2>\n"
+        );
+        for guide in [
+            include_str!("../docs/guide.en.md"),
+            include_str!("../docs/guide.vi.md"),
+        ] {
+            assert!(guide_html(guide).contains("<h2 id=\"deepseek-harness\">"));
+        }
+    }
 
     #[test]
     fn renders_basic_markdown() {

@@ -1,0 +1,20 @@
+{"type":"response","id":1,"command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"extension_ui_request","id":"ui-1","method":"confirm","params":{"title":"Write index.html?"}}
+{"type":"extension_ui_request","id":"ui-2","method":"select","params":{"options":[{"label":"Keep"},{"label":"Replace"}]}}
+{"type":"extension_ui_request","id":"ui-3","method":"notify","params":{"message":"hi"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"Hero first."}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_end","contentIndex":0}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Writing "}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"index.html."}}
+{"type":"tool_execution_start","toolCallId":"call_1","toolName":"write","args":{"path":"index.html"}}
+{"type":"tool_execution_end","toolCallId":"call_1","toolName":"write","result":{"content":[{"type":"text","text":"Wrote 812 bytes"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call_2","toolName":"bash","args":{"command":"ls missing"}}
+{"type":"tool_execution_end","toolCallId":"call_2","toolName":"bash","result":{"content":"ls: missing: No such file"},"isError":true}
+{"type":"response","id":2,"command":"get_state","success":true,"data":{"sessionFile":"/home/u/.pi/agent/sessions/proj/2026-10-24.jsonl"}}
+{"type":"turn_end","message":{"role":"assistant","stopReason":"stop","usage":{"input":900,"output":120,"cacheRead":300,"cacheWrite":0,"totalTokens":1320,"cost":{"total":0.0031}}}}
+{"type":"message_end","message":{"role":"assistant"}}
+{"type":"agent_end","messages":[]}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"after the end"}}

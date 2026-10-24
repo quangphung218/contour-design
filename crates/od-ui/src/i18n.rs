@@ -1,55 +1,115 @@
-//! UI strings in English and Vietnamese (spec 1.5 i18n: en and vi first).
+//! UI strings (spec 1.5 i18n): English and Vietnamese built in, the other
+//! languages of the original app loaded on demand.
 //!
 //! Every visible string goes through [`t`] or [`tf`]. The table is one
-//! macro call, so a key without both translations does not compile.
+//! macro call, so a key without both en and vi does not compile.
 //! Vietnamese follows the vi-VN UI conventions: impersonal, kiểu mới tone
 //! marks, product terms (agent, preview, deck, template…) kept in English.
+//!
+//! The other languages live in `locales/<tag>.txt` (`Key = text` lines),
+//! served next to the bundle and fetched when picked, so they do not grow
+//! the wasm. A key a file lacks falls back to English.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::rc::Rc;
 
-/// A UI language.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub enum Locale {
-    #[default]
-    En,
-    Vi,
+macro_rules! locales {
+    ($($variant:ident => $tag:literal, $name:literal;)*) => {
+        /// A UI language.
+        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+        pub enum Locale {
+            #[default]
+            $($variant),*
+        }
+
+        impl Locale {
+            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+
+            /// BCP 47 tag, also the value stored as `locale` in app settings.
+            #[must_use]
+            pub fn tag(self) -> &'static str {
+                match self { $(Self::$variant => $tag),* }
+            }
+
+            /// The language's own name, for the picker.
+            #[must_use]
+            pub fn native_name(self) -> &'static str {
+                match self { $(Self::$variant => $name),* }
+            }
+        }
+    };
+}
+
+// Same set and order as the original app's `LOCALES`, plus Vietnamese.
+locales! {
+    En => "en", "English";
+    Vi => "vi", "Tiếng Việt";
+    Id => "id", "Bahasa Indonesia";
+    De => "de", "Deutsch";
+    ZhCn => "zh-CN", "简体中文";
+    ZhTw => "zh-TW", "繁體中文";
+    PtBr => "pt-BR", "Português (Brasil)";
+    EsEs => "es-ES", "Español (España)";
+    Ru => "ru", "Русский";
+    Fa => "fa", "فارسی";
+    Ar => "ar", "العربية";
+    Ja => "ja", "日本語";
+    Ko => "ko", "한국어";
+    Pl => "pl", "Polski";
+    Hu => "hu", "Magyar";
+    Fr => "fr", "Français";
+    Uk => "uk", "Українська";
+    Tr => "tr", "Türkçe";
+    Th => "th", "ภาษาไทย";
+    It => "it", "Italiano";
 }
 
 impl Locale {
-    pub const ALL: [Self; 2] = [Self::En, Self::Vi];
-
-    /// BCP 47 tag, also the value stored as `locale` in app settings.
-    #[must_use]
-    pub fn tag(self) -> &'static str {
-        match self {
-            Self::En => "en",
-            Self::Vi => "vi",
-        }
-    }
-
-    /// The language's own name, for the picker.
-    #[must_use]
-    pub fn native_name(self) -> &'static str {
-        match self {
-            Self::En => "English",
-            Self::Vi => "Tiếng Việt",
-        }
-    }
-
-    /// `vi`, `vi-VN`… map to Vietnamese; anything else to English.
+    /// Exact tag first, then Chinese by script or region, then the first
+    /// language with the same primary subtag (`de-AT` → `de`, `pt` →
+    /// `pt-BR`); anything else is English. Mirrors the original
+    /// `resolveSystemLocale`.
     #[must_use]
     pub fn parse(tag: &str) -> Self {
-        let primary = tag.split(['-', '_']).next().unwrap_or("");
-        if primary.eq_ignore_ascii_case("vi") {
-            Self::Vi
-        } else {
-            Self::En
+        let tag = tag.trim();
+        if let Some(exact) = Self::ALL.iter().find(|l| l.tag().eq_ignore_ascii_case(tag)) {
+            return *exact;
         }
+        let lower = tag.to_ascii_lowercase().replace('_', "-");
+        let mut parts = lower.split('-');
+        let language = parts.next().unwrap_or("");
+        if language == "zh" {
+            return match parts.next() {
+                Some("hant" | "tw" | "hk" | "mo") => Self::ZhTw,
+                _ => Self::ZhCn,
+            };
+        }
+        Self::ALL
+            .iter()
+            .find(|l| l.tag().split('-').next() == Some(language))
+            .copied()
+            .unwrap_or(Self::En)
+    }
+
+    /// Whether the strings come from a `locales/<tag>.txt` file.
+    #[must_use]
+    pub fn is_loaded_on_demand(self) -> bool {
+        !matches!(self, Self::En | Self::Vi)
+    }
+
+    /// Arabic and Persian run right to left (`<html dir>`).
+    #[must_use]
+    pub fn is_rtl(self) -> bool {
+        matches!(self, Self::Ar | Self::Fa)
     }
 }
 
 thread_local! {
     static CURRENT: Cell<Locale> = const { Cell::new(Locale::En) };
+    /// Parsed `locales/<tag>.txt` files, by locale; slots follow [`T::ALL`].
+    static DICTS: RefCell<HashMap<Locale, Rc<[Option<&'static str>]>>> =
+        RefCell::new(HashMap::new());
 }
 
 /// Sets the language [`t`] uses. The app re-renders after a change.
@@ -62,6 +122,65 @@ pub fn locale() -> Locale {
     CURRENT.with(Cell::get)
 }
 
+/// Whether `locale`'s strings are ready ([`install_dict`] ran, or built in).
+#[must_use]
+pub fn has_dict(locale: Locale) -> bool {
+    !locale.is_loaded_on_demand() || DICTS.with(|d| d.borrow().contains_key(&locale))
+}
+
+/// Parses a `locales/<tag>.txt` file and keeps it for `locale`. Returns
+/// the lines that name no key (a stale file), for logging.
+pub fn install_dict(locale: Locale, text: String) -> Vec<String> {
+    // Loaded at most once per language for the page's life, so leaking
+    // the text keeps every string `'static` like the built-in ones.
+    let text: &'static str = Box::leak(text.into_boxed_str());
+    let (slots, unknown) = parse_dict(text);
+    DICTS.with(|d| d.borrow_mut().insert(locale, slots.into()));
+    unknown
+}
+
+/// `Key = text` lines (`#` comments and blank lines skipped) into one slot
+/// per [`T::ALL`] key, plus the keys that do not exist. `\n` in a text is
+/// a line break.
+fn parse_dict(text: &'static str) -> (Vec<Option<&'static str>>, Vec<String>) {
+    let index: HashMap<&str, usize> = T::ALL
+        .iter()
+        .enumerate()
+        .map(|(i, k)| (k.name(), i))
+        .collect();
+    let mut slots = vec![None; T::ALL.len()];
+    let mut unknown = Vec::new();
+    for line in text.lines() {
+        let line = line.trim_end_matches('\r');
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once(" = ") else {
+            unknown.push(line.to_owned());
+            continue;
+        };
+        let Some(&i) = index.get(key.trim()) else {
+            unknown.push(key.trim().to_owned());
+            continue;
+        };
+        let value = value.trim();
+        slots[i] = Some(if value.contains("\\n") {
+            &*Box::leak(value.replace("\\n", "\n").into_boxed_str())
+        } else {
+            value
+        });
+    }
+    (slots, unknown)
+}
+
+fn lookup(locale: Locale, key: T) -> Option<&'static str> {
+    DICTS.with(|d| {
+        d.borrow()
+            .get(&locale)
+            .and_then(|slots| slots.get(key as usize).copied().flatten())
+    })
+}
+
 macro_rules! messages {
     ($($key:ident => $en:literal, $vi:literal;)*) => {
         /// A UI string key.
@@ -71,11 +190,20 @@ macro_rules! messages {
         impl T {
             pub const ALL: &'static [T] = &[$(T::$key),*];
 
+            /// The key's name, as written in `locales/<tag>.txt`.
+            #[must_use]
+            pub fn name(self) -> &'static str {
+                match self { $(T::$key => stringify!($key)),* }
+            }
+
+            /// The text in `locale`; English when that language's file
+            /// is not loaded or lacks the key.
             #[must_use]
             pub fn text(self, locale: Locale) -> &'static str {
                 match locale {
                     Locale::En => match self { $(T::$key => $en),* },
                     Locale::Vi => match self { $(T::$key => $vi),* },
+                    other => lookup(other, self).unwrap_or_else(|| self.text(Locale::En)),
                 }
             }
         }
@@ -1278,6 +1406,20 @@ messages! {
     ShortcutNextSlide => "Next slide", "Slide sau";
     ShortcutPrevSlide => "Previous slide", "Slide trước";
     ShortcutFirstLast => "First or last slide", "Slide đầu hoặc cuối";
+    // Track C3-runtimes: DeepSeek Harness connection setup.
+    DshSetupTitle => "Set up DeepSeek Harness", "Thiết lập DeepSeek Harness";
+    DshSetupDescription => "Open Design runs the dsh CLI on this computer through its open-design profile. Install both, then detect again.", "Open Design chạy dsh CLI trên máy này qua profile open-design. Cài cả hai rồi phát hiện lại.";
+    DshStepCli => "1. Install the dsh CLI", "1. Cài dsh CLI";
+    DshCliFound => "dsh found: {0}", "Đã thấy dsh: {0}";
+    DshStepProfile => "2. Add the open-design profile", "2. Thêm profile open-design";
+    DshStepProfileHint => "Build the profile package from the Open Design source, then add it with dsh.", "Build gói profile từ mã nguồn Open Design rồi thêm bằng dsh.";
+    DshSetupNote => "DeepSeek Harness and its profile stay installed and managed by you. The guide has every step.", "DeepSeek Harness và profile do người dùng tự cài và quản lý. Hướng dẫn có đủ các bước.";
+    DshSetupGuide => "Open the setup guide", "Mở hướng dẫn cài";
+    DshSetupDetect => "Detect again", "Phát hiện lại";
+    DshSetupDetecting => "Detecting…", "Đang phát hiện…";
+    DshSetupNoCli => "dsh is still not found on PATH. Install it, or add its folder to PATH, then detect again.", "Vẫn chưa thấy dsh trên PATH. Cài dsh hoặc thêm thư mục của nó vào PATH rồi phát hiện lại.";
+    DshSetupNoProfile => "The open-design profile is missing or does not pass the compatibility check yet.", "Profile open-design chưa có hoặc chưa qua bước kiểm tra tương thích.";
+    DshSetupRequired => "Connection setup required", "Cần thiết lập kết nối";
     // Track B3-chat: Home composer, chat composer, transcript actions.
     HomeTitleCreate => "Let’s create {0}", "Cùng tạo {0}";
     HomeTitleWords => "prototypes,slide decks,documents", "prototype,slide deck,tài liệu";
@@ -1429,6 +1571,232 @@ messages! {
     FromFolder => "From folder", "Từ thư mục";
     ShortcutMention => "Mention a file, plugin, skill or MCP server", "Nhắc tới file, plugin, skill hoặc MCP server";
     ShortcutSlash => "Commands (at the start of a line)", "Lệnh (ở đầu dòng)";
+    // Track C1-preview: manual edit, comments tab, code colors, hints.
+    FirstArtifactTitle => "Your first design is ready", "Bản thiết kế đầu tiên đã xong";
+    FirstArtifactBody => "Edit and annotate it right in the preview, then export when you are happy.", "Sửa và chú thích ngay trên preview, ưng rồi thì export.";
+    FirstArtifactDismiss => "Got it", "Đã hiểu";
+    WorkspaceRecovering => "Connection to Nét interrupted. Reconnecting automatically…", "Mất kết nối tới Nét. Đang tự kết nối lại…";
+    ToolManualEdit => "Edit", "Sửa";
+    ManualEditHint => "Click an element in the preview or pick a layer, then change it. Each change is saved as a version.", "Bấm một phần tử trên preview hoặc chọn một layer rồi sửa. Mỗi lần sửa được lưu thành một version.";
+    CommentsTab => "Comments", "Comment";
+    CommentsFilterOpen => "Open", "Đang mở";
+    CommentsFilterResolved => "Resolved", "Đã xong";
+    CommentsNone => "No comments on this file yet. Turn on Comment and click an element.", "File này chưa có comment. Bật Comment rồi bấm vào một phần tử.";
+    CommentsNoneResolved => "No resolved comments on this file.", "File này chưa có comment nào đã xong.";
+    CommentStatusOpen => "Not sent", "Chưa gửi";
+    CommentStatusAttached => "Goes with next message", "Gửi kèm tin sau";
+    CommentStatusApplying => "Being applied", "Đang áp dụng";
+    CommentStatusResolved => "Resolved", "Đã xong";
+    CommentResolve => "Resolve", "Đánh dấu xong";
+    CommentReopen => "Reopen", "Mở lại";
+    AnchorStale => "Anchor may have moved", "Vị trí có thể đã đổi";
+    AnchorLost => "Anchor lost", "Mất vị trí";
+    CommentAttachImage => "Attach image", "Đính ảnh";
+    CommentImageFailed => "Could not attach the image: {0}", "Không đính được ảnh: {0}";
+    ManualLayers => "Layers", "Layer";
+    ManualNoLayers => "No elements to edit on this page yet.", "Trang này chưa có phần tử nào để sửa.";
+    ManualHidden => "Hidden", "Ẩn";
+    ManualEmpty => "Click an element in the preview or pick a layer.", "Bấm một phần tử trên preview hoặc chọn một layer.";
+    ManualMissing => "This element is no longer on the page.", "Phần tử này không còn trên trang.";
+    ManualTabContent => "Content", "Nội dung";
+    ManualTabStyle => "Style", "Kiểu";
+    ManualTabAttributes => "Attributes", "Thuộc tính";
+    ManualTabHtml => "Html", "Html";
+    ManualText => "Text", "Chữ";
+    ManualHref => "Link (href)", "Liên kết (href)";
+    ManualImageUrl => "Image URL", "URL ảnh";
+    ManualAlt => "Alt text", "Mô tả ảnh (alt)";
+    ManualUploadImage => "Upload image", "Tải ảnh lên";
+    ManualUploadFailed => "Could not upload the image: {0}", "Không tải được ảnh lên: {0}";
+    ManualContainerHint => "This element holds other elements. Edit its markup in the Html tab, or pick a layer inside it.", "Phần tử này chứa phần tử khác. Sửa markup ở tab Html, hoặc chọn một layer bên trong.";
+    ManualAttributesJson => "Attributes (JSON)", "Thuộc tính (JSON)";
+    ManualSelectedHtml => "Element HTML (as in the source)", "HTML của phần tử (như trong source)";
+    ManualInvalidAttributes => "Invalid attributes JSON: {0}", "JSON thuộc tính không hợp lệ: {0}";
+    ManualApply => "Apply", "Áp dụng";
+    ManualApplyContent => "Content", "Nội dung";
+    ManualApplyStyle => "Style", "Kiểu";
+    ManualApplyAttributes => "Attributes", "Thuộc tính";
+    ManualApplyHtml => "HTML", "HTML";
+    ManualDelete => "Delete element", "Xoá phần tử";
+    ManualUndo => "Undo", "Hoàn tác";
+    ManualRedo => "Redo", "Làm lại";
+    ManualHistoryFailed => "Could not undo or redo: {0}", "Không hoàn tác hoặc làm lại được: {0}";
+    // ---- end of track C1-preview ----
+    // Track C2-chat-home: Settings memory, memory toast, library import,
+    // onboarding brand step, Design Jury, media rows, Home, quick menu, help.
+    HookProfile => "Use my profile", "Dùng hồ sơ của tôi";
+    HookProfileHint => "Inject your work profile into every task.", "Đưa hồ sơ công việc vào mọi tác vụ.";
+    HookRewrite => "Rewrite short asks", "Viết lại yêu cầu ngắn";
+    HookRewriteHint => "Before: expand a short request into a full task brief.", "Trước: mở rộng yêu cầu ngắn thành brief đầy đủ.";
+    HookVerify => "Self-verify output", "Tự kiểm kết quả";
+    HookVerifyHint => "After: check the result against your rules, then show a scorecard.", "Sau: đối chiếu kết quả với các quy tắc, rồi hiện bảng điểm.";
+    HookLearn => "Learn from chats", "Học từ chat";
+    HookLearnHint => "Capture useful facts and preferences from chat messages.", "Ghi lại sự thật và sở thích hữu ích từ tin nhắn chat.";
+    MemoryEnable => "Enable memory injection", "Bật đưa bộ nhớ vào prompt";
+    MemoryDisabled => "Memory is off.", "Bộ nhớ đang tắt.";
+    MemoryDisabledBody => "Existing facts stay on disk but are not added to new chats, and new turns learn nothing.", "Các mục đã có vẫn nằm trên đĩa nhưng không được đưa vào chat mới, và lượt mới không học thêm gì.";
+    MemoryHooks => "Memory hooks", "Memory hooks";
+    MemoryHooksHint => "Choose which parts of memory run on their own. The switch above turns all of them off.", "Chọn phần nào của bộ nhớ tự chạy. Công tắc phía trên tắt tất cả.";
+    MemoryImport => "Import", "Nhập";
+    MemoryEditIndex => "Edit MEMORY.md", "Sửa MEMORY.md";
+    MemoryImportHint => "Paste or pick a Markdown file (a MEMORY.md, CLAUDE.md or notes). Bullets become facts; headings such as Rules or Profile set their type.", "Dán hoặc chọn file Markdown (MEMORY.md, CLAUDE.md hay ghi chú). Mỗi gạch đầu dòng thành một mục; tiêu đề như Rules hay Profile quyết định loại.";
+    MemoryImportPlaceholder => "- Prefers serif headings", "- Thích tiêu đề chữ có chân";
+    MemoryImportFile => "Choose file", "Chọn file";
+    MemoryImportScan => "Find facts", "Tìm mục";
+    MemoryImportNone => "No facts found. Use one bullet per fact.", "Không tìm thấy mục nào. Mỗi mục là một gạch đầu dòng.";
+    MemorySuggested => "Suggested memories", "Mục gợi ý";
+    MemorySaveSelected => "Save selected", "Lưu mục đã chọn";
+    MemoryImported => "Saved {0} memories.", "Đã lưu {0} mục.";
+    MemoryImportPartial => "Saved {0}, {1} failed.", "Đã lưu {0}, {1} mục lỗi.";
+    MemoryIndexTitle => "MEMORY.md (index)", "MEMORY.md (mục lục)";
+    MemoryIndexHint => "Only facts linked here reach the prompt. Delete a line to turn a fact off; the entry stays in the list. Not saved until Save index.", "Chỉ mục có liên kết ở đây mới vào prompt. Xoá một dòng để tắt mục đó; mục vẫn còn trong danh sách. Chỉ lưu khi bấm Lưu mục lục.";
+    MemoryIndexSave => "Save index", "Lưu mục lục";
+    MemoryIndexSaved => "Index saved", "Đã lưu mục lục";
+    MemoryUnsaved => "Unsaved changes", "Chưa lưu";
+    MemoryIndexReset => "Reset", "Đặt lại";
+    MemoryDiscard => "Discard", "Bỏ";
+    MemoryToastGlobal => "Memory updated ({0})", "Đã cập nhật bộ nhớ ({0})";
+    MemoryToastProject => "Saved to project memory ({0})", "Đã lưu vào bộ nhớ project ({0})";
+    MemoryToastView => "View", "Xem";
+    ImportFromLibrary => "Import from library", "Nhập từ thư viện";
+    LibrarySearch => "Search library", "Tìm trong thư viện";
+    LibraryFilterKind => "Kind", "Loại";
+    LibraryFilterAll => "All", "Tất cả";
+    LibraryEmpty => "No assets in your library yet", "Thư viện chưa có gì";
+    LibraryImportFailed => "Could not add from library ({0})", "Không thêm được từ thư viện ({0})";
+    LibraryImport => "Import", "Nhập";
+    LibraryImportCount => "Import ({0})", "Nhập ({0})";
+    MentionLibrary => "Library", "Thư viện";
+    JuryInterrupt => "Interrupt", "Ngắt";
+    JuryInterrupting => "Interrupting…", "Đang ngắt…";
+    JuryReplay => "Replay", "Xem lại";
+    JuryReplayExit => "Exit replay", "Thoát xem lại";
+    JuryReadOnly => "Read-only", "Chỉ xem";
+    JuryReplaySpeed => "Replay speed", "Tốc độ xem lại";
+    JuryPaused => "Paused", "Tạm dừng";
+    JuryFast => "Fast", "Nhanh";
+    JuryInstant => "Instant", "Tức thì";
+    MediaBatchImage => "Generating illustrations", "Đang tạo hình minh hoạ";
+    MediaBatchAudio => "Generating audio", "Đang tạo âm thanh";
+    MediaBatchVideo => "Generating video", "Đang tạo video";
+    MediaCountImage => "{0} images", "{0} ảnh";
+    MediaCountAudio => "{0} clips", "{0} đoạn âm thanh";
+    MediaCountVideo => "{0} videos", "{0} video";
+    MediaOpenCell => "Open item {0}", "Mở mục {0}";
+    MediaFailed => "Failed", "Lỗi";
+    MediaRetryMessage => "{0} of the {1} failed to generate, please try those again ({2}).", "{0} trong {1} tạo không được, hãy tạo lại các mục đó ({2}).";
+    BrandStepTitle => "Your brand", "Thương hiệu";
+    BrandStepBody => "Give the website of your brand and the agent extracts a design system from it: palette, type, components. New projects then start with it.", "Nhập website thương hiệu, agent sẽ trích design system từ đó: bảng màu, kiểu chữ, component. Project mới sẽ dùng nó từ đầu.";
+    BrandStepUrl => "Brand website", "Website thương hiệu";
+    BrandStepExtract => "Extract design system", "Trích design system";
+    BrandStepDone => "{0} is ready and set as the default design system.", "{0} đã sẵn sàng và được đặt làm design system mặc định.";
+    BrandStepWait => "Wait until the design system is extracted", "Chờ trích xong design system";
+    Optional => "Optional", "Tuỳ chọn";
+    RecommendedForYou => "Recommended for you", "Gợi ý";
+    RecTryAnother => "Try another", "Gợi ý khác";
+    RecAllTypes => "All types", "Mọi loại";
+    RecStart => "Start creating", "Bắt đầu tạo";
+    RecPrototype => "Start with an editable product prototype", "Bắt đầu với prototype sản phẩm sửa được";
+    RecPrototypeBody => "Clickable screens you can keep refining in chat.", "Các màn bấm được, tiếp tục chỉnh trong chat.";
+    RecPrototypePrompt => "Prototype the main flow of my product: a home screen, a detail view and a settings page, clickable between them.", "Prototype luồng chính của sản phẩm: màn chính, màn chi tiết và trang cài đặt, bấm qua lại được.";
+    RecComponent => "Design one component in every state", "Thiết kế một component đủ mọi trạng thái";
+    RecComponentBody => "Default, hover, focus, disabled and error, side by side.", "Mặc định, hover, focus, disabled và lỗi, đặt cạnh nhau.";
+    RecComponentPrompt => "Design a pricing card component and show it in default, hover, focus, disabled and error states on one page.", "Thiết kế component thẻ giá và hiện các trạng thái mặc định, hover, focus, disabled, lỗi trên cùng một trang.";
+    RecLowfi => "Sketch a low-fidelity wireframe", "Phác wireframe độ chi tiết thấp";
+    RecLowfiBody => "Layout first, no colour, fast to change.", "Bố cục trước, chưa màu, đổi nhanh.";
+    RecLowfiPrompt => "Wireframe a signup flow in grey boxes: landing, form, confirmation.", "Wireframe luồng đăng ký bằng khối xám: trang đầu, form, xác nhận.";
+    RecLanding => "Launch a landing page", "Làm landing page ra mắt";
+    RecLandingBody => "Hero, features, social proof and a call to action.", "Hero, tính năng, cảm nhận khách hàng và lời kêu gọi.";
+    RecLandingPrompt => "Design a landing page for a new product launch with a hero, three features, testimonials and a signup call to action.", "Thiết kế landing page ra mắt sản phẩm mới: hero, ba tính năng, cảm nhận khách hàng và nút đăng ký.";
+    RecVariants => "Compare three directions", "So sánh ba hướng";
+    RecVariantsBody => "The same page in three visual styles to pick from.", "Cùng một trang theo ba phong cách để chọn.";
+    RecVariantsPrompt => "Make three different visual directions for the same campaign page, side by side, so I can pick one.", "Làm ba hướng hình ảnh khác nhau cho cùng một trang chiến dịch, đặt cạnh nhau để chọn.";
+    RecDashboard => "Build an internal dashboard", "Dựng dashboard nội bộ";
+    RecDashboardBody => "Key numbers, a chart and a table of recent items.", "Số liệu chính, một biểu đồ và bảng mục gần đây.";
+    RecDashboardPrompt => "Prototype an operations dashboard with four key metrics, a weekly trend chart and a table of recent orders.", "Prototype dashboard vận hành với bốn chỉ số chính, biểu đồ xu hướng tuần và bảng đơn hàng gần đây.";
+    RecReport => "Write a one-page report", "Viết báo cáo một trang";
+    RecReportBody => "A clear summary with sections and a table.", "Bản tóm tắt rõ ràng, có mục và bảng.";
+    RecReportPrompt => "Write a one-page monthly report with a summary, three sections and a results table.", "Viết báo cáo tháng một trang: tóm tắt, ba mục và bảng kết quả.";
+    RecGeneral => "Start with your first project", "Bắt đầu project đầu tiên";
+    RecGeneralBody => "Describe anything; the agent asks what it needs.", "Mô tả bất cứ thứ gì; agent sẽ hỏi thêm khi cần.";
+    RecGeneralPrompt => "Design a simple homepage for my idea and ask me what you need to know first.", "Thiết kế trang chủ đơn giản cho ý tưởng của tôi và hỏi tôi những gì cần biết trước.";
+    HomeTabsLabel => "Start from", "Bắt đầu từ";
+    HomeTabDesigns => "Designs", "Thiết kế";
+    HomeTabTemplates => "Templates", "Template";
+    HomeTabSystems => "Design systems", "Design system";
+    HomeTabImage => "Image templates", "Template ảnh";
+    HomeTabVideo => "Video templates", "Template video";
+    HomeNoDesigns => "No designs yet. Describe one above.", "Chưa có thiết kế nào. Mô tả một cái ở trên.";
+    HomeNoSystems => "No design systems yet.", "Chưa có design system nào.";
+    HomeAllDesigns => "All projects", "Mọi project";
+    QuickSettings => "Quick settings", "Cài đặt nhanh";
+    LocalMode => "Local mode", "Chế độ cục bộ";
+    LocalModeHint => "No account. Everything stays on this computer.", "Không cần tài khoản. Mọi thứ nằm trên máy này.";
+    Help => "Help", "Trợ giúp";
+    Documentation => "Documentation", "Tài liệu hướng dẫn";
+    ReportIssue => "Report issue", "Báo lỗi";
+    ReportCopied => "Diagnostics copied to the clipboard.", "Đã chép thông tin chẩn đoán vào clipboard.";
+    ReportCopiedDir => "Diagnostics copied to the clipboard. Logs: {0}", "Đã chép thông tin chẩn đoán vào clipboard. Log: {0}";
+    ReportManual => "The clipboard is not available here. Select the text, copy it and paste it where you report the issue. The log folder is open.", "Không dùng được clipboard ở đây. Chọn đoạn chữ, chép và dán vào nơi báo lỗi. Thư mục log đã được mở.";
+    ExportJsx => "Export as JSX", "Export dạng JSX";
+    FontsMissingTitle => "Brand font files missing", "Thiếu file font thương hiệu";
+    FontsMissingBody => "Typography previews use substitute fonts until brand font files are added.", "Phần xem trước kiểu chữ đang dùng font thay thế cho tới khi thêm file font thương hiệu.";
+    FontsMissingAdd => "Add brand font files", "Thêm file font thương hiệu";
+    FontsMissingKeep => "Keep substitutes", "Giữ font thay thế";
+    // End of track C2-chat-home.
+
+    // Track C4-depth: Crystallize and evolution proposals (Automations).
+    Crystallize => "Crystallize", "Đúc kết";
+    Crystallizing => "Crystallizing…", "Đang đúc kết…";
+    CrystallizeTitle => "Draft skill and memory proposals from this run", "Soạn đề xuất skill và memory từ lượt chạy này";
+    CrystallizeFailed => "Crystallize failed: {0}", "Đúc kết không được: {0}";
+    CrystallizeNoProposals => "Crystallize finished, but no proposals were returned.", "Đã đúc kết nhưng không có đề xuất nào.";
+    ProposalsTitle => "Evolution proposals", "Đề xuất tiến hoá";
+    ProposalsSub => "Review automation output before it changes memory, skills or design systems.", "Duyệt kết quả của automation trước khi nó đổi memory, skill hay design system.";
+    ProposalsPending => "{0} pending", "{0} chờ duyệt";
+    ProposalApply => "Apply", "Áp dụng";
+    ProposalReject => "Reject", "Bỏ";
+    ProposalsDismissReason => "Dismissed in Automations", "Bỏ ở trang Automations";
+    ProposalTargetMemory => "Memory", "Memory";
+    ProposalTargetSkill => "Skill", "Skill";
+    ProposalActionCreate => "Create", "Tạo mới";
+    ProposalPreview => "Preview", "Xem trước";
+    ProposalSkillApplied => "Saved as skill {0}.", "Đã lưu thành skill {0}.";
+    ProposalMemoryApplied => "Saved to memory.", "Đã lưu vào memory.";
+    // Track C4-depth: GenUI surfaces in the chat.
+    GenuiWaiting => "A plugin is waiting for an answer", "Plugin đang chờ trả lời";
+    GenuiContinue => "Continue", "Tiếp tục";
+    GenuiAuthorize => "Authorize", "Cấp quyền";
+    GenuiSkip => "Skip", "Bỏ qua";
+    GenuiAcceptAll => "Accept all", "Nhận tất cả";
+    GenuiRejectAll => "Reject all", "Bỏ tất cả";
+    GenuiPartial => "Pick per file", "Chọn từng file";
+    GenuiAccept => "Accept", "Nhận";
+    GenuiReject => "Reject", "Bỏ";
+    GenuiSubmit => "Submit", "Gửi";
+    GenuiSubmitPartial => "Submit partial decision", "Gửi lựa chọn từng file";
+    GenuiPatchNotes => "Notes for the patch author (optional)", "Ghi chú cho người viết patch (không bắt buộc)";
+    GenuiConfirmDefault => "The plugin needs your confirmation to continue.", "Plugin cần xác nhận để chạy tiếp.";
+    GenuiAuthorizeDefault => "Authorize {0} to continue.", "Cấp quyền cho {0} để chạy tiếp.";
+    GenuiTheConnection => "the connection", "kết nối";
+    GenuiConnectorHint => "Connector: {0}", "Connector: {0}";
+    GenuiMcpHint => "MCP server: {0}", "MCP server: {0}";
+    GenuiReviewDefault => "Review the diff and choose how to proceed.", "Xem diff rồi chọn cách xử lý.";
+    GenuiFilesTouched => "{0} files touched.", "{0} file đã sửa.";
+    GenuiNoFileList => "No file list yet: the decision covers every file.", "Chưa có danh sách file: lựa chọn áp cho mọi file.";
+    GenuiPickEach => "Pick accept or reject for: {0}", "Chọn nhận hoặc bỏ cho: {0}";
+    GenuiAnswerDefault => "The plugin needs an answer to continue.", "Plugin cần câu trả lời để chạy tiếp.";
+    GenuiJsonPlaceholder => "Answer as JSON or plain text", "Trả lời bằng JSON hoặc chữ thường";
+    GenuiFieldRequired => "{0} is required.", "Cần điền {0}.";
+    GenuiFieldNumber => "{0} must be a number.", "{0} phải là số.";
+    GenuiFieldWhole => "{0} must be a whole number.", "{0} phải là số nguyên.";
+    GenuiFieldRange => "{0} is out of range.", "{0} nằm ngoài khoảng cho phép.";
+    GenuiAnswerFailed => "Could not send the answer: {0}", "Không gửi được câu trả lời: {0}";
+    GenuiRemembered => "Remembered answers ({0})", "Câu trả lời đã nhớ ({0})";
+    GenuiRememberedHint => "Plugins reuse these answers without asking again.", "Plugin dùng lại các câu trả lời này mà không hỏi lại.";
+    GenuiRevoke => "Revoke", "Thu hồi";
+    GenuiTierProject => "project", "project";
+    GenuiTierConversation => "conversation", "cuộc trò chuyện";
 }
 
 /// The current language's text for `key`.
@@ -1525,5 +1893,124 @@ mod tests {
         assert_eq!(tf(T::StepOf, &["2", "5"]), "Bước 2/5");
         set_locale(Locale::En);
         assert_eq!(tf(T::StepOf, &["2", "5"]), "Step 2/5");
+    }
+
+    #[test]
+    fn locale_parse_follows_the_original_resolver() {
+        for (tag, want) in [
+            ("de-AT", Locale::De),
+            ("pt", Locale::PtBr),
+            ("pt-PT", Locale::PtBr),
+            ("es-MX", Locale::EsEs),
+            ("zh", Locale::ZhCn),
+            ("zh-Hans-CN", Locale::ZhCn),
+            ("zh-Hant", Locale::ZhTw),
+            ("zh-HK", Locale::ZhTw),
+            ("zh_TW", Locale::ZhTw),
+            ("ZH-cn", Locale::ZhCn),
+            ("fa-IR", Locale::Fa),
+            ("ja-JP", Locale::Ja),
+            ("xx", Locale::En),
+        ] {
+            assert_eq!(Locale::parse(tag), want, "{tag}");
+        }
+        for l in Locale::ALL {
+            assert_eq!(Locale::parse(l.tag()), *l, "round trip {l:?}");
+        }
+        assert_eq!(Locale::ALL.len(), 20, "en, vi and the original's 18 others");
+        assert!(Locale::Ar.is_rtl() && Locale::Fa.is_rtl() && !Locale::De.is_rtl());
+    }
+
+    #[test]
+    fn a_loaded_language_falls_back_to_english_per_key() {
+        assert!(!has_dict(Locale::Hu));
+        assert_eq!(T::NavHome.text(Locale::Hu), "Home", "not loaded yet");
+        let unknown = install_dict(
+            Locale::Hu,
+            "# comment\n\nNavHome = Kezdőlap\nNoSuchKey = x\nnot a line\nPasteDesignMdPlaceholder = a\\nb\n".to_owned(),
+        );
+        assert!(has_dict(Locale::Hu));
+        assert_eq!(unknown, ["NoSuchKey", "not a line"]);
+        assert_eq!(T::NavHome.text(Locale::Hu), "Kezdőlap");
+        assert_eq!(T::NavSettings.text(Locale::Hu), "Settings", "missing key");
+        assert_eq!(T::PasteDesignMdPlaceholder.text(Locale::Hu), "a\nb");
+        set_locale(Locale::Hu);
+        assert_eq!(t(T::NavHome), "Kezdőlap");
+        set_locale(Locale::En);
+    }
+
+    /// Display width: East Asian wide characters count twice.
+    fn width(s: &str) -> usize {
+        s.chars()
+            .map(|c| match c as u32 {
+                0x1100..=0x115F
+                | 0x2E80..=0xA4CF
+                | 0xAC00..=0xD7A3
+                | 0xF900..=0xFAFF
+                | 0xFE30..=0xFE4F
+                | 0xFF00..=0xFF60
+                | 0xFFE0..=0xFFE6 => 2,
+                _ => 1,
+            })
+            .sum()
+    }
+
+    /// Every language file: present, every key translated once, same
+    /// placeholders as English, no em dash, and no string so much longer
+    /// than English that it breaks the layout built around it.
+    #[test]
+    fn every_language_file_is_complete_and_fits() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let mut failures = Vec::new();
+        for &locale in Locale::ALL.iter().filter(|l| l.is_loaded_on_demand()) {
+            let path = dir.join(format!("{}.txt", locale.tag()));
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                failures.push(format!("{}: missing", path.display()));
+                continue;
+            };
+            let text: &'static str = Box::leak(text.into_boxed_str());
+            let (slots, unknown) = parse_dict(text);
+            let tag = locale.tag();
+            for u in unknown {
+                failures.push(format!("{tag}: unknown key or bad line {u:?}"));
+            }
+            let mut seen = std::collections::HashSet::new();
+            for line in text
+                .lines()
+                .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            {
+                if let Some((k, _)) = line.split_once(" = ") {
+                    if !seen.insert(k.trim()) {
+                        failures.push(format!("{tag}: {k} twice"));
+                    }
+                }
+            }
+            for (key, slot) in T::ALL.iter().zip(&slots) {
+                let en = key.text(Locale::En);
+                let Some(text) = slot else {
+                    failures.push(format!("{tag}: {} untranslated", key.name()));
+                    continue;
+                };
+                if text.trim().is_empty() || placeholders(text) != placeholders(en) {
+                    failures.push(format!("{tag}: {} placeholders: {text}", key.name()));
+                }
+                if text.contains('\u{2014}') {
+                    failures.push(format!("{tag}: {} has an em dash", key.name()));
+                }
+                let (we, wt) = (width(en), width(text));
+                if wt > (2 * we).max(we + 12) {
+                    failures.push(format!(
+                        "{tag}: {} too long ({wt} vs {we}): {text}",
+                        key.name()
+                    ));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} problems:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
     }
 }

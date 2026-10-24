@@ -8,28 +8,40 @@ mod byok_form;
 mod capture;
 mod chat_ops;
 mod chat_view;
+mod comments_panel;
 mod composer;
 mod deck;
 mod desktop;
 mod doc_view;
+mod docs_page;
 mod ds_create;
 mod ds_page;
+mod dsh_setup;
 mod export_extra;
 mod export_menu;
 mod files_panel;
+mod first_hint;
+mod font_banner;
+mod genui_view;
 mod home;
+mod home_tabs;
 mod icons;
 mod inbox;
 mod integrations;
 mod lazy_frame;
 mod lib_ui;
+mod library_picker;
 mod live_view;
 mod manage;
+mod manual_edit;
 mod mcp_settings;
 mod media_page;
+mod media_rows;
+mod memory_settings;
 mod new_project;
 mod notify;
 mod onboarding;
+mod onboarding_brand;
 mod palette;
 mod plugins_page;
 mod presenter;
@@ -37,6 +49,8 @@ mod preview_comments;
 mod preview_tools;
 mod project_actions;
 mod projects;
+mod quick_menu;
+mod recovery_tip;
 mod settings_page;
 mod shortcuts;
 mod sketch;
@@ -138,6 +152,24 @@ fn locale_of(config: &AppConfig) -> Locale {
         .unwrap_or_default()
 }
 
+/// Fetches `locales/<tag>.txt` (copied next to the bundle) and installs
+/// it. A failed fetch installs an empty table: the app shows English
+/// rather than retrying on every render.
+async fn load_dict(locale: Locale) {
+    let path = format!("/locales/{}.txt", locale.tag());
+    let text = match api::get_text(&path).await {
+        Ok(text) => text,
+        Err(e) => {
+            leptos::logging::warn!("{path}: {e}");
+            String::new()
+        }
+    };
+    let unknown = i18n::install_dict(locale, text);
+    if !unknown.is_empty() {
+        leptos::logging::warn!("{path}: unknown keys {unknown:?}");
+    }
+}
+
 fn apply_theme(theme: Theme) {
     if desktop::is_desktop() {
         desktop::set_theme(theme.as_str());
@@ -182,18 +214,43 @@ pub fn App() -> impl IntoView {
     // Strings are read once per render: a language change rebuilds the app.
     // Wait for settings (a local call) so the first paint is already in the
     // user's language. A memo: saving settings must not rebuild the app.
+    // A language outside en/vi first fetches its strings file. The first
+    // paint waits for it (painting English, then rebuilding, would drop
+    // the first screen's pending requests); a later switch keeps showing
+    // the previous language until the file arrives.
     let ready = Memo::new(move |_| shell.config.with(Option::is_some));
+    let dict_loaded = RwSignal::new(0u32);
+    let painted = StoredValue::new(false);
+    Effect::new(move |_| {
+        let wanted = shell.locale.get();
+        if !i18n::has_dict(wanted) {
+            leptos::task::spawn_local(async move {
+                load_dict(wanted).await;
+                dict_loaded.update(|n| *n += 1);
+            });
+        }
+    });
     move || {
         if !ready.get() {
             return None;
         }
-        let locale = shell.locale.get();
+        dict_loaded.track();
+        let wanted = shell.locale.get();
+        let locale = if i18n::has_dict(wanted) {
+            wanted
+        } else if painted.get_value() {
+            i18n::locale()
+        } else {
+            return None;
+        };
+        painted.set_value(true);
         i18n::set_locale(locale);
         if let Some(root) = web_sys::window()
             .and_then(|w| w.document())
             .and_then(|d| d.document_element())
         {
             let _ = root.set_attribute("lang", locale.tag());
+            let _ = root.set_attribute("dir", if locale.is_rtl() { "rtl" } else { "ltr" });
         }
         Some(view! { <Shelled/> })
     }
@@ -263,6 +320,7 @@ fn Shelled() -> impl IntoView {
             </Show>
             <ViewTracker/>
             <notify::RunWatcher/>
+            <memory_settings::MemoryToast/>
             <div class="app">
                 {mac.then(|| view! { <div class="titlebar" data-tauri-drag-region=""></div> })}
                 <div class="app-body">
@@ -282,6 +340,7 @@ fn Shelled() -> impl IntoView {
                             <Route path=path!("/integrations") view=integrations::Integrations/>
                             <Route path=path!("/inbox") view=inbox::Inbox/>
                             <Route path=path!("/present/:id") view=presenter::Presenter/>
+                            <Route path=path!("/docs") view=docs_page::DocsPage/>
                         </Routes>
                     </main>
                 </div>
@@ -409,6 +468,7 @@ fn Sidebar() -> impl IntoView {
                 {link("/integrations", Glyph::Mcp, T::NavIntegrations, false)}
                 {link("/inbox", Glyph::Inbox, T::NavInbox, false)}
                 <span class="spacer"></span>
+                <quick_menu::QuickMenu rail=Signal::derive(rail)/>
                 <button
                     class="nav-link"
                     data-testid="open-shortcuts"
@@ -484,7 +544,9 @@ fn OnboardingGate() -> impl IntoView {
         let done = shell
             .config
             .with(|c| c.as_ref().map(|c| c.onboarding_completed));
-        if done == Some(false) && location.pathname.get() != "/onboarding" {
+        // The bundled guide stays reachable: onboarding's agent setup links it.
+        let path = location.pathname.get();
+        if done == Some(false) && path != "/onboarding" && path != "/docs" {
             navigate("/onboarding", Default::default());
         }
     });

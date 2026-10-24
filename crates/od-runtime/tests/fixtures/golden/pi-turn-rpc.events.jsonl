@@ -1,0 +1,14 @@
+{"type":"status","label":"initializing"}
+{"type":"status","label":"working"}
+{"type":"status","label":"thinking"}
+{"type":"thinking_start"}
+{"type":"thinking_delta","delta":"Hero first."}
+{"type":"status","label":"streaming","ttftMs":0}
+{"type":"text_delta","delta":"Writing "}
+{"type":"text_delta","delta":"index.html."}
+{"type":"tool_use","id":"call_1","name":"write","input":{"path":"index.html"}}
+{"type":"tool_result","toolUseId":"call_1","content":"Wrote 812 bytes","isError":false}
+{"type":"tool_use","id":"call_2","name":"bash","input":{"command":"ls missing"}}
+{"type":"tool_result","toolUseId":"call_2","content":"ls: missing: No such file","isError":true}
+{"type":"usage","usage":{"input_tokens":900,"output_tokens":120,"cached_read_tokens":300,"cached_write_tokens":0,"total_tokens":1320},"costUsd":0.0031,"durationMs":0}
+{"type":"status","label":"session","sessionId":"/home/u/.pi/agent/sessions/proj/2026-10-24.jsonl"}

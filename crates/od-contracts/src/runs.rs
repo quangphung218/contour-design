@@ -107,6 +107,11 @@ pub enum AgentEvent {
     Critique {
         report: crate::CritiqueReport,
     },
+    /// A media generation of this run (track C2), emitted by the daemon
+    /// when the agent calls the media tool; the latest per task wins.
+    Media {
+        task: crate::MediaTask,
+    },
     /// A stdout line the parser did not recognise, bounded in length.
     Raw {
         line: String,
@@ -372,6 +377,10 @@ pub struct AgentInfo {
     pub supports_steer: bool,
     #[serde(default)]
     pub error: Option<String>,
+    /// Installed, but its Open Design connection component is missing or
+    /// incompatible (DeepSeek Harness): the UI offers to set it up.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub needs_setup: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

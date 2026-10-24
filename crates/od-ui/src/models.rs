@@ -14,6 +14,62 @@ pub fn models_for(agent: &str) -> &'static [&'static str] {
         "claude" => &["default", "opus", "sonnet", "haiku"],
         "codex" => &["default", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
         "opencode" => &["default", "anthropic/claude-sonnet-4-6", "openai/gpt-5.5"],
+        "aider" => &[
+            "default",
+            "sonnet",
+            "gpt-4o",
+            "deepseek/deepseek-chat",
+            "gemini/gemini-2.0-flash",
+        ],
+        // Amp's picker selects its agent mode (`--mode`).
+        "amp" => &["default", "smart", "deep", "rush"],
+        "pi" => &[
+            "default",
+            "anthropic/claude-sonnet-4-5",
+            "anthropic/claude-opus-4-5",
+            "openai/gpt-5",
+            "openai/o4-mini",
+            "google/gemini-2.5-pro",
+            "google/gemini-2.5-flash",
+        ],
+        "qoder" => &[
+            "default",
+            "lite",
+            "efficient",
+            "auto",
+            "performance",
+            "ultimate",
+        ],
+        "atomcode" => &[
+            "default",
+            "claude-sonnet-4-6",
+            "claude-sonnet-4-5",
+            "gpt-5.2",
+            "glm-5.2",
+            "deepseek-v4",
+        ],
+        "grok-build" => &[
+            "default",
+            "grok-build",
+            "grok-4.3",
+            "grok-4.20-reasoning",
+            "grok-4.20-non-reasoning",
+            "grok-4.20-multi-agent",
+        ],
+        // agy reads the label from its settings file; these are the ones
+        // its Switch Model picker lists.
+        "antigravity" => &[
+            "default",
+            "Gemini 3.1 Pro (High)",
+            "Gemini 3.1 Pro (Low)",
+            "Gemini 3.5 Flash (High)",
+            "Gemini 3.5 Flash (Medium)",
+            "Gemini 3.5 Flash (Low)",
+            "Claude Sonnet 4.6 (Thinking)",
+            "Claude Opus 4.6 (Thinking)",
+            "GPT-OSS 120B (Medium)",
+        ],
+        "deepseek" => &["default", "deepseek-v4-pro", "deepseek-v4-flash"],
         _ => &["default"],
     }
 }
@@ -25,6 +81,13 @@ pub fn reasoning_for(agent: &str) -> &'static [&'static str] {
         "codex" => &[
             "default", "none", "minimal", "low", "medium", "high", "xhigh",
         ],
+        "pi" => &[
+            "default", "off", "minimal", "low", "medium", "high", "xhigh",
+        ],
+        "codebuddy" => &[
+            "default", "minimal", "low", "medium", "high", "xhigh", "max",
+        ],
+        "grok-build" => &["default", "low", "medium", "high", "xhigh", "max"],
         _ => &[],
     }
 }

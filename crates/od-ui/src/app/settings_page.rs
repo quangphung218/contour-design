@@ -16,26 +16,7 @@ use serde_json::{Map, Value, json};
 /// Longest global rules, as the original.
 const MAX_RULES: usize = 5000;
 
-/// Built-in model choices per agent (the original's fallback lists);
-/// anything else is typed.
-fn models_for(agent: &str) -> &'static [&'static str] {
-    match agent {
-        "claude" => &["default", "opus", "sonnet", "haiku"],
-        "codex" => &["default", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
-        "opencode" => &["default", "anthropic/claude-sonnet-4-6", "openai/gpt-5.5"],
-        _ => &["default"],
-    }
-}
-
-/// Reasoning effort values the agent accepts (empty: no picker).
-fn reasoning_for(agent: &str) -> &'static [&'static str] {
-    match agent {
-        "codex" => &[
-            "default", "none", "minimal", "low", "medium", "high", "xhigh",
-        ],
-        _ => &[],
-    }
-}
+use crate::models::{models_for, reasoning_for};
 
 /// Service tiers the agent accepts, `(value, label)` (empty: no picker).
 fn tiers_for(agent: &str) -> &'static [(&'static str, T)] {
@@ -66,6 +47,7 @@ fn obj(v: Option<&Value>) -> Map<String, Value> {
 
 #[component]
 pub fn SettingsPage() -> impl IntoView {
+    provide_context(super::memory_settings::MemoryRev(RwSignal::new(0)));
     let shell = Shell::get();
     let agent = RwSignal::new(None::<String>);
     let model = RwSignal::new(String::new());
@@ -383,7 +365,8 @@ pub fn SettingsPage() -> impl IntoView {
                                 on:change=move |ev| language.set(Locale::parse(&event_target_value(&ev)))
                             >
                                 {Locale::ALL
-                                    .into_iter()
+                                    .iter()
+                                    .copied()
                                     .map(|l| {
                                         view! {
                                             <option value=l.tag() selected=move || language.get() == l>
@@ -419,7 +402,10 @@ pub fn SettingsPage() -> impl IntoView {
                     </section>
                     <section class="settings-section" id="settings-memory">
                         {section_head(Glyph::Memory, T::GlobalMemory, T::GlobalMemoryHint)}
+                        // Track C2: switch, hooks, import and MEMORY.md around the list.
+                        <super::memory_settings::MemoryControls/>
                         <GlobalMemory/>
+                        <super::memory_settings::MemoryAdvanced/>
                     </section>
                     <section class="settings-section" id="settings-media">
                         {section_head(Glyph::FileImage, T::MediaProviders, T::MediaProvidersHint)}
@@ -573,7 +559,7 @@ fn GlobalRules() -> impl IntoView {
     }
 }
 
-fn memory_kind_label(kind: &str) -> &'static str {
+pub(super) fn memory_kind_label(kind: &str) -> &'static str {
     t(match kind {
         "feedback" => T::MemoryFeedback,
         "project" => T::MemoryProject,
@@ -588,6 +574,7 @@ fn memory_kind_label(kind: &str) -> &'static str {
 #[component]
 fn GlobalMemory() -> impl IntoView {
     let list = RwSignal::new(Vec::<Value>::new());
+    let rev = expect_context::<super::memory_settings::MemoryRev>();
     let kind = RwSignal::new("user".to_owned());
     let text = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
@@ -598,6 +585,14 @@ fn GlobalMemory() -> impl IntoView {
             }
         });
     };
+    // An import saved entries: list them.
+    Effect::new(move |prev: Option<u32>| {
+        let n = rev.0.get();
+        if prev.is_some() {
+            reload();
+        }
+        n
+    });
     reload();
     let add = move || {
         let body = json!({ "kind": kind.get_untracked(), "text": text.get_untracked() });
@@ -606,7 +601,7 @@ fn GlobalMemory() -> impl IntoView {
                 Ok(_) => {
                     text.set(String::new());
                     error.set(None);
-                    reload();
+                    rev.0.update(|n| *n += 1);
                 }
                 Err(e) => error.set(Some(e.to_string())),
             }
@@ -627,7 +622,7 @@ fn GlobalMemory() -> impl IntoView {
                             let id = id.clone();
                             leptos::task::spawn_local(async move {
                                 let _ = api::delete::<Value>(&format!("/api/memory/{}", api::seg(&id))).await;
-                                reload();
+                                rev.0.update(|n| *n += 1);
                             });
                         };
                         view! {
@@ -778,11 +773,7 @@ fn ProjectLocations() -> impl IntoView {
 /// Media providers: key, base URL and model per provider.
 #[component]
 fn MediaProviders() -> impl IntoView {
-    const PROVIDERS: [(&str, &str); 3] = [
-        ("openai", "OpenAI"),
-        ("fal", "Fal.ai"),
-        ("elevenlabs", "ElevenLabs"),
-    ];
+    let entries = super::media_page::PROVIDERS.map(|(id, label, _)| (id, label));
     let stored = RwSignal::new(Value::Null);
     let edits = RwSignal::new(Map::<String, Value>::new());
     let state = RwSignal::new(None::<Result<(), String>>);
@@ -816,7 +807,7 @@ fn MediaProviders() -> impl IntoView {
     };
     let save = move |clear: Option<&'static str>| {
         let mut providers = Map::new();
-        for (id, _) in PROVIDERS {
+        for (id, _) in entries {
             if clear == Some(id) {
                 continue;
             }
@@ -852,7 +843,7 @@ fn MediaProviders() -> impl IntoView {
     };
     view! {
         <div class="media-providers">
-            {PROVIDERS.into_iter().map(|(id, label)| view! {
+            {entries.into_iter().map(|(id, label)| view! {
                 <div class="card padded media-provider" data-testid="media-provider" data-provider=id>
                     <div class="row">
                         <strong class="grow">{label}</strong>

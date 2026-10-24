@@ -74,7 +74,9 @@ impl From<StoreError> for ApiErr {
             StoreError::VersionNotFound => (S::NOT_FOUND, ErrorCode::VersionNotFound),
             StoreError::CommentNotFound => (S::NOT_FOUND, ErrorCode::NotFound),
             StoreError::FileExists => (S::CONFLICT, ErrorCode::FileExists),
-            StoreError::ProjectFolderMissing => (S::CONFLICT, ErrorCode::Conflict),
+            StoreError::ProjectFolderMissing | StoreError::Conflict(_) => {
+                (S::CONFLICT, ErrorCode::Conflict)
+            }
             _ => {
                 tracing::error!(error = %err, "store error");
                 (S::INTERNAL_SERVER_ERROR, ErrorCode::InternalError)

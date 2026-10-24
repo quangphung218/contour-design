@@ -22,6 +22,7 @@ pub fn comment_label(c: &PreviewComment) -> String {
 fn add_comment(
     ctx: StudioCtx,
     note: String,
+    images: RwSignal<Vec<String>>,
     busy: RwSignal<bool>,
     error: RwSignal<Option<String>>,
 ) {
@@ -43,6 +44,7 @@ fn add_comment(
         slide_index: ctx.deck.get_untracked().map(|d| d.active),
         note,
         status: Some(CommentStatus::Attached),
+        attachments: images.get_untracked(),
     };
     busy.set(true);
     leptos::task::spawn_local(async move {
@@ -88,8 +90,8 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
                 let rects = ctx.pin_rects.get();
                 pins()
                     .into_iter()
-                    .enumerate()
-                    .map(|(i, c)| {
+                    .map(|c| {
+                        let number = ctx.comments.with_untracked(|l| crate::comment_board::number(l, &c));
                         let id = c.id.clone();
                         let id_open = c.id.clone();
                         let attached = c.status == CommentStatus::Attached;
@@ -110,7 +112,7 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
                                         *o = if o.as_deref() == Some(id_open.as_str()) { None } else { Some(id_open.clone()) };
                                     })
                                 >
-                                    {i + 1}
+                                    {number}
                                 </button>
                                 {move || (open_pin.get().as_deref() == Some(id.as_str())).then(|| {
                                     let id_status = id.clone();
@@ -149,6 +151,7 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
 #[component]
 fn DraftBox(ctx: StudioCtx, picked: crate::preview_bridge::Picked) -> impl IntoView {
     let note = RwSignal::new(String::new());
+    let images = RwSignal::new(Vec::<String>::new());
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
     let style = format!(
@@ -159,7 +162,7 @@ fn DraftBox(ctx: StudioCtx, picked: crate::preview_bridge::Picked) -> impl IntoV
     let submit = move || {
         let text = note.get_untracked().trim().to_owned();
         if !text.is_empty() && !busy.get_untracked() {
-            add_comment(ctx, text, busy, error);
+            add_comment(ctx, text, images, busy, error);
         }
     };
     let submit_key = submit;
@@ -185,6 +188,7 @@ fn DraftBox(ctx: StudioCtx, picked: crate::preview_bridge::Picked) -> impl IntoV
                     }
                 }
             ></textarea>
+            <super::comments_panel::DraftImages ctx=ctx images=images error=error/>
             {move || error.get().map(|e| view! { <p class="error-text">{e}</p> })}
             <div class="row end tight">
                 <button class="btn small ghost" on:click=move |_| ctx.comment_draft.set(None)>{t(T::Cancel)}</button>

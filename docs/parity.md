@@ -74,7 +74,7 @@ Xếp theo giá trị cho người dùng chia công sức. Giờ là ước lư�
 | Studio-preview | Gợi ý một lần khi có artifact đầu tiên (`FirstArtifactHint.tsx`) | 0 | Không có |
 | Design systems | Banner thiếu file font thương hiệu (`MissingBrandFontsBanner.tsx`) | 0 | Không có; `od-content/src/design_kit.rs:317` chỉ thay font |
 | Studio-chat | Toast khi lưu memory (`MemoryToast.tsx`) | 0 | Không có |
-| Agent runtimes | Dialog cài DeepSeek Harness (`DeepSeekHarnessSetupDialog.tsx`) | 50 | Runtime có (`crates/od-runtime/src/parse/dsh.rs`), không có dialog cài |
+| Agent runtimes | Dialog cài DeepSeek Harness (`DeepSeekHarnessSetupDialog.tsx`) | 100 | Đợt C (`waveC-integrate`): `crates/od-ui/src/app/dsh_setup.rs` hiện lệnh cài `dsh`, lệnh thêm profile `open-design`, link guide đóng gói (`/docs#deepseek-harness`), rồi phát hiện lại qua `POST /api/agents/:id/detect`. Khác app gốc có chủ đích (quyết định Atlat): không đóng gói `@open-design/dsh-runtime`, nên người dùng tự cài profile. e2e `c3-runtimes` bước 2 và 6 |
 | Settings | Đăng nhập OAuth xAI (`XaiOAuthControl.tsx`) | 0 | Chỉ có preset xAI dùng key (`crates/od-ui/src/byok.rs:135`) |
 | Studio | Gợi ý khôi phục workspace project (`ProjectWorkspaceRecoveryTip.tsx`) | 0 | Không có |
 
