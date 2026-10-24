@@ -181,6 +181,7 @@ jobs:
               exit 1
             fi
             gh release upload "$TAG" dist-release/* --clobber
+            gh release edit "$TAG" --notes-file release-notes.md
           else
             gh release create "$TAG" dist-release/* --draft --verify-tag \
               --title "Contour $TAG" --notes-file release-notes.md

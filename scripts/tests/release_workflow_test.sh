@@ -68,6 +68,9 @@ release published; rc=$?
 check "a published release is refused, nothing uploaded" '[ $rc -ne 0 ] && ! grep -q "release upload" "$work/gh-calls"'
 release draft; rc=$?
 check "a draft gets its files replaced" '[ $rc -eq 0 ] && grep -q "release upload v9.9.9 .*--clobber" "$work/gh-calls"'
+check "a draft gets the current CHANGELOG notes" 'grep -qx "gh release edit v9.9.9 --notes-file release-notes.md" "$work/gh-calls"'
+release published; rc=$?
+check "a published release keeps its notes" '! grep -q "release edit" "$work/gh-calls"'
 release ""; rc=$?
 check "no release yet: a draft is created" '[ $rc -eq 0 ] && grep -q "release create v9.9.9 .*--draft" "$work/gh-calls"'
 
