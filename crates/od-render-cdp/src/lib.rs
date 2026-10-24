@@ -42,6 +42,9 @@ const SLIDE_MIN_PX: u32 = 320;
 const SLIDE_MAX_PX: u32 = 7_680;
 /// Whole frame capture must finish within 5 minutes (original limit).
 pub const FRAME_CAPTURE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+/// How long a closed browser gets to exit before it is killed.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Most frames one capture writes (one hour at 30 fps).
 pub const MAX_FRAMES: u64 = 108_000;
 /// Deck PDF page width (spec 4.2: 13.333 × 7.5 in).
@@ -484,12 +487,21 @@ impl Session {
         Ok(())
     }
 
+    /// Asks the browser to quit and waits for it, at most [`CLOSE_TIMEOUT`]:
+    /// waiting without a bound once held an export until the CLI gave up
+    /// after 600 s. A browser still running then is killed when `self`
+    /// drops (chromiumoxide spawns it with `kill_on_drop`).
     async fn close(mut self) {
         if let Some(gate) = self.gate.take() {
             gate.abort();
         }
-        let _ = self.browser.close().await;
-        let _ = self.browser.wait().await;
+        let quit = async {
+            let _ = self.browser.close().await;
+            let _ = self.browser.wait().await;
+        };
+        if tokio::time::timeout(CLOSE_TIMEOUT, quit).await.is_err() {
+            tracing::warn!("the browser did not exit after closing; killing it");
+        }
         self.handler.abort();
     }
 }
