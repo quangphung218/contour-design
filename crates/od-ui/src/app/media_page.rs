@@ -139,7 +139,7 @@ pub fn MediaPage() -> impl IntoView {
             if let Ok(v) = api::get::<Value>("/api/media/tasks").await {
                 let mut list: Vec<Task> =
                     serde_json::from_value(v["tasks"].clone()).unwrap_or_default();
-                list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+                list.sort_by_key(|a| std::cmp::Reverse(a.created_at));
                 let finished = tasks.with_untracked(|old| {
                     list.iter().any(|n| {
                         n.status == "done" && old.iter().any(|o| o.id == n.id && o.status != "done")

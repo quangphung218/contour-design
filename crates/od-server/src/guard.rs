@@ -182,10 +182,8 @@ fn parse_host(raw: &str, default_port: u16) -> Option<HostPort> {
 fn parse_origin(origin: &str) -> Option<(&'static str, HostPort)> {
     let (scheme, rest, default_port) = if let Some(rest) = origin.strip_prefix("http://") {
         ("http", rest, 80)
-    } else if let Some(rest) = origin.strip_prefix("https://") {
-        ("https", rest, 443)
     } else {
-        return None;
+        ("https", origin.strip_prefix("https://")?, 443)
     };
     Some((scheme, parse_host(rest, default_port)?))
 }

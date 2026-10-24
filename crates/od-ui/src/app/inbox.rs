@@ -71,7 +71,7 @@ pub fn Inbox() -> impl IntoView {
                 id: r.id,
             })
             .collect();
-        list.sort_by(|a, b| b.at.cmp(&a.at));
+        list.sort_by_key(|a| std::cmp::Reverse(a.at));
         list.truncate(MAX_MESSAGES);
         messages.set(Some(list));
     });

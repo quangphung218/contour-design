@@ -37,7 +37,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                 .await
                 .map(|r| {
                     let mut list = r.versions;
-                    list.sort_by(|a, b| b.version.cmp(&a.version));
+                    list.sort_by_key(|a| std::cmp::Reverse(a.version));
                     list
                 })
                 .map_err(|e| e.to_string());

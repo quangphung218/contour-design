@@ -426,12 +426,7 @@ async fn every_provider_speaks_its_protocol() {
             (json!("bytedance/seedance-2.0"), json!("1080p"))
         );
         // The CDN download never carries the key.
-        let dl = s
-            .calls
-            .iter()
-            .filter(|c| c.0 == "GET /files/v.mp4")
-            .next_back()
-            .unwrap();
+        let dl = s.calls.iter().rfind(|c| c.0 == "GET /files/v.mp4").unwrap();
         assert!(!dl.1.contains_key("authorization"));
     }
 

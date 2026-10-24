@@ -206,7 +206,7 @@ pub fn CommandPalette() -> impl IntoView {
             .await
             .map(|r| r.projects)
             .unwrap_or_default();
-        list.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        list.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
         list
     });
     let results = Signal::derive(move || {
