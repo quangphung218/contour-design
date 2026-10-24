@@ -1,4 +1,4 @@
-# Nét UI strings: 简体中文 (zh-CN). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: 简体中文 (zh-CN). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = 首页
 NavProjects = 项目
@@ -224,7 +224,7 @@ NotifyFailedBody = 任务因错误而结束。
 NotifyTestBody = 通知正常。
 ProjectLocations = 项目位置
 ProjectLocationsHint = 存放项目文件夹的工作目录。每个新项目会在默认目录中获得自己的文件夹。
-BuiltInLocation = Nét 项目
+BuiltInLocation = Contour 项目
 DefaultLocation = 默认
 MakeDefault = 设为默认
 AddFolder = 添加文件夹
@@ -325,14 +325,14 @@ TplRegression = 回归监控
 TplRegressionDesc = 标出相对已采纳成果的回归。
 # Integrations
 NavIntegrations = 集成
-IntegrationsIntro = 供 agent 使用的外部工具，以及在其他编程 agent 中使用 Nét。
+IntegrationsIntro = 供 agent 使用的外部工具，以及在其他编程 agent 中使用 Contour。
 ExternalTools = 外部工具
-ConnectAgents = 将 Nét 连接到你的编程 agent
+ConnectAgents = 将 Contour 连接到你的编程 agent
 ConnectAgentsShort = 编程 agent
-ConnectAgentsHint = 在其他 agent 中注册 Nét MCP 服务器，让它读取和编辑你的设计。
+ConnectAgentsHint = 在其他 agent 中注册 Contour MCP 服务器，让它读取和编辑你的设计。
 UseEverywhere = 随处使用
 UseEverywhereShort = CLI、HTTP、MCP
-UseEverywhereHint = 通过终端、脚本或其他 agent 驱动 Nét。
+UseEverywhereHint = 通过终端、脚本或其他 agent 驱动 Contour。
 EverywhereCli = CLI · od
 EverywhereCliBody = 在终端启动 daemon、列出项目、运行 agent 对话并导出。
 EverywhereMcp = MCP 服务器
@@ -403,7 +403,7 @@ GateByok = 保存一个通过测试的提供方后才能继续。
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = 选择你的编程 agent
-OnboardingIntro = Nét 驱动本机已安装的编程 agent。除 agent 自身发送给其提供方的内容外，不会有任何数据离开你的电脑。
+OnboardingIntro = Contour 驱动本机已安装的编程 agent。除 agent 自身发送给其提供方的内容外，不会有任何数据离开你的电脑。
 DetectingAgents = 正在检测 agent…
 AgentDetectionUnavailable = 无法检测 agent：{0}
 NoAgentsFound = 未找到 agent。请安装 Claude Code 或 Codex 后刷新。
@@ -1329,7 +1329,7 @@ ShortcutMention = 提及文件、插件、技能或 MCP 服务器
 ShortcutSlash = 命令（行首输入）
 # / The current language's text for `key`.
 # / Content text (template and skill descriptions, copied from the upstream
-# / app) with the upstream product name swapped for Nét. The files keep
+# / app) with the upstream product name swapped for Contour. The files keep
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 
@@ -1387,7 +1387,7 @@ GenuiTierProject = 项目
 GenuiTierConversation = 对话
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = 设置 DeepSeek Harness
-DshSetupDescription = Nét 通过 open-design 配置在本机运行 dsh CLI。请先安装两者，然后重新检测。
+DshSetupDescription = Contour 通过 open-design 配置在本机运行 dsh CLI。请先安装两者，然后重新检测。
 DshStepCli = 1. 安装 dsh CLI
 DshCliFound = 已找到 dsh：{0}
 DshStepProfile = 2. 添加 open-design 配置
@@ -1402,7 +1402,7 @@ DshSetupRequired = 需要设置连接
 FirstArtifactTitle = 你的第一个设计已就绪
 FirstArtifactBody = 可直接在预览中编辑和批注，满意后再导出。
 FirstArtifactDismiss = 知道了
-WorkspaceRecovering = 与 Nét 的连接已中断，正在自动重连…
+WorkspaceRecovering = 与 Contour 的连接已中断，正在自动重连…
 ToolManualEdit = 编辑元素
 ManualEditHint = 在预览中点击元素或选择图层，然后修改。每次修改都会存为一个版本。
 CommentsTab = 全部评论

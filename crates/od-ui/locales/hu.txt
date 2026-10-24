@@ -1,4 +1,4 @@
-# Nét UI strings: Magyar (hu). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: Magyar (hu). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = Kezdőlap
 NavProjects = Projektek
@@ -224,7 +224,7 @@ NotifyFailedBody = A feladat hibával ért véget.
 NotifyTestBody = Az értesítések működnek.
 ProjectLocations = Projekt helyek
 ProjectLocationsHint = Projektmappákat tartalmazó gyökérmappák. Minden új projekt saját mappát kap az alapértelmezett gyökérmappában.
-BuiltInLocation = Nét projektek
+BuiltInLocation = Contour projektek
 DefaultLocation = Alapértelmezett
 MakeDefault = Alapértelmezett lesz
 AddFolder = Mappa hozzáadása
@@ -325,14 +325,14 @@ TplRegression = Regressziófigyelő
 TplRegressionDesc = Jelzi a regressziókat az elfogadott munkához képest.
 # Integrations
 NavIntegrations = Integrációk
-IntegrationsIntro = Külső eszközök az agentnek, és az Nét más kódoló agentekben.
+IntegrationsIntro = Külső eszközök az agentnek, és az Contour más kódoló agentekben.
 ExternalTools = Külső eszközök
-ConnectAgents = Nét csatlakoztatása a kódoló agenthez
+ConnectAgents = Contour csatlakoztatása a kódoló agenthez
 ConnectAgentsShort = Kódoló agentek
-ConnectAgentsHint = Regisztráld az Nét MCP-szerverét egy másik agentben, hogy az olvashassa és szerkeszthesse a terveidet.
+ConnectAgentsHint = Regisztráld az Contour MCP-szerverét egy másik agentben, hogy az olvashassa és szerkeszthesse a terveidet.
 UseEverywhere = Használat bárhol
 UseEverywhereShort = CLI, HTTP, MCP
-UseEverywhereHint = Vezéreld az Nétt terminálból, scriptből vagy másik agentből.
+UseEverywhereHint = Vezéreld az Contourt terminálból, scriptből vagy másik agentből.
 EverywhereCli = CLI · od
 EverywhereCliBody = Terminálból indíthatod a daemont, listázhatod a projekteket, futtathatsz agent-kört és exportálhatsz.
 EverywhereMcp = MCP-szerver
@@ -403,7 +403,7 @@ GateByok = A folytatáshoz ments egy teszten átment szolgáltatót.
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = Válaszd ki a kódoló agentet
-OnboardingIntro = A Nét a gépen telepített kódoló agentet vezérli. Semmi sem hagyja el a gépedet azon kívül, amit maga az agent küld a szolgáltatójának.
+OnboardingIntro = A Contour a gépen telepített kódoló agentet vezérli. Semmi sem hagyja el a gépedet azon kívül, amit maga az agent küld a szolgáltatójának.
 DetectingAgents = Agentek keresése…
 AgentDetectionUnavailable = Az agentek felismerése nem érhető el: {0}
 NoAgentsFound = Nem található agent. Telepítsd a Claude Code-ot vagy a Codexet, majd frissíts.
@@ -1382,7 +1382,7 @@ GenuiTierProject = projekt
 GenuiTierConversation = beszélgetés
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = DeepSeek Harness beállítása
-DshSetupDescription = Az Nét a dsh CLI-t futtatja ezen a gépen az open-design profillal. Telepítsd mindkettőt, majd észleld újra.
+DshSetupDescription = Az Contour a dsh CLI-t futtatja ezen a gépen az open-design profillal. Telepítsd mindkettőt, majd észleld újra.
 DshStepCli = 1. Telepítsd a dsh CLI-t
 DshCliFound = dsh megtalálva: {0}
 DshStepProfile = 2. Add hozzá az open-design profilt
@@ -1397,7 +1397,7 @@ DshSetupRequired = Kapcsolat beállítása szükséges
 FirstArtifactTitle = Az első terved kész
 FirstArtifactBody = Szerkeszd és jegyzeteld közvetlenül az előnézetben, majd exportáld, ha elégedett vagy.
 FirstArtifactDismiss = Értem
-WorkspaceRecovering = Megszakadt a kapcsolat a Nét-tel. Automatikus újracsatlakozás…
+WorkspaceRecovering = Megszakadt a kapcsolat a Contour-tel. Automatikus újracsatlakozás…
 ToolManualEdit = Elem szerkesztése
 ManualEditHint = Kattints egy elemre az előnézetben, vagy válassz réteget, majd módosítsd. Minden módosítás új verzióként mentődik.
 CommentsTab = Összes megjegyzés

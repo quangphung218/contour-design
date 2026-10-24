@@ -1,4 +1,4 @@
-# Nét UI strings: Русский (ru). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: Русский (ru). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = Главная
 NavProjects = Проекты
@@ -224,7 +224,7 @@ NotifyFailedBody = Задача завершилась с ошибкой.
 NotifyTestBody = Уведомления работают.
 ProjectLocations = Расположения проектов
 ProjectLocationsHint = Корневые папки с проектами. Каждый новый проект получает свою папку внутри папки по умолчанию.
-BuiltInLocation = Проекты Nét
+BuiltInLocation = Проекты Contour
 DefaultLocation = По умолчанию
 MakeDefault = Сделать по умолчанию
 AddFolder = Добавить папку
@@ -325,14 +325,14 @@ TplRegression = Контроль регрессий
 TplRegressionDesc = Отмечает регрессии относительно принятой работы.
 # Integrations
 NavIntegrations = Интеграции
-IntegrationsIntro = Внешние инструменты для агента и Nét внутри других кодовых агентов.
+IntegrationsIntro = Внешние инструменты для агента и Contour внутри других кодовых агентов.
 ExternalTools = Внешние инструменты
-ConnectAgents = Подключите Nét к своему кодовому агенту
+ConnectAgents = Подключите Contour к своему кодовому агенту
 ConnectAgentsShort = Кодовые агенты
-ConnectAgentsHint = Зарегистрируйте MCP-сервер Nét в другом агенте, чтобы он мог читать и править ваши дизайны.
+ConnectAgentsHint = Зарегистрируйте MCP-сервер Contour в другом агенте, чтобы он мог читать и править ваши дизайны.
 UseEverywhere = Использовать везде
 UseEverywhereShort = CLI, HTTP, MCP
-UseEverywhereHint = Управляйте Nét из терминала, скрипта или другого агента.
+UseEverywhereHint = Управляйте Contour из терминала, скрипта или другого агента.
 EverywhereCli = CLI · od
 EverywhereCliBody = Запуск демона, список проектов, ход агента и экспорт из терминала.
 EverywhereMcp = Сервер MCP
@@ -403,7 +403,7 @@ GateByok = Сохраните провайдера, прошедшего про�
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = Выберите кодового агента
-OnboardingIntro = Nét управляет кодовым агентом, установленным на этом компьютере. С компьютера не уходит ничего, кроме того, что агент сам отправляет своему провайдеру.
+OnboardingIntro = Contour управляет кодовым агентом, установленным на этом компьютере. С компьютера не уходит ничего, кроме того, что агент сам отправляет своему провайдеру.
 DetectingAgents = Поиск агентов…
 AgentDetectionUnavailable = Поиск агентов недоступен: {0}
 NoAgentsFound = Агенты не найдены. Установите Claude Code или Codex и обновите.
@@ -1329,7 +1329,7 @@ ShortcutMention = Упомянуть файл, плагин, навык или M
 ShortcutSlash = Команды (в начале строки)
 # / The current language's text for `key`.
 # / Content text (template and skill descriptions, copied from the upstream
-# / app) with the upstream product name swapped for Nét. The files keep
+# / app) with the upstream product name swapped for Contour. The files keep
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
@@ -1388,7 +1388,7 @@ GenuiTierProject = проект
 GenuiTierConversation = беседа
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = Настройка DeepSeek Harness
-DshSetupDescription = Nét запускает dsh CLI на этом компьютере через профиль open-design. Установите оба, затем проверьте снова.
+DshSetupDescription = Contour запускает dsh CLI на этом компьютере через профиль open-design. Установите оба, затем проверьте снова.
 DshStepCli = 1. Установите dsh CLI
 DshCliFound = dsh найден: {0}
 DshStepProfile = 2. Добавьте профиль open-design
@@ -1403,7 +1403,7 @@ DshSetupRequired = Нужна настройка подключения
 FirstArtifactTitle = Ваш первый дизайн готов
 FirstArtifactBody = Правьте и комментируйте прямо в превью, а когда всё устроит, экспортируйте.
 FirstArtifactDismiss = Понятно
-WorkspaceRecovering = Соединение с Nét прервано. Переподключаемся автоматически…
+WorkspaceRecovering = Соединение с Contour прервано. Переподключаемся автоматически…
 ToolManualEdit = Изменить элемент
 ManualEditHint = Нажмите элемент в превью или выберите слой и измените его. Каждое изменение сохраняется как версия.
 CommentsTab = Все комментарии

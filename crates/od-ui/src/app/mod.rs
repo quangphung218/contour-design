@@ -489,11 +489,11 @@ fn Sidebar() -> impl IntoView {
 }
 
 /// Product name shown in the UI (docs/brand.md).
-pub(crate) const APP_NAME: &str = "Nét";
+pub(crate) const APP_NAME: &str = "Contour";
 
-/// The Nét mark (one stroke, `currentColor`) in a tile of class `class`.
+/// The Contour mark (one stroke, `currentColor`) in a tile of class `class`.
 pub(crate) fn brand_mark(class: &'static str) -> impl IntoView {
-    view! { <span class=class aria-hidden="true" inner_html=include_str!("../../assets/net-mark.svg")></span> }
+    view! { <span class=class aria-hidden="true" inner_html=include_str!("../../assets/contour-mark.svg")></span> }
 }
 
 /// The Tauri window on macOS draws its traffic lights over the page

@@ -1,4 +1,4 @@
-# Nét UI strings: ภาษาไทย (th). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: ภาษาไทย (th). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = หน้าแรก
 NavProjects = โปรเจกต์
@@ -224,7 +224,7 @@ NotifyFailedBody = งานจบลงด้วยข้อผิดพลา�
 NotifyTestBody = การแจ้งเตือนใช้งานได้
 ProjectLocations = ตำแหน่งโปรเจกต์
 ProjectLocationsHint = โฟลเดอร์หลักที่เก็บโฟลเดอร์โปรเจกต์ โปรเจกต์ใหม่แต่ละอันจะมีโฟลเดอร์ของตัวเองในโฟลเดอร์หลักเริ่มต้น
-BuiltInLocation = โปรเจกต์ของ Nét
+BuiltInLocation = โปรเจกต์ของ Contour
 DefaultLocation = เริ่มต้น
 MakeDefault = ตั้งเป็นค่าเริ่มต้น
 AddFolder = เพิ่มโฟลเดอร์
@@ -325,14 +325,14 @@ TplRegression = เฝ้าระวัง regression
 TplRegressionDesc = ตั้งธงเมื่อมี regression เทียบกับงานที่ยอมรับแล้ว
 # Integrations
 NavIntegrations = การเชื่อมต่อ
-IntegrationsIntro = เครื่องมือภายนอกสำหรับเอเจนต์ และการใช้ Nét ภายในเอเจนต์เขียนโค้ดอื่น
+IntegrationsIntro = เครื่องมือภายนอกสำหรับเอเจนต์ และการใช้ Contour ภายในเอเจนต์เขียนโค้ดอื่น
 ExternalTools = เครื่องมือภายนอก
-ConnectAgents = เชื่อมต่อ Nét กับเอเจนต์เขียนโค้ดของคุณ
+ConnectAgents = เชื่อมต่อ Contour กับเอเจนต์เขียนโค้ดของคุณ
 ConnectAgentsShort = เอเจนต์เขียนโค้ด
-ConnectAgentsHint = ลงทะเบียนเซิร์ฟเวอร์ MCP ของ Nét ในเอเจนต์อื่น เพื่อให้อ่านและแก้ไขดีไซน์ของคุณได้
+ConnectAgentsHint = ลงทะเบียนเซิร์ฟเวอร์ MCP ของ Contour ในเอเจนต์อื่น เพื่อให้อ่านและแก้ไขดีไซน์ของคุณได้
 UseEverywhere = ใช้ได้ทุกที่
 UseEverywhereShort = CLI, HTTP, MCP
-UseEverywhereHint = สั่งงาน Nét จากเทอร์มินัล สคริปต์ หรือเอเจนต์อื่น
+UseEverywhereHint = สั่งงาน Contour จากเทอร์มินัล สคริปต์ หรือเอเจนต์อื่น
 EverywhereCli = CLI · od
 EverywhereCliBody = เริ่ม daemon แสดงรายการโปรเจกต์ รันเอเจนต์ และส่งออกจากเทอร์มินัล
 EverywhereMcp = เซิร์ฟเวอร์ MCP
@@ -403,7 +403,7 @@ GateByok = บันทึกผู้ให้บริการที่ผ่
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = เลือกเอเจนต์เขียนโค้ดของคุณ
-OnboardingIntro = Nét สั่งงานเอเจนต์เขียนโค้ดที่ติดตั้งในเครื่องนี้ ไม่มีข้อมูลออกจากคอมพิวเตอร์ของคุณ ยกเว้นสิ่งที่เอเจนต์ส่งให้ผู้ให้บริการของมันเอง
+OnboardingIntro = Contour สั่งงานเอเจนต์เขียนโค้ดที่ติดตั้งในเครื่องนี้ ไม่มีข้อมูลออกจากคอมพิวเตอร์ของคุณ ยกเว้นสิ่งที่เอเจนต์ส่งให้ผู้ให้บริการของมันเอง
 DetectingAgents = กำลังตรวจหาเอเจนต์…
 AgentDetectionUnavailable = ตรวจหาเอเจนต์ไม่ได้: {0}
 NoAgentsFound = ไม่พบเอเจนต์ ติดตั้ง Claude Code หรือ Codex แล้วรีเฟรช
@@ -1382,7 +1382,7 @@ GenuiTierProject = โปรเจกต์
 GenuiTierConversation = การสนทนา
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = ตั้งค่า DeepSeek Harness
-DshSetupDescription = Nét รัน dsh CLI บนเครื่องนี้ผ่านโปรไฟล์ open-design ติดตั้งทั้งสองอย่างแล้วตรวจหาอีกครั้ง
+DshSetupDescription = Contour รัน dsh CLI บนเครื่องนี้ผ่านโปรไฟล์ open-design ติดตั้งทั้งสองอย่างแล้วตรวจหาอีกครั้ง
 DshStepCli = 1. ติดตั้ง dsh CLI
 DshCliFound = พบ dsh: {0}
 DshStepProfile = 2. เพิ่มโปรไฟล์ open-design
@@ -1397,7 +1397,7 @@ DshSetupRequired = ต้องตั้งค่าการเชื่อม�
 FirstArtifactTitle = ดีไซน์แรกของคุณพร้อมแล้ว
 FirstArtifactBody = แก้ไขและทำหมายเหตุในพรีวิวได้เลย พอใจแล้วค่อยส่งออก
 FirstArtifactDismiss = รับทราบ
-WorkspaceRecovering = การเชื่อมต่อกับ Nét ขัดข้อง กำลังเชื่อมต่อใหม่อัตโนมัติ…
+WorkspaceRecovering = การเชื่อมต่อกับ Contour ขัดข้อง กำลังเชื่อมต่อใหม่อัตโนมัติ…
 ToolManualEdit = แก้ไของค์ประกอบ
 ManualEditHint = คลิกองค์ประกอบในพรีวิวหรือเลือกเลเยอร์ แล้วแก้ไข ทุกการแก้ไขจะบันทึกเป็นเวอร์ชัน
 CommentsTab = ความคิดเห็นทั้งหมด

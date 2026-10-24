@@ -1,4 +1,4 @@
-# Nét UI strings: Português (Brasil) (pt-BR). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: Português (Brasil) (pt-BR). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = Início
 NavProjects = Projetos
@@ -224,7 +224,7 @@ NotifyFailedBody = A tarefa terminou com erro.
 NotifyTestBody = As notificações funcionam.
 ProjectLocations = Locais de projetos
 ProjectLocationsHint = Bases de trabalho que guardam pastas de projetos. Cada novo projeto ganha uma pasta própria dentro da base padrão.
-BuiltInLocation = Projetos do Nét
+BuiltInLocation = Projetos do Contour
 DefaultLocation = Padrão
 MakeDefault = Tornar padrão
 AddFolder = Adicionar pasta
@@ -325,14 +325,14 @@ TplRegression = Monitor de regressões
 TplRegressionDesc = Sinaliza regressões em relação ao trabalho aceito.
 # Integrations
 NavIntegrations = Integrações
-IntegrationsIntro = Ferramentas externas para o agente, e o Nét dentro de outros agentes de código.
+IntegrationsIntro = Ferramentas externas para o agente, e o Contour dentro de outros agentes de código.
 ExternalTools = Ferramentas externas
-ConnectAgents = Conecte o Nét ao seu agente de código
+ConnectAgents = Conecte o Contour ao seu agente de código
 ConnectAgentsShort = Agentes de código
-ConnectAgentsHint = Registre o servidor MCP do Nét em outro agente para que ele possa ler e editar seus designs.
+ConnectAgentsHint = Registre o servidor MCP do Contour em outro agente para que ele possa ler e editar seus designs.
 UseEverywhere = Usar em qualquer lugar
 UseEverywhereShort = CLI, HTTP, MCP
-UseEverywhereHint = Controle o Nét por um terminal, um script ou outro agente.
+UseEverywhereHint = Controle o Contour por um terminal, um script ou outro agente.
 EverywhereCli = CLI · od
 EverywhereCliBody = Inicie o daemon, liste projetos, execute um turno do agente e exporte pelo terminal.
 EverywhereMcp = Servidor MCP
@@ -402,7 +402,7 @@ GateAgent = Continue depois que o agente responder ao teste.
 GateByok = Salve um provedor que passou no teste para continuar.
 # Onboarding
 OnboardingTitle = Escolha seu agente de código
-OnboardingIntro = O Nét controla um agente de código instalado neste computador. Nada sai da sua máquina, exceto o que o próprio agente envia ao seu provedor.
+OnboardingIntro = O Contour controla um agente de código instalado neste computador. Nada sai da sua máquina, exceto o que o próprio agente envia ao seu provedor.
 DetectingAgents = Detectando agentes…
 AgentDetectionUnavailable = Detecção de agentes indisponível: {0}
 NoAgentsFound = Nenhum agente encontrado. Instale o Claude Code ou o Codex e atualize.
@@ -1328,7 +1328,7 @@ ShortcutMention = Mencionar um arquivo, plugin, skill ou servidor MCP
 ShortcutSlash = Comandos (no início de uma linha)
 # / The current language's text for `key`.
 # / Content text (template and skill descriptions, copied from the upstream
-# / app) with the upstream product name swapped for Nét. The files keep
+# / app) with the upstream product name swapped for Contour. The files keep
 # / their original wording and attribution; only the UI shows the new name.
 # / [`t`] with `{0}`, `{1}`… replaced by `args`.
 # Kiểu mới (hoà, thuỷ, huỷ) throughout; impersonal UI, no "bạn".
@@ -1388,7 +1388,7 @@ GenuiTierProject = projeto
 GenuiTierConversation = conversa
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = Configurar o DeepSeek Harness
-DshSetupDescription = O Nét executa a CLI dsh deste computador pelo perfil open-design. Instale os dois e detecte de novo.
+DshSetupDescription = O Contour executa a CLI dsh deste computador pelo perfil open-design. Instale os dois e detecte de novo.
 DshStepCli = 1. Instale a CLI dsh
 DshCliFound = dsh encontrado: {0}
 DshStepProfile = 2. Adicione o perfil open-design
@@ -1403,7 +1403,7 @@ DshSetupRequired = Configuração da conexão necessária
 FirstArtifactTitle = Seu primeiro design está pronto
 FirstArtifactBody = Edite e anote direto na prévia e exporte quando estiver satisfeito.
 FirstArtifactDismiss = Entendi
-WorkspaceRecovering = Conexão com o Nét interrompida. Reconectando automaticamente…
+WorkspaceRecovering = Conexão com o Contour interrompida. Reconectando automaticamente…
 ToolManualEdit = Editar elemento
 ManualEditHint = Clique em um elemento da prévia ou escolha uma camada e altere. Cada mudança é salva como versão.
 CommentsTab = Todos os comentários

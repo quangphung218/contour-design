@@ -628,7 +628,7 @@ mod tests {
         assert_eq!(of(&lines, Tok::Number), ["42"]);
         // Identifiers that contain a keyword are not keywords.
         assert!(of(&highlight("letter = format", Lang::Js), Tok::Keyword).is_empty());
-        let json = highlight("{\"name\": \"Nét\", \"n\": 1}", Lang::Js);
+        let json = highlight("{\"name\": \"Contour\", \"n\": 1}", Lang::Js);
         assert_eq!(of(&json, Tok::Prop), ["\"name\"", "\"n\""]);
     }
 

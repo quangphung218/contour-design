@@ -1,6 +1,6 @@
 [package]
 name = "od-ui"
-description = "Nét UI: Leptos CSR app compiled to WASM with trunk, served by the daemon"
+description = "Contour UI: Leptos CSR app compiled to WASM with trunk, served by the daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

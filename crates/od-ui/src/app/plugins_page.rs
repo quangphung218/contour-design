@@ -462,7 +462,7 @@ fn InputsForm(fields: Vec<InputField>, values: RwSignal<Map<String, Value>>) -> 
 }
 
 /// The "by …" name of a plugin. Plugins by the original app show none:
-/// its name stays out of the UI, and calling them Nét's would claim work
+/// its name stays out of the UI, and calling them Contour's would claim work
 /// that is not (credit lives in `NOTICE`).
 fn plugin_author(plugin: &Value) -> Option<String> {
     plugin["manifest"]["author"]["name"]

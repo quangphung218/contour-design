@@ -1,4 +1,4 @@
-# Nét UI strings: Bahasa Indonesia (id). One `Key = text` per line; keys and placeholders from src/i18n.rs.
+# Contour UI strings: Bahasa Indonesia (id). One `Key = text` per line; keys and placeholders from src/i18n.rs.
 # Shell
 NavHome = Beranda
 NavProjects = Proyek
@@ -224,7 +224,7 @@ NotifyFailedBody = Tugas berakhir dengan error.
 NotifyTestBody = Notifikasi berfungsi.
 ProjectLocations = Lokasi proyek
 ProjectLocationsHint = Basis kerja yang menyimpan folder proyek. Setiap proyek baru mendapat foldernya sendiri di basis default.
-BuiltInLocation = Proyek Nét
+BuiltInLocation = Proyek Contour
 DefaultLocation = Default
 MakeDefault = Jadikan default
 AddFolder = Tambah folder
@@ -325,14 +325,14 @@ TplRegression = Pemantau regresi
 TplRegressionDesc = Tandai regresi terhadap pekerjaan yang sudah diterima.
 # Integrations
 NavIntegrations = Integrasi
-IntegrationsIntro = Alat eksternal untuk agen, dan Nét di dalam agen coding lain.
+IntegrationsIntro = Alat eksternal untuk agen, dan Contour di dalam agen coding lain.
 ExternalTools = Alat eksternal
-ConnectAgents = Hubungkan Nét ke agen coding Anda
+ConnectAgents = Hubungkan Contour ke agen coding Anda
 ConnectAgentsShort = Agen coding
-ConnectAgentsHint = Daftarkan server MCP Nét di agen lain agar bisa membaca dan mengedit desain Anda.
+ConnectAgentsHint = Daftarkan server MCP Contour di agen lain agar bisa membaca dan mengedit desain Anda.
 UseEverywhere = Gunakan di mana saja
 UseEverywhereShort = CLI, HTTP, MCP
-UseEverywhereHint = Kendalikan Nét dari terminal, skrip, atau agen lain.
+UseEverywhereHint = Kendalikan Contour dari terminal, skrip, atau agen lain.
 EverywhereCli = CLI · od
 EverywhereCliBody = Jalankan daemon, lihat daftar proyek, jalankan giliran agen, dan ekspor dari terminal.
 EverywhereMcp = Server MCP
@@ -403,7 +403,7 @@ GateByok = Simpan provider yang lolos tes untuk melanjutkan.
 # ---- end of management screens ----
 # Onboarding
 OnboardingTitle = Pilih agen coding Anda
-OnboardingIntro = Nét menjalankan agen coding yang terpasang di komputer ini. Tidak ada yang keluar dari komputer Anda selain yang dikirim agen itu sendiri ke providernya.
+OnboardingIntro = Contour menjalankan agen coding yang terpasang di komputer ini. Tidak ada yang keluar dari komputer Anda selain yang dikirim agen itu sendiri ke providernya.
 DetectingAgents = Mendeteksi agen…
 AgentDetectionUnavailable = Deteksi agen tidak tersedia: {0}
 NoAgentsFound = Agen tidak ditemukan. Pasang Claude Code atau Codex, lalu segarkan.
@@ -1382,7 +1382,7 @@ GenuiTierProject = proyek
 GenuiTierConversation = percakapan
 # Wave C: tracks C1-preview, C2-chat-home, C3-runtimes
 DshSetupTitle = Siapkan DeepSeek Harness
-DshSetupDescription = Nét menjalankan dsh CLI di komputer ini lewat profil open-design. Pasang keduanya, lalu deteksi lagi.
+DshSetupDescription = Contour menjalankan dsh CLI di komputer ini lewat profil open-design. Pasang keduanya, lalu deteksi lagi.
 DshStepCli = 1. Pasang dsh CLI
 DshCliFound = dsh ditemukan: {0}
 DshStepProfile = 2. Tambahkan profil open-design
@@ -1397,7 +1397,7 @@ DshSetupRequired = Perlu penyiapan koneksi
 FirstArtifactTitle = Desain pertama Anda sudah siap
 FirstArtifactBody = Edit dan beri anotasi langsung di pratinjau, lalu ekspor saat sudah puas.
 FirstArtifactDismiss = Mengerti
-WorkspaceRecovering = Koneksi ke Nét terputus. Menyambung ulang otomatis…
+WorkspaceRecovering = Koneksi ke Contour terputus. Menyambung ulang otomatis…
 ToolManualEdit = Edit elemen
 ManualEditHint = Klik elemen di pratinjau atau pilih layer, lalu ubah. Setiap perubahan disimpan sebagai versi.
 CommentsTab = Semua komentar

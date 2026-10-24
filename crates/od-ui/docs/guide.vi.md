@@ -1,11 +1,11 @@
-# Hướng dẫn Nét
+# Hướng dẫn Contour
 
-Nét biến một mô tả thành thiết kế: trang web, prototype, slide deck, tài liệu, ảnh và video. Mọi thứ chạy trên máy này. Agent lập trình đang dùng (Claude Code, Codex, Gemini CLI…) hoặc API key riêng làm việc; không có gì được tải lên trừ khi cấu hình provider.
+Contour biến một mô tả thành thiết kế: trang web, prototype, slide deck, tài liệu, ảnh và video. Mọi thứ chạy trên máy này. Agent lập trình đang dùng (Claude Code, Codex, Gemini CLI…) hoặc API key riêng làm việc; không có gì được tải lên trừ khi cấu hình provider.
 
 ## Bắt đầu
 
-1. **Chọn agent.** Lần đầu mở, chọn một agent đã cài để Nét thử kết nối, hoặc dán API key.
-2. **Thương hiệu (tuỳ chọn).** Nhập website, Nét trích design system (bảng màu, kiểu chữ, component). Project mới dùng nó từ đầu.
+1. **Chọn agent.** Lần đầu mở, chọn một agent đã cài để Contour thử kết nối, hoặc dán API key.
+2. **Thương hiệu (tuỳ chọn).** Nhập website, Contour trích design system (bảng màu, kiểu chữ, component). Project mới dùng nó từ đầu.
 3. **Mô tả thứ cần làm** ở Home rồi bấm Tạo. Studio mở ra và agent bắt đầu.
 
 ## Home
@@ -32,17 +32,17 @@ Settings ▸ Bộ nhớ giữ những điều mọi project cần tuân theo. T�
 
 ## DeepSeek Harness {#deepseek-harness}
 
-Nét chạy `dsh` CLI của người dùng qua profile `open-design`. Nét không tự cài cái nào.
+Contour chạy `dsh` CLI của người dùng qua profile `open-design`. Contour không tự cài cái nào.
 
 1. Cài `dsh`. Bộ cài khởi tạo cài luôn Node.js và pnpm bản tương thích, rồi mở web UI của Harness để lưu DeepSeek API key:
    - macOS / Linux: `curl -fsSL 'https://open-design.ai/install-dsh.sh?version=1' | sh`
    - Windows PowerShell: `& ([scriptblock]::Create((irm 'https://open-design.ai/install-dsh.ps1?version=1')))`
-2. Thêm profile `open-design`. Build gói của nó từ mã nguồn Open Design (`packages/dsh-runtime`) rồi thêm bằng `dsh`:
+2. Thêm profile `open-design`. Build gói của nó từ mã nguồn upstream (`nexu-io/open-design`, `packages/dsh-runtime`) rồi thêm bằng `dsh`:
    - `pnpm --filter @open-design/dsh-runtime build`
    - `pnpm -C packages/dsh-runtime pack --pack-destination <thư-mục>`
    - `dsh plugin --profile open-design add <thư-mục>/open-design-dsh-runtime-0.1.0.tgz`
    - `dsh --profile open-design --probe` in ra một dòng JSON khi profile chạy được.
-3. Quay lại Nét, mở thẻ DeepSeek Harness và bấm **Phát hiện lại**. Agent được chọn ngay khi qua bước kiểm tra.
+3. Quay lại Contour, mở thẻ DeepSeek Harness và bấm **Phát hiện lại**. Agent được chọn ngay khi qua bước kiểm tra.
 
 Profile nằm ở `~/.dsh/profiles/open-design`, hoặc trong `$DSH_HOME` nếu biến này được đặt.
 
