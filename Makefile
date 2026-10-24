@@ -24,7 +24,7 @@ BUNDLE_DIR = $(CARGO_TARGET_DIR)/$(1)/bundle
 	app-debug app-release dmg install clean version ci links commitlint
 
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@printf "\nTarget dir: %s\n" "$(CARGO_TARGET_DIR)"
 
 setup: ## Check the toolchain; print the command for anything missing
@@ -84,8 +84,10 @@ app-release: ui-release ## Release desktop bundle (Contour.app, optimised UI)
 	cd apps/desktop && $(TAURI) build --bundles app
 	@du -sh "$(call BUNDLE_DIR,release)/macos/$(APP_NAME).app"
 
+# CI=true makes Tauri skip the Finder window styling, which needs Apple
+# Events permission and fails in headless or sandboxed terminals.
 dmg: ui-release ## Release .dmg (macOS)
-	cd apps/desktop && $(TAURI) build --bundles dmg
+	cd apps/desktop && CI=true $(TAURI) build --bundles dmg
 	@ls -lh "$(call BUNDLE_DIR,release)"/dmg/*.dmg
 
 install: ## Copy the release Contour.app into /Applications (replaces only Contour.app)

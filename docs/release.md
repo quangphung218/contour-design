@@ -48,7 +48,7 @@ CI does the building; a person decides when and checks the result.
 
    ```bash
    make app-release      # Contour.app, about 130 MB (UI WASM about 12 MB)
-   make dmg              # Contour_0.2.0_aarch64.dmg
+   make dmg              # Contour_0.2.0_aarch64.dmg (no Finder window layout locally)
    ```
 
 5. **Commit and merge** through a pull request:
@@ -129,4 +129,5 @@ make install          # replaces /Applications/Contour.app only if it is Contour
 
 `make install` checks the bundle identifier (`dev.contour.desktop`) of an
 existing `/Applications/Contour.app` and refuses to replace anything else.
-Other apps in `/Applications` are never touched.
+Other apps in `/Applications` are never touched. `INSTALL_DIR=~/Applications
+make install` installs somewhere else.
