@@ -814,7 +814,7 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
                     <input type="checkbox" data-testid="project-select" prop:checked=checked on:change=move |_| toggle_select()/>
                 </label>
             </Show>
-            <A href=href attr:class="cover-link" attr:tabindex="-1">
+            <A href=href attr:class="cover-link" attr:tabindex="-1" attr:aria-hidden="true">
                 <ProjectCover project=project.clone()/>
             </A>
             <div class="project-body">

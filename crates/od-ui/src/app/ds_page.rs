@@ -249,6 +249,9 @@ pub fn DesignSystemsPage() -> impl IntoView {
                                         {mine.then(|| view! {
                                             <button class="btn small" on:click=move |_| creating.set(true)>{icon(Glyph::Add)}{t(T::Create)}</button>
                                         })}
+                                        {(!mine && !query.with(|q| q.trim().is_empty())).then(|| view! {
+                                            <button class="btn small" data-testid="ds-clear-search" on:click=move |_| query.set(String::new())>{icon(Glyph::Close)}{t(T::ClearSearch)}</button>
+                                        })}
                                     </li>
                                 }.into_any()
                             } else {
@@ -260,6 +263,10 @@ pub fn DesignSystemsPage() -> impl IntoView {
                 <div class="lib-detail">
                     {move || {
                         let id = selected.get()?;
+                        // Nothing matches the search: no detail of a hidden row.
+                        if !query.with(|q| q.trim().is_empty()) && visible.with(|l| l.iter().all(|s| s.id != id)) {
+                            return None;
+                        }
                         let summary = systems.with(|l| l.as_ref()?.iter().find(|s| s.id == id).cloned())?;
                         Some(view! { <DsDetail summary=summary default_id=default_id on_change=on_change/> })
                     }}
@@ -302,7 +309,7 @@ fn DsRow(
     let is_sel = move || selected.get().as_deref() == Some(id.as_str());
     let mine = is_mine(&system);
     let subtitle = if mine && !system.summary.is_empty() {
-        system.summary.clone()
+        crate::i18n::rebrand(&system.summary).into_owned()
     } else {
         system.category.clone()
     };
@@ -904,7 +911,7 @@ fn DsDetail(
                     </div>
                 </div>
             </header>
-            {(!summary.summary.is_empty()).then(|| view! { <p class="muted ds-summary">{summary.summary.clone()}</p> })}
+            {(!summary.summary.is_empty()).then(|| view! { <p class="muted ds-summary">{crate::i18n::rebrand(&summary.summary).into_owned()}</p> })}
             <Show when=move || confirm_delete.get()>
                 <super::lib_ui::ConfirmBar message=delete_message.clone() testid="ds-delete-confirm"
                     on_confirm=delete_system on_cancel=Callback::new(move |()| confirm_delete.set(false))/>
@@ -968,7 +975,7 @@ fn DsDetail(
                 <span class="spacer"></span>
                 <span class="subtle small kit-keys">{if mine { t(T::KitKeysMine) } else { t(T::KitKeys) }}</span>
             </div>
-            <input type="file" class="visually-hidden" multiple accept="image/*,.svg,.woff,.woff2,.ttf,.otf" node_ref=upload_ref data-testid="ds-asset-input" on:change=on_upload/>
+            <input type="file" class="visually-hidden" aria-label=t(T::UploadFiles) multiple accept="image/*,.svg,.woff,.woff2,.ttf,.otf" node_ref=upload_ref data-testid="ds-asset-input" on:change=on_upload/>
             {move || match kit.get() {
                 None => view! { <div class="skeleton kit-skeleton"></div> }.into_any(),
                 Some(Err(e)) => view! { <p class="error-text">{e}</p> }.into_any(),

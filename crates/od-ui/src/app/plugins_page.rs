@@ -74,12 +74,13 @@ fn skill_name(sk: &SkillSummary) -> String {
 }
 
 fn skill_description(sk: &SkillSummary) -> String {
-    sk.info
+    let text = sk
+        .info
         .description_i18n
         .as_ref()
         .and_then(|m| m.get(locale().tag()))
-        .cloned()
-        .unwrap_or_else(|| sk.info.description.clone())
+        .unwrap_or(&sk.info.description);
+    crate::i18n::rebrand(text).into_owned()
 }
 
 fn hit(q: &str, title: &str, description: &str) -> bool {
@@ -312,7 +313,7 @@ fn PluginRow(plugin: Value, open: RwSignal<Option<Open>>) -> impl IntoView {
             {tile(&id, &title)}
             <button class="plugin-row-main" on:click=move |_| open.set(Some(Open::Plugin(id_open.clone())))>
                 <span class="lib-row-title">{title.clone()}<span class="badge outline">{s(&plugin, "kind")}</span></span>
-                <span class="lib-row-sub">{s(&plugin, "description")}</span>
+                <span class="lib-row-sub">{crate::i18n::rebrand(&s(&plugin, "description")).into_owned()}</span>
                 {(skills + atoms + inputs > 0).then(|| view! {
                     <span class="subtle small">{tf(T::PluginStats, &[&skills.to_string(), &atoms.to_string(), &inputs.to_string()])}</span>
                 })}
@@ -461,23 +462,62 @@ fn InputsForm(fields: Vec<InputField>, values: RwSignal<Map<String, Value>>) -> 
 }
 
 /// The example brief with `{{input}}` placeholders filled from `values`.
+/// A sentence whose input was left empty (no value, no default) is dropped,
+/// so the agent never sees a raw `{{style}}`.
 #[must_use]
 pub fn fill_query(query: &str, values: &Map<String, Value>, fields: &[InputField]) -> String {
-    let mut out = query.to_owned();
-    for f in fields {
-        let v = values
-            .get(&f.name)
-            .filter(|v| !text_of(Some(v)).is_empty())
-            .or(f.default.as_ref());
-        if let Some(v) = v {
-            let text = text_of(Some(v));
-            for pattern in [
-                format!("{{{{{}}}}}", f.name),
-                format!("{{{{ {} }}}}", f.name),
-            ] {
-                out = out.replace(&pattern, &text);
+    let patterns = |name: &str| [format!("{{{{{name}}}}}"), format!("{{{{ {name} }}}}")];
+    let mut out = String::new();
+    for sentence in sentences(query) {
+        let mut sentence = sentence.to_owned();
+        for f in fields {
+            let v = values
+                .get(&f.name)
+                .filter(|v| !text_of(Some(v)).trim().is_empty())
+                .or(f.default.as_ref());
+            let text = v.map(|v| text_of(Some(v)));
+            for pattern in patterns(&f.name) {
+                match &text {
+                    Some(text) => sentence = sentence.replace(&pattern, text),
+                    None if sentence.contains(&pattern) => sentence.clear(),
+                    None => {}
+                }
             }
         }
+        out.push_str(&sentence);
+    }
+    out.trim_end().to_owned()
+}
+
+/// `text` cut after each sentence end (`.`, `!`, `?` and their CJK forms
+/// followed by a space, or a line break); the pieces keep their spacing.
+fn sentences(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        let next = chars.peek().map(|&(_, n)| n);
+        let end = match c {
+            '\n' | '。' | '！' | '？' => true,
+            '.' | '!' | '?' => next.is_none_or(char::is_whitespace),
+            _ => false,
+        };
+        if end {
+            // Spaces after the end belong to this sentence.
+            let mut stop = i + c.len_utf8();
+            while let Some(&(j, n)) = chars.peek() {
+                if n != ' ' {
+                    break;
+                }
+                stop = j + n.len_utf8();
+                chars.next();
+            }
+            out.push(&text[start..stop]);
+            start = stop;
+        }
+    }
+    if start < text.len() {
+        out.push(&text[start..]);
     }
     out
 }
@@ -557,7 +597,7 @@ fn PluginDetail(
                 Some(Ok(p)) => {
                     let pid = s(&p, "id");
                     let title = localized(&p["manifest"]["title_i18n"]).unwrap_or_else(|| s(&p, "title"));
-                    let description = localized(&p["manifest"]["description_i18n"]).unwrap_or_else(|| s(&p, "description"));
+                    let description = crate::i18n::rebrand(&localized(&p["manifest"]["description_i18n"]).unwrap_or_else(|| s(&p, "description"))).into_owned();
                     let fields: Vec<InputField> = p["inputs"].as_array().into_iter().flatten().filter_map(InputField::parse).collect();
                     let query = localized(&p["manifest"]["od"]["useCase"]["query"]);
                     let personal = plugin_personal(&p);
@@ -565,7 +605,7 @@ fn PluginDetail(
                     let can_use = move || values.with(|m| fields_ok.iter().all(|f| f.satisfied(m)));
                     let fields_q = fields.clone();
                     let use_plugin = use_plugin.clone();
-                    let author = p["manifest"]["author"]["name"].as_str().map(str::to_owned);
+                    let author = p["manifest"]["author"]["name"].as_str().map(|a| crate::i18n::rebrand(a).into_owned());
                     let stages: Vec<(String, String)> = p["pipeline"]["stages"].as_array().into_iter().flatten().map(|st| {
                         let atoms: Vec<String> = st["atoms"].as_array().into_iter().flatten().filter_map(|a| a.as_str().map(str::to_owned)).collect();
                         (s(st, "id"), atoms.join(", "))
@@ -727,7 +767,7 @@ fn SkillDetailView(
                                     <span class="badge" class:accent=!user>{if user { t(T::ScopePersonal) } else { t(T::ScopeOfficial) }}</span>
                                     {d.info.category.clone().map(|c| view! { <span class="badge outline">{c}</span> })}
                                 </div>
-                                <p class="muted">{d.info.description.clone()}</p>
+                                <p class="muted">{crate::i18n::rebrand(&d.info.description).into_owned()}</p>
                             </div>
                             <div class="row">
                                 <button class="btn small primary" data-testid="skill-use" on:click=use_skill>{icon(Glyph::ArrowRight)}{t(T::Use)}</button>
@@ -1018,6 +1058,33 @@ mod tests {
         assert_eq!(
             fill_query("{{dish}} in {{ style }} light, {{other}}", &m, &fields),
             "pho in warm light, {{other}}"
+        );
+    }
+
+    #[test]
+    fn a_sentence_with_an_empty_input_is_dropped() {
+        let fields = vec![
+            InputField::parse(&json!({ "name": "subject" })).unwrap(),
+            InputField::parse(&json!({ "name": "style" })).unwrap(),
+        ];
+        let mut m = Map::new();
+        m.insert("subject".into(), json!("tea"));
+        m.insert("style".into(), json!(" "));
+        assert_eq!(
+            fill_query(
+                "A photo of {{subject}}. Style: {{style}}. Aspect: 1.5 wide.",
+                &m,
+                &fields
+            ),
+            "A photo of tea. Aspect: 1.5 wide."
+        );
+        assert_eq!(
+            fill_query("拍 {{subject}}。风格：{{style}}。画幅：方形", &m, &fields),
+            "拍 tea。画幅：方形"
+        );
+        assert_eq!(
+            fill_query("Line {{subject}}\nStyle {{style}}\nEnd", &m, &fields),
+            "Line tea\nEnd"
         );
     }
 

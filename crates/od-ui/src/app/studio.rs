@@ -14,7 +14,7 @@ use super::export_menu::ExportMenu;
 use super::files_panel::{FilesPanel, FilesToast, FilesUi, TabLauncher};
 use super::icons::{Glyph, icon};
 use super::preview_comments::CommentLayer;
-use super::preview_tools::{self, DrawLayer, Tool, ToolBar, ToolPanel, Tools};
+use super::preview_tools::{self, DrawLayer, Tool, ToolBar, ToolHints, ToolPanel, Tools};
 use super::sketch::{SketchView, is_sketch};
 use super::sse::Sse;
 use super::switcher::QuickSwitcher;
@@ -109,6 +109,16 @@ const RESTORE_PATIENCE: u8 = 3;
 
 /// `localStorage` key of the files panel state.
 const FILES_OPEN_KEY: &str = "od.studio.files-open";
+/// Below this window width the file column starts closed (until the user
+/// opens it), so the preview keeps room for its toolbar and tool panels.
+const FILES_OPEN_MIN_WIDTH: f64 = 1100.0;
+
+fn wide_window() -> bool {
+    web_sys::window()
+        .and_then(|w| w.inner_width().ok())
+        .and_then(|w| w.as_f64())
+        .is_none_or(|w| w >= FILES_OPEN_MIN_WIDTH)
+}
 
 /// A file version shown in place of the live preview.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,6 +233,16 @@ pub(super) fn pick_entry(project: Option<&Project>, files: &[ProjectFile]) -> Op
 }
 
 impl StudioCtx {
+    /// Whether something goes with the next message besides its text:
+    /// attached comments, a drawing or uploaded files. Then Send works
+    /// with an empty composer.
+    pub fn has_attached(self) -> bool {
+        self.tools.attachments.with(|a| !a.is_empty())
+            || self
+                .comments
+                .with(|c| c.iter().any(|c| c.status == CommentStatus::Attached))
+    }
+
     pub fn base(self) -> String {
         format!("/api/projects/{}", api::seg(&self.project_id.get_value()))
     }
@@ -1062,7 +1082,7 @@ pub fn Studio() -> impl IntoView {
         jury: RwSignal::new(false),
         memory: RwSignal::new(Vec::new()),
         side: SideChat::new(),
-        files_open: RwSignal::new(super::stored_flag(FILES_OPEN_KEY).unwrap_or(true)),
+        files_open: RwSignal::new(super::stored_flag(FILES_OPEN_KEY).unwrap_or_else(wide_window)),
         show_code: RwSignal::new(false),
         zoom: RwSignal::new(100),
         chat: super::composer::ChatState::new(),
@@ -1332,7 +1352,25 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     };
     view! {
         <section class="preview" class:presenting=move || ctx.presenting.get() data-testid="preview-pane">
-            <TabsBar ctx=ctx/>
+            <div class="preview-top">
+                <TabsBar ctx=ctx/>
+                <div class="preview-actions">
+                    <Show when=move || is_html() && !ctx.side.open.get() && ctx.active_term.with(Option::is_none)>
+                        <button
+                            class="icon-btn"
+                            class:active=move || ctx.history_open.get()
+                            aria-pressed=move || ctx.history_open.get().to_string()
+                            aria-label=t(T::History)
+                            data-tip=t(T::History)
+                            data-testid="history"
+                            on:click=move |_| ctx.history_open.update(|o| *o = !*o)
+                        >
+                            {icon(Glyph::History)}
+                        </button>
+                    </Show>
+                    <ExportMenu ctx=ctx/>
+                </div>
+            </div>
             <Show when=move || !ctx.side.open.get() fallback=move || view! { <SideChatView ctx=ctx/> }>
             {move || ctx.active_term.get().map(|id| view! { <TerminalView id=id/> })}
             <div class="preview-main" style=move || if ctx.active_term.with(Option::is_some) { "display:none" } else { "display:contents" }>
@@ -1340,9 +1378,6 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <button class="icon-btn" aria-label=t(T::ReloadPreview) data-tip=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>
                     {icon(Glyph::Refresh)}
                 </button>
-                <span class="pane-title path-title mono" title=move || ctx.active().unwrap_or_default()>
-                    {move || ctx.active().unwrap_or_default()}
-                </span>
                 <div class="segmented small" role="radiogroup" aria-label=t(T::ViewAs)>
                     <button
                         class="seg"
@@ -1387,6 +1422,14 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         })
                         .collect_view()}
                 </div>
+                <span class="pane-title path-title mono" title=move || ctx.active().unwrap_or_default()>
+                    {move || ctx.active().unwrap_or_default()}
+                </span>
+                <Show when=move || is_html() && ctx.viewing.with(Option::is_none) && !ctx.show_code.get()>
+                    <span class="head-divider" aria-hidden="true"></span>
+                    <ToolBar ctx=ctx/>
+                    <span class="head-divider" aria-hidden="true"></span>
+                </Show>
                 <div class="zoom" role="group" aria-label=t(T::Zoom)>
                     <button class="icon-btn small" aria-label=t(T::ZoomOut) data-tip=t(T::ZoomOut) data-testid="zoom-out"
                         disabled=move || ctx.show_code.get() || zoom_step(ctx.zoom.get(), false) == ctx.zoom.get()
@@ -1398,20 +1441,6 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         disabled=move || ctx.show_code.get() || at_max_zoom(ctx.zoom.get())
                         on:click=move |_| ctx.zoom_by(true)>{icon(Glyph::ZoomIn)}</button>
                 </div>
-                <span class="head-divider" aria-hidden="true"></span>
-                <Show when=is_html>
-                    <button
-                        class="btn small ghost"
-                        class:active=move || ctx.history_open.get()
-                        aria-pressed=move || ctx.history_open.get().to_string()
-                        data-testid="history"
-                        on:click=move |_| ctx.history_open.update(|o| *o = !*o)
-                    >
-                        {icon(Glyph::History)}
-                        <span class="btn-label">{t(T::History)}</span>
-                    </button>
-                </Show>
-                <ExportMenu ctx=ctx/>
                 <Show when=move || !ctx.files_open.get()>
                     <button class="icon-btn" aria-label=t(T::ShowFiles) data-tip=t(T::ShowFiles) data-tip-pos="left" data-testid="show-files" on:click=move |_| ctx.toggle_files()>
                         {icon(Glyph::FilesPanel)}
@@ -1420,7 +1449,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             </div>
             <DeckBar ctx=ctx/>
             <Show when=move || is_html() && ctx.viewing.with(Option::is_none) && !ctx.show_code.get()>
-                <ToolBar ctx=ctx/>
+                <ToolHints ctx=ctx/>
             </Show>
             {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{icon(Glyph::Comment)}{t(T::CommentModeOn)}</p> })}
             <div class="preview-body">

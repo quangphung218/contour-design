@@ -454,6 +454,7 @@ pub fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
                     class="visually-hidden"
                     tabindex="-1"
                     aria-hidden="true"
+                    aria-label=t(T::UploadFiles)
                     data-testid="upload-input"
                     node_ref=input
                     on:change=move |_| {

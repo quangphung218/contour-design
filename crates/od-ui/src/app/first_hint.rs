@@ -3,13 +3,18 @@
 //! corner pointing at the preview tools. It shows only for a project whose
 //! first run started with nothing to preview, waits for the run to end and
 //! the layout to settle, and the "seen" bit is spent when the user closes
-//! it, not when it shows (a remount before that shows it again).
+//! it, not when it shows (a remount before that shows it again). Any click
+//! outside the card closes it too, so it never sits over a menu the user
+//! just opened or over the page they are working on.
 
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, is_previewable};
 use super::{store_flag, stored_flag};
 use crate::i18n::{T, t};
+use leptos::ev;
+use leptos::html::Div;
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 /// `localStorage` key of the "seen" bit (once per browser, ever).
 const SEEN_KEY: &str = "od:seen-first-artifact-hint";
@@ -51,14 +56,30 @@ pub fn FirstArtifactHint(ctx: StudioCtx) -> impl IntoView {
             });
         }
     });
-    let dismiss = move |_| {
+    let close = move || {
         store_flag(SEEN_KEY, true);
         seen.set(true);
     };
+    let dismiss = move |_| close();
+    let card = NodeRef::<Div>::new();
+    let down = window_event_listener(ev::mousedown, move |e| {
+        if !(ready.get_untracked() && settled.get_untracked()) {
+            return;
+        }
+        let inside = card.get_untracked().is_some_and(|c| {
+            e.target()
+                .and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                .is_some_and(|n| c.contains(Some(&n)))
+        });
+        if !inside {
+            close();
+        }
+    });
+    on_cleanup(move || down.remove());
     move || {
         (ready.get() && settled.get()).then(|| {
             view! {
-                <div class="first-artifact-hint" role="status" data-testid="first-artifact-hint">
+                <div class="first-artifact-hint" role="status" data-testid="first-artifact-hint" node_ref=card>
                     <span class="first-artifact-hint-ico">{icon(Glyph::Sparkle)}</span>
                     <div class="first-artifact-hint-body">
                         <strong>{t(T::FirstArtifactTitle)}</strong>

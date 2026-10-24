@@ -319,6 +319,7 @@ fn Shelled() -> impl IntoView {
                 <shortcuts::ShortcutsDialog/>
             </Show>
             <ViewTracker/>
+            <ScrollReset/>
             <notify::RunWatcher/>
             <memory_settings::MemoryToast/>
             <div class="app">
@@ -531,6 +532,30 @@ fn ViewTracker() -> impl IntoView {
             )
             .await;
         });
+    });
+}
+
+/// A new page opens at its top: `<main>` keeps its scroll position across
+/// routes otherwise (scroll down onboarding, and Home opens scrolled past
+/// the brief). Back and forward leave it alone.
+#[component]
+fn ScrollReset() -> impl IntoView {
+    let location = use_location();
+    let popped = StoredValue::new(false);
+    let pop = window_event_listener(leptos::ev::popstate, move |_| popped.set_value(true));
+    on_cleanup(move || pop.remove());
+    Effect::new(move |prev: Option<String>| {
+        let path = location.pathname.get();
+        let back_or_forward = std::mem::take(&mut *popped.write_value());
+        if prev.is_some_and(|p| p != path) && !back_or_forward {
+            if let Some(main) = web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.get_element_by_id("main"))
+            {
+                main.set_scroll_top(0);
+            }
+        }
+        path
     });
 }
 

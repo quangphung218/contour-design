@@ -281,8 +281,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
 
     view! {
         <div class="menu-wrap">
+            // The way out of the main flow: primary once there is a file.
             <button
                 class="btn small"
+                class:primary=move || ctx.active().is_some()
                 class:active=move || open.get()
                 data-testid="export"
                 aria-haspopup="menu"

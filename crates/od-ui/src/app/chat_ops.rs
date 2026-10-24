@@ -7,7 +7,7 @@ use super::chat_view::focus_composer;
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, conversation_title, file_glyph};
 use super::{Shell, api, desktop};
-use crate::chat::{AssistantTurn, FileOp};
+use crate::chat::{AssistantTurn, FileOp, TurnState};
 use crate::guide;
 use crate::i18n::{T, t, tf};
 use leptos::html::Div;
@@ -375,9 +375,11 @@ pub fn ContinueTasks(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     move || {
         let prompt = turn.with(guide::continue_prompt)?;
         let left = turn.with(guide::open_todos);
+        // After "Done" the line would contradict it; the button alone stays.
+        let done = turn.with(|t| t.state == TurnState::Succeeded);
         Some(view! {
-            <div class="continue-tasks" data-testid="continue-tasks">
-                <span class="muted">{tf(T::TaskNotFinished, &[&left.to_string()])}</span>
+            <div class="continue-tasks" data-testid="continue-tasks" data-left=left.to_string()>
+                {(!done).then(|| view! { <span class="muted">{tf(T::TaskNotFinished, &[&left.to_string()])}</span> })}
                 <button class="btn small" data-testid="continue-remaining" on:click=move |_| ctx.send(prompt.clone(), shell)>
                     {icon(Glyph::Play)}{t(T::ContinueRemaining)}
                 </button>

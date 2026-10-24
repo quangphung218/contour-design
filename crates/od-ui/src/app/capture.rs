@@ -127,16 +127,16 @@ pub fn ScreenshotMenu(ctx: StudioCtx) -> impl IntoView {
     let busy = RwSignal::new(false);
     view! {
         <div class="menu-wrap">
-            <button class="btn small ghost" data-testid="screenshot" aria-haspopup="menu"
+            <button class="icon-btn" data-testid="screenshot" aria-haspopup="menu"
+                aria-label=t(T::Screenshot) data-tip=t(T::Screenshot)
                 aria-expanded=move || open.get().to_string() class:active=move || open.get()
                 disabled=move || busy.get()
                 on:click=move |_| open.update(|o| *o = !*o)>
                 {move || if busy.get() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::Screenshot).into_any() }}
-                <span class="btn-label">{t(T::Screenshot)}</span>
             </button>
             <Show when=move || open.get()>
                 <div class="menu-scrim" on:click=move |_| open.set(false)></div>
-                <div class="menu left" role="menu" data-testid="screenshot-menu">
+                <div class="menu" role="menu" data-testid="screenshot-menu">
                     <button class="menu-item" role="menuitem" data-testid="screenshot-copy" on:click=move |_| { open.set(false); copy_to_clipboard(ctx, ui); }>
                         {icon(Glyph::Clipboard)}{t(T::ScreenshotCopy)}
                     </button>

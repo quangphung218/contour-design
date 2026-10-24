@@ -333,7 +333,7 @@ try {
   await row('page.html').click();
   await page.getByTestId('manual-edit-mode').click();
   await page.getByTestId('manual-edit-panel').getByText('Bấm một phần tử trên preview hoặc chọn một layer.').waitFor();
-  await page.getByTestId('comments-tab').getByText('Comment').waitFor();
+  assert.equal(await page.getByTestId('comments-tab').getAttribute('aria-label'), 'Mọi bình luận');
   await shot('manual-edit-vi');
   results.vi = 'ok';
 

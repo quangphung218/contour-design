@@ -300,11 +300,13 @@ pub fn Recommended(
         let s = *list.get(at.get() % list.len())?;
         let many = list.len() > 1;
         Some(view! {
-            <aside class="recommend card" aria-label=t(T::RecommendedForYou) data-testid="recommended" data-starter=s.key>
+            // One quiet line under the composer: the brief stays the one
+            // thing that asks for attention on Home.
+            <aside class="recommend" aria-label=t(T::RecommendedForYou) data-testid="recommended" data-starter=s.key>
                 <span class="recommend-icon" aria-hidden="true">{icon(Glyph::Sparkle)}</span>
-                <div class="grow">
+                <div class="grow recommend-text">
                     <span class="eyebrow">{t(T::RecommendedForYou)}</span>
-                    <strong class="block">{t(s.title)}</strong>
+                    <strong>{t(s.title)}</strong>
                     <span class="muted small">{t(s.body)}</span>
                 </div>
                 {many.then(|| view! {
@@ -319,7 +321,7 @@ pub fn Recommended(
                         let _ = st.set_item(DISMISS_KEY, "1");
                     }
                 }>{t(T::RecAllTypes)}</button>
-                <button class="btn primary small" data-testid="recommended-start" on:click=move |_| {
+                <button class="btn small" data-testid="recommended-start" on:click=move |_| {
                     set_chip.run(s.chip);
                     brief.set(t(s.prompt).to_owned());
                     if let Some(el) = brief_ref.get_untracked() {
