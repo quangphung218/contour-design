@@ -1,4 +1,4 @@
-//! Integrations ▸ "Connect Open Design to your coding agent" (spec 2.5):
+//! Integrations ▸ "Connect Contour to your coding agent" (spec 2.5):
 //!
 //! - `GET /api/mcp/install-info` → how to start `od mcp` (this daemon's
 //!   own binary and URL) and a ready-to-paste snippet per client.

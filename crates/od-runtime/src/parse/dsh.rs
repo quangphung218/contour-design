@@ -261,7 +261,7 @@ impl DshSession {
         }
         if status == "cancelled" && !self.aborted {
             self.fail(
-                "DeepSeek Harness profile cancelled a run that OpenDesign did not cancel.",
+                "DeepSeek Harness profile cancelled a run that Contour did not cancel.",
                 "DSH_PROFILE_PROTOCOL_ERROR",
                 out,
             );

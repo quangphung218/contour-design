@@ -1,7 +1,7 @@
 //! DeepSeek Harness connection component (ports `agent-companion-setup.ts`
 //! and the compatibility probe of `defs/deepseek-harness.ts`).
 //!
-//! `dsh` is user-installed; Open Design talks to it through its own
+//! `dsh` is user-installed; Contour talks to it through its own
 //! `open-design` profile (the `@open-design/dsh-runtime` package). The
 //! agent counts as available only when that profile exists and
 //! `dsh --profile open-design --probe` answers one `probe` frame.
@@ -69,11 +69,11 @@ pub fn parse_probe(stdout: &str) -> Option<String> {
 /// Why the compatibility probe did not pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ProbeFailure {
-    #[error("the Open Design connection component is not set up")]
+    #[error("the `open-design` dsh profile is not set up")]
     NoProfile,
-    #[error("the Open Design connection probe timed out")]
+    #[error("the `open-design` dsh profile probe timed out")]
     TimedOut,
-    #[error("the Open Design connection component did not pass the compatibility check")]
+    #[error("the `open-design` dsh profile did not pass the compatibility check")]
     Incompatible,
 }
 

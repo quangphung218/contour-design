@@ -20,7 +20,7 @@ use std::sync::LazyLock;
 pub const TOOL_TOKEN_ENV: &str = "OD_TOOL_TOKEN";
 pub const PROJECT_ENV: &str = "OD_PROJECT_ID";
 
-const INSTRUCTIONS: &str = "OpenDesign live artifacts (local). Register an HTML page rendered from template.html ({{data.x}} bindings, data-od-repeat=\"item in data.items\") plus data.json, and refresh it from a project JSON file. Templates must not contain scripts, iframes, event handlers or javascript: URLs.";
+const INSTRUCTIONS: &str = "Contour live artifacts (local). Register an HTML page rendered from template.html ({{data.x}} bindings, data-od-repeat=\"item in data.items\") plus data.json, and refresh it from a project JSON file. Templates must not contain scripts, iframes, event handlers or javascript: URLs.";
 
 const INPUT_DESC: &str = "LiveArtifactCreateInput / LiveArtifactUpdateInput JSON: title, slug, pinned, status, preview {type, entry}, document {dataJson, dataSchemaJson, sourceJson {type: local_file|daemon_tool, toolName: project_files.read_json|project_files.search, input, outputMapping {dataPaths [{from, to}]}, refreshPermission: none|manual_refresh_granted_for_read_only}}.";
 

@@ -28,7 +28,7 @@ const DEFAULT_MAX_TOKENS: u64 = 64_000;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Prepended as the system prompt: one self-contained `<artifact>`.
-pub const SYSTEM_PROMPT: &str = "You are running inside Open Design without tools: you cannot \
+pub const SYSTEM_PROMPT: &str = "You are running inside Contour without tools: you cannot \
 read or write files or run commands. Answer with exactly one \
 <artifact identifier=\"index\" type=\"text/html\" title=\"...\"> ... </artifact> block that \
 contains a complete, self-contained HTML document (all CSS and JavaScript inline, no external \

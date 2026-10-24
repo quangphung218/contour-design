@@ -61,7 +61,7 @@ fn invalid(msg: impl Into<String>) -> ToolError {
     ToolError::Invalid(msg.into())
 }
 
-const PROJECT_ARG: &str = "Project id or name (exact, slug or unique substring). Optional: defaults to the project the user has open in OpenDesign. That active context expires about 5 minutes after the last interaction.";
+const PROJECT_ARG: &str = "Project id or name (exact, slug or unique substring). Optional: defaults to the project the user has open in Contour. That active context expires about 5 minutes after the last interaction.";
 
 const ARTIFACT_TYPES: [&str; 8] = [
     "website",
@@ -112,7 +112,7 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
     vec![
         tool(
             "collect_brief",
-            "Start an OpenDesign brief for a new artifact. Returns the questions to ask (each with stable option values and a recommended default) plus an internal draft id and nonce for confirm_brief. Never show the draft id or nonce to the user.",
+            "Start an Contour brief for a new artifact. Returns the questions to ask (each with stable option values and a recommended default) plus an internal draft id and nonce for confirm_brief. Never show the draft id or nonce to the user.",
             json!({
                 "artifactType": { "type": "string", "enum": ARTIFACT_TYPES, "description": "Artifact workflow whose brief should be collected." },
                 "projectTitle": { "type": "string", "description": "Concise human-readable project title." },
@@ -121,7 +121,7 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 "skip": { "type": "boolean", "description": "Use recommended defaults without asking. Defaults to false." },
             }),
             &["artifactType"],
-            write("Collect OpenDesign brief"),
+            write("Collect Contour brief"),
         ),
         tool(
             "confirm_brief",
@@ -133,18 +133,18 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 "locale": { "type": "string", "description": "BCP-47 locale, used when collect_brief had none." },
             }),
             &["briefDraftId", "nonce", "answers"],
-            write("Confirm OpenDesign brief"),
+            write("Confirm Contour brief"),
         ),
         tool(
             "list_projects",
-            "List every OpenDesign project on this daemon.",
+            "List every Contour project on this daemon.",
             json!({}),
             &[],
-            read_only("List OpenDesign projects"),
+            read_only("List Contour projects"),
         ),
         tool(
             "get_active_context",
-            "Project + file the user has open in OpenDesign right now. Returns {active:false, hint} when none is active (the context expires about 5 minutes after the last interaction). Most tools default to it when project is omitted.",
+            "Project + file the user has open in Contour right now. Returns {active:false, hint} when none is active (the context expires about 5 minutes after the last interaction). Most tools default to it when project is omitted.",
             json!({}),
             &[],
             read_only("What is the user looking at?"),
@@ -166,7 +166,7 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
             "Single project metadata: name, skill and design-system ids, entryFile, kind, timestamps and, when it has an entry file, a browser-openable previewUrl.",
             json!({ "project": project }),
             &[],
-            read_only("Get OpenDesign project"),
+            read_only("Get Contour project"),
         ),
         tool(
             "get_file",
@@ -213,7 +213,7 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 "artifactManifest": { "type": "object", "additionalProperties": true, "description": "Optional ArtifactManifest sidecar." },
             }),
             &["name", "content"],
-            write("Create OpenDesign artifact"),
+            write("Create Contour artifact"),
         ),
         tool(
             "write_file",
@@ -225,7 +225,7 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 "encoding": { "type": "string", "enum": ["utf8", "base64"], "description": "utf8 (default) | base64" },
             }),
             &["path", "content"],
-            write("Write OpenDesign project file"),
+            write("Write Contour project file"),
         ),
         tool(
             "delete_file",
@@ -235,7 +235,7 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 "path": { "type": "string", "description": "Project-relative path of the file to delete." },
             }),
             &["path"],
-            destructive("Delete OpenDesign project file"),
+            destructive("Delete Contour project file"),
         ),
         tool(
             "delete_project",
@@ -245,7 +245,7 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 "confirm": { "type": "boolean", "description": "Must be literally true." },
             }),
             &["project", "confirm"],
-            destructive("Delete OpenDesign project"),
+            destructive("Delete Contour project"),
         ),
         tool(
             "create_project",
@@ -257,25 +257,25 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 "skill": { "type": "string", "description": "Optional skill id to seed the project with." },
             }),
             &["name"],
-            write("Create OpenDesign project"),
+            write("Create Contour project"),
         ),
         tool(
             "list_skills",
-            "List OpenDesign skills you can pass to start_run. Discovery only: OpenDesign runs the skill, not you.",
+            "List Contour skills you can pass to start_run. Discovery only: Contour runs the skill, not you.",
             json!({}),
             &[],
-            read_only("List OpenDesign skills"),
+            read_only("List Contour skills"),
         ),
         tool(
             "list_plugins",
-            "List installed OpenDesign plugins you can pass to start_run as plugin + inputs.",
+            "List installed Contour plugins you can pass to start_run as plugin + inputs.",
             json!({}),
             &[],
-            read_only("List OpenDesign plugins"),
+            read_only("List Contour plugins"),
         ),
         tool(
             "start_run",
-            "Commission OpenDesign to generate or refine a design. OpenDesign runs its own agent and returns a runId at once; poll get_run until the status is terminal. Project defaults to the active project and must exist (create_project first).",
+            "Commission Contour to generate or refine a design. Contour runs its own agent and returns a runId at once; poll get_run until the status is terminal. Project defaults to the active project and must exist (create_project first).",
             json!({
                 "project": project,
                 "prompt": { "type": "string", "description": "What to make or change, in natural language." },
@@ -288,28 +288,28 @@ pub static TOOL_DEFS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 "requestId": { "type": "string", "description": "Stable id for this generation; reuse it verbatim on retry so the run is not started twice." },
             }),
             &[],
-            write("Generate with OpenDesign"),
+            write("Generate with Contour"),
         ),
         tool(
             "get_run",
             "Poll a run from start_run: status (queued|running|succeeded|failed|canceled) and error info. On success adds previewUrl (open it in a browser) and agentMessage (the inner agent's text, useful when it asked a question instead of writing files).",
             json!({ "runId": { "type": "string", "description": "Run id returned by start_run." } }),
             &["runId"],
-            read_only("Check OpenDesign run"),
+            read_only("Check Contour run"),
         ),
         tool(
             "cancel_run",
             "Request cancellation of an in-flight run started by start_run.",
             json!({ "runId": { "type": "string", "description": "Run id returned by start_run." } }),
             &["runId"],
-            write("Cancel OpenDesign run"),
+            write("Cancel Contour run"),
         ),
         tool(
             "list_agents",
-            "List the agent CLIs OpenDesign can run for start_run.agent. Only installed agents by default; includeUnavailable:true adds the rest. Up to 10 sample models each.",
+            "List the agent CLIs Contour can run for start_run.agent. Only installed agents by default; includeUnavailable:true adds the rest. Up to 10 sample models each.",
             json!({ "includeUnavailable": { "type": "boolean", "description": "Include agents that are not installed. Defaults to false." } }),
             &[],
-            read_only("List OpenDesign agents"),
+            read_only("List Contour agents"),
         ),
     ]
 });
@@ -412,7 +412,7 @@ impl Resolved {
     }
 }
 
-pub const NO_ACTIVE_PROJECT: &str = "project omitted and OpenDesign has no active project. The active context expires about 5 minutes after the last interaction with OpenDesign: ask the user to click into the project, or pass project=\"<id-or-name>\".";
+pub const NO_ACTIVE_PROJECT: &str = "project omitted and Contour has no active project. The active context expires about 5 minutes after the last interaction with Contour: ask the user to click into the project, or pass project=\"<id-or-name>\".";
 
 async fn active(daemon: &Daemon) -> Result<Option<Active>, ToolError> {
     let v = daemon.get(&["api", "active"]).await?;
@@ -588,7 +588,7 @@ async fn get_active_context(daemon: &Daemon) -> ToolResult {
         }))),
         None => Ok(ToolOutput::json(json!({
             "active": false,
-            "hint": "No project is open in OpenDesign (the active context expires about 5 minutes after the last interaction). Ask the user to open the project, or pass project explicitly.",
+            "hint": "No project is open in Contour (the active context expires about 5 minutes after the last interaction). Ask the user to open the project, or pass project explicitly.",
         }))),
     }
 }

@@ -278,8 +278,8 @@ pub const TRAE: RuntimeDef = RuntimeDef {
 
 /// Appended to Reasonix's ACP system prompt so it answers like a design
 /// tool (`defs/reasonix.ts`).
-const REASONIX_SYSTEM_APPEND: &str = "# OpenDesign integration — MUST follow\n\n\
-You are running inside OpenDesign, a design tool. The user message contains design context \
+const REASONIX_SYSTEM_APPEND: &str = "# Contour integration — MUST follow\n\n\
+You are running inside Contour, a design tool. The user message contains design context \
 (system prompt, skill instructions, design system tokens). Follow these rules:\n\n\
 1. **Output format**: Wrap your HTML output in <artifact> tags.\n\
 2. **Design system**: Apply the colors, typography, spacing and component patterns of the \

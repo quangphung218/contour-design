@@ -1,4 +1,4 @@
-/* Open Design design tokens. Components read only these variables; see
+/* Contour design tokens. Components read only these variables; see
    docs/design-system.md for the scale and the rules. Light is the default,
    dark follows the system unless Settings pins a theme (data-theme on
    <html>). */

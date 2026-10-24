@@ -749,7 +749,7 @@ async fn imagerouter(
 
 const OPENROUTER_HEADERS: [(&str, &str); 2] = [
     ("HTTP-Referer", "https://opendesign.dev"),
-    ("X-Title", "OpenDesign"),
+    ("X-Title", "Contour"),
 ];
 
 fn openrouter_slug(def: ModelDef, creds: &Credentials) -> String {

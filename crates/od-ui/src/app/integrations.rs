@@ -322,7 +322,7 @@ fn UseEverywhere() -> impl IntoView {
         (T::EverywhereSkills, T::EverywhereSkillsBody, "od plugin list\nod plugin apply <plugin> -i name=value\nod mcp live-artifacts --project <id>".to_owned()),
     ];
     let guide: String = std::iter::once(format!(
-        "# Open Design: use it everywhere\n\nDaemon: {origin}\n"
+        "# Contour: use it everywhere\n\nDaemon: {origin}\n"
     ))
     .chain(sections.iter().map(|(title, body, code)| {
         format!("\n## {}\n\n{}\n\n```sh\n{code}\n```\n", t(*title), t(*body))

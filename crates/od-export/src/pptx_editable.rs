@@ -562,7 +562,7 @@ pub fn layouts_to_pptx(layouts: &[SlideLayout], title: &str) -> Result<Vec<u8>, 
     put(
         "docProps/core.xml",
         format!(
-            r#"{XML_DECL}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>{}</dc:title><dc:creator>Open Design</dc:creator></cp:coreProperties>"#,
+            r#"{XML_DECL}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>{}</dc:title><dc:creator>Contour</dc:creator></cp:coreProperties>"#,
             xml_text(title)
         )
         .as_bytes(),
@@ -571,7 +571,7 @@ pub fn layouts_to_pptx(layouts: &[SlideLayout], title: &str) -> Result<Vec<u8>, 
     put(
         "docProps/app.xml",
         format!(
-            r#"{XML_DECL}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Open Design</Application><Slides>{n}</Slides></Properties>"#
+            r#"{XML_DECL}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Contour</Application><Slides>{n}</Slides></Properties>"#
         )
         .as_bytes(),
         opts,

@@ -92,7 +92,7 @@ fn locale_block(locale: Option<&str>) -> Option<String> {
     };
     Some(format!(
         "# UI locale override\n\n\
-         The OpenDesign UI locale for this run is `{tag}` ({name}). All user-visible chat prose and generated UI controls must follow this locale, especially `<question-form>` titles, question labels, placeholders, and option labels. Keep machine-readable ids and object option `value` fields exact and unlocalized.\n\
+         The Contour UI locale for this run is `{tag}` ({name}). All user-visible chat prose and generated UI controls must follow this locale, especially `<question-form>` titles, question labels, placeholders, and option labels. Keep machine-readable ids and object option `value` fields exact and unlocalized.\n\
          The artifacts you generate must also be in {name}: every piece of user-visible copy in the HTML/React/page/deck you produce — headings, body text, navigation, button and link labels, captions, alt text, and form fields — is written in this language by default. This holds even when a chosen template, plugin, or design system ships its reference/example content in another language: treat that copy as a layout and style reference and translate/adapt it into {name}, do not ship its wording verbatim. {LOCALE_EXEMPT_TERMS}"
     ))
 }

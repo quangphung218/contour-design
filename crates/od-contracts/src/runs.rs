@@ -377,7 +377,7 @@ pub struct AgentInfo {
     pub supports_steer: bool,
     #[serde(default)]
     pub error: Option<String>,
-    /// Installed, but its Open Design connection component is missing or
+    /// Installed, but its `open-design` dsh profile is missing or
     /// incompatible (DeepSeek Harness): the UI offers to set it up.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub needs_setup: bool,
