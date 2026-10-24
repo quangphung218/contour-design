@@ -97,40 +97,38 @@ jobs:
       - name: Linux packages
         if: runner.os == 'Linux'
         run: scripts/linux-deps.sh
-      # Signing and notarisation are optional. With no secrets the bundle is
-      # built unsigned and the job only warns. Values go to the environment of
-      # later steps through GITHUB_ENV; nothing is printed.
-      - name: macOS signing (optional)
-        if: runner.os == 'macOS'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
-            echo "::warning::macOS signing secrets are not set; building an unsigned bundle (docs/release.md, Signing)"
-            exit 0
-          fi
-          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY; do
-            printf '%s=%s\n' "$name" "${!name}" >> "$GITHUB_ENV"
-          done
-          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
-            for name in APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-              printf '%s=%s\n' "$name" "${!name}" >> "$GITHUB_ENV"
-            done
-          else
-            echo "::warning::notarisation secrets are not set; the bundle is signed but not notarised"
-          fi
       - name: UI bundle (release)
         working-directory: crates/od-ui
         run: trunk build --release
+      # Signing and notarisation (macOS) are optional. The secrets reach only
+      # this step's environment; empty ones are unset so Tauri builds an
+      # unsigned bundle, and nothing is printed.
       - name: Tauri bundle
         working-directory: apps/desktop
         shell: bash
-        run: npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build ${{ matrix.args }}
+        env:
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+        run: |
+          signing=(APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY)
+          notarising=(APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID)
+          all_set() { for name in "$@"; do [ -n "${!name}" ] || return 1; done; }
+          if [ "$RUNNER_OS" = macOS ]; then
+            if ! all_set "${signing[@]}"; then
+              echo "::warning::macOS signing secrets are not set; building an unsigned bundle (docs/release.md, Signing)"
+              unset "${signing[@]}" "${notarising[@]}"
+            elif ! all_set "${notarising[@]}"; then
+              echo "::warning::notarisation secrets are not set; the bundle is signed but not notarised"
+              unset "${notarising[@]}"
+            fi
+          else
+            unset "${signing[@]}" "${notarising[@]}"
+          fi
+          npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build ${{ matrix.args }}
       - name: Collect files
         shell: bash
         run: |
@@ -176,7 +174,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          if draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            # Re-runs may refresh a draft; a published release is never rewritten.
+            if [ "$draft" != true ]; then
+              echo "::error::release $TAG is already published; its files are not replaced"
+              exit 1
+            fi
             gh release upload "$TAG" dist-release/* --clobber
           else
             gh release create "$TAG" dist-release/* --draft --verify-tag \

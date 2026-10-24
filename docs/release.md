@@ -80,8 +80,9 @@ CI does the building; a person decides when and checks the result.
    on the draft.
 
 To rebuild a release (for example after a flaky runner), run the workflow by
-hand from the Actions tab with the existing tag; files on an existing release
-are replaced.
+hand from the Actions tab with the existing tag. Files are replaced only
+while the release is still a draft; a published release is never rewritten
+(the job fails instead), so cut a new patch version.
 
 ## Signing and notarisation (macOS)
 
@@ -101,8 +102,9 @@ Add them under Settings ▸ Secrets and variables ▸ Actions:
 | `APPLE_TEAM_ID` | the 10-character team id |
 
 With the first three the bundle is signed; with all six it is also
-notarised and stapled by the Tauri CLI. The workflow passes the values only
-through the job environment and never prints them.
+notarised and stapled by the Tauri CLI. The values reach only the
+environment of the "Tauri bundle" step (never `GITHUB_ENV` or other steps)
+and are never printed.
 
 To sign a local build, export the same variables before `make dmg`.
 
