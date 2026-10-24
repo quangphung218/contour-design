@@ -12,7 +12,7 @@ for t in wording_test.sh chrome_sandbox_test.sh; do
   cp "$here/$t" "$work/scripts/tests/"
   (cd "$work" && GIT_CEILING_DIRECTORIES="$work" scripts/tests/"$t") > "$work/out" 2>&1
   rc=$?
-  if [ "$rc" -ne 0 ] && grep -q "FAIL" "$work/out"; then
+  if [ "$rc" -ne 0 ] && grep -q "could not search" "$work/out"; then
     echo "ok   $t fails outside a git repository"
   else
     echo "FAIL $t passed (rc $rc) without anything to search:"

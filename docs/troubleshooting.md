@@ -112,7 +112,7 @@ OD_CHROME_NO_SANDBOX=1 od daemon start
 agent wrote while it is rendered. Set it only when the outer sandbox already
 contains the process, never as a general fix. Contour never turns it on by
 itself; without it, export fails with this error instead of hanging. If
-Chrome cannot start at all, export fails at once with "cannot start".
+Chrome cannot start at all, export fails with "cannot start": at once when the browser exits, within 30 s when it hangs before opening DevTools.
 
 ### MP4 export fails
 

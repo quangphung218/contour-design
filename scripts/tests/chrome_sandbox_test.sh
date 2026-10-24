@@ -29,6 +29,13 @@ calls="$(printf '%s' "$calls" | grep -v -E ':\s*(///|//)' | grep -v -E 'pub fn (
 sites="$(search -n -F '.no_sandbox()' -- 'crates/*/src/**' 'apps/**')" || exit 1
 [ "$(printf '%s' "$sites" | grep -c .)" -le 1 ] && printf '%s' "$sites" | grep -q 'od-render-cdp/src/lib.rs' \
   || fail "--no-sandbox is set somewhere else than the opt-in in od-render-cdp" "$sites"
+# Nothing outside od-render-cdp may set the opt-in either (a server-side
+# set_var or a `.env(...)` on the daemon would turn the sandbox off for every
+# export while the checks above still pass).
+opt_in="$(search -n -E 'OD_CHROME_NO_SANDBOX|NO_SANDBOX_ENV' -- 'crates/*/src/**' 'apps/**')" || exit 1
+opt_in="$(printf '%s' "$opt_in" | grep -v '^crates/od-render-cdp/src/lib.rs:')"
+[ -z "$opt_in" ] || fail "product code outside od-render-cdp names the --no-sandbox opt-in" "$opt_in"
+
 guard="$(grep -n -B1 -F 'config = config.no_sandbox();' crates/od-render-cdp/src/lib.rs | head -1)"
 printf '%s' "$guard" | grep -q 'if no_sandbox {' || fail "the --no-sandbox site is not behind the opt-in flag" "$guard"
 
