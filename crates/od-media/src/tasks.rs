@@ -144,12 +144,16 @@ fn now_ms() -> i64 {
 fn next_created_at() -> i64 {
     static LAST: AtomicI64 = AtomicI64::new(0);
     let now = now_ms();
-    let prev = LAST
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |last| {
-            Some(now.max(last + 1))
-        })
-        .unwrap_or(now);
-    now.max(prev + 1)
+    // A compare-exchange loop, not `fetch_update`: newer toolchains deprecate
+    // it for `try_update`, which the MSRV (1.85) does not have.
+    let mut last = LAST.load(Ordering::SeqCst);
+    loop {
+        let next = now.max(last + 1);
+        match LAST.compare_exchange_weak(last, next, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return next,
+            Err(actual) => last = actual,
+        }
+    }
 }
 
 impl TaskQueue {
@@ -396,6 +400,27 @@ mod tests {
         for _ in 0..20 {
             tokio::task::yield_now().await;
         }
+    }
+
+    #[test]
+    fn created_at_is_unique_and_increasing_across_threads() {
+        let threads: Vec<_> = (0..4)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    let stamps: Vec<i64> = (0..500).map(|_| next_created_at()).collect();
+                    assert!(stamps.windows(2).all(|w| w[0] < w[1]), "{stamps:?}");
+                    stamps
+                })
+            })
+            .collect();
+        let mut all: Vec<i64> = threads
+            .into_iter()
+            .flat_map(|t| t.join().unwrap())
+            .collect();
+        let n = all.len();
+        all.sort_unstable();
+        all.dedup();
+        assert_eq!(all.len(), n, "two tasks got the same stamp");
     }
 
     #[tokio::test]
