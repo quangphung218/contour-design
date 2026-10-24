@@ -1,0 +1,64 @@
+{
+  // Debug with CodeLLDB (vadimcn.vscode-lldb). See docs/development.md.
+  // The target dir matches the Makefile (one per worktree).
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Daemon (od)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "-p", "od-cli", "--bin", "od"],
+        "filter": { "name": "od", "kind": "bin" },
+        "env": { "CARGO_TARGET_DIR": "${userHome}/.cache/odrs-target-${workspaceFolderBasename}" }
+      },
+      "args": ["daemon", "start", "--port", "7456"],
+      "cwd": "${workspaceFolder}",
+      "env": { "RUST_LOG": "info,od_server=debug,od_runtime=debug" },
+      "preLaunchTask": "ui-dist"
+    },
+    {
+      "name": "Daemon (od), scratch data folder",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "-p", "od-cli", "--bin", "od"],
+        "filter": { "name": "od", "kind": "bin" },
+        "env": { "CARGO_TARGET_DIR": "${userHome}/.cache/odrs-target-${workspaceFolderBasename}" }
+      },
+      "args": ["daemon", "start", "--port", "7460"],
+      "cwd": "${workspaceFolder}",
+      "env": { "RUST_LOG": "debug", "OD_DATA_DIR": "${workspaceFolder}/.od-debug" },
+      "preLaunchTask": "ui-dist"
+    },
+    {
+      "name": "Desktop app (od-desktop)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "-p", "od-desktop", "--bin", "od-desktop"],
+        "filter": { "name": "od-desktop", "kind": "bin" },
+        "env": { "CARGO_TARGET_DIR": "${userHome}/.cache/odrs-target-${workspaceFolderBasename}" }
+      },
+      "cwd": "${workspaceFolder}",
+      "env": { "RUST_LOG": "info,od_desktop=debug" },
+      "preLaunchTask": "ui-dist"
+    },
+    {
+      "name": "Unit tests (pick a crate)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["test", "--no-run", "-p", "${input:crate}", "--lib"],
+        "filter": { "kind": "lib" },
+        "env": { "CARGO_TARGET_DIR": "${userHome}/.cache/odrs-target-${workspaceFolderBasename}" }
+      },
+      "args": ["${input:testFilter}"],
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "inputs": [
+    { "id": "crate", "type": "promptString", "description": "Crate", "default": "od-store" },
+    { "id": "testFilter", "type": "promptString", "description": "Test name filter (empty = all)", "default": "" }
+  ]
+}

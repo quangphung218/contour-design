@@ -1,4 +1,4 @@
 [build]
 jobs = 4
-# Không dùng target-dir chung giữa worktree: cargo dùng nhầm artifact crate path của worktree khác (W2-ui, E0432/E0609).
-# Makefile đặt CARGO_TARGET_DIR riêng cho từng worktree.
+# Do not share target-dir across worktrees: cargo picks up the wrong path-crate artifacts from another worktree (W2-ui, E0432/E0609).
+# The Makefile sets a separate CARGO_TARGET_DIR per worktree.

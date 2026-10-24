@@ -1,1 +1,15 @@
 target/
+
+# Local editor and OS files (the shared VS Code launch/tasks are tracked)
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+.DS_Store
+
+# Scratch data folder of the "scratch data folder" launch config
+.od-debug/
+
+# Release files collected by CI
+dist-release/
+*.log

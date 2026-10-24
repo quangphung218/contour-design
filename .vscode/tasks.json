@@ -1,0 +1,12 @@
+{
+  // Make targets as VS Code tasks. See docs/development.md.
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "ui-dist", "type": "shell", "command": "make ui-dist", "problemMatcher": [] },
+    { "label": "check", "type": "shell", "command": "make check", "group": { "kind": "test", "isDefault": true }, "problemMatcher": ["$rustc"] },
+    { "label": "lint", "type": "shell", "command": "make lint", "problemMatcher": ["$rustc"] },
+    { "label": "e2e", "type": "shell", "command": "make e2e", "problemMatcher": [] },
+    { "label": "dev (daemon + trunk serve)", "type": "shell", "command": "make dev", "isBackground": true, "problemMatcher": [] },
+    { "label": "app-debug", "type": "shell", "command": "make app-debug", "group": "build", "problemMatcher": ["$rustc"] }
+  ]
+}
