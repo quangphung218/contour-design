@@ -133,6 +133,26 @@ async fn unlink_nested_paths_and_ignored_files() {
     );
 }
 
+/// The daemon reads a file to serve the preview; on Linux inotify reports
+/// that open, and a reload per read would reload the preview forever.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reading_a_file_is_not_a_change() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("index.html"), "x").unwrap();
+    let hub = native();
+    let mut sub = hub.subscribe("p1", dir.path()).unwrap();
+    quiet(&mut sub).await;
+
+    for _ in 0..3 {
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("index.html")).unwrap(),
+            "x"
+        );
+    }
+    let got = tokio::time::timeout(Duration::from_millis(600), sub.recv()).await;
+    assert!(got.is_err(), "a read was reported: {got:?}");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn watcher_is_shared_and_closed_with_last_subscriber() {
     let dir = tempfile::tempdir().unwrap();

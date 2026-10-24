@@ -2,6 +2,7 @@
 //! shared by every subscriber and closed when the last one leaves. Writes
 //! settle for 200 ms before a `file-changed` event goes out.
 
+use notify::event::{AccessKind, AccessMode};
 use notify::{EventKind, PollWatcher, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{
     DebounceEventResult, DebouncedEvent, Debouncer, NoCache, RecommendedCache, new_debouncer,
@@ -311,6 +312,12 @@ fn classify(
 ) -> Vec<ProjectEvent> {
     let mut seen: Vec<(String, bool)> = Vec::new();
     for event in events {
+        // inotify reports every open and read-only close. Taking those for
+        // changes made the preview's own read of a file reload it, forever.
+        if matches!(event.kind, EventKind::Access(kind) if kind != AccessKind::Close(AccessMode::Write))
+        {
+            continue;
+        }
         let created = matches!(event.kind, EventKind::Create(_));
         for path in &event.paths {
             let Some(rel) = project_path(root, path) else {
@@ -390,5 +397,32 @@ mod tests {
         assert_eq!(rel("/r/.DS_Store"), None);
         assert_eq!(rel("/r/.od-tmp-abc"), None);
         assert_eq!(rel("/r/index.html~"), None);
+    }
+
+    #[test]
+    fn reads_are_not_changes() {
+        use notify::event::{DataChange, Event, ModifyKind};
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("index.html"), "x").unwrap();
+        let ev = |kind| {
+            DebouncedEvent::new(
+                Event::new(kind).add_path(root.join("index.html")),
+                std::time::Instant::now(),
+            )
+        };
+        let mut known = HashSet::new();
+        // inotify reports every open, e.g. the daemon serving the preview.
+        let reads = [
+            ev(EventKind::Access(AccessKind::Open(AccessMode::Any))),
+            ev(EventKind::Access(AccessKind::Close(AccessMode::Read))),
+        ];
+        assert!(classify(&root, &reads, &mut known).is_empty());
+        let write = [
+            ev(EventKind::Access(AccessKind::Open(AccessMode::Any))),
+            ev(EventKind::Modify(ModifyKind::Data(DataChange::Any))),
+            ev(EventKind::Access(AccessKind::Close(AccessMode::Write))),
+        ];
+        assert_eq!(classify(&root, &write, &mut known).len(), 1);
     }
 }
