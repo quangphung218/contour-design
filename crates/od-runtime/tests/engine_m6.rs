@@ -612,6 +612,31 @@ async fn byok_azure_streams_from_a_deployment() {
 }
 
 #[tokio::test]
+async fn byok_azure_without_an_endpoint_fails_at_once() {
+    let h = Harness::new();
+    let spec = byok_spec(
+        &h,
+        "byok-az-none",
+        ByokConfig {
+            protocol: ByokProtocol::Azure,
+            api_key: "az-test-key".into(),
+            base_url: None,
+            model: Some("design-gpt".into()),
+            max_tokens: None,
+            api_version: None,
+        },
+    );
+    let started = std::time::Instant::now();
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Failed);
+    assert_eq!(outcome.failure_category, Some(FailureCategory::AgentError));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "no retries"
+    );
+}
+
+#[tokio::test]
 async fn byok_rejected_key_fails_without_retry() {
     let h = Harness::new();
     let (base, server) = fake_provider(vec![(

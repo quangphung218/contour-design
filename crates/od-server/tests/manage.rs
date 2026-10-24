@@ -487,6 +487,27 @@ async fn byok_azure_tests_a_deployment() {
     assert_eq!(res.status(), StatusCode::OK);
     let cfg = d.get_json("/api/app-config").await;
     assert_eq!(cfg["byok"]["apiVersion"], "2025-01-01-preview");
+    // `null` clears it (the form sends that for an emptied field).
+    let res = put(
+        &d,
+        "/api/app-config",
+        &json!({"byok": {"protocol": "azure", "baseUrl": base, "model": "design", "apiVersion": null}}),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let cfg = d.get_json("/api/app-config").await;
+    assert!(cfg["byok"]["apiVersion"].is_null(), "{cfg}");
+    assert_eq!(cfg["byok"]["hasApiKey"], true, "the key stays");
+    // Azure without an endpoint is refused: a run could never reach it.
+    for no_base in [json!(null), json!(" ")] {
+        let res = put(
+            &d,
+            "/api/app-config",
+            &json!({"byok": {"protocol": "azure", "apiKey": "k", "baseUrl": no_base}}),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
     let res = d
         .post(
             "/api/provider/models",

@@ -3,7 +3,7 @@
 //! provider's model list. Both talk only to the configured endpoint and
 //! never follow redirects (custom auth headers would travel along).
 
-use crate::byok::{ByokConfig, ByokProtocol, azure_chat_url, azure_versioned};
+use crate::byok::{AZURE_NEEDS_BASE, ByokConfig, ByokProtocol, azure_chat_url, azure_versioned};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -77,10 +77,6 @@ fn base(config: &ByokConfig) -> String {
         .trim_end_matches('/')
         .to_owned()
 }
-
-/// Azure has no shared host: the resource endpoint is required.
-const AZURE_NEEDS_BASE: &str =
-    "Azure OpenAI needs the resource endpoint, like https://<resource>.openai.azure.com";
 
 /// Anthropic paths live under `/v1`, whether or not the base carries it.
 fn anthropic_url(base: &str, path: &str) -> String {

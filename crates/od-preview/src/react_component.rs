@@ -15,6 +15,10 @@ use std::sync::LazyLock;
 const REACT_JS: &str = include_str!("../vendor/react-runtime/react.production.min.js");
 const REACT_DOM_JS: &str = include_str!("../vendor/react-runtime/react-dom.production.min.js");
 const SUCRASE_JS: &str = include_str!("../vendor/react-runtime/sucrase.min.js");
+/// React and ReactDOM keep only a short `@license` header when minified;
+/// the page carries their MIT text. Sucrase's bundle starts with its own
+/// and its dependencies' license texts (`build-sucrase.sh`).
+const REACT_LICENSE: &str = include_str!("../vendor/react-runtime/licenses/react.LICENSE");
 
 /// Name given to an anonymous default export.
 const DEFAULT_NAME: &str = "NetComponent";
@@ -47,6 +51,11 @@ pub fn page(source: &str, title: &str, typescript: bool) -> String {
     });
     format!(
         r#"<!doctype html>
+<!--
+React and ReactDOM 18.3.1 are inlined below under this license:
+
+{REACT_LICENSE}
+-->
 <html>
 <head>
 <meta charset="utf-8">
@@ -96,16 +105,18 @@ body {{ font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-s
     )
 }
 
+// Specifiers never cross a `;` or a string: one import never swallows
+// the lines of the ones before it.
 static TYPE_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?m)^[ \t]*import\s+type\s[\s\S]*?\sfrom\s+['"][^'"]+['"];?[ \t]*$"#)
+    Regex::new(r#"(?m)^[ \t]*import\s+type\s[^;'"]*?\sfrom\s+['"][^'"]+['"];?[ \t]*$"#)
         .expect("valid regex")
 });
 static REACT_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?m)^[ \t]*import\s+([\s\S]*?)\s+from\s+['"]react['"];?[ \t]*$"#)
+    Regex::new(r#"(?m)^[ \t]*import\s+([^;'"]*?)\s+from\s+['"]react['"];?[ \t]*$"#)
         .expect("valid regex")
 });
 static OTHER_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?m)^[ \t]*import\s+(?:[\s\S]*?\s+from\s+)?['"][^'"]+['"];?[ \t]*$"#)
+    Regex::new(r#"(?m)^[ \t]*import\s+(?:[^;'"]*?\s+from\s+)?['"][^'"]+['"];?[ \t]*$"#)
         .expect("valid regex")
 });
 static DEFAULT_FN: LazyLock<Regex> = LazyLock::new(|| {
@@ -252,6 +263,21 @@ mod tests {
     }
 
     #[test]
+    fn an_import_before_the_react_one_stays_on_its_own_line() {
+        let src = "import './x.css';\nimport clsx from 'clsx';\nimport type { P } from './p';\n\
+                   import React, { useState } from 'react';\n\
+                   export default function A() { const [n] = useState(clsx('a')); return <i>{n}</i>; }\n";
+        let out = prepare(src);
+        assert_eq!(
+            out.lines().find(|l| !l.trim().is_empty()),
+            Some("const { useState } = window.React;"),
+            "{out}"
+        );
+        assert!(!out.contains("import") && !out.contains("from '"), "{out}");
+        assert!(out.contains("function A()"), "{out}");
+    }
+
+    #[test]
     fn the_component_is_the_default_then_the_first_export() {
         let tail = |s: &str| {
             prepare(s)
@@ -291,5 +317,18 @@ mod tests {
             assert!(!js.contains("</script"));
         }
         assert!(page("x", "", false).contains(r#"transforms: ["jsx"]"#));
+        // Every inlined library comes with its license text.
+        for notice in [
+            "Copyright (c) Facebook, Inc. and its affiliates.",
+            "Permission is hereby granted, free of charge",
+            "Copyright (c) 2012-2018 various contributors (see AUTHORS)",
+            "Copyright (c) 2015 Brian Donovan",
+            "---- ts-interface-checker ----",
+            "Apache License",
+            "Justin Ridgewell",
+        ] {
+            assert!(html.contains(notice), "missing notice: {notice}");
+        }
+        assert!(!REACT_LICENSE.contains("--"), "fits an HTML comment");
     }
 }

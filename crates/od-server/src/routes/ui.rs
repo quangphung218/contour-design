@@ -132,6 +132,15 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
                     return Err(format!("byok.{key} must be a string"));
                 }
             }
+            let azure = byok.get("protocol").and_then(Value::as_str)
+                == Some(od_runtime::byok::ByokProtocol::Azure.name());
+            let no_base = byok
+                .get("baseUrl")
+                .and_then(Value::as_str)
+                .is_none_or(|b| b.trim().is_empty());
+            if azure && no_base {
+                return Err(od_runtime::byok::AZURE_NEEDS_BASE.to_owned());
+            }
         }
         Some(other) => return Err(format!("byok must be an object, got {other}")),
     }

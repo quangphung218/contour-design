@@ -461,6 +461,17 @@ fn InputsForm(fields: Vec<InputField>, values: RwSignal<Map<String, Value>>) -> 
         .collect_view()
 }
 
+/// The "by …" name of a plugin. Plugins by the original app show none:
+/// its name stays out of the UI, and calling them Nét's would claim work
+/// that is not (credit lives in `NOTICE`).
+fn plugin_author(plugin: &Value) -> Option<String> {
+    plugin["manifest"]["author"]["name"]
+        .as_str()
+        .map(str::trim)
+        .filter(|a| !a.is_empty() && !crate::i18n::names_original_app(a))
+        .map(str::to_owned)
+}
+
 /// The example brief with `{{input}}` placeholders filled from `values`.
 /// A sentence whose input was left empty (no value, no default) is dropped,
 /// so the agent never sees a raw `{{style}}`.
@@ -605,7 +616,7 @@ fn PluginDetail(
                     let can_use = move || values.with(|m| fields_ok.iter().all(|f| f.satisfied(m)));
                     let fields_q = fields.clone();
                     let use_plugin = use_plugin.clone();
-                    let author = p["manifest"]["author"]["name"].as_str().map(|a| crate::i18n::rebrand(a).into_owned());
+                    let author = plugin_author(&p);
                     let stages: Vec<(String, String)> = p["pipeline"]["stages"].as_array().into_iter().flatten().map(|st| {
                         let atoms: Vec<String> = st["atoms"].as_array().into_iter().flatten().filter_map(|a| a.as_str().map(str::to_owned)).collect();
                         (s(st, "id"), atoms.join(", "))
@@ -1059,6 +1070,16 @@ mod tests {
             fill_query("{{dish}} in {{ style }} light, {{other}}", &m, &fields),
             "pho in warm light, {{other}}"
         );
+    }
+
+    #[test]
+    fn the_original_app_is_never_shown_as_author() {
+        let by = |name: &str| plugin_author(&json!({ "manifest": { "author": { "name": name } } }));
+        assert_eq!(by("OpenDesign"), None);
+        assert_eq!(by("Open Design team"), None);
+        assert_eq!(by("  "), None);
+        assert_eq!(by("Ada"), Some("Ada".to_owned()));
+        assert_eq!(plugin_author(&json!({ "manifest": {} })), None);
     }
 
     #[test]

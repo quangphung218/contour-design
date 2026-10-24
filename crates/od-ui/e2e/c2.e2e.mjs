@@ -299,7 +299,7 @@ try {
   results.jury = 'ok';
 
   // 8. Export as JSX: a React component downloads as its own source.
-  const jsx = "import { useState } from 'react';\nexport default function PricingCard() {\n  const [plan] = useState<string>('Pro');\n  return <div className=\"card\">{plan}</div>;\n}\n";
+  const jsx = "import './card.css';\nimport { useState } from 'react';\nexport default function PricingCard() {\n  const [plan] = useState<string>('Pro');\n  return <div className=\"card\">{plan}</div>;\n}\n";
   const put = await fetch(`${BASE}/api/projects/${projectId}/files`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'PricingCard.tsx', content: jsx }) });
   assert.equal(put.status, 200);
   await page.reload();
@@ -318,6 +318,9 @@ try {
   assert.equal(htmlDownload.suggestedFilename(), 'PricingCard.html');
   const exported = readFileSync(await htmlDownload.path(), 'utf8');
   assert.ok(!exported.includes('<script src') && !exported.includes('unpkg'), 'nothing fetched');
+  for (const notice of ['Copyright (c) Facebook, Inc. and its affiliates.', '---- sucrase ----', '---- ts-interface-checker ----', 'Apache License']) {
+    assert.ok(exported.includes(notice), `the export carries the notice: ${notice}`);
+  }
   const standalone = await context.newPage();
   await standalone.setContent(exported);
   await standalone.locator('#root .card', { hasText: 'Pro' }).waitFor();

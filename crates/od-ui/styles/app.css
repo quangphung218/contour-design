@@ -313,6 +313,7 @@ a.project-name:hover { color: var(--color-accent-text); }
 .agent-check { display: inline-flex; color: var(--color-accent); opacity: 0; transform: scale(0.6); transition: opacity var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-emphasized); }
 .agent-check .ico { width: 18px; height: 18px; }
 .agent-card.active .agent-check { opacity: 1; transform: scale(1); }
+.agent-card.active .agent-detail { color: var(--color-text-secondary); }
 .agent-card.compact {
   gap: var(--space-2);
   padding: var(--space-1-5) var(--space-2-5);
@@ -825,6 +826,11 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 @container preview (max-width: 760px) {
   .preview-body > .versions { position: absolute; top: 0; right: 0; bottom: 0; z-index: var(--z-raised); width: min(316px, 100%); box-shadow: var(--shadow-lg); }
 }
+/* 1024 window with the file column closed: the last button (Show files)
+   must not run past the edge. The zoom keeps its -/+ buttons. */
+@container preview (max-width: 680px) {
+  .preview-head .head-divider, .preview-head .zoom-value { display: none; }
+}
 @container preview (max-width: 560px) {
   .preview-head { flex-wrap: wrap; height: auto; min-height: 44px; padding-block: var(--space-1); }
 }
@@ -1138,11 +1144,17 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .reference-list { display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; }
 .dialog-icon.danger { color: var(--color-danger); background: var(--color-danger-soft); }
 .media-bar { display: flex; flex-wrap: wrap; gap: var(--space-1-5); padding: var(--space-1-5) var(--space-1) var(--space-0-5); }
-/* One row: the examples are a nudge, not a second menu. */
-.home-examples { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-1-5); margin-top: var(--space-3); min-width: 0; overflow: hidden; }
+/* One row: the examples are a nudge, not a second menu. Chips keep their
+   size; the ones that do not fit wrap onto a second row that is clipped
+   away whole (the padding leaves room for the focus ring). */
+.home-examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-1-5); max-height: calc(var(--control-sm) + 6px); margin: calc(var(--space-3) - 3px) -3px 0; padding: 3px; min-width: 0; overflow: hidden; }
 .home-examples .eyebrow { flex: none; margin-right: var(--space-1); }
-.example-prompt { min-width: 0; flex: 0 1 auto; }
-.example-prompt span { min-width: 0; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.example-prompt { flex: none; }
+.example-prompt span { max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 600px) {
+  .home-examples { display: none; }
+  .recommend-text .eyebrow, .recommend-text .muted { display: none; }
+}
 .quote-btn { position: fixed; z-index: var(--z-popover); box-shadow: var(--shadow-md); animation: pop-in var(--duration-fast) var(--ease-emphasized); }
 .media-notes { width: 220px; height: var(--control-sm); }
 .from-folder { flex-direction: row; flex-wrap: wrap; gap: var(--space-1-5); padding: var(--space-2); min-width: 340px; }
@@ -1330,6 +1342,8 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 .layer:hover { background: var(--color-fill); }
 .layer:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: -2px; }
 .layer.selected { background: var(--color-accent-soft); color: var(--color-accent-text); }
+/* Tertiary text drops under AA on the accent tint (dark); secondary holds. */
+.layer.selected .subtle { color: var(--color-text-secondary); }
 .layer.hidden-layer { color: var(--color-text-tertiary); }
 .layer .ico { flex: none; color: var(--color-text-tertiary); }
 .layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

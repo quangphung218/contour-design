@@ -89,6 +89,11 @@ impl ByokProtocol {
     }
 }
 
+/// Azure has no shared host: without the resource endpoint nothing can be
+/// called, and retrying will not help.
+pub const AZURE_NEEDS_BASE: &str =
+    "Azure OpenAI needs the resource endpoint, like https://<resource>.openai.azure.com";
+
 /// Deployment name tried when an Azure config names none.
 pub const AZURE_DEFAULT_DEPLOYMENT: &str = "gpt-4o-mini";
 
@@ -353,6 +358,18 @@ impl ByokRequest {
 /// # Errors
 /// HTTP, transport or in-stream provider errors, classified.
 pub async fn stream(req: ByokRequest, tx: mpsc::Sender<AgentEvent>) -> Result<(), ByokFailure> {
+    if req.config.protocol == ByokProtocol::Azure
+        && req
+            .config
+            .base_url
+            .as_deref()
+            .is_none_or(|b| b.trim().is_empty())
+    {
+        return Err(ByokFailure::new(
+            FailureCategory::AgentError,
+            AZURE_NEEDS_BASE,
+        ));
+    }
     // No redirects: reqwest keeps custom headers (`x-api-key`) when one
     // points at another host, and a provider API never needs one.
     let client = reqwest::Client::builder()

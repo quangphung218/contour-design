@@ -37,6 +37,10 @@ W4 terminal: crates/od-ui/vendor/xterm/ là xterm.js đóng gói cục bộ (kh�
 - xterm.js, xterm.css từ @xterm/xterm 6.0.0, MIT, Copyright The xterm.js authors, SourceLair, Christopher Jeffrey (LICENSE).
 - addon-fit.js từ @xterm/addon-fit 0.11.0, MIT, Copyright The xterm.js authors (LICENSE.addon-fit).
 
+Export JSX (#119): crates/od-preview/vendor/react-runtime/ là runtime React đóng gói cục bộ (không tải từ CDN), được inline vào trang preview `.jsx/.tsx` và vào file "Export React component as HTML". Text license đầy đủ ở licenses/ và đi kèm file xuất ra.
+- react.production.min.js từ react 18.3.1 và react-dom.production.min.js từ react-dom 18.3.1, MIT, Copyright (c) Facebook, Inc. and its affiliates.
+- sucrase.min.js là sucrase 3.35.0 (MIT, Copyright (c) 2012-2018 various contributors) đóng gói bằng esbuild cùng lines-and-columns 1.2.4 (MIT, Copyright (c) 2015 Brian Donovan), ts-interface-checker 0.1.13 (Apache-2.0, tác giả Dmitry S, Grist Labs), @jridgewell/gen-mapping 0.3.13, resolve-uri 3.1.2, sourcemap-codec 1.6.0, trace-mapping 0.3.31 (MIT, Copyright Justin Ridgewell). Lệnh build: build-sucrase.sh.
+
 W4 tweaks: đã sửa văn bản gốc để agent khai báo tweaks theo định dạng bridge bản Rust đọc (`data-od-tweaks`):
 - crates/od-content/prompts/legacy/OFFICIAL_DESIGNER_PROMPT.md mục "Tweaks (in-design controls)" (thay marker EDITMODE),
   DISCOVERY_AND_PHILOSOPHY.md thêm một câu.

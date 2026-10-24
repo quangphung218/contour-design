@@ -1815,13 +1815,24 @@ pub fn t(key: T) -> &'static str {
 /// their original wording and attribution; only the UI shows the new name.
 #[must_use]
 pub fn rebrand(text: &str) -> std::borrow::Cow<'_, str> {
-    if text.contains("OpenDesign") || text.contains("Open Design") {
+    if names_original_app(text) {
         text.replace("OpenDesign", "Nét")
             .replace("Open Design", "Nét")
+            .replace("Open-Design", "Nét")
             .into()
     } else {
         text.into()
     }
+}
+
+/// Whether `text` names the original app (`docs/brand.md`: never in the
+/// UI). The lowercase `open-design` profile and manifest names are
+/// identifiers, not the name.
+#[must_use]
+pub fn names_original_app(text: &str) -> bool {
+    ["OpenDesign", "Open Design", "Open-Design"]
+        .iter()
+        .any(|n| text.contains(n))
 }
 
 /// [`t`] with `{0}`, `{1}`… replaced by `args`.
@@ -1871,18 +1882,10 @@ mod tests {
             assert_eq!(placeholders(en), placeholders(vi), "{key:?}");
             assert_eq!(vi, vi.trim(), "{key:?} has stray whitespace");
             assert!(
-                !shows_old_name(en) && !shows_old_name(vi),
+                !names_original_app(en) && !names_original_app(vi),
                 "{key:?} shows the old name"
             );
         }
-    }
-
-    /// The UI never names the original app (`docs/brand.md`); the lowercase
-    /// `open-design` profile and manifest names are identifiers, not the name.
-    fn shows_old_name(s: &str) -> bool {
-        ["OpenDesign", "Open Design", "Open-Design"]
-            .iter()
-            .any(|n| s.contains(n))
     }
 
     #[test]
@@ -2014,7 +2017,7 @@ mod tests {
                 if text.contains('\u{2014}') {
                     failures.push(format!("{tag}: {} has an em dash", key.name()));
                 }
-                if shows_old_name(text) {
+                if names_original_app(text) {
                     failures.push(format!("{tag}: {} shows the old name", key.name()));
                 }
                 let (we, wt) = (width(en), width(text));

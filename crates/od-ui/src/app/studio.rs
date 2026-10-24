@@ -1390,6 +1390,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         class="seg"
                         role="radio"
                         data-testid="view-preview"
+                        aria-label=t(T::Preview)
                         aria-checked=move || (!ctx.show_code.get()).to_string()
                         class:active=move || !ctx.show_code.get()
                         on:click=move |_| ctx.show_code.set(false)
@@ -1400,6 +1401,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         class="seg"
                         role="radio"
                         data-testid="view-code"
+                        aria-label=t(T::Code)
                         aria-checked=move || ctx.show_code.get().to_string()
                         class:active=move || ctx.show_code.get()
                         disabled=move || is_image() || ctx.active().is_none()

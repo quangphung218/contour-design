@@ -423,7 +423,8 @@ fn Sidebar() -> impl IntoView {
     let link = move |href: &'static str, glyph: Glyph, label: T, exact: bool| {
         let label = t(label);
         view! {
-            <A href=href exact=exact attr:class="nav-link" attr:data-tip=tip(label) attr:data-tip-pos="right">
+            // The label is hidden on the rail: the link keeps its name.
+            <A href=href exact=exact attr:class="nav-link" attr:aria-label=label attr:data-tip=tip(label) attr:data-tip-pos="right">
                 {icon(glyph)}
                 <span class="nav-label">{label}</span>
             </A>
@@ -473,6 +474,7 @@ fn Sidebar() -> impl IntoView {
                 <button
                     class="nav-link"
                     data-testid="open-shortcuts"
+                    aria-label=t(T::KeyboardShortcuts)
                     data-tip=tip(t(T::KeyboardShortcuts))
                     data-tip-pos="right"
                     on:click=move |_| shell.shortcuts.set(true)

@@ -173,6 +173,19 @@ try {
   await page.getByTestId('byok-test').click();
   await page.getByTestId('byok-test-result').getByText(/Connected\. Replied in \d+ ms: 'ok'/).waitFor();
   assert.equal(providerSeen.at(-1), 'POST /openai/deployments/design/chat/completions?api-version=2025-01-01-preview api-key az-e2e-good');
+  // Saved with its version; an emptied field clears it on the next save.
+  await page.getByTestId('byok-save').click();
+  await until(async () => (await api('/api/app-config')).body.byok?.apiVersion === '2025-01-01-preview', 'azure version saved');
+  await page.getByTestId('byok-api-version').fill('');
+  await page.getByTestId('byok-save').click();
+  await until(async () => (await api('/api/app-config')).body.byok?.apiVersion == null, 'azure version cleared');
+  assert.equal((await api('/api/app-config')).body.byok.protocol, 'azure');
+  // No endpoint, nothing to save (and the daemon refuses it too).
+  await page.getByTestId('byok-base-url').fill('');
+  assert.equal(await page.getByTestId('byok-save').isDisabled(), true);
+  const noBase = await api('/api/app-config', { method: 'PUT', body: JSON.stringify({ byok: { protocol: 'azure', apiKey: 'k' } }) });
+  assert.equal(noBase.status, 400);
+  await api('/api/app-config', { method: 'PUT', body: JSON.stringify({ byok: null, agentId: 'claude' }) });
   results.byokAzure = 'ok';
   await page.getByTestId('byok-preset').selectOption('openai');
   assert.equal(await page.getByTestId('byok-api-version').count(), 0);

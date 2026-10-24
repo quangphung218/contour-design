@@ -135,10 +135,14 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
         if !key.is_empty() {
             b["apiKey"] = json!(key);
         }
+        // An emptied field clears a saved version (back to the default).
         let version = api_version.get_untracked();
-        if protocol.get_untracked() == "azure" && !version.trim().is_empty() {
-            b["apiVersion"] = json!(version.trim());
-        }
+        let version = version.trim();
+        b["apiVersion"] = if protocol.get_untracked() == "azure" && !version.is_empty() {
+            json!(version)
+        } else {
+            Value::Null
+        };
         b
     };
     let run_test = move |_| {
@@ -308,7 +312,9 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                     Some(Err(e)) => view! { <span class="error-text">{e}</span> }.into_any(),
                     None => ().into_any(),
                 }}
-                <button class="btn primary" data-testid="byok-save" on:click=save>{t(T::SaveProvider)}</button>
+                // Azure has no shared host: nothing to save without the endpoint.
+                <button class="btn primary" data-testid="byok-save" on:click=save
+                    disabled=move || azure() && base_url.with(|b| b.trim().is_empty())>{t(T::SaveProvider)}</button>
             </div>
         </div>
     }
