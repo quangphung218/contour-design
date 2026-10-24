@@ -398,7 +398,7 @@ async fn oauth_pkce_flow_refresh_and_agent_wiring() {
         "claude",
         &format!(
             r#"{PROBES}
-prev=""; for a in "$@"; do [ "$prev" = "--mcp-config" ] && {{ cat "$a" > "{log}.cfg"; stat -f %Lp "$a" > "{log}.mode"; echo "$a" > "{log}.path"; }}; prev="$a"; done
+prev=""; for a in "$@"; do [ "$prev" = "--mcp-config" ] && {{ cat "$a" > "{log}.cfg"; {{ stat -c %a "$a" 2>/dev/null || stat -f %Lp "$a"; }} > "{log}.mode"; echo "$a" > "{log}.path"; }}; prev="$a"; done
 IFS= read -r line
 printf '{{"type":"assistant","message":{{"id":"m1","content":[{{"type":"text","text":"ok"}}]}}}}\n'
 printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}}\n'
