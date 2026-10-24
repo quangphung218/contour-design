@@ -535,15 +535,22 @@ try {
   await until(async () => (await term.textContent()).includes('e2e-42'), 'echo output');
   assert.match(await term.textContent(), new RegExp(`projects/${projectId}`), 'shell runs in the project folder');
   await page.screenshot({ path: OUT + 'terminal.png' });
-  // Full-screen programs (xterm.js): top takes over the alternate screen at
-  // the pane's size, q gives the shell's screen back.
+  // Full-screen programs (xterm.js): top takes over the pane at its size and
+  // q ends it. BSD top (macOS) draws on the alternate screen, procps top
+  // (Linux) on the main one and leaves its last frame there, so the shell
+  // prints a fresh line to find after vim.
   await page.keyboard.type('top');
   await page.keyboard.press('Enter');
   await until(async () => /PID[\s\S]*COMMAND/.test(await term.textContent()), 'top screen');
-  assert.ok(!(await term.textContent()).includes('e2e-42'), 'top draws on the alternate screen');
+  assert.ok(!(await term.textContent()).includes('e2e-42'), 'top takes over the pane');
   await page.screenshot({ path: OUT + 'terminal-top.png' });
   await page.keyboard.press('q');
-  await until(async () => (await term.textContent()).includes('e2e-42'), 'shell screen back after top');
+  // The rows only: the terminal also holds xterm's <style>.
+  const rows = term.locator('.xterm-rows');
+  await until(async () => (await rows.textContent()).trimEnd().endsWith('$'), 'prompt after top');
+  await page.keyboard.type('echo back-$((6*7))');
+  await page.keyboard.press('Enter');
+  await until(async () => (await term.textContent()).includes('back-42'), 'shell back after top');
   // vim: insert, Esc, :wq writes the file into the project folder.
   await page.keyboard.type('vi -u NONE -N vim-e2e.txt');
   await page.keyboard.press('Enter');
@@ -557,10 +564,11 @@ try {
     const r = await fetch(`${BASE}/api/projects/${projectId}/raw/vim-e2e.txt`);
     return r.ok && (await r.text()).trim() === 'hello from vim';
   }, 'vim wrote the file');
-  await until(async () => (await term.textContent()).includes('e2e-42'), 'shell screen back after vim');
+  // vim draws on the alternate screen everywhere: the shell's screen comes back.
+  await until(async () => (await term.textContent()).includes('back-42'), 'shell screen back after vim');
   await page.reload();
   await page.getByTestId('terminal-tab').click();
-  await until(async () => (await page.getByTestId('terminal').textContent()).includes('e2e-42'), 'scrollback replay');
+  await until(async () => (await page.getByTestId('terminal').textContent()).includes('back-42'), 'scrollback replay');
   await page.getByTestId('terminal-close').click();
   await until(async () => {
     const r = await (await fetch(`${BASE}/api/projects/${projectId}/terminals`)).json();
