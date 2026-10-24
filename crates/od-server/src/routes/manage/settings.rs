@@ -90,6 +90,9 @@ pub struct TestRequest {
     pub base_url: Option<String>,
     #[serde(default)]
     pub api_key: Option<String>,
+    /// Azure OpenAI `api-version`.
+    #[serde(default)]
+    pub api_version: Option<String>,
 }
 
 /// Result of an agent test, shaped like the provider one.
@@ -124,12 +127,12 @@ pub(crate) fn same_base(a: Option<&str>, b: Option<&str>) -> bool {
 /// The BYOK config a test or model listing uses: the request's fields, with
 /// the stored key only when the protocol and base URL are the stored ones.
 fn provider_config(state: &AppState, req: &TestRequest) -> ApiResult<ByokConfig> {
-    let protocol = match req.protocol.as_deref().map(str::trim) {
-        Some("anthropic") => ByokProtocol::Anthropic,
-        Some("openai" | "openai-compatible") => ByokProtocol::OpenAi,
-        other => {
+    let protocol = match req.protocol.as_deref().and_then(ByokProtocol::parse) {
+        Some(p) => p,
+        None => {
             return Err(ApiErr::bad_request(format!(
-                "protocol must be anthropic or openai, got {other:?}"
+                "protocol must be anthropic, openai or azure, got {:?}",
+                req.protocol
             )));
         }
     };
@@ -154,6 +157,7 @@ fn provider_config(state: &AppState, req: &TestRequest) -> ApiResult<ByokConfig>
         base_url,
         model: clean(req.model.as_deref()),
         max_tokens: None,
+        api_version: clean(req.api_version.as_deref()),
     })
 }
 

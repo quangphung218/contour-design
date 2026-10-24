@@ -1569,3 +1569,6 @@ FontsMissingAdd = Marka yazı tipi dosyalarını ekle
 FontsMissingKeep = Yedekleri koru
 SendAttachedOnly = Ekli yorumları ve çizimleri uygula.
 ClearSearch = Aramayı temizle
+ExportJsxHtml = React bileşenini HTML olarak dışa aktar
+ApiVersion = API sürümü
+AzureDeployment = Dağıtım

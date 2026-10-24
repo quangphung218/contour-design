@@ -1245,8 +1245,15 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             api::file_path(&path)
         );
         // HTML goes through the bridge: deck control, comments, guards.
+        // A React component renders through its own page.
         Some(if is_html_path(&path) {
             format!("{raw}?bridge=1&v={rev}")
+        } else if crate::jsx_export::is_component(&path) {
+            format!(
+                "/api/projects/{}/react/{}?v={rev}",
+                api::seg(&ctx.project_id.get_value()),
+                api::file_path(&path)
+            )
         } else {
             format!("{raw}?v={rev}")
         })

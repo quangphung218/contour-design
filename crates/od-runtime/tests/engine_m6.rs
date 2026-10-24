@@ -478,6 +478,7 @@ async fn byok_anthropic_streams_into_one_artifact_file() {
             base_url: Some(base),
             model: None,
             max_tokens: None,
+            api_version: None,
         },
     );
     let run = spec.run.clone();
@@ -537,6 +538,7 @@ async fn byok_openai_compatible_streams_chat_completions() {
             base_url: Some(format!("{base}/v1")),
             model: Some("gpt-test".into()),
             max_tokens: None,
+            api_version: None,
         },
     );
     let run = spec.run.clone();
@@ -567,6 +569,49 @@ async fn byok_openai_compatible_streams_chat_completions() {
 }
 
 #[tokio::test]
+async fn byok_azure_streams_from_a_deployment() {
+    let h = Harness::new();
+    let chunks = [
+        r#"{"choices":[{"index":0,"delta":{"content":"<artifact identifier=\"index\" type=\"text/html\"><p>Azure</p></artifact>"},"finish_reason":"stop"}]}"#,
+        "[DONE]",
+    ];
+    let body: String = chunks.iter().map(|c| format!("data: {c}\n\n")).collect();
+    let (base, server) = fake_provider(vec![("200 OK", body)]).await;
+    let spec = byok_spec(
+        &h,
+        "byok-az",
+        ByokConfig {
+            protocol: ByokProtocol::Azure,
+            api_key: "az-test-key".into(),
+            base_url: Some(base.clone()),
+            model: Some("design-gpt".into()),
+            max_tokens: None,
+            api_version: Some("2025-01-01-preview".into()),
+        },
+    );
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Succeeded, "{outcome:?}");
+    let raw = &server.await.unwrap()[0];
+    assert!(
+        raw.starts_with(
+            "POST /openai/deployments/design-gpt/chat/completions?api-version=2025-01-01-preview HTTP/1.1"
+        ),
+        "{raw}"
+    );
+    let lower = raw.to_ascii_lowercase();
+    assert!(lower.contains("api-key: az-test-key"), "{raw}");
+    assert!(
+        !lower.contains("authorization:"),
+        "Azure keys go in api-key only"
+    );
+    assert!(request_body(raw).get("model").is_none());
+    assert_eq!(
+        std::fs::read_to_string(h.project.join("index.html")).unwrap(),
+        "<p>Azure</p>"
+    );
+}
+
+#[tokio::test]
 async fn byok_rejected_key_fails_without_retry() {
     let h = Harness::new();
     let (base, server) = fake_provider(vec![(
@@ -584,6 +629,7 @@ async fn byok_rejected_key_fails_without_retry() {
             base_url: Some(base),
             model: None,
             max_tokens: None,
+            api_version: None,
         },
     );
     let run = spec.run.clone();
@@ -621,6 +667,7 @@ async fn byok_transient_error_is_retried_once() {
             base_url: Some(base),
             model: Some("claude-sonnet-5-5".into()),
             max_tokens: Some(1000),
+            api_version: None,
         },
     );
     let run = spec.run.clone();

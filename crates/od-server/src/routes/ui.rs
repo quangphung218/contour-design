@@ -115,16 +115,16 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
         None | Some(Value::Null) => {}
         Some(Value::Object(byok)) => {
             if let Some(p) = byok.get("protocol") {
-                if !matches!(
-                    p.as_str(),
-                    Some("anthropic" | "openai" | "openai-compatible")
-                ) {
+                if p.as_str()
+                    .and_then(od_runtime::byok::ByokProtocol::parse)
+                    .is_none()
+                {
                     return Err(format!(
-                        "byok.protocol must be anthropic or openai, got {p}"
+                        "byok.protocol must be anthropic, openai or azure, got {p}"
                     ));
                 }
             }
-            for key in [API_KEY, "baseUrl", "model"] {
+            for key in [API_KEY, "baseUrl", "model", "apiVersion"] {
                 if byok
                     .get(key)
                     .is_some_and(|v| !v.is_string() && !v.is_null())

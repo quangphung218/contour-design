@@ -50,6 +50,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/projects/{id}/upload", post(files::upload))
         .route("/api/projects/{id}/raw/{*path}", get(raw::raw))
+        .route("/api/projects/{id}/react/{*path}", get(raw::react))
         .route("/api/skills", get(content::list_skills))
         .route("/api/skills/{id}", get(content::get_skill))
         .route("/api/design-templates", get(content::list_design_templates))

@@ -1,4 +1,6 @@
-# Parity Nét (open-design-rs) so với OpenDesign — đo lần cuối tại main `94dd674`
+# Parity Nét (open-design-rs) so với OpenDesign — đo lần cuối tại main `94dd674`, cập nhật ở branch `final-polish`
+
+> **Cập nhật `final-polish` (2026-10-24): 100%.** Hai dòng cuối đã làm: #119 Export JSX (preview render `.jsx/.tsx` và "Export React component as HTML", biên dịch ngay trong trang bằng React 18.3.1 + Sucrase đóng gói sẵn, không CDN) lên 100; #177 BYOK preset đủ 26/26 với Azure OpenAI (protocol `azure`: endpoint resource, deployment, `api-version`, key trong `api-key`). Bằng chứng ở hai dòng đó và mục "Kết quả chạy thật". Phần dưới giữ nguyên số đo tại `94dd674`, trừ bảng tổng hợp, phần "Đọc nhanh" và hai dòng trên.
 
 - Bản Rust: `main` HEAD `94dd674` (merge `waveC-integrate`, 2026-10-24): đợt C gồm C1-preview, C2-chat-home, C3-runtimes, C4-depth.
 - Hai mốc so sánh: **40,7%** (`docs/parity.md` bản `8c9df6a`, 215 dòng chấm) và **90,9%** (bản `eb4eee2` đo tại `dc7938a` sau đợt B, 214 dòng chấm). Cùng danh mục, cùng cách chấm, cùng thứ tự dòng.
@@ -27,22 +29,21 @@
 | Automations | 7 | 7 | 0 | 0 | 1 | 38 | 81 | 100 | +19 |
 | Home | 17 | 17 | 0 | 0 | 3 | 39 | 81 | 100 | +19 |
 | Media | 5 | 5 | 0 | 0 | 1 | 17 | 75 | 100 | +25 |
-| Export | 11 | 10 | 1 | 0 | 1 | 45 | 91 | 95 | +4 |
-| **Tổng** | **207** | **206** | **1** | **0** | **20** | **40,7** | **90,9** | **99,8** | **+8,9** |
+| Export | 11 | 11 | 0 | 0 | 1 | 45 | 91 | 100 | +9 |
+| **Tổng** | **207** | **207** | **0** | **0** | **20** | **40,7** | **90,9** | **100** | **+9,1** |
 
 Đọc nhanh:
-- **Tăng từ 90,9% lên 99,8%** (206 dòng 100, 1 dòng 50, 0 dòng 0). 15/16 nhóm đạt 100%.
+- **Tăng từ 90,9% lên 100%** (207/207 dòng chấm đạt 100). 16/16 nhóm đạt 100%. Tại `94dd674` là 99,8%; `final-polish` làm nốt #119.
 - So cùng danh mục: nếu bỏ 7 dòng mới N/A khỏi bản đợt B thì đợt B là 93,7% (19.400/207). Phần tăng thật do code đợt C là **+6,1 điểm**; phần còn lại do chốt N/A.
-- **Còn 1 dòng dưới 100**: #119 Export JSX. Đợt C làm Export as JSX nhưng thiếu "Export React component as HTML" và preview render component (app gốc có cả hai).
-- Dòng #177 (BYOK preset) giữ 100 như đợt B nhưng còn thiếu Azure OpenAI (25/26). Chấm chặt thì là 50, tổng thành 99,5%.
+- **Không còn dòng dưới 100.** #119 Export JSX có đủ "Export React component as HTML" và preview render component như app gốc.
+- Dòng #177 (BYOK preset) giờ đủ 26/26: thêm Azure OpenAI, nên 100 không còn là chấm rộng tay.
 - 5/6 "dòng mới" ngoài danh mục giờ đạt 100; xAI OAuth là N/A.
 
 ## Dòng còn dưới 100
 
 | # | Dòng | Điểm | Thiếu gì | Giờ | Ghi chú |
 |---|---|---|---|---|---|
-| 1 | Export: Export JSX / preview as HTML (#119) | 50 | "Export React component as HTML" (app gốc `apps/web/src/runtime/exports.ts:855`, `react-component.ts:9`); preview render file `.jsx/.tsx` thành component (`FileViewer.tsx:6910`). Bản Rust mở `.jsx/.tsx` như code | 4–6 | Cần dựng srcdoc chạy React (vendored, không CDN) để giữ luật không ra mạng |
-| — | Agent runtimes: BYOK preset (#177), đang chấm 100 | (100) | Preset Azure OpenAI (protocol `azure`: deployment, `api-version`) | 2–3 | Lệch cách chấm có từ đợt B; ghi để Atlat quyết giữ 100 hay hạ 50 |
+| — | Không còn | — | — | — | #119 và #177 xong ở `final-polish` (xem hai dòng đó) |
 
 ## Dòng mới (app gốc có, danh mục cũ thiếu; không tính vào %)
 
@@ -69,6 +70,8 @@
 | Dòng tiến trình media | c2 6 | PASS: 2 ảnh, 1 lỗi có Retry | `shots/c2-media-row-*` |
 | Help menu / Quick menu | c2 10 | PASS (bản web); menu native Tauri chỉ đọc code | `shots/c2-quick-menu-*`, `shots/c2-docs-*` |
 | Export JSX | c2 8 | PASS (file `.tsx` tải về đúng nguồn) | — |
+| Export JSX: preview + HTML (`final-polish`) | c2 8 | Xem mục Kiểm tra trong báo cáo builder `final-polish` | `shots/c2-jsx-preview-*` |
+| BYOK Azure OpenAI (`final-polish`) | manage 1 | Xem mục Kiểm tra trong báo cáo builder `final-polish` | — |
 | Runtimes mới | c3 1, 3 | PASS: phát hiện agent mới; một lượt Qoder ra thinking + text | `shots/c3/shots/agent-needs-setup-*` |
 | Media provider | c3 4–5 | PASS: mỗi provider mới có thẻ; research qua Tavily (mock) | `shots/c3/shots/settings-media-providers-*` |
 | DeepSeek dialog | c3 2, 6 | PASS: dialog, guide mở được khi chưa xong onboarding | `shots/c3/shots/dsh-setup-*` |
@@ -200,7 +203,7 @@ Lần chạy đầu c4-depth FAIL ở bước 1 ("timed out waiting for German H
 | 116 | Export | HTML standalone | 100 | 100 | 100 | `crates/od-ui/src/app/export_menu.rs` Html |
 | 117 | Export | Export Markdown (file) | 0 | 100 | 100 | `crates/od-ui/src/app/export_menu.rs` Markdown; e2e files bước 12 |
 | 118 | Export | Export ảnh có chọn định dạng | 50 | 100 | 100 | PNG, JPEG, WebP `crates/od-ui/src/app/export_menu.rs:21-23` |
-| 119 | Export | Export JSX / preview as HTML | 0 | 0 | 50 | Export as JSX `crates/od-ui/src/app/export_menu.rs:29,127`, `crates/od-ui/src/jsx_export.rs:7-17`; e2e c2 bước 8. **Thiếu**: “Export React component as HTML” (app gốc `runtime/exports.ts:855`, menu `FileViewer.tsx:7044`) và preview render component JSX/TSX (`FileViewer.tsx:6910`); bản Rust mở `.jsx/.tsx` như code |
+| 119 | Export | Export JSX / preview as HTML | 0 | 0 | 100 | Export as JSX `crates/od-ui/src/app/export_menu.rs:29`, `crates/od-ui/src/jsx_export.rs:7-17`; "Export React component as HTML" `export_menu.rs:31,53` (testid `export-jsx-html`) tải trang từ `GET /api/projects/:id/react/*path` (`crates/od-server/src/routes/raw.rs:177`, `lib.rs:53`); preview render `.jsx/.tsx` thành component `crates/od-ui/src/app/studio.rs:1251`. Trang dựng ở `crates/od-preview/src/react_component.rs:32` (import `react` đọc global, export thành khai báo, `prepare` dòng 135), React 18.3.1 + Sucrase 3.35.0 inline từ `crates/od-preview/vendor/react-runtime/` (có LICENSE), không CDN. Test: `react_component` 3 unit, `crates/od-server/tests/c1_preview.rs:259`; e2e c2 bước 8 (preview `.card` render, file HTML tải về tự chạy khi mở riêng, `nothing fetched`) |
 | 120 | Export | Save as template | 0 | 100 | 100 | `crates/od-ui/src/app/export_menu.rs:329`, `export_extra.rs:74-100` |
 | 121 | Export | MP4 HyperFrames | 50 | 100 | 100 | MP4 trong menu Export `crates/od-ui/src/app/export_menu.rs:26` + trang Media `media_page.rs:922` |
 | 122 | Export | Open in new tab, copy path, download file | 0 | 100 | 100 | `crates/od-ui/src/app/export_menu.rs:317-325` |
@@ -258,7 +261,7 @@ Lần chạy đầu c4-depth FAIL ở bước 1 ("timed out waiting for German H
 | 174 | Agent runtimes | CLI khác (Aider, Amp, Pi, Qoder, MiMo, Codebuddy, AtomCode, Grok Build, Antigravity, DeepSeek TUI) | 0 | 0 | 100 | `crates/od-runtime/src/def.rs:450-548` grok-build, qoder, amp, pi, deepseek (TUI), aider, antigravity, codebuddy, mimo, atomcode; parser `crates/od-runtime/src/parse/{pi,qoder,antigravity}.rs`; e2e c3 bước 1 (phát hiện), bước 3 (một lượt chat qua Qoder) |
 | 175 | Agent runtimes | Phát hiện agent + Refresh | 100 | 100 | 100 | `GET /api/agents`, `crates/od-ui/src/app/onboarding.rs:131` Refresh |
 | 176 | Agent runtimes | Test kết nối | 0 | 100 | 100 | `crates/od-ui/src/app/settings_page.rs:308`, onboarding test; e2e manage bước 1 |
-| 177 | Agent runtimes | BYOK preset (26 provider) | 50 | 100 | 100 | `crates/od-ui/src/byok.rs`; 25/26 preset tại `94dd674` (vLLM đã có `byok.rs:174`, còn thiếu Azure OpenAI vì cần protocol `azure` riêng). Giữ 100 như bản đợt B |
+| 177 | Agent runtimes | BYOK preset (26 provider) | 50 | 100 | 100 | `crates/od-ui/src/byok.rs`; 26/26 preset: Azure OpenAI `byok.rs:54` (protocol `azure`), runtime `crates/od-runtime/src/byok.rs:46,101` (URL `/openai/deployments/<deployment>/chat/completions?api-version=…`, mặc định `2024-10-21`, base `/openai/v1` giữ nguyên đường; key trong `api-key`), form có ô API version `crates/od-ui/src/app/byok_form.rs:280`. Mock loopback: `crates/od-runtime/tests/engine_m6.rs:572` (stream), `crates/od-server/tests/manage.rs:406` (Test connection, lưu `apiVersion`); e2e manage bước 1 |
 | 178 | Agent runtimes | AMR cloud | N/A | N/A | N/A | Cloud: BỎ |
 | 179 | MCP | MCP server `od mcp` (stdio) | 100 | 100 | 100 | `crates/od-cli/src/mcp_cmd.rs`, `crates/od-mcp`; e2e studio bước 15d |
 | 180 | MCP | Cài MCP vào agent (tab theo client, copy command) | 50 | 100 | 100 | `crates/od-ui/src/app/integrations.rs:241-302` snippet theo client, deeplink, Install/Uninstall; `(audit run) shots/manage/shots/integrations-agents-light.png` |

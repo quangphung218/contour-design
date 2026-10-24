@@ -95,6 +95,8 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
     let show_key = RwSignal::new(false);
     let cleaned = RwSignal::new(false);
     let model = RwSignal::new(stored["model"].as_str().unwrap_or_default().to_owned());
+    let api_version = RwSignal::new(stored["apiVersion"].as_str().unwrap_or_default().to_owned());
+    let azure = move || protocol.get() == "azure";
     let fetched = RwSignal::new(Vec::<String>::new());
     let fetch_state = RwSignal::new(None::<Result<usize, String>>);
     let test = RwSignal::new(None::<TestState>);
@@ -132,6 +134,10 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
         let key = api_key.get_untracked();
         if !key.is_empty() {
             b["apiKey"] = json!(key);
+        }
+        let version = api_version.get_untracked();
+        if protocol.get_untracked() == "azure" && !version.trim().is_empty() {
+            b["apiVersion"] = json!(version.trim());
         }
         b
     };
@@ -231,13 +237,15 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                         <select data-testid="byok-protocol" on:change=move |ev| protocol.set(event_target_value(&ev))>
                             <option value="anthropic" selected=move || protocol.get() == "anthropic">"Anthropic Messages"</option>
                             <option value="openai" selected=move || protocol.get() == "openai">{t(T::OpenAiCompatible)}</option>
+                            <option value="azure" selected=move || protocol.get() == "azure">"Azure OpenAI"</option>
                         </select>
                     </label>
                 </Show>
             </div>
             <label class="field">
                 <span>{t(T::BaseUrl)}</span>
-                <input class="input mono" data-testid="byok-base-url" placeholder="https://…"
+                <input class="input mono" data-testid="byok-base-url"
+                    placeholder=move || if azure() { "https://<resource>.openai.azure.com" } else { "https://…" }
                     prop:value=move || base_url.get()
                     on:input=move |ev| { base_url.set(event_target_value(&ev)); test.set(None); }/>
             </label>
@@ -266,8 +274,16 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                     <span class="muted">{t(T::ApiKeyLocalHint)}</span>
                 </label>
             </Show>
+            <Show when=azure>
+                <label class="field">
+                    <span>{t(T::ApiVersion)}</span>
+                    <input class="input mono" data-testid="byok-api-version" placeholder="2024-10-21"
+                        prop:value=move || api_version.get()
+                        on:input=move |ev| { api_version.set(event_target_value(&ev)); test.set(None); }/>
+                </label>
+            </Show>
             <label class="field">
-                <span>{t(T::Model)}</span>
+                <span>{move || if azure() { t(T::AzureDeployment) } else { t(T::Model) }}</span>
                 <span class="row">
                     <input class="input mono grow" data-testid="byok-model" list="byok-models"
                         prop:value=move || model.get()

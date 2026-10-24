@@ -1564,3 +1564,6 @@ FontsMissingAdd = 加入品牌字型檔案
 FontsMissingKeep = 保留替代字型
 SendAttachedOnly = 請套用附加的留言和繪圖。
 ClearSearch = 清除搜尋
+ExportJsxHtml = 將 React 元件匯出為 HTML
+ApiVersion = API 版本
+AzureDeployment = 部署

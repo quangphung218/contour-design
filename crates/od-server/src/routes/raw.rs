@@ -168,6 +168,44 @@ pub async fn raw(
         .map_err(|e| ApiErr::internal(e.to_string()))
 }
 
+/// `GET /api/projects/:id/react/<path>`: a `.jsx`/`.tsx` file as a page
+/// that renders the component (Studio preview, "Export React component as
+/// HTML"). Everything it runs is inlined; it fetches nothing.
+///
+/// # Errors
+/// Not a component file, unknown project or file, or a read error.
+pub async fn react(
+    State(state): State<AppState>,
+    Path((id, rest)): Path<(String, String)>,
+) -> ApiResult<Response> {
+    if !od_preview::react_component::is_component(&rest) {
+        return Err(ApiErr::bad_request("not a .jsx or .tsx file"));
+    }
+    let (_, full) = state.blocking(move |s| s.stat_file(&id, &rest)).await?;
+    let source = tokio::fs::read_to_string(&full)
+        .await
+        .map_err(|e| ApiErr::internal(e.to_string()))?;
+    let name = full
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let typescript = name.to_ascii_lowercase().ends_with(".tsx");
+    let title = name
+        .rsplit_once('.')
+        .map_or(name.as_str(), |(stem, _)| stem);
+    let html = od_preview::react_component::page(&source, title, typescript);
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CONTENT_SECURITY_POLICY, od_preview::RAW_CSP),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        html,
+    )
+        .into_response())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

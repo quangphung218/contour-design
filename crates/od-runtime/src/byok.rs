@@ -1,6 +1,7 @@
 //! Bring-your-own-key runtime (spec 1.5): no CLI, the daemon streams the
-//! provider API itself with the user's key, the Anthropic Messages API or
-//! any OpenAI-compatible `chat/completions` endpoint.
+//! provider API itself with the user's key, the Anthropic Messages API,
+//! any OpenAI-compatible `chat/completions` endpoint, or Azure OpenAI (the
+//! same JSON at a per-deployment URL with `api-version`).
 //!
 //! The profile has no tools, so the model is told to answer with one
 //! `<artifact>` block; the engine turns it into a project file like any
@@ -21,6 +22,8 @@ pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const ANTHROPIC_DEFAULT_MODEL: &str = "claude-opus-5-5";
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-5";
 pub const ANTHROPIC_VERSION: &str = "2026-10-21";
+/// Azure OpenAI `api-version` when the config names none (the original's).
+pub const AZURE_API_VERSION: &str = "2024-10-21";
 const DEFAULT_MAX_TOKENS: u64 = 64_000;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -37,6 +40,113 @@ pub enum ByokProtocol {
     Anthropic,
     /// OpenAI or any OpenAI-compatible endpoint.
     OpenAi,
+    /// Azure OpenAI: the base URL is the resource endpoint
+    /// (`https://<resource>.openai.azure.com`), the model is the
+    /// deployment name, the key goes in `api-key`.
+    Azure,
+}
+
+impl ByokProtocol {
+    /// Reads `anthropic`, `openai` (or `openai-compatible`) and `azure`.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "anthropic" => Some(Self::Anthropic),
+            "openai" | "openai-compatible" => Some(Self::OpenAi),
+            "azure" => Some(Self::Azure),
+            _ => None,
+        }
+    }
+
+    /// The name stored in `app-config.json`.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::OpenAi => "openai",
+            Self::Azure => "azure",
+        }
+    }
+
+    /// The model when neither the run nor the config names one.
+    #[must_use]
+    pub fn default_model(self) -> &'static str {
+        match self {
+            Self::Anthropic => ANTHROPIC_DEFAULT_MODEL,
+            Self::OpenAi => OPENAI_DEFAULT_MODEL,
+            Self::Azure => AZURE_DEFAULT_DEPLOYMENT,
+        }
+    }
+
+    /// The provider's own host; Azure has none (every resource has its own).
+    #[must_use]
+    pub fn default_base_url(self) -> &'static str {
+        match self {
+            Self::Anthropic => ANTHROPIC_BASE_URL,
+            Self::OpenAi => OPENAI_BASE_URL,
+            Self::Azure => "",
+        }
+    }
+}
+
+/// Deployment name tried when an Azure config names none.
+pub const AZURE_DEFAULT_DEPLOYMENT: &str = "gpt-4o-mini";
+
+/// The `chat/completions` URL of an Azure OpenAI resource (the original's
+/// `buildAzureChatCompletionsUrl`): `<base>/openai/deployments/<model>/…`
+/// with `api-version`, or, for a base already on the versioned
+/// `/openai/v1` path, `<base>/chat/completions` (the model then goes in
+/// the body, see [`azure_versioned`]).
+#[must_use]
+pub fn azure_chat_url(base: &str, model: &str, api_version: Option<&str>) -> String {
+    let base = base.trim().trim_end_matches('/');
+    let version = api_version.map(str::trim).filter(|v| !v.is_empty());
+    if azure_versioned(base) {
+        return match version {
+            Some(v) => format!("{base}/chat/completions?api-version={}", encode(v)),
+            None => format!("{base}/chat/completions"),
+        };
+    }
+    format!(
+        "{base}/openai/deployments/{}/chat/completions?api-version={}",
+        encode(model),
+        encode(version.unwrap_or(AZURE_API_VERSION))
+    )
+}
+
+/// Whether an Azure base URL is on the versioned `/openai/v<N>` path.
+#[must_use]
+pub fn azure_versioned(base: &str) -> bool {
+    let path = base
+        .split_once("://")
+        .map_or(base, |(_, rest)| rest)
+        .split_once('/')
+        .map_or("", |(_, p)| p);
+    let mut parts = path.split('/');
+    while let Some(part) = parts.next() {
+        if part == "openai"
+            && parts
+                .next()
+                .and_then(|v| v.strip_prefix('v'))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Percent-encodes a path segment or query value (RFC 3986 unreserved kept).
+fn encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(char::from(b));
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 /// The user's provider settings.
@@ -47,6 +157,8 @@ pub struct ByokConfig {
     pub base_url: Option<String>,
     pub model: Option<String>,
     pub max_tokens: Option<u64>,
+    /// Azure OpenAI `api-version`; [`AZURE_API_VERSION`] when unset.
+    pub api_version: Option<String>,
 }
 
 impl std::fmt::Debug for ByokConfig {
@@ -57,6 +169,7 @@ impl std::fmt::Debug for ByokConfig {
             .field("base_url", &self.base_url)
             .field("model", &self.model)
             .field("max_tokens", &self.max_tokens)
+            .field("api_version", &self.api_version)
             .finish()
     }
 }
@@ -79,22 +192,35 @@ impl ByokConfig {
     /// Reads the `byok` object itself.
     #[must_use]
     pub fn from_value(byok: &Value) -> Option<Self> {
-        let protocol = match non_empty(byok, "protocol")?.to_ascii_lowercase().as_str() {
-            "anthropic" => ByokProtocol::Anthropic,
-            "openai" | "openai-compatible" => ByokProtocol::OpenAi,
-            _ => return None,
-        };
+        let protocol = ByokProtocol::parse(&non_empty(byok, "protocol")?)?;
         Some(Self {
             protocol,
             api_key: non_empty(byok, "apiKey")?,
             base_url: non_empty(byok, "baseUrl"),
             model: non_empty(byok, "model"),
             max_tokens: byok.get("maxTokens").and_then(Value::as_u64),
+            api_version: non_empty(byok, "apiVersion"),
         })
     }
 
-    fn url(&self) -> String {
+    /// Adds the protocol's auth headers.
+    pub fn authed(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         match self.protocol {
+            ByokProtocol::Anthropic => builder
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", ANTHROPIC_VERSION),
+            ByokProtocol::OpenAi => builder.bearer_auth(&self.api_key),
+            ByokProtocol::Azure => builder.header("api-key", &self.api_key),
+        }
+    }
+
+    fn url(&self, model: &str) -> String {
+        match self.protocol {
+            ByokProtocol::Azure => azure_chat_url(
+                self.base_url.as_deref().unwrap_or_default(),
+                model,
+                self.api_version.as_deref(),
+            ),
             ByokProtocol::Anthropic => {
                 let base = self
                     .base_url
@@ -121,11 +247,11 @@ impl ByokConfig {
     /// `name:host` for the run's `start.bin`, never the key.
     #[must_use]
     pub fn label(&self) -> String {
-        let name = match self.protocol {
-            ByokProtocol::Anthropic => "anthropic",
-            ByokProtocol::OpenAi => "openai",
-        };
-        format!("byok:{name} {}", self.url())
+        let model = self
+            .model
+            .as_deref()
+            .unwrap_or(self.protocol.default_model());
+        format!("byok:{} {}", self.protocol.name(), self.url(model))
     }
 }
 
@@ -182,13 +308,7 @@ impl ByokRequest {
             .clone()
             .filter(|m| !m.is_empty() && m != "default")
             .or_else(|| self.config.model.clone())
-            .unwrap_or_else(|| {
-                match self.config.protocol {
-                    ByokProtocol::Anthropic => ANTHROPIC_DEFAULT_MODEL,
-                    ByokProtocol::OpenAi => OPENAI_DEFAULT_MODEL,
-                }
-                .to_owned()
-            })
+            .unwrap_or_else(|| self.config.protocol.default_model().to_owned())
     }
 
     fn body(&self) -> Value {
@@ -201,7 +321,7 @@ impl ByokRequest {
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": self.prompt}],
             }),
-            ByokProtocol::OpenAi => {
+            ByokProtocol::OpenAi | ByokProtocol::Azure => {
                 let mut body = json!({
                     "model": model,
                     "stream": true,
@@ -213,6 +333,13 @@ impl ByokRequest {
                 });
                 if let Some(n) = self.config.max_tokens {
                     body["max_tokens"] = json!(n);
+                }
+                // A deployment URL names the model already.
+                if self.config.protocol == ByokProtocol::Azure
+                    && !azure_versioned(self.config.base_url.as_deref().unwrap_or_default())
+                    && let Some(b) = body.as_object_mut()
+                {
+                    b.remove("model");
                 }
                 body
             }
@@ -233,22 +360,22 @@ pub async fn stream(req: ByokRequest, tx: mpsc::Sender<AgentEvent>) -> Result<()
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| ByokFailure::new(FailureCategory::SpawnFailed, e.to_string()))?;
-    let mut builder = client
-        .post(req.config.url())
+    let builder = client
+        .post(req.config.url(&req.model()))
         .header("content-type", "application/json")
         .header("accept", "text/event-stream");
-    builder = match req.config.protocol {
-        ByokProtocol::Anthropic => builder
-            .header("x-api-key", &req.config.api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION),
-        ByokProtocol::OpenAi => builder.bearer_auth(&req.config.api_key),
-    };
-    let mut res = builder.json(&req.body()).send().await.map_err(|e| {
-        ByokFailure::new(
-            FailureCategory::Transient,
-            format!("could not reach the provider: {e}"),
-        )
-    })?;
+    let mut res = req
+        .config
+        .authed(builder)
+        .json(&req.body())
+        .send()
+        .await
+        .map_err(|e| {
+            ByokFailure::new(
+                FailureCategory::Transient,
+                format!("could not reach the provider: {e}"),
+            )
+        })?;
     let status = res.status();
     if !status.is_success() {
         let body = res.text().await.unwrap_or_default();
@@ -376,7 +503,7 @@ impl SseDecoder {
         };
         match self.protocol {
             ByokProtocol::Anthropic => self.anthropic(&v, out),
-            ByokProtocol::OpenAi => self.openai(&v, out),
+            ByokProtocol::OpenAi | ByokProtocol::Azure => self.openai(&v, out),
         }
     }
 
@@ -512,14 +639,60 @@ mod tests {
         }))
         .unwrap_or_else(|| panic!("config"));
         assert_eq!(cfg.api_key, "sk-secret");
-        assert_eq!(cfg.url(), "http://h/v1/chat/completions");
+        assert_eq!(cfg.url("m"), "http://h/v1/chat/completions");
         assert!(!format!("{cfg:?}").contains("sk-secret"));
         assert!(!cfg.label().contains("sk-secret"));
         assert!(ByokConfig::from_app_config(&json!({"byok": {"protocol": "anthropic"}})).is_none());
         let a =
             ByokConfig::from_app_config(&json!({"byok": {"protocol": "anthropic", "apiKey": "k"}}))
                 .unwrap_or_else(|| panic!("config"));
-        assert_eq!(a.url(), "https://api.anthropic.com/v1/messages");
+        assert_eq!(a.url("m"), "https://api.anthropic.com/v1/messages");
+    }
+
+    #[test]
+    fn azure_calls_a_deployment_with_its_api_version() {
+        let cfg = ByokConfig::from_app_config(&json!({
+            "byok": {"protocol": "azure", "apiKey": "k", "baseUrl": "https://res.openai.azure.com/", "model": "my gpt", "apiVersion": "2025-01-01-preview"}
+        }))
+        .unwrap_or_else(|| panic!("config"));
+        assert_eq!(cfg.protocol, ByokProtocol::Azure);
+        let req = ByokRequest {
+            config: cfg.clone(),
+            model: None,
+            prompt: "hi".to_owned(),
+        };
+        assert_eq!(
+            cfg.url(&req.model()),
+            "https://res.openai.azure.com/openai/deployments/my%20gpt/chat/completions?api-version=2025-01-01-preview"
+        );
+        assert!(
+            req.body().get("model").is_none(),
+            "the URL names the deployment"
+        );
+        assert_eq!(req.body()["stream"], true);
+        // No version given: the default one. A versioned base keeps its path
+        // and sends the model in the body.
+        assert_eq!(
+            azure_chat_url("https://r.openai.azure.com", "d", None),
+            "https://r.openai.azure.com/openai/deployments/d/chat/completions?api-version=2024-10-21"
+        );
+        assert_eq!(
+            azure_chat_url("https://r.openai.azure.com/openai/v1/", "d", None),
+            "https://r.openai.azure.com/openai/v1/chat/completions"
+        );
+        let v1 = ByokRequest {
+            config: ByokConfig {
+                base_url: Some("https://r.openai.azure.com/openai/v1".to_owned()),
+                ..cfg
+            },
+            model: Some("gpt-4o".to_owned()),
+            prompt: String::new(),
+        };
+        assert_eq!(v1.body()["model"], "gpt-4o");
+        assert!(!azure_versioned(
+            "https://r.openai.azure.com/openai/deployments"
+        ));
+        assert_eq!(ByokProtocol::parse(" Azure "), Some(ByokProtocol::Azure));
     }
 
     #[test]

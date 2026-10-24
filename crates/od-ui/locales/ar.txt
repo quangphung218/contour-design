@@ -1564,3 +1564,6 @@ FontsMissingAdd = إضافة ملفات خطوط العلامة
 FontsMissingKeep = إبقاء البدائل
 SendAttachedOnly = طبّق التعليقات والرسومات المرفقة.
 ClearSearch = امسح البحث
+ExportJsxHtml = تصدير مكوّن React بصيغة HTML
+ApiVersion = إصدار API
+AzureDeployment = النشر

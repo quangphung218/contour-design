@@ -1564,3 +1564,6 @@ FontsMissingAdd = Márkabetűfájlok hozzáadása
 FontsMissingKeep = Helyettesítők megtartása
 SendAttachedOnly = Alkalmazd a csatolt megjegyzéseket és rajzokat.
 ClearSearch = Keresés törlése
+ExportJsxHtml = React-komponens exportálása HTML-ként
+ApiVersion = API-verzió
+AzureDeployment = Telepítés

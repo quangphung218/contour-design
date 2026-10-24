@@ -8,6 +8,7 @@ pub mod edit_key;
 pub mod events;
 pub mod inject;
 pub mod lint;
+pub mod react_component;
 pub mod scope;
 pub mod source_patch;
 

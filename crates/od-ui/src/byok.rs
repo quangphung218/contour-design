@@ -1,13 +1,13 @@
 //! BYOK provider presets (the original's `KNOWN_PROVIDERS` that speak a
-//! protocol the daemon supports: Anthropic Messages or OpenAI-compatible
-//! chat completions) and key cleanup.
+//! protocol the daemon supports: Anthropic Messages, OpenAI-compatible
+//! chat completions or Azure OpenAI) and key cleanup.
 
 /// A preset: label, protocol, base URL, suggested models (first = default).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Preset {
     pub id: &'static str,
     pub label: &'static str,
-    /// `anthropic` or `openai`.
+    /// `anthropic`, `openai` or `azure`.
     pub protocol: &'static str,
     pub base_url: &'static str,
     pub models: &'static [&'static str],
@@ -47,6 +47,15 @@ pub const PRESETS: &[Preset] = &[
         "openai",
         "https://api.openai.com/v1",
         &["gpt-5", "gpt-5-mini", "o3", "o4-mini"],
+    ),
+    // Every Azure resource has its own endpoint, typed by the user; the
+    // model field is the deployment name.
+    p(
+        "azure",
+        "Azure OpenAI",
+        "azure",
+        "",
+        &["gpt-4o-mini", "gpt-4o"],
     ),
     p(
         "atlas",
@@ -234,6 +243,9 @@ pub fn preset(id: &str) -> Option<&'static Preset> {
 #[must_use]
 pub fn preset_for(protocol: &str, base_url: Option<&str>) -> Option<&'static Preset> {
     let norm = |u: &str| u.trim().trim_end_matches('/').to_ascii_lowercase();
+    if protocol == "azure" {
+        return preset("azure");
+    }
     match base_url.map(str::trim).filter(|u| !u.is_empty()) {
         Some(url) => PRESETS
             .iter()
@@ -283,11 +295,11 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), PRESETS.len());
-        assert!(PRESETS.len() >= 26);
+        assert!(PRESETS.len() >= 27);
         assert!(
             PRESETS
                 .iter()
-                .all(|p| matches!(p.protocol, "anthropic" | "openai"))
+                .all(|p| matches!(p.protocol, "anthropic" | "openai" | "azure"))
         );
         assert!(PRESETS.iter().all(|p| !p.models.is_empty()));
     }
@@ -305,6 +317,10 @@ mod tests {
         assert_eq!(
             preset_for("openai", Some("https://my.proxy")).map(|p| p.id),
             None
+        );
+        assert_eq!(
+            preset_for("azure", Some("https://res.openai.azure.com")).map(|p| p.id),
+            Some("azure")
         );
         assert_eq!(clean_key(" sk-a\u{200b}b\n"), ("sk-ab".to_owned(), true));
         assert_eq!(clean_key("sk-ab"), ("sk-ab".to_owned(), false));

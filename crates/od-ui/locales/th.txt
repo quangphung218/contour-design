@@ -1564,3 +1564,6 @@ FontsMissingAdd = เพิ่มไฟล์ฟอนต์แบรนด์
 FontsMissingKeep = ใช้ฟอนต์ทดแทนต่อ
 SendAttachedOnly = นำความคิดเห็นและภาพวาดที่แนบมาไปใช้
 ClearSearch = ล้างการค้นหา
+ExportJsxHtml = ส่งออกคอมโพเนนต์ React เป็น HTML
+ApiVersion = เวอร์ชัน API
+AzureDeployment = Deployment

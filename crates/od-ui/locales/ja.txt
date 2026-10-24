@@ -1570,3 +1570,6 @@ FontsMissingAdd = ブランドのフォントファイルを追加
 FontsMissingKeep = 代替フォントのまま
 SendAttachedOnly = 添付したコメントと描画を反映してください。
 ClearSearch = 検索をクリア
+ExportJsxHtml = React コンポーネントを HTML で書き出す
+ApiVersion = API バージョン
+AzureDeployment = デプロイ

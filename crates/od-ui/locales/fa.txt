@@ -1570,3 +1570,6 @@ FontsMissingAdd = افزودن فایل‌های فونت برند
 FontsMissingKeep = نگه داشتن جایگزین‌ها
 SendAttachedOnly = نظرها و طرح‌های پیوست‌شده را اعمال کن.
 ClearSearch = پاک کردن جستجو
+ExportJsxHtml = خروجی کامپوننت React به HTML
+ApiVersion = نسخه API
+AzureDeployment = استقرار

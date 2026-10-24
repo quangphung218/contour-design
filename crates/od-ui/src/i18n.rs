@@ -421,6 +421,8 @@ messages! {
     ShowKey => "Show key", "Hiện key";
     HideKey => "Hide key", "Ẩn key";
     FetchModels => "Fetch models", "Lấy danh sách model";
+    ApiVersion => "API version", "Phiên bản API";
+    AzureDeployment => "Deployment", "Deployment";
     FetchedModels => "Fetched {0} models.", "Đã lấy {0} model.";
     SaveProvider => "Save and use", "Lưu và dùng";
     Notifications => "Notifications", "Thông báo";
@@ -1741,6 +1743,7 @@ messages! {
     ReportCopiedDir => "Diagnostics copied to the clipboard. Logs: {0}", "Đã chép thông tin chẩn đoán vào clipboard. Log: {0}";
     ReportManual => "The clipboard is not available here. Select the text, copy it and paste it where you report the issue. The log folder is open.", "Không dùng được clipboard ở đây. Chọn đoạn chữ, chép và dán vào nơi báo lỗi. Thư mục log đã được mở.";
     ExportJsx => "Export as JSX", "Export dạng JSX";
+    ExportJsxHtml => "Export React component as HTML", "Xuất component React thành HTML";
     FontsMissingTitle => "Brand font files missing", "Thiếu file font thương hiệu";
     FontsMissingBody => "Typography previews use substitute fonts until brand font files are added.", "Phần xem trước kiểu chữ đang dùng font thay thế cho tới khi thêm file font thương hiệu.";
     FontsMissingAdd => "Add brand font files", "Thêm file font thương hiệu";

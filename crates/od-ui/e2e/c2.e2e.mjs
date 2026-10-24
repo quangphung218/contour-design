@@ -299,7 +299,7 @@ try {
   results.jury = 'ok';
 
   // 8. Export as JSX: a React component downloads as its own source.
-  const jsx = 'export default function PricingCard() {\n  return <div className="card">Pro</div>;\n}\n';
+  const jsx = "import { useState } from 'react';\nexport default function PricingCard() {\n  const [plan] = useState<string>('Pro');\n  return <div className=\"card\">{plan}</div>;\n}\n";
   const put = await fetch(`${BASE}/api/projects/${projectId}/files`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'PricingCard.tsx', content: jsx }) });
   assert.equal(put.status, 200);
   await page.reload();
@@ -309,9 +309,23 @@ try {
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-jsx').click()]);
   assert.equal(download.suggestedFilename(), 'PricingCard.tsx', 'TypeScript keeps .tsx');
   assert.equal(readFileSync(await download.path(), 'utf8'), jsx);
+  // The preview renders the component (compiled on the page, no CDN).
+  await page.frameLocator('[data-testid="preview"]').locator('.card', { hasText: 'Pro' }).waitFor();
+  await shot('jsx-preview');
+  // Export React component as HTML: one self-contained page that renders it.
+  await page.getByTestId('export').click();
+  const [htmlDownload] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-jsx-html').click()]);
+  assert.equal(htmlDownload.suggestedFilename(), 'PricingCard.html');
+  const exported = readFileSync(await htmlDownload.path(), 'utf8');
+  assert.ok(!exported.includes('<script src') && !exported.includes('unpkg'), 'nothing fetched');
+  const standalone = await context.newPage();
+  await standalone.setContent(exported);
+  await standalone.locator('#root .card', { hasText: 'Pro' }).waitFor();
+  await standalone.close();
   await page.locator('[data-testid="file-row"][data-path="index.html"]').click();
   await page.getByTestId('export').click();
   assert.equal(await page.getByTestId('export-jsx').isDisabled(), true, 'pages are not components');
+  assert.equal(await page.getByTestId('export-jsx-html').isDisabled(), true);
   await page.keyboard.press('Escape');
   results.exportJsx = 'ok';
 

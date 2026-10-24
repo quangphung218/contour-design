@@ -27,10 +27,12 @@ enum Format {
     Markdown,
     /// A React component's own source (track C2).
     Jsx,
+    /// A React component as a page that renders it, runtime inlined.
+    JsxHtml,
 }
 
 impl Format {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::Html,
         Self::Zip,
         Self::Pdf,
@@ -42,11 +44,13 @@ impl Format {
         Self::Mp4,
         Self::Markdown,
         Self::Jsx,
+        Self::JsxHtml,
     ];
 
     fn testid(self) -> String {
         match self {
             Self::PptxEditable => "export-pptx-editable".to_owned(),
+            Self::JsxHtml => "export-jsx-html".to_owned(),
             f => format!("export-{}", f.ext()),
         }
     }
@@ -64,12 +68,13 @@ impl Format {
             Self::Mp4 => t(T::ExportMp4),
             Self::Markdown => t(T::ExportMarkdown),
             Self::Jsx => t(T::ExportJsx),
+            Self::JsxHtml => t(T::ExportJsxHtml),
         }
     }
 
     fn ext(self) -> &'static str {
         match self {
-            Self::Html => "html",
+            Self::Html | Self::JsxHtml => "html",
             Self::Zip => "zip",
             Self::Pdf => "pdf",
             Self::Png => "png",
@@ -84,7 +89,7 @@ impl Format {
 
     fn mime(self) -> &'static str {
         match self {
-            Self::Html => "text/html",
+            Self::Html | Self::JsxHtml => "text/html",
             Self::Zip => "application/zip",
             Self::Pdf => "application/pdf",
             Self::Png => "image/png",
@@ -108,7 +113,7 @@ impl Format {
             Self::Pptx | Self::PptxEditable => Glyph::Deck,
             Self::Mp4 => Glyph::Play,
             Self::Markdown => Glyph::Markdown,
-            Self::Jsx => Glyph::FileCode,
+            Self::Jsx | Self::JsxHtml => Glyph::FileCode,
         }
     }
 
@@ -124,7 +129,7 @@ impl Format {
             (Self::Zip, _) => true,
             (_, None) => false,
             (Self::Markdown, Some(p)) => crate::file_tree::is_markdown(p),
-            (Self::Jsx, Some(p)) => crate::jsx_export::is_component(p),
+            (Self::Jsx | Self::JsxHtml, Some(p)) => crate::jsx_export::is_component(p),
             (_, Some(p)) => super::studio::is_html_path(p),
         }
     }
@@ -222,6 +227,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                 Format::Markdown | Format::Jsx => {
                     let path = file.clone().unwrap_or_default();
                     api::get_bytes(&format!("{base}/raw/{}", api::file_path(&path))).await
+                }
+                Format::JsxHtml => {
+                    let path = file.clone().unwrap_or_default();
+                    api::get_bytes(&format!("{base}/react/{}", api::file_path(&path))).await
                 }
                 _ => {
                     let kind = match format {

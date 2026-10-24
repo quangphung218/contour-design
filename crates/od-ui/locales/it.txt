@@ -1571,3 +1571,6 @@ FontsMissingAdd = Aggiungi font del brand
 FontsMissingKeep = Mantieni i sostitutivi
 SendAttachedOnly = Applica i commenti e i disegni allegati.
 ClearSearch = Cancella ricerca
+ExportJsxHtml = Esporta componente React come HTML
+ApiVersion = Versione API
+AzureDeployment = Distribuzione

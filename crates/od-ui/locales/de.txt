@@ -1565,3 +1565,6 @@ FontsMissingAdd = Markenschriften hinzufügen
 FontsMissingKeep = Ersatz beibehalten
 SendAttachedOnly = Wende die angehängten Kommentare und Zeichnungen an.
 ClearSearch = Suche löschen
+ExportJsxHtml = React-Komponente als HTML exportieren
+ApiVersion = API-Version
+AzureDeployment = Deployment
