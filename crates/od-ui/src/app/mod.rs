@@ -92,6 +92,8 @@ pub struct Shell {
     /// Where the user asked to go while work would be lost: the leave
     /// question is open.
     leaving: RwSignal<Option<leave_guard::Leave>>,
+    /// The page is about to unload on purpose: `beforeunload` stays quiet.
+    released: StoredValue<bool>,
 }
 
 impl Shell {
@@ -203,6 +205,7 @@ pub fn App() -> impl IntoView {
         studio: RwSignal::new(None),
         unsaved: RwSignal::new(None),
         leaving: RwSignal::new(None),
+        released: StoredValue::new(false),
     };
     provide_context(shell);
     leptos::task::spawn_local(async move {

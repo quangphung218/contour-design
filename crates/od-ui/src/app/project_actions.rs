@@ -100,10 +100,10 @@ fn start(ctx: StudioCtx, ui: FilesUi) {
 /// Asks first when an edit is not applied: the copy opens with a full load
 /// (QA-020).
 fn duplicate(ctx: StudioCtx) {
-    super::leave_guard::leave_then(ctx.shell, move || duplicate_now(ctx));
+    super::leave_guard::leave_then(ctx.shell, move |release| duplicate_now(ctx, release));
 }
 
-fn duplicate_now(ctx: StudioCtx) {
+fn duplicate_now(ctx: StudioCtx, release: super::leave_guard::Release) {
     leptos::task::spawn_local(async move {
         match api::post::<_, DuplicateProjectResponse>(
             &format!("{}/duplicate", ctx.base()),
@@ -112,7 +112,9 @@ fn duplicate_now(ctx: StudioCtx) {
         .await
         {
             Ok(r) => {
-                // A full load: the Studio starts over on the copy.
+                // A full load: the Studio starts over on the copy. Released
+                // only now: a failed copy stays here, still guarded.
+                release.now();
                 if let Some(w) = web_sys::window() {
                     let _ = w
                         .location()

@@ -31,7 +31,7 @@ pub(super) enum Leave {
     /// An in-app path.
     To(String),
     /// Something that leaves by itself (a full page load).
-    Run(std::sync::Arc<dyn Fn() + Send + Sync>),
+    Run(std::sync::Arc<dyn Fn(Release) + Send + Sync>),
     /// The browser's Back (or Forward): the entry it left is pushed back
     /// while the question is open, and the target is this many entries
     /// back.
@@ -52,17 +52,30 @@ pub fn use_leave() -> impl Fn(&str) + Clone + Send + Sync + 'static {
     }
 }
 
+/// Handed to a [`leave_then`] action: [`Release::now`] right before the
+/// page unloads keeps the browser from asking a second time.
+#[derive(Clone, Copy)]
+pub struct Release(Shell);
+
+impl Release {
+    /// Only right before the unload: if the action fails first, the page
+    /// stays and must still ask on a close.
+    pub fn now(self) {
+        self.0.released.set_value(true);
+    }
+}
+
 /// Runs `leave` (a way out the router does not see, such as a full page
 /// load), unless that would lose unsaved work: then the question first.
 /// Takes the shell: a menu item calls it after its menu, and the owner
 /// holding the context, are gone.
-pub fn leave_then(shell: Shell, leave: impl Fn() + Send + Sync + 'static) {
+pub fn leave_then(shell: Shell, leave: impl Fn(Release) + Send + Sync + 'static) {
     if shell.would_lose() {
         shell
             .leaving
             .set(Some(Leave::Run(std::sync::Arc::new(leave))));
     } else {
-        leave();
+        leave(Release(shell));
     }
 }
 
@@ -86,7 +99,7 @@ pub fn LeaveGuard() -> impl IntoView {
     // Set by Leave on a Back: the next `popstate` goes to the router.
     let let_pop = StoredValue::new(false);
     // Leave was chosen for a way out that unloads the page: no second ask.
-    let released = StoredValue::new(false);
+    let released = shell.released;
     let unload = window_event_listener(ev::beforeunload, move |e| {
         if !released.get_value() && shell.would_lose() {
             e.prevent_default();
@@ -203,10 +216,7 @@ pub fn LeaveGuard() -> impl IntoView {
         shell.leaving.set(None);
         match way {
             Leave::To(path) => navigate(&path, Default::default()),
-            Leave::Run(leave) => {
-                released.set_value(true);
-                leave();
-            }
+            Leave::Run(leave) => leave(Release(shell)),
             Leave::Back(steps) => {
                 if let Some(history) = web_sys::window().and_then(|w| w.history().ok()) {
                     let_pop.set_value(true);

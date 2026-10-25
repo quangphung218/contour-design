@@ -242,7 +242,8 @@ pub fn CommandPalette() -> impl IntoView {
                 // The Studio reads its project once: switching from one
                 // Studio to another reloads the page.
                 if studio.is_some() {
-                    super::leave_guard::leave_then(shell, move || {
+                    super::leave_guard::leave_then(shell, move |release| {
+                        release.now();
                         if let Some(w) = web_sys::window() {
                             let _ = w.location().assign(&path);
                         }

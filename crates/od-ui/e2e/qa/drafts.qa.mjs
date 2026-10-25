@@ -453,4 +453,25 @@ test('DL-25', 'The unapplied-edit question opens with the focus on Cancel', asyn
   assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied');
 });
 
+test('DL-26', 'A Duplicate that fails after Leave stays on the page, and a reload still asks', async ({ d, newPage }) => {
+  const { page, panel, id } = await editLead(newPage, d);
+  await page.route('**/duplicate', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"disk full"}}' }));
+  await panel.getByTestId('manual-text').fill('Not applied');
+  await page.getByTestId('project-menu').click();
+  await page.getByTestId('project-duplicate').click();
+  await page.getByTestId('leave-dialog').getByTestId('leave-go').click();
+  await page.getByTestId('notice').waitFor();
+  assert.equal(new URL(page.url()).pathname, `/projects/${id}`, 'a failed Duplicate left the page');
+  let asked = 0;
+  page.on('dialog', async (dlg) => {
+    if (dlg.type() === 'beforeunload') asked++;
+    await dlg.dismiss().catch(() => {});
+  });
+  await page.evaluate(() => { location.reload(); });
+  await until(() => asked > 0, 'the browser asks before the reload', 3000).catch(() => {
+    assert.fail('after a failed Duplicate a reload no longer asks; the edit not applied would be lost');
+  });
+  assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied');
+});
+
 await run('drafts');

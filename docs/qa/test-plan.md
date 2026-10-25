@@ -220,6 +220,7 @@ the guard, so that is what is checked.
 | DL-23 | Ctrl/Cmd-click on a link with an edit not applied | Typed in Content | Ctrl/Cmd-click Projects | New tab on Projects; this tab stays with the text, no question | P2 | auto (QA-021) |
 | DL-24 | The browser's Back with an edit not applied asks | Came from Projects; typed in Content | Back: Cancel, then OK | As DL-14 | P1 | auto (QA-022) |
 | DL-25 | The leave question opens with the focus on Cancel | Typed in Content | Click Projects | Focus on Cancel; Enter stays | P2 | auto (QA-023) |
+| DL-26 | A failed Duplicate after Leave keeps the guard | Typed in Content; `/duplicate` answers 500 | "…" ▸ Duplicate ▸ Leave, then reload | Error shown, page stays; the reload still asks | P2 | auto (QA-020) |
 
 ## Not automated, and why
 
