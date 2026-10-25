@@ -65,7 +65,7 @@ fn bundled_plugins_load_as_presets() {
 fn bundled_plugin_text_is_for_people() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/plugins/_official");
     let internal = regex::Regex::new(
-        r"(?i)task ?kind|\batoms?\b|scenario|devloop|pipeline|\bsignals?\b|downstream|\bstarter\b",
+        r"(?i)task ?kind|\batoms?\b|scenario|devloop|pipeline|\bsignals?\b|downstream|\bstarter\b|media-\*|patch-edit|build-test|diff-review|live artifact",
     )
     .unwrap();
     let mut problems = Vec::new();
@@ -79,6 +79,24 @@ fn bundled_plugin_text_is_for_people() {
             for (tag, v) in m.get(key).and_then(Value::as_object).into_iter().flatten() {
                 texts.push((key, format!("{tag}: {}", v.as_str().unwrap_or_default())));
             }
+        }
+        // The example brief shows on the plugin page, outside Developer
+        // details, and is what the user sends: their words, not step names.
+        match m
+            .get("od")
+            .and_then(|od| od.get("useCase"))
+            .and_then(|u| u.get("query"))
+        {
+            Some(Value::String(q)) => texts.push(("query", q.clone())),
+            Some(Value::Object(q)) => {
+                for (tag, v) in q {
+                    texts.push((
+                        "query",
+                        format!("{tag}: {}", v.as_str().unwrap_or_default()),
+                    ));
+                }
+            }
+            _ => {}
         }
         for (field, text) in texts {
             if internal.is_match(&text) {

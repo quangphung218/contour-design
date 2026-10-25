@@ -293,10 +293,12 @@ fn design_systems_match_original_loader() {
         .design_systems
         .iter()
         .map(|d| {
-            (
-                d.summary.id.clone(),
-                normalize(serde_json::to_value(&d.summary).unwrap()),
-            )
+            let mut v = serde_json::to_value(&d.summary).unwrap();
+            // Contour-only fields; every field the original has must match.
+            let o = v.as_object_mut().unwrap();
+            o.remove("description");
+            o.remove("brand");
+            (d.summary.id.clone(), normalize(v))
         })
         .collect();
     assert_same(
@@ -404,4 +406,41 @@ fn brand_named_design_systems_are_listed_in_notice() {
         .filter(|(_, b)| !listed.contains(&format!("{b},")) && !listed.contains(&format!("{b}.")))
         .collect();
     assert!(missing.is_empty(), "not in NOTICE: {missing:?}");
+}
+
+/// The design system page and the Home picker describe the look, never the
+/// bundled maintainer note ("Bundled OpenDesign package for X, derived from
+/// curated DESIGN.md…") that `summary` keeps for parity.
+#[test]
+fn design_systems_have_a_description_for_people() {
+    let idx = index();
+    let bad: Vec<String> = idx
+        .design_systems
+        .iter()
+        .filter(|d| {
+            let t = &d.summary.description;
+            t.trim().is_empty() || t.contains(" package for ") || t.contains("OpenDesign")
+        })
+        .map(|d| format!("{}: {:?}", d.summary.id, d.summary.description))
+        .collect();
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+    let lingo = idx
+        .design_systems
+        .iter()
+        .find(|d| d.summary.id == "lingo")
+        .unwrap();
+    assert!(
+        lingo
+            .summary
+            .description
+            .starts_with("Playful, minimal design"),
+        "{:?}",
+        lingo.summary.description
+    );
+    let airbnb = idx
+        .design_systems
+        .iter()
+        .find(|d| d.summary.id == "airbnb")
+        .unwrap();
+    assert_eq!(airbnb.summary.brand.as_deref(), Some("Airbnb"));
 }

@@ -122,8 +122,8 @@
     ],
     "useCase": {
       "query": {
-        "en": "Migrate {{repoPath}} to {{targetStack}}. Iterate the patch-edit ↔ build-test devloop until the build passes and the existing tests stay green, then surface a diff-review for human accept.",
-        "zh-CN": "使用这个插件完成以下任务：Migrate {{repoPath}} to {{targetStack}}. Iterate the patch-edit ↔ build-test devloop until the build passes and the existing tests stay green, then surface a diff-review for human accept."
+        "en": "Migrate {{repoPath}} to {{targetStack}} in small steps. After each change, run the build and the existing tests and keep them passing. When it is done, show me the full diff to review and accept.",
+        "zh-CN": "把 {{repoPath}} 分小步迁移到 {{targetStack}}。每次改动后运行构建和现有测试，并保持它们通过。完成后给我看完整的 diff，供我审阅并确认。"
       },
       "exampleOutputs": [
         {

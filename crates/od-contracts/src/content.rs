@@ -183,6 +183,15 @@ pub struct DesignSystemSummary {
     pub source: ContentSource,
     pub status: DesignSystemStatus,
     pub is_editable: bool,
+    /// What the system looks like, for people: `summary` unless that is the
+    /// bundled maintainer note, then the first paragraph of `DESIGN.md`.
+    /// Contour only; `summary` keeps the original app's value.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    /// The company or product a brand-named system is inspired by
+    /// (`manifest.json` `brand`), for the trademark note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

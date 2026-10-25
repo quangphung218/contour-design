@@ -142,8 +142,11 @@ try {
     await page.getByTestId('ds-brand-note').textContent(),
     "Inspired by Airbnb's public design language. Not affiliated with or endorsed by Airbnb. Trademarks belong to their owners.",
   );
-  // No maintainer note ("Bundled … package for Airbnb, derived from …") under it.
-  assert.equal(await detail.locator('.ds-summary').count(), 0);
+  // The line under it describes the look, not the maintainer note
+  // ("Bundled … package for Airbnb, derived from …").
+  const about = await detail.locator('.ds-summary').textContent();
+  assert.match(about, /Travel marketplace/);
+  assert.doesNotMatch(about, /package for/);
   await page.getByTestId('kit-tab-showcase').click();
   await page.getByTestId('ds-showcase').waitFor();
   await page.getByTestId('ds-fullscreen').click();

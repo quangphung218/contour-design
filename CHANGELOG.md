@@ -21,8 +21,13 @@ All notable changes to Contour are recorded here. The format follows
 - Plugins say what they do for you; kind, atoms, pipeline stages and
   capabilities moved under Developer details, and the filter chips read
   "Workflows" and "Building blocks".
-- A bundled design system's page no longer shows the maintainer note "Bundled
-  … package for X, derived from curated DESIGN.md…".
+- Design systems are described by their look (the first paragraph of their
+  DESIGN.md) on their page and in Home's picker, instead of the maintainer note
+  "Bundled … package for X, derived from curated DESIGN.md…"; in the picker, a
+  brand-named system also carries the trademark note.
+- Home's template picker is sorted by the name shown.
+- The example briefs of the Code migration and Media generation plugins read as
+  a user would write them.
 - Brand-named design systems show "Inspired by <Brand>'s public design language.
   Not affiliated with or endorsed by <Brand>. Trademarks belong to their owners."
   on their page, in every UI language.

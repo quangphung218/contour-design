@@ -926,7 +926,7 @@ fn DsDetail(
                     </div>
                 </div>
             </header>
-            {summary_for_people(&summary.summary).map(|text| view! { <p class="muted ds-summary">{text}</p> })}
+            {summary_for_people(&summary.description).map(|text| view! { <p class="muted ds-summary">{text}</p> })}
             <Show when=move || confirm_delete.get()>
                 <super::lib_ui::ConfirmBar message=delete_message.clone() testid="ds-delete-confirm"
                     on_confirm=delete_system on_cancel=Callback::new(move |()| confirm_delete.set(false))/>

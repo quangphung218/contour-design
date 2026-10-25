@@ -111,6 +111,9 @@ try {
   // Enter creates the project and opens the Studio.
   await until(async () => (await page.locator('[data-testid="design-system"] option').count()) > 1, 'design systems');
   await until(async () => (await page.locator('[data-testid="template"] option').count()) > 1, 'prototype templates');
+  // A brand-named system carries the trademark note in the picker too.
+  assert.match(await page.locator('[data-testid="design-system"] option[value="airbnb"]').getAttribute('title'), /Not affiliated with or endorsed by Airbnb/);
+  assert.equal(await page.locator('[data-testid="design-system"] option[value="minimal"]').getAttribute('title'), null);
   results.pickers = {
     designSystems: (await page.locator('[data-testid="design-system"] option').count()) - 1,
     prototypeTemplates: (await page.locator('[data-testid="template"] option').count()) - 1,

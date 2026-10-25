@@ -72,24 +72,11 @@ fn mode_label(m: &str) -> String {
     }
 }
 
-/// The entry of an i18n map for the UI language, else English.
-fn in_locale(map: Option<&std::collections::BTreeMap<String, String>>) -> Option<&String> {
-    map.and_then(|m| m.get(locale().tag()).or_else(|| m.get("en")))
-}
+use crate::intent::in_locale;
 
+/// The name on a template card (see [`crate::intent::template_name`]).
 pub(crate) fn name_of(s: &SkillSummary) -> String {
-    let name = in_locale(s.info.display_name.as_ref())
-        .cloned()
-        .unwrap_or_else(|| s.info.name.clone());
-    if name.contains(' ') || !name.contains('-') {
-        return name;
-    }
-    let words = name.replace('-', " ");
-    let mut chars = words.chars();
-    chars
-        .next()
-        .map(|c| c.to_uppercase().chain(chars).collect())
-        .unwrap_or(words)
+    crate::intent::template_name(s)
 }
 
 fn description_of(s: &SkillSummary) -> String {
