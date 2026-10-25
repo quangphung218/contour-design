@@ -31,6 +31,8 @@ it goes red when the `clear_draft_if` of `send` is removed.
 
 Round 3 fixes (5203152…0a68f88): QA-018…025 fixed, one commit each;
 `make e2e-qa` twice at 0a68f88, 112 of 112 pass, no test still marked.
+After the review (d80fe89…ab025b1): QA-018, QA-020 and QA-024 got a
+follow-up each (see their entries); DL-26 is new; 113 of 113 pass twice.
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
@@ -400,6 +402,7 @@ Reported by the correctness review of 56ffb95 (the QA-005 daemon rule).
   rule, or check only a `byok` whose route (protocol, baseUrl) changes and
   count those hosts as self-hosted.
 - **Fixed** (5203152): the daemon no longer guesses public hosts. It refuses a `byok` without a key only when the patch moves it to another protocol or base URL that is a cloud preset needing a key (the preset table now lives in `od-contracts`), and only while BYOK is the agent picked. A whole-config save that keeps the route (theme, language) goes through; a stale keyless provider sent with a local agent too (`make e2e` manage hit this: the UI kept a provider the test had removed).
+- **Follow-up** (d80fe89): two saves got around it (a keyless cloud provider with a local agent, then `{agentId: byok}`). The key is now checked when the patch moves the route or makes BYOK the picked agent, while BYOK is picked.
 
 ## QA-019 🟠 A steered message comes back in the composer after a reload
 
@@ -439,6 +442,7 @@ Reported by the correctness review of 9a85549 (QA-012 fix).
   POST). Same pattern: the palette's switch to another project
   (`palette.rs:246`).
 - **Fixed** (3645cd3): Duplicate (before the POST) and the palette's switch to another project go through `leave_then`: the app's question first, the full load once Leave is chosen, without a second native prompt.
+- **Follow-up** (e5a14dc): Leave turned `beforeunload` off before the copy was made, so a failed Duplicate left the page unguarded. The action now gets a `Release` it calls right before the unload. Test: DL-26.
 
 ## QA-021 🔵 Ctrl/Cmd-click on a link with an edit not applied is stopped
 
@@ -504,6 +508,7 @@ with a scrolling pane.
   past the fit (the pane already has `overflow: auto`, `app.css:856`), at
   least when the fit is below the smallest step.
 - **Fixed** (c8df340): when the fit is below the smallest step, + goes past it (50 %, then up) and the stage scrolls; − from 50 % comes back to the fit; Reset or a pane wide enough clears it.
+- **Follow-up** (ab025b1): going past the fit kept 50 % as the chosen zoom, so a wider pane showed 50 % instead of the zoom chosen before. `past_fit` keeps that zoom; a wide enough pane and − from 50 % go back to it.
 
 ## QA-025 🔵 When + is off at the fit, its tooltip still says "Zoom in"
 
