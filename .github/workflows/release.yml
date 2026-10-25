@@ -46,9 +46,31 @@ jobs:
           fi
           scripts/release-notes.sh "$TAG" > /dev/null
 
+  # The macOS tests (ci.yml): pull requests run on Linux only, so a release
+  # is where macOS is tested on CI. Bundles wait for them.
+  macos-tests:
+    name: macOS tests
+    needs: check
+    uses: ./.github/workflows/ci.yml
+    with:
+      only: macos
+      # `env` is not available here.
+      ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+  # The Windows compile check runs too, but nothing waits for it: Windows is
+  # best effort (README, Known limitations), like its bundle below. A failure
+  # still shows on the run.
+  windows-build:
+    name: Windows build (does not block)
+    needs: check
+    uses: ./.github/workflows/ci.yml
+    with:
+      only: windows
+      ref: ${{ github.event.inputs.tag || github.ref_name }}
+
   bundle:
     name: bundle (${{ matrix.name }})
-    needs: check
+    needs: [check, macos-tests]
     strategy:
       fail-fast: false
       matrix:

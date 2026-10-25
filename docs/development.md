@@ -242,19 +242,28 @@ cargo bench -p od-export --bench standalone       # standalone HTML export
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pull requests and pushes to `main`:
+**CI on pull requests runs on Linux only.** macOS and Windows run when a
+release is built, or when someone starts CI by hand (Actions tab, "Run
+workflow"). On macOS the main gate is **`make ci` on your machine**: run it
+before asking for review.
 
-| Job | Runs on | Steps |
-|---|---|---|
-| fmt + clippy | Ubuntu | `make lint` |
-| test | macOS, Ubuntu | `make test` |
-| build (windows) | Windows | `trunk build`, `cargo build --workspace --all-targets` (no tests yet) |
-| e2e | Ubuntu | `make e2e`, screenshots uploaded on failure |
-| cargo-deny | Ubuntu | licences, advisories, bans, sources (`deny.toml`) |
-| docs | Ubuntu | `scripts/check-links.sh`, actionlint |
-| commit messages | Ubuntu, PRs only | commitlint over the PR's commits |
+| Job | Workflow | Pull request, push to `main` | Release, manual run | Steps |
+|---|---|---|---|---|
+| fmt + clippy | `ci.yml` | Ubuntu | manual run only | `make lint` |
+| test | `ci.yml` | Ubuntu | macOS (release); macOS and Ubuntu (manual) | ffmpeg (MP4 export tests), `make test` |
+| build (windows) | `ci.yml` | no | Windows (never blocks a release) | `trunk build`, `cargo build --workspace --all-targets` (no tests yet) |
+| e2e | `ci.yml` | Ubuntu | manual run only | `make e2e`, screenshots uploaded on failure |
+| cargo-deny | `ci.yml` | Ubuntu | manual run only | licences, advisories, bans, sources (`deny.toml`) |
+| docs | `docs.yml` | Ubuntu | manual run only | `scripts/check-links.sh`, script tests, actionlint |
+| commit messages | `docs.yml` | Ubuntu, PRs only | no | commitlint over the PR's commits |
+
+`ci.yml` skips changes that only touch `docs/**` or Markdown; `docs.yml`
+always runs. `release.yml` calls `ci.yml` twice: the macOS tests, which
+every bundle waits for (each release is tested on macOS), and the Windows
+build, which runs alongside and never blocks the release.
 
 Actions are pinned to commit SHAs, permissions are read-only, and a newer
-push cancels the running workflow for the same branch. Dependabot proposes
-weekly updates for Cargo, GitHub Actions and the e2e npm packages.
-`make ci` runs the same checks locally (without the OS matrix).
+push cancels the running workflow for the same branch. Dependabot opens at
+most one grouped pull request per month for each of Cargo, GitHub Actions
+and the e2e npm packages. `make ci` runs the same checks locally (without
+the OS matrix).

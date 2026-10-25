@@ -229,8 +229,8 @@ impl Sort {
 
     pub fn apply(self, list: &mut [Project]) {
         match self {
-            Self::Newest => list.sort_by(|a, b| b.updated_at.cmp(&a.updated_at)),
-            Self::Oldest => list.sort_by(|a, b| a.updated_at.cmp(&b.updated_at)),
+            Self::Newest => list.sort_by_key(|a| std::cmp::Reverse(a.updated_at)),
+            Self::Oldest => list.sort_by_key(|a| a.updated_at),
             Self::Name => list.sort_by_key(|p| p.name.to_lowercase()),
         }
     }

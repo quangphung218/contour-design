@@ -18,6 +18,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
 
+/// The latency test runs alone (write lock); the rest share (read lock).
+/// Next to the others, each building a content index, one write on the
+/// macos-15 runner took 374 ms to reach the stream.
+static TIMING: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
+
 const DECK: &str = "<!doctype html><html><head><meta charset=utf-8><script>window.author=1</script></head>\
 <body><img src=\"img/a.png\"><script src=\"app.js\"></script></body></html>";
 
@@ -133,6 +138,7 @@ impl App {
 
 #[tokio::test]
 async fn preview_scope_serves_with_strict_csp() {
+    let _timing = TIMING.read().await;
     let a = app();
     let id = a.project().await;
     a.write(&id, "deck/index.html", DECK).await;
@@ -179,6 +185,7 @@ async fn preview_scope_serves_with_strict_csp() {
 
 #[tokio::test]
 async fn preview_scope_is_checked() {
+    let _timing = TIMING.read().await;
     let a = app();
     let id = a.project().await;
     let other = a.project().await;
@@ -240,6 +247,7 @@ async fn preview_scope_is_checked() {
 
 #[tokio::test]
 async fn raw_bridge_injects_before_author_scripts_with_scoped_base() {
+    let _timing = TIMING.read().await;
     let a = app();
     let id = a.project().await;
     a.write(&id, "deck/index.html", DECK).await;
@@ -295,6 +303,7 @@ async fn raw_bridge_injects_before_author_scripts_with_scoped_base() {
 
 #[tokio::test]
 async fn raw_bridge_skips_html_over_2_mib() {
+    let _timing = TIMING.read().await;
     let a = app();
     let id = a.project().await;
     let big = format!(
@@ -336,6 +345,7 @@ async fn next_event(body: &mut Body, name: &str, within: Duration) -> Value {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn events_stream_ready_then_file_changed_within_300ms() {
+    let _timing = TIMING.write().await;
     let a = app();
     let id = a.project().await;
     let res = a
@@ -364,16 +374,26 @@ async fn events_stream_ready_then_file_changed_within_300ms() {
     // Let the watcher's setup noise (manifest written at creation) drain.
     tokio::time::sleep(Duration::from_millis(400)).await;
 
-    // An agent writes straight to disk.
+    // An agent writes straight to disk. The median of five writes, as in
+    // od-preview's tests/watch.rs: one scheduler stall is not the pipeline.
     let file = a.data.join("projects").join(&id).join("index.html");
-    let started = Instant::now();
-    std::fs::write(&file, "<h1>v1</h1>").unwrap();
-    let changed = next_event(&mut body, "file-changed", Duration::from_secs(2)).await;
-    let took = started.elapsed();
+    let mut took = Vec::new();
+    for round in 0..5 {
+        let started = Instant::now();
+        std::fs::write(&file, format!("<h1>v{round}</h1>")).unwrap();
+        let changed = next_event(&mut body, "file-changed", Duration::from_secs(2)).await;
+        took.push(started.elapsed());
+        assert_eq!(changed["path"], "index.html");
+        assert_eq!(changed["kind"], if round == 0 { "add" } else { "change" });
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
     eprintln!("write → file-changed: {took:?}");
-    assert_eq!(changed["path"], "index.html");
-    assert_eq!(changed["kind"], "add");
-    assert!(took <= Duration::from_millis(300), "took {took:?}");
+    took.sort_unstable();
+    let median = took[took.len() / 2];
+    assert!(
+        median <= Duration::from_millis(300),
+        "median {median:?} of {took:?}"
+    );
 
     let r = a.get("/api/projects/nope/events").await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
@@ -381,6 +401,7 @@ async fn events_stream_ready_then_file_changed_within_300ms() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn creating_a_conversation_publishes_conversation_created() {
+    let _timing = TIMING.read().await;
     let a = app();
     let id = a.project().await;
     let res = a
@@ -419,6 +440,7 @@ async fn creating_a_conversation_publishes_conversation_created() {
 
 #[tokio::test]
 async fn raw_documents_carry_the_no_network_csp() {
+    let _timing = TIMING.read().await;
     let a = app();
     let id = a.project().await;
     a.write(&id, "index.html", DECK).await;
@@ -445,6 +467,7 @@ async fn raw_documents_carry_the_no_network_csp() {
 /// only, and handed to the host once, never to a sandboxed frame.
 #[tokio::test]
 async fn edit_key_goes_to_the_first_load_and_to_the_host_once() {
+    let _timing = TIMING.read().await;
     let a = app();
     let id = a.project().await;
     a.write(&id, "index.html", DECK).await;

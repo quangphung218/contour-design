@@ -160,6 +160,8 @@ async fn folders_are_created_listed_and_deleted_with_their_files() {
     assert_eq!(s, StatusCode::NOT_FOUND);
 }
 
+// Symlinks are part of what must survive a move, so Unix only.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_moved_folder_keeps_everything_in_it() {
     let tmp = tempfile::tempdir().unwrap();

@@ -3,7 +3,7 @@
 //! image's `src` relative to the page, and the undo/redo history of the
 //! versions each edit wrote.
 
-use od_contracts::SourceAttribute;
+use od_contracts::{SourceAttribute, SourceElementResponse};
 use std::collections::BTreeMap;
 
 /// What the Content tab offers for the selected element.
@@ -168,6 +168,110 @@ impl History {
     }
 }
 
+/// The Content, Attributes and Html drafts of the picked element.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Drafts {
+    pub text: String,
+    pub href: String,
+    pub src: String,
+    pub alt: String,
+    pub attrs: String,
+    pub html: String,
+}
+
+impl Drafts {
+    /// As the source has them.
+    #[must_use]
+    pub fn of(el: &SourceElementResponse) -> Self {
+        let attr = |name: &str| {
+            el.attributes
+                .iter()
+                .find(|a| a.name == name)
+                .map(|a| a.value.clone())
+                .unwrap_or_default()
+        };
+        Self {
+            text: el.text.clone(),
+            href: attr("href"),
+            src: attr("src"),
+            alt: attr("alt"),
+            attrs: attributes_json(&el.attributes),
+            html: el.outer_html.clone(),
+        }
+    }
+}
+
+/// Same meaning: text as saved (trimmed), attributes as JSON objects (key
+/// order and layout aside); the rest as written.
+fn text_same(a: &str, b: &str) -> bool {
+    a.trim() == b.trim()
+}
+
+fn json_same(a: &str, b: &str) -> bool {
+    match (
+        serde_json::from_str::<serde_json::Value>(a),
+        serde_json::from_str::<serde_json::Value>(b),
+    ) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+/// The drafts once the same element is read again (a reload after a write,
+/// often the Studio's own): a field the user changed since it was last
+/// clean keeps what they typed, the others follow `after`. Refilling them
+/// all lost the Attributes JSON being typed (the preview e2e's flake).
+#[must_use]
+pub fn refreshed(clean: &Drafts, typed: &Drafts, after: &Drafts) -> Drafts {
+    let pick = |same: bool, t: &String, a: &String| if same { a.clone() } else { t.clone() };
+    Drafts {
+        text: pick(
+            text_same(&typed.text, &clean.text),
+            &typed.text,
+            &after.text,
+        ),
+        href: pick(typed.href == clean.href, &typed.href, &after.href),
+        src: pick(typed.src == clean.src, &typed.src, &after.src),
+        alt: pick(typed.alt == clean.alt, &typed.alt, &after.alt),
+        attrs: pick(
+            json_same(&typed.attrs, &clean.attrs),
+            &typed.attrs,
+            &after.attrs,
+        ),
+        html: pick(typed.html == clean.html, &typed.html, &after.html),
+    }
+}
+
+/// The drafts' bookkeeping across reads of the picked element: what each
+/// field held when it was last clean, that is read from the source or just
+/// written to it. Comparing with the source's own form instead kept a field
+/// "changed" for good after an apply (the source answers pretty JSON, adds
+/// `data-od-id`, trims), so it no longer followed an undo or an agent's edit.
+#[derive(Debug, Clone, Default)]
+pub struct DraftBook {
+    clean: Option<Drafts>,
+}
+
+impl DraftBook {
+    /// The drafts after a read of the element: `same` when it is the
+    /// element already picked, read again.
+    pub fn read(&mut self, typed: &Drafts, el: &SourceElementResponse, same: bool) -> Drafts {
+        let after = Drafts::of(el);
+        let out = match (&self.clean, same) {
+            (Some(clean), true) => refreshed(clean, typed, &after),
+            _ => after.clone(),
+        };
+        self.clean = Some(after);
+        out
+    }
+
+    /// A write or an undo/redo of the element succeeded with `typed` shown:
+    /// those fields are clean now.
+    pub fn written(&mut self, typed: &Drafts) {
+        self.clean = Some(typed.clone());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +281,108 @@ mod tests {
             name: name.into(),
             value: value.into(),
         }
+    }
+
+    fn element(class: &str, style: Option<&str>) -> SourceElementResponse {
+        let mut attributes = vec![attr("class", class)];
+        attributes.extend(style.map(|s| attr("style", s)));
+        SourceElementResponse {
+            tag: "p".into(),
+            attributes,
+            outer_html: "<p>Fresh</p>".into(),
+            text: "Fresh".into(),
+            text_only: true,
+        }
+    }
+
+    #[test]
+    fn a_reread_keeps_what_was_typed_and_follows_the_rest() {
+        // Read, then the user types new attributes.
+        let before = Drafts::of(&element("lead", None));
+        let mut typed = before.clone();
+        typed.attrs = r#"{"class": "lead big"}"#.into();
+        // The same element read again after the Studio's own style write.
+        let after = Drafts::of(&element("lead", Some("font-size: 30px")));
+        let now = refreshed(&before, &typed, &after);
+        assert_eq!(now.attrs, typed.attrs, "what the user typed stays");
+        assert_eq!(now.html, after.html, "untouched fields follow the source");
+        assert_eq!(now.text, after.text);
+        // Nothing typed: everything follows the source.
+        assert_eq!(refreshed(&before, &before, &after), after);
+    }
+
+    fn el_with(attributes: Vec<SourceAttribute>, html: &str, text: &str) -> SourceElementResponse {
+        SourceElementResponse {
+            tag: "p".into(),
+            attributes,
+            outer_html: html.into(),
+            text: text.into(),
+            text_only: true,
+        }
+    }
+
+    /// Type, apply, read again, undo, read again: the field follows the
+    /// source each time it was not changed since (a reviewer's case).
+    fn apply_then_undo(
+        original: &SourceElementResponse,
+        written: &SourceElementResponse,
+        type_it: impl Fn(&mut Drafts),
+        field: impl Fn(&Drafts) -> String,
+    ) {
+        let mut book = DraftBook::default();
+        let mut ui = book.read(&Drafts::default(), original, false);
+        type_it(&mut ui);
+        book.written(&ui); // Apply succeeded.
+        ui = book.read(&ui, written, true); // The reload's read.
+        assert_eq!(field(&ui), field(&Drafts::of(written)), "after apply");
+        book.written(&ui); // Undo succeeded.
+        ui = book.read(&ui, original, true);
+        assert_eq!(field(&ui), field(&Drafts::of(original)), "after undo");
+    }
+
+    #[test]
+    fn attributes_follow_the_source_after_apply_and_undo() {
+        apply_then_undo(
+            &el_with(
+                vec![attr("class", "lead")],
+                "<p class=\"lead\">Fresh</p>",
+                "Fresh",
+            ),
+            &el_with(
+                vec![attr("class", "lead big"), attr("title", "Fresh")],
+                "<p class=\"lead big\" title=\"Fresh\">Fresh</p>",
+                "Fresh",
+            ),
+            // Compact JSON; the source answers pretty and sorted.
+            |d| d.attrs = r#"{"title":"Fresh","class":"lead big"}"#.into(),
+            |d| d.attrs.clone(),
+        );
+    }
+
+    #[test]
+    fn html_follows_the_source_after_apply_and_undo() {
+        apply_then_undo(
+            &el_with(vec![], "<section data-od-id=\"hero\">Hi</section>", "Hi"),
+            // The server keeps the element's data-od-id.
+            &el_with(
+                vec![],
+                "<div class=\"hero\" data-od-id=\"hero\">Brewed</div>",
+                "Brewed",
+            ),
+            |d| d.html = "<div class=\"hero\">Brewed</div>".into(),
+            |d| d.html.clone(),
+        );
+    }
+
+    #[test]
+    fn text_follows_the_source_after_apply_and_undo() {
+        apply_then_undo(
+            &el_with(vec![], "<p>Hello</p>", "Hello"),
+            // Saved trimmed.
+            &el_with(vec![], "<p>Hi there</p>", "Hi there"),
+            |d| d.text = "  Hi there ".into(),
+            |d| d.text.clone(),
+        );
     }
 
     #[test]

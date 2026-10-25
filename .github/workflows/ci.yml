@@ -1,15 +1,33 @@
-# CI: lint, test, e2e, dependency policy and commit messages.
-# `make ci` runs the same steps locally (minus the OS matrix and commitlint).
+# CI: lint, test, e2e and dependency policy. Pull requests and pushes to
+# main run on Linux only; the macOS tests and the Windows build run on a
+# manual dispatch (with the Linux jobs) or when release.yml calls this
+# workflow, once per platform (`only: macos`, `only: windows`). Docs links,
+# script tests, actionlint and commit messages live in docs.yml, which also
+# runs for docs-only changes. `make ci` runs the checks locally and is the
+# main gate on macOS (docs/development.md).
 name: CI
 
 on:
   pull_request:
+    paths-ignore: ["docs/**", "**/*.md"]
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      only:
+        description: Called by release.yml; run just the macOS tests (macos) or the Windows build (windows)
+        type: string
+        default: ""
+      ref:
+        description: Ref to check out (the release tag)
+        type: string
+        default: ""
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # `only` keeps release.yml's two calls in one run from cancelling each other.
+  group: ci-${{ github.workflow }}-${{ inputs.only }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -24,6 +42,9 @@ env:
 jobs:
   lint:
     name: fmt + clippy (native, wasm)
+    # In a called workflow `github.event_name` is the caller's event, so the
+    # jobs go by the `only` input instead.
+    if: ${{ !inputs.only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -45,15 +66,18 @@ jobs:
 
   test:
     name: test (${{ matrix.os }})
+    if: inputs.only != 'windows'
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, ubuntu-24.04]
+        # Release: macOS; dispatch: both; pull requests and main: Linux.
+        os: ${{ fromJSON(inputs.only == 'macos' && '["macos-15"]' || (github.event_name == 'workflow_dispatch' && '["macos-15", "ubuntu-24.04"]' || '["ubuntu-24.04"]')) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
@@ -63,20 +87,40 @@ jobs:
       - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: trunk
+      # The debug build of every test binary outgrows the ~14 GB free on the
+      # Linux runner ("No space left on device"); drop toolchains we never use.
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL
+          df -h /
       - name: Linux packages
         if: runner.os == 'Linux'
         run: scripts/linux-deps.sh
+      # The MP4 export tests need ffmpeg and ffprobe, and fail without them.
+      - name: ffmpeg
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install ffmpeg
+          else
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -version | head -n1
       - run: make test
 
   # Windows is compile-checked only: Job Object, ConPTY and WebView2 are not
   # exercised yet (README, Known limitations).
   build-windows:
     name: build (windows)
+    if: inputs.only == 'windows' || (!inputs.only && github.event_name == 'workflow_dispatch')
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
@@ -93,6 +137,7 @@ jobs:
 
   e2e:
     name: e2e (Playwright)
+    if: ${{ !inputs.only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -129,6 +174,7 @@ jobs:
 
   deny:
     name: cargo-deny (licenses, advisories)
+    if: ${{ !inputs.only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -138,38 +184,3 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check licenses advisories bans sources
-
-  docs:
-    name: docs links, script tests, workflow lint
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: scripts/check-links.sh
-      - run: make test-scripts
-      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
-        with:
-          tool: actionlint
-      - run: actionlint
-
-  commitlint:
-    name: commit messages
-    # Dependabot writes its own subjects ("bump x from a to b").
-    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-      - name: Conventional Commits (commitlint.config.mjs)
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: scripts/commitlint.sh "$BASE" "$HEAD"

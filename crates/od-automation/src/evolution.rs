@@ -469,7 +469,7 @@ impl EvolutionStore {
             .into_iter()
             .filter(|p| status.is_none_or(|s| p.status == s))
             .collect();
-        out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        out.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
         Ok(out)
     }
 
@@ -490,7 +490,7 @@ impl EvolutionStore {
         let _g = self.guard();
         let file: PacketFile = read_json(&self.root.join(PACKETS))?;
         let mut out = file.packets;
-        out.sort_by(|a, b| b.captured_at.cmp(&a.captured_at));
+        out.sort_by_key(|a| std::cmp::Reverse(a.captured_at));
         Ok(out)
     }
 

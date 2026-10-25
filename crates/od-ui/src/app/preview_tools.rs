@@ -232,6 +232,20 @@ fn keyed(msg_key: Option<&str>, key: Option<&str>) -> bool {
     key.is_some() && msg_key == key
 }
 
+/// The same element, read the same way: only the frame's key may differ
+/// (each load has its own). A reload re-inspects the picked element; taking
+/// an unchanged answer as new rebuilt the Style tab's inputs and lost what
+/// was being typed (the preview e2e's `manual-apply-style` flake).
+fn same_inspected(a: &Inspected, b: &Inspected) -> bool {
+    Inspected {
+        key: None,
+        ..a.clone()
+    } == Inspected {
+        key: None,
+        ..b.clone()
+    }
+}
+
 /// A text edit the host should write: from the bridge (keyed), only while
 /// the text tool is on and for the file the bridge was told about.
 fn accepted_text_edit(
@@ -375,7 +389,12 @@ impl StudioCtx {
         match msg {
             BridgeMsg::InspectResult(i) => {
                 if keyed(i.key.as_deref(), tools.edit_key.get_value().as_deref()) {
-                    tools.inspected.set(Some(i.clone()));
+                    let unchanged = tools
+                        .inspected
+                        .with_untracked(|was| was.as_ref().is_some_and(|w| same_inspected(w, i)));
+                    if !unchanged {
+                        tools.inspected.set(Some(i.clone()));
+                    }
                     if tools.tool.get_untracked() == Some(Tool::Manual) {
                         self.manual_inspected(i);
                     }
@@ -1432,6 +1451,31 @@ pub fn watch_lint(ctx: StudioCtx) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reinspect_after_a_reload_is_the_same_element() {
+        let read = |key: &str, size: &str| Inspected {
+            key: Some(key.to_owned()),
+            selector: "p.lead".to_owned(),
+            tag: "p".to_owned(),
+            text: "Fresh leaves daily.".to_owned(),
+            styles: [("font-size".to_owned(), size.to_owned())].into(),
+            ..Inspected::default()
+        };
+        // Same element after a reload: only the frame's key changed.
+        assert!(same_inspected(
+            &read("load-a", "16px"),
+            &read("load-b", "16px")
+        ));
+        // A real change still counts.
+        assert!(!same_inspected(
+            &read("load-a", "16px"),
+            &read("load-a", "30px")
+        ));
+        let mut moved = read("load-a", "16px");
+        moved.missing = true;
+        assert!(!same_inspected(&read("load-a", "16px"), &moved));
+    }
 
     #[test]
     fn rgb_strings_become_hex() {

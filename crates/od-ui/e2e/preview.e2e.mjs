@@ -219,6 +219,19 @@ try {
   await waitSource('class="lead big"', 'attributes written');
   assert.ok((await fileText('page.html')).includes('title="Fresh"'));
   await shot('manual-edit-attributes');
+  // After an apply the field follows the source again: undo shows the
+  // attributes from before, redo brings the edit back.
+  const attrs = panel.getByTestId('manual-attributes');
+  await page.getByTestId('manual-undo').click();
+  await waitSource('<p class="lead" style="font-size: 30px">Fresh leaves daily.</p>', 'attributes undone');
+  await until(async () => {
+    const v = await attrs.inputValue();
+    return v.includes('"class": "lead"') && !v.includes('lead big');
+  }, 'attributes field after undo');
+  await page.getByTestId('manual-redo').click();
+  await waitSource('class="lead big"', 'attributes redone');
+  await until(async () => (await attrs.inputValue()).includes('"class": "lead big"'), 'attributes field after redo');
+  results.manualAttrsUndo = 'field follows undo and redo';
 
   // Html: the section's source HTML replaced; its data-od-id stays.
   await layer(HERO).click();

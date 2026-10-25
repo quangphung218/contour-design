@@ -182,7 +182,8 @@ while [ $# -gt 0 ]; do
   shift
 done
 echo "FILE:$f" >> "$MOCK_LOG"
-echo "MODE:$(stat -f '%Lp' "$f" 2>/dev/null || stat -c '%a' "$f")" >> "$MOCK_LOG"
+# GNU stat first: there -f means "file system" and succeeds with other output.
+echo "MODE:$(stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f")" >> "$MOCK_LOG"
 cat "$f" >> "$MOCK_LOG"; echo >> "$MOCK_LOG"
 echo 'Done.'
 "#;

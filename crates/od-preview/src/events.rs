@@ -2,6 +2,7 @@
 //! shared by every subscriber and closed when the last one leaves. Writes
 //! settle for 200 ms before a `file-changed` event goes out.
 
+use notify::event::{AccessKind, AccessMode};
 use notify::{EventKind, PollWatcher, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{
     DebounceEventResult, DebouncedEvent, Debouncer, NoCache, RecommendedCache, new_debouncer,
@@ -12,13 +13,14 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Component, Path};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 /// Quiet period before a change is reported.
 pub const DEBOUNCE: Duration = Duration::from_millis(200);
-/// Debouncer tick: bounds how late after the quiet period an event fires.
+/// Window and tick of notify's debouncer, which only merges raw events (and
+/// renames) here; `Settle` waits out `DEBOUNCE` on top.
 const TICK: Duration = Duration::from_millis(20);
 const CHANNEL_CAPACITY: usize = 256;
 /// `OD_WATCHER_USE_POLLING=1` forces the polling watcher.
@@ -227,20 +229,18 @@ fn start_watcher(
 ) -> io::Result<Watcher> {
     // FSEvents reports real paths (`/private/var/...`); compare against one.
     let root = std::fs::canonicalize(root)?;
+    let batches = spawn_settle(root.clone(), tx, opts.debounce)?;
     let handler = {
         let root = root.clone();
-        let mut known = HashSet::new();
         move |result: DebounceEventResult| match result {
             Ok(events) => {
-                for event in classify(&root, &events, &mut known) {
-                    let _ = tx.send(event);
-                }
+                let _ = batches.send(events);
             }
             Err(errors) => tracing::warn!(?errors, root = %root.display(), "project watcher error"),
         }
     };
     if !opts.force_polling {
-        let native = new_debouncer(opts.debounce, Some(TICK), handler.clone()).and_then(|mut d| {
+        let native = new_debouncer(TICK, Some(TICK), handler.clone()).and_then(|mut d| {
             d.watch(&root, RecursiveMode::Recursive)?;
             Ok(d)
         });
@@ -253,14 +253,9 @@ fn start_watcher(
         }
     }
     let config = notify::Config::default().with_poll_interval(opts.poll_interval);
-    let mut d = new_debouncer_opt::<_, PollWatcher, NoCache>(
-        opts.debounce,
-        Some(TICK),
-        handler,
-        NoCache,
-        config,
-    )
-    .map_err(io::Error::other)?;
+    let mut d =
+        new_debouncer_opt::<_, PollWatcher, NoCache>(TICK, Some(TICK), handler, NoCache, config)
+            .map_err(io::Error::other)?;
     d.watch(&root, RecursiveMode::Recursive)
         .map_err(io::Error::other)?;
     Ok(Watcher::Polling(d))
@@ -298,31 +293,112 @@ fn project_path(root: &Path, full: &Path) -> Option<String> {
     Some(parts.join("/"))
 }
 
-/// Turns one debounced batch into `file-changed` events: one per path, kind
-/// decided by what is on disk now. Directories and symlinks are skipped.
+/// Holds each changed path until it has been quiet for the window, so a
+/// burst of writes gives one event. notify's debouncer times every raw event
+/// on its own: on Linux each write of a burst came out as its own change.
+struct Settle {
+    window: Duration,
+    /// Relative path → (last raw event, created in the meantime).
+    pending: HashMap<String, (Instant, bool)>,
+}
+
+impl Settle {
+    fn new(window: Duration) -> Self {
+        Self {
+            window,
+            pending: HashMap::new(),
+        }
+    }
+
+    fn add(&mut self, root: &Path, events: &[DebouncedEvent]) {
+        for event in events {
+            // inotify reports every open and read-only close. Taking those
+            // for changes made the preview's own read of a file reload it,
+            // forever.
+            if matches!(event.kind, EventKind::Access(kind) if kind != AccessKind::Close(AccessMode::Write))
+            {
+                continue;
+            }
+            let created = matches!(event.kind, EventKind::Create(_));
+            for path in &event.paths {
+                let Some(rel) = project_path(root, path) else {
+                    continue;
+                };
+                let entry = self.pending.entry(rel).or_insert((event.time, false));
+                entry.0 = entry.0.max(event.time);
+                entry.1 |= created;
+            }
+        }
+    }
+
+    /// When the next path settles.
+    fn next_due(&self) -> Option<Instant> {
+        self.pending
+            .values()
+            .map(|(last, _)| *last + self.window)
+            .min()
+    }
+
+    /// Paths quiet for the window by `now`, in path order.
+    fn take_due(&mut self, now: Instant) -> Vec<(String, bool)> {
+        let mut due: Vec<(String, bool)> = Vec::new();
+        self.pending.retain(|path, (last, created)| {
+            let settled = *last + self.window <= now;
+            if settled {
+                due.push((path.clone(), *created));
+            }
+            !settled
+        });
+        due.sort();
+        due
+    }
+}
+
+/// Runs `Settle` on its own thread; it ends when the watcher (the sender)
+/// is dropped.
+fn spawn_settle(
+    root: std::path::PathBuf,
+    tx: broadcast::Sender<ProjectEvent>,
+    window: Duration,
+) -> io::Result<mpsc::Sender<Vec<DebouncedEvent>>> {
+    let (batches, rx) = mpsc::channel::<Vec<DebouncedEvent>>();
+    std::thread::Builder::new()
+        .name("od-preview-settle".into())
+        .spawn(move || {
+            let mut settle = Settle::new(window);
+            let mut known = HashSet::new();
+            loop {
+                let next = match settle.next_due() {
+                    None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+                    Some(due) => rx.recv_timeout(due.saturating_duration_since(Instant::now())),
+                };
+                match next {
+                    Ok(events) => settle.add(&root, &events),
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                }
+                let due = settle.take_due(Instant::now());
+                for event in classify(&root, due, &mut known) {
+                    let _ = tx.send(event);
+                }
+            }
+        })?;
+    Ok(batches)
+}
+
+/// Turns settled paths into `file-changed` events, kind decided by what is
+/// on disk now. Directories and symlinks are skipped.
 ///
 /// `known` holds files already reported as present: FSEvents keeps the
 /// "created" flag on a fresh file's next writes, so a create counts as `add`
 /// only the first time.
 fn classify(
     root: &Path,
-    events: &[DebouncedEvent],
+    settled: Vec<(String, bool)>,
     known: &mut HashSet<String>,
 ) -> Vec<ProjectEvent> {
-    let mut seen: Vec<(String, bool)> = Vec::new();
-    for event in events {
-        let created = matches!(event.kind, EventKind::Create(_));
-        for path in &event.paths {
-            let Some(rel) = project_path(root, path) else {
-                continue;
-            };
-            match seen.iter_mut().find(|(p, _)| *p == rel) {
-                Some(entry) => entry.1 |= created,
-                None => seen.push((rel, created)),
-            }
-        }
-    }
-    seen.into_iter()
+    settled
+        .into_iter()
         .filter_map(|(path, created)| {
             let kind = match std::fs::symlink_metadata(root.join(&path)) {
                 Ok(meta) if meta.is_dir() || meta.file_type().is_symlink() => return None,
@@ -390,5 +466,101 @@ mod tests {
         assert_eq!(rel("/r/.DS_Store"), None);
         assert_eq!(rel("/r/.od-tmp-abc"), None);
         assert_eq!(rel("/r/index.html~"), None);
+    }
+
+    fn raw(kind: EventKind, path: &str, time: Instant) -> DebouncedEvent {
+        DebouncedEvent::new(
+            notify::Event::new(kind).add_path(Path::new("/r").join(path)),
+            time,
+        )
+    }
+
+    #[test]
+    fn reads_are_not_changes() {
+        use notify::event::{DataChange, ModifyKind};
+        let t0 = Instant::now();
+        let mut settle = Settle::new(DEBOUNCE);
+        // inotify reports every open, e.g. the daemon serving the preview.
+        settle.add(
+            Path::new("/r"),
+            &[
+                raw(
+                    EventKind::Access(AccessKind::Open(AccessMode::Any)),
+                    "a.html",
+                    t0,
+                ),
+                raw(
+                    EventKind::Access(AccessKind::Close(AccessMode::Read)),
+                    "a.html",
+                    t0,
+                ),
+            ],
+        );
+        assert_eq!(settle.next_due(), None);
+        settle.add(
+            Path::new("/r"),
+            &[
+                raw(
+                    EventKind::Access(AccessKind::Open(AccessMode::Any)),
+                    "b.html",
+                    t0,
+                ),
+                raw(
+                    EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+                    "b.html",
+                    t0,
+                ),
+                raw(
+                    EventKind::Access(AccessKind::Close(AccessMode::Write)),
+                    "b.html",
+                    t0,
+                ),
+            ],
+        );
+        assert_eq!(
+            settle.take_due(t0 + DEBOUNCE),
+            [("b.html".to_owned(), false)]
+        );
+    }
+
+    #[test]
+    fn a_burst_settles_once_after_its_last_write() {
+        use notify::event::{CreateKind, DataChange, ModifyKind};
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut settle = Settle::new(DEBOUNCE);
+        let root = Path::new("/r");
+        settle.add(
+            root,
+            &[raw(EventKind::Create(CreateKind::File), "a.css", t0)],
+        );
+        for i in 1..5 {
+            let at = t0 + ms(30 * i);
+            settle.add(
+                root,
+                &[raw(
+                    EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+                    "a.css",
+                    at,
+                )],
+            );
+        }
+        settle.add(
+            root,
+            &[raw(
+                EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+                "b.css",
+                t0,
+            )],
+        );
+        assert_eq!(settle.next_due(), Some(t0 + DEBOUNCE));
+        assert_eq!(
+            settle.take_due(t0 + DEBOUNCE),
+            [("b.css".to_owned(), false)]
+        );
+        // Each write restarts the window; the create is remembered.
+        assert!(settle.take_due(t0 + ms(319)).is_empty());
+        assert_eq!(settle.take_due(t0 + ms(320)), [("a.css".to_owned(), true)]);
+        assert_eq!(settle.next_due(), None);
     }
 }

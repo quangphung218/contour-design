@@ -440,6 +440,12 @@ try {
   log(JSON.stringify(results));
   writeFileSync(join(OUT, 'library.json'), JSON.stringify(results, null, 2));
   log('PASS');
+} catch (e) {
+  // Like manage.e2e.mjs: what the page showed when it failed.
+  log('FAIL', e.stack || e);
+  log('so far', JSON.stringify(results));
+  await browser?.contexts()[0]?.pages()[0]?.screenshot({ path: join(OUT, 'library-failure.png') }).catch(() => {});
+  process.exitCode = 1;
 } finally {
   await browser?.close();
   daemon.kill('SIGTERM');

@@ -34,6 +34,7 @@ async fn real_daemon(tmp: &Path) -> String {
 
 /// Same, with the run engine's `PATH` set to `mocks` plus system tools, so
 /// the mock CLIs there are the only agents found.
+#[cfg(unix)]
 async fn real_daemon_with_agents(tmp: &Path, mocks: &Path) -> String {
     let mut engine = od_runtime::EngineConfig::from_env();
     engine.path = std::env::join_paths([mocks, Path::new("/usr/bin"), Path::new("/bin")]).unwrap();
@@ -274,6 +275,8 @@ async fn mcp_file_tools_and_active_project_over_stdio() {
 
 /// Mock `claude` CLI: writes index.html in its cwd (the project folder) and
 /// says so; a prompt containing "take your time" sleeps until canceled.
+/// A shell script, so the run-engine test is Unix-only.
+#[cfg(unix)]
 const MOCK_CLAUDE: &str = r#"#!/bin/sh
 case "$1" in --version) echo "mock 1.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage"; exit 0; fi
@@ -291,6 +294,7 @@ printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end
 cat >/dev/null
 "#;
 
+#[cfg(unix)]
 async fn wait_run(client: &Client, run_id: &str, status: &str) -> Value {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
@@ -306,14 +310,17 @@ async fn wait_run(client: &Client, run_id: &str, status: &str) -> Value {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_run_tools_against_the_real_run_engine() {
+    use std::os::unix::fs::PermissionsExt;
+
     let tmp = tempfile::tempdir().unwrap();
     let mocks = tmp.path().join("mocks");
     std::fs::create_dir_all(&mocks).unwrap();
     let claude = mocks.join("claude");
     std::fs::write(&claude, MOCK_CLAUDE).unwrap();
-    std::fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
     let url = real_daemon_with_agents(tmp.path(), &mocks).await;
     let client = mcp(&url).await;
 

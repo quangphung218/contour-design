@@ -135,7 +135,7 @@ fn DesignsTab() -> impl IntoView {
         list.retain(|p| {
             p.metadata.as_ref().and_then(|m| m.intent.as_deref()) != Some("media-library")
         });
-        list.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        list.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
         list
     });
     move || {
@@ -282,7 +282,7 @@ pub fn Recommended(
             .map(|r| r.projects)
             .unwrap_or_default();
         let mut projects = projects;
-        projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        projects.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
         let kinds: Vec<_> = projects
             .iter()
             .filter(|p| {
