@@ -1,5 +1,7 @@
 ---
 name: critique
+en_name: "Design critique"
+en_description: "An expert review of a design in your project: five scored dimensions, a radar chart, and what to keep, fix and improve quickly."
 description: |
   Run a 5-dimension expert design review on any HTML artifact in the
   project — Philosophy / Visual hierarchy / Detail / Functionality /

@@ -4,8 +4,7 @@ en_name: "Write a Renewal & Expansion Business Case like an Account Director"
 zh_name: "像客户总监一样写续约与扩容论证"
 description: |
   OpenDesign renewal + seat-expansion business case for a growing customer: realized value, usage proof, and the expansion ROI. Built as a decision-grade B2B sales deck for champion, finance approver.
-en_description: |
-  OpenDesign renewal + seat-expansion business case for a growing customer: realized value, usage proof, and the expansion ROI. Built as a decision-grade B2B sales deck for champion, finance approver.
+en_description: "A renewal and seat-expansion business case from Pinecrest, a fictional vendor: value delivered, usage proof and the expansion ROI. For the champion and the finance approver."
 zh_description: |
   像客户总监一样写续约与扩容论证——一份可商业交付的B2B 销售 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

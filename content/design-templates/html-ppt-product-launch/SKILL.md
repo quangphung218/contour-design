@@ -4,8 +4,7 @@ en_name: "Pitch a Team Rollout like a Strategic Account Executive"
 zh_name: "像战略客户 AE 一样推动团队落地"
 description: |
   OpenDesign Teams: a launch-and-adoption proposal for a mid-market design team weighing a switch from closed cloud tools. Built as a decision-grade B2B sales deck for design team lead, IT.
-en_description: |
-  OpenDesign Teams: a launch-and-adoption proposal for a mid-market design team weighing a switch from closed cloud tools. Built as a decision-grade B2B sales deck for design team lead, IT.
+en_description: "A team rollout proposal from Quarry, a fictional software vendor, to a mid-market design team weighing a switch of tools. For the team lead and IT."
 zh_description: |
   像战略客户 AE 一样推动团队落地——一份可商业交付的B2B 销售 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

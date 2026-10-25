@@ -204,16 +204,29 @@ fn load_one(name: &str, dir: &Path, opts: ListOptions<'_>) -> Option<DesignSyste
     } else {
         category
     };
+    let first_paragraph = summarize(body);
     let summary = [
         mf("description")
             .map(|d| d.trim().to_owned())
             .unwrap_or_default(),
-        summarize(body),
+        first_paragraph.clone(),
         string_field(&front, "description"),
     ]
     .into_iter()
     .find(|s| !s.is_empty())
     .unwrap_or_default();
+    let description = if is_package_note(&summary) {
+        first_paragraph
+    } else {
+        summary.clone()
+    };
+    let brand = manifest
+        .as_ref()
+        .and_then(|m| m.get("brand"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|b| !b.is_empty())
+        .map(str::to_owned);
     let swatches = pick_final_swatch_row(swatches_from_frontmatter(&front), extract_swatches(body));
     let surface = metadata
         .surface
@@ -232,6 +245,8 @@ fn load_one(name: &str, dir: &Path, opts: ListOptions<'_>) -> Option<DesignSyste
             source: opts.source,
             status: metadata.status.unwrap_or(opts.default_status),
             is_editable: opts.is_editable,
+            description,
+            brand,
         },
         body: raw,
         manifest,
@@ -287,6 +302,14 @@ static SUMMARY_STRIP_RES: LazyLock<[Regex; 3]> = LazyLock::new(|| {
         Regex::new(r"(?m)^>\s*").expect("static regex"),
     ]
 });
+
+/// The note every bundled `manifest.json` carries as its description
+/// ("Bundled OpenDesign package for X, derived from curated DESIGN.md…"):
+/// for maintainers, not a description of the look.
+fn is_package_note(text: &str) -> bool {
+    let t = text.trim();
+    t.starts_with("Bundled ") && t.contains(" package for ")
+}
 
 /// First paragraph under the first H1, without blockquote metadata, at most
 /// 240 characters.

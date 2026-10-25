@@ -1,5 +1,7 @@
 ---
 name: orbit-notion
+en_name: "Daily briefing (Notion)"
+en_description: "The last 24 hours in Notion: page edits, comments, mentions and database changes."
 description: |
   Open Orbit briefing skill — selected by the Orbit pipeline when
   Notion is the user's only connected connector, or when the user

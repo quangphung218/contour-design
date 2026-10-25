@@ -1,5 +1,7 @@
 ---
 name: orbit-github
+en_name: "Daily briefing (GitHub)"
+en_description: "The last 24 hours on GitHub: pull requests, review requests, issues, CI runs and merges."
 description: |
   Open Orbit briefing skill — selected by the Orbit pipeline when
   GitHub is the user's only connected connector, or when the user

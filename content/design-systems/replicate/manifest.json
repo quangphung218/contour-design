@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "replicate",
   "name": "Replicate",
+  "brand": "Replicate",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for Replicate, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "apple",
   "name": "Apple",
+  "brand": "Apple",
   "category": "Media & Consumer",
   "description": "Bundled OpenDesign package for Apple, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

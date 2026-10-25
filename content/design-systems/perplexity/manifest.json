@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "perplexity",
   "name": "Perplexity AI",
+  "brand": "Perplexity",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for Perplexity AI, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

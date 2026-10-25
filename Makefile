@@ -20,7 +20,7 @@ APP_NAME := Contour
 BUNDLE_DIR = $(CARGO_TARGET_DIR)/$(1)/bundle
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev run check test e2e e2e-qa lint fmt clippy clippy-wasm deny ui-dist ui-release \
+.PHONY: help setup dev run check test e2e e2e-qa demo-gif lint fmt clippy clippy-wasm deny ui-dist ui-release \
 	app-debug app-release dmg install clean version ci links commitlint test-scripts
 
 help: ## Show this help
@@ -50,6 +50,9 @@ test-scripts: ## Tests for the release scripts (scripts/tests)
 
 e2e: ## Playwright e2e against a real daemon and a mock agent
 	$(UI)/e2e/run.sh
+
+demo-gif: ## Record docs/images/demo.gif with the scripted demo agent (needs ffmpeg)
+	$(UI)/e2e/run.sh demo.mjs
 
 # Not part of `ci` or `e2e`: bugs it finds stay red on purpose (docs/qa).
 e2e-qa: ## QA business-flow e2e (docs/qa/test-plan.md); pass / known bug / fail

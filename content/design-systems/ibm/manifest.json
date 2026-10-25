@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "ibm",
   "name": "IBM",
+  "brand": "IBM",
   "category": "Media & Consumer",
   "description": "Bundled OpenDesign package for IBM, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

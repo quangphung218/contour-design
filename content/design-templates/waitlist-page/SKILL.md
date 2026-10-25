@@ -1,5 +1,7 @@
 ---
 name: waitlist-page
+en_name: "Waitlist page"
+en_description: "A minimal pre-launch page with email sign-up, for product launches, betas and early access."
 description: |
   Minimal pre-launch landing with email capture, brand logo, and optional decorative layer.
   Reads DESIGN.md for colors, typography, and layout rules.

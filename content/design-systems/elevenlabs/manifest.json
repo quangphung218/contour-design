@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "elevenlabs",
   "name": "ElevenLabs",
+  "brand": "ElevenLabs",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for ElevenLabs, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

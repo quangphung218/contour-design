@@ -1,5 +1,7 @@
 ---
 name: invoice
+en_name: "Invoice"
+en_description: "A printable invoice with sender and recipient, line items, tax breakdown, totals and payment details."
 description: |
   A printable invoice page — sender + recipient block, line items table,
   tax breakdown, totals, and payment instructions. Use when the brief

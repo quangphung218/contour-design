@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "ant",
   "name": "Ant",
+  "brand": "Ant Design",
   "category": "Professional & Corporate",
   "description": "Bundled OpenDesign package for Ant, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

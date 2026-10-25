@@ -1,5 +1,7 @@
 ---
 name: wireframe-mobile-flow
+en_name: "Mobile flow wireframe"
+en_description: "Three or four phone screens in a row showing a user flow, connected by numbered arrows."
 description: |
   A lo-fi multi-screen MOBILE flow wireframe — three or four phone frames
   laid out in a row on a board, showing a connected user flow (Onboarding →

@@ -1,5 +1,7 @@
 ---
 name: webgl-experience
+en_name: "WebGL experience"
+en_description: "A full-screen real-time WebGL scene: shaders, 3D, generative visuals or particles, with a type overlay."
 description: |
   A full-screen, real-time WebGL/WebGL2 experience — animated shaders, 3D
   scenes, generative visuals, particle fields — rendered live on the GPU with

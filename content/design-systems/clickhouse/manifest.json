@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "clickhouse",
   "name": "ClickHouse",
+  "brand": "ClickHouse",
   "category": "Backend & Data",
   "description": "Bundled OpenDesign package for ClickHouse, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

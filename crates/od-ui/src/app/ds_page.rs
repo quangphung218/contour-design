@@ -33,6 +33,15 @@ fn is_mine(s: &DesignSystemSummary) -> bool {
     s.source == ContentSource::User || s.is_editable
 }
 
+/// The summary line under a system's name. The bundled packages share a
+/// note for maintainers ("Bundled … package for X, derived from curated
+/// DESIGN.md, tokens.css…"), which says nothing to a user, so it is left out.
+fn summary_for_people(summary: &str) -> Option<String> {
+    let s = summary.trim();
+    let boilerplate = s.starts_with("Bundled ") && s.contains(" package for ");
+    (!s.is_empty() && !boilerplate).then(|| crate::i18n::rebrand(s).into_owned())
+}
+
 /// Whether `s` matches the search text (title, summary, category).
 fn matches(s: &DesignSystemSummary, q: &str) -> bool {
     let q = q.trim().to_lowercase();
@@ -413,6 +422,9 @@ pub struct Kit {
     pub assets: Vec<Asset>,
     pub previews: Vec<String>,
     pub revisions: Vec<Revision>,
+    /// Set on systems named after a real brand (`manifest.json` `brand`).
+    #[serde(default)]
+    pub brand: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -872,6 +884,9 @@ fn DsDetail(
                             <span class="badge accent">{t(T::ChatDefault)}</span>
                         </Show>
                     </div>
+                    {move || kit.with(|k| k.as_ref().and_then(|r| r.as_ref().ok()).and_then(|k| k.brand.clone())).map(|brand| view! {
+                        <p class="subtle small ds-brand-note" data-testid="ds-brand-note">{tf(T::DsBrandNote, &[&brand])}</p>
+                    })}
                 </div>
                 <div class="row wrap ds-actions">
                     <button class="btn small" data-testid="ds-use" on:click=use_in_project>{icon(Glyph::ArrowRight)}{t(T::UseInNewProject)}</button>
@@ -911,7 +926,7 @@ fn DsDetail(
                     </div>
                 </div>
             </header>
-            {(!summary.summary.is_empty()).then(|| view! { <p class="muted ds-summary">{crate::i18n::rebrand(&summary.summary).into_owned()}</p> })}
+            {summary_for_people(&summary.description).map(|text| view! { <p class="muted ds-summary">{text}</p> })}
             <Show when=move || confirm_delete.get()>
                 <super::lib_ui::ConfirmBar message=delete_message.clone() testid="ds-delete-confirm"
                     on_confirm=delete_system on_cancel=Callback::new(move |()| confirm_delete.set(false))/>
@@ -1244,6 +1259,21 @@ fn TokenTable(tokens: Vec<Token>) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_package_note_is_not_shown() {
+        assert_eq!(
+            summary_for_people(
+                "Bundled OpenDesign package for Airbnb, derived from curated DESIGN.md, tokens.css, and components.html fixtures."
+            ),
+            None
+        );
+        assert_eq!(summary_for_people("  "), None);
+        assert_eq!(
+            summary_for_people("Calm and precise.").as_deref(),
+            Some("Calm and precise.")
+        );
+    }
 
     #[test]
     fn sections_strip_numbers() {

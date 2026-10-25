@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "shadcn",
   "name": "Shadcn",
+  "brand": "shadcn/ui",
   "category": "Modern & Minimal",
   "description": "Bundled OpenDesign package for Shadcn, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

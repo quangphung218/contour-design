@@ -1,5 +1,7 @@
 ---
 name: image-poster
+en_name: "Poster image"
+en_description: "Posters, key art and editorial illustrations, saved as PNG or JPEG files in your project."
 description: |
   Single-image generation skill for posters, key art, and editorial
   illustrations. Defaults to gpt-image-2 but is provider-agnostic — the

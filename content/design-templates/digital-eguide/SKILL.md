@@ -1,5 +1,7 @@
 ---
 name: digital-eguide
+en_name: "Digital e-guide"
+en_description: "A two-spread e-guide preview: a cover with table of contents, then a lesson spread with pull quote and steps."
 description: |
   A two-spread digital e-guide preview — page 1 is a cover (display title,
   author, "What's inside" stats, table of contents teaser); page 2 is a

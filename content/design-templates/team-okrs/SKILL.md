@@ -1,5 +1,7 @@
 ---
 name: team-okrs
+en_name: "Team OKRs"
+en_description: "An OKR tracker with three objectives, key results as progress bars, owners, status and a quarter summary."
 description: |
   OKR tracker page — quarter banner, three objectives with their key
   results as progress bars, owner avatars, status pills, and a "this

@@ -1,5 +1,7 @@
 ---
 name: social-media-dashboard
+en_name: "Social media analytics"
+en_description: "A creator dashboard with platform switcher, follower and engagement KPIs, growth chart, top post and trending topics."
 description: |
   Creator-facing social media analytics dashboard in a single HTML file.
   A platform switcher (X / LinkedIn / YouTube / Instagram), a row of KPI

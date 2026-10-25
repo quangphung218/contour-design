@@ -442,7 +442,32 @@ pub fn default_skill(chip: Chip, skills: &[SkillSummary]) -> Option<String> {
         .map(|s| s.info.id.clone())
 }
 
-/// Templates offered for a chip (same mode), featured first, then by name.
+/// The entry of an i18n map for the UI language, else English.
+#[must_use]
+pub fn in_locale(map: Option<&std::collections::BTreeMap<String, String>>) -> Option<&String> {
+    map.and_then(|m| m.get(crate::i18n::locale().tag()).or_else(|| m.get("en")))
+}
+
+/// The name a template shows: its display name in the UI language, else in
+/// English, else its own name, a bare `kebab-case` id read as words.
+#[must_use]
+pub fn template_name(s: &SkillSummary) -> String {
+    let name = in_locale(s.info.display_name.as_ref())
+        .cloned()
+        .unwrap_or_else(|| s.info.name.clone());
+    if name.contains(' ') || !name.contains('-') {
+        return name;
+    }
+    let words = name.replace('-', " ");
+    let mut chars = words.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or(words)
+}
+
+/// Templates offered for a chip (same mode), featured first, then by the
+/// name shown.
 #[must_use]
 pub fn templates_for(chip: Chip, templates: &[SkillSummary]) -> Vec<SkillSummary> {
     let mut out: Vec<SkillSummary> = templates
@@ -450,13 +475,31 @@ pub fn templates_for(chip: Chip, templates: &[SkillSummary]) -> Vec<SkillSummary
         .filter(|t| t.info.mode == chip.mode())
         .cloned()
         .collect();
-    out.sort_by(|a, b| {
-        let fa = a.info.featured.unwrap_or(f64::MAX);
-        let fb = b.info.featured.unwrap_or(f64::MAX);
-        fa.total_cmp(&fb)
-            .then_with(|| a.info.name.cmp(&b.info.name))
+    out.sort_by_cached_key(|t| {
+        (
+            OrdF64(t.info.featured.unwrap_or(f64::MAX)),
+            template_name(t).to_lowercase(),
+        )
     });
     out
+}
+
+/// `f64` ordered by `total_cmp`, for sort keys.
+#[derive(PartialEq)]
+struct OrdF64(f64);
+
+impl Eq for OrdF64 {}
+
+impl PartialOrd for OrdF64 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for OrdF64 {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
 }
 
 /// Project name from the brief's first non-empty line.
@@ -725,5 +768,24 @@ mod tests {
             .map(|s| s.info.id)
             .collect();
         assert_eq!(ids, vec!["x", "z"]);
+    }
+
+    #[test]
+    fn templates_sort_by_the_name_shown() {
+        let named = |id: &str, en: &str| {
+            let mut s = skill(id, "deck", None, &[]);
+            s.info.display_name = Some([("en".to_owned(), en.to_owned())].into());
+            s
+        };
+        let t = vec![
+            named("a-replit-deck", "Themed decision deck"),
+            named("z-pitch", "Demo day pitch"),
+            skill("m-plain", "deck", None, &[]),
+        ];
+        let names: Vec<_> = templates_for(Chip::Deck, &t)
+            .iter()
+            .map(template_name)
+            .collect();
+        assert_eq!(names, ["Demo day pitch", "M plain", "Themed decision deck"]);
     }
 }

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leaf &amp; Kettle · Tea house</title>
+<style>
+  :root {
+    --paper: #f6efe2; --surface: #fffaf1; --ink: #1f1c17; --muted: #6b6255;
+    --leaf: #2f6b3a; --leaf-soft: #dfe9d8; --clay: #b65a3a; --line: #e2d7c3;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.6 var(--sans); }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 40px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 28px 0; }
+  .logo { font: 600 22px var(--serif); letter-spacing: .01em; display: flex; gap: 10px; align-items: center; }
+  .logo i { width: 26px; height: 26px; border-radius: 0 60% 0 60%; background: var(--leaf); display: inline-block; }
+  nav { display: flex; gap: 28px; font-size: 15px; color: var(--muted); }
+  nav a { text-decoration: none; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 999px; background: var(--leaf); color: #fff; text-decoration: none; font-weight: 600; font-size: 15px; }
+  .btn.ghost { background: transparent; color: var(--leaf); box-shadow: inset 0 0 0 1.5px var(--leaf); }
+  .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 56px; align-items: center; padding: 48px 0 72px; }
+  .eyebrow { color: var(--clay); font-size: 13px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; }
+  h1 { font: 500 64px/1.04 var(--serif); margin: 14px 0 20px; letter-spacing: -.01em; }
+  h1 em { color: var(--leaf); font-style: italic; }
+  .lede { color: var(--muted); font-size: 19px; max-width: 30em; margin: 0 0 30px; }
+  .actions { display: flex; gap: 14px; }
+  .cup { aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 50% 46%, #c8a24a 0 28%, #8f6b22 29% 33%, var(--surface) 34% 52%, var(--leaf-soft) 53% 100%); position: relative; box-shadow: 0 30px 60px -30px rgba(47, 107, 58, .45); }
+  .cup::after { content: ""; position: absolute; right: 6%; top: 40%; width: 18%; height: 22%; border: 10px solid var(--surface); border-left: 0; border-radius: 0 50% 50% 0; }
+  .steam { position: absolute; left: 50%; top: -6%; width: 2px; height: 22%; background: linear-gradient(var(--muted), transparent); opacity: .35; }
+  section h2 { font: 500 38px/1.15 var(--serif); margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 32px; }
+  .teas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; padding-bottom: 80px; }
+  .tea { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 26px; }
+  .swatch { width: 44px; height: 44px; border-radius: 12px; margin-bottom: 18px; }
+  .tea h3 { font: 600 21px var(--serif); margin: 0 0 6px; }
+  .tea p { color: var(--muted); font-size: 15px; margin: 0 0 18px; }
+  .price { font-weight: 600; color: var(--leaf); }
+  .visit { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; background: var(--leaf); color: #f3efe4; border-radius: 26px; padding: 48px; margin-bottom: 64px; }
+  .visit h2 { color: #fff; }
+  .visit dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 28px; margin: 0; }
+  .visit dt { opacity: .7; }
+  .visit dd { margin: 0; }
+  .visit .btn { background: #f6efe2; color: var(--leaf); margin-top: 24px; }
+  footer { color: var(--muted); font-size: 14px; padding: 0 0 40px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><i></i>Leaf &amp; Kettle</div>
+    <nav><a href="#teas">Teas</a><a href="#visit">Visit</a><a href="#visit">Workshops</a></nav>
+    <a class="btn ghost" href="#visit">Book a tasting</a>
+  </header>
+
+  <section class="hero">
+    <div>
+      <div class="eyebrow">Small-batch tea house · since 2014</div>
+      <h1>Slow down with a <em>proper</em> cup.</h1>
+      <p class="lede">Hand-picked leaves from six family gardens, brewed the way each one likes. Sit in, take a tin home, or learn to brew it yourself.</p>
+      <div class="actions"><a class="btn" href="#teas">See this season's teas</a><a class="btn ghost" href="#visit">Find us</a></div>
+    </div>
+    <div class="cup" role="img" aria-label="A cup of tea seen from above"><span class="steam"></span></div>
+  </section>
+
+  <section id="teas">
+    <h2>This season</h2>
+    <p class="sub">Three leaves we keep coming back to.</p>
+    <div class="teas">
+      <article class="tea"><div class="swatch" style="background:#9bb36b"></div><h3>Spring sencha</h3><p>Grassy and bright, with a sweet finish. Best at 70 °C.</p><span class="price">£9 · 50 g</span></article>
+      <article class="tea"><div class="swatch" style="background:#b65a3a"></div><h3>Smoked oolong</h3><p>Roasted over longan wood. Warm, nutty, a little honey.</p><span class="price">£12 · 50 g</span></article>
+      <article class="tea"><div class="swatch" style="background:#c8a24a"></div><h3>Golden chamomile</h3><p>Whole flowers, no caffeine. The evening cup.</p><span class="price">£7 · 40 g</span></article>
+    </div>
+  </section>
+
+  <section class="visit" id="visit">
+    <div>
+      <h2>Visit the tea room</h2>
+      <p>Twelve seats, a long wooden bar and a kettle always on. Tastings run every Saturday morning.</p>
+      <a class="btn" href="#visit">Book a tasting</a>
+    </div>
+    <dl>
+      <dt>Where</dt><dd>14 Mill Lane, Bath</dd>
+      <dt>Mon–Fri</dt><dd>8:00 – 18:00</dd>
+      <dt>Sat–Sun</dt><dd>9:00 – 17:00</dd>
+      <dt>Tastings</dt><dd>Saturdays, 10:00</dd>
+    </dl>
+  </section>
+
+  <footer><span>© Leaf &amp; Kettle</span><span>Brewed slowly, sold by the gram.</span></footer>
+</div>
+</body>
+</html>

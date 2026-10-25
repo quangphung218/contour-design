@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "loom",
   "name": "Loom Design System",
+  "brand": "Loom",
   "category": "Themed & Unique",
   "description": "Bundled OpenDesign package for Loom Design System, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

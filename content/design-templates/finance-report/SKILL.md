@@ -1,5 +1,7 @@
 ---
 name: finance-report
+en_name: "Financial report"
+en_description: "A monthly or quarterly financial report with KPIs, revenue and burn charts, P&L table, highlights and outlook."
 description: |
   Quarterly / monthly financial report — masthead with KPIs, revenue and
   burn charts, P&L summary table, top-line highlights, and an outlook

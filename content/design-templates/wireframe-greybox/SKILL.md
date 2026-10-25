@@ -1,5 +1,7 @@
 ---
 name: wireframe-greybox
+en_name: "Greybox wireframe"
+en_description: "A clean low-fidelity wireframe with grey blocks, image placeholders and text bars, like a structural blueprint."
 description: |
   A crisp greybox / blueprint lo-fi wireframe — neutral grey blocks on a
   pale page, image placeholders drawn as a rectangle with a diagonal X,

@@ -5,7 +5,7 @@
   "title": "Direction picker",
   "version": "0.1.0",
   "publishedAt": "2026-05-09T13:00:27Z",
-  "description": "Resolves the visual direction at the plan stage from the brief and design system, without asking the user.",
+  "description": "Chooses a visual direction from your brief and design system without stopping to ask you.",
   "license": "MIT",
   "author": {
     "name": "OpenDesign",

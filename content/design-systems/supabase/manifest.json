@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "supabase",
   "name": "Supabase",
+  "brand": "Supabase",
   "category": "Backend & Data",
   "description": "Bundled OpenDesign package for Supabase, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

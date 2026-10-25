@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "voltagent",
   "name": "VoltAgent",
+  "brand": "VoltAgent",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for VoltAgent, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

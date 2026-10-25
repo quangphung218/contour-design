@@ -457,6 +457,10 @@ pub struct Kit {
     /// Preview pages under `preview/`.
     pub previews: Vec<String>,
     pub revisions: Vec<Revision>,
+    /// The company or product a brand-named system is inspired by
+    /// (`manifest.json` `brand`), for the trademark note on its page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brand: Option<String>,
 }
 
 pub async fn kit(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Kit>> {
@@ -476,7 +480,9 @@ pub async fn kit(State(state): State<AppState>, Path(id): Path<String>) -> ApiRe
             .filter(|n| n.ends_with(".html") && !n.starts_with('.'))
             .collect();
         previews.sort();
+        let brand = e.summary.brand.clone();
         Kit {
+            brand,
             palette: design_kit::palette_from_markdown(&body),
             score: design_kit::score(&tokens, &a2),
             has_components: inside(&e.dir, "components.html").is_ok_and(|p| p.is_file()),

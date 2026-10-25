@@ -137,6 +137,16 @@ try {
   const detail = page.getByTestId('ds-detail');
   await detail.locator('[data-testid="kit-palette"] figure').first().waitFor();
   assert.match(await page.getByTestId('kit-score').textContent(), /\d+/);
+  // A brand-named preset says it is not affiliated with the brand.
+  assert.equal(
+    await page.getByTestId('ds-brand-note').textContent(),
+    "Inspired by Airbnb's public design language. Not affiliated with or endorsed by Airbnb. Trademarks belong to their owners.",
+  );
+  // The line under it describes the look, not the maintainer note
+  // ("Bundled … package for Airbnb, derived from …").
+  const about = await detail.locator('.ds-summary').textContent();
+  assert.match(about, /Travel marketplace/);
+  assert.doesNotMatch(about, /package for/);
   await page.getByTestId('kit-tab-showcase').click();
   await page.getByTestId('ds-showcase').waitFor();
   await page.getByTestId('ds-fullscreen').click();
@@ -245,8 +255,15 @@ try {
   await page.getByTestId('plugins-search').fill('media generation');
   const plugin = page.locator('[data-testid="plugin-row"][data-id="od-media-generation"]');
   await plugin.waitFor();
+  // The list says what a plugin does; internal names stay in Developer details.
+  assert.doesNotMatch(await plugin.textContent(), /scenario|atoms?\b|taskKind/i);
+  const chips = await page.locator('.lib-chips').first().textContent();
+  assert.doesNotMatch(chips, /atom|scenario/i);
+  assert.match(chips, /Workflows/);
   await plugin.getByTestId('plugin-try').click();
   await page.getByTestId('plugin-detail').waitFor();
+  assert.equal(await page.getByTestId('plugin-dev').getAttribute('open'), null, 'developer details start folded');
+  assert.match(await page.getByTestId('plugin-dev').textContent(), /scenario/);
   const use = page.getByTestId('plugin-use');
   assert.equal(await use.isDisabled(), true, 'a required input is missing');
   await page.getByTestId('input-subject').fill('green tea');
@@ -381,6 +398,12 @@ try {
   const tpl = page.getByTestId('tpl-card');
   await until(async () => (await tpl.count()) > 50, 'design templates');
   const all = await tpl.count();
+  // Cards read as names and descriptions for people, not ids or agent triggers;
+  // the Swiss-print web page is filed as a prototype, not a video.
+  const cardText = (await tpl.allTextContents()).join('\n');
+  assert.doesNotMatch(cardText, /Use when|Trigger when|Crm Table Live/);
+  assert.match(cardText, /CRM table \(live data\)/);
+  assert.doesNotMatch(await tpl.filter({ hasText: 'Brutalist web page' }).textContent(), /Video/);
   await page.getByTestId('tpl-type').filter({ hasText: 'Slide deck' }).click();
   await until(async () => (await tpl.count()) < all && (await tpl.count()) > 0, 'type filter');
   await page.getByTestId('tpl-platform-mobile').click();

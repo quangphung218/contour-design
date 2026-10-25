@@ -4,8 +4,7 @@ en_name: "Write an Investor Pitch Book like a Growth-Equity Analyst"
 zh_name: "像成长股权分析师一样写投资 Pitch Book"
 description: |
   OpenDesign's investor pitch book: market map, moat, unit economics, and the ask — analyst-grade and diligence-ready. Built as a decision-grade fundraising pitch deck for growth-equity investors.
-en_description: |
-  OpenDesign's investor pitch book: market map, moat, unit economics, and the ask — analyst-grade and diligence-ready. Built as a decision-grade fundraising pitch deck for growth-equity investors.
+en_description: "An investor pitch book for Vantor, a fictional growth company: market map, moat, unit economics and the ask. For growth-equity investors."
 zh_description: |
   像成长股权分析师一样写投资 Pitch Book——一份可商业交付的融资路演 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

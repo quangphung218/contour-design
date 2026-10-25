@@ -1,5 +1,7 @@
 ---
 name: sprite-animation
+en_name: "Pixel-art animated slide"
+en_description: "An animated explainer slide with pixel-art mascot, bold display type and a ticking timeline."
 description: |
   A pixel / sprite-style animated explainer slide — full-bleed cream stage,
   bold display year, animated pixel-art mascot (e.g. Hanafuda card, mushroom,

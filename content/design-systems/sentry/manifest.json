@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "sentry",
   "name": "Sentry",
+  "brand": "Sentry",
   "category": "Backend & Data",
   "description": "Bundled OpenDesign package for Sentry, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

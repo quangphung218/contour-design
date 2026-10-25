@@ -234,7 +234,7 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                                 <option value="">{t(T::PickTemplate)}</option>
                                 {move || templates.get().unwrap_or_default().into_iter().map(|s| {
                                     let id = s.info.id.clone();
-                                    view! { <option value=s.info.id.clone() selected=move || choice.with(|c| c.template_id.as_deref() == Some(id.as_str()))>{s.info.name.clone()}</option> }
+                                    view! { <option value=s.info.id.clone() selected=move || choice.with(|c| c.template_id.as_deref() == Some(id.as_str()))>{super::templates_page::name_of(&s)}</option> }
                                 }).collect_view()}
                             </select>
                         </label>

@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
 use od_content::plugins::list_plugins;
-use serde_json::{Map, json};
+use serde_json::{Map, Value, json};
 use std::path::Path;
 
 #[test]
@@ -56,4 +56,57 @@ fn bundled_plugins_load_as_presets() {
             p.id
         );
     }
+}
+
+/// The Plugins page shows each plugin's title and description: they say
+/// what the user gets. Internal names (kind, task kind, atoms, pipeline
+/// stages) appear only under Developer details, which reads the manifest.
+#[test]
+fn bundled_plugin_text_is_for_people() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/plugins/_official");
+    let internal = regex::Regex::new(
+        r"(?i)task ?kind|\batoms?\b|scenario|devloop|pipeline|\bsignals?\b|downstream|\bstarter\b|media-\*|patch-edit|build-test|diff-review|live artifact",
+    )
+    .unwrap();
+    let mut problems = Vec::new();
+    for p in list_plugins(&root, None) {
+        let m = &p.manifest;
+        let mut texts = vec![
+            ("title", p.title.clone()),
+            ("description", p.description.clone()),
+        ];
+        for key in ["title_i18n", "description_i18n"] {
+            for (tag, v) in m.get(key).and_then(Value::as_object).into_iter().flatten() {
+                texts.push((key, format!("{tag}: {}", v.as_str().unwrap_or_default())));
+            }
+        }
+        // The example brief shows on the plugin page, outside Developer
+        // details, and is what the user sends: their words, not step names.
+        match m
+            .get("od")
+            .and_then(|od| od.get("useCase"))
+            .and_then(|u| u.get("query"))
+        {
+            Some(Value::String(q)) => texts.push(("query", q.clone())),
+            Some(Value::Object(q)) => {
+                for (tag, v) in q {
+                    texts.push((
+                        "query",
+                        format!("{tag}: {}", v.as_str().unwrap_or_default()),
+                    ));
+                }
+            }
+            _ => {}
+        }
+        for (field, text) in texts {
+            if internal.is_match(&text) {
+                problems.push(format!("{} {field}: {text}", p.id));
+            }
+            // A localized "(default scenario)" suffix in any language.
+            if field.starts_with("title") && text.trim_end().ends_with([')', '）']) {
+                problems.push(format!("{} {field} ends with a note: {text}", p.id));
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }

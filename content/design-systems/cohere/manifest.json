@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "cohere",
   "name": "Cohere",
+  "brand": "Cohere",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for Cohere, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

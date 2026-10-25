@@ -397,6 +397,10 @@ pub fn Home() -> impl IntoView {
                             <select
                                 data-testid="design-system"
                                 aria-label=t(T::DesignSystem)
+                                title=move || {
+                                    let id = design_system.get()?;
+                                    systems.with(|l| l.as_ref()?.iter().find(|s| s.id == id)?.brand.as_deref().map(brand_note))
+                                }
                                 disabled=move || systems.with(Option::is_none)
                                 on:change=move |ev| {
                                     let v = event_target_value(&ev);
@@ -417,7 +421,7 @@ pub fn Home() -> impl IntoView {
                                         .map(|s| {
                                             let selected = design_system.get().as_deref() == Some(s.id.as_str());
                                             view! {
-                                                <option value=s.id.clone() selected=selected>
+                                                <option value=s.id.clone() selected=selected title=s.brand.as_deref().map(brand_note)>
                                                     {format!("{} · {}", crate::i18n::rebrand(&s.title), s.category)}
                                                 </option>
                                             }
@@ -1067,7 +1071,11 @@ fn template_name(s: &SkillSummary) -> String {
 
 fn localized(map: Option<&std::collections::BTreeMap<String, String>>, fallback: &str) -> String {
     let text = map
-        .and_then(|m| m.get(locale().tag()))
+        .and_then(|m| {
+            m.get(locale().tag())
+                .filter(|v| !v.trim().is_empty())
+                .or_else(|| m.get("en"))
+        })
         .filter(|v| !v.trim().is_empty())
         .map_or(fallback, String::as_str);
     crate::i18n::rebrand(text).into_owned()
@@ -1127,6 +1135,22 @@ fn scenario_label(scenario: &str) -> Option<String> {
     )
 }
 
+/// The trademark note for a brand-named design system.
+fn brand_note(brand: &str) -> String {
+    tf(T::DsBrandNote, &[brand])
+}
+
+/// Hover text of the picked design system: what it looks like, then the
+/// trademark note when it is named after a brand.
+fn ds_tooltip(sys: &DesignSystemSummary) -> String {
+    let about = crate::i18n::rebrand(&sys.description).into_owned();
+    match sys.brand.as_deref() {
+        Some(b) if about.is_empty() => brand_note(b),
+        Some(b) => format!("{about}\n{}", brand_note(b)),
+        None => about,
+    }
+}
+
 #[component]
 fn Swatches(
     systems: LocalResource<Vec<DesignSystemSummary>>,
@@ -1135,8 +1159,9 @@ fn Swatches(
     move || {
         let id = selected.get()?;
         let sys = systems.get()?.into_iter().find(|s| s.id == id)?;
+        let tip = ds_tooltip(&sys);
         Some(view! {
-            <span class="swatches" title=sys.summary.clone()>
+            <span class="swatches" title=tip>
                 {sys
                     .swatches
                     .into_iter()
@@ -1144,5 +1169,45 @@ fn Swatches(
                     .collect_view()}
             </span>
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Locale, set_locale};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn picked_brand_system_shows_the_trademark_note() {
+        let mut sys: DesignSystemSummary = serde_json::from_value(serde_json::json!({
+            "id": "airbnb", "title": "Airbnb", "category": "E-Commerce & Retail",
+            "summary": "Bundled OpenDesign package for Airbnb, derived from curated DESIGN.md.",
+            "swatches": [], "surface": "web", "source": "built-in", "status": "published",
+            "isEditable": false, "description": "Travel marketplace.", "brand": "Airbnb"
+        }))
+        .unwrap();
+        let tip = ds_tooltip(&sys);
+        assert!(tip.starts_with("Travel marketplace.\n"), "{tip}");
+        assert!(
+            tip.contains("Not affiliated with or endorsed by Airbnb"),
+            "{tip}"
+        );
+        assert!(!tip.contains("package for"), "{tip}");
+        sys.brand = None;
+        assert_eq!(ds_tooltip(&sys), "Travel marketplace.");
+    }
+
+    #[test]
+    fn template_text_falls_back_to_english_then_the_id() {
+        let map: BTreeMap<String, String> =
+            [("en".to_owned(), "CRM table (live data)".to_owned())].into();
+        set_locale(Locale::Vi);
+        assert_eq!(
+            localized(Some(&map), "Crm Table Live"),
+            "CRM table (live data)"
+        );
+        assert_eq!(localized(None, "Crm Table Live"), "Crm Table Live");
+        set_locale(Locale::En);
     }
 }

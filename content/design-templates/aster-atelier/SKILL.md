@@ -1,5 +1,6 @@
 ---
 name: aster-atelier
+en_description: "A cinematic website for a creative studio, with classical imagery, cobalt skies, elegant serif type and smooth scrolling."
 en_name: Aster Atelier
 zh_name: Aster 艺术工作室
 description: Use this template when the user wants an artistic creative-studio website with classical imagery, cobalt skies, elegant serif typography and cinematic scrolling.

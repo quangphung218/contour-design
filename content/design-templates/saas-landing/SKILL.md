@@ -1,5 +1,7 @@
 ---
 name: saas-landing
+en_name: "SaaS landing page"
+en_description: "A landing page for a SaaS product with hero, features, social proof, pricing and call to action."
 description: |
   Single-page SaaS landing with hero, features, social proof, pricing, and CTA.
   Respects the active DESIGN.md color/typography/layout tokens.

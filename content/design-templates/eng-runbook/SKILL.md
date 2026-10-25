@@ -1,5 +1,7 @@
 ---
 name: eng-runbook
+en_name: "Engineering runbook"
+en_description: "A runbook for a service: overview, alerts, dashboards, copy-paste procedures, on-call rotation and incident checklist."
 description: |
   An engineering runbook — service overview, alerts table, dashboards
   links, common procedures with copy-pasteable commands, on-call rotation,

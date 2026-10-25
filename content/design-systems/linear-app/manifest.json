@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "linear-app",
   "name": "Linear",
+  "brand": "Linear",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Linear, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

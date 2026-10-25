@@ -1,5 +1,7 @@
 ---
 name: mobile-app
+en_name: "Mobile app screen"
+en_description: "A mobile app screen shown inside a realistic iPhone frame."
 description: |
   A mobile-app screen rendered inside a pixel-accurate iPhone 15 Pro frame
   on the page. Built by copying the seed `assets/template.html` and pasting

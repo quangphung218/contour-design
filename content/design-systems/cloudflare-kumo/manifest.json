@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "cloudflare-kumo",
   "name": "Cloudflare Kumo UI",
+  "brand": "Cloudflare",
   "category": "Developer Tools",
   "description": "Cloudflare's component system for modern web apps, with semantic light and dark tokens, compact typography, layered neutral surfaces, accessible controls, and chart-ready color guidance.",
   "source": {

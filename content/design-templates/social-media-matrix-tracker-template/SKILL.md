@@ -1,5 +1,7 @@
 ---
 name: social-media-matrix-tracker-template
+en_name: "Social media tracker"
+en_description: "A data-dense dashboard comparing accounts across platforms, with interactive charts, date ranges and light and dark themes."
 description: |
   社媒矩阵数据追踪面板模板（Social Media Matrix Tracker）。
   Use when users ask for a cinematic, data-dense social media analytics dashboard

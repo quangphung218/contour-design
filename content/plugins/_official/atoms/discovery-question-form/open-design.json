@@ -5,7 +5,7 @@
   "title": "Discovery question form",
   "version": "0.1.0",
   "publishedAt": "2026-05-09T13:00:27Z",
-  "description": "Structured clarification form for unresolved material requirements.",
+  "description": "Asks you a short form of questions when the brief leaves something important open.",
   "license": "MIT",
   "author": {
     "name": "OpenDesign",

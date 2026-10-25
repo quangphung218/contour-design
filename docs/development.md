@@ -37,6 +37,7 @@ On Debian or Ubuntu the desktop crate also needs WebKitGTK and friends:
 | `make test` | tests only |
 | `make lint` | fmt, clippy native and clippy for `wasm32` |
 | `make e2e` | Playwright e2e (real daemon, mock agent, loopback only) |
+| `make demo-gif` | record `docs/images/demo.gif` for the README (scripted demo agent, needs ffmpeg) |
 | `make deny` | cargo-deny: licences, advisories, bans, sources |
 | `make links` | relative links and anchors in Markdown |
 | `make commitlint` | commit messages since `main` |
@@ -230,6 +231,14 @@ Scenarios: `studio`, `design-system`, `library`, `manage`, `chat`, `files`,
 `preview`, `c2`, `c3-runtimes`, `c4-depth` (`<name>.e2e.mjs`). Screenshots
 of failures go to `crates/od-ui/e2e/test-results/`. `screens.mjs` captures
 every main screen in light and dark for design review.
+`demo.mjs` (`make demo-gif`, or `run.sh demo.mjs`) records the README demo with
+the scripted agent in `e2e/demo-agent`, which streams a short plan and writes
+a finished page, so every recording is the same.
+
+After changing `content/skills` or `content/design-templates`, regenerate the
+golden files the content tests compare against with
+`crates/od-content/tests/fixtures/regen/run.sh` (runs the original app's
+loader; see `crates/od-content/tests/fixtures/README.md`).
 
 ### Benchmarks
 

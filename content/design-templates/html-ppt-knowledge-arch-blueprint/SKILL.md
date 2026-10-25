@@ -4,8 +4,7 @@ en_name: "Turn an Incident Retro into a Learning Deck like a Platform VP"
 zh_name: "像平台 VP 一样把事故复盘写成学习稿"
 description: |
   OpenDesign's incident retro: the daemon-restart data bug, the root cause, the fix, and the systemic follow-ups. Built as a decision-grade product management deck for engineering, SRE, leadership.
-en_description: |
-  OpenDesign's incident retro: the daemon-restart data bug, the root cause, the fix, and the systemic follow-ups. Built as a decision-grade product management deck for engineering, SRE, leadership.
+en_description: "An incident retro for Northwind, a fictional SaaS company: what broke, the root cause, the fix and the follow-ups. For engineering, SRE and leadership."
 zh_description: |
   像平台 VP 一样把事故复盘写成学习稿——一份可商业交付的产品管理 Deck，围绕真实主题、证据链与决策目标组织。
 tags:
