@@ -6,7 +6,7 @@
 
 use super::byok_form::{ByokForm, TestResultLine, TestState};
 use super::icons::{Glyph, icon};
-use super::onboarding::AgentPicker;
+use super::onboarding::{AgentPicker, CheckAgainButton};
 use super::{Shell, api, desktop};
 use crate::i18n::{Locale, T, t, tf};
 use crate::settings::{AppConfig, PermissionMode, Theme};
@@ -50,6 +50,18 @@ pub fn SettingsPage() -> impl IntoView {
     provide_context(super::memory_settings::MemoryRev(RwSignal::new(0)));
     let shell = Shell::get();
     let agent = RwSignal::new(None::<String>);
+    // Agent ▸ Check again: an agent installed after the app started.
+    let checking_agents = RwSignal::new(false);
+    let check_agents = Callback::new(move |()| {
+        if checking_agents.get_untracked() {
+            return;
+        }
+        checking_agents.set(true);
+        leptos::task::spawn_local(async move {
+            shell.rescan_agents().await;
+            checking_agents.set(false);
+        });
+    });
     let model = RwSignal::new(String::new());
     let reasoning = RwSignal::new(String::new());
     let tier = RwSignal::new(String::new());
@@ -250,6 +262,9 @@ pub fn SettingsPage() -> impl IntoView {
                         >
                             <div class="card padded">
                                 <AgentPicker picked=agent/>
+                                <div class="row agent-rescan">
+                                    <CheckAgainButton checking=checking_agents on_click=check_agents testid="settings-check-again"/>
+                                </div>
                                 {move || matches!(shell.agents.get(), Some(Err(_))).then(|| view! {
                                     <label class="field">
                                         <span>{t(T::AgentId)}</span>

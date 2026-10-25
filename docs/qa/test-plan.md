@@ -42,6 +42,7 @@ Goal: a first-time user reaches Home with a working agent or API key.
 | ONB-09b | Check again after installing an agent detects it | Start without agent, then install one | Press Check again | The new agent is listed and picked, no restart | P2 | auto (in ONB-03; the login shell rescan in `od-server` tests) |
 | ONB-10 | Phone width, no agent: the install cards fit | PATH without any agent CLI | Open `/onboarding` at 390 px | No sideways scroll; Copy stays inside its card; Copy and Install guide are at least 44 px high | P2 | auto |
 | ONB-11 | Windows, no agent: no bash command | PATH without any agent CLI, Windows browser | Open `/onboarding` | Claude Code shows its PowerShell command; Codex shows only its setup page; no `curl … \| sh` anywhere | P2 | auto |
+| ONB-12 | Installed but not signed in | Mock `claude` fails every prompt until signed in | Open `/onboarding`; sign in; Check again | The failed test shows "Then run claude once to sign in."; after Check again the test passes and Continue is on | P1 | auto |
 
 ## 2. Create a project from Home (`home.qa.mjs`)
 
@@ -175,6 +176,7 @@ and media.
 | SET-06 | Permission mode switch is saved | — | Ask first, reload | Still Ask first; API returns `ask` | P1 | auto |
 | SET-07 | Settings still save with a keyless Ollama provider stored | BYOK `http://ollama:11434/v1`, no key, in the config | Theme ▸ Dark ▸ Save; Language ▸ vi ▸ Save | Both saves 200, no error; provider unchanged | P0 | auto (QA-018) |
 | SET-08 | A keyless Ollama on a one-word host saves | — | API ▸ Ollama ▸ base URL `http://gpu-box:11434/v1` ▸ Save | 200, saved | P1 | auto (QA-018) |
+| SET-09 | Check again in Settings ▸ Agent | No agent at start | Install one, press Check again | The agent is listed, install cards gone | P2 | auto |
 
 ## 9. Automations (`automations.qa.mjs`)
 

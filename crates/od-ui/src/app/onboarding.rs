@@ -34,17 +34,6 @@ pub fn Onboarding() -> impl IntoView {
     let has_agent = move || matches!(shell.agents.get(), Some(Ok(list)) if list.iter().any(|a| a.available && a.id != "byok"));
     let no_agent =
         move || matches!(shell.agents.get(), Some(Ok(list)) if !list.iter().any(installed));
-    let check_again = move || {
-        if checking.get_untracked() {
-            return;
-        }
-        checking.set(true);
-        leptos::task::spawn_local(async move {
-            shell.rescan_agents().await;
-            checking.set(false);
-        });
-    };
-
     // Preselect the first available agent once detection answers.
     Effect::new(move |_| {
         if picked.get_untracked().is_none() {
@@ -57,13 +46,10 @@ pub fn Onboarding() -> impl IntoView {
             }
         }
     });
-    // Test the picked agent once per pick (the original auto-tests).
+    // Test the picked agent once per pick (the original auto-tests); only
+    // the latest test's answer is shown.
     let seq = StoredValue::new(0u32);
-    Effect::new(move |_| {
-        let Some(agent) = picked.get() else {
-            test.set(None);
-            return;
-        };
+    let run_test = move |agent: String| {
         seq.update_value(|n| *n += 1);
         let mine = seq.get_value();
         test.set(Some(TestState::Running));
@@ -77,7 +63,42 @@ pub fn Onboarding() -> impl IntoView {
                 test.set(Some(res));
             }
         });
+    };
+    Effect::new(move |_| {
+        let Some(agent) = picked.get() else {
+            test.set(None);
+            return;
+        };
+        run_test(agent);
     });
+    // Rescan, then test the picked agent again: after signing in, the same
+    // agent now answers. With none picked, the preselect above picks and
+    // tests a newly found one.
+    let check_again = Callback::new(move |()| {
+        if checking.get_untracked() {
+            return;
+        }
+        checking.set(true);
+        let had = picked.get_untracked();
+        leptos::task::spawn_local(async move {
+            shell.rescan_agents().await;
+            checking.set(false);
+            if let Some(agent) = had.filter(|a| picked.get_untracked().as_ref() == Some(a)) {
+                run_test(agent);
+            }
+        });
+    });
+    // A test that failed for Claude Code or Codex: most often not signed in.
+    let sign_in_again = move || {
+        let failed = match test.get() {
+            Some(TestState::Done(v)) => v["ok"] != true,
+            Some(TestState::Failed(_)) => true,
+            _ => false,
+        };
+        let agent = picked.get()?;
+        let featured = FEATURED.iter().find(|f| f.id == agent)?;
+        failed.then(|| view! { <SignInLine command=featured.sign_in testid="onboarding-signin"/> })
+    };
     let agent_ready = move || matches!(test.get(), Some(TestState::Done(v)) if v["ok"] == true);
     let ready = move || {
         if use_key.get() {
@@ -140,7 +161,7 @@ pub fn Onboarding() -> impl IntoView {
                     {move || no_agent().then(|| view! {
                         <p class="agents-none" data-testid="agents-none">{t(T::AgentsNoneHint)}</p>
                     })}
-                    <AgentPicker picked=picked/>
+                    <AgentPicker picked=picked rescan=(checking, check_again)/>
                     {move || no_agent().then(|| view! {
                         <p class="byok-alt muted small" data-testid="byok-alt">
                             <button class="link-btn" on:click=move |_| use_key.set(true)>{t(T::UseApiKeyInstead)}</button>
@@ -150,6 +171,7 @@ pub fn Onboarding() -> impl IntoView {
                     <div class="row">
                         <TestResultLine state=test testid="onboarding-test"/>
                     </div>
+                    {sign_in_again}
                 </Show>
                 <Show when=has_agent>
                     <super::onboarding_brand::BrandStep state=brand/>
@@ -163,17 +185,9 @@ pub fn Onboarding() -> impl IntoView {
                 })}
                 {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 <div class="onboarding-foot">
-                    <Show when=move || !use_key.get()>
-                        <button class="btn ghost" data-testid="onboarding-check-again"
-                            disabled=move || checking.get()
-                            on:click=move |_| check_again()>
-                            {move || if checking.get() {
-                                view! { <span class="spinner"></span> }.into_any()
-                            } else {
-                                icon(Glyph::Refresh).into_any()
-                            }}
-                            {move || t(if checking.get() { T::CheckingAgents } else { T::CheckAgain })}
-                        </button>
+                    // With no agent the button sits under the install cards.
+                    <Show when=move || !use_key.get() && !no_agent()>
+                        <CheckAgainButton checking=checking on_click=check_again testid="onboarding-check-again"/>
                     </Show>
                     <span class="spacer"></span>
                     <button class="btn ghost" on:click=move |_| finish_skip(None)>{t(T::SkipForNow)}</button>
@@ -249,8 +263,13 @@ fn on_windows() -> bool {
 /// Detected agents: installed ones as cards to pick. With none installed,
 /// Claude Code and Codex come first with how to install them; every other
 /// agent waits in a folded list. Shared with Settings. BYOK has its own form.
+/// `rescan`: a Check again button right under the install cards (before
+/// the folded list), where onboarding's hint points.
 #[component]
-pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
+pub fn AgentPicker(
+    picked: RwSignal<Option<String>>,
+    #[prop(optional)] rescan: Option<(RwSignal<bool>, Callback<()>)>,
+) -> impl IntoView {
     let shell = Shell::get();
     move || {
         match shell.agents.get() {
@@ -302,6 +321,11 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
                             <InstallCard agent=a featured=f/>
                         }).collect_view()}
                     </div>
+                    {rescan.map(|(checking, on_click)| view! {
+                        <div class="row check-again-row">
+                            <CheckAgainButton checking=checking on_click=on_click testid="agents-check-again"/>
+                        </div>
+                    })}
                 })}
                 {(!missing.is_empty()).then(|| {
                     let count = missing.len().to_string();
@@ -318,6 +342,40 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
                 .into_any()
         }
     }
+    }
+}
+
+/// Detects the agents again (`POST /api/agents/rescan` through
+/// `on_click`); busy while `checking`. Onboarding and Settings ▸ Agent.
+#[component]
+pub fn CheckAgainButton(
+    checking: RwSignal<bool>,
+    on_click: Callback<()>,
+    testid: &'static str,
+) -> impl IntoView {
+    view! {
+        <button class="btn ghost" data-testid=testid
+            disabled=move || checking.get()
+            on:click=move |_| on_click.run(())>
+            {move || if checking.get() {
+                view! { <span class="spinner"></span> }.into_any()
+            } else {
+                icon(Glyph::Refresh).into_any()
+            }}
+            {move || t(if checking.get() { T::CheckingAgents } else { T::CheckAgain })}
+        </button>
+    }
+}
+
+/// "Then run `claude` once to sign in."
+#[component]
+fn SignInLine(command: &'static str, testid: &'static str) -> impl IntoView {
+    let text = t(T::SignInAfterInstall);
+    let (before, after) = text.split_once("{0}").unwrap_or((text, ""));
+    view! {
+        <p class="install-signin muted small" data-testid=testid>
+            {before}<code>{command}</code>{after}
+        </p>
     }
 }
 
@@ -344,8 +402,6 @@ fn InstallCard(agent: AgentInfo, featured: &'static Featured) -> impl IntoView {
             }
         });
     };
-    let sign_in = t(T::SignInAfterInstall);
-    let (before, after) = sign_in.split_once("{0}").unwrap_or((sign_in, ""));
     view! {
         <div class="agent-card agent-install" data-agent=agent.id.clone() data-testid="agent-install">
             <span class="agent-icon">{icon(Glyph::Download)}</span>
@@ -366,9 +422,7 @@ fn InstallCard(agent: AgentInfo, featured: &'static Featured) -> impl IntoView {
                     </button>
                 </div>
             })}
-            <p class="install-signin muted small" data-testid="install-signin">
-                {before}<code>{featured.sign_in}</code>{after}
-            </p>
+            <SignInLine command=featured.sign_in testid="install-signin"/>
         </div>
     }
 }

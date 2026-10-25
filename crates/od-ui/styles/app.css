@@ -362,6 +362,7 @@ details.agent-missing > summary::-webkit-details-marker { display: none; }
 details.agent-missing > summary .ico { width: var(--icon-sm); height: var(--icon-sm); transition: transform var(--duration-fast) var(--ease-out); }
 /* :last-child outranks the generic open-details rule (180°). */
 details.agent-missing[open] > summary .ico:last-child { transform: rotate(90deg); }
+.check-again-row, .agent-rescan { margin-top: var(--space-2); }
 .byok-alt { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin: var(--space-3) 0 0; }
 .byok-alt button { padding: 0; border: 0; background: none; font: inherit; font-weight: var(--weight-medium); color: var(--color-accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .byok-limits, .onboarding-note {

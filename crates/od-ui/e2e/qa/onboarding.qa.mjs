@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { statSync, existsSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { statSync, existsSync, mkdtempSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, run, until, waitTurn, overflowsX, MOCK_AGENTS } from './lib.mjs';
@@ -30,6 +30,20 @@ const noAgent = { daemon: { onboarded: false, agents: false } };
 const freshWithChrome = { daemon: { onboarded: false, env: { OD_CHROME_PATH: '/bin/sh' } } };
 // Empty at start; ONB-03 installs the mock agent into it while the app runs.
 const lateBin = mkdtempSync(join(tmpdir(), 'od-qa-late-bin-'));
+// A claude that is installed but not signed in until `signed-in` exists:
+// it answers --version and --help, and fails every prompt like Claude Code
+// without a login.
+const authBin = mkdtempSync(join(tmpdir(), 'od-qa-auth-bin-'));
+const signedIn = join(authBin, 'signed-in');
+writeFileSync(join(authBin, 'claude'), `#!/bin/sh
+shared='${join(MOCK_AGENTS, 'claude')}'
+case "$1" in --version) exec "$shared" "$@";; esac
+if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then exec "$shared" "$@"; fi
+if [ ! -f '${signedIn}' ]; then echo 'Invalid API key · Please run /login' >&2; exit 1; fi
+exec "$shared" "$@"
+`);
+chmodSync(join(authBin, 'claude'), 0o755);
+const notSignedIn = { daemon: { onboarded: false, agents: false, env: { PATH: `${authBin}:/usr/bin:/bin` } } };
 const noAgentNoChrome = {
   daemon: { onboarded: false, agents: false, env: { PATH: `${lateBin}:/usr/bin:/bin`, OD_CHROME_PATH: '/nonexistent/chrome' } },
 };
@@ -69,7 +83,7 @@ test('ONB-02', 'After Continue the user lands on Home and is not sent back to on
 }, fresh);
 
 test('ONB-03', 'With no agent installed the screen shows how to install one, and Check again finds it', async ({ d, newPage }) => {
-  const { page } = await newPage();
+  const { page } = await newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(d.base + '/');
   await page.waitForURL('**/onboarding');
   const install = page.getByTestId('agent-install');
@@ -118,9 +132,14 @@ test('ONB-03', 'With no agent installed the screen shows how to install one, and
   assert.match(await chrome.locator('a').getAttribute('href'), /^https:\/\/www\.google\.com\/chrome\//);
   assert.equal(await page.locator('[data-agent].active').count(), 0, 'an agent shows as picked although none is installed');
   assert.equal(await page.getByTestId('onboarding-continue').isDisabled(), true);
+  // Check again sits right under the install cards, in view without scrolling.
+  const again = page.getByTestId('agents-check-again');
+  const box = await again.boundingBox();
+  assert.ok(box && box.y + box.height <= 900, `Check again ends at y ${box && Math.round(box.y + box.height)}, below a 900 px window`);
+  assert.equal(await page.getByTestId('onboarding-check-again').count(), 0, 'a second Check again in the footer');
   // Install an agent while the app is open, then Check again: no restart.
   symlinkSync(join(MOCK_AGENTS, 'claude'), join(lateBin, 'claude'));
-  await page.getByTestId('onboarding-check-again').click();
+  await again.click();
   await page.locator('[data-agent="claude"].active').waitFor({ timeout: 20_000 });
   await page.locator('[data-testid="onboarding-test"] [data-ok="true"]').waitFor({ timeout: 20_000 });
   assert.equal(await page.getByTestId('agent-install').count(), 0, 'install guide still shown next to a working agent');
@@ -274,5 +293,20 @@ test('ONB-11', 'On Windows the install cards give PowerShell commands, or only t
   assert.match(await codex.getByTestId('install-docs').getAttribute('href'), /^https:\/\/developers\.openai\.com\//);
   assert.doesNotMatch(await page.locator('.onboarding-card').innerText(), /\| (ba)?sh/, 'a bash command shown on Windows');
 }, noAgent);
+
+test('ONB-12', 'An agent installed but not signed in says how to sign in, and Check again tests it again', async ({ d, newPage }) => {
+  const { page } = await newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(d.base + '/onboarding');
+  await page.locator('[data-agent="claude"].active').waitFor();
+  await page.locator('[data-testid="onboarding-test"] [data-ok="false"]').waitFor({ timeout: 20_000 });
+  assert.equal(await page.getByTestId('onboarding-signin').innerText(), 'Then run claude once to sign in.');
+  assert.equal(await page.getByTestId('onboarding-continue').isDisabled(), true);
+  // The user signs in from Terminal, then presses Check again.
+  writeFileSync(signedIn, '');
+  await page.getByTestId('onboarding-check-again').click();
+  await page.locator('[data-testid="onboarding-test"] [data-ok="true"]').waitFor({ timeout: 20_000 });
+  assert.equal(await page.getByTestId('onboarding-signin').count(), 0, 'sign-in hint still shown after a passing test');
+  assert.equal(await page.getByTestId('onboarding-continue').isDisabled(), false, 'Continue stays off after signing in');
+}, notSignedIn);
 
 await run('onboarding', { onboarded: false });
