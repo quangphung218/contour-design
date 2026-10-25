@@ -67,7 +67,7 @@ fn mode_label(m: &str) -> String {
         "template" => t(T::TemplateKind).to_owned(),
         "image" => t(T::Image).to_owned(),
         "video" => t(T::Video).to_owned(),
-        "audio" => t(T::AudioKind).to_owned(),
+        "audio" => t(T::SurfaceAudio).to_owned(),
         other => other.to_owned(),
     }
 }
