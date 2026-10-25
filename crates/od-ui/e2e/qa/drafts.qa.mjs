@@ -347,6 +347,6 @@ test('DL-19', 'A message queued while a run is going survives a reload until it 
     (await page.getByTestId('queued').filter({ hasText: msg }).count()) > 0 ||
     (await page.getByTestId('composer').inputValue()) === msg, 'queued message kept', 20_000).catch(() => false);
   assert.ok(kept, 'after the reload the queued message is not queued, not sent and not in the composer');
-}, { knownBug: 'QA-014' });
+});
 
 await run('drafts');

@@ -356,15 +356,10 @@ impl StudioCtx {
         if text.is_empty() {
             return;
         }
-        // The stored draft of this conversation goes once the message is out.
-        let draft_key = self
-            .conversation_id
-            .get_untracked()
-            .map(|c| super::composer::draft_key(&self.project_id.get_value(), &c));
+        // The stored draft of this conversation goes once the message is out:
+        // a queued one is not (the queue lives only in memory, so a reload
+        // brings it back to the composer).
         if self.live_run.get_untracked().is_some() {
-            if let Some(k) = &draft_key {
-                super::composer::clear_draft_if(k, &text);
-            }
             self.queue.update(|q| {
                 q.push(Queued {
                     id: api::random_id(),
@@ -373,6 +368,10 @@ impl StudioCtx {
             });
             return;
         }
+        let draft_key = self
+            .conversation_id
+            .get_untracked()
+            .map(|c| super::composer::draft_key(&self.project_id.get_value(), &c));
         let user_id = api::random_id();
         let assistant_id = api::random_id();
         let turn = RwSignal::new(AssistantTurn::new());
