@@ -47,7 +47,7 @@ use std::collections::HashMap;
 
 /// The pane a phone-width Studio shows (one at a time).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NarrowPane {
+pub enum NarrowPane {
     Chat,
     Preview,
     Files,
@@ -252,6 +252,8 @@ pub struct StudioCtx {
     pub show_notes: RwSignal<bool>,
     pub presenting: RwSignal<bool>,
     pub switcher_open: RwSignal<bool>,
+    /// Under 480 px: the one pane shown. Opening a file shows the preview.
+    pub pane: RwSignal<NarrowPane>,
     pub history_open: RwSignal<bool>,
     pub viewing: RwSignal<Option<ViewedVersion>>,
     /// Inspect, text edit, draw, tweaks, palette, lint (spec 1.2).
@@ -342,7 +344,17 @@ impl StudioCtx {
     }
 
     /// Opens `path` in a tab (or switches to its tab).
+    /// Opens `path` in a tab and, on a phone-width window, shows the preview.
     pub fn open_file(self, path: &str) {
+        self.show_tab(path);
+        if self.pane.get_untracked() != NarrowPane::Preview {
+            self.pane.set(NarrowPane::Preview);
+        }
+    }
+
+    /// Opens `path` in a tab without leaving the pane shown (the entry file
+    /// opened on load must not pull a phone away from the chat).
+    fn show_tab(self, path: &str) {
         self.side.open.set(false);
         self.active_term.set(None);
         self.tabs.update(|t| t.open(path));
@@ -376,7 +388,7 @@ impl StudioCtx {
                     .project
                     .with_untracked(|p| pick_entry(p.as_ref(), &files));
                 if let Some(entry) = entry {
-                    self.open_file(&entry);
+                    self.show_tab(&entry);
                 }
             }
             self.files.set(files);
@@ -1211,6 +1223,7 @@ pub fn Studio() -> impl IntoView {
         show_notes: RwSignal::new(false),
         presenting: RwSignal::new(false),
         switcher_open: RwSignal::new(false),
+        pane: RwSignal::new(NarrowPane::Chat),
         history_open: RwSignal::new(false),
         viewing: RwSignal::new(None),
         session_mode: RwSignal::new(SessionMode::default()),
@@ -1268,19 +1281,7 @@ pub fn Studio() -> impl IntoView {
 
     // Under 480 px (a phone browser) one pane shows at a time, picked here;
     // the CSS hides the switch on wider windows.
-    let pane = RwSignal::new(NarrowPane::Chat);
-    // Picking a file in the Files pane shows it.
-    let file_picked = move |ev: ev::MouseEvent| {
-        use wasm_bindgen::JsCast;
-        let on_file = ev
-            .target()
-            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-            .and_then(|el| el.closest(".files .file:not(.folder)").ok().flatten())
-            .is_some();
-        if on_file && pane.get_untracked() == NarrowPane::Files {
-            pane.set(NarrowPane::Preview);
-        }
-    };
+    let pane = ctx.pane;
     Effect::new(move |_| {
         if !ctx.files_open.get() && pane.get_untracked() == NarrowPane::Files {
             pane.set(NarrowPane::Preview);
@@ -1310,7 +1311,6 @@ pub fn Studio() -> impl IntoView {
             class:chat-collapsed=move || ctx.chat.collapsed.get()
             class:focus=move || files_ui.focus.get()
             data-pane=move || pane.get().key()
-            on:click=file_picked
             style=move || ctx.chat.width.get().map(|w| format!("--chat-w:{w:.0}px"))
         >
             <div class="segmented small studio-switch" role="radiogroup" aria-label=t(T::ViewMode) data-testid="studio-switch">

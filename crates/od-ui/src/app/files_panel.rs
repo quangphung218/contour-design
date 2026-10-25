@@ -629,8 +629,10 @@ fn TreeRow(
         Row::File { depth, .. } => (*depth, false),
     };
     let pad = format!("padding-left:{}px", 6 + depth * 14);
-    let label = match &row {
-        Row::Folder { name, .. } | Row::File { name, .. } => name.clone(),
+    // Name and open state belong to the treeitem (the row), not its button.
+    let (label, expanded) = match &row {
+        Row::Folder { name, open, .. } => (name.clone(), Some(open.to_string())),
+        Row::File { name, .. } => (name.clone(), None),
     };
     let key = if is_folder {
         format!("{path}/")
@@ -661,7 +663,6 @@ fn TreeRow(
                 <button
                     class="file folder"
                     style=pad
-                    aria-expanded=open.to_string()
                     data-testid="folder-row"
                     data-path=path.clone()
                     title=path.clone()
@@ -703,7 +704,7 @@ fn TreeRow(
         }
     };
     view! {
-        <li class="file-row" role="treeitem" aria-label=label attr:aria-level=depth + 1 class:selected=move || checked.get() class:selecting=move || ui.selected.with(|s| !s.is_empty())>
+        <li class="file-row" role="treeitem" aria-label=label aria-expanded=expanded attr:aria-level=depth + 1 class:selected=move || checked.get() class:selecting=move || ui.selected.with(|s| !s.is_empty())>
             <input
                 type="checkbox"
                 class="file-check"

@@ -1039,7 +1039,9 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   .studio-switch { display: flex; margin: var(--space-2); }
   .studio-switch .seg { flex: 1; }
   .studio > .chat, .studio > .workspace { grid-area: 2 / 1; border-bottom: 0; }
-  .studio > .show-chat { display: none; }
+  /* The switch replaces collapsing: a collapse here would do nothing and
+     leave the chat folded once the window grows. */
+  .studio > .show-chat, .studio [data-testid="collapse-chat"] { display: none; }
   .studio[data-pane="chat"] > .workspace, .studio:not([data-pane="chat"]) > .chat { display: none; }
   .studio[data-pane="chat"] > .chat { display: flex; }
   .studio .workspace, .studio .workspace.files-closed { grid-template-columns: minmax(0, 1fr); }

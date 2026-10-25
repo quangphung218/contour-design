@@ -200,7 +200,6 @@ pub fn color_swatch<F: Fn(String) + 'static>(
             type="color"
             class="swatch"
             class:transparent=clear
-            title=clear.then_some("transparent")
             data-testid=testid
             prop:value=hex
             on:input=move |ev| on_pick(event_target_value(&ev))
