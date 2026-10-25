@@ -420,6 +420,7 @@ details.agent-missing[open] > summary .ico:last-child { transform: rotate(90deg)
 .settings-section .card > .field:first-child { margin-top: 0; }
 .settings-inline { display: flex; align-items: center; gap: var(--space-3); }
 .select-auto { width: auto; min-width: 220px; }
+.agent-save { margin-top: var(--space-4); align-items: center; gap: var(--space-3); }
 .settings .warning-text { margin-top: var(--space-3); border-radius: var(--radius-md); }
 .save-bar {
   position: sticky; bottom: 0; z-index: var(--z-sticky);

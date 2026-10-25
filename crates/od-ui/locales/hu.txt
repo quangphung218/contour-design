@@ -13,6 +13,7 @@ DaysAgo = {0} napja
 Loading = Betöltés…
 Cancel = Mégse
 Save = Mentés
+SaveAgent = Agent mentése
 Saved = Mentve
 Delete = Törlés
 Close = Bezárás

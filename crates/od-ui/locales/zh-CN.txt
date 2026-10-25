@@ -13,6 +13,7 @@ DaysAgo = {0} 天前
 Loading = 加载中…
 Cancel = 取消
 Save = 保存
+SaveAgent = 保存 agent
 Saved = 已保存
 Delete = 删除
 Close = 关闭

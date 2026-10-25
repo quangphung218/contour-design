@@ -13,6 +13,7 @@ DaysAgo = há {0} d
 Loading = Carregando…
 Cancel = Cancelar
 Save = Salvar
+SaveAgent = Salvar agent
 Saved = Salvo
 Delete = Excluir
 Close = Fechar

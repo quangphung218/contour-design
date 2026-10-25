@@ -225,6 +225,7 @@ messages! {
     Loading => "Loading…", "Đang tải…";
     Cancel => "Cancel", "Huỷ";
     Save => "Save", "Lưu";
+    SaveAgent => "Save agent", "Lưu agent";
     Saved => "Saved", "Đã lưu";
     Delete => "Delete", "Xoá";
     Close => "Close", "Đóng";

@@ -13,6 +13,7 @@ DaysAgo = il y a {0} j
 Loading = Chargement…
 Cancel = Annuler
 Save = Enregistrer
+SaveAgent = Enregistrer l'agent
 Saved = Enregistré
 Delete = Supprimer
 Close = Fermer

@@ -13,6 +13,7 @@ DaysAgo = {0} g önce
 Loading = Yükleniyor…
 Cancel = İptal
 Save = Kaydet
+SaveAgent = Agent'ı kaydet
 Saved = Kaydedildi
 Delete = Sil
 Close = Kapat

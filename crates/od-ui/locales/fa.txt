@@ -13,6 +13,7 @@ DaysAgo = {0} روز پیش
 Loading = در حال بارگذاری…
 Cancel = لغو
 Save = ذخیره
+SaveAgent = ذخیرهٔ agent
 Saved = ذخیره شد
 Delete = حذف
 Close = بستن

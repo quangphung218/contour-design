@@ -13,6 +13,7 @@ DaysAgo = {0} g fa
 Loading = Caricamento…
 Cancel = Annulla
 Save = Salva
+SaveAgent = Salva agent
 Saved = Salvato
 Delete = Elimina
 Close = Chiudi

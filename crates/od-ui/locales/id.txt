@@ -13,6 +13,7 @@ DaysAgo = {0} h lalu
 Loading = Memuat…
 Cancel = Batal
 Save = Simpan
+SaveAgent = Simpan agent
 Saved = Tersimpan
 Delete = Hapus
 Close = Tutup

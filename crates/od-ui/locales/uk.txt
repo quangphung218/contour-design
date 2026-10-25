@@ -13,6 +13,7 @@ DaysAgo = {0} дн. тому
 Loading = Завантаження…
 Cancel = Скасувати
 Save = Зберегти
+SaveAgent = Зберегти агента
 Saved = Збережено
 Delete = Видалити
 Close = Закрити

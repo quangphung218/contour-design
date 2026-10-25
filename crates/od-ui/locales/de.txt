@@ -13,6 +13,7 @@ DaysAgo = vor {0} T.
 Loading = Wird geladen…
 Cancel = Abbrechen
 Save = Speichern
+SaveAgent = Agent speichern
 Saved = Gespeichert
 Delete = Löschen
 Close = Schließen

@@ -13,6 +13,7 @@ DaysAgo = {0} dni temu
 Loading = Ładowanie…
 Cancel = Anuluj
 Save = Zapisz
+SaveAgent = Zapisz agenta
 Saved = Zapisano
 Delete = Usuń
 Close = Zamknij

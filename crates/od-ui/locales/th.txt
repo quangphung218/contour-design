@@ -13,6 +13,7 @@ DaysAgo = {0} วันที่แล้ว
 Loading = กำลังโหลด…
 Cancel = ยกเลิก
 Save = บันทึก
+SaveAgent = บันทึก agent
 Saved = บันทึกแล้ว
 Delete = ลบ
 Close = ปิด

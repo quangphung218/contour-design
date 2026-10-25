@@ -13,6 +13,7 @@ DaysAgo = قبل {0} ي
 Loading = جارٍ التحميل…
 Cancel = إلغاء
 Save = حفظ
+SaveAgent = حفظ الـ agent
 Saved = محفوظ
 Delete = حذف
 Close = إغلاق
