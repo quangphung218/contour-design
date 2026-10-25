@@ -247,6 +247,11 @@ try {
   await page.getByTestId('composer').fill('make a deck');
   await page.getByTestId('composer').press('Enter');
   await until(async () => (await assistant.nth(7).getAttribute('data-state')) === 'succeeded', 'deck turn end');
+  // The run wrote deck.html, not index.html: the deck opens in its own tab
+  // and no "did not update the entry file" warning shows.
+  await page.locator('.tab.active', { hasText: 'deck.html' }).waitFor();
+  await sleep(300);
+  assert.equal(await page.getByTestId('deliverable-warning').count(), 0, 'entry warning after a run that wrote another page');
   // Let the watcher's file-changed (200 ms debounce) land before driving the
   // deck, or it reloads the frame mid-navigation.
   await sleep(800);

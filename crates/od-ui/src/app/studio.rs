@@ -354,7 +354,7 @@ impl StudioCtx {
 
     /// Opens `path` in a tab without leaving the pane shown (the entry file
     /// opened on load must not pull a phone away from the chat).
-    fn show_tab(self, path: &str) {
+    pub(crate) fn show_tab(self, path: &str) {
         self.side.open.set(false);
         self.active_term.set(None);
         self.tabs.update(|t| t.open(path));
@@ -663,8 +663,8 @@ impl StudioCtx {
                     }
                     if status == RunStatus::Succeeded {
                         let files = turn.with_untracked(AssistantTurn::touched_files);
-                        self.record_versions(files, prompt.get_value());
-                        self.check_deliverable(run.get_value());
+                        self.record_versions(files.clone(), prompt.get_value());
+                        self.check_deliverable(run.get_value(), files);
                     }
                     self.finish_run(shell);
                 }
