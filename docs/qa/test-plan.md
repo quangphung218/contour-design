@@ -38,6 +38,7 @@ Goal: a first-time user reaches Home with a working agent or API key.
 | ONB-06 | A wrong key saved without testing: the first brief explains the failure | Fake provider answering 401 | Save wrong key, Continue, brief | The failed turn mentions the key / 401 | P1 | auto |
 | ONB-07 | The API key is never sent back and its file is private | Key saved | `GET /api/app-config`, `/api/agents`; file mode | Key absent; `app-config.json` is `0600` | P0 | auto |
 | ONB-08 | Keyboard only: onboarding can be finished with Tab/Enter | ONB-01 | Tab to Continue, Enter | Home opens | P2 | auto |
+| ONB-09 | On a phone, "API key required" sits with the key field and Save stays in place | Viewport 390×844, no agent | API key ▸ Anthropic ▸ empty key | Hint tied to the key field; Save next to Test or at the right edge; no sideways scroll | P2 | auto (QA-016) |
 | ONB-09 | Refresh after installing an agent detects it | Start without agent, then install one | Press Refresh | The new agent is listed | P2 | manual: the daemon's PATH is fixed when it starts |
 
 ## 2. Create a project from Home (`home.qa.mjs`)
@@ -58,6 +59,7 @@ gets a project that starts working.
 | HOME-09 | Video (Motion) type creates a video project | Onboarded | Pick Video chip, Enter | Project kind is video | P1 | auto |
 | HOME-10 | Shift+Enter adds a new line instead of sending | Onboarded | Type, Shift+Enter, type | Brief has two lines, still on Home | P1 | auto |
 | HOME-11 | Home at phone width keeps the brief box usable | Viewport 390×844 | Open `/` | No horizontal page scroll; brief box and Create visible | P2 | auto |
+| HOME-12 | While design systems load, the kept pick shows a name or "Loading", not a raw id | A system picked on Home, list request held | Reload | The picker never shows the bare id; the pick is kept once loaded | P2 | auto (QA-017) |
 
 ## 3. Chat with the agent (`chat.qa.mjs`)
 
@@ -77,6 +79,7 @@ of runs.
 | CHAT-11 | Queued message while running goes out after the run | Slow run | Send a second message while running | It is queued, then sent when the first run ends | P1 | exist (studio) |
 | CHAT-12 | Daemon dies mid-session: the user is told | Project open | Kill daemon | A visible "cannot reach" notice, not a frozen UI | P1 | exist (preview, recovery tip) |
 | CHAT-09 | A message sent right after opening a project shows in the chat | Fresh project | Send as soon as the composer shows | User message and answer are shown | P1 | auto as CHAT-09 (QA-002) |
+| CHAT-10 | Switching to another conversation while the first still loads shows only the one picked | Two conversations with one turn each; the first transcript held | Open project, pick the other conversation, let the first answer arrive | Only the picked conversation's messages | P1 | auto (QA-002 guard) |
 
 ## 4. Studio: files, preview, editing (`studio.qa.mjs`)
 
@@ -98,6 +101,7 @@ time when needed.
 | STU-11 | Device sizes lay the page out at their width | Window 1360×860 | Phone, Tablet, Desktop | The page sees 390 px, 820 px (original preset), then the pane width | P1 | auto (QA-003) |
 | STU-12 | Deep link to a project that does not exist | — | Open `/projects/nope` | A clear "not found" with a way back, no crash | P1 | auto |
 | STU-13 | A page with spaces and Vietnamese letters in the user's own folder previews | Folder with `trang chủ.html` | Open folder, open the file | Preview renders it | P1 | auto |
+| STU-14 | With Tablet shrunk to fit, the zoom label shows the real size, also after + | Window 1360×860, Tablet | Read the label, press + | Label = drawn size of the 820 px page; + changes the page or is off | P2 | auto (QA-015) |
 
 ## 5. Export (`export.qa.mjs`)
 
@@ -114,6 +118,8 @@ Goal: the user takes the design out of Contour.
 | EXP-07 | Export on an empty project | No files | Open Export | Disabled or a message; not a broken download | P1 | auto |
 | EXP-08 | Project name with Vietnamese and `/` gives a safe file name | Name "Bản/thảo: v1" | Export ZIP | Download name has no `/` or `:` and keeps letters | P2 | auto |
 | EXP-09 | Esc closes the Export menu | Export menu open | Esc | Menu closes (original closes it) | P2 | auto (QA-004) |
+| EXP-10 | Esc that closes the Export menu leaves comment mode on | Comment mode on, Export open | Esc | Menu closes; comment mode stays on | P1 | auto (QA-013) |
+| EXP-11 | Esc that closes the Export menu does not stop a running Design Jury | Jury on and running, Export open | Esc | Menu closes; jury still running | P1 | auto (QA-013) |
 
 ## 6. Manage projects (`projects.qa.mjs`)
 
@@ -197,6 +203,13 @@ the guard, so that is what is checked.
 | DL-10 | Deleting a conversation asks; Cancel keeps it | One turn | Delete, Cancel | Messages kept; no error | P1 | auto (QA-010 for the error) |
 | DL-11 | Deleting a project asks; Cancel keeps it | Project | Delete, Cancel | Project kept | P0 | auto as PRJ-04 |
 | DL-12 | A version overwritten by the agent can be restored | Two versions | History ▸ restore | Older version back, newer kept | P0 | auto as STU-07 |
+| DL-13 | Desktop app: Leave on the "edit not applied" question leaves | Typed in Content; `confirm` async as in Contour.app | Click Projects, choose Leave | Projects opens | P1 | auto (QA-011) |
+| DL-14 | A sidebar link with an edit not applied asks | Typed in Content | Click Projects: Cancel, then OK | Cancel stays with the text; OK leaves | P1 | auto |
+| DL-15 | Command palette ▸ Projects with an edit not applied asks | Same | Cmd/Ctrl+K ▸ Projects: Cancel, then OK | As DL-14 | P1 | auto (QA-012) |
+| DL-16 | Command palette ▸ Settings with an edit not applied asks | Same | Cmd/Ctrl+K ▸ Settings: Cancel, then OK | As DL-14 | P1 | auto (QA-012) |
+| DL-17 | Quick menu ▸ a Settings section with an edit not applied asks | Same | Quick menu ▸ Models: Cancel, then OK | As DL-14 | P1 | auto (QA-012) |
+| DL-18 | The chat's Settings button with an edit not applied asks | A failed turn; typed in Content | Settings chip: Cancel, then OK | As DL-14 | P1 | auto (QA-012) |
+| DL-19 | A message queued during a run survives a reload | A long run going | Queue a message, reload | Message still queued, back in the composer, or sent after the run | P1 | auto (QA-014) |
 
 ## Not automated, and why
 
