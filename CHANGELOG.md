@@ -20,6 +20,8 @@ All notable changes to Contour are recorded here. The format follows
 - Cancel in the delete-conversation dialog no longer throws a JS error (QA-010).
 - Tablet and Phone previews lay the page out at 820 and 390 px and scale it down when
   the pane is narrower, so device media queries apply (QA-003).
+- Edit panel: an Apply in one tab, or typing while it saves, no longer wipes what
+  was typed and not applied in another field (QA-006).
 
 ## [0.1.0] - 2026-10-24
 

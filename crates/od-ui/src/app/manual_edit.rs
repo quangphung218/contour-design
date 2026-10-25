@@ -142,12 +142,6 @@ impl Manual {
             .unwrap_or_else(|| mm::Drafts::of(el));
         self.set_drafts(drafts);
     }
-
-    /// A write or an undo/redo succeeded: what the drafts show is clean.
-    fn drafts_written(self) {
-        let typed = self.drafts();
-        self.book.update_value(|book| book.written(&typed));
-    }
 }
 
 impl StudioCtx {
@@ -246,8 +240,15 @@ impl StudioCtx {
         })
     }
 
-    /// Writes `edits` as one manual version and records it for undo.
-    fn manual_write(self, edits: Vec<SourceEdit>, label: String, after: impl FnOnce() + 'static) {
+    /// Writes `edits` as one manual version and records it for undo;
+    /// `part` names the drafts it sends, clean once it is saved.
+    fn manual_write(
+        self,
+        edits: Vec<SourceEdit>,
+        label: String,
+        part: mm::Part,
+        after: impl FnOnce() + 'static,
+    ) {
         let Some(file) = self.active_untracked() else {
             return;
         };
@@ -263,6 +264,8 @@ impl StudioCtx {
             label: Some(VERSION_LABEL.to_owned()),
         };
         let tools = self.tools;
+        // As sent: what is typed while it saves is not written yet.
+        let sent = m.drafts();
         leptos::task::spawn_local(async move {
             match api::post::<_, SourceEditResponse>(&format!("{}/source-edits", self.base()), &req)
                 .await
@@ -281,7 +284,7 @@ impl StudioCtx {
                         T::SavedVersion,
                         &[&r.file.path, &r.version.version.to_string()],
                     )));
-                    m.drafts_written();
+                    m.book.update_value(|book| book.written(part, &sent));
                     after();
                 }
                 Err(e) => m.error.set(Some(e.message)),
@@ -290,12 +293,12 @@ impl StudioCtx {
         });
     }
 
-    fn manual_edit(self, change: impl FnOnce(&mut SourceEdit), label: T) {
+    fn manual_edit(self, change: impl FnOnce(&mut SourceEdit), label: T, part: mm::Part) {
         let Some(mut edit) = self.manual_target() else {
             return;
         };
         change(&mut edit);
-        self.manual_write(vec![edit], t(label).to_owned(), || {});
+        self.manual_write(vec![edit], t(label).to_owned(), part, || {});
     }
 
     fn manual_save_content(self) {
@@ -339,6 +342,7 @@ impl StudioCtx {
                 }
             },
             T::ManualApplyContent,
+            mm::Part::Content,
         );
     }
 
@@ -349,12 +353,17 @@ impl StudioCtx {
             .filter(|e| Some(&e.selector) == sel.as_ref())
             .collect();
         let tools = self.tools;
-        self.manual_write(edits, t(T::ManualApplyStyle).to_owned(), move || {
-            let selector = sel.unwrap_or_default();
-            tools
-                .overrides
-                .update(|list| list.retain(|o| o.selector != selector));
-        });
+        self.manual_write(
+            edits,
+            t(T::ManualApplyStyle).to_owned(),
+            mm::Part::None,
+            move || {
+                let selector = sel.unwrap_or_default();
+                tools
+                    .overrides
+                    .update(|list| list.retain(|o| o.selector != selector));
+            },
+        );
     }
 
     fn manual_save_attributes(self) {
@@ -364,14 +373,22 @@ impl StudioCtx {
         };
         match mm::attribute_changes(&el.attributes, &m.attrs.get_untracked()) {
             Ok(changes) if changes.is_empty() => {}
-            Ok(changes) => self.manual_edit(|e| e.attributes = changes, T::ManualApplyAttributes),
+            Ok(changes) => self.manual_edit(
+                |e| e.attributes = changes,
+                T::ManualApplyAttributes,
+                mm::Part::Attributes,
+            ),
             Err(e) => m.error.set(Some(tf(T::ManualInvalidAttributes, &[&e]))),
         }
     }
 
     fn manual_save_html(self) {
         let html = self.tools.manual.html.get_untracked();
-        self.manual_edit(|e| e.outer_html = Some(html), T::ManualApplyHtml);
+        self.manual_edit(
+            |e| e.outer_html = Some(html),
+            T::ManualApplyHtml,
+            mm::Part::Html,
+        );
     }
 
     fn manual_delete(self) {
@@ -380,11 +397,16 @@ impl StudioCtx {
             return;
         };
         edit.remove = true;
-        self.manual_write(vec![edit], t(T::ManualDelete).to_owned(), move || {
-            m.selected.set(None);
-            m.element.set(None);
-            bridge::post_main(&pb::mark(None, false));
-        });
+        self.manual_write(
+            vec![edit],
+            t(T::ManualDelete).to_owned(),
+            mm::Part::None,
+            move || {
+                m.selected.set(None);
+                m.element.set(None);
+                bridge::post_main(&pb::mark(None, false));
+            },
+        );
     }
 
     /// Restores the version before (`undo`) or after the last step.
@@ -419,8 +441,9 @@ impl StudioCtx {
                 expect_version_id: Some(expect),
             };
             match api::post::<_, RestoreVersionResponse>(&url, &req).await {
+                // The fields follow the restored source on its read,
+                // except what was typed and not applied.
                 Ok(_) => {
-                    m.drafts_written();
                     m.history
                         .update(|h| if undo { h.undone() } else { h.redone() });
                 }

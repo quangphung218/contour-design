@@ -265,11 +265,36 @@ impl DraftBook {
         out
     }
 
-    /// A write or an undo/redo of the element succeeded with `typed` shown:
-    /// those fields are clean now.
-    pub fn written(&mut self, typed: &Drafts) {
-        self.clean = Some(typed.clone());
+    /// A write of `part` succeeded with the drafts `sent` (as they were when
+    /// the write started): those fields are clean now. The other fields keep
+    /// their state, so what the user typed in another tab, or while the
+    /// write was saving, stays when the element is read again.
+    pub fn written(&mut self, part: Part, sent: &Drafts) {
+        let Some(clean) = &mut self.clean else {
+            return;
+        };
+        match part {
+            Part::Content => {
+                clean.text.clone_from(&sent.text);
+                clean.href.clone_from(&sent.href);
+                clean.src.clone_from(&sent.src);
+                clean.alt.clone_from(&sent.alt);
+            }
+            Part::Attributes => clean.attrs.clone_from(&sent.attrs),
+            Part::Html => clean.html.clone_from(&sent.html),
+            Part::None => {}
+        }
     }
+}
+
+/// Which drafts a write sends: the Content tab's fields, the Attributes
+/// JSON, the Html, or none (a style, a delete, an undo or redo).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Part {
+    Content,
+    Attributes,
+    Html,
+    None,
 }
 
 #[cfg(test)]
@@ -326,16 +351,17 @@ mod tests {
     fn apply_then_undo(
         original: &SourceElementResponse,
         written: &SourceElementResponse,
+        part: Part,
         type_it: impl Fn(&mut Drafts),
         field: impl Fn(&Drafts) -> String,
     ) {
         let mut book = DraftBook::default();
         let mut ui = book.read(&Drafts::default(), original, false);
         type_it(&mut ui);
-        book.written(&ui); // Apply succeeded.
+        book.written(part, &ui); // Apply succeeded.
         ui = book.read(&ui, written, true); // The reload's read.
         assert_eq!(field(&ui), field(&Drafts::of(written)), "after apply");
-        book.written(&ui); // Undo succeeded.
+        book.written(Part::None, &ui); // Undo succeeded.
         ui = book.read(&ui, original, true);
         assert_eq!(field(&ui), field(&Drafts::of(original)), "after undo");
     }
@@ -353,6 +379,7 @@ mod tests {
                 "<p class=\"lead big\" title=\"Fresh\">Fresh</p>",
                 "Fresh",
             ),
+            Part::Attributes,
             // Compact JSON; the source answers pretty and sorted.
             |d| d.attrs = r#"{"title":"Fresh","class":"lead big"}"#.into(),
             |d| d.attrs.clone(),
@@ -369,6 +396,7 @@ mod tests {
                 "<div class=\"hero\" data-od-id=\"hero\">Brewed</div>",
                 "Brewed",
             ),
+            Part::Html,
             |d| d.html = "<div class=\"hero\">Brewed</div>".into(),
             |d| d.html.clone(),
         );
@@ -380,9 +408,60 @@ mod tests {
             &el_with(vec![], "<p>Hello</p>", "Hello"),
             // Saved trimmed.
             &el_with(vec![], "<p>Hi there</p>", "Hi there"),
+            Part::Content,
             |d| d.text = "  Hi there ".into(),
             |d| d.text.clone(),
         );
+    }
+
+    /// QA-006: an Apply in one tab, or typing while it saves, must not
+    /// wipe what was typed and not applied in another tab.
+    #[test]
+    fn a_write_keeps_what_another_tab_has_typed() {
+        let original = el_with(
+            vec![attr("class", "lead")],
+            "<p class=\"lead\">Fresh</p>",
+            "Fresh",
+        );
+        let titled = el_with(
+            vec![attr("class", "lead"), attr("title", "Fresh")],
+            "<p class=\"lead\" title=\"Fresh\">Fresh</p>",
+            "Fresh",
+        );
+        // Content typed, then Attributes applied.
+        let mut book = DraftBook::default();
+        let mut ui = book.read(&Drafts::default(), &original, false);
+        ui.text = "Typed but not applied yet".into();
+        ui.attrs = r#"{"class":"lead","title":"Fresh"}"#.into();
+        let sent = ui.clone();
+        book.written(Part::Attributes, &sent);
+        ui = book.read(&ui, &titled, true);
+        assert_eq!(ui.text, "Typed but not applied yet");
+        assert_eq!(ui.attrs, Drafts::of(&titled).attrs);
+        // Typed while the write saved: the drafts sent are what is clean.
+        let mut book = DraftBook::default();
+        let mut ui = book.read(&Drafts::default(), &original, false);
+        ui.attrs = r#"{"class":"lead","title":"Fresh"}"#.into();
+        let sent = ui.clone();
+        ui.text = "Typed during the save".into();
+        book.written(Part::Attributes, &sent);
+        ui = book.read(&ui, &titled, true);
+        assert_eq!(ui.text, "Typed during the save");
+        // A style write marks no draft clean.
+        let mut book = DraftBook::default();
+        let mut ui = book.read(&Drafts::default(), &original, false);
+        ui.text = "Still typing this".into();
+        book.written(Part::None, &ui);
+        ui = book.read(
+            &ui,
+            &el_with(
+                vec![attr("class", "lead"), attr("style", "font-size: 30px")],
+                "<p>Fresh</p>",
+                "Fresh",
+            ),
+            true,
+        );
+        assert_eq!(ui.text, "Still typing this");
     }
 
     #[test]

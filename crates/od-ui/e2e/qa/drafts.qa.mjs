@@ -55,7 +55,7 @@ test('DL-01', 'Text typed in Content survives applying a change in Attributes', 
   const text = await panel.getByTestId('manual-text').inputValue();
   assert.equal(text, 'Typed but not applied yet', 'the text typed in Content was replaced by the source');
   assert.equal(await page.getByTestId('manual-error').count(), 0);
-}, { knownBug: 'QA-006' });
+});
 
 test('DL-02', 'Text typed in Content survives applying a style', async ({ d, newPage }) => {
   const { panel, id } = await editLead(newPage, d);
@@ -68,7 +68,7 @@ test('DL-02', 'Text typed in Content survives applying a style', async ({ d, new
   await panel.getByTestId('manual-tab-content').click();
   await sleep(300); // as in DL-01
   assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Still typing this');
-}, { knownBug: 'QA-006' });
+});
 
 test('DL-03', 'Typing while an Apply is still saving keeps what was typed', async ({ d, newPage }) => {
   const { page, panel, id } = await editLead(newPage, d);
@@ -93,7 +93,7 @@ test('DL-03', 'Typing while an Apply is still saving keeps what was typed', asyn
   await page.waitForResponse(/\/source-edits$/).catch(() => {});
   await sleep(500); // the answer is handled after the response event
   assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Typed during the save');
-}, { knownBug: 'QA-006' });
+});
 
 test('DL-04', 'Closing the page with a manual edit not applied asks before leaving', async ({ d, newPage }) => {
   const { page, panel } = await editLead(newPage, d);
