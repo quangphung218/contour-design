@@ -19,6 +19,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 
+/** Opens the folded "Other agents" list, where agents not installed sit. */
+async function unfold(p) {
+  const other = p.getByTestId('agents-other');
+  await other.waitFor();
+  if (!(await other.evaluate((e) => e.open))) await other.locator('summary').click();
+}
+
 const BIN = process.env.OD_E2E_BIN;
 const MOCK_AGENTS = process.env.OD_MOCK_AGENTS;
 const PORT = Number(process.env.OD_E2E_C3_PORT || Number(process.env.OD_E2E_PORT || 17461) + 8);
@@ -160,6 +167,7 @@ try {
   // and changes nothing, then selects the agent once dsh and its profile
   // are installed.
   await page.goto(BASE + '/settings');
+  await unfold(page);
   const card = page.locator('[data-agent="deepseek-harness"]');
   await card.waitFor();
   assert.equal(await card.getAttribute('data-needs-setup'), 'true');
@@ -200,6 +208,7 @@ try {
   await until(async () => (await section.boundingBox()).y < 900, 'the guide opens at its section');
   assert.match(await page.locator('.docs-body').textContent(), /dsh --profile open-design --probe/);
   await page.goto(BASE + '/settings');
+  await unfold(page);
   await card.click();
   await page.getByTestId('deepseek-harness-cli-found').waitFor();
   mkdirSync(profile, { recursive: true });
@@ -264,6 +273,7 @@ try {
   rmSync(join(dshHome, 'profiles'), { recursive: true, force: true });
   await put('/api/app-config', { onboardingCompleted: false });
   await page.goto(BASE + '/onboarding');
+  await unfold(page);
   await page.locator('[data-agent="deepseek-harness"]').click();
   await dialog.waitFor();
   await page.getByTestId('deepseek-harness-guide').click();
@@ -271,7 +281,7 @@ try {
   await sleep(500);
   assert.equal(new URL(page.url()).pathname, '/docs', 'onboarding lets the guide open');
   await page.getByTestId('docs-back').click();
-  await page.locator('[data-agent="deepseek-harness"]').waitFor();
+  await page.locator('[data-agent="deepseek-harness"]').waitFor({ state: 'attached' });
   assert.equal(new URL(page.url()).pathname, '/onboarding');
   await put('/api/app-config', { onboardingCompleted: true });
   results.guideFromOnboarding = 'ok';
@@ -293,6 +303,7 @@ try {
     };
     await shot('agent-needs-setup', async (p) => {
       await p.goto(BASE + '/settings');
+      await unfold(p);
       await p.locator('[data-agent="deepseek-harness"][data-needs-setup="true"]').scrollIntoViewIfNeeded();
     });
     await shot('dsh-setup-dialog', async (p) => {

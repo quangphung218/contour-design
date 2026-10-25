@@ -30,9 +30,9 @@ Goal: a first-time user reaches Home with a working agent or API key.
 
 | ID | Scenario | Precondition | Steps | Expected | P | Status |
 |---|---|---|---|---|---|---|
-| ONB-01 | First launch goes to onboarding and the found agent is preselected | Empty data folder, mock `claude` on PATH | Open `/` | Redirect to `/onboarding`; Claude is selected and tested; agents not installed are disabled | P0 | auto |
+| ONB-01 | First launch goes to onboarding and the found agent is preselected | Empty data folder, mock `claude` on PATH | Open `/` | Redirect to `/onboarding`; Claude is selected and tested; agents not installed sit folded under Other agents and cannot be picked | P0 | auto |
 | ONB-02 | Continue with the found agent lands on Home and is remembered | ONB-01 | Continue, reload `/` | Home stays (no second onboarding) | P0 | auto |
-| ONB-03 | No agent installed: the user is told what to do | PATH without any agent CLI | Open `/onboarding` | No agent is picked; the screen says how to install one or use an API key; Continue is off | P1 | auto |
+| ONB-03 | No agent installed: the user is told what to do | PATH without any agent CLI, no Chrome | Open `/onboarding`; install the mock agent; Check again | No agent is picked; Claude Code and Codex come first, each with a copyable install command and its setup page; the other agents are folded under "Other agents (N)"; the API key path says it makes one HTML file without tools; no brand extraction offered; a line says PDF, PPTX and image export need Chrome; Continue is off; after Check again the new agent is picked | P0 | auto |
 | ONB-04 | Skip onboarding with no agent, then send a brief | ONB-03 | Skip for now, brief, Enter | A message names the missing agent or API key and where to fix it | P1 | auto |
 | ONB-05 | An API provider cannot be saved with an empty key | ONB-03 | API key ▸ Anthropic, key empty, Save | Save refused; Continue stays off (original requires the key) | P1 | auto (QA-005) |
 | ONB-06 | A wrong key saved without testing: the first brief explains the failure | Fake provider answering 401 | Save wrong key, Continue, brief | The failed turn mentions the key / 401 | P1 | auto |

@@ -102,7 +102,7 @@ try {
   await page.goto(BASE + '/');
   await page.waitForURL('**/onboarding');
   await page.locator('[data-agent="claude"].active').waitFor();
-  assert.equal(await page.locator('[data-agent="codex"]').isDisabled(), true, 'unavailable agent is disabled');
+  assert.equal(await page.locator('[data-agent="codex"][role="radio"]').count(), 0, 'unavailable agent can be picked');
   await page.getByTestId('onboarding-continue').click();
   await page.waitForURL(BASE + '/');
   results.onboarding = 'ok';

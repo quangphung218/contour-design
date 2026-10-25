@@ -11,6 +11,7 @@ use crate::events::AgentInfo;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
+use od_contracts::BrowserResponse;
 use serde_json::{Value, json};
 
 #[component]
@@ -25,6 +26,23 @@ pub fn Onboarding() -> impl IntoView {
     // Track C2: step 2, a design system extracted from the brand's site.
     let brand = RwSignal::new(super::onboarding_brand::BrandState::Idle);
     let extracting = move || matches!(brand.get(), super::onboarding_brand::BrandState::Running(_));
+    let checking = RwSignal::new(false);
+    // PDF, PPTX and image export drive Chrome: say so now, not at export.
+    let browser = LocalResource::new(|| api::get::<BrowserResponse>("/api/browser"));
+    let no_browser = move || browser.get().and_then(Result::ok).is_some_and(|b| !b.found);
+    // Extracting a brand needs an agent that can browse; none, no offer.
+    let has_agent = move || matches!(shell.agents.get(), Some(Ok(list)) if list.iter().any(|a| a.available && a.id != "byok"));
+    let no_agent = move || matches!(shell.agents.get(), Some(Ok(list)) if !list.iter().any(|a| a.available && a.id != "byok"));
+    let check_again = move || {
+        if checking.get_untracked() {
+            return;
+        }
+        checking.set(true);
+        leptos::task::spawn_local(async move {
+            shell.rescan_agents().await;
+            checking.set(false);
+        });
+    };
 
     // Preselect the first available agent once detection answers.
     Effect::new(move |_| {
@@ -112,25 +130,49 @@ pub fn Onboarding() -> impl IntoView {
                 <Show
                     when=move || !use_key.get()
                     fallback=move || view! {
+                        <p class="byok-limits" data-testid="byok-limits">{icon(Glyph::Info)}{t(T::ByokLimits)}</p>
                         <p class="muted">{t(T::ByokIntro)}</p>
                         <ByokForm on_saved=on_byok_saved/>
                     }
                 >
                     <p class="muted">{t(T::LocalAgentIntro)}</p>
+                    {move || no_agent().then(|| view! {
+                        <p class="agents-none" data-testid="agents-none">{t(T::AgentsNoneHint)}</p>
+                    })}
                     <AgentPicker picked=picked/>
+                    {move || no_agent().then(|| view! {
+                        <p class="byok-alt muted small" data-testid="byok-alt">
+                            <button class="link-btn" on:click=move |_| use_key.set(true)>{t(T::UseApiKeyInstead)}</button>
+                            <span>{t(T::ByokLimits)}</span>
+                        </p>
+                    })}
                     <div class="row">
                         <TestResultLine state=test testid="onboarding-test"/>
                     </div>
                 </Show>
-                <super::onboarding_brand::BrandStep state=brand/>
+                <Show when=has_agent>
+                    <super::onboarding_brand::BrandStep state=brand/>
+                </Show>
+                {move || no_browser().then(|| view! {
+                    <p class="onboarding-note" data-testid="onboarding-chrome">
+                        {icon(Glyph::Warning)}
+                        <span>{t(T::ChromeNeeded)}</span>
+                        <a href=CHROME_URL target="_blank" rel="noopener">{t(T::GetChrome)}{icon(Glyph::ExternalLink)}</a>
+                    </p>
+                })}
                 {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 <div class="onboarding-foot">
                     <Show when=move || !use_key.get()>
-                        <button class="btn ghost" on:click=move |_| shell.reload_agents()>
-                            {icon(Glyph::Refresh)}
-                            {t(T::Refresh)}
+                        <button class="btn ghost" data-testid="onboarding-check-again"
+                            disabled=move || checking.get()
+                            on:click=move |_| check_again()>
+                            {move || if checking.get() {
+                                view! { <span class="spinner"></span> }.into_any()
+                            } else {
+                                icon(Glyph::Refresh).into_any()
+                            }}
+                            {move || t(if checking.get() { T::CheckingAgents } else { T::CheckAgain })}
                         </button>
-                        <span class="muted small">{t(T::RescanHint)}</span>
                     </Show>
                     <span class="spacer"></span>
                     <button class="btn ghost" on:click=move |_| finish_skip(None)>{t(T::SkipForNow)}</button>
@@ -157,8 +199,27 @@ pub fn Onboarding() -> impl IntoView {
     }
 }
 
-/// Detected agents: installed ones as cards to pick, the others in a
-/// compact list below. Shared with Settings. BYOK has its own form.
+/// Where to get Chrome when export has no browser to drive.
+const CHROME_URL: &str = "https://www.google.com/chrome/";
+
+/// The agents a new user is pointed to first: id, install command for
+/// macOS and Linux, official setup page.
+const FEATURED: &[(&str, &str, &str)] = &[
+    (
+        "claude",
+        "curl -fsSL https://claude.ai/install.sh | bash",
+        "https://code.claude.com/docs/en/setup",
+    ),
+    (
+        "codex",
+        "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+        "https://developers.openai.com/codex/cli",
+    ),
+];
+
+/// Detected agents: installed ones as cards to pick. With none installed,
+/// Claude Code and Codex come first with how to install them; every other
+/// agent waits in a folded list. Shared with Settings. BYOK has its own form.
 #[component]
 pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
     let shell = Shell::get();
@@ -181,26 +242,86 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
         }
             .into_any(),
         Some(Ok(list)) => {
-            let (ready, missing): (Vec<_>, Vec<_>) = list
+            let (ready, mut missing): (Vec<_>, Vec<_>) = list
                 .into_iter()
                 .filter(|a| a.id != "byok")
                 .partition(|a| a.available);
+            // Featured only while nothing is installed: then they are the
+            // way forward, otherwise noise next to a working agent.
+            let featured: Vec<_> = if ready.is_empty() {
+                FEATURED
+                    .iter()
+                    .filter_map(|&(id, command, docs)| {
+                        let at = missing.iter().position(|a| a.id == id)?;
+                        Some((missing.remove(at), command, docs))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             view! {
-                <div class="agent-list" role="radiogroup">
-                    {ready.into_iter().map(|a| view! { <AgentCard agent=a picked=picked/> }).collect_view()}
-                </div>
-                {(!missing.is_empty()).then(|| view! {
-                    <div class="agent-missing">
-                        <span class="eyebrow">{t(T::OtherAgents)}</span>
-                        <div class="agent-list compact">
-                            {missing.into_iter().map(|a| view! { <AgentCard agent=a picked=picked/> }).collect_view()}
-                        </div>
+                {(!ready.is_empty()).then(|| view! {
+                    <div class="agent-list" role="radiogroup">
+                        {ready.into_iter().map(|a| view! { <AgentCard agent=a picked=picked/> }).collect_view()}
                     </div>
+                })}
+                {(!featured.is_empty()).then(|| view! {
+                    <div class="agent-install-list">
+                        {featured.into_iter().map(|(a, command, docs)| view! {
+                            <InstallCard agent=a command=command docs=docs/>
+                        }).collect_view()}
+                    </div>
+                })}
+                {(!missing.is_empty()).then(|| {
+                    let count = missing.len().to_string();
+                    view! {
+                        <details class="agent-missing" data-testid="agents-other">
+                            <summary>{icon(Glyph::ChevronRight)}{tf(T::OtherAgentsCount, &[&count])}</summary>
+                            <div class="agent-list compact">
+                                {missing.into_iter().map(|a| view! { <AgentCard agent=a picked=picked/> }).collect_view()}
+                            </div>
+                        </details>
+                    }
                 })}
             }
                 .into_any()
         }
     }
+    }
+}
+
+/// A recommended agent that is not installed: the command to paste into
+/// Terminal, a Copy button and the official setup page.
+#[component]
+fn InstallCard(agent: AgentInfo, command: &'static str, docs: &'static str) -> impl IntoView {
+    let copied = RwSignal::new(false);
+    let copy = move |_| {
+        leptos::task::spawn_local(async move {
+            if super::lib_ui::copy_text(command).await.is_ok() {
+                copied.set(true);
+                gloo_timers::future::TimeoutFuture::new(2_000).await;
+                copied.set(false);
+            }
+        });
+    };
+    view! {
+        <div class="agent-card agent-install" data-agent=agent.id.clone() data-testid="agent-install">
+            <span class="agent-icon">{icon(Glyph::Download)}</span>
+            <span class="agent-text">
+                <span class="agent-name">{agent.name.clone()}</span>
+                <span class="agent-detail">{t(T::NotInstalled)}</span>
+            </span>
+            <a class="btn ghost small" href=docs target="_blank" rel="noopener" data-testid="install-docs">
+                {t(T::InstallGuide)}{icon(Glyph::ExternalLink)}
+            </a>
+            <div class="install-cmd">
+                <code data-testid="install-command">{command}</code>
+                <button class="btn small" data-testid="install-copy" aria-label=t(T::CopyCommand) on:click=copy>
+                    {move || if copied.get() { icon(Glyph::Check) } else { icon(Glyph::Clipboard) }}
+                    {move || t(if copied.get() { T::Copied } else { T::Copy })}
+                </button>
+            </div>
+        </div>
     }
 }
 
@@ -222,6 +343,8 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
         )
     } else if agent.needs_setup {
         t(T::DshSetupRequired).to_owned()
+    } else if agent.path.is_none() {
+        t(T::NotInstalled).to_owned()
     } else {
         agent
             .error
@@ -230,6 +353,19 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
     };
     let available = agent.available;
     let detail_title = detail.clone();
+    // Not installed: a plain row, not a button that cannot be pressed.
+    if !available && !setup {
+        return view! {
+            <div class="agent-card compact missing" data-agent=agent.id.clone()>
+                <span class="agent-icon">{icon(Glyph::Download)}</span>
+                <span class="agent-text">
+                    <span class="agent-name">{agent.name.clone()}</span>
+                    <span class="agent-detail" title=detail_title>{detail}</span>
+                </span>
+            </div>
+        }
+        .into_any();
+    }
     let selected = move || picked.get().as_deref() == Some(id_check.as_str());
     view! {
         <button
@@ -237,7 +373,6 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
             class:compact=!available
             class:needs-setup=setup
             class:active=selected.clone()
-            disabled=!available && !setup
             role="radio"
             aria-checked=move || selected().to_string()
             data-agent=agent.id.clone()
@@ -250,7 +385,7 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
                 }
             }
         >
-            <span class="agent-icon">{icon(if available { Glyph::Agent } else if setup { Glyph::Settings } else { Glyph::Download })}</span>
+            <span class="agent-icon">{icon(if available { Glyph::Agent } else { Glyph::Settings })}</span>
             <span class="agent-text">
                 <span class="agent-name">{agent.name.clone()}</span>
                 <span class="agent-detail" title=detail_title>{detail}</span>
@@ -263,4 +398,5 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
             <super::dsh_setup::DshSetupDialog state=setup_state picked=picked cli_path=cli_path.clone()/>
         })}
     }
+    .into_any()
 }

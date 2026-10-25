@@ -277,7 +277,7 @@ a.project-name:hover { color: var(--color-accent-text); }
 .onboarding-card { width: min(680px, 100%); padding: var(--space-8); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); animation: rise-in var(--duration-slow) var(--ease-emphasized); }
 .onboarding-head { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-6); }
 .onboarding-head p { margin: 0; max-width: 58ch; }
-.onboarding-foot { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--color-border-subtle); }
+.onboarding-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--color-border-subtle); }
 
 .agent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--space-2-5); }
 .agent-list.compact { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--space-1-5); }
@@ -326,6 +326,52 @@ a.project-name:hover { color: var(--color-accent-text); }
 .agent-card.compact .agent-icon .ico { width: 15px; height: 15px; }
 .agent-card.compact .agent-name { font-weight: var(--weight-medium); font-size: var(--text-sm); color: var(--color-text-secondary); }
 .agent-card.compact .agent-detail { font-size: var(--text-2xs); }
+/* Not installed: a plain row in the folded list, not a dead button. */
+.agent-card.compact.missing { cursor: default; }
+/* No agent yet: Claude Code and Codex with the command to install them. */
+.agents-none { margin: var(--space-3) 0; font-weight: var(--weight-medium); }
+.agent-install-list { display: flex; flex-direction: column; gap: var(--space-2-5); }
+.agent-card.agent-install { flex-wrap: wrap; cursor: default; border-style: solid; }
+.agent-card.agent-install:hover { border-color: var(--color-border); box-shadow: var(--shadow-xs); }
+.agent-card.agent-install .agent-text { flex: 1 1 140px; }
+.agent-card.agent-install > .btn { flex: none; }
+.agent-card.agent-install > .btn .ico { width: var(--icon-sm); height: var(--icon-sm); }
+.install-cmd { display: flex; align-items: center; gap: var(--space-2); flex-basis: 100%; min-width: 0; }
+.install-cmd code {
+  flex: 1; min-width: 0;
+  padding: var(--space-1-5) var(--space-2-5);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border-subtle);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.install-cmd .btn { flex: none; }
+details.agent-missing > summary {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  min-height: 32px;
+  list-style: none; cursor: pointer;
+  font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text-secondary);
+}
+details.agent-missing > summary::-webkit-details-marker { display: none; }
+details.agent-missing > summary .ico { width: var(--icon-sm); height: var(--icon-sm); transition: transform var(--duration-fast) var(--ease-out); }
+details.agent-missing[open] > summary .ico { transform: rotate(90deg); }
+.byok-alt { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin: var(--space-3) 0 0; }
+.byok-alt button { padding: 0; border: 0; background: none; font: inherit; font-weight: var(--weight-medium); color: var(--color-accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.byok-limits, .onboarding-note {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm); color: var(--color-text-secondary);
+}
+.byok-limits .ico, .onboarding-note .ico { width: var(--icon-sm); height: var(--icon-sm); flex: none; }
+.onboarding-note { margin: var(--space-5) 0 0; padding: var(--space-2-5) var(--space-3); border-radius: var(--radius-md); background: var(--color-warning-soft); }
+.onboarding-note > .ico { color: var(--color-warning); }
+@media (max-width: 600px) {
+  .page.onboarding { padding: var(--space-4) var(--space-3); }
+  .onboarding-card { padding: var(--space-5); }
+}
+.onboarding-note a { display: inline-flex; align-items: center; gap: var(--space-1); font-weight: var(--weight-medium); }
 /* Track C3: an installed agent whose connection component is missing. */
 .agent-card.compact.needs-setup { cursor: pointer; border-style: dashed; border-color: var(--color-border-strong); }
 .agent-card.compact.needs-setup .agent-icon { color: var(--color-warning); }

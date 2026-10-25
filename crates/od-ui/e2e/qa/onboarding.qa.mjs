@@ -5,9 +5,10 @@
 
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { statSync, existsSync } from 'node:fs';
+import { statSync, existsSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test, run, until, waitTurn, overflowsX } from './lib.mjs';
+import { test, run, until, waitTurn, overflowsX, MOCK_AGENTS } from './lib.mjs';
 
 /** A fake OpenAI-compatible provider that answers 401 to everything. */
 function rejectingProvider() {
@@ -25,15 +26,35 @@ function rejectingProvider() {
 
 const fresh = { daemon: { onboarded: false } };
 const noAgent = { daemon: { onboarded: false, agents: false } };
+// Any existing file passes as the browser: export is not exercised here.
+const freshWithChrome = { daemon: { onboarded: false, env: { OD_CHROME_PATH: '/bin/sh' } } };
+// Empty at start; ONB-03 installs the mock agent into it while the app runs.
+const lateBin = mkdtempSync(join(tmpdir(), 'od-qa-late-bin-'));
+const noAgentNoChrome = {
+  daemon: { onboarded: false, agents: false, env: { PATH: `${lateBin}:/usr/bin:/bin`, OD_CHROME_PATH: '/nonexistent/chrome' } },
+};
 
-test('ONB-01', 'First launch opens onboarding with the installed agent picked and missing ones disabled', async ({ d, newPage }) => {
+test('ONB-01', 'First launch opens onboarding with the installed agent picked and the others folded away', async ({ d, newPage }) => {
   const { page } = await newPage();
+  const browser = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/browser');
   await page.goto(d.base + '/');
   await page.waitForURL('**/onboarding');
   await page.locator('[data-agent="claude"].active').waitFor();
-  assert.equal(await page.locator('[data-agent="codex"]').isDisabled(), true);
+  // Not installed: folded under "Other agents", not a button to pick.
+  const other = page.getByTestId('agents-other');
+  assert.match(await other.locator('summary').innerText(), /^Other agents \(\d+\)$/);
+  assert.equal(await other.evaluate((e) => e.open), false, 'the other agents are unfolded');
+  assert.equal(await page.locator('[data-agent="codex"][role="radio"]').count(), 0, 'codex can be picked although missing');
+  // An agent is there: no install guide, and the brand step is offered.
+  assert.equal(await page.getByTestId('agent-install').count(), 0);
+  assert.equal(await page.getByTestId('agents-none').count(), 0);
+  await page.getByTestId('onboarding-brand').waitFor();
   await page.locator('[data-testid="onboarding-test"] [data-ok="true"]').waitFor({ timeout: 20_000 });
-}, fresh);
+  // A browser is found: no Chrome warning.
+  await browser;
+  await page.waitForTimeout(200);
+  assert.equal(await page.getByTestId('onboarding-chrome').count(), 0, 'Chrome warning shown although a browser is set');
+}, freshWithChrome);
 
 test('ONB-02', 'After Continue the user lands on Home and is not sent back to onboarding', async ({ d, newPage }) => {
   const { page } = await newPage();
@@ -47,19 +68,59 @@ test('ONB-02', 'After Continue the user lands on Home and is not sent back to on
   assert.equal(new URL(page.url()).pathname, '/');
 }, fresh);
 
-test('ONB-03', 'With no agent installed the screen says what to do and Continue stays off', async ({ d, newPage }) => {
+test('ONB-03', 'With no agent installed the screen shows how to install one, and Check again finds it', async ({ d, newPage }) => {
   const { page } = await newPage();
   await page.goto(d.base + '/');
   await page.waitForURL('**/onboarding');
-  await page.locator('[data-agent]').first().waitFor();
-  // DeepSeek Harness stays clickable on purpose: it opens its setup guide.
-  await page.waitForLoadState('networkidle').catch(() => {});
-  const picked = await page.locator('[data-agent].active').count();
-  assert.equal(picked, 0, `${picked} agent shown as picked although none is installed`);
-  assert.equal(await page.getByTestId('onboarding-continue').isDisabled(), true);
+  const install = page.getByTestId('agent-install');
+  await install.first().waitFor();
+  // Claude Code and Codex first, each with a command to copy and its setup page.
+  assert.deepEqual(await install.evaluateAll((els) => els.map((e) => e.dataset.agent)), ['claude', 'codex']);
+  const first = await page.locator('[data-agent]').first().getAttribute('data-agent');
+  assert.equal(first, 'claude', `${first} comes before Claude Code`);
+  for (const id of ['claude', 'codex']) {
+    const card = page.locator(`[data-testid="agent-install"][data-agent="${id}"]`);
+    const cmd = (await card.getByTestId('install-command').innerText()).trim();
+    assert.match(cmd, /^curl -fsSL https:\/\/\S+ \| (ba)?sh$/, `${id} command: ${cmd}`);
+    const href = await card.getByTestId('install-docs').getAttribute('href');
+    assert.match(href, /^https:\/\/(code\.claude\.com|developers\.openai\.com)\//, `${id} docs: ${href}`);
+    await card.getByTestId('install-copy').click();
+    await card.getByTestId('install-copy').filter({ hasText: 'Copied' }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), cmd, `${id}: Copy put something else on the clipboard`);
+  }
+  // The rest are folded, counted, and none is a dead disabled button.
+  const other = page.getByTestId('agents-other');
+  const summary = await other.locator('summary').innerText();
+  const n = Number(summary.match(/^Other agents \((\d+)\)$/)?.[1]);
+  assert.equal(await other.evaluate((e) => e.open), false, 'the other agents are unfolded');
+  await other.locator('summary').click();
+  assert.equal(await other.locator('[data-agent]').count(), n, `"${summary}" does not match the list`);
+  assert.ok(n >= 20, `only ${n} other agents`);
+  assert.equal(await page.locator('button[data-agent][disabled]').count(), 0, 'a missing agent is a disabled button');
+  // Words a new user understands; the API key path says what it gives.
   const text = await page.locator('.onboarding-card').innerText();
-  assert.match(text, /install|API key/i, 'nothing tells the user to install an agent or use an API key');
-}, noAgent);
+  assert.doesNotMatch(text, /PATH/, 'the screen still talks about PATH');
+  assert.match(text, /No coding agent found yet/);
+  assert.match(text, /API key only: makes a single HTML file, no tools\./);
+  // Brand extraction needs an agent: not offered.
+  assert.equal(await page.getByTestId('onboarding-brand').count(), 0, 'brand extraction offered with no agent');
+  // No Chrome: one line with a download link, nothing blocked by it.
+  const chrome = page.getByTestId('onboarding-chrome');
+  await chrome.waitFor();
+  assert.match(await chrome.innerText(), /PDF, PPTX and image export need Chrome\./);
+  assert.match(await chrome.locator('a').getAttribute('href'), /^https:\/\/www\.google\.com\/chrome\//);
+  assert.equal(await page.locator('[data-agent].active').count(), 0, 'an agent shows as picked although none is installed');
+  assert.equal(await page.getByTestId('onboarding-continue').isDisabled(), true);
+  // Install an agent while the app is open, then Check again: no restart.
+  symlinkSync(join(MOCK_AGENTS, 'claude'), join(lateBin, 'claude'));
+  await page.getByTestId('onboarding-check-again').click();
+  await page.locator('[data-agent="claude"].active').waitFor({ timeout: 20_000 });
+  await page.locator('[data-testid="onboarding-test"] [data-ok="true"]').waitFor({ timeout: 20_000 });
+  assert.equal(await page.getByTestId('agent-install').count(), 0, 'install guide still shown next to a working agent');
+  await page.getByTestId('onboarding-brand').waitFor();
+  await chrome.waitFor();
+  assert.equal(await page.getByTestId('onboarding-continue').isDisabled(), false, 'no Chrome blocks Continue');
+}, noAgentNoChrome);
 
 test('ONB-04', 'Skipping onboarding with no agent, then sending a brief, explains that an agent is needed', async ({ d, newPage }) => {
   const { page } = await newPage();
@@ -178,6 +239,17 @@ test('ONB-09', 'On a phone-sized window "API key required" sits with the key fie
   const atRight = form.x + form.width - (save.x + save.width) < 24;
   assert.ok(sameRow || atRight, `Save is alone on a line at x ${Math.round(save.x)}–${Math.round(save.x + save.width)}` +
     ` (form ${Math.round(form.x)}–${Math.round(form.x + form.width)})`);
+  assert.equal(await overflowsX(page), false, 'the page scrolls sideways');
+}, noAgent);
+
+test('ONB-10', 'On a phone-sized window the install commands fit and Copy stays reachable', async ({ d, newPage }) => {
+  const { page } = await newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(d.base + '/onboarding');
+  const card = page.locator('[data-testid="agent-install"][data-agent="claude"]');
+  await card.waitFor();
+  const copy = await card.getByTestId('install-copy').boundingBox();
+  const box = await card.boundingBox();
+  assert.ok(copy.x + copy.width <= box.x + box.width + 1, `Copy ends at ${Math.round(copy.x + copy.width)}, card at ${Math.round(box.x + box.width)}`);
   assert.equal(await overflowsX(page), false, 'the page scrolls sideways');
 }, noAgent);
 
