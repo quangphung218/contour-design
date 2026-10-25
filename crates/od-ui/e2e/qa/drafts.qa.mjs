@@ -433,7 +433,7 @@ test('DL-23', 'Ctrl/Cmd-click on a link with an edit not applied opens a new tab
 test("DL-24", "The browser's Back with an edit not applied asks: Cancel stays with the text", async ({ d, newPage }) => {
   const s = await editLead(newPage, d, { from: '/projects' });
   await stayThenLeave(s, () => s.page.evaluate(() => history.back()));
-}, { knownBug: 'QA-022' });
+});
 
 test('DL-25', 'The unapplied-edit question opens with the focus on Cancel', async ({ d, newPage }) => {
   const { page, panel } = await editLead(newPage, d);

@@ -119,6 +119,16 @@ impl Manual {
         }
     }
 
+    /// Subscribes the running effect to the typed fields.
+    fn track_drafts(self) {
+        self.text.track();
+        self.href.track();
+        self.src.track();
+        self.alt.track();
+        self.attrs.track();
+        self.html.track();
+    }
+
     /// The picked element has a change typed and not applied.
     pub fn unapplied(self) -> bool {
         let typed = self.drafts();
@@ -500,8 +510,12 @@ fn kind_glyph(kind: &str) -> Glyph {
 pub fn ManualEditPanel(ctx: StudioCtx) -> impl IntoView {
     let m = ctx.tools.manual;
     // While the panel is open, a change typed and not applied asks before
-    // the page is left.
-    super::leave_guard::guard_leaving(Callback::new(move |()| m.unapplied()));
+    // the page is left. Tracked: the guard holds a history entry once the
+    // answer turns true.
+    super::leave_guard::guard_leaving(Callback::new(move |()| {
+        m.track_drafts();
+        m.unapplied()
+    }));
     let layers = move || {
         let list = m.layers.get();
         if list.is_empty() {
