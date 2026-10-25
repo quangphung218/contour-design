@@ -79,8 +79,8 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
         }
     });
 
-    let navigate = leptos_router::hooks::use_navigate();
-    let to_mcp = Callback::new(move |()| navigate("/settings#mcp", Default::default()));
+    let navigate = super::leave_guard::use_leave();
+    let to_mcp = Callback::new(move |()| navigate("/settings#mcp"));
     let send = move || {
         if ctx
             .chat
@@ -652,7 +652,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     let ctx = expect_context::<StudioCtx>();
     let sources = use_context::<Sources>();
     let shell = Shell::get();
-    let navigate = leptos_router::hooks::use_navigate();
+    let navigate = super::leave_guard::use_leave();
     let item_id = StoredValue::new(item_id);
     // The user message this turn answered, and its files, for a retry.
     let asked = move || {
@@ -704,7 +704,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                         ctx.send(text, shell);
                                     }
                                 }
-                                NextStep::Settings => navigate("/settings", Default::default()),
+                                NextStep::Settings => navigate("/settings"),
                             };
                             view! {
                                 <button class="chip next-step" data-testid=testid on:click=run>

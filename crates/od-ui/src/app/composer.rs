@@ -1068,8 +1068,8 @@ pub fn PlusMenu(
     let search = RwSignal::new(String::new());
     let wrap = NodeRef::<Div>::new();
     close_outside(open, wrap);
-    let navigate = leptos_router::hooks::use_navigate();
-    let to_mcp = Callback::new(move |()| navigate("/settings#mcp", Default::default()));
+    let navigate = super::leave_guard::use_leave();
+    let to_mcp = Callback::new(move |()| navigate("/settings#mcp"));
     let children = StoredValue::new(children);
     let add = move |c: Candidate| {
         open.set(false);

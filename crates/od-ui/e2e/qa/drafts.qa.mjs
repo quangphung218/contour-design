@@ -212,12 +212,12 @@ test('DL-14', 'A sidebar link with an edit not applied asks: Cancel stays with t
 test('DL-15', 'Going to Projects from the command palette with an edit not applied asks first', async ({ d, newPage }) => {
   const s = await editLead(newPage, d);
   await stayThenLeave(s, viaPalette(s.page, 'Projects'));
-}, { knownBug: 'QA-012' });
+});
 
 test('DL-16', 'Going to Settings from the command palette with an edit not applied asks first', async ({ d, newPage }) => {
   const s = await editLead(newPage, d);
   await stayThenLeave(s, viaPalette(s.page, 'Settings'));
-}, { knownBug: 'QA-012' });
+});
 
 test('DL-17', 'A Settings section from the quick menu with an edit not applied asks first', async ({ d, newPage }) => {
   const s = await editLead(newPage, d);
@@ -225,12 +225,12 @@ test('DL-17', 'A Settings section from the quick menu with an edit not applied a
     if (!(await s.page.getByTestId('quick-menu-pop').isVisible())) await s.page.getByTestId('quick-menu').click();
     await s.page.getByTestId('quick-section-execution').click();
   });
-}, { knownBug: 'QA-012' });
+});
 
 test('DL-18', "The chat's Settings button after a failed turn, with an edit not applied, asks first", async ({ d, newPage }) => {
   const s = await editLead(newPage, d, { crash: true });
   await stayThenLeave(s, () => s.page.getByTestId('next-settings').first().click());
-}, { knownBug: 'QA-012' });
+});
 
 /** Opens a project with one finished turn and waits for the chat. */
 async function chatProject(newPage, d, name) {
