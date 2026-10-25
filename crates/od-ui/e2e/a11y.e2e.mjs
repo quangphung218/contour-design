@@ -6,7 +6,7 @@
 // under the page at 1024, Studio switches Chat · Preview · Files at 390,
 // onboarding and Projects stay inside 390, a transparent color shows a
 // checker, no tooltip over an open popover, menus and panels take focus and
-// give it back, the run line is a live region.
+// give it back, the run line stays one live region.
 //
 // Port: OD_E2E_PORT + 10 (or OD_E2E_A11Y_PORT). Run through ./run.sh.
 // OD_A11Y_SHOTS=<dir> also saves a screenshot of every screen checked, and
@@ -177,8 +177,32 @@ try {
   // 1440: tooltip, focus, tab keys, live region, transparent swatch.
   page = await newPage(1440, 900, 'light');
   await openStudio(page);
-  await check('run line is a live region', async () => {
-    assert.equal(await page.getByTestId('run-state').first().getAttribute('aria-live'), 'polite');
+  await check('run line is one live region from start to done', async () => {
+    // Keep the first run line the next turn adds and the phase it had then:
+    // a line rebuilt per phase would be a new node, and not be announced.
+    await page.evaluate(() => {
+      const seen = new MutationObserver(() => {
+        const lines = document.querySelectorAll('[data-testid="run-state"]');
+        const line = lines[lines.length - 1];
+        if (lines.length > 1 && !window.__runLine) {
+          window.__runLine = { el: line, phase: line.dataset.phase };
+          seen.disconnect();
+        }
+      });
+      seen.observe(document.body, { childList: true, subtree: true });
+    });
+    await page.getByTestId('composer').fill('make it warmer');
+    await page.getByTestId('composer').press('Enter');
+    await until(async () => (await page.getByTestId('assistant-msg').nth(1).getAttribute('data-state')) === 'succeeded', 'second turn');
+    const line = await page.evaluate(() => {
+      const r = window.__runLine;
+      return r && { first: r.phase, live: r.el.getAttribute('aria-live'), connected: r.el.isConnected, now: r.el.dataset.phase };
+    });
+    assert.ok(line, 'no run line appeared');
+    assert.ok(['starting', 'working'].includes(line.first), `first phase seen: ${line.first}`);
+    assert.ok(line.connected, 'the run line was replaced, not updated');
+    assert.equal(line.now, 'done', 'the run line kept its first phase');
+    assert.equal(line.live, 'polite', 'the run line is not a live region');
   });
   await check('no tooltip over the open model popover', async () => {
     await page.getByTestId('model-picker').click();
@@ -258,6 +282,11 @@ try {
     await shot(page, 'studio-chat-390-light');
     assert.ok(await onTop(page.getByTestId('composer')), 'composer is covered');
     assert.ok(!(await page.getByTestId('preview').isVisible()), 'preview shows with the chat');
+    assert.ok(!(await page.getByTestId('collapse-chat').isVisible()), 'collapse chat shows, but the switch replaces it');
+    // A file opened from the chat shows the preview too.
+    await page.getByTestId('turn-file-open').first().click();
+    await until(async () => (await page.getByTestId('pane-preview').getAttribute('aria-checked')) === 'true', 'a file opened from the chat shows the preview');
+    await preview(page).locator('#title').waitFor();
     await page.getByTestId('pane-files').click();
     await page.locator('.file', { hasText: 'index.html' }).waitFor();
     await sleep(400);
