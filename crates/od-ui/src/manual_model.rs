@@ -3,7 +3,7 @@
 //! image's `src` relative to the page, and the undo/redo history of the
 //! versions each edit wrote.
 
-use od_contracts::SourceAttribute;
+use od_contracts::{SourceAttribute, SourceElementResponse};
 use std::collections::BTreeMap;
 
 /// What the Content tab offers for the selected element.
@@ -168,6 +168,56 @@ impl History {
     }
 }
 
+/// The Content, Attributes and Html drafts of the picked element.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Drafts {
+    pub text: String,
+    pub href: String,
+    pub src: String,
+    pub alt: String,
+    pub attrs: String,
+    pub html: String,
+}
+
+impl Drafts {
+    /// As the source has them.
+    #[must_use]
+    pub fn of(el: &SourceElementResponse) -> Self {
+        let attr = |name: &str| {
+            el.attributes
+                .iter()
+                .find(|a| a.name == name)
+                .map(|a| a.value.clone())
+                .unwrap_or_default()
+        };
+        Self {
+            text: el.text.clone(),
+            href: attr("href"),
+            src: attr("src"),
+            alt: attr("alt"),
+            attrs: attributes_json(&el.attributes),
+            html: el.outer_html.clone(),
+        }
+    }
+}
+
+/// The drafts once the same element is read again (a reload after a write,
+/// often the Studio's own): a field the user changed since `before` was read
+/// keeps what they typed, the others follow `after`. Refilling them all lost
+/// the Attributes JSON being typed (the preview e2e's flake).
+#[must_use]
+pub fn refreshed(before: &Drafts, typed: &Drafts, after: &Drafts) -> Drafts {
+    let pick = |b: &String, t: &String, a: &String| if t == b { a.clone() } else { t.clone() };
+    Drafts {
+        text: pick(&before.text, &typed.text, &after.text),
+        href: pick(&before.href, &typed.href, &after.href),
+        src: pick(&before.src, &typed.src, &after.src),
+        alt: pick(&before.alt, &typed.alt, &after.alt),
+        attrs: pick(&before.attrs, &typed.attrs, &after.attrs),
+        html: pick(&before.html, &typed.html, &after.html),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +227,34 @@ mod tests {
             name: name.into(),
             value: value.into(),
         }
+    }
+
+    fn element(class: &str, style: Option<&str>) -> SourceElementResponse {
+        let mut attributes = vec![attr("class", class)];
+        attributes.extend(style.map(|s| attr("style", s)));
+        SourceElementResponse {
+            tag: "p".into(),
+            attributes,
+            outer_html: "<p>Fresh</p>".into(),
+            text: "Fresh".into(),
+            text_only: true,
+        }
+    }
+
+    #[test]
+    fn a_reread_keeps_what_was_typed_and_follows_the_rest() {
+        // Read, then the user types new attributes.
+        let before = Drafts::of(&element("lead", None));
+        let mut typed = before.clone();
+        typed.attrs = r#"{"class": "lead big"}"#.into();
+        // The same element read again after the Studio's own style write.
+        let after = Drafts::of(&element("lead", Some("font-size: 30px")));
+        let now = refreshed(&before, &typed, &after);
+        assert_eq!(now.attrs, typed.attrs, "what the user typed stays");
+        assert_eq!(now.html, after.html, "untouched fields follow the source");
+        assert_eq!(now.text, after.text);
+        // Nothing typed: everything follows the source.
+        assert_eq!(refreshed(&before, &before, &after), after);
     }
 
     #[test]

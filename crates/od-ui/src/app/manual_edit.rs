@@ -105,20 +105,39 @@ impl Manual {
         self.error.set(None);
     }
 
+    fn drafts(self) -> mm::Drafts {
+        mm::Drafts {
+            text: self.text.get_untracked(),
+            href: self.href.get_untracked(),
+            src: self.src.get_untracked(),
+            alt: self.alt.get_untracked(),
+            attrs: self.attrs.get_untracked(),
+            html: self.html.get_untracked(),
+        }
+    }
+
+    fn set_drafts(self, d: mm::Drafts) {
+        self.text.set(d.text);
+        self.href.set(d.href);
+        self.src.set(d.src);
+        self.alt.set(d.alt);
+        self.attrs.set(d.attrs);
+        self.html.set(d.html);
+    }
+
+    /// Fills the drafts from a read of the picked element. A read again of
+    /// the same one (`m.element` is cleared on a new pick) keeps what the
+    /// user changed since the last read.
     fn fill(self, el: &SourceElementResponse) {
-        let attr = |name: &str| {
-            el.attributes
-                .iter()
-                .find(|a| a.name == name)
-                .map(|a| a.value.clone())
-                .unwrap_or_default()
-        };
-        self.text.set(el.text.clone());
-        self.href.set(attr("href"));
-        self.src.set(attr("src"));
-        self.alt.set(attr("alt"));
-        self.attrs.set(mm::attributes_json(&el.attributes));
-        self.html.set(el.outer_html.clone());
+        let after = mm::Drafts::of(el);
+        let before = self.element.with_untracked(|was| match was {
+            Some(Ok(prev)) => Some(mm::Drafts::of(prev)),
+            _ => None,
+        });
+        self.set_drafts(match before {
+            Some(before) => mm::refreshed(&before, &self.drafts(), &after),
+            None => after,
+        });
     }
 }
 
