@@ -121,6 +121,24 @@ fn next_zoom(chosen: u32, cap: Option<u32>, up: bool) -> Option<u32> {
     (capped(next, cap) != shown).then_some(next)
 }
 
+/// One zoom step as [`next_zoom`], with `past_fit`: the frame is drawn
+/// above its fit, the stage scrolling. Only a frame that fits below the
+/// smallest step goes there: + steps past the fit, and − from the
+/// smallest step comes back to it (QA-024). Returns the new zoom and
+/// `past_fit`.
+fn zoom_move(chosen: u32, cap: Option<u32>, past_fit: bool, up: bool) -> Option<(u32, bool)> {
+    let cap = cap.filter(|_| !past_fit);
+    if let Some(z) = next_zoom(chosen, cap, up) {
+        return Some((z, past_fit));
+    }
+    let below_steps = cap.is_some_and(|c| c < ZOOM_STEPS[0]);
+    match up {
+        true if below_steps => Some((ZOOM_STEPS[0], true)),
+        false if past_fit => Some((chosen, false)),
+        _ => None,
+    }
+}
+
 /// Slide states a deck restore waits through before it gives up (the
 /// user may have moved on).
 const RESTORE_PATIENCE: u8 = 3;
@@ -214,6 +232,8 @@ pub struct StudioCtx {
     /// The largest zoom the device frame fits the preview at (`None` for
     /// Desktop, which follows the pane).
     zoom_cap: RwSignal<Option<u32>>,
+    /// Zoomed in past the fit ([`zoom_move`]): the cap does not apply.
+    past_fit: RwSignal<bool>,
     /// Composer context, uploads and the chat pane's size (track B3-chat).
     pub chat: super::composer::ChatState,
     /// Last slide shown per deck file, restored when the deck reloads.
@@ -331,13 +351,26 @@ impl StudioCtx {
 
     /// One zoom step from the size shown, when it changes that size.
     pub fn zoom_by(self, up: bool) {
-        if let Some(z) = next_zoom(self.zoom.get_untracked(), self.zoom_cap.get_untracked(), up) {
+        let (zoom, cap) = (self.zoom.get_untracked(), self.zoom_cap.get_untracked());
+        if let Some((z, past)) = zoom_move(zoom, cap, self.past_fit.get_untracked(), up) {
             self.zoom.set(z);
+            self.past_fit.set(past);
         }
     }
 
     fn can_zoom(self, up: bool) -> bool {
-        next_zoom(self.zoom.get(), self.zoom_cap.get(), up).is_some()
+        zoom_move(
+            self.zoom.get(),
+            self.zoom_cap.get(),
+            self.past_fit.get(),
+            up,
+        )
+        .is_some()
+    }
+
+    pub fn reset_zoom(self) {
+        self.zoom.set(100);
+        self.past_fit.set(false);
     }
 
     pub fn reload_preview(self) {
@@ -1148,6 +1181,7 @@ pub fn Studio() -> impl IntoView {
         show_code: RwSignal::new(false),
         zoom: RwSignal::new(100),
         zoom_cap: RwSignal::new(None),
+        past_fit: RwSignal::new(false),
         chat: super::composer::ChatState::new(),
         tools: Tools::new(),
         last_slide: StoredValue::new(None),
@@ -1303,8 +1337,18 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     let stage = NodeRef::<leptos::html::Div>::new();
     let stage_width = observe_width(stage);
     // A device wider than the stage is scaled down to fit, as the original.
-    let zoom = Memo::new(move |_| fit_zoom(device.get(), ctx.zoom.get(), stage_width.get()));
-    Effect::new(move |_| ctx.zoom_cap.set(fit_cap(device.get(), stage_width.get())));
+    let zoom = Memo::new(move |_| match ctx.past_fit.get() {
+        true => ctx.zoom.get(),
+        false => fit_zoom(device.get(), ctx.zoom.get(), stage_width.get()),
+    });
+    Effect::new(move |_| {
+        let cap = fit_cap(device.get(), stage_width.get());
+        ctx.zoom_cap.set(cap);
+        // Past the fit only while the frame fits below the smallest step.
+        if cap.is_none_or(|c| c >= ZOOM_STEPS[0]) {
+            ctx.past_fit.set(false);
+        }
+    });
     let src = Memo::new(move |_| {
         let path = ctx.active()?;
         let rev = ctx.preview_rev.get();
@@ -1514,7 +1558,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         on:click=move |_| ctx.zoom_by(false)>{icon(Glyph::ZoomOut)}</button>
                     <button class="zoom-value" data-tip=t(T::ZoomReset) aria-label=t(T::ZoomReset) data-testid="zoom-reset"
                         disabled=move || ctx.show_code.get()
-                        on:click=move |_| ctx.zoom.set(100)>{move || format!("{}%", zoom.get())}</button>
+                        on:click=move |_| ctx.reset_zoom()>{move || format!("{}%", zoom.get())}</button>
                     <button class="icon-btn small" aria-label=t(T::ZoomIn) data-tip=t(T::ZoomIn) data-testid="zoom-in"
                         disabled=move || ctx.show_code.get() || !ctx.can_zoom(true)
                         on:click=move |_| ctx.zoom_by(true)>{icon(Glyph::ZoomIn)}</button>
@@ -1803,5 +1847,18 @@ mod tests {
         assert_eq!(next_zoom(100, None, true), Some(125));
         assert_eq!(next_zoom(200, None, true), None);
         assert_eq!(next_zoom(50, None, false), None);
+    }
+
+    #[test]
+    fn a_frame_fit_below_the_steps_zooms_past_the_fit_and_back() {
+        // Tablet on a phone: fit at 35 %. + goes past it to 50 %, then on.
+        assert_eq!(zoom_move(100, Some(35), false, true), Some((50, true)));
+        assert_eq!(zoom_move(50, Some(35), true, true), Some((67, true)));
+        assert_eq!(zoom_move(67, Some(35), true, false), Some((50, true)));
+        // − from the smallest step comes back to the fit; − at the fit is off.
+        assert_eq!(zoom_move(50, Some(35), true, false), Some((50, false)));
+        assert_eq!(zoom_move(100, Some(35), false, false), None);
+        // A fit within the steps still stops +.
+        assert_eq!(zoom_move(100, Some(79), false, true), None);
     }
 }

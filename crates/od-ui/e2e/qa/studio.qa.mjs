@@ -192,7 +192,7 @@ test('STU-15', 'On a phone-width window, Tablet can still be zoomed in to read, 
   assert.ok(bigger > fit, `+ did not make the page bigger (${fit}% → ${bigger}%)`);
   const scrolls = await page.locator('.preview-stage').evaluate((el) => el.scrollWidth > el.clientWidth + 1);
   assert.ok(scrolls, 'the zoomed page is wider than the pane but the pane does not scroll');
-}, { knownBug: 'QA-024' });
+});
 
 test('STU-16', 'When + is off, its tooltip says why', async ({ d, newPage }) => {
   const { page } = await studio(newPage, d);
