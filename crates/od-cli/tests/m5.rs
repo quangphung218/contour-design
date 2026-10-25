@@ -526,6 +526,73 @@ fn mcp_install_cursor_merges_and_prints_json() {
     assert_eq!(std::fs::read_to_string(&config).unwrap(), "{ not json");
 }
 
+/// Uninstall after an upgrade, before any reinstall: only the entry an
+/// older version wrote as open-design is there, and it goes.
+#[test]
+fn mcp_uninstall_removes_the_old_entry_too() {
+    let home = tempfile::tempdir().unwrap();
+    let config = home.path().join(".cursor/mcp.json");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(
+        &config,
+        r#"{"mcpServers":{"open-design":{"command":"old-od"},"github":{"command":"gh-mcp"}}}"#,
+    )
+    .unwrap();
+    let out = od_home(home.path(), &["mcp", "install", "cursor", "--uninstall"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let left: Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+    assert_eq!(
+        left,
+        json!({ "mcpServers": { "github": { "command": "gh-mcp" } } })
+    );
+}
+
+/// The same with claude, whose `mcp remove` fails for a name it does not
+/// have: the old entry still goes and the uninstall succeeds.
+#[test]
+fn mcp_uninstall_from_claude_removes_the_old_entry() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(
+        home.path().join(".claude.json"),
+        r#"{"mcpServers":{"open-design":{"command":"old-od"}}}"#,
+    )
+    .unwrap();
+    let bin = home.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let claude = bin.join("claude");
+    std::fs::write(
+        &claude,
+        "#!/bin/sh\necho \"$*\" >> \"$HOME/claude.log\"\ncase \"$*\" in *contour*) exit 1;; esac\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = Command::new(OD)
+        .args(["mcp", "install", "claude", "--uninstall"])
+        .env("HOME", home.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env_remove("OD_DAEMON_URL")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let log = std::fs::read_to_string(home.path().join("claude.log")).unwrap();
+    assert_eq!(
+        log.lines().collect::<Vec<_>>(),
+        [
+            "mcp remove --scope user contour",
+            "mcp remove --scope user open-design"
+        ]
+    );
+}
+
 #[test]
 fn mcp_install_cli_agents_print_their_commands() {
     let home = tempfile::tempdir().unwrap();

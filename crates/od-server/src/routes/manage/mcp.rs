@@ -207,22 +207,30 @@ pub async fn install_route(
             &mut out,
             &mut err,
         );
-        if matches!(code, Ok(0)) && !req.uninstall {
-            install::remove_legacy(agent, &spec, &home, &runner);
-        }
-        (code, out)
+        // After an install, and on uninstall even when no contour entry
+        // was there to remove: the old name goes either way.
+        let legacy = (matches!(code, Ok(0)) || req.uninstall)
+            && install::remove_legacy(agent, &spec, &home, &runner);
+        (code, out, legacy)
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?;
-    let (code, out) = res;
+    let (code, out, legacy) = res;
     let code = code.map_err(|e| ApiErr::internal(e.to_string()))?;
     let report: Value = serde_json::from_slice(&out).unwrap_or(Value::Null);
-    let message = report.get("message").and_then(Value::as_str).map_or_else(
+    let mut message = report.get("message").and_then(Value::as_str).map_or_else(
         || String::from_utf8_lossy(&out).trim().to_owned(),
         str::to_owned,
     );
+    if legacy {
+        message = format!(
+            "{message}; removed the old {} entry",
+            install::LEGACY_SERVER_NAME
+        );
+    }
     Ok(ApiJson(InstallResponse {
-        ok: code == 0,
+        // Uninstalling only the old entry still uninstalls the server.
+        ok: code == 0 || (req.uninstall && legacy),
         message,
     }))
 }

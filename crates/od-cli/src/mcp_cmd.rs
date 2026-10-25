@@ -123,18 +123,19 @@ fn install(
         &mut std::io::stdout(),
         &mut std::io::stderr(),
     )?;
-    if code == 0
+    // After an install, and on uninstall even when no entry under `name`
+    // was there: the old name goes either way.
+    let legacy = (code == 0 || opts.uninstall)
         && !opts.print
-        && !opts.uninstall
         && name != install::LEGACY_SERVER_NAME
-        && install::remove_legacy(agent, &spec, &home, &runner)
-        && !opts.json
-    {
+        && install::remove_legacy(agent, &spec, &home, &runner);
+    if legacy && !opts.json {
         println!(
             "removed the old {} entry from {}",
             install::LEGACY_SERVER_NAME,
             agent.slug()
         );
     }
+    let code = if legacy && opts.uninstall { 0 } else { code };
     Ok(ExitCode::from(u8::try_from(code).unwrap_or(1)))
 }
