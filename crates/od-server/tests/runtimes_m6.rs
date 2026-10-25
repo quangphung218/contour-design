@@ -60,6 +60,15 @@ async fn byok_key_is_stored_0600_and_never_returned() {
     assert_eq!(status, 400);
     let (_, body) = put_config(&d, &json!({"byok": null})).await;
     assert!(body.get("byok").is_none());
+
+    // A public host with no key, sent or stored, is refused (QA-005).
+    let (status, body) = put_config(
+        &d,
+        &json!({"byok": {"protocol": "anthropic", "baseUrl": "https://api.anthropic.com"}, "agentId": "byok"}),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    assert!(d.get_json("/api/app-config").await.get("byok").is_none());
 }
 
 /// A saved BYOK key belongs to the protocol and base URL it was saved with:

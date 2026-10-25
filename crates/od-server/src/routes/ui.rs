@@ -6,7 +6,8 @@
 //!   the BYOK API key. Responses never carry the key: `byok.apiKey` is
 //!   replaced by `hasApiKey` and `apiKeyHint` (last four characters), and a
 //!   `byok` patch without `apiKey` keeps the stored one while the protocol
-//!   and base URL stay the same.
+//!   and base URL stay the same. A provider on a public host saved with
+//!   no key (sent or kept) is refused with 400.
 //! - `POST /api/import/folder`: a project pointing at an existing folder.
 //! - Everything else that is not `/api/*`: the static `od-ui` bundle, with
 //!   `index.html` as the SPA fallback.
@@ -184,6 +185,47 @@ fn same_route(a: &Value, b: &Value) -> bool {
     protocol(a) == protocol(b) && crate::routes::manage::settings::same_base(base(a), base(b))
 }
 
+/// The host of a `byok` provider saved without a key when that host needs
+/// one: any but a self-hosted one (loopback, LAN, `.local`), which the
+/// UI's Ollama and vLLM presets save without a key (QA-005).
+fn key_missing(byok: &Value) -> Option<String> {
+    let has_key = byok
+        .get(API_KEY)
+        .and_then(Value::as_str)
+        .is_some_and(|k| !k.trim().is_empty());
+    if has_key {
+        return None;
+    }
+    let base = byok
+        .get("baseUrl")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let host = reqwest::Url::parse(base.trim())
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase));
+    match host {
+        Some(h) if self_hosted(&h) => None,
+        Some(h) => Some(h),
+        // No base URL: the protocol's own public host.
+        None => Some("the provider".to_owned()),
+    }
+}
+
+fn self_hosted(host: &str) -> bool {
+    use std::net::IpAddr;
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
+        return true;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(v4)) => {
+            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
+        }
+        Ok(IpAddr::V6(v6)) => v6.is_loopback() || v6.is_unspecified(),
+        Err(_) => false,
+    }
+}
+
 const BYOK_KEY: &str = od_runtime::byok::APP_CONFIG_KEY;
 const API_KEY: &str = "apiKey";
 
@@ -265,12 +307,23 @@ async fn put_config(
     ApiJson(patch): ApiJson<Map<String, Value>>,
 ) -> ApiResult<ApiJson<Value>> {
     validate_patch(&patch).map_err(ApiErr::bad_request)?;
+    let saves_byok = patch.get(BYOK_KEY).is_some_and(Value::is_object);
     let config = state
         .blocking(move |s| {
             let _guard = CONFIG_LOCK.lock().unwrap_or_else(|p| p.into_inner());
             let path = config_path(s);
             let mut config = read_config(&path)?;
             merge_patch(&mut config, patch);
+            // After the merge: a patch without `apiKey` may keep the stored one.
+            if let Some(host) = config
+                .get(BYOK_KEY)
+                .filter(|_| saves_byok)
+                .and_then(key_missing)
+            {
+                return Err(StoreError::BadRequest(format!(
+                    "byok.apiKey required: {host} needs an API key"
+                )));
+            }
             let bytes = serde_json::to_vec_pretty(&config)?;
             write_atomic(&path, &bytes)?;
             Ok(config)
@@ -474,6 +527,37 @@ mod tests {
         assert!(validate_patch(&obj(json!({"agentPermissionMode": "yolo"}))).is_err());
         assert!(validate_patch(&obj(json!({"theme": 3}))).is_err());
         assert!(validate_patch(&obj(json!({"model": "anything"}))).is_ok());
+    }
+
+    #[test]
+    fn byok_on_a_public_host_needs_a_key() {
+        let missing = |v: Value| key_missing(&v);
+        assert_eq!(
+            missing(json!({"protocol": "anthropic", "baseUrl": "https://api.anthropic.com"})),
+            Some("api.anthropic.com".to_owned())
+        );
+        assert_eq!(
+            missing(json!({"protocol": "openai", "apiKey": "  "})),
+            Some("the provider".to_owned())
+        );
+        assert_eq!(
+            missing(json!({"protocol": "anthropic", "apiKey": "sk-ant-1"})),
+            None
+        );
+        // Self-hosted endpoints run without a key.
+        for base in [
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:8000/v1",
+            "http://192.168.1.20:8000/v1",
+            "http://[::1]:8000/v1",
+            "http://gpu-box.local:8000/v1",
+        ] {
+            assert_eq!(
+                missing(json!({"protocol": "openai", "baseUrl": base})),
+                None,
+                "{base}"
+            );
+        }
     }
 
     #[test]
