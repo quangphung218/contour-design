@@ -228,6 +228,28 @@ test('STU-17', 'The Studio names the project at the top of the chat, the convers
   }
 });
 
+test('STU-18', 'The "first design is ready" hint leaves when the next message is sent, and does not come back', async ({ d, newPage }) => {
+  const id = await createProject(d, 'Hint project');
+  const { page } = await newPage();
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.getByTestId('chat-empty').waitFor();
+  const hint = page.getByTestId('first-artifact-hint');
+  await page.getByTestId('composer').fill('a tea page');
+  await page.getByTestId('composer').press('Enter');
+  await waitTurn(page, 0);
+  await hint.waitFor({ timeout: 10_000 });
+  // Not closed by hand: the user just goes on.
+  await page.getByTestId('composer').fill('make it darker');
+  await page.getByTestId('composer').press('Enter');
+  await waitTurn(page, 1);
+  await page.waitForTimeout(1200);
+  assert.equal(await hint.count(), 0, 'hint still over the preview after the next turn');
+  await page.reload();
+  await page.getByTestId('composer').waitFor();
+  await page.waitForTimeout(1200);
+  assert.equal(await hint.count(), 0, 'hint back after a reload');
+});
+
 test('STU-12', 'A link to a project that does not exist says so and offers a way back', async ({ d, newPage }) => {
   const { page } = await newPage();
   await page.goto(`${d.base}/projects/does-not-exist-123`);

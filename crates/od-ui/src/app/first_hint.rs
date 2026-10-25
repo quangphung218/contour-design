@@ -5,7 +5,8 @@
 //! the layout to settle, and the "seen" bit is spent when the user closes
 //! it, not when it shows (a remount before that shows it again). Any click
 //! outside the card closes it too, so it never sits over a menu the user
-//! just opened or over the page they are working on.
+//! just opened or over the page they are working on. Sending the next
+//! message closes it as well.
 
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, is_previewable};
@@ -61,6 +62,13 @@ pub fn FirstArtifactHint(ctx: StudioCtx) -> impl IntoView {
         seen.set(true);
     };
     let dismiss = move |_| close();
+    // Seen and left open: the next message the user sends retires it, so
+    // it does not sit over the preview turn after turn.
+    Effect::new(move |_| {
+        if ctx.live_run.with(Option::is_some) && settled.get_untracked() && !seen.get_untracked() {
+            close();
+        }
+    });
     let card = NodeRef::<Div>::new();
     let down = window_event_listener(ev::mousedown, move |e| {
         if !(ready.get_untracked() && settled.get_untracked()) {
