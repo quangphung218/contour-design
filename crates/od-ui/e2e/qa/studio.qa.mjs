@@ -141,24 +141,74 @@ test('STU-11', 'Tablet and Phone preview the page at 820 and 390 px wide, Deskto
   await until(async () => (await inner()) === desktop, 'desktop width');
 });
 
+/** Device ▸ `name`, by its radio in the preview toolbar. */
+const device = (page, name) => page.getByRole('radiogroup', { name: 'Device' }).getByRole('radio', { name }).click();
+
+/**
+ * The drawn width of the 820 px Tablet frame, in % of 820, once it has
+ * stopped moving: the frame's width is animated (`transition: width`), so
+ * a single read can land mid-animation. Two equal reads 100 ms apart.
+ */
+async function settledDrawn(page, label = 'the frame to stop resizing') {
+  const drawn = async () => Math.round(((await page.getByTestId('preview').boundingBox()).width / 820) * 100);
+  let last = -1;
+  return until(async () => {
+    await page.waitForTimeout(100);
+    const now = await drawn();
+    const same = now === last;
+    last = now;
+    return same && now;
+  }, label, 5000);
+}
+const zoomLabel = async (page) => parseInt(await page.getByTestId('zoom-reset').innerText(), 10);
+
 test('STU-14', 'With Tablet shrunk to fit the pane, the zoom label shows the real size, also after +', async ({ d, newPage }) => {
   const { page } = await studio(newPage, d);
   await frame(page).locator('#title').waitFor();
-  await page.getByRole('radiogroup', { name: 'Device' }).getByRole('radio', { name: 'Tablet' }).click();
-  // The size the user sees: the drawn width of the 820 px frame.
-  const drawn = async () => Math.round(((await page.getByTestId('preview').boundingBox()).width / 820) * 100);
-  const label = async () => parseInt(await page.getByTestId('zoom-reset').innerText(), 10);
-  await until(async () => (await drawn()) < 100, 'Tablet shrunk to fit');
-  const at = await drawn();
-  assert.ok(Math.abs((await label()) - at) <= 1, `the label says ${await label()}% while the page is drawn at ${at}%`);
+  await device(page, 'Tablet');
+  const at = await settledDrawn(page, 'Tablet shrunk to fit');
+  assert.ok(at < 100, `Tablet is drawn at ${at}%, not shrunk to fit a 1360 px window`);
+  assert.ok(Math.abs((await zoomLabel(page)) - at) <= 1, `the label says ${await zoomLabel(page)}% while the page is drawn at ${at}%`);
   const plus = page.getByTestId('zoom-in');
   if (await plus.isEnabled()) {
     await plus.click();
-    await page.waitForTimeout(300); // the frame is restyled on the next frame
-    assert.ok(Math.abs((await label()) - (await drawn())) <= 1,
-      `after + the label says ${await label()}% while the page is still drawn at ${await drawn()}%`);
+    const after = await settledDrawn(page, 'the frame to settle after +');
+    assert.ok(Math.abs((await zoomLabel(page)) - after) <= 1,
+      `after + the label says ${await zoomLabel(page)}% while the page is drawn at ${after}%`);
   }
-}, { knownBug: 'QA-015' });
+});
+
+test('STU-15', 'On a phone-width window, Tablet can still be zoomed in to read, and the pane scrolls', async ({ d, newPage }) => {
+  const id = await createProject(d, 'Narrow zoom', { 'index.html': PAGE });
+  const { page } = await newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(`${d.base}/projects/${id}`);
+  await frame(page).locator('#title').waitFor();
+  await device(page, 'Tablet');
+  const fit = await settledDrawn(page, 'Tablet shrunk to fit');
+  const plus = page.getByTestId('zoom-in');
+  assert.equal(await plus.isEnabled(), true, `+ is off at ${fit}% (label ${await zoomLabel(page)}%): the page cannot be made readable`);
+  await plus.click();
+  const bigger = await settledDrawn(page, 'the frame to settle after +');
+  assert.ok(bigger > fit, `+ did not make the page bigger (${fit}% → ${bigger}%)`);
+  const scrolls = await page.locator('.preview-stage').evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+  assert.ok(scrolls, 'the zoomed page is wider than the pane but the pane does not scroll');
+}, { knownBug: 'QA-024' });
+
+test('STU-16', 'When + is off, its tooltip says why', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d);
+  await frame(page).locator('#title').waitFor();
+  await device(page, 'Tablet');
+  await settledDrawn(page, 'Tablet shrunk to fit');
+  const plus = page.getByTestId('zoom-in');
+  // At the fit + is off; if not, step up to the largest zoom.
+  for (let i = 0; i < 12 && (await plus.isEnabled()); i++) {
+    await plus.click();
+    await settledDrawn(page);
+  }
+  assert.equal(await plus.isEnabled(), false, '+ never turns off');
+  const tip = (await plus.getAttribute('data-tip')) || (await plus.getAttribute('title')) || '';
+  assert.notEqual(tip.trim(), await plus.getAttribute('aria-label'), `+ is off and its tooltip only says "${tip}", not why`);
+}, { knownBug: 'QA-025' });
 
 test('STU-12', 'A link to a project that does not exist says so and offers a way back', async ({ d, newPage }) => {
   const { page } = await newPage();

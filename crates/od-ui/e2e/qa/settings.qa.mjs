@@ -3,6 +3,8 @@
 // wrong: a folder that does not exist, a base URL that is not a URL.
 
 import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test, run, until } from './lib.mjs';
 
 const isMac = process.platform === 'darwin';
@@ -85,5 +87,60 @@ test('SET-06', 'Choosing "Ask first" permissions is saved and still chosen after
   await page.reload();
   await until(() => radios.nth(1).isChecked(), 'Ask first still checked', 5000);
 }, { daemon: {} });
+
+/**
+ * Stores a BYOK provider with no key straight in the daemon's config file,
+ * as a config saved before the key rule (or by an older build) is, then
+ * restarts the daemon so it reads it.
+ */
+async function storeKeylessByok(d, byok) {
+  const file = join(d.data, 'app-config.json');
+  const cur = JSON.parse(readFileSync(file, 'utf8'));
+  writeFileSync(file, JSON.stringify({ ...cur, agentId: 'byok', byok }, null, 2), { mode: 0o600 });
+  await d.restart();
+}
+
+/** Clicks `button` and returns the status of the PUT /api/app-config it sends. */
+async function savedStatus(page, button) {
+  const put = page.waitForResponse((r) => r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/app-config', { timeout: 5000 });
+  await button.click();
+  return (await put).status();
+}
+
+const OLLAMA_DOCKER = { protocol: 'openai', baseUrl: 'http://ollama:11434/v1', model: 'llama3.1' };
+
+test('SET-07', 'With an Ollama provider saved without a key, changing the theme or language still saves', async ({ d, api, newPage }) => {
+  // Ollama in docker compose: the host is the service name, no key needed.
+  await storeKeylessByok(d, OLLAMA_DOCKER);
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.getByTestId('save-settings').waitFor();
+  await page.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click();
+  let status = await savedStatus(page, page.getByTestId('save-settings'));
+  assert.equal(status, 200, `saving the theme answered ${status}: ${await page.locator('.save-bar .error-text').innerText().catch(() => '')}`);
+  assert.equal(await page.locator('.save-bar .error-text').count(), 0, 'an error shows after saving the theme');
+  await page.getByTestId('language').selectOption('vi');
+  status = await savedStatus(page, page.getByTestId('save-settings'));
+  assert.equal(status, 200, `saving the language answered ${status}`);
+  const cfg = (await api('/api/app-config')).body;
+  assert.equal(cfg.byok?.baseUrl, OLLAMA_DOCKER.baseUrl, 'the saved provider changed');
+}, { daemon: {}, knownBug: 'QA-018' });
+
+test('SET-08', 'An Ollama provider on a one-word host (gpu-box) saves from Settings without a key', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.getByTestId('mode-api').click();
+  const form = page.getByTestId('byok-form');
+  await form.waitFor();
+  const ollama = await page.locator('[data-testid="byok-preset"] option').evaluateAll((os) =>
+    os.find((o) => /ollama/i.test(o.textContent) && !/cloud/i.test(o.textContent))?.value);
+  assert.ok(ollama, 'no local Ollama preset in the provider list');
+  await page.getByTestId('byok-preset').selectOption(ollama);
+  await page.getByTestId('byok-base-url').fill('http://gpu-box:11434/v1');
+  const save = page.getByTestId('byok-save');
+  assert.equal(await save.isEnabled(), true, 'Save is off for a keyless Ollama');
+  const status = await savedStatus(page, save);
+  assert.equal(status, 200, `saving answered ${status}: ${await form.innerText()}`);
+}, { daemon: {}, knownBug: 'QA-018' });
 
 await run('settings');

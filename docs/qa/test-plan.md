@@ -101,7 +101,9 @@ time when needed.
 | STU-11 | Device sizes lay the page out at their width | Window 1360×860 | Phone, Tablet, Desktop | The page sees 390 px, 820 px (original preset), then the pane width | P1 | auto (QA-003) |
 | STU-12 | Deep link to a project that does not exist | — | Open `/projects/nope` | A clear "not found" with a way back, no crash | P1 | auto |
 | STU-13 | A page with spaces and Vietnamese letters in the user's own folder previews | Folder with `trang chủ.html` | Open folder, open the file | Preview renders it | P1 | auto |
-| STU-14 | With Tablet shrunk to fit, the zoom label shows the real size, also after + | Window 1360×860, Tablet | Read the label, press + | Label = drawn size of the 820 px page; + changes the page or is off | P2 | auto (QA-015) |
+| STU-14 | With Tablet shrunk to fit, the zoom label shows the real size, also after + | Window 1360×860, Tablet | Read the label once the frame has stopped resizing, press + | Label = drawn size of the 820 px page; + changes the page or is off | P2 | auto (QA-015) |
+| STU-15 | Tablet on a phone-width window can still be zoomed in | Window 390×844, Tablet | Press + | + is on at the fit; the page gets bigger; the pane scrolls | P2 | auto (QA-024) |
+| STU-16 | A + that is off says why | Window 1360×860, Tablet | + until off, hover | Tooltip gives the reason, not just "Zoom in" | P2 | auto (QA-025) |
 
 ## 5. Export (`export.qa.mjs`)
 
@@ -169,6 +171,8 @@ and media.
 | SET-04 | Notifications: test notification works without permission crash | — | Notifications ▸ Test | No page error | P2 | auto |
 | SET-05 | Settings opened by Cmd/Ctrl+, | Home | Press shortcut | Settings page opens | P1 | auto |
 | SET-06 | Permission mode switch is saved | — | Ask first, reload | Still Ask first; API returns `ask` | P1 | auto |
+| SET-07 | Settings still save with a keyless Ollama provider stored | BYOK `http://ollama:11434/v1`, no key, in the config | Theme ▸ Dark ▸ Save; Language ▸ vi ▸ Save | Both saves 200, no error; provider unchanged | P0 | auto (QA-018) |
+| SET-08 | A keyless Ollama on a one-word host saves | — | API ▸ Ollama ▸ base URL `http://gpu-box:11434/v1` ▸ Save | 200, saved | P1 | auto (QA-018) |
 
 ## 9. Automations (`automations.qa.mjs`)
 
@@ -210,6 +214,12 @@ the guard, so that is what is checked.
 | DL-17 | Quick menu ▸ a Settings section with an edit not applied asks | Same | Quick menu ▸ Models: Cancel, then OK | As DL-14 | P1 | auto (QA-012) |
 | DL-18 | The chat's Settings button with an edit not applied asks | A failed turn; typed in Content | Settings chip: Cancel, then OK | As DL-14 | P1 | auto (QA-012) |
 | DL-19 | A message queued during a run survives a reload | A long run going | Queue a message, reload | Message still queued, back in the composer, or sent after the run | P1 | auto (QA-014) |
+| DL-20 | A steered message is not back in the composer after a reload | A long run going | Queue a message, Steer, reload | Composer empty | P1 | auto (QA-019) |
+| DL-21 | A sent and answered message is not back in the composer after a reload | Project open | Send, wait for the answer, reload | Composer empty | P1 | auto |
+| DL-22 | Duplicate project with an edit not applied asks first | Typed in Content | "…" ▸ Duplicate: Cancel, then Leave | The app's question; Cancel stays with the text; Leave opens the copy | P1 | auto (QA-020) |
+| DL-23 | Ctrl/Cmd-click on a link with an edit not applied | Typed in Content | Ctrl/Cmd-click Projects | New tab on Projects; this tab stays with the text, no question | P2 | auto (QA-021) |
+| DL-24 | The browser's Back with an edit not applied asks | Came from Projects; typed in Content | Back: Cancel, then OK | As DL-14 | P1 | auto (QA-022) |
+| DL-25 | The leave question opens with the focus on Cancel | Typed in Content | Click Projects | Focus on Cancel; Enter stays | P2 | auto (QA-023) |
 
 ## Not automated, and why
 

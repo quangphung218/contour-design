@@ -21,13 +21,29 @@ Round 2 fixes (5728ac3…bae2d3d): QA-011…017 fixed; `make e2e-qa` twice
 at bae2d3d, 101 of 102 pass. STU-14 (QA-015) stays marked: the fix works,
 the test reads the frame mid-transition (see QA-015).
 
+Round 3 (branch at c357aa5, after the round 2 fixes): STU-14 was a test
+bug (it read the frame mid-transition); it now waits for two equal reads
+and passes, so QA-015 is closed. QA-018…025 come from the two reviews of
+the round 2 fixes and the debugger's open points, each with a red test.
+Expected results are Atlat's calls for this round. DL-21 is a new guard
+(no bug): a sent and answered message must not come back to the composer;
+it goes red when the `clear_draft_if` of `send` is removed.
+
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
+| QA-018 | 🔴 | With a BYOK provider saved without a key on a host the daemon calls public (`http://ollama:11434`, `gpu-box`), every Settings save (theme, language…) is refused with 400 | `settings.qa.mjs` SET-07, SET-08 | Open |
+| QA-019 | 🟠 | A message steered into the running turn comes back in the composer after a reload | `drafts.qa.mjs` DL-20 | Open |
+| QA-022 | 🟠 | The browser's Back with an edit not applied leaves at once; the typed text is lost | `drafts.qa.mjs` DL-24 | Open |
+| QA-020 | 🟡 | Duplicate project with an edit not applied skips the app's leave question (only the browser's "leave site?" asks) | `drafts.qa.mjs` DL-22 | Open |
+| QA-024 | 🟡 | Tablet on a phone-width window is stuck at the fit (35%): + is off, the page cannot be zoomed in to read | `studio.qa.mjs` STU-15 | Open |
+| QA-021 | 🔵 | Ctrl/Cmd-click on an in-app link with an edit not applied is stopped and asked as if this tab were leaving | `drafts.qa.mjs` DL-23 | Open |
+| QA-023 | 🔵 | The leave question opens with the focus on the dialog box, not on Cancel | `drafts.qa.mjs` DL-25 | Open |
+| QA-025 | 🔵 | When + is off at the fit, its tooltip still says "Zoom in", not why | `studio.qa.mjs` STU-16 | Open |
 | QA-011 | 🟠 | Desktop app: choosing Leave on the "edit not applied" question does not leave; every in-app link is dead while an edit is unapplied | `drafts.qa.mjs` DL-13 | Fixed |
 | QA-014 | 🟠 | A message queued while a run is going is lost on a reload (queue only in memory, draft cleared at queue time) | `drafts.qa.mjs` DL-19 | Fixed |
 | QA-013 | 🟠 | Esc that closes a drop-down menu also stops a running Design Jury and turns off comment mode or the tool | `export.qa.mjs` EXP-10, EXP-11 | Fixed |
 | QA-012 | 🟡 | Leaving through the command palette, the quick menu or the chat's Settings button does not ask about an edit not applied | `drafts.qa.mjs` DL-15…DL-18 | Fixed |
-| QA-015 | 🟡 | Zoom label says 100% while Tablet is drawn shrunk to fit; + changes the label, not the page | `studio.qa.mjs` STU-14 | Fixed (test timing, see below) |
+| QA-015 | 🟡 | Zoom label says 100% while Tablet is drawn shrunk to fit; + changes the label, not the page | `studio.qa.mjs` STU-14 | Fixed (test fixed in round 3) |
 | QA-016 | 🔵 | BYOK on a phone: "API key required" sits in the button row, not with the key field, and pushes Save onto its own line | `onboarding.qa.mjs` ONB-09 | Fixed |
 | QA-017 | 🔵 | Home: while design systems load, the kept pick shows its raw id | `home.qa.mjs` HOME-12 | Fixed |
 | QA-006 | 🟠 | Edit panel: an Apply in one tab wipes text typed in another tab, and text typed while the Apply is saving | `drafts.qa.mjs` DL-01, DL-02, DL-03 | Fixed |
@@ -322,6 +338,7 @@ the gap visible.
   fitted `zoom` memo (`fit_zoom`, `:1271`). Show the fitted value (or mark
   it "fit"), and disable + (`at_max_zoom`) when the fit caps it.
 - **Fixed** (759581a): the label shows the fitted zoom, and the zoom buttons and keys step from it, off when a step would not change the drawn size. **STU-14 stays `knownBug`, test timing**: it reads the drawn width as soon as it is under 100 %, while `.frame-wrap` is still in its 0.3 s width transition (650 → 820 px under the new scale). A probe every 100 ms after Tablet read 63, 76, 79, 79, 79… with the label at 79, and + off. The test should wait for the width to settle (e.g. two equal reads) before comparing; QA to change it.
+- **Test fixed** (round 3): STU-14 reads the drawn width only once two reads 100 ms apart are equal (`settledDrawn`), after Tablet and after +. It passes; `knownBug` removed.
 
 ## QA-016 🔵 BYOK on a phone: "API key required" sits in the button row
 
@@ -354,3 +371,139 @@ Reported by the UX review of the QA-008 fix.
   `localStorage`).
 - **Fixed** (724cdab): while the list loads the kept pick reads "Loading…" and the picker is disabled.
 
+
+## QA-018 🔴 With a keyless BYOK provider on a "public" host, every Settings save is refused
+
+Reported by the correctness review of 56ffb95 (the QA-005 daemon rule).
+
+- **Steps A** (config from before the rule, or Ollama in docker): a BYOK
+  provider stored with `baseUrl: http://ollama:11434/v1` and no key ▸
+  Settings ▸ Appearance ▸ Dark ▸ Save (or Language ▸ Tiếng Việt ▸ Save).
+- **Steps B** (new setup): Settings ▸ API ▸ preset Ollama ▸ base URL
+  `http://gpu-box:11434/v1` ▸ Save (the form allows it: Ollama needs no key).
+- **Expected** (Atlat's call): the save goes through (200), no error.
+- **Actual**: `PUT /api/app-config` → 400 `byok.apiKey required: ollama
+  needs an API key`; the save bar shows the error. B: the form says Save is
+  fine, the daemon refuses it.
+- **Test**: `settings.qa.mjs` SET-07 (config file written with the keyless
+  Ollama, daemon restarted, then theme and language saves), SET-08 (B).
+- **Code**: `crates/od-server/src/routes/ui.rs` `put_config` (`:310-326`):
+  `saves_byok` is true for any patch carrying `byok`, and
+  `AppConfig::to_patch` (`crates/od-ui/src/settings.rs:87`) sends the whole
+  config (`extra`) on every save. `self_hosted` (`:214`) calls one-word hosts
+  (`ollama`, `gpu-box`), Tailscale `100.64/10`, `*.ts.net` and `fc00::/7`
+  public. The original has no daemon rule; its UI checks per preset
+  (`apps/web/src/components/byok/validation.ts:127`). Either drop the host
+  rule, or check only a `byok` whose route (protocol, baseUrl) changes and
+  count those hosts as self-hosted.
+
+## QA-019 🟠 A steered message comes back in the composer after a reload
+
+Reported by the correctness review of 14d3ea6 (QA-014 fix).
+
+- **Steps**: Studio ▸ send a long request ▸ while it runs type "make it
+  blue" ▸ Enter (queued) ▸ Steer ▸ the turn shows "Steered: make it blue" ▸
+  reload (or Projects and back).
+- **Expected** (Atlat's call): the composer is empty; the message was
+  delivered.
+- **Actual**: the composer holds "make it blue" again; Enter sends it a
+  second time.
+- **Test**: `drafts.qa.mjs` DL-20. Guard of the main path: DL-21 (send,
+  wait for the answer, reload: composer empty; passes).
+- **Code**: `crates/od-ui/src/app/studio.rs` `steer` (`:503`): its `Ok`
+  branch drops the item from the queue but keeps the stored draft; only
+  `send`'s `Ok` (`:461`) calls `clear_draft_if`. Call
+  `clear_draft_if(draft_key(…), &item.text)` there too, and when a queued
+  item is deleted (`chat_view.rs:496`).
+
+## QA-020 🟡 Duplicate project with an edit not applied skips the app's question
+
+Reported by the correctness review of 9a85549 (QA-012 fix).
+
+- **Steps**: a page ▸ Edit ▸ type in Content, do not apply ▸ files panel
+  "…" ▸ Duplicate.
+- **Expected** (Atlat's call): the app's "Leave this page?" dialog, as for
+  any other way out; Cancel stays with the text, Leave opens the copy.
+- **Actual**: no app dialog. The copy is made and the page does a full
+  load; in a browser only the native "leave site?" (`beforeunload`) asks,
+  and in the desktop app `beforeunload` is not checked.
+- **Test**: `drafts.qa.mjs` DL-22 (the test dismisses the native prompt
+  and counts it; it saw 1).
+- **Code**: `crates/od-ui/src/app/project_actions.rs:113` `duplicate`
+  calls `location().set_href`. Go through `use_leave()` (or ask before the
+  POST). Same pattern: the palette's switch to another project
+  (`palette.rs:246`).
+
+## QA-021 🔵 Ctrl/Cmd-click on a link with an edit not applied is stopped
+
+Reported by the correctness review of 5728ac3 (QA-011 fix).
+
+- **Steps**: a page ▸ Edit ▸ type in Content ▸ Ctrl-click (Cmd-click on a
+  Mac) Projects in the sidebar.
+- **Expected** (Atlat's call): not stopped in this tab: a new tab opens on
+  Projects, this one stays with the text and no question.
+- **Actual**: the leave dialog shows; picking Leave navigates this tab.
+- **Test**: `drafts.qa.mjs` DL-23.
+- **Code**: `crates/od-ui/src/app/leave_guard.rs:65` `on_click` only
+  skips `button() != 0`. Also return early on `ctrl_key()`, `meta_key()`,
+  `shift_key()` (and `alt_key()`).
+
+## QA-022 🟠 The browser's Back with an edit not applied leaves without asking
+
+Reported by the UX review and the debugger (open point 5). Not a
+regression: main does the same.
+
+- **Steps**: Projects ▸ open a project ▸ Edit ▸ type in Content ▸ the
+  browser's Back (or the mouse back button, or ⌘[).
+- **Expected** (Atlat's call): the same question; Cancel stays on the
+  page with the text, Leave goes back.
+- **Actual**: Projects shows at once; the typed text is gone.
+- **Test**: `drafts.qa.mjs` DL-24 (opens `/projects` first, then
+  `history.back()`).
+- **Code**: `leave_guard.rs` has no `popstate` handling. On `popstate`
+  with unsaved work: push the current URL back, then open the dialog;
+  Leave does `history.back()` (or navigates to the target) with the guard
+  off.
+
+## QA-023 🔵 The leave question opens with the focus on the dialog box
+
+Reported by the UX review of 5728ac3.
+
+- **Steps**: a page ▸ Edit ▸ type in Content ▸ click Projects.
+- **Expected** (Atlat's call): the focus is on Cancel, so Enter or Space
+  keeps the work (the safe answer is the default).
+- **Actual**: the focus is on the dialog itself (`data-testid=
+  "leave-dialog"`); the first Tab goes to the unlabeled × button.
+- **Test**: `drafts.qa.mjs` DL-25.
+- **Code**: `leave_guard.rs` `LeaveGuard` view; focus `leave-stay` on
+  open (`Modal` in `lib_ui.rs` focuses its box; add an autofocus prop or
+  focus the button on mount).
+
+## QA-024 🟡 Tablet on a phone-width window is stuck at the fit
+
+Reported by the UX review of 759581a (QA-015 fix). Main let − go to 75%
+with a scrolling pane.
+
+- **Steps**: window 390×844 ▸ a page ▸ Tablet.
+- **Expected** (Atlat's call): the page can still be zoomed in to read: +
+  is on at the fit, a step makes it bigger, and the pane scrolls.
+- **Actual**: the page is drawn at 35%; + and − are off and the 35% label
+  (Reset) does nothing.
+- **Test**: `studio.qa.mjs` STU-15.
+- **Code**: `crates/od-ui/src/app/studio.rs` `next_zoom` / `fit_cap`
+  (`:334-340`, `:1291`): + is refused once the fit caps the zoom. Let + go
+  past the fit (the pane already has `overflow: auto`, `app.css:856`), at
+  least when the fit is below the smallest step.
+
+## QA-025 🔵 When + is off at the fit, its tooltip still says "Zoom in"
+
+Reported by the UX review of 759581a.
+
+- **Steps**: window 1360×860 ▸ a page ▸ Tablet ▸ hover +.
+- **Expected** (Atlat's call): the tooltip says why + is off (e.g. "Fits
+  the pane").
+- **Actual**: "Zoom in", same as when it is on.
+- **Test**: `studio.qa.mjs` STU-16 (steps + up until it is off, then
+  compares `data-tip` with the button's label).
+- **Code**: `studio.rs:1502`, the `zoom-in` button: a fixed
+  `data-tip=t(T::ZoomIn)`. Make it reactive on `can_zoom(true)` and say why.

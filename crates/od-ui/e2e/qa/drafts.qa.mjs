@@ -17,14 +17,19 @@ const raw = async (d, id, path) => (await fetch(`${d.base}/api/projects/${id}/ra
 /**
  * Opens page.html in manual edit mode with the lead paragraph selected.
  * `init` runs on the context before the page loads (an init script);
+ * `from` is a page opened first, so the browser's Back has a page to go to;
  * `crash` first sends a turn the mock agent fails, so the chat offers its
  * "Settings" next step.
  */
-async function editLead(newPage, d, { init, crash = false } = {}) {
+async function editLead(newPage, d, { init, crash = false, from } = {}) {
   const id = await createProject(d, 'Edit drafts', { 'page.html': PAGE });
   const p = await newPage();
   const { page } = p;
   if (init) await p.context.addInitScript(init);
+  if (from) {
+    await page.goto(d.base + from);
+    await page.locator('main, #app, body').first().waitFor();
+  }
   const loaded = page.waitForResponse((r) => /\/conversations\/[^/]+\/messages$/.test(new URL(r.url()).pathname));
   await page.goto(`${d.base}/projects/${id}`);
   const frame = page.frameLocator('[data-testid="preview"]');
@@ -348,5 +353,104 @@ test('DL-19', 'A message queued while a run is going survives a reload until it 
     (await page.getByTestId('composer').inputValue()) === msg, 'queued message kept', 20_000).catch(() => false);
   assert.ok(kept, 'after the reload the queued message is not queued, not sent and not in the composer');
 });
+
+test('DL-20', 'A message steered into the running turn is not back in the composer after a reload', async ({ d, newPage }) => {
+  const { page } = await chatProject(newPage, d, 'Steer reload');
+  const msg = 'make it blue';
+  await page.getByTestId('composer').fill('slow first version');
+  await page.getByTestId('composer').press('Enter');
+  await page.getByTestId('assistant-msg').first().getByText('step1', { exact: false }).waitFor();
+  await page.getByTestId('composer').fill(msg);
+  await page.getByTestId('composer').press('Enter');
+  const queued = page.getByTestId('queued').filter({ hasText: msg });
+  await queued.waitFor();
+  await queued.getByTestId('steer').click();
+  await page.getByTestId('assistant-msg').first().getByText(`Steered: ${msg}`).waitFor();
+  await queued.waitFor({ state: 'detached' });
+  await sleep(600); // as DL-05: a debounced draft save would land by now
+  await page.reload();
+  await page.getByTestId('composer').waitFor();
+  await sleep(500); // a stored draft is put back right after the mount
+  assert.equal(await page.getByTestId('composer').inputValue(), '',
+    'the steered message is back in the composer; sending it again would repeat it');
+}, { knownBug: 'QA-019' });
+
+test('DL-21', 'A message sent and answered is not back in the composer after a reload', async ({ d, newPage }) => {
+  const { page } = await chatProject(newPage, d, 'Sent reload');
+  await page.getByTestId('composer').fill('Một trang giới thiệu quán trà');
+  await page.getByTestId('composer').press('Enter');
+  await waitTurn(page, 0);
+  await sleep(600); // as DL-20
+  await page.reload();
+  await page.getByTestId('composer').waitFor();
+  await page.locator('.msg.user', { hasText: 'Một trang giới thiệu quán trà' }).waitFor();
+  await sleep(500);
+  assert.equal(await page.getByTestId('composer').inputValue(), '', 'the sent message is back in the composer');
+});
+
+test('DL-22', 'Duplicating the project with an edit not applied asks first: Cancel stays with the text', async ({ d, newPage }) => {
+  const { page, panel, id } = await editLead(newPage, d);
+  await panel.getByTestId('manual-text').fill('Not applied');
+  // The browser's own "leave site?" is not the app asking: stay, and count it.
+  let native = 0;
+  page.on('dialog', async (dlg) => {
+    native++;
+    await dlg.dismiss().catch(() => {});
+  });
+  const duplicate = async () => {
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('project-duplicate').click();
+  };
+  await duplicate();
+  const dialog = page.getByTestId('leave-dialog');
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {
+    assert.fail(`Duplicate did not ask in the app (browser prompts: ${native}, now on ${new URL(page.url()).pathname})`);
+  });
+  await dialog.getByTestId('leave-stay').click();
+  await sleep(300);
+  assert.equal(new URL(page.url()).pathname, `/projects/${id}`, 'Cancel still left for the copy');
+  assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied', 'Cancel stayed but lost the text');
+  await duplicate();
+  await dialog.getByTestId('leave-go').click();
+  await until(() => /^\/projects\/[^/]+$/.test(new URL(page.url()).pathname) && new URL(page.url()).pathname !== `/projects/${id}`,
+    'Leave opens the copy', 5000);
+}, { knownBug: 'QA-020' });
+
+test('DL-23', 'Ctrl/Cmd-click on a link with an edit not applied opens a new tab and keeps this one', async ({ d, newPage }) => {
+  const { page, panel, context, id } = await editLead(newPage, d);
+  await panel.getByTestId('manual-text').fill('Not applied');
+  const opened = context.waitForEvent('page', { timeout: 5000 }).catch(() => null);
+  await page.getByRole('link', { name: 'Projects' }).first().click({ modifiers: ['ControlOrMeta'] });
+  const tab = await opened;
+  await sleep(300);
+  assert.equal(await page.getByTestId('leave-dialog').count(), 0, 'a Ctrl/Cmd-click (new tab) asked as if this tab were leaving');
+  assert.equal(new URL(page.url()).pathname, `/projects/${id}`, 'this tab left the page');
+  assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied');
+  assert.ok(tab, 'no new tab opened');
+  await tab.waitForURL('**/projects', { timeout: 5000 });
+}, { knownBug: 'QA-021' });
+
+test("DL-24", "The browser's Back with an edit not applied asks: Cancel stays with the text", async ({ d, newPage }) => {
+  const s = await editLead(newPage, d, { from: '/projects' });
+  await stayThenLeave(s, () => s.page.evaluate(() => history.back()));
+}, { knownBug: 'QA-022' });
+
+test('DL-25', 'The unapplied-edit question opens with the focus on Cancel', async ({ d, newPage }) => {
+  const { page, panel } = await editLead(newPage, d);
+  await panel.getByTestId('manual-text').fill('Not applied');
+  await page.getByRole('link', { name: 'Projects' }).first().click();
+  await page.getByTestId('leave-dialog').waitFor();
+  const focused = () => page.evaluate(() => {
+    const a = document.activeElement;
+    return a ? a.getAttribute('data-testid') || `${a.tagName.toLowerCase()}.${a.className}` : 'none';
+  });
+  await until(async () => (await focused()) === 'leave-stay', 'focus on Cancel', 2000).catch(async () => {
+    assert.fail(`the focus is on ${await focused()}, not Cancel`);
+  });
+  // Enter on the focused Cancel stays: the safe answer is the default.
+  await page.keyboard.press('Enter');
+  await page.getByTestId('leave-dialog').waitFor({ state: 'detached' });
+  assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied');
+}, { knownBug: 'QA-023' });
 
 await run('drafts');
