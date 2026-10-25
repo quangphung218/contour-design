@@ -165,7 +165,7 @@ pub struct ContentStore {
     /// Reloads are numbered when they start; a scan is stored only if no
     /// later-started one was stored already. Otherwise a reload that began
     /// before a write could finish last and swap the older snapshot back
-    /// in, losing a skill just created (tests/reload.rs).
+    /// in, losing a skill just created (`an_older_reload_finishing_last_is_dropped`).
     started: std::sync::atomic::AtomicU64,
     stored: std::sync::Mutex<u64>,
 }
@@ -199,11 +199,15 @@ impl ContentStore {
 
     /// Rescans every root and swaps the snapshot in.
     pub fn reload(&self) {
+        self.reload_with(ContentIndex::build);
+    }
+
+    fn reload_with(&self, build: impl FnOnce(&ContentRoots) -> ContentIndex) {
         let generation = self
             .started
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
             + 1;
-        let index = Arc::new(ContentIndex::build(&self.roots));
+        let index = Arc::new(build(&self.roots));
         let mut stored = self
             .stored
             .lock()
@@ -217,5 +221,55 @@ impl ContentStore {
     #[must_use]
     pub fn roots(&self) -> &ContentRoots {
         &self.roots
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    /// Deterministic order: reload A starts (before a write), reload B
+    /// starts after the write and finishes first, then A finishes. A must
+    /// not put its older index back. Removing the numbering fails this test.
+    #[test]
+    fn an_older_reload_finishing_last_is_dropped() {
+        let data = tempfile::tempdir().unwrap();
+        let content = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
+        let store = Arc::new(ContentStore::load(
+            ContentRoots::bundled(&content).with_user_root(data.path()),
+        ));
+        let (scanned, a_scanned) = mpsc::channel();
+        let (go, a_go) = mpsc::channel::<()>();
+        let a = {
+            let store = Arc::clone(&store);
+            std::thread::spawn(move || {
+                store.reload_with(|roots| {
+                    let index = ContentIndex::build(roots);
+                    scanned.send(()).unwrap();
+                    a_go.recv().unwrap();
+                    index
+                });
+            })
+        };
+        a_scanned.recv().unwrap();
+        let dir = data.path().join("skills").join("late");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            "---\nname: late\ndescription: x\n---\n\nBody.\n",
+        )
+        .unwrap();
+        store.reload();
+        assert!(
+            store.snapshot().find_skill("late").is_some(),
+            "B sees the write"
+        );
+        go.send(()).unwrap();
+        a.join().unwrap();
+        assert!(
+            store.snapshot().find_skill("late").is_some(),
+            "the older reload put a stale index back"
+        );
     }
 }
