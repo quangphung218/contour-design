@@ -100,6 +100,10 @@ and the choices behind it in [docs/decisions.md](docs/decisions.md).
 
 - **Windows is not tested.** Job Objects, ConPTY and the WebView2 app only
   pass a compile check; CI builds it but runs no tests.
+- **Windows may not find an installed agent.** Detection looks for the bare
+  name (`claude`), not `claude.exe`, and the install folders Check again
+  adds hang off `HOME`, which Windows usually does not set; a restart does
+  not help.
 - **External MCP servers reach Claude, ACP agents and OpenCode only**, as in
   the original app; ACP takes stdio servers only.
 - **Fully detached processes can survive.** An MCP stdio helper that
