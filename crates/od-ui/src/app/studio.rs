@@ -235,6 +235,8 @@ pub struct StudioCtx {
     pub link_down: RwSignal<bool>,
     /// The project could not be loaded; shown until a retry succeeds.
     pub load_error: RwSignal<Option<String>>,
+    /// The load failed because the project does not exist (404).
+    pub load_gone: RwSignal<bool>,
     pub comments: RwSignal<Vec<PreviewComment>>,
     pub comment_mode: RwSignal<bool>,
     /// The element picked in comment mode, waiting for its note.
@@ -1080,6 +1082,7 @@ impl StudioCtx {
             Err(e) => {
                 // Not a toast: without its project the Studio is unusable,
                 // so the error stays until a retry loads it.
+                self.load_gone.set(e.status == 404);
                 self.load_error.set(Some(e.to_string()));
                 return;
             }
@@ -1212,6 +1215,7 @@ pub fn Studio() -> impl IntoView {
         notice: RwSignal::new(None),
         link_down: RwSignal::new(false),
         load_error: RwSignal::new(None),
+        load_gone: RwSignal::new(false),
         comments: RwSignal::new(Vec::new()),
         comment_mode: RwSignal::new(false),
         comment_draft: RwSignal::new(None),
@@ -1833,12 +1837,15 @@ fn PreviewEmpty(ctx: StudioCtx) -> impl IntoView {
         <div class="empty-state preview-empty" data-testid="preview-empty">
             <span class="empty-icon">{move || if running() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::Desktop).into_any() }}</span>
             <strong>{move || if running() { t(T::PreviewWaitingTitle) } else { t(T::PreviewEmptyTitle) }}</strong>
-            <p>{move || if running() { t(T::PreviewWaiting) } else { t(T::PreviewEmpty) }}</p>
-            <ol class="empty-steps">
-                <li>{t(T::PreviewStep1)}</li>
-                <li>{t(T::PreviewStep2)}</li>
-                <li>{t(T::PreviewStep3)}</li>
-            </ol>
+            // No project: no steps to follow in it.
+            <Show when=move || ctx.load_error.with(Option::is_none)>
+                <p>{move || if running() { t(T::PreviewWaiting) } else { t(T::PreviewEmpty) }}</p>
+                <ol class="empty-steps">
+                    <li>{t(T::PreviewStep1)}</li>
+                    <li>{t(T::PreviewStep2)}</li>
+                    <li>{t(T::PreviewStep3)}</li>
+                </ol>
+            </Show>
         </div>
     }
 }

@@ -517,6 +517,9 @@ pub fn MentionArea(
     /// offers no library rows.
     #[prop(optional)]
     on_library: Option<Callback<Vec<super::library_picker::LibraryAsset>>>,
+    /// Nothing to send to (the project could not be loaded).
+    #[prop(optional, into)]
+    disabled: Option<Signal<bool>>,
 ) -> impl IntoView {
     let area = node_ref.unwrap_or_default();
     let open = RwSignal::new(None::<(bool, Trigger)>);
@@ -701,6 +704,7 @@ pub fn MentionArea(
                 class=class
                 data-od-composer=""
                 data-testid=testid
+                disabled=move || disabled.is_some_and(|d| d.get())
                 aria-label=aria_label
                 rows=rows
                 node_ref=area

@@ -212,11 +212,32 @@ test('STU-16', 'When + is off, its tooltip says why', async ({ d, newPage }) => 
   assert.notEqual(tip.trim(), await plus.getAttribute('aria-label'), `+ is off and its tooltip only says "${tip}", not why`);
 });
 
+test('STU-17', 'The Studio names the project at the top of the chat, the conversation under it', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d);
+  const name = page.getByTestId('studio-project-name');
+  assert.equal(await name.innerText(), 'Studio project');
+  assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Studio project');
+  const conversation = page.getByTestId('conversation');
+  assert.equal(await conversation.evaluate((e) => e.selectedOptions[0]?.textContent), 'Conversation 1');
+  const [n, c] = [await name.boundingBox(), await conversation.boundingBox()];
+  assert.ok(n.y < c.y, 'the conversation is not under the project name');
+  for (const width of [1440, 1024]) {
+    await page.setViewportSize({ width, height: 860 });
+    const shown = await name.evaluate((e) => e.getBoundingClientRect().width);
+    assert.ok(shown >= 100, `project name only ${Math.round(shown)} px wide at ${width}`);
+  }
+});
+
 test('STU-12', 'A link to a project that does not exist says so and offers a way back', async ({ d, newPage }) => {
   const { page } = await newPage();
   await page.goto(`${d.base}/projects/does-not-exist-123`);
   await page.getByText(/not found|no longer exists|deleted|does not exist|doesn.t exist/i).first().waitFor({ timeout: 8000 });
   await page.getByRole('link', { name: /projects|home|back/i }).first().waitFor({ timeout: 2000 });
+  // Nothing to do in a project that is not there: no Retry, no steps, no composer.
+  await page.getByTestId('load-error').getByRole('link', { name: 'All projects' }).waitFor();
+  assert.equal(await page.getByTestId('load-retry').count(), 0, 'Retry offered for a project that does not exist');
+  assert.equal(await page.locator('.empty-steps').count(), 0, 'preview steps shown without a project');
+  assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on without a project');
 });
 
 test('STU-13', "A page named with spaces and Vietnamese letters in the user's own folder previews", async ({ d, api, newPage }) => {
