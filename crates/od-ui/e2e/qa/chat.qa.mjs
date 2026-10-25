@@ -139,6 +139,6 @@ test('CHAT-09', 'A message sent right after opening a project shows in the chat'
     assert.equal(shown, 1, `attempt ${i}: the run went out but the chat shows no message (${await page.getByTestId('assistant-msg').count()} assistant messages)`);
     await context.close();
   }
-}, { knownBug: 'QA-002' });
+});
 
 await run('chat');

@@ -120,6 +120,20 @@ pub fn plan_progress(todos: &[Todo]) -> Option<(usize, usize, &Todo)> {
     }
 }
 
+/// The transcript once a conversation's stored messages arrive: the stored
+/// ones, then what was added locally while they loaded (a message sent at
+/// once). A local item wins over its stored copy (same id: the client names
+/// the messages of a run), as it holds the live turn.
+#[must_use]
+pub fn merge_loaded<T>(stored: Vec<T>, local: Vec<T>, id: impl Fn(&T) -> &str) -> Vec<T> {
+    let mut out: Vec<T> = stored
+        .into_iter()
+        .filter(|s| !local.iter().any(|l| id(l) == id(s)))
+        .collect();
+    out.extend(local);
+    out
+}
+
 /// Assistant prose without the Design Jury protocol, which the theater
 /// shows instead (`<CRITIQUE_RUN>` to its end, or to the end of the text
 /// while it still streams).
@@ -463,6 +477,30 @@ mod tests {
 
     fn agent(v: Value) -> RunFrame {
         decode_frame("agent", &v.to_string())
+    }
+
+    #[test]
+    fn a_message_sent_while_the_transcript_loads_is_kept() {
+        fn id<'a>(s: &'a (&str, &str)) -> &'a str {
+            s.0
+        }
+        // Nothing sent meanwhile: the stored transcript as is.
+        let stored = vec![("u1", "stored"), ("a1", "stored")];
+        assert_eq!(merge_loaded(stored.clone(), vec![], id), stored);
+        // Sent meanwhile, not stored yet: kept after the stored ones.
+        let local = vec![("u2", "local"), ("a2", "local")];
+        assert_eq!(
+            merge_loaded(stored.clone(), local.clone(), id),
+            vec![
+                ("u1", "stored"),
+                ("a1", "stored"),
+                ("u2", "local"),
+                ("a2", "local")
+            ]
+        );
+        // Already stored too: once, the local (live) copy.
+        let both = vec![("u2", "stored"), ("a2", "stored")];
+        assert_eq!(merge_loaded(both, local.clone(), id), local);
     }
 
     #[test]

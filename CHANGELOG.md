@@ -24,6 +24,8 @@ All notable changes to Contour are recorded here. The format follows
   was typed and not applied in another field (QA-006).
 - With an edit panel change not applied, closing or reloading the page asks first,
   and so does a link that leaves the page (QA-007).
+- A message sent right after opening a project no longer vanishes from the chat
+  when the stored transcript arrives (QA-002).
 
 ## [0.1.0] - 2026-10-24
 

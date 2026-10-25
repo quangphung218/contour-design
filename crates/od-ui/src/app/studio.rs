@@ -663,6 +663,9 @@ impl StudioCtx {
         let Ok(res) = api::get::<MessagesResponse>(&format!("{base}/messages")).await else {
             return;
         };
+        if self.conversation_id.get_untracked().as_deref() != Some(cid.as_str()) {
+            return; // Another conversation was opened meanwhile.
+        }
         let mut resume = None;
         let items = res
             .messages
@@ -673,14 +676,19 @@ impl StudioCtx {
                 MessageRole::Assistant => {
                     let turn = RwSignal::new(AssistantTurn::from_stored(m));
                     if turn.with_untracked(|t| t.state.is_live()) {
-                        resume = m.run_id.clone().map(|r| (r, turn));
+                        resume = m.run_id.clone().map(|r| (r, turn, m.id.clone()));
                     }
                     ChatItem::assistant(m.id.clone(), turn)
                 }
             })
             .collect();
-        self.items.set(items);
-        if let Some((run_id, turn)) = resume {
+        // A message sent while this loaded is in `items` already, its turn
+        // attached to the run: merge, do not replace (QA-002).
+        let local = self.items.get_untracked();
+        let resume = resume.filter(|(_, _, id)| !local.iter().any(|l| &l.id == id));
+        self.items
+            .set(crate::chat::merge_loaded(items, local, |i| i.id.as_str()));
+        if let Some((run_id, turn, _)) = resume {
             // Replay from the start: the turn is rebuilt from frames.
             turn.update(|t| *t = AssistantTurn::new());
             self.attach(run_id, turn, None);
