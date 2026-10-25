@@ -69,6 +69,9 @@ pub struct ChatState {
     pub collapsed: RwSignal<bool>,
     /// Chat pane width in px, once dragged.
     pub width: RwSignal<Option<f64>>,
+    /// A send just emptied the composer: its stored draft stays until the
+    /// send succeeds ([`clear_draft_if`]).
+    pub sent: StoredValue<bool>,
 }
 
 /// `localStorage` key of the chat pane width.
@@ -87,6 +90,7 @@ impl ChatState {
             uploads: RwSignal::new(Vec::new()),
             collapsed: RwSignal::new(false),
             width: RwSignal::new(width),
+            sent: StoredValue::new(false),
         }
     }
 
@@ -96,6 +100,92 @@ impl ChatState {
             let _ = s.set_item(CHAT_WIDTH_KEY, &format!("{px:.0}"));
         }
     }
+}
+
+/// `localStorage` key of the composer draft of a conversation (the
+/// original's key).
+#[must_use]
+pub fn draft_key(project: &str, conversation: &str) -> String {
+    format!("od:chat-composer:draft:{project}:{conversation}")
+}
+
+fn storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok()?
+}
+
+/// The draft stored under `key`, if any.
+pub fn load_draft(key: &str) -> Option<String> {
+    storage()?
+        .get_item(key)
+        .ok()
+        .flatten()
+        .filter(|d| !d.is_empty())
+}
+
+/// Stores `text` under `key`; an empty one removes the draft.
+pub fn save_draft(key: &str, text: &str) {
+    if let Some(s) = storage() {
+        let _ = if text.is_empty() {
+            s.remove_item(key)
+        } else {
+            s.set_item(key, text)
+        };
+    }
+}
+
+/// A message went out: drop the draft stored under `key` when it is what
+/// that message was sent from (not something typed since).
+pub fn clear_draft_if(key: &str, sent: &str) {
+    if load_draft(key).is_some_and(|d| sent_from(&d, sent)) {
+        save_draft(key, "");
+    }
+}
+
+/// `draft` is what the composer sends as `sent`.
+fn sent_from(draft: &str, sent: &str) -> bool {
+    matches!(crate::mention::outgoing(draft), crate::mention::Outgoing::Send(t) if t == sent.trim())
+}
+
+/// Keeps the Studio composer's draft per project and conversation across
+/// reloads and visits: stored as it is typed, brought back when the
+/// conversation opens (unless something is typed already), left once a
+/// send succeeds (as the original's `ChatPane`).
+pub fn keep_draft(
+    draft: RwSignal<String>,
+    chat: ChatState,
+    project: StoredValue<String>,
+    conversation: RwSignal<Option<String>>,
+) {
+    let key = Memo::new(move |_| {
+        conversation
+            .get()
+            .map(|c| draft_key(&project.get_value(), &c))
+    });
+    Effect::new(move |prev: Option<Option<String>>| {
+        let next = key.get();
+        if let Some(k) = &next {
+            let stored = load_draft(k);
+            if matches!(prev, Some(Some(_))) {
+                // Another conversation: its own draft.
+                draft.set(stored.unwrap_or_default());
+            } else if let Some(text) = stored.filter(|_| draft.with_untracked(String::is_empty)) {
+                draft.set(text);
+            } else {
+                save_draft(k, &draft.get_untracked());
+            }
+        }
+        next
+    });
+    Effect::new(move |_| {
+        let text = draft.get();
+        if chat.sent.get_value() {
+            chat.sent.set_value(false);
+            return;
+        }
+        if let Some(k) = key.get_untracked() {
+            save_draft(&k, &text);
+        }
+    });
 }
 
 /// `metadata.extra` keys of what Home stages for the first turn.
@@ -1273,6 +1363,19 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn drafts_are_kept_per_conversation_until_sent() {
+        assert_eq!(draft_key("p1", "c1"), "od:chat-composer:draft:p1:c1");
+        assert_ne!(draft_key("p1", "c1"), draft_key("p1", "c2"));
+        assert!(sent_from(" Làm nền tối hơn \n", "Làm nền tối hơn"));
+        assert!(!sent_from("typed since", "Làm nền tối hơn"));
+        let search = match crate::mention::outgoing("/search tea shops") {
+            crate::mention::Outgoing::Send(t) => t,
+            crate::mention::Outgoing::OpenMcpSettings => String::new(),
+        };
+        assert!(sent_from("/search tea shops", &search));
+    }
 
     #[test]
     fn take_pending_removes_what_home_staged() {

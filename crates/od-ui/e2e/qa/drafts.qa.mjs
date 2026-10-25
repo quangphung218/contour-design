@@ -130,7 +130,7 @@ test('DL-05', 'A message typed in the composer is still there after a reload', a
   await page.getByTestId('composer').waitFor();
   await until(async () => (await page.getByTestId('composer').inputValue()) !== '', 'draft restored', 3000).catch(() => {});
   assert.equal(await page.getByTestId('composer').inputValue(), 'Làm nền tối hơn, giữ logo');
-}, { knownBug: 'QA-008' });
+});
 
 test('DL-06', 'A message typed in the composer is still there after visiting Projects and coming back', async ({ d, newPage }) => {
   const { page, id } = await chatProject(newPage, d, 'Composer away');
@@ -142,7 +142,7 @@ test('DL-06', 'A message typed in the composer is still there after visiting Pro
   await page.getByTestId('composer').waitFor();
   await until(async () => (await page.getByTestId('composer').inputValue()) !== '', 'draft restored', 3000).catch(() => {});
   assert.equal(await page.getByTestId('composer').inputValue(), 'Half a thought');
-}, { knownBug: 'QA-008' });
+});
 
 test('DL-07', 'The brief and design system chosen on Home survive a trip to Settings', async ({ d, newPage }) => {
   const { page } = await newPage();
@@ -157,7 +157,7 @@ test('DL-07', 'The brief and design system chosen on Home survive a trip to Sett
   await page.getByTestId('brief').waitFor();
   assert.equal(await page.getByTestId('brief').inputValue(), 'Trang menu quán cà phê', 'the brief was lost');
   assert.equal(await page.getByTestId('design-system').inputValue(), ds, 'the design system was lost');
-}, { knownBug: 'QA-008' });
+});
 
 test('DL-08', 'Markdown typed and left at once is saved', async ({ d, newPage }) => {
   const id = await createProject(d, 'Markdown leave', { 'index.html': PAGE, 'notes.md': '# Notes\n' });

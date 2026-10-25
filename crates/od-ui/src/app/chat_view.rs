@@ -102,6 +102,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                 to_mcp.run(());
             }
             Outgoing::Send(text) => {
+                ctx.chat.sent.set_value(true);
                 draft.set(String::new());
                 // While a run is going this queues the message.
                 ctx.send(text, shell);

@@ -26,6 +26,8 @@ All notable changes to Contour are recorded here. The format follows
   and so does a link that leaves the page (QA-007).
 - A message sent right after opening a project no longer vanishes from the chat
   when the stored transcript arrives (QA-002).
+- Drafts are kept: the Studio composer per project and conversation, and Home's brief
+  and design system, across reloads and visits until sent (QA-008).
 
 ## [0.1.0] - 2026-10-24
 

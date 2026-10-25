@@ -356,7 +356,15 @@ impl StudioCtx {
         if text.is_empty() {
             return;
         }
+        // The stored draft of this conversation goes once the message is out.
+        let draft_key = self
+            .conversation_id
+            .get_untracked()
+            .map(|c| super::composer::draft_key(&self.project_id.get_value(), &c));
         if self.live_run.get_untracked().is_some() {
+            if let Some(k) = &draft_key {
+                super::composer::clear_draft_if(k, &text);
+            }
             self.queue.update(|q| {
                 q.push(Queued {
                     id: api::random_id(),
@@ -431,6 +439,9 @@ impl StudioCtx {
         leptos::task::spawn_local(async move {
             match api::post::<_, CreateRunResponse>("/api/runs", &req).await {
                 Ok(res) => {
+                    if let Some(k) = &draft_key {
+                        super::composer::clear_draft_if(k, &text);
+                    }
                     self.tools.attachments.update(|a| {
                         a.retain(|p| !req_attachments.contains(p));
                     });
@@ -1115,6 +1126,7 @@ pub fn Studio() -> impl IntoView {
     provide_context(files_ui);
     preview_tools::watch_lint(ctx);
     super::deck::sync_deck(ctx);
+    super::composer::keep_draft(ctx.draft, ctx.chat, ctx.project_id, ctx.conversation_id);
     // The command palette offers this Studio's commands while it is open.
     shell.studio.set(Some(ctx));
 
