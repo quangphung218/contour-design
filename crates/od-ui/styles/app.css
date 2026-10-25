@@ -344,10 +344,12 @@ a.project-name:hover { color: var(--color-accent-text); }
   background: var(--color-surface-sunken);
   border: 1px solid var(--color-border-subtle);
   font-size: var(--text-xs);
-  overflow-wrap: anywhere;
+  white-space: nowrap; overflow-x: auto;
   user-select: all;
 }
 .install-cmd .btn { flex: none; }
+.install-signin { flex-basis: 100%; margin: 0; }
+.install-signin code { font-size: var(--text-xs); }
 details.agent-missing > summary {
   display: inline-flex; align-items: center; gap: var(--space-1);
   min-height: 32px;
@@ -356,7 +358,8 @@ details.agent-missing > summary {
 }
 details.agent-missing > summary::-webkit-details-marker { display: none; }
 details.agent-missing > summary .ico { width: var(--icon-sm); height: var(--icon-sm); transition: transform var(--duration-fast) var(--ease-out); }
-details.agent-missing[open] > summary .ico { transform: rotate(90deg); }
+/* :last-child outranks the generic open-details rule (180°). */
+details.agent-missing[open] > summary .ico:last-child { transform: rotate(90deg); }
 .byok-alt { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin: var(--space-3) 0 0; }
 .byok-alt button { padding: 0; border: 0; background: none; font: inherit; font-weight: var(--weight-medium); color: var(--color-accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .byok-limits, .onboarding-note {
@@ -365,11 +368,13 @@ details.agent-missing[open] > summary .ico { transform: rotate(90deg); }
   font-size: var(--text-sm); color: var(--color-text-secondary);
 }
 .byok-limits .ico, .onboarding-note .ico { width: var(--icon-sm); height: var(--icon-sm); flex: none; }
+.byok-limits { margin-top: var(--space-3); }
 .onboarding-note { margin: var(--space-5) 0 0; padding: var(--space-2-5) var(--space-3); border-radius: var(--radius-md); background: var(--color-warning-soft); }
 .onboarding-note > .ico { color: var(--color-warning); }
 @media (max-width: 600px) {
   .page.onboarding { padding: var(--space-4) var(--space-3); }
   .onboarding-card { padding: var(--space-5); }
+  .agent-card.agent-install .btn { min-height: 44px; }
 }
 .onboarding-note a { display: inline-flex; align-items: center; gap: var(--space-1); font-weight: var(--weight-medium); }
 /* Track C3: an installed agent whose connection component is missing. */

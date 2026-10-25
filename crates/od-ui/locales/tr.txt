@@ -399,6 +399,7 @@ ByokIntro = Kendi anahtarınızla bir model sağlayıcısı bağlayın. Test edi
 AgentsNoneHint = Henüz coding agent bulunamadı. Bir kurulum komutunu Terminal’e yapıştırın, sonra Tekrar denetle’yi seçin.
 InstallGuide = Kurulum kılavuzu
 CopyCommand = Komutu kopyala
+SignInAfterInstall = Sonra oturum için bir kez {0} çalıştırın.
 CheckAgain = Tekrar denetle
 CheckingAgents = Denetleniyor…
 ByokLimits = Yalnızca API key: tek bir HTML dosyası üretir, araç yok.

@@ -400,6 +400,7 @@ ByokIntro = Conecte um provedor de modelos com sua própria chave. Teste e depoi
 AgentsNoneHint = Nenhum coding agent encontrado ainda. Cole um comando de instalação no Terminal e escolha Verificar de novo.
 InstallGuide = Guia de instalação
 CopyCommand = Copiar comando
+SignInAfterInstall = Depois, execute {0} uma vez para entrar.
 CheckAgain = Verificar de novo
 CheckingAgents = Verificando…
 ByokLimits = Só API key: gera um único arquivo HTML, sem ferramentas.

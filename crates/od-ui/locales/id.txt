@@ -400,6 +400,7 @@ ByokIntro = Hubungkan penyedia model dengan key Anda sendiri. Tes, lalu simpan.
 AgentsNoneHint = Belum ada coding agent. Tempel perintah instal di Terminal, lalu pilih Periksa lagi.
 InstallGuide = Panduan instal
 CopyCommand = Salin perintah
+SignInAfterInstall = Lalu jalankan {0} sekali untuk masuk.
 CheckAgain = Periksa lagi
 CheckingAgents = Memeriksa…
 ByokLimits = Hanya API key: membuat satu file HTML, tanpa tool.

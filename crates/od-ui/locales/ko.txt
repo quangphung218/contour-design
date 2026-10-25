@@ -400,6 +400,7 @@ ByokIntro = 직접 발급한 키로 모델 제공업체를 연결하세요. 테�
 AgentsNoneHint = 아직 coding agent가 없습니다. 설치 명령을 터미널에 붙여 넣은 뒤 다시 확인을 누르세요.
 InstallGuide = 설치 안내
 CopyCommand = 명령 복사
+SignInAfterInstall = 그다음 {0}을(를) 한 번 실행해 로그인하세요.
 CheckAgain = 다시 확인
 CheckingAgents = 확인 중…
 ByokLimits = API key만: HTML 파일 하나만 만들며 도구는 없습니다.

@@ -400,6 +400,7 @@ ByokIntro = اربط مزوّد نماذج بمفتاحك الخاص. اختبر
 AgentsNoneHint = لم يُعثر على coding agent بعد. الصق أمر التثبيت في Terminal ثم اختر «تحقق مجددًا».
 InstallGuide = دليل التثبيت
 CopyCommand = نسخ الأمر
+SignInAfterInstall = ثم شغّل {0} مرة واحدة لتسجيل الدخول.
 CheckAgain = تحقق مجددًا
 CheckingAgents = جارٍ التحقق…
 ByokLimits = API key فقط: ينشئ ملف HTML واحدًا، دون أدوات.

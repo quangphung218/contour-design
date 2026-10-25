@@ -400,6 +400,7 @@ ByokIntro = เชื่อมต่อผู้ให้บริการโ�
 AgentsNoneHint = ยังไม่พบ coding agent วางคำสั่งติดตั้งใน Terminal แล้วเลือก ตรวจอีกครั้ง
 InstallGuide = คู่มือติดตั้ง
 CopyCommand = คัดลอกคำสั่ง
+SignInAfterInstall = จากนั้นรัน {0} หนึ่งครั้งเพื่อลงชื่อเข้าใช้
 CheckAgain = ตรวจอีกครั้ง
 CheckingAgents = กำลังตรวจ…
 ByokLimits = API key เท่านั้น: สร้างไฟล์ HTML ไฟล์เดียว ไม่มีเครื่องมือ

@@ -88,6 +88,9 @@ test('ONB-03', 'With no agent installed the screen shows how to install one, and
     await card.getByTestId('install-copy').filter({ hasText: 'Copied' }).waitFor();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), cmd, `${id}: Copy put something else on the clipboard`);
   }
+  // Installed is not signed in: each card says what to run next.
+  assert.equal(await page.locator('[data-testid="agent-install"][data-agent="claude"] [data-testid="install-signin"]').innerText(), 'Then run claude once to sign in.');
+  assert.equal(await page.locator('[data-testid="agent-install"][data-agent="codex"] [data-testid="install-signin"]').innerText(), 'Then run codex login once to sign in.');
   // The rest are folded, counted, and none is a dead disabled button.
   const other = page.getByTestId('agents-other');
   const summary = await other.locator('summary').innerText();
@@ -95,6 +98,10 @@ test('ONB-03', 'With no agent installed the screen shows how to install one, and
   assert.equal(await other.evaluate((e) => e.open), false, 'the other agents are unfolded');
   await other.locator('summary').click();
   assert.equal(await other.locator('[data-agent]').count(), n, `"${summary}" does not match the list`);
+  // Open, the chevron points down (90°), not back to the left.
+  await page.waitForTimeout(300);
+  const turn = await other.locator('summary .ico').evaluate((e) => getComputedStyle(e).transform);
+  assert.equal(turn, 'matrix(0, 1, -1, 0, 0, 0)', `open chevron transform: ${turn}`);
   assert.ok(n >= 20, `only ${n} other agents`);
   assert.equal(await page.locator('button[data-agent][disabled]').count(), 0, 'a missing agent is a disabled button');
   // Words a new user understands; the API key path says what it gives.
@@ -248,9 +255,24 @@ test('ONB-10', 'On a phone-sized window the install commands fit and Copy stays 
   const card = page.locator('[data-testid="agent-install"][data-agent="claude"]');
   await card.waitFor();
   const copy = await card.getByTestId('install-copy').boundingBox();
+  const guide = await card.getByTestId('install-docs').boundingBox();
+  assert.ok(copy.height >= 44 && guide.height >= 44, `touch targets: Copy ${copy.height}px, Install guide ${guide.height}px high`);
   const box = await card.boundingBox();
   assert.ok(copy.x + copy.width <= box.x + box.width + 1, `Copy ends at ${Math.round(copy.x + copy.width)}, card at ${Math.round(box.x + box.width)}`);
   assert.equal(await overflowsX(page), false, 'the page scrolls sideways');
+}, noAgent);
+
+test('ONB-11', 'On Windows the install cards give PowerShell commands, or only the setup page', async ({ d, newPage }) => {
+  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+  const { page } = await newPage({ userAgent });
+  await page.goto(d.base + '/onboarding');
+  const claude = page.locator('[data-testid="agent-install"][data-agent="claude"]');
+  await claude.waitFor();
+  assert.equal((await claude.getByTestId('install-command').innerText()).trim(), 'irm https://claude.ai/install.ps1 | iex');
+  const codex = page.locator('[data-testid="agent-install"][data-agent="codex"]');
+  assert.equal(await codex.getByTestId('install-command').count(), 0, 'a bash command shown on Windows');
+  assert.match(await codex.getByTestId('install-docs').getAttribute('href'), /^https:\/\/developers\.openai\.com\//);
+  assert.doesNotMatch(await page.locator('.onboarding-card').innerText(), /\| (ba)?sh/, 'a bash command shown on Windows');
 }, noAgent);
 
 await run('onboarding', { onboarded: false });

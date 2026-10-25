@@ -19,7 +19,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 
-/** Opens the folded "Other agents" list, where agents not installed sit. */
+/** Opens the folded "Other agents" list, where agents not installed sit
+ * (DeepSeek Harness before `dsh` is on PATH). */
 async function unfold(p) {
   const other = p.getByTestId('agents-other');
   await other.waitFor();
@@ -207,8 +208,9 @@ try {
   await section.waitFor();
   await until(async () => (await section.boundingBox()).y < 900, 'the guide opens at its section');
   assert.match(await page.locator('.docs-body').textContent(), /dsh --profile open-design --probe/);
+  // Installed, it waits for setup in view, not folded away.
   await page.goto(BASE + '/settings');
-  await unfold(page);
+  await card.waitFor();
   await card.click();
   await page.getByTestId('deepseek-harness-cli-found').waitFor();
   mkdirSync(profile, { recursive: true });
@@ -273,7 +275,8 @@ try {
   rmSync(join(dshHome, 'profiles'), { recursive: true, force: true });
   await put('/api/app-config', { onboardingCompleted: false });
   await page.goto(BASE + '/onboarding');
-  await unfold(page);
+  // dsh is installed and waits for setup: in view, not folded away.
+  await page.locator('[data-agent="deepseek-harness"]').waitFor();
   await page.locator('[data-agent="deepseek-harness"]').click();
   await dialog.waitFor();
   await page.getByTestId('deepseek-harness-guide').click();
@@ -281,7 +284,7 @@ try {
   await sleep(500);
   assert.equal(new URL(page.url()).pathname, '/docs', 'onboarding lets the guide open');
   await page.getByTestId('docs-back').click();
-  await page.locator('[data-agent="deepseek-harness"]').waitFor({ state: 'attached' });
+  await page.locator('[data-agent="deepseek-harness"]').waitFor();
   assert.equal(new URL(page.url()).pathname, '/onboarding');
   await put('/api/app-config', { onboardingCompleted: true });
   results.guideFromOnboarding = 'ok';
@@ -303,7 +306,6 @@ try {
     };
     await shot('agent-needs-setup', async (p) => {
       await p.goto(BASE + '/settings');
-      await unfold(p);
       await p.locator('[data-agent="deepseek-harness"][data-needs-setup="true"]').scrollIntoViewIfNeeded();
     });
     await shot('dsh-setup-dialog', async (p) => {

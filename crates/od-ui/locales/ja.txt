@@ -400,6 +400,7 @@ ByokIntro = 自分のキーでモデルプロバイダーに接続します。�
 AgentsNoneHint = coding agent がまだ見つかりません。インストールコマンドをターミナルに貼り付けて、「再確認」を押してください。
 InstallGuide = インストールガイド
 CopyCommand = コマンドをコピー
+SignInAfterInstall = その後 {0} を一度実行してサインインします。
 CheckAgain = 再確認
 CheckingAgents = 確認中…
 ByokLimits = API key のみ: HTML ファイル 1 つを作成、ツールなし。

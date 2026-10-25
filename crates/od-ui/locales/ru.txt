@@ -400,6 +400,7 @@ ByokIntro = Подключите провайдера моделей со сво
 AgentsNoneHint = Coding agent пока не найден. Вставьте команду установки в Терминал и нажмите «Проверить снова».
 InstallGuide = Инструкция по установке
 CopyCommand = Скопировать команду
+SignInAfterInstall = Затем один раз выполните {0}, чтобы войти.
 CheckAgain = Проверить снова
 CheckingAgents = Проверка…
 ByokLimits = Только API key: один HTML-файл, без инструментов.

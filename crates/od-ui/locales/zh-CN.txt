@@ -400,6 +400,7 @@ ByokIntro = 使用自己的 Key 连接模型提供方。先测试，再保存。
 AgentsNoneHint = 尚未找到 coding agent。将安装命令粘贴到终端，然后点击“重新检查”。
 InstallGuide = 安装指南
 CopyCommand = 复制命令
+SignInAfterInstall = 然后运行一次 {0} 进行登录。
 CheckAgain = 重新检查
 CheckingAgents = 正在检查…
 ByokLimits = 仅 API key：只生成一个 HTML 文件，不使用工具。

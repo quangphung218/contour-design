@@ -400,6 +400,7 @@ ByokIntro = یک ارائه‌دهنده مدل را با کلید خودتان 
 AgentsNoneHint = هنوز هیچ coding agent پیدا نشد. یک فرمان نصب را در Terminal بچسبانید و سپس «بررسی دوباره» را بزنید.
 InstallGuide = راهنمای نصب
 CopyCommand = کپی فرمان
+SignInAfterInstall = سپس یک بار {0} را اجرا کنید تا وارد شوید.
 CheckAgain = بررسی دوباره
 CheckingAgents = در حال بررسی…
 ByokLimits = فقط API key: یک فایل HTML می‌سازد، بدون ابزار.

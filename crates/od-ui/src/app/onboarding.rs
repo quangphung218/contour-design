@@ -32,7 +32,8 @@ pub fn Onboarding() -> impl IntoView {
     let no_browser = move || browser.get().and_then(Result::ok).is_some_and(|b| !b.found);
     // Extracting a brand needs an agent that can browse; none, no offer.
     let has_agent = move || matches!(shell.agents.get(), Some(Ok(list)) if list.iter().any(|a| a.available && a.id != "byok"));
-    let no_agent = move || matches!(shell.agents.get(), Some(Ok(list)) if !list.iter().any(|a| a.available && a.id != "byok"));
+    let no_agent =
+        move || matches!(shell.agents.get(), Some(Ok(list)) if !list.iter().any(installed));
     let check_again = move || {
         if checking.get_untracked() {
             return;
@@ -202,20 +203,48 @@ pub fn Onboarding() -> impl IntoView {
 /// Where to get Chrome when export has no browser to drive.
 const CHROME_URL: &str = "https://www.google.com/chrome/";
 
-/// The agents a new user is pointed to first: id, install command for
-/// macOS and Linux, official setup page.
-const FEATURED: &[(&str, &str, &str)] = &[
-    (
-        "claude",
-        "curl -fsSL https://claude.ai/install.sh | bash",
-        "https://code.claude.com/docs/en/setup",
-    ),
-    (
-        "codex",
-        "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-        "https://developers.openai.com/codex/cli",
-    ),
+/// On this machine: ready, or installed and waiting for setup (DeepSeek
+/// Harness without its profile). BYOK is not an agent here.
+fn installed(a: &AgentInfo) -> bool {
+    (a.available || a.needs_setup) && a.id != "byok"
+}
+
+/// An agent a new user is pointed to first.
+struct Featured {
+    id: &'static str,
+    /// Install command for macOS and Linux.
+    unix: &'static str,
+    /// Install command for Windows PowerShell; none: the setup page only.
+    windows: Option<&'static str>,
+    /// Official setup page.
+    docs: &'static str,
+    /// What to run once installed to sign in.
+    sign_in: &'static str,
+}
+
+const FEATURED: &[Featured] = &[
+    Featured {
+        id: "claude",
+        unix: "curl -fsSL https://claude.ai/install.sh | bash",
+        windows: Some("irm https://claude.ai/install.ps1 | iex"),
+        docs: "https://code.claude.com/docs/en/setup",
+        sign_in: "claude",
+    },
+    Featured {
+        id: "codex",
+        unix: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+        windows: None,
+        docs: "https://developers.openai.com/codex/cli",
+        sign_in: "codex login",
+    },
 ];
+
+/// The page runs on Windows (the daemon is on the same machine).
+fn on_windows() -> bool {
+    web_sys::window()
+        .and_then(|w| w.navigator().user_agent().ok())
+        .is_some_and(|ua| ua.contains("Windows"))
+}
 
 /// Detected agents: installed ones as cards to pick. With none installed,
 /// Claude Code and Codex come first with how to install them; every other
@@ -242,18 +271,20 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
         }
             .into_any(),
         Some(Ok(list)) => {
+            // Installed, or installed and waiting for setup, stay in view;
+            // the rest is folded away.
             let (ready, mut missing): (Vec<_>, Vec<_>) = list
                 .into_iter()
                 .filter(|a| a.id != "byok")
-                .partition(|a| a.available);
+                .partition(installed);
             // Featured only while nothing is installed: then they are the
             // way forward, otherwise noise next to a working agent.
             let featured: Vec<_> = if ready.is_empty() {
                 FEATURED
                     .iter()
-                    .filter_map(|&(id, command, docs)| {
-                        let at = missing.iter().position(|a| a.id == id)?;
-                        Some((missing.remove(at), command, docs))
+                    .filter_map(|f| {
+                        let at = missing.iter().position(|a| a.id == f.id)?;
+                        Some((missing.remove(at), f))
                     })
                     .collect()
             } else {
@@ -267,8 +298,8 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
                 })}
                 {(!featured.is_empty()).then(|| view! {
                     <div class="agent-install-list">
-                        {featured.into_iter().map(|(a, command, docs)| view! {
-                            <InstallCard agent=a command=command docs=docs/>
+                        {featured.into_iter().map(|(a, f)| view! {
+                            <InstallCard agent=a featured=f/>
                         }).collect_view()}
                     </div>
                 })}
@@ -291,11 +322,20 @@ pub fn AgentPicker(picked: RwSignal<Option<String>>) -> impl IntoView {
 }
 
 /// A recommended agent that is not installed: the command to paste into
-/// Terminal, a Copy button and the official setup page.
+/// Terminal (or PowerShell) with a Copy button, the official setup page,
+/// and how to sign in once installed.
 #[component]
-fn InstallCard(agent: AgentInfo, command: &'static str, docs: &'static str) -> impl IntoView {
+fn InstallCard(agent: AgentInfo, featured: &'static Featured) -> impl IntoView {
+    let command = if on_windows() {
+        featured.windows
+    } else {
+        Some(featured.unix)
+    };
     let copied = RwSignal::new(false);
     let copy = move |_| {
+        let Some(command) = command else {
+            return;
+        };
         leptos::task::spawn_local(async move {
             if super::lib_ui::copy_text(command).await.is_ok() {
                 copied.set(true);
@@ -304,6 +344,8 @@ fn InstallCard(agent: AgentInfo, command: &'static str, docs: &'static str) -> i
             }
         });
     };
+    let sign_in = t(T::SignInAfterInstall);
+    let (before, after) = sign_in.split_once("{0}").unwrap_or((sign_in, ""));
     view! {
         <div class="agent-card agent-install" data-agent=agent.id.clone() data-testid="agent-install">
             <span class="agent-icon">{icon(Glyph::Download)}</span>
@@ -311,16 +353,22 @@ fn InstallCard(agent: AgentInfo, command: &'static str, docs: &'static str) -> i
                 <span class="agent-name">{agent.name.clone()}</span>
                 <span class="agent-detail">{t(T::NotInstalled)}</span>
             </span>
-            <a class="btn ghost small" href=docs target="_blank" rel="noopener" data-testid="install-docs">
+            <a class="btn ghost small" href=featured.docs target="_blank" rel="noopener" data-testid="install-docs">
                 {t(T::InstallGuide)}{icon(Glyph::ExternalLink)}
             </a>
-            <div class="install-cmd">
-                <code data-testid="install-command">{command}</code>
-                <button class="btn small" data-testid="install-copy" aria-label=t(T::CopyCommand) on:click=copy>
-                    {move || if copied.get() { icon(Glyph::Check) } else { icon(Glyph::Clipboard) }}
-                    {move || t(if copied.get() { T::Copied } else { T::Copy })}
-                </button>
-            </div>
+            {command.map(|command| view! {
+                <div class="install-cmd">
+                    // Scrolls sideways when narrow, so it takes keyboard focus.
+                    <code data-testid="install-command" tabindex="0">{command}</code>
+                    <button class="btn small" data-testid="install-copy" aria-label=t(T::CopyCommand) on:click=copy>
+                        {move || if copied.get() { icon(Glyph::Check) } else { icon(Glyph::Clipboard) }}
+                        {move || t(if copied.get() { T::Copied } else { T::Copy })}
+                    </button>
+                </div>
+            })}
+            <p class="install-signin muted small" data-testid="install-signin">
+                {before}<code>{featured.sign_in}</code>{after}
+            </p>
         </div>
     }
 }
@@ -399,4 +447,33 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
         })}
     }
     .into_any()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn agent(id: &str, available: bool, needs_setup: bool) -> AgentInfo {
+        AgentInfo {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            bin: id.to_owned(),
+            available,
+            path: (available || needs_setup).then(|| format!("/bin/{id}")),
+            version: None,
+            capabilities: Vec::new(),
+            supports_resume: false,
+            supports_steer: false,
+            error: None,
+            needs_setup,
+        }
+    }
+
+    #[test]
+    fn an_agent_waiting_for_setup_counts_as_installed() {
+        assert!(installed(&agent("claude", true, false)));
+        assert!(installed(&agent("deepseek-harness", false, true)));
+        assert!(!installed(&agent("codex", false, false)));
+        assert!(!installed(&agent("byok", true, false)));
+    }
 }

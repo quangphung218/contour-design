@@ -199,9 +199,12 @@ shell for its `PATH` again, so an agent installed under a new nvm Node while
 the app runs is found without a restart.
 
 With no agent installed, onboarding puts Claude Code and Codex first, each
-with its install command (Copy) and official setup page, folds the other
-agents under **Other agents**, and offers the API key path with its limit
-(one HTML file, no tools). It also warns when no Chrome, Edge or Chromium is
+with its install command (Copy; PowerShell on Windows, or the setup page
+only), its official setup page and how to sign in once installed. Agents
+not installed are folded under **Other agents**; one installed but waiting
+for setup (DeepSeek Harness) stays in view. The API key path comes with its
+limit (one HTML file, no tools). In the desktop app, web links open in the
+system browser. It also warns when no Chrome, Edge or Chromium is
 found (`GET /api/browser`), since PDF, PPTX and image export need one;
 nothing else is blocked.
 

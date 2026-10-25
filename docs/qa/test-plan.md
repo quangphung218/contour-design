@@ -39,7 +39,9 @@ Goal: a first-time user reaches Home with a working agent or API key.
 | ONB-07 | The API key is never sent back and its file is private | Key saved | `GET /api/app-config`, `/api/agents`; file mode | Key absent; `app-config.json` is `0600` | P0 | auto |
 | ONB-08 | Keyboard only: onboarding can be finished with Tab/Enter | ONB-01 | Tab to Continue, Enter | Home opens | P2 | auto |
 | ONB-09 | On a phone, "API key required" sits with the key field and Save stays in place | Viewport 390×844, no agent | API key ▸ Anthropic ▸ empty key | Hint tied to the key field; Save next to Test or at the right edge; no sideways scroll | P2 | auto (QA-016) |
-| ONB-09 | Refresh after installing an agent detects it | Start without agent, then install one | Press Refresh | The new agent is listed | P2 | manual: the daemon's PATH is fixed when it starts |
+| ONB-09b | Check again after installing an agent detects it | Start without agent, then install one | Press Check again | The new agent is listed and picked, no restart | P2 | auto (in ONB-03; the login shell rescan in `od-server` tests) |
+| ONB-10 | Phone width, no agent: the install cards fit | PATH without any agent CLI | Open `/onboarding` at 390 px | No sideways scroll; Copy stays inside its card; Copy and Install guide are at least 44 px high | P2 | auto |
+| ONB-11 | Windows, no agent: no bash command | PATH without any agent CLI, Windows browser | Open `/onboarding` | Claude Code shows its PowerShell command; Codex shows only its setup page; no `curl … \| sh` anywhere | P2 | auto |
 
 ## 2. Create a project from Home (`home.qa.mjs`)
 
@@ -230,8 +232,9 @@ the guard, so that is what is checked.
 - **Real agents and real BYOK providers**: the suite uses the mock CLI and
   a fake provider on loopback (no outbound network by design).
 - **MP4 export**: needs ffmpeg and a HyperFrames composition; out of scope.
-- **ONB-09** (agent installed while running): the daemon's `PATH` is fixed
-  when it starts.
+- **ONB-09b in the desktop app**: Check again asks the login shell for its
+  `PATH` again only in the app (a CLI daemon has none); the suite covers it
+  with a fake shell in `od-server` tests, the real shell needs a manual pass.
 - **No Chrome at all**: Chrome is installed on this machine at its standard
   path, so EXP-03 points `OD_CHROME_PATH` at nothing instead; the message
   for a machine without any Chrome ("this export needs Chrome, Edge or

@@ -400,6 +400,7 @@ ByokIntro = Csatlakoztass modellszolgáltatót a saját kulcsoddal. Teszteld, ma
 AgentsNoneHint = Még nincs coding agent. Illessz be egy telepítő parancsot a Terminálba, majd válaszd az Újraellenőrzést.
 InstallGuide = Telepítési útmutató
 CopyCommand = Parancs másolása
+SignInAfterInstall = Utána futtasd egyszer: {0}, hogy bejelentkezz.
 CheckAgain = Újraellenőrzés
 CheckingAgents = Ellenőrzés…
 ByokLimits = Csak API key: egyetlen HTML-fájlt készít, eszközök nélkül.
