@@ -42,11 +42,14 @@ fn summary_for_people(summary: &str) -> Option<String> {
     (!s.is_empty() && !boilerplate).then(|| crate::i18n::rebrand(s).into_owned())
 }
 
-/// Whether `s` matches the search text (title, summary, category).
+/// Whether `s` matches the search text: the words the page shows (title,
+/// description, a summary written for people, category), not the bundled
+/// packages' maintainer note.
 fn matches(s: &DesignSystemSummary, q: &str) -> bool {
     let q = q.trim().to_lowercase();
+    let summary = summary_for_people(&s.summary).unwrap_or_default();
     q.is_empty()
-        || format!("{} {} {}", s.title, s.summary, s.category)
+        || format!("{} {} {summary} {}", s.title, s.description, s.category)
             .to_lowercase()
             .contains(&q)
 }
@@ -1273,6 +1276,22 @@ mod tests {
             summary_for_people("Calm and precise.").as_deref(),
             Some("Calm and precise.")
         );
+    }
+
+    #[test]
+    fn search_reads_the_description_not_the_package_note() {
+        let sys: DesignSystemSummary = serde_json::from_value(serde_json::json!({
+            "id": "airbnb", "title": "Airbnb", "category": "E-Commerce & Retail",
+            "summary": "Bundled OpenDesign package for Airbnb, derived from curated DESIGN.md.",
+            "swatches": [], "surface": "web", "source": "built-in", "status": "published",
+            "isEditable": false, "description": "Warm coral accent on a clean white canvas."
+        }))
+        .unwrap();
+        assert!(matches(&sys, "Coral"));
+        assert!(matches(&sys, "airbnb"));
+        assert!(matches(&sys, "retail"));
+        assert!(!matches(&sys, "package"));
+        assert!(!matches(&sys, "curated"));
     }
 
     #[test]
