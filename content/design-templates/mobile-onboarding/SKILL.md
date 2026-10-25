@@ -1,5 +1,7 @@
 ---
 name: mobile-onboarding
+en_name: "Mobile onboarding flow"
+en_description: "Three phone screens side by side for a sign-up flow: splash, value proposition and sign-in."
 description: |
   A multi-screen mobile onboarding flow rendered as three phone frames
   side by side — splash, value-prop, sign-in. Status bar, swipe dots,

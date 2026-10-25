@@ -1,5 +1,7 @@
 ---
 name: meeting-notes
+en_name: "Meeting notes"
+en_description: "Meeting notes with attendees, agenda, decisions, action items with owners and dates, and the next meeting."
 description: |
   Meeting notes page — title bar with attendees, agenda checklist, decisions
   block, action items table with owners + dates, and a "next meeting" footer.

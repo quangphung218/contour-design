@@ -797,7 +797,6 @@ ScopeOfficial = Hivatalos
 ScopePersonal = Személyes
 SearchPlugins = Keresés
 PluginsEmptyPersonal = Még nincs itt semmi. Hozz létre egy plugint vagy skillt.
-PluginStats = {0} skill · {1} atom · {2} bemenet
 BackToList = Vissza
 ByAuthor = szerző: {0}
 UsePlugin = Plugin használata

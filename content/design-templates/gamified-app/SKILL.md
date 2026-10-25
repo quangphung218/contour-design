@@ -1,5 +1,7 @@
 ---
 name: gamified-app
+en_name: "Gamified mobile app"
+en_description: "Three phone screens for a habit or quest app: cover, today's quests with XP and levels, and a quest detail."
 description: |
   A multi-frame gamified mobile-app prototype — three phone frames on a dark
   showcase stage. Frame 1: cover / poster, Frame 2: today's quests with XP

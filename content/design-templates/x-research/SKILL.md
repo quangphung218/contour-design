@@ -1,5 +1,7 @@
 ---
 name: x-research
+en_name: "X sentiment report"
+en_description: "What people are saying on X about a company, product, market or event, with sentiment and notable posts."
 description: |
   X/Twitter public sentiment research for recent market, company, product, or
   community discourse. Use when the brief asks what people are saying on X,

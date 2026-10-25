@@ -796,7 +796,6 @@ ScopeOfficial = Oficiais
 ScopePersonal = Pessoais
 SearchPlugins = Buscar
 PluginsEmptyPersonal = Nada aqui ainda. Crie um plugin ou uma skill.
-PluginStats = {0} skills · {1} átomos · {2} entradas
 BackToList = Voltar
 ByAuthor = por {0}
 UsePlugin = Usar plugin

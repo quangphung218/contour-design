@@ -797,7 +797,6 @@ ScopeOfficial = رسمي
 ScopePersonal = شخصي
 SearchPlugins = بحث
 PluginsEmptyPersonal = لا شيء هنا بعد. أنشئ إضافة أو مهارة.
-PluginStats = {0} مهارات · {1} ذرات · {2} مدخلات
 BackToList = رجوع
 ByAuthor = بواسطة {0}
 UsePlugin = استخدام الإضافة

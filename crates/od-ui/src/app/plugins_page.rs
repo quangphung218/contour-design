@@ -303,20 +303,16 @@ fn empty(personal: bool) -> impl IntoView {
 fn PluginRow(plugin: Value, open: RwSignal<Option<Open>>) -> impl IntoView {
     let id = s(&plugin, "id");
     let title = s(&plugin, "title");
-    let skills = plugin["context"]["skills"].as_array().map_or(0, Vec::len);
-    let atoms = plugin["context"]["atoms"].as_array().map_or(0, Vec::len);
-    let inputs = plugin["inputs"].as_array().map_or(0, Vec::len);
     let id_open = id.clone();
     let id_use = id.clone();
     view! {
         <li class="plugin-row" data-testid="plugin-row" data-id=id.clone()>
             {tile(&id, &title)}
             <button class="plugin-row-main" on:click=move |_| open.set(Some(Open::Plugin(id_open.clone())))>
-                <span class="lib-row-title">{title.clone()}<span class="badge outline">{s(&plugin, "kind")}</span></span>
+                // What it does for the user; kind, atoms and inputs are
+                // under Developer details on the plugin page.
+                <span class="lib-row-title">{title.clone()}</span>
                 <span class="lib-row-sub">{crate::i18n::rebrand(&s(&plugin, "description")).into_owned()}</span>
-                {(skills + atoms + inputs > 0).then(|| view! {
-                    <span class="subtle small">{tf(T::PluginStats, &[&skills.to_string(), &atoms.to_string(), &inputs.to_string()])}</span>
-                })}
             </button>
             <button class="btn small" data-testid="plugin-try" on:click=move |_| open.set(Some(Open::Plugin(id_use.clone())))>{t(T::TryIt)}</button>
         </li>
@@ -607,6 +603,7 @@ fn PluginDetail(
                 Some(Err(e)) => view! { <p class="error-text">{e}</p> }.into_any(),
                 Some(Ok(p)) => {
                     let pid = s(&p, "id");
+                    let (pid_dev, kind_dev) = (pid.clone(), s(&p, "kind"));
                     let title = localized(&p["manifest"]["title_i18n"]).unwrap_or_else(|| s(&p, "title"));
                     let description = crate::i18n::rebrand(&localized(&p["manifest"]["description_i18n"]).unwrap_or_else(|| s(&p, "description"))).into_owned();
                     let fields: Vec<InputField> = p["inputs"].as_array().into_iter().flatten().filter_map(InputField::parse).collect();
@@ -682,23 +679,26 @@ fn PluginDetail(
                                 </div>
                             </section>
                             <section class="card padded plugin-meta">
-                                {(!stages.is_empty()).then(|| view! {
-                                    <h3>{icon(Glyph::Plan)}{t(T::Workflow)}</h3>
-                                    <ol class="plugin-stages">{stages.into_iter().map(|(id, atoms)| view! { <li><strong>{id}</strong>" · "<span class="subtle">{atoms}</span></li> }).collect_view()}</ol>
-                                })}
-                                {meta_list(T::ContextSkills, ctx_skills)}
-                                {ctx_ds.map(|d| meta_list(T::DesignSystem, vec![d]))}
-                                {meta_list(T::Craft, ctx_craft)}
-                                {meta_list(T::Atoms, ctx_atoms)}
-                                {meta_list(T::Capabilities, caps)}
                                 <h4>{t(T::SourceLabel)}</h4>
                                 <p class="subtle small">{if personal { t(T::SourceUserFolder) } else { t(T::SourceBundled) }}</p>
-                                {(!s(&p, "body").is_empty()).then(|| view! {
-                                    <details class="plugin-dev">
-                                        <summary>{t(T::DeveloperDetails)}</summary>
+                                // Internal names (kind, pipeline stages, atoms,
+                                // capabilities) stay here, folded away.
+                                <details class="plugin-dev" data-testid="plugin-dev">
+                                    <summary>{t(T::DeveloperDetails)}</summary>
+                                    <p class="subtle small"><code class="meta-chip">{pid_dev}</code>" · "<code class="meta-chip">{kind_dev}</code></p>
+                                    {(!stages.is_empty()).then(|| view! {
+                                        <h4>{icon(Glyph::Plan)}{t(T::Workflow)}</h4>
+                                        <ol class="plugin-stages">{stages.into_iter().map(|(id, atoms)| view! { <li><strong>{id}</strong>" · "<span class="subtle">{atoms}</span></li> }).collect_view()}</ol>
+                                    })}
+                                    {meta_list(T::ContextSkills, ctx_skills)}
+                                    {ctx_ds.map(|d| meta_list(T::DesignSystem, vec![d]))}
+                                    {meta_list(T::Craft, ctx_craft)}
+                                    {meta_list(T::Atoms, ctx_atoms)}
+                                    {meta_list(T::Capabilities, caps)}
+                                    {(!s(&p, "body").is_empty()).then(|| view! {
                                         <div class="md" inner_html=crate::markdown::to_html(&s(&p, "body"))></div>
-                                    </details>
-                                })}
+                                    })}
+                                </details>
                             </section>
                         </div>
                     }.into_any()

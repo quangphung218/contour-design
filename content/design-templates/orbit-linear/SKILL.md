@@ -1,5 +1,7 @@
 ---
 name: orbit-linear
+en_name: "Daily briefing (Linear)"
+en_description: "The last 24 hours in Linear: issue changes, assignments and cycle progress."
 description: |
   Open Orbit briefing skill — selected by the Orbit pipeline when
   Linear is the user's only connected connector, or when the user

@@ -1067,7 +1067,11 @@ fn template_name(s: &SkillSummary) -> String {
 
 fn localized(map: Option<&std::collections::BTreeMap<String, String>>, fallback: &str) -> String {
     let text = map
-        .and_then(|m| m.get(locale().tag()))
+        .and_then(|m| {
+            m.get(locale().tag())
+                .filter(|v| !v.trim().is_empty())
+                .or_else(|| m.get("en"))
+        })
         .filter(|v| !v.trim().is_empty())
         .map_or(fallback, String::as_str);
     crate::i18n::rebrand(text).into_owned()

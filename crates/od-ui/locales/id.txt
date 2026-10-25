@@ -797,7 +797,6 @@ ScopeOfficial = Resmi
 ScopePersonal = Pribadi
 SearchPlugins = Cari
 PluginsEmptyPersonal = Belum ada di sini. Buat plugin atau skill.
-PluginStats = {0} skill · {1} atom · {2} input
 BackToList = Kembali
 ByAuthor = oleh {0}
 UsePlugin = Gunakan plugin

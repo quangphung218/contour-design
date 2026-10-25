@@ -796,7 +796,6 @@ ScopeOfficial = Resmi
 ScopePersonal = Kişisel
 SearchPlugins = Ara
 PluginsEmptyPersonal = Burada henüz bir şey yok. Bir plugin veya skill oluşturun.
-PluginStats = {0} skill · {1} atom · {2} girdi
 BackToList = Geri
 ByAuthor = {0} tarafından
 UsePlugin = Plugin'i kullan

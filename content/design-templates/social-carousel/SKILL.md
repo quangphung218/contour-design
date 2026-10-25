@@ -1,5 +1,7 @@
 ---
 name: social-carousel
+en_name: "Social media carousel"
+en_description: "Three square 1080 × 1080 cards whose headlines connect across the series, ready to post."
 description: |
   A three-card social-media carousel laid out as 1080×1080 squares —
   three cinematic, on-brand panels with display headlines that connect

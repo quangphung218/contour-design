@@ -1,5 +1,7 @@
 ---
 name: docs-page
+en_name: "Documentation page"
+en_description: "A documentation page with side navigation, article body and an on-page table of contents."
 description: |
   A documentation page — inline-start nav, scrollable article body,
   inline-end table of contents. Use when the brief mentions "docs",

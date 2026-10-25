@@ -1,5 +1,7 @@
 ---
 name: orbit-gmail
+en_name: "Daily briefing (Gmail)"
+en_description: "The last 24 hours in your inbox: replies you owe, mentions, and bulk mail sorted for you."
 description: |
   Open Orbit briefing skill — selected by the Orbit pipeline when
   Gmail is the user's only connected connector, or when the user

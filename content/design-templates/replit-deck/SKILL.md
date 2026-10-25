@@ -28,6 +28,19 @@ triggers:
   - "html deck"
   - "html slides"
 od:
+  examples:
+    example-atlas:
+      en_name: "Quarterly report deck (Atlas)"
+      en_description: "A worked example: a quarterly business review deck for a fictional company, Atlas."
+    example-bluehouse:
+      en_name: "Real estate ROI deck (Bluehouse)"
+      en_description: "A worked example: a real estate return-on-investment deck for a fictional company, Bluehouse."
+    example-helix:
+      en_name: "Board update deck (Helix)"
+      en_description: "A worked example: a quarterly board update deck for a fictional company, Helix."
+    example-holm:
+      en_name: "Series A pre-read deck (Holm)"
+      en_description: "A worked example: a Series A investor pre-read deck for a fictional company, Holm."
   mode: deck
   preview:
     type: html

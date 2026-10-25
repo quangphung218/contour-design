@@ -1,5 +1,7 @@
 ---
 name: orbit-general
+en_name: "Daily briefing (all tools)"
+en_description: "A daily dashboard of the last 24 hours across your connected tools, such as GitHub, Linear, Notion, Slack and Gmail."
 description: |
   Open Orbit briefing skill — selected by the Orbit pipeline when the
   user has two or more connectors connected. Pulls the past 24 hours of

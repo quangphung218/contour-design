@@ -1,5 +1,7 @@
 ---
 name: flowai-live-dashboard-template
+en_name: "Team dashboard (FlowAI style)"
+en_description: "A team-management dashboard with member table, activity log, role chart and top contributors, in light and dark themes."
 description: |
   Team-management dashboard skill in the FlowAI aesthetic — three tabs
   (Team Members, Team Details, Activity Log), KPI stat row, member table,

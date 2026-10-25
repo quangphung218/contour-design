@@ -797,7 +797,6 @@ ScopeOfficial = 官方
 ScopePersonal = 个人
 SearchPlugins = 搜索
 PluginsEmptyPersonal = 这里还没有内容。创建一个插件或技能吧。
-PluginStats = {0} 个技能 · {1} 个 atom · {2} 个输入
 BackToList = 返回
 ByAuthor = 作者：{0}
 UsePlugin = 使用插件

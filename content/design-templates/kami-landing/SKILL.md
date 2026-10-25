@@ -1,5 +1,7 @@
 ---
 name: kami-landing
+en_name: "Kami one-pager"
+en_description: "A print-quality one-pager or white paper on warm parchment with an ink-blue accent, in English, Chinese or Japanese."
 description: >
   Produce a print-grade single-page kami (紙 / 纸) document — warm
   parchment canvas, ink-blue accent, serif at one weight, no italic,

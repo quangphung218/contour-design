@@ -165,6 +165,7 @@ fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<V
     let critique_policy = normalize_critique_policy(od_get2("critique", "policy"));
     let full_body = body_with_root_preamble(body, dir);
     let examples = collect_derived_examples(dir);
+    let example_meta = od_get("examples").filter(|v| v.is_object());
 
     let parent = SkillInfo {
         id: parent_id.clone(),
@@ -195,13 +196,22 @@ fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<V
     };
     let mut out = Vec::with_capacity(1 + examples.len());
     for key in examples {
+        // Contour extension, ignored by the original loader: a derived
+        // example may carry its own UI name and description under
+        // `od.examples.<key>` (`en_name`, `en_description`, `zh_*`).
+        let meta = example_meta.and_then(|m| m.get(&key));
+        let field = |k: &str| meta.and_then(|m| m.get(k));
         out.push(SkillEntry {
             info: SkillInfo {
                 id: format!("{parent_id}:{key}"),
                 name: humanize_example_name(&key),
-                display_name: None,
+                display_name: localized_from_fields(field("en_name"), field("zh_name")),
                 description: description.clone(),
-                description_i18n: description_i18n.clone(),
+                description_i18n: localized_from_fields(
+                    field("en_description"),
+                    field("zh_description"),
+                )
+                .or_else(|| description_i18n.clone()),
                 triggers: triggers.clone(),
                 mode,
                 surface,
@@ -736,5 +746,44 @@ mod tests {
         assert_eq!(list[0].info.description, "user copy");
         assert!(list[0].info.aggregates_examples);
         assert!(list[0].body.contains("Skill root"));
+    }
+
+    #[test]
+    fn derived_example_reads_its_own_name_and_description() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("live");
+        std::fs::create_dir_all(dir.join("examples")).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            "---\nname: live\ndescription: Use when the brief asks for data.\nen_description: Pages that refresh.\nod:\n  examples:\n    crm-table:\n      en_name: \"CRM table (live data)\"\n      en_description: \"A sales pipeline.\"\n---\nbody",
+        )
+        .unwrap();
+        std::fs::write(dir.join("examples/crm-table.html"), "<p>").unwrap();
+        std::fs::write(dir.join("examples/other.html"), "<p>").unwrap();
+        let list = list_skills(&[tmp.path().to_path_buf()], false);
+        let en =
+            |m: &Option<BTreeMap<String, String>>| m.as_ref().and_then(|m| m.get("en")).cloned();
+        let crm = &list[1].info;
+        assert_eq!(crm.id, "live:crm-table");
+        assert_eq!(
+            crm.name, "Crm Table",
+            "the id-derived name stays for parity"
+        );
+        assert_eq!(
+            en(&crm.display_name).as_deref(),
+            Some("CRM table (live data)")
+        );
+        assert_eq!(
+            en(&crm.description_i18n).as_deref(),
+            Some("A sales pipeline.")
+        );
+        assert_eq!(crm.description, "Use when the brief asks for data.");
+        // Without its own entry an example keeps the parent's text.
+        let other = &list[2].info;
+        assert_eq!(other.display_name, None);
+        assert_eq!(
+            en(&other.description_i18n).as_deref(),
+            Some("Pages that refresh.")
+        );
     }
 }

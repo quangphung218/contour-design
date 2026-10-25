@@ -9,10 +9,10 @@
   },
   "version": "0.1.0",
   "publishedAt": "2026-06-26T07:15:53Z",
-  "description": "Extract visual effects, Canvas/WebGL/Shader behavior, and interaction details from a reference website, then rebuild them as an editable OpenDesign artifact.",
+  "description": "Recreate the visual effects and interactions of a website you like, including Canvas, WebGL and shaders, as a design you can edit.",
   "description_i18n": {
-    "en": "Extract visual effects, Canvas/WebGL/Shader behavior, and interaction details from a reference website, then rebuild them as an editable OpenDesign artifact.",
-    "zh-CN": "从参考网站提取视觉特效、Canvas/WebGL/Shader 行为与交互细节，并复刻为可编辑的 OpenDesign 产物。"
+    "en": "Recreate the visual effects and interactions of a website you like, including Canvas, WebGL and shaders, as a design you can edit.",
+    "zh-CN": "把你喜欢的网站中的视觉效果和交互（包括 Canvas、WebGL 和着色器）重建为可编辑的设计。"
   },
   "license": "MIT",
   "author": {

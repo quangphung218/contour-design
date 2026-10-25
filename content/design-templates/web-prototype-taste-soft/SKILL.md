@@ -1,6 +1,10 @@
 ---
 name: web-prototype-taste-soft
+en_name: "Soft premium web page"
+en_description: "A soft, premium web page: silver and cream tones, nested cards, rounded corners, springy motion and a subtle gradient mesh."
 description: Apple-tier soft web prototype. Silver/cream canvas, double-bezel cards, button-in-button CTAs, generous squircle radii, spring motion, ambient mesh. Distilled from Leonxlnx/taste-skill `soft-skill` + sections 4–8 of `taste-skill`.
+od:
+  mode: prototype
 ---
 
 # Web Prototype — Soft Premium

@@ -1,5 +1,7 @@
 ---
 name: pm-spec
+en_name: "Product spec (PRD)"
+en_description: "A one-page product spec: problem, success metrics, scope, user stories, design notes, rollout plan and open questions."
 description: |
   Product spec / PRD as a single page — problem, success metrics, scope,
   user stories, design notes, rollout plan, open questions. Use when the

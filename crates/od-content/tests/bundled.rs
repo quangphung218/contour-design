@@ -142,6 +142,19 @@ fn ours_skills(list: &[od_content::SkillEntry]) -> BTreeMap<String, Value> {
         .collect()
 }
 
+/// A derived example's UI name and description come from `od.examples`,
+/// which only Contour reads; every other field must still match.
+fn without_example_text(mut map: BTreeMap<String, Value>) -> BTreeMap<String, Value> {
+    for (id, v) in &mut map {
+        if is_derived(id) {
+            let o = v.as_object_mut().unwrap();
+            o.remove("displayName");
+            o.remove("descriptionI18n");
+        }
+    }
+    map
+}
+
 fn assert_same(kind: &str, ours: &BTreeMap<String, Value>, theirs: &BTreeMap<String, Value>) {
     let ours_ids: Vec<_> = ours.keys().collect();
     let their_ids: Vec<_> = theirs.keys().collect();
@@ -174,9 +187,76 @@ fn design_templates_match_original_loader() {
     let idx = index();
     assert_same(
         "design-templates",
-        &ours_skills(&idx.design_templates),
-        &golden("original-design-templates.json"),
+        &without_example_text(ours_skills(&idx.design_templates)),
+        &without_example_text(golden("original-design-templates.json")),
     );
+}
+
+/// English text of an i18n map.
+fn en(map: Option<&BTreeMap<String, String>>) -> Option<&str> {
+    map.and_then(|m| m.get("en")).map(String::as_str)
+}
+
+/// Mode inference reads the whole body, so a page that says "not animated"
+/// once is filed as video. Bundled templates state their mode instead.
+#[test]
+fn every_design_template_declares_its_mode() {
+    let undeclared: Vec<String> = dirs(&content_root().join("design-templates"))
+        .iter()
+        .filter_map(|dir| {
+            let raw = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+            let (data, _) = od_content::frontmatter::parse(&raw).unwrap();
+            let declared = data["od"]["mode"]
+                .as_str()
+                .and_then(SkillMode::parse)
+                .is_some();
+            (!declared).then(|| dir.file_name().unwrap().to_string_lossy().into_owned())
+        })
+        .collect();
+    assert!(undeclared.is_empty(), "no od.mode: {undeclared:?}");
+    let idx = index();
+    let mode = |id: &str| {
+        idx.design_templates
+            .iter()
+            .find(|t| t.info.id == id)
+            .unwrap()
+            .info
+            .mode
+    };
+    assert_eq!(mode("web-prototype-taste-brutalist"), SkillMode::Prototype);
+    assert_eq!(mode("html-ppt-taste-brutalist"), SkillMode::Deck);
+}
+
+/// What the Templates page shows: a name in words, not an id, and a
+/// description for people. The agent-facing `description` (with "Use when
+/// the brief asks for…") stays for routing but is never the card text.
+#[test]
+fn design_templates_have_text_for_people() {
+    let trigger = regex::Regex::new(
+        r"(?i)\b(use|trigger|select)(ed)?( this)?( template| skill)?( when| by)\b|\bwhen (the )?(user|brief)|\b(brief|user)s? (asks?|mentions?|wants?)",
+    )
+    .unwrap();
+    let idx = index();
+    let mut seen: BTreeMap<String, String> = BTreeMap::new();
+    let mut problems = Vec::new();
+    for t in &idx.design_templates {
+        let id = &t.info.id;
+        match en(t.info.display_name.as_ref()) {
+            Some(name) if !name.trim().is_empty() => {}
+            _ => problems.push(format!("{id}: no en_name")),
+        }
+        let Some(text) = en(t.info.description_i18n.as_ref()) else {
+            problems.push(format!("{id}: no en_description"));
+            continue;
+        };
+        if trigger.is_match(text) {
+            problems.push(format!("{id}: agent wording in {text:?}"));
+        }
+        if let Some(other) = seen.insert(text.to_owned(), id.clone()) {
+            problems.push(format!("{id}: same description as {other}"));
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 #[test]

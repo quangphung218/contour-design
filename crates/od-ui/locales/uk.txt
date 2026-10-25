@@ -797,7 +797,6 @@ ScopeOfficial = Офіційні
 ScopePersonal = Особисті
 SearchPlugins = Пошук
 PluginsEmptyPersonal = Тут поки порожньо. Створіть плагін або навичку.
-PluginStats = Навичок: {0} · атомів: {1} · входів: {2}
 BackToList = Назад
 ByAuthor = від {0}
 UsePlugin = Використати плагін

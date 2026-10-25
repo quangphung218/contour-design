@@ -796,7 +796,6 @@ ScopeOfficial = Oficjalne
 ScopePersonal = Osobiste
 SearchPlugins = Szukaj
 PluginsEmptyPersonal = Nic tu jeszcze nie ma. Utwórz wtyczkę lub umiejętność.
-PluginStats = Umiejętności: {0} · atomy: {1} · dane wejściowe: {2}
 BackToList = Wstecz
 ByAuthor = autor: {0}
 UsePlugin = Użyj wtyczki

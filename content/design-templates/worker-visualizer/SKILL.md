@@ -1,5 +1,7 @@
 ---
 name: worker-visualizer
+en_name: "Real-time visualizer"
+en_description: "A smooth 60 fps data, particle or simulation visualizer that keeps the page responsive."
 description: |
   A real-time data/particle/simulation visualizer whose heavy compute runs in
   a Web Worker (off the main thread), optionally sharing memory with the UI via

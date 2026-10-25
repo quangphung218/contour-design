@@ -797,7 +797,6 @@ ScopeOfficial = Официальные
 ScopePersonal = Личные
 SearchPlugins = Поиск
 PluginsEmptyPersonal = Пока пусто. Создайте плагин или навык.
-PluginStats = Навыков: {0} · атомов: {1} · входов: {2}
 BackToList = Назад
 ByAuthor = от {0}
 UsePlugin = Использовать плагин

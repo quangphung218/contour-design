@@ -797,7 +797,6 @@ ScopeOfficial = 官方
 ScopePersonal = 個人
 SearchPlugins = 搜尋
 PluginsEmptyPersonal = 這裡還沒有內容。建立一個外掛或技能吧。
-PluginStats = {0} 個技能 · {1} 個原子 · {2} 個輸入
 BackToList = 返回
 ByAuthor = 作者：{0}
 UsePlugin = 使用外掛

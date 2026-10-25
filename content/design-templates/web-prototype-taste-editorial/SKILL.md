@@ -1,6 +1,10 @@
 ---
 name: web-prototype-taste-editorial
+en_name: "Editorial minimalist web page"
+en_description: "A calm editorial web page: warm monochrome, serif headings, hairline borders, pastel chips and lots of white space."
 description: Editorial-minimalist web prototype. Warm monochrome canvas, serif display + grotesque body, 1px hairline borders, muted pastel chips, generous macro-whitespace, ambient micro-motion. Distilled from Leonxlnx/taste-skill `minimalist-skill`.
+od:
+  mode: prototype
 ---
 
 # Web Prototype — Editorial Minimalism

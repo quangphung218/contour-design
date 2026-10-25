@@ -1,5 +1,7 @@
 ---
 name: tweaks
+en_name: "Live design controls"
+en_description: "Adds a side panel to a design for trying accent colour, type scale, density, motion and theme live, without asking again."
 description: |
   Wrap any HTML artifact with a side panel of live, parameterized
   controls — accent color, type scale, density, motion, theme — that

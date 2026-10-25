@@ -797,7 +797,6 @@ ScopeOfficial = 公式
 ScopePersonal = 個人
 SearchPlugins = 検索
 PluginsEmptyPersonal = まだありません。プラグインまたはスキルを作成してください。
-PluginStats = スキル{0}件 · アトム{1}件 · 入力{2}件
 BackToList = 戻る
 ByAuthor = 作成者: {0}
 UsePlugin = プラグインを使う

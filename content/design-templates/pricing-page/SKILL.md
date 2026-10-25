@@ -1,5 +1,7 @@
 ---
 name: pricing-page
+en_name: "Pricing page"
+en_description: "A pricing page with plan tiers, a feature comparison table and an FAQ."
 description: |
   A standalone pricing page — header, plan tiers, feature comparison table,
   and an FAQ. Use when the brief asks for "pricing", "plans",

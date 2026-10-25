@@ -1,5 +1,7 @@
 ---
 name: dashboard
+en_name: "Admin dashboard"
+en_description: "An admin or analytics dashboard with sidebar, top bar, KPI cards and charts."
 description: |
   Admin / analytics dashboard in a single HTML file. Fixed left sidebar,
   top bar with user/search, main grid of KPI cards and one or two charts.

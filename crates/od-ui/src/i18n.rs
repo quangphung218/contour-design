@@ -1027,7 +1027,6 @@ messages! {
     ScopePersonal => "Personal", "Cá nhân";
     SearchPlugins => "Search", "Tìm";
     PluginsEmptyPersonal => "Nothing here yet. Create a plugin or a skill.", "Chưa có gì. Hãy tạo plugin hoặc skill.";
-    PluginStats => "{0} skills · {1} atoms · {2} inputs", "{0} skill · {1} atom · {2} input";
     BackToList => "Back", "Quay lại";
     ByAuthor => "by {0}", "của {0}";
     UsePlugin => "Use plugin", "Dùng plugin";

@@ -72,12 +72,13 @@ fn mode_label(m: &str) -> String {
     }
 }
 
-fn name_of(s: &SkillSummary) -> String {
-    let name = s
-        .info
-        .display_name
-        .as_ref()
-        .and_then(|m| m.get(locale().tag()))
+/// The entry of an i18n map for the UI language, else English.
+fn in_locale(map: Option<&std::collections::BTreeMap<String, String>>) -> Option<&String> {
+    map.and_then(|m| m.get(locale().tag()).or_else(|| m.get("en")))
+}
+
+pub(crate) fn name_of(s: &SkillSummary) -> String {
+    let name = in_locale(s.info.display_name.as_ref())
         .cloned()
         .unwrap_or_else(|| s.info.name.clone());
     if name.contains(' ') || !name.contains('-') {
@@ -92,12 +93,7 @@ fn name_of(s: &SkillSummary) -> String {
 }
 
 fn description_of(s: &SkillSummary) -> String {
-    let text = s
-        .info
-        .description_i18n
-        .as_ref()
-        .and_then(|m| m.get(locale().tag()))
-        .unwrap_or(&s.info.description);
+    let text = in_locale(s.info.description_i18n.as_ref()).unwrap_or(&s.info.description);
     crate::i18n::rebrand(text).into_owned()
 }
 

@@ -797,7 +797,6 @@ ScopeOfficial = อย่างเป็นทางการ
 ScopePersonal = ส่วนตัว
 SearchPlugins = ค้นหา
 PluginsEmptyPersonal = ยังไม่มีอะไร สร้างปลั๊กอินหรือสกิล
-PluginStats = {0} สกิล · {1} อะตอม · {2} อินพุต
 BackToList = กลับ
 ByAuthor = โดย {0}
 UsePlugin = ใช้ปลั๊กอิน
