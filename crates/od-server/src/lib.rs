@@ -32,6 +32,7 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/api/health", get(system::health))
         .route("/api/version", get(system::version))
+        .route("/api/browser", get(system::browser))
         .route("/api/projects", get(projects::list).post(projects::create))
         .route(
             "/api/projects/{id}",
@@ -79,6 +80,7 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(conversations::put_message),
         )
         .route("/api/agents", get(runs::agents))
+        .route("/api/agents/rescan", post(runs::rescan_agents))
         .route("/api/runs", get(runs::list).post(runs::create))
         .route("/api/runs/{id}", get(runs::get))
         .route("/api/runs/{id}/events", get(runs::events))

@@ -982,13 +982,20 @@ pub(crate) fn byok_configured(state: &AppState) -> bool {
 }
 
 pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
-    let path = state.runs.engine.config().path.clone();
+    let config = state.runs.engine.config();
     ApiJson(AgentsResponse {
         agents: od_runtime::detect::detect_all_in(
-            path,
-            state.runs.engine.config().base_env.clone(),
+            config.path.clone(),
+            config.base_env.clone(),
             byok_configured(&state),
         )
         .await,
     })
+}
+
+/// Onboarding ▸ Check again: the login shell's `PATH` is read again (an
+/// agent installed while the app runs), then every agent is detected.
+pub async fn rescan_agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
+    state.runs.engine.rescan_path().await;
+    agents(State(state)).await
 }

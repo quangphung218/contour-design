@@ -751,6 +751,29 @@ async fn agents_endpoint_detects_mocks_and_missing_binaries() {
     assert_eq!(codex["supportsSteer"], false);
 }
 
+/// Onboarding ▸ Check again: an agent installed after the first scan is
+/// found without a restart.
+#[tokio::test]
+async fn rescan_finds_an_agent_installed_after_the_first_scan() {
+    let d = daemon().await;
+    let before = d.get_json("/api/agents").await;
+    let claude = |v: &Value| {
+        v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "claude")
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(claude(&before)["available"], false);
+    write_mock(&d.mocks, "claude", &claude_hello(&d.mocks));
+    let res = d.post("/api/agents/rescan", &json!({})).await;
+    assert_eq!(res.status(), 200);
+    let after: Value = res.json().await.unwrap();
+    assert_eq!(claude(&after)["available"], true);
+}
+
 #[tokio::test]
 async fn unknown_agent_and_run_are_rejected() {
     let d = daemon().await;
