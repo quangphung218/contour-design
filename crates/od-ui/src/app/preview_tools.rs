@@ -162,6 +162,52 @@ pub fn rgb_to_hex(css: &str) -> Option<String> {
     (parts.len() == 3).then(|| format!("#{:02x}{:02x}{:02x}", parts[0], parts[1], parts[2]))
 }
 
+/// Whether a computed color draws nothing: `transparent`, or an `rgba(…)`
+/// whose alpha is 0. Such a color has no hex, so the swatch shows a checker.
+pub fn is_transparent(css: &str) -> bool {
+    let css = css.trim();
+    if css.eq_ignore_ascii_case("transparent") {
+        return true;
+    }
+    let Some(inner) = css
+        .strip_prefix("rgba(")
+        .or_else(|| css.strip_prefix("rgb("))
+        .and_then(|c| c.strip_suffix(')'))
+    else {
+        return false;
+    };
+    inner
+        .split([',', ' ', '/'])
+        .filter(|p| !p.is_empty())
+        .nth(3)
+        .and_then(|a| a.trim_end_matches('%').parse::<f64>().ok())
+        .is_some_and(|a| a == 0.0)
+}
+
+/// The color input of an Inspect or Edit element row: the color as hex, or
+/// a checkerboard when it is transparent (a black swatch read as black).
+pub fn color_swatch<F: Fn(String) + 'static>(
+    shown: &str,
+    testid: Option<String>,
+    on_pick: F,
+) -> impl IntoView + use<F> {
+    let clear = is_transparent(shown);
+    let hex = rgb_to_hex(shown)
+        .filter(|_| !clear)
+        .unwrap_or_else(|| "#ffffff".to_owned());
+    view! {
+        <input
+            type="color"
+            class="swatch"
+            class:transparent=clear
+            title=clear.then_some("transparent")
+            data-testid=testid
+            prop:value=hex
+            on:input=move |ev| on_pick(event_target_value(&ev))
+        />
+    }
+}
+
 /// Longest element text the bridge sends as a print (`plainText`).
 const PRINT_CHARS: usize = 160;
 
@@ -755,8 +801,10 @@ pub fn ToolPanel(ctx: StudioCtx) -> impl IntoView {
             }
             _ => return None,
         };
+        let panel = NodeRef::<leptos::html::Aside>::new();
+        super::focus::focus_while_open(panel, |_| None);
         Some(view! {
-            <aside class="versions tool-panel" data-testid="tool-panel">
+            <aside class="versions tool-panel" data-testid="tool-panel" tabindex="-1" node_ref=panel>
                 {body}
             </aside>
         })
@@ -801,18 +849,11 @@ fn InspectPanel(ctx: StudioCtx) -> impl IntoView {
                         let sel_text = selector.clone();
                         let sel_pick = selector.clone();
                         let sel_reset = selector.clone();
-                        let picker = is_color.then(|| {
-                            let hex = rgb_to_hex(&shown).unwrap_or_else(|| "#000000".to_owned());
-                            view! {
-                                <input
-                                    type="color"
-                                    class="swatch"
-                                    data-testid=format!("inspect-{prop}-picker")
-                                    prop:value=hex
-                                    on:input=move |ev| ctx.set_override(&sel_pick, prop, &event_target_value(&ev))
-                                />
-                            }
-                        });
+                        let picker = is_color.then_some(color_swatch(
+                            &shown,
+                            Some(format!("inspect-{prop}-picker")),
+                            move |v| ctx.set_override(&sel_pick, prop, &v),
+                        ));
                         view! {
                             <label class="inspect-row" class:overridden=set.is_some()>
                                 <span class="mono small">{prop}</span>
@@ -1487,6 +1528,16 @@ mod tests {
         assert_eq!(rgb_to_hex("rgb(1 2 3 / 50%)").as_deref(), Some("#010203"));
         assert_eq!(rgb_to_hex("transparent"), None);
         assert_eq!(rgb_to_hex("rgb(1, 2)"), None);
+    }
+
+    #[test]
+    fn zero_alpha_is_transparent() {
+        assert!(is_transparent("rgba(0, 0, 0, 0)"));
+        assert!(is_transparent("rgb(0 0 0 / 0%)"));
+        assert!(is_transparent(" Transparent "));
+        assert!(!is_transparent("rgba(0, 0, 0, 0.5)"));
+        assert!(!is_transparent("rgb(0, 0, 0)"));
+        assert!(!is_transparent("rgb(10 20 30 / 1)"));
     }
 
     #[test]

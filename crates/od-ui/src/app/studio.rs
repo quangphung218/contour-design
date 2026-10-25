@@ -45,6 +45,24 @@ use send_wrapper::SendWrapper;
 use serde_json::json;
 use std::collections::HashMap;
 
+/// The pane a phone-width Studio shows (one at a time).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NarrowPane {
+    Chat,
+    Preview,
+    Files,
+}
+
+impl NarrowPane {
+    fn key(self) -> &'static str {
+        match self {
+            Self::Chat => "chat",
+            Self::Preview => "preview",
+            Self::Files => "files",
+        }
+    }
+}
+
 /// Preview frame widths (spec 1.2 device frames).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Device {
@@ -1248,13 +1266,58 @@ pub fn Studio() -> impl IntoView {
         shell.studio.set(None);
     });
 
+    // Under 480 px (a phone browser) one pane shows at a time, picked here;
+    // the CSS hides the switch on wider windows.
+    let pane = RwSignal::new(NarrowPane::Chat);
+    // Picking a file in the Files pane shows it.
+    let file_picked = move |ev: ev::MouseEvent| {
+        use wasm_bindgen::JsCast;
+        let on_file = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            .and_then(|el| el.closest(".files .file:not(.folder)").ok().flatten())
+            .is_some();
+        if on_file && pane.get_untracked() == NarrowPane::Files {
+            pane.set(NarrowPane::Preview);
+        }
+    };
+    Effect::new(move |_| {
+        if !ctx.files_open.get() && pane.get_untracked() == NarrowPane::Files {
+            pane.set(NarrowPane::Preview);
+        }
+    });
+    let pick = move |p: NarrowPane| {
+        match p {
+            NarrowPane::Chat => ctx.chat.collapsed.set(false),
+            NarrowPane::Files => ctx.files_open.set(true),
+            NarrowPane::Preview => {}
+        }
+        pane.set(p);
+    };
+    let pane_seg = move |p: NarrowPane, label: T| {
+        view! {
+            <button class="seg" role="radio" data-testid=format!("pane-{}", p.key())
+                aria-checked=move || (pane.get() == p).to_string()
+                class:active=move || pane.get() == p
+                on:click=move |_| pick(p)>
+                {t(label)}
+            </button>
+        }
+    };
     view! {
         <div
             class="studio"
             class:chat-collapsed=move || ctx.chat.collapsed.get()
             class:focus=move || files_ui.focus.get()
+            data-pane=move || pane.get().key()
+            on:click=file_picked
             style=move || ctx.chat.width.get().map(|w| format!("--chat-w:{w:.0}px"))
         >
+            <div class="segmented small studio-switch" role="radiogroup" aria-label=t(T::ViewMode) data-testid="studio-switch">
+                {pane_seg(NarrowPane::Chat, T::Chat)}
+                {pane_seg(NarrowPane::Preview, T::Preview)}
+                {pane_seg(NarrowPane::Files, T::Files)}
+            </div>
             <ChatPane ctx=ctx/>
             <Show when=move || ctx.chat.collapsed.get()>
                 <button class="btn small show-chat" data-testid="show-chat" on:click=move |_| ctx.chat.collapsed.set(false)>
@@ -1281,14 +1344,44 @@ pub fn Studio() -> impl IntoView {
 #[component]
 fn TabsBar(ctx: StudioCtx) -> impl IntoView {
     let files_ui = FilesUi::get();
+    // Left/Right move between tabs, as in the WAI-ARIA tabs pattern.
+    let tab_keys = move |ev: ev::KeyboardEvent| {
+        use wasm_bindgen::JsCast;
+        let step = match ev.key().as_str() {
+            "ArrowLeft" => -1,
+            "ArrowRight" => 1,
+            _ => return,
+        };
+        let element =
+            |t: Option<web_sys::EventTarget>| t.and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+        let (Some(list), Some(from)) = (element(ev.current_target()), element(ev.target())) else {
+            return;
+        };
+        let Ok(found) = list.query_selector_all("[role=tab]") else {
+            return;
+        };
+        let tabs: Vec<web_sys::HtmlElement> = (0..found.length())
+            .filter_map(|i| found.item(i)?.dyn_into().ok())
+            .collect();
+        let Some(at) = tabs.iter().position(|t| **t == from) else {
+            return;
+        };
+        ev.prevent_default();
+        let next = (at as i32 + step).rem_euclid(tabs.len() as i32) as usize;
+        let _ = tabs[next].focus();
+    };
     view! {
-        <div class="tabs" role="tablist" data-testid="tabs">
+        <div class="tabs" data-testid="tabs">
+            // Only the tabs sit in the tablist: the "+" launcher and the focus
+            // toggle are siblings, and each close "×" is a mouse shortcut
+            // hidden from assistive tech (Delete on a focused tab closes it).
+            <div class="tab-list" role="tablist" on:keydown=tab_keys>
             {move || {
                 let tabs = ctx.tabs.get();
                 let side_open = ctx.side.open.get();
                 let side_tab = view! {
-                    <div class="tab side-tab" class:active=side_open role="tab" aria-selected=side_open.to_string() data-testid="side-chat-tab" title=t(T::SideChatHint)>
-                        <button class="tab-name" on:click=move |_| ctx.side.show(ctx)>{icon(Glyph::SideChat)}{t(T::SideChat)}</button>
+                    <div class="tab side-tab" class:active=side_open role="presentation" data-testid="side-chat-tab" title=t(T::SideChatHint)>
+                        <button class="tab-name" role="tab" aria-selected=side_open.to_string() on:click=move |_| ctx.side.show(ctx)>{icon(Glyph::SideChat)}{t(T::SideChat)}</button>
                     </div>
                 };
                 let term_active = ctx.active_term.with(Option::is_some);
@@ -1304,12 +1397,18 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                         };
                         let open = path.clone();
                         let close = path.clone();
+                        let close_key = path.clone();
                         view! {
-                            <div class="tab" class:active=active role="tab" aria-selected=active.to_string() data-testid="tab" title=path.clone()>
-                                <button class="tab-name" on:click=move |_| ctx.open_file(&open)>{icon(if live { Glyph::Sparkle } else { file_glyph(&name) })}{name.clone()}</button>
+                            <div class="tab" class:active=active role="presentation" data-testid="tab" title=path.clone()>
+                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete"
+                                    on:click=move |_| ctx.open_file(&open)
+                                    on:keydown=move |ev| if ev.key() == "Delete" { ev.prevent_default(); ctx.tabs.update(|t| t.close(&close_key)); }
+                                >{icon(if live { Glyph::Sparkle } else { file_glyph(&name) })}{name.clone()}</button>
                                 <button
                                     class="tab-close"
-                                    aria-label=t(T::CloseTab)
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                    title=t(T::CloseTab)
                                     on:click=move |_| ctx.tabs.update(|t| t.close(&close))
                                 >
                                     {icon(Glyph::Close)}
@@ -1326,16 +1425,21 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                     .into_iter()
                     .map(|term| {
                         let active = !ctx.side.open.get() && ctx.active_term.with(|a| a.as_deref() == Some(term.id.as_str()));
-                        let (show, close) = (term.id.clone(), term.id.clone());
+                        let (show, close, close_key) = (term.id.clone(), term.id.clone(), term.id.clone());
                         view! {
-                            <div class="tab term-tab" class:active=active role="tab" aria-selected=active.to_string() data-testid="terminal-tab">
-                                <button class="tab-name" on:click=move |_| { ctx.side.open.set(false); ctx.active_term.set(Some(show.clone())); }>
+                            <div class="tab term-tab" class:active=active role="presentation" data-testid="terminal-tab">
+                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete"
+                                    on:click=move |_| { ctx.side.open.set(false); ctx.active_term.set(Some(show.clone())); }
+                                    on:keydown=move |ev| if ev.key() == "Delete" { ev.prevent_default(); terminal::close(ctx, close_key.clone()); }
+                                >
                                     {icon(Glyph::Terminal)}
                                     {tf(T::TerminalTab, &[&term.number.to_string()])}
                                 </button>
                                 <button
                                     class="tab-close"
-                                    aria-label=t(T::CloseTerminal)
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                    title=t(T::CloseTerminal)
                                     data-testid="terminal-close"
                                     on:click=move |_| terminal::close(ctx, close.clone())
                                 >
@@ -1346,6 +1450,7 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                     })
                     .collect_view()
             }}
+            </div>
             <TabLauncher ctx=ctx/>
             <span class="spacer"></span>
             <super::files_panel::FocusToggle/>

@@ -722,13 +722,11 @@ fn StyleTab(ctx: StudioCtx) -> impl IntoView {
                     let set = i.overrides.get(prop).cloned();
                     let shown = set.clone().unwrap_or(computed);
                     let (s1, s2, s3) = (sel.clone(), sel.clone(), sel.clone());
-                    let picker = prop.ends_with("color").then(|| {
-                        let hex = super::preview_tools::rgb_to_hex(&shown).unwrap_or_else(|| "#000000".to_owned());
-                        view! {
-                            <input type="color" class="swatch" prop:value=hex
-                                on:input=move |ev| ctx.set_override(&s1, prop, &event_target_value(&ev))/>
-                        }
-                    });
+                    let picker = prop.ends_with("color").then_some(super::preview_tools::color_swatch(
+                        &shown,
+                        None,
+                        move |v| ctx.set_override(&s1, prop, &v),
+                    ));
                     view! {
                         <label class="inspect-row" class:overridden=set.is_some()>
                             <span class="mono small">{prop}</span>

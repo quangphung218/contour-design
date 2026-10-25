@@ -204,9 +204,33 @@ pub fn ChatResizer(ctx: StudioCtx) -> impl IntoView {
         ev.target()
             .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
     };
+    // aria-valuenow/max: the pane's width and the widest drag allowed, in px,
+    // re-read when the width changes and when the handle takes focus.
+    let handle = NodeRef::<leptos::html::Div>::new();
+    let range = RwSignal::new((crate::workspace::CHAT_MIN, crate::workspace::CHAT_MIN));
+    let measure = move || {
+        let Some(el) = handle.get_untracked() else {
+            return;
+        };
+        let (Some(pane), Some(r)) = (el.parent_element(), studio_box(&el)) else {
+            return;
+        };
+        let now = pane.get_bounding_client_rect().width();
+        range.set((now, crate::workspace::clamp_chat_width(f64::MAX, r.width())));
+    };
+    Effect::new(move |_| {
+        ctx.chat.width.track();
+        handle.track();
+        next_tick(measure);
+    });
     view! {
         <div
             class="chat-resizer"
+            node_ref=handle
+            aria-valuemin=crate::workspace::CHAT_MIN
+            aria-valuenow=move || range.get().0.round()
+            aria-valuemax=move || range.get().1.round()
+            on:focus=move |_| measure()
             class:active=move || dragging.get()
             role="separator"
             aria-orientation="vertical"
