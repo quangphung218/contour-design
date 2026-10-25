@@ -62,7 +62,9 @@ pub fn LeaveGuard() -> impl IntoView {
     });
     // Capture phase on the window: runs before the router's link handler.
     let on_click = ClickCallback::new(move |e: web_sys::MouseEvent| {
-        if e.default_prevented() || e.button() != 0 || !shell.would_lose() {
+        // A modified click opens a new tab or window: this one stays (QA-021).
+        let modified = e.ctrl_key() || e.meta_key() || e.shift_key() || e.alt_key();
+        if e.default_prevented() || e.button() != 0 || modified || !shell.would_lose() {
             return;
         }
         let href = e

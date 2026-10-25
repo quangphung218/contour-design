@@ -428,7 +428,7 @@ test('DL-23', 'Ctrl/Cmd-click on a link with an edit not applied opens a new tab
   assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied');
   assert.ok(tab, 'no new tab opened');
   await tab.waitForURL('**/projects', { timeout: 5000 });
-}, { knownBug: 'QA-021' });
+});
 
 test("DL-24", "The browser's Back with an edit not applied asks: Cancel stays with the text", async ({ d, newPage }) => {
   const s = await editLead(newPage, d, { from: '/projects' });
