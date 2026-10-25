@@ -20,7 +20,7 @@ APP_NAME := Contour
 BUNDLE_DIR = $(CARGO_TARGET_DIR)/$(1)/bundle
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev run check test e2e lint fmt clippy clippy-wasm deny ui-dist ui-release \
+.PHONY: help setup dev run check test e2e e2e-qa lint fmt clippy clippy-wasm deny ui-dist ui-release \
 	app-debug app-release dmg install clean version ci links commitlint test-scripts
 
 help: ## Show this help
@@ -50,6 +50,10 @@ test-scripts: ## Tests for the release scripts (scripts/tests)
 
 e2e: ## Playwright e2e against a real daemon and a mock agent
 	$(UI)/e2e/run.sh
+
+# Not part of `ci` or `e2e`: bugs it finds stay red on purpose (docs/qa).
+e2e-qa: ## QA business-flow e2e (docs/qa/test-plan.md); pass / known bug / fail
+	$(UI)/e2e/qa/run.sh $(F)
 
 lint: fmt clippy clippy-wasm ## fmt --check, clippy native and wasm
 

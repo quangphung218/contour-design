@@ -1,0 +1,26 @@
+#!/bin/sh
+# QA mock `claude` (qa/lib.mjs puts this folder before ../../mock-agent on
+# the daemon's PATH). Requests of its own, everything else goes to the
+# shared mock unchanged:
+# - `qa-crash`: prints to stderr and exits 3 without a result line.
+shared="$(cd "$(dirname "$0")/../../mock-agent" && pwd)/claude"
+case "$1" in --version) exec "$shared" "$@";; esac
+if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then exec "$shared" "$@"; fi
+
+sid=""; prev=""
+for a in "$@"; do
+  case "$prev" in --session-id|--resume) sid="$a";; esac
+  prev="$a"
+done
+IFS= read -r line
+
+# Only the new request counts: the prompt also carries the earlier turns.
+req=$(printf '%s' "$line" | sed -e 's/.*# User request\\n\\n//' -e 's/\([^\\]\)".*/\1/')
+case "$req" in *qa-crash*)
+  printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+  echo "mock: model overloaded, try again later" >&2
+  exit 3
+;; esac
+
+# Not ours: hand the line (and the rest of stdin) to the shared mock.
+{ printf '%s\n' "$line"; cat; } | exec "$shared" "$@"
