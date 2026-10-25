@@ -42,6 +42,30 @@ test('LIB-03', 'Searching design systems for something that does not exist says 
   assert.match(await page.locator('[data-testid="ds-list"] .empty-state').innerText(), /\w{3,}/);
 });
 
+test('LIB-12', 'Design system search finds the words the page shows, not the bundled package note', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/design-systems');
+  await page.getByTestId('ds-row').first().waitFor();
+  const ids = () => page.getByTestId('ds-row').evaluateAll((els) => els.map((e) => e.dataset.id));
+  await page.getByTestId('ds-search').fill('coral');
+  await until(async () => (await ids()).includes('airbnb'), '"coral" finds Airbnb');
+  await page.getByTestId('ds-search').fill('curated');
+  await until(async () => (await page.getByTestId('ds-row').count()) === 0, '"curated" matches nothing shown');
+});
+
+test('LIB-13', 'The Skills tab says what each skill makes, not when the agent should load it', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/plugins');
+  await page.getByTestId('kind-skills').click();
+  await page.getByTestId('skill-row').first().waitFor();
+  const agentText = await page.getByTestId('skill-row').evaluateAll((els) =>
+    els.map((e) => e.innerText).filter((t) => /\bUse (when|this|for)\b|Triggers? on/i.test(t)));
+  assert.deepEqual(agentText.slice(0, 3), [], `${agentText.length} skills show agent instructions`);
+  await page.locator('[data-testid="skill-row"][data-id="faq-page"] .plugin-row-main').click();
+  const detail = await page.getByTestId('skill-detail').locator('.plugin-hero p').innerText();
+  assert.doesNotMatch(detail, /Use when/);
+});
+
 test('LIB-04', "A design system's DESIGN.md opens from its detail page", async ({ d, newPage }) => {
   const { page } = await newPage();
   await page.goto(d.base + '/design-systems');

@@ -10,6 +10,7 @@ use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, copy_text, initials, localized, query_param, tint};
 use super::{Shell, api, desktop};
 use crate::i18n::{T, locale, t, tf};
+use crate::intent::in_locale;
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use od_contracts::{ContentSource, SkillDetail, SkillSummary, SkillsResponse};
@@ -84,13 +85,31 @@ fn skill_name(sk: &SkillSummary) -> String {
 }
 
 fn skill_description(sk: &SkillSummary) -> String {
-    let text = sk
-        .info
-        .description_i18n
-        .as_ref()
-        .and_then(|m| m.get(locale().tag()))
-        .unwrap_or(&sk.info.description);
-    crate::i18n::rebrand(text).into_owned()
+    for_people(in_locale(sk.info.description_i18n.as_ref()).unwrap_or(&sk.info.description))
+}
+
+/// A skill's description without the sentences that tell the agent when
+/// to load it ("Use when the user asks for…", "Triggers on…"): those are
+/// for the agent, the page shows what the skill makes.
+fn for_people(text: &str) -> String {
+    const FOR_AGENT: [&str; 6] = [
+        "use when",
+        "use this",
+        "use it when",
+        "use for",
+        "trigger",
+        "when the user",
+    ];
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let cut = flat
+        .match_indices(". ")
+        .map(|(i, _)| i + 2)
+        .find(|&i| {
+            let rest = flat[i..].to_lowercase();
+            FOR_AGENT.iter().any(|w| rest.starts_with(w))
+        });
+    let kept = cut.map_or(flat.as_str(), |i| flat[..i].trim_end());
+    crate::i18n::rebrand(kept).into_owned()
 }
 
 fn hit(q: &str, title: &str, description: &str) -> bool {
@@ -788,7 +807,7 @@ fn SkillDetailView(
                                     <span class="badge" class:accent=!user>{if user { t(T::ScopePersonal) } else { t(T::ScopeOfficial) }}</span>
                                     {d.info.category.clone().map(|c| view! { <span class="badge outline">{c}</span> })}
                                 </div>
-                                <p class="muted">{crate::i18n::rebrand(&d.info.description).into_owned()}</p>
+                                <p class="muted">{for_people(in_locale(d.info.description_i18n.as_ref()).unwrap_or(&d.info.description))}</p>
                             </div>
                             <div class="row">
                                 <button class="btn small primary" data-testid="skill-use" on:click=use_skill>{icon(Glyph::ArrowRight)}{t(T::Use)}</button>
@@ -1048,6 +1067,26 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_text_drops_what_tells_the_agent_when_to_use_it() {
+        assert_eq!(
+            for_people(
+                "A FAQ page with collapsible sections.\n  Use when the brief asks for \"FAQ\" or \"help center\"."
+            ),
+            "A FAQ page with collapsible sections."
+        );
+        assert_eq!(
+            for_people("Browser automation CLI. Use for testing. Triggers on: browse."),
+            "Browser automation CLI."
+        );
+        assert_eq!(
+            for_people("Turns a brief into a spec. Keeps the palette."),
+            "Turns a brief into a spec. Keeps the palette."
+        );
+        // Nothing else to show: the text stays whole.
+        assert_eq!(for_people("Use when asked."), "Use when asked.");
+    }
 
     #[test]
     fn input_fields_parse_and_check_required() {
