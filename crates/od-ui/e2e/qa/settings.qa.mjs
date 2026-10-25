@@ -124,7 +124,7 @@ test('SET-07', 'With an Ollama provider saved without a key, changing the theme 
   assert.equal(status, 200, `saving the language answered ${status}`);
   const cfg = (await api('/api/app-config')).body;
   assert.equal(cfg.byok?.baseUrl, OLLAMA_DOCKER.baseUrl, 'the saved provider changed');
-}, { daemon: {}, knownBug: 'QA-018' });
+}, { daemon: {} });
 
 test('SET-08', 'An Ollama provider on a one-word host (gpu-box) saves from Settings without a key', async ({ d, newPage }) => {
   const { page } = await newPage();
@@ -141,6 +141,6 @@ test('SET-08', 'An Ollama provider on a one-word host (gpu-box) saves from Setti
   assert.equal(await save.isEnabled(), true, 'Save is off for a keyless Ollama');
   const status = await savedStatus(page, save);
   assert.equal(status, 200, `saving answered ${status}: ${await form.innerText()}`);
-}, { daemon: {}, knownBug: 'QA-018' });
+}, { daemon: {} });
 
 await run('settings');

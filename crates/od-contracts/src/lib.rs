@@ -5,6 +5,7 @@
 //! validation beyond what serde enforces.
 
 pub mod agent_w3;
+pub mod byok_presets;
 pub mod c2;
 pub mod comments;
 pub mod content;

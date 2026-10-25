@@ -185,10 +185,11 @@ fn same_route(a: &Value, b: &Value) -> bool {
     protocol(a) == protocol(b) && crate::routes::manage::settings::same_base(base(a), base(b))
 }
 
-/// The host of a `byok` provider saved without a key when that host needs
-/// one: any but a self-hosted one (loopback, LAN, `.local`), which the
-/// UI's Ollama and vLLM presets save without a key (QA-005).
-fn key_missing(byok: &Value) -> Option<String> {
+/// The provider a `byok` object without a key would call when that is a
+/// cloud preset that needs one. Like the original, the daemon follows the
+/// UI's presets and does not guess from the host: a custom or self-hosted
+/// base URL (Ollama on `http://gpu-box:11434`) saves without a key.
+fn key_missing(byok: &Value) -> Option<&'static str> {
     let has_key = byok
         .get(API_KEY)
         .and_then(Value::as_str)
@@ -196,34 +197,14 @@ fn key_missing(byok: &Value) -> Option<String> {
     if has_key {
         return None;
     }
-    let base = byok
-        .get("baseUrl")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let host = reqwest::Url::parse(base.trim())
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_ascii_lowercase));
-    match host {
-        Some(h) if self_hosted(&h) => None,
-        Some(h) => Some(h),
-        // No base URL: the protocol's own public host.
-        None => Some("the provider".to_owned()),
-    }
-}
-
-fn self_hosted(host: &str) -> bool {
-    use std::net::IpAddr;
-    let host = host.trim_start_matches('[').trim_end_matches(']');
-    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
-        return true;
-    }
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(v4)) => {
-            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
-        }
-        Ok(IpAddr::V6(v6)) => v6.is_loopback() || v6.is_unspecified(),
-        Err(_) => false,
-    }
+    let protocol = match byok.get("protocol").and_then(Value::as_str) {
+        Some("openai-compatible") | None => "openai",
+        Some(p) => p,
+    };
+    let base = byok.get("baseUrl").and_then(Value::as_str);
+    od_contracts::byok_presets::preset_for(protocol, base)
+        .filter(|p| p.needs_key)
+        .map(|p| p.label)
 }
 
 const BYOK_KEY: &str = od_runtime::byok::APP_CONFIG_KEY;
@@ -307,21 +288,31 @@ async fn put_config(
     ApiJson(patch): ApiJson<Map<String, Value>>,
 ) -> ApiResult<ApiJson<Value>> {
     validate_patch(&patch).map_err(ApiErr::bad_request)?;
-    let saves_byok = patch.get(BYOK_KEY).is_some_and(Value::is_object);
     let config = state
         .blocking(move |s| {
             let _guard = CONFIG_LOCK.lock().unwrap_or_else(|p| p.into_inner());
             let path = config_path(s);
             let mut config = read_config(&path)?;
+            // Only a patch that moves BYOK to another route is checked: the
+            // UI sends the whole config on every save, theme included, and
+            // a provider stored before this rule must not block those
+            // (QA-018). And only while BYOK is the agent picked: a stale
+            // provider sent along with a local agent is never called.
+            let moves_byok = patch
+                .get(BYOK_KEY)
+                .filter(|b| b.is_object())
+                .is_some_and(|b| !config.get(BYOK_KEY).is_some_and(|s| same_route(s, b)));
             merge_patch(&mut config, patch);
             // After the merge: a patch without `apiKey` may keep the stored one.
-            if let Some(host) = config
+            let picked =
+                config.get("agentId").and_then(Value::as_str) == Some(od_runtime::def::BYOK.id);
+            if let Some(provider) = config
                 .get(BYOK_KEY)
-                .filter(|_| saves_byok)
+                .filter(|_| moves_byok && picked)
                 .and_then(key_missing)
             {
                 return Err(StoreError::BadRequest(format!(
-                    "byok.apiKey required: {host} needs an API key"
+                    "byok.apiKey required: {provider} needs an API key"
                 )));
             }
             let bytes = serde_json::to_vec_pretty(&config)?;
@@ -530,27 +521,34 @@ mod tests {
     }
 
     #[test]
-    fn byok_on_a_public_host_needs_a_key() {
+    fn byok_on_a_cloud_preset_needs_a_key() {
         let missing = |v: Value| key_missing(&v);
         assert_eq!(
             missing(json!({"protocol": "anthropic", "baseUrl": "https://api.anthropic.com"})),
-            Some("api.anthropic.com".to_owned())
+            Some("Anthropic")
         );
         assert_eq!(
             missing(json!({"protocol": "openai", "apiKey": "  "})),
-            Some("the provider".to_owned())
+            Some("OpenAI")
+        );
+        assert_eq!(
+            missing(
+                json!({"protocol": "openai-compatible", "baseUrl": "https://api.deepseek.com/"})
+            ),
+            Some("DeepSeek")
         );
         assert_eq!(
             missing(json!({"protocol": "anthropic", "apiKey": "sk-ant-1"})),
             None
         );
-        // Self-hosted endpoints run without a key.
+        // Self-hosted presets and custom hosts are not guessed at (QA-018).
         for base in [
             "http://localhost:11434/v1",
             "http://127.0.0.1:8000/v1",
-            "http://192.168.1.20:8000/v1",
-            "http://[::1]:8000/v1",
-            "http://gpu-box.local:8000/v1",
+            "http://ollama:11434/v1",
+            "http://gpu-box:11434/v1",
+            "http://100.64.0.7:8000/v1",
+            "https://my.proxy/v1",
         ] {
             assert_eq!(
                 missing(json!({"protocol": "openai", "baseUrl": base})),
