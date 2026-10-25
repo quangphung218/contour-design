@@ -89,9 +89,9 @@ pub struct Shell {
     pub(crate) studio: RwSignal<Option<studio::StudioCtx>>,
     /// Whether leaving the page would lose work (`leave_guard`).
     unsaved: RwSignal<Option<Callback<(), bool>>>,
-    /// The path the user asked to go to while work would be lost: the
-    /// leave question is open.
-    leaving: RwSignal<Option<String>>,
+    /// Where the user asked to go while work would be lost: the leave
+    /// question is open.
+    leaving: RwSignal<Option<leave_guard::Leave>>,
 }
 
 impl Shell {

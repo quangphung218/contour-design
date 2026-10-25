@@ -25,6 +25,15 @@ pub fn guard_leaving(unsaved: Callback<(), bool>) {
     on_cleanup(move || shell.unsaved.set(None));
 }
 
+/// A way out the leave question waits on.
+#[derive(Clone)]
+pub(super) enum Leave {
+    /// An in-app path.
+    To(String),
+    /// Something that leaves by itself (a full page load).
+    Run(std::sync::Arc<dyn Fn() + Send + Sync>),
+}
+
 /// `navigate(path)`, unless leaving would lose unsaved work: then the
 /// question first, and the path once the user agrees.
 pub fn use_leave() -> impl Fn(&str) + Clone + Send + Sync + 'static {
@@ -32,10 +41,24 @@ pub fn use_leave() -> impl Fn(&str) + Clone + Send + Sync + 'static {
     let navigate = use_navigate();
     move |path: &str| {
         if shell.would_lose() {
-            shell.leaving.set(Some(path.to_owned()));
+            shell.leaving.set(Some(Leave::To(path.to_owned())));
         } else {
             navigate(path, Default::default());
         }
+    }
+}
+
+/// Runs `leave` (a way out the router does not see, such as a full page
+/// load), unless that would lose unsaved work: then the question first.
+/// Takes the shell: a menu item calls it after its menu, and the owner
+/// holding the context, are gone.
+pub fn leave_then(shell: Shell, leave: impl Fn() + Send + Sync + 'static) {
+    if shell.would_lose() {
+        shell
+            .leaving
+            .set(Some(Leave::Run(std::sync::Arc::new(leave))));
+    } else {
+        leave();
     }
 }
 
@@ -54,8 +77,10 @@ pub fn LeaveGuard() -> impl IntoView {
     type ClickCallback = wasm_bindgen::closure::Closure<dyn FnMut(web_sys::MouseEvent)>;
     let shell = Shell::get();
     let navigate = use_navigate();
+    // Leave was chosen for a way out that unloads the page: no second ask.
+    let released = StoredValue::new(false);
     let unload = window_event_listener(ev::beforeunload, move |e| {
-        if shell.would_lose() {
+        if !released.get_value() && shell.would_lose() {
             e.prevent_default();
             e.set_return_value("");
         }
@@ -76,7 +101,7 @@ pub fn LeaveGuard() -> impl IntoView {
         if let Some(href) = href {
             e.prevent_default();
             e.stop_propagation();
-            shell.leaving.set(Some(href));
+            shell.leaving.set(Some(Leave::To(href)));
         }
     });
     if let Some(w) = web_sys::window() {
@@ -101,9 +126,16 @@ pub fn LeaveGuard() -> impl IntoView {
     });
     let stay = Callback::new(move |()| shell.leaving.set(None));
     let leave = Callback::new(move |()| {
-        if let Some(path) = shell.leaving.get_untracked() {
-            shell.leaving.set(None);
-            navigate(&path, Default::default());
+        let Some(way) = shell.leaving.get_untracked() else {
+            return;
+        };
+        shell.leaving.set(None);
+        match way {
+            Leave::To(path) => navigate(&path, Default::default()),
+            Leave::Run(leave) => {
+                released.set_value(true);
+                leave();
+            }
         }
     });
     view! {

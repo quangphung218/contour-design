@@ -97,7 +97,13 @@ fn start(ctx: StudioCtx, ui: FilesUi) {
     });
 }
 
+/// Asks first when an edit is not applied: the copy opens with a full load
+/// (QA-020).
 fn duplicate(ctx: StudioCtx) {
+    super::leave_guard::leave_then(ctx.shell, move || duplicate_now(ctx));
+}
+
+fn duplicate_now(ctx: StudioCtx) {
     leptos::task::spawn_local(async move {
         match api::post::<_, DuplicateProjectResponse>(
             &format!("{}/duplicate", ctx.base()),

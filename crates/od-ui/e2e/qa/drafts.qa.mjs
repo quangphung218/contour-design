@@ -414,7 +414,7 @@ test('DL-22', 'Duplicating the project with an edit not applied asks first: Canc
   await dialog.getByTestId('leave-go').click();
   await until(() => /^\/projects\/[^/]+$/.test(new URL(page.url()).pathname) && new URL(page.url()).pathname !== `/projects/${id}`,
     'Leave opens the copy', 5000);
-}, { knownBug: 'QA-020' });
+});
 
 test('DL-23', 'Ctrl/Cmd-click on a link with an edit not applied opens a new tab and keeps this one', async ({ d, newPage }) => {
   const { page, panel, context, id } = await editLead(newPage, d);
