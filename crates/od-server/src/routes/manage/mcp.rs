@@ -211,11 +211,13 @@ pub async fn install_route(
         // was there to remove: the old name goes either way.
         let legacy = (matches!(code, Ok(0)) || req.uninstall)
             && install::remove_legacy(agent, &spec, &home, &runner);
-        (code, out, legacy)
+        // A failed `mcp remove` is fine only when nothing is left to remove.
+        let gone = !install::has_entry(agent, &home, SERVER_NAME);
+        (code, out, legacy, gone)
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?;
-    let (code, out, legacy) = res;
+    let (code, out, legacy, gone) = res;
     let code = code.map_err(|e| ApiErr::internal(e.to_string()))?;
     let report: Value = serde_json::from_slice(&out).unwrap_or(Value::Null);
     let mut message = report.get("message").and_then(Value::as_str).map_or_else(
@@ -230,7 +232,7 @@ pub async fn install_route(
     }
     Ok(ApiJson(InstallResponse {
         // Uninstalling only the old entry still uninstalls the server.
-        ok: code == 0 || (req.uninstall && legacy),
+        ok: code == 0 || (req.uninstall && legacy && gone),
         message,
     }))
 }

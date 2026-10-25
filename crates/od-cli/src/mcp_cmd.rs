@@ -136,6 +136,12 @@ fn install(
             agent.slug()
         );
     }
-    let code = if legacy && opts.uninstall { 0 } else { code };
+    // The old entry gone and no entry under `name` left: uninstalled, even
+    // when the agent's own `mcp remove` failed for want of one.
+    let code = if legacy && opts.uninstall && !install::has_entry(agent, &home, name) {
+        0
+    } else {
+        code
+    };
     Ok(ExitCode::from(u8::try_from(code).unwrap_or(1)))
 }

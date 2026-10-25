@@ -593,6 +593,39 @@ fn mcp_uninstall_from_claude_removes_the_old_entry() {
     );
 }
 
+/// claude fails to remove a contour entry that is really there: removing
+/// the old entry does not turn that into a success.
+#[test]
+fn mcp_uninstall_fails_while_the_contour_entry_stays() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(
+        home.path().join(".claude.json"),
+        r#"{"mcpServers":{"contour":{"command":"od"},"open-design":{"command":"old-od"}}}"#,
+    )
+    .unwrap();
+    let bin = home.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let claude = bin.join("claude");
+    std::fs::write(
+        &claude,
+        "#!/bin/sh\ncase \"$*\" in *contour*) echo 'config locked' >&2; exit 1;; esac\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = Command::new(OD)
+        .args(["mcp", "install", "claude", "--uninstall"])
+        .env("HOME", home.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env_remove("OD_DAEMON_URL")
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "uninstall reported success with contour still installed"
+    );
+}
+
 #[test]
 fn mcp_install_cli_agents_print_their_commands() {
     let home = tempfile::tempdir().unwrap();
