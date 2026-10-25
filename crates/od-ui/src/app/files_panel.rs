@@ -597,7 +597,8 @@ fn TreeView(
                 }}
             </nav>
         </Show>
-        <ul class="file-tree" data-testid="file-tree" role="tree">
+        // A tree only while it has rows: the empty state is a plain list item.
+        <ul class="file-tree" data-testid="file-tree" role=move || rows.with(|r| !r.is_empty()).then_some("tree")>
             {move || {
                 let rows = rows.get();
                 if rows.is_empty() {
@@ -628,6 +629,11 @@ fn TreeRow(
         Row::File { depth, .. } => (*depth, false),
     };
     let pad = format!("padding-left:{}px", 6 + depth * 14);
+    // Name and open state belong to the treeitem (the row), not its button.
+    let (label, expanded) = match &row {
+        Row::Folder { name, open, .. } => (name.clone(), Some(open.to_string())),
+        Row::File { name, .. } => (name.clone(), None),
+    };
     let key = if is_folder {
         format!("{path}/")
     } else {
@@ -657,8 +663,6 @@ fn TreeRow(
                 <button
                     class="file folder"
                     style=pad
-                    role="treeitem"
-                    aria-expanded=open.to_string()
                     data-testid="folder-row"
                     data-path=path.clone()
                     title=path.clone()
@@ -686,7 +690,6 @@ fn TreeRow(
                     class="file"
                     class:active=move || ctx.active().as_deref() == Some(active.as_str())
                     style=pad
-                    role="treeitem"
                     data-testid="file-row"
                     data-path=path.clone()
                     title=path.clone()
@@ -701,7 +704,7 @@ fn TreeRow(
         }
     };
     view! {
-        <li class="file-row" class:selected=move || checked.get() class:selecting=move || ui.selected.with(|s| !s.is_empty())>
+        <li class="file-row" role="treeitem" aria-label=label aria-expanded=expanded attr:aria-level=depth + 1 class:selected=move || checked.get() class:selecting=move || ui.selected.with(|s| !s.is_empty())>
             <input
                 type="checkbox"
                 class="file-check"

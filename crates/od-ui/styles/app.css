@@ -87,6 +87,8 @@ button.nav-link { width: 100%; border: 0; background: transparent; font: inherit
 .page.wide { max-width: 1280px; }
 .page.settings { max-width: 1000px; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-6); flex-wrap: wrap; }
+/* Narrow windows: the action buttons wrap instead of running off the edge. */
+.page-head > .row { flex-wrap: wrap; min-width: 0; }
 .page-title { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; min-width: 0; }
 .page-sub { flex-basis: 100%; margin: var(--space-1) 0 0; color: var(--color-text-secondary); max-width: 62ch; }
 .count-badge { font-size: var(--text-sm); color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
@@ -279,8 +281,8 @@ a.project-name:hover { color: var(--color-accent-text); }
 .onboarding-head p { margin: 0; max-width: 58ch; }
 .onboarding-foot { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--color-border-subtle); }
 
-.agent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--space-2-5); }
-.agent-list.compact { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--space-1-5); }
+.agent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: var(--space-2-5); }
+.agent-list.compact { grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr)); gap: var(--space-1-5); }
 .agent-missing { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-5); }
 .agent-card {
   position: relative;
@@ -825,6 +827,12 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 }
 @container preview (max-width: 760px) {
   .preview-body > .versions { position: absolute; top: 0; right: 0; bottom: 0; z-index: var(--z-raised); width: min(316px, 100%); box-shadow: var(--shadow-lg); }
+  /* Inspect and Edit element act on the page, so their panel must not cover
+     it: it becomes a sheet under the page, at most 45% of the height. */
+  .preview-body:has(> .tool-panel) { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 45%); }
+  .preview-body:has(> .tool-panel) > .thumb-rail { grid-area: 1 / 1; }
+  .preview-body:has(> .tool-panel) > .preview-stage { grid-area: 1 / 2; }
+  .preview-body > .tool-panel { position: static; grid-area: 2 / 1 / 3 / -1; width: auto; border-left: 0; border-top: 1px solid var(--color-border); box-shadow: var(--shadow-lg); animation: none; }
 }
 /* 1024 window with the file column closed: the last button (Show files)
    must not run past the edge. The dividers go; the zoom value stays, since
@@ -1022,6 +1030,23 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   .chat { border-right: 0; border-bottom: 1px solid var(--color-border); }
   .workspace { grid-template-columns: 1fr; }
   .files { display: none; }
+}
+/* Phone width: Chat, Preview and Files take turns under a switch instead of
+   stacking (stacked, the composer covered the tab bar). */
+.studio-switch { display: none; }
+@media (max-width: 480px) {
+  .studio, .studio.chat-collapsed { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .studio-switch { display: flex; margin: var(--space-2); }
+  .studio-switch .seg { flex: 1; }
+  .studio > .chat, .studio > .workspace { grid-area: 2 / 1; border-bottom: 0; }
+  /* The switch replaces collapsing: a collapse here would do nothing and
+     leave the chat folded once the window grows. */
+  .studio > .show-chat, .studio [data-testid="collapse-chat"] { display: none; }
+  .studio[data-pane="chat"] > .workspace, .studio:not([data-pane="chat"]) > .chat { display: none; }
+  .studio[data-pane="chat"] > .chat { display: flex; }
+  .studio .workspace, .studio .workspace.files-closed { grid-template-columns: minmax(0, 1fr); }
+  .studio[data-pane="files"] .preview { display: none; }
+  .studio[data-pane="files"] .files { display: flex; border-left: 0; }
 }
 
 /* command palette (shares the quick switcher's frame) */

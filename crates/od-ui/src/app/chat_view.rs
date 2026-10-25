@@ -607,42 +607,48 @@ fn AssistantView(
 }
 
 /// One status line per turn: starting, working (step N of M), done (files
-/// written), failed or stopped. `data-phase` mirrors it for tests.
+/// written), failed or stopped. `data-phase` mirrors it for tests. The line
+/// stays one element while the run goes on, so screen readers announce each
+/// change of its live region.
 #[component]
 fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
-    move || {
-        turn.with(|tn| {
-            let (phase, glyph, label, detail) = match run_phase(tn) {
-                RunPhase::Starting => ("starting", None, t(T::RunStarting).to_owned(), None),
-                RunPhase::Working { step } => (
-                    "working",
-                    None,
-                    match step {
-                        Some((n, m)) => tf(T::RunStep, &[&n.to_string(), &m.to_string()]),
-                        None => t(T::RunWorking).to_owned(),
-                    },
-                    tn.status.clone(),
-                ),
-                RunPhase::Done { files } => (
-                    "done",
-                    Some(Glyph::CheckCircle),
-                    t(T::RunDone).to_owned(),
-                    (files > 0).then(|| tf(T::RunFilesWritten, &[&files.to_string()])),
-                ),
-                RunPhase::Failed => ("failed", Some(Glyph::Warning), t(T::RunFailed).to_owned(), Some(t(T::RunFailedHint).to_owned())),
-                RunPhase::Stopped => ("stopped", Some(Glyph::Stop), t(T::Stopped).to_owned(), None),
-            };
-            view! {
-                <div class=format!("run-status {phase}") role="status" data-testid="run-state" data-phase=phase>
-                    {match glyph {
-                        Some(g) => icon(g).into_any(),
-                        None => view! { <span class="spinner"></span> }.into_any(),
-                    }}
-                    <strong>{label}</strong>
-                    {detail.map(|d| view! { <span class="muted">{d}</span> })}
-                </div>
-            }
+    let line = Memo::new(move |_| {
+        turn.with(|tn| match run_phase(tn) {
+            RunPhase::Starting => ("starting", None, t(T::RunStarting).to_owned(), None),
+            RunPhase::Working { step } => (
+                "working",
+                None,
+                match step {
+                    Some((n, m)) => tf(T::RunStep, &[&n.to_string(), &m.to_string()]),
+                    None => t(T::RunWorking).to_owned(),
+                },
+                tn.status.clone(),
+            ),
+            RunPhase::Done { files } => (
+                "done",
+                Some(Glyph::CheckCircle),
+                t(T::RunDone).to_owned(),
+                (files > 0).then(|| tf(T::RunFilesWritten, &[&files.to_string()])),
+            ),
+            RunPhase::Failed => (
+                "failed",
+                Some(Glyph::Warning),
+                t(T::RunFailed).to_owned(),
+                Some(t(T::RunFailedHint).to_owned()),
+            ),
+            RunPhase::Stopped => ("stopped", Some(Glyph::Stop), t(T::Stopped).to_owned(), None),
         })
+    });
+    let phase = move || line.with(|l| l.0);
+    view! {
+        <div class=move || format!("run-status {}", phase()) role="status" aria-live="polite" data-testid="run-state" data-phase=phase>
+            {move || match line.with(|l| l.1) {
+                Some(g) => icon(g).into_any(),
+                None => view! { <span class="spinner"></span> }.into_any(),
+            }}
+            <strong>{move || line.with(|l| l.2.clone())}</strong>
+            {move || line.with(|l| l.3.clone()).map(|d| view! { <span class="muted">{d}</span> })}
+        </div>
     }
 }
 

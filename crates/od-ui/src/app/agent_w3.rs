@@ -261,7 +261,11 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
                 <span class="count">{move || ctx.memory.with(Vec::len)}</span>
             </button>
             <Show when=move || open.get()>
-                <div class="menu popover left memory-panel" data-testid="memory-panel" role="dialog" aria-label=t(T::Memory)>
+                {
+                let panel = NodeRef::<leptos::html::Div>::new();
+                super::focus::focus_while_open(panel, |p| p.query_selector(super::focus::FIRST_ITEM).ok().flatten());
+                view! {
+                <div class="menu popover left memory-panel" data-testid="memory-panel" role="dialog" aria-label=t(T::Memory) node_ref=panel>
                     <div class="popover-head">
                         <strong>{icon(Glyph::Memory)}{t(T::Memory)}</strong>
                         <button class="icon-btn small" aria-label=t(T::Close) on:click=move |_| open.set(false)>{icon(Glyph::Close)}</button>
@@ -302,6 +306,8 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
                         </button>
                     </Show>
                 </div>
+                }
+                }
             </Show>
         </div>
     }

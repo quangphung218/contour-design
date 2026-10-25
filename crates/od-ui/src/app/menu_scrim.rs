@@ -36,5 +36,13 @@ pub fn MenuScrim(#[prop(into)] on_close: Callback<()>) -> impl IntoView {
             });
         }
     });
-    view! { <div class="menu-scrim" on:click=move |_| on_close.run(())></div> }
+    // The menu follows the scrim: its first item takes focus.
+    let scrim = NodeRef::<leptos::html::Div>::new();
+    super::focus::focus_while_open(scrim, |s| {
+        s.next_element_sibling()?
+            .query_selector(super::focus::FIRST_ITEM)
+            .ok()
+            .flatten()
+    });
+    view! { <div class="menu-scrim" node_ref=scrim on:click=move |_| on_close.run(())></div> }
 }
