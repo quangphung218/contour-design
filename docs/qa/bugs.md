@@ -12,6 +12,8 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 |---|---|---|---|---|
 | QA-002 | 🟠 | A message sent right after opening a project can vanish from the chat while the run goes on | `chat.qa.mjs` CHAT-09 | open |
 | QA-003 | 🟠 | Tablet preview lays the page out at the pane width, not 820 px | `studio.qa.mjs` STU-11 | open |
+| QA-005 | 🟠 | Onboarding saves and selects an API provider with an empty key | `onboarding.qa.mjs` ONB-05 | open |
+| QA-004 | 🟡 | Esc does not close the Export menu (nor the other drop-down menus) | `export.qa.mjs` EXP-09 | open |
 | QA-001 | 🟡 | Renaming a project to blank shows a nameless card and no error | `projects.qa.mjs` PRJ-02 | open |
 
 ---
@@ -75,3 +77,32 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
   returns `width:<device>` without `max-width:none` (the other branch has
   it), so `.frame-wrap { max-width: 100% }` (`crates/od-ui/styles/app.css:860`) wins. Add
   `max-width:none`, and scale the frame down when it is wider than the pane.
+
+## QA-004 🟡 Esc does not close the Export menu (nor the other drop-down menus)
+
+- **Steps**: Studio ▸ Export ▸ press Esc.
+- **Expected**: the menu closes, as in the original app (`FileViewer.tsx`
+  closes its share/export, present and zoom menus on Escape) and as
+  features.md says for Esc ("close a modal, leave present or a mode").
+- **Actual**: the menu stays open; only a click on the page closes it. A
+  keyboard-only user has no way to dismiss it.
+- **Test**: `export.qa.mjs` EXP-09.
+- **Code**: `crates/od-ui/src/app/export_menu.rs` (no key handler; the
+  `.menu-scrim` only handles clicks). Same pattern in `capture.rs`,
+  `deck.rs` (present menu) and `files_panel.rs` (New menu, row menu).
+
+## QA-005 🟠 Onboarding saves and selects an API provider with an empty key
+
+- **Steps**: first launch with no agent CLI ▸ API key ▸ provider Anthropic
+  (base URL and model are prefilled) ▸ leave API key empty ▸ Save and use.
+- **Expected**: Save is refused ("API key required") and Continue stays
+  off, as in the original app (`EntryShell.tsx` and `SettingsDialog.tsx`
+  require `apiKey.trim()` for providers that need a key).
+- **Actual**: "✓ Saved" shows, `agentId` becomes `byok` with no key, and
+  Continue is enabled. The user reaches Home and every brief fails later.
+- **Evidence**: `GET /api/app-config` after the save: `agentId: "byok"`,
+  `byok.hasApiKey` false. Screenshot `test-results/qa/shots/ONB-05.png`.
+- **Test**: `onboarding.qa.mjs` ONB-05.
+- **Code**: `crates/od-ui/src/app/byok_form.rs` `save` only blocks Azure
+  without a base URL; `needs_key()` exists but is not used to disable Save.
+  The daemon accepts the `PUT /api/app-config` too.
