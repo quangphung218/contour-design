@@ -232,7 +232,11 @@ pub async fn install_route(
     }
     Ok(ApiJson(InstallResponse {
         // Uninstalling only the old entry still uninstalls the server.
-        ok: code == 0 || (req.uninstall && legacy && gone),
+        ok: if req.uninstall {
+            install::uninstall_ok(code, legacy, gone)
+        } else {
+            code == 0
+        },
         message,
     }))
 }

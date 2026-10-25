@@ -389,6 +389,14 @@ pub fn has_entry(agent: Agent, home: &Path, name: &str) -> bool {
     }
 }
 
+/// Whether an uninstall succeeded: the agent's own remove passed (`code`
+/// 0), or it failed but the old entry was removed (`legacy`) and no entry
+/// under the current name is left (`gone`), i.e. there was none to remove.
+#[must_use]
+pub fn uninstall_ok(code: i32, legacy: bool, gone: bool) -> bool {
+    code == 0 || (legacy && gone)
+}
+
 /// After an install: removes the [`LEGACY_SERVER_NAME`] entry when the
 /// agent's config has one. Best effort, quiet; true when one was removed.
 pub fn remove_legacy(agent: Agent, spec: &LaunchSpec, home: &Path, runner: Runner<'_>) -> bool {
@@ -572,6 +580,17 @@ mod tests {
             ran.borrow().as_slice(),
             ["claude mcp add --scope user contour -- /opt/od mcp"]
         );
+    }
+
+    #[test]
+    fn uninstall_ok_needs_the_entry_gone_when_the_remove_failed() {
+        assert!(uninstall_ok(0, false, false));
+        assert!(uninstall_ok(0, true, true));
+        // The remove failed: only fine when nothing was there to remove.
+        assert!(uninstall_ok(1, true, true));
+        assert!(!uninstall_ok(1, true, false), "contour is still there");
+        assert!(!uninstall_ok(1, false, true), "nothing was removed at all");
+        assert!(!uninstall_ok(1, false, false));
     }
 
     /// An install under the new name drops the entry older versions wrote,

@@ -138,7 +138,9 @@ fn install(
     }
     // The old entry gone and no entry under `name` left: uninstalled, even
     // when the agent's own `mcp remove` failed for want of one.
-    let code = if legacy && opts.uninstall && !install::has_entry(agent, &home, name) {
+    let code = if opts.uninstall
+        && install::uninstall_ok(code, legacy, !install::has_entry(agent, &home, name))
+    {
         0
     } else {
         code
