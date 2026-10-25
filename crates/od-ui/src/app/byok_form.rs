@@ -70,6 +70,9 @@ pub fn TestResultLine(state: RwSignal<Option<TestState>>, testid: &'static str) 
 }
 
 /// The form. `on_saved` runs after a successful save.
+/// Id of the "API key required" line, which describes the key field.
+const KEY_REQUIRED_ID: &str = "byok-key-required";
+
 #[component]
 pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl IntoView {
     let shell = Shell::get();
@@ -275,6 +278,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                     <span>{t(T::ApiKey)}</span>
                     <span class="row key-row">
                         <input class="input mono grow" data-testid="byok-key" autocomplete="off"
+                            aria-describedby=move || key_missing().then_some(KEY_REQUIRED_ID)
                             type=move || if show_key.get() { "text" } else { "password" }
                             placeholder=if has_key { tf(T::ApiKeyStored, &[&key_hint]) } else { t(T::ApiKeyPlaceholder).to_owned() }
                             prop:value=move || api_key.get()
@@ -290,6 +294,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                             {move || icon(if show_key.get() { Glyph::EyeOff } else { Glyph::Eye })}
                         </button>
                     </span>
+                    {move || key_missing().then(|| view! { <span class="muted" id=KEY_REQUIRED_ID data-testid="byok-key-required">{t(T::ApiKeyRequired)}</span> })}
                     {move || cleaned.get().then(|| view! { <span class="muted">{t(T::ApiKeyCleaned)}</span> })}
                     {move || shape_warning().then(|| view! { <span class="warning-text">{t(T::ApiKeyShape)}</span> })}
                     <span class="muted">{t(T::ApiKeyLocalHint)}</span>
@@ -329,7 +334,6 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                     Some(Err(e)) => view! { <span class="error-text">{e}</span> }.into_any(),
                     None => ().into_any(),
                 }}
-                {move || key_missing().then(|| view! { <span class="muted small" data-testid="byok-key-required">{t(T::ApiKeyRequired)}</span> })}
                 // Azure has no shared host: nothing to save without the endpoint.
                 <button class="btn primary" data-testid="byok-save" on:click=save
                     disabled=move || key_missing() || (azure() && base_url.with(|b| b.trim().is_empty()))>{t(T::SaveProvider)}</button>

@@ -179,6 +179,6 @@ test('ONB-09', 'On a phone-sized window "API key required" sits with the key fie
   assert.ok(sameRow || atRight, `Save is alone on a line at x ${Math.round(save.x)}–${Math.round(save.x + save.width)}` +
     ` (form ${Math.round(form.x)}–${Math.round(form.x + form.width)})`);
   assert.equal(await overflowsX(page), false, 'the page scrolls sideways');
-}, { ...noAgent, knownBug: 'QA-016' });
+}, noAgent);
 
 await run('onboarding', { onboarded: false });
