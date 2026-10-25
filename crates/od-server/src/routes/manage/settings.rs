@@ -170,17 +170,45 @@ pub async fn test_connection(
             let config = provider_config(&state, &req)?;
             let result: TestResult =
                 byok_probe::test_connection(&config, byok_probe::TEST_TIMEOUT).await;
+            tracing::info!(agent = "byok", ok = result.ok, category = ?result.kind, "connection test");
             Ok(ApiJson(serde_json::to_value(result).unwrap_or(Value::Null)))
         }
         "agent" => {
             let agent = clean(req.agent_id.as_deref())
                 .ok_or_else(|| ApiErr::bad_request("agentId is required"))?;
             let result = test_agent(&state, &agent, &req, AGENT_TEST_TIMEOUT).await?;
-            Ok(ApiJson(serde_json::to_value(result).unwrap_or(Value::Null)))
+            let category = test_category(&result);
+            tracing::info!(agent = %agent, ok = result.ok, category, "connection test");
+            // `category` lets onboarding tell a missing sign-in from other failures.
+            let mut body = serde_json::to_value(result).unwrap_or(Value::Null);
+            if let Value::Object(map) = &mut body {
+                map.insert("category".to_owned(), Value::from(category));
+            }
+            Ok(ApiJson(body))
         }
         other => Err(ApiErr::bad_request(format!(
             "mode must be agent or provider, got {other:?}"
         ))),
+    }
+}
+
+/// The result's kind, or `auth` when a failure reads like a missing sign-in
+/// (what a freshly installed Claude Code or Codex answers).
+fn test_category(result: &AgentTestResult) -> &'static str {
+    let detail = result.detail.as_deref().unwrap_or_default().to_lowercase();
+    let auth = [
+        "login",
+        "log in",
+        "sign in",
+        "api key",
+        "401",
+        "unauthorized",
+        "authenticat",
+    ];
+    if !result.ok && auth.iter().any(|w| detail.contains(w)) {
+        "auth"
+    } else {
+        result.kind
     }
 }
 

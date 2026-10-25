@@ -28,6 +28,8 @@ pub struct Options {
     pub idle_timeout: Option<Duration>,
     pub kill_grace: Duration,
     pub extra_env: Vec<(String, String)>,
+    /// Shell asked for `PATH` on `POST /api/agents/rescan`, as in the app.
+    pub login_shell: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -37,6 +39,7 @@ impl Default for Options {
             idle_timeout: None,
             kill_grace: od_runtime::process::KILL_GRACE,
             extra_env: Vec::new(),
+            login_shell: None,
         }
     }
 }
@@ -64,6 +67,7 @@ pub async fn daemon_with(opts: Options) -> Daemon {
     engine.path =
         std::env::join_paths([mocks.as_path(), Path::new("/usr/bin"), Path::new("/bin")]).unwrap();
     engine.idle_timeout = opts.idle_timeout;
+    engine.login_shell = opts.login_shell.map(PathBuf::into_os_string);
     engine.kill_grace = opts.kill_grace;
     engine.retry_base = Duration::from_millis(50);
     // A mock's first exec can take seconds on a loaded Mac (it scans new

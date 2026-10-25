@@ -193,7 +193,22 @@ in [parity.md](parity.md) row 174.
 **Detection** runs each time the agent picker opens or `GET /api/agents` is
 called: the daemon finds the binary on its `PATH`, runs `--version` and reads
 `--help` for supported flags (5 seconds per command). Nothing is cached, so
-after installing an agent press **Refresh**.
+after installing an agent press **Check again** in onboarding
+(`POST /api/agents/rescan`). In the desktop app that also asks the login
+shell for its `PATH` again, so an agent installed under a new nvm Node while
+the app runs is found without a restart.
+
+With no working agent (none installed, or the picked one failed its test),
+onboarding puts Claude Code and Codex first, each with its install command
+(Copy), its official setup page, the account it needs and how to sign in
+once installed; on Windows only the setup page. Check again tests the
+picked agent again and says so when it still finds nothing. Agents
+not installed are folded under **Other agents**; one installed but waiting
+for setup (DeepSeek Harness) stays in view. The API key path comes with its
+limit (one HTML file, no tools). In the desktop app, web links open in the
+system browser. It also warns when no Chrome, Edge or Chromium is
+found (`GET /api/browser`), since PDF, PPTX and image export need one;
+nothing else is blocked.
 
 ```bash
 curl -s http://127.0.0.1:7456/api/agents
@@ -277,7 +292,7 @@ the running daemon.
 
 ```bash
 od mcp install claude --print      # show the command or config it would write
-od mcp install claude              # register the "open-design" server in Claude Code
+od mcp install claude              # register the "contour" server in Claude Code (drops an old "open-design" entry)
 od mcp install cursor              # write ~/.cursor/mcp.json, keeping other servers
 od mcp install claude --uninstall
 ```
@@ -356,6 +371,7 @@ daemon, `od <command> --help` lists the options.
 | `OD_RESOURCE_ROOT` | the `content/` folder (skills, templates, design systems) | next to the binary, then the source tree |
 | `OD_UI_DIST` | built UI folder | `ui/` next to the binary, then `crates/od-ui/dist` |
 | `OD_CHROME_PATH` | Chrome/Edge/Chromium for export | found automatically |
+| `OD_RESCAN_INSTALL_DIRS` | `0`: Check again in a terminal-started daemon keeps its `PATH` instead of adding `~/.local/bin`, Homebrew and the other usual install folders (tests) | `1` |
 | `OD_CHROME_NO_SANDBOX` | `1` starts Chrome without its own sandbox. **Security risk:** Chrome then renders agent-written HTML without isolation. Only for a Contour that already runs inside another sandbox (`sandbox-exec`, some containers), where Chrome cannot start its own; Contour never turns it on by itself | off |
 | `OD_FFMPEG_PATH` | `ffmpeg` for MP4 | `PATH`, Homebrew |
 | `OD_TERMINAL_SHELL` | shell of terminal tabs | `$SHELL` |

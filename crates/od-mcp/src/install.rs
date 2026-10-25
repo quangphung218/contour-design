@@ -8,7 +8,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Name of our entry in agent configs.
-pub const SERVER_NAME: &str = "open-design";
+pub const SERVER_NAME: &str = "contour";
+/// The name versions before the rename installed under; an install
+/// removes it so the agent does not list the server twice.
+pub const LEGACY_SERVER_NAME: &str = "open-design";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
@@ -358,6 +361,61 @@ pub fn execute(
     }
 }
 
+/// Whether `agent`'s user config has an entry named `name`: claude in
+/// `~/.claude.json`, codex in `~/.codex/config.toml`, cursor in
+/// `~/.cursor/mcp.json`.
+#[must_use]
+pub fn has_entry(agent: Agent, home: &Path, name: &str) -> bool {
+    let json_has = |path: PathBuf| {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .is_some_and(|v| v["mcpServers"].get(name).is_some())
+    };
+    match agent {
+        Agent::Claude => json_has(home.join(".claude.json")),
+        Agent::Cursor => json_has(home.join(".cursor").join("mcp.json")),
+        Agent::Codex => {
+            std::fs::read_to_string(home.join(".codex").join("config.toml")).is_ok_and(|text| {
+                let (bare, quoted) = (
+                    format!("[mcp_servers.{name}]"),
+                    format!("[mcp_servers.\"{name}\"]"),
+                );
+                text.lines()
+                    .map(str::trim)
+                    .any(|l| l == bare || l == quoted)
+            })
+        }
+    }
+}
+
+/// Whether an uninstall succeeded: the agent's own remove passed (`code`
+/// 0), or it failed but the old entry was removed (`legacy`) and no entry
+/// under the current name is left (`gone`), i.e. there was none to remove.
+#[must_use]
+pub fn uninstall_ok(code: i32, legacy: bool, gone: bool) -> bool {
+    code == 0 || (legacy && gone)
+}
+
+/// After an install: removes the [`LEGACY_SERVER_NAME`] entry when the
+/// agent's config has one. Best effort, quiet; true when one was removed.
+pub fn remove_legacy(agent: Agent, spec: &LaunchSpec, home: &Path, runner: Runner<'_>) -> bool {
+    if !has_entry(agent, home, LEGACY_SERVER_NAME) {
+        return false;
+    }
+    let plan = plan(agent, spec, home, LEGACY_SERVER_NAME);
+    let opts = InstallOptions {
+        uninstall: true,
+        ..InstallOptions::default()
+    };
+    let mut sink = std::io::sink();
+    let mut sink_err = std::io::sink();
+    matches!(
+        execute(agent, &plan, opts, runner, &mut sink, &mut sink_err),
+        Ok(0)
+    )
+}
+
 /// Write to a sibling temp file, then rename over the target.
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));
@@ -398,18 +456,11 @@ mod tests {
             Plan::Cli {
                 bin: "claude",
                 add: [
-                    "mcp",
-                    "add",
-                    "--scope",
-                    "user",
-                    "open-design",
-                    "--",
-                    "/opt/od",
-                    "mcp"
+                    "mcp", "add", "--scope", "user", "contour", "--", "/opt/od", "mcp"
                 ]
                 .map(String::from)
                 .to_vec(),
-                remove: ["mcp", "remove", "--scope", "user", "open-design"]
+                remove: ["mcp", "remove", "--scope", "user", "contour"]
                     .map(String::from)
                     .to_vec(),
             }
@@ -417,7 +468,7 @@ mod tests {
         let Plan::Cli { add, .. } = plan(Agent::Codex, &spec(), home, SERVER_NAME) else {
             panic!()
         };
-        assert_eq!(add, ["mcp", "add", "open-design", "--", "/opt/od", "mcp"]);
+        assert_eq!(add, ["mcp", "add", "contour", "--", "/opt/od", "mcp"]);
     }
 
     #[test]
@@ -527,7 +578,70 @@ mod tests {
         );
         assert_eq!(
             ran.borrow().as_slice(),
-            ["claude mcp add --scope user open-design -- /opt/od mcp"]
+            ["claude mcp add --scope user contour -- /opt/od mcp"]
+        );
+    }
+
+    #[test]
+    fn uninstall_ok_needs_the_entry_gone_when_the_remove_failed() {
+        assert!(uninstall_ok(0, false, false));
+        assert!(uninstall_ok(0, true, true));
+        // The remove failed: only fine when nothing was there to remove.
+        assert!(uninstall_ok(1, true, true));
+        assert!(!uninstall_ok(1, true, false), "contour is still there");
+        assert!(!uninstall_ok(1, false, true), "nothing was removed at all");
+        assert!(!uninstall_ok(1, false, false));
+    }
+
+    /// An install under the new name drops the entry older versions wrote,
+    /// and leaves configs without one alone.
+    #[test]
+    fn remove_legacy_drops_only_the_old_entry() {
+        let home = tempfile::tempdir().unwrap();
+        let ran = RefCell::new(Vec::<String>::new());
+        let runner = |bin: &str, argv: &[String]| -> std::io::Result<i32> {
+            ran.borrow_mut().push(format!("{bin} {}", argv.join(" ")));
+            Ok(0)
+        };
+        // Nothing to remove: no agent command runs.
+        for agent in Agent::ALL {
+            assert!(!remove_legacy(agent, &spec(), home.path(), &runner));
+        }
+        assert!(ran.borrow().is_empty());
+
+        std::fs::write(
+            home.path().join(".claude.json"),
+            r#"{"mcpServers":{"open-design":{"command":"od"}}}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+        std::fs::write(
+            home.path().join(".codex/config.toml"),
+            "[mcp_servers.open-design]\ncommand = \"od\"\n",
+        )
+        .unwrap();
+        assert!(remove_legacy(Agent::Claude, &spec(), home.path(), &runner));
+        assert!(remove_legacy(Agent::Codex, &spec(), home.path(), &runner));
+        assert_eq!(
+            ran.borrow().as_slice(),
+            [
+                "claude mcp remove --scope user open-design",
+                "codex mcp remove open-design"
+            ]
+        );
+
+        let cursor = home.path().join(".cursor/mcp.json");
+        std::fs::create_dir_all(cursor.parent().unwrap()).unwrap();
+        std::fs::write(
+            &cursor,
+            r#"{"mcpServers":{"open-design":{"command":"od"},"contour":{"command":"od"},"github":{}}}"#,
+        )
+        .unwrap();
+        assert!(remove_legacy(Agent::Cursor, &spec(), home.path(), &runner));
+        let left: Value = serde_json::from_str(&std::fs::read_to_string(&cursor).unwrap()).unwrap();
+        assert_eq!(
+            left["mcpServers"],
+            json!({ "contour": { "command": "od" }, "github": {} })
         );
     }
 }

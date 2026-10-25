@@ -138,6 +138,16 @@ impl Shell {
         });
     }
 
+    /// Onboarding ▸ Check again: the daemon reads the login shell's `PATH`
+    /// again first, so an agent installed while the app runs is found.
+    pub async fn rescan_agents(self) {
+        let res = api::post::<_, AgentsResponse>("/api/agents/rescan", &serde_json::json!({}))
+            .await
+            .map(|r| r.agents)
+            .map_err(|e| e.to_string());
+        self.agents.set(Some(res));
+    }
+
     /// The agent runs use: the configured one, else the first available.
     pub fn agent_id(self) -> Option<String> {
         let configured = self

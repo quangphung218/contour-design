@@ -177,7 +177,7 @@ impl ServerHandler for OdMcp {
             serde_json::from_value(json!({ "tools": {}, "resources": {} })).unwrap_or_default();
         ServerConfig::new(caps)
             .with_server_info(Implementation::new(
-                "open-design",
+                crate::install::SERVER_NAME,
                 env!("CARGO_PKG_VERSION"),
             ))
             .with_instructions(INSTRUCTIONS)
@@ -250,4 +250,18 @@ pub async fn serve_stdio(daemon_url: &str) -> anyhow::Result<()> {
         () = idle => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What `initialize` answers: the same name `od mcp install` registers.
+    #[test]
+    fn initialize_names_the_server_contour() {
+        let mcp = OdMcp::new(Daemon::new("http://127.0.0.1:9").unwrap());
+        let info = mcp.get_info();
+        assert_eq!(info.server_info.name, "contour");
+        assert_eq!(info.server_info.name, crate::install::SERVER_NAME);
+    }
 }

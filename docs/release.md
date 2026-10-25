@@ -90,8 +90,10 @@ while the release is still a draft; a published release is never rewritten
 ## Signing and notarisation (macOS)
 
 Optional. Without these secrets the workflow builds an **unsigned** bundle,
-prints a warning and carries on. Users then open it with right-click ▸ Open
-the first time, or `xattr -dr com.apple.quarantine /Applications/Contour.app`.
+prints a warning and carries on. Users then allow it once: System Settings ▸
+Privacy & Security ▸ Open Anyway on macOS 15 and later, Control-click ▸ Open
+on macOS 14 and earlier, or `xattr -dr com.apple.quarantine
+/Applications/Contour.app` (see getting-started.md).
 
 Add them under Settings ▸ Secrets and variables ▸ Actions:
 

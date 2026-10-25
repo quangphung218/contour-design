@@ -51,10 +51,13 @@ The full tour is in [docs/features.md](docs/features.md).
 Get the latest build from
 [Releases](https://github.com/quangphung218/contour-design/releases): a
 universal `.dmg` for macOS, an `.AppImage` or `.deb` for Linux, and an
-`.msi` for Windows (untested). Each release has a `SHA256SUMS` file. Builds
-without a signing certificate are unsigned; see
-[getting started](docs/getting-started.md#download-a-release) for opening
-them on macOS.
+`.msi` for Windows (untested). Each release has a `SHA256SUMS` file.
+
+Builds without a signing certificate are unsigned, and macOS stops them the
+first time. On **macOS 15 and later**, open Contour once, then go to
+**System Settings ▸ Privacy & Security ▸ Open Anyway** and open it again.
+On macOS 14 and earlier, Control-click the app ▸ **Open**. Step by step:
+[getting started](docs/getting-started.md#open-an-unsigned-build-on-macos).
 
 ### Build from source
 
@@ -97,6 +100,11 @@ and the choices behind it in [docs/decisions.md](docs/decisions.md).
 
 - **Windows is not tested.** Job Objects, ConPTY and the WebView2 app only
   pass a compile check; CI builds it but runs no tests.
+- **Windows may not find an installed agent.** Detection looks for the bare
+  name (`claude`), not `claude.exe`, and the install folders Check again
+  adds hang off `HOME`, which Windows usually does not set; a restart does
+  not help. Onboarding on Windows therefore links each agent's setup page
+  and the API key path, with no install command or Check again.
 - **External MCP servers reach Claude, ACP agents and OpenCode only**, as in
   the original app; ACP takes stdio servers only.
 - **Fully detached processes can survive.** An MCP stdio helper that

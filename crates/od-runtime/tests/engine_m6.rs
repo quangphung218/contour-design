@@ -45,6 +45,9 @@ impl Harness {
         config.retry_base = Duration::from_millis(10);
         // A hang shows up as a failed run within seconds, not a stuck test.
         config.idle_timeout = Some(Duration::from_secs(5));
+        // A mock shell reading EOF can take over the 500 ms default on a
+        // loaded machine; the lingering-agent test still sees SIGTERM.
+        config.exit_after_completion = Duration::from_secs(3);
         let runs = Runs::new(tmp.path().join("runs"));
         Self {
             engine: RunEngine::new(config),

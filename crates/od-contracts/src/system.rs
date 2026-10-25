@@ -15,3 +15,10 @@ pub struct AppVersionResponse {
     pub platform: String,
     pub arch: String,
 }
+
+/// `GET /api/browser`: whether the Chrome, Edge or Chromium that PDF, PPTX
+/// and image export drive is installed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowserResponse {
+    pub found: bool,
+}

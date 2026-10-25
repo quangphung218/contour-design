@@ -123,5 +123,27 @@ fn install(
         &mut std::io::stdout(),
         &mut std::io::stderr(),
     )?;
+    // After an install, and on uninstall even when no entry under `name`
+    // was there: the old name goes either way.
+    let legacy = (code == 0 || opts.uninstall)
+        && !opts.print
+        && name != install::LEGACY_SERVER_NAME
+        && install::remove_legacy(agent, &spec, &home, &runner);
+    if legacy && !opts.json {
+        println!(
+            "removed the old {} entry from {}",
+            install::LEGACY_SERVER_NAME,
+            agent.slug()
+        );
+    }
+    // The old entry gone and no entry under `name` left: uninstalled, even
+    // when the agent's own `mcp remove` failed for want of one.
+    let code = if opts.uninstall
+        && install::uninstall_ok(code, legacy, !install::has_entry(agent, &home, name))
+    {
+        0
+    } else {
+        code
+    };
     Ok(ExitCode::from(u8::try_from(code).unwrap_or(1)))
 }

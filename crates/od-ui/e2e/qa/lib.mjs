@@ -82,6 +82,8 @@ export async function startDaemon({ agents = true, env = {}, data } = {}) {
         PATH: path,
         OD_OPEN_COMMAND: '/usr/bin/true',
         SHELL: '/bin/sh',
+        // Check again must not find the agents installed on this machine.
+        OD_RESCAN_INSTALL_DIRS: '0',
         RUST_LOG: 'warn',
         ...env,
       },
@@ -180,8 +182,8 @@ export async function listFiles(d, id) {
  * Opens a fresh context and page on `d`: external requests blocked, page
  * errors and run request bodies collected.
  */
-export async function newPage(browser, d, { viewport = { width: 1360, height: 860 }, locale } = {}) {
-  const context = await browser.newContext({ viewport, acceptDownloads: true, locale });
+export async function newPage(browser, d, { viewport = { width: 1360, height: 860 }, locale, userAgent } = {}) {
+  const context = await browser.newContext({ viewport, acceptDownloads: true, locale, userAgent });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: d.base });
   const external = [];
   await context.route('**/*', (route) => {

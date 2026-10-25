@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::ChildStdin;
@@ -61,7 +61,21 @@ pub struct EngineConfig {
     /// After a failed help probe, runs go without optional flags for this
     /// long before the CLI is probed again.
     pub probe_retry_after: Duration,
+    /// How long a protocol agent may take to exit once its turn completed
+    /// and stdin closed, before it is stopped (tests on a loaded machine
+    /// give it longer).
+    pub exit_after_completion: Duration,
+    /// Shell asked again for its `PATH` when the agents are rescanned (the
+    /// desktop app); `None` keeps `path` as it is.
+    pub login_shell: Option<OsString>,
+    /// A rescan without a login shell adds the usual install folders
+    /// (`~/.local/bin`, Homebrew…). Off (`OD_RESCAN_INSTALL_DIRS=0`) for
+    /// tests that must not find the agents installed on the machine.
+    pub rescan_install_dirs: bool,
 }
+
+/// Turns [`EngineConfig::rescan_install_dirs`] off when `0`.
+pub const RESCAN_INSTALL_DIRS_ENV: &str = "OD_RESCAN_INSTALL_DIRS";
 
 impl EngineConfig {
     /// The daemon's own `PATH` and environment.
@@ -76,6 +90,9 @@ impl EngineConfig {
             tool_loop: ToolLoopLimits::default(),
             probe_timeout: detect::PROBE_TIMEOUT,
             probe_retry_after: PROBE_RETRY_AFTER,
+            exit_after_completion: EXIT_AFTER_COMPLETION,
+            login_shell: None,
+            rescan_install_dirs: std::env::var_os(RESCAN_INSTALL_DIRS_ENV).is_none_or(|v| v != "0"),
         }
     }
 
@@ -169,7 +186,8 @@ struct Active {
 /// Runs agents. Cheap to clone.
 #[derive(Debug, Clone)]
 pub struct RunEngine {
-    config: Arc<EngineConfig>,
+    /// Swapped whole when a rescan changes `path`.
+    config: Arc<RwLock<Arc<EngineConfig>>>,
     active: Arc<Mutex<HashMap<String, Arc<Active>>>>,
     capabilities: Arc<Mutex<HashMap<PathBuf, Probed>>>,
 }
@@ -186,15 +204,61 @@ impl RunEngine {
     #[must_use]
     pub fn new(config: EngineConfig) -> Self {
         Self {
-            config: Arc::new(config),
+            config: Arc::new(RwLock::new(Arc::new(config))),
             active: Arc::default(),
             capabilities: Arc::default(),
         }
     }
 
     #[must_use]
-    pub fn config(&self) -> &EngineConfig {
-        &self.config
+    pub fn config(&self) -> Arc<EngineConfig> {
+        Arc::clone(
+            &self
+                .config
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    /// Asks the login shell for its `PATH` again, so an agent installed
+    /// while the app runs (under a new nvm Node, say) is found, and adds the
+    /// usual install folders (`~/.local/bin`…) a terminal-started daemon may
+    /// lack. New folders go after the current `path`, which is never
+    /// shortened. The login shell's own `PATH` goes first, as in a new
+    /// Terminal (a newer nvm Node before the one the app started with); one
+    /// that does not answer adds nothing. True when `path` changed.
+    pub async fn rescan_path(&self) -> bool {
+        let login = match self.config().login_shell.clone() {
+            Some(shell) => {
+                let login = crate::login_path::login_shell_path(&shell).await;
+                if login.is_none() {
+                    tracing::warn!(shell = %shell.to_string_lossy(), "login shell gave no PATH; agent path kept");
+                }
+                login
+            }
+            None if !self.config().rescan_install_dirs => return false,
+            None => None,
+        };
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let mut config = self
+            .config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = match login {
+            Some(login) => crate::login_path::merge(
+                std::ffi::OsStr::new(&login),
+                Some(&config.path.to_string_lossy()),
+                home.as_deref(),
+            ),
+            None => crate::login_path::merge(&config.path, None, home.as_deref()),
+        };
+        if path == config.path {
+            return false;
+        }
+        let mut next = EngineConfig::clone(&config);
+        next.path = path;
+        *config = Arc::new(next);
+        true
     }
 
     fn active(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Active>>> {
@@ -278,13 +342,13 @@ impl RunEngine {
             Some(Probed::Flags(flags)) => return flags,
             // A failed probe is not "no flags", but probing a CLI whose
             // `--help` hangs on every run would add its timeout to each.
-            Some(Probed::Failed(at)) if at.elapsed() < self.config.probe_retry_after => {
+            Some(Probed::Failed(at)) if at.elapsed() < self.config().probe_retry_after => {
                 return Vec::new();
             }
             _ => {}
         }
         let probed =
-            detect::probe_capabilities(def, bin, &self.config.path, self.config.probe_timeout)
+            detect::probe_capabilities(def, bin, &self.config().path, self.config().probe_timeout)
                 .await;
         let entry = probed
             .clone()
@@ -306,7 +370,7 @@ impl RunEngine {
             spec.bin
                 .clone()
                 .filter(|b| detect::is_executable(b))
-                .or_else(|| detect::resolve_bin(def, &self.config.path))
+                .or_else(|| detect::resolve_bin(def, &self.config().path))
         };
         let shown_bin = match (&bin, &spec.byok) {
             (Some(b), _) => b.to_string_lossy().into_owned(),
@@ -445,7 +509,7 @@ impl RunEngine {
                 );
                 if transient && !attempt.visible_output && retries < MAX_RETRIES {
                     retries += 1;
-                    let delay = retry_delay(self.config.retry_base, *category, retries);
+                    let delay = retry_delay(self.config().retry_base, *category, retries);
                     tracing::info!(run = %run.id(), %message, ?delay, "retrying after a transient failure");
                     run.emit_json(
                         sse::RUN_RETRY_ATTEMPTED,
@@ -576,8 +640,8 @@ impl RunEngine {
         }
         write_stdin(active, parser.take_writes()).await;
 
-        let mut guard = ToolLoopGuard::new(self.config.tool_loop);
-        let idle = self.config.idle_timeout.unwrap_or(def.idle_timeout);
+        let mut guard = ToolLoopGuard::new(self.config().tool_loop);
+        let idle = self.config().idle_timeout.unwrap_or(def.idle_timeout);
         let mut deadline = tokio::time::Instant::now() + idle;
         let mut events = Vec::new();
         let mut stop: Option<(FailureCategory, String)> = None;
@@ -620,7 +684,7 @@ impl RunEngine {
                                 att.protocol_completed = true;
                                 *active.stdin.lock().await = None;
                                 completion_deadline =
-                                    Some(tokio::time::Instant::now() + EXIT_AFTER_COMPLETION);
+                                    Some(tokio::time::Instant::now() + self.config().exit_after_completion);
                             }
                         }
                         Line::Stderr(text) => {
@@ -672,7 +736,7 @@ impl RunEngine {
         // server): the run owns those processes, so they end with it.
         if pgid > 0 && process::group_alive(pgid) {
             tracing::warn!(run = %run.id(), pgid, "agent left processes behind; stopping its group");
-            process::terminate_group(pgid, self.config.kill_grace).await;
+            process::terminate_group(pgid, self.config().kill_grace).await;
         }
         process::release_group(pgid);
         run.set_process(None, None);
@@ -711,8 +775,8 @@ impl RunEngine {
             },
             tx,
         ));
-        let mut guard = ToolLoopGuard::new(self.config.tool_loop);
-        let idle = self.config.idle_timeout.unwrap_or(spec.def.idle_timeout);
+        let mut guard = ToolLoopGuard::new(self.config().tool_loop);
+        let idle = self.config().idle_timeout.unwrap_or(spec.def.idle_timeout);
         let mut deadline = tokio::time::Instant::now() + idle;
         let mut events = Vec::new();
         let mut result = None;
@@ -867,13 +931,13 @@ impl RunEngine {
                 let _ = pipe.flush().await;
             }
             drop(stdin);
-            let grace = self.config.kill_grace;
+            let grace = self.config().kill_grace;
             if process::wait_group_gone(pgid, grace).await {
                 return tokio::spawn(async { false });
             }
         }
         *active.stdin.lock().await = None;
-        let grace = self.config.kill_grace;
+        let grace = self.config().kill_grace;
         tokio::spawn(async move { process::terminate_group(pgid, grace).await })
     }
 }

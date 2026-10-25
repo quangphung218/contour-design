@@ -616,7 +616,20 @@ messages! {
     UseApiKey => "API key", "API key";
     LocalAgentIntro => "Use Claude Code, Codex, Cursor, OpenCode, Kimi, Qwen, Hermes, Kiro and more. The picked agent is tested once with a short prompt.", "Dùng Claude Code, Codex, Cursor, OpenCode, Kimi, Qwen, Hermes, Kiro… Agent được chọn sẽ được thử một lần bằng prompt ngắn.";
     ByokIntro => "Connect a model provider with your own key. Test it, then save.", "Kết nối provider model bằng key riêng. Kiểm tra rồi lưu.";
-    RescanHint => "Rescan takes 5 to 10 seconds.", "Quét lại mất 5 đến 10 giây.";
+    AgentsNoneHint => "No coding agent found yet. Paste an install command into Terminal, then choose Check again.", "Chưa có coding agent nào. Dán lệnh cài vào Terminal rồi bấm Kiểm tra lại.";
+    InstallGuide => "Install guide", "Hướng dẫn cài";
+    CopyCommand => "Copy command", "Sao chép lệnh";
+    SignInAfterInstall => "Then open a new Terminal window and run {0} to sign in.", "Sau đó mở cửa sổ Terminal mới và chạy {0} để đăng nhập.";
+    StillNoAgent => "Still no agent found. Open a new Terminal window and run {0}.", "Vẫn chưa thấy agent nào. Mở cửa sổ Terminal mới và chạy {0}.";
+    AgentsNoneHintWindows => "No coding agent found yet. Install one from its guide below, or use an API key.", "Chưa có coding agent nào. Cài theo hướng dẫn bên dưới, hoặc dùng API key.";
+    ClaudeAccount => "Needs a Claude Pro, Max, Team or Enterprise plan, or a Console account.", "Cần gói Claude Pro, Max, Team hoặc Enterprise, hoặc tài khoản Console.";
+    CodexAccount => "Needs a ChatGPT plan or an OpenAI API key.", "Cần gói ChatGPT hoặc API key của OpenAI.";
+    CheckAgain => "Check again", "Kiểm tra lại";
+    CheckingAgents => "Checking…", "Đang kiểm tra…";
+    ByokLimits => "API key only: makes a single HTML file, no tools.", "Chỉ API key: tạo một file HTML, không dùng tool.";
+    UseApiKeyInstead => "Use an API key instead", "Dùng API key thay thế";
+    ChromeNeeded => "PDF, PPTX and image export need Chrome.", "Xuất PDF, PPTX và ảnh cần Chrome.";
+    GetChrome => "Get Chrome", "Tải Chrome";
     GateAgent => "Continue once the agent answered the test.", "Tiếp tục được khi agent đã trả lời bài thử.";
     GateByok => "Save a provider that passed the test to continue.", "Lưu một provider đã qua bài thử để tiếp tục.";
     // ---- end of management screens ----
@@ -1150,7 +1163,7 @@ messages! {
     NoTemplates => "No templates for this output type yet.", "Chưa có template cho loại đầu ra này.";
     ProjectsEmptyTitle => "No projects yet", "Chưa có project nào";
     ProjectsEmptyBody => "Write a brief on Home, or open a folder you already have.", "Viết brief ở Trang chủ, hoặc mở một thư mục có sẵn.";
-    OtherAgents => "Not installed", "Chưa cài";
+    OtherAgentsCount => "Other agents ({0})", "Agent khác ({0})";
     AgentSectionHint => "The coding agent that runs briefs on this machine.", "Coding agent chạy brief trên máy này.";
     PermissionsHint => "What the agent may do without asking.", "Những việc agent được làm mà không cần hỏi.";
     AppearanceHint => "Follows the system unless you pin a theme.", "Theo hệ thống, trừ khi chọn cố định một chế độ.";

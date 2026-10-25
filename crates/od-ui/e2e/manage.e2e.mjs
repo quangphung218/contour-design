@@ -379,7 +379,7 @@ try {
   await openai.getByTestId('media-configured').waitFor();
   await page.getByTestId('about-version').waitFor();
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-diagnostics').click()]);
-  assert.match(download.suggestedFilename(), /diagnostics.*\.zip$/);
+  assert.match(download.suggestedFilename(), /^contour-diagnostics-\d{8}-\d{6}\.zip$/);
   await page.screenshot({ path: OUT + 'settings-about.png', fullPage: false });
   await page.getByTestId('reset-onboarding').click();
   await page.waitForURL('**/onboarding');
@@ -431,13 +431,13 @@ try {
   await page.locator('[data-testid="mcp-template"][data-template="fetch"]').getByTestId('mcp-template-add').click();
   await until(async () => (await api('/api/mcp/servers')).body.servers?.some((s) => s.id === 'fetch'), 'catalog add');
   await page.getByTestId('tab-agents').click();
-  assert.match(await page.getByTestId('mcp-snippet').textContent(), /^claude mcp add-json --scope user open-design '/);
+  assert.match(await page.getByTestId('mcp-snippet').textContent(), /^claude mcp add-json --scope user contour '/);
   await page.getByTestId('mcp-client').selectOption('cursor');
   await page.getByTestId('mcp-deeplink').waitFor();
   await page.getByTestId('mcp-install-run').click();
   await page.getByTestId('mcp-install-result').waitFor();
   const cursorCfg = JSON.parse(readFileSync(join(home, '.cursor', 'mcp.json'), 'utf8'));
-  assert.equal(cursorCfg.mcpServers['open-design'].args[0], 'mcp');
+  assert.equal(cursorCfg.mcpServers.contour.args[0], 'mcp');
   await page.screenshot({ path: OUT + 'integrations-agents.png' });
   await page.getByTestId('tab-everywhere').click();
   await page.getByTestId('copy-agent-guide').click();

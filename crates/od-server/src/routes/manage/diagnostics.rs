@@ -131,7 +131,7 @@ pub async fn export(State(state): State<AppState>) -> ApiResult<impl IntoRespons
     .map_err(|e| ApiErr::internal(e.to_string()))?
     .map_err(|e| ApiErr::internal(format!("building the archive: {e}")))?;
     let name = format!(
-        "attachment; filename=\"open-design-diagnostics-{}.zip\"",
+        "attachment; filename=\"contour-diagnostics-{}.zip\"",
         chrono::Local::now().format("%Y%m%d-%H%M%S")
     );
     Ok((

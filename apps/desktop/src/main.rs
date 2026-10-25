@@ -8,8 +8,6 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod login_path;
-
 use anyhow::Context;
 use od_content::{ContentRoots, ContentStore};
 use od_server::routes::ui::import_folder;
@@ -65,7 +63,7 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
     };
     let roots = ContentRoots::bundled(&resource_root).with_user_root(data_dir.root());
     let content = tokio::task::spawn_blocking(move || ContentStore::load(roots)).await?;
-    let agent_path = login_path::agent_path().await;
+    let agent_path = od_runtime::login_path::agent_path().await;
     // Port 0: a fresh loopback port per launch, so a CLI daemon on 7456 never
     // collides on the port (the data dir lock above refuses a second daemon).
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
@@ -87,6 +85,7 @@ async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
             Arc::clone(&runs),
             od_runtime::EngineConfig {
                 path: agent_path,
+                login_shell: od_runtime::login_path::default_shell(),
                 ..od_runtime::EngineConfig::from_env()
             },
         )),
@@ -192,6 +191,32 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
 fn allowed_navigation(url: &Url, origin: Option<&str>) -> bool {
     let splash = url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost");
     splash || origin.is_some_and(|o| url.origin().ascii_serialization() == o)
+}
+
+/// A page link meant for a new window (`target="_blank"`, `window.open`):
+/// only web addresses leave the app, for the system browser.
+fn opens_in_browser(url: &Url) -> bool {
+    matches!(url.scheme(), "http" | "https")
+}
+
+/// Hands `url` to the system opener (`open`, `xdg-open`, `explorer`).
+fn open_in_browser(url: &Url) {
+    let program = od_server::routes::handoff::opener();
+    match std::process::Command::new(&program)
+        .arg(url.as_str())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        // Reaped off the UI thread: the opener may outlive the call.
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => tracing::warn!(%url, error = %e, %program, "cannot open the link"),
+    }
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
@@ -302,6 +327,16 @@ fn main() -> anyhow::Result<()> {
                             tracing::warn!(%url, "blocked a navigation away from the app");
                         }
                         ok
+                    })
+                    // The app never opens a second webview: web links go to
+                    // the system browser, anything else is dropped.
+                    .on_new_window(|url, _| {
+                        if opens_in_browser(&url) {
+                            open_in_browser(&url);
+                        } else {
+                            tracing::warn!(%url, "blocked a new window");
+                        }
+                        tauri::webview::NewWindowResponse::Deny
                     })
                     .title(APP_NAME)
                     .inner_size(1360.0, 860.0)
@@ -433,6 +468,27 @@ mod tests {
             "file:///etc/passwd",
         ] {
             assert!(!ok(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn only_web_links_open_in_the_browser() {
+        let opens = |u: &str| opens_in_browser(&Url::parse(u).unwrap());
+        assert!(opens("https://code.claude.com/docs/en/setup"));
+        assert!(opens("https://www.google.com/chrome/"));
+        assert!(opens(
+            "http://127.0.0.1:50123/api/projects/p1/raw/index.html"
+        ));
+        for bad in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,hi",
+            "blob:http://127.0.0.1:50123/x",
+            "tauri://localhost/index.html",
+            "mailto:a@b.c",
+            "vscode://file/x",
+        ] {
+            assert!(!opens(bad), "{bad}");
         }
     }
 }

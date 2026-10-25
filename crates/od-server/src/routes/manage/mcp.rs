@@ -207,19 +207,36 @@ pub async fn install_route(
             &mut out,
             &mut err,
         );
-        (code, out)
+        // After an install, and on uninstall even when no contour entry
+        // was there to remove: the old name goes either way.
+        let legacy = (matches!(code, Ok(0)) || req.uninstall)
+            && install::remove_legacy(agent, &spec, &home, &runner);
+        // A failed `mcp remove` is fine only when nothing is left to remove.
+        let gone = !install::has_entry(agent, &home, SERVER_NAME);
+        (code, out, legacy, gone)
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?;
-    let (code, out) = res;
+    let (code, out, legacy, gone) = res;
     let code = code.map_err(|e| ApiErr::internal(e.to_string()))?;
     let report: Value = serde_json::from_slice(&out).unwrap_or(Value::Null);
-    let message = report.get("message").and_then(Value::as_str).map_or_else(
+    let mut message = report.get("message").and_then(Value::as_str).map_or_else(
         || String::from_utf8_lossy(&out).trim().to_owned(),
         str::to_owned,
     );
+    if legacy {
+        message = format!(
+            "{message}; removed the old {} entry",
+            install::LEGACY_SERVER_NAME
+        );
+    }
     Ok(ApiJson(InstallResponse {
-        ok: code == 0,
+        // Uninstalling only the old entry still uninstalls the server.
+        ok: if req.uninstall {
+            install::uninstall_ok(code, legacy, gone)
+        } else {
+            code == 0
+        },
         message,
     }))
 }
@@ -414,17 +431,14 @@ mod tests {
         let all = snippets(&spec);
         assert_eq!(all.len(), 8);
         let claude = &all[0].snippet;
-        assert!(claude.starts_with("claude mcp add-json --scope user open-design '"));
+        assert!(claude.starts_with("claude mcp add-json --scope user contour '"));
         assert!(
             claude.contains(r"od'\''s"),
             "single quotes are escaped: {claude}"
         );
         assert!(all[1].snippet.contains("args = [\"mcp\", \"--daemon-url\""));
         let cursor: Value = serde_json::from_str(&all[2].snippet).unwrap_or(Value::Null);
-        assert_eq!(
-            cursor["mcpServers"]["open-design"]["command"],
-            "/opt/od's/od"
-        );
+        assert_eq!(cursor["mcpServers"]["contour"]["command"], "/opt/od's/od");
         assert!(
             all[2]
                 .deeplink

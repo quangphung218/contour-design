@@ -3,9 +3,10 @@
 // wrong: a folder that does not exist, a base URL that is not a URL.
 
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test, run, until } from './lib.mjs';
+import { test, run, until, MOCK_AGENTS } from './lib.mjs';
 
 const isMac = process.platform === 'darwin';
 
@@ -142,5 +143,18 @@ test('SET-08', 'An Ollama provider on a one-word host (gpu-box) saves from Setti
   const status = await savedStatus(page, save);
   assert.equal(status, 200, `saving answered ${status}: ${await form.innerText()}`);
 }, { daemon: {} });
+
+// Empty at start; SET-09 installs the mock agent into it while Settings is open.
+const lateBin = mkdtempSync(join(tmpdir(), 'od-qa-settings-bin-'));
+
+test('SET-09', 'Settings ▸ Agent: Check again finds an agent installed after the app started', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.locator('[data-testid="agent-install"][data-agent="claude"]').waitFor();
+  symlinkSync(join(MOCK_AGENTS, 'claude'), join(lateBin, 'claude'));
+  await page.getByTestId('settings-check-again').click();
+  await page.locator('[data-agent="claude"][role="radio"]').waitFor({ timeout: 20_000 });
+  assert.equal(await page.getByTestId('agent-install').count(), 0, 'install cards still shown next to a found agent');
+}, { daemon: { agents: false, env: { PATH: `${lateBin}:/usr/bin:/bin` } } });
 
 await run('settings');

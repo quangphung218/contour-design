@@ -30,16 +30,20 @@ Goal: a first-time user reaches Home with a working agent or API key.
 
 | ID | Scenario | Precondition | Steps | Expected | P | Status |
 |---|---|---|---|---|---|---|
-| ONB-01 | First launch goes to onboarding and the found agent is preselected | Empty data folder, mock `claude` on PATH | Open `/` | Redirect to `/onboarding`; Claude is selected and tested; agents not installed are disabled | P0 | auto |
+| ONB-01 | First launch goes to onboarding and the found agent is preselected | Empty data folder, mock `claude` on PATH | Open `/` | Redirect to `/onboarding`; Claude is selected and tested; agents not installed sit folded under Other agents and cannot be picked | P0 | auto |
 | ONB-02 | Continue with the found agent lands on Home and is remembered | ONB-01 | Continue, reload `/` | Home stays (no second onboarding) | P0 | auto |
-| ONB-03 | No agent installed: the user is told what to do | PATH without any agent CLI | Open `/onboarding` | No agent is picked; the screen says how to install one or use an API key; Continue is off | P1 | auto |
+| ONB-03 | No agent installed: the user is told what to do | PATH without any agent CLI, no Chrome | Open `/onboarding`; install the mock agent; Check again | No agent is picked; Claude Code and Codex come first, each with a copyable install command and its setup page; the other agents are folded under "Other agents (N)"; the API key path says it makes one HTML file without tools; no brand extraction offered; a line says PDF, PPTX and image export need Chrome; Continue is off; after Check again the new agent is picked | P0 | auto |
 | ONB-04 | Skip onboarding with no agent, then send a brief | ONB-03 | Skip for now, brief, Enter | A message names the missing agent or API key and where to fix it | P1 | auto |
 | ONB-05 | An API provider cannot be saved with an empty key | ONB-03 | API key ▸ Anthropic, key empty, Save | Save refused; Continue stays off (original requires the key) | P1 | auto (QA-005) |
 | ONB-06 | A wrong key saved without testing: the first brief explains the failure | Fake provider answering 401 | Save wrong key, Continue, brief | The failed turn mentions the key / 401 | P1 | auto |
 | ONB-07 | The API key is never sent back and its file is private | Key saved | `GET /api/app-config`, `/api/agents`; file mode | Key absent; `app-config.json` is `0600` | P0 | auto |
 | ONB-08 | Keyboard only: onboarding can be finished with Tab/Enter | ONB-01 | Tab to Continue, Enter | Home opens | P2 | auto |
 | ONB-09 | On a phone, "API key required" sits with the key field and Save stays in place | Viewport 390×844, no agent | API key ▸ Anthropic ▸ empty key | Hint tied to the key field; Save next to Test or at the right edge; no sideways scroll | P2 | auto (QA-016) |
-| ONB-09 | Refresh after installing an agent detects it | Start without agent, then install one | Press Refresh | The new agent is listed | P2 | manual: the daemon's PATH is fixed when it starts |
+| ONB-09b | Check again after installing an agent detects it | Start without agent, then install one | Press Check again | The new agent is listed and picked, no restart | P2 | auto (in ONB-03; the login shell rescan in `od-server` tests) |
+| ONB-10 | Phone width, no agent: the install cards fit | PATH without any agent CLI | Open `/onboarding` at 390 px | No sideways scroll; Copy stays inside its card; Copy and Install guide are at least 44 px high | P2 | auto |
+| ONB-11 | Windows, no agent: setup pages only | PATH without any agent CLI, Windows browser | Open `/onboarding` | No install command, no Check again, nothing about Terminal; each card links its setup page; the API key path is offered | P2 | auto |
+| ONB-12 | Installed but not signed in | Mock `claude` fails every prompt until signed in | Open `/onboarding`; sign in; Check again | The failed test shows "Then open a new Terminal window and run claude to sign in."; after Check again the test passes and Continue is on | P1 | auto |
+| ONB-13 | Installed agent fails its test, not a sign-in issue | Mock `claude` rejects every prompt | Open `/onboarding` | Claude stays a card; Codex install card and the API key path are shown; no sign-in hint, no brand step; Continue is off | P1 | auto |
 
 ## 2. Create a project from Home (`home.qa.mjs`)
 
@@ -173,6 +177,7 @@ and media.
 | SET-06 | Permission mode switch is saved | — | Ask first, reload | Still Ask first; API returns `ask` | P1 | auto |
 | SET-07 | Settings still save with a keyless Ollama provider stored | BYOK `http://ollama:11434/v1`, no key, in the config | Theme ▸ Dark ▸ Save; Language ▸ vi ▸ Save | Both saves 200, no error; provider unchanged | P0 | auto (QA-018) |
 | SET-08 | A keyless Ollama on a one-word host saves | — | API ▸ Ollama ▸ base URL `http://gpu-box:11434/v1` ▸ Save | 200, saved | P1 | auto (QA-018) |
+| SET-09 | Check again in Settings ▸ Agent | No agent at start | Install one, press Check again | The agent is listed, install cards gone | P2 | auto |
 
 ## 9. Automations (`automations.qa.mjs`)
 
@@ -230,8 +235,9 @@ the guard, so that is what is checked.
 - **Real agents and real BYOK providers**: the suite uses the mock CLI and
   a fake provider on loopback (no outbound network by design).
 - **MP4 export**: needs ffmpeg and a HyperFrames composition; out of scope.
-- **ONB-09** (agent installed while running): the daemon's `PATH` is fixed
-  when it starts.
+- **ONB-09b in the desktop app**: Check again asks the login shell for its
+  `PATH` again only in the app (a CLI daemon has none); the suite covers it
+  with a fake shell in `od-server` tests, the real shell needs a manual pass.
 - **No Chrome at all**: Chrome is installed on this machine at its standard
   path, so EXP-03 points `OD_CHROME_PATH` at nothing instead; the message
   for a machine without any Chrome ("this export needs Chrome, Edge or
