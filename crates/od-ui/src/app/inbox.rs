@@ -38,7 +38,23 @@ struct Message {
     status: RunStatus,
     project_id: Option<String>,
     project: String,
+    /// What was asked, when the run belongs to a conversation.
+    prompt: Option<String>,
     at: i64,
+}
+
+/// Longest title, in characters, before it is cut.
+const TITLE_CHARS: usize = 60;
+
+/// A message's title: the first line of what was asked, cut to
+/// [`TITLE_CHARS`]; `None` when nothing was asked (an automation run).
+fn title_of(prompt: Option<&str>) -> Option<String> {
+    let line = prompt?.lines().map(str::trim).find(|l| !l.is_empty())?;
+    if line.chars().count() <= TITLE_CHARS {
+        return Some(line.to_owned());
+    }
+    let cut: String = line.chars().take(TITLE_CHARS - 1).collect();
+    Some(format!("{}…", cut.trim_end()))
 }
 
 #[component]
@@ -66,6 +82,7 @@ pub fn Inbox() -> impl IntoView {
                     .and_then(|p| names.get(p).cloned())
                     .unwrap_or_else(|| t(T::DeletedProject).to_owned()),
                 at: r.ended_at.unwrap_or(r.created_at),
+                prompt: r.prompt,
                 project_id: r.project_id.filter(|p| names.contains_key(p)),
                 status: r.status,
                 id: r.id,
@@ -138,11 +155,13 @@ pub fn Inbox() -> impl IntoView {
                 view! {
                     <ul class="inbox-list">
                         {list.into_iter().map(|m| {
-                            let (glyph, title, class) = match m.status {
+                            let (glyph, state, class) = match m.status {
                                 RunStatus::Succeeded => (Glyph::CheckCircle, t(T::NotifyDone), "ok-text"),
                                 RunStatus::Failed => (Glyph::Failed, t(T::NotifyFailed), "error-text"),
                                 _ => (Glyph::Stop, t(T::RunStateCanceled), "muted"),
                             };
+                            // Named by what was asked; the state is a badge.
+                            let title = title_of(m.prompt.as_deref());
                             let id = m.id.clone();
                             let id_open = m.id.clone();
                             let id_archive = m.id.clone();
@@ -152,7 +171,13 @@ pub fn Inbox() -> impl IntoView {
                                 <li class="card inbox-item" class:unread=move || !is_read() data-testid="inbox-item">
                                     <span class=class>{icon(glyph)}</span>
                                     <span class="grow">
-                                        <strong>{title}</strong>
+                                        {match title {
+                                            Some(title) => view! {
+                                                <strong class="inbox-title" data-testid="inbox-title">{title}</strong>
+                                                " "<span class=format!("badge outline {class}") data-testid="inbox-state">{state}</span>
+                                            }.into_any(),
+                                            None => view! { <strong data-testid="inbox-title">{state}</strong> }.into_any(),
+                                        }}
                                         <span class="muted block small">{tf(T::InboxRunIn, &[&m.project])}" · "<span title=local_time(m.at)>{ago(m.at)}</span></span>
                                     </span>
                                     {href.map(|h| {
@@ -172,5 +197,24 @@ pub fn Inbox() -> impl IntoView {
                 }.into_any()
             }}
         </section>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_message_is_titled_by_the_first_line_asked() {
+        assert_eq!(
+            title_of(Some("\n  A tea shop landing page\nwith a menu")).as_deref(),
+            Some("A tea shop landing page")
+        );
+        let long = "word ".repeat(30);
+        let title = title_of(Some(&long)).unwrap();
+        assert_eq!(title.chars().count(), TITLE_CHARS);
+        assert!(title.ends_with('…'));
+        assert_eq!(title_of(Some("   ")), None);
+        assert_eq!(title_of(None), None);
     }
 }
