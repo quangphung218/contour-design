@@ -87,7 +87,9 @@ try {
   assert.equal(generateBodies[0].agentId, 'claude');
   results.generate = 'ok';
 
-  // 2. The picker lists it next to the bundled ones and selects it.
+  // 2. The picker lists it next to the bundled ones and selects it (the
+  // list reloads after the status line shows).
+  for (let i = 0; i < 100 && (await options.count()) - 1 <= bundled; i++) await sleep(50);
   assert.equal((await options.count()) - 1, bundled + 1);
   assert.equal(await page.getByTestId('design-system').inputValue(), 'user:tea-house');
   const label = await page.locator('[data-testid="design-system"] option[value="user:tea-house"]').textContent();

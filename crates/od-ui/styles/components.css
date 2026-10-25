@@ -213,6 +213,12 @@ textarea.input { height: auto; padding: var(--space-2) var(--space-2-5); resize:
 input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent); width: 15px; height: 15px; margin: 0; cursor: pointer; }
 input[type="range"] { accent-color: var(--color-accent); }
 input[type="color"].swatch { cursor: pointer; }
+/* A transparent color: a checkerboard instead of the input's (black) swatch. */
+input[type="color"].swatch.transparent {
+  background: repeating-conic-gradient(var(--color-fill-strong) 0 25%, var(--color-surface) 0 50%) 50% / 10px 10px;
+}
+input[type="color"].swatch.transparent::-webkit-color-swatch { opacity: 0; }
+input[type="color"].swatch.transparent::-moz-color-swatch { opacity: 0; }
 
 .field { display: flex; flex-direction: column; gap: var(--space-1-5); margin-top: var(--space-4); }
 .field > span:first-child { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text); }
@@ -336,6 +342,7 @@ input[type="color"].swatch { cursor: pointer; }
 /* ---------- tabs ---------- */
 .tabs { display: flex; align-items: flex-end; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
+.tab-list { display: flex; align-items: inherit; gap: inherit; flex: none; }
 .tab {
   position: relative;
   display: flex; align-items: center; gap: 2px; flex: none;
@@ -485,6 +492,8 @@ input[type="color"].swatch { cursor: pointer; }
 [data-tip-pos="left"]::after { left: auto; right: 0; transform: translate(0, -2px); }
 [data-tip-pos="left"]:hover::after, [data-tip-pos="left"]:focus-visible::after { transform: translate(0, 0); }
 [data-tip-pos="top"]::after { top: auto; bottom: calc(100% + 6px); }
+/* No tooltip over the menu or popover its control has opened. */
+[data-tip][aria-expanded="true"]::after { content: none; }
 
 /* ---------- empty state & skeleton ---------- */
 .empty { color: var(--color-text-tertiary); padding: var(--space-3) 0; margin: 0; font-size: var(--text-sm); }

@@ -12,11 +12,11 @@ cargo build -p od-cli --bin od --manifest-path "$root/Cargo.toml"
 target_dir="$(cargo metadata --format-version 1 --no-deps --manifest-path "$root/Cargo.toml" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).target_directory))')"
 
 cd "$here"
-[ -d node_modules/playwright ] || npm ci --no-audit --no-fund
+[ -d node_modules/playwright ] && [ -d node_modules/axe-core ] || npm ci --no-audit --no-fund
 export OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$here/mock-agent" \
   OD_RESOURCE_ROOT="$root/content"
 # A fixed port collides when two worktrees run the e2e at once; pick a free
-# one (the other scenarios use the next nine ports, one each) unless one is given.
+# one (the other scenarios use the next ten ports, one each) unless one is given.
 if [ -z "${OD_E2E_PORT:-}" ]; then
   OD_E2E_PORT="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
   export OD_E2E_PORT
@@ -32,3 +32,5 @@ node preview.e2e.mjs
 node c2.e2e.mjs
 node c3-runtimes.e2e.mjs
 node c4-depth.e2e.mjs
+# axe-core and narrow windows: port OD_E2E_PORT + 10.
+node a11y.e2e.mjs

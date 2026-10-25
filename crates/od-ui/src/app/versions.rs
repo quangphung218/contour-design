@@ -88,8 +88,10 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
         });
     };
 
+    let panel = NodeRef::<leptos::html::Aside>::new();
+    super::focus::focus_while_open(panel, |_| None);
     view! {
-        <aside class="versions" data-testid="versions">
+        <aside class="versions" data-testid="versions" tabindex="-1" node_ref=panel>
             <div class="pane-head">
                 <span class="pane-ico">{icon(Glyph::History)}</span>
                 <span class="pane-title" title=move || tf(T::VersionsTitle, &[&ctx.active().unwrap_or_default()])>

@@ -182,6 +182,8 @@ test('STU-15', 'On a phone-width window, Tablet can still be zoomed in to read, 
   const id = await createProject(d, 'Narrow zoom', { 'index.html': PAGE });
   const { page } = await newPage({ viewport: { width: 390, height: 844 } });
   await page.goto(`${d.base}/projects/${id}`);
+  // Phone width shows one pane at a time and opens on the chat.
+  await page.getByTestId('pane-preview').click();
   await frame(page).locator('#title').waitFor();
   await device(page, 'Tablet');
   const fit = await settledDrawn(page, 'Tablet shrunk to fit');

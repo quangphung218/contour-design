@@ -1275,7 +1275,11 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
                 {icon(Glyph::ChevronDown)}
             </button>
             <Show when=move || open.get()>
-                <div class=if up { "popover left up model-pop" } else { "popover left model-pop" } data-testid="model-popover">
+                {
+                let pop = NodeRef::<leptos::html::Div>::new();
+                super::focus::focus_while_open(pop, |p| p.query_selector(super::focus::FIRST_ITEM).ok().flatten());
+                view! {
+                <div class=if up { "popover left up model-pop" } else { "popover left model-pop" } data-testid="model-popover" node_ref=pop>
                     {move || {
                         let agents: Vec<(String, String)> = shell.agents.with(|a| match a {
                             Some(Ok(list)) => list.iter().filter(|x| x.available).map(|x| (x.id.clone(), x.name.clone())).collect(),
@@ -1354,6 +1358,8 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
                         }.into_any()
                     }}
                 </div>
+                }
+                }
             </Show>
         </div>
     }
