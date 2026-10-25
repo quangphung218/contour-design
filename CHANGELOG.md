@@ -17,6 +17,7 @@ All notable changes to Contour are recorded here. The format follows
 - Esc closes the drop-down menus: Export, Screenshot, Present, the project menu and
   the files panel menus (QA-004).
 - Leaving a Markdown file right after typing no longer panics (QA-009).
+- Cancel in the delete-conversation dialog no longer throws a JS error (QA-010).
 
 ## [0.1.0] - 2026-10-24
 

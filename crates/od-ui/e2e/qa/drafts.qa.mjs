@@ -205,6 +205,6 @@ test('DL-10', 'Deleting a conversation asks first, and Cancel keeps its messages
   const convs = await (await fetch(`${d.base}/api/projects/${id}/conversations`)).json();
   assert.equal(convs.conversations.length, 1);
   // The harness then fails the test on the JS error Cancel throws (QA-010).
-}, { knownBug: 'QA-010' });
+});
 
 await run('drafts');
