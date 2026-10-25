@@ -122,27 +122,38 @@ fn next_zoom(chosen: u32, cap: Option<u32>, up: bool) -> Option<u32> {
 }
 
 /// One zoom step as [`next_zoom`], with `past_fit`: the frame is drawn
-/// above its fit, the stage scrolling. Only a frame that fits below the
-/// smallest step goes there: + steps past the fit, and − from the
-/// smallest step comes back to it (QA-024). Returns the new zoom and
-/// `past_fit`.
-fn zoom_move(chosen: u32, cap: Option<u32>, past_fit: bool, up: bool) -> Option<(u32, bool)> {
-    let cap = cap.filter(|_| !past_fit);
+/// above its fit, the stage scrolling, and this is the zoom chosen before
+/// it went there. Only a frame that fits below the smallest step goes
+/// there: + steps past the fit, and − from the smallest step comes back to
+/// it and to that zoom (QA-024). Returns the new zoom and `past_fit`.
+fn zoom_move(
+    chosen: u32,
+    cap: Option<u32>,
+    past_fit: Option<u32>,
+    up: bool,
+) -> Option<(u32, Option<u32>)> {
+    let cap = cap.filter(|_| past_fit.is_none());
     if let Some(z) = next_zoom(chosen, cap, up) {
         return Some((z, past_fit));
     }
     let below_steps = cap.is_some_and(|c| c < ZOOM_STEPS[0]);
-    match up {
-        true if below_steps => Some((ZOOM_STEPS[0], true)),
-        false if past_fit => Some((chosen, false)),
+    match (up, past_fit) {
+        (true, None) if below_steps => Some((ZOOM_STEPS[0], Some(chosen))),
+        (false, Some(before)) => Some((before, None)),
         _ => None,
     }
 }
 
+/// The zoom to go back to once the frame fits `cap` at the smallest step
+/// or more (a wider pane, another device): the one chosen before `past_fit`.
+fn leave_past_fit(cap: Option<u32>, past_fit: Option<u32>) -> Option<u32> {
+    past_fit.filter(|_| cap.is_none_or(|c| c >= ZOOM_STEPS[0]))
+}
+
 /// The zoom-in button is off because the frame already fills the pane
 /// (not at the largest step).
-fn fit_stops_zoom_in(chosen: u32, cap: Option<u32>, past_fit: bool) -> bool {
-    let cap = cap.filter(|_| !past_fit);
+fn fit_stops_zoom_in(chosen: u32, cap: Option<u32>, past_fit: Option<u32>) -> bool {
+    let cap = cap.filter(|_| past_fit.is_none());
     let shown = capped(chosen, cap);
     cap.is_some()
         && zoom_move(chosen, cap, past_fit, true).is_none()
@@ -242,8 +253,9 @@ pub struct StudioCtx {
     /// The largest zoom the device frame fits the preview at (`None` for
     /// Desktop, which follows the pane).
     zoom_cap: RwSignal<Option<u32>>,
-    /// Zoomed in past the fit ([`zoom_move`]): the cap does not apply.
-    past_fit: RwSignal<bool>,
+    /// Zoomed in past the fit ([`zoom_move`]), from this zoom: the cap
+    /// does not apply.
+    past_fit: RwSignal<Option<u32>>,
     /// Composer context, uploads and the chat pane's size (track B3-chat).
     pub chat: super::composer::ChatState,
     /// Last slide shown per deck file, restored when the deck reloads.
@@ -380,7 +392,7 @@ impl StudioCtx {
 
     pub fn reset_zoom(self) {
         self.zoom.set(100);
-        self.past_fit.set(false);
+        self.past_fit.set(None);
     }
 
     pub fn reload_preview(self) {
@@ -1191,7 +1203,7 @@ pub fn Studio() -> impl IntoView {
         show_code: RwSignal::new(false),
         zoom: RwSignal::new(100),
         zoom_cap: RwSignal::new(None),
-        past_fit: RwSignal::new(false),
+        past_fit: RwSignal::new(None),
         chat: super::composer::ChatState::new(),
         tools: Tools::new(),
         last_slide: StoredValue::new(None),
@@ -1348,15 +1360,17 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     let stage_width = observe_width(stage);
     // A device wider than the stage is scaled down to fit, as the original.
     let zoom = Memo::new(move |_| match ctx.past_fit.get() {
-        true => ctx.zoom.get(),
-        false => fit_zoom(device.get(), ctx.zoom.get(), stage_width.get()),
+        Some(_) => ctx.zoom.get(),
+        None => fit_zoom(device.get(), ctx.zoom.get(), stage_width.get()),
     });
     Effect::new(move |_| {
         let cap = fit_cap(device.get(), stage_width.get());
         ctx.zoom_cap.set(cap);
-        // Past the fit only while the frame fits below the smallest step.
-        if cap.is_none_or(|c| c >= ZOOM_STEPS[0]) {
-            ctx.past_fit.set(false);
+        // Past the fit only while the frame fits below the smallest step;
+        // then back to the zoom chosen before.
+        if let Some(before) = leave_past_fit(cap, ctx.past_fit.get_untracked()) {
+            ctx.zoom.set(before);
+            ctx.past_fit.set(None);
         }
     });
     let src = Memo::new(move |_| {
@@ -1866,16 +1880,28 @@ mod tests {
     #[test]
     fn a_frame_fit_below_the_steps_zooms_past_the_fit_and_back() {
         // Tablet on a phone: fit at 35 %. + goes past it to 50 %, then on.
-        assert_eq!(zoom_move(100, Some(35), false, true), Some((50, true)));
-        assert_eq!(zoom_move(50, Some(35), true, true), Some((67, true)));
-        assert_eq!(zoom_move(67, Some(35), true, false), Some((50, true)));
-        // − from the smallest step comes back to the fit; − at the fit is off.
-        assert_eq!(zoom_move(50, Some(35), true, false), Some((50, false)));
-        assert_eq!(zoom_move(100, Some(35), false, false), None);
+        // It keeps the zoom chosen before (100 %).
+        assert_eq!(zoom_move(100, Some(35), None, true), Some((50, Some(100))));
+        assert_eq!(
+            zoom_move(50, Some(35), Some(100), true),
+            Some((67, Some(100)))
+        );
+        assert_eq!(
+            zoom_move(67, Some(35), Some(100), false),
+            Some((50, Some(100)))
+        );
+        // − from the smallest step comes back to the fit and that zoom.
+        assert_eq!(zoom_move(50, Some(35), Some(100), false), Some((100, None)));
+        assert_eq!(zoom_move(100, Some(35), None, false), None);
+        // A wider pane (or Desktop) goes back to it too; a narrow one stays.
+        assert_eq!(leave_past_fit(Some(79), Some(100)), Some(100));
+        assert_eq!(leave_past_fit(None, Some(75)), Some(75));
+        assert_eq!(leave_past_fit(Some(40), Some(100)), None);
+        assert_eq!(leave_past_fit(Some(79), None), None);
         // A fit within the steps still stops + (the tooltip says why).
-        assert_eq!(zoom_move(100, Some(79), false, true), None);
-        assert!(fit_stops_zoom_in(100, Some(79), false));
-        assert!(!fit_stops_zoom_in(200, None, false));
-        assert!(!fit_stops_zoom_in(100, Some(35), false));
+        assert_eq!(zoom_move(100, Some(79), None, true), None);
+        assert!(fit_stops_zoom_in(100, Some(79), None));
+        assert!(!fit_stops_zoom_in(200, None, None));
+        assert!(!fit_stops_zoom_in(100, Some(35), None));
     }
 }
