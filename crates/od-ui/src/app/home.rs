@@ -403,6 +403,10 @@ pub fn Home() -> impl IntoView {
                                 }
                             >
                                 <option value="">{t(T::NoneOption)}</option>
+                                // While the list loads, the kept pick still shows.
+                                {move || systems.get().is_none().then(|| design_system.get().map(|id| view! {
+                                    <option value=id.clone() selected=true>{id.clone()}</option>
+                                }))}
                                 {move || {
                                     systems
                                         .get()
