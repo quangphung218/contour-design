@@ -5,6 +5,7 @@
 use super::api;
 use super::files_panel::{FilesUi, anchor_style};
 use super::icons::{Glyph, icon};
+use super::menu_scrim::MenuScrim;
 use super::studio::StudioCtx;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -96,7 +97,13 @@ fn start(ctx: StudioCtx, ui: FilesUi) {
     });
 }
 
+/// Asks first when an edit is not applied: the copy opens with a full load
+/// (QA-020).
 fn duplicate(ctx: StudioCtx) {
+    super::leave_guard::leave_then(ctx.shell, move |release| duplicate_now(ctx, release));
+}
+
+fn duplicate_now(ctx: StudioCtx, release: super::leave_guard::Release) {
     leptos::task::spawn_local(async move {
         match api::post::<_, DuplicateProjectResponse>(
             &format!("{}/duplicate", ctx.base()),
@@ -105,7 +112,9 @@ fn duplicate(ctx: StudioCtx) {
         .await
         {
             Ok(r) => {
-                // A full load: the Studio starts over on the copy.
+                // A full load: the Studio starts over on the copy. Released
+                // only now: a failed copy stays here, still guarded.
+                release.now();
                 if let Some(w) = web_sys::window() {
                     let _ = w
                         .location()
@@ -132,7 +141,7 @@ pub fn ProjectMenu(ctx: StudioCtx) -> impl IntoView {
                 {icon(Glyph::More)}
             </button>
             <Show when=move || open.get()>
-                <div class="menu-scrim" on:click=move |_| open.set(false)></div>
+                <MenuScrim on_close=move || open.set(false)/>
                 <div class="menu" role="menu" data-testid="project-menu-list" style=move || pos.get()>
                     <button class="menu-item" role="menuitem" data-testid="project-refresh"
                         on:click=move |_| { open.set(false); ui.changed(ctx); }>

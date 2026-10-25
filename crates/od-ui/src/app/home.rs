@@ -27,22 +27,64 @@ use od_contracts::{
 
 /// Templates shown before "Show all".
 const GALLERY: usize = 8;
+/// `localStorage` keys of the brief and design system not sent yet (the
+/// original's keys); a design system stored as "" is "none" picked.
+const PROMPT_KEY: &str = "open-design:home-composer:prompt";
+const DESIGN_SYSTEM_KEY: &str = "open-design:home-composer:design-system";
+
+fn storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok()?
+}
+
+fn stored(key: &str) -> Option<String> {
+    storage()?.get_item(key).ok().flatten()
+}
+
+/// Keeps `value` under `key` while it is set; `None` removes it.
+fn store(key: &str, value: Option<&str>) {
+    if let Some(s) = storage() {
+        let _ = match value {
+            Some(v) => s.set_item(key, v),
+            None => s.remove_item(key),
+        };
+    }
+}
 
 #[component]
 pub fn Home() -> impl IntoView {
     let shell = Shell::get();
     let navigate = use_navigate();
-    let brief = RwSignal::new(String::new());
+    // What was typed and picked here last, until it is sent.
+    let brief = RwSignal::new(stored(PROMPT_KEY).unwrap_or_default());
     let chip = RwSignal::new(Chip::Prototype);
     // The title rotates until a chip is picked by hand.
     let chip_picked = RwSignal::new(false);
     let media = RwSignal::new(MediaOptions::defaults(Chip::Prototype));
-    // `?ds=` from the Design systems page, else the default for new chats.
-    let design_system = RwSignal::new(query_param("ds").or_else(|| {
-        shell
-            .config
-            .with_untracked(|c| c.as_ref().and_then(AppConfig::default_design_system))
-    }));
+    // `?ds=` from the Design systems page, else the one picked last, else
+    // the default for new chats.
+    let design_system = RwSignal::new(
+        query_param("ds")
+            .map(Some)
+            .or_else(|| stored(DESIGN_SYSTEM_KEY).map(|v| Some(v).filter(|v| !v.is_empty())))
+            .unwrap_or_else(|| {
+                shell
+                    .config
+                    .with_untracked(|c| c.as_ref().and_then(AppConfig::default_design_system))
+            }),
+    );
+    let ds_picked = StoredValue::new(stored(DESIGN_SYSTEM_KEY).is_some());
+    Effect::new(move |_| {
+        brief.with(|b| store(PROMPT_KEY, Some(b.as_str()).filter(|b| !b.is_empty())));
+    });
+    // Stored once picked by hand, so the default for new chats still
+    // follows Settings until then.
+    Effect::new(move |first: Option<()>| {
+        let ds = design_system.get();
+        if first.is_some() || ds_picked.get_value() {
+            ds_picked.set_value(true);
+            store(DESIGN_SYSTEM_KEY, Some(ds.as_deref().unwrap_or_default()));
+        }
+    });
     let template = RwSignal::new(None::<String>);
     // `?skill=` from the Plugins page: the project runs that skill.
     let skill_pick = RwSignal::new(query_param("skill"));
@@ -253,6 +295,9 @@ pub fn Home() -> impl IntoView {
                 )
                 .await;
             }
+            // Sent: the next visit starts from a blank brief.
+            store(PROMPT_KEY, None);
+            store(DESIGN_SYSTEM_KEY, None);
             navigate(&format!("/projects/{}", res.project.id), Default::default());
         });
     };
@@ -352,12 +397,18 @@ pub fn Home() -> impl IntoView {
                             <select
                                 data-testid="design-system"
                                 aria-label=t(T::DesignSystem)
+                                disabled=move || systems.with(Option::is_none)
                                 on:change=move |ev| {
                                     let v = event_target_value(&ev);
                                     design_system.set(Some(v).filter(|v| !v.is_empty()));
                                 }
                             >
                                 <option value="">{t(T::NoneOption)}</option>
+                                // While the list loads, the kept pick stays chosen,
+                                // shown as loading (its name is not known yet).
+                                {move || systems.get().is_none().then(|| design_system.get().map(|id| view! {
+                                    <option value=id selected=true>{t(T::Loading)}</option>
+                                }))}
                                 {move || {
                                     systems
                                         .get()

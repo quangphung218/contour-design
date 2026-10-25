@@ -6,7 +6,8 @@
 //!   the BYOK API key. Responses never carry the key: `byok.apiKey` is
 //!   replaced by `hasApiKey` and `apiKeyHint` (last four characters), and a
 //!   `byok` patch without `apiKey` keeps the stored one while the protocol
-//!   and base URL stay the same.
+//!   and base URL stay the same. A provider on a public host saved with
+//!   no key (sent or kept) is refused with 400.
 //! - `POST /api/import/folder`: a project pointing at an existing folder.
 //! - Everything else that is not `/api/*`: the static `od-ui` bundle, with
 //!   `index.html` as the SPA fallback.
@@ -184,6 +185,28 @@ fn same_route(a: &Value, b: &Value) -> bool {
     protocol(a) == protocol(b) && crate::routes::manage::settings::same_base(base(a), base(b))
 }
 
+/// The provider a `byok` object without a key would call when that is a
+/// cloud preset that needs one. Like the original, the daemon follows the
+/// UI's presets and does not guess from the host: a custom or self-hosted
+/// base URL (Ollama on `http://gpu-box:11434`) saves without a key.
+fn key_missing(byok: &Value) -> Option<&'static str> {
+    let has_key = byok
+        .get(API_KEY)
+        .and_then(Value::as_str)
+        .is_some_and(|k| !k.trim().is_empty());
+    if has_key {
+        return None;
+    }
+    let protocol = match byok.get("protocol").and_then(Value::as_str) {
+        Some("openai-compatible") | None => "openai",
+        Some(p) => p,
+    };
+    let base = byok.get("baseUrl").and_then(Value::as_str);
+    od_contracts::byok_presets::preset_for(protocol, base)
+        .filter(|p| p.needs_key)
+        .map(|p| p.label)
+}
+
 const BYOK_KEY: &str = od_runtime::byok::APP_CONFIG_KEY;
 const API_KEY: &str = "apiKey";
 
@@ -270,7 +293,32 @@ async fn put_config(
             let _guard = CONFIG_LOCK.lock().unwrap_or_else(|p| p.into_inner());
             let path = config_path(s);
             let mut config = read_config(&path)?;
+            // Only a patch that moves BYOK to another route is checked: the
+            // UI sends the whole config on every save, theme included, and
+            // a provider stored before this rule must not block those
+            // (QA-018). And only while BYOK is the agent picked: a stale
+            // provider sent along with a local agent is never called, but
+            // picking BYOK later is checked too.
+            let is_byok = |c: &Map<String, Value>| {
+                c.get("agentId").and_then(Value::as_str) == Some(od_runtime::def::BYOK.id)
+            };
+            let becomes_picked = !is_byok(&config);
+            let moves_byok = patch
+                .get(BYOK_KEY)
+                .filter(|b| b.is_object())
+                .is_some_and(|b| !config.get(BYOK_KEY).is_some_and(|s| same_route(s, b)));
             merge_patch(&mut config, patch);
+            // After the merge: a patch without `apiKey` may keep the stored one.
+            let picked = is_byok(&config);
+            if let Some(provider) = config
+                .get(BYOK_KEY)
+                .filter(|_| (moves_byok || becomes_picked) && picked)
+                .and_then(key_missing)
+            {
+                return Err(StoreError::BadRequest(format!(
+                    "byok.apiKey required: {provider} needs an API key"
+                )));
+            }
             let bytes = serde_json::to_vec_pretty(&config)?;
             write_atomic(&path, &bytes)?;
             Ok(config)
@@ -474,6 +522,44 @@ mod tests {
         assert!(validate_patch(&obj(json!({"agentPermissionMode": "yolo"}))).is_err());
         assert!(validate_patch(&obj(json!({"theme": 3}))).is_err());
         assert!(validate_patch(&obj(json!({"model": "anything"}))).is_ok());
+    }
+
+    #[test]
+    fn byok_on_a_cloud_preset_needs_a_key() {
+        let missing = |v: Value| key_missing(&v);
+        assert_eq!(
+            missing(json!({"protocol": "anthropic", "baseUrl": "https://api.anthropic.com"})),
+            Some("Anthropic")
+        );
+        assert_eq!(
+            missing(json!({"protocol": "openai", "apiKey": "  "})),
+            Some("OpenAI")
+        );
+        assert_eq!(
+            missing(
+                json!({"protocol": "openai-compatible", "baseUrl": "https://api.deepseek.com/"})
+            ),
+            Some("DeepSeek")
+        );
+        assert_eq!(
+            missing(json!({"protocol": "anthropic", "apiKey": "sk-ant-1"})),
+            None
+        );
+        // Self-hosted presets and custom hosts are not guessed at (QA-018).
+        for base in [
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:8000/v1",
+            "http://ollama:11434/v1",
+            "http://gpu-box:11434/v1",
+            "http://100.64.0.7:8000/v1",
+            "https://my.proxy/v1",
+        ] {
+            assert_eq!(
+                missing(json!({"protocol": "openai", "baseUrl": base})),
+                None,
+                "{base}"
+            );
+        }
     }
 
     #[test]

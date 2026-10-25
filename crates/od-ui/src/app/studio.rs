@@ -79,6 +79,15 @@ impl Device {
             Self::Phone => "390px",
         }
     }
+
+    /// The width the page lays out at, px; `None` for the pane's width.
+    fn px(self) -> Option<u32> {
+        match self {
+            Self::Desktop => None,
+            Self::Tablet => Some(820),
+            Self::Phone => Some(390),
+        }
+    }
 }
 
 /// Zoom levels of the preview, percent.
@@ -99,8 +108,56 @@ pub fn zoom_step(current: u32, up: bool) -> u32 {
     ZOOM_STEPS[i]
 }
 
-fn at_max_zoom(zoom: u32) -> bool {
-    zoom_step(zoom, true) == zoom
+/// `zoom` lowered to `cap`, the largest zoom a device frame fits at.
+fn capped(zoom: u32, cap: Option<u32>) -> u32 {
+    cap.map_or(zoom, |c| zoom.min(c))
+}
+
+/// The zoom one step up or down from the one shown (`chosen` under `cap`);
+/// `None` when that step would not change the size the page is drawn at.
+fn next_zoom(chosen: u32, cap: Option<u32>, up: bool) -> Option<u32> {
+    let shown = capped(chosen, cap);
+    let next = zoom_step(shown, up);
+    (capped(next, cap) != shown).then_some(next)
+}
+
+/// One zoom step as [`next_zoom`], with `past_fit`: the frame is drawn
+/// above its fit, the stage scrolling, and this is the zoom chosen before
+/// it went there. Only a frame that fits below the smallest step goes
+/// there: + steps past the fit, and − from the smallest step comes back to
+/// it and to that zoom (QA-024). Returns the new zoom and `past_fit`.
+fn zoom_move(
+    chosen: u32,
+    cap: Option<u32>,
+    past_fit: Option<u32>,
+    up: bool,
+) -> Option<(u32, Option<u32>)> {
+    let cap = cap.filter(|_| past_fit.is_none());
+    if let Some(z) = next_zoom(chosen, cap, up) {
+        return Some((z, past_fit));
+    }
+    let below_steps = cap.is_some_and(|c| c < ZOOM_STEPS[0]);
+    match (up, past_fit) {
+        (true, None) if below_steps => Some((ZOOM_STEPS[0], Some(chosen))),
+        (false, Some(before)) => Some((before, None)),
+        _ => None,
+    }
+}
+
+/// The zoom to go back to once the frame fits `cap` at the smallest step
+/// or more (a wider pane, another device): the one chosen before `past_fit`.
+fn leave_past_fit(cap: Option<u32>, past_fit: Option<u32>) -> Option<u32> {
+    past_fit.filter(|_| cap.is_none_or(|c| c >= ZOOM_STEPS[0]))
+}
+
+/// The zoom-in button is off because the frame already fills the pane
+/// (not at the largest step).
+fn fit_stops_zoom_in(chosen: u32, cap: Option<u32>, past_fit: Option<u32>) -> bool {
+    let cap = cap.filter(|_| past_fit.is_none());
+    let shown = capped(chosen, cap);
+    cap.is_some()
+        && zoom_move(chosen, cap, past_fit, true).is_none()
+        && zoom_step(shown, true) > shown
 }
 
 /// Slide states a deck restore waits through before it gives up (the
@@ -193,6 +250,12 @@ pub struct StudioCtx {
     pub show_code: RwSignal<bool>,
     /// Preview zoom, percent (one of [`ZOOM_STEPS`]).
     pub zoom: RwSignal<u32>,
+    /// The largest zoom the device frame fits the preview at (`None` for
+    /// Desktop, which follows the pane).
+    zoom_cap: RwSignal<Option<u32>>,
+    /// Zoomed in past the fit ([`zoom_move`]), from this zoom: the cap
+    /// does not apply.
+    past_fit: RwSignal<Option<u32>>,
     /// Composer context, uploads and the chat pane's size (track B3-chat).
     pub chat: super::composer::ChatState,
     /// Last slide shown per deck file, restored when the deck reloads.
@@ -308,8 +371,28 @@ impl StudioCtx {
         super::store_flag(FILES_OPEN_KEY, next);
     }
 
+    /// One zoom step from the size shown, when it changes that size.
     pub fn zoom_by(self, up: bool) {
-        self.zoom.update(|z| *z = zoom_step(*z, up));
+        let (zoom, cap) = (self.zoom.get_untracked(), self.zoom_cap.get_untracked());
+        if let Some((z, past)) = zoom_move(zoom, cap, self.past_fit.get_untracked(), up) {
+            self.zoom.set(z);
+            self.past_fit.set(past);
+        }
+    }
+
+    fn can_zoom(self, up: bool) -> bool {
+        zoom_move(
+            self.zoom.get(),
+            self.zoom_cap.get(),
+            self.past_fit.get(),
+            up,
+        )
+        .is_some()
+    }
+
+    pub fn reset_zoom(self) {
+        self.zoom.set(100);
+        self.past_fit.set(None);
     }
 
     pub fn reload_preview(self) {
@@ -347,6 +430,9 @@ impl StudioCtx {
         if text.is_empty() {
             return;
         }
+        // The stored draft of this conversation goes once the message is out:
+        // a queued one is not (the queue lives only in memory, so a reload
+        // brings it back to the composer).
         if self.live_run.get_untracked().is_some() {
             self.queue.update(|q| {
                 q.push(Queued {
@@ -356,6 +442,7 @@ impl StudioCtx {
             });
             return;
         }
+        let draft_key = self.draft_key();
         let user_id = api::random_id();
         let assistant_id = api::random_id();
         let turn = RwSignal::new(AssistantTurn::new());
@@ -422,6 +509,9 @@ impl StudioCtx {
         leptos::task::spawn_local(async move {
             match api::post::<_, CreateRunResponse>("/api/runs", &req).await {
                 Ok(res) => {
+                    if let Some(k) = &draft_key {
+                        super::composer::clear_draft_if(k, &text);
+                    }
                     self.tools.attachments.update(|a| {
                         a.retain(|p| !req_attachments.contains(p));
                     });
@@ -451,6 +541,25 @@ impl StudioCtx {
         });
     }
 
+    /// `localStorage` key of the open conversation's composer draft.
+    fn draft_key(self) -> Option<String> {
+        self.conversation_id
+            .get_untracked()
+            .map(|c| super::composer::draft_key(&self.project_id.get_value(), &c))
+    }
+
+    /// Takes a queued message off the queue once it is steered or deleted:
+    /// its stored draft goes too, as after a send (QA-019).
+    pub fn drop_queued(self, id: &str) {
+        let text = self.queue.try_update(|q| {
+            let i = q.iter().position(|x| x.id == id)?;
+            Some(q.remove(i).text)
+        });
+        if let (Some(Some(text)), Some(key)) = (text, self.draft_key()) {
+            super::composer::clear_draft_if(&key, &text);
+        }
+    }
+
     /// Sends the first queued message, if any.
     fn send_next(self, shell: Shell) {
         let next = self
@@ -476,7 +585,7 @@ impl StudioCtx {
             let path = format!("/api/runs/{}/steer", api::seg(&run_id));
             match api::post::<_, serde_json::Value>(&path, &json!({ "message": item.text })).await {
                 Ok(_) => {
-                    self.queue.update(|q| q.retain(|q| q.id != id));
+                    self.drop_queued(&id);
                     let turn = self.items.with_untracked(|items| {
                         items.iter().rev().find_map(|i| match &i.kind {
                             super::chat_view::ItemKind::Assistant(turn) => Some(*turn),
@@ -654,6 +763,9 @@ impl StudioCtx {
         let Ok(res) = api::get::<MessagesResponse>(&format!("{base}/messages")).await else {
             return;
         };
+        if self.conversation_id.get_untracked().as_deref() != Some(cid.as_str()) {
+            return; // Another conversation was opened meanwhile.
+        }
         let mut resume = None;
         let items = res
             .messages
@@ -664,14 +776,19 @@ impl StudioCtx {
                 MessageRole::Assistant => {
                     let turn = RwSignal::new(AssistantTurn::from_stored(m));
                     if turn.with_untracked(|t| t.state.is_live()) {
-                        resume = m.run_id.clone().map(|r| (r, turn));
+                        resume = m.run_id.clone().map(|r| (r, turn, m.id.clone()));
                     }
                     ChatItem::assistant(m.id.clone(), turn)
                 }
             })
             .collect();
-        self.items.set(items);
-        if let Some((run_id, turn)) = resume {
+        // A message sent while this loaded is in `items` already, its turn
+        // attached to the run: merge, do not replace (QA-002).
+        let local = self.items.get_untracked();
+        let resume = resume.filter(|(_, _, id)| !local.iter().any(|l| &l.id == id));
+        self.items
+            .set(crate::chat::merge_loaded(items, local, |i| i.id.as_str()));
+        if let Some((run_id, turn, _)) = resume {
             // Replay from the start: the turn is rebuilt from frames.
             turn.update(|t| *t = AssistantTurn::new());
             self.attach(run_id, turn, None);
@@ -1085,6 +1202,8 @@ pub fn Studio() -> impl IntoView {
         files_open: RwSignal::new(super::stored_flag(FILES_OPEN_KEY).unwrap_or_else(wide_window)),
         show_code: RwSignal::new(false),
         zoom: RwSignal::new(100),
+        zoom_cap: RwSignal::new(None),
+        past_fit: RwSignal::new(None),
         chat: super::composer::ChatState::new(),
         tools: Tools::new(),
         last_slide: StoredValue::new(None),
@@ -1098,6 +1217,7 @@ pub fn Studio() -> impl IntoView {
     provide_context(files_ui);
     preview_tools::watch_lint(ctx);
     super::deck::sync_deck(ctx);
+    super::composer::keep_draft(ctx.draft, ctx.chat, ctx.project_id, ctx.conversation_id);
     // The command palette offers this Studio's commands while it is open.
     shell.studio.set(Some(ctx));
 
@@ -1236,6 +1356,23 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
 #[component]
 fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     let device = RwSignal::new(Device::Desktop);
+    let stage = NodeRef::<leptos::html::Div>::new();
+    let stage_width = observe_width(stage);
+    // A device wider than the stage is scaled down to fit, as the original.
+    let zoom = Memo::new(move |_| match ctx.past_fit.get() {
+        Some(_) => ctx.zoom.get(),
+        None => fit_zoom(device.get(), ctx.zoom.get(), stage_width.get()),
+    });
+    Effect::new(move |_| {
+        let cap = fit_cap(device.get(), stage_width.get());
+        ctx.zoom_cap.set(cap);
+        // Past the fit only while the frame fits below the smallest step;
+        // then back to the zoom chosen before.
+        if let Some(before) = leave_past_fit(cap, ctx.past_fit.get_untracked()) {
+            ctx.zoom.set(before);
+            ctx.past_fit.set(None);
+        }
+    });
     let src = Memo::new(move |_| {
         let path = ctx.active()?;
         let rev = ctx.preview_rev.get();
@@ -1315,14 +1452,14 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             view! { <CodeView ctx=ctx version=None/> }.into_any()
         }
         (Some(_), Some(v)) => view! {
-            <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
+            <div class="frame-zoom" style=move || zoom_box(device.get(), zoom.get())>
             <iframe
                 class="preview-frame"
                 data-testid="version-preview"
                 title=tf(T::ViewingVersion, &[&v.version.to_string()])
                 sandbox="allow-scripts"
                 srcdoc=v.content
-                style=move || zoomed(device.get(), ctx.zoom.get())
+                style=move || zoomed(device.get(), zoom.get())
             ></iframe>
             </div>
         }
@@ -1339,8 +1476,8 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 url
             };
             view! {
-                <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
-                <div class="frame-wrap" style=move || zoomed(device.get(), ctx.zoom.get())>
+                <div class="frame-zoom" style=move || zoom_box(device.get(), zoom.get())>
+                <div class="frame-wrap" style=move || zoomed(device.get(), zoom.get())>
                     // No allow-same-origin: artifact scripts run in an
                     // opaque origin and cannot call the daemon API.
                     <iframe
@@ -1441,13 +1578,17 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 </Show>
                 <div class="zoom" role="group" aria-label=t(T::Zoom)>
                     <button class="icon-btn small" aria-label=t(T::ZoomOut) data-tip=t(T::ZoomOut) data-testid="zoom-out"
-                        disabled=move || ctx.show_code.get() || zoom_step(ctx.zoom.get(), false) == ctx.zoom.get()
+                        disabled=move || ctx.show_code.get() || !ctx.can_zoom(false)
                         on:click=move |_| ctx.zoom_by(false)>{icon(Glyph::ZoomOut)}</button>
                     <button class="zoom-value" data-tip=t(T::ZoomReset) aria-label=t(T::ZoomReset) data-testid="zoom-reset"
                         disabled=move || ctx.show_code.get()
-                        on:click=move |_| ctx.zoom.set(100)>{move || format!("{}%", ctx.zoom.get())}</button>
-                    <button class="icon-btn small" aria-label=t(T::ZoomIn) data-tip=t(T::ZoomIn) data-testid="zoom-in"
-                        disabled=move || ctx.show_code.get() || at_max_zoom(ctx.zoom.get())
+                        on:click=move |_| ctx.reset_zoom()>{move || format!("{}%", zoom.get())}</button>
+                    <button class="icon-btn small" aria-label=t(T::ZoomIn) data-testid="zoom-in"
+                        data-tip=move || {
+                            let fits = fit_stops_zoom_in(ctx.zoom.get(), ctx.zoom_cap.get(), ctx.past_fit.get());
+                            t(if fits { T::ZoomFitsPane } else { T::ZoomIn })
+                        }
+                        disabled=move || ctx.show_code.get() || !ctx.can_zoom(true)
                         on:click=move |_| ctx.zoom_by(true)>{icon(Glyph::ZoomIn)}</button>
                 </div>
                 <Show when=move || !ctx.files_open.get()>
@@ -1463,7 +1604,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{icon(Glyph::Comment)}{t(T::CommentModeOn)}</p> })}
             <div class="preview-body">
                 <ThumbRail ctx=ctx src=src/>
-                <div class="preview-stage">
+                <div class="preview-stage" node_ref=stage>
                     <super::first_hint::FirstArtifactHint ctx=ctx/>
                     {move || match special.get() {
                         Some(Special::Markdown(path)) => view! { <MarkdownView ctx=ctx path=path/> }.into_any(),
@@ -1499,20 +1640,75 @@ enum Special {
     Doc(String),
 }
 
+/// The zoom a device frame is shown at: the chosen one, lowered so the
+/// frame fits `stage` px (its content width; 0 while not measured).
+/// Desktop follows the pane, so it keeps the chosen zoom.
+fn fit_zoom(device: Device, zoom: u32, stage: f64) -> u32 {
+    capped(zoom, fit_cap(device, stage))
+}
+
+/// The largest zoom (at most 100) a device frame fits `stage` px at;
+/// `None` for Desktop and while the stage is not measured.
+fn fit_cap(device: Device, stage: f64) -> Option<u32> {
+    let px = device.px().filter(|_| stage >= 1.0)?;
+    // Whole percent, rounded down so the frame never overflows.
+    Some((stage * 100.0 / f64::from(px)).floor().clamp(1.0, 100.0) as u32)
+}
+
+/// Follows the content width of `node` (a `ResizeObserver`); 0 until it
+/// has been measured or where the observer is missing.
+fn observe_width(node: NodeRef<leptos::html::Div>) -> RwSignal<f64> {
+    use wasm_bindgen::JsCast;
+    type SizeCallback = wasm_bindgen::closure::Closure<dyn FnMut(js_sys::Array)>;
+    let width = RwSignal::new(0.0);
+    let observer = StoredValue::new(None::<SendWrapper<(web_sys::ResizeObserver, SizeCallback)>>);
+    Effect::new(move |_| {
+        let Some(el) = node.get() else {
+            return;
+        };
+        let on_size = SizeCallback::new(move |entries: js_sys::Array| {
+            let last = entries
+                .iter()
+                .filter_map(|e| e.dyn_into::<web_sys::ResizeObserverEntry>().ok())
+                .next_back();
+            if let Some(e) = last {
+                width.set(e.content_rect().width());
+            }
+        });
+        if let Ok(obs) = web_sys::ResizeObserver::new(on_size.as_ref().unchecked_ref()) {
+            obs.observe(&el);
+            observer.set_value(Some(SendWrapper::new((obs, on_size))));
+        }
+    });
+    on_cleanup(move || {
+        observer.with_value(|o| {
+            if let Some(o) = o {
+                o.0.disconnect();
+            }
+        });
+    });
+    width
+}
+
 /// The box a zoomed preview takes in the stage: its on-screen size.
 fn zoom_box(device: Device, zoom: u32) -> String {
     match device {
         Device::Desktop => "width:100%".to_owned(),
-        d => format!("width:calc({} * {zoom} / 100)", d.width()),
+        d => format!("width:calc({} * {zoom} / 100);max-width:none", d.width()),
     }
 }
 
 /// The frame inside [`zoom_box`]: laid out at the device size, scaled to
 /// fit. A transform, not CSS `zoom`, so WebKit and Chromium agree and the
-/// comment pins and drawing (local coordinates) follow it.
+/// comment pins and drawing (local coordinates) follow it. A device frame
+/// is never narrowed by the pane (`max-width:none`): its page must see the
+/// device width.
 fn zoomed(device: Device, zoom: u32) -> String {
     if zoom == 100 {
-        return format!("width:{}", device.width());
+        return match device {
+            Device::Desktop => format!("width:{}", device.width()),
+            d => format!("width:{};max-width:none", d.width()),
+        };
     }
     let width = match device {
         Device::Desktop => format!("calc(100% * 100 / {zoom})"),
@@ -1649,6 +1845,63 @@ mod tests {
             zoomed(Device::Phone, 50),
             "width:390px;max-width:none;height:calc(100% * 100 / 50);transform:scale(0.5);transform-origin:0 0"
         );
-        assert_eq!(zoom_box(Device::Phone, 50), "width:calc(390px * 50 / 100)");
+        assert_eq!(
+            zoom_box(Device::Phone, 50),
+            "width:calc(390px * 50 / 100);max-width:none"
+        );
+        assert_eq!(zoomed(Device::Tablet, 100), "width:820px;max-width:none");
+    }
+
+    #[test]
+    fn a_device_wider_than_the_stage_is_scaled_to_fit() {
+        // 1360 px window: a 650 px stage shows Tablet at 79 %.
+        assert_eq!(fit_zoom(Device::Tablet, 100, 650.0), 79);
+        assert_eq!(fit_zoom(Device::Tablet, 125, 650.0), 79);
+        assert_eq!(fit_zoom(Device::Tablet, 50, 650.0), 50);
+        assert_eq!(fit_zoom(Device::Tablet, 100, 1200.0), 100);
+        assert_eq!(fit_zoom(Device::Phone, 100, 650.0), 100);
+        // Desktop follows the pane; an unmeasured stage keeps the zoom.
+        assert_eq!(fit_zoom(Device::Desktop, 125, 650.0), 125);
+        assert_eq!(fit_zoom(Device::Tablet, 100, 0.0), 100);
+    }
+
+    #[test]
+    fn zoom_steps_from_the_size_shown_and_stops_at_the_fit() {
+        // Tablet shown at 79 %: + would not grow it, - goes to 75 %.
+        assert_eq!(next_zoom(100, Some(79), true), None);
+        assert_eq!(next_zoom(125, Some(79), false), Some(75));
+        assert_eq!(next_zoom(75, Some(79), true), Some(100));
+        // Desktop: the plain steps, clamped at both ends.
+        assert_eq!(next_zoom(100, None, true), Some(125));
+        assert_eq!(next_zoom(200, None, true), None);
+        assert_eq!(next_zoom(50, None, false), None);
+    }
+
+    #[test]
+    fn a_frame_fit_below_the_steps_zooms_past_the_fit_and_back() {
+        // Tablet on a phone: fit at 35 %. + goes past it to 50 %, then on.
+        // It keeps the zoom chosen before (100 %).
+        assert_eq!(zoom_move(100, Some(35), None, true), Some((50, Some(100))));
+        assert_eq!(
+            zoom_move(50, Some(35), Some(100), true),
+            Some((67, Some(100)))
+        );
+        assert_eq!(
+            zoom_move(67, Some(35), Some(100), false),
+            Some((50, Some(100)))
+        );
+        // − from the smallest step comes back to the fit and that zoom.
+        assert_eq!(zoom_move(50, Some(35), Some(100), false), Some((100, None)));
+        assert_eq!(zoom_move(100, Some(35), None, false), None);
+        // A wider pane (or Desktop) goes back to it too; a narrow one stays.
+        assert_eq!(leave_past_fit(Some(79), Some(100)), Some(100));
+        assert_eq!(leave_past_fit(None, Some(75)), Some(75));
+        assert_eq!(leave_past_fit(Some(40), Some(100)), None);
+        assert_eq!(leave_past_fit(Some(79), None), None);
+        // A fit within the steps still stops + (the tooltip says why).
+        assert_eq!(zoom_move(100, Some(79), None, true), None);
+        assert!(fit_stops_zoom_in(100, Some(79), None));
+        assert!(!fit_stops_zoom_in(200, None, None));
+        assert!(!fit_stops_zoom_in(100, Some(35), None));
     }
 }

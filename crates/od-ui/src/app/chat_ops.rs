@@ -59,6 +59,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
             }
         });
     };
+    let cancel_delete = move || next_tick(move || confirming.set(false));
     let delete = move || {
         next_tick(move || confirming.set(false));
         let Some(cid) = ctx.conversation_id.get_untracked() else {
@@ -151,8 +152,8 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
                 </div>
             })}
             <Show when=move || confirming.get()>
-                <div class="overlay center" on:click=move |_| confirming.set(false)
-                    on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { confirming.set(false) }>
+                <div class="overlay center" on:click=move |_| cancel_delete()
+                    on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { cancel_delete() }>
                     <div class="dialog" role="alertdialog" aria-modal="true" data-testid="delete-conversation-dialog"
                         on:click=|ev| ev.stop_propagation()>
                         <div class="dialog-head">
@@ -163,7 +164,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
                             </div>
                         </div>
                         <div class="dialog-foot">
-                            <button class="btn" on:click=move |_| confirming.set(false)>{t(T::Cancel)}</button>
+                            <button class="btn" on:click=move |_| cancel_delete()>{t(T::Cancel)}</button>
                             <button class="btn danger" data-testid="confirm-delete-conversation" on:click=move |_| delete()>
                                 {icon(Glyph::Delete)}{t(T::Delete)}
                             </button>

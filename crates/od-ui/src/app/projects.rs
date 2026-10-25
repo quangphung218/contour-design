@@ -777,12 +777,28 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
         });
     };
 
+    // The last name the daemon accepted: a refused rename goes back to it.
+    let saved = StoredValue::new(project.name.clone());
     let rename = move || {
         editing.set(false);
-        let new_name = name.get_untracked();
+        let Some(new_name) = rename_input(&name.get_untracked()) else {
+            name.set(saved.get_value());
+            page.error.set(Some(t(T::ProjectNameRequired).to_string()));
+            return;
+        };
+        name.set(new_name.clone());
         leptos::task::spawn_local(async move {
             let path = format!("/api/projects/{}", api::seg(&id.get_value()));
-            let _ = api::patch::<_, ProjectResponse>(&path, &json!({ "name": new_name })).await;
+            match api::patch::<_, ProjectResponse>(&path, &json!({ "name": new_name })).await {
+                Ok(_) => {
+                    saved.set_value(new_name);
+                    page.error.set(None);
+                }
+                Err(e) => {
+                    name.set(saved.get_value());
+                    page.error.set(Some(e.to_string()));
+                }
+            }
             page.reload();
         });
     };
@@ -790,14 +806,18 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
     let duplicate = move |_| {
         leptos::task::spawn_local(async move {
             let path = format!("/api/projects/{}/duplicate", api::seg(&id.get_value()));
-            let _ = api::post::<_, DuplicateProjectResponse>(&path, &json!({})).await;
+            if let Err(e) = api::post::<_, DuplicateProjectResponse>(&path, &json!({})).await {
+                page.error.set(Some(e.to_string()));
+            }
             page.reload();
         });
     };
     let delete = move |_| {
         leptos::task::spawn_local(async move {
             let path = format!("/api/projects/{}", api::seg(&id.get_value()));
-            let _ = api::delete::<OkResponse>(&path).await;
+            if let Err(e) = api::delete::<OkResponse>(&path).await {
+                page.error.set(Some(e.to_string()));
+            }
             page.reload();
         });
     };
@@ -834,6 +854,7 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
                                         if ev.key() == "Enter" {
                                             rename_key();
                                         } else if ev.key() == "Escape" {
+                                            name.set(saved.get_value());
                                             editing.set(false);
                                         }
                                     }
@@ -1035,5 +1056,24 @@ fn BoardCard(project: Project, page: Page) -> impl IntoView {
             </A>
             <button class="icon-btn small danger" aria-label=t(T::Delete) data-tip=t(T::Delete) on:click=delete>{icon(Glyph::Close)}</button>
         </article>
+    }
+}
+
+/// The name a rename sends: trimmed, `None` when nothing is left (the
+/// daemon refuses a blank name).
+fn rename_input(typed: &str) -> Option<String> {
+    let name = typed.trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rename_input_trims_and_refuses_blank() {
+        assert_eq!(rename_input("  Quán phở 🍜 "), Some("Quán phở 🍜".into()));
+        assert_eq!(rename_input("   "), None);
+        assert_eq!(rename_input(""), None);
     }
 }

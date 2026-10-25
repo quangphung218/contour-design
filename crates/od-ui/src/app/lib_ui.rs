@@ -23,6 +23,10 @@ pub fn Modal(
     on_close: Callback<()>,
     #[prop(optional)] wide: bool,
     #[prop(optional, into)] testid: Option<&'static str>,
+    /// A selector inside the dialog to focus on open (the safe answer)
+    /// instead of the dialog itself.
+    #[prop(optional, into)]
+    autofocus: Option<&'static str>,
     children: Children,
 ) -> impl IntoView {
     let label = title.clone();
@@ -30,7 +34,13 @@ pub fn Modal(
     let dialog = NodeRef::<leptos::html::Div>::new();
     Effect::new(move |_| {
         if let Some(el) = dialog.get() {
-            let _ = el.focus();
+            let inner = autofocus
+                .and_then(|sel| el.query_selector(sel).ok().flatten())
+                .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
+            let _ = match inner {
+                Some(inner) => inner.focus(),
+                None => el.focus(),
+            };
         }
     });
     view! {

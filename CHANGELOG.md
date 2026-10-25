@@ -8,6 +8,27 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Renaming a project to a blank name keeps the old name and says a name is
+  required; failed renames, duplicates and deletes now show their error (QA-001).
+- The API provider form no longer saves a provider that needs a key without one;
+  it says "API key required" and Continue stays off (QA-005).
+- Esc closes the drop-down menus: Export, Screenshot, Present, the project menu and
+  the files panel menus (QA-004).
+- Leaving a Markdown file right after typing no longer panics (QA-009).
+- Cancel in the delete-conversation dialog no longer throws a JS error (QA-010).
+- Tablet and Phone previews lay the page out at 820 and 390 px and scale it down when
+  the pane is narrower, so device media queries apply (QA-003).
+- Edit panel: an Apply in one tab, or typing while it saves, no longer wipes what
+  was typed and not applied in another field (QA-006).
+- With an edit panel change not applied, closing or reloading the page asks first,
+  and so does a link that leaves the page (QA-007).
+- A message sent right after opening a project no longer vanishes from the chat
+  when the stored transcript arrives (QA-002).
+- Drafts are kept: the Studio composer per project and conversation, and Home's brief
+  and design system, across reloads and visits until sent (QA-008).
+
 ## [0.1.0] - 2026-10-24
 
 First release: a Rust rewrite of [OpenDesign](https://github.com/nexu-io/open-design)

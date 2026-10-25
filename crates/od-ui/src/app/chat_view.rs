@@ -79,8 +79,8 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
         }
     });
 
-    let navigate = leptos_router::hooks::use_navigate();
-    let to_mcp = Callback::new(move |()| navigate("/settings#mcp", Default::default()));
+    let navigate = super::leave_guard::use_leave();
+    let to_mcp = Callback::new(move |()| navigate("/settings#mcp"));
     let send = move || {
         if ctx
             .chat
@@ -102,6 +102,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                 to_mcp.run(());
             }
             Outgoing::Send(text) => {
+                ctx.chat.sent.set_value(true);
                 draft.set(String::new());
                 // While a run is going this queues the message.
                 ctx.send(text, shell);
@@ -491,7 +492,7 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
                                             on:click=move |_| ctx.steer(id_steer.clone())>{icon(Glyph::ArrowRight)}{t(T::Steer)}</button>
                                     })}
                                     <button class="icon-btn small danger" data-tip=t(T::Delete) data-tip-pos="left" aria-label=t(T::Delete)
-                                        on:click=move |_| ctx.queue.update(|q| q.retain(|x| x.id != id_del))>{icon(Glyph::Close)}</button>
+                                        on:click=move |_| ctx.drop_queued(&id_del)>{icon(Glyph::Close)}</button>
                                 </div>
                             </div>
                         }
@@ -651,7 +652,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     let ctx = expect_context::<StudioCtx>();
     let sources = use_context::<Sources>();
     let shell = Shell::get();
-    let navigate = leptos_router::hooks::use_navigate();
+    let navigate = super::leave_guard::use_leave();
     let item_id = StoredValue::new(item_id);
     // The user message this turn answered, and its files, for a retry.
     let asked = move || {
@@ -703,7 +704,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                         ctx.send(text, shell);
                                     }
                                 }
-                                NextStep::Settings => navigate("/settings", Default::default()),
+                                NextStep::Settings => navigate("/settings"),
                             };
                             view! {
                                 <button class="chip next-step" data-testid=testid on:click=run>

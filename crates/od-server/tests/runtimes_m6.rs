@@ -60,6 +60,53 @@ async fn byok_key_is_stored_0600_and_never_returned() {
     assert_eq!(status, 400);
     let (_, body) = put_config(&d, &json!({"byok": null})).await;
     assert!(body.get("byok").is_none());
+
+    // A public host with no key, sent or stored, is refused (QA-005).
+    let (status, body) = put_config(
+        &d,
+        &json!({"byok": {"protocol": "anthropic", "baseUrl": "https://api.anthropic.com"}, "agentId": "byok"}),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    assert!(d.get_json("/api/app-config").await.get("byok").is_none());
+
+    // A self-hosted or custom host is not guessed at: no key needed (QA-018).
+    let ollama = json!({"protocol": "openai", "baseUrl": "http://gpu-box:11434/v1"});
+    let (status, body) = put_config(&d, &json!({"byok": ollama, "agentId": "byok"})).await;
+    assert_eq!(status, 200, "{body}");
+
+    // A stale keyless provider sent along with a local agent is not used.
+    let (_, _) = put_config(&d, &json!({"byok": null})).await;
+    let anthropic = json!({"protocol": "anthropic", "baseUrl": "https://api.anthropic.com"});
+    let (status, body) = put_config(&d, &json!({"byok": anthropic, "agentId": "claude"})).await;
+    assert_eq!(status, 200, "{body}");
+    // Picking BYOK afterwards, without touching it, is checked too.
+    let (status, body) = put_config(&d, &json!({"agentId": "byok"})).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(d.get_json("/api/app-config").await["agentId"], "claude");
+    // A save that keeps the agent goes through.
+    let (status, body) = put_config(&d, &json!({"theme": "dark"})).await;
+    assert_eq!(status, 200, "{body}");
+}
+
+/// The UI sends the whole config on every save: a keyless provider stored
+/// before the key rule must not block a theme save (QA-018).
+#[tokio::test]
+async fn a_whole_config_save_that_keeps_the_byok_route_goes_through() {
+    let d = daemon().await;
+    let path = d.data.join("app-config.json");
+    for byok in [
+        json!({"protocol": "openai", "baseUrl": "http://ollama:11434/v1"}),
+        json!({"protocol": "anthropic", "baseUrl": "https://api.anthropic.com"}),
+    ] {
+        let config = json!({"byok": byok, "agentId": "byok", "theme": "light"});
+        std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let mut whole = d.get_json("/api/app-config").await;
+        whole["theme"] = json!("dark");
+        let (status, body) = put_config(&d, &whole).await;
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(body["theme"], "dark");
+    }
 }
 
 /// A saved BYOK key belongs to the protocol and base URL it was saved with:

@@ -29,6 +29,7 @@ mod icons;
 mod inbox;
 mod integrations;
 mod lazy_frame;
+mod leave_guard;
 mod lib_ui;
 mod library_picker;
 mod live_view;
@@ -38,6 +39,7 @@ mod mcp_settings;
 mod media_page;
 mod media_rows;
 mod memory_settings;
+mod menu_scrim;
 mod new_project;
 mod notify;
 mod onboarding;
@@ -85,6 +87,13 @@ pub struct Shell {
     pub shortcuts: RwSignal<bool>,
     /// The open Studio, whose commands the palette adds.
     pub(crate) studio: RwSignal<Option<studio::StudioCtx>>,
+    /// Whether leaving the page would lose work (`leave_guard`).
+    unsaved: RwSignal<Option<Callback<(), bool>>>,
+    /// Where the user asked to go while work would be lost: the leave
+    /// question is open.
+    leaving: RwSignal<Option<leave_guard::Leave>>,
+    /// The page is about to unload on purpose: `beforeunload` stays quiet.
+    released: StoredValue<bool>,
 }
 
 impl Shell {
@@ -194,6 +203,9 @@ pub fn App() -> impl IntoView {
         palette: RwSignal::new(false),
         shortcuts: RwSignal::new(false),
         studio: RwSignal::new(None),
+        unsaved: RwSignal::new(None),
+        leaving: RwSignal::new(None),
+        released: StoredValue::new(false),
     };
     provide_context(shell);
     leptos::task::spawn_local(async move {
@@ -312,6 +324,7 @@ fn Shelled() -> impl IntoView {
     view! {
         <Router>
             <OnboardingGate/>
+            <leave_guard::LeaveGuard/>
             <Show when=move || shell.palette.get()>
                 <palette::CommandPalette/>
             </Show>

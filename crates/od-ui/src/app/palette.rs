@@ -9,7 +9,6 @@ use crate::fuzzy;
 use crate::i18n::{T, t, tf};
 use crate::settings::Theme;
 use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
 use od_contracts::ProjectsResponse;
 
 /// Rows shown at most.
@@ -197,7 +196,7 @@ fn filter(query: &str, all: Vec<Command>) -> Vec<Command> {
 #[component]
 pub fn CommandPalette() -> impl IntoView {
     let shell = Shell::get();
-    let navigate = use_navigate();
+    let navigate = super::leave_guard::use_leave();
     let query = RwSignal::new(String::new());
     let selected = RwSignal::new(0usize);
     let input = NodeRef::<leptos::html::Input>::new();
@@ -233,9 +232,9 @@ pub fn CommandPalette() -> impl IntoView {
         close();
         let studio = shell.studio.get_untracked();
         match action {
-            Action::Go(path) => navigate(path, Default::default()),
+            Action::Go(path) => navigate(path),
             Action::NewProject => {
-                navigate("/", Default::default());
+                navigate("/");
                 focus_later("[data-testid=brief]");
             }
             Action::Project(id) => {
@@ -243,11 +242,14 @@ pub fn CommandPalette() -> impl IntoView {
                 // The Studio reads its project once: switching from one
                 // Studio to another reloads the page.
                 if studio.is_some() {
-                    if let Some(w) = web_sys::window() {
-                        let _ = w.location().assign(&path);
-                    }
+                    super::leave_guard::leave_then(shell, move |release| {
+                        release.now();
+                        if let Some(w) = web_sys::window() {
+                            let _ = w.location().assign(&path);
+                        }
+                    });
                 } else {
-                    navigate(&path, Default::default());
+                    navigate(&path);
                 }
             }
             Action::Theme(theme) => {

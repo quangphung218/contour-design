@@ -8,6 +8,7 @@
 use super::api;
 use super::export_menu::{copy_text, download};
 use super::icons::{Glyph, icon};
+use super::menu_scrim::MenuScrim;
 use super::studio::{StudioCtx, file_glyph};
 use super::terminal;
 use crate::file_tree::{self as ft, GROUP_PAGE, Group, Row};
@@ -163,22 +164,28 @@ impl Default for FilesUi {
 
 /// Overwrites existing file `path` with `body` (exact path, never renamed);
 /// `label` names the version an HTML file gets.
-pub async fn replace_content(
+///
+/// The URL is built at the call, not when the future first runs: a save
+/// spawned while the Studio goes away must not read its disposed context.
+pub fn replace_content(
     ctx: StudioCtx,
     path: &str,
     body: &str,
     label: &str,
-) -> Result<ProjectFile, String> {
+) -> impl Future<Output = Result<ProjectFile, String>> + 'static {
     let url = format!(
         "{}/content/{}?label={}",
         ctx.base(),
         api::file_path(path),
         api::seg(label)
     );
-    api::put_text::<FileResponse>(&url, body)
-        .await
-        .map(|r| r.file)
-        .map_err(|e| e.to_string())
+    let body = body.to_owned();
+    async move {
+        api::put_text::<FileResponse>(&url, &body)
+            .await
+            .map(|r| r.file)
+            .map_err(|e| e.to_string())
+    }
 }
 
 /// Inline style placing a menu under (or, near the bottom of the window,
@@ -478,7 +485,7 @@ pub fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
                         {icon(Glyph::Add)}
                     </button>
                     <Show when=move || new_open.get()>
-                        <div class="menu-scrim" on:click=move |_| new_open.set(false)></div>
+                        <MenuScrim on_close=move || new_open.set(false)/>
                         <div class="menu" role="menu" data-testid="files-new-menu">
                             <button class="menu-item" role="menuitem" data-testid="files-upload" on:click=pick_upload>
                                 {icon(Glyph::Upload)}{t(T::UploadFiles)}
@@ -921,7 +928,7 @@ fn RowMenu(ctx: StudioCtx, ui: FilesUi, key: String) -> impl IntoView {
                 {icon(Glyph::More)}
             </button>
             <Show when=move || open.get()>
-                <div class="menu-scrim" on:click=move |_| close()></div>
+                <MenuScrim on_close=move || close()/>
                 <div class="menu" role="menu" data-testid="row-menu-list" style=move || pos.get()>{items.clone()}</div>
             </Show>
         </div>
@@ -1271,7 +1278,7 @@ pub fn TabLauncher(ctx: StudioCtx) -> impl IntoView {
                 {icon(Glyph::Add)}
             </button>
             <Show when=move || ui.launcher.get()>
-                <div class="menu-scrim" on:click=move |_| close()></div>
+                <MenuScrim on_close=move || close()/>
                 <div class="menu left" role="menu" data-testid="tab-launcher-menu" style=move || pos.get()>
                     <button class="menu-item" role="menuitem" data-testid="launch-open-file" on:click=move |_| { close(); ctx.switcher_open.set(true); }>
                         {icon(Glyph::Search)}{t(T::OpenFileEllipsis)}<span class="menu-hint">{format!("{}P", super::shortcuts::modifier())}</span>

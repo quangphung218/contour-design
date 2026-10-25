@@ -330,6 +330,7 @@ messages! {
     ImportZipTitle => "Import a Claude Design .zip export", "Import file .zip xuất từ Claude Design";
     ImportingZip => "Importing…", "Đang import…";
     ImportZipFailed => "Import failed: {0}", "Import lỗi: {0}";
+    ProjectNameRequired => "A project name is required.", "Cần nhập tên project.";
     ProjectInstructions => "Project instructions", "Chỉ dẫn cho project";
     ProjectInstructionsHint => "Included in every message of this project. They win over the global rules in Settings.", "Gửi kèm mọi tin nhắn của project này. Khi mâu thuẫn, chỉ dẫn này thắng luật chung trong Cài đặt.";
     ProjectInstructionsPlaceholder => "Instructions for this project (injected on every message)…", "Chỉ dẫn cho project này (gửi kèm mọi tin nhắn)…";
@@ -414,6 +415,7 @@ messages! {
     BaseUrl => "Base URL", "Base URL";
     ApiKey => "API key", "API key";
     ApiKeyPlaceholder => "Paste the API key", "Dán API key";
+    ApiKeyRequired => "API key required", "Cần API key";
     ApiKeyStored => "Saved key {0}; type to replace", "Đã lưu key {0}; gõ để thay";
     ApiKeyCleaned => "Removed spaces and hidden characters from the pasted key.", "Đã bỏ khoảng trắng và ký tự ẩn khỏi key vừa dán.";
     ApiKeyShape => "This key does not look like one for this provider.", "Key này có vẻ không phải của provider này.";
@@ -1353,6 +1355,7 @@ messages! {
     Device => "Device", "Thiết bị";
     Zoom => "Zoom", "Thu phóng";
     ZoomIn => "Zoom in", "Phóng to";
+    ZoomFitsPane => "Fits the pane", "Đã vừa khung";
     ZoomOut => "Zoom out", "Thu nhỏ";
     ZoomReset => "Reset zoom to 100%", "Về 100%";
     Annotate => "Annotate and inspect", "Chú thích và soi phần tử";
@@ -1618,6 +1621,9 @@ messages! {
     ManualInvalidAttributes => "Invalid attributes JSON: {0}", "JSON thuộc tính không hợp lệ: {0}";
     ManualApply => "Apply", "Áp dụng";
     ManualApplyContent => "Content", "Nội dung";
+    ManualLeaveTitle => "Leave this page?", "Rời trang này?";
+    ManualLeave => "Leave", "Rời trang";
+    ManualLeaveConfirm => "An edit is not applied yet. Leave and lose it?", "Có chỉnh sửa chưa áp dụng. Rời trang và bỏ chỉnh sửa này?";
     ManualApplyStyle => "Style", "Kiểu";
     ManualApplyAttributes => "Attributes", "Thuộc tính";
     ManualApplyHtml => "HTML", "HTML";

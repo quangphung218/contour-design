@@ -494,8 +494,9 @@ try {
   await page.getByTestId('export').click();
   assert.equal(await page.getByTestId('export-pdf').isDisabled(), true, 'PDF needs a page');
   assert.equal(await page.getByTestId('save-template').isDisabled(), true, 'template needs a page');
+  // Esc closes the menu (QA-004).
   await page.keyboard.press('Escape');
-  await page.locator('.menu-scrim').click();
+  await page.getByTestId('export-menu').waitFor({ state: 'hidden' });
   await page.locator('.tab', { hasText: 'index.html' }).locator('.tab-name').click();
   await frame.locator('#title').waitFor();
   await page.getByTestId('export').click();

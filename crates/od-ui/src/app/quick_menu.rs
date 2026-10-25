@@ -8,12 +8,12 @@
 
 use super::composer::close_outside;
 use super::icons::{Glyph, icon};
+use super::leave_guard::use_leave;
 use super::{Shell, api};
 use crate::i18n::{Locale, T, t};
 use crate::settings::Theme;
 use leptos::html::Div;
 use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
 use serde_json::Value;
 
 /// How long the Report Issue result stays.
@@ -68,7 +68,7 @@ const SECTIONS: [(&str, T, Glyph); 4] = [
 #[component]
 pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
     let shell = Shell::get();
-    let navigate = use_navigate();
+    let navigate = use_leave();
     let open = RwSignal::new(false);
     let wrap = NodeRef::<Div>::new();
     close_outside(open, wrap);
@@ -97,7 +97,7 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
         });
     };
     let nav_docs = navigate.clone();
-    let go_docs = Callback::new(move |()| nav_docs("/docs", Default::default()));
+    let go_docs = Callback::new(move |()| nav_docs("/docs"));
     // The desktop Help menu.
     let go_docs_menu = move || go_docs.run(());
     let menu = window_event_listener(
@@ -132,7 +132,7 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
     };
     let go = move |href: String| {
         open.set(false);
-        navigate(&href, Default::default());
+        navigate(&href);
     };
     let go_section = go.clone();
     view! {

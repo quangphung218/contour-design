@@ -3,6 +3,7 @@
 
 use super::api;
 use super::icons::{Glyph, icon};
+use super::menu_scrim::MenuScrim;
 use super::presenter::{DeckChannel, channel_name};
 use super::studio::StudioCtx;
 use crate::i18n::{T, t, tf};
@@ -163,7 +164,7 @@ fn PresentMenu(ctx: StudioCtx) -> impl IntoView {
                 {icon(Glyph::ChevronUp)}
             </button>
             <Show when=move || open.get()>
-                <div class="menu-scrim" on:click=move |_| open.set(false)></div>
+                <MenuScrim on_close=move || open.set(false)/>
                 <div class="menu" role="menu" data-testid="present-menu" style=move || pos.get()>
                     <button class="menu-item" role="menuitem" data-testid="present-tab" on:click=move |_| { open.set(false); present_in_tab(ctx); }>
                         {icon(Glyph::Present)}{t(T::PresentInTab)}
