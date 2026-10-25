@@ -16,7 +16,8 @@ CI does the building; a person decides when and checks the result.
 
 ## Steps
 
-1. **Start from a green `main`.** Pull, then run the full local check:
+1. **Start from a green `main`.** CI on `main` runs on Linux only, so pull
+   and run the full local check on macOS:
 
    ```bash
    git switch main && git pull
@@ -70,6 +71,7 @@ CI does the building; a person decides when and checks the result.
    | Job | Output |
    |---|---|
    | check | fails fast if the tag, `Cargo.toml` and `CHANGELOG.md` disagree |
+   | macOS tests, Windows build | `ci.yml` called before any bundle: `make test` on macOS and the Windows compile check; a failure stops the release |
    | bundle (macos-universal) | `Contour_<v>_universal.dmg` (Apple silicon and Intel) |
    | bundle (linux-x64) | `Contour_<v>_amd64.AppImage`, `Contour_<v>_amd64.deb` (built on Ubuntu 22.04) |
    | bundle (windows-x64) | `Contour_<v>_x64_en-US.msi`, best effort: a failure here does not block the release |
