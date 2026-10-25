@@ -14,6 +14,8 @@ All notable changes to Contour are recorded here. The format follows
   required; failed renames, duplicates and deletes now show their error (QA-001).
 - The API provider form no longer saves a provider that needs a key without one;
   it says "API key required" and Continue stays off (QA-005).
+- Esc closes the drop-down menus: Export, Screenshot, Present, the project menu and
+  the files panel menus (QA-004).
 
 ## [0.1.0] - 2026-10-24
 

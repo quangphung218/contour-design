@@ -5,6 +5,7 @@
 use super::export_menu::download;
 use super::files_panel::FilesUi;
 use super::icons::{Glyph, icon};
+use super::menu_scrim::MenuScrim;
 use super::preview_tools::{page_png, save_png};
 use super::studio::StudioCtx;
 use crate::i18n::{T, t, tf};
@@ -135,7 +136,7 @@ pub fn ScreenshotMenu(ctx: StudioCtx) -> impl IntoView {
                 {move || if busy.get() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::Screenshot).into_any() }}
             </button>
             <Show when=move || open.get()>
-                <div class="menu-scrim" on:click=move |_| open.set(false)></div>
+                <MenuScrim on_close=move || open.set(false)/>
                 <div class="menu" role="menu" data-testid="screenshot-menu">
                     <button class="menu-item" role="menuitem" data-testid="screenshot-copy" on:click=move |_| { open.set(false); copy_to_clipboard(ctx, ui); }>
                         {icon(Glyph::Clipboard)}{t(T::ScreenshotCopy)}

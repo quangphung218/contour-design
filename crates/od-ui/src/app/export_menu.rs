@@ -3,6 +3,7 @@
 
 use super::api;
 use super::icons::{Glyph, icon};
+use super::menu_scrim::MenuScrim;
 use super::studio::StudioCtx;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -305,7 +306,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                 {icon(Glyph::ChevronDown)}
             </button>
             <Show when=move || open.get()>
-                <div class="menu-scrim" on:click=move |_| open.set(false)></div>
+                <MenuScrim on_close=move || open.set(false)/>
                 <div class="menu" role="menu" data-testid="export-menu">
                     {Format::ALL
                         .into_iter()

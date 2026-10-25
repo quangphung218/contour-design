@@ -19,7 +19,7 @@ it; PR #6 touched none of their code.
 | QA-002 | 🟠 | A message sent right after opening a project can vanish from the chat while the run goes on | `chat.qa.mjs` CHAT-09 | open |
 | QA-003 | 🟠 | Tablet preview lays the page out at the pane width, not 820 px | `studio.qa.mjs` STU-11 | open |
 | QA-005 | 🟠 | Onboarding saves and selects an API provider with an empty key | `onboarding.qa.mjs` ONB-05 | Fixed |
-| QA-004 | 🟡 | Esc does not close the Export menu (nor the other drop-down menus) | `export.qa.mjs` EXP-09 | open |
+| QA-004 | 🟡 | Esc does not close the Export menu (nor the other drop-down menus) | `export.qa.mjs` EXP-09 | Fixed |
 | QA-001 | 🟡 | Renaming a project to blank shows a nameless card and no error | `projects.qa.mjs` PRJ-02 | Fixed |
 | QA-009 | 🔵 | Leaving a Markdown file with an unsaved edit panics in wasm (the edit is saved) | `drafts.qa.mjs` DL-08 | open |
 | QA-010 | 🔵 | Cancel in the delete-conversation dialog throws a JS error | `drafts.qa.mjs` DL-10 | open |

@@ -144,6 +144,6 @@ test('EXP-09', 'Esc closes the Export menu, as in the original app', async ({ d,
   await page.getByTestId('export-menu').waitFor();
   await page.keyboard.press('Escape');
   await page.getByTestId('export-menu').waitFor({ state: 'hidden', timeout: 2000 });
-}, { knownBug: 'QA-004' });
+});
 
 await run('export');

@@ -38,6 +38,7 @@ mod mcp_settings;
 mod media_page;
 mod media_rows;
 mod memory_settings;
+mod menu_scrim;
 mod new_project;
 mod notify;
 mod onboarding;
