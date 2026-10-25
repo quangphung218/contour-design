@@ -998,7 +998,12 @@ pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
 pub async fn rescan_agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
     let path_changed = state.runs.engine.rescan_path().await;
     let res = agents(State(state)).await;
-    let available = res.0.agents.iter().filter(|a| a.available).count();
+    let available = res
+        .0
+        .agents
+        .iter()
+        .filter(|a| a.available && a.id != od_runtime::def::BYOK.id)
+        .count();
     tracing::info!(path_changed, available, "agents rescanned");
     res
 }

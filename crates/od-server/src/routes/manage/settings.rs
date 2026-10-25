@@ -177,13 +177,14 @@ pub async fn test_connection(
             let agent = clean(req.agent_id.as_deref())
                 .ok_or_else(|| ApiErr::bad_request("agentId is required"))?;
             let result = test_agent(&state, &agent, &req, AGENT_TEST_TIMEOUT).await?;
-            tracing::info!(
-                agent = %agent,
-                ok = result.ok,
-                category = test_category(&result),
-                "connection test"
-            );
-            Ok(ApiJson(serde_json::to_value(result).unwrap_or(Value::Null)))
+            let category = test_category(&result);
+            tracing::info!(agent = %agent, ok = result.ok, category, "connection test");
+            // `category` lets onboarding tell a missing sign-in from other failures.
+            let mut body = serde_json::to_value(result).unwrap_or(Value::Null);
+            if let Value::Object(map) = &mut body {
+                map.insert("category".to_owned(), Value::from(category));
+            }
+            Ok(ApiJson(body))
         }
         other => Err(ApiErr::bad_request(format!(
             "mode must be agent or provider, got {other:?}"
