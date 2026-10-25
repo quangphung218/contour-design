@@ -303,6 +303,10 @@ async fn put_config(
                 c.get("agentId").and_then(Value::as_str) == Some(od_runtime::def::BYOK.id)
             };
             let becomes_picked = !is_byok(&config);
+            let done =
+                |c: &Map<String, Value>| c.get("onboardingCompleted") == Some(&Value::Bool(true));
+            let was_done = done(&config);
+            let design_system_before = config.get("designSystemId").cloned();
             let moves_byok = patch
                 .get(BYOK_KEY)
                 .filter(|b| b.is_object())
@@ -321,6 +325,22 @@ async fn put_config(
             }
             let bytes = serde_json::to_vec_pretty(&config)?;
             write_atomic(&path, &bytes)?;
+            if !was_done && done(&config) {
+                let agent = config
+                    .get("agentId")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let mode = match agent {
+                    "" => "skip",
+                    a if a == od_runtime::def::BYOK.id => "byok",
+                    _ => "agent",
+                };
+                // The brand step stores the extracted system as the default.
+                let brand_extracted = config
+                    .get("designSystemId")
+                    .is_some_and(|v| !v.is_null() && Some(v) != design_system_before.as_ref());
+                tracing::info!(mode, agent, brand_extracted, "onboarding finished");
+            }
             Ok(config)
         })
         .await?;
