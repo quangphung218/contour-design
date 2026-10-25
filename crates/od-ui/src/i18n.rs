@@ -901,6 +901,8 @@ messages! {
     AllIndustries => "All industries", "Mọi ngành";
     AllProjectsFilter => "All projects", "Mọi project";
     Category => "Category", "Nhóm";
+    PluginKindWorkflows => "Workflows", "Quy trình";
+    PluginKindBlocks => "Building blocks", "Khối dựng";
     Surface => "Surface", "Bề mặt";
     SurfaceWeb => "Web", "Web";
     Source => "Source", "Nguồn";
@@ -956,6 +958,7 @@ messages! {
     MoreActions => "More actions", "Thêm thao tác";
     DownloadZip => "Download ZIP", "Tải ZIP";
     DuplicateAction => "Duplicate", "Nhân bản";
+    DsBrandNote => "Inspired by {0}'s public design language. Not affiliated with or endorsed by {0}. Trademarks belong to their owners.", "Lấy cảm hứng từ ngôn ngữ thiết kế công khai của {0}. Không liên kết với {0} và không được {0} bảo trợ. Nhãn hiệu thuộc về chủ sở hữu.";
     DsDeleteConfirm => "Delete the design system \"{0}\"? Its files are removed.", "Xoá design system \"{0}\"? Các file của nó sẽ bị xoá.";
     DsReviewTitle => "Review this design system", "Duyệt design system này";
     DsReviewBody => "Approve it to publish, or say what needs work and an agent revises it for you to accept.", "Duyệt để xuất bản, hoặc ghi chỗ cần sửa để agent sửa rồi chờ duyệt.";
@@ -1041,7 +1044,6 @@ messages! {
     ScopePersonal => "Personal", "Cá nhân";
     SearchPlugins => "Search", "Tìm";
     PluginsEmptyPersonal => "Nothing here yet. Create a plugin or a skill.", "Chưa có gì. Hãy tạo plugin hoặc skill.";
-    PluginStats => "{0} skills · {1} atoms · {2} inputs", "{0} skill · {1} atom · {2} input";
     BackToList => "Back", "Quay lại";
     ByAuthor => "by {0}", "của {0}";
     UsePlugin => "Use plugin", "Dùng plugin";

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "airbnb",
   "name": "Airbnb",
+  "brand": "Airbnb",
   "category": "E-Commerce & Retail",
   "description": "Bundled OpenDesign package for Airbnb, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

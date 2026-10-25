@@ -1,5 +1,7 @@
 ---
 name: wireframe-sketch
+en_name: "Hand-drawn wireframe"
+en_description: "A whiteboard-style wireframe on graph paper with marker lines, sticky notes and several variants."
 description: |
   A hand-drawn wireframe exploration — graph-paper background, marker /
   pencil tone, multiple tab labels for variants, sticky-note annotations,

@@ -1,5 +1,7 @@
 ---
 name: blog-post
+en_name: "Blog post"
+en_description: "A long-form article with masthead, hero image, figures, pull quotes, author byline and related posts."
 description: |
   A long-form article / blog post — masthead, hero image placeholder,
   article body with figures and pull quotes, author byline, related posts.

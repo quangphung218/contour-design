@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "mongodb",
   "name": "MongoDB",
+  "brand": "MongoDB",
   "category": "Backend & Data",
   "description": "Bundled OpenDesign package for MongoDB, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

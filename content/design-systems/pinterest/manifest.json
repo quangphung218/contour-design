@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "pinterest",
   "name": "Pinterest",
+  "brand": "Pinterest",
   "category": "Media & Consumer",
   "description": "Bundled OpenDesign package for Pinterest, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

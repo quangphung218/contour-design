@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "material",
   "name": "Material",
+  "brand": "Google",
   "category": "Professional & Corporate",
   "description": "Bundled OpenDesign package for Material, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

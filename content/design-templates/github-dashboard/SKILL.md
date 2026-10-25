@@ -1,5 +1,7 @@
 ---
 name: github-dashboard
+en_name: "GitHub repository dashboard"
+en_description: "Stars, forks, contributors, issues, pull requests and recent activity for a GitHub repository."
 description: |
   GitHub repository analytics dashboard — stars, forks, contributors,
   issues, pull requests, recent activity, and top contributors. Use when

@@ -1,5 +1,7 @@
 ---
 name: "contact-widget"
+en_name: "Contact widget"
+en_description: "A floating chat widget with welcome screen, social links, meeting button and message box, in one HTML file."
 description: "Self-contained floating chat widget with welcome screen, social links, meeting button, and message input. Single HTML file, zero dependencies."
 triggers:
   - "contact widget"

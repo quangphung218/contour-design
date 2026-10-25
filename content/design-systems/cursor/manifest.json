@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "cursor",
   "name": "Cursor",
+  "brand": "Cursor",
   "category": "Developer Tools",
   "description": "Bundled OpenDesign package for Cursor, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

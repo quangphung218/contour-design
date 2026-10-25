@@ -1,5 +1,7 @@
 ---
 name: trading-analysis-dashboard-template
+en_name: "Trading terminal dashboard"
+en_description: "A dense trading dashboard with market panels, interactive charts, replay and light and dark themes."
 description: |
   Professional trading analysis dashboard template (single-file HTML) with
   light/dark theme switch, dense market panels, chart interactions, demo/live

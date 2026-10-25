@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "intercom",
   "name": "Intercom",
+  "brand": "Intercom",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Intercom, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

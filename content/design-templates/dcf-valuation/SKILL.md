@@ -1,5 +1,7 @@
 ---
 name: dcf-valuation
+en_name: "DCF valuation"
+en_description: "A discounted cash flow valuation of a public company, showing intrinsic value, assumptions and a price target."
 description: |
   Discounted cash flow valuation and intrinsic value analysis for public
   companies. Use when the brief asks for DCF, fair value, intrinsic value,

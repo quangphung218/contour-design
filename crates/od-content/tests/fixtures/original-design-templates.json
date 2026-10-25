@@ -2,7 +2,13 @@
  {
   "id": "magazine-poster",
   "name": "magazine-poster",
+  "displayName": {
+   "en": "Magazine poster"
+  },
   "description": "An editorial-style poster — newsprint paper, dateline, oversized serif\nheadline with a struck-through word and italic accent, a 2-column body\nblock, and 6 numbered sections with annotated pull-quote captions.\nReads like a Sunday-paper full-page essay or a thoughtful launch poster.\nUse when the brief asks for \"magazine poster\", \"editorial poster\",\n\"newsprint\", \"essay layout\", or \"manifesto\".",
+  "descriptionI18n": {
+   "en": "An editorial poster that reads like a Sunday-paper essay: newsprint paper, oversized serif headline, numbered sections and pull quotes."
+  },
   "triggers": [
    "magazine poster",
    "editorial poster",
@@ -35,12 +41,18 @@
  {
   "id": "web-prototype-taste-brutalist",
   "name": "web-prototype-taste-brutalist",
+  "displayName": {
+   "en": "Brutalist web page (Swiss print)"
+  },
   "description": "Swiss industrial-print web prototype. Newsprint canvas, monolithic black grotesque, viewport-bleeding numerals, hairline grid dividers, hazard-red accent, ASCII syntax decoration. Distilled from Leonxlnx/taste-skill `brutalist-skill` (Swiss Industrial Print mode).",
+  "descriptionI18n": {
+   "en": "A Swiss print-style web page: newsprint background, heavy black type, hairline grid and one hazard-red accent."
+  },
   "triggers": [],
-  "mode": "video",
-  "surface": "video",
+  "mode": "prototype",
+  "surface": "web",
   "craftRequires": [],
-  "platform": null,
+  "platform": "desktop",
   "scenario": "hr",
   "category": null,
   "previewType": "html",
@@ -63,6 +75,9 @@
    "zh-CN": "Aster 艺术工作室"
   },
   "description": "Use this template when the user wants an artistic creative-studio website with classical imagery, cobalt skies, elegant serif typography and cinematic scrolling.",
+  "descriptionI18n": {
+   "en": "A cinematic website for a creative studio, with classical imagery, cobalt skies, elegant serif type and smooth scrolling."
+  },
   "triggers": [
    "cinematic studio website",
    "classical art portfolio",
@@ -93,7 +108,13 @@
  {
   "id": "audio-jingle",
   "name": "audio-jingle",
+  "displayName": {
+   "en": "Audio jingle"
+  },
   "description": "Audio generation skill — jingles, beds, voiceover, and sound effects.\nRoutes music requests to Suno V5 / Udio / Lyria, speech to MiniMax\nTTS / FishAudio / ElevenLabs V3, and SFX to ElevenLabs SFX or\nAudioCraft. Output is one MP3/WAV file saved to the project folder.",
+  "descriptionI18n": {
+   "en": "Jingles, background music, voiceovers and sound effects, saved as one MP3 or WAV file in your project."
+  },
   "triggers": [
    "music",
    "jingle",
@@ -126,7 +147,13 @@
  {
   "id": "blog-post",
   "name": "blog-post",
+  "displayName": {
+   "en": "Blog post"
+  },
   "description": "A long-form article / blog post — masthead, hero image placeholder,\narticle body with figures and pull quotes, author byline, related posts.\nUse when the brief asks for \"blog\", \"article\", \"post\", \"essay\", or\n\"case study\".",
+  "descriptionI18n": {
+   "en": "A long-form article with masthead, hero image, figures, pull quotes, author byline and related posts."
+  },
   "triggers": [
    "blog",
    "blog post",
@@ -163,7 +190,13 @@
  {
   "id": "clinical-case-report",
   "name": "clinical-case-report",
+  "displayName": {
+   "en": "Clinical case report"
+  },
   "description": "Structured medical case presentation for clinical rounds, conferences,\nand documentation. Generates SOAP-format or narrative case reports\nwith physiologically accurate vitals, labs, and evidence-based plans.\nUse when the brief mentions \"case report\", \"case presentation\", \"SOAP note\",\n\"clinical case\", \"ward rounds\", \"case summary\", or \"patient presentation\".",
+  "descriptionI18n": {
+   "en": "A structured medical case presentation for rounds and conferences, in SOAP or narrative format, with vitals, labs and plan."
+  },
   "triggers": [
    "case report",
    "case presentation",
@@ -196,6 +229,9 @@
   "id": "clinical-case-report:example-stemi",
   "name": "Example Stemi",
   "description": "Structured medical case presentation for clinical rounds, conferences,\nand documentation. Generates SOAP-format or narrative case reports\nwith physiologically accurate vitals, labs, and evidence-based plans.\nUse when the brief mentions \"case report\", \"case presentation\", \"SOAP note\",\n\"clinical case\", \"ward rounds\", \"case summary\", or \"patient presentation\".",
+  "descriptionI18n": {
+   "en": "A structured medical case presentation for rounds and conferences, in SOAP or narrative format, with vitals, labs and plan."
+  },
   "triggers": [
    "case report",
    "case presentation",
@@ -227,7 +263,13 @@
  {
   "id": "contact-widget",
   "name": "contact-widget",
+  "displayName": {
+   "en": "Contact widget"
+  },
   "description": "Self-contained floating chat widget with welcome screen, social links, meeting button, and message input. Single HTML file, zero dependencies.",
+  "descriptionI18n": {
+   "en": "A floating chat widget with welcome screen, social links, meeting button and message box, in one HTML file."
+  },
   "triggers": [
    "contact widget",
    "chat widget",
@@ -255,7 +297,13 @@
  {
   "id": "critique",
   "name": "critique",
+  "displayName": {
+   "en": "Design critique"
+  },
   "description": "Run a 5-dimension expert design review on any HTML artifact in the\nproject — Philosophy / Visual hierarchy / Detail / Functionality /\nInnovation, each scored 0–10. Outputs a single self-contained HTML\nreport with a radar chart, evidence-backed scores, and three lists:\nKeep / Fix / Quick-wins. Use when the brief asks for a \"design\nreview\", \"design critique\", \"5 维度评审\", \"design audit\", or \"what's\nwrong with my design\".",
+  "descriptionI18n": {
+   "en": "An expert review of a design in your project: five scored dimensions, a radar chart, and what to keep, fix and improve quickly."
+  },
   "triggers": [
    "critique",
    "design review",
@@ -289,7 +337,13 @@
  {
   "id": "dashboard",
   "name": "dashboard",
+  "displayName": {
+   "en": "Admin dashboard"
+  },
   "description": "Admin / analytics dashboard in a single HTML file. Fixed left sidebar,\ntop bar with user/search, main grid of KPI cards and one or two charts.\nUse when the brief asks for a \"dashboard\", \"admin\", \"analytics\", or\n\"control panel\" screen.",
+  "descriptionI18n": {
+   "en": "An admin or analytics dashboard with sidebar, top bar, KPI cards and charts."
+  },
   "triggers": [
    "dashboard",
    "admin panel",
@@ -323,7 +377,13 @@
  {
   "id": "dating-web",
   "name": "dating-web",
+  "displayName": {
+   "en": "Dating dashboard"
+  },
   "description": "A consumer-feeling dating / matchmaking dashboard — left rail navigation,\nticker bar of community signals, headline KPIs, a 30-day mutual-matches\nbar chart, and a match-rate trend block. Editorial typography, restrained\naccent. Use when the brief asks for a \"dating site\", \"matchmaking\",\n\"community dashboard\", \"social network dashboard\", or any consumer\nproduct where the data is the story.",
+  "descriptionI18n": {
+   "en": "A dating or matchmaking dashboard with community ticker, headline KPIs, a 30-day matches chart and a match-rate trend."
+  },
   "triggers": [
    "dating app",
    "dating site",
@@ -355,7 +415,13 @@
  {
   "id": "dcf-valuation",
   "name": "dcf-valuation",
+  "displayName": {
+   "en": "DCF valuation"
+  },
   "description": "Discounted cash flow valuation and intrinsic value analysis for public\ncompanies. Use when the brief asks for DCF, fair value, intrinsic value,\nprice target, undervalued or overvalued analysis, or \"what is this company\nworth?\"",
+  "descriptionI18n": {
+   "en": "A discounted cash flow valuation of a public company, showing intrinsic value, assumptions and a price target."
+  },
   "triggers": [
    "dcf",
    "discounted cash flow",
@@ -388,7 +454,13 @@
  {
   "id": "digital-eguide",
   "name": "digital-eguide",
+  "displayName": {
+   "en": "Digital e-guide"
+  },
   "description": "A two-spread digital e-guide preview — page 1 is a cover (display title,\nauthor, \"What's inside\" stats, table of contents teaser); page 2 is a\nspread (lesson body with pull-quote and a step list). Lifestyle / creator\nbrand tone. Use when the brief asks for an \"e-guide\", \"digital guide\",\n\"lookbook\", \"lead magnet\", \"creator guide\", \"playbook\", \"PDF guide\",\nor \"电子指南\".",
+  "descriptionI18n": {
+   "en": "A two-spread e-guide preview: a cover with table of contents, then a lesson spread with pull quote and steps."
+  },
   "triggers": [
    "e-guide",
    "digital guide",
@@ -427,7 +499,13 @@
  {
   "id": "docs-page",
   "name": "docs-page",
+  "displayName": {
+   "en": "Documentation page"
+  },
   "description": "A documentation page — inline-start nav, scrollable article body,\ninline-end table of contents. Use when the brief mentions \"docs\",\n\"documentation\", \"guide\", \"API reference\", or \"tutorial\".",
+  "descriptionI18n": {
+   "en": "A documentation page with side navigation, article body and an on-page table of contents."
+  },
   "triggers": [
    "docs",
    "documentation",
@@ -462,7 +540,13 @@
  {
   "id": "email-marketing",
   "name": "email-marketing",
+  "displayName": {
+   "en": "Launch email"
+  },
   "description": "A brand product-launch email — masthead with wordmark, hero image block,\nheadline lockup with skewed-italic accent, body copy, primary CTA, and a\nspecifications grid. Pure HTML email layout (centered single column, table\nfallback). Use when the brief asks for an \"email\", \"newsletter blast\",\n\"MJML\", \"product launch email\", or \"email template\".",
+  "descriptionI18n": {
+   "en": "A product-launch email with wordmark, hero image, headline, call to action and specs grid, built to render in email clients."
+  },
   "triggers": [
    "email",
    "email template",
@@ -494,7 +578,13 @@
  {
   "id": "eng-runbook",
   "name": "eng-runbook",
+  "displayName": {
+   "en": "Engineering runbook"
+  },
   "description": "An engineering runbook — service overview, alerts table, dashboards\nlinks, common procedures with copy-pasteable commands, on-call rotation,\nand an incident-response checklist. Use when the brief mentions\n\"runbook\", \"ops doc\", \"on-call guide\", \"SRE doc\", or \"运维手册\".",
+  "descriptionI18n": {
+   "en": "A runbook for a service: overview, alerts, dashboards, copy-paste procedures, on-call rotation and incident checklist."
+  },
   "triggers": [
    "runbook",
    "ops doc",
@@ -524,7 +614,13 @@
  {
   "id": "finance-report",
   "name": "finance-report",
+  "displayName": {
+   "en": "Financial report"
+  },
   "description": "Quarterly / monthly financial report — masthead with KPIs, revenue and\nburn charts, P&L summary table, top-line highlights, and an outlook\nparagraph. Use when the brief mentions \"financial report\", \"Q3 report\",\n\"MRR review\", \"P&L\", or \"财报\".",
+  "descriptionI18n": {
+   "en": "A monthly or quarterly financial report with KPIs, revenue and burn charts, P&L table, highlights and outlook."
+  },
   "triggers": [
    "financial report",
    "finance report",
@@ -557,7 +653,13 @@
  {
   "id": "flowai-live-dashboard-template",
   "name": "flowai-live-dashboard-template",
+  "displayName": {
+   "en": "Team dashboard (FlowAI style)"
+  },
   "description": "Team-management dashboard skill in the FlowAI aesthetic — three tabs\n(Team Members, Team Details, Activity Log), KPI stat row, member table,\nrole distribution bar chart, online presence and activity sparklines,\nand a top-contributors panel, all in a single self-contained HTML file\nwith light/dark theming, hoverable chart tooltips, click-to-zoom panels,\nand CSV export. Use when the brief asks for a team / workspace admin\ndashboard, an interactive admin dashboard with charts, or names FlowAI.",
+  "descriptionI18n": {
+   "en": "A team-management dashboard with member table, activity log, role chart and top contributors, in light and dark themes."
+  },
   "triggers": [
    "flowai dashboard",
    "team dashboard",
@@ -591,7 +693,13 @@
  {
   "id": "gamified-app",
   "name": "gamified-app",
+  "displayName": {
+   "en": "Gamified mobile app"
+  },
   "description": "A multi-frame gamified mobile-app prototype — three phone frames on a dark\nshowcase stage. Frame 1: cover / poster, Frame 2: today's quests with XP\nribbons and a level bar, Frame 3: quest detail. Vivid quest tiles, level\nribbon, bottom tab bar. Use when the brief asks for a \"gamified app\",\n\"habit tracker\", \"RPG-style life app\", \"level-up app\", \"daily quests\",\n\"XP / streak app\", or \"ELI5-style explainer app\".",
+  "descriptionI18n": {
+   "en": "Three phone screens for a habit or quest app: cover, today's quests with XP and levels, and a quest detail."
+  },
   "triggers": [
    "gamified app",
    "habit tracker",
@@ -628,7 +736,13 @@
  {
   "id": "github-dashboard",
   "name": "github-dashboard",
+  "displayName": {
+   "en": "GitHub repository dashboard"
+  },
   "description": "GitHub repository analytics dashboard — stars, forks, contributors,\nissues, pull requests, recent activity, and top contributors. Use when\nthe brief asks for a GitHub repo dashboard, open-source growth report,\nrepository health page, or GitHub analytics view.",
+  "descriptionI18n": {
+   "en": "Stars, forks, contributors, issues, pull requests and recent activity for a GitHub repository."
+  },
   "triggers": [
    "github dashboard",
    "repo dashboard",
@@ -703,7 +817,13 @@
  {
   "id": "hr-onboarding",
   "name": "hr-onboarding",
+  "displayName": {
+   "en": "New-hire onboarding plan"
+  },
   "description": "A new-hire onboarding plan as a single page — first week schedule,\nbuddy + manager intro, learning track, equipment checklist, and \"you're\nset when…\" outcomes. Use when the brief mentions \"onboarding\",\n\"new hire\", \"first week plan\", or \"入职\".",
+  "descriptionI18n": {
+   "en": "A one-page plan for a new hire: first-week schedule, buddy and manager, learning track, equipment checklist and goals."
+  },
   "triggers": [
    "onboarding",
    "new hire",
@@ -822,7 +942,7 @@
   },
   "description": "OpenDesign's feature business case for the plugin marketplace: the user pain, options, tradeoffs, and the measure of success. Built as a decision-grade product management deck for PM, eng, design, leadership.",
   "descriptionI18n": {
-   "en": "OpenDesign's feature business case for the plugin marketplace: the user pain, options, tradeoffs, and the measure of success. Built as a decision-grade product management deck for PM, eng, design, leadership.",
+   "en": "A feature business case for Lumen, a fictional design-tool startup: the user pain, the options and tradeoffs, and how success is measured. For PM, engineering, design and leadership.",
    "zh-CN": "像 Principal PM 一样写功能商业论证——一份可商业交付的产品管理 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -863,7 +983,7 @@
   },
   "description": "OpenDesign + BYOK: choosing and wiring your own model, hands-on — cost, quality, and the routing decision. Built as a decision-grade AI literacy deck for engineers, IT, applied-AI teams.",
   "descriptionI18n": {
-   "en": "OpenDesign + BYOK: choosing and wiring your own model, hands-on — cost, quality, and the routing decision. Built as a decision-grade AI literacy deck for engineers, IT, applied-AI teams.",
+   "en": "A hands-on session on choosing and wiring your own AI model at Relay, a fictional software company: cost, quality and the routing decision. For engineers, IT and applied-AI teams.",
    "zh-CN": "像应用 AI 工程师一样讲 BYOK 选型——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -904,7 +1024,7 @@
   },
   "description": "OpenDesign's incident retro: the daemon-restart data bug, the root cause, the fix, and the systemic follow-ups. Built as a decision-grade product management deck for engineering, SRE, leadership.",
   "descriptionI18n": {
-   "en": "OpenDesign's incident retro: the daemon-restart data bug, the root cause, the fix, and the systemic follow-ups. Built as a decision-grade product management deck for engineering, SRE, leadership.",
+   "en": "An incident retro for Northwind, a fictional SaaS company: what broke, the root cause, the fix and the follow-ups. For engineering, SRE and leadership.",
    "zh-CN": "像平台 VP 一样把事故复盘写成学习稿——一份可商业交付的产品管理 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -945,7 +1065,7 @@
   },
   "description": "OpenDesign's enterprise AI-adoption brief: local-first agents at work, the risk controls, the ROI, and the rollout plan. Built as a decision-grade AI literacy deck for leadership, IT, security.",
   "descriptionI18n": {
-   "en": "OpenDesign's enterprise AI-adoption brief: local-first agents at work, the risk controls, the ROI, and the rollout plan. Built as a decision-grade AI literacy deck for leadership, IT, security.",
+   "en": "An enterprise AI adoption brief for Halden, a fictional insurer: agents at work, risk controls, ROI and the rollout plan. For leadership, IT and security.",
    "zh-CN": "像企业 AI 转型负责人一样写落地简报——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -986,7 +1106,7 @@
   },
   "description": "OpenDesign's demo-day pitch: hook, traction, moat, and the raise — built to make a partner sit up by page three. Built as a decision-grade fundraising pitch deck for accelerator partners, angels.",
   "descriptionI18n": {
-   "en": "OpenDesign's demo-day pitch: hook, traction, moat, and the raise — built to make a partner sit up by page three. Built as a decision-grade fundraising pitch deck for accelerator partners, angels.",
+   "en": "A demo-day pitch for Kestrel, a fictional startup: hook, traction, moat and the raise. For accelerator partners and angels.",
    "zh-CN": "像顶级加速器合伙人一样写 Demo Day 路演——一份可商业交付的融资路演 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1027,7 +1147,7 @@
   },
   "description": "OpenDesign live demo: from a one-line prompt to runnable design in a single session — the flow, live. Built as a decision-grade AI literacy deck for developers, prospects, community.",
   "descriptionI18n": {
-   "en": "OpenDesign live demo: from a one-line prompt to runnable design in a single session — the flow, live. Built as a decision-grade AI literacy deck for developers, prospects, community.",
+   "en": "A live product demo for Fathom, a fictional AI tool: from a one-line prompt to a working result in one session, with presenter notes. For developers, prospects and community.",
    "zh-CN": "像创始 DevRel 一样做现场 AI 演示——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1068,7 +1188,7 @@
   },
   "description": "OpenDesign Teams: a launch-and-adoption proposal for a mid-market design team weighing a switch from closed cloud tools. Built as a decision-grade B2B sales deck for design team lead, IT.",
   "descriptionI18n": {
-   "en": "OpenDesign Teams: a launch-and-adoption proposal for a mid-market design team weighing a switch from closed cloud tools. Built as a decision-grade B2B sales deck for design team lead, IT.",
+   "en": "A team rollout proposal from Quarry, a fictional software vendor, to a mid-market design team weighing a switch of tools. For the team lead and IT.",
    "zh-CN": "像战略客户 AE 一样推动团队落地——一份可商业交付的B2B 销售 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1103,10 +1223,16 @@
  {
   "id": "html-ppt-taste-brutalist",
   "name": "html-ppt-taste-brutalist",
+  "displayName": {
+   "en": "Brutalist deck (CRT terminal)"
+  },
   "description": "16:9 HTML deck in tactical-telemetry / CRT-terminal taste. Deactivated-CRT charcoal slides, white-phosphor monospace, hazard-red accent, scanline overlay, ASCII syntax, density over decoration. Distilled from Leonxlnx/taste-skill `brutalist-skill` (Tactical Telemetry mode).",
+  "descriptionI18n": {
+   "en": "A 16:9 slide deck in a dark CRT-terminal style: charcoal slides, phosphor monospace, scanlines and a hazard-red accent."
+  },
   "triggers": [],
-  "mode": "image",
-  "surface": "image",
+  "mode": "deck",
+  "surface": "web",
   "craftRequires": [],
   "platform": null,
   "scenario": "engineering",
@@ -1126,10 +1252,16 @@
  {
   "id": "html-ppt-taste-editorial",
   "name": "html-ppt-taste-editorial",
+  "displayName": {
+   "en": "Editorial minimalist deck"
+  },
   "description": "16:9 HTML deck in editorial-minimalist taste. Warm cream slides, serif display + grotesque body, hairline rules, monospace meta, generous macro-whitespace, one accent. Distilled from Leonxlnx/taste-skill `minimalist-skill`.",
+  "descriptionI18n": {
+   "en": "A 16:9 slide deck in an editorial style: warm cream slides, serif headings, hairline rules and generous white space."
+  },
   "triggers": [],
-  "mode": "image",
-  "surface": "image",
+  "mode": "deck",
+  "surface": "web",
   "craftRequires": [],
   "platform": null,
   "scenario": "marketing",
@@ -1155,7 +1287,7 @@
   },
   "description": "OpenDesign internals: how the agent stream, sandbox, and artifacts work — an engineering deep-dive talk. Built as a decision-grade AI literacy deck for engineers, dev community.",
   "descriptionI18n": {
-   "en": "OpenDesign internals: how the agent stream, sandbox, and artifacts work — an engineering deep-dive talk. Built as a decision-grade AI literacy deck for engineers, dev community.",
+   "en": "An engineering deep-dive talk on how Relay, a fictional product, streams agent output, sandboxes code and stores results. For engineers and developer communities.",
    "zh-CN": "像 Staff DevRel 一样做工程分享——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1237,7 +1369,7 @@
   },
   "description": "OpenDesign's weekly growth review: stars, installs, activation — the number, the driver, and the recommended move. Built as a decision-grade data & finance deck for growth & product team.",
   "descriptionI18n": {
-   "en": "OpenDesign's weekly growth review: stars, installs, activation — the number, the driver, and the recommended move. Built as a decision-grade data & finance deck for growth & product team.",
+   "en": "A weekly growth review for Ember, a fictional app: signups, installs and activation, the driver behind the number and the recommended move. For growth and product teams.",
    "zh-CN": "像分析负责人一样写每周增长复盘——一份可商业交付的数据财务 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1483,7 +1615,7 @@
   },
   "description": "OpenDesign's QBR for the executive committee: what moved, what stalled, and the resource reallocation ask. Built as a decision-grade corporate strategy deck for executive committee.",
   "descriptionI18n": {
-   "en": "OpenDesign's QBR for the executive committee: what moved, what stalled, and the resource reallocation ask. Built as a decision-grade corporate strategy deck for executive committee.",
+   "en": "A quarterly business review for Corvid, a fictional company: what moved, what stalled and the resource ask. For the executive committee.",
    "zh-CN": "像幕僚长一样做季度经营回顾——一份可商业交付的企业战略 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1524,7 +1656,7 @@
   },
   "description": "OpenDesign's Series A growth story: the traction curve, the expansion motion, and why it's venture-scale. Built as a decision-grade fundraising pitch deck for Series A partners.",
   "descriptionI18n": {
-   "en": "OpenDesign's Series A growth story: the traction curve, the expansion motion, and why it's venture-scale. Built as a decision-grade fundraising pitch deck for Series A partners.",
+   "en": "A Series A growth story for Marlow, a fictional startup: the traction curve, the expansion motion and why it can be venture-scale. For Series A investors.",
    "zh-CN": "像一线 VC 合伙人一样写 A 轮增长叙事——一份可商业交付的融资路演 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1565,7 +1697,7 @@
   },
   "description": "OpenDesign's product-launch announcement and press narrative — the headline, the proof points, and the call to action. Built as a decision-grade marketing & GTM deck for press, community, prospects.",
   "descriptionI18n": {
-   "en": "OpenDesign's product-launch announcement and press narrative — the headline, the proof points, and the call to action. Built as a decision-grade marketing & GTM deck for press, community, prospects.",
+   "en": "A product-launch announcement for Tidewater, a fictional company: the headline, the proof points and the call to action. For press, community and prospects.",
    "zh-CN": "像公关传播总监一样写产品发布公告——一份可商业交付的市场增长 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1688,7 +1820,7 @@
   },
   "description": "OpenDesign renewal + seat-expansion business case for a growing customer: realized value, usage proof, and the expansion ROI. Built as a decision-grade B2B sales deck for champion, finance approver.",
   "descriptionI18n": {
-   "en": "OpenDesign renewal + seat-expansion business case for a growing customer: realized value, usage proof, and the expansion ROI. Built as a decision-grade B2B sales deck for champion, finance approver.",
+   "en": "A renewal and seat-expansion business case from Pinecrest, a fictional vendor: value delivered, usage proof and the expansion ROI. For the champion and the finance approver.",
    "zh-CN": "像客户总监一样写续约与扩容论证——一份可商业交付的B2B 销售 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1729,7 +1861,7 @@
   },
   "description": "OpenDesign's community-growth campaign across GitHub, Discord, and X: the loops, the content calendar, and the pipeline math. Built as a decision-grade marketing & GTM deck for growth team, community lead.",
   "descriptionI18n": {
-   "en": "OpenDesign's community-growth campaign across GitHub, Discord, and X: the loops, the content calendar, and the pipeline math. Built as a decision-grade marketing & GTM deck for growth team, community lead.",
+   "en": "A community-growth campaign for Juniper, a fictional open-source project, across GitHub, Discord and X: the loops, the content calendar and the numbers. For growth and community teams.",
    "zh-CN": "像增长负责人一样规划社区增长战役——一份可商业交付的市场增长 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1934,7 +2066,7 @@
   },
   "description": "OpenDesign's unit-economics and BYOK cost model: the assumptions, the sensitivity, and why it scales. Built as a decision-grade data & finance deck for CFO, investors.",
   "descriptionI18n": {
-   "en": "OpenDesign's unit-economics and BYOK cost model: the assumptions, the sensitivity, and why it scales. Built as a decision-grade data & finance deck for CFO, investors.",
+   "en": "A unit-economics model for Saltmarsh, a fictional SaaS company: the assumptions, the sensitivity and why it scales. For the CFO and investors.",
    "zh-CN": "像 FP&A 伙伴一样讲清单位经济模型——一份可商业交付的数据财务 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -2467,7 +2599,7 @@
   },
   "description": "OpenDesign's strategy memo: should it monetize the plugin registry now or hold — options, risks, and the recommendation. Built as a decision-grade corporate strategy deck for CEO, strategy team.",
   "descriptionI18n": {
-   "en": "OpenDesign's strategy memo: should it monetize the plugin registry now or hold — options, risks, and the recommendation. Built as a decision-grade corporate strategy deck for CEO, strategy team.",
+   "en": "A strategy decision memo for Orchard, a fictional platform: monetize the marketplace now or wait, with options, risks and a recommendation. For the CEO and strategy team.",
    "zh-CN": "像战略发展负责人一样写战略决策备忘——一份可商业交付的企业战略 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -2666,7 +2798,13 @@
  {
   "id": "hyperframes",
   "name": "hyperframes",
+  "displayName": {
+   "en": "HTML video composition"
+  },
   "description": "Create video compositions, animations, title cards, overlays, captions, voiceovers, audio-reactive visuals, and scene transitions in HyperFrames HTML. Use when asked to build any HTML-based video content, add captions or subtitles synced to audio, generate text-to-speech narration, create audio-reactive animation (beat sync, glow, pulse driven by music), add animated text highlighting (marker sweeps, hand-drawn circles, burst lines, scribble, sketchout), or add transitions between scenes (crossfades, wipes, reveals, shader transitions). Covers composition authoring, timing, media, and the full video production workflow. For CLI commands (init, lint, preview, render, transcribe, tts) see the hyperframes-cli skill.",
+  "descriptionI18n": {
+   "en": "Videos built from HTML: animations, title cards, captions synced to audio, voiceover and scene transitions, exported to MP4."
+  },
   "triggers": [
    "hyperframes",
    "html video",
@@ -2709,7 +2847,7 @@
   },
   "description": "OpenDesign's investor pitch book: market map, moat, unit economics, and the ask — analyst-grade and diligence-ready. Built as a decision-grade fundraising pitch deck for growth-equity investors.",
   "descriptionI18n": {
-   "en": "OpenDesign's investor pitch book: market map, moat, unit economics, and the ask — analyst-grade and diligence-ready. Built as a decision-grade fundraising pitch deck for growth-equity investors.",
+   "en": "An investor pitch book for Vantor, a fictional growth company: market map, moat, unit economics and the ask. For growth-equity investors.",
    "zh-CN": "像成长股权分析师一样写投资 Pitch Book——一份可商业交付的融资路演 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -2744,7 +2882,13 @@
  {
   "id": "image-poster",
   "name": "image-poster",
+  "displayName": {
+   "en": "Poster image"
+  },
   "description": "Single-image generation skill for posters, key art, and editorial\nillustrations. Defaults to gpt-image-2 but is provider-agnostic — the\nsame workflow drives Flux, Imagen, or Midjourney via the active\nupstream tooling. Output is one or more PNG/JPEG files saved to the\nproject folder.",
+  "descriptionI18n": {
+   "en": "Posters, key art and editorial illustrations, saved as PNG or JPEG files in your project."
+  },
   "triggers": [
    "poster",
    "key art",
@@ -2775,7 +2919,13 @@
  {
   "id": "invoice",
   "name": "invoice",
+  "displayName": {
+   "en": "Invoice"
+  },
   "description": "A printable invoice page — sender + recipient block, line items table,\ntax breakdown, totals, and payment instructions. Use when the brief\nmentions \"invoice\", \"bill\", \"billing statement\", or \"发票\".",
+  "descriptionI18n": {
+   "en": "A printable invoice with sender and recipient, line items, tax breakdown, totals and payment details."
+  },
   "triggers": [
    "invoice",
    "bill",
@@ -2848,7 +2998,13 @@
  {
   "id": "kami-landing",
   "name": "kami-landing",
+  "displayName": {
+   "en": "Kami one-pager"
+  },
   "description": "Produce a print-grade single-page kami (紙 / 纸) document — warm\nparchment canvas, ink-blue accent, serif at one weight, no italic,\nno cool grays. The output reads like a professional white paper or\nstudio one-pager, not an app UI. Multilingual by design (EN ·\nzh-CN · ja). One self-contained HTML file, zero dependencies.",
+  "descriptionI18n": {
+   "en": "A print-quality one-pager or white paper on warm parchment with an ink-blue accent, in English, Chinese or Japanese."
+  },
   "triggers": [
    "kami",
    "紙",
@@ -2885,7 +3041,13 @@
  {
   "id": "kanban-board",
   "name": "kanban-board",
+  "displayName": {
+   "en": "Kanban board"
+  },
   "description": "Kanban / task board with columns (To do / In progress / In review / Done),\ndraggable-looking cards, assignee avatars, swimlanes, and a top filter\nbar. Use when the brief mentions \"kanban\", \"task board\", \"sprint board\",\n\"trello\", \"看板\".",
+  "descriptionI18n": {
+   "en": "A task board with To do, In progress, In review and Done columns, assignees, swimlanes and filters."
+  },
   "triggers": [
    "kanban",
    "task board",
@@ -2918,7 +3080,13 @@
  {
   "id": "last30days",
   "name": "last30days",
+  "displayName": {
+   "en": "Last 30 days trend report"
+  },
   "description": "Recent community and social trend research over the last 30 days. Use when\nthe brief asks what people are saying now, recent sentiment, community\nreactions, social proof, launch reaction, trend scan, or last-30-days context.",
+  "descriptionI18n": {
+   "en": "A report on what people have said about a topic in the last 30 days: sentiment, community reactions and trends."
+  },
   "triggers": [
    "last 30 days",
    "last30days",
@@ -2951,7 +3119,13 @@
  {
   "id": "live-artifact",
   "name": "live-artifact",
+  "displayName": {
+   "en": "Live data page"
+  },
   "description": "Create refreshable, auditable OpenDesign artifacts backed by connector or local data.\nTrigger when the user asks for live dashboards, refreshable reports, synced views, or reusable data-backed artifacts.",
+  "descriptionI18n": {
+   "en": "A dashboard or report that refreshes from your data, with each number traceable to its source."
+  },
   "triggers": [
    "live artifact",
    "live dashboard",
@@ -2984,6 +3158,9 @@
   "id": "live-artifact:baby-health-live",
   "name": "Baby Health Live",
   "description": "Create refreshable, auditable OpenDesign artifacts backed by connector or local data.\nTrigger when the user asks for live dashboards, refreshable reports, synced views, or reusable data-backed artifacts.",
+  "descriptionI18n": {
+   "en": "A dashboard or report that refreshes from your data, with each number traceable to its source."
+  },
   "triggers": [
    "live artifact",
    "live dashboard",
@@ -3016,6 +3193,9 @@
   "id": "live-artifact:competitor-radar-live",
   "name": "Competitor Radar Live",
   "description": "Create refreshable, auditable OpenDesign artifacts backed by connector or local data.\nTrigger when the user asks for live dashboards, refreshable reports, synced views, or reusable data-backed artifacts.",
+  "descriptionI18n": {
+   "en": "A dashboard or report that refreshes from your data, with each number traceable to its source."
+  },
   "triggers": [
    "live artifact",
    "live dashboard",
@@ -3048,6 +3228,9 @@
   "id": "live-artifact:crm-table-live",
   "name": "Crm Table Live",
   "description": "Create refreshable, auditable OpenDesign artifacts backed by connector or local data.\nTrigger when the user asks for live dashboards, refreshable reports, synced views, or reusable data-backed artifacts.",
+  "descriptionI18n": {
+   "en": "A dashboard or report that refreshes from your data, with each number traceable to its source."
+  },
   "triggers": [
    "live artifact",
    "live dashboard",
@@ -3080,6 +3263,9 @@
   "id": "live-artifact:crypto-dashboard",
   "name": "Crypto Dashboard",
   "description": "Create refreshable, auditable OpenDesign artifacts backed by connector or local data.\nTrigger when the user asks for live dashboards, refreshable reports, synced views, or reusable data-backed artifacts.",
+  "descriptionI18n": {
+   "en": "A dashboard or report that refreshes from your data, with each number traceable to its source."
+  },
   "triggers": [
    "live artifact",
    "live dashboard",
@@ -3112,6 +3298,9 @@
   "id": "live-artifact:monday-operator-live",
   "name": "Monday Operator Live",
   "description": "Create refreshable, auditable OpenDesign artifacts backed by connector or local data.\nTrigger when the user asks for live dashboards, refreshable reports, synced views, or reusable data-backed artifacts.",
+  "descriptionI18n": {
+   "en": "A dashboard or report that refreshes from your data, with each number traceable to its source."
+  },
   "triggers": [
    "live artifact",
    "live dashboard",
@@ -3144,6 +3333,9 @@
   "id": "live-artifact:stock-dashboard",
   "name": "Stock Dashboard",
   "description": "Create refreshable, auditable OpenDesign artifacts backed by connector or local data.\nTrigger when the user asks for live dashboards, refreshable reports, synced views, or reusable data-backed artifacts.",
+  "descriptionI18n": {
+   "en": "A dashboard or report that refreshes from your data, with each number traceable to its source."
+  },
   "triggers": [
    "live artifact",
    "live dashboard",
@@ -3175,7 +3367,13 @@
  {
   "id": "live-dashboard",
   "name": "live-dashboard",
+  "displayName": {
+   "en": "Team dashboard (Notion style)"
+  },
   "description": "Notion-style team dashboard rendered as a Live Artifact. A single-page,\nself-contained HTML dashboard with KPIs, a 7-day sparkline, a real-time\nactivity feed and a linked-database task table — wired to Notion via the\nComposio connector catalog. Refreshes on demand and when the artifact\nis opened. Falls back to seeded mock data when no connector is bound,\nso it works offline / in screenshots / in the picker preview.",
+  "descriptionI18n": {
+   "en": "A Notion-style team dashboard with KPIs, a 7-day sparkline, an activity feed and a task table, refreshed on demand."
+  },
   "triggers": [
    "team dashboard",
    "notion dashboard",
@@ -3213,7 +3411,13 @@
  {
   "id": "meeting-notes",
   "name": "meeting-notes",
+  "displayName": {
+   "en": "Meeting notes"
+  },
   "description": "Meeting notes page — title bar with attendees, agenda checklist, decisions\nblock, action items table with owners + dates, and a \"next meeting\" footer.\nUse when the brief mentions \"meeting notes\", \"minutes\", \"1:1 notes\",\n\"all-hands recap\", or \"会议纪要\".",
+  "descriptionI18n": {
+   "en": "Meeting notes with attendees, agenda, decisions, action items with owners and dates, and the next meeting."
+  },
   "triggers": [
    "meeting notes",
    "minutes",
@@ -3244,7 +3448,13 @@
  {
   "id": "mobile-app",
   "name": "mobile-app",
+  "displayName": {
+   "en": "Mobile app screen"
+  },
   "description": "A mobile-app screen rendered inside a pixel-accurate iPhone 15 Pro frame\non the page. Built by copying the seed `assets/template.html` and pasting\none screen archetype from `references/layouts.md`. Use when the brief asks\nfor \"mobile app\", \"iOS app\", \"Android app\", \"phone screen\", or \"app UI\".",
+  "descriptionI18n": {
+   "en": "A mobile app screen shown inside a realistic iPhone frame."
+  },
   "triggers": [
    "mobile app",
    "ios app",
@@ -3279,7 +3489,13 @@
  {
   "id": "mobile-onboarding",
   "name": "mobile-onboarding",
+  "displayName": {
+   "en": "Mobile onboarding flow"
+  },
   "description": "A multi-screen mobile onboarding flow rendered as three phone frames\nside by side — splash, value-prop, sign-in. Status bar, swipe dots,\nprimary CTA. Use when the brief mentions \"mobile onboarding\", \"iOS\nonboarding\", \"phone signup\", or \"移动端引导\".",
+  "descriptionI18n": {
+   "en": "Three phone screens side by side for a sign-up flow: splash, value proposition and sign-in."
+  },
   "triggers": [
    "mobile onboarding",
    "ios onboarding",
@@ -3315,7 +3531,13 @@
  {
   "id": "motion-frames",
   "name": "motion-frames",
+  "displayName": {
+   "en": "Motion design hero"
+  },
   "description": "A single-frame motion-design composition with looping CSS animations —\nrotating type ring, animated globe, ticking timer, parallax labels.\nRenders as a hero video poster you can hand straight to HyperFrames or\nany keyframe-based exporter. Use when the brief asks for \"motion design\",\n\"animated hero\", \"loop\", \"video poster\", \"title card\", or pairs Open\nClaude Design with HyperFrames for a kinetic export.",
+  "descriptionI18n": {
+   "en": "A looping animated hero: rotating type ring, animated globe, ticking timer and parallax labels."
+  },
   "triggers": [
    "motion design",
    "motion graphic",
@@ -3349,7 +3571,13 @@
  {
   "id": "open-design-landing",
   "name": "open-design-landing",
+  "displayName": {
+   "en": "Atelier Zero landing page"
+  },
   "description": "Produce a world-class single-page editorial landing site in the\nAtelier Zero visual language (Monocle / Apartamento / Études editorial\ncollage) — the same aesthetic OpenDesign uses for its own marketing\nsurface. The agent fills a typed `inputs.json` from a brand brief,\noptionally generates 16 collage assets via gpt-image-2, then runs a\npure-function composer that emits a self-contained HTML file.\nDrop-in scroll-reveal motion and a\nHeadroom-style sticky nav are wired automatically.",
+  "descriptionI18n": {
+   "en": "An editorial landing page in a magazine collage style, filled in from your brand brief, with optional generated collage images."
+  },
   "triggers": [
    "landing page",
    "落地页",
@@ -3359,13 +3587,13 @@
    "atelier zero",
    "open design landing"
   ],
-  "mode": "image",
+  "mode": "prototype",
   "surface": "web",
   "craftRequires": [
    "pixel-discipline",
    "typographic-rhythm"
   ],
-  "platform": null,
+  "platform": "desktop",
   "scenario": "marketing",
   "category": "brand-page",
   "previewType": "html",
@@ -3389,7 +3617,7 @@
   },
   "description": "OpenDesign's brand-story deck for partners and press: why it exists, what it believes, and where design is going. Built as a decision-grade marketing & GTM deck for partners, press, community.",
   "descriptionI18n": {
-   "en": "OpenDesign's brand-story deck for partners and press: why it exists, what it believes, and where design is going. Built as a decision-grade marketing & GTM deck for partners, press, community.",
+   "en": "A brand-story deck for Larkspur, a fictional design studio: why it exists, what it believes and where it is going. For partners, press and community.",
    "zh-CN": "像会讲故事的创始人一样写品牌故事稿——一份可商业交付的市场增长 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -3427,7 +3655,13 @@
  {
   "id": "orbit-general",
   "name": "orbit-general",
+  "displayName": {
+   "en": "Daily briefing (all tools)"
+  },
   "description": "Open Orbit briefing skill — selected by the Orbit pipeline when the\nuser has two or more connectors connected. Pulls the past 24 hours of\nactivity from every authenticated connector (GitHub, Linear, Notion,\nSlack, 飞书, Calendar, Gmail, Drive, Sentry, Vercel, …) and renders a\nsingle adaptive bento-grid dashboard at the top of \"我的设计\". Each\nconnector module picks its own UI form (list, avatar stack, status\nring, heatmap, file grid, alert card, …) based on the data shape it\nreturns, so the layout scales as Orbit's connector ecosystem grows.\nThis skill should not be triggered manually — it is invoked by\nOrbit's daily-digest scheduler against the user's live connector\ndata.",
+  "descriptionI18n": {
+   "en": "A daily dashboard of the last 24 hours across your connected tools, such as GitHub, Linear, Notion, Slack and Gmail."
+  },
   "triggers": [
    "orbit",
    "daily digest",
@@ -3457,7 +3691,13 @@
  {
   "id": "orbit-github",
   "name": "orbit-github",
+  "displayName": {
+   "en": "Daily briefing (GitHub)"
+  },
   "description": "Open Orbit briefing skill — selected by the Orbit pipeline when\nGitHub is the user's only connected connector, or when the user\nexplicitly scopes their daily digest to GitHub. Pulls the past 24\nhours of PRs, review requests, issues, CI runs, and merges from the\nuser's authenticated GitHub connection and renders them in a layout\nthat mirrors GitHub's native Notifications + PR-diff visual language.\nThis skill should not be triggered manually — it is invoked by\nOrbit's daily-digest scheduler against live GitHub data.",
+  "descriptionI18n": {
+   "en": "The last 24 hours on GitHub: pull requests, review requests, issues, CI runs and merges."
+  },
   "triggers": [
    "github briefing",
    "github digest",
@@ -3486,7 +3726,13 @@
  {
   "id": "orbit-gmail",
   "name": "orbit-gmail",
+  "displayName": {
+   "en": "Daily briefing (Gmail)"
+  },
   "description": "Open Orbit briefing skill — selected by the Orbit pipeline when\nGmail is the user's only connected connector, or when the user\nexplicitly scopes their daily digest to Gmail. Pulls the past 24\nhours of inbox activity (replies awaited, mentions, cc, auto-\ncategorized bulk) from the user's authenticated Gmail connection\nand renders the digest as the Orbit Daily Digest email opened\ninside Gmail's reading view. This skill should not be triggered\nmanually — it is invoked by Orbit's daily-digest scheduler against\nlive Gmail data.",
+  "descriptionI18n": {
+   "en": "The last 24 hours in your inbox: replies you owe, mentions, and bulk mail sorted for you."
+  },
   "triggers": [
    "gmail briefing",
    "inbox digest",
@@ -3515,7 +3761,13 @@
  {
   "id": "orbit-linear",
   "name": "orbit-linear",
+  "displayName": {
+   "en": "Daily briefing (Linear)"
+  },
   "description": "Open Orbit briefing skill — selected by the Orbit pipeline when\nLinear is the user's only connected connector, or when the user\nexplicitly scopes their daily digest to Linear. Pulls the past 24\nhours of issue movement, status changes, assignments, and cycle\nprogress from the user's authenticated Linear connection and renders\nthe digest in Linear's native Inbox + cycle-progress visual language.\nThis skill should not be triggered manually — it is invoked by\nOrbit's daily-digest scheduler against live Linear data.",
+  "descriptionI18n": {
+   "en": "The last 24 hours in Linear: issue changes, assignments and cycle progress."
+  },
   "triggers": [
    "linear briefing",
    "linear digest",
@@ -3544,7 +3796,13 @@
  {
   "id": "orbit-notion",
   "name": "orbit-notion",
+  "displayName": {
+   "en": "Daily briefing (Notion)"
+  },
   "description": "Open Orbit briefing skill — selected by the Orbit pipeline when\nNotion is the user's only connected connector, or when the user\nexplicitly scopes their daily digest to Notion. Pulls the past 24\nhours of document edits, comments, mentions, and database row changes\nfrom the user's authenticated Notion connection and renders the\ndigest as a native Notion page (callout / toggle / database table\nprimitives). This skill should not be triggered manually — it is\ninvoked by Orbit's daily-digest scheduler against live Notion data.",
+  "descriptionI18n": {
+   "en": "The last 24 hours in Notion: page edits, comments, mentions and database changes."
+  },
   "triggers": [
    "notion briefing",
    "notion digest",
@@ -3573,7 +3831,13 @@
  {
   "id": "pm-spec",
   "name": "pm-spec",
+  "displayName": {
+   "en": "Product spec (PRD)"
+  },
   "description": "Product spec / PRD as a single page — problem, success metrics, scope,\nuser stories, design notes, rollout plan, open questions. Use when the\nbrief mentions \"PRD\", \"spec\", \"product spec\", \"feature brief\", or \"需求文档\".",
+  "descriptionI18n": {
+   "en": "A one-page product spec: problem, success metrics, scope, user stories, design notes, rollout plan and open questions."
+  },
   "triggers": [
    "prd",
    "spec",
@@ -3603,7 +3867,13 @@
  {
   "id": "pricing-page",
   "name": "pricing-page",
+  "displayName": {
+   "en": "Pricing page"
+  },
   "description": "A standalone pricing page — header, plan tiers, feature comparison table,\nand an FAQ. Use when the brief asks for \"pricing\", \"plans\",\n\"subscription tiers\", or a \"compare plans\" page.",
+  "descriptionI18n": {
+   "en": "A pricing page with plan tiers, a feature comparison table and an FAQ."
+  },
   "triggers": [
    "pricing",
    "pricing page",
@@ -3637,12 +3907,12 @@
   "id": "replit-deck",
   "name": "replit-deck",
   "displayName": {
-   "en": "Write a Feature Business Case like a Principal PM",
-   "zh-CN": "像 Principal PM 一样写功能商业论证"
+   "en": "Themed decision deck (8 styles)",
+   "zh-CN": "主题决策演示（8 种风格）"
   },
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -3679,7 +3949,7 @@
   "name": "Example Atlas",
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -3716,7 +3986,7 @@
   "name": "Example Bluehouse",
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -3753,7 +4023,7 @@
   "name": "Example Helix",
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -3790,7 +4060,7 @@
   "name": "Example Holm",
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -3825,7 +4095,13 @@
  {
   "id": "saas-landing",
   "name": "saas-landing",
+  "displayName": {
+   "en": "SaaS landing page"
+  },
   "description": "Single-page SaaS landing with hero, features, social proof, pricing, and CTA.\nRespects the active DESIGN.md color/typography/layout tokens.\nTrigger keywords: \"saas landing\", \"marketing page\", \"product landing\".",
+  "descriptionI18n": {
+   "en": "A landing page for a SaaS product with hero, features, social proof, pricing and call to action."
+  },
   "triggers": [
    "saas landing",
    "marketing page",
@@ -3863,7 +4139,7 @@
   },
   "description": "OpenDesign's operating review: growth, burn, and the concrete path to sustainability without losing the open ethos. Built as a decision-grade corporate strategy deck for leadership team.",
   "descriptionI18n": {
-   "en": "OpenDesign's operating review: growth, burn, and the concrete path to sustainability without losing the open ethos. Built as a decision-grade corporate strategy deck for leadership team.",
+   "en": "An operating review for Brightwell, a fictional company: growth, burn and the path to sustainability. For the leadership team.",
    "zh-CN": "像克制的 COO 一样写经营复盘——一份可商业交付的企业战略 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -3898,7 +4174,13 @@
  {
   "id": "social-carousel",
   "name": "social-carousel",
+  "displayName": {
+   "en": "Social media carousel"
+  },
   "description": "A three-card social-media carousel laid out as 1080×1080 squares —\nthree cinematic, on-brand panels with display headlines that connect\nacross the series (\"onwards.\" → \"to the next one.\" → \"looking ahead.\").\nEach card has a brand mark, a number / total, a caption, and a \"loop\"\naffordance. Use when the brief asks for a \"carousel post\", \"social\ncarousel\", \"Instagram carousel\", \"LinkedIn series\", \"X thread cards\",\nor \"三连发\".",
+  "descriptionI18n": {
+   "en": "Three square 1080 × 1080 cards whose headlines connect across the series, ready to post."
+  },
   "triggers": [
    "social carousel",
    "carousel post",
@@ -3930,7 +4212,13 @@
  {
   "id": "social-media-dashboard",
   "name": "social-media-dashboard",
+  "displayName": {
+   "en": "Social media analytics"
+  },
   "description": "Creator-facing social media analytics dashboard in a single HTML file.\nA platform switcher (X / LinkedIn / YouTube / Instagram), a row of KPI\ncards (followers, engagement rate, likes, reposts), a follower-growth\nchart, a \"top post this week\" preview, and a trending topics / top\ncomments side panel. Use when the brief mentions a \"social media\ndashboard\", \"creator analytics\", \"social analytics\", or names specific\nplatforms (X, Twitter, LinkedIn, YouTube, Instagram, TikTok) together\nwith metrics like followers, engagement, likes, reposts.",
+  "descriptionI18n": {
+   "en": "A creator dashboard with platform switcher, follower and engagement KPIs, growth chart, top post and trending topics."
+  },
   "triggers": [
    "social media dashboard",
    "social analytics",
@@ -3962,7 +4250,13 @@
  {
   "id": "social-media-matrix-tracker-template",
   "name": "social-media-matrix-tracker-template",
+  "displayName": {
+   "en": "Social media tracker"
+  },
   "description": "社媒矩阵数据追踪面板模板（Social Media Matrix Tracker）。\nUse when users ask for a cinematic, data-dense social media analytics dashboard\nwith multi-platform metrics, interactive charts, hover insights, range compare,\nand dark/light theme switching in a single HTML artifact.",
+  "descriptionI18n": {
+   "en": "A data-dense dashboard comparing accounts across platforms, with interactive charts, date ranges and light and dark themes."
+  },
   "triggers": [
    "social media matrix tracker",
    "social media dashboard template",
@@ -4004,7 +4298,13 @@
  {
   "id": "sprite-animation",
   "name": "sprite-animation",
+  "displayName": {
+   "en": "Pixel-art animated slide"
+  },
   "description": "A pixel / sprite-style animated explainer slide — full-bleed cream stage,\nbold display year, animated pixel-art mascot (e.g. Hanafuda card, mushroom,\nor 8-bit console), kinetic Japanese display type, ticking timeline ribbon.\nReads like a single frame of an educational motion video — looping CSS\nkeyframes, no JS, ready to be screen-recorded into a vertical video.\nUse when the brief asks for a \"sprite animation\", \"pixel-art video\",\n\"8-bit explainer\", \"history of X explainer\", \"kinetic typography history\",\n\"Nintendo-style\", \"精灵图动画\", \"像素动画\", or \"复古动画\".",
+  "descriptionI18n": {
+   "en": "An animated explainer slide with pixel-art mascot, bold display type and a ticking timeline."
+  },
   "triggers": [
    "sprite animation",
    "pixel art animation",
@@ -4038,7 +4338,13 @@
  {
   "id": "team-okrs",
   "name": "team-okrs",
+  "displayName": {
+   "en": "Team OKRs"
+  },
   "description": "OKR tracker page — quarter banner, three objectives with their key\nresults as progress bars, owner avatars, status pills, and a \"this\nquarter at a glance\" sidebar. Use when the brief mentions \"OKRs\",\n\"key results\", \"objectives\", or \"目标\".",
+  "descriptionI18n": {
+   "en": "An OKR tracker with three objectives, key results as progress bars, owners, status and a quarter summary."
+  },
   "triggers": [
    "okr",
    "okrs",
@@ -4067,7 +4373,13 @@
  {
   "id": "trading-analysis-dashboard-template",
   "name": "trading-analysis-dashboard-template",
+  "displayName": {
+   "en": "Trading terminal dashboard"
+  },
   "description": "Professional trading analysis dashboard template (single-file HTML) with\nlight/dark theme switch, dense market panels, chart interactions, demo/live\nplayback, and command palette behavior.\nUse when users ask for a Wall-Street-style analytics terminal, trading cockpit,\nor high-tech financial dashboard template with realistic data layout.",
+  "descriptionI18n": {
+   "en": "A dense trading dashboard with market panels, interactive charts, replay and light and dark themes."
+  },
   "triggers": [
    "trading analysis dashboard template",
    "wall street dashboard template",
@@ -4098,7 +4410,13 @@
  {
   "id": "tweaks",
   "name": "tweaks",
+  "displayName": {
+   "en": "Live design controls"
+  },
   "description": "Wrap any HTML artifact with a side panel of live, parameterized\ncontrols — accent color, type scale, density, motion, theme — that\nrewrite CSS custom properties in real time and persist to\nlocalStorage. Lets the user explore variants of a design without\nre-prompting the agent. Use when the brief asks for \"variants\",\n\"side-by-side options\", \"tweak this\", \"let me adjust\", \"live\nknobs\", or \"实时调参\".",
+  "descriptionI18n": {
+   "en": "Adds a side panel to a design for trying accent colour, type scale, density, motion and theme live, without asking again."
+  },
   "triggers": [
    "tweaks",
    "variants",
@@ -4131,7 +4449,13 @@
  {
   "id": "video-shortform",
   "name": "video-shortform",
+  "displayName": {
+   "en": "Short video clip"
+  },
   "description": "Short-form video generation skill — 3-10 second clips for product\nreveals, motion teasers, ambient loops. Defaults to Seedance 2 but\nworks the same with Kling 3 / 4, Veo 3 or Sora 2. Output is one MP4\nsaved to the project folder. When the workspace also ships an\ninteractive-video / hyperframes skill, prefer composing several short\nshots into a single timeline rather than one long monolithic clip.",
+  "descriptionI18n": {
+   "en": "A 3 to 10 second clip for product reveals, teasers or ambient loops, saved as an MP4 in your project."
+  },
   "triggers": [
    "video",
    "clip",
@@ -4161,7 +4485,13 @@
  {
   "id": "waitlist-page",
   "name": "waitlist-page",
+  "displayName": {
+   "en": "Waitlist page"
+  },
   "description": "Minimal pre-launch landing with email capture, brand logo, and optional decorative layer.\nReads DESIGN.md for colors, typography, and layout rules.\nBest for: product launches, beta signups, early access programs, indie projects.",
+  "descriptionI18n": {
+   "en": "A minimal pre-launch page with email sign-up, for product launches, betas and early access."
+  },
   "triggers": [
    "waitlist page",
    "coming soon page",
@@ -4190,7 +4520,13 @@
  {
   "id": "web-prototype",
   "name": "web-prototype",
+  "displayName": {
+   "en": "Web page"
+  },
   "description": "General-purpose desktop web prototype. Single self-contained HTML file built\nby copying the seed `assets/template.html` and pasting section layouts from\n`references/layouts.md`. Default for any landing / marketing / docs / SaaS\npage when no more specific skill matches.",
+  "descriptionI18n": {
+   "en": "A general-purpose desktop web page: landing, marketing, docs or SaaS."
+  },
   "triggers": [
    "prototype",
    "mockup",
@@ -4220,12 +4556,18 @@
  {
   "id": "web-prototype-taste-editorial",
   "name": "web-prototype-taste-editorial",
+  "displayName": {
+   "en": "Editorial minimalist web page"
+  },
   "description": "Editorial-minimalist web prototype. Warm monochrome canvas, serif display + grotesque body, 1px hairline borders, muted pastel chips, generous macro-whitespace, ambient micro-motion. Distilled from Leonxlnx/taste-skill `minimalist-skill`.",
+  "descriptionI18n": {
+   "en": "A calm editorial web page: warm monochrome, serif headings, hairline borders, pastel chips and lots of white space."
+  },
   "triggers": [],
-  "mode": "image",
-  "surface": "image",
+  "mode": "prototype",
+  "surface": "web",
   "craftRequires": [],
-  "platform": null,
+  "platform": "desktop",
   "scenario": "marketing",
   "category": null,
   "previewType": "html",
@@ -4243,12 +4585,18 @@
  {
   "id": "web-prototype-taste-soft",
   "name": "web-prototype-taste-soft",
+  "displayName": {
+   "en": "Soft premium web page"
+  },
   "description": "Apple-tier soft web prototype. Silver/cream canvas, double-bezel cards, button-in-button CTAs, generous squircle radii, spring motion, ambient mesh. Distilled from Leonxlnx/taste-skill `soft-skill` + sections 4–8 of `taste-skill`.",
+  "descriptionI18n": {
+   "en": "A soft, premium web page: silver and cream tones, nested cards, rounded corners, springy motion and a subtle gradient mesh."
+  },
   "triggers": [],
-  "mode": "image",
-  "surface": "image",
+  "mode": "prototype",
+  "surface": "web",
   "craftRequires": [],
-  "platform": null,
+  "platform": "desktop",
   "scenario": "general",
   "category": null,
   "previewType": "html",
@@ -4266,7 +4614,13 @@
  {
   "id": "webgl-experience",
   "name": "webgl-experience",
+  "displayName": {
+   "en": "WebGL experience"
+  },
   "description": "A full-screen, real-time WebGL/WebGL2 experience — animated shaders, 3D\nscenes, generative visuals, particle fields — rendered live on the GPU with\na typographic overlay. Produced as a single self-contained `index.html`.\nUse when the brief asks for a \"WebGL\", \"shader\", \"3D\", \"generative\", \"GPU\",\n\"interactive canvas\", \"hero animation\", or \"real-time visual\" experience.\nOpenDesign serves this in powered-preview mode so the GPU stack actually\nruns.",
+  "descriptionI18n": {
+   "en": "A full-screen real-time WebGL scene: shaders, 3D, generative visuals or particles, with a type overlay."
+  },
   "triggers": [
    "webgl",
    "webgl2",
@@ -4309,7 +4663,7 @@
   },
   "description": "OpenDesign's weekly metrics standup: this week's numbers, the one anomaly, and the single decision it forces. Built as a decision-grade data & finance deck for ops & growth team.",
   "descriptionI18n": {
-   "en": "OpenDesign's weekly metrics standup: this week's numbers, the one anomaly, and the single decision it forces. Built as a decision-grade data & finance deck for ops & growth team.",
+   "en": "A weekly metrics stand-up for Ferro, a fictional startup: this week's numbers, the one anomaly and the decision it forces. For ops and growth teams.",
    "zh-CN": "像数据驱动的运营负责人一样开指标站会——一份可商业交付的数据财务 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -4344,7 +4698,13 @@
  {
   "id": "wireframe-annotated",
   "name": "wireframe-annotated",
+  "displayName": {
+   "en": "Annotated wireframe"
+  },
   "description": "An annotated / redline lo-fi wireframe — a desktop landing/marketing page\ndrawn as flat greyboxes inside a browser chrome frame, overlaid with numbered\nannotation pins (①②③④⑤) in a single accent color, paired with a right-hand\nSPEC PANEL that lists each numbered pin with a short engineering / UX note.\nThis is the \"wireframe + redline spec\" style — clean, flat, low-fidelity, NOT\nhand-drawn. Use when the brief asks for \"annotated wireframe\", \"redline\nwireframe\", \"wireframe with spec\", \"lo-fi landing wireframe\", \"low fidelity\",\n\"线框图\", \"标注线框\", or \"redline\".",
+  "descriptionI18n": {
+   "en": "A greybox landing-page wireframe with numbered notes and a spec panel explaining each one."
+  },
   "triggers": [
    "annotated wireframe",
    "redline",
@@ -4376,7 +4736,13 @@
  {
   "id": "wireframe-greybox",
   "name": "wireframe-greybox",
+  "displayName": {
+   "en": "Greybox wireframe"
+  },
   "description": "A crisp greybox / blueprint lo-fi wireframe — neutral grey blocks on a\npale page, image placeholders drawn as a rectangle with a diagonal X,\ntext shown as solid \"lorem bars\" of varying widths, sharp 1.5–2px\nborders, and a single monospace redline accent for annotations. Reads\nlike a structural blueprint before any visual design is applied. Use\nwhen the brief asks for \"greybox\", \"blueprint wireframe\", \"lo-fi\ndashboard\", \"low fidelity\", \"线框图\", or \"灰盒原型\".",
+  "descriptionI18n": {
+   "en": "A clean low-fidelity wireframe with grey blocks, image placeholders and text bars, like a structural blueprint."
+  },
   "triggers": [
    "greybox",
    "grey box wireframe",
@@ -4408,7 +4774,13 @@
  {
   "id": "wireframe-mobile-flow",
   "name": "wireframe-mobile-flow",
+  "displayName": {
+   "en": "Mobile flow wireframe"
+  },
   "description": "A lo-fi multi-screen MOBILE flow wireframe — three or four phone frames\nlaid out in a row on a board, showing a connected user flow (Onboarding →\nHome feed → Item detail → Confirm). Grey-box content inside each device,\ndashed connector arrows + numbered step labels between screens, and a\ncouple of annotation callouts. Reads like an app flow pinned to a\nwhiteboard before any pixels are committed. Use when the brief asks for\n\"mobile wireframe\", \"app flow\", \"user flow wireframe\", \"lo-fi mobile\",\n\"low fidelity\", \"线框图\", \"移动端线框\", or \"App 流程\".",
+  "descriptionI18n": {
+   "en": "Three or four phone screens in a row showing a user flow, connected by numbered arrows."
+  },
   "triggers": [
    "mobile wireframe",
    "app flow",
@@ -4440,7 +4812,13 @@
  {
   "id": "wireframe-sketch",
   "name": "wireframe-sketch",
+  "displayName": {
+   "en": "Hand-drawn wireframe"
+  },
   "description": "A hand-drawn wireframe exploration — graph-paper background, marker /\npencil tone, multiple tab labels for variants, sticky-note annotations,\nscribbled chart placeholders, hatched fills. Reads like a designer's\nwhiteboard before any pixels are committed. Use when the brief asks for\n\"wireframe\", \"sketch wireframe\", \"hand-drawn\", \"lo-fi\", \"whiteboard\",\n\"草稿\", or \"手绘原型\".",
+  "descriptionI18n": {
+   "en": "A whiteboard-style wireframe on graph paper with marker lines, sticky notes and several variants."
+  },
   "triggers": [
    "wireframe",
    "sketch wireframe",
@@ -4473,7 +4851,13 @@
  {
   "id": "worker-visualizer",
   "name": "worker-visualizer",
+  "displayName": {
+   "en": "Real-time visualizer"
+  },
   "description": "A real-time data/particle/simulation visualizer whose heavy compute runs in\na Web Worker (off the main thread), optionally sharing memory with the UI via\nSharedArrayBuffer, and renders to a canvas at 60fps. Produced as a single\nself-contained `index.html`. Use when the brief asks for a \"web worker\",\n\"simulation\", \"particle system\", \"physics\", \"off-main-thread\", \"fractal\",\n\"real-time compute\", or \"audio/data visualizer\". OpenDesign serves this in\npowered-preview mode so Workers and SharedArrayBuffer actually work.",
+  "descriptionI18n": {
+   "en": "A smooth 60 fps data, particle or simulation visualizer that keeps the page responsive."
+  },
   "triggers": [
    "web worker",
    "worker",
@@ -4512,7 +4896,13 @@
  {
   "id": "x-research",
   "name": "x-research",
+  "displayName": {
+   "en": "X sentiment report"
+  },
   "description": "X/Twitter public sentiment research for recent market, company, product, or\ncommunity discourse. Use when the brief asks what people are saying on X,\nTwitter sentiment, CT sentiment, public opinion, expert posts, or social\nreaction around a stock, sector, company, product, or market event.",
+  "descriptionI18n": {
+   "en": "What people are saying on X about a company, product, market or event, with sentiment and notable posts."
+  },
   "triggers": [
    "x research",
    "twitter sentiment",

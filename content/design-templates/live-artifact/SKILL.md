@@ -1,5 +1,7 @@
 ---
 name: live-artifact
+en_name: "Live data page"
+en_description: "A dashboard or report that refreshes from your data, with each number traceable to its source."
 description: |
   Create refreshable, auditable OpenDesign artifacts backed by connector or local data.
   Trigger when the user asks for live dashboards, refreshable reports, synced views, or reusable data-backed artifacts.
@@ -13,6 +15,25 @@ triggers:
   - "可刷新"
   - "实时看板"
 od:
+  examples:
+    baby-health-live:
+      en_name: "Baby health tracker (live data)"
+      en_description: "A calm panel for a newborn's first month: sleep, feeds and growth, synced from your tracking apps."
+    competitor-radar-live:
+      en_name: "Competitor radar (live data)"
+      en_description: "Competitors ranked by threat level, with the latest signals from your sources in one refreshable view."
+    crm-table-live:
+      en_name: "CRM table (live data)"
+      en_description: "A sales pipeline filled in from your email, with stage, ARR, owner and next action for each lead."
+    crypto-dashboard:
+      en_name: "Crypto portfolio (live data)"
+      en_description: "A crypto portfolio with holdings, prices and performance charts that refresh on demand."
+    monday-operator-live:
+      en_name: "Monday briefing (live data)"
+      en_description: "A Monday-morning memo with the week's revenue and the few things that need your attention."
+    stock-dashboard:
+      en_name: "Stock portfolio (live data)"
+      en_description: "A stock portfolio with positions, gains and charts that refresh on demand."
   mode: prototype
   scenario: live
   preview:

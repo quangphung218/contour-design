@@ -4,8 +4,7 @@ en_name: "Write a Series A Growth Story like a Tier-1 VC Partner"
 zh_name: "像一线 VC 合伙人一样写 A 轮增长叙事"
 description: |
   OpenDesign's Series A growth story: the traction curve, the expansion motion, and why it's venture-scale. Built as a decision-grade fundraising pitch deck for Series A partners.
-en_description: |
-  OpenDesign's Series A growth story: the traction curve, the expansion motion, and why it's venture-scale. Built as a decision-grade fundraising pitch deck for Series A partners.
+en_description: "A Series A growth story for Marlow, a fictional startup: the traction curve, the expansion motion and why it can be venture-scale. For Series A investors."
 zh_description: |
   像一线 VC 合伙人一样写 A 轮增长叙事——一份可商业交付的融资路演 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

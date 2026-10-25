@@ -142,6 +142,19 @@ fn ours_skills(list: &[od_content::SkillEntry]) -> BTreeMap<String, Value> {
         .collect()
 }
 
+/// A derived example's UI name and description come from `od.examples`,
+/// which only Contour reads; every other field must still match.
+fn without_example_text(mut map: BTreeMap<String, Value>) -> BTreeMap<String, Value> {
+    for (id, v) in &mut map {
+        if is_derived(id) {
+            let o = v.as_object_mut().unwrap();
+            o.remove("displayName");
+            o.remove("descriptionI18n");
+        }
+    }
+    map
+}
+
 fn assert_same(kind: &str, ours: &BTreeMap<String, Value>, theirs: &BTreeMap<String, Value>) {
     let ours_ids: Vec<_> = ours.keys().collect();
     let their_ids: Vec<_> = theirs.keys().collect();
@@ -174,9 +187,103 @@ fn design_templates_match_original_loader() {
     let idx = index();
     assert_same(
         "design-templates",
-        &ours_skills(&idx.design_templates),
-        &golden("original-design-templates.json"),
+        &without_example_text(ours_skills(&idx.design_templates)),
+        &without_example_text(golden("original-design-templates.json")),
     );
+}
+
+/// English text of an i18n map.
+fn en(map: Option<&BTreeMap<String, String>>) -> Option<&str> {
+    map.and_then(|m| m.get("en")).map(String::as_str)
+}
+
+/// Mode inference reads the whole body, so a page that says "not animated"
+/// once is filed as video. Bundled templates state their mode instead.
+#[test]
+fn every_design_template_declares_its_mode() {
+    let undeclared: Vec<String> = dirs(&content_root().join("design-templates"))
+        .iter()
+        .filter_map(|dir| {
+            let raw = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+            let (data, _) = od_content::frontmatter::parse(&raw).unwrap();
+            let declared = data["od"]["mode"]
+                .as_str()
+                .and_then(SkillMode::parse)
+                .is_some();
+            (!declared).then(|| dir.file_name().unwrap().to_string_lossy().into_owned())
+        })
+        .collect();
+    assert!(undeclared.is_empty(), "no od.mode: {undeclared:?}");
+    let idx = index();
+    let mode = |id: &str| {
+        idx.design_templates
+            .iter()
+            .find(|t| t.info.id == id)
+            .unwrap()
+            .info
+            .mode
+    };
+    assert_eq!(mode("web-prototype-taste-brutalist"), SkillMode::Prototype);
+    assert_eq!(mode("html-ppt-taste-brutalist"), SkillMode::Deck);
+    // Platform is inferred from the body too: a "Mobile:" checklist line
+    // must not file a desktop page under Mobile.
+    let platform = |id: &str| {
+        idx.design_templates
+            .iter()
+            .find(|t| t.info.id == id)
+            .unwrap()
+            .info
+            .platform
+    };
+    assert_eq!(
+        platform("web-prototype-taste-soft"),
+        Some(od_contracts::Platform::Desktop)
+    );
+}
+
+/// What the Templates page shows: a name in words, not an id, and a
+/// description for people. The agent-facing `description` (with "Use when
+/// the brief asks for…") stays for routing but is never the card text.
+#[test]
+fn design_templates_have_text_for_people() {
+    let trigger = regex::Regex::new(
+        r"(?i)\b(use|trigger|select)(ed)?( this)?( template| skill)?( when| by)\b|\bwhen (the )?(user|brief)|\b(brief|user)s? (asks?|mentions?|wants?)",
+    )
+    .unwrap();
+    let idx = index();
+    let mut seen: BTreeMap<String, String> = BTreeMap::new();
+    let mut names: BTreeMap<String, String> = BTreeMap::new();
+    let mut problems = Vec::new();
+    for t in &idx.design_templates {
+        let id = &t.info.id;
+        match en(t.info.display_name.as_ref()) {
+            Some(name) if !name.trim().is_empty() => {
+                if let Some(other) = names.insert(name.to_owned(), id.clone()) {
+                    problems.push(format!("{id}: same name as {other}"));
+                }
+            }
+            _ => problems.push(format!("{id}: no en_name")),
+        }
+        let Some(text) = en(t.info.description_i18n.as_ref()) else {
+            problems.push(format!("{id}: no en_description"));
+            continue;
+        };
+        if trigger.is_match(text) {
+            problems.push(format!("{id}: agent wording in {text:?}"));
+        }
+        // Sample decks are about made-up companies, not about this app:
+        // "Contour Teams" or "Contour's Series A" would read as real.
+        if ["OpenDesign", "Open Design", "Open-Design"]
+            .iter()
+            .any(|n| text.contains(n))
+        {
+            problems.push(format!("{id}: names the original app in {text:?}"));
+        }
+        if let Some(other) = seen.insert(text.to_owned(), id.clone()) {
+            problems.push(format!("{id}: same description as {other}"));
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 #[test]
@@ -186,10 +293,12 @@ fn design_systems_match_original_loader() {
         .design_systems
         .iter()
         .map(|d| {
-            (
-                d.summary.id.clone(),
-                normalize(serde_json::to_value(&d.summary).unwrap()),
-            )
+            let mut v = serde_json::to_value(&d.summary).unwrap();
+            // Contour-only fields; every field the original has must match.
+            let o = v.as_object_mut().unwrap();
+            o.remove("description");
+            o.remove("brand");
+            (d.summary.id.clone(), normalize(v))
         })
         .collect();
     assert_same(
@@ -266,4 +375,72 @@ fn prompt_teaches_the_tweaks_declaration() {
         ..PromptInput::default()
     });
     assert!(!chat.contains("data-od-tweaks"));
+}
+
+/// Brand-named design systems ship with a non-affiliation note
+/// (`docs/decisions.md` §3): each states its brand in `manifest.json`, the
+/// app shows the note, and NOTICE lists the same brands.
+#[test]
+fn brand_named_design_systems_are_listed_in_notice() {
+    let notice = std::fs::read_to_string(content_root().join("../NOTICE")).unwrap();
+    let idx = index();
+    let brands: Vec<(String, String)> = idx
+        .design_systems
+        .iter()
+        .filter_map(|d| {
+            let brand = d.manifest.as_ref()?.get("brand")?.as_str()?;
+            Some((d.summary.id.clone(), brand.to_owned()))
+        })
+        .collect();
+    assert!(brands.len() >= 90, "{} brand-named systems", brands.len());
+    for id in ["airbnb", "apple", "stripe", "material"] {
+        assert!(brands.iter().any(|(b, _)| b == id), "{id} names its brand");
+    }
+    for id in ["minimal", "editorial", "default"] {
+        assert!(!brands.iter().any(|(b, _)| b == id), "{id} is not a brand");
+    }
+    let listed = &notice[notice.find("\nTrademarks\n").expect("Trademarks section")..];
+    assert!(listed.contains(&format!("\n{} of the 152 design systems", brands.len())));
+    let missing: Vec<_> = brands
+        .iter()
+        .filter(|(_, b)| !listed.contains(&format!("{b},")) && !listed.contains(&format!("{b}.")))
+        .collect();
+    assert!(missing.is_empty(), "not in NOTICE: {missing:?}");
+}
+
+/// The design system page and the Home picker describe the look, never the
+/// bundled maintainer note ("Bundled OpenDesign package for X, derived from
+/// curated DESIGN.md…") that `summary` keeps for parity.
+#[test]
+fn design_systems_have_a_description_for_people() {
+    let idx = index();
+    let bad: Vec<String> = idx
+        .design_systems
+        .iter()
+        .filter(|d| {
+            let t = &d.summary.description;
+            t.trim().is_empty() || t.contains(" package for ") || t.contains("OpenDesign")
+        })
+        .map(|d| format!("{}: {:?}", d.summary.id, d.summary.description))
+        .collect();
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+    let lingo = idx
+        .design_systems
+        .iter()
+        .find(|d| d.summary.id == "lingo")
+        .unwrap();
+    assert!(
+        lingo
+            .summary
+            .description
+            .starts_with("Playful, minimal design"),
+        "{:?}",
+        lingo.summary.description
+    );
+    let airbnb = idx
+        .design_systems
+        .iter()
+        .find(|d| d.summary.id == "airbnb")
+        .unwrap();
+    assert_eq!(airbnb.summary.brand.as_deref(), Some("Airbnb"));
 }

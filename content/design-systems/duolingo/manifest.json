@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "duolingo",
   "name": "Duolingo",
+  "brand": "Duolingo",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Duolingo, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

@@ -1,6 +1,10 @@
 ---
 name: html-ppt-taste-brutalist
+en_name: "Brutalist deck (CRT terminal)"
+en_description: "A 16:9 slide deck in a dark CRT-terminal style: charcoal slides, phosphor monospace, scanlines and a hazard-red accent."
 description: 16:9 HTML deck in tactical-telemetry / CRT-terminal taste. Deactivated-CRT charcoal slides, white-phosphor monospace, hazard-red accent, scanline overlay, ASCII syntax, density over decoration. Distilled from Leonxlnx/taste-skill `brutalist-skill` (Tactical Telemetry mode).
+od:
+  mode: deck
 ---
 
 # HTML PPT — Tactical Telemetry / CRT Terminal

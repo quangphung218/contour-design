@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "openai",
   "name": "OpenAI",
+  "brand": "OpenAI",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for OpenAI, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "sanity",
   "name": "Sanity",
+  "brand": "Sanity",
   "category": "Backend & Data",
   "description": "Bundled OpenDesign package for Sanity, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

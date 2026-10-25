@@ -1,5 +1,7 @@
 ---
 name: open-design-landing
+en_name: "Atelier Zero landing page"
+en_description: "An editorial landing page in a magazine collage style, filled in from your brand brief, with optional generated collage images."
 description: >
   Produce a world-class single-page editorial landing site in the
   Atelier Zero visual language (Monocle / Apartamento / Études editorial
@@ -18,6 +20,7 @@ triggers:
   - atelier zero
   - open design landing
 od:
+  mode: prototype
   category: brand-page
   surface: web
   scenario: marketing

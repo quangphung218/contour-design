@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "binance",
   "name": "Binance.US",
+  "brand": "Binance",
   "category": "Fintech & Crypto",
   "description": "Bundled OpenDesign package for Binance.US, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

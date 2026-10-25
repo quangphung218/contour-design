@@ -4,8 +4,7 @@ en_name: "Write a Feature Business Case like a Principal PM"
 zh_name: "像 Principal PM 一样写功能商业论证"
 description: |
   OpenDesign's feature business case for the plugin marketplace: the user pain, options, tradeoffs, and the measure of success. Built as a decision-grade product management deck for PM, eng, design, leadership.
-en_description: |
-  OpenDesign's feature business case for the plugin marketplace: the user pain, options, tradeoffs, and the measure of success. Built as a decision-grade product management deck for PM, eng, design, leadership.
+en_description: "A feature business case for Lumen, a fictional design-tool startup: the user pain, the options and tradeoffs, and how success is measured. For PM, engineering, design and leadership."
 zh_description: |
   像 Principal PM 一样写功能商业论证——一份可商业交付的产品管理 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

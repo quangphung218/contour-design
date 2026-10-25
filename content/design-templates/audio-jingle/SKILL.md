@@ -1,5 +1,7 @@
 ---
 name: audio-jingle
+en_name: "Audio jingle"
+en_description: "Jingles, background music, voiceovers and sound effects, saved as one MP3 or WAV file in your project."
 description: |
   Audio generation skill — jingles, beds, voiceover, and sound effects.
   Routes music requests to Suno V5 / Udio / Lyria, speech to MiniMax

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "huggingface",
   "name": "Hugging Face",
+  "brand": "Hugging Face",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for Hugging Face, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

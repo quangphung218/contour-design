@@ -1,5 +1,7 @@
 ---
 name: motion-frames
+en_name: "Motion design hero"
+en_description: "A looping animated hero: rotating type ring, animated globe, ticking timer and parallax labels."
 description: |
   A single-frame motion-design composition with looping CSS animations —
   rotating type ring, animated globe, ticking timer, parallax labels.

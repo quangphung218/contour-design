@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "notion",
   "name": "Notion",
+  "brand": "Notion",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Notion, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

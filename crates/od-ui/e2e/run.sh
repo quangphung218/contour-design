@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the UI bundle and the `od` daemon, then runs the Playwright e2e
 # against the real daemon with the mock `claude` CLI in e2e/mock-agent.
-# Usage: crates/od-ui/e2e/run.sh   (from anywhere; needs trunk, node, npm)
+# Usage: crates/od-ui/e2e/run.sh [script.mjs…]   (from anywhere; needs trunk,
+# node, npm). With arguments, runs only those scripts (e.g. demo.mjs).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 ui="$here/.."
@@ -20,6 +21,10 @@ export OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$
 if [ -z "${OD_E2E_PORT:-}" ]; then
   OD_E2E_PORT="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
   export OD_E2E_PORT
+fi
+if [ $# -gt 0 ]; then
+  for script in "$@"; do node "$script"; done
+  exit 0
 fi
 node studio.e2e.mjs
 node design-system.e2e.mjs

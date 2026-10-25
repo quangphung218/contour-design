@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "slack",
   "name": "Slack",
+  "brand": "Slack",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Slack, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

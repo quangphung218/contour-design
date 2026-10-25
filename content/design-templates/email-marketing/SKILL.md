@@ -1,5 +1,7 @@
 ---
 name: email-marketing
+en_name: "Launch email"
+en_description: "A product-launch email with wordmark, hero image, headline, call to action and specs grid, built to render in email clients."
 description: |
   A brand product-launch email — masthead with wordmark, hero image block,
   headline lockup with skewed-italic accent, body copy, primary CTA, and a

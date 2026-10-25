@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "tesla",
   "name": "Tesla",
+  "brand": "Tesla",
   "category": "Automotive",
   "description": "Bundled OpenDesign package for Tesla, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

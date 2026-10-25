@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "x-ai",
   "name": "xAI",
+  "brand": "xAI",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for xAI, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

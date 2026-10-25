@@ -1,5 +1,7 @@
 ---
 name: clinical-case-report
+en_name: "Clinical case report"
+en_description: "A structured medical case presentation for rounds and conferences, in SOAP or narrative format, with vitals, labs and plan."
 description: |
   Structured medical case presentation for clinical rounds, conferences,
   and documentation. Generates SOAP-format or narrative case reports
@@ -16,6 +18,10 @@ triggers:
   - "case summary"
   - "medical case"
 od:
+  examples:
+    example-stemi:
+      en_name: "Case report: inferior STEMI"
+      en_description: "A worked example: a case report for an inferior STEMI with cardiogenic shock, with vitals, labs and management."
   mode: prototype
   platform: desktop
   scenario: healthcare

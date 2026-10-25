@@ -1,5 +1,7 @@
 ---
 name: magazine-poster
+en_name: "Magazine poster"
+en_description: "An editorial poster that reads like a Sunday-paper essay: newsprint paper, oversized serif headline, numbered sections and pull quotes."
 description: |
   An editorial-style poster — newsprint paper, dateline, oversized serif
   headline with a struck-through word and italic accent, a 2-column body

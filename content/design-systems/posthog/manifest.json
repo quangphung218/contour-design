@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "posthog",
   "name": "PostHog",
+  "brand": "PostHog",
   "category": "Backend & Data",
   "description": "Bundled OpenDesign package for PostHog, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "bmw",
   "name": "BMW",
+  "brand": "BMW",
   "category": "Automotive",
   "description": "Bundled OpenDesign package for BMW, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

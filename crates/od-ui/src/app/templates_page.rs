@@ -72,32 +72,15 @@ fn mode_label(m: &str) -> String {
     }
 }
 
-fn name_of(s: &SkillSummary) -> String {
-    let name = s
-        .info
-        .display_name
-        .as_ref()
-        .and_then(|m| m.get(locale().tag()))
-        .cloned()
-        .unwrap_or_else(|| s.info.name.clone());
-    if name.contains(' ') || !name.contains('-') {
-        return name;
-    }
-    let words = name.replace('-', " ");
-    let mut chars = words.chars();
-    chars
-        .next()
-        .map(|c| c.to_uppercase().chain(chars).collect())
-        .unwrap_or(words)
+use crate::intent::in_locale;
+
+/// The name on a template card (see [`crate::intent::template_name`]).
+pub(crate) fn name_of(s: &SkillSummary) -> String {
+    crate::intent::template_name(s)
 }
 
 fn description_of(s: &SkillSummary) -> String {
-    let text = s
-        .info
-        .description_i18n
-        .as_ref()
-        .and_then(|m| m.get(locale().tag()))
-        .unwrap_or(&s.info.description);
+    let text = in_locale(s.info.description_i18n.as_ref()).unwrap_or(&s.info.description);
     crate::i18n::rebrand(text).into_owned()
 }
 
@@ -206,8 +189,9 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
         list.sort_by(|a, b| {
             let fa = a.info.featured.unwrap_or(f64::MAX);
             let fb = b.info.featured.unwrap_or(f64::MAX);
+            // Then by the name on the card, not the id it came from.
             fa.total_cmp(&fb)
-                .then_with(|| a.info.name.cmp(&b.info.name))
+                .then_with(|| name_of(a).to_lowercase().cmp(&name_of(b).to_lowercase()))
         });
         list
     });
@@ -613,5 +597,30 @@ fn MyTemplates() -> impl IntoView {
                 }).collect_view().into_any(),
             }}
         </ul>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Locale, set_locale};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn a_language_without_the_text_shows_english() {
+        let map: BTreeMap<String, String> = [
+            ("en".to_owned(), "CRM table (live data)".to_owned()),
+            ("zh-CN".to_owned(), "客户表".to_owned()),
+        ]
+        .into();
+        set_locale(Locale::Vi);
+        assert_eq!(
+            in_locale(Some(&map)).map(String::as_str),
+            Some("CRM table (live data)")
+        );
+        set_locale(Locale::ZhCn);
+        assert_eq!(in_locale(Some(&map)).map(String::as_str), Some("客户表"));
+        set_locale(Locale::En);
+        assert_eq!(in_locale(None), None);
     }
 }

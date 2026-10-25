@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "arc",
   "name": "Arc Browser",
+  "brand": "Arc Browser",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Arc Browser, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

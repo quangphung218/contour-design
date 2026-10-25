@@ -1,5 +1,7 @@
 ---
 name: kanban-board
+en_name: "Kanban board"
+en_description: "A task board with To do, In progress, In review and Done columns, assignees, swimlanes and filters."
 description: |
   Kanban / task board with columns (To do / In progress / In review / Done),
   draggable-looking cards, assignee avatars, swimlanes, and a top filter

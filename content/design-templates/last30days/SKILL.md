@@ -1,5 +1,7 @@
 ---
 name: last30days
+en_name: "Last 30 days trend report"
+en_description: "A report on what people have said about a topic in the last 30 days: sentiment, community reactions and trends."
 description: |
   Recent community and social trend research over the last 30 days. Use when
   the brief asks what people are saying now, recent sentiment, community

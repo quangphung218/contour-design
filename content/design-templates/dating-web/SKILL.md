@@ -1,5 +1,7 @@
 ---
 name: dating-web
+en_name: "Dating dashboard"
+en_description: "A dating or matchmaking dashboard with community ticker, headline KPIs, a 30-day matches chart and a match-rate trend."
 description: |
   A consumer-feeling dating / matchmaking dashboard — left rail navigation,
   ticker bar of community signals, headline KPIs, a 30-day mutual-matches

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "mintlify",
   "name": "Mintlify",
+  "brand": "Mintlify",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Mintlify, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

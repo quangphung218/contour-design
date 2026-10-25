@@ -4,8 +4,7 @@ en_name: "Write a Brand-Story Deck like a Founder Storyteller"
 zh_name: "像会讲故事的创始人一样写品牌故事稿"
 description: |
   OpenDesign's brand-story deck for partners and press: why it exists, what it believes, and where design is going. Built as a decision-grade marketing & GTM deck for partners, press, community.
-en_description: |
-  OpenDesign's brand-story deck for partners and press: why it exists, what it believes, and where design is going. Built as a decision-grade marketing & GTM deck for partners, press, community.
+en_description: "A brand-story deck for Larkspur, a fictional design studio: why it exists, what it believes and where it is going. For partners, press and community."
 zh_description: |
   像会讲故事的创始人一样写品牌故事稿——一份可商业交付的市场增长 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

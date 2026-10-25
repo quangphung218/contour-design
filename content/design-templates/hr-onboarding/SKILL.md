@@ -1,5 +1,7 @@
 ---
 name: hr-onboarding
+en_name: "New-hire onboarding plan"
+en_description: "A one-page plan for a new hire: first-week schedule, buddy and manager, learning track, equipment checklist and goals."
 description: |
   A new-hire onboarding plan as a single page — first week schedule,
   buddy + manager intro, learning track, equipment checklist, and "you're

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "runwayml",
   "name": "Runway",
+  "brand": "Runway",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for Runway, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

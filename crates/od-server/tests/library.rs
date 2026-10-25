@@ -752,6 +752,8 @@ async fn design_system_kit_import_copy_and_revisions() {
         kit["score"]
     );
     assert_eq!(kit["hasComponents"], true);
+    // A brand-named system names the brand for the trademark note.
+    assert_eq!(kit["brand"], "Airbnb");
     let res = d
         .http
         .get(format!("{}/api/design-systems/airbnb/showcase", d.base))
@@ -795,6 +797,10 @@ async fn design_system_kit_import_copy_and_revisions() {
     assert_eq!(kit["summary"]["status"], "draft");
     assert!(kit["body"].as_str().unwrap().contains("## 2. Color"));
     assert_eq!(kit["hasComponents"], false);
+    assert!(
+        kit.get("brand").is_none(),
+        "no brand on a user's own system"
+    );
     let showcase = d
         .http
         .get(format!("{}/api/design-systems/user:shad/showcase", d.base))

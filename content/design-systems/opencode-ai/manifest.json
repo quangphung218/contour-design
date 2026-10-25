@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "opencode-ai",
   "name": "OpenCode",
+  "brand": "OpenCode",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for OpenCode, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

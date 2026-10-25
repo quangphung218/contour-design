@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "lamborghini",
   "name": "Lamborghini",
+  "brand": "Lamborghini",
   "category": "Automotive",
   "description": "Bundled OpenDesign package for Lamborghini, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

@@ -4,8 +4,7 @@ en_name: "Write a Demo Day Pitch like a Top Accelerator Partner"
 zh_name: "像顶级加速器合伙人一样写 Demo Day 路演"
 description: |
   OpenDesign's demo-day pitch: hook, traction, moat, and the raise — built to make a partner sit up by page three. Built as a decision-grade fundraising pitch deck for accelerator partners, angels.
-en_description: |
-  OpenDesign's demo-day pitch: hook, traction, moat, and the raise — built to make a partner sit up by page three. Built as a decision-grade fundraising pitch deck for accelerator partners, angels.
+en_description: "A demo-day pitch for Kestrel, a fictional startup: hook, traction, moat and the raise. For accelerator partners and angels."
 zh_description: |
   像顶级加速器合伙人一样写 Demo Day 路演——一份可商业交付的融资路演 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

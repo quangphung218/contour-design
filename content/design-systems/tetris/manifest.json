@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "tetris",
   "name": "Tetris",
+  "brand": "Tetris",
   "category": "Themed & Unique",
   "description": "Bundled OpenDesign package for Tetris, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

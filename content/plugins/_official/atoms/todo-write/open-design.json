@@ -2,10 +2,10 @@
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
   "specVersion": "1.0.0",
   "name": "todo-write",
-  "title": "Todo write",
+  "title": "Plan first",
   "version": "0.1.0",
   "publishedAt": "2026-05-09T13:00:27Z",
-  "description": "TodoWrite-driven plan that the agent commits to before generation.",
+  "description": "Writes a short plan before starting, so you can see what will be done.",
   "license": "MIT",
   "author": {
     "name": "OpenDesign",

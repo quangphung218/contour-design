@@ -1,5 +1,7 @@
 ---
 name: video-shortform
+en_name: "Short video clip"
+en_description: "A 3 to 10 second clip for product reveals, teasers or ambient loops, saved as an MP4 in your project."
 description: |
   Short-form video generation skill — 3-10 second clips for product
   reveals, motion teasers, ambient loops. Defaults to Seedance 2 but

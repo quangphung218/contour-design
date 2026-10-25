@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "hashicorp",
   "name": "HashiCorp",
+  "brand": "HashiCorp",
   "category": "Backend & Data",
   "description": "Bundled OpenDesign package for HashiCorp, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

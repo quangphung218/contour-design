@@ -1,5 +1,7 @@
 ---
 name: wireframe-annotated
+en_name: "Annotated wireframe"
+en_description: "A greybox landing-page wireframe with numbered notes and a spec panel explaining each one."
 description: |
   An annotated / redline lo-fi wireframe — a desktop landing/marketing page
   drawn as flat greyboxes inside a browser chrome frame, overlaid with numbered

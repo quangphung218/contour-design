@@ -1,5 +1,7 @@
 ---
 name: web-prototype
+en_name: "Web page"
+en_description: "A general-purpose desktop web page: landing, marketing, docs or SaaS."
 description: |
   General-purpose desktop web prototype. Single self-contained HTML file built
   by copying the seed `assets/template.html` and pasting section layouts from

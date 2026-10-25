@@ -4,8 +4,7 @@ en_name: "Write a Weekly Growth Review like a Head of Analytics"
 zh_name: "像分析负责人一样写每周增长复盘"
 description: |
   OpenDesign's weekly growth review: stars, installs, activation — the number, the driver, and the recommended move. Built as a decision-grade data & finance deck for growth & product team.
-en_description: |
-  OpenDesign's weekly growth review: stars, installs, activation — the number, the driver, and the recommended move. Built as a decision-grade data & finance deck for growth & product team.
+en_description: "A weekly growth review for Ember, a fictional app: signups, installs and activation, the driver behind the number and the recommended move. For growth and product teams."
 zh_description: |
   像分析负责人一样写每周增长复盘——一份可商业交付的数据财务 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

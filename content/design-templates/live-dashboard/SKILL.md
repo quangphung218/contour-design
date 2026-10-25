@@ -1,5 +1,7 @@
 ---
 name: live-dashboard
+en_name: "Team dashboard (Notion style)"
+en_description: "A Notion-style team dashboard with KPIs, a 7-day sparkline, an activity feed and a task table, refreshed on demand."
 description: |
   Notion-style team dashboard rendered as a Live Artifact. A single-page,
   self-contained HTML dashboard with KPIs, a 7-day sparkline, a real-time
