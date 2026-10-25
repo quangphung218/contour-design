@@ -202,7 +202,7 @@ test('DL-13', 'In the desktop app, choosing Leave on the unapplied-edit question
   await until(() => new URL(page.url()).pathname === '/projects', 'Leave leaves', 3000).catch(() => {
     assert.fail(`chose Leave, but the page stays on ${new URL(page.url()).pathname} (id ${id})`);
   });
-}, { knownBug: 'QA-011' });
+});
 
 test('DL-14', 'A sidebar link with an edit not applied asks: Cancel stays with the text, OK leaves', async ({ d, newPage }) => {
   const s = await editLead(newPage, d);

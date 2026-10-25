@@ -15,13 +15,11 @@ use super::studio::StudioCtx;
 use crate::i18n::{T, t, tf};
 use crate::manual_model::{self as mm, History, Kind, Step};
 use crate::preview_bridge::{self as pb, Inspected, Layer};
-use leptos::ev;
 use leptos::prelude::*;
 use od_contracts::{
     RestoreVersionRequest, RestoreVersionResponse, SourceEdit, SourceEditRequest,
     SourceEditResponse, SourceElementRequest, SourceElementResponse,
 };
-use send_wrapper::SendWrapper;
 use std::collections::BTreeMap;
 
 /// Label of the versions manual edits write.
@@ -498,78 +496,12 @@ fn kind_glyph(kind: &str) -> Glyph {
     }
 }
 
-/// While the panel is open, a change typed and not applied makes the
-/// browser ask before closing or reloading the page, and the app ask
-/// before a link leaves the page (as the original's `FileWorkspace`).
-fn guard_unapplied(m: Manual) {
-    use wasm_bindgen::JsCast;
-    type ClickCallback = wasm_bindgen::closure::Closure<dyn FnMut(web_sys::MouseEvent)>;
-    let unload = window_event_listener(ev::beforeunload, move |e| {
-        if m.unapplied() {
-            e.prevent_default();
-            e.set_return_value("");
-        }
-    });
-    // Capture phase on the window: runs before the router's link handler,
-    // which a refused leave stops.
-    let on_click = ClickCallback::new(move |e: web_sys::MouseEvent| {
-        if e.default_prevented() || e.button() != 0 || !m.unapplied() {
-            return;
-        }
-        let leaves = e
-            .target()
-            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-            .and_then(|el| el.closest("a[href]").ok().flatten())
-            .is_some_and(|a| link_leaves_page(&a));
-        let Some(w) = web_sys::window() else { return };
-        if leaves
-            && !w
-                .confirm_with_message(t(T::ManualLeaveConfirm))
-                .unwrap_or(true)
-        {
-            e.prevent_default();
-            e.stop_propagation();
-        }
-    });
-    let window = web_sys::window();
-    if let Some(w) = &window {
-        let _ = w.add_event_listener_with_callback_and_bool(
-            "click",
-            on_click.as_ref().unchecked_ref(),
-            true,
-        );
-    }
-    let on_click = StoredValue::new(SendWrapper::new(on_click));
-    on_cleanup(move || {
-        unload.remove();
-        if let Some(w) = web_sys::window() {
-            on_click.with_value(|c| {
-                let _ = w.remove_event_listener_with_callback_and_bool(
-                    "click",
-                    c.as_ref().unchecked_ref(),
-                    true,
-                );
-            });
-        }
-    });
-}
-
-/// An in-app link to another page (not a new tab, not this same page).
-fn link_leaves_page(a: &web_sys::Element) -> bool {
-    let href = a.get_attribute("href").unwrap_or_default();
-    if !href.starts_with('/') || a.get_attribute("target").is_some_and(|t| t == "_blank") {
-        return false;
-    }
-    let here = web_sys::window()
-        .and_then(|w| w.location().pathname().ok())
-        .unwrap_or_default();
-    href.split(['?', '#']).next() != Some(here.as_str())
-}
-
 #[component]
 pub fn ManualEditPanel(ctx: StudioCtx) -> impl IntoView {
     let m = ctx.tools.manual;
-    guard_unapplied(m);
+    // While the panel is open, a change typed and not applied asks before
+    // the page is left.
+    super::leave_guard::guard_leaving(Callback::new(move |()| m.unapplied()));
     let layers = move || {
         let list = m.layers.get();
         if list.is_empty() {

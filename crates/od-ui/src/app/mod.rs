@@ -29,6 +29,7 @@ mod icons;
 mod inbox;
 mod integrations;
 mod lazy_frame;
+mod leave_guard;
 mod lib_ui;
 mod library_picker;
 mod live_view;
@@ -86,6 +87,11 @@ pub struct Shell {
     pub shortcuts: RwSignal<bool>,
     /// The open Studio, whose commands the palette adds.
     pub(crate) studio: RwSignal<Option<studio::StudioCtx>>,
+    /// Whether leaving the page would lose work (`leave_guard`).
+    unsaved: RwSignal<Option<Callback<(), bool>>>,
+    /// The path the user asked to go to while work would be lost: the
+    /// leave question is open.
+    leaving: RwSignal<Option<String>>,
 }
 
 impl Shell {
@@ -195,6 +201,8 @@ pub fn App() -> impl IntoView {
         palette: RwSignal::new(false),
         shortcuts: RwSignal::new(false),
         studio: RwSignal::new(None),
+        unsaved: RwSignal::new(None),
+        leaving: RwSignal::new(None),
     };
     provide_context(shell);
     leptos::task::spawn_local(async move {
@@ -313,6 +321,7 @@ fn Shelled() -> impl IntoView {
     view! {
         <Router>
             <OnboardingGate/>
+            <leave_guard::LeaveGuard/>
             <Show when=move || shell.palette.get()>
                 <palette::CommandPalette/>
             </Show>
