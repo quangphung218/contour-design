@@ -397,15 +397,17 @@ pub fn Home() -> impl IntoView {
                             <select
                                 data-testid="design-system"
                                 aria-label=t(T::DesignSystem)
+                                disabled=move || systems.with(Option::is_none)
                                 on:change=move |ev| {
                                     let v = event_target_value(&ev);
                                     design_system.set(Some(v).filter(|v| !v.is_empty()));
                                 }
                             >
                                 <option value="">{t(T::NoneOption)}</option>
-                                // While the list loads, the kept pick still shows.
+                                // While the list loads, the kept pick stays chosen,
+                                // shown as loading (its name is not known yet).
                                 {move || systems.get().is_none().then(|| design_system.get().map(|id| view! {
-                                    <option value=id.clone() selected=true>{id.clone()}</option>
+                                    <option value=id selected=true>{t(T::Loading)}</option>
                                 }))}
                                 {move || {
                                     systems

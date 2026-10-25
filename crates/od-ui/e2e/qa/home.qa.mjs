@@ -180,6 +180,6 @@ test('HOME-12', 'While design systems load, the kept pick shows its name or a lo
   release();
   assert.notEqual(shown, pick.id, `while the list loads the picker shows the raw id "${pick.id}"`);
   await until(async () => (await select.inputValue()) === pick.id, 'the pick is kept once loaded');
-}, { knownBug: 'QA-017' });
+});
 
 await run('home');
