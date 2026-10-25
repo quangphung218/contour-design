@@ -1,0 +1,51 @@
+#!/bin/sh
+# Scripted stand-in for the `claude` CLI, used only to record the README
+# demo (demo.mjs). Speaks Claude Code's stream-json like e2e/mock-agent, but
+# streams a short plan and reply at a human pace and writes a finished page
+# (tea-shop.html next to this script) so the recording is the same every
+# time. Nothing leaves the machine.
+
+case "$1" in --version) echo "demo-claude 1.0.0"; exit 0;; esac
+if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: demo"; exit 0; fi
+here="$(cd "$(dirname "$0")" && pwd)"
+
+sid=""; prev=""
+for a in "$@"; do
+  case "$prev" in --session-id|--resume) sid="$a";; esac
+  prev="$a"
+done
+IFS= read -r line
+
+init() { printf '{"type":"system","subtype":"init","session_id":"%s","model":"demo-1"}\n' "$sid"; }
+done_turn() {
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null
+  exit 0
+}
+n=0
+say() {
+  n=$((n + 1))
+  printf '{"type":"assistant","message":{"id":"d%s-%s","role":"assistant","content":[{"type":"text","text":"%s"}]}}\n' "$$" "$n" "$1"
+}
+
+case "$line" in *"Reply with only: ok"*) init; say "ok"; done_turn;; esac
+
+init
+plan() {
+  printf '{"type":"assistant","message":{"id":"d%s-plan%s","role":"assistant","content":[{"type":"tool_use","id":"plan-%s-%s","name":"TodoWrite","input":{"todos":[{"content":"Pick a warm palette and type","activeForm":"Picking a palette","status":"%s"},{"content":"Write the landing page","activeForm":"Writing the page","status":"%s"},{"content":"Check contrast and layout","activeForm":"Checking the page","status":"%s"}]}}]}}\n' "$$" "$1" "$$" "$1" "$2" "$3" "$4"
+}
+for w in "A " "calm, " "warm " "page " "for " "the " "tea " "shop: " "cream " "paper, " "leaf " "green " "and " "a " "serif " "headline. "; do
+  say "$w"; sleep 0.12
+done
+plan 1 in_progress pending pending; sleep 0.8
+plan 2 completed in_progress pending; sleep 0.4
+tool="write-$$"
+printf '{"type":"assistant","message":{"id":"d%s-w","role":"assistant","content":[{"type":"tool_use","id":"%s","name":"Write","input":{"file_path":"%s/index.html","content":"..."}}]}}\n' "$$" "$tool" "$PWD"
+cp "$here/tea-shop.html" index.html
+printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"%s","content":"File created successfully"}]}}\n' "$tool"
+sleep 0.6
+plan 3 completed completed completed
+for w in "Wrote " "\`index.html\`: " "hero, " "three " "teas, " "visit " "hours " "and " "a " "booking " "button." ; do
+  say "$w"; sleep 0.1
+done
+done_turn

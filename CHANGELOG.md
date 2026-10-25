@@ -8,6 +8,22 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Templates show a name and a description written for people ("CRM table (live
+  data)" instead of "Crm Table Live"); the agent-facing "Use when the brief asks
+  for…" text no longer appears in the UI, and each example has its own
+  description. Languages without a translation show the English text.
+- The Swiss-print web page and four other templates are filed under the right
+  type (a web page was listed as Video, decks as Image).
+- Plugins say what they do for you; kind, atoms, pipeline stages and
+  capabilities moved under Developer details.
+- Brand-named design systems show "Inspired by <Brand>'s public design language.
+  Not affiliated with or endorsed by <Brand>. Trademarks belong to their owners."
+  on their page, in every UI language.
+- The README opens with what Contour is (no telemetry, runs on your machine, uses
+  the agent CLI you have), a recorded demo, and how it differs from OpenDesign.
+
 ### Fixed
 
 - Renaming a project to a blank name keeps the old name and says a name is
