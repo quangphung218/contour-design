@@ -200,7 +200,10 @@ pub fn MediaPage() -> impl IntoView {
                     <h1>{t(T::NavMedia)}</h1>
                     <p class="page-sub">{t(T::MediaPageSub)}</p>
                 </div>
-                <button class="btn primary" data-testid="media-new" on:click=move |_| tab.set(Tab::Generate)>{icon(Glyph::Sparkle)}{t(T::GenerateMedia)}</button>
+                // The Generate tab is the same place: no second way in from it.
+                <Show when=move || tab.get() != Tab::Generate>
+                    <button class="btn primary" data-testid="media-new" on:click=move |_| tab.set(Tab::Generate)>{icon(Glyph::Sparkle)}{t(T::GenerateMedia)}</button>
+                </Show>
             </header>
             <div class="segmented lib-tabs" role="tablist">
                 {tab_button(Tab::Library, T::Library, Glyph::Grid, "library")}
@@ -337,7 +340,7 @@ fn LibraryView(
     view! {
         <div class="lib-toolbar">
             <div class="segmented small" role="group" aria-label=t(T::Kind)>
-                {[("", T::AllFilter), ("image", T::Images), ("video", T::Videos), ("audio", T::AudioKind)].into_iter().map(|(k, label)| view! {
+                {[("", T::AllFilter), ("image", T::Images), ("video", T::Videos), ("audio", T::SurfaceAudio)].into_iter().map(|(k, label)| view! {
                     <button class="seg" data-testid=format!("media-kind-{}", if k.is_empty() { "all" } else { k }) aria-pressed=move || (kind.get() == k).to_string() on:click=move |_| kind.set(k.to_owned())>{t(label)}</button>
                 }).collect_view()}
             </div>
@@ -614,7 +617,7 @@ fn GenerateView(
     view! {
         <div class="media-generate card padded" data-testid="media-generate">
             <div class="segmented" role="group" aria-label=t(T::Kind)>
-                {[("image", T::Image, Glyph::Image), ("video", T::Video, Glyph::Video), ("audio", T::AudioKind, Glyph::Audio)].into_iter().map(|(k, label, glyph)| view! {
+                {[("image", T::Image, Glyph::Image), ("video", T::Video, Glyph::Video), ("audio", T::SurfaceAudio, Glyph::Audio)].into_iter().map(|(k, label, glyph)| view! {
                     <button class="seg" data-testid=format!("gen-surface-{k}") aria-pressed=move || (surface.get() == k).to_string() on:click=move |_| surface.set(k.to_owned())>{icon(glyph)}{t(label)}</button>
                 }).collect_view()}
             </div>
@@ -675,7 +678,7 @@ fn GenerateView(
             </div>
             <Show when=move || !provider_ready() && !models.with(Vec::is_empty)>
                 <p class="callout" data-testid="gen-no-key">{icon(Glyph::Info)}{t(T::ProviderNeedsKey)}
-                    <button class="btn small ghost" on:click=move |_| on_providers.run(())>{t(T::Providers)}</button>
+                    <button class="btn small" data-testid="gen-set-up-providers" on:click=move |_| on_providers.run(())>{icon(Glyph::Settings)}{t(T::SetUpProviders)}</button>
                 </p>
             </Show>
             {move || error.get().map(|e| view! { <p class="error-text" role="alert" data-testid="gen-error">{e}</p> })}

@@ -857,6 +857,7 @@ GenerateMedia = Создать
 Library = Библиотека
 MediaQueue = Очередь
 Providers = Провайдеры
+SetUpProviders = Настроить провайдеров
 HyperframesMp4 = HyperFrames в MP4
 Images = Изображения
 Videos = Видео

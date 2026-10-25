@@ -857,6 +857,7 @@ GenerateMedia = Generálás
 Library = Könyvtár
 MediaQueue = Sorba állítás
 Providers = Szolgáltatók
+SetUpProviders = Szolgáltatók beállítása
 HyperframesMp4 = HyperFrames MP4-be
 Images = Képek
 Videos = Videók

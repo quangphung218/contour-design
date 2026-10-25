@@ -857,6 +857,7 @@ GenerateMedia = ساخت
 Library = کتابخانه
 MediaQueue = صف
 Providers = ارائه‌دهندگان
+SetUpProviders = تنظیم ارائه‌دهندگان
 HyperframesMp4 = HyperFrames به MP4
 Images = تصاویر
 Videos = ویدیوها

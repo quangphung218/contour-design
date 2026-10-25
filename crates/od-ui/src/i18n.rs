@@ -1088,6 +1088,7 @@ messages! {
     MediaQueue => "Queue", "Hàng đợi";
     Providers => "Providers", "Provider";
     HyperframesMp4 => "HyperFrames to MP4", "HyperFrames ra MP4";
+    SetUpProviders => "Set up providers", "Thiết lập nhà cung cấp";
     Images => "Images", "Ảnh";
     Videos => "Videos", "Video";
     Image => "Image", "Ảnh";

@@ -857,6 +857,7 @@ GenerateMedia = Genera
 Library = Libreria
 MediaQueue = Coda
 Providers = Provider
+SetUpProviders = Configura provider
 HyperframesMp4 = HyperFrames in MP4
 Images = Immagini
 Videos = Video

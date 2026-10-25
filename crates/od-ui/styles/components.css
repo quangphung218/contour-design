@@ -194,7 +194,7 @@ kbd, .kbd {
   box-shadow: var(--shadow-xs);
   transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
 }
-select, .select {
+select, .select, select.input {
   appearance: none;
   -webkit-appearance: none;
   padding-right: var(--space-8);

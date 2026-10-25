@@ -857,6 +857,7 @@ GenerateMedia = توليد
 Library = المكتبة
 MediaQueue = الانتظار
 Providers = المزوّدون
+SetUpProviders = إعداد المزوّدين
 HyperframesMp4 = HyperFrames إلى MP4
 Images = صور
 Videos = فيديوهات

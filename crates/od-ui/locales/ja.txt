@@ -857,6 +857,7 @@ GenerateMedia = 生成
 Library = ライブラリ
 MediaQueue = キュー
 Providers = プロバイダー
+SetUpProviders = プロバイダーを設定
 HyperframesMp4 = HyperFrames から MP4
 Images = 画像
 Videos = 動画

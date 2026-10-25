@@ -857,6 +857,7 @@ GenerateMedia = Buat
 Library = Pustaka
 MediaQueue = Antrean
 Providers = Provider
+SetUpProviders = Atur provider
 HyperframesMp4 = HyperFrames ke MP4
 Images = Gambar
 Videos = Video

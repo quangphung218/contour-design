@@ -149,6 +149,29 @@ test('LIB-09', 'Generating an image with no provider key points the user to Prov
   await page.getByTestId('media-providers').or(page.getByTestId('media-provider')).first().waitFor();
 });
 
+test('LIB-14', 'Media and Templates say "Audio", Generate has one way in, real selects and a Set up providers button', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/media');
+  assert.equal(await page.getByTestId('media-kind-audio').innerText(), 'Audio');
+  await page.getByTestId('media-tab-generate').click();
+  await page.getByTestId('media-generate').waitFor();
+  assert.equal(await page.getByTestId('media-new').count(), 0, 'a Generate button next to the Generate tab');
+  assert.equal((await page.getByTestId('gen-surface-audio').innerText()).trim(), 'Audio');
+  for (const id of ['gen-model', 'gen-aspect', 'gen-target']) {
+    const arrow = await page.getByTestId(id).evaluate((e) => getComputedStyle(e).backgroundImage);
+    assert.notEqual(arrow, 'none', `${id} has no select arrow`);
+  }
+  const setUp = page.getByTestId('gen-set-up-providers');
+  await setUp.waitFor({ timeout: 8000 });
+  assert.equal(await setUp.innerText(), 'Set up providers');
+  assert.match(await setUp.getAttribute('class'), /\bbtn\b/);
+  assert.doesNotMatch(await setUp.getAttribute('class'), /ghost/);
+  await page.goto(d.base + '/templates');
+  await page.locator('section').first().waitFor();
+  await page.waitForLoadState('networkidle').catch(() => {});
+  assert.doesNotMatch(await page.locator('main').innerText(), /Audio type/);
+});
+
 test('LIB-10', 'Library pages fit a phone-sized window without sideways scroll', async ({ d, newPage }) => {
   const { page } = await newPage({ viewport: { width: 390, height: 844 } });
   const wide = [];

@@ -857,6 +857,7 @@ GenerateMedia = 產生
 Library = 資料庫
 MediaQueue = 佇列
 Providers = 供應商
+SetUpProviders = 設定供應商
 HyperframesMp4 = HyperFrames 轉 MP4
 Images = 圖片
 Videos = 影片

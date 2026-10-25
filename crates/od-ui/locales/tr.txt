@@ -856,6 +856,7 @@ GenerateMedia = Oluştur
 Library = Kitaplık
 MediaQueue = Sıra
 Providers = Sağlayıcılar
+SetUpProviders = Sağlayıcıları ayarla
 HyperframesMp4 = HyperFrames'ten MP4'e
 Images = Görseller
 Videos = Videolar

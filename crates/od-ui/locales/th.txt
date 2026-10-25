@@ -857,6 +857,7 @@ GenerateMedia = สร้าง
 Library = ไลบรารี
 MediaQueue = คิว
 Providers = ผู้ให้บริการ
+SetUpProviders = ตั้งค่าผู้ให้บริการ
 HyperframesMp4 = HyperFrames เป็น MP4
 Images = รูปภาพ
 Videos = วิดีโอ

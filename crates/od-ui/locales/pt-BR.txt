@@ -856,6 +856,7 @@ GenerateMedia = Gerar
 Library = Biblioteca
 MediaQueue = Fila
 Providers = Provedores
+SetUpProviders = Configurar provedores
 HyperframesMp4 = HyperFrames para MP4
 Images = Imagens
 Videos = Vídeos

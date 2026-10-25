@@ -857,6 +857,7 @@ GenerateMedia = 미디어 생성
 Library = 라이브러리
 MediaQueue = 대기열
 Providers = 제공업체
+SetUpProviders = 제공업체 설정
 HyperframesMp4 = HyperFrames를 MP4로
 Images = 이미지
 Videos = 동영상
