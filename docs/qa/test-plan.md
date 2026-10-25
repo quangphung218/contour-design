@@ -174,6 +174,30 @@ and media.
 | AUT-04 | Delete a routine removes it from the list and API | Routine | Delete | Gone from list and `GET /api/routines` | P1 | auto |
 | AUT-05 | Routine on a project that was deleted | Routine on project P | Delete P, Run now | The run is refused or recorded as failed with "project not found" | P2 | auto |
 
+## 10. Work in progress is not lost (`drafts.qa.mjs`)
+
+Goal: what the user typed and did not save yet survives tab switches,
+saves of other fields, reloads and navigation; destructive actions ask
+first. Expected results follow the original app (composer and Home drafts
+in `localStorage`, a leave guard for unsettled manual edits). The original
+has no undo for deleting a project, file or conversation; a confirmation is
+the guard, so that is what is checked.
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| DL-01 | Text typed in Content survives an Apply in Attributes | Edit panel on a paragraph | Type in Content, Attributes ▸ Apply, back | Typed text still there | P1 | auto (QA-006) |
+| DL-02 | Text typed in Content survives a style Apply | Same | Type in Content, Style ▸ Apply, back | Typed text still there | P1 | auto (QA-006) |
+| DL-03 | Typing while an Apply is saving is kept | Same, save answer held | Apply Attributes, type in Content before the answer | Typed text still there | P1 | auto (QA-006) |
+| DL-04 | Closing with a manual edit not applied asks first | Typed in Content | Close the tab | A "leave page?" prompt | P1 | auto (QA-007) |
+| DL-05 | Composer draft survives a reload | Project open | Type, reload | Text back in the composer | P1 | auto (QA-008) |
+| DL-06 | Composer draft survives going to Projects and back | Project open | Type, Projects, Back | Text back | P1 | auto (QA-008) |
+| DL-07 | Home brief and design system survive a trip to Settings | Home | Type, pick system, Settings, Home | Both back | P1 | auto (QA-008) |
+| DL-08 | Markdown typed and left at once is saved | `.md` open | Type, click Projects | File has the text; no error | P1 | auto (QA-009 for the panic) |
+| DL-09 | Deleting a file asks; Cancel keeps it | File | Delete, Cancel | File unchanged | P1 | auto |
+| DL-10 | Deleting a conversation asks; Cancel keeps it | One turn | Delete, Cancel | Messages kept; no error | P1 | auto (QA-010 for the error) |
+| DL-11 | Deleting a project asks; Cancel keeps it | Project | Delete, Cancel | Project kept | P0 | auto as PRJ-04 |
+| DL-12 | A version overwritten by the agent can be restored | Two versions | History ▸ restore | Older version back, newer kept | P0 | auto as STU-07 |
+
 ## Not automated, and why
 
 - **Desktop shell (Tauri)**: native menus, Cmd+O folder dialog, Finder

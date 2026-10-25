@@ -8,13 +8,21 @@ Bugs found by the QA suite (`crates/od-ui/e2e/qa`, plan in
 Severity: 🔴 data loss or main flow blocked · 🟠 wrong result or hard to
 get out of · 🟡 poor or confusing message · 🔵 minor.
 
+Retested on `main` 17f9c2a (PR #6 merged): none of QA-001…005 is fixed by
+it; PR #6 touched none of their code.
+
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
+| QA-006 | 🟠 | Edit panel: an Apply in one tab wipes text typed in another tab, and text typed while the Apply is saving | `drafts.qa.mjs` DL-01, DL-02, DL-03 | open |
+| QA-008 | 🟠 | Drafts are not kept: composer text and the Home brief and design system vanish on reload or navigation | `drafts.qa.mjs` DL-05, DL-06, DL-07 | open |
+| QA-007 | 🟡 | Closing or reloading the page with a manual edit not applied gives no warning | `drafts.qa.mjs` DL-04 | open |
 | QA-002 | 🟠 | A message sent right after opening a project can vanish from the chat while the run goes on | `chat.qa.mjs` CHAT-09 | open |
 | QA-003 | 🟠 | Tablet preview lays the page out at the pane width, not 820 px | `studio.qa.mjs` STU-11 | open |
 | QA-005 | 🟠 | Onboarding saves and selects an API provider with an empty key | `onboarding.qa.mjs` ONB-05 | open |
 | QA-004 | 🟡 | Esc does not close the Export menu (nor the other drop-down menus) | `export.qa.mjs` EXP-09 | open |
 | QA-001 | 🟡 | Renaming a project to blank shows a nameless card and no error | `projects.qa.mjs` PRJ-02 | open |
+| QA-009 | 🔵 | Leaving a Markdown file with an unsaved edit panics in wasm (the edit is saved) | `drafts.qa.mjs` DL-08 | open |
+| QA-010 | 🔵 | Cancel in the delete-conversation dialog throws a JS error | `drafts.qa.mjs` DL-10 | open |
 
 ---
 
@@ -106,3 +114,86 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 - **Code**: `crates/od-ui/src/app/byok_form.rs` `save` only blocks Azure
   without a base URL; `needs_key()` exists but is not used to disable Save.
   The daemon accepts the `PUT /api/app-config` too.
+
+## QA-006 🟠 Edit panel: an Apply in one tab wipes text typed in another tab
+
+Reported by the PR #6 reviewer (`manual_model.rs` `written`), reproduced
+end to end here.
+
+- **Steps A**: open a page ▸ Edit (manual edit) ▸ click a paragraph ▸
+  Content: type new text, do not apply ▸ Attributes: add a title ▸ Apply ▸
+  back to Content. Same with Style ▸ font size ▸ Apply instead of Attributes.
+- **Steps B**: Attributes: change ▸ Apply, and while the save is in flight
+  go to Content and type.
+- **Expected**: what the user typed and did not apply stays in its field
+  (the doc of `refreshed` promises "a field the user changed since it was
+  last clean keeps what they typed").
+- **Actual**: the Content field is back to the source text
+  ("Fresh leaves daily."), the typed text is gone, no message.
+- **Test**: `drafts.qa.mjs` DL-01 (Attributes), DL-02 (Style), DL-03 (typing
+  while the save is held by the test until the user has typed).
+- **Code**: `crates/od-ui/src/manual_model.rs:270` `written` marks every
+  draft clean with the values present when the response arrives; called
+  from `crates/od-ui/src/app/manual_edit.rs:147`, `:284`, `:423`. Take the
+  drafts **before** `spawn_local`, and mark clean only the fields of that
+  write (Content: text/href/src/alt; Attributes: attrs; Html: html; Style:
+  none).
+
+## QA-007 🟡 Closing or reloading with a manual edit not applied gives no warning
+
+- **Steps**: manual edit ▸ type new text in Content (no Apply) ▸ close the
+  tab, reload, or quit.
+- **Expected**: the browser asks before leaving, as the original app does
+  (`FileWorkspace.tsx` adds a `beforeunload` guard and an in-app navigation
+  guard while a manual edit is unsettled).
+- **Actual**: the page closes at once; the typed text is lost.
+- **Test**: `drafts.qa.mjs` DL-04.
+- **Code**: no `beforeunload` listener anywhere in `crates/od-ui/src`. Add
+  one while the Edit panel has dirty drafts (`DraftBook`), and in the
+  desktop app on window close.
+
+## QA-008 🟠 Drafts are not kept: composer text and the Home brief vanish
+
+- **Steps**: (a) Studio: type a message, do not send ▸ reload, or go to
+  Projects and back. (b) Home: type a brief and pick a design system ▸
+  Settings ▸ Home.
+- **Expected**: the text comes back, as in the original app: the composer
+  draft is stored per project and conversation
+  (`od:chat-composer:draft:<project>:<conversation>`, `ChatPane.tsx:2654`),
+  and Home keeps the prompt and design system
+  (`open-design:home-composer:prompt` / `:design-system`, `HomeView.tsx:351`).
+- **Actual**: the composer is empty after a reload or a round trip; Home's
+  brief is empty and the design system is back to none.
+- **Test**: `drafts.qa.mjs` DL-05, DL-06 (composer), DL-07 (Home).
+- **Code**: `crates/od-ui/src/app/composer.rs` keeps the draft only in a
+  signal (`localStorage` holds just the chat width); `home.rs` the same for
+  `brief` and `design_system`.
+
+## QA-009 🔵 Leaving a Markdown file with an unsaved edit panics in wasm
+
+- **Steps**: open a `.md` file ▸ type ▸ at once click Projects (or press
+  Cmd+,).
+- **Expected**: the edit is saved, no error.
+- **Actual**: the edit is saved (by the blur save), but the console shows
+  `panicked at reactive_graph … doc_view.rs:133:50, you tried to access a
+  reactive value which was defined at doc_view.rs:105:16, but it has already
+  been disposed`. The app keeps working in the debug build.
+- **Test**: `drafts.qa.mjs` DL-08 (the content check passes; the panic fails
+  it).
+- **Code**: `crates/od-ui/src/app/doc_view.rs` `on_cleanup` (line 252) calls
+  `save_now`, whose `spawn_local` reads `path.get_value()` after the
+  component is disposed. Read `path` (and `ctx` values) before spawning, or
+  use `try_get_value`.
+
+## QA-010 🔵 Cancel in the delete-conversation dialog throws a JS error
+
+- **Steps**: Studio ▸ conversation menu ▸ Delete ▸ Cancel.
+- **Expected**: the dialog closes, nothing else.
+- **Actual**: the dialog closes and the conversation is kept, but the page
+  throws `closure invoked recursively or after being dropped` twice.
+- **Test**: `drafts.qa.mjs` DL-10.
+- **Code**: `crates/od-ui/src/app/chat_ops.rs:153-170`: Cancel sets
+  `confirming` to false inside its click handler, `<Show>` drops the dialog,
+  and the same click then bubbles to the dropped `.dialog`/`.overlay`
+  handlers. Close on the next tick (the file already has `next_tick`) or stop
+  propagation on the buttons.
