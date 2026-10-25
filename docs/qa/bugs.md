@@ -29,16 +29,19 @@ Expected results are Atlat's calls for this round. DL-21 is a new guard
 (no bug): a sent and answered message must not come back to the composer;
 it goes red when the `clear_draft_if` of `send` is removed.
 
+Round 3 fixes (5203152…0a68f88): QA-018…025 fixed, one commit each;
+`make e2e-qa` twice at 0a68f88, 112 of 112 pass, no test still marked.
+
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
-| QA-018 | 🔴 | With a BYOK provider saved without a key on a host the daemon calls public (`http://ollama:11434`, `gpu-box`), every Settings save (theme, language…) is refused with 400 | `settings.qa.mjs` SET-07, SET-08 | Open |
-| QA-019 | 🟠 | A message steered into the running turn comes back in the composer after a reload | `drafts.qa.mjs` DL-20 | Open |
-| QA-022 | 🟠 | The browser's Back with an edit not applied leaves at once; the typed text is lost | `drafts.qa.mjs` DL-24 | Open |
-| QA-020 | 🟡 | Duplicate project with an edit not applied skips the app's leave question (only the browser's "leave site?" asks) | `drafts.qa.mjs` DL-22 | Open |
-| QA-024 | 🟡 | Tablet on a phone-width window is stuck at the fit (35%): + is off, the page cannot be zoomed in to read | `studio.qa.mjs` STU-15 | Open |
-| QA-021 | 🔵 | Ctrl/Cmd-click on an in-app link with an edit not applied is stopped and asked as if this tab were leaving | `drafts.qa.mjs` DL-23 | Open |
-| QA-023 | 🔵 | The leave question opens with the focus on the dialog box, not on Cancel | `drafts.qa.mjs` DL-25 | Open |
-| QA-025 | 🔵 | When + is off at the fit, its tooltip still says "Zoom in", not why | `studio.qa.mjs` STU-16 | Open |
+| QA-018 | 🔴 | With a BYOK provider saved without a key on a host the daemon calls public (`http://ollama:11434`, `gpu-box`), every Settings save (theme, language…) is refused with 400 | `settings.qa.mjs` SET-07, SET-08 | Fixed |
+| QA-019 | 🟠 | A message steered into the running turn comes back in the composer after a reload | `drafts.qa.mjs` DL-20 | Fixed |
+| QA-022 | 🟠 | The browser's Back with an edit not applied leaves at once; the typed text is lost | `drafts.qa.mjs` DL-24 | Fixed |
+| QA-020 | 🟡 | Duplicate project with an edit not applied skips the app's leave question (only the browser's "leave site?" asks) | `drafts.qa.mjs` DL-22 | Fixed |
+| QA-024 | 🟡 | Tablet on a phone-width window is stuck at the fit (35%): + is off, the page cannot be zoomed in to read | `studio.qa.mjs` STU-15 | Fixed |
+| QA-021 | 🔵 | Ctrl/Cmd-click on an in-app link with an edit not applied is stopped and asked as if this tab were leaving | `drafts.qa.mjs` DL-23 | Fixed |
+| QA-023 | 🔵 | The leave question opens with the focus on the dialog box, not on Cancel | `drafts.qa.mjs` DL-25 | Fixed |
+| QA-025 | 🔵 | When + is off at the fit, its tooltip still says "Zoom in", not why | `studio.qa.mjs` STU-16 | Fixed |
 | QA-011 | 🟠 | Desktop app: choosing Leave on the "edit not applied" question does not leave; every in-app link is dead while an edit is unapplied | `drafts.qa.mjs` DL-13 | Fixed |
 | QA-014 | 🟠 | A message queued while a run is going is lost on a reload (queue only in memory, draft cleared at queue time) | `drafts.qa.mjs` DL-19 | Fixed |
 | QA-013 | 🟠 | Esc that closes a drop-down menu also stops a running Design Jury and turns off comment mode or the tool | `export.qa.mjs` EXP-10, EXP-11 | Fixed |
@@ -396,6 +399,7 @@ Reported by the correctness review of 56ffb95 (the QA-005 daemon rule).
   (`apps/web/src/components/byok/validation.ts:127`). Either drop the host
   rule, or check only a `byok` whose route (protocol, baseUrl) changes and
   count those hosts as self-hosted.
+- **Fixed** (5203152): the daemon no longer guesses public hosts. It refuses a `byok` without a key only when the patch moves it to another protocol or base URL that is a cloud preset needing a key (the preset table now lives in `od-contracts`), and only while BYOK is the agent picked. A whole-config save that keeps the route (theme, language) goes through; a stale keyless provider sent with a local agent too (`make e2e` manage hit this: the UI kept a provider the test had removed).
 
 ## QA-019 🟠 A steered message comes back in the composer after a reload
 
@@ -415,6 +419,7 @@ Reported by the correctness review of 14d3ea6 (QA-014 fix).
   `send`'s `Ok` (`:461`) calls `clear_draft_if`. Call
   `clear_draft_if(draft_key(…), &item.text)` there too, and when a queued
   item is deleted (`chat_view.rs:496`).
+- **Fixed** (4f686d3): Steer's `Ok` and the queue's delete go through `drop_queued`, which clears the stored draft as a send does.
 
 ## QA-020 🟡 Duplicate project with an edit not applied skips the app's question
 
@@ -433,6 +438,7 @@ Reported by the correctness review of 9a85549 (QA-012 fix).
   calls `location().set_href`. Go through `use_leave()` (or ask before the
   POST). Same pattern: the palette's switch to another project
   (`palette.rs:246`).
+- **Fixed** (3645cd3): Duplicate (before the POST) and the palette's switch to another project go through `leave_then`: the app's question first, the full load once Leave is chosen, without a second native prompt.
 
 ## QA-021 🔵 Ctrl/Cmd-click on a link with an edit not applied is stopped
 
@@ -447,6 +453,7 @@ Reported by the correctness review of 5728ac3 (QA-011 fix).
 - **Code**: `crates/od-ui/src/app/leave_guard.rs:65` `on_click` only
   skips `button() != 0`. Also return early on `ctrl_key()`, `meta_key()`,
   `shift_key()` (and `alt_key()`).
+- **Fixed** (4c69489): a click with Ctrl, Cmd, Shift or Alt is passed through.
 
 ## QA-022 🟠 The browser's Back with an edit not applied leaves without asking
 
@@ -464,6 +471,7 @@ regression: main does the same.
   with unsaved work: push the current URL back, then open the dialog;
   Leave does `history.back()` (or navigates to the target) with the guard
   off.
+- **Fixed** (2bc7e54): while an edit is not applied the page holds a second history entry of its own URL, so Back stays in this document even when the page was opened by URL; the guard stops the router, pushes the entry back and asks; Leave goes back to the target. One Back more is needed after an edit is applied (the extra entry stays).
 
 ## QA-023 🔵 The leave question opens with the focus on the dialog box
 
@@ -478,6 +486,7 @@ Reported by the UX review of 5728ac3.
 - **Code**: `leave_guard.rs` `LeaveGuard` view; focus `leave-stay` on
   open (`Modal` in `lib_ui.rs` focuses its box; add an autofocus prop or
   focus the button on mount).
+- **Fixed** (6d7c49e): `Modal` takes an `autofocus` selector; the leave question focuses Cancel.
 
 ## QA-024 🟡 Tablet on a phone-width window is stuck at the fit
 
@@ -494,6 +503,7 @@ with a scrolling pane.
   (`:334-340`, `:1291`): + is refused once the fit caps the zoom. Let + go
   past the fit (the pane already has `overflow: auto`, `app.css:856`), at
   least when the fit is below the smallest step.
+- **Fixed** (c8df340): when the fit is below the smallest step, + goes past it (50 %, then up) and the stage scrolls; − from 50 % comes back to the fit; Reset or a pane wide enough clears it.
 
 ## QA-025 🔵 When + is off at the fit, its tooltip still says "Zoom in"
 
@@ -507,3 +517,4 @@ Reported by the UX review of 759581a.
   compares `data-tip` with the button's label).
 - **Code**: `studio.rs:1502`, the `zoom-in` button: a fixed
   `data-tip=t(T::ZoomIn)`. Make it reactive on `can_zoom(true)` and say why.
+- **Fixed** (0a68f88): the zoom-in button's `data-tip` reads "Fits the pane" (18 locales) while the fit stops it.
