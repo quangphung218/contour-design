@@ -108,7 +108,8 @@ pub fn LeaveGuard() -> impl IntoView {
     });
     view! {
         <Show when=move || shell.leaving.with(Option::is_some)>
-            <Modal title=t(T::ManualLeaveTitle).to_owned() glyph=Glyph::EditText on_close=stay testid="leave-dialog">
+            <Modal title=t(T::ManualLeaveTitle).to_owned() glyph=Glyph::EditText on_close=stay testid="leave-dialog"
+                autofocus="[data-testid=leave-stay]">
                 <div class="dialog-body"><p>{t(T::ManualLeaveConfirm)}</p></div>
                 <div class="dialog-foot">
                     <button class="btn" data-testid="leave-stay" on:click=move |_| stay.run(())>{t(T::Cancel)}</button>

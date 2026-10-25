@@ -451,6 +451,6 @@ test('DL-25', 'The unapplied-edit question opens with the focus on Cancel', asyn
   await page.keyboard.press('Enter');
   await page.getByTestId('leave-dialog').waitFor({ state: 'detached' });
   assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied');
-}, { knownBug: 'QA-023' });
+});
 
 await run('drafts');
