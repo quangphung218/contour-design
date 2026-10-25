@@ -193,6 +193,32 @@ fn allowed_navigation(url: &Url, origin: Option<&str>) -> bool {
     splash || origin.is_some_and(|o| url.origin().ascii_serialization() == o)
 }
 
+/// A page link meant for a new window (`target="_blank"`, `window.open`):
+/// only web addresses leave the app, for the system browser.
+fn opens_in_browser(url: &Url) -> bool {
+    matches!(url.scheme(), "http" | "https")
+}
+
+/// Hands `url` to the system opener (`open`, `xdg-open`, `explorer`).
+fn open_in_browser(url: &Url) {
+    let program = od_server::routes::handoff::opener();
+    match std::process::Command::new(&program)
+        .arg(url.as_str())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        // Reaped off the UI thread: the opener may outlive the call.
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => tracing::warn!(%url, error = %e, %program, "cannot open the link"),
+    }
+}
+
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::default(app)?;
     let open = MenuItem::with_id(
@@ -301,6 +327,16 @@ fn main() -> anyhow::Result<()> {
                             tracing::warn!(%url, "blocked a navigation away from the app");
                         }
                         ok
+                    })
+                    // The app never opens a second webview: web links go to
+                    // the system browser, anything else is dropped.
+                    .on_new_window(|url, _| {
+                        if opens_in_browser(&url) {
+                            open_in_browser(&url);
+                        } else {
+                            tracing::warn!(%url, "blocked a new window");
+                        }
+                        tauri::webview::NewWindowResponse::Deny
                     })
                     .title(APP_NAME)
                     .inner_size(1360.0, 860.0)
@@ -432,6 +468,27 @@ mod tests {
             "file:///etc/passwd",
         ] {
             assert!(!ok(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn only_web_links_open_in_the_browser() {
+        let opens = |u: &str| opens_in_browser(&Url::parse(u).unwrap());
+        assert!(opens("https://code.claude.com/docs/en/setup"));
+        assert!(opens("https://www.google.com/chrome/"));
+        assert!(opens(
+            "http://127.0.0.1:50123/api/projects/p1/raw/index.html"
+        ));
+        for bad in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,hi",
+            "blob:http://127.0.0.1:50123/x",
+            "tauri://localhost/index.html",
+            "mailto:a@b.c",
+            "vscode://file/x",
+        ] {
+            assert!(!opens(bad), "{bad}");
         }
     }
 }
