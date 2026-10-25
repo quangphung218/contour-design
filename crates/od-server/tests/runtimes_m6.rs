@@ -80,6 +80,13 @@ async fn byok_key_is_stored_0600_and_never_returned() {
     let anthropic = json!({"protocol": "anthropic", "baseUrl": "https://api.anthropic.com"});
     let (status, body) = put_config(&d, &json!({"byok": anthropic, "agentId": "claude"})).await;
     assert_eq!(status, 200, "{body}");
+    // Picking BYOK afterwards, without touching it, is checked too.
+    let (status, body) = put_config(&d, &json!({"agentId": "byok"})).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(d.get_json("/api/app-config").await["agentId"], "claude");
+    // A save that keeps the agent goes through.
+    let (status, body) = put_config(&d, &json!({"theme": "dark"})).await;
+    assert_eq!(status, 200, "{body}");
 }
 
 /// The UI sends the whole config on every save: a keyless provider stored

@@ -297,18 +297,22 @@ async fn put_config(
             // UI sends the whole config on every save, theme included, and
             // a provider stored before this rule must not block those
             // (QA-018). And only while BYOK is the agent picked: a stale
-            // provider sent along with a local agent is never called.
+            // provider sent along with a local agent is never called, but
+            // picking BYOK later is checked too.
+            let is_byok = |c: &Map<String, Value>| {
+                c.get("agentId").and_then(Value::as_str) == Some(od_runtime::def::BYOK.id)
+            };
+            let becomes_picked = !is_byok(&config);
             let moves_byok = patch
                 .get(BYOK_KEY)
                 .filter(|b| b.is_object())
                 .is_some_and(|b| !config.get(BYOK_KEY).is_some_and(|s| same_route(s, b)));
             merge_patch(&mut config, patch);
             // After the merge: a patch without `apiKey` may keep the stored one.
-            let picked =
-                config.get("agentId").and_then(Value::as_str) == Some(od_runtime::def::BYOK.id);
+            let picked = is_byok(&config);
             if let Some(provider) = config
                 .get(BYOK_KEY)
-                .filter(|_| moves_byok && picked)
+                .filter(|_| (moves_byok || becomes_picked) && picked)
                 .and_then(key_missing)
             {
                 return Err(StoreError::BadRequest(format!(
