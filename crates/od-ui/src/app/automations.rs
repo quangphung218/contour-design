@@ -324,7 +324,8 @@ impl Form {
         Self {
             name: RwSignal::new(String::new()),
             project: RwSignal::new(String::new()),
-            each_run: RwSignal::new(false),
+            // A fresh project per run until the user picks one of theirs.
+            each_run: RwSignal::new(true),
             prompt: RwSignal::new(String::new()),
             cron: RwSignal::new(preset.to_cron()),
             preset: RwSignal::new(preset),

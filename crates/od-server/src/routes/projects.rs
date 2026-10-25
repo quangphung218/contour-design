@@ -7,8 +7,11 @@ use od_contracts::{
     OkResponse, ProjectResponse, ProjectsResponse, UpdateProjectRequest,
 };
 
+/// Every project but the media library's, which holds uploads and is not
+/// a design the user made.
 pub async fn list(State(state): State<AppState>) -> ApiResult<ApiJson<ProjectsResponse>> {
-    let projects = state.blocking(|s| s.list_projects_with_entry()).await?;
+    let mut projects = state.blocking(|s| s.list_projects_with_entry()).await?;
+    projects.retain(|p| p.id != crate::routes::library::assets::LIBRARY_PROJECT_ID);
     Ok(ApiJson(ProjectsResponse { projects }))
 }
 

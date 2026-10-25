@@ -98,6 +98,23 @@ test('LIB-08', 'Uploading a text file to the media library is refused or kept, n
   assert.equal(errors.length, 0);
 });
 
+// A 1×1 PNG.
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+
+test('LIB-11', 'An upload to the media library does not add a "Media library" project to Projects or Recent', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/media');
+  await page.getByTestId('media-upload-input').setInputFiles({ name: 'mood.png', mimeType: 'image/png', buffer: PNG });
+  await until(async () => (await api('/api/library/assets')).body.assets?.some((a) => a.path.endsWith('mood.png')), 'upload stored');
+  for (const tab of ['collection-all', 'collection-recent']) {
+    await page.goto(d.base + '/projects');
+    await page.getByTestId(tab).click();
+    await page.waitForLoadState('networkidle').catch(() => {});
+    assert.doesNotMatch(await page.locator('main').innerText(), /Media library/, `${tab} lists the media library`);
+  }
+  assert.ok(!(await listProjects(d)).some((p) => p.id === 'media-library'), 'the API lists the media library');
+});
+
 test('LIB-09', 'Generating an image with no provider key points the user to Providers', async ({ d, newPage }) => {
   const { page } = await newPage();
   await page.goto(d.base + '/media');

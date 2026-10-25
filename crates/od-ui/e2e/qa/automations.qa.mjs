@@ -12,6 +12,8 @@ async function form(newPage, d, { name, prompt, project, eachRun = false }) {
   const { page } = p;
   await page.goto(d.base + '/automations');
   await page.getByTestId('routine-form').waitFor();
+  // A new routine starts on "New project each run", not on some project.
+  assert.equal(await page.getByTestId('routine-each-run').isChecked(), true, 'new routine targets an existing project');
   await page.getByTestId('routine-name').fill(name);
   await page.getByTestId('routine-prompt').fill(prompt);
   const each = page.getByTestId('routine-each-run');

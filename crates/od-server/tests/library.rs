@@ -483,6 +483,15 @@ async fn media_library_lists_uploads_and_chats_to_design() {
     assert_eq!(v["projectId"], "media-library");
     let (s, _) = upload(&d, "/api/library/upload", &[("notes.txt", b"x")]).await;
     assert_eq!(s, 400, "only media files");
+    // The project holding uploads is not one of the user's designs.
+    let listed = d.get_json("/api/projects").await;
+    let ids: Vec<&str> = listed["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, [pid.as_str()], "media library listed as a project");
 
     let all = d.get_json("/api/library/assets").await;
     let paths: Vec<&str> = all["assets"]
