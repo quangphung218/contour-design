@@ -1569,4 +1569,6 @@ ApiVersion = เวอร์ชัน API
 AzureDeployment = Deployment
 ProjectNameRequired = ต้องระบุชื่อโปรเจกต์
 ApiKeyRequired = ต้องใช้คีย์ API
+ManualLeaveTitle = ออกจากหน้านี้หรือไม่
+ManualLeave = ออก
 ManualLeaveConfirm = มีการแก้ไขที่ยังไม่ได้ใช้ ออกและทิ้งการแก้ไขนี้หรือไม่

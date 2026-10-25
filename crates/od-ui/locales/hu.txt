@@ -1569,4 +1569,6 @@ ApiVersion = API-verzió
 AzureDeployment = Telepítés
 ProjectNameRequired = A projekt neve kötelező.
 ApiKeyRequired = API-kulcs szükséges
+ManualLeaveTitle = Kilép az oldalról?
+ManualLeave = Kilépés
 ManualLeaveConfirm = Egy módosítás még nincs alkalmazva. Kilép és elveti?

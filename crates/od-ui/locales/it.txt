@@ -1576,4 +1576,6 @@ ApiVersion = Versione API
 AzureDeployment = Distribuzione
 ProjectNameRequired = Il nome del progetto è obbligatorio.
 ApiKeyRequired = Chiave API obbligatoria
+ManualLeaveTitle = Uscire da questa pagina?
+ManualLeave = Esci
 ManualLeaveConfirm = Una modifica non è ancora applicata. Uscire e perderla?

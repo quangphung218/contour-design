@@ -1569,4 +1569,6 @@ ApiVersion = Versi API
 AzureDeployment = Deployment
 ProjectNameRequired = Nama proyek wajib diisi.
 ApiKeyRequired = API key wajib diisi
+ManualLeaveTitle = Tinggalkan halaman ini?
+ManualLeave = Tinggalkan
 ManualLeaveConfirm = Ada edit yang belum diterapkan. Tinggalkan dan buang?

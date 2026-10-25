@@ -1574,4 +1574,6 @@ ApiVersion = API sürümü
 AzureDeployment = Dağıtım
 ProjectNameRequired = Proje adı gerekli.
 ApiKeyRequired = API anahtarı gerekli
+ManualLeaveTitle = Bu sayfadan çıkılsın mı?
+ManualLeave = Çık
 ManualLeaveConfirm = Uygulanmamış bir düzenleme var. Çıkıp silinsin mi?

@@ -1575,4 +1575,6 @@ ApiVersion = Версія API
 AzureDeployment = Розгортання
 ProjectNameRequired = Вкажіть назву проєкту.
 ApiKeyRequired = Потрібен ключ API
+ManualLeaveTitle = Піти з цієї сторінки?
+ManualLeave = Піти
 ManualLeaveConfirm = Є незастосована правка. Піти й втратити її?

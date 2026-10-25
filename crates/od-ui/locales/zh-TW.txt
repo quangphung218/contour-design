@@ -1569,4 +1569,6 @@ ApiVersion = API 版本
 AzureDeployment = 部署
 ProjectNameRequired = 專案名稱不能為空。
 ApiKeyRequired = 需要 API 金鑰
+ManualLeaveTitle = 離開此頁面？
+ManualLeave = 離開
 ManualLeaveConfirm = 有修改尚未套用。離開並捨棄？
