@@ -1314,7 +1314,10 @@ messages! {
     NotesSaveFailed => "Could not save the notes: {0}", "Không lưu được ghi chú: {0}";
     ExportJpeg => "JPEG image", "Ảnh JPEG";
     ExportWebp => "WebP image", "Ảnh WebP";
-    ExportMp4 => "MP4 video (HyperFrames)", "Video MP4 (HyperFrames)";
+    ExportMp4 => "MP4 video", "Video MP4";
+    ExportPowerPoint => "PowerPoint", "PowerPoint";
+    ExportPptxSlides => "Slides as images", "Slide dạng ảnh";
+    ExportPptxEditableShort => "Editable text", "Chữ chỉnh sửa được";
     FileSection => "This file", "File này";
     SaveTemplateBody => "The page, bundled into one file, joins the templates on Home.", "Trang này, gói thành một file, sẽ có trong danh sách template ở Trang chủ.";
     TemplateDescription => "Description", "Mô tả";

@@ -1764,7 +1764,10 @@ mod tests {
             None
         );
         assert_eq!(
-            other_page(&d(DeliverableValidation::TypeMismatch), &wrote(&["deck.html"])),
+            other_page(
+                &d(DeliverableValidation::TypeMismatch),
+                &wrote(&["deck.html"])
+            ),
             None
         );
     }

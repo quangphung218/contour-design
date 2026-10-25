@@ -37,8 +37,7 @@ pub fn BrandStep(state: RwSignal<BrandState>, agent: RwSignal<Option<String>>) -
         }
         state.set(BrandState::Running(0));
         let name = brand_name(&target);
-        let body =
-            json!({ "name": name, "brief": "", "urls": [target], "agentId": agent.get_untracked() });
+        let body = json!({ "name": name, "brief": "", "urls": [target], "agentId": agent.get_untracked() });
         leptos::task::spawn_local(async move {
             let job = match api::post::<_, Value>("/api/design-systems/generate", &body).await {
                 Ok(v) => v["job"]["id"].as_str().unwrap_or_default().to_owned(),

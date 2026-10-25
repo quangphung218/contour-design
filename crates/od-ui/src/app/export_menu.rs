@@ -33,21 +33,6 @@ enum Format {
 }
 
 impl Format {
-    const ALL: [Self; 12] = [
-        Self::Html,
-        Self::Zip,
-        Self::Pdf,
-        Self::Png,
-        Self::Jpeg,
-        Self::Webp,
-        Self::Pptx,
-        Self::PptxEditable,
-        Self::Mp4,
-        Self::Markdown,
-        Self::Jsx,
-        Self::JsxHtml,
-    ];
-
     fn testid(self) -> String {
         match self {
             Self::PptxEditable => "export-pptx-editable".to_owned(),
@@ -70,6 +55,19 @@ impl Format {
             Self::Markdown => t(T::ExportMarkdown),
             Self::Jsx => t(T::ExportJsx),
             Self::JsxHtml => t(T::ExportJsxHtml),
+        }
+    }
+
+    /// The name under its group: "PNG" under Image, "Editable" under
+    /// PowerPoint.
+    fn short_label(self) -> &'static str {
+        match self {
+            Self::Png => "PNG",
+            Self::Jpeg => "JPEG",
+            Self::Webp => "WebP",
+            Self::Pptx => t(T::ExportPptxSlides),
+            Self::PptxEditable => t(T::ExportPptxEditableShort),
+            f => f.label(),
         }
     }
 
@@ -134,6 +132,72 @@ impl Format {
             (_, Some(p)) => super::studio::is_html_path(p),
         }
     }
+}
+
+/// A row of the export list: a format, or a group folded under one name
+/// (the image formats, the two PowerPoint kinds).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Row {
+    One(Format),
+    Group(Group),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Group {
+    Image,
+    PowerPoint,
+}
+
+impl Group {
+    fn formats(self) -> &'static [Format] {
+        match self {
+            Self::Image => &[Format::Png, Format::Jpeg, Format::Webp],
+            Self::PowerPoint => &[Format::Pptx, Format::PptxEditable],
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Image => t(T::Image),
+            Self::PowerPoint => t(T::ExportPowerPoint),
+        }
+    }
+
+    fn testid(self) -> &'static str {
+        match self {
+            Self::Image => "export-image",
+            Self::PowerPoint => "export-powerpoint",
+        }
+    }
+
+    fn glyph(self) -> Glyph {
+        self.formats()[0].glyph()
+    }
+}
+
+/// The export list in menu order, every format once.
+const ROWS: [Row; 9] = [
+    Row::One(Format::Html),
+    Row::One(Format::Zip),
+    Row::One(Format::Pdf),
+    Row::Group(Group::Image),
+    Row::Group(Group::PowerPoint),
+    Row::One(Format::Mp4),
+    Row::One(Format::Markdown),
+    Row::One(Format::Jsx),
+    Row::One(Format::JsxHtml),
+];
+
+/// The rows that apply to the open file `path`; a format that does not
+/// (Markdown next to a page, PDF with nothing open) is left out, not shown
+/// greyed without a reason.
+fn rows_for(path: Option<&str>) -> Vec<Row> {
+    ROWS.into_iter()
+        .filter(|r| match r {
+            Row::One(f) => f.fits(path),
+            Row::Group(g) => g.formats().iter().any(|f| f.fits(path)),
+        })
+        .collect()
 }
 
 /// Saves `bytes` as `name` through a temporary object URL.
@@ -204,6 +268,13 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         });
     });
 
+    // The group unfolded in the menu (Image ▸, PowerPoint ▸).
+    let expanded = RwSignal::new(None::<Group>);
+    Effect::new(move |_| {
+        if !open.get() {
+            expanded.set(None);
+        }
+    });
     let export = move |format: Format| {
         open.set(false);
         let file = ctx.active_untracked();
@@ -308,23 +379,38 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             <Show when=move || open.get()>
                 <MenuScrim on_close=move || open.set(false)/>
                 <div class="menu" role="menu" data-testid="export-menu">
-                    {Format::ALL
-                        .into_iter()
-                        .map(|f| {
-                            view! {
-                                <button
-                                    class="menu-item"
-                                    role="menuitem"
-                                    data-testid=f.testid()
-                                    disabled=move || !f.fits(ctx.active().as_deref())
-                                    on:click=move |_| export(f)
-                                >
-                                    {icon(f.glyph())}
-                                    {f.label()}
-                                </button>
-                            }
-                        })
-                        .collect_view()}
+                    {move || {
+                        let path = ctx.active();
+                        rows_for(path.as_deref())
+                            .into_iter()
+                            .map(|row| match row {
+                                Row::One(f) => format_item(f, export, false).into_any(),
+                                Row::Group(g) => {
+                                    let unfolded = move || expanded.get() == Some(g);
+                                    view! {
+                                        <button
+                                            class="menu-item"
+                                            role="menuitem"
+                                            data-testid=g.testid()
+                                            aria-haspopup="true"
+                                            aria-expanded=move || unfolded().to_string()
+                                            on:click=move |_| expanded.update(|e| *e = if *e == Some(g) { None } else { Some(g) })
+                                        >
+                                            {icon(g.glyph())}
+                                            {g.label()}
+                                            <span class="menu-hint">{move || icon(if unfolded() { Glyph::ChevronDown } else { Glyph::ChevronRight })}</span>
+                                        </button>
+                                        {move || unfolded().then(|| g
+                                            .formats()
+                                            .iter()
+                                            .map(|&f| format_item(f, export, true))
+                                            .collect_view())}
+                                    }
+                                    .into_any()
+                                }
+                            })
+                            .collect_view()
+                    }}
                     <div class="menu-sep">{t(T::FileSection)}</div>
                     <button class="menu-item" role="menuitem" data-testid="file-new-tab" disabled=move || ctx.active().is_none()
                         on:click=move |_| { open.set(false); if let Some(p) = ctx.active_untracked() { super::files_panel::open_in_new_tab(ctx, &p); } }>
@@ -392,6 +478,22 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                 })}
             </div>
         </div>
+    }
+}
+
+/// A menu item that exports `f`; `nested` under its group's name.
+fn format_item(f: Format, export: impl Fn(Format) + 'static, nested: bool) -> impl IntoView {
+    view! {
+        <button
+            class="menu-item"
+            class:menu-sub=nested
+            role="menuitem"
+            data-testid=f.testid()
+            on:click=move |_| export(f)
+        >
+            {icon(f.glyph())}
+            {if nested { f.short_label() } else { f.label() }}
+        </button>
     }
 }
 
@@ -483,6 +585,32 @@ mod tests {
             design_md_state(&[spec, file("a/b.html", 11.0)]),
             DesignMd::Stale
         );
+    }
+
+    #[test]
+    fn the_menu_lists_only_what_the_open_file_exports_to() {
+        use super::{Format, Group, Row, rows_for};
+        assert_eq!(rows_for(None), [Row::One(Format::Zip)]);
+        let page = rows_for(Some("deck.html"));
+        assert!(page.contains(&Row::Group(Group::Image)));
+        assert!(page.contains(&Row::Group(Group::PowerPoint)));
+        assert!(page.contains(&Row::One(Format::Mp4)));
+        assert!(!page.contains(&Row::One(Format::Markdown)));
+        assert!(!page.contains(&Row::One(Format::Jsx)));
+        assert_eq!(
+            rows_for(Some("notes.md")),
+            [Row::One(Format::Zip), Row::One(Format::Markdown)]
+        );
+        // Every format is reachable once.
+        let mut all: Vec<Format> = super::ROWS
+            .iter()
+            .flat_map(|r| match r {
+                Row::One(f) => vec![*f],
+                Row::Group(g) => g.formats().to_vec(),
+            })
+            .collect();
+        all.dedup();
+        assert_eq!(all.len(), 12);
     }
 
     #[test]

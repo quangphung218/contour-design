@@ -101,13 +101,10 @@ fn for_people(text: &str) -> String {
         "when the user",
     ];
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let cut = flat
-        .match_indices(". ")
-        .map(|(i, _)| i + 2)
-        .find(|&i| {
-            let rest = flat[i..].to_lowercase();
-            FOR_AGENT.iter().any(|w| rest.starts_with(w))
-        });
+    let cut = flat.match_indices(". ").map(|(i, _)| i + 2).find(|&i| {
+        let rest = flat[i..].to_lowercase();
+        FOR_AGENT.iter().any(|w| rest.starts_with(w))
+    });
     let kept = cut.map_or(flat.as_str(), |i| flat[..i].trim_end());
     crate::i18n::rebrand(kept).into_owned()
 }

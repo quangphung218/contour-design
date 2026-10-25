@@ -407,6 +407,7 @@ input[type="color"].swatch.transparent::-moz-color-swatch { opacity: 0; }
 .menu-item:disabled { color: var(--color-text-disabled); cursor: not-allowed; }
 .menu-item:disabled .ico { color: var(--color-text-disabled); }
 .menu-item .menu-hint { margin-left: auto; font-size: var(--text-xs); color: var(--color-text-tertiary); }
+.menu-item.menu-sub { padding-left: var(--space-8); }
 .menu-item.danger, .menu-item.danger .ico { color: var(--color-danger); }
 .menu-item.danger:hover:not(:disabled) { background: var(--color-danger-soft); }
 .menu-item.danger:hover:not(:disabled) .ico { color: var(--color-danger); }

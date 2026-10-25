@@ -327,8 +327,9 @@ try {
   await standalone.close();
   await page.locator('[data-testid="file-row"][data-path="index.html"]').click();
   await page.getByTestId('export').click();
-  assert.equal(await page.getByTestId('export-jsx').isDisabled(), true, 'pages are not components');
-  assert.equal(await page.getByTestId('export-jsx-html').isDisabled(), true);
+  await page.getByTestId('export-html').waitFor();
+  assert.equal(await page.getByTestId('export-jsx').count(), 0, 'pages are not components');
+  assert.equal(await page.getByTestId('export-jsx-html').count(), 0);
   await page.keyboard.press('Escape');
   results.exportJsx = 'ok';
 
