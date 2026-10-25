@@ -108,8 +108,17 @@ pub fn zoom_step(current: u32, up: bool) -> u32 {
     ZOOM_STEPS[i]
 }
 
-fn at_max_zoom(zoom: u32) -> bool {
-    zoom_step(zoom, true) == zoom
+/// `zoom` lowered to `cap`, the largest zoom a device frame fits at.
+fn capped(zoom: u32, cap: Option<u32>) -> u32 {
+    cap.map_or(zoom, |c| zoom.min(c))
+}
+
+/// The zoom one step up or down from the one shown (`chosen` under `cap`);
+/// `None` when that step would not change the size the page is drawn at.
+fn next_zoom(chosen: u32, cap: Option<u32>, up: bool) -> Option<u32> {
+    let shown = capped(chosen, cap);
+    let next = zoom_step(shown, up);
+    (capped(next, cap) != shown).then_some(next)
 }
 
 /// Slide states a deck restore waits through before it gives up (the
@@ -202,6 +211,9 @@ pub struct StudioCtx {
     pub show_code: RwSignal<bool>,
     /// Preview zoom, percent (one of [`ZOOM_STEPS`]).
     pub zoom: RwSignal<u32>,
+    /// The largest zoom the device frame fits the preview at (`None` for
+    /// Desktop, which follows the pane).
+    zoom_cap: RwSignal<Option<u32>>,
     /// Composer context, uploads and the chat pane's size (track B3-chat).
     pub chat: super::composer::ChatState,
     /// Last slide shown per deck file, restored when the deck reloads.
@@ -317,8 +329,15 @@ impl StudioCtx {
         super::store_flag(FILES_OPEN_KEY, next);
     }
 
+    /// One zoom step from the size shown, when it changes that size.
     pub fn zoom_by(self, up: bool) {
-        self.zoom.update(|z| *z = zoom_step(*z, up));
+        if let Some(z) = next_zoom(self.zoom.get_untracked(), self.zoom_cap.get_untracked(), up) {
+            self.zoom.set(z);
+        }
+    }
+
+    fn can_zoom(self, up: bool) -> bool {
+        next_zoom(self.zoom.get(), self.zoom_cap.get(), up).is_some()
     }
 
     pub fn reload_preview(self) {
@@ -1112,6 +1131,7 @@ pub fn Studio() -> impl IntoView {
         files_open: RwSignal::new(super::stored_flag(FILES_OPEN_KEY).unwrap_or_else(wide_window)),
         show_code: RwSignal::new(false),
         zoom: RwSignal::new(100),
+        zoom_cap: RwSignal::new(None),
         chat: super::composer::ChatState::new(),
         tools: Tools::new(),
         last_slide: StoredValue::new(None),
@@ -1268,6 +1288,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     let stage_width = observe_width(stage);
     // A device wider than the stage is scaled down to fit, as the original.
     let zoom = Memo::new(move |_| fit_zoom(device.get(), ctx.zoom.get(), stage_width.get()));
+    Effect::new(move |_| ctx.zoom_cap.set(fit_cap(device.get(), stage_width.get())));
     let src = Memo::new(move |_| {
         let path = ctx.active()?;
         let rev = ctx.preview_rev.get();
@@ -1473,13 +1494,13 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 </Show>
                 <div class="zoom" role="group" aria-label=t(T::Zoom)>
                     <button class="icon-btn small" aria-label=t(T::ZoomOut) data-tip=t(T::ZoomOut) data-testid="zoom-out"
-                        disabled=move || ctx.show_code.get() || zoom_step(ctx.zoom.get(), false) == ctx.zoom.get()
+                        disabled=move || ctx.show_code.get() || !ctx.can_zoom(false)
                         on:click=move |_| ctx.zoom_by(false)>{icon(Glyph::ZoomOut)}</button>
                     <button class="zoom-value" data-tip=t(T::ZoomReset) aria-label=t(T::ZoomReset) data-testid="zoom-reset"
                         disabled=move || ctx.show_code.get()
-                        on:click=move |_| ctx.zoom.set(100)>{move || format!("{}%", ctx.zoom.get())}</button>
+                        on:click=move |_| ctx.zoom.set(100)>{move || format!("{}%", zoom.get())}</button>
                     <button class="icon-btn small" aria-label=t(T::ZoomIn) data-tip=t(T::ZoomIn) data-testid="zoom-in"
-                        disabled=move || ctx.show_code.get() || at_max_zoom(ctx.zoom.get())
+                        disabled=move || ctx.show_code.get() || !ctx.can_zoom(true)
                         on:click=move |_| ctx.zoom_by(true)>{icon(Glyph::ZoomIn)}</button>
                 </div>
                 <Show when=move || !ctx.files_open.get()>
@@ -1535,14 +1556,15 @@ enum Special {
 /// frame fits `stage` px (its content width; 0 while not measured).
 /// Desktop follows the pane, so it keeps the chosen zoom.
 fn fit_zoom(device: Device, zoom: u32, stage: f64) -> u32 {
-    match device.px() {
-        Some(px) if stage >= 1.0 => {
-            // Whole percent, rounded down so the frame never overflows.
-            let fit = (stage * 100.0 / f64::from(px)).floor().clamp(1.0, 100.0) as u32;
-            zoom.min(fit)
-        }
-        _ => zoom,
-    }
+    capped(zoom, fit_cap(device, stage))
+}
+
+/// The largest zoom (at most 100) a device frame fits `stage` px at;
+/// `None` for Desktop and while the stage is not measured.
+fn fit_cap(device: Device, stage: f64) -> Option<u32> {
+    let px = device.px().filter(|_| stage >= 1.0)?;
+    // Whole percent, rounded down so the frame never overflows.
+    Some((stage * 100.0 / f64::from(px)).floor().clamp(1.0, 100.0) as u32)
 }
 
 /// Follows the content width of `node` (a `ResizeObserver`); 0 until it
@@ -1753,5 +1775,17 @@ mod tests {
         // Desktop follows the pane; an unmeasured stage keeps the zoom.
         assert_eq!(fit_zoom(Device::Desktop, 125, 650.0), 125);
         assert_eq!(fit_zoom(Device::Tablet, 100, 0.0), 100);
+    }
+
+    #[test]
+    fn zoom_steps_from_the_size_shown_and_stops_at_the_fit() {
+        // Tablet shown at 79 %: + would not grow it, - goes to 75 %.
+        assert_eq!(next_zoom(100, Some(79), true), None);
+        assert_eq!(next_zoom(125, Some(79), false), Some(75));
+        assert_eq!(next_zoom(75, Some(79), true), Some(100));
+        // Desktop: the plain steps, clamped at both ends.
+        assert_eq!(next_zoom(100, None, true), Some(125));
+        assert_eq!(next_zoom(200, None, true), None);
+        assert_eq!(next_zoom(50, None, false), None);
     }
 }
