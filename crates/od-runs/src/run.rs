@@ -238,6 +238,7 @@ impl Run {
             created_at: self.meta.created_at,
             ended_at: inner.ended_at,
             last_event_id: inner.next_id - 1,
+            prompt: None,
         }
     }
 

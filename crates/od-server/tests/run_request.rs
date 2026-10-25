@@ -66,3 +66,22 @@ async fn reusing_a_client_request_id_with_other_comments_is_a_conflict() {
     assert!(again.reused);
     assert_eq!(again.run_id, first.run_id);
 }
+
+#[tokio::test]
+async fn the_run_list_names_what_was_asked() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
+    let (project, _) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project, "message": "A tea shop landing page"}))
+        .await;
+    end_of(&d.events(&run.run_id, None).await);
+    let runs: Value = d.get_json("/api/runs").await;
+    let listed = runs["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == run.run_id.as_str())
+        .unwrap();
+    assert_eq!(listed["prompt"], "A tea shop landing page");
+}
