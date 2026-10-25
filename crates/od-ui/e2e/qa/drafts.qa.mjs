@@ -109,7 +109,7 @@ test('DL-04', 'Closing the page with a manual edit not applied asks before leavi
   await until(() => page.isClosed() || asked, 'page closed or asked', 5000);
   await sleep(300);
   assert.ok(asked, 'the page closed without asking, the typed edit is gone');
-}, { knownBug: 'QA-007' });
+});
 
 /** Opens a project with one finished turn and waits for the chat. */
 async function chatProject(newPage, d, name) {

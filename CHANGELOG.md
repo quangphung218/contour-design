@@ -22,6 +22,8 @@ All notable changes to Contour are recorded here. The format follows
   the pane is narrower, so device media queries apply (QA-003).
 - Edit panel: an Apply in one tab, or typing while it saves, no longer wipes what
   was typed and not applied in another field (QA-006).
+- With an edit panel change not applied, closing or reloading the page asks first,
+  and so does a link that leaves the page (QA-007).
 
 ## [0.1.0] - 2026-10-24
 

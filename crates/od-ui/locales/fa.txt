@@ -1575,3 +1575,4 @@ ApiVersion = نسخه API
 AzureDeployment = استقرار
 ProjectNameRequired = نام پروژه الزامی است.
 ApiKeyRequired = کلید API لازم است
+ManualLeaveConfirm = یک ویرایش هنوز اعمال نشده است. خارج شوید و آن را از دست بدهید؟

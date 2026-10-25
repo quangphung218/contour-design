@@ -1576,3 +1576,4 @@ ApiVersion = Versión de la API
 AzureDeployment = Implementación
 ProjectNameRequired = El nombre del proyecto es obligatorio.
 ApiKeyRequired = Se necesita una clave de API
+ManualLeaveConfirm = Hay una edición sin aplicar. ¿Salir y descartarla?

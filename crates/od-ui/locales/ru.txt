@@ -1575,3 +1575,4 @@ ApiVersion = Версия API
 AzureDeployment = Развертывание
 ProjectNameRequired = Укажите название проекта.
 ApiKeyRequired = Нужен ключ API
+ManualLeaveConfirm = Есть неприменённая правка. Уйти и потерять её?

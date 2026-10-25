@@ -1575,3 +1575,4 @@ ApiVersion = API バージョン
 AzureDeployment = デプロイ
 ProjectNameRequired = プロジェクト名は必須です。
 ApiKeyRequired = APIキーが必要です
+ManualLeaveConfirm = 未適用の編集があります。破棄して移動しますか？

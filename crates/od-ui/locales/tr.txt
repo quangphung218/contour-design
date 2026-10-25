@@ -1574,3 +1574,4 @@ ApiVersion = API sürümü
 AzureDeployment = Dağıtım
 ProjectNameRequired = Proje adı gerekli.
 ApiKeyRequired = API anahtarı gerekli
+ManualLeaveConfirm = Uygulanmamış bir düzenleme var. Çıkıp silinsin mi?

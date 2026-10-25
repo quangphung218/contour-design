@@ -1569,3 +1569,4 @@ ApiVersion = إصدار API
 AzureDeployment = النشر
 ProjectNameRequired = اسم المشروع مطلوب.
 ApiKeyRequired = مفتاح API مطلوب
+ManualLeaveConfirm = هناك تعديل لم يُطبَّق بعد. هل تغادر وتفقده؟

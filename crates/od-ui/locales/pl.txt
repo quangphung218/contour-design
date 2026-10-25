@@ -1575,3 +1575,4 @@ ApiVersion = Wersja API
 AzureDeployment = Wdrożenie
 ProjectNameRequired = Nazwa projektu jest wymagana.
 ApiKeyRequired = Wymagany klucz API
+ManualLeaveConfirm = Edycja nie została zastosowana. Wyjść i ją utracić?

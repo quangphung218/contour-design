@@ -1575,3 +1575,4 @@ ApiVersion = API 버전
 AzureDeployment = 배포
 ProjectNameRequired = 프로젝트 이름을 입력하세요.
 ApiKeyRequired = API 키가 필요합니다
+ManualLeaveConfirm = 적용하지 않은 편집이 있습니다. 나가면서 버릴까요?

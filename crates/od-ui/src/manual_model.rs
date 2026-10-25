@@ -265,6 +265,20 @@ impl DraftBook {
         out
     }
 
+    /// True when `typed` holds a change not applied yet: a field differs
+    /// from what it held when last clean.
+    #[must_use]
+    pub fn dirty(&self, typed: &Drafts) -> bool {
+        self.clean.as_ref().is_some_and(|clean| {
+            !text_same(&typed.text, &clean.text)
+                || typed.href != clean.href
+                || typed.src != clean.src
+                || typed.alt != clean.alt
+                || !json_same(&typed.attrs, &clean.attrs)
+                || typed.html != clean.html
+        })
+    }
+
     /// A write of `part` succeeded with the drafts `sent` (as they were when
     /// the write started): those fields are clean now. The other fields keep
     /// their state, so what the user typed in another tab, or while the
@@ -462,6 +476,27 @@ mod tests {
             true,
         );
         assert_eq!(ui.text, "Still typing this");
+    }
+
+    #[test]
+    fn a_draft_is_dirty_until_applied() {
+        let el = el_with(
+            vec![attr("class", "lead")],
+            "<p class=\"lead\">Fresh</p>",
+            "Fresh",
+        );
+        let mut book = DraftBook::default();
+        assert!(!book.dirty(&Drafts::default()), "nothing read yet");
+        let mut ui = book.read(&Drafts::default(), &el, false);
+        assert!(!book.dirty(&ui));
+        // Layout and spaces aside, the same values are not a change.
+        ui.attrs = r#"{"class":"lead"}"#.into();
+        ui.text = " Fresh ".into();
+        assert!(!book.dirty(&ui));
+        ui.text = "Not applied".into();
+        assert!(book.dirty(&ui));
+        book.written(Part::Content, &ui);
+        assert!(!book.dirty(&ui));
     }
 
     #[test]

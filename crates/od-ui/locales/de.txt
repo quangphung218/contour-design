@@ -1570,3 +1570,4 @@ ApiVersion = API-Version
 AzureDeployment = Deployment
 ProjectNameRequired = Ein Projektname ist erforderlich.
 ApiKeyRequired = API-Key erforderlich
+ManualLeaveConfirm = Eine Änderung ist noch nicht angewendet. Verlassen und verwerfen?
