@@ -164,22 +164,28 @@ impl Default for FilesUi {
 
 /// Overwrites existing file `path` with `body` (exact path, never renamed);
 /// `label` names the version an HTML file gets.
-pub async fn replace_content(
+///
+/// The URL is built at the call, not when the future first runs: a save
+/// spawned while the Studio goes away must not read its disposed context.
+pub fn replace_content(
     ctx: StudioCtx,
     path: &str,
     body: &str,
     label: &str,
-) -> Result<ProjectFile, String> {
+) -> impl Future<Output = Result<ProjectFile, String>> + 'static {
     let url = format!(
         "{}/content/{}?label={}",
         ctx.base(),
         api::file_path(path),
         api::seg(label)
     );
-    api::put_text::<FileResponse>(&url, body)
-        .await
-        .map(|r| r.file)
-        .map_err(|e| e.to_string())
+    let body = body.to_owned();
+    async move {
+        api::put_text::<FileResponse>(&url, &body)
+            .await
+            .map(|r| r.file)
+            .map_err(|e| e.to_string())
+    }
 }
 
 /// Inline style placing a menu under (or, near the bottom of the window,

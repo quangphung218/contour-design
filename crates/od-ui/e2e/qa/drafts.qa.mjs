@@ -172,7 +172,7 @@ test('DL-08', 'Markdown typed and left at once is saved', async ({ d, newPage })
   await until(async () => (await raw(d, id, 'notes.md')).includes('Last line typed'), 'markdown saved', 5000)
     .catch(async () => assert.fail(`notes.md after leaving: ${JSON.stringify(await raw(d, id, 'notes.md'))}`));
   // The harness then fails the test on the wasm panic of leaving (QA-009).
-}, { knownBug: 'QA-009' });
+});
 
 test('DL-09', 'Deleting a file asks first, and Cancel keeps it', async ({ d, newPage }) => {
   const id = await createProject(d, 'Delete cancel', { 'index.html': PAGE, 'keep.css': 'h1{}' });
