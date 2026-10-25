@@ -659,7 +659,7 @@ fn ChipRow(
                 role="radio"
                 data-testid="chip"
                 data-chip=c.key()
-                aria-checked=move || (chip.get() == c).to_string()
+                aria-checked=move || (chip.get() == c).to_string() tabindex=move || super::focus::roving(chip.get() == c)
                 on:click=move |_| set_chip.run(c)
             >
                 {icon(chip_glyph(c))}
@@ -668,7 +668,7 @@ fn ChipRow(
         }
     };
     view! {
-        <div class="chips" role="radiogroup" aria-label=t(T::OutputType)>
+        <div class="chips" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::OutputType)>
             {Chip::PRIMARY.into_iter().map(chip_button).collect_view()}
             {move || {
                 let c = chip.get();

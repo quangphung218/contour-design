@@ -409,13 +409,13 @@ pub fn Projects() -> impl IntoView {
             }}
 
             <div class="projects-toolbar">
-                <div class="segmented small" role="tablist" aria-label=t(T::ProjectCollections)>
+                <div class="segmented small" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ProjectCollections)>
                     <button class="seg" role="tab" data-testid="collection-all"
-                        aria-selected=move || (collection.get() == Collection::All).to_string()
+                        aria-selected=move || (collection.get() == Collection::All).to_string() tabindex=move || super::focus::roving(collection.get() == Collection::All)
                         class:active=move || collection.get() == Collection::All
                         on:click=move |_| collection.set(Collection::All)>{t(T::CollectionAll)}</button>
                     <button class="seg" role="tab" data-testid="collection-recent"
-                        aria-selected=move || (collection.get() == Collection::Recent).to_string()
+                        aria-selected=move || (collection.get() == Collection::Recent).to_string() tabindex=move || super::focus::roving(collection.get() == Collection::Recent)
                         class:active=move || collection.get() == Collection::Recent
                         on:click=move |_| collection.set(Collection::Recent)>{t(T::CollectionRecent)}</button>
                 </div>

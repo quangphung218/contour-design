@@ -172,7 +172,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
                 class="seg"
                 role="tab"
                 class:active=move || scope.get() == sc
-                aria-selected=move || (scope.get() == sc).to_string()
+                aria-selected=move || (scope.get() == sc).to_string() tabindex=move || super::focus::roving(scope.get() == sc)
                 data-testid=match sc { Scope::Mine => "ds-scope-mine", Scope::Presets => "ds-scope-presets" }
                 on:click=move |_| {
                     scope.set(sc);
@@ -196,7 +196,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
                     {icon(Glyph::Add)}{t(T::Create)}
                 </button>
             </header>
-            <div class="segmented lib-tabs" role="tablist">
+            <div class="segmented lib-tabs" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true)>
                 {scope_tab(Scope::Mine, T::DsYourSystems)}
                 {scope_tab(Scope::Presets, T::DsPresets)}
             </div>
@@ -980,11 +980,11 @@ fn DsDetail(
                 _ => Vec::new(),
             }).into_iter().map(|r| view! { <RevisionCard revision=r decide=decide/> }).collect_view()}
             <div class="row kit-tabs">
-                <div class="segmented" role="tablist">
+                <div class="segmented" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true)>
                 {[(KitTab::Kit, T::KitTab, "kit"), (KitTab::Showcase, T::Showcase, "showcase"), (KitTab::Tokens, T::Tokens, "tokens"), (KitTab::Design, T::DesignMd, "design-md")]
                     .into_iter()
                     .map(|(k, label, key)| view! {
-                        <button class="seg" role="tab" data-testid=format!("kit-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() on:click=move |_| tab.set(k)>
+                        <button class="seg" role="tab" data-testid=format!("kit-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() tabindex=move || super::focus::roving(tab.get() == k) on:click=move |_| tab.set(k)>
                             <span class="seg-label">{t(label)}</span>
                         </button>
                     })

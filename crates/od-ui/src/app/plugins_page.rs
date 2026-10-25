@@ -292,13 +292,14 @@ pub fn PluginsPage() -> impl IntoView {
                                 prop:value=move || query.get() on:input=move |ev| query.set(event_target_value(&ev))/>
                         </label>
                     </div>
-                    <div class="chips lib-chips" role="radiogroup" aria-label=t(T::Category)>
-                        <button class="chip" role="radio" aria-checked=move || category.get().is_empty().to_string() class:active=move || category.get().is_empty() on:click=move |_| category.set(String::new())>{t(T::AllFilter)}</button>
+                    <div class="chips lib-chips" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::Category)>
+                        <button class="chip" role="radio" aria-checked=move || category.get().is_empty().to_string() tabindex=move || super::focus::roving(category.get().is_empty()) class:active=move || category.get().is_empty() on:click=move |_| category.set(String::new())>{t(T::AllFilter)}</button>
                         {move || categories.get().into_iter().map(|c| {
                             let c2 = c.clone();
                             let c3 = c.clone();
+                            let c4 = c.clone();
                             view! {
-                                <button class="chip" role="radio" data-testid="plugin-category" aria-checked=move || (category.get() == c2).to_string() class:active={ let c = c.clone(); move || category.get() == c } on:click=move |_| category.set(c3.clone())>{category_label(&c)}</button>
+                                <button class="chip" role="radio" data-testid="plugin-category" aria-checked=move || (category.get() == c2).to_string() tabindex=move || super::focus::roving(category.get() == c4) class:active={ let c = c.clone(); move || category.get() == c } on:click=move |_| category.set(c3.clone())>{category_label(&c)}</button>
                             }
                         }).collect_view()}
                     </div>

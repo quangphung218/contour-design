@@ -167,12 +167,12 @@ pub fn Onboarding() -> impl IntoView {
                     <h1>{t(T::OnboardingTitle)}</h1>
                     <p class="muted">{t(T::OnboardingIntro)}</p>
                 </header>
-                <div class="segmented" role="tablist" aria-label=t(T::ExecutionMode)>
+                <div class="segmented" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ExecutionMode)>
                     <button class="seg" role="tab" data-testid="onboarding-local"
-                        aria-selected=move || (!use_key.get()).to_string() class:active=move || !use_key.get()
+                        aria-selected=move || (!use_key.get()).to_string() tabindex=move || super::focus::roving(!use_key.get()) class:active=move || !use_key.get()
                         on:click=move |_| use_key.set(false)>{icon(Glyph::Terminal)}{t(T::LocalAgent)}</button>
                     <button class="seg" role="tab" data-testid="onboarding-byok"
-                        aria-selected=move || use_key.get().to_string() class:active=move || use_key.get()
+                        aria-selected=move || use_key.get().to_string() tabindex=move || super::focus::roving(use_key.get()) class:active=move || use_key.get()
                         on:click=move |_| use_key.set(true)>{icon(Glyph::Key)}{t(T::UseApiKey)}</button>
                 </div>
                 <Show

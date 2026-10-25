@@ -43,7 +43,7 @@ pub fn Integrations() -> impl IntoView {
     let tab_button = move |tb: Tab, glyph: Glyph, label: T, hint: T, testid: &'static str| {
         view! {
             <button class="seg" role="tab" data-testid=testid data-tip=t(hint)
-                aria-selected=move || (tab.get() == tb).to_string()
+                aria-selected=move || (tab.get() == tb).to_string() tabindex=move || super::focus::roving(tab.get() == tb)
                 class:active=move || tab.get() == tb
                 on:click=move |_| tab.set(tb)>
                 {icon(glyph)}{t(label)}
@@ -58,7 +58,7 @@ pub fn Integrations() -> impl IntoView {
                     <p class="page-sub">{t(T::IntegrationsIntro)}</p>
                 </div>
             </header>
-            <div class="segmented integration-tabs" role="tablist">
+            <div class="segmented integration-tabs" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true)>
                 {tab_button(Tab::Mcp, Glyph::Mcp, T::McpTitle, T::ExternalTools, "tab-mcp")}
                 {tab_button(Tab::Agents, Glyph::Agent, T::ConnectAgents, T::ConnectAgentsShort, "tab-agents")}
                 {tab_button(Tab::Everywhere, Glyph::Globe, T::UseEverywhere, T::UseEverywhereShort, "tab-everywhere")}

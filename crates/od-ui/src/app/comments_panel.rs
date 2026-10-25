@@ -89,7 +89,7 @@ pub fn CommentsPanel(ctx: StudioCtx) -> impl IntoView {
                 class="seg"
                 role="radio"
                 data-testid=testid
-                aria-checked=move || (resolved.get() == value).to_string()
+                aria-checked=move || (resolved.get() == value).to_string() tabindex=move || super::focus::roving(resolved.get() == value)
                 class:active=move || resolved.get() == value
                 on:click=move |_| resolved.set(value)
             >
@@ -100,7 +100,7 @@ pub fn CommentsPanel(ctx: StudioCtx) -> impl IntoView {
     view! {
         {panel_head(ctx, t(T::CommentsTab).to_owned())}
         <div class="tool-body comments-board" data-testid="comments-panel">
-            <div class="segmented small" role="radiogroup" aria-label=t(T::CommentsTab)>
+            <div class="segmented small" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::CommentsTab)>
                 {filter(false, T::CommentsFilterOpen, "comments-filter-open")}
                 {filter(true, T::CommentsFilterResolved, "comments-filter-resolved")}
             </div>

@@ -98,10 +98,10 @@ pub fn HomeTabs(
     };
     view! {
         <section class="home-section home-tabs" data-testid="home-tabs">
-            <div class="segmented" role="tablist" aria-label=t(T::HomeTabsLabel)>
+            <div class="segmented" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::HomeTabsLabel)>
                 {Tab::ALL.into_iter().map(|k| view! {
                     <button class="seg" role="tab" data-testid=format!("home-tab-{}", k.key())
-                        aria-selected=move || (tab.get() == k).to_string()
+                        aria-selected=move || (tab.get() == k).to_string() tabindex=move || super::focus::roving(tab.get() == k)
                         class:active=move || tab.get() == k
                         on:click=move |_| pick(k)>
                         {icon(k.glyph())}<span class="seg-label">{k.label()}</span>

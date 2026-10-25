@@ -148,7 +148,7 @@ impl StudioCtx {
 pub fn ChatTools(ctx: StudioCtx) -> impl IntoView {
     view! {
         <div class="chat-tools">
-            <div class="segmented small" role="radiogroup" aria-label=t(T::SessionMode) data-testid="session-mode">
+            <div class="segmented small" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::SessionMode) data-testid="session-mode">
                 {[SessionMode::Design, SessionMode::Chat, SessionMode::Plan]
                     .into_iter()
                     .map(|m| {
@@ -160,7 +160,7 @@ pub fn ChatTools(ctx: StudioCtx) -> impl IntoView {
                                 title=hint
                                 data-mode=mode_id(m)
                                 class:active=move || ctx.session_mode.get() == m
-                                aria-checked=move || (ctx.session_mode.get() == m).to_string()
+                                aria-checked=move || (ctx.session_mode.get() == m).to_string() tabindex=move || super::focus::roving(ctx.session_mode.get() == m)
                                 disabled=move || ctx.live_run.get().is_some()
                                 on:click=move |_| ctx.set_session_mode(m)
                             >

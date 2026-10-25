@@ -319,10 +319,10 @@ pub fn CreateFlow(
     view! {
         <Modal title=t(T::DsDialogTitle).to_owned() subtitle=t(T::DsCreateSub).to_owned() glyph=Glyph::Sparkle wide=true testid="ds-create" on_close=on_close>
             <div class="dialog-body">
-                <div class="source-picker" role="radiogroup" aria-label=t(T::Source)>
+                <div class="source-picker" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::Source)>
                     {Source::ALL.into_iter().map(|s| view! {
                         <button class="chip" role="radio" data-testid=format!("dsc-source-{}", s.key())
-                            aria-checked=move || (source.get() == s).to_string() class:active=move || source.get() == s
+                            aria-checked=move || (source.get() == s).to_string() tabindex=move || super::focus::roving(source.get() == s) class:active=move || source.get() == s
                             on:click=move |_| source.set(s)>
                             {icon(s.glyph())}{s.label()}
                         </button>

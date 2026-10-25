@@ -274,6 +274,9 @@ try {
     await shot(page, 'projects-390-light');
     const b = await page.getByTestId('new-project').boundingBox();
     assert.ok(b.x >= 0 && b.x + b.width <= 390, `New project spans ${b.x}..${b.x + b.width}`);
+    // The main action leads: not on a line under Import ZIP and Open folder.
+    const zip = await page.getByTestId('import-zip').boundingBox();
+    assert.ok(b.y <= zip.y + 1, `New project at y ${b.y}, below Import ZIP at y ${zip.y}`);
   });
   await check('390: Studio shows Chat, Preview and Files one at a time', async () => {
     await page.goto(projectUrl);
@@ -296,6 +299,23 @@ try {
     await preview(page).locator('#title').waitFor();
     await shot(page, 'studio-preview-390-light');
     assert.ok(await onTop(page.getByTestId('preview')), 'preview frame is covered');
+    // The side chat covers the preview; Preview on the switch brings it back.
+    await page.locator('[data-testid="side-chat-tab"] .tab-name').click();
+    await page.getByTestId('side-chat').waitFor();
+    await page.getByTestId('pane-preview').click();
+    await page.getByTestId('side-chat').waitFor({ state: 'detached' });
+    await preview(page).locator('#title').waitFor();
+    // The switch is one Tab stop; the arrows move and pick (WAI-ARIA radio group).
+    assert.deepEqual(
+      await page.locator('[data-testid="studio-switch"] [role=radio]').evaluateAll((els) => els.map((e) => e.tabIndex)),
+      [-1, 0, -1],
+    );
+    await page.getByTestId('pane-preview').focus();
+    await page.keyboard.press('ArrowRight');
+    await until(async () => (await page.getByTestId('pane-files').getAttribute('aria-checked')) === 'true', 'ArrowRight picks Files');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.testid), 'pane-files');
+    await page.keyboard.press('ArrowLeft');
+    await until(async () => (await page.getByTestId('pane-preview').getAttribute('aria-checked')) === 'true', 'ArrowLeft picks Preview');
   });
   await page.context().close();
 } catch (e) {

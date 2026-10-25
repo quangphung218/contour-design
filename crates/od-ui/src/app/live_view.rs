@@ -185,10 +185,10 @@ pub fn LiveView(ctx: StudioCtx, path: String) -> impl IntoView {
     view! {
         <div class="md-view live-view" data-testid="live-view">
             <div class="md-bar">
-                <div class="segmented small" role="radiogroup" aria-label=t(T::LiveArtifacts)>
+                <div class="segmented small" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::LiveArtifacts)>
                     {Pane::ALL.into_iter().map(|p| view! {
                         <button class="seg" role="radio" data-testid=format!("live-tab-{}", p.key())
-                            aria-checked=move || (pane.get() == p).to_string() class:active=move || pane.get() == p
+                            aria-checked=move || (pane.get() == p).to_string() tabindex=move || super::focus::roving(pane.get() == p) class:active=move || pane.get() == p
                             on:click=move |_| pane.set(p)>{p.label()}</button>
                     }).collect_view()}
                 </div>

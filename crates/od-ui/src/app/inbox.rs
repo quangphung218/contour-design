@@ -131,9 +131,9 @@ pub fn Inbox() -> impl IntoView {
                     <p class="page-sub">{t(T::MessageCenterIntro)}</p>
                 </div>
                 <div class="row">
-                    <div class="segmented small" role="tablist">
-                        <button class="seg" role="tab" aria-selected=move || (!show_archived.get()).to_string() class:active=move || !show_archived.get() on:click=move |_| show_archived.set(false)>{t(T::Inbox)}</button>
-                        <button class="seg" role="tab" data-testid="inbox-archived-tab" aria-selected=move || show_archived.get().to_string() class:active=move || show_archived.get() on:click=move |_| show_archived.set(true)>{t(T::Archived)}</button>
+                    <div class="segmented small" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true)>
+                        <button class="seg" role="tab" aria-selected=move || (!show_archived.get()).to_string() tabindex=move || super::focus::roving(!show_archived.get()) class:active=move || !show_archived.get() on:click=move |_| show_archived.set(false)>{t(T::Inbox)}</button>
+                        <button class="seg" role="tab" data-testid="inbox-archived-tab" aria-selected=move || show_archived.get().to_string() tabindex=move || super::focus::roving(show_archived.get()) class:active=move || show_archived.get() on:click=move |_| show_archived.set(true)>{t(T::Archived)}</button>
                     </div>
                     <button class="btn small" data-testid="inbox-mark-all" on:click=mark_all>{icon(Glyph::Check)}{t(T::MarkAllRead)}</button>
                 </div>

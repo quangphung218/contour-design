@@ -1295,14 +1295,16 @@ pub fn Studio() -> impl IntoView {
         match p {
             NarrowPane::Chat => ctx.chat.collapsed.set(false),
             NarrowPane::Files => ctx.files_open.set(true),
-            NarrowPane::Preview => {}
+            // The side chat covers the preview on a phone: Preview brings
+            // the page back.
+            NarrowPane::Preview => ctx.side.open.set(false),
         }
         pane.set(p);
     };
     let pane_seg = move |p: NarrowPane, label: T| {
         view! {
             <button class="seg" role="radio" data-testid=format!("pane-{}", p.key())
-                aria-checked=move || (pane.get() == p).to_string()
+                aria-checked=move || (pane.get() == p).to_string() tabindex=move || super::focus::roving(pane.get() == p)
                 class:active=move || pane.get() == p
                 on:click=move |_| pick(p)>
                 {t(label)}
@@ -1317,7 +1319,7 @@ pub fn Studio() -> impl IntoView {
             data-pane=move || pane.get().key()
             style=move || ctx.chat.width.get().map(|w| format!("--chat-w:{w:.0}px"))
         >
-            <div class="segmented small studio-switch" role="radiogroup" aria-label=t(T::ViewMode) data-testid="studio-switch">
+            <div class="segmented small studio-switch" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ViewMode) data-testid="studio-switch">
                 {pane_seg(NarrowPane::Chat, T::Chat)}
                 {pane_seg(NarrowPane::Preview, T::Preview)}
                 {pane_seg(NarrowPane::Files, T::Files)}
@@ -1348,32 +1350,9 @@ pub fn Studio() -> impl IntoView {
 #[component]
 fn TabsBar(ctx: StudioCtx) -> impl IntoView {
     let files_ui = FilesUi::get();
-    // Left/Right move between tabs, as in the WAI-ARIA tabs pattern.
-    let tab_keys = move |ev: ev::KeyboardEvent| {
-        use wasm_bindgen::JsCast;
-        let step = match ev.key().as_str() {
-            "ArrowLeft" => -1,
-            "ArrowRight" => 1,
-            _ => return,
-        };
-        let element =
-            |t: Option<web_sys::EventTarget>| t.and_then(|t| t.dyn_into::<web_sys::Element>().ok());
-        let (Some(list), Some(from)) = (element(ev.current_target()), element(ev.target())) else {
-            return;
-        };
-        let Ok(found) = list.query_selector_all("[role=tab]") else {
-            return;
-        };
-        let tabs: Vec<web_sys::HtmlElement> = (0..found.length())
-            .filter_map(|i| found.item(i)?.dyn_into().ok())
-            .collect();
-        let Some(at) = tabs.iter().position(|t| **t == from) else {
-            return;
-        };
-        ev.prevent_default();
-        let next = (at as i32 + step).rem_euclid(tabs.len() as i32) as usize;
-        let _ = tabs[next].focus();
-    };
+    // Left/Right move between tabs, as in the WAI-ARIA tabs pattern; a
+    // tab opens on Enter or a click, not on focus (it loads a file).
+    let tab_keys = move |ev: ev::KeyboardEvent| super::focus::group_keys(&ev, false);
     view! {
         <div class="tabs" data-testid="tabs">
             // Only the tabs sit in the tablist: the "+" launcher and the focus
@@ -1631,13 +1610,13 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <button class="icon-btn" aria-label=t(T::ReloadPreview) data-tip=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>
                     {icon(Glyph::Refresh)}
                 </button>
-                <div class="segmented small" role="radiogroup" aria-label=t(T::ViewAs)>
+                <div class="segmented small" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ViewAs)>
                     <button
                         class="seg"
                         role="radio"
                         data-testid="view-preview"
                         aria-label=t(T::Preview)
-                        aria-checked=move || (!ctx.show_code.get()).to_string()
+                        aria-checked=move || (!ctx.show_code.get()).to_string() tabindex=move || super::focus::roving(!ctx.show_code.get())
                         class:active=move || !ctx.show_code.get()
                         on:click=move |_| ctx.show_code.set(false)
                     >
@@ -1648,7 +1627,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         role="radio"
                         data-testid="view-code"
                         aria-label=t(T::Code)
-                        aria-checked=move || ctx.show_code.get().to_string()
+                        aria-checked=move || ctx.show_code.get().to_string() tabindex=move || super::focus::roving(ctx.show_code.get())
                         class:active=move || ctx.show_code.get()
                         disabled=move || is_image() || ctx.active().is_none()
                         on:click=move |_| ctx.show_code.set(true)
@@ -1656,7 +1635,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         {icon(Glyph::Code)}<span class="btn-label">{t(T::Code)}</span>
                     </button>
                 </div>
-                <div class="segmented small icons" role="radiogroup" aria-label=t(T::Device)>
+                <div class="segmented small icons" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::Device)>
                     {Device::ALL
                         .into_iter()
                         .map(|d| {
@@ -1664,7 +1643,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                                 <button
                                     class="seg"
                                     role="radio"
-                                    aria-checked=move || (device.get() == d).to_string()
+                                    aria-checked=move || (device.get() == d).to_string() tabindex=move || super::focus::roving(device.get() == d)
                                     aria-label=d.label()
                                     data-tip=d.label()
                                     class:active=move || device.get() == d

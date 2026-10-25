@@ -562,7 +562,7 @@ pub fn ManualEditPanel(ctx: StudioCtx) -> impl IntoView {
                 class="seg"
                 role="tab"
                 data-testid=testid
-                aria-selected=move || (m.tab.get() == tab).to_string()
+                aria-selected=move || (m.tab.get() == tab).to_string() tabindex=move || super::focus::roving(m.tab.get() == tab)
                 class:active=move || m.tab.get() == tab
                 on:click=move |_| m.tab.set(tab)
             >
@@ -593,7 +593,7 @@ pub fn ManualEditPanel(ctx: StudioCtx) -> impl IntoView {
                         <header class="manual-section-head">
                             <strong class="mono">{format!("<{tag}>")}</strong>
                         </header>
-                        <div class="segmented small manual-tabs" role="tablist" aria-label=t(T::ToolManualEdit)>
+                        <div class="segmented small manual-tabs" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ToolManualEdit)>
                             {tab_button(Tab::Content, T::ManualTabContent, "manual-tab-content")}
                             {tab_button(Tab::Style, T::ManualTabStyle, "manual-tab-style")}
                             {tab_button(Tab::Attributes, T::ManualTabAttributes, "manual-tab-attributes")}

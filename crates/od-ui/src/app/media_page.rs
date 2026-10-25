@@ -185,7 +185,7 @@ pub fn MediaPage() -> impl IntoView {
 
     let tab_button = move |k: Tab, label: T, glyph: Glyph, key: &'static str| {
         view! {
-            <button class="seg" role="tab" data-testid=format!("media-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() on:click=move |_| tab.set(k)>
+            <button class="seg" role="tab" data-testid=format!("media-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() tabindex=move || super::focus::roving(tab.get() == k) on:click=move |_| tab.set(k)>
                 <span class="seg-label">{icon(glyph)}{t(label)}
                     {(k == Tab::Queue).then(|| view! { <Show when=move || { active() > 0 }><span class="badge accent">{active}</span></Show> })}
                 </span>
@@ -205,7 +205,7 @@ pub fn MediaPage() -> impl IntoView {
                     <button class="btn primary" data-testid="media-new" on:click=move |_| tab.set(Tab::Generate)>{icon(Glyph::Sparkle)}{t(T::GenerateMedia)}</button>
                 </Show>
             </header>
-            <div class="segmented lib-tabs" role="tablist">
+            <div class="segmented lib-tabs" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true)>
                 {tab_button(Tab::Library, T::Library, Glyph::Grid, "library")}
                 {tab_button(Tab::Generate, T::Generate, Glyph::Sparkle, "generate")}
                 {tab_button(Tab::Queue, T::MediaQueue, Glyph::Queue, "queue")}

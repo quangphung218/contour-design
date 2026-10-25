@@ -260,10 +260,10 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
     view! {
         <div class="md-view" data-testid="markdown-view" data-mode=move || mode.get().key()>
             <div class="md-bar">
-                <div class="segmented small" role="radiogroup" aria-label=t(T::MdViewMode)>
+                <div class="segmented small" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::MdViewMode)>
                     {Mode::ALL.into_iter().map(|m| view! {
                         <button class="seg" role="radio" data-testid=format!("md-mode-{}", m.key())
-                            aria-checked=move || (mode.get() == m).to_string() class:active=move || mode.get() == m
+                            aria-checked=move || (mode.get() == m).to_string() tabindex=move || super::focus::roving(mode.get() == m) class:active=move || mode.get() == m
                             on:click=move |_| { mode.set(m); m.store(); }>
                             {icon(m.glyph())}<span class="btn-label">{m.label()}</span>
                         </button>

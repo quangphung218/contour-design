@@ -152,10 +152,10 @@ pub fn LibraryPicker(
                     aria-label=t(T::LibrarySearch)
                     prop:value=move || query.get()
                     on:input=move |ev| query.set(event_target_value(&ev))/>
-                <div class="segmented small" role="tablist" aria-label=t(T::LibraryFilterKind)>
+                <div class="segmented small" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::LibraryFilterKind)>
                     {KINDS.into_iter().map(|(k, label)| view! {
                         <button class="seg" role="tab" data-testid="library-kind" data-kind=k
-                            aria-selected=move || (kind.get() == k).to_string()
+                            aria-selected=move || (kind.get() == k).to_string() tabindex=move || super::focus::roving(kind.get() == k)
                             class:active=move || kind.get() == k
                             on:click=move |_| kind.set(if kind.get_untracked() == k { "" } else { k })>
                             {t(label)}
