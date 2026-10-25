@@ -499,7 +499,7 @@ messages! {
     RoutineNeedsName => "Add a title for this automation.", "Cần đặt tên cho automation.";
     RoutineNeedsPrompt => "Add a prompt for the scheduled conversation.", "Cần nhập prompt cho conversation theo lịch.";
     TargetCreateEachRun => "New project each run", "Project mới mỗi lần chạy";
-    TargetCreateEachRunHint => "A fresh, isolated workspace per fire.", "Mỗi lần chạy có một không gian riêng, mới.";
+    TargetCreateEachRunHint => "A fresh, separate project for every run.", "Mỗi lần chạy có một project mới, riêng.";
     TargetReuse => "Reuse an existing project", "Dùng lại một project";
     TargetReuseHint => "Each run lives as a new conversation inside the project.", "Mỗi lần chạy là một conversation mới trong project.";
     KindHourly => "Hourly", "Hằng giờ";
@@ -597,9 +597,9 @@ messages! {
     NavDesignSystems => "Design systems", "Design system";
     NavPlugins => "Plugins", "Plugin";
     NavInbox => "Messages", "Tin báo";
-    MessageCenter => "Message center", "Trung tâm tin báo";
+    MessageCenter => "Messages", "Tin báo";
     MessageCenterIntro => "Runs that finished, failed or were canceled, including those started by automations.", "Các run đã xong, lỗi hoặc bị huỷ, kể cả run do automation chạy.";
-    Inbox => "Inbox", "Hộp thư";
+    Inbox => "Active", "Đang theo dõi";
     Archived => "Archived", "Đã lưu trữ";
     Archive => "Archive", "Lưu trữ";
     Unarchive => "Move back to inbox", "Đưa lại hộp thư";
@@ -739,7 +739,7 @@ messages! {
     LintBadge => "Lint · {0}", "Lint · {0}";
     LintClean => "Lint", "Lint";
     LintTitle => "Lint of {0}", "Lint của {0}";
-    LintNone => "No anti-slop issues found.", "Không thấy lỗi AI slop nào.";
+    LintNone => "No design issues found.", "Không thấy lỗi thiết kế nào.";
     LintFix => "Fix: {0}", "Cách sửa: {0}";
     LintSend => "Ask the agent to fix", "Nhờ agent sửa";
     LintFailed => "Lint failed: {0}", "Không lint được: {0}";
@@ -955,7 +955,7 @@ messages! {
     UseInNewProject => "Use in a new project", "Dùng cho project mới";
     EditWithAgent => "Edit with agent", "Sửa bằng agent";
     CopyToYourSystems => "Copy to your systems", "Chép về của tôi";
-    DefaultForNewChats => "Default for new chats", "Mặc định cho chat mới";
+    DefaultForNewChats => "Default for new projects", "Mặc định cho project mới";
     DefaultNeedsPublished => "Publish this system first", "Cần xuất bản trước";
     DefaultSet => "New chats now start with this design system.", "Chat mới sẽ dùng design system này.";
     DefaultCleared => "No default design system now.", "Đã bỏ design system mặc định.";
@@ -1089,7 +1089,7 @@ messages! {
     Library => "Library", "Thư viện";
     MediaQueue => "Queue", "Hàng đợi";
     Providers => "Providers", "Provider";
-    HyperframesMp4 => "HyperFrames to MP4", "HyperFrames ra MP4";
+    HyperframesMp4 => "Video to MP4", "Video ra MP4";
     SetUpProviders => "Set up providers", "Thiết lập nhà cung cấp";
     Images => "Images", "Ảnh";
     Videos => "Videos", "Video";
@@ -1117,7 +1117,7 @@ messages! {
     ProvidersHint => "Keys stay on this machine (media-config.json, mode 0600). Leave a key empty to keep the saved one; an empty base URL uses the provider's own.", "Key chỉ lưu trên máy này (media-config.json, quyền 0600). Để trống key thì giữ key cũ; để trống base URL thì dùng địa chỉ mặc định của provider.";
     KeySaved => "Key saved ···{0}", "Đã lưu key ···{0}";
     KeyFromEnv => "Key from environment", "Key từ biến môi trường";
-    Mp4Hint => "Renders a project's HyperFrames composition (index.html with hyperframes.json) to an MP4 saved in the project. Needs Chrome and ffmpeg.", "Render composition HyperFrames của project (index.html kèm hyperframes.json) ra MP4 lưu trong project. Cần Chrome và ffmpeg.";
+    Mp4Hint => "Renders a motion project to an MP4 saved in the project. Needs Chrome and ffmpeg.", "Render project chuyển động ra MP4 lưu trong project. Cần Chrome và ffmpeg.";
     FramesPerSecond => "Frames per second", "Khung hình mỗi giây";
     RenderMp4 => "Render MP4", "Render MP4";
     Mp4Saved => "Saved {0}.", "Đã lưu {0}.";
