@@ -162,6 +162,12 @@ fn find<'a>(entries: &'a [SkillEntry], id: &str) -> Option<&'a SkillEntry> {
 pub struct ContentStore {
     roots: ContentRoots,
     index: ArcSwap<ContentIndex>,
+    /// Reloads are numbered when they start; a scan is stored only if no
+    /// later-started one was stored already. Otherwise a reload that began
+    /// before a write could finish last and swap the older snapshot back
+    /// in, losing a skill just created (tests/reload.rs).
+    started: std::sync::atomic::AtomicU64,
+    stored: std::sync::Mutex<u64>,
 }
 
 impl ContentStore {
@@ -180,6 +186,8 @@ impl ContentStore {
         Self {
             roots,
             index: ArcSwap::from_pointee(index),
+            started: std::sync::atomic::AtomicU64::new(0),
+            stored: std::sync::Mutex::new(0),
         }
     }
 
@@ -191,7 +199,19 @@ impl ContentStore {
 
     /// Rescans every root and swaps the snapshot in.
     pub fn reload(&self) {
-        self.index.store(Arc::new(ContentIndex::build(&self.roots)));
+        let generation = self
+            .started
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        let index = Arc::new(ContentIndex::build(&self.roots));
+        let mut stored = self
+            .stored
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if generation > *stored {
+            *stored = generation;
+            self.index.store(index);
+        }
     }
 
     #[must_use]
