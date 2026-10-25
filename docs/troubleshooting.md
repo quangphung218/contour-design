@@ -154,7 +154,10 @@ Install the Playwright browser: `cd crates/od-ui/e2e && npx playwright install c
 
 ### "Contour is damaged and can't be opened" / "unidentified developer"
 
-The download is not signed. Right-click the app ▸ Open the first time, or:
+The download is not signed. On macOS 15 and later, open the app once, then
+System Settings ▸ Privacy & Security ▸ **Open Anyway** and open it again
+(Control-click ▸ Open no longer works there). On macOS 14 and earlier,
+Control-click the app ▸ Open the first time. On any version:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Contour.app

@@ -193,7 +193,17 @@ in [parity.md](parity.md) row 174.
 **Detection** runs each time the agent picker opens or `GET /api/agents` is
 called: the daemon finds the binary on its `PATH`, runs `--version` and reads
 `--help` for supported flags (5 seconds per command). Nothing is cached, so
-after installing an agent press **Refresh**.
+after installing an agent press **Check again** in onboarding
+(`POST /api/agents/rescan`). In the desktop app that also asks the login
+shell for its `PATH` again, so an agent installed under a new nvm Node while
+the app runs is found without a restart.
+
+With no agent installed, onboarding puts Claude Code and Codex first, each
+with its install command (Copy) and official setup page, folds the other
+agents under **Other agents**, and offers the API key path with its limit
+(one HTML file, no tools). It also warns when no Chrome, Edge or Chromium is
+found (`GET /api/browser`), since PDF, PPTX and image export need one;
+nothing else is blocked.
 
 ```bash
 curl -s http://127.0.0.1:7456/api/agents
@@ -277,7 +287,7 @@ the running daemon.
 
 ```bash
 od mcp install claude --print      # show the command or config it would write
-od mcp install claude              # register the "open-design" server in Claude Code
+od mcp install claude              # register the "contour" server in Claude Code (drops an old "open-design" entry)
 od mcp install cursor              # write ~/.cursor/mcp.json, keeping other servers
 od mcp install claude --uninstall
 ```

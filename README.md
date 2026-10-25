@@ -51,10 +51,13 @@ The full tour is in [docs/features.md](docs/features.md).
 Get the latest build from
 [Releases](https://github.com/quangphung218/contour-design/releases): a
 universal `.dmg` for macOS, an `.AppImage` or `.deb` for Linux, and an
-`.msi` for Windows (untested). Each release has a `SHA256SUMS` file. Builds
-without a signing certificate are unsigned; see
-[getting started](docs/getting-started.md#download-a-release) for opening
-them on macOS.
+`.msi` for Windows (untested). Each release has a `SHA256SUMS` file.
+
+Builds without a signing certificate are unsigned, and macOS stops them the
+first time. On **macOS 15 and later**, open Contour once, then go to
+**System Settings ▸ Privacy & Security ▸ Open Anyway** and open it again.
+On macOS 14 and earlier, Control-click the app ▸ **Open**. Step by step:
+[getting started](docs/getting-started.md#open-an-unsigned-build-on-macos).
 
 ### Build from source
 
