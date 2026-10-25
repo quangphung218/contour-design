@@ -104,6 +104,19 @@ pub async fn agent_path() -> OsString {
 mod tests {
     use super::*;
 
+    /// A new binary's first exec can take seconds on a loaded Mac (it
+    /// scans it), past the 3 s login shell limit; run a fresh fake shell
+    /// once before timing it.
+    #[cfg(unix)]
+    fn warm_up(shell: &Path) {
+        let _ = std::process::Command::new(shell)
+            .args(["-ilc", "true"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+
     #[test]
     fn keeps_order_and_drops_repeats() {
         let merged = merge(
@@ -151,6 +164,7 @@ mod tests {
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        warm_up(&shell);
         let path = login_shell_path(shell.as_os_str()).await;
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(path.as_deref(), Some("/opt/tools/bin:/usr/bin"));
@@ -175,6 +189,7 @@ mod tests {
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        warm_up(&shell);
         let started = std::time::Instant::now();
         let path = login_shell_path(shell.as_os_str()).await;
         let took = started.elapsed();
@@ -213,19 +228,19 @@ mod tests {
         });
         assert!(!has_nvm(&engine.config().path));
         write_shell(&format!("{nvm}:/usr/bin"));
-        // First exec of a new binary can be slow on a loaded Mac (it scans it).
-        std::process::Command::new(&shell)
-            .args(["-ilc", "true"])
-            .status()
-            .unwrap();
+        warm_up(&shell);
         assert!(engine.rescan_path().await, "the new folder is not a change");
         let path = engine.config().path.clone();
-        assert!(has_nvm(&path), "{path:?}");
-        // The current folders stay first.
+        let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        // The shell's PATH comes first, as in a new Terminal: its Node runs
+        // the agent's `#!/usr/bin/env node`, not an older one already here.
         assert_eq!(
-            std::env::split_paths(&path).next(),
-            Some(PathBuf::from("/usr/bin"))
+            dirs[..2],
+            [PathBuf::from(nvm), PathBuf::from("/usr/bin")],
+            "{dirs:?}"
         );
+        let unique: std::collections::HashSet<_> = dirs.iter().collect();
+        assert_eq!(unique.len(), dirs.len(), "{dirs:?}");
         // Same answer again: nothing changes.
         assert!(!engine.rescan_path().await);
         // A shell that fails now keeps what the last rescan found.
@@ -243,6 +258,7 @@ mod tests {
         let engine = crate::RunEngine::new(crate::EngineConfig {
             path: OsString::from("/only/here"),
             login_shell: None,
+            rescan_install_dirs: true,
             ..crate::EngineConfig::from_env()
         });
         assert!(engine.rescan_path().await);
@@ -261,5 +277,18 @@ mod tests {
         }
         // Nothing new the second time.
         assert!(!engine.rescan_path().await);
+    }
+
+    /// Tests turn the install folders off so the machine's agents stay out.
+    #[tokio::test]
+    async fn rescan_can_keep_the_path_as_started() {
+        let engine = crate::RunEngine::new(crate::EngineConfig {
+            path: OsString::from("/only/here"),
+            login_shell: None,
+            rescan_install_dirs: false,
+            ..crate::EngineConfig::from_env()
+        });
+        assert!(!engine.rescan_path().await);
+        assert_eq!(engine.config().path, OsString::from("/only/here"));
     }
 }

@@ -68,7 +68,14 @@ pub struct EngineConfig {
     /// Shell asked again for its `PATH` when the agents are rescanned (the
     /// desktop app); `None` keeps `path` as it is.
     pub login_shell: Option<OsString>,
+    /// A rescan without a login shell adds the usual install folders
+    /// (`~/.local/bin`, Homebrew…). Off (`OD_RESCAN_INSTALL_DIRS=0`) for
+    /// tests that must not find the agents installed on the machine.
+    pub rescan_install_dirs: bool,
 }
+
+/// Turns [`EngineConfig::rescan_install_dirs`] off when `0`.
+pub const RESCAN_INSTALL_DIRS_ENV: &str = "OD_RESCAN_INSTALL_DIRS";
 
 impl EngineConfig {
     /// The daemon's own `PATH` and environment.
@@ -85,6 +92,7 @@ impl EngineConfig {
             probe_retry_after: PROBE_RETRY_AFTER,
             exit_after_completion: EXIT_AFTER_COMPLETION,
             login_shell: None,
+            rescan_install_dirs: std::env::var_os(RESCAN_INSTALL_DIRS_ENV).is_none_or(|v| v != "0"),
         }
     }
 
@@ -216,8 +224,9 @@ impl RunEngine {
     /// while the app runs (under a new nvm Node, say) is found, and adds the
     /// usual install folders (`~/.local/bin`…) a terminal-started daemon may
     /// lack. New folders go after the current `path`, which is never
-    /// shortened; a login shell that does not answer adds nothing. True
-    /// when `path` changed.
+    /// shortened. The login shell's own `PATH` goes first, as in a new
+    /// Terminal (a newer nvm Node before the one the app started with); one
+    /// that does not answer adds nothing. True when `path` changed.
     pub async fn rescan_path(&self) -> bool {
         let login = match self.config().login_shell.clone() {
             Some(shell) => {
@@ -227,6 +236,7 @@ impl RunEngine {
                 }
                 login
             }
+            None if !self.config().rescan_install_dirs => return false,
             None => None,
         };
         let home = std::env::var_os("HOME").map(PathBuf::from);
@@ -234,7 +244,14 @@ impl RunEngine {
             .config
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let path = crate::login_path::merge(&config.path, login.as_deref(), home.as_deref());
+        let path = match login {
+            Some(login) => crate::login_path::merge(
+                std::ffi::OsStr::new(&login),
+                Some(&config.path.to_string_lossy()),
+                home.as_deref(),
+            ),
+            None => crate::login_path::merge(&config.path, None, home.as_deref()),
+        };
         if path == config.path {
             return false;
         }

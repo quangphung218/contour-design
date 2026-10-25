@@ -82,6 +82,8 @@ export async function startDaemon({ agents = true, env = {}, data } = {}) {
         PATH: path,
         OD_OPEN_COMMAND: '/usr/bin/true',
         SHELL: '/bin/sh',
+        // Check again must not find the agents installed on this machine.
+        OD_RESCAN_INSTALL_DIRS: '0',
         RUST_LOG: 'warn',
         ...env,
       },
