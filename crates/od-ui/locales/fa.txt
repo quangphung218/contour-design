@@ -1574,3 +1574,4 @@ ExportJsxHtml = خروجی کامپوننت React به HTML
 ApiVersion = نسخه API
 AzureDeployment = استقرار
 ProjectNameRequired = نام پروژه الزامی است.
+ApiKeyRequired = کلید API لازم است

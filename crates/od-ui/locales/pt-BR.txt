@@ -1574,3 +1574,4 @@ ExportJsxHtml = Exportar componente React como HTML
 ApiVersion = Versão da API
 AzureDeployment = Implantação
 ProjectNameRequired = O nome do projeto é obrigatório.
+ApiKeyRequired = Chave de API obrigatória

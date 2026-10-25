@@ -83,6 +83,8 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
         .to_owned();
     let s_base = stored["baseUrl"].as_str().map(str::to_owned);
     let has_key = stored["hasApiKey"] == true;
+    // The base URL a stored key belongs to ("" when the default host).
+    let key_base = RwSignal::new(has_key.then(|| s_base.clone().unwrap_or_default()));
     let key_hint = stored["apiKeyHint"].as_str().unwrap_or_default().to_owned();
     let initial = byok::preset_for(&s_protocol, s_base.as_deref())
         .map_or("custom", |p| p.id)
@@ -179,7 +181,17 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
             }
         });
     };
+    let key_missing = move || {
+        api_key.with(|k| {
+            base_url.with(|b| {
+                key_base.with(|s| byok::key_missing(&preset_id.get(), k, b, s.as_deref()))
+            })
+        })
+    };
     let save = move |_| {
+        if key_missing() {
+            return;
+        }
         let mut byok = body();
         if byok["baseUrl"] == "" {
             byok["baseUrl"] = Value::Null;
@@ -204,9 +216,14 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
         };
         next.extra.insert("byok".to_owned(), merged);
         next.agent_id = Some("byok".to_owned());
+        let sent_key = !api_key.get_untracked().is_empty();
+        let sent_base = base_url.get_untracked();
         leptos::task::spawn_local(async move {
             let res = shell.save_config(next).await;
             if res.is_ok() {
+                if sent_key {
+                    key_base.set(Some(sent_base));
+                }
                 api_key.set(String::new());
                 shell.reload_agents();
                 if let Some(cb) = on_saved {
@@ -312,9 +329,10 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                     Some(Err(e)) => view! { <span class="error-text">{e}</span> }.into_any(),
                     None => ().into_any(),
                 }}
+                {move || key_missing().then(|| view! { <span class="muted small" data-testid="byok-key-required">{t(T::ApiKeyRequired)}</span> })}
                 // Azure has no shared host: nothing to save without the endpoint.
                 <button class="btn primary" data-testid="byok-save" on:click=save
-                    disabled=move || azure() && base_url.with(|b| b.trim().is_empty())>{t(T::SaveProvider)}</button>
+                    disabled=move || key_missing() || (azure() && base_url.with(|b| b.trim().is_empty()))>{t(T::SaveProvider)}</button>
             </div>
         </div>
     }

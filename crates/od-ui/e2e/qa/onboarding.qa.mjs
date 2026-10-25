@@ -98,7 +98,7 @@ test('ONB-05', 'An API provider cannot be saved with an empty key', async ({ d, 
   const cfg = (await api('/api/app-config')).body;
   assert.ok(!(cfg.agentId === 'byok' && !cfg.byok?.hasApiKey), 'BYOK was saved and selected without a key');
   assert.equal(await page.getByTestId('onboarding-continue').isDisabled(), true, 'Continue is enabled with no key');
-}, { ...noAgent, knownBug: 'QA-005' });
+}, noAgent);
 
 test('ONB-06', 'A wrong API key saved without testing gives a clear error on the first brief', async ({ d, newPage }) => {
   const provider = await rejectingProvider();

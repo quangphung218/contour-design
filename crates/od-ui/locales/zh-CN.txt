@@ -1573,3 +1573,4 @@ ExportJsxHtml = 将 React 组件导出为 HTML
 ApiVersion = API 版本
 AzureDeployment = 部署
 ProjectNameRequired = 项目名称不能为空。
+ApiKeyRequired = 需要 API 密钥

@@ -415,6 +415,7 @@ messages! {
     BaseUrl => "Base URL", "Base URL";
     ApiKey => "API key", "API key";
     ApiKeyPlaceholder => "Paste the API key", "Dán API key";
+    ApiKeyRequired => "API key required", "Cần API key";
     ApiKeyStored => "Saved key {0}; type to replace", "Đã lưu key {0}; gõ để thay";
     ApiKeyCleaned => "Removed spaces and hidden characters from the pasted key.", "Đã bỏ khoảng trắng và ký tự ẩn khỏi key vừa dán.";
     ApiKeyShape => "This key does not look like one for this provider.", "Key này có vẻ không phải của provider này.";

@@ -1568,3 +1568,4 @@ ExportJsxHtml = Ekspor komponen React sebagai HTML
 ApiVersion = Versi API
 AzureDeployment = Deployment
 ProjectNameRequired = Nama proyek wajib diisi.
+ApiKeyRequired = API key wajib diisi

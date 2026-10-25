@@ -1573,3 +1573,4 @@ ExportJsxHtml = React bileşenini HTML olarak dışa aktar
 ApiVersion = API sürümü
 AzureDeployment = Dağıtım
 ProjectNameRequired = Proje adı gerekli.
+ApiKeyRequired = API anahtarı gerekli

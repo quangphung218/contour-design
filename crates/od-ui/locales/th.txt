@@ -1568,3 +1568,4 @@ ExportJsxHtml = ส่งออกคอมโพเนนต์ React เป็
 ApiVersion = เวอร์ชัน API
 AzureDeployment = Deployment
 ProjectNameRequired = ต้องระบุชื่อโปรเจกต์
+ApiKeyRequired = ต้องใช้คีย์ API

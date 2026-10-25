@@ -1568,3 +1568,4 @@ ExportJsxHtml = React-komponens exportálása HTML-ként
 ApiVersion = API-verzió
 AzureDeployment = Telepítés
 ProjectNameRequired = A projekt neve kötelező.
+ApiKeyRequired = API-kulcs szükséges
