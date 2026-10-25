@@ -350,7 +350,9 @@ a.project-name:hover { color: var(--color-accent-text); }
   user-select: all;
 }
 .install-cmd .btn { flex: none; }
-.install-signin { flex-basis: 100%; margin: 0; }
+.install-signin, .install-account { flex-basis: 100%; margin: 0; }
+.agents-still-none { margin: var(--space-2) 0 0; color: var(--color-warning); }
+.agents-still-none code { font-size: var(--text-xs); }
 .install-signin code { font-size: var(--text-xs); }
 details.agent-missing > summary {
   display: inline-flex; align-items: center; gap: var(--space-1);

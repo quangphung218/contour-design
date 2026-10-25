@@ -103,7 +103,8 @@ and the choices behind it in [docs/decisions.md](docs/decisions.md).
 - **Windows may not find an installed agent.** Detection looks for the bare
   name (`claude`), not `claude.exe`, and the install folders Check again
   adds hang off `HOME`, which Windows usually does not set; a restart does
-  not help.
+  not help. Onboarding on Windows therefore links each agent's setup page
+  and the API key path, with no install command or Check again.
 - **External MCP servers reach Claude, ACP agents and OpenCode only**, as in
   the original app; ACP takes stdio servers only.
 - **Fully detached processes can survive.** An MCP stdio helper that

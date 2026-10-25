@@ -619,7 +619,11 @@ messages! {
     AgentsNoneHint => "No coding agent found yet. Paste an install command into Terminal, then choose Check again.", "Chưa có coding agent nào. Dán lệnh cài vào Terminal rồi bấm Kiểm tra lại.";
     InstallGuide => "Install guide", "Hướng dẫn cài";
     CopyCommand => "Copy command", "Sao chép lệnh";
-    SignInAfterInstall => "Then run {0} once to sign in.", "Sau đó chạy {0} một lần để đăng nhập.";
+    SignInAfterInstall => "Then open a new Terminal window and run {0} to sign in.", "Sau đó mở cửa sổ Terminal mới và chạy {0} để đăng nhập.";
+    StillNoAgent => "Still no agent found. Open a new Terminal window and run {0}.", "Vẫn chưa thấy agent nào. Mở cửa sổ Terminal mới và chạy {0}.";
+    AgentsNoneHintWindows => "No coding agent found yet. Install one from its guide below, or use an API key.", "Chưa có coding agent nào. Cài theo hướng dẫn bên dưới, hoặc dùng API key.";
+    ClaudeAccount => "Needs a Claude Pro, Max, Team or Enterprise plan, or a Console account.", "Cần gói Claude Pro, Max, Team hoặc Enterprise, hoặc tài khoản Console.";
+    CodexAccount => "Needs a ChatGPT plan or an OpenAI API key.", "Cần gói ChatGPT hoặc API key của OpenAI.";
     CheckAgain => "Check again", "Kiểm tra lại";
     CheckingAgents => "Checking…", "Đang kiểm tra…";
     ByokLimits => "API key only: makes a single HTML file, no tools.", "Chỉ API key: tạo một file HTML, không dùng tool.";

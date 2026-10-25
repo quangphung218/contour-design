@@ -41,8 +41,9 @@ Goal: a first-time user reaches Home with a working agent or API key.
 | ONB-09 | On a phone, "API key required" sits with the key field and Save stays in place | Viewport 390×844, no agent | API key ▸ Anthropic ▸ empty key | Hint tied to the key field; Save next to Test or at the right edge; no sideways scroll | P2 | auto (QA-016) |
 | ONB-09b | Check again after installing an agent detects it | Start without agent, then install one | Press Check again | The new agent is listed and picked, no restart | P2 | auto (in ONB-03; the login shell rescan in `od-server` tests) |
 | ONB-10 | Phone width, no agent: the install cards fit | PATH without any agent CLI | Open `/onboarding` at 390 px | No sideways scroll; Copy stays inside its card; Copy and Install guide are at least 44 px high | P2 | auto |
-| ONB-11 | Windows, no agent: no bash command | PATH without any agent CLI, Windows browser | Open `/onboarding` | Claude Code shows its PowerShell command; Codex shows only its setup page; no `curl … \| sh` anywhere | P2 | auto |
-| ONB-12 | Installed but not signed in | Mock `claude` fails every prompt until signed in | Open `/onboarding`; sign in; Check again | The failed test shows "Then run claude once to sign in."; after Check again the test passes and Continue is on | P1 | auto |
+| ONB-11 | Windows, no agent: setup pages only | PATH without any agent CLI, Windows browser | Open `/onboarding` | No install command, no Check again, nothing about Terminal; each card links its setup page; the API key path is offered | P2 | auto |
+| ONB-12 | Installed but not signed in | Mock `claude` fails every prompt until signed in | Open `/onboarding`; sign in; Check again | The failed test shows "Then open a new Terminal window and run claude to sign in."; after Check again the test passes and Continue is on | P1 | auto |
+| ONB-13 | Installed agent fails its test, not a sign-in issue | Mock `claude` rejects every prompt | Open `/onboarding` | Claude stays a card; Codex install card and the API key path are shown; no sign-in hint, no brand step; Continue is off | P1 | auto |
 
 ## 2. Create a project from Home (`home.qa.mjs`)
 

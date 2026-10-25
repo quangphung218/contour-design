@@ -30,10 +30,12 @@ pub fn Onboarding() -> impl IntoView {
     // PDF, PPTX and image export drive Chrome: say so now, not at export.
     let browser = LocalResource::new(|| api::get::<BrowserResponse>("/api/browser"));
     let no_browser = move || browser.get().and_then(Result::ok).is_some_and(|b| !b.found);
-    // Extracting a brand needs an agent that can browse; none, no offer.
-    let has_agent = move || matches!(shell.agents.get(), Some(Ok(list)) if list.iter().any(|a| a.available && a.id != "byok"));
     let no_agent =
         move || matches!(shell.agents.get(), Some(Ok(list)) if !list.iter().any(installed));
+    // Check again found nothing: say so, a press that changes nothing reads
+    // as a broken button.
+    let still_none = RwSignal::new(false);
+    let windows = on_windows();
     // Preselect the first available agent once detection answers.
     Effect::new(move |_| {
         if picked.get_untracked().is_none() {
@@ -74,32 +76,42 @@ pub fn Onboarding() -> impl IntoView {
     // Rescan, then test the picked agent again: after signing in, the same
     // agent now answers. With none picked, the preselect above picks and
     // tests a newly found one.
-    let check_again = Callback::new(move |()| {
-        if checking.get_untracked() {
-            return;
-        }
-        checking.set(true);
-        let had = picked.get_untracked();
-        leptos::task::spawn_local(async move {
-            shell.rescan_agents().await;
-            checking.set(false);
-            if let Some(agent) = had.filter(|a| picked.get_untracked().as_ref() == Some(a)) {
-                run_test(agent);
+    let check_again =
+        Callback::new(move |()| {
+            if checking.get_untracked() {
+                return;
             }
+            checking.set(true);
+            let had = picked.get_untracked();
+            leptos::task::spawn_local(async move {
+                shell.rescan_agents().await;
+                checking.set(false);
+                still_none.set(shell.agents.with_untracked(
+                    |a| matches!(a, Some(Ok(list)) if !list.iter().any(installed)),
+                ));
+                if let Some(agent) = had.filter(|a| picked.get_untracked().as_ref() == Some(a)) {
+                    run_test(agent);
+                }
+            });
         });
-    });
-    // A test that failed for Claude Code or Codex: most often not signed in.
+    // Claude Code or Codex failed its test for want of a sign-in (the
+    // daemon's `category`): say how to sign in.
     let sign_in_again = move || {
-        let failed = match test.get() {
-            Some(TestState::Done(v)) => v["ok"] != true,
-            Some(TestState::Failed(_)) => true,
-            _ => false,
-        };
+        let auth = matches!(test.get(), Some(TestState::Done(v)) if v["ok"] != true && v["category"] == "auth");
         let agent = picked.get()?;
         let featured = FEATURED.iter().find(|f| f.id == agent)?;
-        failed.then(|| view! { <SignInLine command=featured.sign_in testid="onboarding-signin"/> })
+        (auth && !windows)
+            .then(|| view! { <SignInLine command=featured.sign_in testid="onboarding-signin"/> })
     };
     let agent_ready = move || matches!(test.get(), Some(TestState::Done(v)) if v["ok"] == true);
+    let test_failed = move || match test.get() {
+        Some(TestState::Done(v)) => v["ok"] != true,
+        Some(TestState::Failed(_)) => true,
+        _ => false,
+    };
+    // No agent works yet: none installed, or the picked one failed its
+    // test. The ways forward (install cards, API key) stay in view.
+    let need_help = Signal::derive(move || no_agent() || test_failed());
     let ready = move || {
         if use_key.get() {
             byok_ready.get()
@@ -157,12 +169,15 @@ pub fn Onboarding() -> impl IntoView {
                         <ByokForm on_saved=on_byok_saved/>
                     }
                 >
-                    <p class="muted">{t(T::LocalAgentIntro)}</p>
+                    {move || (!no_agent()).then(|| view! { <p class="muted">{t(T::LocalAgentIntro)}</p> })}
                     {move || no_agent().then(|| view! {
-                        <p class="agents-none" data-testid="agents-none">{t(T::AgentsNoneHint)}</p>
+                        <p class="agents-none" data-testid="agents-none">
+                            {t(if windows { T::AgentsNoneHintWindows } else { T::AgentsNoneHint })}
+                        </p>
                     })}
-                    <AgentPicker picked=picked rescan=(checking, check_again)/>
-                    {move || no_agent().then(|| view! {
+                    <AgentPicker picked=picked need_help=need_help
+                        rescan=(!windows).then_some(Rescan { checking, on_click: check_again, still_none })/>
+                    {move || need_help.get().then(|| view! {
                         <p class="byok-alt muted small" data-testid="byok-alt">
                             <button class="link-btn" on:click=move |_| use_key.set(true)>{t(T::UseApiKeyInstead)}</button>
                             <span>{t(T::ByokLimits)}</span>
@@ -173,7 +188,8 @@ pub fn Onboarding() -> impl IntoView {
                     </div>
                     {sign_in_again}
                 </Show>
-                <Show when=has_agent>
+                // Extracting a brand runs the agent: only one that passed its test.
+                <Show when=agent_ready>
                     <super::onboarding_brand::BrandStep state=brand/>
                 </Show>
                 {move || no_browser().then(|| view! {
@@ -186,7 +202,7 @@ pub fn Onboarding() -> impl IntoView {
                 {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 <div class="onboarding-foot">
                     // With no agent the button sits under the install cards.
-                    <Show when=move || !use_key.get() && !no_agent()>
+                    <Show when=move || !use_key.get() && !no_agent() && !windows>
                         <CheckAgainButton checking=checking on_click=check_again testid="onboarding-check-again"/>
                     </Show>
                     <span class="spacer"></span>
@@ -226,30 +242,31 @@ fn installed(a: &AgentInfo) -> bool {
 /// An agent a new user is pointed to first.
 struct Featured {
     id: &'static str,
-    /// Install command for macOS and Linux.
+    /// Install command for macOS and Linux. Windows gets the setup page
+    /// only: detection there cannot find what it installs yet.
     unix: &'static str,
-    /// Install command for Windows PowerShell; none: the setup page only.
-    windows: Option<&'static str>,
     /// Official setup page.
     docs: &'static str,
     /// What to run once installed to sign in.
     sign_in: &'static str,
+    /// The account it needs, from the setup page.
+    account: T,
 }
 
 const FEATURED: &[Featured] = &[
     Featured {
         id: "claude",
         unix: "curl -fsSL https://claude.ai/install.sh | bash",
-        windows: Some("irm https://claude.ai/install.ps1 | iex"),
         docs: "https://code.claude.com/docs/en/setup",
         sign_in: "claude",
+        account: T::ClaudeAccount,
     },
     Featured {
         id: "codex",
         unix: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-        windows: None,
         docs: "https://developers.openai.com/codex/cli",
         sign_in: "codex login",
+        account: T::CodexAccount,
     },
 ];
 
@@ -263,12 +280,14 @@ fn on_windows() -> bool {
 /// Detected agents: installed ones as cards to pick. With none installed,
 /// Claude Code and Codex come first with how to install them; every other
 /// agent waits in a folded list. Shared with Settings. BYOK has its own form.
-/// `rescan`: a Check again button right under the install cards (before
-/// the folded list), where onboarding's hint points.
+/// `need_help`: show the install cards even next to installed agents (none
+/// of them works yet). `rescan`: a Check again button right under the
+/// install cards (before the folded list), where onboarding's hint points.
 #[component]
 pub fn AgentPicker(
     picked: RwSignal<Option<String>>,
-    #[prop(optional)] rescan: Option<(RwSignal<bool>, Callback<()>)>,
+    #[prop(optional, into)] need_help: Option<Signal<bool>>,
+    #[prop(default = None)] rescan: Option<Rescan>,
 ) -> impl IntoView {
     let shell = Shell::get();
     move || {
@@ -296,9 +315,11 @@ pub fn AgentPicker(
                 .into_iter()
                 .filter(|a| a.id != "byok")
                 .partition(installed);
-            // Featured only while nothing is installed: then they are the
-            // way forward, otherwise noise next to a working agent.
-            let featured: Vec<_> = if ready.is_empty() {
+            // Featured while nothing is installed, or nothing installed
+            // works: then they are the way forward, otherwise noise next to
+            // a working agent. One that is installed sits with the others.
+            let none_installed = ready.is_empty();
+            let featured: Vec<_> = if none_installed || need_help.is_some_and(|h| h.get()) {
                 FEATURED
                     .iter()
                     .filter_map(|f| {
@@ -321,10 +342,14 @@ pub fn AgentPicker(
                             <InstallCard agent=a featured=f/>
                         }).collect_view()}
                     </div>
-                    {rescan.map(|(checking, on_click)| view! {
+                    // With an agent installed, Check again is in the footer.
+                    {rescan.filter(|_| none_installed).map(|r| view! {
                         <div class="row check-again-row">
-                            <CheckAgainButton checking=checking on_click=on_click testid="agents-check-again"/>
+                            <CheckAgainButton checking=r.checking on_click=r.on_click testid="agents-check-again"/>
                         </div>
+                        {move || r.still_none.get().then(|| view! {
+                            <StillNoneLine/>
+                        })}
                     })}
                 })}
                 {(!missing.is_empty()).then(|| {
@@ -367,7 +392,28 @@ pub fn CheckAgainButton(
     }
 }
 
-/// "Then run `claude` once to sign in."
+/// Onboarding's Check again under the install cards.
+#[derive(Clone, Copy)]
+pub struct Rescan {
+    pub checking: RwSignal<bool>,
+    pub on_click: Callback<()>,
+    /// The last Check again found no agent.
+    pub still_none: RwSignal<bool>,
+}
+
+/// "Still no agent found. Open a new Terminal window and run `claude --version`."
+#[component]
+fn StillNoneLine() -> impl IntoView {
+    let text = t(T::StillNoAgent);
+    let (before, after) = text.split_once("{0}").unwrap_or((text, ""));
+    view! {
+        <p class="agents-still-none small" role="status" data-testid="agents-still-none">
+            {before}<code>"claude --version"</code>{after}
+        </p>
+    }
+}
+
+/// "Then open a new Terminal window and run `claude` to sign in."
 #[component]
 fn SignInLine(command: &'static str, testid: &'static str) -> impl IntoView {
     let text = t(T::SignInAfterInstall);
@@ -384,11 +430,8 @@ fn SignInLine(command: &'static str, testid: &'static str) -> impl IntoView {
 /// and how to sign in once installed.
 #[component]
 fn InstallCard(agent: AgentInfo, featured: &'static Featured) -> impl IntoView {
-    let command = if on_windows() {
-        featured.windows
-    } else {
-        Some(featured.unix)
-    };
+    let windows = on_windows();
+    let command = (!windows).then_some(featured.unix);
     let copied = RwSignal::new(false);
     let copy = move |_| {
         let Some(command) = command else {
@@ -422,7 +465,8 @@ fn InstallCard(agent: AgentInfo, featured: &'static Featured) -> impl IntoView {
                     </button>
                 </div>
             })}
-            <SignInLine command=featured.sign_in testid="install-signin"/>
+            {(!windows).then(|| view! { <SignInLine command=featured.sign_in testid="install-signin"/> })}
+            <p class="install-account muted small" data-testid="install-account">{t(featured.account)}</p>
         </div>
     }
 }
