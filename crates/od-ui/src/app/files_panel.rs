@@ -452,9 +452,8 @@ pub fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
             }
         >
             <div class="pane-head files-head">
-                <span class="pane-title" title=move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()).unwrap_or_default())>
-                    {move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()).unwrap_or_default())}
-                </span>
+                // The project's name heads the chat.
+                <span class="pane-title">{t(T::Files)}</span>
                 <input
                     type="file"
                     multiple

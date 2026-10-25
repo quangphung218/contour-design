@@ -197,9 +197,12 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                             <strong>{t(T::ProjectLoadFailed)}</strong>
                             <span>{e}</span>
                             <div class="row">
-                                <button class="btn small" data-testid="load-retry" on:click=move |_| {
-                                    leptos::task::spawn_local(ctx.load(shell));
-                                }>{icon(Glyph::Refresh)}{t(T::NextRetry)}</button>
+                                // A project that does not exist will not load on a retry.
+                                {(!ctx.load_gone.get()).then(|| view! {
+                                    <button class="btn small" data-testid="load-retry" on:click=move |_| {
+                                        leptos::task::spawn_local(ctx.load(shell));
+                                    }>{icon(Glyph::Refresh)}{t(T::NextRetry)}</button>
+                                })}
                                 <a class="btn small ghost" href="/projects">{icon(Glyph::Projects)}{t(T::AllProjects)}</a>
                             </div>
                         </div>
@@ -296,6 +299,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     on_mcp_settings=to_mcp
                     on_notice=Callback::new(move |m: String| ctx.notice.set(Some(m)))
                     on_library=import_library
+                    disabled=Signal::derive(move || ctx.load_error.with(Option::is_some))
                 />
                 <FilePicker trigger=pick_files on_files=stage_files/>
                 <div class="composer-actions">
@@ -327,7 +331,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                                 class=if live { "btn small send-btn queue" } else { "btn small primary send-btn" }
                                 data-testid="send"
                                 aria-label=label
-                                disabled=move || (draft.with(|d| d.trim().is_empty()) && !ctx.has_attached()) || uploading()
+                                disabled=move || (draft.with(|d| d.trim().is_empty()) && !ctx.has_attached()) || uploading() || ctx.load_error.with(Option::is_some)
                                 on:click=move |_| send()
                             >
                                 {icon(if live { Glyph::Queue } else { Glyph::Send })}
@@ -347,31 +351,38 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
     view! {
         <div class="pane-head conversation-bar">
             <span class="conversation-ico">{icon(Glyph::Chat)}</span>
-            <select
-                class="conversation-select"
-                data-testid="conversation"
-                aria-label=t(T::Conversation)
-                disabled=move || ctx.live_run.get().is_some()
-                on:change=move |ev| {
-                    let id = event_target_value(&ev);
-                    leptos::task::spawn_local(ctx.open_conversation(id));
-                }
-            >
-                {move || {
-                    let current = ctx.conversation_id.get();
-                    let list = ctx.conversations.get();
-                    let n = list.len();
-                    list.iter()
-                        .enumerate()
-                        .map(|(i, c)| {
-                            let selected = current.as_deref() == Some(c.id.as_str());
-                            view! {
-                                <option value=c.id.clone() selected=selected>{conversation_title(c, n - i)}</option>
-                            }
-                        })
-                        .collect_view()
-                }}
-            </select>
+            // Which project this is first; the conversation under it.
+            <div class="conversation-names">
+                <h1 class="studio-project" data-testid="studio-project-name"
+                    title=move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()))>
+                    {move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()))}
+                </h1>
+                <select
+                    class="conversation-select"
+                    data-testid="conversation"
+                    aria-label=t(T::Conversation)
+                    disabled=move || ctx.live_run.get().is_some()
+                    on:change=move |ev| {
+                        let id = event_target_value(&ev);
+                        leptos::task::spawn_local(ctx.open_conversation(id));
+                    }
+                >
+                    {move || {
+                        let current = ctx.conversation_id.get();
+                        let list = ctx.conversations.get();
+                        let n = list.len();
+                        list.iter()
+                            .enumerate()
+                            .map(|(i, c)| {
+                                let selected = current.as_deref() == Some(c.id.as_str());
+                                view! {
+                                    <option value=c.id.clone() selected=selected>{conversation_title(c, n - i)}</option>
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </select>
+            </div>
             <button
                 class="icon-btn"
                 aria-label=t(T::NewConversation)
