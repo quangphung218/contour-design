@@ -74,6 +74,8 @@ pub struct Manual {
     html: RwSignal<String>,
     /// Number of the latest element read; older answers are dropped.
     read_seq: StoredValue<u32>,
+    /// Which drafts are clean (match the source or were just written).
+    book: StoredValue<mm::DraftBook>,
 }
 
 impl Manual {
@@ -93,6 +95,7 @@ impl Manual {
             attrs: RwSignal::new(String::new()),
             html: RwSignal::new(String::new()),
             read_seq: StoredValue::new(0),
+            book: StoredValue::new(mm::DraftBook::default()),
         }
     }
 
@@ -127,17 +130,23 @@ impl Manual {
 
     /// Fills the drafts from a read of the picked element. A read again of
     /// the same one (`m.element` is cleared on a new pick) keeps what the
-    /// user changed since the last read.
+    /// user changed since the fields were last clean.
     fn fill(self, el: &SourceElementResponse) {
-        let after = mm::Drafts::of(el);
-        let before = self.element.with_untracked(|was| match was {
-            Some(Ok(prev)) => Some(mm::Drafts::of(prev)),
-            _ => None,
-        });
-        self.set_drafts(match before {
-            Some(before) => mm::refreshed(&before, &self.drafts(), &after),
-            None => after,
-        });
+        let same = self
+            .element
+            .with_untracked(|was| matches!(was, Some(Ok(_))));
+        let typed = self.drafts();
+        let drafts = self
+            .book
+            .try_update_value(|book| book.read(&typed, el, same))
+            .unwrap_or_else(|| mm::Drafts::of(el));
+        self.set_drafts(drafts);
+    }
+
+    /// A write or an undo/redo succeeded: what the drafts show is clean.
+    fn drafts_written(self) {
+        let typed = self.drafts();
+        self.book.update_value(|book| book.written(&typed));
     }
 }
 
@@ -272,6 +281,7 @@ impl StudioCtx {
                         T::SavedVersion,
                         &[&r.file.path, &r.version.version.to_string()],
                     )));
+                    m.drafts_written();
                     after();
                 }
                 Err(e) => m.error.set(Some(e.message)),
@@ -409,9 +419,11 @@ impl StudioCtx {
                 expect_version_id: Some(expect),
             };
             match api::post::<_, RestoreVersionResponse>(&url, &req).await {
-                Ok(_) => m
-                    .history
-                    .update(|h| if undo { h.undone() } else { h.redone() }),
+                Ok(_) => {
+                    m.drafts_written();
+                    m.history
+                        .update(|h| if undo { h.undone() } else { h.redone() });
+                }
                 Err(e) => m.error.set(Some(tf(T::ManualHistoryFailed, &[&e.message]))),
             }
             m.busy.set(false);
