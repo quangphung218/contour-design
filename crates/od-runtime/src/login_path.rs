@@ -213,11 +213,24 @@ mod tests {
         });
         assert!(!has_nvm(&engine.config().path));
         write_shell(&format!("{nvm}:/usr/bin"));
-        engine.rescan_path().await;
-        assert!(has_nvm(&engine.config().path), "{:?}", engine.config().path);
+        // First exec of a new binary can be slow on a loaded Mac (it scans it).
+        std::process::Command::new(&shell)
+            .args(["-ilc", "true"])
+            .status()
+            .unwrap();
+        assert!(engine.rescan_path().await, "the new folder is not a change");
+        let path = engine.config().path.clone();
+        assert!(has_nvm(&path), "{path:?}");
+        // The current folders stay first.
+        assert_eq!(
+            std::env::split_paths(&path).next(),
+            Some(PathBuf::from("/usr/bin"))
+        );
+        // Same answer again: nothing changes.
+        assert!(!engine.rescan_path().await);
         // A shell that fails now keeps what the last rescan found.
         std::fs::write(&shell, "#!/bin/sh\nexit 1\n").unwrap();
-        engine.rescan_path().await;
+        assert!(!engine.rescan_path().await);
         assert!(has_nvm(&engine.config().path), "{:?}", engine.config().path);
         std::fs::remove_dir_all(&dir).unwrap();
     }

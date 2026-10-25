@@ -32,5 +32,6 @@ pub async fn browser() -> impl IntoResponse {
     let found = tokio::task::spawn_blocking(|| od_render_cdp::find_chrome().is_ok())
         .await
         .unwrap_or(false);
+    tracing::info!(found, "export browser check");
     (NO_STORE, ApiJson(BrowserResponse { found }))
 }

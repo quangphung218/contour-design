@@ -213,25 +213,31 @@ impl RunEngine {
     }
 
     /// Asks the login shell for its `PATH` again, so an agent installed
-    /// while the app runs (under a new nvm Node, say) is found. Keeps the
-    /// current `path` without a login shell or when it does not answer.
-    pub async fn rescan_path(&self) {
+    /// while the app runs (under a new nvm Node, say) is found. New folders
+    /// are added after the current `path`, which is never shortened. Keeps
+    /// `path` without a login shell or when it does not answer. True when
+    /// `path` changed.
+    pub async fn rescan_path(&self) -> bool {
         let Some(shell) = self.config().login_shell.clone() else {
-            return;
+            return false;
         };
         let Some(login) = crate::login_path::login_shell_path(&shell).await else {
-            return;
+            tracing::warn!(shell = %shell.to_string_lossy(), "login shell gave no PATH; agent path kept");
+            return false;
         };
-        let current = std::env::var_os("PATH").unwrap_or_default();
         let home = std::env::var_os("HOME").map(PathBuf::from);
-        let path = crate::login_path::merge(&current, Some(&login), home.as_deref());
         let mut config = self
             .config
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = crate::login_path::merge(&config.path, Some(&login), home.as_deref());
+        if path == config.path {
+            return false;
+        }
         let mut next = EngineConfig::clone(&config);
         next.path = path;
         *config = Arc::new(next);
+        true
     }
 
     fn active(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Active>>> {

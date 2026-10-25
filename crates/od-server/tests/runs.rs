@@ -751,12 +751,36 @@ async fn agents_endpoint_detects_mocks_and_missing_binaries() {
     assert_eq!(codex["supportsSteer"], false);
 }
 
-/// Onboarding ▸ Check again: an agent installed after the first scan is
-/// found without a restart.
+/// Onboarding ▸ Check again in the app: an agent installed after start in a
+/// folder only the login shell's new `PATH` names (a new nvm Node) is not
+/// found by a plain detection, and is found once rescan asks the shell.
 #[tokio::test]
-async fn rescan_finds_an_agent_installed_after_the_first_scan() {
-    let d = daemon().await;
-    let before = d.get_json("/api/agents").await;
+async fn rescan_asks_the_login_shell_and_finds_a_new_agent() {
+    let shell_dir = tempfile::tempdir().unwrap();
+    let late = shell_dir.path().join("nvm-v24-bin");
+    std::fs::create_dir_all(&late).unwrap();
+    let shell = shell_dir.path().join("fake-shell");
+    std::fs::write(
+        &shell,
+        format!(
+            "#!/bin/sh\nPATH={}:/usr/bin\nexport PATH\nshift\neval \"$1\"\n",
+            late.display()
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // A new binary's first exec can take seconds on a loaded Mac (it scans
+    // it); run it once so the rescan's 3 s login shell limit is not that.
+    std::process::Command::new(&shell)
+        .args(["-ilc", "true"])
+        .status()
+        .unwrap();
+    let d = daemon_with(Options {
+        login_shell: Some(shell),
+        ..Options::default()
+    })
+    .await;
     let claude = |v: &Value| {
         v["agents"]
             .as_array()
@@ -766,12 +790,23 @@ async fn rescan_finds_an_agent_installed_after_the_first_scan() {
             .cloned()
             .unwrap()
     };
-    assert_eq!(claude(&before)["available"], false);
-    write_mock(&d.mocks, "claude", &claude_hello(&d.mocks));
+    write_mock(&late, "claude", &claude_hello(&d.mocks));
+    let before = d.get_json("/api/agents").await;
+    assert_eq!(
+        claude(&before)["available"],
+        false,
+        "found without a rescan"
+    );
     let res = d.post("/api/agents/rescan", &json!({})).await;
     assert_eq!(res.status(), 200);
     let after: Value = res.json().await.unwrap();
-    assert_eq!(claude(&after)["available"], true);
+    assert_eq!(claude(&after)["available"], true, "{after}");
+    assert!(
+        claude(&after)["path"]
+            .as_str()
+            .unwrap()
+            .starts_with(late.to_str().unwrap())
+    );
 }
 
 #[tokio::test]
