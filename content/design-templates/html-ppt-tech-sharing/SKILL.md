@@ -4,8 +4,7 @@ en_name: "Give an Engineering Tech Talk like a Staff Developer-Advocate"
 zh_name: "像 Staff DevRel 一样做工程分享"
 description: |
   OpenDesign internals: how the agent stream, sandbox, and artifacts work — an engineering deep-dive talk. Built as a decision-grade AI literacy deck for engineers, dev community.
-en_description: |
-  OpenDesign internals: how the agent stream, sandbox, and artifacts work — an engineering deep-dive talk. Built as a decision-grade AI literacy deck for engineers, dev community.
+en_description: "An engineering deep-dive talk on how Relay, a fictional product, streams agent output, sandboxes code and stores results. For engineers and developer communities."
 zh_description: |
   像 Staff DevRel 一样做工程分享——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

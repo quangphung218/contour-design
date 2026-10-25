@@ -887,6 +887,8 @@ messages! {
     AllIndustries => "All industries", "Mọi ngành";
     AllProjectsFilter => "All projects", "Mọi project";
     Category => "Category", "Nhóm";
+    PluginKindWorkflows => "Workflows", "Quy trình";
+    PluginKindBlocks => "Building blocks", "Khối dựng";
     Surface => "Surface", "Bề mặt";
     SurfaceWeb => "Web", "Web";
     Source => "Source", "Nguồn";

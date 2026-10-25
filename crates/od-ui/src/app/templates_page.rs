@@ -202,8 +202,9 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
         list.sort_by(|a, b| {
             let fa = a.info.featured.unwrap_or(f64::MAX);
             let fb = b.info.featured.unwrap_or(f64::MAX);
+            // Then by the name on the card, not the id it came from.
             fa.total_cmp(&fb)
-                .then_with(|| a.info.name.cmp(&b.info.name))
+                .then_with(|| name_of(a).to_lowercase().cmp(&name_of(b).to_lowercase()))
         });
         list
     });
@@ -609,5 +610,30 @@ fn MyTemplates() -> impl IntoView {
                 }).collect_view().into_any(),
             }}
         </ul>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Locale, set_locale};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn a_language_without_the_text_shows_english() {
+        let map: BTreeMap<String, String> = [
+            ("en".to_owned(), "CRM table (live data)".to_owned()),
+            ("zh-CN".to_owned(), "客户表".to_owned()),
+        ]
+        .into();
+        set_locale(Locale::Vi);
+        assert_eq!(
+            in_locale(Some(&map)).map(String::as_str),
+            Some("CRM table (live data)")
+        );
+        set_locale(Locale::ZhCn);
+        assert_eq!(in_locale(Some(&map)).map(String::as_str), Some("客户表"));
+        set_locale(Locale::En);
+        assert_eq!(in_locale(None), None);
     }
 }

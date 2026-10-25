@@ -16,8 +16,13 @@ All notable changes to Contour are recorded here. The format follows
   description. Languages without a translation show the English text.
 - The Swiss-print web page and four other templates are filed under the right
   type (a web page was listed as Video, decks as Image).
+- Templates are sorted by the name on the card; no two share a name, and the
+  sample decks are about made-up companies, not about Contour.
 - Plugins say what they do for you; kind, atoms, pipeline stages and
-  capabilities moved under Developer details.
+  capabilities moved under Developer details, and the filter chips read
+  "Workflows" and "Building blocks".
+- A bundled design system's page no longer shows the maintainer note "Bundled
+  … package for X, derived from curated DESIGN.md…".
 - Brand-named design systems show "Inspired by <Brand>'s public design language.
   Not affiliated with or endorsed by <Brand>. Trademarks belong to their owners."
   on their page, in every UI language.

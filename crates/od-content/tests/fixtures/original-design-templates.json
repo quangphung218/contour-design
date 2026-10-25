@@ -942,7 +942,7 @@
   },
   "description": "OpenDesign's feature business case for the plugin marketplace: the user pain, options, tradeoffs, and the measure of success. Built as a decision-grade product management deck for PM, eng, design, leadership.",
   "descriptionI18n": {
-   "en": "OpenDesign's feature business case for the plugin marketplace: the user pain, options, tradeoffs, and the measure of success. Built as a decision-grade product management deck for PM, eng, design, leadership.",
+   "en": "A feature business case for Lumen, a fictional design-tool startup: the user pain, the options and tradeoffs, and how success is measured. For PM, engineering, design and leadership.",
    "zh-CN": "像 Principal PM 一样写功能商业论证——一份可商业交付的产品管理 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -983,7 +983,7 @@
   },
   "description": "OpenDesign + BYOK: choosing and wiring your own model, hands-on — cost, quality, and the routing decision. Built as a decision-grade AI literacy deck for engineers, IT, applied-AI teams.",
   "descriptionI18n": {
-   "en": "OpenDesign + BYOK: choosing and wiring your own model, hands-on — cost, quality, and the routing decision. Built as a decision-grade AI literacy deck for engineers, IT, applied-AI teams.",
+   "en": "A hands-on session on choosing and wiring your own AI model at Relay, a fictional software company: cost, quality and the routing decision. For engineers, IT and applied-AI teams.",
    "zh-CN": "像应用 AI 工程师一样讲 BYOK 选型——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1024,7 +1024,7 @@
   },
   "description": "OpenDesign's incident retro: the daemon-restart data bug, the root cause, the fix, and the systemic follow-ups. Built as a decision-grade product management deck for engineering, SRE, leadership.",
   "descriptionI18n": {
-   "en": "OpenDesign's incident retro: the daemon-restart data bug, the root cause, the fix, and the systemic follow-ups. Built as a decision-grade product management deck for engineering, SRE, leadership.",
+   "en": "An incident retro for Northwind, a fictional SaaS company: what broke, the root cause, the fix and the follow-ups. For engineering, SRE and leadership.",
    "zh-CN": "像平台 VP 一样把事故复盘写成学习稿——一份可商业交付的产品管理 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1065,7 +1065,7 @@
   },
   "description": "OpenDesign's enterprise AI-adoption brief: local-first agents at work, the risk controls, the ROI, and the rollout plan. Built as a decision-grade AI literacy deck for leadership, IT, security.",
   "descriptionI18n": {
-   "en": "OpenDesign's enterprise AI-adoption brief: local-first agents at work, the risk controls, the ROI, and the rollout plan. Built as a decision-grade AI literacy deck for leadership, IT, security.",
+   "en": "An enterprise AI adoption brief for Halden, a fictional insurer: agents at work, risk controls, ROI and the rollout plan. For leadership, IT and security.",
    "zh-CN": "像企业 AI 转型负责人一样写落地简报——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1106,7 +1106,7 @@
   },
   "description": "OpenDesign's demo-day pitch: hook, traction, moat, and the raise — built to make a partner sit up by page three. Built as a decision-grade fundraising pitch deck for accelerator partners, angels.",
   "descriptionI18n": {
-   "en": "OpenDesign's demo-day pitch: hook, traction, moat, and the raise — built to make a partner sit up by page three. Built as a decision-grade fundraising pitch deck for accelerator partners, angels.",
+   "en": "A demo-day pitch for Kestrel, a fictional startup: hook, traction, moat and the raise. For accelerator partners and angels.",
    "zh-CN": "像顶级加速器合伙人一样写 Demo Day 路演——一份可商业交付的融资路演 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1147,7 +1147,7 @@
   },
   "description": "OpenDesign live demo: from a one-line prompt to runnable design in a single session — the flow, live. Built as a decision-grade AI literacy deck for developers, prospects, community.",
   "descriptionI18n": {
-   "en": "OpenDesign live demo: from a one-line prompt to runnable design in a single session — the flow, live. Built as a decision-grade AI literacy deck for developers, prospects, community.",
+   "en": "A live product demo for Fathom, a fictional AI tool: from a one-line prompt to a working result in one session, with presenter notes. For developers, prospects and community.",
    "zh-CN": "像创始 DevRel 一样做现场 AI 演示——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1188,7 +1188,7 @@
   },
   "description": "OpenDesign Teams: a launch-and-adoption proposal for a mid-market design team weighing a switch from closed cloud tools. Built as a decision-grade B2B sales deck for design team lead, IT.",
   "descriptionI18n": {
-   "en": "OpenDesign Teams: a launch-and-adoption proposal for a mid-market design team weighing a switch from closed cloud tools. Built as a decision-grade B2B sales deck for design team lead, IT.",
+   "en": "A team rollout proposal from Quarry, a fictional software vendor, to a mid-market design team weighing a switch of tools. For the team lead and IT.",
    "zh-CN": "像战略客户 AE 一样推动团队落地——一份可商业交付的B2B 销售 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1287,7 +1287,7 @@
   },
   "description": "OpenDesign internals: how the agent stream, sandbox, and artifacts work — an engineering deep-dive talk. Built as a decision-grade AI literacy deck for engineers, dev community.",
   "descriptionI18n": {
-   "en": "OpenDesign internals: how the agent stream, sandbox, and artifacts work — an engineering deep-dive talk. Built as a decision-grade AI literacy deck for engineers, dev community.",
+   "en": "An engineering deep-dive talk on how Relay, a fictional product, streams agent output, sandboxes code and stores results. For engineers and developer communities.",
    "zh-CN": "像 Staff DevRel 一样做工程分享——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1369,7 +1369,7 @@
   },
   "description": "OpenDesign's weekly growth review: stars, installs, activation — the number, the driver, and the recommended move. Built as a decision-grade data & finance deck for growth & product team.",
   "descriptionI18n": {
-   "en": "OpenDesign's weekly growth review: stars, installs, activation — the number, the driver, and the recommended move. Built as a decision-grade data & finance deck for growth & product team.",
+   "en": "A weekly growth review for Ember, a fictional app: signups, installs and activation, the driver behind the number and the recommended move. For growth and product teams.",
    "zh-CN": "像分析负责人一样写每周增长复盘——一份可商业交付的数据财务 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1615,7 +1615,7 @@
   },
   "description": "OpenDesign's QBR for the executive committee: what moved, what stalled, and the resource reallocation ask. Built as a decision-grade corporate strategy deck for executive committee.",
   "descriptionI18n": {
-   "en": "OpenDesign's QBR for the executive committee: what moved, what stalled, and the resource reallocation ask. Built as a decision-grade corporate strategy deck for executive committee.",
+   "en": "A quarterly business review for Corvid, a fictional company: what moved, what stalled and the resource ask. For the executive committee.",
    "zh-CN": "像幕僚长一样做季度经营回顾——一份可商业交付的企业战略 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1656,7 +1656,7 @@
   },
   "description": "OpenDesign's Series A growth story: the traction curve, the expansion motion, and why it's venture-scale. Built as a decision-grade fundraising pitch deck for Series A partners.",
   "descriptionI18n": {
-   "en": "OpenDesign's Series A growth story: the traction curve, the expansion motion, and why it's venture-scale. Built as a decision-grade fundraising pitch deck for Series A partners.",
+   "en": "A Series A growth story for Marlow, a fictional startup: the traction curve, the expansion motion and why it can be venture-scale. For Series A investors.",
    "zh-CN": "像一线 VC 合伙人一样写 A 轮增长叙事——一份可商业交付的融资路演 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1697,7 +1697,7 @@
   },
   "description": "OpenDesign's product-launch announcement and press narrative — the headline, the proof points, and the call to action. Built as a decision-grade marketing & GTM deck for press, community, prospects.",
   "descriptionI18n": {
-   "en": "OpenDesign's product-launch announcement and press narrative — the headline, the proof points, and the call to action. Built as a decision-grade marketing & GTM deck for press, community, prospects.",
+   "en": "A product-launch announcement for Tidewater, a fictional company: the headline, the proof points and the call to action. For press, community and prospects.",
    "zh-CN": "像公关传播总监一样写产品发布公告——一份可商业交付的市场增长 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1820,7 +1820,7 @@
   },
   "description": "OpenDesign renewal + seat-expansion business case for a growing customer: realized value, usage proof, and the expansion ROI. Built as a decision-grade B2B sales deck for champion, finance approver.",
   "descriptionI18n": {
-   "en": "OpenDesign renewal + seat-expansion business case for a growing customer: realized value, usage proof, and the expansion ROI. Built as a decision-grade B2B sales deck for champion, finance approver.",
+   "en": "A renewal and seat-expansion business case from Pinecrest, a fictional vendor: value delivered, usage proof and the expansion ROI. For the champion and the finance approver.",
    "zh-CN": "像客户总监一样写续约与扩容论证——一份可商业交付的B2B 销售 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -1861,7 +1861,7 @@
   },
   "description": "OpenDesign's community-growth campaign across GitHub, Discord, and X: the loops, the content calendar, and the pipeline math. Built as a decision-grade marketing & GTM deck for growth team, community lead.",
   "descriptionI18n": {
-   "en": "OpenDesign's community-growth campaign across GitHub, Discord, and X: the loops, the content calendar, and the pipeline math. Built as a decision-grade marketing & GTM deck for growth team, community lead.",
+   "en": "A community-growth campaign for Juniper, a fictional open-source project, across GitHub, Discord and X: the loops, the content calendar and the numbers. For growth and community teams.",
    "zh-CN": "像增长负责人一样规划社区增长战役——一份可商业交付的市场增长 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -2066,7 +2066,7 @@
   },
   "description": "OpenDesign's unit-economics and BYOK cost model: the assumptions, the sensitivity, and why it scales. Built as a decision-grade data & finance deck for CFO, investors.",
   "descriptionI18n": {
-   "en": "OpenDesign's unit-economics and BYOK cost model: the assumptions, the sensitivity, and why it scales. Built as a decision-grade data & finance deck for CFO, investors.",
+   "en": "A unit-economics model for Saltmarsh, a fictional SaaS company: the assumptions, the sensitivity and why it scales. For the CFO and investors.",
    "zh-CN": "像 FP&A 伙伴一样讲清单位经济模型——一份可商业交付的数据财务 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -2599,7 +2599,7 @@
   },
   "description": "OpenDesign's strategy memo: should it monetize the plugin registry now or hold — options, risks, and the recommendation. Built as a decision-grade corporate strategy deck for CEO, strategy team.",
   "descriptionI18n": {
-   "en": "OpenDesign's strategy memo: should it monetize the plugin registry now or hold — options, risks, and the recommendation. Built as a decision-grade corporate strategy deck for CEO, strategy team.",
+   "en": "A strategy decision memo for Orchard, a fictional platform: monetize the marketplace now or wait, with options, risks and a recommendation. For the CEO and strategy team.",
    "zh-CN": "像战略发展负责人一样写战略决策备忘——一份可商业交付的企业战略 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -2847,7 +2847,7 @@
   },
   "description": "OpenDesign's investor pitch book: market map, moat, unit economics, and the ask — analyst-grade and diligence-ready. Built as a decision-grade fundraising pitch deck for growth-equity investors.",
   "descriptionI18n": {
-   "en": "OpenDesign's investor pitch book: market map, moat, unit economics, and the ask — analyst-grade and diligence-ready. Built as a decision-grade fundraising pitch deck for growth-equity investors.",
+   "en": "An investor pitch book for Vantor, a fictional growth company: market map, moat, unit economics and the ask. For growth-equity investors.",
    "zh-CN": "像成长股权分析师一样写投资 Pitch Book——一份可商业交付的融资路演 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -3617,7 +3617,7 @@
   },
   "description": "OpenDesign's brand-story deck for partners and press: why it exists, what it believes, and where design is going. Built as a decision-grade marketing & GTM deck for partners, press, community.",
   "descriptionI18n": {
-   "en": "OpenDesign's brand-story deck for partners and press: why it exists, what it believes, and where design is going. Built as a decision-grade marketing & GTM deck for partners, press, community.",
+   "en": "A brand-story deck for Larkspur, a fictional design studio: why it exists, what it believes and where it is going. For partners, press and community.",
    "zh-CN": "像会讲故事的创始人一样写品牌故事稿——一份可商业交付的市场增长 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -3907,12 +3907,12 @@
   "id": "replit-deck",
   "name": "replit-deck",
   "displayName": {
-   "en": "Write a Feature Business Case like a Principal PM",
-   "zh-CN": "像 Principal PM 一样写功能商业论证"
+   "en": "Themed decision deck (8 styles)",
+   "zh-CN": "主题决策演示（8 种风格）"
   },
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -3949,7 +3949,7 @@
   "name": "Example Atlas",
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -3986,7 +3986,7 @@
   "name": "Example Bluehouse",
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -4023,7 +4023,7 @@
   "name": "Example Helix",
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -4060,7 +4060,7 @@
   "name": "Example Holm",
   "description": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
   "descriptionI18n": {
-   "en": "For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query \"pm-feature-business-case-deck\", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.",
+   "en": "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes.",
    "zh-CN": "产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。"
   },
   "triggers": [
@@ -4139,7 +4139,7 @@
   },
   "description": "OpenDesign's operating review: growth, burn, and the concrete path to sustainability without losing the open ethos. Built as a decision-grade corporate strategy deck for leadership team.",
   "descriptionI18n": {
-   "en": "OpenDesign's operating review: growth, burn, and the concrete path to sustainability without losing the open ethos. Built as a decision-grade corporate strategy deck for leadership team.",
+   "en": "An operating review for Brightwell, a fictional company: growth, burn and the path to sustainability. For the leadership team.",
    "zh-CN": "像克制的 COO 一样写经营复盘——一份可商业交付的企业战略 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [
@@ -4596,7 +4596,7 @@
   "mode": "prototype",
   "surface": "web",
   "craftRequires": [],
-  "platform": "mobile",
+  "platform": "desktop",
   "scenario": "general",
   "category": null,
   "previewType": "html",
@@ -4663,7 +4663,7 @@
   },
   "description": "OpenDesign's weekly metrics standup: this week's numbers, the one anomaly, and the single decision it forces. Built as a decision-grade data & finance deck for ops & growth team.",
   "descriptionI18n": {
-   "en": "OpenDesign's weekly metrics standup: this week's numbers, the one anomaly, and the single decision it forces. Built as a decision-grade data & finance deck for ops & growth team.",
+   "en": "A weekly metrics stand-up for Ferro, a fictional startup: this week's numbers, the one anomaly and the decision it forces. For ops and growth teams.",
    "zh-CN": "像数据驱动的运营负责人一样开指标站会——一份可商业交付的数据财务 Deck，围绕真实主题、证据链与决策目标组织。"
   },
   "triggers": [

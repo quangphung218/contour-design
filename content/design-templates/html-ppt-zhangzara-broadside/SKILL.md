@@ -4,8 +4,7 @@ en_name: "Write a Product-Launch Announcement like a PR & Comms Director"
 zh_name: "像公关传播总监一样写产品发布公告"
 description: |
   OpenDesign's product-launch announcement and press narrative — the headline, the proof points, and the call to action. Built as a decision-grade marketing & GTM deck for press, community, prospects.
-en_description: |
-  OpenDesign's product-launch announcement and press narrative — the headline, the proof points, and the call to action. Built as a decision-grade marketing & GTM deck for press, community, prospects.
+en_description: "A product-launch announcement for Tidewater, a fictional company: the headline, the proof points and the call to action. For press, community and prospects."
 zh_description: |
   像公关传播总监一样写产品发布公告——一份可商业交付的市场增长 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

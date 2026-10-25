@@ -1,11 +1,10 @@
 ---
 name: replit-deck
-en_name: "Write a Feature Business Case like a Principal PM"
-zh_name: "像 Principal PM 一样写功能商业论证"
+en_name: "Themed decision deck (8 styles)"
+zh_name: "主题决策演示（8 种风格）"
 description: |
   For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query "pm-feature-business-case-deck", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.
-en_description: |
-  For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query "pm-feature-business-case-deck", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.
+en_description: "A decision deck for product and engineering work, such as PRDs, roadmaps, RFCs and retros, in one of eight ready-made themes."
 zh_description: |
   产品/技术管理场景：围绕 core query「pm-feature-business-case-deck」把粗糙材料整理成“像 Principal PM 一样写功能商业论证”这类可购买、可复用的专业 Deck；突出受众、决策目标、证据链、风险取舍和评审标准。
 tags:

@@ -4,8 +4,7 @@ en_name: "Write an Enterprise AI Adoption Brief like a Transformation Lead"
 zh_name: "像企业 AI 转型负责人一样写落地简报"
 description: |
   OpenDesign's enterprise AI-adoption brief: local-first agents at work, the risk controls, the ROI, and the rollout plan. Built as a decision-grade AI literacy deck for leadership, IT, security.
-en_description: |
-  OpenDesign's enterprise AI-adoption brief: local-first agents at work, the risk controls, the ROI, and the rollout plan. Built as a decision-grade AI literacy deck for leadership, IT, security.
+en_description: "An enterprise AI adoption brief for Halden, a fictional insurer: agents at work, risk controls, ROI and the rollout plan. For leadership, IT and security."
 zh_description: |
   像企业 AI 转型负责人一样写落地简报——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

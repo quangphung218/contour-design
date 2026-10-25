@@ -225,6 +225,20 @@ fn every_design_template_declares_its_mode() {
     };
     assert_eq!(mode("web-prototype-taste-brutalist"), SkillMode::Prototype);
     assert_eq!(mode("html-ppt-taste-brutalist"), SkillMode::Deck);
+    // Platform is inferred from the body too: a "Mobile:" checklist line
+    // must not file a desktop page under Mobile.
+    let platform = |id: &str| {
+        idx.design_templates
+            .iter()
+            .find(|t| t.info.id == id)
+            .unwrap()
+            .info
+            .platform
+    };
+    assert_eq!(
+        platform("web-prototype-taste-soft"),
+        Some(od_contracts::Platform::Desktop)
+    );
 }
 
 /// What the Templates page shows: a name in words, not an id, and a
@@ -238,11 +252,16 @@ fn design_templates_have_text_for_people() {
     .unwrap();
     let idx = index();
     let mut seen: BTreeMap<String, String> = BTreeMap::new();
+    let mut names: BTreeMap<String, String> = BTreeMap::new();
     let mut problems = Vec::new();
     for t in &idx.design_templates {
         let id = &t.info.id;
         match en(t.info.display_name.as_ref()) {
-            Some(name) if !name.trim().is_empty() => {}
+            Some(name) if !name.trim().is_empty() => {
+                if let Some(other) = names.insert(name.to_owned(), id.clone()) {
+                    problems.push(format!("{id}: same name as {other}"));
+                }
+            }
             _ => problems.push(format!("{id}: no en_name")),
         }
         let Some(text) = en(t.info.description_i18n.as_ref()) else {
@@ -251,6 +270,14 @@ fn design_templates_have_text_for_people() {
         };
         if trigger.is_match(text) {
             problems.push(format!("{id}: agent wording in {text:?}"));
+        }
+        // Sample decks are about made-up companies, not about this app:
+        // "Contour Teams" or "Contour's Series A" would read as real.
+        if ["OpenDesign", "Open Design", "Open-Design"]
+            .iter()
+            .any(|n| text.contains(n))
+        {
+            problems.push(format!("{id}: names the original app in {text:?}"));
         }
         if let Some(other) = seen.insert(text.to_owned(), id.clone()) {
             problems.push(format!("{id}: same description as {other}"));

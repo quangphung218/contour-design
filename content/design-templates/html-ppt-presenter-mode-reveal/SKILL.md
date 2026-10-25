@@ -4,8 +4,7 @@ en_name: "Run a Live AI Product Demo like a Founding DevRel Lead"
 zh_name: "像创始 DevRel 一样做现场 AI 演示"
 description: |
   OpenDesign live demo: from a one-line prompt to runnable design in a single session — the flow, live. Built as a decision-grade AI literacy deck for developers, prospects, community.
-en_description: |
-  OpenDesign live demo: from a one-line prompt to runnable design in a single session — the flow, live. Built as a decision-grade AI literacy deck for developers, prospects, community.
+en_description: "A live product demo for Fathom, a fictional AI tool: from a one-line prompt to a working result in one session, with presenter notes. For developers, prospects and community."
 zh_description: |
   像创始 DevRel 一样做现场 AI 演示——一份可商业交付的AI 素养 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

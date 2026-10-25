@@ -142,6 +142,8 @@ try {
     await page.getByTestId('ds-brand-note').textContent(),
     "Inspired by Airbnb's public design language. Not affiliated with or endorsed by Airbnb. Trademarks belong to their owners.",
   );
+  // No maintainer note ("Bundled … package for Airbnb, derived from …") under it.
+  assert.equal(await detail.locator('.ds-summary').count(), 0);
   await page.getByTestId('kit-tab-showcase').click();
   await page.getByTestId('ds-showcase').waitFor();
   await page.getByTestId('ds-fullscreen').click();
@@ -252,6 +254,9 @@ try {
   await plugin.waitFor();
   // The list says what a plugin does; internal names stay in Developer details.
   assert.doesNotMatch(await plugin.textContent(), /scenario|atoms?\b|taskKind/i);
+  const chips = await page.locator('.lib-chips').first().textContent();
+  assert.doesNotMatch(chips, /atom|scenario/i);
+  assert.match(chips, /Workflows/);
   await plugin.getByTestId('plugin-try').click();
   await page.getByTestId('plugin-detail').waitFor();
   assert.equal(await page.getByTestId('plugin-dev').getAttribute('open'), null, 'developer details start folded');

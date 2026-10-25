@@ -4,8 +4,7 @@ en_name: "Write an Operating Review like a Disciplined COO"
 zh_name: "像克制的 COO 一样写经营复盘"
 description: |
   OpenDesign's operating review: growth, burn, and the concrete path to sustainability without losing the open ethos. Built as a decision-grade corporate strategy deck for leadership team.
-en_description: |
-  OpenDesign's operating review: growth, burn, and the concrete path to sustainability without losing the open ethos. Built as a decision-grade corporate strategy deck for leadership team.
+en_description: "An operating review for Brightwell, a fictional company: growth, burn and the path to sustainability. For the leadership team."
 zh_description: |
   像克制的 COO 一样写经营复盘——一份可商业交付的企业战略 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

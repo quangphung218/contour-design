@@ -5,6 +5,7 @@ en_description: "A soft, premium web page: silver and cream tones, nested cards,
 description: Apple-tier soft web prototype. Silver/cream canvas, double-bezel cards, button-in-button CTAs, generous squircle radii, spring motion, ambient mesh. Distilled from Leonxlnx/taste-skill `soft-skill` + sections 4–8 of `taste-skill`.
 od:
   mode: prototype
+  platform: desktop
 ---
 
 # Web Prototype — Soft Premium

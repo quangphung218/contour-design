@@ -1150,3 +1150,23 @@ fn Swatches(
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Locale, set_locale};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn template_text_falls_back_to_english_then_the_id() {
+        let map: BTreeMap<String, String> =
+            [("en".to_owned(), "CRM table (live data)".to_owned())].into();
+        set_locale(Locale::Vi);
+        assert_eq!(
+            localized(Some(&map), "Crm Table Live"),
+            "CRM table (live data)"
+        );
+        assert_eq!(localized(None, "Crm Table Live"), "Crm Table Live");
+        set_locale(Locale::En);
+    }
+}

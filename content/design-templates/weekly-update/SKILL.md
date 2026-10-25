@@ -4,8 +4,7 @@ en_name: "Run a Metrics Standup like a Data-Driven Ops Lead"
 zh_name: "像数据驱动的运营负责人一样开指标站会"
 description: |
   OpenDesign's weekly metrics standup: this week's numbers, the one anomaly, and the single decision it forces. Built as a decision-grade data & finance deck for ops & growth team.
-en_description: |
-  OpenDesign's weekly metrics standup: this week's numbers, the one anomaly, and the single decision it forces. Built as a decision-grade data & finance deck for ops & growth team.
+en_description: "A weekly metrics stand-up for Ferro, a fictional startup: this week's numbers, the one anomaly and the decision it forces. For ops and growth teams."
 zh_description: |
   像数据驱动的运营负责人一样开指标站会——一份可商业交付的数据财务 Deck，围绕真实主题、证据链与决策目标组织。
 tags:

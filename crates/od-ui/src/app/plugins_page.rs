@@ -50,6 +50,16 @@ fn plugin_category(p: &Value) -> String {
     s(p, "kind")
 }
 
+/// A category chip's label: plugin kinds read as what they are to the
+/// user; skill categories show as they are.
+fn category_label(c: &str) -> String {
+    match c {
+        "scenario" => t(T::PluginKindWorkflows).to_owned(),
+        "atom" => t(T::PluginKindBlocks).to_owned(),
+        other => other.to_owned(),
+    }
+}
+
 /// A skill's category, else its mode.
 fn skill_category(sk: &SkillSummary) -> String {
     sk.info
@@ -272,7 +282,7 @@ pub fn PluginsPage() -> impl IntoView {
                             let c2 = c.clone();
                             let c3 = c.clone();
                             view! {
-                                <button class="chip" role="radio" data-testid="plugin-category" aria-checked=move || (category.get() == c2).to_string() class:active={ let c = c.clone(); move || category.get() == c } on:click=move |_| category.set(c3.clone())>{c.clone()}</button>
+                                <button class="chip" role="radio" data-testid="plugin-category" aria-checked=move || (category.get() == c2).to_string() class:active={ let c = c.clone(); move || category.get() == c } on:click=move |_| category.set(c3.clone())>{category_label(&c)}</button>
                             }
                         }).collect_view()}
                     </div>
@@ -1056,6 +1066,13 @@ mod tests {
         assert!(!g.satisfied(&m));
         m.insert("subject".into(), json!("tea"));
         assert!(g.satisfied(&m));
+    }
+
+    #[test]
+    fn plugin_kinds_read_as_words_for_people() {
+        assert_eq!(category_label("scenario"), "Workflows");
+        assert_eq!(category_label("atom"), "Building blocks");
+        assert_eq!(category_label("prototype"), "prototype");
     }
 
     #[test]
