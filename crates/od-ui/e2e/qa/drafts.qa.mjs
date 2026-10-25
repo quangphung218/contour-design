@@ -373,7 +373,7 @@ test('DL-20', 'A message steered into the running turn is not back in the compos
   await sleep(500); // a stored draft is put back right after the mount
   assert.equal(await page.getByTestId('composer').inputValue(), '',
     'the steered message is back in the composer; sending it again would repeat it');
-}, { knownBug: 'QA-019' });
+});
 
 test('DL-21', 'A message sent and answered is not back in the composer after a reload', async ({ d, newPage }) => {
   const { page } = await chatProject(newPage, d, 'Sent reload');

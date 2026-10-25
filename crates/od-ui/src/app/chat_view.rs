@@ -492,7 +492,7 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
                                             on:click=move |_| ctx.steer(id_steer.clone())>{icon(Glyph::ArrowRight)}{t(T::Steer)}</button>
                                     })}
                                     <button class="icon-btn small danger" data-tip=t(T::Delete) data-tip-pos="left" aria-label=t(T::Delete)
-                                        on:click=move |_| ctx.queue.update(|q| q.retain(|x| x.id != id_del))>{icon(Glyph::Close)}</button>
+                                        on:click=move |_| ctx.drop_queued(&id_del)>{icon(Glyph::Close)}</button>
                                 </div>
                             </div>
                         }

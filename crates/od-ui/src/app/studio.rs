@@ -387,10 +387,7 @@ impl StudioCtx {
             });
             return;
         }
-        let draft_key = self
-            .conversation_id
-            .get_untracked()
-            .map(|c| super::composer::draft_key(&self.project_id.get_value(), &c));
+        let draft_key = self.draft_key();
         let user_id = api::random_id();
         let assistant_id = api::random_id();
         let turn = RwSignal::new(AssistantTurn::new());
@@ -489,6 +486,25 @@ impl StudioCtx {
         });
     }
 
+    /// `localStorage` key of the open conversation's composer draft.
+    fn draft_key(self) -> Option<String> {
+        self.conversation_id
+            .get_untracked()
+            .map(|c| super::composer::draft_key(&self.project_id.get_value(), &c))
+    }
+
+    /// Takes a queued message off the queue once it is steered or deleted:
+    /// its stored draft goes too, as after a send (QA-019).
+    pub fn drop_queued(self, id: &str) {
+        let text = self.queue.try_update(|q| {
+            let i = q.iter().position(|x| x.id == id)?;
+            Some(q.remove(i).text)
+        });
+        if let (Some(Some(text)), Some(key)) = (text, self.draft_key()) {
+            super::composer::clear_draft_if(&key, &text);
+        }
+    }
+
     /// Sends the first queued message, if any.
     fn send_next(self, shell: Shell) {
         let next = self
@@ -514,7 +530,7 @@ impl StudioCtx {
             let path = format!("/api/runs/{}/steer", api::seg(&run_id));
             match api::post::<_, serde_json::Value>(&path, &json!({ "message": item.text })).await {
                 Ok(_) => {
-                    self.queue.update(|q| q.retain(|q| q.id != id));
+                    self.drop_queued(&id);
                     let turn = self.items.with_untracked(|items| {
                         items.iter().rev().find_map(|i| match &i.kind {
                             super::chat_view::ItemKind::Assistant(turn) => Some(*turn),
