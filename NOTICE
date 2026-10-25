@@ -6,7 +6,7 @@ Copied content (git archive at e03d5c2, git-tracked files only):
 - content/craft/            13 files (11 craft entries + README.md + FUTURE_SECTIONS.md)
 - content/skills/           169 directories
 - content/design-templates/ 115 directories
-- content/design-systems/   152 packages + _schema; brand names and attribution kept per docs/decisions.md §3
+- content/design-systems/   152 packages + _schema; brand names and attribution kept per docs/decisions.md §3 (see Trademarks below)
 - 73 nested LICENSE files kept in place.
 
 Excluded or not yet copied:
@@ -14,6 +14,24 @@ Excluded or not yet copied:
 - prompt-templates/: see M6 below.
 - plugins/_official/ examples, image/video-templates, design-systems: not yet copied.
   When copying examples/, exclude the unlicensed fonts (examples/open-design-homepage/assets/fonts) and the hashed fonts in video-templates/*/source/fonts.
+
+Trademarks
+90 of the 152 design systems in content/design-systems/ are named after a real company or product and are
+inspired by its public design language. Contour is not affiliated with or endorsed by any of them. All
+trademarks, product names and logos belong to their owners. Each of these packages states its brand in
+manifest.json (`brand`), and the app shows this note on its page:
+  "Inspired by <Brand>'s public design language. Not affiliated with or endorsed by <Brand>.
+   Trademarks belong to their owners."
+The brands:
+Airbnb, Airtable, Ant Design, Anthropic, Apple, Arc Browser, Binance, BMW, BMW M, Bugatti, Cal.com,
+Canva, Cisco, ClickHouse, Cloudflare, Cohere, Coinbase, Composio, Cursor, Discord, Duolingo,
+ElevenLabs, Expo, Ferrari, Figma, Framer, GitHub, Google, HashiCorp, Hugging Face, IBM, Intercom,
+Kraken, Lamborghini, Linear, Loom, Lovable, Mastercard, Meta, MiniMax, Mintlify, Miro, Mistral AI,
+MongoDB, Nike, Notion, NVIDIA, Ollama, OpenAI, OpenCode, PAC-MAN, Perplexity, Pinterest,
+PlayStation, PostHog, Raycast, Renault, Replicate, Resend, Revolut, Runway, Sanity, Sentry,
+shadcn/ui, Shopify, Slack, SpaceX, Spotify, Starbucks, Stripe, Supabase, Superhuman, Tesla, Tetris,
+The Verge, Together AI, Totality Festival, Uber, Vercel, Vodafone, VoltAgent, Warp, Webex, Webflow,
+WeChat, WIRED, Wise, xAI, Xiaohongshu, Zapier.
 
 Test data: crates/od-content/tests/fixtures/original-*.json is the output of the original TypeScript loader (Apache-2.0) run over the content/ above.
 

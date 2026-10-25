@@ -712,6 +712,7 @@ DefaultCleared = Ora nessun design system predefinito.
 MoreActions = Altre azioni
 DownloadZip = Scarica ZIP
 DuplicateAction = Duplica
+DsBrandNote = Ispirato al linguaggio di design pubblico di {0}. Non affiliato a {0} né approvato da {0}. I marchi appartengono ai rispettivi proprietari.
 DsDeleteConfirm = Eliminare il design system \"{0}\"? I suoi file vengono rimossi.
 DsReviewTitle = Rivedi questo design system
 DsReviewBody = Approvalo per pubblicarlo, oppure indica cosa va migliorato e un agente lo rivede per te da accettare.

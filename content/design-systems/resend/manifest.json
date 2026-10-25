@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "resend",
   "name": "Resend",
+  "brand": "Resend",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Resend, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

@@ -711,6 +711,7 @@ DefaultCleared = Artık varsayılan tasarım sistemi yok.
 MoreActions = Diğer eylemler
 DownloadZip = ZIP indir
 DuplicateAction = Çoğalt
+DsBrandNote = {0} şirketinin herkese açık tasarım dilinden esinlenmiştir. {0} ile bağlantılı değildir ve {0} tarafından onaylanmamıştır. Ticari markalar sahiplerine aittir.
 DsDeleteConfirm = \"{0}\" tasarım sistemi silinsin mi? Dosyaları da kaldırılır.
 DsReviewTitle = Bu tasarım sistemini inceleyin
 DsReviewBody = Yayımlamak için onaylayın ya da neyin düzelmesi gerektiğini yazın; agent kabul etmeniz için revize eder.

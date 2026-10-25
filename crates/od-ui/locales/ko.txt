@@ -712,6 +712,7 @@ DefaultCleared = 기본 디자인 시스템이 해제되었습니다.
 MoreActions = 더 보기
 DownloadZip = ZIP 다운로드
 DuplicateAction = 복제
+DsBrandNote = {0}의 공개 디자인 언어에서 영감을 받았습니다. {0}와 제휴하거나 {0}의 보증을 받지 않았습니다. 상표는 각 소유자에게 있습니다.
 DsDeleteConfirm = 디자인 시스템 \"{0}\"을(를) 삭제할까요? 관련 파일도 삭제됩니다.
 DsReviewTitle = 이 디자인 시스템 검토
 DsReviewBody = 승인하면 게시됩니다. 수정이 필요하면 내용을 적어 주세요. 에이전트가 수정한 뒤 수락 여부를 물어봅니다.

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "spotify",
   "name": "Spotify",
+  "brand": "Spotify",
   "category": "Media & Consumer",
   "description": "Bundled OpenDesign package for Spotify, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

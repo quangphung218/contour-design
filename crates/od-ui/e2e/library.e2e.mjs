@@ -137,6 +137,11 @@ try {
   const detail = page.getByTestId('ds-detail');
   await detail.locator('[data-testid="kit-palette"] figure').first().waitFor();
   assert.match(await page.getByTestId('kit-score').textContent(), /\d+/);
+  // A brand-named preset says it is not affiliated with the brand.
+  assert.equal(
+    await page.getByTestId('ds-brand-note').textContent(),
+    "Inspired by Airbnb's public design language. Not affiliated with or endorsed by Airbnb. Trademarks belong to their owners.",
+  );
   await page.getByTestId('kit-tab-showcase').click();
   await page.getByTestId('ds-showcase').waitFor();
   await page.getByTestId('ds-fullscreen').click();

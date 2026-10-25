@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "webex",
   "name": "Webex",
+  "brand": "Webex",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Webex, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

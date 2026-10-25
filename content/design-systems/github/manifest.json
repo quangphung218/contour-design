@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "github",
   "name": "GitHub",
+  "brand": "GitHub",
   "category": "Developer Tools",
   "description": "Bundled OpenDesign package for GitHub, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

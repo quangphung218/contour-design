@@ -712,6 +712,7 @@ DefaultCleared = Nincs alapértelmezett tervezési rendszer.
 MoreActions = További műveletek
 DownloadZip = ZIP letöltése
 DuplicateAction = Duplikálás
+DsBrandNote = A(z) {0} nyilvános designnyelve ihlette. Nem kapcsolódik a(z) {0} céghez, és a(z) {0} nem támogatja. A védjegyek a tulajdonosaiké.
 DsDeleteConfirm = Törlöd a(z) \"{0}\" tervezési rendszert? A fájljai is törlődnek.
 DsReviewTitle = Tervezési rendszer áttekintése
 DsReviewBody = Hagyd jóvá a közzétételhez, vagy írd meg, mit kell javítani, és egy agent átdolgozza, hogy elfogadhasd.

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "cal",
   "name": "Cal.com",
+  "brand": "Cal.com",
   "category": "Productivity & SaaS",
   "description": "Bundled OpenDesign package for Cal.com, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

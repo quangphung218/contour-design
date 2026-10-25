@@ -712,6 +712,7 @@ DefaultCleared = 已不再有默认设计系统。
 MoreActions = 更多操作
 DownloadZip = 下载 ZIP
 DuplicateAction = 复制
+DsBrandNote = 灵感来自 {0} 公开的设计语言。与 {0} 无关联，也未获 {0} 认可。商标归其所有者所有。
 DsDeleteConfirm = 删除设计系统“{0}”？其文件将被移除。
 DsReviewTitle = 审阅此设计系统
 DsReviewBody = 批准即可发布；或说明哪里需要改进，由 agent 修改后供你确认。

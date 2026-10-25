@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "wise",
   "name": "Wise",
+  "brand": "Wise",
   "category": "Fintech & Crypto",
   "description": "Bundled OpenDesign package for Wise, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "figma",
   "name": "Figma",
+  "brand": "Figma",
   "category": "Design & Creative",
   "description": "Bundled OpenDesign package for Figma, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

@@ -413,6 +413,9 @@ pub struct Kit {
     pub assets: Vec<Asset>,
     pub previews: Vec<String>,
     pub revisions: Vec<Revision>,
+    /// Set on systems named after a real brand (`manifest.json` `brand`).
+    #[serde(default)]
+    pub brand: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -872,6 +875,9 @@ fn DsDetail(
                             <span class="badge accent">{t(T::ChatDefault)}</span>
                         </Show>
                     </div>
+                    {move || kit.with(|k| k.as_ref().and_then(|r| r.as_ref().ok()).and_then(|k| k.brand.clone())).map(|brand| view! {
+                        <p class="subtle small ds-brand-note" data-testid="ds-brand-note">{tf(T::DsBrandNote, &[&brand])}</p>
+                    })}
                 </div>
                 <div class="row wrap ds-actions">
                     <button class="btn small" data-testid="ds-use" on:click=use_in_project>{icon(Glyph::ArrowRight)}{t(T::UseInNewProject)}</button>

@@ -711,6 +711,7 @@ DefaultCleared = Brak domyślnego systemu projektowego.
 MoreActions = Więcej akcji
 DownloadZip = Pobierz ZIP
 DuplicateAction = Duplikuj
+DsBrandNote = Inspirowane publicznym językiem projektowym {0}. Brak powiązań z {0} i poparcia {0}. Znaki towarowe należą do ich właścicieli.
 DsDeleteConfirm = Usunąć system projektowy \"{0}\"? Jego pliki zostaną usunięte.
 DsReviewTitle = Przejrzyj ten system projektowy
 DsReviewBody = Zatwierdź, aby opublikować, albo napisz, co poprawić, a agent przygotuje poprawioną wersję do akceptacji.

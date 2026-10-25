@@ -347,3 +347,34 @@ fn prompt_teaches_the_tweaks_declaration() {
     });
     assert!(!chat.contains("data-od-tweaks"));
 }
+
+/// Brand-named design systems ship with a non-affiliation note
+/// (`docs/decisions.md` §3): each states its brand in `manifest.json`, the
+/// app shows the note, and NOTICE lists the same brands.
+#[test]
+fn brand_named_design_systems_are_listed_in_notice() {
+    let notice = std::fs::read_to_string(content_root().join("../NOTICE")).unwrap();
+    let idx = index();
+    let brands: Vec<(String, String)> = idx
+        .design_systems
+        .iter()
+        .filter_map(|d| {
+            let brand = d.manifest.as_ref()?.get("brand")?.as_str()?;
+            Some((d.summary.id.clone(), brand.to_owned()))
+        })
+        .collect();
+    assert!(brands.len() >= 90, "{} brand-named systems", brands.len());
+    for id in ["airbnb", "apple", "stripe", "material"] {
+        assert!(brands.iter().any(|(b, _)| b == id), "{id} names its brand");
+    }
+    for id in ["minimal", "editorial", "default"] {
+        assert!(!brands.iter().any(|(b, _)| b == id), "{id} is not a brand");
+    }
+    let listed = &notice[notice.find("\nTrademarks\n").expect("Trademarks section")..];
+    assert!(listed.contains(&format!("\n{} of the 152 design systems", brands.len())));
+    let missing: Vec<_> = brands
+        .iter()
+        .filter(|(_, b)| !listed.contains(&format!("{b},")) && !listed.contains(&format!("{b}.")))
+        .collect();
+    assert!(missing.is_empty(), "not in NOTICE: {missing:?}");
+}

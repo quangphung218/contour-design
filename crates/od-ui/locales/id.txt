@@ -712,6 +712,7 @@ DefaultCleared = Kini tidak ada sistem desain default.
 MoreActions = Aksi lainnya
 DownloadZip = Unduh ZIP
 DuplicateAction = Duplikat
+DsBrandNote = Terinspirasi oleh bahasa desain publik {0}. Tidak berafiliasi dengan atau didukung oleh {0}. Merek dagang milik pemiliknya.
 DsDeleteConfirm = Hapus sistem desain \"{0}\"? File-nya ikut dihapus.
 DsReviewTitle = Tinjau sistem desain ini
 DsReviewBody = Setujui untuk menerbitkan, atau sebutkan yang perlu diperbaiki dan agen akan merevisinya untuk Anda terima.

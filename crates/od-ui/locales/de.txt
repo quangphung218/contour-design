@@ -712,6 +712,7 @@ DefaultCleared = Jetzt kein Standard-Designsystem.
 MoreActions = Weitere Aktionen
 DownloadZip = ZIP herunterladen
 DuplicateAction = Duplizieren
+DsBrandNote = Inspiriert von der öffentlichen Designsprache von {0}. Nicht mit {0} verbunden oder von {0} unterstützt. Marken gehören ihren Inhabern.
 DsDeleteConfirm = Das Designsystem \"{0}\" löschen? Seine Dateien werden entfernt.
 DsReviewTitle = Dieses Designsystem prüfen
 DsReviewBody = Gib es zur Veröffentlichung frei oder sage, was noch fehlt; ein Agent überarbeitet es, und du nimmst es dann an.

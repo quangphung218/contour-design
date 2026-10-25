@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "mistral-ai",
   "name": "Mistral AI",
+  "brand": "Mistral AI",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for Mistral AI, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

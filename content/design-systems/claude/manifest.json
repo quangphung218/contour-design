@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "claude",
   "name": "Claude (Anthropic)",
+  "brand": "Anthropic",
   "category": "AI & LLM",
   "description": "Bundled OpenDesign package for Claude (Anthropic), derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

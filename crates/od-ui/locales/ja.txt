@@ -712,6 +712,7 @@ DefaultCleared = デフォルトのデザインシステムはありません。
 MoreActions = その他の操作
 DownloadZip = ZIPをダウンロード
 DuplicateAction = 複製
+DsBrandNote = {0} の公開デザイン言語に着想を得ています。{0} とは提携しておらず、{0} の承認も受けていません。商標は各所有者に帰属します。
 DsDeleteConfirm = デザインシステム \"{0}\" を削除しますか？ファイルも削除されます。
 DsReviewTitle = このデザインシステムをレビュー
 DsReviewBody = 承認すると公開されます。修正点を伝えると、エージェントが修正し、確認後に反映できます。

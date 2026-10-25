@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "raycast",
   "name": "Raycast",
+  "brand": "Raycast",
   "category": "Developer Tools",
   "description": "Bundled OpenDesign package for Raycast, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {

@@ -2,6 +2,7 @@
   "schemaVersion": "od-design-system-project/v1",
   "id": "xiaohongshu",
   "name": "Xiaohongshu",
+  "brand": "Xiaohongshu",
   "category": "Media & Consumer",
   "description": "Bundled OpenDesign package for Xiaohongshu, derived from curated DESIGN.md, tokens.css, and components.html fixtures.",
   "source": {
