@@ -701,6 +701,7 @@ OpenInNewTab = Megnyitás új lapon
 ProjectLabel = Projekt
 ChooseProject = Válassz projektet
 NoMatches = Egy elem sem felel meg a szűrőknek.
+ClearFilters = Szűrők törlése
 SelectPlaceholder = Válassz…
 SelectItem = Kijelölés
 ClearSelection = Kijelölés törlése

@@ -701,6 +701,7 @@ OpenInNewTab = Buka di tab baru
 ProjectLabel = Proyek
 ChooseProject = Pilih proyek
 NoMatches = Tidak ada yang cocok dengan filter.
+ClearFilters = Hapus filter
 SelectPlaceholder = Pilih…
 SelectItem = Pilih
 ClearSelection = Hapus pilihan

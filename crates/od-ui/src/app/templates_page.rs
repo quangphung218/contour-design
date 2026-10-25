@@ -231,7 +231,18 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
         <div class="template-grid lib-template-grid" data-testid="tpl-grid">
             {move || match templates.get() {
                 None => (0..8).map(|_| view! { <div class="skeleton template-skeleton"></div> }).collect_view().into_any(),
-                Some(_) if visible.with(Vec::is_empty) => view! { <p class="empty">{t(T::NoMatches)}</p> }.into_any(),
+                Some(_) if visible.with(Vec::is_empty) => view! {
+                    <div class="empty-state compact tpl-empty" data-testid="tpl-empty">
+                        <span class="empty-icon">{icon(Glyph::Search)}</span>
+                        <p>{t(T::NoMatches)}</p>
+                        <button class="btn small" data-testid="tpl-clear-filters" on:click=move |_| {
+                            mode.set(String::new());
+                            platform.set(String::new());
+                            scenario.set(String::new());
+                            query.set(String::new());
+                        }>{t(T::ClearFilters)}</button>
+                    </div>
+                }.into_any(),
                 Some(_) => visible.get().into_iter().map(|s| {
                     let open = s.clone();
                     let open_key = s.clone();

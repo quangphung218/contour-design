@@ -700,6 +700,7 @@ OpenInNewTab = Yeni sekmede aç
 ProjectLabel = Proje
 ChooseProject = Proje seçin
 NoMatches = Filtrelerle eşleşen bir şey yok.
+ClearFilters = Filtreleri temizle
 SelectPlaceholder = Seçin…
 SelectItem = Seç
 ClearSelection = Seçimi temizle

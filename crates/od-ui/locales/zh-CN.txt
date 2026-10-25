@@ -701,6 +701,7 @@ OpenInNewTab = 在新标签页中打开
 ProjectLabel = 项目
 ChooseProject = 选择项目
 NoMatches = 没有符合筛选条件的内容。
+ClearFilters = 清除筛选
 SelectPlaceholder = 请选择…
 SelectItem = 选择
 ClearSelection = 清除选择

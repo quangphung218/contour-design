@@ -701,6 +701,7 @@ OpenInNewTab = فتح في تبويب جديد
 ProjectLabel = المشروع
 ChooseProject = اختر مشروعًا
 NoMatches = لا شيء يطابق عوامل التصفية.
+ClearFilters = مسح عوامل التصفية
 SelectPlaceholder = اختر…
 SelectItem = تحديد
 ClearSelection = مسح التحديد

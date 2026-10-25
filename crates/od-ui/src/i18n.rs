@@ -930,6 +930,7 @@ messages! {
     ProjectLabel => "Project", "Project";
     ChooseProject => "Choose a project", "Chọn project";
     NoMatches => "Nothing matches the filters.", "Không có mục nào khớp bộ lọc.";
+    ClearFilters => "Clear filters", "Xoá bộ lọc";
     SelectPlaceholder => "Select…", "Chọn…";
     SelectItem => "Select", "Chọn";
     ClearSelection => "Clear selection", "Bỏ chọn";

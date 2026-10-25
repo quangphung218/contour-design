@@ -700,6 +700,7 @@ OpenInNewTab = Otwórz w nowej karcie
 ProjectLabel = Projekt
 ChooseProject = Wybierz projekt
 NoMatches = Nic nie pasuje do filtrów.
+ClearFilters = Wyczyść filtry
 SelectPlaceholder = Wybierz…
 SelectItem = Wybierz
 ClearSelection = Wyczyść wybór

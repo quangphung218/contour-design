@@ -701,6 +701,7 @@ OpenInNewTab = 新しいタブで開く
 ProjectLabel = プロジェクト
 ChooseProject = プロジェクトを選択
 NoMatches = 条件に一致するものはありません。
+ClearFilters = フィルターをクリア
 SelectPlaceholder = 選択…
 SelectItem = 選択
 ClearSelection = 選択を解除

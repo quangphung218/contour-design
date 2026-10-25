@@ -701,6 +701,7 @@ OpenInNewTab = เปิดในแท็บใหม่
 ProjectLabel = โปรเจกต์
 ChooseProject = เลือกโปรเจกต์
 NoMatches = ไม่มีรายการที่ตรงกับตัวกรอง
+ClearFilters = ล้างตัวกรอง
 SelectPlaceholder = เลือก…
 SelectItem = เลือก
 ClearSelection = ล้างที่เลือก

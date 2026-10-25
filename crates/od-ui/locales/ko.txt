@@ -701,6 +701,7 @@ OpenInNewTab = 새 탭에서 열기
 ProjectLabel = 프로젝트
 ChooseProject = 프로젝트 선택
 NoMatches = 필터에 맞는 항목이 없습니다.
+ClearFilters = 필터 지우기
 SelectPlaceholder = 선택…
 SelectItem = 선택
 ClearSelection = 선택 해제

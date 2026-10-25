@@ -701,6 +701,7 @@ OpenInNewTab = باز کردن در تب جدید
 ProjectLabel = پروژه
 ChooseProject = یک پروژه انتخاب کنید
 NoMatches = هیچ مورد با فیلترها مطابقت ندارد.
+ClearFilters = پاک کردن فیلترها
 SelectPlaceholder = انتخاب…
 SelectItem = انتخاب
 ClearSelection = پاک کردن انتخاب

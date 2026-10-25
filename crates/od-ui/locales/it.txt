@@ -701,6 +701,7 @@ OpenInNewTab = Apri in nuova scheda
 ProjectLabel = Progetto
 ChooseProject = Scegli un progetto
 NoMatches = Nessun risultato per i filtri.
+ClearFilters = Azzera filtri
 SelectPlaceholder = Seleziona…
 SelectItem = Seleziona
 ClearSelection = Cancella selezione

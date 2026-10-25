@@ -701,6 +701,7 @@ OpenInNewTab = Открыть в новой вкладке
 ProjectLabel = Проект
 ChooseProject = Выберите проект
 NoMatches = Ничего не подходит под фильтры.
+ClearFilters = Сбросить фильтры
 SelectPlaceholder = Выбрать…
 SelectItem = Выбрать
 ClearSelection = Снять выбор

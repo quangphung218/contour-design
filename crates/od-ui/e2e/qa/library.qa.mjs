@@ -30,6 +30,12 @@ test('LIB-02', 'Searching templates for something that does not exist says nothi
   await page.getByTestId('tpl-search').fill('zzqqxx-nothing');
   await until(async () => (await page.getByTestId('tpl-card').count()) === 0, 'no cards');
   await page.getByText(/no (templates|results|match)|nothing (found|matches)/i).first().waitFor({ timeout: 3000 });
+  // A way out: Clear filters brings every template back.
+  await page.getByTestId('tpl-platform-mobile').click();
+  await page.getByTestId('tpl-clear-filters').click();
+  await page.getByTestId('tpl-card').first().waitFor();
+  assert.equal(await page.getByTestId('tpl-search').inputValue(), '');
+  assert.equal(await page.getByTestId('tpl-platform-all').getAttribute('aria-pressed'), 'true');
 });
 
 test('LIB-03', 'Searching design systems for something that does not exist says nothing matches', async ({ d, newPage }) => {

@@ -701,6 +701,7 @@ OpenInNewTab = У новій вкладці
 ProjectLabel = Проєкт
 ChooseProject = Виберіть проєкт
 NoMatches = Нічого не відповідає фільтрам.
+ClearFilters = Скинути фільтри
 SelectPlaceholder = Виберіть…
 SelectItem = Вибрати
 ClearSelection = Зняти вибір
