@@ -5,7 +5,7 @@
 //! under `~/.local/bin`, Homebrew or npm are "not found". At startup the
 //! desktop asks the user's login shell for its `PATH` and appends the usual
 //! install folders as a fallback, keeping what the process already had
-//! first.
+//! first. [`crate::RunEngine::rescan_path`] asks again later.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -83,14 +83,18 @@ pub fn merge(current: &OsStr, login: Option<&str>, home: Option<&Path>) -> OsStr
     std::env::join_paths(seen).unwrap_or_else(|_| current.to_owned())
 }
 
+/// The shell the desktop asks: `$SHELL`, else zsh; none on Windows.
+#[must_use]
+pub fn default_shell() -> Option<OsString> {
+    (!cfg!(windows)).then(|| std::env::var_os("SHELL").unwrap_or_else(|| "/bin/zsh".into()))
+}
+
 /// The agent search path for this process.
 pub async fn agent_path() -> OsString {
     let current = std::env::var_os("PATH").unwrap_or_default();
-    let shell = std::env::var_os("SHELL").unwrap_or_else(|| "/bin/zsh".into());
-    let login = if cfg!(windows) {
-        None
-    } else {
-        login_shell_path(&shell).await
+    let login = match default_shell() {
+        Some(shell) => login_shell_path(&shell).await,
+        None => None,
     };
     let home = std::env::var_os("HOME").map(PathBuf::from);
     merge(&current, login.as_deref(), home.as_deref())
@@ -180,5 +184,52 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(path.as_deref(), Some("/opt/tools/bin"));
         assert!(took < Duration::from_secs(2), "{took:?}");
+    }
+
+    /// Check again in onboarding: the login shell's new `PATH` (an nvm
+    /// install made while the app runs) reaches the engine; a shell that
+    /// does not answer leaves the path alone.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn rescan_takes_the_login_shells_new_path() {
+        let dir = std::env::temp_dir().join(format!("od-login-rescan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let shell = dir.join("fake-shell");
+        let write_shell = |path: &str| {
+            std::fs::write(
+                &shell,
+                format!("#!/bin/sh\nPATH={path}\nexport PATH\nshift\neval \"$1\"\n"),
+            )
+            .unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let nvm = "/Users/u/.nvm/versions/node/v24/bin";
+        let has_nvm = |p: &OsStr| std::env::split_paths(p).any(|d| d == Path::new(nvm));
+        let engine = crate::RunEngine::new(crate::EngineConfig {
+            path: OsString::from("/usr/bin"),
+            login_shell: Some(shell.clone().into_os_string()),
+            ..crate::EngineConfig::from_env()
+        });
+        assert!(!has_nvm(&engine.config().path));
+        write_shell(&format!("{nvm}:/usr/bin"));
+        engine.rescan_path().await;
+        assert!(has_nvm(&engine.config().path), "{:?}", engine.config().path);
+        // A shell that fails now keeps what the last rescan found.
+        std::fs::write(&shell, "#!/bin/sh\nexit 1\n").unwrap();
+        engine.rescan_path().await;
+        assert!(has_nvm(&engine.config().path), "{:?}", engine.config().path);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn rescan_without_a_login_shell_keeps_the_path() {
+        let engine = crate::RunEngine::new(crate::EngineConfig {
+            path: OsString::from("/only/here"),
+            login_shell: None,
+            ..crate::EngineConfig::from_env()
+        });
+        engine.rescan_path().await;
+        assert_eq!(engine.config().path, OsString::from("/only/here"));
     }
 }
