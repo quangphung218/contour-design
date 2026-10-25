@@ -903,9 +903,19 @@ fn About() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match api::get_bytes("/api/diagnostics/export").await {
                 Ok(bytes) => {
-                    let name = "open-design-diagnostics.zip";
-                    let _ = super::export_menu::download(&bytes, name, "application/zip");
-                    state.set(Some(Ok(tf(T::DiagnosticsSaved, &[name]))));
+                    // Same name as the daemon's Content-Disposition.
+                    let d = js_sys::Date::new_0();
+                    let name = format!(
+                        "contour-diagnostics-{:04}{:02}{:02}-{:02}{:02}{:02}.zip",
+                        d.get_full_year(),
+                        d.get_month() + 1,
+                        d.get_date(),
+                        d.get_hours(),
+                        d.get_minutes(),
+                        d.get_seconds()
+                    );
+                    let _ = super::export_menu::download(&bytes, &name, "application/zip");
+                    state.set(Some(Ok(tf(T::DiagnosticsSaved, &[&name]))));
                 }
                 Err(e) => state.set(Some(Err(e.to_string()))),
             }

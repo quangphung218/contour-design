@@ -207,6 +207,9 @@ pub async fn install_route(
             &mut out,
             &mut err,
         );
+        if matches!(code, Ok(0)) && !req.uninstall {
+            install::remove_legacy(agent, &spec, &home, &runner);
+        }
         (code, out)
     })
     .await
@@ -414,17 +417,14 @@ mod tests {
         let all = snippets(&spec);
         assert_eq!(all.len(), 8);
         let claude = &all[0].snippet;
-        assert!(claude.starts_with("claude mcp add-json --scope user open-design '"));
+        assert!(claude.starts_with("claude mcp add-json --scope user contour '"));
         assert!(
             claude.contains(r"od'\''s"),
             "single quotes are escaped: {claude}"
         );
         assert!(all[1].snippet.contains("args = [\"mcp\", \"--daemon-url\""));
         let cursor: Value = serde_json::from_str(&all[2].snippet).unwrap_or(Value::Null);
-        assert_eq!(
-            cursor["mcpServers"]["open-design"]["command"],
-            "/opt/od's/od"
-        );
+        assert_eq!(cursor["mcpServers"]["contour"]["command"], "/opt/od's/od");
         assert!(
             all[2]
                 .deeplink

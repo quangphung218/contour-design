@@ -460,7 +460,7 @@ fn mcp_install_cursor_merges_and_prints_json() {
     let printed: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(
         printed,
-        json!({ "mcpServers": { "open-design": { "type": "stdio", "command": od_path, "args": ["mcp"] } } })
+        json!({ "mcpServers": { "contour": { "type": "stdio", "command": od_path, "args": ["mcp"] } } })
     );
     assert!(!config.exists());
 
@@ -468,7 +468,7 @@ fn mcp_install_cursor_merges_and_prints_json() {
     std::fs::create_dir_all(config.parent().unwrap()).unwrap();
     std::fs::write(
         &config,
-        r#"{"mcpServers":{"github":{"command":"gh-mcp"}},"editor":{"tabSize":2}}"#,
+        r#"{"mcpServers":{"github":{"command":"gh-mcp"},"open-design":{"command":"old-od"}},"editor":{"tabSize":2}}"#,
     )
     .unwrap();
     let out = od_home(home.path(), &["mcp", "install", "cursor"]);
@@ -482,7 +482,12 @@ fn mcp_install_cursor_merges_and_prints_json() {
         merged["mcpServers"]["github"],
         json!({ "command": "gh-mcp" })
     );
-    assert_eq!(merged["mcpServers"]["open-design"]["args"], json!(["mcp"]));
+    assert_eq!(merged["mcpServers"]["contour"]["args"], json!(["mcp"]));
+    // The entry an older version installed under its old name is gone.
+    assert!(
+        merged["mcpServers"].get("open-design").is_none(),
+        "{merged}"
+    );
     assert_eq!(merged["editor"], json!({ "tabSize": 2 }));
 
     // A non-default daemon URL is carried into the entry.
@@ -500,7 +505,7 @@ fn mcp_install_cursor_merges_and_prints_json() {
     );
     let result: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(
-        result["preview"]["mcpServers"]["open-design"]["args"],
+        result["preview"]["mcpServers"]["contour"]["args"],
         json!(["mcp", "--daemon-url", "http://127.0.0.1:9999"])
     );
 
@@ -530,7 +535,7 @@ fn mcp_install_cli_agents_print_their_commands() {
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
         format!(
-            "would run: claude mcp add --scope user open-design -- {} mcp",
+            "would run: claude mcp add --scope user contour -- {} mcp",
             od_path.display()
         )
     );
@@ -546,7 +551,7 @@ fn mcp_install_cli_agents_print_their_commands() {
         ],
     );
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["command"], "codex mcp remove open-design");
+    assert_eq!(v["command"], "codex mcp remove contour");
     let out = od_home(home.path(), &["mcp", "install", "vim"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("expected one of: claude codex cursor"));

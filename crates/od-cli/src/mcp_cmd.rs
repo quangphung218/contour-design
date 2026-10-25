@@ -123,5 +123,18 @@ fn install(
         &mut std::io::stdout(),
         &mut std::io::stderr(),
     )?;
+    if code == 0
+        && !opts.print
+        && !opts.uninstall
+        && name != install::LEGACY_SERVER_NAME
+        && install::remove_legacy(agent, &spec, &home, &runner)
+        && !opts.json
+    {
+        println!(
+            "removed the old {} entry from {}",
+            install::LEGACY_SERVER_NAME,
+            agent.slug()
+        );
+    }
     Ok(ExitCode::from(u8::try_from(code).unwrap_or(1)))
 }
