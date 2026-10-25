@@ -1121,6 +1121,7 @@ CodeCut = عرض أول {0} من {1} سطرًا.
 Device = الجهاز
 Zoom = التكبير
 ZoomIn = تكبير
+ZoomFitsPane = بحجم اللوحة
 ZoomOut = تصغير
 ZoomReset = إعادة التكبير إلى 100%
 Annotate = تعليق وفحص

@@ -1355,6 +1355,7 @@ messages! {
     Device => "Device", "Thiết bị";
     Zoom => "Zoom", "Thu phóng";
     ZoomIn => "Zoom in", "Phóng to";
+    ZoomFitsPane => "Fits the pane", "Đã vừa khung";
     ZoomOut => "Zoom out", "Thu nhỏ";
     ZoomReset => "Reset zoom to 100%", "Về 100%";
     Annotate => "Annotate and inspect", "Chú thích và soi phần tử";

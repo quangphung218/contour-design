@@ -1121,6 +1121,7 @@ CodeCut = แสดง {0} จาก {1} บรรทัดแรก
 Device = อุปกรณ์
 Zoom = ซูม
 ZoomIn = ซูมเข้า
+ZoomFitsPane = พอดีกับแผงแล้ว
 ZoomOut = ซูมออก
 ZoomReset = รีเซ็ตซูมเป็น 100%
 Annotate = ใส่คำอธิบายและตรวจสอบ

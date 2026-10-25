@@ -1121,6 +1121,7 @@ CodeCut = Az első {0} sor látszik ennyiből: {1}.
 Device = Eszköz
 Zoom = Nagyítás
 ZoomIn = Nagyítás
+ZoomFitsPane = Kitölti a panelt
 ZoomOut = Kicsinyítés
 ZoomReset = Nagyítás visszaállítása 100%-ra
 Annotate = Jegyzetelés és vizsgálat

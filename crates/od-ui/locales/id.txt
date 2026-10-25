@@ -1121,6 +1121,7 @@ CodeCut = Menampilkan {0} dari {1} baris pertama.
 Device = Perangkat
 Zoom = Zoom
 ZoomIn = Perbesar
+ZoomFitsPane = Sudah pas di panel
 ZoomOut = Perkecil
 ZoomReset = Atur ulang zoom ke 100%
 Annotate = Anotasi dan inspeksi

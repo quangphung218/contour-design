@@ -1121,6 +1121,7 @@ CodeCut = {1}行中、最初の{0}行を表示しています。
 Device = デバイス
 Zoom = ズーム
 ZoomIn = ズームイン
+ZoomFitsPane = ペインに収まっています
 ZoomOut = ズームアウト
 ZoomReset = ズームを100%に戻す
 Annotate = 注釈と検査

@@ -1121,6 +1121,7 @@ CodeCut = Mostrando las primeras {0} de {1} líneas.
 Device = Dispositivo
 Zoom = Zoom
 ZoomIn = Acercar
+ZoomFitsPane = Ya cabe en el panel
 ZoomOut = Alejar
 ZoomReset = Restablecer zoom al 100 %
 Annotate = Anotar e inspeccionar

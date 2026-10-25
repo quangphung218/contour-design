@@ -1121,6 +1121,7 @@ CodeCut = 顯示 {1} 行中的前 {0} 行。
 Device = 裝置
 Zoom = 縮放
 ZoomIn = 放大
+ZoomFitsPane = 已符合窗格大小
 ZoomOut = 縮小
 ZoomReset = 重設縮放為 100%
 Annotate = 標註與檢查

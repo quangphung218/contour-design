@@ -1121,6 +1121,7 @@ CodeCut = Die ersten {0} von {1} Zeilen werden angezeigt.
 Device = Gerät
 Zoom = Zoom
 ZoomIn = Vergrößern
+ZoomFitsPane = Passt in den Bereich
 ZoomOut = Verkleinern
 ZoomReset = Zoom auf 100 % zurücksetzen
 Annotate = Anmerken und prüfen

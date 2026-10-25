@@ -139,6 +139,16 @@ fn zoom_move(chosen: u32, cap: Option<u32>, past_fit: bool, up: bool) -> Option<
     }
 }
 
+/// The zoom-in button is off because the frame already fills the pane
+/// (not at the largest step).
+fn fit_stops_zoom_in(chosen: u32, cap: Option<u32>, past_fit: bool) -> bool {
+    let cap = cap.filter(|_| !past_fit);
+    let shown = capped(chosen, cap);
+    cap.is_some()
+        && zoom_move(chosen, cap, past_fit, true).is_none()
+        && zoom_step(shown, true) > shown
+}
+
 /// Slide states a deck restore waits through before it gives up (the
 /// user may have moved on).
 const RESTORE_PATIENCE: u8 = 3;
@@ -1559,7 +1569,11 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                     <button class="zoom-value" data-tip=t(T::ZoomReset) aria-label=t(T::ZoomReset) data-testid="zoom-reset"
                         disabled=move || ctx.show_code.get()
                         on:click=move |_| ctx.reset_zoom()>{move || format!("{}%", zoom.get())}</button>
-                    <button class="icon-btn small" aria-label=t(T::ZoomIn) data-tip=t(T::ZoomIn) data-testid="zoom-in"
+                    <button class="icon-btn small" aria-label=t(T::ZoomIn) data-testid="zoom-in"
+                        data-tip=move || {
+                            let fits = fit_stops_zoom_in(ctx.zoom.get(), ctx.zoom_cap.get(), ctx.past_fit.get());
+                            t(if fits { T::ZoomFitsPane } else { T::ZoomIn })
+                        }
                         disabled=move || ctx.show_code.get() || !ctx.can_zoom(true)
                         on:click=move |_| ctx.zoom_by(true)>{icon(Glyph::ZoomIn)}</button>
                 </div>
@@ -1858,7 +1872,10 @@ mod tests {
         // − from the smallest step comes back to the fit; − at the fit is off.
         assert_eq!(zoom_move(50, Some(35), true, false), Some((50, false)));
         assert_eq!(zoom_move(100, Some(35), false, false), None);
-        // A fit within the steps still stops +.
+        // A fit within the steps still stops + (the tooltip says why).
         assert_eq!(zoom_move(100, Some(79), false, true), None);
+        assert!(fit_stops_zoom_in(100, Some(79), false));
+        assert!(!fit_stops_zoom_in(200, None, false));
+        assert!(!fit_stops_zoom_in(100, Some(35), false));
     }
 }

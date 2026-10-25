@@ -208,7 +208,7 @@ test('STU-16', 'When + is off, its tooltip says why', async ({ d, newPage }) => 
   assert.equal(await plus.isEnabled(), false, '+ never turns off');
   const tip = (await plus.getAttribute('data-tip')) || (await plus.getAttribute('title')) || '';
   assert.notEqual(tip.trim(), await plus.getAttribute('aria-label'), `+ is off and its tooltip only says "${tip}", not why`);
-}, { knownBug: 'QA-025' });
+});
 
 test('STU-12', 'A link to a project that does not exist says so and offers a way back', async ({ d, newPage }) => {
   const { page } = await newPage();
