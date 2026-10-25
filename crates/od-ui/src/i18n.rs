@@ -330,6 +330,7 @@ messages! {
     ImportZipTitle => "Import a Claude Design .zip export", "Import file .zip xuất từ Claude Design";
     ImportingZip => "Importing…", "Đang import…";
     ImportZipFailed => "Import failed: {0}", "Import lỗi: {0}";
+    ProjectNameRequired => "A project name is required.", "Cần nhập tên project.";
     ProjectInstructions => "Project instructions", "Chỉ dẫn cho project";
     ProjectInstructionsHint => "Included in every message of this project. They win over the global rules in Settings.", "Gửi kèm mọi tin nhắn của project này. Khi mâu thuẫn, chỉ dẫn này thắng luật chung trong Cài đặt.";
     ProjectInstructionsPlaceholder => "Instructions for this project (injected on every message)…", "Chỉ dẫn cho project này (gửi kèm mọi tin nhắn)…";

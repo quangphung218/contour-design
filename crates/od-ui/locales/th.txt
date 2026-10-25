@@ -1567,3 +1567,4 @@ ClearSearch = ล้างการค้นหา
 ExportJsxHtml = ส่งออกคอมโพเนนต์ React เป็น HTML
 ApiVersion = เวอร์ชัน API
 AzureDeployment = Deployment
+ProjectNameRequired = ต้องระบุชื่อโปรเจกต์

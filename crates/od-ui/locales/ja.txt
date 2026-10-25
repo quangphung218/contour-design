@@ -1573,3 +1573,4 @@ ClearSearch = 検索をクリア
 ExportJsxHtml = React コンポーネントを HTML で書き出す
 ApiVersion = API バージョン
 AzureDeployment = デプロイ
+ProjectNameRequired = プロジェクト名は必須です。

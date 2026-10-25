@@ -8,6 +8,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Renaming a project to a blank name keeps the old name and says a name is
+  required; failed renames, duplicates and deletes now show their error (QA-001).
+
 ## [0.1.0] - 2026-10-24
 
 First release: a Rust rewrite of [OpenDesign](https://github.com/nexu-io/open-design)

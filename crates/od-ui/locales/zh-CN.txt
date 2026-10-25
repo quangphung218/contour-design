@@ -1572,3 +1572,4 @@ ClearSearch = 清除搜索
 ExportJsxHtml = 将 React 组件导出为 HTML
 ApiVersion = API 版本
 AzureDeployment = 部署
+ProjectNameRequired = 项目名称不能为空。

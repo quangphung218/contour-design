@@ -40,7 +40,7 @@ test('PRJ-02', 'Renaming a project to only spaces keeps the old name', async ({ 
   const name = (await api(`/api/projects/${id}`)).body.project.name;
   assert.equal(name, 'Keep this name', `project was renamed to ${JSON.stringify(name)}`);
   await card(page, 'Keep this name').waitFor({ timeout: 3000 });
-}, { knownBug: 'QA-001' });
+});
 
 test('PRJ-03', 'Duplicating a project copies its files and leaves the original untouched', async ({ d, api, newPage }) => {
   const id = await createProject(d, 'Original', { 'index.html': '<h1 id="title">Original page</h1>', 'css/site.css': 'body{color:red}' });

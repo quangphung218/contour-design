@@ -1567,3 +1567,4 @@ ClearSearch = امسح البحث
 ExportJsxHtml = تصدير مكوّن React بصيغة HTML
 ApiVersion = إصدار API
 AzureDeployment = النشر
+ProjectNameRequired = اسم المشروع مطلوب.

@@ -1573,3 +1573,4 @@ ClearSearch = 검색 지우기
 ExportJsxHtml = React 컴포넌트를 HTML로 내보내기
 ApiVersion = API 버전
 AzureDeployment = 배포
+ProjectNameRequired = 프로젝트 이름을 입력하세요.

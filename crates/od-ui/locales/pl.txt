@@ -1573,3 +1573,4 @@ ClearSearch = Wyczyść wyszukiwanie
 ExportJsxHtml = Eksportuj komponent React jako HTML
 ApiVersion = Wersja API
 AzureDeployment = Wdrożenie
+ProjectNameRequired = Nazwa projektu jest wymagana.

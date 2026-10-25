@@ -1573,3 +1573,4 @@ ClearSearch = پاک کردن جستجو
 ExportJsxHtml = خروجی کامپوننت React به HTML
 ApiVersion = نسخه API
 AzureDeployment = استقرار
+ProjectNameRequired = نام پروژه الزامی است.
