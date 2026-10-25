@@ -824,6 +824,22 @@ pub(super) fn render_block(
     }
 }
 
+/// What a tool call did, in words: the agents' own tool names
+/// (`TodoWrite`, `Bash`) mean nothing to most people. Unknown tools keep
+/// their name.
+fn tool_label(name: &str) -> String {
+    let key = match name {
+        "TodoWrite" | "update_plan" => T::ToolPlan,
+        "Write" | "write_file" => T::ToolWrote,
+        "Edit" | "MultiEdit" | "edit_file" => T::ToolEdited,
+        "Read" | "read_file" => T::ToolRead,
+        "Bash" | "shell" | "command_execution" => T::ToolRan,
+        "Glob" | "Grep" | "LS" | "list_directory" => T::ToolSearched,
+        other => return other.to_owned(),
+    };
+    t(key).to_owned()
+}
+
 /// One tool call. A call still without a result once the run is over
 /// (the agent never reported back) stops spinning and shows a plain ring.
 #[component]
@@ -844,7 +860,7 @@ fn ToolRow(call: ToolCall, live: Signal<bool>) -> impl IntoView {
     view! {
         <div class=class>
             <span class="tool-icon">{mark}</span>
-            <span class="tool-name">{call.name}</span>
+            <span class="tool-name" title=call.name.clone()>{tool_label(&call.name)}</span>
             <span class="tool-summary mono">{call.summary}</span>
         </div>
     }
@@ -991,5 +1007,18 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
             <legend>{q.label.clone()}{q.required.then_some(" *")}</legend>
             <div class=if q.kind.has_options() { "opts" } else { "" }>{control}</div>
         </fieldset>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tool_label;
+
+    #[test]
+    fn tools_read_as_what_they_did() {
+        assert_eq!(tool_label("TodoWrite"), "Updated plan");
+        assert_eq!(tool_label("Write"), "Wrote");
+        assert_eq!(tool_label("MultiEdit"), "Edited");
+        assert_eq!(tool_label("mcp__contour__list"), "mcp__contour__list");
     }
 }

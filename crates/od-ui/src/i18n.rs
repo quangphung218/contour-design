@@ -1565,8 +1565,14 @@ messages! {
     CollapseChat => "Collapse the conversation pane", "Thu gọn khung chat";
     ResizeChat => "Resize chat panel", "Đổi độ rộng khung chat";
     FilesFromTurn => "Files from this turn", "File của lượt này";
-    WriteCount => "Write {0}", "Ghi {0}";
-    EditCount => "Edit {0}", "Sửa {0}";
+    WriteCount => "{0} new", "{0} mới";
+    EditCount => "{0} edited", "{0} đã sửa";
+    ToolPlan => "Updated plan", "Cập nhật kế hoạch";
+    ToolWrote => "Wrote", "Đã ghi";
+    ToolEdited => "Edited", "Đã sửa";
+    ToolRead => "Read", "Đã đọc";
+    ToolRan => "Ran", "Đã chạy";
+    ToolSearched => "Searched", "Đã tìm";
     OpenNamed => "Open {0}", "Mở {0}";
     DownloadNamed => "Download {0}", "Tải {0}";
     MoreN => "+{0} more", "+{0} file nữa";

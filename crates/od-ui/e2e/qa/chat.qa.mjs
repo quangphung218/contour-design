@@ -196,4 +196,16 @@ test('CHAT-12', 'Messages names each finished run by what was asked, the state a
   assert.equal(await page.getByTestId('inbox-state').first().innerText(), 'Task completed');
 });
 
+test('CHAT-13', 'The chat says what the agent did in words, not tool names', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d, 'Tool words');
+  await send(page, 'plan a tea page');
+  await waitTurn(page, 0);
+  const turn = page.getByTestId('assistant-msg').first();
+  const tools = await turn.locator('.tool-name').allInnerTexts();
+  assert.ok(tools.includes('Updated plan'), `tools: ${tools}`);
+  assert.ok(tools.includes('Wrote'), `tools: ${tools}`);
+  assert.doesNotMatch(await turn.innerText(), /TodoWrite|Write \d/);
+  assert.match(await turn.getByTestId('turn-files').innerText(), /1 new/);
+});
+
 await run('chat');
