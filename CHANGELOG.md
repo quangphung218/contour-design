@@ -33,6 +33,31 @@ All notable changes to Contour are recorded here. The format follows
   on their page, in every UI language.
 - The README opens with what Contour is (no telemetry, runs on your machine, uses
   the agent CLI you have), a recorded demo, and how it differs from OpenDesign.
+- Home keeps one composer with one row of controls: the "Recommended for you"
+  strip is gone, and New design system, Create plugin and From folder moved into
+  the "+" menu. New design system opens the same dialog as the Design systems
+  page, with every source.
+- The Studio names the project at the top of the chat, with the conversation
+  under it; the files panel is headed "Files".
+- The Export menu folds the image formats under Image and the two PowerPoint
+  kinds under PowerPoint, lists only the formats the open file exports to, and
+  says "MP4 video".
+- Settings saves Permissions, Appearance and Language as soon as they change;
+  the agent card ("Save agent") and the API provider form ("Save and use") each
+  have their own Save, never both at once.
+- Messages are named by what was asked, with the state as a badge, and the page
+  is called Messages everywhere. `GET /api/runs` gives each run's `prompt`.
+- The chat says what the agent did ("Updated plan", "Wrote", "1 new") instead of
+  tool names such as `TodoWrite`.
+- New routines start on "New project each run".
+- Media and Templates say "Audio"; Media ▸ Generate has one way in, real selects
+  and a Set up providers button.
+- Segmented controls, tab lists and radio chips move with the arrow keys and are
+  one Tab stop each.
+- Onboarding: when an installed agent fails its test, the reason and "<Agent> did
+  not pass its test. Update it, or install one of these instead." sit right under
+  it, on the first screen; "Still no agent found" names both `claude --version`
+  and `codex --version`.
 
 ### Fixed
 
@@ -54,6 +79,23 @@ All notable changes to Contour are recorded here. The format follows
   when the stored transcript arrives (QA-002).
 - Drafts are kept: the Studio composer per project and conversation, and Home's brief
   and design system, across reloads and visits until sent (QA-008).
+- A run that writes another page (a deck next to `index.html`) opens it in a tab
+  instead of warning that the entry file was not updated.
+- The "Media library" project that holds uploads no longer shows in Projects,
+  Recent or the Automations project list.
+- Onboarding's brand extraction runs the agent the user picked and tested, not
+  the first one found; "Not logged in" and "not signed in" count as a missing
+  sign-in.
+- A link to a project that does not exist offers only All projects: no Retry, no
+  preview steps, and the composer is off. Unknown addresses get a "Page not found"
+  page with Go to Home.
+- An empty template search offers Clear filters; Design systems search matches
+  the description people read, not the package note; the Skills tab drops the
+  "Use when…" text meant for the agent.
+- The "first design is ready" hint closes when the next message is sent.
+- At 390 px, Preview closes the side chat and New project leads the Projects
+  header; comment chips read "h1: …"; the command palette no longer matches
+  scattered letters ("set" found "Quarterly marketing site").
 
 ## [0.1.0] - 2026-10-24
 
