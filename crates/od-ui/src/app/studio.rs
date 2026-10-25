@@ -79,6 +79,15 @@ impl Device {
             Self::Phone => "390px",
         }
     }
+
+    /// The width the page lays out at, px; `None` for the pane's width.
+    fn px(self) -> Option<u32> {
+        match self {
+            Self::Desktop => None,
+            Self::Tablet => Some(820),
+            Self::Phone => Some(390),
+        }
+    }
 }
 
 /// Zoom levels of the preview, percent.
@@ -1236,6 +1245,10 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
 #[component]
 fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     let device = RwSignal::new(Device::Desktop);
+    let stage = NodeRef::<leptos::html::Div>::new();
+    let stage_width = observe_width(stage);
+    // A device wider than the stage is scaled down to fit, as the original.
+    let zoom = Memo::new(move |_| fit_zoom(device.get(), ctx.zoom.get(), stage_width.get()));
     let src = Memo::new(move |_| {
         let path = ctx.active()?;
         let rev = ctx.preview_rev.get();
@@ -1315,14 +1328,14 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             view! { <CodeView ctx=ctx version=None/> }.into_any()
         }
         (Some(_), Some(v)) => view! {
-            <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
+            <div class="frame-zoom" style=move || zoom_box(device.get(), zoom.get())>
             <iframe
                 class="preview-frame"
                 data-testid="version-preview"
                 title=tf(T::ViewingVersion, &[&v.version.to_string()])
                 sandbox="allow-scripts"
                 srcdoc=v.content
-                style=move || zoomed(device.get(), ctx.zoom.get())
+                style=move || zoomed(device.get(), zoom.get())
             ></iframe>
             </div>
         }
@@ -1339,8 +1352,8 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 url
             };
             view! {
-                <div class="frame-zoom" style=move || zoom_box(device.get(), ctx.zoom.get())>
-                <div class="frame-wrap" style=move || zoomed(device.get(), ctx.zoom.get())>
+                <div class="frame-zoom" style=move || zoom_box(device.get(), zoom.get())>
+                <div class="frame-wrap" style=move || zoomed(device.get(), zoom.get())>
                     // No allow-same-origin: artifact scripts run in an
                     // opaque origin and cannot call the daemon API.
                     <iframe
@@ -1463,7 +1476,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{icon(Glyph::Comment)}{t(T::CommentModeOn)}</p> })}
             <div class="preview-body">
                 <ThumbRail ctx=ctx src=src/>
-                <div class="preview-stage">
+                <div class="preview-stage" node_ref=stage>
                     <super::first_hint::FirstArtifactHint ctx=ctx/>
                     {move || match special.get() {
                         Some(Special::Markdown(path)) => view! { <MarkdownView ctx=ctx path=path/> }.into_any(),
@@ -1499,20 +1512,74 @@ enum Special {
     Doc(String),
 }
 
+/// The zoom a device frame is shown at: the chosen one, lowered so the
+/// frame fits `stage` px (its content width; 0 while not measured).
+/// Desktop follows the pane, so it keeps the chosen zoom.
+fn fit_zoom(device: Device, zoom: u32, stage: f64) -> u32 {
+    match device.px() {
+        Some(px) if stage >= 1.0 => {
+            // Whole percent, rounded down so the frame never overflows.
+            let fit = (stage * 100.0 / f64::from(px)).floor().clamp(1.0, 100.0) as u32;
+            zoom.min(fit)
+        }
+        _ => zoom,
+    }
+}
+
+/// Follows the content width of `node` (a `ResizeObserver`); 0 until it
+/// has been measured or where the observer is missing.
+fn observe_width(node: NodeRef<leptos::html::Div>) -> RwSignal<f64> {
+    use wasm_bindgen::JsCast;
+    type SizeCallback = wasm_bindgen::closure::Closure<dyn FnMut(js_sys::Array)>;
+    let width = RwSignal::new(0.0);
+    let observer = StoredValue::new(None::<SendWrapper<(web_sys::ResizeObserver, SizeCallback)>>);
+    Effect::new(move |_| {
+        let Some(el) = node.get() else {
+            return;
+        };
+        let on_size = SizeCallback::new(move |entries: js_sys::Array| {
+            let last = entries
+                .iter()
+                .filter_map(|e| e.dyn_into::<web_sys::ResizeObserverEntry>().ok())
+                .next_back();
+            if let Some(e) = last {
+                width.set(e.content_rect().width());
+            }
+        });
+        if let Ok(obs) = web_sys::ResizeObserver::new(on_size.as_ref().unchecked_ref()) {
+            obs.observe(&el);
+            observer.set_value(Some(SendWrapper::new((obs, on_size))));
+        }
+    });
+    on_cleanup(move || {
+        observer.with_value(|o| {
+            if let Some(o) = o {
+                o.0.disconnect();
+            }
+        });
+    });
+    width
+}
+
 /// The box a zoomed preview takes in the stage: its on-screen size.
 fn zoom_box(device: Device, zoom: u32) -> String {
     match device {
         Device::Desktop => "width:100%".to_owned(),
-        d => format!("width:calc({} * {zoom} / 100)", d.width()),
+        d => format!("width:calc({} * {zoom} / 100);max-width:none", d.width()),
     }
 }
 
 /// The frame inside [`zoom_box`]: laid out at the device size, scaled to
 /// fit. A transform, not CSS `zoom`, so WebKit and Chromium agree and the
-/// comment pins and drawing (local coordinates) follow it.
+/// comment pins and drawing (local coordinates) follow it. A device frame
+/// is never narrowed by the pane (`max-width:none`): its page must see the
+/// device width.
 fn zoomed(device: Device, zoom: u32) -> String {
     if zoom == 100 {
-        return format!("width:{}", device.width());
+        return match device {
+            Device::Desktop => format!("width:{}", device.width()),
+            d => format!("width:{};max-width:none", d.width()),
+        };
     }
     let width = match device {
         Device::Desktop => format!("calc(100% * 100 / {zoom})"),
@@ -1649,6 +1716,23 @@ mod tests {
             zoomed(Device::Phone, 50),
             "width:390px;max-width:none;height:calc(100% * 100 / 50);transform:scale(0.5);transform-origin:0 0"
         );
-        assert_eq!(zoom_box(Device::Phone, 50), "width:calc(390px * 50 / 100)");
+        assert_eq!(
+            zoom_box(Device::Phone, 50),
+            "width:calc(390px * 50 / 100);max-width:none"
+        );
+        assert_eq!(zoomed(Device::Tablet, 100), "width:820px;max-width:none");
+    }
+
+    #[test]
+    fn a_device_wider_than_the_stage_is_scaled_to_fit() {
+        // 1360 px window: a 650 px stage shows Tablet at 79 %.
+        assert_eq!(fit_zoom(Device::Tablet, 100, 650.0), 79);
+        assert_eq!(fit_zoom(Device::Tablet, 125, 650.0), 79);
+        assert_eq!(fit_zoom(Device::Tablet, 50, 650.0), 50);
+        assert_eq!(fit_zoom(Device::Tablet, 100, 1200.0), 100);
+        assert_eq!(fit_zoom(Device::Phone, 100, 650.0), 100);
+        // Desktop follows the pane; an unmeasured stage keeps the zoom.
+        assert_eq!(fit_zoom(Device::Desktop, 125, 650.0), 125);
+        assert_eq!(fit_zoom(Device::Tablet, 100, 0.0), 100);
     }
 }

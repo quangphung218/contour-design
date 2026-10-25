@@ -139,7 +139,7 @@ test('STU-11', 'Tablet and Phone preview the page at 820 and 390 px wide, Deskto
   });
   await group.getByRole('radio', { name: 'Desktop' }).click();
   await until(async () => (await inner()) === desktop, 'desktop width');
-}, { knownBug: 'QA-003' });
+});
 
 test('STU-12', 'A link to a project that does not exist says so and offers a way back', async ({ d, newPage }) => {
   const { page } = await newPage();

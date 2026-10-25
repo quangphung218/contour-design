@@ -18,6 +18,8 @@ All notable changes to Contour are recorded here. The format follows
   the files panel menus (QA-004).
 - Leaving a Markdown file right after typing no longer panics (QA-009).
 - Cancel in the delete-conversation dialog no longer throws a JS error (QA-010).
+- Tablet and Phone previews lay the page out at 820 and 390 px and scale it down when
+  the pane is narrower, so device media queries apply (QA-003).
 
 ## [0.1.0] - 2026-10-24
 
