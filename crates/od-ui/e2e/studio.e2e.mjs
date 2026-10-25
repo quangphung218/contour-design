@@ -231,6 +231,7 @@ try {
   await page.getByTestId('comment-note').fill('Make the title green');
   await page.getByTestId('comment-add').click();
   await page.getByTestId('comment-chip').getByText('Make the title green').waitFor();
+  assert.doesNotMatch(await page.getByTestId('comment-chip').first().innerText(), / :/, 'space before the colon');
   await page.getByTestId('comment-pin').first().waitFor();
   await page.getByTestId('comment-mode').click();
   await page.getByTestId('composer').fill('apply comments');

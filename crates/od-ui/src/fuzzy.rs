@@ -38,6 +38,28 @@ pub fn score(query: &str, path: &str) -> Option<i64> {
     (qi == q.len()).then(|| total * 100 - i64::try_from(p.len()).unwrap_or(i64::MAX))
 }
 
+/// Score of `query` against a label (the command palette), `None` unless
+/// every word of `query` is in `label` as written or as its words'
+/// initials ("np" for "New project"). Stricter than [`score`], which takes
+/// any scattered letters: "set" must not find "Quarterly marketing site".
+#[must_use]
+pub fn words(query: &str, label: &str) -> Option<i64> {
+    let lower = label.to_lowercase();
+    let initials: String = lower
+        .split(|c: char| c.is_whitespace() || matches!(c, '/' | '-' | '_' | '.'))
+        .filter_map(|w| w.chars().next())
+        .collect();
+    let all = query.split_whitespace().all(|w| {
+        let w = w.to_lowercase();
+        lower.contains(&w) || initials.contains(&w)
+    });
+    if !all {
+        return None;
+    }
+    let joined: String = query.split_whitespace().collect();
+    Some(score(&joined, label).unwrap_or(0))
+}
+
 /// `paths` filtered and ordered for `query`. Files in `recent` (most recent
 /// first) rank above others; with a query they get a bonus instead.
 #[must_use]
@@ -61,6 +83,19 @@ mod tests {
 
     fn paths(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn palette_words_match_as_written_or_as_initials() {
+        assert!(words("set", "Quarterly marketing site").is_none());
+        assert!(words("set", "Settings").is_some());
+        assert!(words("np", "New project").is_some());
+        assert!(words("tea menu", "Menu for the tea house").is_some());
+        assert!(words("tea xyz", "Menu for the tea house").is_none());
+        assert!(
+            words("sett", "Settings").unwrap() > words("s", "Quarterly marketing site").unwrap(),
+            "a closer match ranks first"
+        );
     }
 
     #[test]

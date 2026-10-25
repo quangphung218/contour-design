@@ -746,7 +746,7 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
             {tool_button(Tool::Inspect, T::ToolInspect, Glyph::Inspect, "inspect-mode")}
             {tool_button(Tool::EditText, T::ToolEditText, Glyph::EditText, "edit-mode")}
             {tool_button(Tool::Manual, T::ToolManualEdit, Glyph::ManualEdit, "manual-edit-mode")}
-            {tool_button(Tool::Draw, T::ToolDraw, Glyph::Draw, "draw-mode")}
+            {tool_button(Tool::Draw, T::ToolDraw, Glyph::Sketch, "draw-mode")}
             <super::capture::ScreenshotMenu ctx=ctx/>
             <Show when=move || tools.tweaks.with(|t| !t.is_empty())>
                 {tool_button(Tool::Tweaks, T::ToolTweaks, Glyph::Tweaks, "tweaks-toggle")}

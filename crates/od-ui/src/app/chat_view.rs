@@ -536,8 +536,10 @@ fn CommentChips(ctx: StudioCtx) -> impl IntoView {
                         view! {
                             <span class="chip comment-chip" data-testid="comment-chip" title=c.file_path.clone()>
                                 {icon(Glyph::Comment)}
-                                <strong>{comment_label(&c)}</strong>
-                                {format!(": {}", c.note)}
+                                // The colon stays with the label: the chip's gap
+                                // would put a space before it ("h1 :").
+                                <strong>{format!("{}:", comment_label(&c))}</strong>
+                                {c.note.clone()}
                                 <button
                                     class="chip-x"
                                     title=t(T::Detach)

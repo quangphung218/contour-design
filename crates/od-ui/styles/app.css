@@ -83,7 +83,10 @@ button.nav-link { width: 100%; border: 0; background: transparent; font: inherit
 
 /* ---------- pages ---------- */
 .page { width: 100%; max-width: 1080px; margin: 0 auto; padding: var(--space-10) var(--space-10) var(--space-16); }
-.page.narrow { max-width: 780px; }
+/* Narrow pages keep the same left edge as the others; only their content
+   stops sooner. */
+.page.narrow { max-width: 1280px; }
+.page.narrow > * { max-width: 780px; }
 .page.wide { max-width: 1280px; }
 .page.settings { max-width: 1000px; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-6); flex-wrap: wrap; }
