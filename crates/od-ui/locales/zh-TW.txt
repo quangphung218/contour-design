@@ -3,7 +3,9 @@
 NavHome = 首頁
 NavProjects = 專案
 NavSettings = 設定
-PageNotFound = 找不到頁面。
+PageNotFound = 找不到頁面
+PageNotFoundBody = 連結可能已過期或輸入錯誤。
+GoToHome = 返回首頁
 JustNow = 剛剛
 MinAgo = {0} 分鐘前
 HoursAgo = {0} 小時前

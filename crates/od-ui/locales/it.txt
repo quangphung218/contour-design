@@ -3,7 +3,9 @@
 NavHome = Home
 NavProjects = Progetti
 NavSettings = Impostazioni
-PageNotFound = Pagina non trovata.
+PageNotFound = Pagina non trovata
+PageNotFoundBody = Il link potrebbe essere vecchio o scritto male.
+GoToHome = Vai alla Home
 JustNow = proprio ora
 MinAgo = {0} min fa
 HoursAgo = {0} h fa

@@ -3,7 +3,9 @@
 NavHome = خانه
 NavProjects = پروژه‌ها
 NavSettings = تنظیمات
-PageNotFound = صفحه پیدا نشد.
+PageNotFound = صفحه پیدا نشد
+PageNotFoundBody = شاید پیوند قدیمی باشد یا اشتباه نوشته شده باشد.
+GoToHome = رفتن به خانه
 JustNow = همین الان
 MinAgo = {0} دقیقه پیش
 HoursAgo = {0} ساعت پیش

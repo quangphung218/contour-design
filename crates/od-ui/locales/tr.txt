@@ -3,7 +3,9 @@
 NavHome = Ana sayfa
 NavProjects = Projeler
 NavSettings = Ayarlar
-PageNotFound = Sayfa bulunamadı.
+PageNotFound = Sayfa bulunamadı
+PageNotFoundBody = Bağlantı eski ya da yanlış yazılmış olabilir.
+GoToHome = Ana sayfaya git
 JustNow = şimdi
 MinAgo = {0} dk önce
 HoursAgo = {0} sa önce

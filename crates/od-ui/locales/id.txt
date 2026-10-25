@@ -3,7 +3,9 @@
 NavHome = Beranda
 NavProjects = Proyek
 NavSettings = Pengaturan
-PageNotFound = Halaman tak ditemukan.
+PageNotFound = Halaman tak ditemukan
+PageNotFoundBody = Tautan mungkin sudah lama atau salah ketik.
+GoToHome = Ke Beranda
 JustNow = baru saja
 MinAgo = {0} mnt lalu
 HoursAgo = {0} j lalu

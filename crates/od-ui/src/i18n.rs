@@ -215,7 +215,9 @@ messages! {
     NavHome => "Home", "Trang chủ";
     NavProjects => "Projects", "Project";
     NavSettings => "Settings", "Cài đặt";
-    PageNotFound => "Page not found.", "Không tìm thấy trang.";
+    PageNotFound => "Page not found", "Không tìm thấy trang";
+    PageNotFoundBody => "The link may be old or mistyped.", "Link có thể đã cũ hoặc gõ sai.";
+    GoToHome => "Go to Home", "Về trang chủ";
     JustNow => "just now", "vừa xong";
     MinAgo => "{0} min ago", "{0} phút trước";
     HoursAgo => "{0} h ago", "{0} giờ trước";

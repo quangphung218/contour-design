@@ -351,7 +351,7 @@ fn Shelled() -> impl IntoView {
                 <div class="app-body">
                     <Sidebar/>
                     <main class="main" id="main">
-                        <Routes fallback=|| view! { <p class="empty page">{t(T::PageNotFound)}</p> }>
+                        <Routes fallback=|| view! { <NotFound/> }>
                             <Route path=path!("/") view=home::Home/>
                             <Route path=path!("/projects") view=projects::Projects/>
                             <Route path=path!("/projects/:id") view=studio::Studio/>
@@ -405,6 +405,21 @@ pub(super) fn stored_flag(key: &str) -> Option<bool> {
 pub(super) fn store_flag(key: &str, on: bool) {
     if let Some(Ok(Some(storage))) = web_sys::window().map(|w| w.local_storage()) {
         let _ = storage.set_item(key, if on { "1" } else { "0" });
+    }
+}
+
+/// An address no page answers: say so, and the way back.
+#[component]
+fn NotFound() -> impl IntoView {
+    view! {
+        <section class="page not-found" data-testid="not-found">
+            <div class="empty-state">
+                <span class="empty-icon">{icon(Glyph::Search)}</span>
+                <h1>{t(T::PageNotFound)}</h1>
+                <p>{t(T::PageNotFoundBody)}</p>
+                <A href="/" attr:class="btn primary" attr:data-testid="go-home">{icon(Glyph::Home)}{t(T::GoToHome)}</A>
+            </div>
+        </section>
     }
 }
 

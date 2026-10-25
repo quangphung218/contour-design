@@ -3,7 +3,9 @@
 NavHome = 홈
 NavProjects = 프로젝트
 NavSettings = 설정
-PageNotFound = 페이지가 없습니다.
+PageNotFound = 페이지가 없습니다
+PageNotFoundBody = 링크가 오래되었거나 잘못 입력되었을 수 있습니다.
+GoToHome = 홈으로
 JustNow = 방금 전
 MinAgo = {0}분 전
 HoursAgo = {0}시간 전

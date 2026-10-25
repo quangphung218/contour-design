@@ -182,4 +182,13 @@ test('HOME-12', 'While design systems load, the kept pick shows its name or a lo
   await until(async () => (await select.inputValue()) === pick.id, 'the pick is kept once loaded');
 });
 
+test('HOME-13', 'An address no page answers says "Page not found" and leads back to Home', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/nope/page');
+  assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Page not found');
+  await page.getByTestId('go-home').click();
+  await page.waitForURL(d.base + '/');
+  await page.getByTestId('brief').waitFor();
+});
+
 await run('home');

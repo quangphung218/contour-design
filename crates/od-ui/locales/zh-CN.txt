@@ -3,7 +3,9 @@
 NavHome = 首页
 NavProjects = 项目
 NavSettings = 设置
-PageNotFound = 找不到页面。
+PageNotFound = 找不到页面
+PageNotFoundBody = 链接可能已过期或输错了。
+GoToHome = 返回首页
 JustNow = 刚刚
 MinAgo = {0} 分钟前
 HoursAgo = {0} 小时前

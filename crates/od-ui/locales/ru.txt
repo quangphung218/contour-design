@@ -3,7 +3,9 @@
 NavHome = Главная
 NavProjects = Проекты
 NavSettings = Настройки
-PageNotFound = Страница не найдена.
+PageNotFound = Страница не найдена
+PageNotFoundBody = Возможно, ссылка устарела или набрана с ошибкой.
+GoToHome = На главную
 JustNow = только что
 MinAgo = {0} мин назад
 HoursAgo = {0} ч назад
