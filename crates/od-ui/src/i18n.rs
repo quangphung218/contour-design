@@ -620,7 +620,8 @@ messages! {
     InstallGuide => "Install guide", "Hướng dẫn cài";
     CopyCommand => "Copy command", "Sao chép lệnh";
     SignInAfterInstall => "Then open a new Terminal window and run {0} to sign in.", "Sau đó mở cửa sổ Terminal mới và chạy {0} để đăng nhập.";
-    StillNoAgent => "Still no agent found. Open a new Terminal window and run {0}.", "Vẫn chưa thấy agent nào. Mở cửa sổ Terminal mới và chạy {0}.";
+    StillNoAgent => "Still no agent found. Open a new Terminal window and run {0} or {1}.", "Vẫn chưa thấy agent nào. Mở cửa sổ Terminal mới và chạy {0} hoặc {1}.";
+    AgentTestFailedLead => "{0} did not pass its test. Update it, or install one of these instead.", "{0} chưa qua bài test. Cập nhật nó, hoặc cài một agent dưới đây.";
     AgentsNoneHintWindows => "No coding agent found yet. Install one from its guide below, or use an API key.", "Chưa có coding agent nào. Cài theo hướng dẫn bên dưới, hoặc dùng API key.";
     ClaudeAccount => "Needs a Claude Pro, Max, Team or Enterprise plan, or a Console account.", "Cần gói Claude Pro, Max, Team hoặc Enterprise, hoặc tài khoản Console.";
     CodexAccount => "Needs a ChatGPT plan or an OpenAI API key.", "Cần gói ChatGPT hoặc API key của OpenAI.";

@@ -43,7 +43,8 @@ Goal: a first-time user reaches Home with a working agent or API key.
 | ONB-10 | Phone width, no agent: the install cards fit | PATH without any agent CLI | Open `/onboarding` at 390 px | No sideways scroll; Copy stays inside its card; Copy and Install guide are at least 44 px high | P2 | auto |
 | ONB-11 | Windows, no agent: setup pages only | PATH without any agent CLI, Windows browser | Open `/onboarding` | No install command, no Check again, nothing about Terminal; each card links its setup page; the API key path is offered | P2 | auto |
 | ONB-12 | Installed but not signed in | Mock `claude` fails every prompt until signed in | Open `/onboarding`; sign in; Check again | The failed test shows "Then open a new Terminal window and run claude to sign in."; after Check again the test passes and Continue is on | P1 | auto |
-| ONB-13 | Installed agent fails its test, not a sign-in issue | Mock `claude` rejects every prompt | Open `/onboarding` | Claude stays a card; Codex install card and the API key path are shown; no sign-in hint, no brand step; Continue is off | P1 | auto |
+| ONB-13 | Installed agent fails its test, not a sign-in issue | Mock `claude` rejects every prompt | Open `/onboarding` at 1440×900 | Claude stays a card; Codex install card and the API key path are shown; no sign-in hint, no brand step; Continue is off; the test result and "Claude Code did not pass its test…" sit under the Claude card, above the install cards, inside the first 900 px | P1 | auto |
+| ONB-14 | Brand extraction uses the tested agent | Broken mock `claude`, working mock `codex` | Pick Codex; wait for its test; enter a website; Extract | The extraction request names `codex` as its agent | P2 | auto |
 
 ## 2. Create a project from Home (`home.qa.mjs`)
 
