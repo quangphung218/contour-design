@@ -158,7 +158,7 @@ test('EXP-10', 'Esc that closes the Export menu leaves comment mode on', async (
   await page.getByTestId('export-menu').waitFor({ state: 'hidden', timeout: 2000 });
   await page.waitForTimeout(200); // any other Esc handler runs in the same tick
   assert.equal(await mode.getAttribute('aria-pressed'), 'true', 'the Esc meant for the menu also turned comment mode off');
-}, { knownBug: 'QA-013' });
+});
 
 test('EXP-11', 'Esc that closes the Export menu does not stop a running Design Jury', async ({ d, api, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Esc jury', { 'index.html': PAGE });
@@ -183,6 +183,6 @@ test('EXP-11', 'Esc that closes the Export menu does not stop a running Design J
     const stop = jury.getByTestId('jury-interrupt');
     if ((await stop.count()) && (await stop.isEnabled())) await stop.click();
   }
-}, { knownBug: 'QA-013' });
+});
 
 await run('export');
