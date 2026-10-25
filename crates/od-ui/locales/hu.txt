@@ -1356,6 +1356,7 @@ MediaNotes = Stílusjegyzetek
 CreatePlugin = Plugin létrehozása
 CreatePluginPrompt = Készíts egy plugint ehhez:
 FromFolder = Mappából
+StartFrom = Kezdés
 ShortcutMention = Fájl, plugin, skill vagy MCP-szerver megemlítése
 ShortcutSlash = Parancsok (sor elején)
 

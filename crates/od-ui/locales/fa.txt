@@ -1356,6 +1356,7 @@ MediaNotes = یادداشت‌های سبک
 CreatePlugin = ساخت پلاگین
 CreatePluginPrompt = Create a plugin for:
 FromFolder = از پوشه
+StartFrom = شروع
 ShortcutMention = اشاره به یک فایل، پلاگین، مهارت یا سرور MCP
 ShortcutSlash = فرمان‌ها (در ابتدای خط)
 # / The current language's text for `key`.

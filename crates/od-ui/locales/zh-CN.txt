@@ -1356,6 +1356,7 @@ MediaNotes = 风格备注
 CreatePlugin = 创建插件
 CreatePluginPrompt = 创建一个插件，用于：
 FromFolder = 来自文件夹
+StartFrom = 开始
 ShortcutMention = 提及文件、插件、技能或 MCP 服务器
 ShortcutSlash = 命令（行首输入）
 # / The current language's text for `key`.

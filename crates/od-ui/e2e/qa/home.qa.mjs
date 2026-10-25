@@ -191,4 +191,19 @@ test('HOME-13', 'An address no page answers says "Page not found" and leads back
   await page.getByTestId('brief').waitFor();
 });
 
+test('HOME-14', 'Home has one composer with one row of controls; starting points live in "+"', async ({ d, newPage }) => {
+  const { page } = await newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(d.base + '/');
+  await page.getByTestId('brief').waitFor();
+  assert.equal(await page.getByTestId('recommended').count(), 0, '"Recommended… Start creating" next to the composer');
+  assert.equal(await page.locator('.composer-foot button:visible').count(), 0, 'buttons under the composer');
+  for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) assert.equal(await page.getByTestId(id).count(), 0, `${id} outside "+"`);
+  await page.getByTestId('plus-menu').click();
+  for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) await page.getByTestId(id).waitFor();
+  // The dialog is the full one from the Design systems page.
+  await page.getByTestId('ds-new').click();
+  await page.getByTestId('ds-create').waitFor();
+  await page.getByTestId('dsc-source-website').waitFor();
+});
+
 await run('home');

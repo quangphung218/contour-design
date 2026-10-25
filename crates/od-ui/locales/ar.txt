@@ -1356,6 +1356,7 @@ MediaNotes = ملاحظات النمط
 CreatePlugin = إنشاء إضافة
 CreatePluginPrompt = أنشئ إضافة لـ:
 FromFolder = من مجلد
+StartFrom = ابدأ
 ShortcutMention = الإشارة إلى ملف أو إضافة أو مهارة أو خادم MCP
 ShortcutSlash = الأوامر (في بداية السطر)
 

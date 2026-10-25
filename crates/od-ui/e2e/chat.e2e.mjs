@@ -169,8 +169,10 @@ try {
   await page.keyboard.press('Escape');
   results.workingDir = 'ok';
 
-  // 4b. "Create plugin" seeds the brief with the plugin authoring plugin.
+  // 4b. "+" ▸ "Create plugin" seeds the brief with the plugin authoring plugin.
+  await page.getByTestId('plus-menu').click();
   await page.getByTestId('action-create-plugin').click();
+  assert.equal(await page.getByTestId('action-create-plugin').count(), 0, 'the menu stays open');
   assert.equal(await brief.inputValue(), '@od-plugin-authoring Create a plugin for: ');
   await page.locator('[data-testid="context-chip"][data-kind="plugin"]', { hasText: 'od-plugin-authoring' }).locator('.chip-x').click();
   assert.equal(await page.getByTestId('context-chip').count(), 0);
@@ -445,8 +447,9 @@ try {
   await composer.fill('');
   results.linkedFolders = 'ok';
 
-  // 17b. "From folder" on Home opens a project over an existing folder.
+  // 17b. "+" ▸ "From folder" on Home opens a project over an existing folder.
   await page.goto(BASE + '/');
+  await page.getByTestId('plus-menu').click();
   await page.getByTestId('action-from-folder').click();
   await page.getByTestId('from-folder-path').fill(join(work, 'site'));
   await page.getByTestId('from-folder-open').click();

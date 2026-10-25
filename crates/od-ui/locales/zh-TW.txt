@@ -1356,6 +1356,7 @@ MediaNotes = 風格備註
 CreatePlugin = 建立外掛
 CreatePluginPrompt = 建立一個外掛，用途：
 FromFolder = 從資料夾
+StartFrom = 開始
 ShortcutMention = 提及檔案、外掛、技能或 MCP 伺服器
 ShortcutSlash = 命令（在行首輸入）
 

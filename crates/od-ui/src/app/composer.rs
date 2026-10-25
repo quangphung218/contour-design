@@ -1104,7 +1104,19 @@ pub fn PlusMenu(
                 {icon(Glyph::Add)}
             </button>
             <Show when=move || open.get()>
-                <div class=if up { "menu left up plus-menu" } else { "menu left plus-menu" } role="menu">
+                // An item of the caller's that leaves the menu (opens a
+                // dialog, fills the composer) carries `data-closes-menu`.
+                <div class=if up { "menu left up plus-menu" } else { "menu left plus-menu" } role="menu"
+                    on:click=move |ev| {
+                        let closes = ev
+                            .target()
+                            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                            .and_then(|e| e.closest("[data-closes-menu]").ok().flatten())
+                            .is_some();
+                        if closes {
+                            open.set(false);
+                        }
+                    }>
                     {move || match view_of.get() {
                         PlusView::Main => {
                             view! {

@@ -1356,6 +1356,7 @@ MediaNotes = Catatan gaya
 CreatePlugin = Buat plugin
 CreatePluginPrompt = Buat plugin untuk:
 FromFolder = Dari folder
+StartFrom = Mulai
 ShortcutMention = Sebut file, plugin, skill, atau server MCP
 ShortcutSlash = Perintah (di awal baris)
 

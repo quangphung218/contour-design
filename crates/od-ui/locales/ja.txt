@@ -1356,6 +1356,7 @@ MediaNotes = スタイルメモ
 CreatePlugin = プラグインを作成
 CreatePluginPrompt = 次のプラグインを作成してください:
 FromFolder = フォルダから
+StartFrom = 始める
 ShortcutMention = ファイル、プラグイン、スキル、MCP サーバーをメンション
 ShortcutSlash = コマンド（行頭）
 # / The current language's text for `key`.

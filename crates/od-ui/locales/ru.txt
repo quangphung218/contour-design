@@ -1356,6 +1356,7 @@ MediaNotes = Заметки о стиле
 CreatePlugin = Создать плагин
 CreatePluginPrompt = Создай плагин для:
 FromFolder = Из папки
+StartFrom = Начать
 ShortcutMention = Упомянуть файл, плагин, навык или MCP-сервер
 ShortcutSlash = Команды (в начале строки)
 # / The current language's text for `key`.

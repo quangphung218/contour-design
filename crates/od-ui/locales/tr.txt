@@ -1355,6 +1355,7 @@ MediaNotes = Stil notları
 CreatePlugin = Plugin oluştur
 CreatePluginPrompt = Şunun için bir plugin oluştur:
 FromFolder = Klasörden
+StartFrom = Başla
 ShortcutMention = Dosya, plugin, skill veya MCP sunucusundan bahset
 ShortcutSlash = Komutlar (satır başında)
 # / The current language's text for `key`.

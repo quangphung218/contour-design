@@ -1355,6 +1355,7 @@ MediaNotes = Uwagi o stylu
 CreatePlugin = Utwórz wtyczkę
 CreatePluginPrompt = Utwórz wtyczkę do:
 FromFolder = Z folderu
+StartFrom = Zacznij
 ShortcutMention = Wspomnij plik, wtyczkę, umiejętność lub serwer MCP
 ShortcutSlash = Polecenia (na początku wiersza)
 # / The current language's text for `key`.

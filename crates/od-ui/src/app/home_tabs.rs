@@ -1,5 +1,4 @@
-//! Home below the composer (track C2-chat-home): "Recommended for you"
-//! (the original's `RecommendedStartRegion`) and the entry tabs: Designs,
+//! Home below the composer (track C2-chat-home): the entry tabs: Designs,
 //! Templates, Design systems, Image and Video templates. Connectors are
 //! N/A (no cloud). The tab is remembered per browser.
 
@@ -7,13 +6,11 @@ use super::api;
 use super::icons::{Glyph, icon};
 use crate::i18n::{T, t};
 use crate::intent::Chip;
-use crate::recommend::{self, Starter};
 use leptos::prelude::*;
-use od_contracts::{DesignSystemSummary, Project, ProjectsResponse};
+use od_contracts::{DesignSystemSummary, ProjectsResponse};
 use serde_json::Value;
 
 const TAB_KEY: &str = "od.home.tab";
-const DISMISS_KEY: &str = "od.home.recommend-dismissed";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -257,78 +254,5 @@ fn PromptsTab(
                 }).collect_view()}
             </div>
         }
-    }
-}
-
-/// "Recommended for you": one starter at a time from what the user made.
-/// "Start creating" fills the composer (never sends); "All types" hides
-/// the strip for good.
-#[component]
-pub fn Recommended(
-    brief: RwSignal<String>,
-    set_chip: Callback<Chip>,
-    brief_ref: NodeRef<leptos::html::Textarea>,
-) -> impl IntoView {
-    let dismissed = RwSignal::new(
-        storage()
-            .and_then(|s| s.get_item(DISMISS_KEY).ok().flatten())
-            .is_some_and(|v| v == "1"),
-    );
-    let starters = RwSignal::new(None::<&'static [Starter]>);
-    let at = RwSignal::new(0usize);
-    leptos::task::spawn_local(async move {
-        let projects: Vec<Project> = api::get::<ProjectsResponse>("/api/projects")
-            .await
-            .map(|r| r.projects)
-            .unwrap_or_default();
-        let mut projects = projects;
-        projects.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
-        let kinds: Vec<_> = projects
-            .iter()
-            .filter(|p| {
-                p.metadata.as_ref().and_then(|m| m.intent.as_deref()) != Some("media-library")
-            })
-            .filter_map(|p| p.metadata.as_ref().and_then(|m| m.kind))
-            .collect();
-        starters.set(Some(recommend::bucket(&kinds).starters()));
-    });
-    move || {
-        if dismissed.get() {
-            return None;
-        }
-        let list = starters.get()?;
-        let s = *list.get(at.get() % list.len())?;
-        let many = list.len() > 1;
-        Some(view! {
-            // One quiet line under the composer: the brief stays the one
-            // thing that asks for attention on Home.
-            <aside class="recommend" aria-label=t(T::RecommendedForYou) data-testid="recommended" data-starter=s.key>
-                <span class="recommend-icon" aria-hidden="true">{icon(Glyph::Sparkle)}</span>
-                <div class="grow recommend-text">
-                    <span class="eyebrow">{t(T::RecommendedForYou)}</span>
-                    <strong>{t(s.title)}</strong>
-                    <span class="muted small">{t(s.body)}</span>
-                </div>
-                {many.then(|| view! {
-                    <button class="icon-btn small" data-testid="recommended-next" aria-label=t(T::RecTryAnother) data-tip=t(T::RecTryAnother)
-                        on:click=move |_| at.update(|i| *i += 1)>
-                        {icon(Glyph::Refresh)}
-                    </button>
-                })}
-                <button class="btn ghost small" data-testid="recommended-dismiss" on:click=move |_| {
-                    dismissed.set(true);
-                    if let Some(st) = storage() {
-                        let _ = st.set_item(DISMISS_KEY, "1");
-                    }
-                }>{t(T::RecAllTypes)}</button>
-                <button class="btn small" data-testid="recommended-start" on:click=move |_| {
-                    set_chip.run(s.chip);
-                    brief.set(t(s.prompt).to_owned());
-                    if let Some(el) = brief_ref.get_untracked() {
-                        let _ = el.focus();
-                    }
-                }>{t(T::RecStart)}{icon(Glyph::ChevronRight)}</button>
-            </aside>
-        })
     }
 }

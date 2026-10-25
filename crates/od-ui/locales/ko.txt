@@ -1356,6 +1356,7 @@ MediaNotes = 스타일 메모
 CreatePlugin = 플러그인 만들기
 CreatePluginPrompt = 다음을 위한 플러그인을 만들어 줘:
 FromFolder = 폴더에서 가져오기
+StartFrom = 시작
 ShortcutMention = 파일, 플러그인, 스킬 또는 MCP 서버 멘션
 ShortcutSlash = 명령 (줄 맨 앞에서)
 # / The current language's text for `key`.

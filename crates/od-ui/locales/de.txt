@@ -1356,6 +1356,7 @@ MediaNotes = Stilnotizen
 CreatePlugin = Plugin erstellen
 CreatePluginPrompt = Erstelle ein Plugin für:
 FromFolder = Aus Ordner
+StartFrom = Starten
 ShortcutMention = Datei, Plugin, Skill oder MCP-Server erwähnen
 ShortcutSlash = Befehle (am Zeilenanfang)
 

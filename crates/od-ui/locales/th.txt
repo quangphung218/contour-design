@@ -1356,6 +1356,7 @@ MediaNotes = โน้ตสไตล์
 CreatePlugin = สร้างปลั๊กอิน
 CreatePluginPrompt = สร้างปลั๊กอินสำหรับ:
 FromFolder = จากโฟลเดอร์
+StartFrom = เริ่ม
 ShortcutMention = กล่าวถึงไฟล์ ปลั๊กอิน สกิล หรือเซิร์ฟเวอร์ MCP
 ShortcutSlash = คำสั่ง (ต้นบรรทัด)
 
