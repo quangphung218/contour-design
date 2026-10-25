@@ -251,15 +251,16 @@ before asking for review.
 |---|---|---|---|---|
 | fmt + clippy | `ci.yml` | Ubuntu | manual run only | `make lint` |
 | test | `ci.yml` | Ubuntu | macOS (release); macOS and Ubuntu (manual) | ffmpeg (MP4 export tests), `make test` |
-| build (windows) | `ci.yml` | no | Windows | `trunk build`, `cargo build --workspace --all-targets` (no tests yet) |
+| build (windows) | `ci.yml` | no | Windows (never blocks a release) | `trunk build`, `cargo build --workspace --all-targets` (no tests yet) |
 | e2e | `ci.yml` | Ubuntu | manual run only | `make e2e`, screenshots uploaded on failure |
 | cargo-deny | `ci.yml` | Ubuntu | manual run only | licences, advisories, bans, sources (`deny.toml`) |
 | docs | `docs.yml` | Ubuntu | manual run only | `scripts/check-links.sh`, script tests, actionlint |
 | commit messages | `docs.yml` | Ubuntu, PRs only | no | commitlint over the PR's commits |
 
 `ci.yml` skips changes that only touch `docs/**` or Markdown; `docs.yml`
-always runs. `release.yml` calls `ci.yml` (macOS tests, Windows build)
-before it builds any bundle, so every release is tested on macOS.
+always runs. `release.yml` calls `ci.yml` twice: the macOS tests, which
+every bundle waits for (each release is tested on macOS), and the Windows
+build, which runs alongside and never blocks the release.
 
 Actions are pinned to commit SHAs, permissions are read-only, and a newer
 push cancels the running workflow for the same branch. Dependabot opens at

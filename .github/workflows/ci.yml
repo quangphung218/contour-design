@@ -1,7 +1,7 @@
 # CI: lint, test, e2e and dependency policy. Pull requests and pushes to
 # main run on Linux only; the macOS tests and the Windows build run on a
 # manual dispatch (with the Linux jobs) or when release.yml calls this
-# workflow before it builds bundles (macOS and Windows only). Docs links,
+# workflow, once per platform (`only: macos`, `only: windows`). Docs links,
 # script tests, actionlint and commit messages live in docs.yml, which also
 # runs for docs-only changes. `make ci` runs the checks locally and is the
 # main gate on macOS (docs/development.md).
@@ -16,17 +16,18 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
-      release:
-        description: Called by release.yml; run the macOS tests and the Windows build only
-        type: boolean
-        default: false
+      only:
+        description: Called by release.yml; run just the macOS tests (macos) or the Windows build (windows)
+        type: string
+        default: ""
       ref:
         description: Ref to check out (the release tag)
         type: string
         default: ""
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # `only` keeps release.yml's two calls in one run from cancelling each other.
+  group: ci-${{ github.workflow }}-${{ inputs.only }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -42,8 +43,8 @@ jobs:
   lint:
     name: fmt + clippy (native, wasm)
     # In a called workflow `github.event_name` is the caller's event, so the
-    # jobs go by the `release` input instead.
-    if: ${{ !inputs.release }}
+    # jobs go by the `only` input instead.
+    if: ${{ !inputs.only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -65,11 +66,12 @@ jobs:
 
   test:
     name: test (${{ matrix.os }})
+    if: inputs.only != 'windows'
     strategy:
       fail-fast: false
       matrix:
         # Release: macOS; dispatch: both; pull requests and main: Linux.
-        os: ${{ fromJSON(inputs.release && '["macos-15"]' || (github.event_name == 'workflow_dispatch' && '["macos-15", "ubuntu-24.04"]' || '["ubuntu-24.04"]')) }}
+        os: ${{ fromJSON(inputs.only == 'macos' && '["macos-15"]' || (github.event_name == 'workflow_dispatch' && '["macos-15", "ubuntu-24.04"]' || '["ubuntu-24.04"]')) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -112,7 +114,7 @@ jobs:
   # exercised yet (README, Known limitations).
   build-windows:
     name: build (windows)
-    if: github.event_name == 'workflow_dispatch' || inputs.release
+    if: inputs.only == 'windows' || (!inputs.only && github.event_name == 'workflow_dispatch')
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
@@ -135,7 +137,7 @@ jobs:
 
   e2e:
     name: e2e (Playwright)
-    if: ${{ !inputs.release }}
+    if: ${{ !inputs.only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -172,7 +174,7 @@ jobs:
 
   deny:
     name: cargo-deny (licenses, advisories)
-    if: ${{ !inputs.release }}
+    if: ${{ !inputs.only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

@@ -74,4 +74,18 @@ check "a published release keeps its notes" '! grep -q "release edit" "$work/gh-
 release ""; rc=$?
 check "no release yet: a draft is created" '[ $rc -eq 0 ] && grep -q "release create v9.9.9 .*--draft" "$work/gh-calls"'
 
+# Tests before bundles: macOS gates them, the Windows build never does.
+ruby -ryaml -e '
+  jobs = YAML.load_file(ARGV[0])["jobs"]
+  call = ->(name) { j = jobs[name] or abort("no job #{name}"); "#{j["uses"]} only=#{(j["with"] || {})["only"]}" }
+  puts "bundle needs: #{Array(jobs["bundle"]["needs"]).sort.join(",")}"
+  puts "macos-tests: #{call.("macos-tests")}"
+  puts "windows-build: #{call.("windows-build")}"
+  waiting = jobs.select { |_, j| Array(j["needs"]).include?("windows-build") }.keys
+  puts "waits for windows: #{waiting.join(",")}"' "$workflow" > "$work/gates" 2>&1
+check "bundles wait for the macOS tests, not for Windows" 'grep -qx "bundle needs: check,macos-tests" "$work/gates"'
+check "macOS tests come from ci.yml with only=macos" 'grep -qx "macos-tests: ./.github/workflows/ci.yml only=macos" "$work/gates"'
+check "the Windows build runs from ci.yml with only=windows" 'grep -qx "windows-build: ./.github/workflows/ci.yml only=windows" "$work/gates"'
+check "no job waits for the Windows build" 'grep -qx "waits for windows: " "$work/gates"'
+
 [ "$failures" -eq 0 ] && echo "release.yml: all checks passed" || { echo "release.yml: $failures failed"; exit 1; }

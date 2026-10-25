@@ -71,7 +71,8 @@ CI does the building; a person decides when and checks the result.
    | Job | Output |
    |---|---|
    | check | fails fast if the tag, `Cargo.toml` and `CHANGELOG.md` disagree |
-   | macOS tests, Windows build | `ci.yml` called before any bundle: `make test` on macOS and the Windows compile check; a failure stops the release |
+   | macOS tests | `ci.yml` (`only: macos`): `make test` on macOS; bundles wait for it, so a failure stops the release |
+   | Windows build (does not block) | `ci.yml` (`only: windows`): the Windows compile check; nothing waits for it, a failure shows on the run but the release goes on (Windows is best effort) |
    | bundle (macos-universal) | `Contour_<v>_universal.dmg` (Apple silicon and Intel) |
    | bundle (linux-x64) | `Contour_<v>_amd64.AppImage`, `Contour_<v>_amd64.deb` (built on Ubuntu 22.04) |
    | bundle (windows-x64) | `Contour_<v>_x64_en-US.msi`, best effort: a failure here does not block the release |
