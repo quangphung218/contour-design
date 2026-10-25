@@ -61,6 +61,10 @@ pub struct EngineConfig {
     /// After a failed help probe, runs go without optional flags for this
     /// long before the CLI is probed again.
     pub probe_retry_after: Duration,
+    /// How long a protocol agent may take to exit once its turn completed
+    /// and stdin closed, before it is stopped (tests on a loaded machine
+    /// give it longer).
+    pub exit_after_completion: Duration,
     /// Shell asked again for its `PATH` when the agents are rescanned (the
     /// desktop app); `None` keeps `path` as it is.
     pub login_shell: Option<OsString>,
@@ -79,6 +83,7 @@ impl EngineConfig {
             tool_loop: ToolLoopLimits::default(),
             probe_timeout: detect::PROBE_TIMEOUT,
             probe_retry_after: PROBE_RETRY_AFTER,
+            exit_after_completion: EXIT_AFTER_COMPLETION,
             login_shell: None,
         }
     }
@@ -652,7 +657,7 @@ impl RunEngine {
                                 att.protocol_completed = true;
                                 *active.stdin.lock().await = None;
                                 completion_deadline =
-                                    Some(tokio::time::Instant::now() + EXIT_AFTER_COMPLETION);
+                                    Some(tokio::time::Instant::now() + self.config().exit_after_completion);
                             }
                         }
                         Line::Stderr(text) => {

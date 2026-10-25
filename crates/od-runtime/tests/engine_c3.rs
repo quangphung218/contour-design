@@ -46,6 +46,8 @@ impl Harness {
         }
         let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
         config.kill_grace = Duration::from_millis(500);
+        // Reading EOF and exiting can take a mock over 500 ms on a loaded machine.
+        config.exit_after_completion = Duration::from_secs(3);
         config.retry_base = Duration::from_millis(10);
         config.idle_timeout = Some(Duration::from_secs(5));
         let runs = Runs::new(tmp.path().join("runs"));
