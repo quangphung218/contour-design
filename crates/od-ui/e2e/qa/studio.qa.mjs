@@ -141,6 +141,25 @@ test('STU-11', 'Tablet and Phone preview the page at 820 and 390 px wide, Deskto
   await until(async () => (await inner()) === desktop, 'desktop width');
 });
 
+test('STU-14', 'With Tablet shrunk to fit the pane, the zoom label shows the real size, also after +', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d);
+  await frame(page).locator('#title').waitFor();
+  await page.getByRole('radiogroup', { name: 'Device' }).getByRole('radio', { name: 'Tablet' }).click();
+  // The size the user sees: the drawn width of the 820 px frame.
+  const drawn = async () => Math.round(((await page.getByTestId('preview').boundingBox()).width / 820) * 100);
+  const label = async () => parseInt(await page.getByTestId('zoom-reset').innerText(), 10);
+  await until(async () => (await drawn()) < 100, 'Tablet shrunk to fit');
+  const at = await drawn();
+  assert.ok(Math.abs((await label()) - at) <= 1, `the label says ${await label()}% while the page is drawn at ${at}%`);
+  const plus = page.getByTestId('zoom-in');
+  if (await plus.isEnabled()) {
+    await plus.click();
+    await page.waitForTimeout(300); // the frame is restyled on the next frame
+    assert.ok(Math.abs((await label()) - (await drawn())) <= 1,
+      `after + the label says ${await label()}% while the page is still drawn at ${await drawn()}%`);
+  }
+}, { knownBug: 'QA-015' });
+
 test('STU-12', 'A link to a project that does not exist says so and offers a way back', async ({ d, newPage }) => {
   const { page } = await newPage();
   await page.goto(`${d.base}/projects/does-not-exist-123`);

@@ -146,4 +146,43 @@ test('EXP-09', 'Esc closes the Export menu, as in the original app', async ({ d,
   await page.getByTestId('export-menu').waitFor({ state: 'hidden', timeout: 2000 });
 });
 
+test('EXP-10', 'Esc that closes the Export menu leaves comment mode on', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d, 'Esc comment', { 'index.html': PAGE });
+  await page.frameLocator('[data-testid="preview"]').locator('#title').waitFor();
+  const mode = page.getByTestId('comment-mode');
+  await mode.click();
+  await until(async () => (await mode.getAttribute('aria-pressed')) === 'true', 'comment mode on');
+  await page.getByTestId('export').click();
+  await page.getByTestId('export-menu').waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByTestId('export-menu').waitFor({ state: 'hidden', timeout: 2000 });
+  await page.waitForTimeout(200); // any other Esc handler runs in the same tick
+  assert.equal(await mode.getAttribute('aria-pressed'), 'true', 'the Esc meant for the menu also turned comment mode off');
+}, { knownBug: 'QA-013' });
+
+test('EXP-11', 'Esc that closes the Export menu does not stop a running Design Jury', async ({ d, api, newPage }) => {
+  const { page, id } = await studio(newPage, d, 'Esc jury', { 'index.html': PAGE });
+  await page.getByTestId('chat-empty').waitFor();
+  await page.getByTestId('jury-toggle').click();
+  await until(async () => (await api(`/api/projects/${id}/critique`)).body?.enabled === true, 'jury on');
+  await page.getByTestId('composer').fill('qa-jury-slow poster');
+  await page.getByTestId('composer').press('Enter');
+  const jury = page.getByTestId('assistant-msg').first().getByTestId('jury');
+  await jury.getByTestId('jury-interrupt').waitFor({ timeout: 15_000 });
+  await until(async () => (await jury.getByTestId('jury-round').count()) >= 1, 'round 1 closed');
+  try {
+    await page.getByTestId('export').click();
+    await page.getByTestId('export-menu').waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByTestId('export-menu').waitFor({ state: 'hidden', timeout: 2000 });
+    const stopped = await until(async () => (await jury.getAttribute('data-status')) !== 'running', 'jury stops', 2000)
+      .then(() => true, () => false);
+    assert.equal(stopped, false, `the Esc meant for the menu stopped the jury (status ${await jury.getAttribute('data-status')})`);
+  } finally {
+    // The mock thinks for a minute: end it either way.
+    const stop = jury.getByTestId('jury-interrupt');
+    if ((await stop.count()) && (await stop.isEnabled())) await stop.click();
+  }
+}, { knownBug: 'QA-013' });
+
 await run('export');

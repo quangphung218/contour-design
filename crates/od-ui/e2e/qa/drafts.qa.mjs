@@ -14,14 +14,28 @@ const PAGE = '<!doctype html><html><body><h1 data-od-id="t">Hello tea</h1>' +
 
 const raw = async (d, id, path) => (await fetch(`${d.base}/api/projects/${id}/raw/${path}`)).text();
 
-/** Opens page.html in manual edit mode with the lead paragraph selected. */
-async function editLead(newPage, d) {
+/**
+ * Opens page.html in manual edit mode with the lead paragraph selected.
+ * `init` runs on the context before the page loads (an init script);
+ * `crash` first sends a turn the mock agent fails, so the chat offers its
+ * "Settings" next step.
+ */
+async function editLead(newPage, d, { init, crash = false } = {}) {
   const id = await createProject(d, 'Edit drafts', { 'page.html': PAGE });
   const p = await newPage();
   const { page } = p;
+  if (init) await p.context.addInitScript(init);
+  const loaded = page.waitForResponse((r) => /\/conversations\/[^/]+\/messages$/.test(new URL(r.url()).pathname));
   await page.goto(`${d.base}/projects/${id}`);
   const frame = page.frameLocator('[data-testid="preview"]');
   await frame.locator('h1', { hasText: 'Hello tea' }).waitFor();
+  if (crash) {
+    await loaded;
+    await page.getByTestId('chat-empty').waitFor();
+    await page.getByTestId('composer').fill('qa-crash please');
+    await page.getByTestId('composer').press('Enter');
+    await waitTurn(page, 0);
+  }
   await page.getByTestId('manual-edit-mode').click();
   const panel = page.getByTestId('manual-edit-panel');
   await panel.waitFor();
@@ -110,6 +124,113 @@ test('DL-04', 'Closing the page with a manual edit not applied asks before leavi
   await sleep(300);
   assert.ok(asked, 'the page closed without asking, the typed edit is gone');
 });
+
+const LEAVE_TEXT = /not applied|leave|lose|chưa áp dụng|rời/i;
+
+/** As tauri-plugin-dialog does in Contour.app: `confirm` answers a Promise. */
+const DESKTOP_CONFIRM = () => {
+  window.__qaAsked = 0;
+  window.confirm = async () => {
+    window.__qaAsked++;
+    return true; // the user picks Leave in the native dialog
+  };
+};
+
+/** Answers native confirms on `page` with `state.leave`; counts them. */
+function leaveAnswers(page) {
+  const state = { leave: false, native: 0 };
+  page.on('dialog', async (dlg) => {
+    if (dlg.type() !== 'confirm') return dlg.accept().catch(() => {});
+    state.native++;
+    await (state.leave ? dlg.accept() : dlg.dismiss()).catch(() => {});
+  });
+  return state;
+}
+
+/**
+ * Runs `act` (a way of leaving the page) and answers the "leave and lose
+ * the edit?" question however the app asks it: a native confirm, the
+ * desktop app's async confirm, or a dialog in the page. False when it did
+ * not ask at all.
+ */
+async function tryLeave(page, state, leave, act) {
+  state.leave = leave;
+  const tauri = () => page.evaluate(() => window.__qaAsked || 0).catch(() => 0);
+  const before = { native: state.native, tauri: await tauri(), url: page.url() };
+  await act();
+  const inApp = page.locator('[role="dialog"], [role="alertdialog"]').filter({ hasText: LEAVE_TEXT });
+  const how = await until(async () => {
+    if (state.native > before.native) return 'native';
+    if ((await tauri()) > before.tauri) return 'desktop';
+    if (await inApp.count()) return 'page';
+    if (page.url() !== before.url) return 'none';
+    return null;
+  }, 'the app asks or leaves', 3000).catch(() => 'none');
+  if (how === 'page') {
+    await inApp.getByRole('button', { name: leave ? /leave|discard|rời|bỏ/i : /cancel|stay|keep|huỷ|hủy|ở lại/i }).first().click();
+  }
+  return how !== 'none';
+}
+
+/** Cancel on the question stays with the text; then OK leaves. */
+async function stayThenLeave({ page, panel, id }, act) {
+  await panel.getByTestId('manual-text').fill('Not applied');
+  const state = leaveAnswers(page);
+  assert.ok(await tryLeave(page, state, false, act), 'left the page without asking; the edit not applied is gone');
+  await sleep(300); // a refused leave must not navigate a moment later
+  assert.equal(new URL(page.url()).pathname, `/projects/${id}`, 'Cancel still left the page');
+  assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied', 'Cancel stayed but lost the text');
+  assert.ok(await tryLeave(page, state, true, act), 'the second try did not ask');
+  await until(() => new URL(page.url()).pathname !== `/projects/${id}`, 'OK leaves the page', 3000);
+}
+
+/** Cmd/Ctrl+K ▸ the command named `label`. */
+const viaPalette = (page, label) => async () => {
+  if (!(await page.getByTestId('command-palette').isVisible())) await page.keyboard.press('ControlOrMeta+k');
+  await page.getByTestId('palette-input').fill(label);
+  await page.getByTestId('palette-item')
+    .filter({ has: page.locator('.switcher-path', { hasText: new RegExp(`^${label}$`) }) })
+    .first().click();
+};
+
+test('DL-13', 'In the desktop app, choosing Leave on the unapplied-edit question leaves the page', async ({ d, newPage }) => {
+  const { page, panel, id } = await editLead(newPage, d, { init: DESKTOP_CONFIRM });
+  await panel.getByTestId('manual-text').fill('Not applied');
+  const state = leaveAnswers(page);
+  const asked = await tryLeave(page, state, true, () => page.getByRole('link', { name: 'Projects' }).first().click());
+  assert.ok(asked, 'left the page without asking');
+  await until(() => new URL(page.url()).pathname === '/projects', 'Leave leaves', 3000).catch(() => {
+    assert.fail(`chose Leave, but the page stays on ${new URL(page.url()).pathname} (id ${id})`);
+  });
+}, { knownBug: 'QA-011' });
+
+test('DL-14', 'A sidebar link with an edit not applied asks: Cancel stays with the text, OK leaves', async ({ d, newPage }) => {
+  const s = await editLead(newPage, d);
+  await stayThenLeave(s, () => s.page.getByRole('link', { name: 'Projects' }).first().click());
+});
+
+test('DL-15', 'Going to Projects from the command palette with an edit not applied asks first', async ({ d, newPage }) => {
+  const s = await editLead(newPage, d);
+  await stayThenLeave(s, viaPalette(s.page, 'Projects'));
+}, { knownBug: 'QA-012' });
+
+test('DL-16', 'Going to Settings from the command palette with an edit not applied asks first', async ({ d, newPage }) => {
+  const s = await editLead(newPage, d);
+  await stayThenLeave(s, viaPalette(s.page, 'Settings'));
+}, { knownBug: 'QA-012' });
+
+test('DL-17', 'A Settings section from the quick menu with an edit not applied asks first', async ({ d, newPage }) => {
+  const s = await editLead(newPage, d);
+  await stayThenLeave(s, async () => {
+    if (!(await s.page.getByTestId('quick-menu-pop').isVisible())) await s.page.getByTestId('quick-menu').click();
+    await s.page.getByTestId('quick-section-execution').click();
+  });
+}, { knownBug: 'QA-012' });
+
+test('DL-18', "The chat's Settings button after a failed turn, with an edit not applied, asks first", async ({ d, newPage }) => {
+  const s = await editLead(newPage, d, { crash: true });
+  await stayThenLeave(s, () => s.page.getByTestId('next-settings').first().click());
+}, { knownBug: 'QA-012' });
 
 /** Opens a project with one finished turn and waits for the chat. */
 async function chatProject(newPage, d, name) {
@@ -206,5 +327,26 @@ test('DL-10', 'Deleting a conversation asks first, and Cancel keeps its messages
   assert.equal(convs.conversations.length, 1);
   // The harness then fails the test on the JS error Cancel throws (QA-010).
 });
+
+test('DL-19', 'A message queued while a run is going survives a reload until it is sent', async ({ d, newPage }) => {
+  const { page } = await chatProject(newPage, d, 'Queue reload');
+  const msg = 'Thêm chân trang nữa';
+  await page.getByTestId('composer').fill('slow first version');
+  await page.getByTestId('composer').press('Enter');
+  await page.getByTestId('assistant-msg').first().getByText('step1', { exact: false }).waitFor();
+  await page.getByTestId('composer').fill(msg);
+  await page.getByTestId('composer').press('Enter');
+  await page.getByTestId('queued').filter({ hasText: msg }).waitFor();
+  await sleep(600); // as DL-05: let a debounced draft save land
+  await page.reload();
+  await page.getByTestId('composer').waitFor();
+  // Still queued, back in the composer, or sent when the run ends: fine.
+  // Gone from all three is not.
+  const kept = await until(async () =>
+    (await page.locator('.msg.user', { hasText: msg }).count()) > 0 ||
+    (await page.getByTestId('queued').filter({ hasText: msg }).count()) > 0 ||
+    (await page.getByTestId('composer').inputValue()) === msg, 'queued message kept', 20_000).catch(() => false);
+  assert.ok(kept, 'after the reload the queued message is not queued, not sent and not in the composer');
+}, { knownBug: 'QA-014' });
 
 await run('drafts');

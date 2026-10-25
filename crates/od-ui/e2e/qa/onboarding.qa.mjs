@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { test, run, until, waitTurn } from './lib.mjs';
+import { test, run, until, waitTurn, overflowsX } from './lib.mjs';
 
 /** A fake OpenAI-compatible provider that answers 401 to everything. */
 function rejectingProvider() {
@@ -154,5 +154,31 @@ test('ONB-08', 'Onboarding can be finished with the keyboard only', async ({ d, 
   await page.keyboard.press('Enter');
   await page.waitForURL(d.base + '/');
 }, fresh);
+
+test('ONB-09', 'On a phone-sized window "API key required" sits with the key field and Save stays in place', async ({ d, newPage }) => {
+  const { page } = await newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(d.base + '/onboarding');
+  await page.getByTestId('onboarding-byok').click();
+  await page.getByTestId('byok-form').waitFor();
+  await page.getByTestId('byok-preset').selectOption('anthropic').catch(() => {});
+  await page.getByTestId('byok-key').fill('');
+  await page.getByText('API key required').first().waitFor();
+  // Tied to the field: named by its aria-describedby, or inside its block.
+  const tied = await page.getByTestId('byok-key').evaluate((input) => {
+    const ids = (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+    if (ids.some((i) => document.getElementById(i)?.textContent.includes('API key required'))) return true;
+    return !!input.closest('.field, label')?.textContent.includes('API key required');
+  });
+  assert.ok(tied, '"API key required" is not tied to the API key field (it sits in the button row)');
+  // Save, the main action, ends its row: next to Test, or at the right edge.
+  const save = await page.getByTestId('byok-save').boundingBox();
+  const testBtn = await page.getByTestId('byok-test').boundingBox();
+  const form = await page.getByTestId('byok-form').boundingBox();
+  const sameRow = Math.abs(save.y - testBtn.y) < 4;
+  const atRight = form.x + form.width - (save.x + save.width) < 24;
+  assert.ok(sameRow || atRight, `Save is alone on a line at x ${Math.round(save.x)}–${Math.round(save.x + save.width)}` +
+    ` (form ${Math.round(form.x)}–${Math.round(form.x + form.width)})`);
+  assert.equal(await overflowsX(page), false, 'the page scrolls sideways');
+}, { ...noAgent, knownBug: 'QA-016' });
 
 await run('onboarding', { onboarded: false });

@@ -141,4 +141,46 @@ test('CHAT-09', 'A message sent right after opening a project shows in the chat'
   }
 });
 
+test('CHAT-10', 'Switching to another conversation while the first still loads shows only the one picked', async ({ d, newPage }) => {
+  const { page, id } = await studio(newPage, d, 'Two conversations');
+  await send(page, 'message in conversation one');
+  await waitTurn(page, 0);
+  await page.getByTestId('new-conversation').click();
+  await until(async () => (await page.locator('[data-testid="conversation"] option').count()) === 2, 'second conversation');
+  await page.getByTestId('chat-empty').waitFor();
+  await send(page, 'message in conversation two');
+  await waitTurn(page, 0);
+  // Reopen the project; hold the transcript that loads first, pick the
+  // other conversation meanwhile, then let the held one arrive.
+  const b = await newPage();
+  let release;
+  const held = new Promise((r) => { release = r; });
+  let first = null;
+  await b.page.route(/\/conversations\/[^/]+\/messages$/, async (route) => {
+    const cid = decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-2));
+    first ??= cid;
+    if (cid !== first) return route.continue();
+    const res = await route.fetch();
+    await held;
+    await route.fulfill({ response: res }).catch(() => {});
+  });
+  await b.page.goto(`${d.base}/projects/${id}`);
+  await until(() => first, 'first transcript asked');
+  const select = b.page.getByTestId('conversation');
+  await until(async () => (await select.locator('option').count()) === 2, 'both conversations listed');
+  const other = await select.evaluate((s, f) => [...s.options].find((o) => o.value !== f).value, first);
+  const stored = await (await fetch(`${d.base}/api/projects/${id}/conversations/${encodeURIComponent(other)}/messages`)).json();
+  const want = stored.messages.find((m) => m.role === 'user').content;
+  await select.selectOption(other);
+  await b.page.locator('.msg.user', { hasText: want }).waitFor();
+  const answered = b.page.waitForResponse((r) => r.url().includes(encodeURIComponent(first)) && r.url().endsWith('/messages'), { timeout: 3000 });
+  release();
+  await answered.catch(() => {});
+  await b.page.waitForTimeout(500); // the held answer is decoded after the response event
+  const users = await b.page.locator('.msg.user').allInnerTexts();
+  assert.deepEqual(users.map((t) => t.trim()).filter(Boolean).map((t) => t.includes(want)), [true],
+    `the chat shows ${JSON.stringify(users)} for the conversation picked (${want})`);
+  assert.equal(await select.inputValue(), other, 'the picked conversation is no longer selected');
+});
+
 await run('chat');

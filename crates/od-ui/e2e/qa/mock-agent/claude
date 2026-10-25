@@ -3,6 +3,8 @@
 # the daemon's PATH). Requests of its own, everything else goes to the
 # shared mock unchanged:
 # - `qa-crash`: prints to stderr and exits 3 without a result line.
+# - `qa-jury-slow`: a Design Jury that closes round 1, then thinks until
+#   it is interrupted.
 shared="$(cd "$(dirname "$0")/../../mock-agent" && pwd)/claude"
 case "$1" in --version) exec "$shared" "$@";; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then exec "$shared" "$@"; fi
@@ -20,6 +22,14 @@ case "$req" in *qa-crash*)
   printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
   echo "mock: model overloaded, try again later" >&2
   exit 3
+;; esac
+
+case "$req" in *qa-jury-slow*)
+  # A Design Jury that closes round 1 and then thinks until interrupted.
+  printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+  printf '%s\n' '{"type":"assistant","message":{"id":"qa-j1","role":"assistant","content":[{"type":"text","text":"<CRITIQUE_RUN version=\"1\" maxRounds=\"3\" threshold=\"8.0\" scale=\"10\"><ROUND n=\"1\"><PANELIST role=\"designer\"><NOTES>Draft.</NOTES><ARTIFACT><![CDATA[<h1 id=\"title\">Jury round one</h1>]]></ARTIFACT></PANELIST><PANELIST role=\"critic\" score=\"6\" must_fix=\"1\"><MUST_FIX>More contrast.</MUST_FIX></PANELIST><PANELIST role=\"brand\" score=\"7\"></PANELIST><PANELIST role=\"a11y\" score=\"6\"></PANELIST><PANELIST role=\"copy\" score=\"7\"></PANELIST><ROUND_END n=\"1\" decision=\"continue\"></ROUND_END></ROUND><ROUND n=\"2\"><PANELIST role=\"designer\"><NOTES>Trying again.</NOTES></PANELIST>"}]}}'
+  sleep 60
+  exit 0
 ;; esac
 
 # Not ours: hand the line (and the rest of stdin) to the shared mock.

@@ -156,4 +156,30 @@ test('HOME-11', 'On a phone-sized window Home has no sideways scroll and Create 
   assert.ok(box && box.x >= 0 && box.x + box.width <= 390, `Create is outside the screen: ${JSON.stringify(box)}`);
 });
 
+test('HOME-12', 'While design systems load, the kept pick shows its name or a loading word, not a raw id', async ({ d, newPage }) => {
+  const { page } = await home(newPage, d);
+  const select = page.getByTestId('design-system');
+  await until(async () => (await select.locator('option').count()) > 2, 'design systems');
+  const pick = await select.locator('option').evaluateAll((os) =>
+    os.map((o) => ({ id: o.value, name: o.textContent.trim() })).find((o) => o.id && o.name !== o.id));
+  assert.ok(pick, 'no design system whose name differs from its id');
+  await select.selectOption(pick.id);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await page.route(/\/api\/design-systems(\?|$)/, async (route) => {
+    await held;
+    await route.continue().catch(() => {});
+  });
+  await page.reload();
+  await page.getByTestId('brief').waitFor();
+  const none = await select.locator('option').first().textContent();
+  const shown = await until(async () => {
+    const t = await select.evaluate((s) => s.selectedOptions[0]?.textContent.trim());
+    return t && t !== none.trim() && t;
+  }, 'the kept pick shows', 3000).catch(() => '');
+  release();
+  assert.notEqual(shown, pick.id, `while the list loads the picker shows the raw id "${pick.id}"`);
+  await until(async () => (await select.inputValue()) === pick.id, 'the pick is kept once loaded');
+}, { knownBug: 'QA-017' });
+
 await run('home');
