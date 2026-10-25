@@ -236,13 +236,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rescan_without_a_login_shell_keeps_the_path() {
+    /// A daemon started from a terminal (no login shell): rescan keeps its
+    /// `PATH` first and adds the usual install folders, so `claude` from
+    /// the native installer (`~/.local/bin`) is found.
+    async fn rescan_without_a_login_shell_adds_the_install_folders() {
         let engine = crate::RunEngine::new(crate::EngineConfig {
             path: OsString::from("/only/here"),
             login_shell: None,
             ..crate::EngineConfig::from_env()
         });
-        engine.rescan_path().await;
-        assert_eq!(engine.config().path, OsString::from("/only/here"));
+        assert!(engine.rescan_path().await);
+        let path = engine.config().path.clone();
+        let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        assert_eq!(dirs[0], PathBuf::from("/only/here"));
+        assert!(
+            dirs.contains(&PathBuf::from("/opt/homebrew/bin")),
+            "{dirs:?}"
+        );
+        if let Some(home) = std::env::var_os("HOME") {
+            assert!(
+                dirs.contains(&Path::new(&home).join(".local/bin")),
+                "{dirs:?}"
+            );
+        }
+        // Nothing new the second time.
+        assert!(!engine.rescan_path().await);
     }
 }
