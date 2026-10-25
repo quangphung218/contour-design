@@ -17,15 +17,19 @@ QA-001…010): QA-011…017 come from the two reviews of those fixes
 conversation switched while loading now has a test (CHAT-10, passes; it
 goes red when the guard's `return` is removed).
 
+Round 2 fixes (5728ac3…bae2d3d): QA-011…017 fixed; `make e2e-qa` twice
+at bae2d3d, 101 of 102 pass. STU-14 (QA-015) stays marked: the fix works,
+the test reads the frame mid-transition (see QA-015).
+
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
-| QA-011 | 🟠 | Desktop app: choosing Leave on the "edit not applied" question does not leave; every in-app link is dead while an edit is unapplied | `drafts.qa.mjs` DL-13 | Open |
-| QA-014 | 🟠 | A message queued while a run is going is lost on a reload (queue only in memory, draft cleared at queue time) | `drafts.qa.mjs` DL-19 | Open |
-| QA-013 | 🟠 | Esc that closes a drop-down menu also stops a running Design Jury and turns off comment mode or the tool | `export.qa.mjs` EXP-10, EXP-11 | Open |
-| QA-012 | 🟡 | Leaving through the command palette, the quick menu or the chat's Settings button does not ask about an edit not applied | `drafts.qa.mjs` DL-15…DL-18 | Open |
-| QA-015 | 🟡 | Zoom label says 100% while Tablet is drawn shrunk to fit; + changes the label, not the page | `studio.qa.mjs` STU-14 | Open |
-| QA-016 | 🔵 | BYOK on a phone: "API key required" sits in the button row, not with the key field, and pushes Save onto its own line | `onboarding.qa.mjs` ONB-09 | Open |
-| QA-017 | 🔵 | Home: while design systems load, the kept pick shows its raw id | `home.qa.mjs` HOME-12 | Open |
+| QA-011 | 🟠 | Desktop app: choosing Leave on the "edit not applied" question does not leave; every in-app link is dead while an edit is unapplied | `drafts.qa.mjs` DL-13 | Fixed |
+| QA-014 | 🟠 | A message queued while a run is going is lost on a reload (queue only in memory, draft cleared at queue time) | `drafts.qa.mjs` DL-19 | Fixed |
+| QA-013 | 🟠 | Esc that closes a drop-down menu also stops a running Design Jury and turns off comment mode or the tool | `export.qa.mjs` EXP-10, EXP-11 | Fixed |
+| QA-012 | 🟡 | Leaving through the command palette, the quick menu or the chat's Settings button does not ask about an edit not applied | `drafts.qa.mjs` DL-15…DL-18 | Fixed |
+| QA-015 | 🟡 | Zoom label says 100% while Tablet is drawn shrunk to fit; + changes the label, not the page | `studio.qa.mjs` STU-14 | Fixed (test timing, see below) |
+| QA-016 | 🔵 | BYOK on a phone: "API key required" sits in the button row, not with the key field, and pushes Save onto its own line | `onboarding.qa.mjs` ONB-09 | Fixed |
+| QA-017 | 🔵 | Home: while design systems load, the kept pick shows its raw id | `home.qa.mjs` HOME-12 | Fixed |
 | QA-006 | 🟠 | Edit panel: an Apply in one tab wipes text typed in another tab, and text typed while the Apply is saving | `drafts.qa.mjs` DL-01, DL-02, DL-03 | Fixed |
 | QA-008 | 🟠 | Drafts are not kept: composer text and the Home brief and design system vanish on reload or navigation | `drafts.qa.mjs` DL-05, DL-06, DL-07 | Fixed |
 | QA-007 | 🟡 | Closing or reloading the page with a manual edit not applied gives no warning | `drafts.qa.mjs` DL-04 | Fixed |
@@ -235,6 +239,7 @@ the dialog plugin's override.
   (`Dialog`/`ConfirmBar`; `lib_ui.rs:82` already avoids `window.confirm`),
   and on Leave call `use_navigate()` to the link's `href`. The same helper
   serves QA-012.
+- **Fixed** (5728ac3, bae2d3d): the guard moved to the shell (`leave_guard.rs`). A leaving link click with unsaved work is always stopped and the app's own dialog asks; Leave navigates to the link's path. No `window.confirm` any more.
 
 ## QA-012 🟡 Leaving through the palette, quick menu or chat buttons does not ask
 
@@ -255,6 +260,7 @@ the guard only sees clicks on `a[href]`.
   `chat_view.rs:83` (MCP) and `:707` (Settings). Not tested: the chat's MCP
   path (`/mcp` in the composer). Fix with one shared "navigate unless an
   edit is unapplied" helper that asks first (see QA-011).
+- **Fixed** (9a85549): the palette, quick menu, chat (Settings, MCP) and composer (MCP) go through `use_leave()`, which asks the same question first. Not covered: the palette's switch to another project reloads the page (`location.assign`), so only `beforeunload` asks.
 
 ## QA-013 🟠 Esc that closes a drop-down menu also stops a Design Jury or comment mode
 
@@ -276,6 +282,7 @@ Reported by the UX review of the QA-004 fix.
   mode or the tool. Stop the event in `MenuScrim` (capture phase,
   `stop_immediate_propagation`), or have those listeners skip it while a
   `.menu-scrim` is shown.
+- **Fixed** (dda7917): `MenuScrim` listens in the capture phase on the window and calls `stop_immediate_propagation` on the Esc it uses.
 
 ## QA-014 🟠 A message queued while a run is going is lost on a reload
 
@@ -295,6 +302,7 @@ Reported by the correctness review of the QA-008 fix.
   `clear_draft_if` when it queues; the queue (`ctx.queue`) lives only in
   memory. Clear the draft only when `send_next` really sends (the `Ok`
   branch at `studio.rs:442` does it already), or store the queue.
+- **Fixed** (14d3ea6): `send` no longer clears the stored draft when it queues; the draft goes when the run is created. After a reload the queued text is back in the composer. Left: deleting a queued message keeps its stored draft, so a reload brings it back to the composer.
 
 ## QA-015 🟡 Zoom label says 100% while Tablet is drawn shrunk to fit
 
@@ -313,6 +321,7 @@ the gap visible.
 - **Code**: `crates/od-ui/src/app/studio.rs:1481` prints `ctx.zoom`, not the
   fitted `zoom` memo (`fit_zoom`, `:1271`). Show the fitted value (or mark
   it "fit"), and disable + (`at_max_zoom`) when the fit caps it.
+- **Fixed** (759581a): the label shows the fitted zoom, and the zoom buttons and keys step from it, off when a step would not change the drawn size. **STU-14 stays `knownBug`, test timing**: it reads the drawn width as soon as it is under 100 %, while `.frame-wrap` is still in its 0.3 s width transition (650 → 820 px under the new scale). A probe every 100 ms after Tablet read 63, 76, 79, 79, 79… with the label at 79, and + off. The test should wait for the width to settle (e.g. two equal reads) before comparing; QA to change it.
 
 ## QA-016 🔵 BYOK on a phone: "API key required" sits in the button row
 
@@ -329,6 +338,7 @@ Reported by the UX review of the QA-005 fix.
 - **Code**: `crates/od-ui/src/app/byok_form.rs:332`. Move it into the
   API key `.field` (`:273`) with an id, and point `aria-describedby` of
   `byok-key` at it.
+- **Fixed** (5b38cb5): the line is in the API key field, with an id the input names in `aria-describedby`. Also (56ffb95, QA-005 follow-up): the daemon answers 400 to a BYOK provider on a public host saved with no key, sent or stored; loopback, LAN and `.local` hosts still save without one.
 
 ## QA-017 🔵 Home: while design systems load, the kept pick shows its raw id
 
@@ -342,3 +352,5 @@ Reported by the UX review of the QA-008 fix.
 - **Code**: `crates/od-ui/src/app/home.rs:407` renders `id` as the option
   text. Show a loading label (or keep the name with the id in
   `localStorage`).
+- **Fixed** (724cdab): while the list loads the kept pick reads "Loading…" and the picker is disabled.
+
