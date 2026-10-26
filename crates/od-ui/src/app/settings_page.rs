@@ -980,7 +980,7 @@ const BUILT_ON: &str = "Built on OpenDesign by nexu-io (Apache-2.0)";
 
 /// Bundled work by others, as (name, holder and license). The full texts
 /// are in the license files below and in each content folder's LICENSE.
-const CREDITS: [(&str, &str); 12] = [
+const CREDITS: [(&str, &str); 13] = [
     ("xterm.js", "The xterm.js authors · MIT"),
     ("Remix Icon 4.8.0", "Remix Design · Apache-2.0"),
     ("Geist, Geist Mono", "Vercel, basement.studio · OFL-1.1"),
@@ -996,6 +996,7 @@ const CREDITS: [(&str, &str); 12] = [
     ),
     ("guizang-ppt-skill", "op7418 · MIT"),
     ("html-ppt", "lewislulu · MIT"),
+    ("huashu-design (critique, tweaks)", "alchaincyf · MIT"),
     ("Pitch Agent (financial-services)", "Anthropic · Apache-2.0"),
     ("agent-browser", "Vercel · Apache-2.0"),
     (

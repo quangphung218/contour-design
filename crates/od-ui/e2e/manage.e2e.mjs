@@ -380,7 +380,8 @@ try {
   await page.getByTestId('about-version').waitFor();
   // About > Licenses: the attribution line and the shipped license files.
   assert.equal(await page.getByTestId('about-built-on').textContent(), 'Built on OpenDesign by nexu-io (Apache-2.0)');
-  assert.ok((await page.getByTestId('about-credits').locator('li').count()) >= 10, 'credits listed');
+  assert.ok((await page.getByTestId('about-credits').locator('li').count()) >= 13, 'credits listed');
+  assert.ok((await page.getByTestId('about-credits').textContent()).includes('huashu-design'), 'huashu-design credited');
   for (const [file, text] of [['LICENSE', 'Apache License'], ['NOTICE', 'nexu-io'], ['THIRD-PARTY-LICENSES', 'Rust crates']]) {
     await page.locator(`[data-testid="license-file"][data-file="${file}"]`).click();
     const shown = page.locator(`[data-testid="license-text"][data-file="${file}"]`);
