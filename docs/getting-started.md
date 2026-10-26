@@ -12,7 +12,7 @@ Releases are published on the repository's
 
 | Platform | File | Notes |
 |---|---|---|
-| macOS (Apple silicon and Intel) | `Contour_<version>_universal.dmg` | Open the `.dmg` and drag Contour to Applications. Unsigned builds need one extra step the first time: see [Open an unsigned build on macOS](#open-an-unsigned-build-on-macos). |
+| macOS 13.3 or later (Apple silicon and Intel) | `Contour_<version>_universal.dmg` | Open the `.dmg` and drag Contour to Applications. Unsigned builds need one extra step the first time: see [Open an unsigned build on macOS](#open-an-unsigned-build-on-macos). |
 | Linux x64 | `Contour_<version>_amd64.AppImage` or `.deb` | `chmod +x` the AppImage and run it, or `sudo apt install ./Contour_<version>_amd64.deb`. |
 | Windows x64 | `Contour_<version>_x64_en-US.msi` | Best effort: Windows is compile-checked but not tested yet. |
 
@@ -31,7 +31,7 @@ this check.
    **Open Anyway** and enter your password.
 3. Open Contour again and click **Open Anyway** in the dialog.
 
-**macOS 14 (Sonoma) and earlier.** Control-click (or right-click) Contour in
+**macOS 13.3 to 14 (Sonoma).** Control-click (or right-click) Contour in
 Applications ▸ **Open**, then **Open** in the dialog.
 
 **Any version, from Terminal:**

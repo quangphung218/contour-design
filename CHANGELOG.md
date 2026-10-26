@@ -10,6 +10,12 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [0.2.0-beta.2] - 2026-10-26
 
+### Changed
+
+- The macOS app needs macOS 13.3 or later: the preview's reload guard relies
+  on the browser telling the app's own loads from the page's, which older
+  versions of the system web view do not do.
+
 ### Fixed
 
 - A plugin run whose agent finished at once (a quick failure, a fast model) no
