@@ -1522,7 +1522,7 @@ messages! {
     MediaAudioKind => "Audio type", "Loại âm thanh";
     SecondsN => "{0}s", "{0} giây";
     WorkingDir => "Working directory", "Thư mục làm việc";
-    WorkingDirPick => "Choose folder", "Chọn thư mục";
+    WorkingDirPick => "Let the agent read a folder", "Cho agent đọc một thư mục";
     WorkingDirReplace => "Change working directory", "Đổi thư mục làm việc";
     WorkingDirRecent => "Recent folders", "Thư mục gần đây";
     WorkingDirClear => "Remove working directory", "Bỏ thư mục làm việc";
@@ -1607,7 +1607,7 @@ messages! {
     MediaNotes => "Style notes", "Ghi chú phong cách";
     CreatePlugin => "Create plugin", "Tạo plugin";
     CreatePluginPrompt => "Create a plugin for:", "Tạo một plugin cho:";
-    FromFolder => "From folder", "Từ thư mục";
+    FromFolder => "Open a folder as a project", "Mở thư mục thành project";
     StartFrom => "Start", "Bắt đầu";
     ShortcutMention => "Mention a file, plugin, skill or MCP server", "Nhắc tới file, plugin, skill hoặc MCP server";
     ShortcutSlash => "Commands (at the start of a line)", "Lệnh (ở đầu dòng)";

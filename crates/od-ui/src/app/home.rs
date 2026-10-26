@@ -626,7 +626,8 @@ fn HomeActions(
         </button>
         <button type="button" class="menu-item" role="menuitem" data-testid="action-from-folder"
             on:click=pick_folder>
-            {icon(Glyph::FolderOpen)}{t(T::FromFolder)}
+            // Not the working directory's icon: this one leaves for a new project.
+            {icon(Glyph::FolderAdd)}{t(T::FromFolder)}
         </button>
     }
 }

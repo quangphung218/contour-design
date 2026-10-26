@@ -211,6 +211,13 @@ test('HOME-14', 'Home has one composer with one row of controls; starting points
   for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) assert.equal(await page.getByTestId(id).count(), 0, `${id} outside "+"`);
   await page.getByTestId('plus-menu').click();
   for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) await page.getByTestId(id).waitFor();
+  // The two folder items say what each does and do not share an icon.
+  const folder = page.getByTestId('action-from-folder');
+  const workdir = page.getByTestId('working-dir-pick');
+  assert.equal((await folder.innerText()).trim(), 'Open a folder as a project');
+  assert.equal((await workdir.innerText()).trim(), 'Let the agent read a folder');
+  const svg = (l) => l.locator('svg').first().evaluate((e) => e.innerHTML);
+  assert.notEqual(await svg(folder), await svg(workdir), 'same icon on both folder items');
   // The dialog is the full one from the Design systems page.
   await page.getByTestId('ds-new').click();
   await page.getByTestId('ds-create').waitFor();
