@@ -174,10 +174,11 @@ async fn deliverable(
         });
         // Local log only: how often a run writes another page than its
         // entry (the Studio then opens that page instead of warning).
-        let other_page = touched.iter().any(|t| {
-            (t.ends_with(".html") || t.ends_with(".htm"))
-                && res.entry_file.as_deref().is_none_or(|e| !t.ends_with(e))
-        });
+        let other_page = wrote_other_page(
+            &touched,
+            listing.as_ref().map(|(d, _)| d.as_path()),
+            res.entry_file.as_deref(),
+        );
         tracing::info!(validation = ?res.validation, other_page, "deliverable checked");
         Ok(res)
     })
@@ -263,6 +264,19 @@ fn relative_to(dir: &FsPath, path: &str) -> Option<String> {
     let rel = canon(&abs).strip_prefix(canon(dir)).ok()?.to_path_buf();
     let rel = rel.to_string_lossy().replace('\\', "/");
     safe_relative(&rel)
+}
+
+/// Whether the run wrote an HTML page other than `entry`, comparing paths
+/// relative to the project folder `dir` (`old/index.html` is not
+/// `index.html`). A page outside the folder is another page.
+fn wrote_other_page(touched: &[String], dir: Option<&FsPath>, entry: Option<&str>) -> bool {
+    touched
+        .iter()
+        .filter(|t| t.ends_with(".html") || t.ends_with(".htm"))
+        .any(|t| {
+            let rel = dir.and_then(|d| relative_to(d, t));
+            entry.is_none_or(|e| rel.as_deref() != Some(e))
+        })
 }
 
 /// Whether the entry page links to a page the run wrote (a multi-page
@@ -460,6 +474,22 @@ mod tests {
             fx.check(&p, &[fx.abs("a.css")]).validation,
             V::EntryNotTouched
         );
+    }
+
+    #[test]
+    fn another_page_is_told_apart_by_its_whole_path() {
+        let fx = Fixture::new(&[
+            ("index.html", FileKind::Html, "<h1>x</h1>"),
+            ("old/index.html", FileKind::Html, "<h1>old</h1>"),
+        ]);
+        let dir = Some(fx.dir.path());
+        let other = |t: &[String]| wrote_other_page(t, dir, Some("index.html"));
+        assert!(!other(&[fx.abs("index.html")]));
+        assert!(!other(&["index.html".into(), fx.abs("a.css")]));
+        assert!(other(&[fx.abs("old/index.html")]));
+        assert!(other(&["old/index.html".into()]));
+        assert!(other(&["/elsewhere/index.html".into()]));
+        assert!(wrote_other_page(&[fx.abs("index.html")], dir, None));
     }
 
     #[test]
