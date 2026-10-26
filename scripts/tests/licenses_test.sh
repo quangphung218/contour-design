@@ -23,5 +23,20 @@ elif scripts/licenses.py check --third-party "$tmp/third-party" >/dev/null 2>&1;
   fail=1
 fi
 
+# A modified content file missing from NOTICE (needs an open-design checkout).
+if [ ! -d "${OPEN_DESIGN:-$HOME/Documents/GitHub/open-design}/.git" ]; then
+  echo "SKIP NOTICE modified files: no open-design checkout (set OPEN_DESIGN)"
+else
+  awk '/^Modified files \(generated/ { section = 1 }
+       section && !done && /^- content\// { done = 1; next } { print }' NOTICE >"$tmp/notice"
+  if cmp -s NOTICE "$tmp/notice"; then
+    echo "FAIL test setup: no modified-file line to drop"
+    fail=1
+  elif scripts/licenses.py check --notice "$tmp/notice" >/dev/null 2>&1; then
+    echo "FAIL check passed with a modified file missing from NOTICE"
+    fail=1
+  fi
+fi
+
 [ "$fail" -eq 0 ] && echo "licenses: all checks passed"
 exit "$fail"
