@@ -13,8 +13,10 @@ use crate::state::AppState;
 use axum::extract::State;
 use axum::http::header;
 use axum::response::IntoResponse;
+use regex::Regex;
 use serde_json::{Map, Value, json};
 use std::io::Write;
+use std::sync::LazyLock;
 
 pub const MAX_RUNS: usize = 100;
 pub const MAX_RUN_LOGS: usize = 10;
@@ -53,50 +55,40 @@ pub fn scrub(value: Value) -> Value {
     }
 }
 
-/// [`scrub`] for a log line: hides the value of each `key=value` field
-/// whose key looks secret (`api_key="sk-…"` → `api_key=[redacted]`).
+/// A `name=value` pair anywhere in a line: a log field, a query string
+/// parameter (`?api_key=…&`), a pair inside another field's quoted value.
+/// The value is a quoted string or runs to whitespace, `&`, `,`, `;` or a
+/// quote; whatever it leaves out is scanned as the rest of the line.
+static PAIR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"([\w.-]+)=("(?:[^"\\]|\\.)*"|[^\s&,;"']*)"#).expect("valid regex")
+});
+/// `Bearer <token>`, as in an `Authorization` header.
+static BEARER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)\b(bearer)\s+[^\s"'&]+"#).expect("valid regex"));
+
+/// [`scrub`] for a log line: hides the value of every `name=value` pair
+/// whose name looks secret, wherever it sits (`api_key="sk-…"`,
+/// `url=http://x/?token=…`), and bearer tokens.
 #[must_use]
 pub fn scrub_line(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut rest = line;
-    while let Some(eq) = rest.find('=') {
-        let (head, value) = (&rest[..eq], &rest[eq + 1..]);
-        let key_start = head
-            .char_indices()
-            .rev()
-            .find(|(_, c)| !(c.is_alphanumeric() || matches!(c, '_' | '.' | '-')))
-            .map_or(0, |(i, c)| i + c.len_utf8());
-        let key = &head[key_start..];
-        let len = value_len(value);
-        out.push_str(head);
-        out.push('=');
-        if !key.is_empty() && is_secret_key(key) {
-            out.push_str("[redacted]");
+    let line = BEARER.replace_all(line, "$1 [redacted]");
+    PAIR.replace_all(&line, |c: &regex::Captures<'_>| {
+        if is_secret_key(&c[1]) {
+            format!("{}=[redacted]", &c[1])
         } else {
-            out.push_str(&value[..len]);
-        }
-        rest = &value[len..];
-    }
-    out.push_str(rest);
-    out
-}
-
-/// Bytes of a field value at the start of `s`: a quoted string up to its
-/// closing quote, else up to the next whitespace.
-fn value_len(s: &str) -> usize {
-    if let Some(quoted) = s.strip_prefix('"') {
-        let mut escaped = false;
-        for (i, c) in quoted.char_indices() {
-            match c {
-                _ if escaped => escaped = false,
-                '\\' => escaped = true,
-                '"' => return i + 2,
-                _ => {}
+            // Pairs inside the value: a query string, a quoted message.
+            let value = &c[2];
+            match value
+                .strip_prefix('"')
+                .and_then(|v| v.strip_suffix('"'))
+                .filter(|_| value.len() >= 2)
+            {
+                Some(inner) => format!("{}=\"{}\"", &c[1], scrub_line(inner)),
+                None => format!("{}={}", &c[1], scrub_line(value)),
             }
         }
-        return s.len();
-    }
-    s.find(char::is_whitespace).unwrap_or(s.len())
+    })
+    .into_owned()
 }
 
 /// The last [`LOG_LINES`] lines of the daemon log, scrubbed, one per line.
@@ -242,6 +234,30 @@ mod tests {
         assert_eq!(scrub_line("no fields here"), "no fields here");
         assert_eq!(scrub_line(r#"key="a\"b" x=1"#), "key=[redacted] x=1");
         assert_eq!(scrub_line("é=1 secret="), "é=1 secret=[redacted]");
+    }
+
+    #[test]
+    fn scrub_line_looks_inside_other_values() {
+        assert_eq!(
+            scrub_line("blocked url=http://x/?api_key=sk-1"),
+            "blocked url=http://x/?api_key=[redacted]"
+        );
+        assert_eq!(
+            scrub_line("url=https://maps.example/js?v=3&key=AIza-9&cb=init status=403"),
+            "url=https://maps.example/js?v=3&key=[redacted]&cb=init status=403"
+        );
+        assert_eq!(
+            scrub_line(r#"error="refused: token=abc, retry" code=401"#),
+            r#"error="refused: token=[redacted], retry" code=401"#
+        );
+        assert_eq!(
+            scrub_line(r#"header="Authorization: Bearer sk-live-7""#),
+            r#"header="Authorization: Bearer [redacted]""#
+        );
+        assert_eq!(
+            scrub_line("PASSWORD=hunter2 Client_Secret=s3"),
+            "PASSWORD=[redacted] Client_Secret=[redacted]"
+        );
     }
 
     #[test]
