@@ -87,3 +87,7 @@ Turn chat content into a configurable motion overlay clip instead of a single ha
 - Transcript/config to spec: `scripts/build_chat_overlay_spec.py`
 - Remotion bundle preparation: `scripts/prepare_chat_overlay_bundle.py`
 - Remotion render template: `assets/remotion-template/`
+
+## Remotion license
+
+The Remotion bundle declares `remotion` as an npm dependency; it is not shipped with this skill. Remotion has its own license (https://www.remotion.dev/license): free for individuals and companies of up to 3 people, a company license otherwise. Tell the user before they render a video with it.

@@ -63,6 +63,11 @@ jobs:
       - name: Linux packages
         run: scripts/linux-deps.sh
       - run: make lint
+      # THIRD-PARTY-LICENSES must match Cargo.lock (`make licenses`). The
+      # NOTICE modified-files part needs an open-design checkout and is
+      # checked by `make check` locally.
+      - name: Third-party licenses
+        run: scripts/licenses.py check
 
   test:
     name: test (${{ matrix.os }})

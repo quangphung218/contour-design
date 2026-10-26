@@ -471,6 +471,29 @@ mod tests {
         }
     }
 
+    /// Apache-2.0 §4(a)/(d) and the MIT/MPL notices: the app ships LICENSE,
+    /// NOTICE and THIRD-PARTY-LICENSES next to `content/`, where the daemon
+    /// serves them from (`GET /api/licenses/:name`).
+    #[test]
+    fn the_bundle_ships_the_license_files() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let conf: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("tauri.conf.json")).unwrap())
+                .unwrap();
+        let resources = conf["bundle"]["resources"].as_object().unwrap();
+        assert_eq!(resources["../../content/"], "content/");
+        for name in od_server::routes::licenses::FILES {
+            let source = format!("../../{name}");
+            assert_eq!(
+                resources.get(&source).and_then(|v| v.as_str()),
+                Some(name),
+                "{name}"
+            );
+            let text = std::fs::read_to_string(dir.join(&source)).unwrap();
+            assert!(!text.trim().is_empty(), "{name} is empty");
+        }
+    }
+
     #[test]
     fn only_web_links_open_in_the_browser() {
         let opens = |u: &str| opens_in_browser(&Url::parse(u).unwrap());

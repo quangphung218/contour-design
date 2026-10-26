@@ -1007,6 +1007,84 @@ fn About() -> impl IntoView {
                 Ok(m) => view! { <p class="ok-text small" data-testid="diagnostics-state">{m}</p> }.into_any(),
                 Err(e) => view! { <p class="error-text small" data-testid="diagnostics-state">{e}</p> }.into_any(),
             })}
+            <Licenses/>
         </div>
+    }
+}
+
+/// Attribution the licenses require (Apache-2.0 §4, MIT notices). The one
+/// place the UI names the original app (`docs/brand.md`).
+const BUILT_ON: &str = "Built on OpenDesign by nexu-io (Apache-2.0)";
+
+/// Bundled work by others, as (name, holder and license). The full texts
+/// are in the license files below and in each content folder's LICENSE.
+const CREDITS: [(&str, &str); 13] = [
+    ("xterm.js", "The xterm.js authors · MIT"),
+    ("Remix Icon 4.8.0", "Remix Design · Apache-2.0"),
+    ("Geist, Geist Mono", "Vercel, basement.studio · OFL-1.1"),
+    ("React, React DOM, Sucrase", "Meta and contributors · MIT"),
+    ("refero_skill (craft)", "Refero · MIT"),
+    (
+        "awesome-design-md, awesome-design-skills",
+        "VoltAgent, Bergside · MIT",
+    ),
+    (
+        "kami, tom-modern, Kumo",
+        "Tw93, Tom-Opencart, Cloudflare · MIT",
+    ),
+    ("guizang-ppt-skill", "op7418 · MIT"),
+    ("html-ppt", "lewislulu · MIT"),
+    ("huashu-design (critique, tweaks)", "alchaincyf · MIT"),
+    ("Pitch Agent (financial-services)", "Anthropic · Apache-2.0"),
+    ("agent-browser", "Vercel · Apache-2.0"),
+    (
+        "Prompt templates",
+        "authors named in each template · CC-BY-4.0, Apache-2.0, MIT",
+    ),
+];
+
+/// About ▸ Licenses: the attribution line, the credits and the license
+/// files shipped with the app (`GET /api/licenses/:name`), one open at a time.
+#[component]
+fn Licenses() -> impl IntoView {
+    const FILES: [&str; 3] = ["LICENSE", "NOTICE", "THIRD-PARTY-LICENSES"];
+    let open = RwSignal::new(None::<(&'static str, Result<String, String>)>);
+    let toggle = move |name: &'static str| {
+        if open.with_untracked(|o| o.as_ref().is_some_and(|(n, _)| *n == name)) {
+            open.set(None);
+            return;
+        }
+        leptos::task::spawn_local(async move {
+            let text = api::get_text(&format!("/api/licenses/{name}"))
+                .await
+                .map_err(|e| e.to_string());
+            open.set(Some((name, text)));
+        });
+    };
+    view! {
+        <section class="about-licenses" data-testid="about-licenses">
+            <h3>{t(T::Licenses)}</h3>
+            <p class="small" data-testid="about-built-on">{BUILT_ON}</p>
+            <p class="muted small">{t(T::LicensesHint)}</p>
+            <h4 class="small">{t(T::Credits)}</h4>
+            <ul class="about-credits small" data-testid="about-credits">
+                {CREDITS.into_iter().map(|(name, by)| view! {
+                    <li><strong>{name}</strong>" · "<span class="muted">{by}</span></li>
+                }).collect_view()}
+            </ul>
+            <div class="row wrap">
+                {FILES.into_iter().map(|name| view! {
+                    <button class="btn small" data-testid="license-file" data-file=name
+                        aria-pressed=move || open.with(|o| o.as_ref().is_some_and(|(n, _)| *n == name)).to_string()
+                        on:click=move |_| toggle(name)>
+                        {icon(Glyph::FileText)}{name}
+                    </button>
+                }).collect_view()}
+            </div>
+            {move || open.get().map(|(name, text)| match text {
+                Ok(text) => view! { <pre class="license-text mono" data-testid="license-text" data-file=name>{text}</pre> }.into_any(),
+                Err(e) => view! { <p class="error-text small" data-testid="license-text">{e}</p> }.into_any(),
+            })}
+        </section>
     }
 }

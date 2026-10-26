@@ -116,3 +116,5 @@ Bugs, layout issues, new layout requests — Issues and PRs welcome. Prioritize:
 ## License
 
 MIT © 2026 [op7418](https://github.com/op7418)
+
+Provenance: this copy is the MIT-licensed release of op7418/guizang-ppt-skill, imported from upstream commits 604f5f3 (2026-04-23) and b3e2ec7 (2026-04-24). Upstream switched to AGPL-3.0 at commit 014c572 (2026-05-28); do not sync anything from 014c572 or later into this folder.

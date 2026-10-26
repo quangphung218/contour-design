@@ -488,6 +488,9 @@ messages! {
     DiagnosticsHint => "A zip built on this machine: versions, settings without keys, detected agents and recent run logs. Nothing is uploaded.", "File zip tạo trên máy này: phiên bản, cài đặt không kèm key, agent tìm thấy và log run gần đây. Không gửi lên đâu.";
     DiagnosticsSaved => "Saved diagnostics to {0}", "Đã lưu chẩn đoán vào {0}";
     ResetOnboarding => "Reset onboarding", "Chạy lại thiết lập ban đầu";
+    Licenses => "Licenses", "Giấy phép";
+    LicensesHint => "Contour is licensed under the Apache License 2.0. These files ship with the app.", "Contour dùng giấy phép Apache License 2.0. Các file này đi kèm app.";
+    Credits => "Credits", "Ghi công";
     // Automations
     MetricActive => "Active", "Đang bật";
     MetricPaused => "Paused", "Tạm dừng";

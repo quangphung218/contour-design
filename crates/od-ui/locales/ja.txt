@@ -269,6 +269,9 @@ ExportDiagnostics = 診断情報をエクスポート
 DiagnosticsHint = このマシンで作成する zip です。バージョン、キーを除く設定、検出されたエージェント、最近の実行ログを含みます。アップロードはされません。
 DiagnosticsSaved = 診断情報を {0} に保存しました
 ResetOnboarding = 初期設定をやり直す
+Licenses = ライセンス
+LicensesHint = Contour は Apache License 2.0 で提供されています。これらのファイルはアプリに同梱されています。
+Credits = クレジット
 # Automations
 MetricActive = 有効
 MetricPaused = 一時停止

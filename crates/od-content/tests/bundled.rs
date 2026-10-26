@@ -182,14 +182,121 @@ fn skills_match_original_loader() {
     );
 }
 
+/// Templates left out of the bundle (NOTICE): OpenDesign's own marketing
+/// page and deck.
+const REMOVED_TEMPLATES: [&str; 2] = ["open-design-landing", "open-design-landing-deck"];
+
 #[test]
 fn design_templates_match_original_loader() {
     let idx = index();
+    let mut theirs = golden("original-design-templates.json");
+    theirs.retain(|id, _| {
+        let parent = id.split(':').next().unwrap_or(id);
+        !REMOVED_TEMPLATES.contains(&parent)
+    });
     assert_same(
         "design-templates",
         &without_example_text(ours_skills(&idx.design_templates)),
-        &without_example_text(golden("original-design-templates.json")),
+        &without_example_text(theirs),
     );
+}
+
+/// Nothing that ships points an agent or a page at a removed template.
+#[test]
+fn no_content_names_a_removed_template() {
+    let hits: Vec<String> = walk(&content_root())
+        .into_iter()
+        .filter(|path| {
+            let bytes = std::fs::read(path).unwrap();
+            REMOVED_TEMPLATES
+                .iter()
+                .any(|id| bytes.windows(id.len()).any(|w| w == id.as_bytes()))
+        })
+        .map(|path| path.display().to_string())
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "files naming a removed template: {hits:#?}"
+    );
+}
+
+/// Whether `dir` ships a license file of its own.
+fn has_license(dir: &Path) -> bool {
+    std::fs::read_dir(dir).unwrap().any(|e| {
+        let name = e.unwrap().file_name().to_string_lossy().to_lowercase();
+        name.starts_with("license") || name.starts_with("licence")
+    })
+}
+
+/// A third-party upstream: a URL outside nexu-io, the OpenDesign org whose
+/// work the top-level LICENSE (Apache-2.0) covers.
+fn third_party(upstream: &str) -> bool {
+    upstream.contains("://") && !upstream.contains("github.com/nexu-io/")
+}
+
+/// Every skill or template copied from a third party keeps its upstream's
+/// LICENSE. A stub (a lone SKILL.md under 4 KB that points at its upstream
+/// for the real files) copies nothing and needs none.
+#[test]
+fn every_third_party_entry_ships_its_license() {
+    let mut missing = Vec::new();
+    for kind in ["skills", "design-templates"] {
+        for dir in dirs(&content_root().join(kind)) {
+            let raw = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+            let (data, _) = od_content::frontmatter::parse(&raw).unwrap();
+            let data = Value::Object(data);
+            let upstream = data["od"]["upstream"]
+                .as_str()
+                .or_else(|| data["upstream"].as_str())
+                .unwrap_or_default();
+            let files = walk(&dir);
+            let stub = files.len() == 1 && raw.len() < 4096;
+            if third_party(upstream) && !stub && !has_license(&dir) {
+                missing.push(format!(
+                    "{kind}/{} ({upstream})",
+                    dir.file_name().unwrap().to_string_lossy()
+                ));
+            }
+        }
+    }
+    for dir in dirs(&content_root().join("design-systems")) {
+        let Ok(raw) = std::fs::read_to_string(dir.join("manifest.json")) else {
+            continue;
+        };
+        let manifest: Value = serde_json::from_str(&raw).unwrap();
+        let source = manifest["source"].to_string();
+        if third_party(&source) && !has_license(&dir) {
+            missing.push(format!(
+                "design-systems/{} ({source})",
+                dir.file_name().unwrap().to_string_lossy()
+            ));
+        }
+    }
+    // Whole folders derived from MIT projects (refero_skill; awesome-design-md
+    // and the other design-system catalogues).
+    for folder in ["craft", "design-systems"] {
+        if !has_license(&content_root().join(folder)) {
+            missing.push(folder.to_owned());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "third-party content without a LICENSE: {missing:#?}"
+    );
+}
+
+/// Every file under `dir`, recursively.
+fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            out.extend(walk(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out
 }
 
 /// English text of an i18n map.

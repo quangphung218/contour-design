@@ -32,6 +32,7 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/api/health", get(system::health))
         .route("/api/version", get(system::version))
+        .route("/api/licenses/{name}", get(routes::licenses::get))
         .route("/api/browser", get(system::browser))
         .route("/api/projects", get(projects::list).post(projects::create))
         .route(

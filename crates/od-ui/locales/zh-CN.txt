@@ -269,6 +269,9 @@ ExportDiagnostics = 导出诊断日志
 DiagnosticsHint = 在本机生成的 zip：版本信息、不含 Key 的设置、检测到的 agent 和最近的运行日志。不会上传任何内容。
 DiagnosticsSaved = 诊断日志已保存到 {0}
 ResetOnboarding = 重置引导流程
+Licenses = 许可证
+LicensesHint = Contour 采用 Apache License 2.0 许可。这些文件随应用一同提供。
+Credits = 致谢
 # Automations
 MetricActive = 启用中
 MetricPaused = 已暂停

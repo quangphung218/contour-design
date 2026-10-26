@@ -148,10 +148,17 @@ OpenDesign. It is built on OpenDesign by nexu-io and contributors: skills,
 design templates, design systems, craft guides, plugins and prompt texts come
 from OpenDesign (commit `e03d5c2`) and keep their own licences and
 attribution. Bundled third-party code (xterm.js, React, Sucrase, Remix Icon,
-Geist) and every licence are listed in [NOTICE](NOTICE).
+Geist) are listed in [NOTICE](NOTICE); the files Contour changed from
+OpenDesign are listed there too. [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES)
+holds the licence texts of every Rust crate and vendored asset in the app,
+generated from `Cargo.lock` by `make licenses`. The app ships all three files
+and shows them in Settings ▸ About ▸ Licenses.
 
 **Trademarks.** 90 of the bundled design systems are named after a real
 company or product (Airbnb, Apple, Stripe…). Each is inspired by that
 brand's public design language; Contour is not affiliated with or endorsed by
 any of them, and all trademarks belong to their owners. The app shows this
 note on each one's page, and [NOTICE](NOTICE) lists them.
+
+Claude Code, Codex, Cursor, Copilot and other names are trademarks of their
+owners; Contour is not affiliated with them.

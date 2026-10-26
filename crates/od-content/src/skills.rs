@@ -15,11 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 /// Deprecated ids forwarded to their current id after a rename.
-pub const SKILL_ID_ALIASES: [(&str, &str); 3] = [
-    ("editorial-collage", "open-design-landing"),
-    ("editorial-collage-deck", "open-design-landing-deck"),
-    ("taste-skill", "design-taste-frontend"),
-];
+pub const SKILL_ID_ALIASES: [(&str, &str); 1] = [("taste-skill", "design-taste-frontend")];
 
 /// Folder, relative to a project, where a run stages its active skills.
 pub const SKILLS_CWD_ALIAS: &str = ".od-skills";

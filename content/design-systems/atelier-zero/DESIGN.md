@@ -243,8 +243,8 @@ the page-of-008 counter on the right.
 
 ### Anti-patterns specific to AI-generated imagery
 
-This system is paired with `gpt-image-fal` / `gpt-image-azure` via the
-open-design-landing skill. Several common image-model defaults will
+This system is paired with `gpt-image-fal` / `gpt-image-azure` for its
+collage imagery. Several common image-model defaults will
 silently break the Atelier Zero aesthetic, so they are forbidden in
 every collage prompt and rejected on visual review:
 
@@ -288,8 +288,7 @@ generated to match these constraints:
   dotted matrices, numbered tags. Never typography that conflicts
   with on-page copy.
 
-See `design-templates/open-design-landing/assets/imagegen-prompts.md` for the
-working prompt pack and per-section variants. All renders should be
+Write one prompt per section from the rules above. All renders should be
 at 16:9 (heroes) or 1:1 (cards / about / cta), saved as PNG, ≥1024px
 on the long edge.
 

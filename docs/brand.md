@@ -2,7 +2,7 @@
 
 **Contour**: design with your agent, on your machine.
 
-Crate and binary names (`od-*`, `od`) and the `OD_*` environment variables stay as they are (docs/decisions.md §5). The display name is Contour: window, menus, sidebar, onboarding, CLI help, README. The OpenDesign name and logo never appear in the UI; credit to the original app lives in `NOTICE` and `README.md`.
+Crate and binary names (`od-*`, `od`) and the `OD_*` environment variables stay as they are (docs/decisions.md §5). The display name is Contour: window, menus, sidebar, onboarding, CLI help, README. The OpenDesign name and logo never appear in the UI as a brand; credit to the original app lives in `NOTICE`, `README.md` and one attribution line in Settings ▸ About ▸ Licenses ("Built on OpenDesign by nexu-io (Apache-2.0)").
 
 ## Meaning
 
@@ -11,7 +11,7 @@ A contour is the outline that defines a shape: the first line a designer draws. 
 ## Name
 
 - Always "Contour", with a capital C, in every UI string, doc and store listing. Never "CONTOUR" or "contour" as the product name.
-- Never "OpenDesign" or "Open Design" in the UI or for this product.
+- Never "OpenDesign" or "Open Design" in the UI or for this product. The one exception is the attribution line in Settings ▸ About ▸ Licenses, which the Apache-2.0 license calls for.
 - Internal names do not change: crates `od-*`, binary `od`. Lowercase `contour` appears only in identifiers: file names (`contour-*.svg`), the data folder, the bundle id `dev.contour.desktop` and the repo `contour-design`.
 
 ## Files

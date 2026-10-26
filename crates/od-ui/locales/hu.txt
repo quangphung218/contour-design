@@ -269,6 +269,9 @@ ExportDiagnostics = Diagnosztika exportálása
 DiagnosticsHint = Ezen a gépen összeállított zip: verziók, kulcsok nélküli beállítások, felismert agentek és friss futási naplók. Semmi sem kerül feltöltésre.
 DiagnosticsSaved = Diagnosztika elmentve ide: {0}
 ResetOnboarding = Üdvözlő képernyő újra
+Licenses = Licencek
+LicensesHint = A Contour az Apache License 2.0 licenc alatt érhető el. Ezek a fájlok az alkalmazás részei.
+Credits = Közreműködők
 # Automations
 MetricActive = Aktív
 MetricPaused = Szüneteltetve

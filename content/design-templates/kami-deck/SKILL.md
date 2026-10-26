@@ -160,11 +160,24 @@ Output a single file with all CSS inline. Mirror the structure of
 [`example.html`](./example.html). Use only the tokens from
 `design-systems/kami/DESIGN.md`.
 
-The runtime script (keyboard / wheel / touch nav, dot indicator,
-progress bar, ESC overview) should match the model documented in
-[`open-design-landing-deck/scripts/compose.ts`](../open-design-landing-deck/scripts/compose.ts).
-Do **not** reuse the open-design-landing-deck CSS; the visual
-language is different.
+The runtime script follows the one at the end of
+[`example.html`](./example.html):
+
+- Slides sit side by side in one `#deck` track (`width: N × 100vw`);
+  moving is `transform: translateX(-i × 100vw)` with a CSS transition.
+- Keys: `→` `↓` `Space` `PageDown` next; `←` `↑` `PageUp` previous;
+  `Home` / `End` first / last.
+- Wheel: add up `deltaX + deltaY`, step one slide past 60 px, reset the
+  sum after 150 ms of quiet. Touch: a horizontal swipe over 50 px that
+  is wider than it is tall steps one slide.
+- Wheel, key and touch go through one 700 ms lock so a burst never
+  skips a slide; host-driven jumps set the slide directly.
+- Each step toggles `.active` on the current `.slide` (the host reads it
+  for the slide counter), on its dot in `#nav` (one button per slide),
+  and sets the ink-blue `.deck-progress .bar` width to `(i + 1) / N`.
+- `Esc` toggles an overview grid of scaled slide clones (`scale(0.18)`);
+  clicking a card closes it and jumps there. Nav input is ignored while
+  it is open.
 
 ### 4. Self-check
 
@@ -192,16 +205,13 @@ language is different.
   and use solid hex from the table in
   `design-systems/kami/DESIGN.md` §2.
 - **Do not** add a router. This is a single-file artifact.
-- **Do not** reuse Atelier Zero collage imagery (the open-design-landing
-  visual system). Kami is gradient-free, image-light, and hierarchy
-  is carried by type.
+- **Do not** use collage imagery (the Atelier Zero visual system).
+  Kami is gradient-free, image-light, and hierarchy is carried by type.
 
 ## See also
 
 - [`kami-landing`](../kami-landing/) — long-form one-pager sister skill.
 - [`design-systems/kami/DESIGN.md`](../../design-systems/kami/DESIGN.md) — token spec.
-- [`open-design-landing-deck`](../open-design-landing-deck/) — same
-  horizontal swipe nav model, different visual language (Atelier Zero).
 - Upstream: [`tw93/kami`](https://github.com/tw93/kami) — original
   Claude skill (MIT). Kami's slides.py template documents the macro
   × 1.6 / micro × 0.6 ratios this skill applies.

@@ -70,15 +70,24 @@ pub async fn get_design_template(
 const EXAMPLE_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; \
      font-src data:; media-src data:; sandbox";
 
+/// The upstream app's name as example pages spell it, and what replaces it
+/// (an all-caps wordmark stays all caps).
+const ORIGINAL_NAMES: [(&str, &str); 4] = [
+    ("OpenDesign", "Contour"),
+    ("Open Design", "Contour"),
+    ("OPENDESIGN", "CONTOUR"),
+    ("OPEN DESIGN", "CONTOUR"),
+];
+
 /// Example pages copied from the upstream app name it (sample decks and
 /// dashboards about "OpenDesign"); the gallery thumbnails and design system
 /// previews show Contour instead.
 /// The files on disk keep their original text.
 pub(crate) fn rebrand_example(html: Vec<u8>) -> Vec<u8> {
     match String::from_utf8(html) {
-        Ok(text) if text.contains("OpenDesign") || text.contains("Open Design") => text
-            .replace("OpenDesign", "Contour")
-            .replace("Open Design", "Contour")
+        Ok(text) if ORIGINAL_NAMES.iter().any(|(name, _)| text.contains(name)) => ORIGINAL_NAMES
+            .iter()
+            .fold(text, |text, (name, ours)| text.replace(name, ours))
             .into_bytes(),
         Ok(text) => text.into_bytes(),
         Err(e) => e.into_bytes(),
@@ -180,6 +189,11 @@ mod tests {
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "<b>Show HN: Contour v2</b> by Contour"
+        );
+        let out = rebrand_example(b"<h1>OPENDESIGN</h1><p>OPEN DESIGN, Inc.</p>".to_vec());
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "<h1>CONTOUR</h1><p>CONTOUR, Inc.</p>"
         );
         assert_eq!(rebrand_example(vec![0xff, b'O']), vec![0xff, b'O']);
     }

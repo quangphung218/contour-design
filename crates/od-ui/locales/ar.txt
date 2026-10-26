@@ -269,6 +269,9 @@ ExportDiagnostics = تصدير التشخيص
 DiagnosticsHint = ملف zip يُنشأ على هذا الجهاز: الإصدارات، والإعدادات بدون المفاتيح، والوكلاء المكتشفون، وسجلات التشغيل الأخيرة. لا يُرفع شيء.
 DiagnosticsSaved = تم حفظ التشخيص في {0}
 ResetOnboarding = إعادة ضبط الإرشاد
+Licenses = التراخيص
+LicensesHint = Contour مرخّص بموجب Apache License 2.0. هذه الملفات مضمّنة في التطبيق.
+Credits = شكر وتقدير
 # Automations
 MetricActive = نشط
 MetricPaused = متوقّف مؤقتًا
