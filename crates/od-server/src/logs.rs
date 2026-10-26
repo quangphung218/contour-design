@@ -187,12 +187,14 @@ pub fn install_panic_hook(file: Arc<LogFile>) {
 /// Whether `OD_LOG_FILE` asks for the log file (`1`, `true`, `yes`, `on`).
 #[must_use]
 pub fn file_from_env() -> bool {
-    std::env::var(LOG_FILE_ENV).is_ok_and(|v| {
-        matches!(
-            v.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        )
-    })
+    std::env::var(LOG_FILE_ENV).is_ok_and(|v| is_on(&v))
+}
+
+fn is_on(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }
 
 /// Runs `f` with a console-only subscriber, for what happens before
@@ -305,6 +307,62 @@ mod tests {
         let read = |name: &str| std::fs::read_to_string(tmp.path().join(name)).unwrap();
         assert_eq!(read(LOG_FILE), line(9));
         assert_eq!(read("daemon.2.log"), line(7));
+    }
+
+    fn log_file(dir: &Path) -> LogFile {
+        LogFile::new(RollingFile::open(dir, MAX_FILE_BYTES, KEEP_FILES).unwrap())
+    }
+
+    #[test]
+    fn a_panic_while_the_log_is_locked_still_writes_and_returns() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = Arc::new(log_file(tmp.path()));
+        let held = file.file.lock().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let writer = Arc::clone(&file);
+        let worker = std::thread::spawn(move || {
+            writer.write_panic("PANIC while locked\n");
+            let _ = tx.send(());
+        });
+        let returned = rx.recv_timeout(std::time::Duration::from_secs(5));
+        drop(held);
+        worker.join().unwrap();
+        assert!(returned.is_ok(), "write_panic waited on the lock");
+        let text = std::fs::read_to_string(tmp.path().join(LOG_FILE)).unwrap();
+        assert_eq!(text, "PANIC while locked\n");
+    }
+
+    #[test]
+    fn a_poisoned_log_still_takes_the_panic_through_the_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = Arc::new(log_file(tmp.path()));
+        let poison = Arc::clone(&file);
+        let _ = std::thread::spawn(move || {
+            let _g = poison.file.lock().unwrap();
+            panic!("poison the log lock");
+        })
+        .join();
+        assert!(file.file.is_poisoned());
+        file.write_panic("PANIC after poison\n");
+        let text = std::fs::read_to_string(tmp.path().join(LOG_FILE)).unwrap();
+        assert_eq!(text, "PANIC after poison\n");
+        // Written through the rolling file, so its size counts it.
+        let size = file
+            .file
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .size;
+        assert_eq!(size, 19);
+    }
+
+    #[test]
+    fn od_log_file_takes_the_usual_yes_words() {
+        for v in ["1", "true", "YES", " on "] {
+            assert!(is_on(v), "{v}");
+        }
+        for v in ["", "0", "false", "off", "no", "2"] {
+            assert!(!is_on(v), "{v}");
+        }
     }
 
     #[test]
