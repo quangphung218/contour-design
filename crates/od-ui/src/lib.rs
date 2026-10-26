@@ -27,7 +27,6 @@ pub mod models;
 pub mod preview_bridge;
 pub mod project_panel;
 pub mod question_form;
-pub mod recommend;
 pub mod schedule;
 pub mod settings;
 pub mod sketch_model;

@@ -6,7 +6,7 @@
 - Two baselines: **40.7%** (`docs/parity.md` at `53f04bc`, 215 scored rows) and **90.9%** (version `cf5effa` measured at `c4fb1c7` after wave B, 214 scored rows). Same catalogue, same scoring, same row order.
 - Original app: `~/Documents/GitHub/open-design` (read-only).
 - Scoring: **100** complete, **50** partial (notes what is missing), **0** absent, **N/A** deliberately dropped. A group's % is the mean score, excluding N/A. Every row has equal weight. Available only via API/CLI, not in the UI: 50.
-- Catalogue changes: per the settled decisions (Connectors, Orbit, Figma, marketplace, pet, browser tab, Web Clipper, xAI OAuth, auto-update are N/A), **7 rows became N/A**: #18 Pet, #43 Figma import, #108 Browser tab, #142 Registry/marketplace, #191 Web Clipper, #199 Orbit, #209 Pet window. Connectors (#185) and auto-update (#210) were already N/A. Rows #3 (action chips) and #14 (entry tabs) are partly Figma/Connectors: that part is dropped and the row is scored on the rest. Hence "Now" scores **207 rows**, versus 214 in wave B.
+- Catalogue changes: per the settled decisions (Connectors, Orbit, Figma, marketplace, pet, browser tab, Web Clipper, xAI OAuth, auto-update are N/A), **7 rows became N/A**: #18 Pet, #43 Figma import, #108 Browser tab, #142 Registry/marketplace, #191 Web Clipper, #199 Orbit, #209 Pet window. Connectors (#185) and auto-update (#210) were already N/A. Rows #3 (action chips) and #14 (entry tabs) are partly Figma/Connectors: that part is dropped and the row is scored on the rest. Hence "Now" scored **207 rows**, versus 214 in wave B. The global-beta UI polish then dropped #11 (Recommended for you) on purpose: **206 rows**.
 - Live run: debug `od` daemon (`~/.cache/odrs-target-open-design-rs/debug/od`, built 08:52 from `f4c455b`, `CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2`) + UI bundle built with `trunk build --dist` into the run directory + mock agent, with a temporary data dir that each scenario creates and deletes. Ran the repo's 10 Playwright scenarios (exactly as `crates/od-ui/e2e/run.sh`) from a copy outside the repo, sequentially: studio, design-system, library, manage, chat, files, preview, c2, c3-runtimes, c4-depth. **10/10 PASS**, `externalRequests: 0` in every scenario that counts it. 161 screenshots (light and dark) in `shots/`, logs in `logs/`.
 - Evidence marked `e2e <scenario> step N` was actually run in this measurement; the rest is code reading (file:line at `f4c455b`). Line numbers for rows whose score did not change were mapped automatically from `c4fb1c7` to `f4c455b` via `git diff` hunks (114 rows had shifted line numbers); 22 spots were checked by hand.
 
@@ -27,13 +27,13 @@
 | Settings | 15 | 15 | 0 | 0 | 1 | 37 | 87 | 100 | +13 |
 | Desktop shell | 8 | 8 | 0 | 0 | 2 | 56 | 83 | 100 | +17 |
 | Automations | 7 | 7 | 0 | 0 | 1 | 38 | 81 | 100 | +19 |
-| Home | 17 | 17 | 0 | 0 | 3 | 39 | 81 | 100 | +19 |
+| Home | 16 | 16 | 0 | 0 | 4 | 39 | 81 | 100 | +19 |
 | Media | 5 | 5 | 0 | 0 | 1 | 17 | 75 | 100 | +25 |
 | Export | 11 | 11 | 0 | 0 | 1 | 45 | 91 | 100 | +9 |
-| **Total** | **207** | **207** | **0** | **0** | **20** | **40.7** | **90.9** | **100** | **+9.1** |
+| **Total** | **206** | **206** | **0** | **0** | **21** | **40.7** | **90.9** | **100** | **+9.1** |
 
 Quick read:
-- **Up from 90.9% to 100%** (207/207 scored rows at 100). 16/16 groups at 100%. At `f4c455b` it was 99.8%; `final-polish` finished #119.
+- **Up from 90.9% to 100%** (206/206 scored rows at 100). 16/16 groups at 100%. At `f4c455b` it was 99.8%; `final-polish` finished #119.
 - Like-for-like: dropping the 7 newly N/A rows from the wave B version puts wave B at 93.7% (19,400/207). The real gain from wave C code is **+6.1 points**; the rest comes from settling N/A.
 - **No row is below 100 any more.** #119 Export JSX has the full "Export React component as HTML", and preview renders the component as the original app does.
 - Row #177 (BYOK presets) is now 26/26: Azure OpenAI was added, so its 100 is no longer generous scoring.
@@ -95,7 +95,7 @@ The first c4-depth run FAILED at step 1 ("timed out waiting for German Home link
 | 8 | Home | Context search with @ (file, plugin, skill, MCP) | 0 | 100 | 100 | `crates/od-ui/src/app/composer.rs:717` @ palette, `crates/od-ui/src/mention.rs`; e2e chat step 5 |
 | 9 | Home | Media picker at the composer footer (Ratio, Duration, Resolution, Notes) | 0 | 100 | 100 | `crates/od-ui/src/app/home.rs:609` MediaBar (model, ratio, resolution, duration, notes `home.rs:647`); e2e chat step 3 |
 | 10 | Home | Working directory picker (choose, change, recent folders) | 0 | 100 | 100 | `crates/od-ui/src/app/home.rs:456,780-817` choose/change/recent/clear; e2e chat step 4 |
-| 11 | Home | "Recommended for you" card | 0 | 0 | 100 | `crates/od-ui/src/app/home_tabs.rs:303-322` Recommended (Start, Next, Dismiss), mounted at `home.rs:471`; e2e c2 step 2; `shots/c2-home-recommended-light.png` |
+| 11 | Home | "Recommended for you" card | 0 | 0 | N/A | Dropped in the global-beta UI polish: a second "start creating" next to the composer (designer review #11). Home keeps the composer, examples and entry tabs |
 | 12 | Home | Recent projects strip (+ owner/type filter) | 50 | 100 | 100 | `crates/od-ui/src/app/projects.rs:684-688` recent strip + type filter; owner filter does not apply since there are no teams (N/A); e2e manage step 6; `(audit run) shots/manage/shots/home-recent-light.png` |
 | 13 | Home | Left rail (Home, Projects, Automations, Plugins, Design systems, Integrations, collapse) | 50 | 100 | 100 | `crates/od-ui/src/app/mod.rs:460-473`: Home, Projects, Templates, Design systems, Plugins, Media, Automations, Integrations, Inbox, Settings + collapse |
 | 14 | Home | Entry tabs (Designs, Templates, Design systems, Connectors, Image/Video templates) | 50 | 50 | 100 | `crates/od-ui/src/app/home_tabs.rs:19-25,103-114` tabs Designs, Templates, Design systems, Image, Video (tab remembered); Connectors N/A; e2e c2 step 2 |

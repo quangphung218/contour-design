@@ -104,7 +104,7 @@ claim (OpenDesign as of commit `e03d5c2`):
 | Account and cloud | None. Nothing to sign in to. | Optional OpenDesign Cloud with sign-in and its own model service ([README](https://github.com/nexu-io/open-design/blob/e03d5c23f308c39f4de7c057568df66c29a84385/README.md)). |
 | Network | Only the services you configure: your agent or model provider, and any MCP server, media or research provider you add. Contour never downloads a browser or updates itself. | Also its cloud, sharing and deploy services when you use them. |
 | Built with | Rust: axum daemon, Leptos/WASM UI, Tauri 2 shell. | TypeScript: Node daemon, Next.js UI, Electron shell. |
-| Features | **207 of 207** scored features of OpenDesign. The 20 that need an account, a cloud service or outbound network (connectors, marketplace, team sharing, cloud deploy, auto-update…) are left out on purpose. | All of them, including the cloud features. |
+| Features | **206 of 206** scored features of OpenDesign. The 20 that need an account, a cloud service or outbound network (connectors, marketplace, team sharing, cloud deploy, auto-update…) are left out on purpose, and Home drops the "Recommended for you" strip. | All of them, including the cloud features. |
 
 The row-by-row feature comparison with evidence is in
 [docs/parity.md](docs/parity.md), and the choices behind it in
