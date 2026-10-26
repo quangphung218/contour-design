@@ -229,6 +229,7 @@ async fn bridge_in_headless_chrome() {
     inspect_prints_survive_scripts(&h).await;
     edit_key_stays_with_the_bridge(&h).await;
     bridge_runs_before_any_author_markup(&h).await;
+    host_reloads_are_not_a_loop(&h).await;
     reload_loops_are_stopped(&h).await;
     h.close().await;
 }
@@ -602,6 +603,23 @@ async fn bridge_runs_before_any_author_markup(h: &Harness) {
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// The host reloading the frame fast (an agent or the user saving) is not
+/// a loop: each of its loads has a fresh edit key. The preview e2e stopped
+/// its preview this way after a run of manual edits (run 40316428465).
+async fn host_reloads_are_not_a_loop(h: &Harness) {
+    for i in 0..20 {
+        let page = format!("<!doctype html><html><body><p>v{i}</p></body></html>");
+        h.load_keyed(&page, Some(&format!("key{i}"))).await;
+        let seen = h
+            .eval(
+                "window.__after('od:ready', 0, null, 5000).then(() => 'ready', \
+                 () => JSON.stringify(window.__msgs.map((m) => m.type)))",
+            )
+            .await;
+        assert_eq!(seen, json!("ready"), "load {i}");
+    }
 }
 
 async fn reload_loops_are_stopped(h: &Harness) {

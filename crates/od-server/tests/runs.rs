@@ -754,6 +754,7 @@ async fn agents_endpoint_detects_mocks_and_missing_binaries() {
 /// Onboarding ▸ Check again in the app: an agent installed after start in a
 /// folder only the login shell's new `PATH` names (a new nvm Node) is not
 /// found by a plain detection, and is found once rescan asks the shell.
+#[cfg(unix)]
 #[tokio::test]
 async fn rescan_asks_the_login_shell_and_finds_a_new_agent() {
     let shell_dir = tempfile::tempdir().unwrap();

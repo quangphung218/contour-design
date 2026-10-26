@@ -91,6 +91,10 @@ async fn plugin_runs_ask_their_surfaces() {
             "__auto_diff_review_review"
         ]
     );
+    // Asked before the agent starts: a fast agent ended the run while the
+    // surfaces were still being asked, and the rest were lost (Linux CI).
+    let first = |name: &str| events.iter().position(|e| e.event == name).unwrap();
+    assert!(first("genui_surface_request") < first("start"));
     let review = events
         .iter()
         .find(|e| e.data["surfaceId"] == "__auto_diff_review_review")

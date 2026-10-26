@@ -625,7 +625,8 @@ try {
   await page.getByRole('button', { name: 'Dark' }).click();
   await page.getByTestId('model').fill('mock-large');
   await page.getByTestId('save-settings').click();
-  await page.getByText('Saved').waitFor();
+  // The agent card's own status: Appearance shows "Saved" too.
+  await page.locator('#settings-execution').getByText('Saved').waitFor();
   let cfg = await (await fetch(`${BASE}/api/app-config`)).json();
   assert.equal(cfg.agentPermissionMode, 'ask');
   assert.equal(cfg.model, 'mock-large');

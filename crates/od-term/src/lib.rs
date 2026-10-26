@@ -700,7 +700,9 @@ mod tests {
             ..TermConfig::default()
         });
         let s = terms.create("p", &dir, None, None).unwrap();
-        s.write(b"sleep 1 &\r").unwrap();
+        // `wait` reaps the job: dash (Linux's sh) leaves it a zombie until
+        // the next prompt, and on Linux a zombie's group still takes signals.
+        s.write(b"sleep 1 & wait\r").unwrap();
         let until = |want: bool| {
             let s = Arc::clone(&s);
             async move {

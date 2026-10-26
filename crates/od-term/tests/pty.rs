@@ -111,7 +111,10 @@ async fn closing_kills_the_shell_its_foreground_job_and_background_jobs() {
     let mut seen = String::new();
     // `B""G=` in the typed line keeps the echo from matching `BG=`. The
     // foreground job ignores SIGHUP, so only the SIGKILL step ends it.
-    s.write(b"set +H; sleep 1001 & echo B\"\"G=$! .\r").unwrap();
+    // History expansion off where there is any: dash (Linux's sh) has no
+    // `-H` and drops the whole line on `set +H`.
+    s.write(b"case $- in *H*) set +H;; esac; sleep 1001 & echo B\"\"G=$! .\r")
+        .unwrap();
     read_until(&mut att.live, &mut seen, "BG=").await;
     read_until(&mut att.live, &mut seen, ".").await;
     s.write(b"sh -c 'trap \"\" HUP; echo F\"\"G=$$ .; exec sleep 1002'\r")

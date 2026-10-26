@@ -553,6 +553,7 @@ fn mcp_uninstall_removes_the_old_entry_too() {
 
 /// The same with claude, whose `mcp remove` fails for a name it does not
 /// have: the old entry still goes and the uninstall succeeds.
+#[cfg(unix)]
 #[test]
 fn mcp_uninstall_from_claude_removes_the_old_entry() {
     use std::os::unix::fs::PermissionsExt;
@@ -595,6 +596,7 @@ fn mcp_uninstall_from_claude_removes_the_old_entry() {
 
 /// claude fails to remove a contour entry that is really there: removing
 /// the old entry does not turn that into a success.
+#[cfg(unix)]
 #[test]
 fn mcp_uninstall_fails_while_the_contour_entry_stays() {
     use std::os::unix::fs::PermissionsExt;
