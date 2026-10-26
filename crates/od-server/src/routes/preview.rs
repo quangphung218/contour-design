@@ -60,6 +60,16 @@ fn edit_key_id(query: Option<&str>) -> Option<&str> {
         .filter(|id| is_edit_key_id(id))
 }
 
+/// Whether the host page started this load, so it may get an edit key. A
+/// sandboxed page navigating itself has an opaque origin: its requests say
+/// `Sec-Fetch-Site: cross-site`. Without the header (an older engine, the
+/// CLI) the load counts as the host's.
+fn host_load(headers: &HeaderMap) -> bool {
+    headers
+        .get("sec-fetch-site")
+        .is_none_or(|site| matches!(site.as_bytes(), b"same-origin" | b"none"))
+}
+
 /// Injected bytes differ from the file, so file validators and ranges no
 /// longer apply.
 fn strip_validators(headers: &mut HeaderMap) {
@@ -152,7 +162,11 @@ async fn raw_bridge(State(preview): State<Preview>, mut req: Request, next: Next
     } else {
         format!("/api/projects/{id}/preview/{}/{dir}/", scope.token)
     };
-    let kid = edit_key_id(req.uri().query()).map(str::to_owned);
+    // A page that names a fresh id on each of its own loads would get a
+    // key each time and slip past the bridge's reload guard.
+    let kid = edit_key_id(req.uri().query())
+        .filter(|_| host_load(req.headers()))
+        .map(str::to_owned);
     let id = id.to_owned();
     strip_validators(req.headers_mut());
     let res = next.run(req).await;

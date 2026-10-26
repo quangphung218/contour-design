@@ -56,8 +56,9 @@
   // browsing context, so each load counts a hop; loads less than GAP_MS apart
   // chain. Past MAX_HOPS the bridge stops the parser before any author script
   // runs, which breaks `location.reload()` and meta-refresh loops. A load
-  // with an edit key is the host's (a fresh id gets one, a reload of it does
-  // not): it starts a new chain, so saving fast is not taken for a loop.
+  // with an edit key is the host's: the daemon keys only a fresh id the host
+  // page navigated to, not a reload of it nor an id the page made up. It
+  // starts a new chain, so saving fast is not taken for a loop.
   // ---------------------------------------------------------------------
   var GUARD_PREFIX = '__odGuard=';
   var MAX_HOPS = 15;

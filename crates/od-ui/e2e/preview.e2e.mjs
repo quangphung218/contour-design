@@ -3,7 +3,8 @@
 // edit (layers, content, style, attributes, HTML, image upload, delete,
 // undo/redo and the guard that refuses an undo over a newer change), the
 // Comments tab (list, images on a comment, anchor moved and lost, resolve,
-// images sent with the next message) and the workspace recovery tip while
+// images sent with the next message), the reload guard against a page that
+// names its own edit-key ids, and the workspace recovery tip while
 // the daemon is down. Every request leaving loopback is blocked and fails
 // the test. Light and dark screenshots of the new screens go to
 // OD_E2E_SHOTS (default test-results/c1).
@@ -326,6 +327,16 @@ try {
   await item.getByTestId('comment-resolve').click();
   await page.getByTestId('comments-empty').waitFor();
   results.commentsTab = 'list, image, anchored, stale, lost, resolve and reopen, image sent with the message';
+
+  // 4b. Reload guard: a page that loads itself under a fresh edit-key id
+  // each time gets no key for it (only the host's loads do), so its loads
+  // chain and the bridge stops it.
+  await write('mint.html', `<!doctype html><html><body><p>again</p><script>
+location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+</script></body></html>`);
+  await row('mint.html').click();
+  await frame.getByText('Preview stopped: the page kept reloading itself.').waitFor({ timeout: 15_000 });
+  results.mintedKeyLoop = 'stopped';
 
   // 5. Recovery tip: the daemon goes away, the Studio says it is
   // reconnecting and keeps what it shows; back up, the tip goes.
