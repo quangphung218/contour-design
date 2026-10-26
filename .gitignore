@@ -13,3 +13,9 @@ target/
 # Release files collected by CI
 dist-release/
 *.log
+
+# Local secrets and agent settings, never committed
+.env
+.env.*
+.claude/settings.local.json
+.claude/worktrees/

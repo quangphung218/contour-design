@@ -507,7 +507,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
 |---|---|---|---|
 | `craft/` | 11 files | Yes | Adapted from MIT sources (noted in `craft/README.md`); keep the README |
 | `design-templates/` | about 115 directories | Yes, keep nested LICENSEs | 37 third-party MIT LICENSE files (many deck sets); `hyperframes/` is forked from an Apache-2.0 source |
-| `skills/` | about 170 directories | Yes, keep nested LICENSEs | 36 MIT LICENSEs. 194 skills declare `upstream` but only 32 declare `upstream_license`: Atlat audits the rest before release |
+| `skills/` | about 170 directories | Yes, keep nested LICENSEs | 36 MIT LICENSEs. 194 skills declare `upstream` but only 32 declare `upstream_license`: the rest are audited before release |
 | `design-systems/` | about 152 packages + `_schema` | Yes license-wise, **trademark risk** | Many packages are named after real brands. Rename the display names or ship only a neutral set, and ask the owner. Attribution is in `design-systems/README.md` |
 | `prompt-templates/` | 107 JSON | **Conditional** | 72 files CC-BY-4.0 (attribution required), 31 Apache, 1 MIT, 2 files with unclear license (exclude). Preview images are third-party CDN URLs |
 | `plugins/_official/atoms`, `scenarios` | 13 + 14 | Yes | Drop cloud and rollout scenarios (take `od-next-strategy` only if the Next prompt is chosen) |

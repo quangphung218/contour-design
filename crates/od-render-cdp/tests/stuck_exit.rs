@@ -1,5 +1,5 @@
 //! A browser that does not exit after `Browser.close` must not hang the
-//! export: the Atlat gate once saw `od export --format pdf` wait the CLI's
+//! export: the pre-merge check once saw `od export --format pdf` wait the CLI's
 //! full 600 s while the daemon sat in `Session::close` waiting for Chrome.
 //!
 //! The "browser" here is a wrapper that starts the real Chrome in the

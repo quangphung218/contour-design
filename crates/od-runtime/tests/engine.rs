@@ -11,7 +11,7 @@ use od_runtime::{EngineConfig, LaunchSpec, PermissionMode, RunEngine};
 use std::path::Path;
 use std::time::Duration;
 
-/// macOS `ps` is setuid root: inside `sandbox-exec` (how the Atlat gate runs
+/// macOS `ps` is setuid root: inside `sandbox-exec` (how the maintainer's pre-merge check runs
 /// `make check`) it cannot be executed, so the process-tree cleanup these
 /// tests check has nothing to list. They skip there and run everywhere else.
 fn ps_unavailable() -> bool {

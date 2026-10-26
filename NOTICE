@@ -1,4 +1,5 @@
 Contour (contour-design)
+Copyright 2026 Quang Phung and contributors, Apache License 2.0.
 A Rust rewrite of OpenDesign (https://github.com/nexu-io/open-design), Copyright nexu-io and contributors, Apache License 2.0.
 Content in content/ (skills, design-templates, design-systems, craft…) comes from OpenDesign commit e03d5c2; each subdirectory keeps its original LICENSE file where one exists.
 
@@ -20,6 +21,10 @@ LICENSE files added by Contour for third-party content that OpenDesign copied wi
 - content/skills/agent-browser/LICENSE: Apache-2.0, Copyright 2025 Vercel Inc. (vercel-labs/agent-browser).
 - content/design-templates/guizang-ppt/ is the MIT release of op7418/guizang-ppt-skill (upstream commits
   604f5f3, b3e2ec7). Upstream moved to AGPL-3.0 at 014c572; nothing from that commit on is included.
+- content/design-systems/totality-festival/ is modified from the totality-festival example of
+  google-labs-code/design.md (https://github.com/google-labs-code/design.md), Apache-2.0, Copyright Google LLC.
+- content/skills/chat-motion-overlay/assets/avatar-library/ (6 PNG mascots) ships as found in OpenDesign
+  e03d5c2; OpenDesign does not record their origin.
 
 Excluded or not yet copied:
 - Fonts: the 4 directories above contain no font files (.woff/.woff2/.ttf/.otf/.eot), so nothing had to be excluded.
