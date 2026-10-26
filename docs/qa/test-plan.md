@@ -201,6 +201,7 @@ and media.
 | AUT-03 | Empty prompt is refused | — | Save without prompt | Save refused | P1 | auto |
 | AUT-04 | Delete a routine removes it from the list and API | Routine | Delete | Gone from list and `GET /api/routines` | P1 | auto |
 | AUT-05 | Routine on a project that was deleted | Routine on project P | Delete P, Run now | The run is refused or recorded as failed with "project not found" | P2 | auto |
+| AUT-06 | The form resets after editing a routine | A routine on a project | Edit, Save; Edit, Cancel | The form is back on "New project each run" with no name | P2 | auto |
 
 ## 10. Work in progress is not lost (`drafts.qa.mjs`)
 

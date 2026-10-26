@@ -343,6 +343,16 @@ impl Form {
         self.cron.set(r.schedule.clone());
     }
 
+    /// Back to a new routine after a save or a cancelled edit: no name or
+    /// prompt, "New project each run", and `first` (the first project, as
+    /// on load) rather than the project of the routine just edited.
+    fn reset(self, first: Option<String>) {
+        self.name.set(String::new());
+        self.prompt.set(String::new());
+        self.each_run.set(true);
+        self.project.set(first.unwrap_or_default());
+    }
+
     fn set_preset(self, p: Preset) {
         self.cron.set(p.to_cron());
         self.preset.set(p);
@@ -409,6 +419,7 @@ pub fn Automations() -> impl IntoView {
         on_cleanup(move || handle.clear());
     }
 
+    let first_project = move || projects.with_untracked(|l| l.first().map(|p| p.id.clone()));
     let submit = move |_| {
         if form.name.with_untracked(|n| n.trim().is_empty()) {
             error.set(Some(t(T::RoutineNeedsName).to_owned()));
@@ -439,8 +450,7 @@ pub fn Automations() -> impl IntoView {
             match res {
                 Ok(_) => {
                     error.set(None);
-                    form.name.set(String::new());
-                    form.prompt.set(String::new());
+                    form.reset(first_project());
                     editing.set(None);
                     reload();
                 }
@@ -548,8 +558,7 @@ pub fn Automations() -> impl IntoView {
                     <Show when=move || editing.get().is_some()>
                         <button class="btn ghost" data-testid="routine-cancel-edit" on:click=move |_| {
                             editing.set(None);
-                            form.name.set(String::new());
-                            form.prompt.set(String::new());
+                            form.reset(first_project());
                         }>{t(T::Cancel)}</button>
                     </Show>
                     <button class="btn primary" data-testid="routine-add" on:click=submit>

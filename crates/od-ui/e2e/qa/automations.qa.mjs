@@ -86,4 +86,24 @@ test('AUT-05', 'Running a routine whose project was deleted fails with a readabl
   assert.equal(errors.length, 0);
 });
 
+test('AUT-06', 'After saving or cancelling an edit of a routine on a project, the form is back on "New project each run"', async ({ d, newPage }) => {
+  const pid = await createProject(d, 'Edited routine target');
+  const { page } = await form(newPage, d, { name: 'On a project', prompt: 'Refresh it', project: pid });
+  await page.getByTestId('routine-add').click();
+  const routine = page.getByTestId('routine').filter({ hasText: 'On a project' });
+  await routine.waitFor();
+  const fresh = async (label) => {
+    assert.equal(await page.getByTestId('routine-each-run').isChecked(), true, `${label}: the form kept "Existing project"`);
+    assert.equal(await page.getByTestId('routine-name').inputValue(), '', `${label}: the name stayed`);
+  };
+  await fresh('after adding');
+  for (const how of ['save', 'cancel']) {
+    await routine.getByTestId('routine-edit').click();
+    await until(async () => (await page.getByTestId('routine-reuse').isChecked()), `edit fills ${how}`);
+    await page.getByTestId(how === 'save' ? 'routine-add' : 'routine-cancel-edit').click();
+    await until(async () => (await page.getByTestId('routine-name').inputValue()) === '', `form cleared after ${how}`);
+    await fresh(`after ${how}`);
+  }
+});
+
 await run('automations');
