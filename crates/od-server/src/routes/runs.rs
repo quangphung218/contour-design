@@ -133,7 +133,7 @@ pub async fn create(
         client_request_id: client_request_id.clone(),
         request_hash: Some(request_hash(&req)),
         created_at: od_runs::now_ms(),
-        prompt: prompt_title(&req.message),
+        prompt: od_runs::prompt_title(&req.message),
     };
     let (run, reused) = match state.runs.registry.create_or_reuse(meta) {
         Ok(found) => found,
@@ -261,20 +261,6 @@ fn reused_response(run: &Arc<Run>) -> Response {
         }),
     )
         .into_response()
-}
-
-/// Characters of the user's message kept with a run.
-const PROMPT_TITLE_CHARS: usize = 200;
-
-/// What the run list shows of the user's message: its first non-empty
-/// line, cut to [`PROMPT_TITLE_CHARS`]. `/api/runs` is polled every few
-/// seconds and runs are never pruned, so the full message stays in the chat.
-fn prompt_title(message: &str) -> Option<String> {
-    let line = message.lines().map(str::trim).find(|l| !l.is_empty())?;
-    match line.char_indices().nth(PROMPT_TITLE_CHARS) {
-        Some((end, _)) => Some(format!("{}…", line[..end].trim_end())),
-        None => Some(line.to_owned()),
-    }
 }
 
 fn new_id() -> String {
@@ -1021,24 +1007,4 @@ pub async fn rescan_agents(State(state): State<AppState>) -> ApiJson<AgentsRespo
         .count();
     tracing::info!(path_changed, available, "agents rescanned");
     res
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_run_keeps_the_first_line_of_what_was_asked() {
-        assert_eq!(
-            prompt_title("\n  A tea shop  \nwith a menu").as_deref(),
-            Some("A tea shop")
-        );
-        assert_eq!(prompt_title(" \n\t\n"), None);
-        let long = "é".repeat(PROMPT_TITLE_CHARS + 50);
-        let title = prompt_title(&long).unwrap();
-        assert_eq!(title.chars().count(), PROMPT_TITLE_CHARS + 1);
-        assert!(title.ends_with('…'));
-        let exact = "a".repeat(PROMPT_TITLE_CHARS);
-        assert_eq!(prompt_title(&exact).as_deref(), Some(exact.as_str()));
-    }
 }

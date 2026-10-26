@@ -184,3 +184,35 @@ async fn nothing_follows_end() {
     assert!(run.emit(sse::AGENT, json!({})).is_none());
     assert_eq!(run.status(), RunStatus::Canceled);
 }
+
+#[test]
+fn a_run_saved_with_the_whole_message_lists_only_its_first_line() {
+    let tmp = tempfile::tempdir().unwrap();
+    let asked = "\nA tea shop landing page\nWarm colours, a menu, opening hours.";
+    {
+        let runs = Runs::new(tmp.path());
+        let mut m = meta("old");
+        m.prompt = Some(asked.to_owned());
+        let (run, _) = runs.create_or_reuse(m).unwrap();
+        assert_eq!(
+            run.info().prompt.as_deref(),
+            Some("A tea shop landing page")
+        );
+        run.finish(end(RunStatus::Succeeded));
+    }
+    // A daemon from before kept the whole message in state.json.
+    let state = tmp.path().join("old/state.json");
+    let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
+    v["prompt"] = json!(asked);
+    std::fs::write(&state, serde_json::to_vec(&v).unwrap()).unwrap();
+    let (runs, _) = Runs::load(tmp.path()).unwrap();
+    let run = runs.get("old").unwrap();
+    assert_eq!(
+        run.info().prompt.as_deref(),
+        Some("A tea shop landing page")
+    );
+    assert_eq!(
+        run.meta().prompt.as_deref(),
+        Some("A tea shop landing page")
+    );
+}

@@ -60,7 +60,8 @@ pub struct RunMeta {
     #[serde(default)]
     pub request_hash: Option<String>,
     pub created_at: i64,
-    /// The user's message the run answers (chat runs), for the run list.
+    /// The first line of the user's message the run answers (chat runs),
+    /// for the run list ([`crate::prompt_title`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
 }
@@ -117,9 +118,11 @@ impl Run {
         Ok(run)
     }
 
+    /// Runs written before runs kept only a title ([`crate::prompt_title`])
+    /// carry the whole message; it is cut here, on create and on load.
     fn with_state(
         dir: PathBuf,
-        meta: RunMeta,
+        mut meta: RunMeta,
         next_id: u64,
         status: RunStatus,
         ended_at: Option<i64>,
@@ -136,6 +139,7 @@ impl Run {
                     .open(dir.join(EVENTS_FILE))?,
             ))
         };
+        meta.prompt = meta.prompt.as_deref().and_then(crate::prompt_title);
         let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
         Ok(Self {
             meta,
