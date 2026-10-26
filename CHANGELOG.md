@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.1] - 2026-10-26
+
 ### Added
 
 - The desktop app writes its log to `<data folder>/logs/daemon.log` (rolled over
@@ -161,5 +163,6 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.1...HEAD
+[0.2.0-beta.1]: https://github.com/quangphung218/contour-design/compare/v0.1.0...v0.2.0-beta.1
 [0.1.0]: https://github.com/quangphung218/contour-design/releases/tag/v0.1.0

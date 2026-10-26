@@ -8,7 +8,7 @@ configure: your agent or model provider, and any MCP server, media or
 research provider you add.
 
 [![CI](https://github.com/quangphung218/contour-design/actions/workflows/ci.yml/badge.svg)](https://github.com/quangphung218/contour-design/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/quangphung218/contour-design?include_prereleases&sort=semver)](https://github.com/quangphung218/contour-design/releases)
+[![Release](https://img.shields.io/github/v/release/quangphung218/contour?include_prereleases&sort=semver)](https://github.com/quangphung218/contour/releases)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 <p><img src="docs/images/demo.gif" alt="A brief typed on Home becomes a project: the agent streams its reply, the live preview fills in, and the page is exported as HTML" width="100%"></p>
@@ -54,7 +54,7 @@ The full tour is in [docs/features.md](docs/features.md).
 ### Download
 
 Get the latest build from
-[Releases](https://github.com/quangphung218/contour-design/releases): a
+[Releases](https://github.com/quangphung218/contour/releases): a
 universal `.dmg` for macOS, an `.AppImage` or `.deb` for Linux, and an
 `.msi` for Windows (untested). Each release has a `SHA256SUMS` file.
 
