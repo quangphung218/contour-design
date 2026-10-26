@@ -1256,7 +1256,9 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 }
 .quote-btn { position: fixed; z-index: var(--z-popover); box-shadow: var(--shadow-md); animation: pop-in var(--duration-fast) var(--ease-emphasized); }
 .media-notes { width: 220px; height: var(--control-sm); }
-.from-folder { display: flex; flex: 1 1 280px; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); min-width: 0; }
+/* Open, the folder form takes the whole line: next to the hint it was
+   squeezed to a few characters on a phone. */
+.from-folder { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); min-width: 0; }
 .from-folder .input { flex: 1; min-width: 0; }
 /* ---------- Studio files panel (tree, kinds, selection, drop) ---------- */
 .files { position: relative; }

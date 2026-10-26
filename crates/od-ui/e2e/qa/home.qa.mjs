@@ -217,4 +217,15 @@ test('HOME-14', 'Home has one composer with one row of controls; starting points
   await page.getByTestId('dsc-source-website').waitFor();
 });
 
+test('HOME-15', 'On a phone, "+" ▸ From folder gives a path field wide enough to read', async ({ d, newPage }) => {
+  const { page } = await newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(d.base + '/');
+  await page.getByTestId('plus-menu').click();
+  await page.getByTestId('action-from-folder').click();
+  const field = page.getByTestId('from-folder-path');
+  await field.waitFor();
+  const w = (await field.boundingBox()).width;
+  assert.ok(w >= 200, `path field only ${Math.round(w)} px wide`);
+});
+
 await run('home');

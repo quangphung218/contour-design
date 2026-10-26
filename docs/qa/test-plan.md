@@ -67,6 +67,7 @@ gets a project that starts working.
 | HOME-12 | While design systems load, the kept pick shows a name or "Loading", not a raw id | A system picked on Home, list request held | Reload | The picker never shows the bare id; the pick is kept once loaded | P2 | auto (QA-017) |
 | HOME-13 | An address no page answers | — | Open `/nope/page`, Go to Home | Heading "Page not found", a Go to Home button that lands on Home | P2 | auto |
 | HOME-14 | One composer, one row of controls | 1440×900 | Open Home, open "+" | No "Recommended… Start creating" strip, no buttons under the composer; New design system, Create plugin and From folder are in "+"; New design system opens the full create dialog | P2 | auto |
+| HOME-15 | From folder fits a phone | 390×844 | "+" ▸ From folder | The path field is at least 200 px wide | P2 | auto |
 
 ## 3. Chat with the agent (`chat.qa.mjs`)
 
