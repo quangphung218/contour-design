@@ -8,6 +8,14 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A plugin run whose agent finished at once (a quick failure, a fast model) no
+  longer loses its GenUI questions: they are asked before the agent starts.
+- The preview no longer stops with "the page kept reloading itself" when files
+  are saved in quick succession (an agent writing many files, fast manual
+  edits); a page that really reloads itself is still stopped.
+
 ## [0.2.0-beta.1] - 2026-10-26
 
 ### Added
