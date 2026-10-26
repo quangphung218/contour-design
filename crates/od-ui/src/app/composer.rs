@@ -1047,6 +1047,10 @@ pub fn apply_toolbox(
     super::chat_view::focus_selector("[data-od-composer]");
 }
 
+/// Whether the "+" menu is open, for the items a caller adds to it.
+#[derive(Clone, Copy)]
+pub struct PlusMenuOpen(pub RwSignal<bool>);
+
 /// "+": attach files, mention a plugin, skill or MCP server, and the
 /// caller's own items (`children`: working directory, linked folders…).
 #[component]
@@ -1067,6 +1071,8 @@ pub fn PlusMenu(
     #[prop(optional)] children: Option<ChildrenFn>,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
+    // The caller's items close the menu through it.
+    provide_context(PlusMenuOpen(open));
     let picker = RwSignal::new(false);
     let view_of = RwSignal::new(PlusView::Main);
     let search = RwSignal::new(String::new());
@@ -1104,19 +1110,7 @@ pub fn PlusMenu(
                 {icon(Glyph::Add)}
             </button>
             <Show when=move || open.get()>
-                // An item of the caller's that leaves the menu (opens a
-                // dialog, fills the composer) carries `data-closes-menu`.
-                <div class=if up { "menu left up plus-menu" } else { "menu left plus-menu" } role="menu"
-                    on:click=move |ev| {
-                        let closes = ev
-                            .target()
-                            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-                            .and_then(|e| e.closest("[data-closes-menu]").ok().flatten())
-                            .is_some();
-                        if closes {
-                            open.set(false);
-                        }
-                    }>
+                <div class=if up { "menu left up plus-menu" } else { "menu left plus-menu" } role="menu">
                     {move || match view_of.get() {
                         PlusView::Main => {
                             view! {

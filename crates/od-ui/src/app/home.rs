@@ -566,7 +566,7 @@ pub fn Home() -> impl IntoView {
 }
 
 /// Home's own items in the "+" menu: start a design system, a plugin, or a
-/// project over a folder. Each closes the menu (`data-closes-menu`).
+/// project over a folder. Each closes the menu.
 #[component]
 fn HomeActions(
     ds_open: RwSignal<bool>,
@@ -575,7 +575,10 @@ fn HomeActions(
     error: RwSignal<Option<String>>,
 ) -> impl IntoView {
     let navigate = use_navigate();
+    let menu = expect_context::<super::composer::PlusMenuOpen>().0;
+    let close = move || menu.set(false);
     let pick_folder = move |_| {
+        close();
         if desktop::is_desktop() {
             let navigate = navigate.clone();
             leptos::task::spawn_local(async move {
@@ -591,15 +594,15 @@ fn HomeActions(
     };
     view! {
         <div class="menu-sep" role="presentation">{t(T::StartFrom)}</div>
-        <button type="button" class="menu-item" role="menuitem" data-testid="ds-new" data-closes-menu=""
-            aria-haspopup="dialog" on:click=move |_| ds_open.set(true)>
+        <button type="button" class="menu-item" role="menuitem" data-testid="ds-new"
+            aria-haspopup="dialog" on:click=move |_| { close(); ds_open.set(true); }>
             {icon(Glyph::DesignSystem)}{t(T::NewDesignSystem)}
         </button>
-        <button type="button" class="menu-item" role="menuitem" data-testid="action-create-plugin" data-closes-menu=""
-            on:click=move |_| on_plugin.run(())>
+        <button type="button" class="menu-item" role="menuitem" data-testid="action-create-plugin"
+            on:click=move |_| { close(); on_plugin.run(()); }>
             {icon(Glyph::Plugin)}{t(T::CreatePlugin)}
         </button>
-        <button type="button" class="menu-item" role="menuitem" data-testid="action-from-folder" data-closes-menu=""
+        <button type="button" class="menu-item" role="menuitem" data-testid="action-from-folder"
             on:click=pick_folder>
             {icon(Glyph::FolderOpen)}{t(T::FromFolder)}
         </button>

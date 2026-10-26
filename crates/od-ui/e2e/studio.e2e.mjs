@@ -589,6 +589,8 @@ try {
   // lands in the history and in its own conversation.
   await page.goto(BASE + '/automations');
   await page.getByTestId('routine-name').fill('Morning refresh');
+  // A new routine starts on "New project each run": pick this project.
+  await page.getByTestId('routine-reuse').check();
   await page.getByTestId('routine-project').selectOption(projectId);
   await page.getByTestId('routine-prompt').fill('Routine refresh of the page');
   await page.getByTestId('routine-schedule').fill('@daily');
@@ -798,14 +800,15 @@ try {
   results.askModeWarning = 'ok';
 
   // 16b. A Studio whose project cannot load keeps saying so (no toast that
-  // times out), with a retry, and offers no starter prompts.
+  // times out) and offers no starter prompts. A project that does not exist
+  // offers All projects, not a retry that cannot work.
   await page.goto(BASE + '/projects/does-not-exist');
   await page.getByTestId('load-error').waitFor();
   await sleep(9000);
   assert.equal(await page.getByTestId('load-error').count(), 1, 'load error still shown after 9 s');
   assert.equal(await page.getByTestId('chat-empty').count(), 0);
-  await page.getByTestId('load-retry').click();
-  await page.getByTestId('load-error').waitFor();
+  assert.equal(await page.getByTestId('load-retry').count(), 0, 'Retry for a project that does not exist');
+  await page.getByTestId('load-error').locator('a[href="/projects"]').waitFor();
   results.loadError = 'ok';
 
   // 17. Nothing left loopback during the whole scenario.
