@@ -492,6 +492,51 @@ async fn edit_key_goes_to_the_first_load_and_to_the_host_once() {
     assert!(again.contains("<script data-od-bridge>"), "{again:.200}");
     assert!(!again.contains("data-od-key=\""));
 
+    // A sandboxed page loading itself under an id it made up: no key, so
+    // its loads chain in the bridge's reload guard.
+    let minted = format!("/api/projects/{id}/raw/index.html?bridge=1&key=load-minted-by-the-page");
+    for site in ["cross-site", "same-site"] {
+        let own = a
+            .send(
+                Request::get(&minted)
+                    .header("sec-fetch-site", site)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .text();
+        assert!(
+            own.contains("<script data-od-bridge>"),
+            "{site}: {own:.200}"
+        );
+    }
+    let host = a
+        .send(
+            Request::get(&minted)
+                .header("sec-fetch-site", "same-origin")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .text();
+    assert!(
+        host.contains("data-od-key=\""),
+        "the host's load of that id"
+    );
+    // A load the user started (address bar, bookmark): no page asked for it.
+    let typed = a
+        .send(
+            Request::get(format!(
+                "/api/projects/{id}/raw/index.html?bridge=1&key=load-typed-by-the-user"
+            ))
+            .header("sec-fetch-site", "none")
+            .body(Body::empty())
+            .unwrap(),
+        )
+        .await
+        .text();
+    assert!(typed.contains("data-od-key=\""), "a user-started load");
+
     let claim = format!("/api/projects/{id}/edit-keys/{kid}");
     let sandboxed = a
         .send(

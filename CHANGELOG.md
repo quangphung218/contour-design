@@ -8,6 +8,14 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.2] - 2026-10-26
+
+### Changed
+
+- The macOS app needs macOS 13.3 or later: the preview's reload guard relies
+  on the browser telling the app's own loads from the page's, which older
+  versions of the system web view do not do.
+
 ### Fixed
 
 - A plugin run whose agent finished at once (a quick failure, a fast model) no
@@ -15,6 +23,12 @@ All notable changes to Contour are recorded here. The format follows
 - The preview no longer stops with "the page kept reloading itself" when files
   are saved in quick succession (an agent writing many files, fast manual
   edits); a page that really reloads itself is still stopped.
+- A page that loads itself again under a new preview address each time is
+  stopped like any other reload loop: only loads the app starts get an edit
+  key, so the page cannot pass for the app saving fast.
+- A plugin run canceled while its GenUI questions were being asked no longer
+  leaves them waiting in the chat for a run that never started.
+- The Windows build compiles without warnings.
 
 ## [0.2.0-beta.1] - 2026-10-26
 
@@ -171,6 +185,7 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.1...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.2...HEAD
+[0.2.0-beta.2]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/quangphung218/contour-design/compare/v0.1.0...v0.2.0-beta.1
 [0.1.0]: https://github.com/quangphung218/contour-design/releases/tag/v0.1.0

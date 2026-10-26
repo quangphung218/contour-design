@@ -5,7 +5,7 @@
 //! to start instead of treating the first one's live runs as orphans.
 
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, Write};
+use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 
 /// File name of the lock inside the data dir.
@@ -70,6 +70,7 @@ impl DaemonLock {
         #[cfg(unix)]
         {
             use nix::fcntl::{Flock, FlockArg};
+            use std::io::Read;
             match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
                 Ok(file) => Ok(Self { file }),
                 Err((mut file, nix::errno::Errno::EWOULDBLOCK)) => {

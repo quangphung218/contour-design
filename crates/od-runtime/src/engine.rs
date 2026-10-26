@@ -1244,6 +1244,7 @@ pub fn retry_delay(base: Duration, category: FailureCategory, attempt: u32) -> D
     capped.mul_f64(factor)
 }
 
+#[cfg(unix)]
 fn signal_name(sig: i32) -> String {
     match sig {
         9 => "SIGKILL".to_owned(),

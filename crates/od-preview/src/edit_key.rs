@@ -2,7 +2,8 @@
 //! bridge, not from the artifact's own scripts, which share its window.
 //!
 //! The host names each preview load with a fresh id (`raw?bridge=1&key=<id>`).
-//! The first response for that id carries a new secret key inside the
+//! The first response for that id, when the host page started the load
+//! (the daemon checks `Sec-Fetch-Site`), carries a new secret key inside the
 //! bridge's `<script>` tag; the bridge takes it before any author script
 //! runs and removes it from the DOM. The host claims the key once, by a
 //! POST the guard refuses to sandboxed frames, and from then on accepts

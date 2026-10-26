@@ -297,6 +297,7 @@ struct Session {
 /// Prefix of browser profile folders in the temp dir.
 const PROFILE_PREFIX: &str = "od-chrome-";
 /// A profile folder without a browser lock this old is left over.
+#[cfg(unix)]
 const STALE_PROFILE: Duration = Duration::from_secs(60 * 60);
 
 /// A throwaway browser profile. Removed only once no process started with

@@ -633,6 +633,7 @@ async fn prepare_and_launch(
         if let Some(file) = &mcp.file {
             let _ = std::fs::remove_file(file);
         }
+        crate::routes::genui::drop_pending_for_run(state, run).await;
         end_unlaunched(
             state,
             run,
