@@ -266,6 +266,9 @@ ExportDiagnostics = ส่งออกข้อมูลวินิจฉัย
 DiagnosticsHint = ไฟล์ zip ที่สร้างบนเครื่องนี้: เวอร์ชัน การตั้งค่า (ไม่รวม key) เอเจนต์ที่พบ และบันทึกการรันล่าสุด ไม่มีการอัปโหลดใดๆ
 DiagnosticsSaved = บันทึกข้อมูลวินิจฉัยไว้ที่ {0}
 ResetOnboarding = รีเซ็ตการเริ่มต้นใช้งาน
+Licenses = สัญญาอนุญาต
+LicensesHint = Contour ใช้สัญญาอนุญาต Apache License 2.0 ไฟล์เหล่านี้มาพร้อมกับแอป
+Credits = เครดิต
 # Automations
 MetricActive = ใช้งานอยู่
 MetricPaused = หยุดชั่วคราว

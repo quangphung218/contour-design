@@ -266,6 +266,9 @@ ExportDiagnostics = 진단 정보 내보내기
 DiagnosticsHint = 이 컴퓨터에서 만든 zip 파일입니다. 버전, 키를 제외한 설정, 감지된 에이전트, 최근 실행 로그가 들어 있으며 아무것도 업로드되지 않습니다.
 DiagnosticsSaved = 진단 정보를 {0}에 저장했습니다
 ResetOnboarding = 온보딩 초기화
+Licenses = 라이선스
+LicensesHint = Contour는 Apache License 2.0으로 배포됩니다. 이 파일들은 앱에 포함되어 있습니다.
+Credits = 크레딧
 # Automations
 MetricActive = 활성
 MetricPaused = 일시 정지

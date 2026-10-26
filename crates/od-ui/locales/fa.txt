@@ -266,6 +266,9 @@ ExportDiagnostics = صادر کردن تشخیص
 DiagnosticsHint = یک فایل zip که روی همین دستگاه ساخته می‌شود: نسخه‌ها، تنظیمات بدون کلید، agentهای شناسایی‌شده و لاگ اجراهای اخیر. چیزی آپلود نمی‌شود.
 DiagnosticsSaved = تشخیص‌ها در {0} ذخیره شد
 ResetOnboarding = بازنشانی شروع
+Licenses = مجوزها
+LicensesHint = Contour تحت مجوز Apache License 2.0 است. این فایل‌ها همراه برنامه ارائه می‌شوند.
+Credits = قدردانی
 # Automations
 MetricActive = فعال
 MetricPaused = متوقف‌شده موقت

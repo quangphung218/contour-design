@@ -266,6 +266,9 @@ ExportDiagnostics = Экспорт диагностики
 DiagnosticsHint = ZIP, собранный на этом компьютере: версии, настройки без ключей, найденные агенты и недавние логи запусков. Ничего не отправляется.
 DiagnosticsSaved = Диагностика сохранена в {0}
 ResetOnboarding = Сбросить onboarding
+Licenses = Лицензии
+LicensesHint = Contour распространяется по лицензии Apache License 2.0. Эти файлы входят в приложение.
+Credits = Благодарности
 # Automations
 MetricActive = Активна
 MetricPaused = На паузе

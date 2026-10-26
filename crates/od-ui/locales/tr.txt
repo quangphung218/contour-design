@@ -265,6 +265,9 @@ ExportDiagnostics = Tanılamayı dışa aktar
 DiagnosticsHint = Bu bilgisayarda oluşturulan bir zip: sürümler, anahtarsız ayarlar, algılanan agent'lar ve son çalıştırma günlükleri. Hiçbir şey yüklenmez.
 DiagnosticsSaved = Tanılama {0} konumuna kaydedildi
 ResetOnboarding = Karşılamayı sıfırla
+Licenses = Lisanslar
+LicensesHint = Contour, Apache License 2.0 ile lisanslanmıştır. Bu dosyalar uygulamayla birlikte gelir.
+Credits = Katkıda bulunanlar
 # Automations
 MetricActive = Etkin
 MetricPaused = Duraklatıldı

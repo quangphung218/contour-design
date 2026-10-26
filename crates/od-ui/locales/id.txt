@@ -266,6 +266,9 @@ ExportDiagnostics = Ekspor diagnostik
 DiagnosticsHint = File zip yang dibuat di komputer ini: versi, pengaturan tanpa key, agen yang terdeteksi, dan log eksekusi terbaru. Tidak ada yang diunggah.
 DiagnosticsSaved = Diagnostik disimpan ke {0}
 ResetOnboarding = Atur ulang onboarding
+Licenses = Lisensi
+LicensesHint = Contour berlisensi Apache License 2.0. File ini disertakan bersama aplikasi.
+Credits = Kredit
 # Automations
 MetricActive = Aktif
 MetricPaused = Dijeda

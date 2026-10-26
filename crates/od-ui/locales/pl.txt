@@ -266,6 +266,9 @@ ExportDiagnostics = Eksportuj diagnostykę
 DiagnosticsHint = Plik zip utworzony na tym komputerze: wersje, ustawienia bez kluczy, wykryci agenci i ostatnie logi uruchomień. Nic nie jest wysyłane.
 DiagnosticsSaved = Zapisano diagnostykę w {0}
 ResetOnboarding = Zresetuj wprowadzenie
+Licenses = Licencje
+LicensesHint = Contour jest dostępny na licencji Apache License 2.0. Te pliki są dołączone do aplikacji.
+Credits = Podziękowania
 # Automations
 MetricActive = Aktywne
 MetricPaused = Wstrzymane
