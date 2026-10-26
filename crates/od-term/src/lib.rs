@@ -17,7 +17,7 @@
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::Serialize;
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -162,7 +162,8 @@ pub struct Session {
     exit: watch::Sender<Option<TermExit>>,
     /// Process groups of the shell's descendants seen while it ran, still
     /// alive at the last look (POSIX).
-    tracked: Mutex<BTreeSet<i32>>,
+    #[cfg(unix)]
+    tracked: Mutex<std::collections::BTreeSet<i32>>,
 }
 
 impl std::fmt::Debug for Session {
@@ -577,6 +578,7 @@ fn spawn_session(
         }),
         tx,
         exit,
+        #[cfg(unix)]
         tracked: Mutex::default(),
     });
     #[cfg(unix)]
@@ -660,6 +662,7 @@ mod tests {
     /// macOS `ps` is setuid root: inside `sandbox-exec` (how the maintainer's pre-merge check runs
     /// `make check`) it cannot be executed, so the process-tree cleanup these
     /// tests check has nothing to list. They skip there and run everywhere else.
+    #[cfg(unix)]
     fn ps_unavailable() -> bool {
         std::process::Command::new("ps")
             .args(["-p", "1"])
