@@ -46,10 +46,15 @@ All notable changes to Contour are recorded here. The format follows
   the agent card ("Save agent") and the API provider form ("Save and use") each
   have their own Save, never both at once.
 - Messages are named by what was asked, with the state as a badge, and the page
-  is called Messages everywhere. `GET /api/runs` gives each run's `prompt`.
+  is called Messages everywhere. Each run keeps the message it answered
+  (`prompt` in `GET /api/runs` and `GET /api/runs/:id`).
 - The chat says what the agent did ("Updated plan", "Wrote", "1 new") instead of
   tool names such as `TodoWrite`.
-- New routines start on "New project each run".
+- New routines start on "New project each run", and the form goes back to it
+  after an edit is saved or cancelled.
+- "+" on Home names its two folder items by what they do: "Open a folder as a
+  project" and "Let the agent read a folder".
+- The run status says "1 file written" / "N files written".
 - Media and Templates say "Audio"; Media ▸ Generate has one way in, real selects
   and a Set up providers button.
 - Segmented controls, tab lists and radio chips move with the arrow keys and are
@@ -86,8 +91,9 @@ All notable changes to Contour are recorded here. The format follows
 - Onboarding's brand extraction runs the agent the user picked and tested, not
   the first one found; "Not logged in" and "not signed in" count as a missing
   sign-in.
-- A link to a project that does not exist offers only All projects: no Retry, no
-  preview steps, and the composer is off. Unknown addresses get a "Page not found"
+- A link to a project that does not exist says "This project was deleted or the
+  link is wrong." and offers only All projects: no Retry, tabs, Export, files or
+  pickers, and the composer is off. Unknown addresses get a "Page not found"
   page with Go to Home.
 - An empty template search offers Clear filters; Design systems search matches
   the description people read, not the package note; the Skills tab drops the
