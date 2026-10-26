@@ -97,6 +97,10 @@ try {
   assert.equal(await page.getByTestId('design-system').inputValue(), 'user:tea-house');
   const label = await page.locator('[data-testid="design-system"] option[value="user:tea-house"]').textContent();
   assert.equal(label, 'Tea House · Custom');
+  // The "created" line is about Tea House: another pick retires it.
+  await page.getByTestId('design-system').selectOption('');
+  await page.getByTestId('ds-status').waitFor({ state: 'detached' });
+  await page.getByTestId('design-system').selectOption('user:tea-house');
   const api = await (await fetch(`${BASE}/api/design-systems`)).json();
   const mine = api.designSystems.find((s) => s.id === 'user:tea-house');
   assert.equal(mine.source, 'user');

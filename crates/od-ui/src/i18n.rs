@@ -1175,7 +1175,7 @@ messages! {
     AgentSectionHint => "The coding agent that runs briefs on this machine.", "Coding agent chạy brief trên máy này.";
     PermissionsHint => "What the agent may do without asking.", "Những việc agent được làm mà không cần hỏi.";
     AppearanceHint => "Follows the system unless you pin a theme.", "Theo hệ thống, trừ khi chọn cố định một chế độ.";
-    LanguageHint => "Applies to the whole app after saving.", "Áp dụng cho cả app sau khi lưu.";
+    LanguageHint => "Applies to the whole app.", "Áp dụng cho cả app.";
     NewRoutine => "New routine", "Routine mới";
     RoutinesTitle => "Routines", "Routine";
     NoRoutinesBody => "Add one above to run a prompt on a schedule.", "Thêm một routine ở trên để chạy prompt theo lịch.";
@@ -1396,7 +1396,8 @@ messages! {
     RunWorking => "Working", "Đang chạy";
     RunStep => "Step {0} of {1}", "Bước {0}/{1}";
     RunDone => "Done", "Xong";
-    RunFilesWritten => "{0} file(s) written", "Đã ghi {0} file";
+    RunFileWritten => "1 file written", "Đã ghi 1 file";
+    RunFilesWritten => "{0} files written", "Đã ghi {0} file";
     RunFailed => "Failed", "Lỗi";
     RunFailedHint => "See the message above, then retry or check the agent in Settings.", "Xem thông báo ở trên, rồi thử lại hoặc kiểm tra agent trong Cài đặt.";
     NextSteps => "Next", "Tiếp theo";

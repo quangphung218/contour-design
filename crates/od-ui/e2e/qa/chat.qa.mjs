@@ -208,6 +208,7 @@ test('CHAT-13', 'The chat says what the agent did in words, not tool names', asy
   const files = await turn.getByTestId('turn-files').innerText();
   assert.match(files, /1 new/);
   assert.doesNotMatch(files, /\bWrite\b/);
+  assert.match(await turn.getByTestId('run-state').innerText(), /1 file written/);
 });
 
 await run('chat');

@@ -642,7 +642,11 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                 "done",
                 Some(Glyph::CheckCircle),
                 t(T::RunDone).to_owned(),
-                (files > 0).then(|| tf(T::RunFilesWritten, &[&files.to_string()])),
+                match files {
+                    0 => None,
+                    1 => Some(t(T::RunFileWritten).to_owned()),
+                    n => Some(tf(T::RunFilesWritten, &[&n.to_string()])),
+                },
             ),
             RunPhase::Failed => (
                 "failed",

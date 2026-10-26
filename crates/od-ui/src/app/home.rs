@@ -96,6 +96,13 @@ pub fn Home() -> impl IntoView {
     let ds_open = RwSignal::new(false);
     let folder = RwSignal::new(None::<String>);
     let ds_created = RwSignal::new(None::<String>);
+    // "Design system X created" is about X: picking another one retires it.
+    Effect::new(move |_| {
+        let now = design_system.get();
+        if ds_created.get_untracked().is_some_and(|c| Some(c) != now) {
+            ds_created.set(None);
+        }
+    });
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
     let brief_ref = NodeRef::<leptos::html::Textarea>::new();
