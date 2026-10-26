@@ -38,17 +38,32 @@ fn start(bare: bool) -> Daemon {
 
 /// Like [`start`], with `dir` first on the daemon's `PATH` (mock agents).
 fn start_with_path(bare: bool, dir: Option<&std::path::Path>) -> Daemon {
+    start_with(bare, dir, &[], &[])
+}
+
+/// Like [`start_with_path`], with more `daemon start` arguments and env.
+fn start_with(
+    bare: bool,
+    dir: Option<&std::path::Path>,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Daemon {
     // The free port is released before the daemon binds it, so a test running
     // alongside can take it first; the daemon then exits. Retry on a new port.
     for _ in 0..3 {
-        if let Some(daemon) = try_start(bare, dir) {
+        if let Some(daemon) = try_start(bare, dir, args, env) {
             return daemon;
         }
     }
     panic!("daemon did not start after 3 ports");
 }
 
-fn try_start(bare: bool, dir: Option<&std::path::Path>) -> Option<Daemon> {
+fn try_start(
+    bare: bool,
+    dir: Option<&std::path::Path>,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Option<Daemon> {
     let tmp = tempfile::tempdir().unwrap();
     let resources = tmp.path().join("resources");
     std::fs::create_dir_all(resources.join("skills/demo")).unwrap();
@@ -61,6 +76,7 @@ fn try_start(bare: bool, dir: Option<&std::path::Path>) -> Option<Daemon> {
     let mut cmd = Command::new(OD);
     if !bare {
         cmd.args(["daemon", "start", "--port", &port.to_string()]);
+        cmd.args(args);
     }
     if let Some(dir) = dir {
         let mut parts = vec![dir.to_path_buf()];
@@ -74,6 +90,8 @@ fn try_start(bare: bool, dir: Option<&std::path::Path>) -> Option<Daemon> {
         .env("OD_DATA_DIR", tmp.path().join("data"))
         .env("OD_RESOURCE_ROOT", &resources)
         .env("RUST_LOG", "warn")
+        .env_remove("OD_LOG_FILE")
+        .envs(env.iter().copied())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -341,4 +359,64 @@ cat >/dev/null
         runs.iter()
             .any(|r| r["id"] == run_id.as_str() && r["status"] == "canceled")
     );
+}
+
+#[test]
+fn the_daemon_writes_a_log_file_only_when_asked() {
+    let info = ("RUST_LOG", "info");
+    for (args, env, wanted) in [
+        (&["--log-file"][..], &[info][..], true),
+        (&[][..], &[info, ("OD_LOG_FILE", "1")][..], true),
+        (&[][..], &[info, ("OD_LOG_FILE", "0")][..], false),
+        (&[][..], &[info][..], false),
+    ] {
+        let d = start_with(false, None, args, env);
+        let log = d._tmp.path().join("data/logs/daemon.log");
+        if wanted {
+            let text = std::fs::read_to_string(&log).unwrap();
+            assert!(
+                text.contains("od daemon listening"),
+                "{args:?} {env:?}: {text}"
+            );
+        } else {
+            assert!(!log.exists(), "{args:?} {env:?}");
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn open_logs_shows_the_log_folder() {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = tempfile::tempdir().unwrap();
+    let opened = bin.path().join("opened");
+    let opener = bin.path().join("opener");
+    std::fs::write(
+        &opener,
+        format!(
+            "#!/bin/sh\nprintf '%s' \"$1\" > '{0}.tmp' && mv '{0}.tmp' '{0}'\n",
+            opened.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&opener, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let d = start_with(
+        false,
+        None,
+        &[],
+        &[("OD_OPEN_COMMAND", opener.to_str().unwrap())],
+    );
+    let res = reqwest::blocking::Client::new()
+        .post(format!("{}/api/diagnostics/open-logs", d.url))
+        .json(&serde_json::json!({}))
+        .send()
+        .unwrap();
+    assert!(res.status().is_success(), "{}", res.status());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !opened.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let dir = std::fs::read_to_string(&opened).unwrap();
+    assert!(dir.ends_with("/data/logs"), "{dir}");
+    assert!(std::path::Path::new(&dir).is_dir());
 }

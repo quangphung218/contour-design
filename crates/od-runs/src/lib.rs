@@ -38,6 +38,21 @@ pub enum RunsError {
 
 pub type Result<T, E = RunsError> = std::result::Result<T, E>;
 
+/// Characters of the user's message kept with a run.
+pub const PROMPT_TITLE_CHARS: usize = 200;
+
+/// What a run keeps of the user's message: its first non-empty line, cut
+/// to [`PROMPT_TITLE_CHARS`]. `/api/runs` is polled every few seconds and
+/// runs are never pruned, so the full message stays in the chat only.
+#[must_use]
+pub fn prompt_title(message: &str) -> Option<String> {
+    let line = message.lines().map(str::trim).find(|l| !l.is_empty())?;
+    match line.char_indices().nth(PROMPT_TITLE_CHARS) {
+        Some((end, _)) => Some(format!("{}…", line[..end].trim_end())),
+        None => Some(line.to_owned()),
+    }
+}
+
 /// Current time as Unix epoch milliseconds.
 #[must_use]
 pub fn now_ms() -> i64 {
@@ -54,4 +69,26 @@ pub fn is_safe_run_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_run_keeps_the_first_line_of_what_was_asked() {
+        assert_eq!(
+            prompt_title("\n  A tea shop  \nwith a menu").as_deref(),
+            Some("A tea shop")
+        );
+        assert_eq!(prompt_title(" \n\t\n"), None);
+        let long = "é".repeat(PROMPT_TITLE_CHARS + 50);
+        let title = prompt_title(&long).unwrap();
+        assert_eq!(title.chars().count(), PROMPT_TITLE_CHARS + 1);
+        assert!(title.ends_with('…'));
+        let exact = "a".repeat(PROMPT_TITLE_CHARS);
+        assert_eq!(prompt_title(&exact).as_deref(), Some(exact.as_str()));
+        // Already a title: unchanged, so trimming again is harmless.
+        assert_eq!(prompt_title(&title).as_deref(), Some(title.as_str()));
+    }
 }

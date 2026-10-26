@@ -52,8 +52,7 @@ fn resource_root(app: &AppHandle) -> PathBuf {
         .unwrap_or_else(resolve_resource_root)
 }
 
-async fn start_daemon(resource_root: PathBuf) -> anyhow::Result<Daemon> {
-    let data_dir = DataDir::from_env();
+async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Result<Daemon> {
     let mut lock = DaemonLock::acquire(data_dir.root())?;
     let store = {
         let data_dir = data_dir.clone();
@@ -293,11 +292,10 @@ fn show_data_folder(app: &AppHandle) {
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .init();
+    // Opened from Finder the app has no stdout or stderr: the log and any
+    // panic also go to `<data>/logs/` (Help ▸ Report Issue reads it).
+    let data_dir = od_server::logs::with_console(DataDir::from_env);
+    od_server::logs::init(Some(data_dir.root()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -313,7 +311,7 @@ fn main() -> anyhow::Result<()> {
             REPORT_MENU_ID => ui_action(app, "report-issue"),
             _ => {}
         })
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle().clone();
             // The daemon's origin, once it listens; until then only the
             // splash may load.
@@ -353,7 +351,7 @@ fn main() -> anyhow::Result<()> {
             window.build()?;
             let root = resource_root(&handle);
             tauri::async_runtime::spawn(async move {
-                let daemon = match start_daemon(root).await {
+                let daemon = match start_daemon(data_dir, root).await {
                     Ok(daemon) => daemon,
                     Err(e) => {
                         // Typically a CLI daemon already owns the data dir.

@@ -314,7 +314,8 @@ files under the data folder and the API returns them masked.
 - It shares the data folder with `od`. If an `od` daemon already owns it,
   the app says so and quits; stop `od` first.
 - **Project ▸ Open Folder…** (Cmd+O), **Help** ▸ Documentation, Report Issue
-  (copies a diagnostics summary and opens the run log folder), Show Data
+  (copies a diagnostics summary with the last lines of the app log and opens
+  the log folder), Show Data
   Folder, Keyboard Shortcuts, Command Palette.
 - Started from Finder or the Dock, the app takes `PATH` from your login
   shell (plus `~/.local/bin`, Homebrew, npm, bun, cargo) to find agents.
@@ -381,6 +382,7 @@ daemon, `od <command> --help` lists the options.
 | `OD_WATCHER_USE_POLLING` | poll for file changes (network drives, Docker) | off |
 | `OD_OPEN_COMMAND` | command that opens folders and links instead of Finder or `xdg-open` | per OS |
 | `RUST_LOG` | log filter for the daemon and the app ([development.md](development.md#logs)) | `info` |
+| `OD_LOG_FILE` | `1` makes the `od` daemon also write `<data>/logs/daemon.log` (the desktop app always does) | off |
 
 ## Not in Contour
 

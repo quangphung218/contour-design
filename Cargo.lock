@@ -3606,7 +3606,6 @@ dependencies = [
  "tauri-plugin-dialog",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3811,6 +3810,7 @@ dependencies = [
  "od-runtime",
  "od-store",
  "od-term",
+ "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",
@@ -3823,6 +3823,7 @@ dependencies = [
  "tokio-util",
  "tower",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "zip",
 ]

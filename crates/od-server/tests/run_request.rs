@@ -75,12 +75,13 @@ async fn the_run_list_names_what_was_asked() {
     let run = d
         .start(
             json!({"agentId": "claude", "projectId": project, "conversationId": conversation,
-            "message": "A tea shop landing page"}),
+            "message": "\n  A tea shop landing page\nWarm colours, a menu and opening hours."}),
         )
         .await;
     end_of(&d.events(&run.run_id, None).await);
     // The list reads the run, not the chat (it is polled every few
-    // seconds): a message rewritten afterwards does not change it.
+    // seconds): a message rewritten afterwards does not change it. The run
+    // keeps only the first non-empty line of what was asked.
     let messages = d.settled_messages(&project, &conversation).await;
     let user = messages.iter().find(|m| m["role"] == "user").unwrap();
     let res = d

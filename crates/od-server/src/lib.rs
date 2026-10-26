@@ -6,6 +6,7 @@
 pub mod error;
 pub mod guard;
 pub mod lock;
+pub mod logs;
 pub mod routes;
 pub mod state;
 

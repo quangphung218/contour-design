@@ -131,6 +131,10 @@ struct StartArgs {
     host: String,
     #[arg(long, env = "OD_PORT", default_value_t = od_server::DEFAULT_PORT)]
     port: u16,
+    /// Also write the log, and any panic, to `<data>/logs/daemon.log`
+    /// (rolled over at 5 MB, 5 files kept). Same as `OD_LOG_FILE=1`.
+    #[arg(long)]
+    log_file: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -199,6 +203,7 @@ fn main() -> ExitCode {
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(od_server::DEFAULT_PORT),
+            log_file: false,
         }),
         Some(Command::Daemon(DaemonCommand::Start(args))) => run_daemon(args),
         Some(Command::Daemon(DaemonCommand::Status)) => {
@@ -248,19 +253,15 @@ fn main() -> ExitCode {
 }
 
 fn run_daemon(args: StartArgs) -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    let options =
+        od_server::logs::with_console(|| od_server::ServeOptions::from_env(args.host, args.port));
+    let to_file = args.log_file || od_server::logs::file_from_env();
+    od_server::logs::init(to_file.then(|| options.data_dir.root()));
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("starting the async runtime")?;
-    runtime.block_on(od_server::serve(od_server::ServeOptions::from_env(
-        args.host, args.port,
-    )))
+    runtime.block_on(od_server::serve(options))
 }
 
 fn print_json<T: serde::Serialize>(value: &T) -> anyhow::Result<()> {
