@@ -565,6 +565,12 @@ async fn prepare_and_launch(
     let resumed = prepared.resume_session_id.is_some();
     let mcp = crate::routes::platform::mcp::for_agent(state, def.mcp, run.id()).await;
     let engine = &state.runs.engine;
+    // Before the launch: a fast agent can end the run while the surfaces
+    // are still being asked, and a run takes no events once it has ended.
+    let canceled = state.runs.pending_cancels().contains(run.id());
+    if !canceled {
+        crate::routes::genui::raise_for_run(state, run, req, project).await;
+    }
     let launched = {
         // Held across the check and `launch` so a concurrent cancel either
         // finds the run in the engine or leaves a pending cancel seen here.
@@ -638,7 +644,6 @@ async fn prepare_and_launch(
         .await;
         return Ok(resumed);
     };
-    crate::routes::genui::raise_for_run(state, run, req, project).await;
     tokio::spawn(persist_run(
         state.clone(),
         Arc::clone(run),
