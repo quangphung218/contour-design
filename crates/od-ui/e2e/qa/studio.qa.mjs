@@ -215,7 +215,7 @@ test('STU-16', 'When + is off, its tooltip says why', async ({ d, newPage }) => 
 test('STU-17', 'The Studio names the project at the top of the chat, the conversation under it', async ({ d, newPage }) => {
   const { page } = await studio(newPage, d);
   const name = page.getByTestId('studio-project-name');
-  assert.equal(await name.innerText(), 'Studio project');
+  await until(async () => (await name.innerText()) === 'Studio project', 'project name in the chat head');
   assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Studio project');
   const conversation = page.getByTestId('conversation');
   assert.equal(await conversation.evaluate((e) => e.selectedOptions[0]?.textContent), 'Conversation 1');

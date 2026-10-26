@@ -101,10 +101,17 @@ fn for_people(text: &str) -> String {
         "when the user",
     ];
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let cut = flat.match_indices(". ").map(|(i, _)| i + 2).find(|&i| {
-        let rest = flat[i..].to_lowercase();
-        FOR_AGENT.iter().any(|w| rest.starts_with(w))
-    });
+    // Sentence starts: after ". " or a CJK full stop.
+    let starts = flat
+        .match_indices(". ")
+        .map(|(i, _)| i + 2)
+        .chain(flat.match_indices('。').map(|(i, m)| i + m.len()));
+    let cut = starts
+        .filter(|&i| {
+            let rest = flat[i..].trim_start().to_lowercase();
+            FOR_AGENT.iter().any(|w| rest.starts_with(w))
+        })
+        .min();
     let kept = cut.map_or(flat.as_str(), |i| flat[..i].trim_end());
     crate::i18n::rebrand(kept).into_owned()
 }
@@ -1081,6 +1088,10 @@ mod tests {
         assert_eq!(
             for_people("Turns a brief into a spec. Keeps the palette."),
             "Turns a brief into a spec. Keeps the palette."
+        );
+        assert_eq!(
+            for_people("网站复刻方法论。USE WHEN 用户说 复刻网站。"),
+            "网站复刻方法论。"
         );
         // Nothing else to show: the text stays whole.
         assert_eq!(for_people("Use when asked."), "Use when asked.");

@@ -16,8 +16,7 @@ async function form(newPage, d, { name, prompt, project, eachRun = false }) {
   assert.equal(await page.getByTestId('routine-each-run').isChecked(), true, 'new routine targets an existing project');
   await page.getByTestId('routine-name').fill(name);
   await page.getByTestId('routine-prompt').fill(prompt);
-  const each = page.getByTestId('routine-each-run');
-  if ((await each.isChecked()) !== eachRun) await each.click();
+  await page.getByTestId(eachRun ? 'routine-each-run' : 'routine-reuse').check();
   if (project) await page.getByTestId('routine-project').selectOption(project);
   await page.getByTestId('schedule-hourly').click();
   return p;

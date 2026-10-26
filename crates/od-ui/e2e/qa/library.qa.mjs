@@ -55,8 +55,9 @@ test('LIB-12', 'Design system search finds the words the page shows, not the bun
   const ids = () => page.getByTestId('ds-row').evaluateAll((els) => els.map((e) => e.dataset.id));
   await page.getByTestId('ds-search').fill('coral');
   await until(async () => (await ids()).includes('airbnb'), '"coral" finds Airbnb');
-  await page.getByTestId('ds-search').fill('curated');
-  await until(async () => (await page.getByTestId('ds-row').count()) === 0, '"curated" matches nothing shown');
+  // Words only the bundled packages' maintainer note has.
+  await page.getByTestId('ds-search').fill('derived from curated');
+  await until(async () => (await page.getByTestId('ds-row').count()) === 0, '"derived from curated" matches nothing shown');
 });
 
 test('LIB-13', 'The Skills tab says what each skill makes, not when the agent should load it', async ({ d, newPage }) => {

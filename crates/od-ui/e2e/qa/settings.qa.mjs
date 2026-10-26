@@ -140,7 +140,7 @@ test('SET-08', 'An Ollama provider on a one-word host (gpu-box) saves from Setti
   await page.getByTestId('byok-base-url').fill('http://gpu-box:11434/v1');
   const save = page.getByTestId('byok-save');
   assert.equal(await save.isEnabled(), true, 'Save is off for a keyless Ollama');
-  const status = await savedStatus(page, save);
+  const status = await savedStatus(page, () => save.click());
   assert.equal(status, 200, `saving answered ${status}: ${await form.innerText()}`);
 }, { daemon: {} });
 
@@ -157,7 +157,7 @@ test('SET-09', 'Settings ▸ Agent: Check again finds an agent installed after t
   assert.equal(await page.getByTestId('agent-install').count(), 0, 'install cards still shown next to a found agent');
 }, { daemon: { agents: false, env: { PATH: `${lateBin}:/usr/bin:/bin` } } });
 
-test('SET-09', 'Settings has one Save per thing to save: the agent card or the API provider, never both', async ({ d, api, newPage }) => {
+test('SET-10', 'Settings has one Save per thing to save: the agent card or the API provider, never both', async ({ d, api, newPage }) => {
   const { page } = await newPage();
   await page.goto(d.base + '/settings');
   const visibleSaves = () => page.locator('#settings-execution button.primary:visible').count();
