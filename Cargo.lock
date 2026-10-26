@@ -3600,6 +3600,7 @@ dependencies = [
  "od-runtime",
  "od-server",
  "od-store",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
