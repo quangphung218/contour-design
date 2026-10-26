@@ -1582,8 +1582,8 @@ messages! {
     TaskNotFinished => "Task not finished yet: {0} item(s) left", "Việc chưa xong: còn {0} mục";
     Reconnect => "Reconnect", "Kết nối lại";
     SearchList => "Search", "Tìm";
-    OpWrite => "Write", "Ghi";
-    OpEdit => "Edit", "Sửa";
+    OpWrite => "New", "Mới";
+    OpEdit => "Edited", "Đã sửa";
     DesignToolbox => "Design toolbox", "Hộp công cụ thiết kế";
     ToolMatch => "Match next step", "Gợi ý bước tiếp theo";
     ToolMatchPrompt => "Define the taste bar for this design first, then pick the skills, files and tools that fit the next step and do it.", "Xác định chuẩn thẩm mỹ cho bản thiết kế này trước, rồi chọn skill, file và công cụ hợp với bước tiếp theo và làm luôn.";

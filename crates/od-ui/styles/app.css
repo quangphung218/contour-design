@@ -157,7 +157,8 @@ button.nav-link { width: 100%; border: 0; background: transparent; font: inherit
 .picker:focus-within { box-shadow: 0 0 0 3px var(--color-focus-ring); }
 .picker-label { font-size: var(--text-sm); }
 .picker select {
-  width: auto; max-width: 200px;
+  /* Narrow enough that Home's controls fit on one row at 1440. */
+  width: auto; max-width: 116px;
   height: var(--control-sm);
   padding: 0 var(--space-6) 0 0;
   border: 0; box-shadow: none;

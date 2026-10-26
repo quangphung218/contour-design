@@ -205,7 +205,9 @@ test('CHAT-13', 'The chat says what the agent did in words, not tool names', asy
   assert.ok(tools.includes('Updated plan'), `tools: ${tools}`);
   assert.ok(tools.includes('Wrote'), `tools: ${tools}`);
   assert.doesNotMatch(await turn.innerText(), /TodoWrite|Write \d/);
-  assert.match(await turn.getByTestId('turn-files').innerText(), /1 new/);
+  const files = await turn.getByTestId('turn-files').innerText();
+  assert.match(files, /1 new/);
+  assert.doesNotMatch(files, /\bWrite\b/);
 });
 
 await run('chat');

@@ -411,7 +411,6 @@ pub fn Home() -> impl IntoView {
                             <WorkingDirItems dir=working_dir/>
                         </PlusMenu>
                         <ChipRow chip=chip picked=chip_picked set_chip=Callback::new(set_chip)/>
-                        <span class="bar-divider" aria-hidden="true"></span>
                         <label class="picker">
                             {icon(Glyph::DesignSystem)}
                             <select

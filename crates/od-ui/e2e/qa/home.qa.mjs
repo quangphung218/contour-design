@@ -197,6 +197,8 @@ test('HOME-14', 'Home has one composer with one row of controls; starting points
   await page.getByTestId('brief').waitFor();
   assert.equal(await page.getByTestId('recommended').count(), 0, '"Recommended… Start creating" next to the composer');
   assert.equal(await page.locator('.composer-foot button:visible').count(), 0, 'buttons under the composer');
+  const rows = await page.locator('.composer-bar > :visible').evaluateAll((els) => new Set(els.map((e) => { const r = e.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2 / 16); })).size);
+  assert.equal(rows, 1, `composer controls on ${rows} rows`);
   for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) assert.equal(await page.getByTestId(id).count(), 0, `${id} outside "+"`);
   await page.getByTestId('plus-menu').click();
   for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) await page.getByTestId(id).waitFor();
