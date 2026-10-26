@@ -55,7 +55,9 @@
   // Guard: redirect / reload loops. window.name survives reloads of the same
   // browsing context, so each load counts a hop; loads less than GAP_MS apart
   // chain. Past MAX_HOPS the bridge stops the parser before any author script
-  // runs, which breaks `location.reload()` and meta-refresh loops.
+  // runs, which breaks `location.reload()` and meta-refresh loops. A load
+  // with an edit key is the host's (a fresh id gets one, a reload of it does
+  // not): it starts a new chain, so saving fast is not taken for a loop.
   // ---------------------------------------------------------------------
   var GUARD_PREFIX = '__odGuard=';
   var MAX_HOPS = 15;
@@ -80,7 +82,7 @@
 
   var loadedAt = Date.now();
   var prevGuard = readGuard();
-  var chained = prevGuard && loadedAt - prevGuard.last <= GAP_MS;
+  var chained = !EDIT_KEY && prevGuard && loadedAt - prevGuard.last <= GAP_MS;
   var hops = (chained ? prevGuard.hops : 0) + 1;
   if (hops > MAX_HOPS) {
     writeGuard(null);
