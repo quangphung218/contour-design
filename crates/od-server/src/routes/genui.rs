@@ -277,6 +277,18 @@ pub async fn raise_for_run(state: &AppState, run: &Arc<Run>, req: &ChatRequest, 
     }
 }
 
+/// A run canceled while its surfaces were being asked ends before its
+/// agent starts: the questions it left pending go, or the chat would show
+/// them for a run that never ran.
+pub async fn drop_pending_for_run(state: &AppState, run: &Run) {
+    let state = state.clone();
+    let run_id = run.id().to_owned();
+    let res = blocking(move || Ok(store(&state)?.drop_pending(&run_id)?)).await;
+    if let Err(e) = res {
+        tracing::warn!(error = %e.message, "dropping GenUI surfaces");
+    }
+}
+
 /// The run's project, or 404 for an unknown run.
 fn run_project(state: &AppState, run_id: &str) -> ApiResult<Option<String>> {
     let run = state

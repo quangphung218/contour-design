@@ -346,6 +346,18 @@ impl GenuiStore {
         )?)
     }
 
+    /// Drops the run's unanswered surfaces: it ended before its agent
+    /// started, so nothing will read an answer. Returns how many changed.
+    ///
+    /// # Errors
+    /// SQLite errors.
+    pub fn drop_pending(&self, run_id: &str) -> Result<usize> {
+        Ok(self.conn().execute(
+            "UPDATE genui_surfaces SET status = 'invalidated' WHERE run_id = ?1 AND status = 'pending'",
+            [run_id],
+        )?)
+    }
+
     /// Answers a surface ahead of any run (`od ui prefill`).
     ///
     /// # Errors
@@ -501,6 +513,28 @@ mod tests {
         // A run-tier answer is never reused.
         let (_, reused) = s.request_or_reuse(&ask(&spec, "r2", "c1"), 13).unwrap();
         assert!(!reused);
+    }
+
+    #[test]
+    fn a_run_that_never_started_drops_its_pending_surfaces() {
+        let (_d, s) = store();
+        let go = json!({"id": "go", "persist": "run"});
+        let tone = json!({"id": "tone", "persist": "run"});
+        s.request_or_reuse(&ask(&go, "r1", "c1"), 10).unwrap();
+        s.request_or_reuse(&ask(&tone, "r1", "c1"), 10).unwrap();
+        s.request_or_reuse(&ask(&go, "r2", "c1"), 10).unwrap();
+        let v = json!(true);
+        s.respond(answer("r1", "go", &v), 11).unwrap();
+        assert_eq!(s.drop_pending("r1").unwrap(), 1);
+        let status = |run| -> Vec<String> {
+            s.for_run(run)
+                .unwrap()
+                .into_iter()
+                .map(|r| r.status)
+                .collect()
+        };
+        assert_eq!(status("r1"), ["resolved", "invalidated"]);
+        assert_eq!(status("r2"), ["pending"], "another run's");
     }
 
     #[test]

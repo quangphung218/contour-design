@@ -385,3 +385,54 @@ async fn a_receipt_linked_out_of_the_project_is_not_read() {
         json!(["src/app.js"])
     );
 }
+
+/// A cancel that comes while the surfaces are being asked ends the run
+/// before its agent starts; the questions it asked do not stay pending.
+#[tokio::test]
+async fn a_run_canceled_while_asking_leaves_nothing_pending() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude());
+    let dir = d.data.join("plugins/surface-demo");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("open-design.json"), PLUGIN).unwrap();
+    d.state.content.reload();
+    let (project, conversation) = d.project().await;
+    // Opens the surfaces database, then holds its write lock: asking waits
+    // on it (SQLite's busy timeout) while the cancel comes.
+    d.get_json(&format!("/api/projects/{project}/genui")).await;
+    let db = rusqlite::Connection::open(d.data.join("genui.sqlite")).unwrap();
+    db.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    // The start answers once the agent is launched or the run has ended.
+    let start = d.start(json!({ "agentId": "claude", "projectId": project,
+                                "conversationId": conversation, "message": "migrate",
+                                "pluginId": "surface-demo" }));
+    let cancel = async {
+        let run_id = loop {
+            let runs = d.get_json(&format!("/api/runs?projectId={project}")).await;
+            if let Some(id) = runs["runs"][0]["id"].as_str() {
+                break id.to_owned();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let res = d
+            .post(&format!("/api/runs/{run_id}/cancel"), &json!({}))
+            .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        db.execute_batch("COMMIT").unwrap();
+    };
+    let (run, ()) = tokio::join!(start, cancel);
+
+    let events = d.events(&run.run_id, None).await;
+    assert!(!events.iter().any(|e| e.event == "start"), "never launched");
+    assert_eq!(requested(&events).len(), 4, "asked before the cancel");
+    let info = d.get_json(&format!("/api/runs/{}", run.run_id)).await;
+    assert_eq!(info["run"]["status"], "canceled");
+    let listed = d.get_json(&format!("/api/runs/{}/genui", run.run_id)).await;
+    let surfaces = listed["surfaces"].as_array().unwrap();
+    assert_eq!(surfaces.len(), 4);
+    assert!(
+        surfaces.iter().all(|s| s["status"] == "invalidated"),
+        "{surfaces:#?}"
+    );
+}
