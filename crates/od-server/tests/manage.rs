@@ -889,6 +889,14 @@ async fn integrations_info_and_local_diagnostics() {
         &json!({"byok": {"protocol": "openai", "apiKey": "sk-hidden-123456"}}),
     )
     .await;
+    let logs = d.data.join("logs");
+    std::fs::create_dir_all(&logs).unwrap();
+    let old: String = (0..300).map(|i| format!("old line {i}\n")).collect();
+    std::fs::write(logs.join("daemon.log"), old + concat!(
+        "2026-10-26T10:00:00Z  INFO od_server::routes::projects: project not found project=nope\n",
+        "2026-10-26T10:00:01Z  WARN od_runtime: provider refused api_key=\"sk-log-secret\" status=401\n",
+    ))
+    .unwrap();
     let res = d
         .http
         .get(format!("{}/api/diagnostics/export", d.base))
@@ -915,6 +923,13 @@ async fn integrations_info_and_local_diagnostics() {
     std::io::Read::read_to_string(&mut zip.by_name("app-config.json").unwrap(), &mut config)
         .unwrap();
     assert!(!config.contains("sk-hidden"), "{config}");
+    let mut log = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("logs/daemon.log").unwrap(), &mut log).unwrap();
+    assert_eq!(log.lines().count(), 200, "{log}");
+    assert!(log.contains("project not found project=nope"), "{log}");
+    assert!(log.contains("api_key=[redacted] status=401"), "{log}");
+    assert!(!log.contains("sk-log-secret"), "{log}");
+    assert!(!log.contains("old line 101\n"), "{log}");
 }
 
 #[tokio::test]

@@ -4,8 +4,9 @@
 //! Contents: `summary/manifest.json` (version, platform, time),
 //! `summary/machine-info.json`, `app-config.json` without secrets (the BYOK
 //! key, agent CLI env, anything named like a key or token), `agents.json`,
-//! `runs.json` (the last [`MAX_RUNS`] runs) and the tail of each of the
-//! last [`MAX_RUN_LOGS`] runs' `events.jsonl`.
+//! `runs.json` (the last [`MAX_RUNS`] runs), the tail of each of the
+//! last [`MAX_RUN_LOGS`] runs' `events.jsonl`, and `logs/daemon.log`: the
+//! last [`LOG_LINES`] lines of the daemon log ([`crate::logs`]), scrubbed.
 
 use crate::error::{ApiErr, ApiResult};
 use crate::state::AppState;
@@ -17,8 +18,20 @@ use std::io::Write;
 
 pub const MAX_RUNS: usize = 100;
 pub const MAX_RUN_LOGS: usize = 10;
+/// Daemon log lines in the archive and in the Report Issue text.
+pub const LOG_LINES: usize = 200;
 /// Bytes kept from the end of each `events.jsonl`.
 const LOG_TAIL_BYTES: usize = 64 * 1024;
+
+/// Whether a field named `key` holds a secret (`apiKey`, `token`…; not
+/// the `has…` flags).
+fn is_secret_key(key: &str) -> bool {
+    let lower = key.to_ascii_lowercase();
+    ["key", "token", "secret", "password", "authorization"]
+        .iter()
+        .any(|s| lower.contains(s))
+        && !lower.starts_with("has")
+}
 
 /// Drops values whose key looks secret, at any depth.
 #[must_use]
@@ -27,12 +40,7 @@ pub fn scrub(value: Value) -> Value {
         Value::Object(map) => Value::Object(
             map.into_iter()
                 .map(|(k, v)| {
-                    let lower = k.to_ascii_lowercase();
-                    let secret = ["key", "token", "secret", "password", "authorization"]
-                        .iter()
-                        .any(|s| lower.contains(s))
-                        && !lower.starts_with("has");
-                    if secret {
+                    if is_secret_key(&k) {
                         (k, Value::String("[redacted]".to_owned()))
                     } else {
                         (k, scrub(v))
@@ -43,6 +51,61 @@ pub fn scrub(value: Value) -> Value {
         Value::Array(items) => Value::Array(items.into_iter().map(scrub).collect()),
         other => other,
     }
+}
+
+/// [`scrub`] for a log line: hides the value of each `key=value` field
+/// whose key looks secret (`api_key="sk-…"` → `api_key=[redacted]`).
+#[must_use]
+pub fn scrub_line(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(eq) = rest.find('=') {
+        let (head, value) = (&rest[..eq], &rest[eq + 1..]);
+        let key_start = head
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !(c.is_alphanumeric() || matches!(c, '_' | '.' | '-')))
+            .map_or(0, |(i, c)| i + c.len_utf8());
+        let key = &head[key_start..];
+        let len = value_len(value);
+        out.push_str(head);
+        out.push('=');
+        if !key.is_empty() && is_secret_key(key) {
+            out.push_str("[redacted]");
+        } else {
+            out.push_str(&value[..len]);
+        }
+        rest = &value[len..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Bytes of a field value at the start of `s`: a quoted string up to its
+/// closing quote, else up to the next whitespace.
+fn value_len(s: &str) -> usize {
+    if let Some(quoted) = s.strip_prefix('"') {
+        let mut escaped = false;
+        for (i, c) in quoted.char_indices() {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                '"' => return i + 2,
+                _ => {}
+            }
+        }
+        return s.len();
+    }
+    s.find(char::is_whitespace).unwrap_or(s.len())
+}
+
+/// The last [`LOG_LINES`] lines of the daemon log, scrubbed, one per line.
+#[must_use]
+pub fn log_tail(data_root: &std::path::Path) -> String {
+    crate::logs::tail_lines(data_root, LOG_LINES)
+        .iter()
+        .map(|l| scrub_line(l) + "\n")
+        .collect()
 }
 
 fn tail(bytes: &[u8]) -> &[u8] {
@@ -124,6 +187,10 @@ pub async fn export(State(state): State<AppState>) -> ApiResult<impl IntoRespons
                 add(&format!("runs/{}/events.jsonl", run.id()), tail(&log))?;
             }
         }
+        let log = log_tail(&root);
+        if !log.is_empty() {
+            add("logs/daemon.log", log.as_bytes())?;
+        }
         let cursor = zip.finish().map_err(std::io::Error::other)?;
         Ok(cursor.into_inner())
     })
@@ -159,6 +226,22 @@ mod tests {
         assert_eq!(v["list"][0]["OPENAI_API_KEY"], "[redacted]");
         assert_eq!(v["theme"], "dark");
         assert!(!v.to_string().contains("sk-1"));
+    }
+
+    #[test]
+    fn scrub_line_hides_secret_fields() {
+        let line = r#"2026-10-26T10:00:00Z  INFO od_server: saved api_key="sk-1 2" token=abc model="m" hasApiKey=true url=http://x/?a=b"#;
+        let s = scrub_line(line);
+        assert!(!s.contains("sk-1") && !s.contains("abc"), "{s}");
+        assert!(
+            s.ends_with(
+                r#"saved api_key=[redacted] token=[redacted] model="m" hasApiKey=true url=http://x/?a=b"#
+            ),
+            "{s}"
+        );
+        assert_eq!(scrub_line("no fields here"), "no fields here");
+        assert_eq!(scrub_line(r#"key="a\"b" x=1"#), "key=[redacted] x=1");
+        assert_eq!(scrub_line("é=1 secret="), "é=1 secret=[redacted]");
     }
 
     #[test]

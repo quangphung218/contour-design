@@ -674,6 +674,13 @@ async fn the_issue_summary_lists_facts_without_secrets() {
     )
     .await;
     turn(&d, &project, &conversation, "hello").await;
+    let logs = d.data.join("logs");
+    std::fs::create_dir_all(&logs).unwrap();
+    std::fs::write(
+        logs.join("daemon.log"),
+        "2026-10-26T10:00:00Z  INFO od_server: deliverable checked other_page=true token=tok-secret-9\n",
+    )
+    .unwrap();
     let v = d.get_json("/api/diagnostics/summary").await;
     let text = v["text"].as_str().unwrap();
     assert!(
@@ -685,6 +692,11 @@ async fn the_issue_summary_lists_facts_without_secrets() {
         "{text}"
     );
     assert!(!text.contains("sk-secret"), "{text}");
+    assert!(
+        text.contains("deliverable checked other_page=true token=[redacted]"),
+        "{text}"
+    );
+    assert!(!text.contains("tok-secret"), "{text}");
     assert!(v["logDir"].as_str().unwrap().ends_with("runs"));
 }
 

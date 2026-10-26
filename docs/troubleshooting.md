@@ -1,8 +1,9 @@
 # Troubleshooting
 
 Problems people hit, with the cause and the fix. If yours is not here,
-collect diagnostics (Help ▸ Report Issue, or the daemon log with
-`RUST_LOG=debug`) and open an issue.
+collect diagnostics (Help ▸ Report Issue, or the daemon log in
+`<data folder>/logs/daemon.log`, with `RUST_LOG=debug` for more) and open an
+issue.
 
 ## Running
 

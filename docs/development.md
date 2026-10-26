@@ -157,8 +157,12 @@ make app-release      # $CARGO_TARGET_DIR/release/bundle/macos/Contour.app
 
 ### Logs
 
-The daemon and the desktop app log to stderr through `tracing`. The filter
-comes from `RUST_LOG` (default `info`):
+The daemon and the desktop app log to stderr through `tracing`. The desktop
+app also writes `<data folder>/logs/daemon.log` (a Finder launch has no
+stderr); `od daemon start --log-file` or `OD_LOG_FILE=1` does the same for the CLI
+daemon. The file rolls over at 5 MB and keeps 5 files (`daemon.log`,
+`daemon.1.log` … `daemon.4.log`). A panic writes its message and stack there
+first. The filter comes from `RUST_LOG` (default `info`):
 
 ```bash
 RUST_LOG=debug cargo run -p od-cli --bin od
@@ -167,10 +171,10 @@ RUST_LOG=info,od_runtime=trace,od_server=debug cargo run -p od-cli --bin od
 
 | What | Where |
 |---|---|
-| daemon log | the terminal running `od` |
-| desktop app log | stderr of the app: start it from a terminal, e.g. `RUST_LOG=debug "$CARGO_TARGET_DIR/release/bundle/macos/Contour.app/Contents/MacOS/od-desktop"` |
+| daemon log | the terminal running `od`; also `<data folder>/logs/daemon.log` with `--log-file` |
+| desktop app log | `<data folder>/logs/daemon.log`, or stderr of the app started from a terminal, e.g. `RUST_LOG=debug "$CARGO_TARGET_DIR/release/bundle/macos/Contour.app/Contents/MacOS/od-desktop"` |
 | agent output per run | `<data folder>/runs/<run-id>/events.jsonl`, final state in `state.json` |
-| diagnostics summary | Help ▸ Report Issue, or Settings ▸ About ▸ Export diagnostics |
+| diagnostics summary | Help ▸ Report Issue, or Settings ▸ About ▸ Export diagnostics; both carry the last 200 lines of `daemon.log`, with secret-looking fields (`api_key=…`, `token=…`) redacted |
 | `od mcp` server | stderr, default level `warn` |
 
 ### Data folder
