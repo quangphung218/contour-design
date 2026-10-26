@@ -24,7 +24,7 @@ IFS= read -r line
 printf '%s\n' "$line" > "{record}.prompt"
 printf 'proxy=%s\n' "$ANTHROPIC_BASE_URL" > "{record}.env"
 printf '{{"type":"system","subtype":"init","session_id":"s-%s","model":"mock"}}\n' "$$"
-printf '{{"type":"assistant","message":{{"id":"m-%s","content":[{{"type":"text","text":"{reply}"}}]}}}}\n' "$$"
+printf '{{"type":"assistant","message":{{"id":"m-%s","content":[{{"type":"text","text":"%s"}}]}}}}\n' "$$" '{reply}'
 printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}}\n'
 cat >/dev/null
 "#,
@@ -73,10 +73,11 @@ async fn status_search_and_recent_views_follow_the_history() {
     write_mock(
         &d.mocks,
         "claude",
-        // printf turns `\\` into `\`: the JSON gets `\"`.
+        // A printf argument, not the format: dash (Linux's sh) keeps `\"`
+        // in a format, so the JSON line broke there.
         &claude(
             &rec,
-            r#"Matcha first. <question-form id=\\\"q\\\" title=\\\"Brief\\\"></question-form>"#,
+            r#"Matcha first. <question-form id=\"q\" title=\"Brief\"></question-form>"#,
         ),
     );
     let (asked, conversation) = d.project().await;
@@ -255,17 +256,21 @@ async fn zip_entries_keep_their_names() {
     let res = import_zip(&d, "dupes.zip", bytes).await;
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     // APFS also folds Unicode forms (é and e + U+0301): the second write
-    // finds the file taken.
+    // finds the file taken. ext4 keeps both names: a new project.
     let bytes = zip_of(&[("caf\u{e9}.html", b"a"), ("cafe\u{301}.html", b"b")]);
     let res = import_zip(&d, "forms.zip", bytes).await;
-    if cfg!(target_os = "macos") {
-        assert_eq!(res.status(), StatusCode::CONFLICT);
-    }
+    let folds = cfg!(target_os = "macos");
+    let expected = if folds {
+        StatusCode::CONFLICT
+    } else {
+        StatusCode::OK
+    };
+    assert_eq!(res.status(), expected);
     let after = d.get_json("/api/projects").await["projects"]
         .as_array()
         .unwrap()
         .len();
-    assert_eq!(before, after);
+    assert_eq!(after, before + usize::from(!folds));
 }
 
 /// A fake OpenAI/Anthropic endpoint on loopback recording the auth it saw.
