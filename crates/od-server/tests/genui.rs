@@ -414,7 +414,21 @@ async fn a_run_canceled_while_asking_leaves_nothing_pending() {
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         };
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        // The turn is recorded first thing in the prepare step; asking comes
+        // a few milliseconds later and waits on the lock. Nothing shows that
+        // wait from outside, so give it a margin well under the 5 s timeout.
+        let messages = format!("/api/projects/{project}/conversations/{conversation}/messages");
+        loop {
+            let body = d.get_json(&messages).await;
+            let recorded = body["messages"]
+                .as_array()
+                .is_some_and(|m| m.iter().any(|m| m["runId"] == run_id.as_str()));
+            if recorded {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         let res = d
             .post(&format!("/api/runs/{run_id}/cancel"), &json!({}))
             .await;
