@@ -157,8 +157,7 @@ button.nav-link { width: 100%; border: 0; background: transparent; font: inherit
 .picker:focus-within { box-shadow: 0 0 0 3px var(--color-focus-ring); }
 .picker-label { font-size: var(--text-sm); }
 .picker select {
-  /* Narrow enough that Home's controls fit on one row at 1440. */
-  width: auto; max-width: 116px;
+  width: auto; max-width: 200px;
   height: var(--control-sm);
   padding: 0 var(--space-6) 0 0;
   border: 0; box-shadow: none;
@@ -169,6 +168,13 @@ button.nav-link { width: 100%; border: 0; background: transparent; font: inherit
   text-overflow: ellipsis;
 }
 .picker select:focus { box-shadow: none; }
+/* A wide Home composer (a 1440 window) keeps its controls on one row: the
+   two pickers in the bar shrink, their title gives the full name. Narrower
+   composers wrap, so the names stay whole. */
+.composer-card { container: composer / inline-size; }
+@container composer (min-width: 800px) {
+  .composer-bar > .picker select { max-width: 116px; }
+}
 .swatches { display: inline-flex; gap: 2px; margin-right: var(--space-2); }
 .swatches i { width: 10px; height: 10px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12); }
 .send-btn { border-radius: var(--radius-full); }

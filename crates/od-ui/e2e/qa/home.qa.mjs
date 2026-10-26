@@ -199,6 +199,15 @@ test('HOME-14', 'Home has one composer with one row of controls; starting points
   assert.equal(await page.locator('.composer-foot button:visible').count(), 0, 'buttons under the composer');
   const rows = await page.locator('.composer-bar > :visible').evaluateAll((els) => new Set(els.map((e) => { const r = e.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2 / 16); })).size);
   assert.equal(rows, 1, `composer controls on ${rows} rows`);
+  // Cut to fit that row, the pickers say their full name on hover.
+  assert.equal(await page.getByTestId('template').getAttribute('title'), 'Default template');
+  // A narrow window wraps the row instead: names are not cut there.
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const id of ['design-system', 'template']) {
+    const max = await page.getByTestId(id).evaluate((e) => getComputedStyle(e).maxWidth);
+    assert.equal(max, '200px', `${id} capped at ${max} on a phone`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) assert.equal(await page.getByTestId(id).count(), 0, `${id} outside "+"`);
   await page.getByTestId('plus-menu').click();
   for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) await page.getByTestId(id).waitFor();

@@ -416,9 +416,18 @@ pub fn Home() -> impl IntoView {
                             <select
                                 data-testid="design-system"
                                 aria-label=t(T::DesignSystem)
+                                // The full name (the select may cut it), then the
+                                // trademark note of a brand-named system.
                                 title=move || {
                                     let id = design_system.get()?;
-                                    systems.with(|l| l.as_ref()?.iter().find(|s| s.id == id)?.brand.as_deref().map(brand_note))
+                                    systems.with(|l| {
+                                        let s = l.as_ref()?.iter().find(|s| s.id == id)?;
+                                        let name = format!("{} · {}", crate::i18n::rebrand(&s.title), s.category);
+                                        Some(match s.brand.as_deref() {
+                                            Some(b) => format!("{name}\n{}", brand_note(b)),
+                                            None => name,
+                                        })
+                                    })
                                 }
                                 disabled=move || systems.with(Option::is_none)
                                 on:change=move |ev| {
@@ -455,6 +464,13 @@ pub fn Home() -> impl IntoView {
                             <select
                                 data-testid="template"
                                 aria-label=t(T::Template)
+                                title=move || {
+                                    let id = template.get();
+                                    chip_templates.with(|l| match (l, id) {
+                                        (Some(l), Some(id)) => l.iter().find(|s| s.info.id == id).map(template_name),
+                                        _ => None,
+                                    }).unwrap_or_else(|| t(T::DefaultTemplate).to_owned())
+                                }
                                 // A property, not `selected` on the options: an
                                 // option the user picked by hand ignores the
                                 // attribute, so the gallery could not move it.
