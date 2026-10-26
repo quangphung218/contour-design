@@ -174,7 +174,7 @@ RUST_LOG=info,od_runtime=trace,od_server=debug cargo run -p od-cli --bin od
 | daemon log | the terminal running `od`; also `<data folder>/logs/daemon.log` with `--log-file` |
 | desktop app log | `<data folder>/logs/daemon.log`, or stderr of the app started from a terminal, e.g. `RUST_LOG=debug "$CARGO_TARGET_DIR/release/bundle/macos/Contour.app/Contents/MacOS/od-desktop"` |
 | agent output per run | `<data folder>/runs/<run-id>/events.jsonl`, final state in `state.json` |
-| diagnostics summary | Help ▸ Report Issue, or Settings ▸ About ▸ Export diagnostics; both carry the last 200 lines of `daemon.log`, with secret-looking fields (`api_key=…`, `token=…`) redacted |
+| diagnostics summary | Help ▸ Report Issue, or Settings ▸ About ▸ Export diagnostics; both carry the last 200 lines of `daemon.log`, with secret-looking values (`api_key=…`, `?token=…` in a URL, `Bearer …`) redacted |
 | `od mcp` server | stderr, default level `warn` |
 
 ### Data folder

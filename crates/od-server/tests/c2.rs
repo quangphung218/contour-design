@@ -697,7 +697,7 @@ async fn the_issue_summary_lists_facts_without_secrets() {
         "{text}"
     );
     assert!(!text.contains("tok-secret"), "{text}");
-    assert!(v["logDir"].as_str().unwrap().ends_with("runs"));
+    assert!(v["logDir"].as_str().unwrap().ends_with("logs"));
 }
 
 // Read-only by Unix mode bits.

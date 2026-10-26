@@ -315,7 +315,7 @@ files under the data folder and the API returns them masked.
   the app says so and quits; stop `od` first.
 - **Project ▸ Open Folder…** (Cmd+O), **Help** ▸ Documentation, Report Issue
   (copies a diagnostics summary with the last lines of the app log and opens
-  the run log folder), Show Data
+  the log folder), Show Data
   Folder, Keyboard Shortcuts, Command Palette.
 - Started from Finder or the Dock, the app takes `PATH` from your login
   shell (plus `~/.local/bin`, Homebrew, npm, bun, cargo) to find agents.

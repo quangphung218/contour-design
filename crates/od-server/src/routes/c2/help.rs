@@ -3,7 +3,8 @@
 //! - `GET  /api/diagnostics/summary` → `{text, logDir}`: a plain-text
 //!   report to paste into an issue (version, platform, agents, recent
 //!   runs, the last lines of the daemon log), with nothing secret in it.
-//! - `POST /api/diagnostics/open-logs`: the run logs folder in the OS file
+//! - `POST /api/diagnostics/open-logs`: `<data>/logs` (the daemon log) in
+//!   the OS file
 //!   manager (`OD_OPEN_COMMAND` overrides, as for handoff).
 //!
 //! Nothing leaves the machine: the user decides where to paste the text.
@@ -82,9 +83,10 @@ pub fn summary_text(
                 .position(|b| *b == b'\n')
                 .map_or(log.len(), |i| start + i + 1)
         };
-        out.push_str("\n<details><summary>Daemon log (last lines)</summary>\n\n```\n");
+        // Four backticks: a log line with ``` cannot close the block.
+        out.push_str("\n<details><summary>Daemon log (last lines)</summary>\n\n````\n");
         out.push_str(&log[start..]);
-        out.push_str("```\n\n</details>\n");
+        out.push_str("````\n\n</details>\n");
     }
     out
 }
@@ -116,7 +118,7 @@ pub async fn summary(State(state): State<AppState>) -> ApiResult<axum::Json<Valu
         tokio::task::spawn_blocking(move || crate::routes::manage::diagnostics::log_tail(&root))
             .await
             .map_err(|e| ApiErr::internal(e.to_string()))?;
-    let log_dir = state.store.data_dir().runs_dir();
+    let log_dir = crate::logs::dir(state.store.data_dir().root());
     Ok(axum::Json(json!({
         "text": summary_text(&agents, configured.as_deref(), &runs, &log),
         "logDir": log_dir.display().to_string(),
@@ -124,7 +126,7 @@ pub async fn summary(State(state): State<AppState>) -> ApiResult<axum::Json<Valu
 }
 
 pub async fn open_logs(State(state): State<AppState>) -> ApiResult<ApiJson<OkResponse>> {
-    let dir = state.store.data_dir().runs_dir();
+    let dir = crate::logs::dir(state.store.data_dir().root());
     std::fs::create_dir_all(&dir).map_err(|e| ApiErr::internal(e.to_string()))?;
     let program = crate::routes::handoff::opener();
     // Not awaited: file managers may stay attached to the child.
@@ -152,10 +154,13 @@ mod tests {
         let text = summary_text(&[], None, &[], &log);
         let at = text.find("<details>").unwrap();
         assert!(text.find("### What happened").unwrap() < at);
-        let shown = text[at..].split("```\n").nth(1).unwrap();
+        let shown = text[at..].split("````\n").nth(1).unwrap();
         assert!(shown.len() <= SUMMARY_LOG_BYTES, "{}", shown.len());
         assert!(shown.starts_with("ligne é "), "{}", &shown[..20]);
         assert!(shown.ends_with("ligne é 4999\n"));
         assert!(text.ends_with("</details>\n"));
+        // A fence in the log stays inside the block.
+        let text = summary_text(&[], None, &[], "a\n```\nb\n");
+        assert!(text.contains("\n````\na\n```\nb\n````\n"), "{text}");
     }
 }

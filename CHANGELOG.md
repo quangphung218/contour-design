@@ -15,8 +15,9 @@ All notable changes to Contour are recorded here. The format follows
   --log-file` or `OD_LOG_FILE=1` does the same for the CLI daemon. A panic
   writes its message and stack there before the app quits.
 - Help ▸ Report Issue and Export diagnostics include the last 200 lines of that
-  log, with secret-looking fields (`api_key=…`, `token=…`) redacted. Nothing is
-  sent anywhere.
+  log, with secret-looking values redacted wherever they sit (`api_key=…`, a
+  `?token=…` in a URL, `Bearer …`). Nothing is sent anywhere. Report Issue now
+  opens that log folder instead of the run folder.
 
 ### Changed
 
@@ -78,7 +79,7 @@ All notable changes to Contour are recorded here. The format follows
 
 - `/api/runs` keeps only the first line of each run's prompt (up to 200
   characters) instead of the whole message, which the run list polled every
-  few seconds.
+  few seconds; runs saved before this are cut the same way when loaded.
 - The "deliverable checked" log line compares whole paths: a run that writes
   `old/index.html` next to the entry `index.html` counts as another page.
 - Renaming a project to a blank name keeps the old name and says a name is
