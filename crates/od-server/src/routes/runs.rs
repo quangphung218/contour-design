@@ -133,6 +133,7 @@ pub async fn create(
         client_request_id: client_request_id.clone(),
         request_hash: Some(request_hash(&req)),
         created_at: od_runs::now_ms(),
+        prompt: Some(req.message.clone()),
     };
     let (run, reused) = match state.runs.registry.create_or_reuse(meta) {
         Ok(found) => found,
@@ -906,56 +907,8 @@ pub async fn list(
                     .is_none_or(|c| r.meta().conversation_id.as_deref() == Some(c))
         })
         .map(|r| r.info())
-        .collect::<Vec<_>>();
-    // Name each run by what was asked (the Messages page).
-    let asked: Vec<(String, String)> = runs
-        .iter()
-        .filter_map(|r| Some((r.conversation_id.clone()?, r.assistant_message_id.clone()?)))
-        .collect();
-    let prompts = state
-        .blocking(move |s| Ok(prompts_of(s, &asked)))
-        .await
-        .unwrap_or_default();
-    let runs = runs
-        .into_iter()
-        .map(|mut r| {
-            r.prompt = r
-                .assistant_message_id
-                .as_ref()
-                .and_then(|m| prompts.get(m).cloned());
-            r
-        })
         .collect();
     ApiJson(RunsResponse { runs })
-}
-
-/// For each `(conversation, assistant message)`, the user message right
-/// before that answer, by assistant message id. One read per conversation.
-fn prompts_of(
-    store: &Store,
-    asked: &[(String, String)],
-) -> std::collections::HashMap<String, String> {
-    let mut out = std::collections::HashMap::new();
-    let mut conversations: Vec<&str> = asked.iter().map(|(c, _)| c.as_str()).collect();
-    conversations.sort_unstable();
-    conversations.dedup();
-    for conversation in conversations {
-        let Ok(messages) = store.list_messages(conversation) else {
-            continue;
-        };
-        let mut last_user: Option<&str> = None;
-        for m in &messages {
-            match m.role {
-                MessageRole::User => last_user = Some(&m.content),
-                MessageRole::Assistant => {
-                    if let Some(text) = last_user {
-                        out.insert(m.id.clone(), text.to_owned());
-                    }
-                }
-            }
-        }
-    }
-    out
 }
 
 pub async fn get(

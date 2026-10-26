@@ -60,6 +60,9 @@ pub struct RunMeta {
     #[serde(default)]
     pub request_hash: Option<String>,
     pub created_at: i64,
+    /// The user's message the run answers (chat runs), for the run list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
 
 /// `runs/<id>/state.json`.
@@ -238,7 +241,7 @@ impl Run {
             created_at: self.meta.created_at,
             ended_at: inner.ended_at,
             last_event_id: inner.next_id - 1,
-            prompt: None,
+            prompt: self.meta.prompt.clone(),
         }
     }
 

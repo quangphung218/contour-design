@@ -71,11 +71,30 @@ async fn reusing_a_client_request_id_with_other_comments_is_a_conflict() {
 async fn the_run_list_names_what_was_asked() {
     let d = daemon().await;
     write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
-    let (project, _) = d.project().await;
+    let (project, conversation) = d.project().await;
     let run = d
-        .start(json!({"agentId": "claude", "projectId": project, "message": "A tea shop landing page"}))
+        .start(
+            json!({"agentId": "claude", "projectId": project, "conversationId": conversation,
+            "message": "A tea shop landing page"}),
+        )
         .await;
     end_of(&d.events(&run.run_id, None).await);
+    // The list reads the run, not the chat (it is polled every few
+    // seconds): a message rewritten afterwards does not change it.
+    let messages = d.settled_messages(&project, &conversation).await;
+    let user = messages.iter().find(|m| m["role"] == "user").unwrap();
+    let res = d
+        .http
+        .put(format!(
+            "{}/api/projects/{project}/conversations/{conversation}/messages/{}",
+            d.base,
+            user["id"].as_str().unwrap()
+        ))
+        .json(&json!({"role": "user", "content": "rewritten"}))
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status().is_success(), "{}", res.status());
     let runs: Value = d.get_json("/api/runs").await;
     let listed = runs["runs"]
         .as_array()
@@ -84,4 +103,6 @@ async fn the_run_list_names_what_was_asked() {
         .find(|r| r["id"] == run.run_id.as_str())
         .unwrap();
     assert_eq!(listed["prompt"], "A tea shop landing page");
+    let one: Value = d.get_json(&format!("/api/runs/{}", run.run_id)).await;
+    assert_eq!(one["run"]["prompt"], "A tea shop landing page");
 }

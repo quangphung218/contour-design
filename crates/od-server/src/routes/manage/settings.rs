@@ -280,6 +280,7 @@ async fn test_agent(
             client_request_id: None,
             request_hash: None,
             created_at: od_runs::now_ms(),
+            prompt: None,
         })
         .map_err(|e| ApiErr::internal(e.to_string()))?;
     let cwd = scratch.path().join("work");

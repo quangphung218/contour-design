@@ -12,6 +12,7 @@ fn meta(id: &str) -> RunMeta {
         run_id: id.to_owned(),
         agent_id: "claude".to_owned(),
         created_at: od_runs::now_ms(),
+        prompt: None,
         ..RunMeta::default()
     }
 }
