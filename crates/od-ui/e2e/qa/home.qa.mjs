@@ -182,4 +182,57 @@ test('HOME-12', 'While design systems load, the kept pick shows its name or a lo
   await until(async () => (await select.inputValue()) === pick.id, 'the pick is kept once loaded');
 });
 
+test('HOME-13', 'An address no page answers says "Page not found" and leads back to Home', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/nope/page');
+  assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Page not found');
+  await page.getByTestId('go-home').click();
+  await page.waitForURL(d.base + '/');
+  await page.getByTestId('brief').waitFor();
+});
+
+test('HOME-14', 'Home has one composer with one row of controls; starting points live in "+"', async ({ d, newPage }) => {
+  const { page } = await newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(d.base + '/');
+  await page.getByTestId('brief').waitFor();
+  assert.equal(await page.getByTestId('recommended').count(), 0, '"Recommended… Start creating" next to the composer');
+  assert.equal(await page.locator('.composer-foot button:visible').count(), 0, 'buttons under the composer');
+  const rows = await page.locator('.composer-bar > :visible').evaluateAll((els) => new Set(els.map((e) => { const r = e.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2 / 16); })).size);
+  assert.equal(rows, 1, `composer controls on ${rows} rows`);
+  // Cut to fit that row, the pickers say their full name on hover.
+  assert.equal(await page.getByTestId('template').getAttribute('title'), 'Default template');
+  // A narrow window wraps the row instead: names are not cut there.
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const id of ['design-system', 'template']) {
+    const max = await page.getByTestId(id).evaluate((e) => getComputedStyle(e).maxWidth);
+    assert.equal(max, '200px', `${id} capped at ${max} on a phone`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) assert.equal(await page.getByTestId(id).count(), 0, `${id} outside "+"`);
+  await page.getByTestId('plus-menu').click();
+  for (const id of ['ds-new', 'action-create-plugin', 'action-from-folder']) await page.getByTestId(id).waitFor();
+  // The two folder items say what each does and do not share an icon.
+  const folder = page.getByTestId('action-from-folder');
+  const workdir = page.getByTestId('working-dir-pick');
+  assert.equal((await folder.innerText()).trim(), 'Open a folder as a project');
+  assert.equal((await workdir.innerText()).trim(), 'Let the agent read a folder');
+  const svg = (l) => l.locator('svg').first().evaluate((e) => e.innerHTML);
+  assert.notEqual(await svg(folder), await svg(workdir), 'same icon on both folder items');
+  // The dialog is the full one from the Design systems page.
+  await page.getByTestId('ds-new').click();
+  await page.getByTestId('ds-create').waitFor();
+  await page.getByTestId('dsc-source-website').waitFor();
+});
+
+test('HOME-15', 'On a phone, "+" ▸ From folder gives a path field wide enough to read', async ({ d, newPage }) => {
+  const { page } = await newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(d.base + '/');
+  await page.getByTestId('plus-menu').click();
+  await page.getByTestId('action-from-folder').click();
+  const field = page.getByTestId('from-folder-path');
+  await field.waitFor();
+  const w = (await field.boundingBox()).width;
+  assert.ok(w >= 200, `path field only ${Math.round(w)} px wide`);
+});
+
 await run('home');

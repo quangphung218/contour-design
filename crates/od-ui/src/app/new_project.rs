@@ -139,10 +139,10 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                     <button class="icon-btn" aria-label=t(T::Close) on:click=move |_| open.set(false)>{icon(Glyph::Close)}</button>
                 </div>
                 <div class="dialog-body">
-                    <div class="segmented panel-tabs" role="tablist" aria-label=t(T::ProjectType)>
+                    <div class="segmented panel-tabs" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ProjectType)>
                         {PanelTab::ALL.into_iter().map(|tb| view! {
                             <button class="seg" role="tab" data-testid=format!("panel-tab-{}", tb.id())
-                                aria-selected=move || (tab() == tb).to_string()
+                                aria-selected=move || (tab() == tb).to_string() tabindex=move || super::focus::roving(tab() == tb)
                                 class:active=move || tab() == tb
                                 on:click=move |_| set(&|c| c.tab = tb)>
                                 {tab_label(tb)}

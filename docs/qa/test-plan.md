@@ -43,7 +43,8 @@ Goal: a first-time user reaches Home with a working agent or API key.
 | ONB-10 | Phone width, no agent: the install cards fit | PATH without any agent CLI | Open `/onboarding` at 390 px | No sideways scroll; Copy stays inside its card; Copy and Install guide are at least 44 px high | P2 | auto |
 | ONB-11 | Windows, no agent: setup pages only | PATH without any agent CLI, Windows browser | Open `/onboarding` | No install command, no Check again, nothing about Terminal; each card links its setup page; the API key path is offered | P2 | auto |
 | ONB-12 | Installed but not signed in | Mock `claude` fails every prompt until signed in | Open `/onboarding`; sign in; Check again | The failed test shows "Then open a new Terminal window and run claude to sign in."; after Check again the test passes and Continue is on | P1 | auto |
-| ONB-13 | Installed agent fails its test, not a sign-in issue | Mock `claude` rejects every prompt | Open `/onboarding` | Claude stays a card; Codex install card and the API key path are shown; no sign-in hint, no brand step; Continue is off | P1 | auto |
+| ONB-13 | Installed agent fails its test, not a sign-in issue | Mock `claude` rejects every prompt | Open `/onboarding` at 1440×900 | Claude stays a card; Codex install card and the API key path are shown; no sign-in hint, no brand step; Continue is off; the test result and "Claude Code did not pass its test…" sit under the Claude card, above the install cards, inside the first 900 px | P1 | auto |
+| ONB-14 | Brand extraction uses the tested agent | Broken mock `claude`, working mock `codex` | Pick Codex; wait for its test; enter a website; Extract | The extraction request names `codex` as its agent | P2 | auto |
 
 ## 2. Create a project from Home (`home.qa.mjs`)
 
@@ -64,6 +65,9 @@ gets a project that starts working.
 | HOME-10 | Shift+Enter adds a new line instead of sending | Onboarded | Type, Shift+Enter, type | Brief has two lines, still on Home | P1 | auto |
 | HOME-11 | Home at phone width keeps the brief box usable | Viewport 390×844 | Open `/` | No horizontal page scroll; brief box and Create visible | P2 | auto |
 | HOME-12 | While design systems load, the kept pick shows a name or "Loading", not a raw id | A system picked on Home, list request held | Reload | The picker never shows the bare id; the pick is kept once loaded | P2 | auto (QA-017) |
+| HOME-13 | An address no page answers | — | Open `/nope/page`, Go to Home | Heading "Page not found", a Go to Home button that lands on Home | P2 | auto |
+| HOME-14 | One composer, one row of controls | 1440×900 | Open Home, open "+" | No "Recommended… Start creating" strip, no buttons under the composer; New design system, Create plugin and From folder are in "+"; New design system opens the full create dialog | P2 | auto |
+| HOME-15 | From folder fits a phone | 390×844 | "+" ▸ From folder | The path field is at least 200 px wide | P2 | auto |
 
 ## 3. Chat with the agent (`chat.qa.mjs`)
 
@@ -81,6 +85,8 @@ of runs.
 | CHAT-07 | Two tabs on one project both see a new turn | Project open in 2 tabs | Send from tab A | Tab B shows the new messages after reload at the latest | P2 | auto |
 | CHAT-08 | Vietnamese message round-trips through the agent | Project | Send "làm cho tối hơn" | The user bubble and the agent echo show the same text | P1 | auto |
 | CHAT-11 | Queued message while running goes out after the run | Slow run | Send a second message while running | It is queued, then sent when the first run ends | P1 | exist (studio) |
+| CHAT-12 | Messages are named by what was asked | Two turns | Open Messages | Titles are the prompts' first lines, newest first; the state is a badge | P2 | auto |
+| CHAT-13 | The chat says what the agent did in words | A turn with a plan | Send "plan…" | Tool rows read "Updated plan", "Wrote"; files read "1 new"; no `TodoWrite` | P2 | auto |
 | CHAT-12 | Daemon dies mid-session: the user is told | Project open | Kill daemon | A visible "cannot reach" notice, not a frozen UI | P1 | exist (preview, recovery tip) |
 | CHAT-09 | A message sent right after opening a project shows in the chat | Fresh project | Send as soon as the composer shows | User message and answer are shown | P1 | auto as CHAT-09 (QA-002) |
 | CHAT-10 | Switching to another conversation while the first still loads shows only the one picked | Two conversations with one turn each; the first transcript held | Open project, pick the other conversation, let the first answer arrive | Only the picked conversation's messages | P1 | auto (QA-002 guard) |
@@ -103,11 +109,13 @@ time when needed.
 | STU-09 | Empty comment cannot be added | Comment mode | Pin with empty note | Add disabled or refused | P1 | auto |
 | STU-10 | Draw on the preview and undo everything | Page open | Draw, undo | Canvas empty; nothing attached | P2 | exist (studio, files) |
 | STU-11 | Device sizes lay the page out at their width | Window 1360×860 | Phone, Tablet, Desktop | The page sees 390 px, 820 px (original preset), then the pane width | P1 | auto (QA-003) |
-| STU-12 | Deep link to a project that does not exist | — | Open `/projects/nope` | A clear "not found" with a way back, no crash | P1 | auto |
+| STU-12 | Deep link to a project that does not exist | — | Open `/projects/nope` | A clear "not found" with All projects as the only way out; no Retry, no preview steps, composer off; no crash | P1 | auto |
 | STU-13 | A page with spaces and Vietnamese letters in the user's own folder previews | Folder with `trang chủ.html` | Open folder, open the file | Preview renders it | P1 | auto |
 | STU-14 | With Tablet shrunk to fit, the zoom label shows the real size, also after + | Window 1360×860, Tablet | Read the label once the frame has stopped resizing, press + | Label = drawn size of the 820 px page; + changes the page or is off | P2 | auto (QA-015) |
 | STU-15 | Tablet on a phone-width window can still be zoomed in | Window 390×844, Tablet | Press + | + is on at the fit; the page gets bigger; the pane scrolls | P2 | auto (QA-024) |
 | STU-16 | A + that is off says why | Window 1360×860, Tablet | + until off, hover | Tooltip gives the reason, not just "Zoom in" | P2 | auto (QA-025) |
+| STU-17 | The Studio names the project | A project | Open it at 1440 and 1024 | The chat head shows the project name (the page heading) above the conversation, at least 100 px wide | P2 | auto |
+| STU-18 | The first-design hint goes away by itself | New browser, empty project | First turn, then a second turn without closing the hint | The hint is gone after the second turn and after a reload | P3 | auto |
 
 ## 5. Export (`export.qa.mjs`)
 
@@ -126,6 +134,7 @@ Goal: the user takes the design out of Contour.
 | EXP-09 | Esc closes the Export menu | Export menu open | Esc | Menu closes (original closes it) | P2 | auto (QA-004) |
 | EXP-10 | Esc that closes the Export menu leaves comment mode on | Comment mode on, Export open | Esc | Menu closes; comment mode stays on | P1 | auto (QA-013) |
 | EXP-11 | Esc that closes the Export menu does not stop a running Design Jury | Jury on and running, Export open | Esc | Menu closes; jury still running | P1 | auto (QA-013) |
+| EXP-12 | The Export menu lists what applies, grouped | A page open | Open Export, unfold Image and PowerPoint | No greyed formats; no Markdown or JSX for a page; "MP4 video"; Image ▸ PNG, JPEG, WebP; PowerPoint ▸ Slides as images, Editable text | P2 | auto |
 
 ## 6. Manage projects (`projects.qa.mjs`)
 
@@ -154,7 +163,7 @@ and media.
 | ID | Scenario | Precondition | Steps | Expected | P | Status |
 |---|---|---|---|---|---|---|
 | LIB-01 | Use a template from the Templates page | — | Templates ▸ card ▸ Use, brief, Enter | Home shows the template; the project's skill is that template | P0 | auto |
-| LIB-02 | Template search with no result says so | — | Search "zzqqxx" | No cards and an empty-state message | P1 | auto |
+| LIB-02 | Template search with no result says so | — | Search "zzqqxx" | No cards and an empty-state message with Clear filters, which brings the templates back | P1 | auto |
 | LIB-03 | Design system search with no result says so | — | Search "zzqqxx" | Empty state with text | P1 | auto |
 | LIB-04 | Design system detail opens its DESIGN.md | — | Open one ▸ DESIGN.md | The document is shown | P0 | auto |
 | LIB-05 | Create a design system with an empty brief is refused | — | Create, brief empty or spaces | Generate disabled | P1 | auto |
@@ -163,6 +172,10 @@ and media.
 | LIB-08 | Media library upload of a non-media file | — | Upload `.txt` | Refused with a message, or listed under its name; no page error | P2 | auto |
 | LIB-09 | Media generate without a provider key points to Providers | No key | Generate tab, prompt | "Needs a key" note with a Providers button that works | P1 | auto |
 | LIB-10 | Library pages fit a phone-sized window | 390×844 | Open each page | No sideways scroll | P2 | auto |
+| LIB-11 | Uploads do not add a project | — | Media ▸ upload a PNG | Projects and Recent do not list "Media library" | P2 | auto |
+| LIB-12 | Design system search reads what the page shows | — | Search "coral", then "curated" | Airbnb found; the package note matches nothing | P2 | auto |
+| LIB-13 | Skills say what they make | — | Plugins ▸ Skills, open faq-page | No "Use when…" text for the agent | P2 | auto |
+| LIB-14 | Media and Templates labels, Generate tab | No provider key | Media, Generate tab, Templates | "Audio", no second Generate button, selects with arrows, a Set up providers button | P3 | auto |
 | LIB-11 | Skills: a user skill overrides a bundled one | — | Create skill with a bundled id | Override notice shown | P2 | exist (library) |
 
 ## 8. Settings (`settings.qa.mjs`)
@@ -177,17 +190,19 @@ and media.
 | SET-06 | Permission mode switch is saved | — | Ask first, reload | Still Ask first; API returns `ask` | P1 | auto |
 | SET-07 | Settings still save with a keyless Ollama provider stored | BYOK `http://ollama:11434/v1`, no key, in the config | Theme ▸ Dark ▸ Save; Language ▸ vi ▸ Save | Both saves 200, no error; provider unchanged | P0 | auto (QA-018) |
 | SET-08 | A keyless Ollama on a one-word host saves | — | API ▸ Ollama ▸ base URL `http://gpu-box:11434/v1` ▸ Save | 200, saved | P1 | auto (QA-018) |
+| SET-10 | One Save per thing to save | — | Settings, local agent then API provider; change the theme | One Save in each mode; the theme saves on its own | P2 | auto |
 | SET-09 | Check again in Settings ▸ Agent | No agent at start | Install one, press Check again | The agent is listed, install cards gone | P2 | auto |
 
 ## 9. Automations (`automations.qa.mjs`)
 
 | ID | Scenario | Precondition | Steps | Expected | P | Status |
 |---|---|---|---|---|---|---|
-| AUT-01 | Create a routine and Run now produces a run in its project | Project | New routine, Run now | History shows a run that succeeded | P0 | auto |
+| AUT-01 | Create a routine and Run now produces a run in its project | Project | New routine (starts on "New project each run"), pick the project, Run now | History shows a run that succeeded | P0 | auto |
 | AUT-02 | Invalid cron is refused with a message | — | Schedule "61 * * * *" | Save refused; message names the schedule | P1 | auto |
 | AUT-03 | Empty prompt is refused | — | Save without prompt | Save refused | P1 | auto |
 | AUT-04 | Delete a routine removes it from the list and API | Routine | Delete | Gone from list and `GET /api/routines` | P1 | auto |
 | AUT-05 | Routine on a project that was deleted | Routine on project P | Delete P, Run now | The run is refused or recorded as failed with "project not found" | P2 | auto |
+| AUT-06 | The form resets after editing a routine | A routine on a project | Edit, Save; Edit, Cancel | The form is back on "New project each run" with no name | P2 | auto |
 
 ## 10. Work in progress is not lost (`drafts.qa.mjs`)
 

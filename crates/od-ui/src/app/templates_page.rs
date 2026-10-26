@@ -67,7 +67,7 @@ fn mode_label(m: &str) -> String {
         "template" => t(T::TemplateKind).to_owned(),
         "image" => t(T::Image).to_owned(),
         "video" => t(T::Video).to_owned(),
-        "audio" => t(T::AudioKind).to_owned(),
+        "audio" => t(T::SurfaceAudio).to_owned(),
         other => other.to_owned(),
     }
 }
@@ -113,7 +113,7 @@ pub fn TemplatesPage() -> impl IntoView {
     });
     let tab_button = move |k: Tab, label: T, key: &'static str| {
         view! {
-            <button class="seg" role="tab" data-testid=format!("tpl-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() on:click=move |_| tab.set(k)>
+            <button class="seg" role="tab" data-testid=format!("tpl-tab-{key}") class:active=move || tab.get() == k aria-selected=move || (tab.get() == k).to_string() tabindex=move || super::focus::roving(tab.get() == k) on:click=move |_| tab.set(k)>
                 <span class="seg-label">{t(label)}</span>
             </button>
         }
@@ -126,7 +126,7 @@ pub fn TemplatesPage() -> impl IntoView {
                     <p class="page-sub">{t(T::TemplatesPageSub)}</p>
                 </div>
             </header>
-            <div class="segmented lib-tabs" role="tablist">
+            <div class="segmented lib-tabs" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true)>
                 {tab_button(Tab::Design, T::DesignTemplates, "design")}
                 {tab_button(Tab::Image, T::ImagePrompts, "image")}
                 {tab_button(Tab::Video, T::VideoPrompts, "video")}
@@ -197,14 +197,15 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
     });
 
     view! {
-        <div class="chips lib-chips" role="radiogroup" aria-label=t(T::TemplateType)>
-            <button class="chip" role="radio" aria-checked=move || mode.get().is_empty().to_string() class:active=move || mode.get().is_empty() on:click=move |_| mode.set(String::new())>{t(T::AllFilter)}</button>
+        <div class="chips lib-chips" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::TemplateType)>
+            <button class="chip" role="radio" aria-checked=move || mode.get().is_empty().to_string() tabindex=move || super::focus::roving(mode.get().is_empty()) class:active=move || mode.get().is_empty() on:click=move |_| mode.set(String::new())>{t(T::AllFilter)}</button>
             {move || modes.get().into_iter().map(|m| {
                 let a = m.clone();
                 let b = m.clone();
                 let c = m.clone();
+                let d = m.clone();
                 view! {
-                    <button class="chip" role="radio" data-testid="tpl-type" aria-checked=move || (mode.get() == a).to_string() class:active=move || mode.get() == b on:click=move |_| mode.set(c.clone())>{mode_label(&m)}</button>
+                    <button class="chip" role="radio" data-testid="tpl-type" aria-checked=move || (mode.get() == a).to_string() tabindex=move || super::focus::roving(mode.get() == d) class:active=move || mode.get() == b on:click=move |_| mode.set(c.clone())>{mode_label(&m)}</button>
                 }
             }).collect_view()}
         </div>
@@ -231,7 +232,18 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
         <div class="template-grid lib-template-grid" data-testid="tpl-grid">
             {move || match templates.get() {
                 None => (0..8).map(|_| view! { <div class="skeleton template-skeleton"></div> }).collect_view().into_any(),
-                Some(_) if visible.with(Vec::is_empty) => view! { <p class="empty">{t(T::NoMatches)}</p> }.into_any(),
+                Some(_) if visible.with(Vec::is_empty) => view! {
+                    <div class="empty-state compact tpl-empty" data-testid="tpl-empty">
+                        <span class="empty-icon">{icon(Glyph::Search)}</span>
+                        <p>{t(T::NoMatches)}</p>
+                        <button class="btn small" data-testid="tpl-clear-filters" on:click=move |_| {
+                            mode.set(String::new());
+                            platform.set(String::new());
+                            scenario.set(String::new());
+                            query.set(String::new());
+                        }>{t(T::ClearFilters)}</button>
+                    </div>
+                }.into_any(),
                 Some(_) => visible.get().into_iter().map(|s| {
                     let open = s.clone();
                     let open_key = s.clone();

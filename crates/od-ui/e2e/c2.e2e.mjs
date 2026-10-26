@@ -157,14 +157,10 @@ try {
   assert.ok(brandStep);
   results.onboardingBrand = 'ok';
 
-  // 2. Home: "Recommended for you" and the entry tabs.
-  const rec = page.getByTestId('recommended');
-  await rec.waitFor();
-  assert.equal(await rec.getAttribute('data-starter'), 'general', 'no projects yet');
-  await page.getByTestId('recommended-start').click();
-  assert.match(await page.getByTestId('brief').inputValue(), /homepage for my idea/);
-  assert.equal(runBodies.length, 0, 'Start creating fills the brief, never sends');
-  await page.getByTestId('brief').fill('');
+  // 2. Home: the entry tabs (no "Recommended for you" strip competing with
+  // the composer).
+  await page.getByTestId('home-tabs').waitFor();
+  assert.equal(await page.getByTestId('recommended').count(), 0, 'a second "start creating" next to the composer');
   for (const tab of ['designs', 'templates', 'design-systems', 'image', 'video']) {
     await page.getByTestId(`home-tab-${tab}`).click();
     await until(async () => (await page.getByTestId('home-tab-panel').getAttribute('data-tab')) === tab, `tab ${tab}`);
@@ -180,11 +176,7 @@ try {
   await until(async () => (await page.getByTestId('home-tab-panel').getAttribute('data-tab')) === 'image', 'tab remembered');
   await page.getByTestId('home-tab-templates').click();
   await page.getByTestId('brief').fill('');
-  await shot('home-recommended', async () => page.getByTestId('recommended').scrollIntoViewIfNeeded());
-  await page.getByTestId('recommended-dismiss').click();
-  await page.reload();
-  await page.getByTestId('home-tabs').waitFor();
-  assert.equal(await page.getByTestId('recommended').count(), 0, 'All types hides the strip for good');
+  await shot('home-tabs', async () => page.getByTestId('home-tabs').scrollIntoViewIfNeeded());
   results.home = 'ok';
 
   // 3. Import from library: "+" on Home (uploaded with the first turn).
@@ -327,8 +319,9 @@ try {
   await standalone.close();
   await page.locator('[data-testid="file-row"][data-path="index.html"]').click();
   await page.getByTestId('export').click();
-  assert.equal(await page.getByTestId('export-jsx').isDisabled(), true, 'pages are not components');
-  assert.equal(await page.getByTestId('export-jsx-html').isDisabled(), true);
+  await page.getByTestId('export-html').waitFor();
+  assert.equal(await page.getByTestId('export-jsx').count(), 0, 'pages are not components');
+  assert.equal(await page.getByTestId('export-jsx-html').count(), 0);
   await page.keyboard.press('Escape');
   results.exportJsx = 'ok';
 

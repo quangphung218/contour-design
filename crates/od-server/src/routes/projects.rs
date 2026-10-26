@@ -7,8 +7,11 @@ use od_contracts::{
     OkResponse, ProjectResponse, ProjectsResponse, UpdateProjectRequest,
 };
 
+/// Every project but the media library's, which holds uploads and is not
+/// a design the user made.
 pub async fn list(State(state): State<AppState>) -> ApiResult<ApiJson<ProjectsResponse>> {
-    let projects = state.blocking(|s| s.list_projects_with_entry()).await?;
+    let mut projects = state.blocking(|s| s.list_projects_with_entry()).await?;
+    projects.retain(|p| p.id != crate::routes::library::assets::LIBRARY_PROJECT_ID);
     Ok(ApiJson(ProjectsResponse { projects }))
 }
 
@@ -47,7 +50,16 @@ pub async fn get(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<ApiJson<ProjectResponse>> {
-    let project = state.blocking(move |s| s.get_project(&id)).await?;
+    let wanted = id.clone();
+    let project = state
+        .blocking(move |s| s.get_project(&id))
+        .await
+        .inspect_err(|e| {
+            // A link to a project that is gone (Recent, Messages, a bookmark).
+            if e.status == axum::http::StatusCode::NOT_FOUND {
+                tracing::info!(project = %wanted, "project not found");
+            }
+        })?;
     Ok(ApiJson(ProjectResponse { project }))
 }
 

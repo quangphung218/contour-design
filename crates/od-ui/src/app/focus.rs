@@ -56,3 +56,71 @@ fn after_render(f: impl FnOnce() + 'static) {
         f();
     });
 }
+
+/// Arrow keys (and Home, End) inside a tab list or radio group: focus the
+/// next `[role=tab]` or `[role=radio]` of the group the handler sits on,
+/// as in the WAI-ARIA tabs and radio group patterns. With `select` the
+/// focused item is also picked (a click), so selection follows focus.
+pub fn group_keys(ev: &web_sys::KeyboardEvent, select: bool) {
+    let element =
+        |t: Option<web_sys::EventTarget>| t.and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+    let (Some(group), Some(from)) = (element(ev.current_target()), element(ev.target())) else {
+        return;
+    };
+    let Ok(found) = group.query_selector_all("[role=tab], [role=radio]") else {
+        return;
+    };
+    let items: Vec<web_sys::HtmlElement> = (0..found.length())
+        .filter_map(|i| found.item(i)?.dyn_into().ok())
+        .filter(|e: &web_sys::HtmlElement| !e.has_attribute("disabled"))
+        .collect();
+    let Some(at) = items.iter().position(|t| **t == from) else {
+        return;
+    };
+    let Some(next) = next_index(&ev.key(), at, items.len()) else {
+        return;
+    };
+    ev.prevent_default();
+    let _ = items[next].focus();
+    if select {
+        items[next].click();
+    }
+}
+
+/// Where an arrow, Home or End key moves from `at` among `len` items
+/// (wrapping); `None` for any other key.
+fn next_index(key: &str, at: usize, len: usize) -> Option<usize> {
+    if len == 0 {
+        return None;
+    }
+    Some(match key {
+        "ArrowLeft" | "ArrowUp" => (at + len - 1) % len,
+        "ArrowRight" | "ArrowDown" => (at + 1) % len,
+        "Home" => 0,
+        "End" => len - 1,
+        _ => return None,
+    })
+}
+
+/// Roving tabindex: only the picked item of a group is a Tab stop; the
+/// arrows ([`group_keys`]) move between the others.
+#[must_use]
+pub fn roving(picked: bool) -> &'static str {
+    if picked { "0" } else { "-1" }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::next_index;
+
+    #[test]
+    fn arrows_wrap_and_home_end_jump() {
+        assert_eq!(next_index("ArrowRight", 2, 3), Some(0));
+        assert_eq!(next_index("ArrowLeft", 0, 3), Some(2));
+        assert_eq!(next_index("ArrowDown", 0, 3), Some(1));
+        assert_eq!(next_index("End", 0, 3), Some(2));
+        assert_eq!(next_index("Home", 2, 3), Some(0));
+        assert_eq!(next_index("Enter", 0, 3), None);
+        assert_eq!(next_index("ArrowRight", 0, 0), None);
+    }
+}

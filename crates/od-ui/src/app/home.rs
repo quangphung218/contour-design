@@ -6,7 +6,7 @@ use super::composer::{
     Upload, UploadTray, admit, close_outside, upload_all,
 };
 use super::desktop;
-use super::ds_create::NewDesignSystem;
+use super::ds_create::CreateFlow;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::lib_ui::query_param;
@@ -91,6 +91,18 @@ pub fn Home() -> impl IntoView {
     // `?template=` from the Templates page, applied once the list loads.
     let wanted_template = StoredValue::new(query_param("template"));
     let working_dir = RwSignal::new(None::<String>);
+    // The "+" menu's Home items: the design system dialog, the folder path
+    // form (browser only), and the system just created.
+    let ds_open = RwSignal::new(false);
+    let folder = RwSignal::new(None::<String>);
+    let ds_created = RwSignal::new(None::<String>);
+    // "Design system X created" is about X: picking another one retires it.
+    Effect::new(move |_| {
+        let now = design_system.get();
+        if ds_created.get_untracked().is_some_and(|c| Some(c) != now) {
+            ds_created.set(None);
+        }
+    });
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
     let brief_ref = NodeRef::<leptos::html::Textarea>::new();
@@ -100,6 +112,20 @@ pub fn Home() -> impl IntoView {
     let context = RwSignal::new(Vec::<Candidate>::new());
     let sources = Sources::load();
     let pick_files = RwSignal::new(0u32);
+    // "+" ▸ Create plugin: the authoring plugin mentioned, then the ask.
+    let create_plugin = Callback::new(move |()| {
+        let mut text = String::new();
+        if let Some(c) = sources.plugin("od-plugin-authoring") {
+            text.push_str(&crate::mention::token(&c));
+            super::composer::stage(context, c);
+        }
+        text.push_str(t(T::CreatePluginPrompt));
+        text.push(' ');
+        brief.set(text);
+        if let Some(el) = brief_ref.get_untracked() {
+            let _ = el.focus();
+        }
+    });
 
     let skills = LocalResource::new(|| async {
         api::get::<SkillsResponse>("/api/skills")
@@ -388,18 +414,27 @@ pub fn Home() -> impl IntoView {
                             on_attach=Callback::new(move |()| pick_files.update(|n| *n += 1))
                             on_library=import_library
                         >
+                            <HomeActions ds_open=ds_open folder=folder on_plugin=create_plugin error=error/>
                             <WorkingDirItems dir=working_dir/>
                         </PlusMenu>
                         <ChipRow chip=chip picked=chip_picked set_chip=Callback::new(set_chip)/>
-                        <span class="bar-divider" aria-hidden="true"></span>
                         <label class="picker">
                             {icon(Glyph::DesignSystem)}
                             <select
                                 data-testid="design-system"
                                 aria-label=t(T::DesignSystem)
+                                // The full name (the select may cut it), then the
+                                // trademark note of a brand-named system.
                                 title=move || {
                                     let id = design_system.get()?;
-                                    systems.with(|l| l.as_ref()?.iter().find(|s| s.id == id)?.brand.as_deref().map(brand_note))
+                                    systems.with(|l| {
+                                        let s = l.as_ref()?.iter().find(|s| s.id == id)?;
+                                        let name = format!("{} · {}", crate::i18n::rebrand(&s.title), s.category);
+                                        Some(match s.brand.as_deref() {
+                                            Some(b) => format!("{name}\n{}", brand_note(b)),
+                                            None => name,
+                                        })
+                                    })
                                 }
                                 disabled=move || systems.with(Option::is_none)
                                 on:change=move |ev| {
@@ -436,6 +471,13 @@ pub fn Home() -> impl IntoView {
                             <select
                                 data-testid="template"
                                 aria-label=t(T::Template)
+                                title=move || {
+                                    let id = template.get();
+                                    chip_templates.with(|l| match (l, id) {
+                                        (Some(l), Some(id)) => l.iter().find(|s| s.info.id == id).map(template_name),
+                                        _ => None,
+                                    }).unwrap_or_else(|| t(T::DefaultTemplate).to_owned())
+                                }
                                 // A property, not `selected` on the options: an
                                 // option the user picked by hand ignores the
                                 // attribute, so the gallery could not move it.
@@ -478,7 +520,16 @@ pub fn Home() -> impl IntoView {
                     <MediaBar chip=chip media=media/>
                 </div>
                 <div class="composer-foot">
-                    <NewDesignSystem systems=systems selected=design_system/>
+                    {move || ds_created.get().map(|id| {
+                        let name = systems.with(|l| {
+                            l.as_ref()
+                                .and_then(|l| l.iter().find(|s| s.id == id))
+                                .map_or_else(|| id.clone(), |s| crate::i18n::rebrand(&s.title).into_owned())
+                        });
+                        view! {
+                            <p class="ds-status ok" data-testid="ds-status">{icon(Glyph::CheckCircle)}{tf(T::DesignSystemCreated, &[&name])}</p>
+                        }
+                    })}
                     {move || skill_pick.get().map(|id| view! {
                         <span class="chip active" data-testid="home-skill">
                             {icon(Glyph::Book)}
@@ -488,23 +539,7 @@ pub fn Home() -> impl IntoView {
                             </button>
                         </span>
                     })}
-                    <button class="btn ghost small" data-testid="action-create-plugin" on:click=move |_| {
-                        let plugin = sources.plugin("od-plugin-authoring");
-                        let mut text = String::new();
-                        if let Some(c) = plugin {
-                            text.push_str(&crate::mention::token(&c));
-                            super::composer::stage(context, c);
-                        }
-                        text.push_str(t(T::CreatePluginPrompt));
-                        text.push(' ');
-                        brief.set(text);
-                        if let Some(el) = brief_ref.get_untracked() {
-                            let _ = el.focus();
-                        }
-                    }>
-                        {icon(Glyph::Plugin)}{t(T::CreatePlugin)}
-                    </button>
-                    <FromFolder/>
+                    <FromFolderForm typing=folder/>
                     {move || working_dir.get().map(|d| {
                         let name = d.rsplit('/').next().unwrap_or(&d).to_owned();
                         view! {
@@ -522,8 +557,7 @@ pub fn Home() -> impl IntoView {
                 {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 <Examples chip=chip brief=brief brief_ref=brief_ref/>
 
-                // Track C2: a starter suggestion and the entry tabs.
-                <super::home_tabs::Recommended brief=brief set_chip=Callback::new(set_chip) brief_ref=brief_ref/>
+                // Track C2: the entry tabs.
                 <super::home_tabs::HomeTabs
                     templates=move || view! { <Gallery templates=chip_templates selected=template pick=pick_template/> }
                     systems=systems
@@ -535,8 +569,83 @@ pub fn Home() -> impl IntoView {
 
                 <super::projects::RecentStrip/>
             </div>
+            // Same dialog as the Design systems page: every source, not
+            // only a description.
+            <Show when=move || ds_open.get()>
+                <CreateFlow
+                    systems=Signal::derive(move || systems.get().unwrap_or_default())
+                    on_close=Callback::new(move |()| ds_open.set(false))
+                    on_created=Callback::new(move |id: String| {
+                        ds_open.set(false);
+                        systems.refetch();
+                        design_system.set(Some(id.clone()));
+                        ds_created.set(Some(id));
+                    })
+                />
+            </Show>
         </section>
     }
+}
+
+/// Home's own items in the "+" menu: start a design system, a plugin, or a
+/// project over a folder. Each closes the menu.
+#[component]
+fn HomeActions(
+    ds_open: RwSignal<bool>,
+    folder: RwSignal<Option<String>>,
+    on_plugin: Callback<()>,
+    error: RwSignal<Option<String>>,
+) -> impl IntoView {
+    let navigate = use_navigate();
+    let menu = expect_context::<super::composer::PlusMenuOpen>().0;
+    let close = move || menu.set(false);
+    let pick_folder = move |_| {
+        close();
+        if desktop::is_desktop() {
+            let navigate = navigate.clone();
+            leptos::task::spawn_local(async move {
+                if let Some(d) = desktop::pick_folder().await {
+                    if let Err(e) = import_folder(&navigate, d).await {
+                        error.set(Some(e));
+                    }
+                }
+            });
+        } else {
+            folder.set(Some(String::new()));
+        }
+    };
+    view! {
+        <div class="menu-sep" role="presentation">{t(T::StartFrom)}</div>
+        <button type="button" class="menu-item" role="menuitem" data-testid="ds-new"
+            aria-haspopup="dialog" on:click=move |_| { close(); ds_open.set(true); }>
+            {icon(Glyph::DesignSystem)}{t(T::NewDesignSystem)}
+        </button>
+        <button type="button" class="menu-item" role="menuitem" data-testid="action-create-plugin"
+            on:click=move |_| { close(); on_plugin.run(()); }>
+            {icon(Glyph::Plugin)}{t(T::CreatePlugin)}
+        </button>
+        <button type="button" class="menu-item" role="menuitem" data-testid="action-from-folder"
+            on:click=pick_folder>
+            // Not the working directory's icon: this one leaves for a new project.
+            {icon(Glyph::FolderAdd)}{t(T::FromFolder)}
+        </button>
+    }
+}
+
+/// A project over an existing folder (the files stay where they are), then
+/// the Studio.
+async fn import_folder(
+    navigate: &impl Fn(&str, leptos_router::NavigateOptions),
+    dir: String,
+) -> Result<(), String> {
+    let r = api::post::<_, CreateProjectResponse>(
+        "/api/import/folder",
+        &serde_json::json!({ "baseDir": dir }),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    navigate(&format!("/projects/{}", r.project.id), Default::default());
+    Ok(())
 }
 
 fn chip_glyph(c: Chip) -> Glyph {
@@ -576,7 +685,7 @@ fn ChipRow(
                 role="radio"
                 data-testid="chip"
                 data-chip=c.key()
-                aria-checked=move || (chip.get() == c).to_string()
+                aria-checked=move || (chip.get() == c).to_string() tabindex=move || super::focus::roving(chip.get() == c)
                 on:click=move |_| set_chip.run(c)
             >
                 {icon(chip_glyph(c))}
@@ -585,7 +694,7 @@ fn ChipRow(
         }
     };
     view! {
-        <div class="chips" role="radiogroup" aria-label=t(T::OutputType)>
+        <div class="chips" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::OutputType)>
             {Chip::PRIMARY.into_iter().map(chip_button).collect_view()}
             {move || {
                 let c = chip.get();
@@ -877,67 +986,44 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>) -> impl IntoView {
     }
 }
 
-/// "From folder": a project over an existing folder (the files stay where
-/// they are), then the Studio.
+/// "From folder" in a browser: the folder path to type (the desktop app
+/// picks it with the system dialog instead). Open while `typing` is set.
 #[component]
-fn FromFolder() -> impl IntoView {
+fn FromFolderForm(typing: RwSignal<Option<String>>) -> impl IntoView {
     let navigate = use_navigate();
-    let typing = RwSignal::new(None::<String>);
     let error = RwSignal::new(None::<String>);
-    let import = move |dir: String| {
+    let import = move || {
+        let dir = typing.get_untracked().unwrap_or_default().trim().to_owned();
         let navigate = navigate.clone();
         leptos::task::spawn_local(async move {
-            match api::post::<_, CreateProjectResponse>(
-                "/api/import/folder",
-                &serde_json::json!({ "baseDir": dir }),
-            )
-            .await
-            {
-                Ok(r) => navigate(&format!("/projects/{}", r.project.id), Default::default()),
-                Err(e) => error.set(Some(e.to_string())),
+            if let Err(e) = import_folder(&navigate, dir).await {
+                error.set(Some(e));
             }
         });
     };
-    let import_pick = import.clone();
-    let import_typed = import.clone();
-    view! {
-        <span class="menu-wrap">
-            <button class="btn ghost small" data-testid="action-from-folder"
-                aria-expanded=move || typing.with(Option::is_some).to_string()
-                on:click=move |_| {
-                    if desktop::is_desktop() {
-                        let import = import_pick.clone();
-                        leptos::task::spawn_local(async move {
-                            if let Some(d) = desktop::pick_folder().await {
-                                import(d);
-                            }
-                        });
-                    } else {
-                        typing.update(|v| *v = if v.is_some() { None } else { Some(String::new()) });
-                    }
-                }>
-                {icon(Glyph::FolderOpen)}{t(T::FromFolder)}
-            </button>
-            {move || typing.get().map(|value| {
-                let import = import_typed.clone();
-                let import_key = import_typed.clone();
-                view! {
-                    <div class="popover left from-folder" data-testid="from-folder-form">
-                        <input class="input small mono" data-testid="from-folder-path" placeholder=t(T::FolderPathPlaceholder)
-                            aria-label=t(T::FolderPathLabel) prop:value=value
-                            on:input=move |ev| typing.set(Some(event_target_value(&ev)))
-                            on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" {
-                                import_key(typing.get_untracked().unwrap_or_default().trim().to_owned());
-                            }/>
-                        <button class="btn small primary" data-testid="from-folder-open"
-                            on:click=move |_| import(typing.get_untracked().unwrap_or_default().trim().to_owned())>
-                            {t(T::OpenFolder)}
-                        </button>
-                        {move || error.get().map(|e| view! { <p class="error-text small">{e}</p> })}
-                    </div>
-                }
-            })}
-        </span>
+    let import_key = import.clone();
+    move || {
+        typing.get().map(|value| {
+            let import = import.clone();
+            let import_key = import_key.clone();
+            view! {
+                <div class="from-folder" data-testid="from-folder-form">
+                    <input class="input small mono" data-testid="from-folder-path" placeholder=t(T::FolderPathPlaceholder)
+                        aria-label=t(T::FolderPathLabel) prop:value=value autofocus=true
+                        on:input=move |ev| typing.set(Some(event_target_value(&ev)))
+                        on:keydown=move |ev: web_sys::KeyboardEvent| match ev.key().as_str() {
+                            "Enter" => import_key(),
+                            "Escape" => typing.set(None),
+                            _ => {}
+                        }/>
+                    <button class="btn small primary" data-testid="from-folder-open" on:click=move |_| import()>
+                        {t(T::OpenFolder)}
+                    </button>
+                    <button class="icon-btn small" aria-label=t(T::Close) on:click=move |_| typing.set(None)>{icon(Glyph::Close)}</button>
+                    {move || error.get().map(|e| view! { <p class="error-text small">{e}</p> })}
+                </div>
+            }
+        })
     }
 }
 

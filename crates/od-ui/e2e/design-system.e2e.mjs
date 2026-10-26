@@ -75,13 +75,16 @@ try {
   const bundled = (await options.count()) - 1;
   assert.ok(bundled > 100, `bundled design systems listed (${bundled})`);
 
-  // 1. Open the form, fill name + brief, generate.
+  // 1. "+" ▸ New design system opens the same dialog as the Design systems
+  // page (every source); fill name + brief, generate.
+  await page.getByTestId('plus-menu').click();
   await page.getByTestId('ds-new').click();
-  await page.getByTestId('ds-form').waitFor();
-  assert.equal(await page.getByTestId('ds-generate').isDisabled(), true, 'empty form cannot submit');
-  await page.getByTestId('ds-name').fill('Tea House');
-  await page.getByTestId('ds-brief').fill('A calm tea house: cream paper, leaf green, serif headlines.');
-  await page.getByTestId('ds-generate').click();
+  await page.getByTestId('ds-create').waitFor();
+  assert.equal(await page.getByTestId('dsc-source-website').count(), 1, 'Home offers only Describe');
+  assert.equal(await page.getByTestId('dsc-create').isDisabled(), true, 'empty form cannot submit');
+  await page.getByTestId('dsc-name').fill('Tea House');
+  await page.getByTestId('dsc-brief').fill('A calm tea house: cream paper, leaf green, serif headlines.');
+  await page.getByTestId('dsc-create').click();
   await page.getByTestId('ds-status').filter({ hasText: 'Created design system Tea House.' }).waitFor({ timeout: 20_000 });
   assert.equal(generateBodies.length, 1);
   assert.equal(generateBodies[0].agentId, 'claude');
@@ -94,6 +97,10 @@ try {
   assert.equal(await page.getByTestId('design-system').inputValue(), 'user:tea-house');
   const label = await page.locator('[data-testid="design-system"] option[value="user:tea-house"]').textContent();
   assert.equal(label, 'Tea House · Custom');
+  // The "created" line is about Tea House: another pick retires it.
+  await page.getByTestId('design-system').selectOption('');
+  await page.getByTestId('ds-status').waitFor({ state: 'detached' });
+  await page.getByTestId('design-system').selectOption('user:tea-house');
   const api = await (await fetch(`${BASE}/api/design-systems`)).json();
   const mine = api.designSystems.find((s) => s.id === 'user:tea-house');
   assert.equal(mine.source, 'user');
@@ -111,9 +118,10 @@ try {
   // 4. Vietnamese strings.
   await fetch(`${BASE}/api/app-config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: 'vi' }) });
   await page.goto(BASE + '/');
+  await page.getByTestId('plus-menu').click();
   await page.getByTestId('ds-new').filter({ hasText: 'Tạo design system…' }).waitFor();
   await page.getByTestId('ds-new').click();
-  assert.equal(await page.getByTestId('ds-name').getAttribute('placeholder'), 'Tên, ví dụ Tea House');
+  assert.equal(await page.getByTestId('dsc-name').getAttribute('placeholder'), 'Tên, ví dụ Tea House');
   results.vi = 'ok';
 
   await page.screenshot({ path: join(OUT, 'design-system.png') });

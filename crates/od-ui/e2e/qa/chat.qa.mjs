@@ -183,4 +183,32 @@ test('CHAT-10', 'Switching to another conversation while the first still loads s
   assert.equal(await select.inputValue(), other, 'the picked conversation is no longer selected');
 });
 
+test('CHAT-12', 'Messages names each finished run by what was asked, the state as a badge', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d, 'Inbox titles');
+  await send(page, 'A tea shop landing page\nwith a menu');
+  await waitTurn(page, 0);
+  await send(page, 'make the header darker');
+  await waitTurn(page, 1);
+  await page.goto(d.base + '/inbox');
+  await page.getByTestId('inbox-item').first().waitFor();
+  const titles = await page.getByTestId('inbox-title').allInnerTexts();
+  assert.deepEqual(titles.slice(0, 2), ['make the header darker', 'A tea shop landing page']);
+  assert.equal(await page.getByTestId('inbox-state').first().innerText(), 'Task completed');
+});
+
+test('CHAT-13', 'The chat says what the agent did in words, not tool names', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d, 'Tool words');
+  await send(page, 'plan a tea page');
+  await waitTurn(page, 0);
+  const turn = page.getByTestId('assistant-msg').first();
+  const tools = await turn.locator('.tool-name').allInnerTexts();
+  assert.ok(tools.includes('Updated plan'), `tools: ${tools}`);
+  assert.ok(tools.includes('Wrote'), `tools: ${tools}`);
+  assert.doesNotMatch(await turn.innerText(), /TodoWrite|Write \d/);
+  const files = await turn.getByTestId('turn-files').innerText();
+  assert.match(files, /1 new/);
+  assert.doesNotMatch(files, /\bWrite\b/);
+  assert.match(await turn.getByTestId('run-state').innerText(), /1 file written/);
+});
+
 await run('chat');

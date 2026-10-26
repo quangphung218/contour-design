@@ -101,10 +101,10 @@ async function storeKeylessByok(d, byok) {
   await d.restart();
 }
 
-/** Clicks `button` and returns the status of the PUT /api/app-config it sends. */
-async function savedStatus(page, button) {
+/** Runs `act` (a click, a pick) and returns the status of the PUT /api/app-config it sends. */
+async function savedStatus(page, act) {
   const put = page.waitForResponse((r) => r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/app-config', { timeout: 5000 });
-  await button.click();
+  await act();
   return (await put).status();
 }
 
@@ -115,13 +115,13 @@ test('SET-07', 'With an Ollama provider saved without a key, changing the theme 
   await storeKeylessByok(d, OLLAMA_DOCKER);
   const { page } = await newPage();
   await page.goto(d.base + '/settings');
-  await page.getByTestId('save-settings').waitFor();
-  await page.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click();
-  let status = await savedStatus(page, page.getByTestId('save-settings'));
-  assert.equal(status, 200, `saving the theme answered ${status}: ${await page.locator('.save-bar .error-text').innerText().catch(() => '')}`);
-  assert.equal(await page.locator('.save-bar .error-text').count(), 0, 'an error shows after saving the theme');
-  await page.getByTestId('language').selectOption('vi');
-  status = await savedStatus(page, page.getByTestId('save-settings'));
+  await page.getByTestId('byok-form').waitFor();
+  // Theme and language save as soon as they are picked: no second Save.
+  let status = await savedStatus(page, () => page.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click());
+  assert.equal(status, 200, `saving the theme answered ${status}: ${await page.locator('#settings-appearance .error-text').innerText().catch(() => '')}`);
+  await page.getByTestId('saved-appearance').waitFor();
+  assert.equal(await page.locator('#settings-appearance .error-text').count(), 0, 'an error shows after saving the theme');
+  status = await savedStatus(page, () => page.getByTestId('language').selectOption('vi'));
   assert.equal(status, 200, `saving the language answered ${status}`);
   const cfg = (await api('/api/app-config')).body;
   assert.equal(cfg.byok?.baseUrl, OLLAMA_DOCKER.baseUrl, 'the saved provider changed');
@@ -140,7 +140,7 @@ test('SET-08', 'An Ollama provider on a one-word host (gpu-box) saves from Setti
   await page.getByTestId('byok-base-url').fill('http://gpu-box:11434/v1');
   const save = page.getByTestId('byok-save');
   assert.equal(await save.isEnabled(), true, 'Save is off for a keyless Ollama');
-  const status = await savedStatus(page, save);
+  const status = await savedStatus(page, () => save.click());
   assert.equal(status, 200, `saving answered ${status}: ${await form.innerText()}`);
 }, { daemon: {} });
 
@@ -156,5 +156,21 @@ test('SET-09', 'Settings ▸ Agent: Check again finds an agent installed after t
   await page.locator('[data-agent="claude"][role="radio"]').waitFor({ timeout: 20_000 });
   assert.equal(await page.getByTestId('agent-install').count(), 0, 'install cards still shown next to a found agent');
 }, { daemon: { agents: false, env: { PATH: `${lateBin}:/usr/bin:/bin` } } });
+
+test('SET-10', 'Settings has one Save per thing to save: the agent card or the API provider, never both', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  const visibleSaves = () => page.locator('#settings-execution button.primary:visible').count();
+  await page.getByTestId('save-settings').waitFor();
+  assert.equal(await visibleSaves(), 1, 'local agent: one Save');
+  await page.getByTestId('mode-api').click();
+  await page.getByTestId('byok-save').waitFor();
+  assert.equal(await page.getByTestId('save-settings').count(), 0, 'a second Save next to the provider form');
+  assert.equal(await visibleSaves(), 1, 'API provider: one Save');
+  // The other sections save on their own.
+  const before = (await api('/api/app-config')).body.theme;
+  await page.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click();
+  await until(async () => (await api('/api/app-config')).body.theme === 'dark', `theme saved (was ${before})`, 5000);
+}, { daemon: {} });
 
 await run('settings');

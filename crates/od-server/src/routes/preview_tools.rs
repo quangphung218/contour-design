@@ -166,12 +166,20 @@ async fn deliverable(
             let files = s.list_files(&p.id).ok()?;
             Some((dir, files))
         });
-        Ok(validate(&RunFacts {
+        let res = validate(&RunFacts {
             succeeded,
             touched: &touched,
             project: project.as_ref(),
             listing: listing.as_ref().map(|(d, f)| (d.as_path(), f.as_slice())),
-        }))
+        });
+        // Local log only: how often a run writes another page than its
+        // entry (the Studio then opens that page instead of warning).
+        let other_page = touched.iter().any(|t| {
+            (t.ends_with(".html") || t.ends_with(".htm"))
+                && res.entry_file.as_deref().is_none_or(|e| !t.ends_with(e))
+        });
+        tracing::info!(validation = ?res.validation, other_page, "deliverable checked");
+        Ok(res)
     })
     .await?;
     Ok(ApiJson(res))

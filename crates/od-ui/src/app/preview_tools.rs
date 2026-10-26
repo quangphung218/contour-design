@@ -315,6 +315,18 @@ fn snapshot_image(s: Snapshot) -> Option<String> {
     s.data_url.filter(|u| u.starts_with("data:image/"))
 }
 
+/// The page a run wrote in place of its entry file: the first HTML file it
+/// wrote when the entry was left untouched.
+fn other_page(d: &DeliverableResponse, written: &[String]) -> Option<String> {
+    if d.validation != DeliverableValidation::EntryNotTouched {
+        return None;
+    }
+    written
+        .iter()
+        .find(|f| is_html_path(f) && Some(f.as_str()) != d.entry_file.as_deref())
+        .cloned()
+}
+
 fn deliverable_message(d: &DeliverableResponse) -> Option<String> {
     let entry = d.entry_file.clone().unwrap_or_default();
     Some(match d.validation {
@@ -636,12 +648,21 @@ impl StudioCtx {
         });
     }
 
-    /// After a successful run: warn when it did not deliver its entry.
-    pub fn check_deliverable(self, run_id: String) {
+    /// After a successful run: warn when it did not deliver its entry. A
+    /// run that wrote another page instead (a deck next to `index.html`)
+    /// delivered that page: it opens, with no warning. `written`: the
+    /// files the run wrote, project-relative.
+    pub fn check_deliverable(self, run_id: String, written: Vec<String>) {
         let tools = self.tools;
         leptos::task::spawn_local(async move {
             let url = format!("/api/runs/{}/deliverable", api::seg(&run_id));
             if let Ok(d) = api::get::<DeliverableResponse>(&url).await {
+                if let Some(page) = other_page(&d, &written) {
+                    let _ = tools.deliverable.try_set(None);
+                    // A tab, not the pane: a phone stays on the chat.
+                    self.show_tab(&page);
+                    return;
+                }
                 let _ = tools.deliverable.try_set((!d.valid).then_some(d));
             }
         });
@@ -725,7 +746,7 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
             {tool_button(Tool::Inspect, T::ToolInspect, Glyph::Inspect, "inspect-mode")}
             {tool_button(Tool::EditText, T::ToolEditText, Glyph::EditText, "edit-mode")}
             {tool_button(Tool::Manual, T::ToolManualEdit, Glyph::ManualEdit, "manual-edit-mode")}
-            {tool_button(Tool::Draw, T::ToolDraw, Glyph::Draw, "draw-mode")}
+            {tool_button(Tool::Draw, T::ToolDraw, Glyph::Sketch, "draw-mode")}
             <super::capture::ScreenshotMenu ctx=ctx/>
             <Show when=move || tools.tweaks.with(|t| !t.is_empty())>
                 {tool_button(Tool::Tweaks, T::ToolTweaks, Glyph::Tweaks, "tweaks-toggle")}
@@ -1717,6 +1738,37 @@ mod tests {
             deliverable_message(&d(DeliverableValidation::EntryNotTouched))
                 .unwrap()
                 .contains("index.html")
+        );
+    }
+
+    #[test]
+    fn a_run_that_wrote_another_page_delivered_it() {
+        let d = |v| DeliverableResponse {
+            valid: v == DeliverableValidation::Valid,
+            validation: v,
+            entry_file: Some("index.html".into()),
+            artifact_kind: None,
+        };
+        let wrote = |files: &[&str]| files.iter().map(|f| (*f).to_owned()).collect::<Vec<_>>();
+        let untouched = d(DeliverableValidation::EntryNotTouched);
+        assert_eq!(
+            other_page(&untouched, &wrote(&["notes.md", "deck.html"])).as_deref(),
+            Some("deck.html")
+        );
+        // Only CSS or notes: the entry warning stands.
+        assert_eq!(other_page(&untouched, &wrote(&["a.css", "notes.md"])), None);
+        assert_eq!(other_page(&untouched, &[]), None);
+        // Any other verdict keeps its own message.
+        assert_eq!(
+            other_page(&d(DeliverableValidation::Valid), &wrote(&["deck.html"])),
+            None
+        );
+        assert_eq!(
+            other_page(
+                &d(DeliverableValidation::TypeMismatch),
+                &wrote(&["deck.html"])
+            ),
+            None
         );
     }
 }

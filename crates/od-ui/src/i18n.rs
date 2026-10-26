@@ -215,7 +215,9 @@ messages! {
     NavHome => "Home", "Trang chủ";
     NavProjects => "Projects", "Project";
     NavSettings => "Settings", "Cài đặt";
-    PageNotFound => "Page not found.", "Không tìm thấy trang.";
+    PageNotFound => "Page not found", "Không tìm thấy trang";
+    PageNotFoundBody => "The link may be old or mistyped.", "Link có thể đã cũ hoặc gõ sai.";
+    GoToHome => "Go to Home", "Về trang chủ";
     JustNow => "just now", "vừa xong";
     MinAgo => "{0} min ago", "{0} phút trước";
     HoursAgo => "{0} h ago", "{0} giờ trước";
@@ -223,6 +225,7 @@ messages! {
     Loading => "Loading…", "Đang tải…";
     Cancel => "Cancel", "Huỷ";
     Save => "Save", "Lưu";
+    SaveAgent => "Save agent", "Lưu agent";
     Saved => "Saved", "Đã lưu";
     Delete => "Delete", "Xoá";
     Close => "Close", "Đóng";
@@ -496,7 +499,7 @@ messages! {
     RoutineNeedsName => "Add a title for this automation.", "Cần đặt tên cho automation.";
     RoutineNeedsPrompt => "Add a prompt for the scheduled conversation.", "Cần nhập prompt cho conversation theo lịch.";
     TargetCreateEachRun => "New project each run", "Project mới mỗi lần chạy";
-    TargetCreateEachRunHint => "A fresh, isolated workspace per fire.", "Mỗi lần chạy có một không gian riêng, mới.";
+    TargetCreateEachRunHint => "A fresh, separate project for every run.", "Mỗi lần chạy có một project mới, riêng.";
     TargetReuse => "Reuse an existing project", "Dùng lại một project";
     TargetReuseHint => "Each run lives as a new conversation inside the project.", "Mỗi lần chạy là một conversation mới trong project.";
     KindHourly => "Hourly", "Hằng giờ";
@@ -594,9 +597,9 @@ messages! {
     NavDesignSystems => "Design systems", "Design system";
     NavPlugins => "Plugins", "Plugin";
     NavInbox => "Messages", "Tin báo";
-    MessageCenter => "Message center", "Trung tâm tin báo";
+    MessageCenter => "Messages", "Tin báo";
     MessageCenterIntro => "Runs that finished, failed or were canceled, including those started by automations.", "Các run đã xong, lỗi hoặc bị huỷ, kể cả run do automation chạy.";
-    Inbox => "Inbox", "Hộp thư";
+    Inbox => "Active", "Đang theo dõi";
     Archived => "Archived", "Đã lưu trữ";
     Archive => "Archive", "Lưu trữ";
     Unarchive => "Move back to inbox", "Đưa lại hộp thư";
@@ -620,7 +623,8 @@ messages! {
     InstallGuide => "Install guide", "Hướng dẫn cài";
     CopyCommand => "Copy command", "Sao chép lệnh";
     SignInAfterInstall => "Then open a new Terminal window and run {0} to sign in.", "Sau đó mở cửa sổ Terminal mới và chạy {0} để đăng nhập.";
-    StillNoAgent => "Still no agent found. Open a new Terminal window and run {0}.", "Vẫn chưa thấy agent nào. Mở cửa sổ Terminal mới và chạy {0}.";
+    StillNoAgent => "Still no agent found. Open a new Terminal window and run {0} or {1}.", "Vẫn chưa thấy agent nào. Mở cửa sổ Terminal mới và chạy {0} hoặc {1}.";
+    AgentTestFailedLead => "{0} did not pass its test. Update it, or install one of these instead.", "{0} chưa qua bài test. Cập nhật nó, hoặc cài một agent dưới đây.";
     AgentsNoneHintWindows => "No coding agent found yet. Install one from its guide below, or use an API key.", "Chưa có coding agent nào. Cài theo hướng dẫn bên dưới, hoặc dùng API key.";
     ClaudeAccount => "Needs a Claude Pro, Max, Team or Enterprise plan, or a Console account.", "Cần gói Claude Pro, Max, Team hoặc Enterprise, hoặc tài khoản Console.";
     CodexAccount => "Needs a ChatGPT plan or an OpenAI API key.", "Cần gói ChatGPT hoặc API key của OpenAI.";
@@ -735,7 +739,7 @@ messages! {
     LintBadge => "Lint · {0}", "Lint · {0}";
     LintClean => "Lint", "Lint";
     LintTitle => "Lint of {0}", "Lint của {0}";
-    LintNone => "No anti-slop issues found.", "Không thấy lỗi AI slop nào.";
+    LintNone => "No design issues found.", "Không thấy lỗi thiết kế nào.";
     LintFix => "Fix: {0}", "Cách sửa: {0}";
     LintSend => "Ask the agent to fix", "Nhờ agent sửa";
     LintFailed => "Lint failed: {0}", "Không lint được: {0}";
@@ -927,6 +931,7 @@ messages! {
     ProjectLabel => "Project", "Project";
     ChooseProject => "Choose a project", "Chọn project";
     NoMatches => "Nothing matches the filters.", "Không có mục nào khớp bộ lọc.";
+    ClearFilters => "Clear filters", "Xoá bộ lọc";
     SelectPlaceholder => "Select…", "Chọn…";
     SelectItem => "Select", "Chọn";
     ClearSelection => "Clear selection", "Bỏ chọn";
@@ -950,7 +955,7 @@ messages! {
     UseInNewProject => "Use in a new project", "Dùng cho project mới";
     EditWithAgent => "Edit with agent", "Sửa bằng agent";
     CopyToYourSystems => "Copy to your systems", "Chép về của tôi";
-    DefaultForNewChats => "Default for new chats", "Mặc định cho chat mới";
+    DefaultForNewChats => "Default for new projects", "Mặc định cho project mới";
     DefaultNeedsPublished => "Publish this system first", "Cần xuất bản trước";
     DefaultSet => "New chats now start with this design system.", "Chat mới sẽ dùng design system này.";
     DefaultCleared => "No default design system now.", "Đã bỏ design system mặc định.";
@@ -1084,7 +1089,8 @@ messages! {
     Library => "Library", "Thư viện";
     MediaQueue => "Queue", "Hàng đợi";
     Providers => "Providers", "Provider";
-    HyperframesMp4 => "HyperFrames to MP4", "HyperFrames ra MP4";
+    HyperframesMp4 => "Video to MP4", "Video ra MP4";
+    SetUpProviders => "Set up providers", "Thiết lập nhà cung cấp";
     Images => "Images", "Ảnh";
     Videos => "Videos", "Video";
     Image => "Image", "Ảnh";
@@ -1111,7 +1117,7 @@ messages! {
     ProvidersHint => "Keys stay on this machine (media-config.json, mode 0600). Leave a key empty to keep the saved one; an empty base URL uses the provider's own.", "Key chỉ lưu trên máy này (media-config.json, quyền 0600). Để trống key thì giữ key cũ; để trống base URL thì dùng địa chỉ mặc định của provider.";
     KeySaved => "Key saved ···{0}", "Đã lưu key ···{0}";
     KeyFromEnv => "Key from environment", "Key từ biến môi trường";
-    Mp4Hint => "Renders a project's HyperFrames composition (index.html with hyperframes.json) to an MP4 saved in the project. Needs Chrome and ffmpeg.", "Render composition HyperFrames của project (index.html kèm hyperframes.json) ra MP4 lưu trong project. Cần Chrome và ffmpeg.";
+    Mp4Hint => "Renders a motion project to an MP4 saved in the project. Needs Chrome and ffmpeg.", "Render project chuyển động ra MP4 lưu trong project. Cần Chrome và ffmpeg.";
     FramesPerSecond => "Frames per second", "Khung hình mỗi giây";
     RenderMp4 => "Render MP4", "Render MP4";
     Mp4Saved => "Saved {0}.", "Đã lưu {0}.";
@@ -1169,7 +1175,7 @@ messages! {
     AgentSectionHint => "The coding agent that runs briefs on this machine.", "Coding agent chạy brief trên máy này.";
     PermissionsHint => "What the agent may do without asking.", "Những việc agent được làm mà không cần hỏi.";
     AppearanceHint => "Follows the system unless you pin a theme.", "Theo hệ thống, trừ khi chọn cố định một chế độ.";
-    LanguageHint => "Applies to the whole app after saving.", "Áp dụng cho cả app sau khi lưu.";
+    LanguageHint => "Applies to the whole app.", "Áp dụng cho cả app.";
     NewRoutine => "New routine", "Routine mới";
     RoutinesTitle => "Routines", "Routine";
     NoRoutinesBody => "Add one above to run a prompt on a schedule.", "Thêm một routine ở trên để chạy prompt theo lịch.";
@@ -1310,7 +1316,10 @@ messages! {
     NotesSaveFailed => "Could not save the notes: {0}", "Không lưu được ghi chú: {0}";
     ExportJpeg => "JPEG image", "Ảnh JPEG";
     ExportWebp => "WebP image", "Ảnh WebP";
-    ExportMp4 => "MP4 video (HyperFrames)", "Video MP4 (HyperFrames)";
+    ExportMp4 => "MP4 video", "Video MP4";
+    ExportPowerPoint => "PowerPoint", "PowerPoint";
+    ExportPptxSlides => "Slides as images", "Slide dạng ảnh";
+    ExportPptxEditableShort => "Editable text", "Chữ chỉnh sửa được";
     FileSection => "This file", "File này";
     SaveTemplateBody => "The page, bundled into one file, joins the templates on Home.", "Trang này, gói thành một file, sẽ có trong danh sách template ở Trang chủ.";
     TemplateDescription => "Description", "Mô tả";
@@ -1382,11 +1391,13 @@ messages! {
 
     // Run status and next steps
     ProjectLoadFailed => "This project could not be opened.", "Không mở được project này.";
+    ProjectGone => "This project was deleted or the link is wrong.", "Project này đã bị xoá hoặc link bị sai.";
     RunStarting => "Starting the agent…", "Đang khởi động agent…";
     RunWorking => "Working", "Đang chạy";
     RunStep => "Step {0} of {1}", "Bước {0}/{1}";
     RunDone => "Done", "Xong";
-    RunFilesWritten => "{0} file(s) written", "Đã ghi {0} file";
+    RunFileWritten => "1 file written", "Đã ghi 1 file";
+    RunFilesWritten => "{0} files written", "Đã ghi {0} file";
     RunFailed => "Failed", "Lỗi";
     RunFailedHint => "See the message above, then retry or check the agent in Settings.", "Xem thông báo ở trên, rồi thử lại hoặc kiểm tra agent trong Cài đặt.";
     NextSteps => "Next", "Tiếp theo";
@@ -1511,7 +1522,7 @@ messages! {
     MediaAudioKind => "Audio type", "Loại âm thanh";
     SecondsN => "{0}s", "{0} giây";
     WorkingDir => "Working directory", "Thư mục làm việc";
-    WorkingDirPick => "Choose folder", "Chọn thư mục";
+    WorkingDirPick => "Let the agent read a folder", "Cho agent đọc một thư mục";
     WorkingDirReplace => "Change working directory", "Đổi thư mục làm việc";
     WorkingDirRecent => "Recent folders", "Thư mục gần đây";
     WorkingDirClear => "Remove working directory", "Bỏ thư mục làm việc";
@@ -1556,8 +1567,14 @@ messages! {
     CollapseChat => "Collapse the conversation pane", "Thu gọn khung chat";
     ResizeChat => "Resize chat panel", "Đổi độ rộng khung chat";
     FilesFromTurn => "Files from this turn", "File của lượt này";
-    WriteCount => "Write {0}", "Ghi {0}";
-    EditCount => "Edit {0}", "Sửa {0}";
+    WriteCount => "{0} new", "{0} mới";
+    EditCount => "{0} edited", "{0} đã sửa";
+    ToolPlan => "Updated plan", "Cập nhật kế hoạch";
+    ToolWrote => "Wrote", "Đã ghi";
+    ToolEdited => "Edited", "Đã sửa";
+    ToolRead => "Read", "Đã đọc";
+    ToolRan => "Ran", "Đã chạy";
+    ToolSearched => "Searched", "Đã tìm";
     OpenNamed => "Open {0}", "Mở {0}";
     DownloadNamed => "Download {0}", "Tải {0}";
     MoreN => "+{0} more", "+{0} file nữa";
@@ -1567,8 +1584,8 @@ messages! {
     TaskNotFinished => "Task not finished yet: {0} item(s) left", "Việc chưa xong: còn {0} mục";
     Reconnect => "Reconnect", "Kết nối lại";
     SearchList => "Search", "Tìm";
-    OpWrite => "Write", "Ghi";
-    OpEdit => "Edit", "Sửa";
+    OpWrite => "New", "Mới";
+    OpEdit => "Edited", "Đã sửa";
     DesignToolbox => "Design toolbox", "Hộp công cụ thiết kế";
     ToolMatch => "Match next step", "Gợi ý bước tiếp theo";
     ToolMatchPrompt => "Define the taste bar for this design first, then pick the skills, files and tools that fit the next step and do it.", "Xác định chuẩn thẩm mỹ cho bản thiết kế này trước, rồi chọn skill, file và công cụ hợp với bước tiếp theo và làm luôn.";
@@ -1590,7 +1607,8 @@ messages! {
     MediaNotes => "Style notes", "Ghi chú phong cách";
     CreatePlugin => "Create plugin", "Tạo plugin";
     CreatePluginPrompt => "Create a plugin for:", "Tạo một plugin cho:";
-    FromFolder => "From folder", "Từ thư mục";
+    FromFolder => "Open a folder as a project", "Mở thư mục thành project";
+    StartFrom => "Start", "Bắt đầu";
     ShortcutMention => "Mention a file, plugin, skill or MCP server", "Nhắc tới file, plugin, skill hoặc MCP server";
     ShortcutSlash => "Commands (at the start of a line)", "Lệnh (ở đầu dòng)";
     // Track C1-preview: manual edit, comments tab, code colors, hints.
@@ -1717,34 +1735,6 @@ messages! {
     BrandStepDone => "{0} is ready and set as the default design system.", "{0} đã sẵn sàng và được đặt làm design system mặc định.";
     BrandStepWait => "Wait until the design system is extracted", "Chờ trích xong design system";
     Optional => "Optional", "Tuỳ chọn";
-    RecommendedForYou => "Recommended for you", "Gợi ý";
-    RecTryAnother => "Try another", "Gợi ý khác";
-    RecAllTypes => "All types", "Mọi loại";
-    RecStart => "Start creating", "Bắt đầu tạo";
-    RecPrototype => "Start with an editable product prototype", "Bắt đầu với prototype sản phẩm sửa được";
-    RecPrototypeBody => "Clickable screens you can keep refining in chat.", "Các màn bấm được, tiếp tục chỉnh trong chat.";
-    RecPrototypePrompt => "Prototype the main flow of my product: a home screen, a detail view and a settings page, clickable between them.", "Prototype luồng chính của sản phẩm: màn chính, màn chi tiết và trang cài đặt, bấm qua lại được.";
-    RecComponent => "Design one component in every state", "Thiết kế một component đủ mọi trạng thái";
-    RecComponentBody => "Default, hover, focus, disabled and error, side by side.", "Mặc định, hover, focus, disabled và lỗi, đặt cạnh nhau.";
-    RecComponentPrompt => "Design a pricing card component and show it in default, hover, focus, disabled and error states on one page.", "Thiết kế component thẻ giá và hiện các trạng thái mặc định, hover, focus, disabled, lỗi trên cùng một trang.";
-    RecLowfi => "Sketch a low-fidelity wireframe", "Phác wireframe độ chi tiết thấp";
-    RecLowfiBody => "Layout first, no colour, fast to change.", "Bố cục trước, chưa màu, đổi nhanh.";
-    RecLowfiPrompt => "Wireframe a signup flow in grey boxes: landing, form, confirmation.", "Wireframe luồng đăng ký bằng khối xám: trang đầu, form, xác nhận.";
-    RecLanding => "Launch a landing page", "Làm landing page ra mắt";
-    RecLandingBody => "Hero, features, social proof and a call to action.", "Hero, tính năng, cảm nhận khách hàng và lời kêu gọi.";
-    RecLandingPrompt => "Design a landing page for a new product launch with a hero, three features, testimonials and a signup call to action.", "Thiết kế landing page ra mắt sản phẩm mới: hero, ba tính năng, cảm nhận khách hàng và nút đăng ký.";
-    RecVariants => "Compare three directions", "So sánh ba hướng";
-    RecVariantsBody => "The same page in three visual styles to pick from.", "Cùng một trang theo ba phong cách để chọn.";
-    RecVariantsPrompt => "Make three different visual directions for the same campaign page, side by side, so I can pick one.", "Làm ba hướng hình ảnh khác nhau cho cùng một trang chiến dịch, đặt cạnh nhau để chọn.";
-    RecDashboard => "Build an internal dashboard", "Dựng dashboard nội bộ";
-    RecDashboardBody => "Key numbers, a chart and a table of recent items.", "Số liệu chính, một biểu đồ và bảng mục gần đây.";
-    RecDashboardPrompt => "Prototype an operations dashboard with four key metrics, a weekly trend chart and a table of recent orders.", "Prototype dashboard vận hành với bốn chỉ số chính, biểu đồ xu hướng tuần và bảng đơn hàng gần đây.";
-    RecReport => "Write a one-page report", "Viết báo cáo một trang";
-    RecReportBody => "A clear summary with sections and a table.", "Bản tóm tắt rõ ràng, có mục và bảng.";
-    RecReportPrompt => "Write a one-page monthly report with a summary, three sections and a results table.", "Viết báo cáo tháng một trang: tóm tắt, ba mục và bảng kết quả.";
-    RecGeneral => "Start with your first project", "Bắt đầu project đầu tiên";
-    RecGeneralBody => "Describe anything; the agent asks what it needs.", "Mô tả bất cứ thứ gì; agent sẽ hỏi thêm khi cần.";
-    RecGeneralPrompt => "Design a simple homepage for my idea and ask me what you need to know first.", "Thiết kế trang chủ đơn giản cho ý tưởng của tôi và hỏi tôi những gì cần biết trước.";
     HomeTabsLabel => "Start from", "Bắt đầu từ";
     HomeTabDesigns => "Designs", "Thiết kế";
     HomeTabTemplates => "Templates", "Template";

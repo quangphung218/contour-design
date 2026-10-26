@@ -332,6 +332,10 @@ pub struct RunInfo {
     #[serde(default)]
     pub ended_at: Option<i64>,
     pub last_event_id: u64,
+    /// The user's message the run answered, kept with the run when it
+    /// was created (chat runs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

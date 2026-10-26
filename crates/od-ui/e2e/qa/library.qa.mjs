@@ -30,6 +30,12 @@ test('LIB-02', 'Searching templates for something that does not exist says nothi
   await page.getByTestId('tpl-search').fill('zzqqxx-nothing');
   await until(async () => (await page.getByTestId('tpl-card').count()) === 0, 'no cards');
   await page.getByText(/no (templates|results|match)|nothing (found|matches)/i).first().waitFor({ timeout: 3000 });
+  // A way out: Clear filters brings every template back.
+  await page.getByTestId('tpl-platform-mobile').click();
+  await page.getByTestId('tpl-clear-filters').click();
+  await page.getByTestId('tpl-card').first().waitFor();
+  assert.equal(await page.getByTestId('tpl-search').inputValue(), '');
+  assert.equal(await page.getByTestId('tpl-platform-all').getAttribute('aria-pressed'), 'true');
 });
 
 test('LIB-03', 'Searching design systems for something that does not exist says nothing matches', async ({ d, newPage }) => {
@@ -40,6 +46,31 @@ test('LIB-03', 'Searching design systems for something that does not exist says 
   await until(async () => (await page.getByTestId('ds-row').count()) === 0, 'no rows');
   await page.locator('[data-testid="ds-list"] .empty-state').waitFor();
   assert.match(await page.locator('[data-testid="ds-list"] .empty-state').innerText(), /\w{3,}/);
+});
+
+test('LIB-12', 'Design system search finds the words the page shows, not the bundled package note', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/design-systems');
+  await page.getByTestId('ds-row').first().waitFor();
+  const ids = () => page.getByTestId('ds-row').evaluateAll((els) => els.map((e) => e.dataset.id));
+  await page.getByTestId('ds-search').fill('coral');
+  await until(async () => (await ids()).includes('airbnb'), '"coral" finds Airbnb');
+  // Words only the bundled packages' maintainer note has.
+  await page.getByTestId('ds-search').fill('derived from curated');
+  await until(async () => (await page.getByTestId('ds-row').count()) === 0, '"derived from curated" matches nothing shown');
+});
+
+test('LIB-13', 'The Skills tab says what each skill makes, not when the agent should load it', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/plugins');
+  await page.getByTestId('kind-skills').click();
+  await page.getByTestId('skill-row').first().waitFor();
+  const agentText = await page.getByTestId('skill-row').evaluateAll((els) =>
+    els.map((e) => e.innerText).filter((t) => /\bUse (when|this|for)\b|Triggers? on/i.test(t)));
+  assert.deepEqual(agentText.slice(0, 3), [], `${agentText.length} skills show agent instructions`);
+  await page.locator('[data-testid="skill-row"][data-id="faq-page"] .plugin-row-main').click();
+  const detail = await page.getByTestId('skill-detail').locator('.plugin-hero p').innerText();
+  assert.doesNotMatch(detail, /Use when/);
 });
 
 test('LIB-04', "A design system's DESIGN.md opens from its detail page", async ({ d, newPage }) => {
@@ -98,6 +129,23 @@ test('LIB-08', 'Uploading a text file to the media library is refused or kept, n
   assert.equal(errors.length, 0);
 });
 
+// A 1×1 PNG.
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+
+test('LIB-11', 'An upload to the media library does not add a "Media library" project to Projects or Recent', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/media');
+  await page.getByTestId('media-upload-input').setInputFiles({ name: 'mood.png', mimeType: 'image/png', buffer: PNG });
+  await until(async () => (await api('/api/library/assets')).body.assets?.some((a) => a.path.endsWith('mood.png')), 'upload stored');
+  for (const tab of ['collection-all', 'collection-recent']) {
+    await page.goto(d.base + '/projects');
+    await page.getByTestId(tab).click();
+    await page.waitForLoadState('networkidle').catch(() => {});
+    assert.doesNotMatch(await page.locator('main').innerText(), /Media library/, `${tab} lists the media library`);
+  }
+  assert.ok(!(await listProjects(d)).some((p) => p.id === 'media-library'), 'the API lists the media library');
+});
+
 test('LIB-09', 'Generating an image with no provider key points the user to Providers', async ({ d, newPage }) => {
   const { page } = await newPage();
   await page.goto(d.base + '/media');
@@ -106,6 +154,29 @@ test('LIB-09', 'Generating an image with no provider key points the user to Prov
   await page.getByTestId('gen-no-key').waitFor({ timeout: 8000 });
   await page.getByTestId('gen-no-key').getByRole('button').click();
   await page.getByTestId('media-providers').or(page.getByTestId('media-provider')).first().waitFor();
+});
+
+test('LIB-14', 'Media and Templates say "Audio", Generate has one way in, real selects and a Set up providers button', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/media');
+  assert.equal(await page.getByTestId('media-kind-audio').innerText(), 'Audio');
+  await page.getByTestId('media-tab-generate').click();
+  await page.getByTestId('media-generate').waitFor();
+  assert.equal(await page.getByTestId('media-new').count(), 0, 'a Generate button next to the Generate tab');
+  assert.equal((await page.getByTestId('gen-surface-audio').innerText()).trim(), 'Audio');
+  for (const id of ['gen-model', 'gen-aspect', 'gen-target']) {
+    const arrow = await page.getByTestId(id).evaluate((e) => getComputedStyle(e).backgroundImage);
+    assert.notEqual(arrow, 'none', `${id} has no select arrow`);
+  }
+  const setUp = page.getByTestId('gen-set-up-providers');
+  await setUp.waitFor({ timeout: 8000 });
+  assert.equal(await setUp.innerText(), 'Set up providers');
+  assert.match(await setUp.getAttribute('class'), /\bbtn\b/);
+  assert.doesNotMatch(await setUp.getAttribute('class'), /ghost/);
+  await page.goto(d.base + '/templates');
+  await page.locator('section').first().waitFor();
+  await page.waitForLoadState('networkidle').catch(() => {});
+  assert.doesNotMatch(await page.locator('main').innerText(), /Audio type/);
 });
 
 test('LIB-10', 'Library pages fit a phone-sized window without sideways scroll', async ({ d, newPage }) => {

@@ -1,12 +1,10 @@
 //! Creating a design system (spec 1.4).
 //!
-//! - [`NewDesignSystem`], on Home: name + brief go to
-//!   `POST /api/design-systems/generate`; the job is polled until the
-//!   agent's package is installed, then the picker reloads and selects it.
-//! - [`CreateFlow`], on the Design systems page: the same from a website
-//!   (or a brand), a GitHub repository, Figma or attached files, with the
-//!   job's phases as steps; a pasted DESIGN.md or CSS variables, or a copy
-//!   of an existing system, install without an agent.
+//! [`CreateFlow`], on Home ("+" ▸ New design system) and the Design systems
+//! page: a design system from a description, a website (or a brand), a
+//! GitHub repository, Figma or attached files, with the job's phases as
+//! steps; a pasted DESIGN.md or CSS variables, or a copy of an existing
+//! system, install without an agent.
 
 use super::icons::{Glyph, icon};
 use super::{Shell, api};
@@ -24,186 +22,6 @@ enum Phase {
     Running,
     Done(String),
     Failed(String),
-}
-
-#[component]
-pub fn NewDesignSystem(
-    systems: LocalResource<Vec<DesignSystemSummary>>,
-    selected: RwSignal<Option<String>>,
-) -> impl IntoView {
-    let shell = Shell::get();
-    let open = RwSignal::new(false);
-    let name = RwSignal::new(String::new());
-    let brief = RwSignal::new(String::new());
-    let phase = RwSignal::new(Phase::Idle);
-
-    let start = move || {
-        if phase.get_untracked() == Phase::Running
-            || name.with_untracked(|n| n.trim().is_empty())
-            || brief.with_untracked(|b| b.trim().is_empty())
-        {
-            return;
-        }
-        phase.set(Phase::Running);
-        let body = json!({
-            "name": name.get_untracked().trim(),
-            "brief": brief.get_untracked().trim(),
-            "agentId": shell.agent_id(),
-        });
-        leptos::task::spawn_local(async move {
-            let job = match api::post::<_, Value>("/api/design-systems/generate", &body).await {
-                Ok(v) => v["job"]["id"].as_str().unwrap_or_default().to_owned(),
-                Err(e) => {
-                    phase.set(Phase::Failed(e.to_string()));
-                    return;
-                }
-            };
-            loop {
-                gloo_timers::future::TimeoutFuture::new(POLL_MS).await;
-                let v = match api::get::<Value>(&format!("/api/design-systems/jobs/{job}")).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        phase.set(Phase::Failed(e.to_string()));
-                        return;
-                    }
-                };
-                match v["job"]["status"].as_str() {
-                    Some("succeeded") => {
-                        let id = v["job"]["designSystemId"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .to_owned();
-                        systems.refetch();
-                        selected.set(Some(id));
-                        phase.set(Phase::Done(
-                            v["job"]["name"].as_str().unwrap_or_default().to_owned(),
-                        ));
-                        name.set(String::new());
-                        brief.set(String::new());
-                        open.set(false);
-                        return;
-                    }
-                    Some("failed") => {
-                        phase.set(Phase::Failed(
-                            v["job"]["error"].as_str().unwrap_or_default().to_owned(),
-                        ));
-                        return;
-                    }
-                    _ => {}
-                }
-            }
-        });
-    };
-
-    let status = move || {
-        match phase.get() {
-        Phase::Idle => None,
-        Phase::Running => Some(view! {
-            <p class="ds-status" data-testid="ds-status"><span class="spinner"></span>{t(T::GeneratingDesignSystemHint)}</p>
-        }.into_any()),
-        Phase::Done(n) => Some(view! {
-            <p class="ds-status ok" data-testid="ds-status">{icon(Glyph::CheckCircle)}{tf(T::DesignSystemCreated, &[n.as_str()])}</p>
-        }.into_any()),
-        Phase::Failed(e) => Some(view! {
-            <p class="error-text" role="alert" data-testid="ds-status">{tf(T::DesignSystemFailed, &[e.as_str()])}</p>
-        }.into_any()),
-    }
-    };
-    let name_ref = NodeRef::<leptos::html::Input>::new();
-    Effect::new(move |_| {
-        if let Some(el) = name_ref.get() {
-            let _ = el.focus();
-        }
-    });
-
-    view! {
-        <div class="ds-create">
-            <button
-                class="btn ghost small"
-                data-testid="ds-new"
-                aria-haspopup="dialog"
-                on:click=move |_| open.update(|o| *o = !*o)
-            >
-                {icon(Glyph::Sparkle)}
-                {t(T::NewDesignSystem)}
-            </button>
-            <Show when=move || !open.get()>{status}</Show>
-            <Show when=move || open.get()>
-                // The backdrop is the dialog's sibling: Cancel removes the
-                // dialog while its click bubbles (see `lib_ui::Modal`).
-                <div class="overlay center">
-                    <div class="modal-backdrop" aria-hidden="true" on:click=move |_| open.set(false)></div>
-                    <div
-                        class="dialog"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="ds-dialog-title"
-                        data-testid="ds-form"
-                        on:keydown=move |ev: web_sys::KeyboardEvent| {
-                            if ev.key() == "Escape" {
-                                open.set(false);
-                            }
-                        }
-                    >
-                        <div class="dialog-head">
-                            <span class="dialog-icon">{icon(Glyph::Sparkle)}</span>
-                            <div class="grow">
-                                <h2 id="ds-dialog-title">{t(T::DsDialogTitle)}</h2>
-                                <p>{t(T::DsDialogBody)}</p>
-                            </div>
-                            <button class="icon-btn" aria-label=t(T::Close) on:click=move |_| open.set(false)>
-                                {icon(Glyph::Close)}
-                            </button>
-                        </div>
-                        <div class="dialog-body">
-                            <label class="field">
-                                <span>{t(T::DsName)}</span>
-                                <input
-                                    class="input"
-                                    data-testid="ds-name"
-                                    node_ref=name_ref
-                                    placeholder=t(T::DesignSystemNamePlaceholder)
-                                    prop:value=move || name.get()
-                                    on:input=move |ev| name.set(event_target_value(&ev))
-                                />
-                            </label>
-                            <label class="field">
-                                <span>{t(T::DsBrief)}</span>
-                                <textarea
-                                    class="input"
-                                    data-testid="ds-brief"
-                                    rows="4"
-                                    placeholder=t(T::DesignSystemBriefPlaceholder)
-                                    prop:value=move || brief.get()
-                                    on:input=move |ev| brief.set(event_target_value(&ev))
-                                ></textarea>
-                            </label>
-                            {status}
-                        </div>
-                        <div class="dialog-foot">
-                            <button class="btn ghost" on:click=move |_| open.set(false)>{t(T::Cancel)}</button>
-                            <button
-                                class="btn primary"
-                                data-testid="ds-generate"
-                                disabled=move || {
-                                    phase.get() == Phase::Running
-                                        || name.with(|n| n.trim().is_empty())
-                                        || brief.with(|b| b.trim().is_empty())
-                                }
-                                on:click=move |_| start()
-                            >
-                                {move || if phase.get() == Phase::Running {
-                                    view! { <span class="spinner on-accent"></span>{t(T::GeneratingDesignSystem)} }.into_any()
-                                } else {
-                                    view! { {icon(Glyph::Sparkle)}{t(T::GenerateDesignSystem)} }.into_any()
-                                }}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </Show>
-        </div>
-    }
 }
 
 /// Where a new design system comes from (the original's create flow).
@@ -501,10 +319,10 @@ pub fn CreateFlow(
     view! {
         <Modal title=t(T::DsDialogTitle).to_owned() subtitle=t(T::DsCreateSub).to_owned() glyph=Glyph::Sparkle wide=true testid="ds-create" on_close=on_close>
             <div class="dialog-body">
-                <div class="source-picker" role="radiogroup" aria-label=t(T::Source)>
+                <div class="source-picker" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::Source)>
                     {Source::ALL.into_iter().map(|s| view! {
                         <button class="chip" role="radio" data-testid=format!("dsc-source-{}", s.key())
-                            aria-checked=move || (source.get() == s).to_string() class:active=move || source.get() == s
+                            aria-checked=move || (source.get() == s).to_string() tabindex=move || super::focus::roving(source.get() == s) class:active=move || source.get() == s
                             on:click=move |_| source.set(s)>
                             {icon(s.glyph())}{s.label()}
                         </button>

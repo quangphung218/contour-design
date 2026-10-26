@@ -10,6 +10,7 @@ use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, copy_text, initials, localized, query_param, tint};
 use super::{Shell, api, desktop};
 use crate::i18n::{T, locale, t, tf};
+use crate::intent::in_locale;
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use od_contracts::{ContentSource, SkillDetail, SkillSummary, SkillsResponse};
@@ -84,13 +85,35 @@ fn skill_name(sk: &SkillSummary) -> String {
 }
 
 fn skill_description(sk: &SkillSummary) -> String {
-    let text = sk
-        .info
-        .description_i18n
-        .as_ref()
-        .and_then(|m| m.get(locale().tag()))
-        .unwrap_or(&sk.info.description);
-    crate::i18n::rebrand(text).into_owned()
+    for_people(in_locale(sk.info.description_i18n.as_ref()).unwrap_or(&sk.info.description))
+}
+
+/// A skill's description without the sentences that tell the agent when
+/// to load it ("Use when the user asks for…", "Triggers on…"): those are
+/// for the agent, the page shows what the skill makes.
+fn for_people(text: &str) -> String {
+    const FOR_AGENT: [&str; 6] = [
+        "use when",
+        "use this",
+        "use it when",
+        "use for",
+        "trigger",
+        "when the user",
+    ];
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Sentence starts: after ". " or a CJK full stop.
+    let starts = flat
+        .match_indices(". ")
+        .map(|(i, _)| i + 2)
+        .chain(flat.match_indices('。').map(|(i, m)| i + m.len()));
+    let cut = starts
+        .filter(|&i| {
+            let rest = flat[i..].trim_start().to_lowercase();
+            FOR_AGENT.iter().any(|w| rest.starts_with(w))
+        })
+        .min();
+    let kept = cut.map_or(flat.as_str(), |i| flat[..i].trim_end());
+    crate::i18n::rebrand(kept).into_owned()
 }
 
 fn hit(q: &str, title: &str, description: &str) -> bool {
@@ -276,13 +299,14 @@ pub fn PluginsPage() -> impl IntoView {
                                 prop:value=move || query.get() on:input=move |ev| query.set(event_target_value(&ev))/>
                         </label>
                     </div>
-                    <div class="chips lib-chips" role="radiogroup" aria-label=t(T::Category)>
-                        <button class="chip" role="radio" aria-checked=move || category.get().is_empty().to_string() class:active=move || category.get().is_empty() on:click=move |_| category.set(String::new())>{t(T::AllFilter)}</button>
+                    <div class="chips lib-chips" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::Category)>
+                        <button class="chip" role="radio" aria-checked=move || category.get().is_empty().to_string() tabindex=move || super::focus::roving(category.get().is_empty()) class:active=move || category.get().is_empty() on:click=move |_| category.set(String::new())>{t(T::AllFilter)}</button>
                         {move || categories.get().into_iter().map(|c| {
                             let c2 = c.clone();
                             let c3 = c.clone();
+                            let c4 = c.clone();
                             view! {
-                                <button class="chip" role="radio" data-testid="plugin-category" aria-checked=move || (category.get() == c2).to_string() class:active={ let c = c.clone(); move || category.get() == c } on:click=move |_| category.set(c3.clone())>{category_label(&c)}</button>
+                                <button class="chip" role="radio" data-testid="plugin-category" aria-checked=move || (category.get() == c2).to_string() tabindex=move || super::focus::roving(category.get() == c4) class:active={ let c = c.clone(); move || category.get() == c } on:click=move |_| category.set(c3.clone())>{category_label(&c)}</button>
                             }
                         }).collect_view()}
                     </div>
@@ -788,7 +812,7 @@ fn SkillDetailView(
                                     <span class="badge" class:accent=!user>{if user { t(T::ScopePersonal) } else { t(T::ScopeOfficial) }}</span>
                                     {d.info.category.clone().map(|c| view! { <span class="badge outline">{c}</span> })}
                                 </div>
-                                <p class="muted">{crate::i18n::rebrand(&d.info.description).into_owned()}</p>
+                                <p class="muted">{for_people(in_locale(d.info.description_i18n.as_ref()).unwrap_or(&d.info.description))}</p>
                             </div>
                             <div class="row">
                                 <button class="btn small primary" data-testid="skill-use" on:click=use_skill>{icon(Glyph::ArrowRight)}{t(T::Use)}</button>
@@ -1048,6 +1072,30 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_text_drops_what_tells_the_agent_when_to_use_it() {
+        assert_eq!(
+            for_people(
+                "A FAQ page with collapsible sections.\n  Use when the brief asks for \"FAQ\" or \"help center\"."
+            ),
+            "A FAQ page with collapsible sections."
+        );
+        assert_eq!(
+            for_people("Browser automation CLI. Use for testing. Triggers on: browse."),
+            "Browser automation CLI."
+        );
+        assert_eq!(
+            for_people("Turns a brief into a spec. Keeps the palette."),
+            "Turns a brief into a spec. Keeps the palette."
+        );
+        assert_eq!(
+            for_people("网站复刻方法论。USE WHEN 用户说 复刻网站。"),
+            "网站复刻方法论。"
+        );
+        // Nothing else to show: the text stays whole.
+        assert_eq!(for_people("Use when asked."), "Use when asked.");
+    }
 
     #[test]
     fn input_fields_parse_and_check_required() {

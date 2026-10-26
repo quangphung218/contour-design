@@ -231,6 +231,7 @@ try {
   await page.getByTestId('comment-note').fill('Make the title green');
   await page.getByTestId('comment-add').click();
   await page.getByTestId('comment-chip').getByText('Make the title green').waitFor();
+  assert.doesNotMatch(await page.getByTestId('comment-chip').first().innerText(), / :/, 'space before the colon');
   await page.getByTestId('comment-pin').first().waitFor();
   await page.getByTestId('comment-mode').click();
   await page.getByTestId('composer').fill('apply comments');
@@ -250,6 +251,11 @@ try {
   await page.getByTestId('composer').fill('make a deck');
   await page.getByTestId('composer').press('Enter');
   await until(async () => (await assistant.nth(7).getAttribute('data-state')) === 'succeeded', 'deck turn end');
+  // The run wrote deck.html, not index.html: the deck opens in its own tab
+  // and no "did not update the entry file" warning shows.
+  await page.locator('.tab.active', { hasText: 'deck.html' }).waitFor();
+  await sleep(300);
+  assert.equal(await page.getByTestId('deliverable-warning').count(), 0, 'entry warning after a run that wrote another page');
   // Let the watcher's file-changed (200 ms debounce) land before driving the
   // deck, or it reloads the frame mid-navigation.
   await sleep(800);
@@ -583,6 +589,8 @@ try {
   // lands in the history and in its own conversation.
   await page.goto(BASE + '/automations');
   await page.getByTestId('routine-name').fill('Morning refresh');
+  // A new routine starts on "New project each run": pick this project.
+  await page.getByTestId('routine-reuse').check();
   await page.getByTestId('routine-project').selectOption(projectId);
   await page.getByTestId('routine-prompt').fill('Routine refresh of the page');
   await page.getByTestId('routine-schedule').fill('@daily');
@@ -792,14 +800,15 @@ try {
   results.askModeWarning = 'ok';
 
   // 16b. A Studio whose project cannot load keeps saying so (no toast that
-  // times out), with a retry, and offers no starter prompts.
+  // times out) and offers no starter prompts. A project that does not exist
+  // offers All projects, not a retry that cannot work.
   await page.goto(BASE + '/projects/does-not-exist');
   await page.getByTestId('load-error').waitFor();
   await sleep(9000);
   assert.equal(await page.getByTestId('load-error').count(), 1, 'load error still shown after 9 s');
   assert.equal(await page.getByTestId('chat-empty').count(), 0);
-  await page.getByTestId('load-retry').click();
-  await page.getByTestId('load-error').waitFor();
+  assert.equal(await page.getByTestId('load-retry').count(), 0, 'Retry for a project that does not exist');
+  await page.getByTestId('load-error').locator('a[href="/projects"]').waitFor();
   results.loadError = 'ok';
 
   // 17. Nothing left loopback during the whole scenario.

@@ -196,13 +196,17 @@ pub async fn test_connection(
 /// (what a freshly installed Claude Code or Codex answers).
 fn test_category(result: &AgentTestResult) -> &'static str {
     let detail = result.detail.as_deref().unwrap_or_default().to_lowercase();
+    // Past tense too: "Not logged in" contains neither "login" nor "log in".
     let auth = [
         "login",
         "log in",
+        "logged in",
         "sign in",
+        "signed in",
         "api key",
         "401",
         "unauthorized",
+        // "authenticate", "not authenticated", "authentication failed"
         "authenticat",
     ];
     if !result.ok && auth.iter().any(|w| detail.contains(w)) {
@@ -276,6 +280,7 @@ async fn test_agent(
             client_request_id: None,
             request_hash: None,
             created_at: od_runs::now_ms(),
+            prompt: None,
         })
         .map_err(|e| ApiErr::internal(e.to_string()))?;
     let cwd = scratch.path().join("work");
@@ -561,5 +566,31 @@ mod tests {
         assert_eq!(v["env"]["claude"]["ANTHROPIC_BASE_URL"], "http://proxy");
         assert!(!v.to_string().contains("sk-ant-1234567890"));
         assert!(allowed_keys("cursor").is_empty());
+    }
+
+    #[test]
+    fn a_missing_sign_in_is_an_auth_failure() {
+        let result = |ok: bool, detail: &str| AgentTestResult {
+            ok,
+            kind: if ok { "success" } else { "unknown" },
+            latency_ms: 0,
+            agent_name: "Codex".to_owned(),
+            sample: None,
+            detail: Some(detail.to_owned()),
+        };
+        for (detail, category) in [
+            ("Not logged in · Please run /login", "auth"),
+            ("Not logged in", "auth"),
+            ("You are not signed in", "auth"),
+            ("Please sign in first", "auth"),
+            ("Error: not authenticated", "auth"),
+            ("Invalid API key", "auth"),
+            ("HTTP 401", "auth"),
+            ("Unauthorized", "auth"),
+            ("Unrecognized flag: --dir", "unknown"),
+        ] {
+            assert_eq!(test_category(&result(false, detail)), category, "{detail}");
+        }
+        assert_eq!(test_category(&result(true, "Not logged in")), "success");
     }
 }

@@ -133,6 +133,7 @@ pub async fn create(
         client_request_id: client_request_id.clone(),
         request_hash: Some(request_hash(&req)),
         created_at: od_runs::now_ms(),
+        prompt: Some(req.message.clone()),
     };
     let (run, reused) = match state.runs.registry.create_or_reuse(meta) {
         Ok(found) => found,

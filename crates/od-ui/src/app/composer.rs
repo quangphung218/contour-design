@@ -517,6 +517,9 @@ pub fn MentionArea(
     /// offers no library rows.
     #[prop(optional)]
     on_library: Option<Callback<Vec<super::library_picker::LibraryAsset>>>,
+    /// Nothing to send to (the project could not be loaded).
+    #[prop(optional, into)]
+    disabled: Option<Signal<bool>>,
 ) -> impl IntoView {
     let area = node_ref.unwrap_or_default();
     let open = RwSignal::new(None::<(bool, Trigger)>);
@@ -701,6 +704,7 @@ pub fn MentionArea(
                 class=class
                 data-od-composer=""
                 data-testid=testid
+                disabled=move || disabled.is_some_and(|d| d.get())
                 aria-label=aria_label
                 rows=rows
                 node_ref=area
@@ -1043,6 +1047,10 @@ pub fn apply_toolbox(
     super::chat_view::focus_selector("[data-od-composer]");
 }
 
+/// Whether the "+" menu is open, for the items a caller adds to it.
+#[derive(Clone, Copy)]
+pub struct PlusMenuOpen(pub RwSignal<bool>);
+
 /// "+": attach files, mention a plugin, skill or MCP server, and the
 /// caller's own items (`children`: working directory, linked folders…).
 #[component]
@@ -1063,6 +1071,8 @@ pub fn PlusMenu(
     #[prop(optional)] children: Option<ChildrenFn>,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
+    // The caller's items close the menu through it.
+    provide_context(PlusMenuOpen(open));
     let picker = RwSignal::new(false);
     let view_of = RwSignal::new(PlusView::Main);
     let search = RwSignal::new(String::new());

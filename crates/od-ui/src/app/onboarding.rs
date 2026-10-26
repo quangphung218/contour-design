@@ -109,6 +109,20 @@ pub fn Onboarding() -> impl IntoView {
         Some(TestState::Failed(_)) => true,
         _ => false,
     };
+    // An installed agent failed: say why the install cards appeared under it.
+    let failed_lead = move || {
+        if !test_failed() || no_agent() {
+            return None;
+        }
+        let id = picked.get()?;
+        let name = shell.agents.with(|a| match a {
+            Some(Ok(list)) => list.iter().find(|a| a.id == id).map(|a| a.name.clone()),
+            _ => None,
+        })?;
+        Some(view! {
+            <p class="agent-test-lead small" data-testid="onboarding-test-lead">{tf(T::AgentTestFailedLead, &[&name])}</p>
+        })
+    };
     // No agent works yet: none installed, or the picked one failed its
     // test. The ways forward (install cards, API key) stay in view.
     let need_help = Signal::derive(move || no_agent() || test_failed());
@@ -153,12 +167,12 @@ pub fn Onboarding() -> impl IntoView {
                     <h1>{t(T::OnboardingTitle)}</h1>
                     <p class="muted">{t(T::OnboardingIntro)}</p>
                 </header>
-                <div class="segmented" role="tablist" aria-label=t(T::ExecutionMode)>
+                <div class="segmented" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ExecutionMode)>
                     <button class="seg" role="tab" data-testid="onboarding-local"
-                        aria-selected=move || (!use_key.get()).to_string() class:active=move || !use_key.get()
+                        aria-selected=move || (!use_key.get()).to_string() tabindex=move || super::focus::roving(!use_key.get()) class:active=move || !use_key.get()
                         on:click=move |_| use_key.set(false)>{icon(Glyph::Terminal)}{t(T::LocalAgent)}</button>
                     <button class="seg" role="tab" data-testid="onboarding-byok"
-                        aria-selected=move || use_key.get().to_string() class:active=move || use_key.get()
+                        aria-selected=move || use_key.get().to_string() tabindex=move || super::focus::roving(use_key.get()) class:active=move || use_key.get()
                         on:click=move |_| use_key.set(true)>{icon(Glyph::Key)}{t(T::UseApiKey)}</button>
                 </div>
                 <Show
@@ -175,22 +189,28 @@ pub fn Onboarding() -> impl IntoView {
                             {t(if windows { T::AgentsNoneHintWindows } else { T::AgentsNoneHint })}
                         </p>
                     })}
+                    // The test result sits under the installed agents, above
+                    // the install cards it explains.
                     <AgentPicker picked=picked need_help=need_help
-                        rescan=(!windows).then_some(Rescan { checking, on_click: check_again, still_none })/>
+                        rescan=(!windows).then_some(Rescan { checking, on_click: check_again, still_none })
+                        status=ViewFn::from(move || view! {
+                            <div class="row">
+                                <TestResultLine state=test testid="onboarding-test"/>
+                            </div>
+                            {failed_lead}
+                            {sign_in_again}
+                        })/>
                     {move || need_help.get().then(|| view! {
                         <p class="byok-alt muted small" data-testid="byok-alt">
                             <button class="link-btn" on:click=move |_| use_key.set(true)>{t(T::UseApiKeyInstead)}</button>
                             <span>{t(T::ByokLimits)}</span>
                         </p>
                     })}
-                    <div class="row">
-                        <TestResultLine state=test testid="onboarding-test"/>
-                    </div>
-                    {sign_in_again}
                 </Show>
-                // Extracting a brand runs the agent: only one that passed its test.
+                // Extracting a brand runs the agent: only the picked one, once
+                // it passed its test.
                 <Show when=agent_ready>
-                    <super::onboarding_brand::BrandStep state=brand/>
+                    <super::onboarding_brand::BrandStep state=brand agent=picked/>
                 </Show>
                 {move || no_browser().then(|| view! {
                     <p class="onboarding-note" data-testid="onboarding-chrome">
@@ -283,11 +303,13 @@ fn on_windows() -> bool {
 /// `need_help`: show the install cards even next to installed agents (none
 /// of them works yet). `rescan`: a Check again button right under the
 /// install cards (before the folded list), where onboarding's hint points.
+/// `status`: shown right under the installed agents (onboarding's test).
 #[component]
 pub fn AgentPicker(
     picked: RwSignal<Option<String>>,
     #[prop(optional, into)] need_help: Option<Signal<bool>>,
     #[prop(default = None)] rescan: Option<Rescan>,
+    #[prop(optional, into)] status: Option<ViewFn>,
 ) -> impl IntoView {
     let shell = Shell::get();
     move || {
@@ -336,6 +358,7 @@ pub fn AgentPicker(
                         {ready.into_iter().map(|a| view! { <AgentCard agent=a picked=picked/> }).collect_view()}
                     </div>
                 })}
+                {status.clone().map(|s| s.run())}
                 {(!featured.is_empty()).then(|| view! {
                     <div class="agent-install-list">
                         {featured.into_iter().map(|(a, f)| view! {
@@ -401,14 +424,16 @@ pub struct Rescan {
     pub still_none: RwSignal<bool>,
 }
 
-/// "Still no agent found. Open a new Terminal window and run `claude --version`."
+/// "Still no agent found. Open a new Terminal window and run
+/// `claude --version` or `codex --version`."
 #[component]
 fn StillNoneLine() -> impl IntoView {
     let text = t(T::StillNoAgent);
-    let (before, after) = text.split_once("{0}").unwrap_or((text, ""));
+    let (before, rest) = text.split_once("{0}").unwrap_or((text, ""));
+    let (between, after) = rest.split_once("{1}").unwrap_or((rest, ""));
     view! {
         <p class="agents-still-none small" role="status" data-testid="agents-still-none">
-            {before}<code>"claude --version"</code>{after}
+            {before}<code>"claude --version"</code>{between}<code>"codex --version"</code>{after}
         </p>
     }
 }

@@ -134,6 +134,30 @@ pub fn SettingsPage() -> impl IntoView {
             status.set(Some(shell.save_config(next).await));
         });
     };
+    // Permissions, appearance and language save as soon as they change; the
+    // agent card and the API provider form each have their own Save.
+    let prefs_saved = RwSignal::new(None::<(&'static str, Result<(), String>)>);
+    let save_prefs = move |section: &'static str| {
+        let mut next: AppConfig = shell.config.get_untracked().unwrap_or_default();
+        next.agent_permission_mode = permission.get_untracked();
+        next.theme = theme.get_untracked();
+        next.locale = Some(language.get_untracked().tag().to_owned());
+        next.onboarding_completed = true;
+        leptos::task::spawn_local(async move {
+            prefs_saved.set(Some((section, shell.save_config(next).await)));
+        });
+    };
+    let prefs_status = move |section: &'static str| {
+        move || {
+            match prefs_saved.get() {
+            Some((s, Ok(()))) if s == section => view! {
+                <span class="ok-text save-status small" data-testid=format!("saved-{section}")>{icon(Glyph::Check)}{t(T::Saved)}</span>
+            }.into_any(),
+            Some((s, Err(e))) if s == section => view! { <span class="error-text small">{e}</span> }.into_any(),
+            _ => ().into_any(),
+        }
+        }
+    };
     // Switching agents shows that agent's stored model and effort.
     Effect::new(move |prev: Option<Option<String>>| {
         let now = agent.get();
@@ -196,7 +220,10 @@ pub fn SettingsPage() -> impl IntoView {
                     type="radio"
                     name="permission"
                     prop:checked=move || permission.get() == mode
-                    on:change=move |_| permission.set(mode)
+                    on:change=move |_| {
+                        permission.set(mode);
+                        save_prefs("permissions");
+                    }
                 />
                 <span>
                     <strong>{t(title)}</strong>
@@ -326,6 +353,17 @@ pub fn SettingsPage() -> impl IntoView {
                                     <TestResultLine state=agent_test testid="agent-test-result"/>
                                 </div>
                                 <AdvancedEnv agent=agent/>
+                                // Saves the agent and its model; the sections
+                                // below save on their own.
+                                <div class="row agent-save">
+                                    <span class="spacer"></span>
+                                    {move || match status.get() {
+                                        Some(Ok(())) => view! { <span class="ok-text save-status">{icon(Glyph::Check)}{t(T::Saved)}</span> }.into_any(),
+                                        Some(Err(e)) => view! { <span class="error-text">{e}</span> }.into_any(),
+                                        None => ().into_any(),
+                                    }}
+                                    <button class="btn primary" data-testid="save-settings" on:click=save>{t(T::SaveAgent)}</button>
+                                </div>
                             </div>
                         </Show>
                     </section>
@@ -338,6 +376,7 @@ pub fn SettingsPage() -> impl IntoView {
                                 {perm_option(PermissionMode::Ask, T::PermAsk, T::PermAskDetail)}
                             </div>
                             <super::agent_w3::AskModeWarning/>
+                            {prefs_status("permissions")}
                         </div>
                     </section>
 
@@ -358,7 +397,10 @@ pub fn SettingsPage() -> impl IntoView {
                                                 class="seg"
                                                 aria-pressed=move || (theme.get() == th).to_string()
                                                 class:active=move || theme.get() == th
-                                                on:click=move |_| theme.set(th)
+                                                on:click=move |_| {
+                                                    theme.set(th);
+                                                    save_prefs("appearance");
+                                                }
                                             >
                                                 {icon(glyph)}
                                                 {label}
@@ -367,6 +409,7 @@ pub fn SettingsPage() -> impl IntoView {
                                     })
                                     .collect_view()}
                             </div>
+                            {prefs_status("appearance")}
                         </div>
                     </section>
 
@@ -377,7 +420,10 @@ pub fn SettingsPage() -> impl IntoView {
                                 class="select-auto"
                                 data-testid="language"
                                 aria-label=t(T::Language)
-                                on:change=move |ev| language.set(Locale::parse(&event_target_value(&ev)))
+                                on:change=move |ev| {
+                                    language.set(Locale::parse(&event_target_value(&ev)));
+                                    save_prefs("language");
+                                }
                             >
                                 {Locale::ALL
                                     .iter()
@@ -391,17 +437,9 @@ pub fn SettingsPage() -> impl IntoView {
                                     })
                                     .collect_view()}
                             </select>
+                            {prefs_status("language")}
                         </div>
                     </section>
-
-                    <div class="save-bar">
-                        {move || match status.get() {
-                            Some(Ok(())) => view! { <span class="ok-text save-status">{icon(Glyph::Check)}{t(T::Saved)}</span> }.into_any(),
-                            Some(Err(e)) => view! { <span class="error-text">{e}</span> }.into_any(),
-                            None => ().into_any(),
-                        }}
-                        <button class="btn primary" data-testid="save-settings" on:click=save>{t(T::Save)}</button>
-                    </div>
 
                     <section class="settings-section" id="settings-notifications">
                         {section_head(Glyph::Bell, T::Notifications, T::NotificationsHint)}

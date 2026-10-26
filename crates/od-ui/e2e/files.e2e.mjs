@@ -490,9 +490,10 @@ try {
   download = page.waitForEvent('download');
   await page.getByTestId('export-md').click();
   assert.equal((await download).suggestedFilename(), 'Launch-plan.md');
-  assert.equal(await page.getByTestId('export-pdf').count(), 0, 'menu closed');
+  assert.equal(await page.getByTestId('export-menu').count(), 0, 'menu closed');
   await page.getByTestId('export').click();
-  assert.equal(await page.getByTestId('export-pdf').isDisabled(), true, 'PDF needs a page');
+  await page.getByTestId('export-md').waitFor();
+  assert.equal(await page.getByTestId('export-pdf').count(), 0, 'PDF offered for a Markdown file');
   assert.equal(await page.getByTestId('save-template').isDisabled(), true, 'template needs a page');
   // Esc closes the menu (QA-004).
   await page.keyboard.press('Escape');
@@ -526,6 +527,7 @@ try {
   const tryExport = async (testid, file) => {
     await page.locator('.tab', { hasText: file }).locator('.tab-name').click();
     await page.getByTestId('export').click();
+    await page.getByTestId(testid.startsWith('export-pptx') ? 'export-powerpoint' : 'export-image').click();
     const dl = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
     await page.getByTestId(testid).click();
     const status = page.getByTestId('export-status');

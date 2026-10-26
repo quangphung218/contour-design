@@ -99,8 +99,9 @@ try {
     });
     await page.goto(BASE + '/');
     await shot('home-design-system-dialog', async () => {
+      await page.getByTestId('plus-menu').click();
       await page.getByTestId('ds-new').click();
-      await page.getByTestId('ds-form').waitFor();
+      await page.getByTestId('ds-create').waitFor();
     });
     await page.keyboard.press('Escape');
 

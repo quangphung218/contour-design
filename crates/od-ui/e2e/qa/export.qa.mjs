@@ -41,8 +41,12 @@ async function studio(newPage, d, name, files, open = 'index.html') {
 }
 
 /** Clicks Export ▸ `item` and returns the download, or the status text when none comes. */
+// Formats folded under a group name in the Export menu.
+const GROUP = { 'export-png': 'export-image', 'export-jpg': 'export-image', 'export-webp': 'export-image', 'export-pptx': 'export-powerpoint', 'export-pptx-editable': 'export-powerpoint' };
+
 async function exportVia(page, item, timeout = 90_000) {
   await page.getByTestId('export').click();
+  if (GROUP[item]) await page.getByTestId(GROUP[item]).click();
   const dl = page.waitForEvent('download', { timeout }).catch(() => null);
   await page.getByTestId(item).click();
   const status = page.getByTestId('export-status');
@@ -120,9 +124,8 @@ test('EXP-07', 'An empty project offers no page exports and its ZIP is still a v
   await page.goto(`${d.base}/projects/${id}`);
   await page.getByTestId('preview-empty').waitFor();
   await page.getByTestId('export').click();
-  for (const item of ['export-html', 'export-pdf', 'export-pptx']) {
-    const el = page.getByTestId(item);
-    if (await el.count()) assert.equal(await el.isDisabled(), true, `${item} is enabled with no file`);
+  for (const item of ['export-html', 'export-pdf', 'export-image', 'export-powerpoint', 'export-mp4']) {
+    assert.equal(await page.getByTestId(item).count(), 0, `${item} offered with no file`);
   }
   await page.locator('.menu-scrim').click();
   const res = await exportVia(page, 'export-zip');
@@ -144,6 +147,30 @@ test('EXP-09', 'Esc closes the Export menu, as in the original app', async ({ d,
   await page.getByTestId('export-menu').waitFor();
   await page.keyboard.press('Escape');
   await page.getByTestId('export-menu').waitFor({ state: 'hidden', timeout: 2000 });
+});
+
+test('EXP-12', 'The Export menu folds images and PowerPoint under one name each and lists only what the page exports to', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d, 'Menu shape', { 'index.html': PAGE });
+  await page.getByTestId('export').click();
+  const menu = page.getByTestId('export-menu');
+  await menu.waitFor();
+  assert.equal(await page.getByTestId('export-png').count(), 0, 'image formats unfolded from the start');
+  assert.equal(await menu.locator('[data-testid^="export-"]:disabled').count(), 0, 'greyed formats without a reason');
+  for (const id of ['export-md', 'export-jsx', 'export-jsx-html']) assert.equal(await page.getByTestId(id).count(), 0, `${id} for a page`);
+  assert.equal((await page.getByTestId('export-mp4').innerText()).trim(), 'MP4 video');
+  assert.doesNotMatch(await menu.innerText(), /HyperFrames/);
+  const image = page.getByTestId('export-image');
+  await image.click();
+  assert.equal(await image.getAttribute('aria-expanded'), 'true');
+  assert.deepEqual(
+    await menu.locator('.menu-sub').evaluateAll((els) => els.map((e) => e.innerText.trim())),
+    ['PNG', 'JPEG', 'WebP'],
+  );
+  await page.getByTestId('export-powerpoint').click();
+  assert.deepEqual(
+    await menu.locator('.menu-sub').evaluateAll((els) => els.map((e) => e.innerText.trim())),
+    ['Slides as images', 'Editable text'],
+  );
 });
 
 test('EXP-10', 'Esc that closes the Export menu leaves comment mode on', async ({ d, newPage }) => {

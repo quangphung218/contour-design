@@ -452,9 +452,8 @@ pub fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
             }
         >
             <div class="pane-head files-head">
-                <span class="pane-title" title=move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()).unwrap_or_default())>
-                    {move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()).unwrap_or_default())}
-                </span>
+                // The project's name heads the chat.
+                <span class="pane-title">{t(T::Files)}</span>
                 <input
                     type="file"
                     multiple
@@ -527,14 +526,14 @@ pub fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
                     prop:value=move || ui.query.get()
                     on:input=move |ev| ui.query.set(event_target_value(&ev))
                 />
-                <div class="segmented small icons" role="radiogroup" aria-label=t(T::FilesViewAs)>
+                <div class="segmented small icons" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::FilesViewAs)>
                     <button class="seg" role="radio" data-testid="files-view-tree" aria-label=t(T::FilesViewTree) data-tip=t(T::FilesViewTree)
-                        aria-checked=move || (!ui.by_kind.get()).to_string() class:active=move || !ui.by_kind.get()
+                        aria-checked=move || (!ui.by_kind.get()).to_string() tabindex=move || super::focus::roving(!ui.by_kind.get()) class:active=move || !ui.by_kind.get()
                         on:click=move |_| { ui.by_kind.set(false); super::store_flag(BY_KIND_KEY, false); }>
                         {icon(Glyph::Folder)}
                     </button>
                     <button class="seg" role="radio" data-testid="files-view-kind" aria-label=t(T::FilesViewKind) data-tip=t(T::FilesViewKind)
-                        aria-checked=move || ui.by_kind.get().to_string() class:active=move || ui.by_kind.get()
+                        aria-checked=move || ui.by_kind.get().to_string() tabindex=move || super::focus::roving(ui.by_kind.get()) class:active=move || ui.by_kind.get()
                         on:click=move |_| { ui.by_kind.set(true); super::store_flag(BY_KIND_KEY, true); }>
                         {icon(Glyph::Grid)}
                     </button>

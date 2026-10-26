@@ -195,11 +195,15 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         {icon(Glyph::Warning)}
                         <div class="load-error-body">
                             <strong>{t(T::ProjectLoadFailed)}</strong>
-                            <span>{e}</span>
+                            // A missing project in words, not "Not found (HTTP 404)".
+                            <span>{if ctx.load_gone.get() { t(T::ProjectGone).to_owned() } else { e }}</span>
                             <div class="row">
-                                <button class="btn small" data-testid="load-retry" on:click=move |_| {
-                                    leptos::task::spawn_local(ctx.load(shell));
-                                }>{icon(Glyph::Refresh)}{t(T::NextRetry)}</button>
+                                // A project that does not exist will not load on a retry.
+                                {(!ctx.load_gone.get()).then(|| view! {
+                                    <button class="btn small" data-testid="load-retry" on:click=move |_| {
+                                        leptos::task::spawn_local(ctx.load(shell));
+                                    }>{icon(Glyph::Refresh)}{t(T::NextRetry)}</button>
+                                })}
                                 <a class="btn small ghost" href="/projects">{icon(Glyph::Projects)}{t(T::AllProjects)}</a>
                             </div>
                         </div>
@@ -296,6 +300,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     on_mcp_settings=to_mcp
                     on_notice=Callback::new(move |m: String| ctx.notice.set(Some(m)))
                     on_library=import_library
+                    disabled=Signal::derive(move || ctx.load_error.with(Option::is_some))
                 />
                 <FilePicker trigger=pick_files on_files=stage_files/>
                 <div class="composer-actions">
@@ -327,7 +332,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                                 class=if live { "btn small send-btn queue" } else { "btn small primary send-btn" }
                                 data-testid="send"
                                 aria-label=label
-                                disabled=move || (draft.with(|d| d.trim().is_empty()) && !ctx.has_attached()) || uploading()
+                                disabled=move || (draft.with(|d| d.trim().is_empty()) && !ctx.has_attached()) || uploading() || ctx.load_error.with(Option::is_some)
                                 on:click=move |_| send()
                             >
                                 {icon(if live { Glyph::Queue } else { Glyph::Send })}
@@ -347,31 +352,38 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
     view! {
         <div class="pane-head conversation-bar">
             <span class="conversation-ico">{icon(Glyph::Chat)}</span>
-            <select
-                class="conversation-select"
-                data-testid="conversation"
-                aria-label=t(T::Conversation)
-                disabled=move || ctx.live_run.get().is_some()
-                on:change=move |ev| {
-                    let id = event_target_value(&ev);
-                    leptos::task::spawn_local(ctx.open_conversation(id));
-                }
-            >
-                {move || {
-                    let current = ctx.conversation_id.get();
-                    let list = ctx.conversations.get();
-                    let n = list.len();
-                    list.iter()
-                        .enumerate()
-                        .map(|(i, c)| {
-                            let selected = current.as_deref() == Some(c.id.as_str());
-                            view! {
-                                <option value=c.id.clone() selected=selected>{conversation_title(c, n - i)}</option>
-                            }
-                        })
-                        .collect_view()
-                }}
-            </select>
+            // Which project this is first; the conversation under it.
+            <div class="conversation-names">
+                // Only once the project is there: an empty heading says nothing.
+                {move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone())).map(|name| view! {
+                    <h1 class="studio-project" data-testid="studio-project-name" title=name.clone()>{name.clone()}</h1>
+                })}
+                <select
+                    class="conversation-select"
+                    data-testid="conversation"
+                    aria-label=t(T::Conversation)
+                    disabled=move || ctx.live_run.get().is_some()
+                    on:change=move |ev| {
+                        let id = event_target_value(&ev);
+                        leptos::task::spawn_local(ctx.open_conversation(id));
+                    }
+                >
+                    {move || {
+                        let current = ctx.conversation_id.get();
+                        let list = ctx.conversations.get();
+                        let n = list.len();
+                        list.iter()
+                            .enumerate()
+                            .map(|(i, c)| {
+                                let selected = current.as_deref() == Some(c.id.as_str());
+                                view! {
+                                    <option value=c.id.clone() selected=selected>{conversation_title(c, n - i)}</option>
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </select>
+            </div>
             <button
                 class="icon-btn"
                 aria-label=t(T::NewConversation)
@@ -525,8 +537,10 @@ fn CommentChips(ctx: StudioCtx) -> impl IntoView {
                         view! {
                             <span class="chip comment-chip" data-testid="comment-chip" title=c.file_path.clone()>
                                 {icon(Glyph::Comment)}
-                                <strong>{comment_label(&c)}</strong>
-                                {format!(": {}", c.note)}
+                                // The colon stays with the label: the chip's gap
+                                // would put a space before it ("h1 :").
+                                <strong>{format!("{}:", comment_label(&c))}</strong>
+                                {c.note.clone()}
                                 <button
                                     class="chip-x"
                                     title=t(T::Detach)
@@ -628,7 +642,11 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                 "done",
                 Some(Glyph::CheckCircle),
                 t(T::RunDone).to_owned(),
-                (files > 0).then(|| tf(T::RunFilesWritten, &[&files.to_string()])),
+                match files {
+                    0 => None,
+                    1 => Some(t(T::RunFileWritten).to_owned()),
+                    n => Some(tf(T::RunFilesWritten, &[&n.to_string()])),
+                },
             ),
             RunPhase::Failed => (
                 "failed",
@@ -813,6 +831,22 @@ pub(super) fn render_block(
     }
 }
 
+/// What a tool call did, in words: the agents' own tool names
+/// (`TodoWrite`, `Bash`) mean nothing to most people. Unknown tools keep
+/// their name.
+fn tool_label(name: &str) -> String {
+    let key = match name {
+        "TodoWrite" | "update_plan" => T::ToolPlan,
+        "Write" | "write_file" => T::ToolWrote,
+        "Edit" | "MultiEdit" | "edit_file" => T::ToolEdited,
+        "Read" | "read_file" => T::ToolRead,
+        "Bash" | "shell" | "command_execution" => T::ToolRan,
+        "Glob" | "Grep" | "LS" | "list_directory" => T::ToolSearched,
+        other => return other.to_owned(),
+    };
+    t(key).to_owned()
+}
+
 /// One tool call. A call still without a result once the run is over
 /// (the agent never reported back) stops spinning and shows a plain ring.
 #[component]
@@ -833,7 +867,7 @@ fn ToolRow(call: ToolCall, live: Signal<bool>) -> impl IntoView {
     view! {
         <div class=class>
             <span class="tool-icon">{mark}</span>
-            <span class="tool-name">{call.name}</span>
+            <span class="tool-name" title=call.name.clone()>{tool_label(&call.name)}</span>
             <span class="tool-summary mono">{call.summary}</span>
         </div>
     }
@@ -980,5 +1014,18 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
             <legend>{q.label.clone()}{q.required.then_some(" *")}</legend>
             <div class=if q.kind.has_options() { "opts" } else { "" }>{control}</div>
         </fieldset>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tool_label;
+
+    #[test]
+    fn tools_read_as_what_they_did() {
+        assert_eq!(tool_label("TodoWrite"), "Updated plan");
+        assert_eq!(tool_label("Write"), "Wrote");
+        assert_eq!(tool_label("MultiEdit"), "Edited");
+        assert_eq!(tool_label("mcp__contour__list"), "mcp__contour__list");
     }
 }

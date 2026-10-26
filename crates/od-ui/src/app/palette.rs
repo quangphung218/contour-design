@@ -183,7 +183,7 @@ fn filter(query: &str, all: Vec<Command>) -> Vec<Command> {
     let mut scored: Vec<(i64, usize, Command)> = all
         .into_iter()
         .enumerate()
-        .filter_map(|(i, c)| fuzzy::score(query.trim(), &c.label).map(|s| (s, i, c)))
+        .filter_map(|(i, c)| fuzzy::words(query.trim(), &c.label).map(|s| (s, i, c)))
         .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     scored

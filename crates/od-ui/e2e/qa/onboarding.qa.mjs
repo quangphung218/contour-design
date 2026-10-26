@@ -54,6 +54,19 @@ echo 'Unrecognized flag: --include-partial-messages' >&2; exit 2
 `);
 chmodSync(join(brokenBin, 'claude'), 0o755);
 const brokenAgent = { daemon: { onboarded: false, agents: false, env: { PATH: `${brokenBin}:/usr/bin:/bin` } } };
+// The broken claude next to a codex that passes its test (Codex's exec JSON).
+const codexBin = mkdtempSync(join(tmpdir(), 'od-qa-codex-bin-'));
+symlinkSync(join(brokenBin, 'claude'), join(codexBin, 'claude'));
+writeFileSync(join(codexBin, 'codex'), `#!/bin/sh
+case "$1" in --version) echo 'codex-cli 0.50.0'; exit 0;; esac
+if [ "$1" = "exec" ] && [ "$2" = "--help" ]; then echo 'Usage: codex exec [OPTIONS] [PROMPT]'; exit 0; fi
+cat >/dev/null
+echo '{"type":"thread.started","thread_id":"t-1"}'
+echo '{"type":"item.completed","item":{"id":"i-1","type":"agent_message","text":"ok"}}'
+echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
+`);
+chmodSync(join(codexBin, 'codex'), 0o755);
+const brokenAndCodex = { daemon: { onboarded: false, agents: false, env: { PATH: `${codexBin}:/usr/bin:/bin` } } };
 const notSignedIn = { daemon: { onboarded: false, agents: false, env: { PATH: `${authBin}:/usr/bin:/bin` } } };
 const noAgentNoChrome = {
   daemon: { onboarded: false, agents: false, env: { PATH: `${lateBin}:/usr/bin:/bin`, OD_CHROME_PATH: '/nonexistent/chrome' } },
@@ -155,7 +168,7 @@ test('ONB-03', 'With no agent installed the screen shows how to install one, and
   await again.click();
   const still = page.getByTestId('agents-still-none');
   await still.waitFor();
-  assert.equal(await still.innerText(), 'Still no agent found. Open a new Terminal window and run claude --version.');
+  assert.equal(await still.innerText(), 'Still no agent found. Open a new Terminal window and run claude --version or codex --version.');
   // Install an agent while the app is open, then Check again: no restart.
   symlinkSync(join(MOCK_AGENTS, 'claude'), join(lateBin, 'claude'));
   await again.click();
@@ -340,7 +353,7 @@ test('ONB-12', 'An agent installed but not signed in says how to sign in, and Ch
 }, notSignedIn);
 
 test('ONB-13', 'An installed agent that fails its test leaves the other ways forward in view', async ({ d, newPage }) => {
-  const { page } = await newPage();
+  const { page } = await newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(d.base + '/onboarding');
   await page.locator('[data-agent="claude"].active').waitFor();
   await page.locator('[data-testid="onboarding-test"] [data-ok="false"]').waitFor({ timeout: 20_000 });
@@ -353,6 +366,32 @@ test('ONB-13', 'An installed agent that fails its test leaves the other ways for
   assert.equal(await page.getByTestId('onboarding-signin').count(), 0, 'sign-in hint for a failure that is not about signing in');
   assert.equal(await page.getByTestId('onboarding-brand').count(), 0, 'brand extraction offered with no working agent');
   assert.equal(await page.getByTestId('onboarding-continue').isDisabled(), true);
+  // Why the install cards appeared: said right under the broken agent, on
+  // the first screen, before the install cards.
+  const lead = page.getByTestId('onboarding-test-lead');
+  assert.equal(await lead.innerText(), 'Claude Code did not pass its test. Update it, or install one of these instead.');
+  for (const id of ['onboarding-test', 'onboarding-test-lead']) {
+    const box = await page.getByTestId(id).boundingBox();
+    assert.ok(box && box.y + box.height <= 900, `${id} ends at y ${box && Math.round(box.y + box.height)}, below a 900 px window`);
+  }
+  const [leadY, cardY] = [await lead.boundingBox(), await install.first().boundingBox()].map((b) => b.y);
+  assert.ok(leadY < cardY, 'the test result sits under the install cards');
 }, brokenAgent);
+
+test('ONB-14', 'Brand extraction runs the agent the user picked and tested, not the first one found', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/onboarding');
+  // Claude Code is picked first and fails; the user picks Codex, which passes.
+  await page.locator('[data-agent="claude"].active').waitFor();
+  await page.locator('[data-testid="onboarding-test"] [data-ok="false"]').waitFor({ timeout: 20_000 });
+  assert.equal(await page.getByTestId('onboarding-brand').count(), 0);
+  await page.locator('[data-agent="codex"][role="radio"]').click();
+  await page.locator('[data-testid="onboarding-test"] [data-ok="true"]').waitFor({ timeout: 20_000 });
+  assert.equal(await page.getByTestId('onboarding-test-lead').count(), 0, 'failure lead shown for a passing agent');
+  await page.getByTestId('onboarding-brand-url').fill('acme-coffee.com');
+  const request = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/design-systems/generate');
+  await page.getByTestId('onboarding-brand-extract').click();
+  assert.equal((await request).postDataJSON().agentId, 'codex');
+}, brokenAndCodex);
 
 await run('onboarding', { onboarded: false });
