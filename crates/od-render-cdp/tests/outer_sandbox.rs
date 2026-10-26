@@ -1,5 +1,5 @@
 //! Rendering from inside another sandbox (macOS `sandbox-exec`, which is how
-//! the Atlat gate runs `make check`). Chrome cannot start its own sandbox
+//! the maintainer's pre-merge check runs `make check`). Chrome cannot start its own sandbox
 //! there: its renderers never come up and, before this test, every page
 //! command waited out its timeout until `od export` gave up after 600 s.
 //!

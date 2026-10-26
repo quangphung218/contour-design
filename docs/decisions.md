@@ -1,6 +1,6 @@
 # Design decisions
 
-Settled 2026-10-22 (Atlat, with full authority delegated by the owner). Answers the 4 open questions in `spec.md` §5.6, plus general constraints.
+Settled 2026-10-22 by the maintainer. Answers the 4 open questions in `spec.md` §5.6, plus general constraints.
 
 | # | Question | Decision | Why |
 |---|---|---|---|
@@ -17,4 +17,4 @@ Settled 2026-10-22 (Atlat, with full authority delegated by the owner). Answers 
 - **Rust code** follows the `rust-skills` skill (`.claude/skills/rust-skills`).
 - **16 GB dev machine**: `.cargo/config.toml` caps `jobs = 4`; heavy tests run serially.
 - **Content** (skills, design-templates, design-systems, craft…) is copied from the original app per the table in `spec.md` §3.7, keeping every nested LICENSE; prompt templates with unclear licenses and unlicensed fonts are excluded.
-- **Repository**: `quangphung218/contour-design` on GitHub (private). Work merges into `main` after Atlat's review gate; Atlat creates the remote and pushes.
+- **Repository**: `quangphung218/contour-design` on GitHub. Work merges into `main` after review.

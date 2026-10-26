@@ -29,9 +29,9 @@ Only the latest release receives fixes.
 
 Report privately. Do not open a public issue.
 
-- Use GitHub's **Report a vulnerability** button on the repository's
-  Security tab (private vulnerability reporting), or
-- email the maintainer listed on the GitHub profile of `quangphung218`.
+Use GitHub's **Report a vulnerability** button on the repository's
+Security tab (private vulnerability reporting). It reaches the maintainer
+privately and keeps the discussion out of public view.
 
 Include the version (`od --version`), the OS, the steps to reproduce and
 what an attacker gains. Remove real API keys from logs.

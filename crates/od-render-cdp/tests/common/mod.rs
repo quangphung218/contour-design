@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 /// A renderer for `exe` that works where the tests run: inside another
-/// sandbox (the Atlat gate runs `make check` under `sandbox-exec`) Chrome
+/// sandbox (the maintainer's pre-merge check runs `make check` under `sandbox-exec`) Chrome
 /// cannot start its own, so the tests opt out of it there, as
 /// `OD_CHROME_NO_SANDBOX=1` would. The product never decides this itself.
 #[allow(dead_code)] // not every test binary uses it

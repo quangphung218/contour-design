@@ -25,7 +25,7 @@ Round 3 (branch at c357aa5, after the round 2 fixes): STU-14 was a test
 bug (it read the frame mid-transition); it now waits for two equal reads
 and passes, so QA-015 is closed. QA-018…025 come from the two reviews of
 the round 2 fixes and the debugger's open points, each with a red test.
-Expected results are Atlat's calls for this round. DL-21 is a new guard
+Expected results are maintainer's calls for this round. DL-21 is a new guard
 (no bug): a sent and answered message must not come back to the composer;
 it goes red when the `clear_draft_if` of `send` is removed.
 
@@ -386,7 +386,7 @@ Reported by the correctness review of 56ffb95 (the QA-005 daemon rule).
   Settings ▸ Appearance ▸ Dark ▸ Save (or Language ▸ Tiếng Việt ▸ Save).
 - **Steps B** (new setup): Settings ▸ API ▸ preset Ollama ▸ base URL
   `http://gpu-box:11434/v1` ▸ Save (the form allows it: Ollama needs no key).
-- **Expected** (Atlat's call): the save goes through (200), no error.
+- **Expected** (maintainer's call): the save goes through (200), no error.
 - **Actual**: `PUT /api/app-config` → 400 `byok.apiKey required: ollama
   needs an API key`; the save bar shows the error. B: the form says Save is
   fine, the daemon refuses it.
@@ -411,7 +411,7 @@ Reported by the correctness review of 14d3ea6 (QA-014 fix).
 - **Steps**: Studio ▸ send a long request ▸ while it runs type "make it
   blue" ▸ Enter (queued) ▸ Steer ▸ the turn shows "Steered: make it blue" ▸
   reload (or Projects and back).
-- **Expected** (Atlat's call): the composer is empty; the message was
+- **Expected** (maintainer's call): the composer is empty; the message was
   delivered.
 - **Actual**: the composer holds "make it blue" again; Enter sends it a
   second time.
@@ -430,7 +430,7 @@ Reported by the correctness review of 9a85549 (QA-012 fix).
 
 - **Steps**: a page ▸ Edit ▸ type in Content, do not apply ▸ files panel
   "…" ▸ Duplicate.
-- **Expected** (Atlat's call): the app's "Leave this page?" dialog, as for
+- **Expected** (maintainer's call): the app's "Leave this page?" dialog, as for
   any other way out; Cancel stays with the text, Leave opens the copy.
 - **Actual**: no app dialog. The copy is made and the page does a full
   load; in a browser only the native "leave site?" (`beforeunload`) asks,
@@ -450,7 +450,7 @@ Reported by the correctness review of 5728ac3 (QA-011 fix).
 
 - **Steps**: a page ▸ Edit ▸ type in Content ▸ Ctrl-click (Cmd-click on a
   Mac) Projects in the sidebar.
-- **Expected** (Atlat's call): not stopped in this tab: a new tab opens on
+- **Expected** (maintainer's call): not stopped in this tab: a new tab opens on
   Projects, this one stays with the text and no question.
 - **Actual**: the leave dialog shows; picking Leave navigates this tab.
 - **Test**: `drafts.qa.mjs` DL-23.
@@ -466,7 +466,7 @@ regression: main does the same.
 
 - **Steps**: Projects ▸ open a project ▸ Edit ▸ type in Content ▸ the
   browser's Back (or the mouse back button, or ⌘[).
-- **Expected** (Atlat's call): the same question; Cancel stays on the
+- **Expected** (maintainer's call): the same question; Cancel stays on the
   page with the text, Leave goes back.
 - **Actual**: Projects shows at once; the typed text is gone.
 - **Test**: `drafts.qa.mjs` DL-24 (opens `/projects` first, then
@@ -482,7 +482,7 @@ regression: main does the same.
 Reported by the UX review of 5728ac3.
 
 - **Steps**: a page ▸ Edit ▸ type in Content ▸ click Projects.
-- **Expected** (Atlat's call): the focus is on Cancel, so Enter or Space
+- **Expected** (maintainer's call): the focus is on Cancel, so Enter or Space
   keeps the work (the safe answer is the default).
 - **Actual**: the focus is on the dialog itself (`data-testid=
   "leave-dialog"`); the first Tab goes to the unlabeled × button.
@@ -498,7 +498,7 @@ Reported by the UX review of 759581a (QA-015 fix). Main let − go to 75%
 with a scrolling pane.
 
 - **Steps**: window 390×844 ▸ a page ▸ Tablet.
-- **Expected** (Atlat's call): the page can still be zoomed in to read: +
+- **Expected** (maintainer's call): the page can still be zoomed in to read: +
   is on at the fit, a step makes it bigger, and the pane scrolls.
 - **Actual**: the page is drawn at 35%; + and − are off and the 35% label
   (Reset) does nothing.
@@ -515,7 +515,7 @@ with a scrolling pane.
 Reported by the UX review of 759581a.
 
 - **Steps**: window 1360×860 ▸ a page ▸ Tablet ▸ hover +.
-- **Expected** (Atlat's call): the tooltip says why + is off (e.g. "Fits
+- **Expected** (maintainer's call): the tooltip says why + is off (e.g. "Fits
   the pane").
 - **Actual**: "Zoom in", same as when it is on.
 - **Test**: `studio.qa.mjs` STU-16 (steps + up until it is off, then

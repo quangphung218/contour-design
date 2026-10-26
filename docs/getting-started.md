@@ -8,7 +8,7 @@ Contour; contributors want [development.md](development.md).
 ### Download a release
 
 Releases are published on the repository's
-[Releases page](https://github.com/quangphung218/contour/releases):
+[Releases page](https://github.com/quangphung218/contour-design/releases):
 
 | Platform | File | Notes |
 |---|---|---|

@@ -3,7 +3,8 @@
 Thanks for helping. This page covers how to get a working checkout, what to
 run before a pull request, how to write commit messages and how review works.
 The developer guide ([docs/development.md](docs/development.md)) has the
-details on the toolchain, crate layout and debugging.
+details on the toolchain, crate layout and debugging. Everyone taking part
+follows the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Getting set up
 
