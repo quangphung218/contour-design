@@ -1156,6 +1156,7 @@ PreviewStep2 = agent فایل‌ها را می‌نویسد؛ این پیش‌ن
 PreviewStep3 = روی صفحه نظر بدهید تا تغییرات درخواست شود، سپس خروجی بگیرید.
 # Run status and next steps
 ProjectLoadFailed = این پروژه باز نشد.
+ProjectGone = این پروژه حذف شده یا پیوند اشتباه است.
 RunStarting = در حال راه‌اندازی agent…
 RunWorking = در حال کار
 RunStep = مرحله {0} از {1}

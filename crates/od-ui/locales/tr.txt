@@ -1155,6 +1155,7 @@ PreviewStep2 = Agent dosyaları yazar; bu önizleme kendiliğinden yenilenir.
 PreviewStep3 = Değişiklik istemek için sayfaya yorum yapın, sonra dışa aktarın.
 # Run status and next steps
 ProjectLoadFailed = Bu proje açılamadı.
+ProjectGone = Bu proje silinmiş ya da bağlantı yanlış.
 RunStarting = Agent başlatılıyor…
 RunWorking = Çalışıyor
 RunStep = Adım {0}/{1}

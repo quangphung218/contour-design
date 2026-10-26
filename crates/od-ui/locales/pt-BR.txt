@@ -1155,6 +1155,7 @@ PreviewStep2 = O agente escreve os arquivos; esta prévia recarrega sozinha.
 PreviewStep3 = Comente na página para pedir alterações e depois exporte.
 # Run status and next steps
 ProjectLoadFailed = Não foi possível abrir este projeto.
+ProjectGone = Este projeto foi excluído ou o link está errado.
 RunStarting = Iniciando o agente…
 RunWorking = Trabalhando
 RunStep = Etapa {0} de {1}

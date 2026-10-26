@@ -1156,6 +1156,7 @@ PreviewStep2 = Der Agent schreibt die Dateien; diese Vorschau lädt sich selbst 
 PreviewStep3 = Kommentiere die Seite, um Änderungen anzufragen, und exportiere dann.
 # Run status and next steps
 ProjectLoadFailed = Dieses Projekt konnte nicht geöffnet werden.
+ProjectGone = Dieses Projekt wurde gelöscht oder der Link ist falsch.
 RunStarting = Agent wird gestartet…
 RunWorking = Arbeitet
 RunStep = Schritt {0} von {1}

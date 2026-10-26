@@ -1156,6 +1156,7 @@ PreviewStep2 = เอเจนต์เขียนไฟล์ ตัวอย�
 PreviewStep3 = คอมเมนต์บนหน้าเพื่อขอแก้ไข แล้วส่งออก
 # Run status and next steps
 ProjectLoadFailed = เปิดโปรเจกต์นี้ไม่ได้
+ProjectGone = โปรเจกต์นี้ถูกลบแล้วหรือลิงก์ไม่ถูกต้อง
 RunStarting = กำลังเริ่มเอเจนต์…
 RunWorking = กำลังทำงาน
 RunStep = ขั้นตอน {0} จาก {1}

@@ -1156,6 +1156,7 @@ PreviewStep2 = Agen menulis file; pratinjau ini dimuat ulang sendiri.
 PreviewStep3 = Beri komentar pada halaman untuk meminta perubahan, lalu ekspor.
 # Run status and next steps
 ProjectLoadFailed = Proyek ini tidak dapat dibuka.
+ProjectGone = Proyek ini sudah dihapus atau tautannya salah.
 RunStarting = Memulai agen…
 RunWorking = Sedang bekerja
 RunStep = Langkah {0} dari {1}

@@ -1156,6 +1156,7 @@ PreviewStep2 = Agent 會寫入檔案，此預覽會自動重新載入。
 PreviewStep3 = 在頁面上留言提出修改，然後匯出。
 # Run status and next steps
 ProjectLoadFailed = 無法開啟此專案。
+ProjectGone = 此專案已被刪除，或連結有誤。
 RunStarting = 正在啟動 Agent…
 RunWorking = 處理中
 RunStep = 步驟 {0}/{1}

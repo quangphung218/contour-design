@@ -1156,6 +1156,7 @@ PreviewStep2 = Az agent megírja a fájlokat; az előnézet magától újratölt
 PreviewStep3 = Kommentáld az oldalt módosításokért, aztán exportálj.
 # Run status and next steps
 ProjectLoadFailed = Ezt a projektet nem sikerült megnyitni.
+ProjectGone = Ezt a projektet törölték, vagy hibás a link.
 RunStarting = Az agent indítása…
 RunWorking = Dolgozik
 RunStep = {0}. lépés / {1}

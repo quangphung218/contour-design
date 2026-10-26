@@ -1156,6 +1156,7 @@ PreviewStep2 = يكتب الوكيل الملفات؛ وتُعاد تحميل ه
 PreviewStep3 = علّق على الصفحة لطلب تغييرات، ثم صدّر.
 # Run status and next steps
 ProjectLoadFailed = تعذّر فتح هذا المشروع.
+ProjectGone = حُذف هذا المشروع أو أن الرابط خاطئ.
 RunStarting = جارٍ تشغيل الوكيل…
 RunWorking = قيد العمل
 RunStep = الخطوة {0} من {1}

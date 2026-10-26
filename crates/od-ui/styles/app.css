@@ -654,6 +654,15 @@ pre.snippet { margin: var(--space-2) 0; padding: var(--space-3); border-radius: 
 }
 .conversation-select:hover:not(:disabled) { background-color: var(--color-fill); }
 .conversation-names { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+/* No project to work on: only the error and its way out stay. */
+.studio.load-failed .preview-top,
+.studio.load-failed .preview-head,
+.studio.load-failed .files,
+.studio.load-failed .chat-tools,
+.studio.load-failed .composer-actions,
+.studio.load-failed .conversation-bar > :not(.conversation-ico):not(.conversation-names),
+.studio.load-failed .conversation-select { display: none; }
+.studio.load-failed .composer { opacity: 0.55; }
 .studio-project { margin: 0; padding-left: var(--space-1-5); font-size: var(--text-sm); font-weight: var(--weight-semibold); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-names .conversation-select { flex: none; height: 20px; font-size: var(--text-xs); font-weight: var(--weight-regular); color: var(--color-text-secondary); }
 .chat-tools { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; padding: var(--space-1-5) var(--space-2); border-bottom: 1px solid var(--color-border-subtle); container-type: inline-size; }

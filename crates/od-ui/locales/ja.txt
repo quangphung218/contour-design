@@ -1156,6 +1156,7 @@ PreviewStep2 = エージェントがファイルを書き込み、プレビュ�
 PreviewStep3 = ページにコメントして変更を依頼し、エクスポートします。
 # Run status and next steps
 ProjectLoadFailed = このプロジェクトを開けませんでした。
+ProjectGone = このプロジェクトは削除されたか、リンクが間違っています。
 RunStarting = エージェントを起動中…
 RunWorking = 作業中
 RunStep = ステップ {0}/{1}

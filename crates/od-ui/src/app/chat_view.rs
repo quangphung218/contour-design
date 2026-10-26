@@ -195,7 +195,8 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         {icon(Glyph::Warning)}
                         <div class="load-error-body">
                             <strong>{t(T::ProjectLoadFailed)}</strong>
-                            <span>{e}</span>
+                            // A missing project in words, not "Not found (HTTP 404)".
+                            <span>{if ctx.load_gone.get() { t(T::ProjectGone).to_owned() } else { e }}</span>
                             <div class="row">
                                 // A project that does not exist will not load on a retry.
                                 {(!ctx.load_gone.get()).then(|| view! {
@@ -353,10 +354,10 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
             <span class="conversation-ico">{icon(Glyph::Chat)}</span>
             // Which project this is first; the conversation under it.
             <div class="conversation-names">
-                <h1 class="studio-project" data-testid="studio-project-name"
-                    title=move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()))>
-                    {move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone()))}
-                </h1>
+                // Only once the project is there: an empty heading says nothing.
+                {move || ctx.project.with(|p| p.as_ref().map(|p| p.name.clone())).map(|name| view! {
+                    <h1 class="studio-project" data-testid="studio-project-name" title=name.clone()>{name.clone()}</h1>
+                })}
                 <select
                     class="conversation-select"
                     data-testid="conversation"

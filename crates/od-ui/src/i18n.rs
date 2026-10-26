@@ -1391,6 +1391,7 @@ messages! {
 
     // Run status and next steps
     ProjectLoadFailed => "This project could not be opened.", "Không mở được project này.";
+    ProjectGone => "This project was deleted or the link is wrong.", "Project này đã bị xoá hoặc link bị sai.";
     RunStarting => "Starting the agent…", "Đang khởi động agent…";
     RunWorking => "Working", "Đang chạy";
     RunStep => "Step {0} of {1}", "Bước {0}/{1}";

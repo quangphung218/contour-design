@@ -1315,6 +1315,7 @@ pub fn Studio() -> impl IntoView {
         <div
             class="studio"
             class:chat-collapsed=move || ctx.chat.collapsed.get()
+            class:load-failed=move || ctx.load_error.with(Option::is_some)
             class:focus=move || files_ui.focus.get()
             data-pane=move || pane.get().key()
             style=move || ctx.chat.width.get().map(|w| format!("--chat-w:{w:.0}px"))

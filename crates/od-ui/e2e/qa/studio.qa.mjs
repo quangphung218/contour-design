@@ -260,6 +260,14 @@ test('STU-12', 'A link to a project that does not exist says so and offers a way
   assert.equal(await page.getByTestId('load-retry').count(), 0, 'Retry offered for a project that does not exist');
   assert.equal(await page.locator('.empty-steps').count(), 0, 'preview steps shown without a project');
   assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on without a project');
+  // Said in words, and nothing else to press.
+  const error = await page.getByTestId('load-error').innerText();
+  assert.match(error, /This project was deleted or the link is wrong\./);
+  assert.doesNotMatch(error, /HTTP|404/);
+  for (const id of ['export', 'tabs', 'plus-menu', 'new-conversation', 'file-tree']) {
+    assert.equal(await page.getByTestId(id).first().isVisible().catch(() => false), false, `${id} still offered`);
+  }
+  assert.equal(await page.locator('h1:empty').count(), 0, 'an empty heading');
 });
 
 test('STU-13', "A page named with spaces and Vietnamese letters in the user's own folder previews", async ({ d, api, newPage }) => {

@@ -1156,6 +1156,7 @@ PreviewStep2 = Агент пише файли; цей перегляд пере�
 PreviewStep3 = Прокоментуйте сторінку, щоб попросити зміни, потім експортуйте.
 # Run status and next steps
 ProjectLoadFailed = Не вдалося відкрити цей проєкт.
+ProjectGone = Проєкт видалено або посилання неправильне.
 RunStarting = Запуск агента…
 RunWorking = Працює
 RunStep = Крок {0} із {1}
