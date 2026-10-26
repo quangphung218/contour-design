@@ -138,6 +138,26 @@ async fn health_and_version() {
 }
 
 #[tokio::test]
+async fn license_files_are_served_from_next_to_the_content() {
+    let h = harness_with(&content_root());
+    for name in od_server::routes::licenses::FILES {
+        let r = h.get(&format!("/api/licenses/{name}")).await;
+        assert_eq!(r.status, StatusCode::OK, "{name}");
+        assert_eq!(r.headers[header::CONTENT_TYPE], "text/plain; charset=utf-8");
+        let text = String::from_utf8(r.body).unwrap();
+        let on_disk = std::fs::read_to_string(content_root().join("..").join(name)).unwrap();
+        assert_eq!(text, on_disk, "{name}");
+    }
+    let notice = h.get("/api/licenses/NOTICE").await;
+    assert!(String::from_utf8_lossy(&notice.body).contains("nexu-io"));
+    // Only the listed files: nothing else next to the content root.
+    for bad in ["Cargo.toml", "..%2FCargo.toml", "license"] {
+        let r = h.get(&format!("/api/licenses/{bad}")).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{bad}");
+    }
+}
+
+#[tokio::test]
 async fn project_crud_round_trip_creates_folder_and_manifest() {
     let h = harness();
     let r = h

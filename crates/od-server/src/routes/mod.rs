@@ -11,6 +11,7 @@ pub mod files;
 pub mod genui;
 pub mod handoff;
 pub mod library;
+pub mod licenses;
 pub mod manage;
 pub mod manual_edit;
 pub mod media;
