@@ -201,6 +201,25 @@ fn design_templates_match_original_loader() {
     );
 }
 
+/// Nothing that ships points an agent or a page at a removed template.
+#[test]
+fn no_content_names_a_removed_template() {
+    let hits: Vec<String> = walk(&content_root())
+        .into_iter()
+        .filter(|path| {
+            let bytes = std::fs::read(path).unwrap();
+            REMOVED_TEMPLATES
+                .iter()
+                .any(|id| bytes.windows(id.len()).any(|w| w == id.as_bytes()))
+        })
+        .map(|path| path.display().to_string())
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "files naming a removed template: {hits:#?}"
+    );
+}
+
 /// Whether `dir` ships a license file of its own.
 fn has_license(dir: &Path) -> bool {
     std::fs::read_dir(dir).unwrap().any(|e| {
