@@ -71,8 +71,9 @@ case "$pkg" in
     # Without /dev/fuse (most containers) it unpacks itself instead.
     fuse=libfuse2
     [ "${VERSION_ID%%.*}" -ge 24 ] && fuse=libfuse2t64
-    # A desktop has GTK and the GL stack; the AppImage brings WebKitGTK.
-    apt-get install -y -qq --no-install-recommends "$fuse" fuse3 libgtk-3-0 libgl1 libegl1 \
+    # A desktop has GTK and the GL stack (GL, EGL, GLES 2: WebKitGTK loads
+    # libGLESv2 from the host); the AppImage brings WebKitGTK itself.
+    apt-get install -y -qq --no-install-recommends "$fuse" fuse3 libgtk-3-0 libgl1 libegl1 libgles2 \
       fonts-dejavu-core > "$out/apt-install.log" 2>&1 || stop "installing $fuse and the desktop libraries" "$(tail -5 "$out/apt-install.log")"
     ok "installed $fuse"
     app="/opt/$(basename "$pkg")"
