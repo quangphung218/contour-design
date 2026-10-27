@@ -150,7 +150,13 @@ jobs:
           else
             unset "${signing[@]}" "${notarising[@]}"
           fi
-          npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build ${{ matrix.args }}
+          extra=()
+          if [ "$RUNNER_OS" = Windows ]; then
+            # WiX takes numbers only; 0.2.0-beta.2 becomes 0.2.0.102 (scripts/msi-version.sh).
+            msi="$(../../scripts/msi-version.sh "$TAG")"
+            extra=(--config "{\"bundle\":{\"windows\":{\"wix\":{\"version\":\"$msi\"}}}}")
+          fi
+          npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build ${{ matrix.args }} ${extra[@]+"${extra[@]}"}
       - name: Collect files
         shell: bash
         run: |
