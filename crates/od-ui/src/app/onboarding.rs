@@ -192,7 +192,7 @@ pub fn Onboarding() -> impl IntoView {
                     // The test result sits under the installed agents, above
                     // the install cards it explains.
                     <AgentPicker picked=picked need_help=need_help
-                        rescan=(!windows).then_some(Rescan { checking, on_click: check_again, still_none })
+                        rescan=Some(Rescan { checking, on_click: check_again, still_none })
                         status=ViewFn::from(move || view! {
                             <div class="row">
                                 <TestResultLine state=test testid="onboarding-test"/>
@@ -222,7 +222,7 @@ pub fn Onboarding() -> impl IntoView {
                 {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 <div class="onboarding-foot">
                     // With no agent the button sits under the install cards.
-                    <Show when=move || !use_key.get() && !no_agent() && !windows>
+                    <Show when=move || !use_key.get() && !no_agent()>
                         <CheckAgainButton checking=checking on_click=check_again testid="onboarding-check-again"/>
                     </Show>
                     <span class="spacer"></span>
@@ -262,8 +262,8 @@ fn installed(a: &AgentInfo) -> bool {
 /// An agent a new user is pointed to first.
 struct Featured {
     id: &'static str,
-    /// Install command for macOS and Linux. Windows gets the setup page
-    /// only: detection there cannot find what it installs yet.
+    /// Install command for macOS and Linux. Windows gets the setup page,
+    /// which has the PowerShell and npm ways.
     unix: &'static str,
     /// Official setup page.
     docs: &'static str,
