@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Prints the Windows Installer version for a release version. WiX only takes
 # numbers (major.minor.patch.build, major and minor <= 255, the rest <= 65535),
-# so `tauri build --bundles msi` fails on 0.2.0-beta.2. The build field keeps
-# release order: alpha.N -> N, beta.N -> 100+N, rc.N -> 200+N, release -> 1000.
+# so `tauri build --bundles msi` fails on 0.2.0-beta.2. The build field tells
+# the builds apart: alpha.N -> N, beta.N -> 100+N, rc.N -> 200+N, release -> 1000.
+# Windows Installer ignores it when it compares versions; upgrades between them
+# work because Tauri allows downgrades by default.
 # Usage: scripts/msi-version.sh 0.2.0-beta.2   (a leading "v" is accepted)
 set -euo pipefail
 v="${1:?usage: scripts/msi-version.sh x.y.z[-alpha|beta|rc.N]}"

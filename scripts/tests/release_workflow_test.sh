@@ -40,6 +40,7 @@ mkdir -p "$work/bin"
 cat > "$work/bin/npx" <<'SH'
 #!/bin/sh
 env | grep '^APPLE_' | sort > "$WORK/npx-env"
+printf '%s\n' "$@" > "$WORK/npx-args"
 SH
 chmod +x "$work/bin/npx"
 step "Tauri bundle" "$work/bundle.sh"
@@ -51,6 +52,21 @@ bundle RUNNER_OS=macOS $empty APPLE_CERTIFICATE=c APPLE_CERTIFICATE_PASSWORD=p A
 check "signing only: certificate passed on, notarisation unset" '[ "$(cut -d= -f1 "$work/npx-env" | LC_ALL=C sort | tr "\n" " ")" = "APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY " ] && grep -q "not notarised" "$work/out" && ! grep -qE "=(c|p|i)$" "$work/out"'
 bundle RUNNER_OS=Linux $empty
 check "other runners get no APPLE_* at all" '[ ! -s "$work/npx-env" ]'
+
+# MSI version: the step runs in apps/desktop and calls ../../scripts/msi-version.sh.
+mkdir -p "$work/apps/desktop" && ln -s "$here/.." "$work/scripts"
+# wix_version: bundle.windows.wix.version from the JSON after --config, or "none".
+wix_version() {
+  ruby -rjson -e 'a = File.readlines(ARGV[0], chomp: true); i = a.index("--config")
+    puts(i ? JSON.parse(a[i + 1]).dig("bundle", "windows", "wix", "version").to_s : "none")' "$work/npx-args"
+}
+desktop() { (cd "$work/apps/desktop" && env WORK="$work" PATH="$work/bin:$PATH" TAURI_CLI_VERSION=0 "$@" bash "$work/bundle.sh") >"$work/out" 2>&1; }
+desktop RUNNER_OS=Windows TAG=v9.9.9-beta.2 $empty; rc=$?
+check "Windows gets a numeric MSI version through --config" '[ $rc -eq 0 ] && [ "$(wix_version)" = 9.9.9.102 ]'
+for os in macOS Linux; do
+  desktop RUNNER_OS=$os TAG=v9.9.9-beta.2 $empty
+  check "$os gets no --config" '[ "$(wix_version)" = none ]'
+done
 
 # Draft release: a published release is never rewritten.
 cat > "$work/bin/gh" <<'SH'
@@ -87,6 +103,5 @@ check "bundles wait for the macOS tests, not for Windows" 'grep -qx "bundle need
 check "macOS tests come from ci.yml with only=macos" 'grep -qx "macos-tests: ./.github/workflows/ci.yml only=macos" "$work/gates"'
 check "the Windows build runs from ci.yml with only=windows" 'grep -qx "windows-build: ./.github/workflows/ci.yml only=windows" "$work/gates"'
 check "no job waits for the Windows build" 'grep -qx "waits for windows: " "$work/gates"'
-check "the Windows bundle passes a numeric MSI version" 'grep -q "scripts/msi-version.sh \"\$TAG\"" "$workflow" && grep -q "wix.*version" "$workflow"'
 
 [ "$failures" -eq 0 ] && echo "release.yml: all checks passed" || { echo "release.yml: $failures failed"; exit 1; }
