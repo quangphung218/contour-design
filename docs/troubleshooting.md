@@ -91,6 +91,12 @@ AppImages need FUSE 2: `sudo apt install libfuse2` on Ubuntu 22.04,
 `APPIMAGE_EXTRACT_AND_RUN=1 ./Contour_<version>_amd64.AppImage`. The
 `.deb` has neither problem.
 
+### The AppImage quits at start: "Couldn't open libGLESv2.so.2"
+
+The AppImage brings WebKitGTK but uses the system's OpenGL libraries, and
+a minimal install may lack OpenGL ES: `sudo apt install libgles2`. The
+`.deb` pulls in everything it needs.
+
 ### `apt install` says "unable to locate package" or "is not a .deb"
 
 Give `apt` a path, with `./` in front: `sudo apt install ./Contour_<version>_amd64.deb`.
