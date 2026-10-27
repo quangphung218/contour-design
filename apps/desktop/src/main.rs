@@ -228,7 +228,15 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         Some("CmdOrCtrl+O"),
     )?;
     let project = Submenu::with_items(app, "Project", true, &[&open])?;
-    menu.append(&project)?;
+    // Project goes before Window and Help, which stay last.
+    let window_at = menu
+        .items()?
+        .iter()
+        .position(|i| i.id() == tauri::menu::WINDOW_SUBMENU_ID);
+    match window_at {
+        Some(at) => menu.insert(&project, at)?,
+        None => menu.append(&project)?,
+    }
     let settings = MenuItem::with_id(
         app,
         SETTINGS_MENU_ID,
@@ -263,13 +271,22 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     }
     #[cfg(not(target_os = "macos"))]
     project.append(&settings)?;
-    let help = Submenu::with_items(
-        app,
-        "Help",
-        true,
-        &[&docs, &separator, &report, &data, &shortcuts, &palette],
-    )?;
-    menu.append(&help)?;
+    let items: [&dyn tauri::menu::IsMenuItem<tauri::Wry>; 6] =
+        [&docs, &separator, &report, &data, &shortcuts, &palette];
+    // The default menu already has a Help menu (About, on Linux and
+    // Windows): the items go there rather than into a second "Help".
+    let default_help = menu
+        .get(tauri::menu::HELP_SUBMENU_ID)
+        .and_then(|i| i.as_submenu().cloned());
+    match default_help {
+        Some(help) => {
+            if !help.items()?.is_empty() {
+                help.append(&tauri::menu::PredefinedMenuItem::separator(app)?)?;
+            }
+            help.append_items(&items)?;
+        }
+        None => menu.append(&Submenu::with_items(app, "Help", true, &items)?)?,
+    }
     Ok(menu)
 }
 
