@@ -173,9 +173,19 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # The Linux packages installed and opened on clean Ubuntu 22.04 and 24.04
+  # (linux-smoke.yml); a broken .deb or AppImage stops the draft release.
+  linux-smoke:
+    name: Linux smoke
+    needs: bundle
+    uses: ./.github/workflows/linux-smoke.yml
+    with:
+      artifact: bundle-linux-x64
+      ref: ${{ github.event.inputs.tag || github.ref_name }}
+
   release:
     name: draft GitHub Release
-    needs: bundle
+    needs: [bundle, linux-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

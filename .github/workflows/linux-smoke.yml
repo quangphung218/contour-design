@@ -1,0 +1,137 @@
+# Linux packages on a clean Ubuntu: installs the .deb with apt and runs the
+# AppImage in fresh ubuntu:22.04 and ubuntu:24.04 containers, opens Contour
+# under Xvfb, waits for /api/health to report the version, runs an agent
+# turn and saves a screenshot (scripts/linux-smoke.sh). release.yml calls it
+# with the bundle it just built and drafts the release only when it passes;
+# pull requests that touch the packaging, and a manual run, build the bundle
+# from the branch first.
+name: Linux smoke
+
+on:
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - scripts/linux-smoke.sh
+      - scripts/linux-deps.sh
+      - .github/workflows/linux-smoke.yml
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      artifact:
+        description: Name of the bundle artifact (AppImage and .deb) in the calling run
+        type: string
+        required: true
+      ref:
+        description: Ref to check out (the release tag)
+        type: string
+        required: true
+
+concurrency:
+  # release.yml's call runs inside the release's own group; this one only
+  # cancels superseded pull request pushes.
+  group: linux-smoke-${{ inputs.ref || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  # Keep in sync with the Makefile (TAURI_CLI_VERSION).
+  TAURI_CLI_VERSION: 2.12.4
+
+jobs:
+  # The same build as release.yml's bundle (linux-x64), from this branch.
+  bundle:
+    name: bundle (linux-x64)
+    if: ${{ !inputs.artifact }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-linux-x64
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: trunk
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Linux packages
+        run: scripts/linux-deps.sh
+      - name: UI bundle (release)
+        working-directory: crates/od-ui
+        run: trunk build --release
+      - name: Tauri bundle
+        working-directory: apps/desktop
+        run: npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build --bundles appimage,deb
+      - name: Collect files
+        run: |
+          mkdir -p dist-release
+          find target/release/bundle -maxdepth 2 -type f \( -name '*.AppImage' -o -name '*.deb' \) \
+            -exec cp {} dist-release/ \;
+          ls -l dist-release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-linux-x64
+          path: dist-release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke:
+    name: smoke (ubuntu ${{ matrix.ubuntu }}, ${{ matrix.package }})
+    needs: bundle
+    # `bundle` is skipped when release.yml hands over its own build.
+    if: ${{ !cancelled() && (needs.bundle.result == 'success' || needs.bundle.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ["22.04", "24.04"]
+        package: [deb, AppImage]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: ubuntu:${{ matrix.ubuntu }}
+      # A desktop lets WebKitGTK and Chrome build their sandboxes (user
+      # namespaces) and the AppImage mount itself (FUSE); Docker's default
+      # seccomp and AppArmor profiles forbid both.
+      options: >-
+        --device /dev/fuse --cap-add SYS_ADMIN
+        --security-opt seccomp=unconfined --security-opt apparmor=unconfined
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.artifact || 'bundle-linux-x64' }}
+          path: dist-release
+      - name: Smoke test
+        env:
+          # PDF export through Chrome once per Ubuntu, with the .deb.
+          SMOKE_EXPORT: ${{ matrix.package == 'deb' && '1' || '0' }}
+        run: |
+          shopt -s nullglob
+          files=(dist-release/*.${{ matrix.package }})
+          [ "${#files[@]}" -eq 1 ] || { echo "::error::want one .${{ matrix.package }}, found ${#files[@]}"; ls -l dist-release; exit 1; }
+          scripts/linux-smoke.sh "${files[0]}" smoke-out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: smoke-ubuntu-${{ matrix.ubuntu }}-${{ matrix.package }}
+          path: smoke-out
+          if-no-files-found: warn
+          retention-days: 14
