@@ -8,6 +8,31 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Windows 10 and 11 (x64) are supported platforms. Every release's `.msi`
+  is installed silently, opened from its Start menu shortcut, runs an agent
+  turn and a PDF export, and is uninstalled on clean Windows Server 2025
+  and 2022 before the release is drafted (`windows-smoke.yml`). An
+  installer that builds but fails this stops the draft; the Windows build
+  itself stays best effort.
+- Getting started explains installing Contour on Windows (SmartScreen:
+  More info ▸ Run anyway), silent installs, uninstalling and where the logs
+  are; troubleshooting covers SmartScreen, a failed install and a blank
+  window.
+
+### Fixed
+
+- Windows finds agent CLIs installed with npm (`claude.cmd`) or a native
+  installer (`claude.exe`). Detection looked for the bare name, which on
+  Windows is npm's `sh` script or nothing. It also looks in
+  `%USERPROFILE%\.local\bin` and `%APPDATA%\npm`, and reads `Path` from
+  the registry, so an agent installed after signing in to Windows is found
+  without signing out; onboarding has Check again on Windows too.
+- PDF, PNG and PPTX export work on Windows: Edge was handed a page address
+  it could not open (`file:////%3F/C:/…`) and the export failed after two
+  minutes with "loading the page: Request timed out".
+
 ## [0.2.0-beta.3] - 2026-10-27
 
 ### Added
