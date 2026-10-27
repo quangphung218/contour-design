@@ -87,5 +87,6 @@ check "bundles wait for the macOS tests, not for Windows" 'grep -qx "bundle need
 check "macOS tests come from ci.yml with only=macos" 'grep -qx "macos-tests: ./.github/workflows/ci.yml only=macos" "$work/gates"'
 check "the Windows build runs from ci.yml with only=windows" 'grep -qx "windows-build: ./.github/workflows/ci.yml only=windows" "$work/gates"'
 check "no job waits for the Windows build" 'grep -qx "waits for windows: " "$work/gates"'
+check "the Windows bundle passes a numeric MSI version" 'grep -q "scripts/msi-version.sh \"\$TAG\"" "$workflow" && grep -q "wix.*version" "$workflow"'
 
 [ "$failures" -eq 0 ] && echo "release.yml: all checks passed" || { echo "release.yml: $failures failed"; exit 1; }

@@ -75,7 +75,7 @@ CI does the building; a person decides when and checks the result.
    | Windows build (does not block) | `ci.yml` (`only: windows`): the Windows compile check; nothing waits for it, a failure shows on the run but the release goes on (Windows is best effort) |
    | bundle (macos-universal) | `Contour_<v>_universal.dmg` (Apple silicon and Intel) |
    | bundle (linux-x64) | `Contour_<v>_amd64.AppImage`, `Contour_<v>_amd64.deb` (built on Ubuntu 22.04) |
-   | bundle (windows-x64) | `Contour_<v>_x64_en-US.msi`, best effort: a failure here does not block the release |
+   | bundle (windows-x64) | `Contour_<v>_x64_en-US.msi`, best effort: a failure here does not block the release. WiX takes numeric versions only, so the installer gets the version from `scripts/msi-version.sh` (`0.2.0-beta.2` → `0.2.0.102`, a release → `x.y.z.1000`) |
    | release | `SHA256SUMS` and a **draft** GitHub Release titled `Contour v<v>` with the CHANGELOG section as notes |
 
 8. **Check the draft.** Download each file, verify it against `SHA256SUMS`,
