@@ -1,0 +1,76 @@
+# TEMPORARY (dropped before merge): runs the c4-depth e2e ten times after the
+# rest of the suite, with memory readings, to chase the lang=ar flake.
+name: c4 soak
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/c4-soak.yml
+      - crates/od-ui/e2e/c4-*.mjs
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "4"
+  SOAK_SCRIPT: c4-depth.e2e.mjs
+
+jobs:
+  soak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: trunk
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/od-ui/e2e/package-lock.json
+      - name: Playwright
+        working-directory: crates/od-ui/e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Full suite once
+        run: make e2e || echo "::warning::full suite failed"
+      - name: Processes left after the suite
+        run: |
+          free -m
+          ps -eo pid,rss,etime,comm,args --sort=-rss | head -25 | cut -c1-200
+      - name: Soak
+        run: |
+          pass=0
+          for i in $(seq 1 10); do
+            (while sleep 3; do ps -eo rss,comm | awk '/chrome/ {if ($1 > m) m = $1} END {print int(m / 1024)}'; done) > "mem-$i.txt" &
+            sampler=$!
+            if crates/od-ui/e2e/run.sh "$SOAK_SCRIPT" > "soak-$i.log" 2>&1; then pass=$((pass + 1)); r=PASS; else r=FAIL; fi
+            kill "$sampler"
+            echo "  largest chrome process: $(sort -n "mem-$i.txt" | tail -1) MB" 
+            echo "run $i: $r $(grep -o '\[e2e:c4\] \(PASS\|FAIL\).*' "soak-$i.log" | cut -c1-200)"
+            grep 'DIAG mem' "soak-$i.log" | sed -n '1p;10p;19p'
+            grep 'DIAG ' "soak-$i.log" | grep -v mem | awk '{print $8}' | sort -n | tail -1 | sed 's/^/  slowest lang ms: /'
+            [ "$r" = FAIL ] && grep -B3 -A30 'FAIL' "soak-$i.log" | grep -v 'Compiling' | tail -40
+            free -m | sed -n 2p
+          done
+          echo "soak: $pass/10 passed"
+          [ "$pass" -eq 10 ]
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: c4-soak
+          path: |
+            soak-*.log
+            crates/od-ui/e2e/test-results
+          retention-days: 7
