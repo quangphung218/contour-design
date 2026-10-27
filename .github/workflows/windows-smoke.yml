@@ -1,0 +1,178 @@
+# The Windows installer on clean Windows Server 2025 and 2022 runners:
+# installs the .msi silently, checks the files and the Start Menu shortcut,
+# opens Contour from it, waits for /api/health to report the version, runs
+# an agent turn through an npm-style `.cmd` on the user's Path and a PDF
+# export through Edge, saves a screenshot, closes the app and uninstalls
+# (scripts/windows-smoke.ps1).
+# release.yml calls it with the bundle it just built and drafts the release
+# only when it passes; a run without a Windows bundle (its build is best
+# effort) skips the smoke test instead. Pull requests that touch the
+# packaging, and a manual run, build the installer from the branch first.
+name: Windows smoke
+
+on:
+  pull_request:
+    paths:
+      - apps/desktop/**
+      # Where the installed app finds its files and the agent CLIs.
+      - crates/od-server/src/routes/ui.rs
+      - crates/od-server/src/lib.rs
+      - crates/od-runtime/src/login_path.rs
+      - crates/od-runtime/src/detect.rs
+      # PDF export through Edge.
+      - crates/od-render-cdp/src/lib.rs
+      - scripts/windows-smoke.ps1
+      - scripts/msi-version.sh
+      - .github/workflows/windows-smoke.yml
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      artifact:
+        description: Name of the bundle artifact (the .msi) in the calling run
+        type: string
+        required: true
+      ref:
+        description: Ref to check out (the release tag)
+        type: string
+        required: true
+
+concurrency:
+  # release.yml's call runs inside the release's own group; this one only
+  # cancels superseded pull request pushes.
+  group: windows-smoke-${{ inputs.ref || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  # Keep in sync with the Makefile (TAURI_CLI_VERSION).
+  TAURI_CLI_VERSION: 2.12.4
+
+jobs:
+  # The same build as release.yml's bundle (windows-x64), from this branch.
+  bundle:
+    name: bundle (windows-x64)
+    if: ${{ !inputs.artifact }}
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-windows-x64
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: trunk
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: UI bundle (release)
+        working-directory: crates/od-ui
+        run: trunk build --release
+      - name: Tauri bundle
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          version="$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/version=/,"");print;exit}' ../../Cargo.toml)"
+          msi="$(../../scripts/msi-version.sh "$version")"
+          npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build --bundles msi \
+            --config "{\"bundle\":{\"windows\":{\"wix\":{\"version\":\"$msi\"}}}}"
+      - name: Collect files
+        shell: bash
+        run: |
+          mkdir -p dist-release
+          find target/release/bundle -maxdepth 2 -type f -name '*.msi' -exec cp {} dist-release/ \;
+          ls -l dist-release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-windows-x64
+          path: dist-release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # Whether there is an installer to test. Built here, there always is; in
+  # a release run the Windows bundle is best effort, and without it the
+  # smoke test is skipped (a warning, not a failure).
+  installer:
+    name: find the installer
+    needs: bundle
+    if: ${{ !cancelled() && (needs.bundle.result == 'success' || needs.bundle.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      msi: ${{ steps.find.outputs.msi }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        # A failed best-effort build uploads nothing.
+        continue-on-error: true
+        with:
+          name: ${{ inputs.artifact || 'bundle-windows-x64' }}
+          path: dist-release
+      - name: Find the installer
+        id: find
+        env:
+          FROM_RELEASE: ${{ inputs.artifact && '1' || '0' }}
+        run: |
+          shopt -s nullglob
+          files=(dist-release/*.msi)
+          if [ "${#files[@]}" -eq 1 ]; then
+            echo "msi=true" >> "$GITHUB_OUTPUT"
+          elif [ "${#files[@]}" -eq 0 ] && [ "$FROM_RELEASE" = 1 ]; then
+            echo "::warning::no Windows installer in this run (its build is best effort); the Windows smoke test is skipped"
+            echo "msi=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::want one .msi, found ${#files[@]}"
+            ls -l dist-release 2>/dev/null
+            exit 1
+          fi
+
+  smoke:
+    name: smoke (${{ matrix.os }})
+    needs: installer
+    if: ${{ !cancelled() && needs.installer.outputs.msi == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.artifact || 'bundle-windows-x64' }}
+          path: dist-release
+      - name: Installer version
+        id: version
+        shell: bash
+        run: |
+          version="$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/version=/,"");print;exit}' Cargo.toml)"
+          echo "msi=$(scripts/msi-version.sh "$version")" >> "$GITHUB_OUTPUT"
+      - name: Smoke test
+        shell: pwsh
+        env:
+          MSI_VERSION: ${{ steps.version.outputs.msi }}
+        run: |
+          $files = @(Get-ChildItem dist-release -Filter *.msi)
+          if ($files.Count -ne 1) { Write-Host "::error::want one .msi, found $($files.Count)"; exit 1 }
+          ./scripts/windows-smoke.ps1 $files[0].FullName smoke-out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: smoke-${{ matrix.os }}
+          path: smoke-out
+          if-no-files-found: warn
+          retention-days: 14
