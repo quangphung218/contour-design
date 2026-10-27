@@ -1,8 +1,9 @@
 # The Windows installer on clean Windows Server 2025 and 2022 runners:
 # installs the .msi silently, checks the files and the Start Menu shortcut,
 # opens Contour from it, waits for /api/health to report the version, runs
-# an agent turn through an npm-style `.cmd` on the user's Path and a PDF
-# export through Edge, saves a screenshot, closes the app and uninstalls
+# an agent turn through an npm-style `.cmd` on the user's Path, checks that
+# Check again finds one installed meanwhile, runs a PDF export through
+# Edge, saves a screenshot, closes the app and uninstalls
 # (scripts/windows-smoke.ps1).
 # release.yml calls it with the bundle it just built and drafts the release
 # only when it passes; a run without a Windows bundle (its build is best
@@ -19,11 +20,17 @@ on:
       - crates/od-server/src/lib.rs
       - crates/od-runtime/src/login_path.rs
       - crates/od-runtime/src/detect.rs
+      # Check again, and starting the agent (its process tree in a Job Object).
+      - crates/od-runtime/src/engine.rs
+      - crates/od-runtime/src/process.rs
+      - crates/od-job/**
       # PDF export through Edge.
       - crates/od-render-cdp/src/lib.rs
       - scripts/windows-smoke.ps1
       - scripts/msi-version.sh
       - .github/workflows/windows-smoke.yml
+      # The windows-x64 bundle and the call that hands it over.
+      - .github/workflows/release.yml
   workflow_dispatch:
   workflow_call:
     inputs:
