@@ -55,8 +55,11 @@ The full tour is in [docs/features.md](docs/features.md).
 
 Get the latest build from
 [Releases](https://github.com/quangphung218/contour-design/releases): a
-universal `.dmg` for macOS 13.3 or later, an `.AppImage` or `.deb` for Linux, and an
-`.msi` for Windows (untested). Each release has a `SHA256SUMS` file.
+universal `.dmg` for macOS 13.3 or later, a `.deb` or `.AppImage` for
+Ubuntu 22.04 LTS and later (x64), and an `.msi` for Windows (untested).
+Each release has a `SHA256SUMS` file. On Ubuntu: `sudo apt install
+./Contour_<version>_amd64.deb`
+([details](docs/getting-started.md#install-on-ubuntu)).
 
 Builds without a signing certificate are unsigned, and macOS stops them the
 first time. On **macOS 15 and later**, open Contour once, then go to
@@ -112,6 +115,12 @@ The row-by-row feature comparison with evidence is in
 
 ## Known limitations
 
+- **Linux means Ubuntu 22.04 LTS and 24.04 LTS on x64.** Each release's
+  `.deb` and AppImage are installed and opened on both, under X11; for a
+  blank window under Wayland see
+  [troubleshooting](docs/troubleshooting.md#the-window-is-blank-or-white-wayland-nvidia).
+  Other distributions with WebKitGTK 4.1 are not tested, and there is no
+  ARM build.
 - **Windows is not tested.** Job Objects, ConPTY and the WebView2 app only
   pass a compile check; CI builds it but runs no tests.
 - **Windows may not find an installed agent.** Detection looks for the bare

@@ -268,6 +268,7 @@ before asking for review.
 | e2e | `ci.yml` | Ubuntu | manual run only | `make e2e`, screenshots uploaded on failure |
 | cargo-deny | `ci.yml` | Ubuntu | manual run only | licences, advisories, bans, sources (`deny.toml`) |
 | docs | `docs.yml` | Ubuntu | manual run only | `scripts/check-links.sh`, script tests, actionlint |
+| Linux smoke | `linux-smoke.yml` | PRs touching `apps/desktop/**` or the smoke files | release (blocks the draft); manual run | builds the AppImage and `.deb`, then `scripts/linux-smoke.sh` in ubuntu:22.04 and ubuntu:24.04 containers |
 | commit messages | `docs.yml` | Ubuntu, PRs only | no | commitlint over the PR's commits |
 
 `ci.yml` skips changes that only touch `docs/**` or Markdown; `docs.yml`
