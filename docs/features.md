@@ -201,7 +201,8 @@ the app runs is found without a restart.
 With no working agent (none installed, or the picked one failed its test),
 onboarding puts Claude Code and Codex first, each with its install command
 (Copy), its official setup page, the account it needs and how to sign in
-once installed; on Windows only the setup page. Check again tests the
+once installed; on Windows the setup page instead of the command. Check
+again (on Windows too) tests the
 picked agent again and says so when it still finds nothing. Agents
 not installed are folded under **Other agents**; one installed but waiting
 for setup (DeepSeek Harness) stays in view. The API key path comes with its

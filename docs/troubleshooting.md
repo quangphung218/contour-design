@@ -102,6 +102,33 @@ a minimal install may lack OpenGL ES: `sudo apt install libgles2`. The
 Give `apt` a path, with `./` in front: `sudo apt install ./Contour_<version>_amd64.deb`.
 Without it, `apt` searches its repositories for a package of that name.
 
+## Windows
+
+### "Windows protected your PC" when opening the installer
+
+The `.msi` is not signed yet, so Microsoft Defender SmartScreen does not
+know it. Click **More info**, check that the file is
+`Contour_<version>_x64_en-US.msi` from the Releases page (compare it with
+`SHA256SUMS`: `Get-FileHash .\Contour_<version>_x64_en-US.msi`), then
+**Run anyway**. If the file's Properties show "This file came from another
+computer", tick **Unblock** first.
+
+### The installer fails or rolls back
+
+Run it again with a log, from an administrator PowerShell:
+`msiexec /i Contour_<version>_x64_en-US.msi /l*v contour-install.log`. Search
+the log for `Return value 3`; the lines above it name the failing step.
+Installing needs administrator rights (Contour installs for all users).
+
+### The window is blank or white
+
+Contour draws its window with Microsoft Edge WebView2. Windows 10 and 11
+have it; the installer downloads it otherwise, which needs a connection.
+Check Settings ▸ Apps ▸ Installed apps for **Microsoft Edge WebView2
+Runtime**; if it is missing, install the Evergreen runtime from Microsoft
+and open Contour again. The app log is in
+`%APPDATA%\contour\logs\daemon.log`.
+
 ## Agents
 
 ### No agent is detected
@@ -113,6 +140,11 @@ Detection looks for the binary on the daemon's `PATH`. In a terminal,
   `PATH` from your login shell (`$SHELL -il`). Put the agent's folder on
   `PATH` in `~/.zprofile` or `~/.zshrc` (macOS), `~/.profile` or
   `~/.bashrc` (Ubuntu), quit the app and open it again.
+- Windows: Contour looks for `claude.exe`, `claude.cmd` and the like (not
+  the extensionless `claude` npm also writes) on `Path`, including the
+  user and system `Path` in the registry, so an agent installed after you
+  signed in is found. It also looks in `%USERPROFILE%\.local\bin` and
+  `%APPDATA%\npm`. In PowerShell, `Get-Command claude` must print a path.
 - Installed it while Contour was open: press **Refresh** on the agent
   picker. Nothing is cached.
 - Check what the daemon sees: `curl -s http://127.0.0.1:7456/api/agents`.

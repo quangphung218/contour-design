@@ -76,12 +76,14 @@ CI does the building; a person decides when and checks the result.
    | bundle (macos-universal) | `Contour_<v>_universal.dmg` (Apple silicon and Intel) |
    | bundle (linux-x64) | `Contour_<v>_amd64.AppImage`, `Contour_<v>_amd64.deb` (built on Ubuntu 22.04) |
    | Linux smoke | `linux-smoke.yml`: installs the `.deb` with `apt` and runs the AppImage on clean Ubuntu 22.04 and 24.04 containers, opens the app under Xvfb, checks `/api/health` reports `<v>`, runs an agent turn and a PDF export; screenshots and logs are uploaded as `smoke-ubuntu-*` artifacts. The draft release waits for it |
-   | bundle (windows-x64) | `Contour_<v>_x64_en-US.msi`, best effort: a failure here does not block the release. WiX takes numeric versions only, so the installer gets the version from `scripts/msi-version.sh` (`0.2.0-beta.2` → `0.2.0.102`, a release → `x.y.z.1000`) |
+   | bundle (windows-x64) | `Contour_<v>_x64_en-US.msi`, best effort: a failed build does not block the release (the Windows smoke test is then skipped with a warning). WiX takes numeric versions only, so the installer gets the version from `scripts/msi-version.sh` (`0.2.0-beta.2` → `0.2.0.102`, a release → `x.y.z.1000`) |
+   | Windows smoke | `windows-smoke.yml`: installs the `.msi` silently on clean Windows Server 2025 and 2022 runners, checks the files, the uninstall entry and the Start Menu shortcut, opens the app from it, checks `/api/health` reports `<v>`, runs an agent turn through an npm-style `claude.cmd` on the user's `Path` and a PDF export through Edge, closes the app and uninstalls it; screenshots and logs are uploaded as `smoke-windows-*` artifacts. When the Windows bundle built, the draft release waits for it and a failure stops the draft; when it did not build, the smoke test is skipped with a warning and the release goes on without an `.msi` |
    | release | `SHA256SUMS` and a **draft** GitHub Release titled `Contour v<v>` with the CHANGELOG section as notes |
 
 8. **Check the draft.** Download each file, verify it against `SHA256SUMS`,
-   open the app, create a project and run one turn. For Linux, the
-   `smoke-ubuntu-*` screenshots of the run show the window on each Ubuntu. Then press **Publish**
+   open the app, create a project and run one turn. For Linux and
+   Windows, the `smoke-ubuntu-*` and `smoke-windows-*` screenshots of the run
+   show the window on each system. Then press **Publish**
    on the draft.
 
 To rebuild a release (for example after a flaky runner), run the workflow by
