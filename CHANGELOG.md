@@ -8,7 +8,23 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Ubuntu 22.04 LTS and 24.04 LTS (x64) are supported platforms. Every
+  release's `.deb` and AppImage are installed and opened on clean Ubuntu
+  22.04 and 24.04 before the release is drafted (`linux-smoke.yml`):
+  the app starts, an agent runs a turn and PDF export works.
+- Getting started explains installing, updating and removing Contour on
+  Ubuntu, FUSE for the AppImage, and where the logs are; troubleshooting
+  covers a blank window under Wayland.
+
 ### Fixed
+
+- The Linux `.deb` and AppImage open the app instead of "UI bundle not
+  found".
+- Contour is listed under Graphics and Development in the Linux app menu,
+  with a proper description, and the `.deb` recommends `xdg-utils`.
+- The menu bar has one Help menu, and Project comes before Window.
 
 - The Windows installer (`.msi`) builds for pre-release versions: WiX gets a
   numeric version (`0.2.0-beta.2` → `0.2.0.102`) from `scripts/msi-version.sh`.
