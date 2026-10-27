@@ -11,6 +11,10 @@ on:
   pull_request:
     paths:
       - apps/desktop/**
+      # Where the installed app finds its files and the agent CLIs.
+      - crates/od-server/src/routes/ui.rs
+      - crates/od-server/src/lib.rs
+      - crates/od-runtime/src/login_path.rs
       - scripts/linux-smoke.sh
       - scripts/linux-deps.sh
       - .github/workflows/linux-smoke.yml

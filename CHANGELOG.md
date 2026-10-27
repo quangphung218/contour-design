@@ -27,7 +27,6 @@ All notable changes to Contour are recorded here. The format follows
 - Contour is listed under Graphics and Development in the Linux app menu,
   with a proper description, and the `.deb` recommends `xdg-utils`.
 - The menu bar has one Help menu, and Project comes before Window.
-
 - The Windows installer (`.msi`) builds for pre-release versions: WiX gets a
   numeric version (`0.2.0-beta.2` → `0.2.0.102`) from `scripts/msi-version.sh`.
 
