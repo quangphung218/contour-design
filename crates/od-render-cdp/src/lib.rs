@@ -646,8 +646,20 @@ struct PageInfo {
 fn file_url(path: &Path) -> RenderResult<String> {
     let abs = std::fs::canonicalize(path)
         .map_err(|e| RenderError::Failed(format!("{}: {e}", path.display())))?;
+    Ok(file_url_of(&abs.to_string_lossy()))
+}
+
+/// The `file://` URL of an absolute path. On Windows `canonicalize` gives a
+/// verbatim path (`\\?\C:\…`, `\\?\UNC\server\share\…`), which no browser
+/// opens as a URL (`file:////%3F/C:/…`): the prefix goes first.
+fn file_url_of(abs: &str) -> String {
+    let unverbatim = if let Some(unc) = abs.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        abs.strip_prefix(r"\\?\").unwrap_or(abs).to_owned()
+    };
     let mut url = String::from("file://");
-    let s = abs.to_string_lossy().replace('\\', "/");
+    let s = unverbatim.replace('\\', "/");
     if !s.starts_with('/') {
         url.push('/');
     }
@@ -658,7 +670,7 @@ fn file_url(path: &Path) -> RenderResult<String> {
             url.push_str(&format!("%{b:02X}"));
         }
     }
-    Ok(url)
+    url
 }
 
 /// `url` names the same file as `allowed` (fragment and percent-encoding
@@ -965,6 +977,23 @@ mod tests {
         let url = file_url(&file).unwrap();
         assert!(url.starts_with("file:///"), "{url}");
         assert!(url.ends_with("/a%20b%23.html"), "{url}");
+    }
+
+    #[test]
+    fn windows_verbatim_paths_become_plain_file_urls() {
+        assert_eq!(
+            file_url_of(r"\\?\C:\Users\u\AppData\Roaming\contour\projects\p 1\index.html"),
+            "file:///C:/Users/u/AppData/Roaming/contour/projects/p%201/index.html"
+        );
+        assert_eq!(
+            file_url_of(r"\\?\UNC\server\share\index.html"),
+            "file:////server/share/index.html"
+        );
+        assert_eq!(
+            file_url_of(r"C:\work\index.html"),
+            "file:///C:/work/index.html"
+        );
+        assert_eq!(file_url_of("/tmp/index.html"), "file:///tmp/index.html");
     }
 
     #[test]
