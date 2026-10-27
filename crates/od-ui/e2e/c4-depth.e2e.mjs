@@ -112,13 +112,26 @@ try {
     return route.abort();
   });
   await loopbackOnly(context);
-  const page = await context.newPage();
   const pageErrors = [];
-  page.on('pageerror', (e) => { pageErrors.push(e.message); log('page error:', e.message); });
-  page.on('console', (m) => {
-    if (m.type() === 'error' && m.text().includes('panicked at')) pageErrors.push(m.text().slice(0, 500));
-    if (m.type() === 'warning' && m.text().includes('unknown keys')) pageErrors.push(m.text().slice(0, 300));
-  });
+  const watch = (p) => {
+    p.on('pageerror', (e) => { pageErrors.push(e.message); log('page error:', e.message); });
+    p.on('console', (m) => {
+      if (m.type() === 'error' && m.text().includes('panicked at')) pageErrors.push(m.text().slice(0, 500));
+      if (m.type() === 'warning' && m.text().includes('unknown keys')) pageErrors.push(m.text().slice(0, 300));
+    });
+    return p;
+  };
+  let page = watch(await context.newPage());
+  // A fresh tab, the old one closed. Every `goto` loads the whole app (the
+  // debug WASM is 78 MB), and one tab's renderer does not give that memory
+  // back between loads: on CI it grew from 0.6 GB to 7 GB over the ~110
+  // loads before Arabic, and on a busy runner the browser stalled there
+  // ("timed out waiting for lang=ar", and no failure screenshot).
+  const freshTab = async () => {
+    const old = page;
+    page = watch(await context.newPage());
+    await old.close();
+  };
   const shot = async (name) => {
     for (const scheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: scheme });
@@ -187,7 +200,7 @@ try {
     }
     return out;
   });
-  const homeLink = page.locator('.nav-link[href="/"]');
+  const homeLink = () => page.locator('.nav-link[href="/"]');
 
   // 1. Settings ▸ Language lists all 20; picking German loads its strings.
   await page.goto(`${BASE}/settings`);
@@ -197,7 +210,7 @@ try {
   await picker.selectOption('de');
   await page.getByTestId('save-settings').click();
   await until(async () => (await page.locator('html').getAttribute('lang')) === 'de', 'lang=de');
-  await until(async () => (await homeLink.textContent()).includes(homeLabel('de')), 'German Home link');
+  await until(async () => (await homeLink().textContent()).includes(homeLabel('de')), 'German Home link');
   assert.equal((await (await fetch(`${BASE}/api/app-config`)).json()).locale, 'de');
   await page.locator('#settings-language').scrollIntoViewIfNeeded();
   await shot('settings-language-de');
@@ -208,11 +221,12 @@ try {
   const problems = [];
   const baseline = {};
   for (const tag of ['en', ...LOCALES]) {
+    await freshTab();
     await config({ locale: tag });
     for (const path of SCREENS(pid)) {
       await page.goto(`${BASE}${path}`);
       await until(async () => (await page.locator('html').getAttribute('lang')) === tag, `lang=${tag}`);
-      await until(async () => (await homeLink.textContent()).includes(homeLabel(tag)), `${tag} Home link`);
+      await until(async () => (await homeLink().textContent()).includes(homeLabel(tag)), `${tag} Home link`);
       const dir = await page.locator('html').getAttribute('dir');
       assert.equal(dir, ['ar', 'fa'].includes(tag) ? 'rtl' : 'ltr', `${tag} dir`);
       await sleep(150);
@@ -233,7 +247,7 @@ try {
   await shot('home-ar');
   await config({ locale: 'ja' });
   await page.goto(`${BASE}/automations`);
-  await until(async () => (await homeLink.textContent()).includes(homeLabel('ja')), 'ja');
+  await until(async () => (await homeLink().textContent()).includes(homeLabel('ja')), 'ja');
   await shot('automations-ja');
   // A browser in Brazilian Portuguese with no saved choice gets pt-BR.
   await config({ locale: null });

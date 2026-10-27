@@ -8,6 +8,36 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.4] - 2026-10-28
+
+### Added
+
+- Windows 10 and 11 (x64) are supported platforms. Every release's `.msi`
+  is installed silently, opened from its Start menu shortcut, runs an agent
+  turn and a PDF export, and is uninstalled on clean Windows Server 2025
+  and 2022 before the release is drafted (`windows-smoke.yml`). An
+  installer that builds but fails this stops the draft; the Windows build
+  itself stays best effort.
+- Getting started explains installing Contour on Windows (SmartScreen:
+  More info ▸ Run anyway), silent installs, uninstalling and where the logs
+  are; troubleshooting covers SmartScreen, a failed install and a blank
+  window.
+
+### Fixed
+
+- Windows finds agent CLIs installed with npm (`claude.cmd`) or a native
+  installer (`claude.exe`). Detection looked for the bare name, which on
+  Windows is npm's `sh` script or nothing. It also looks in
+  `%USERPROFILE%\.local\bin` and `%APPDATA%\npm`, and reads `Path` from
+  the registry, so an agent installed after signing in to Windows is found
+  without signing out; onboarding has Check again on Windows too.
+- Integrations ▸ install the Contour MCP server into Claude Code or Codex
+  works on Windows: it ran npm's `sh` script (`claude`, "not a valid Win32
+  application") or found nothing, instead of `claude.cmd` or `claude.exe`.
+- PDF, PNG and PPTX export work on Windows: Edge was handed a page address
+  it could not open (`file:////%3F/C:/…`) and the export failed after two
+  minutes with "loading the page: Request timed out".
+
 ## [0.2.0-beta.3] - 2026-10-27
 
 ### Added
@@ -207,7 +237,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.3...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.4...HEAD
+[0.2.0-beta.4]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.3...v0.2.0-beta.4
 [0.2.0-beta.3]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [0.2.0-beta.2]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/quangphung218/contour-design/compare/v0.1.0...v0.2.0-beta.1

@@ -269,6 +269,7 @@ before asking for review.
 | cargo-deny | `ci.yml` | Ubuntu | manual run only | licences, advisories, bans, sources (`deny.toml`) |
 | docs | `docs.yml` | Ubuntu | manual run only | `scripts/check-links.sh`, script tests, actionlint |
 | Linux smoke | `linux-smoke.yml` | PRs touching `apps/desktop/**` or the smoke files | release (blocks the draft); manual run | builds the AppImage and `.deb`, then `scripts/linux-smoke.sh` in ubuntu:22.04 and ubuntu:24.04 containers |
+| Windows smoke | `windows-smoke.yml` | PRs touching `apps/desktop/**`, the agent lookup or the smoke files | release (blocks the draft when the `.msi` built); manual run | builds the `.msi`, then `scripts/windows-smoke.ps1` on windows-2025 and windows-2022 |
 | commit messages | `docs.yml` | Ubuntu, PRs only | no | commitlint over the PR's commits |
 
 `ci.yml` skips changes that only touch `docs/**` or Markdown; `docs.yml`

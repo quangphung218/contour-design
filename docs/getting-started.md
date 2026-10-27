@@ -14,7 +14,7 @@ Releases are published on the repository's
 |---|---|---|
 | macOS 13.3 or later (Apple silicon and Intel) | `Contour_<version>_universal.dmg` | Open the `.dmg` and drag Contour to Applications. Unsigned builds need one extra step the first time: see [Open an unsigned build on macOS](#open-an-unsigned-build-on-macos). |
 | Ubuntu 22.04 LTS or 24.04 LTS (x64) | `Contour_<version>_amd64.deb` or `Contour_<version>_amd64.AppImage` | `sudo apt install ./Contour_<version>_amd64.deb`, or run the AppImage. See [Install on Ubuntu](#install-on-ubuntu). Other x64 distributions with WebKitGTK 4.1 are best effort. |
-| Windows x64 | `Contour_<version>_x64_en-US.msi` | Best effort: Windows is compile-checked but not tested yet. |
+| Windows 10 or 11 (x64) | `Contour_<version>_x64_en-US.msi` | Double-click it; the installer is unsigned, so SmartScreen asks once. See [Install on Windows](#install-on-windows). |
 
 #### Open an unsigned build on macOS
 
@@ -46,6 +46,9 @@ Check a download against `SHA256SUMS` from the same release:
 shasum -a 256 -c SHA256SUMS --ignore-missing    # macOS
 sha256sum -c SHA256SUMS --ignore-missing        # Linux
 ```
+
+On Windows, compare `Get-FileHash .\Contour_<version>_x64_en-US.msi`
+(PowerShell) with the line in `SHA256SUMS`.
 
 #### Install on Ubuntu
 
@@ -89,6 +92,47 @@ prints there.
 its `PATH` (`bash -il`, which reads `~/.profile` and `~/.bashrc`), so
 agents installed with nvm, npm or the native installers (`~/.local/bin`)
 are found. PDF, image and PPTX export use Google Chrome or Chromium.
+
+#### Install on Windows
+
+Windows 10 and 11 on x64 are supported; every release's installer is
+installed, opened and uninstalled on clean Windows Server 2025 and 2022
+(the server editions of Windows 11 and 10) before it is published.
+
+1. Download `Contour_<version>_x64_en-US.msi` and double-click it.
+2. The installer is not signed yet, so Microsoft Defender SmartScreen may
+   say "Windows protected your PC". Click **More info**, check that the
+   app is `Contour_<version>_x64_en-US.msi`, then **Run anyway**.
+3. Allow the installer to make changes (it installs for all users, in
+   `C:\Program Files\Contour`). Contour is then in the Start menu.
+
+The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have;
+if it is missing the installer downloads it. To update, install the newer
+`.msi` the same way.
+
+To install without questions (a script, Intune), from an administrator
+PowerShell:
+
+```powershell
+msiexec /i Contour_<version>_x64_en-US.msi /qn /l*v contour-install.log
+```
+
+**Uninstall.** Settings ▸ Apps ▸ Installed apps ▸ Contour ▸ **Uninstall**,
+or `msiexec /x Contour_<version>_x64_en-US.msi /qn`. This removes the app
+and its Start menu entry. Your projects and settings stay in
+`%APPDATA%\contour`; delete that folder too to remove them.
+
+**Logs.** `%APPDATA%\contour\logs\daemon.log` (Help ▸ Report Issue opens
+the folder). The installer writes a log only when asked to, with
+`/l*v <file>` as above.
+
+**Agents.** Contour looks for `claude.exe`, `claude.cmd` and the like on
+your `Path`, including folders an installer added since you signed in to
+Windows, and in the usual install folders: `%USERPROFILE%\.local\bin`
+(the Claude Code installer) and `%APPDATA%\npm` (`npm install -g`).
+Installed an agent while Contour is open? Press **Check again** on the
+first screen. PDF, image and PPTX export use Microsoft Edge, which Windows
+has, or Chrome.
 
 ### Build from source
 

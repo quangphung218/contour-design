@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Tests for .github/workflows/release.yml: runs the shell of two steps with
-# fake `gh` and `npx`, and checks where the signing secrets can go.
+# Tests for .github/workflows/release.yml and windows-smoke.yml: runs the
+# shell of their steps with fake `gh` and `npx`, checks where the signing
+# secrets can go and which jobs wait for which.
 # Needs ruby (YAML parsing; present on macOS and GitHub's Ubuntu runners).
 # Usage: scripts/tests/release_workflow_test.sh   (or `make test-scripts`)
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 workflow="$here/../../.github/workflows/release.yml"
+windows_smoke="$here/../../.github/workflows/windows-smoke.yml"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 failures=0
@@ -13,13 +15,14 @@ check() {
   if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; [ -f "$work/out" ] && sed 's/^/     /' "$work/out"; failures=$((failures + 1)); fi
 }
 
-# step <name> <file>: the `run:` script of the step with that name.
+# step <name> <file> [workflow]: the `run:` script of the step with that
+# name (in release.yml unless another workflow is given).
 step() {
   ruby -ryaml -e '
     wf = YAML.load_file(ARGV[0])
     s = wf["jobs"].values.flat_map { |j| j["steps"] || [] }.find { |x| x["name"] == ARGV[1] }
     abort("no step #{ARGV[1]}") unless s
-    print s["run"].gsub(/\$\{\{\s*matrix\.args\s*\}\}/, "--bundles app")' "$workflow" "$1" > "$2"
+    print s["run"].gsub(/\$\{\{\s*matrix\.args\s*\}\}/, "--bundles app")' "${3:-$workflow}" "$1" > "$2"
 }
 
 # Secrets: only in the env of the "Tauri bundle" step, never via GITHUB_ENV.
@@ -114,8 +117,62 @@ ruby -ryaml -e '
   puts "release needs: #{Array(jobs["release"]["needs"]).sort.join(",")}"
   puts "smoke: #{smoke["uses"]} needs=#{Array(smoke["needs"]).join(",")}"
   puts "smoke artifact built: #{built.include?(smoke["with"]["artifact"])}"' "$workflow" > "$work/smoke" 2>&1
-check "the draft release waits for the Linux smoke test" 'grep -qx "release needs: bundle,linux-smoke" "$work/smoke"'
+check "the draft release waits for the Linux smoke test" 'grep -q "release needs: .*linux-smoke" "$work/smoke"'
 check "the Linux smoke test runs linux-smoke.yml after the bundles" 'grep -qx "smoke: ./.github/workflows/linux-smoke.yml needs=bundle" "$work/smoke"'
 check "the Linux smoke test gets an artifact the bundle job uploads" 'grep -qx "smoke artifact built: true" "$work/smoke"'
+
+# The draft release also waits for the Windows smoke test of the .msi, which
+# is skipped (not failed) when the best-effort Windows bundle did not build.
+ruby -ryaml -e '
+  jobs = YAML.load_file(ARGV[0])["jobs"]
+  smoke = jobs["windows-smoke"] or abort("no job windows-smoke")
+  windows = jobs["bundle"]["strategy"]["matrix"]["include"].find { |m| m["name"] == "windows-x64" }
+  upload = jobs["bundle"]["steps"].find { |s| s["uses"].to_s.start_with?("actions/upload-artifact") }
+  puts "smoke: #{smoke["uses"]} needs=#{Array(smoke["needs"]).join(",")}"
+  puts "smoke artifact: #{smoke["with"]["artifact"] == upload["with"]["name"].sub("${{ matrix.name }}", "windows-x64")}"
+  puts "windows bundle best effort: #{windows["best_effort"]} continue-on-error: #{jobs["bundle"]["continue-on-error"]}"' "$workflow" > "$work/wsmoke" 2>&1
+check "the draft release waits for the Windows smoke test" 'grep -qx "release needs: bundle,linux-smoke,windows-smoke" "$work/smoke"'
+check "the Windows smoke test runs windows-smoke.yml after the bundles" 'grep -qx "smoke: ./.github/workflows/windows-smoke.yml needs=bundle" "$work/wsmoke"'
+check "the Windows smoke test gets the .msi artifact the bundle job uploads" 'grep -qx "smoke artifact: true" "$work/wsmoke"'
+check "the Windows bundle stays best effort" 'grep -qx "windows bundle best effort: true continue-on-error: \${{ matrix.best_effort }}" "$work/wsmoke"'
+
+# windows-smoke.yml: the smoke jobs run only when "find the installer" found
+# one, and that step decides from what the bundle job left.
+ruby -ryaml -e '
+  jobs = YAML.load_file(ARGV[0])["jobs"]
+  installer = jobs["installer"] or abort("no job installer")
+  dl = installer["steps"].find { |s| s["uses"].to_s.start_with?("actions/download-artifact") }
+  puts "installer needs: #{Array(installer["needs"]).join(",")} download continue-on-error: #{dl["continue-on-error"]}"
+  puts "installer output: #{installer["outputs"]["msi"]}"
+  puts "smoke needs: #{Array(jobs["smoke"]["needs"]).join(",")} if: #{jobs["smoke"]["if"]}"
+  puts "smoke runners: #{jobs["smoke"]["strategy"]["matrix"]["os"].join(",")}"' "$windows_smoke" > "$work/wjobs" 2>&1
+check "a missing artifact does not fail the download in the installer job" 'grep -qx "installer needs: bundle download continue-on-error: true" "$work/wjobs"'
+check "the smoke jobs run only when the installer job found an .msi" 'grep -qx "installer output: \${{ steps.find.outputs.msi }}" "$work/wjobs" && grep -qx "smoke needs: installer if: \${{ !cancelled() && needs.installer.outputs.msi == '"'"'true'"'"' }}" "$work/wjobs"'
+check "the smoke test runs on Windows Server 2025 and 2022" 'grep -qx "smoke runners: windows-2025,windows-2022" "$work/wjobs"'
+
+step "Find the installer" "$work/find.sh" "$windows_smoke"
+find_installer() {
+  rm -rf "$work/find" && mkdir -p "$work/find/dist-release" && : > "$work/find/output"
+  for f in "${@:2}"; do touch "$work/find/dist-release/$f"; done
+  (cd "$work/find" && env GITHUB_OUTPUT="$work/find/output" FROM_RELEASE="$1" bash "$work/find.sh") >"$work/out" 2>&1
+}
+find_installer 1 Contour_9.9.9_x64_en-US.msi; rc=$?
+check "release with an .msi: the smoke test runs" '[ $rc -eq 0 ] && grep -qx "msi=true" "$work/find/output"'
+find_installer 1; rc=$?
+check "release without an .msi: skipped with a warning, the draft goes on" '[ $rc -eq 0 ] && grep -qx "msi=false" "$work/find/output" && grep -q "::warning::no Windows installer" "$work/out"'
+find_installer 0; rc=$?
+check "built on the branch without an .msi: fails" '[ $rc -ne 0 ] && ! grep -q "msi=" "$work/find/output"'
+find_installer 1 a.msi b.msi; rc=$?
+check "two .msi files: fails" '[ $rc -ne 0 ] && ! grep -q "msi=" "$work/find/output"'
+
+# The branch build and the smoke test agree with release.yml on the MSI version.
+printf '[workspace.package]\nversion = "9.9.9-rc.3"\n' > "$work/Cargo.toml"
+step "Tauri bundle" "$work/wbundle.sh" "$windows_smoke"
+(cd "$work/apps/desktop" && env WORK="$work" PATH="$work/bin:$PATH" TAURI_CLI_VERSION=0 bash "$work/wbundle.sh") >"$work/out" 2>&1; rc=$?
+check "the branch's .msi gets the numeric version from Cargo.toml" '[ $rc -eq 0 ] && [ "$(wix_version)" = 9.9.9.203 ] && grep -qx -- "--bundles" "$work/npx-args" && grep -qx msi "$work/npx-args"'
+step "Installer version" "$work/wversion.sh" "$windows_smoke"
+: > "$work/version-output"
+(cd "$work" && env GITHUB_OUTPUT="$work/version-output" bash "$work/wversion.sh") >"$work/out" 2>&1; rc=$?
+check "the smoke test expects that same installer version" '[ $rc -eq 0 ] && grep -qx "msi=9.9.9.203" "$work/version-output"'
 
 [ "$failures" -eq 0 ] && echo "release.yml: all checks passed" || { echo "release.yml: $failures failed"; exit 1; }

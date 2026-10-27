@@ -16,17 +16,54 @@ pub const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 pub fn resolve_bin(def: &RuntimeDef, path: &OsStr) -> Option<PathBuf> {
     std::iter::once(def.bin)
         .chain(def.fallback_bins.iter().copied())
-        .find_map(|name| find_on_path(name, path))
+        .find_map(|name| find_bin(name, path))
 }
 
-fn find_on_path(name: &str, path: &OsStr) -> Option<PathBuf> {
-    if name.contains('/') {
+/// The executable a CLI called `name` is started from: the first match on
+/// `path`, as Windows names it there (`claude.exe`, `claude.cmd`), or
+/// `name` itself when it is a path.
+#[must_use]
+pub fn find_bin(name: &str, path: &OsStr) -> Option<PathBuf> {
+    find_in(name, path, cfg!(windows))
+}
+
+fn find_in(name: &str, path: &OsStr, windows: bool) -> Option<PathBuf> {
+    if name.contains('/') || name.contains(std::path::MAIN_SEPARATOR) {
         let p = PathBuf::from(name);
         return is_executable(&p).then_some(p);
     }
-    std::env::split_paths(path)
-        .map(|dir| dir.join(name))
-        .find(|candidate| is_executable(candidate))
+    let names = file_names(name, windows);
+    std::env::split_paths(path).find_map(|dir| {
+        names
+            .iter()
+            .map(|n| dir.join(n))
+            .find(|candidate| is_executable(candidate))
+    })
+}
+
+/// What Windows can start without a shell; `.exe` first (the native
+/// installers), then npm's `.cmd` shims.
+const WINDOWS_EXTENSIONS: &[&str] = &["exe", "cmd", "bat", "com"];
+
+/// The files `name` may be on disk: itself off Windows. On Windows the
+/// name with each of [`WINDOWS_EXTENSIONS`], never the bare name: npm
+/// installs a `sh` script called `claude` next to `claude.cmd`, and
+/// Windows cannot run it.
+fn file_names(name: &str, windows: bool) -> Vec<String> {
+    if !windows {
+        return vec![name.to_owned()];
+    }
+    let has_extension = Path::new(name)
+        .extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|e| WINDOWS_EXTENSIONS.iter().any(|w| w.eq_ignore_ascii_case(e)));
+    if has_extension {
+        return vec![name.to_owned()];
+    }
+    WINDOWS_EXTENSIONS
+        .iter()
+        .map(|e| format!("{name}.{e}"))
+        .collect()
 }
 
 /// A regular file with an execute bit (any file off Unix).
@@ -185,4 +222,51 @@ pub async fn detect_all_in(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_looks_for_the_exe_and_the_npm_shim() {
+        assert_eq!(file_names("claude", false), ["claude"]);
+        assert_eq!(
+            file_names("claude", true),
+            ["claude.exe", "claude.cmd", "claude.bat", "claude.com"]
+        );
+        assert_eq!(file_names("claude.CMD", true), ["claude.CMD"]);
+        // A dot in the name is not an extension Windows runs.
+        assert_eq!(
+            file_names("cursor-agent.v2", true)[0],
+            "cursor-agent.v2.exe"
+        );
+    }
+
+    /// npm's global folder on Windows: `claude` (a `sh` script), `claude.cmd`
+    /// and `claude.ps1`. Only the `.cmd` can be started. Runs on every OS:
+    /// the files are executable, so only the Windows naming decides.
+    #[test]
+    fn finds_the_cmd_shim_not_the_sh_script() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["claude", "claude.cmd", "claude.ps1"] {
+            let file = dir.path().join(name);
+            std::fs::write(&file, "").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+        let path = dir.path().as_os_str();
+        assert_eq!(
+            find_in("claude", path, true),
+            Some(dir.path().join("claude.cmd"))
+        );
+        assert_eq!(
+            find_in("claude", path, false),
+            Some(dir.path().join("claude"))
+        );
+        assert_eq!(find_in("codex", path, true), None);
+    }
 }

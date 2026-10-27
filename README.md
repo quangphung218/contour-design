@@ -56,10 +56,12 @@ The full tour is in [docs/features.md](docs/features.md).
 Get the latest build from
 [Releases](https://github.com/quangphung218/contour-design/releases): a
 universal `.dmg` for macOS 13.3 or later, a `.deb` or `.AppImage` for
-Ubuntu 22.04 LTS and later (x64), and an `.msi` for Windows (untested).
-Each release has a `SHA256SUMS` file. On Ubuntu: `sudo apt install
+Ubuntu 22.04 LTS and later (x64), and an `.msi` for Windows 10 and 11
+(x64). Each release has a `SHA256SUMS` file. On Ubuntu: `sudo apt install
 ./Contour_<version>_amd64.deb`
-([details](docs/getting-started.md#install-on-ubuntu)).
+([details](docs/getting-started.md#install-on-ubuntu)). On Windows,
+double-click the `.msi`; it is unsigned, so SmartScreen asks once: **More
+info ▸ Run anyway** ([details](docs/getting-started.md#install-on-windows)).
 
 Builds without a signing certificate are unsigned, and macOS stops them the
 first time. On **macOS 15 and later**, open Contour once, then go to
@@ -121,13 +123,13 @@ The row-by-row feature comparison with evidence is in
   [troubleshooting](docs/troubleshooting.md#the-window-is-blank-or-white-wayland-nvidia).
   Other distributions with WebKitGTK 4.1 are not tested, and there is no
   ARM build.
-- **Windows is not tested.** Job Objects, ConPTY and the WebView2 app only
-  pass a compile check; CI builds it but runs no tests.
-- **Windows may not find an installed agent.** Detection looks for the bare
-  name (`claude`), not `claude.exe`, and the install folders Check again
-  adds hang off `HOME`, which Windows usually does not set; a restart does
-  not help. Onboarding on Windows therefore links each agent's setup page
-  and the API key path, with no install command or Check again.
+- **Windows means Windows 10 and 11 on x64, smoke-tested.** Each release's
+  `.msi` is installed, opened, runs an agent turn and a PDF export, and is
+  uninstalled on Windows Server 2025 and 2022 before the release is drafted.
+  The unit tests, terminal tabs (ConPTY) and stopping an agent's process
+  tree (Job Objects) are only compile-checked there. The installer is
+  unsigned, and there is no ARM64 build. Onboarding links each agent's
+  setup page rather than giving an install command.
 - **External MCP servers reach Claude, ACP agents and OpenCode only**, as in
   the original app; ACP takes stdio servers only.
 - **Fully detached processes can survive.** An MCP stdio helper that

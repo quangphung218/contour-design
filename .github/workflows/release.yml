@@ -88,7 +88,8 @@ jobs:
             args: --bundles appimage,deb
             out: target/release/bundle
             best_effort: false
-          # Windows is not tested yet (README, Known limitations): best effort.
+          # Best effort: a failed Windows build does not stop the release.
+          # An installer that builds must pass the Windows smoke test below.
           - name: windows-x64
             os: windows-2025
             rust_targets: wasm32-unknown-unknown
@@ -183,9 +184,20 @@ jobs:
       artifact: bundle-linux-x64
       ref: ${{ github.event.inputs.tag || github.ref_name }}
 
+  # The .msi installed, opened and uninstalled on clean Windows Server 2025
+  # and 2022 (windows-smoke.yml). A broken installer stops the draft
+  # release; a run whose Windows bundle did not build skips it.
+  windows-smoke:
+    name: Windows smoke
+    needs: bundle
+    uses: ./.github/workflows/windows-smoke.yml
+    with:
+      artifact: bundle-windows-x64
+      ref: ${{ github.event.inputs.tag || github.ref_name }}
+
   release:
     name: draft GitHub Release
-    needs: [bundle, linux-smoke]
+    needs: [bundle, linux-smoke, windows-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
