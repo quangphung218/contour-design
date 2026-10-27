@@ -31,6 +31,9 @@ All notable changes to Contour are recorded here. The format follows
   `%USERPROFILE%\.local\bin` and `%APPDATA%\npm`, and reads `Path` from
   the registry, so an agent installed after signing in to Windows is found
   without signing out; onboarding has Check again on Windows too.
+- Integrations ▸ install the Contour MCP server into Claude Code or Codex
+  works on Windows: it ran npm's `sh` script (`claude`, "not a valid Win32
+  application") or found nothing, instead of `claude.cmd` or `claude.exe`.
 - PDF, PNG and PPTX export work on Windows: Edge was handed a page address
   it could not open (`file:////%3F/C:/…`) and the export failed after two
   minutes with "loading the page: Request timed out".

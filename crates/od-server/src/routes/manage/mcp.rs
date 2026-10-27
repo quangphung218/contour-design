@@ -182,9 +182,8 @@ pub async fn install_route(
     let res = tokio::task::spawn_blocking(move || {
         let plan = install::plan(agent, &spec, &home, SERVER_NAME);
         let runner = |bin: &str, argv: &[String]| -> std::io::Result<i32> {
-            let found = std::env::split_paths(&path)
-                .map(|d| d.join(bin))
-                .find(|p| p.is_file())
+            // `claude.cmd` / `claude.exe` on Windows, as agent detection finds it.
+            let found = od_runtime::detect::find_bin(bin, &path)
                 .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "not on PATH"))?;
             let status = std::process::Command::new(found)
                 .args(argv)

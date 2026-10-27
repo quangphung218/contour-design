@@ -16,15 +16,23 @@ pub const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 pub fn resolve_bin(def: &RuntimeDef, path: &OsStr) -> Option<PathBuf> {
     std::iter::once(def.bin)
         .chain(def.fallback_bins.iter().copied())
-        .find_map(|name| find_on_path(name, path))
+        .find_map(|name| find_bin(name, path))
 }
 
-fn find_on_path(name: &str, path: &OsStr) -> Option<PathBuf> {
+/// The executable a CLI called `name` is started from: the first match on
+/// `path`, as Windows names it there (`claude.exe`, `claude.cmd`), or
+/// `name` itself when it is a path.
+#[must_use]
+pub fn find_bin(name: &str, path: &OsStr) -> Option<PathBuf> {
+    find_in(name, path, cfg!(windows))
+}
+
+fn find_in(name: &str, path: &OsStr, windows: bool) -> Option<PathBuf> {
     if name.contains('/') || name.contains(std::path::MAIN_SEPARATOR) {
         let p = PathBuf::from(name);
         return is_executable(&p).then_some(p);
     }
-    let names = file_names(name, cfg!(windows));
+    let names = file_names(name, windows);
     std::env::split_paths(path).find_map(|dir| {
         names
             .iter()
@@ -236,15 +244,29 @@ mod tests {
     }
 
     /// npm's global folder on Windows: `claude` (a `sh` script), `claude.cmd`
-    /// and `claude.ps1`. Only the `.cmd` can be started.
-    #[cfg(windows)]
+    /// and `claude.ps1`. Only the `.cmd` can be started. Runs on every OS:
+    /// the files are executable, so only the Windows naming decides.
     #[test]
     fn finds_the_cmd_shim_not_the_sh_script() {
         let dir = tempfile::tempdir().unwrap();
         for name in ["claude", "claude.cmd", "claude.ps1"] {
-            std::fs::write(dir.path().join(name), "").unwrap();
+            let file = dir.path().join(name);
+            std::fs::write(&file, "").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
         }
-        let found = find_on_path("claude", dir.path().as_os_str());
-        assert_eq!(found, Some(dir.path().join("claude.cmd")));
+        let path = dir.path().as_os_str();
+        assert_eq!(
+            find_in("claude", path, true),
+            Some(dir.path().join("claude.cmd"))
+        );
+        assert_eq!(
+            find_in("claude", path, false),
+            Some(dir.path().join("claude"))
+        );
+        assert_eq!(find_in("codex", path, true), None);
     }
 }
