@@ -4,8 +4,9 @@
 # waits for the in-process daemon's /api/health to report the expected
 # version, checks that an agent CLI installed the way npm installs one (a
 # `.cmd` shim in a folder on the user's Path, which the app's own
-# environment does not have yet) is found and runs, exports a PDF through
-# Edge, saves a screenshot of the window, closes it and uninstalls. Logs go to the out dir.
+# environment does not have yet) is found and runs, that Check again finds
+# one installed while the app runs, exports a PDF through Edge, saves a
+# screenshot of the window, closes it and uninstalls. Logs go to the out dir.
 # Usage: pwsh scripts/windows-smoke.ps1 <Contour_*.msi> [out-dir]
 # EXPECTED_VERSION overrides the version read from Cargo.toml; MSI_VERSION
 # is the installer's numeric version (scripts/msi-version.sh), checked when set.
@@ -155,6 +156,21 @@ else {
   $events = try { (Invoke-WebRequest "$url/api/runs/$($run.runId)" -UseBasicParsing).Content } catch { "$_" }
   Fail "agent run $($run.runId) ended '$status'" $events
 }
+
+# An agent installed while the app runs: its folder joins the user's Path
+# in the registry only, and Check again (POST /api/agents/rescan) finds it.
+$laterDir = Join-Path $env:LOCALAPPDATA "smoke-later"
+New-Item -ItemType Directory -Force -Path $laterDir | Out-Null
+Set-Content -Path "$laterDir\codex.cmd" -Encoding ascii -Value "@echo codex-cli 0.0.0-smoke"
+if (Get-Command codex -ErrorAction SilentlyContinue) { Fail "a codex is already on this machine's PATH" (Get-Command codex).Source }
+$before = (Invoke-RestMethod "$url/api/agents").agents | Where-Object { $_.id -eq "codex" }
+if ($before.available) { Fail "codex is found before it is installed" ($before | ConvertTo-Json -Compress) }
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$userPath;$laterDir", "User")
+$rescan = Invoke-RestMethod -Method Post "$url/api/agents/rescan"
+$codex = $rescan.agents | Where-Object { $_.id -eq "codex" }
+if ($codex.available -and $codex.path -eq "$laterDir\codex.cmd") { Ok "Check again finds an agent installed while the app runs ($($codex.path))" }
+else { Fail "Check again does not find codex.cmd added to the user's Path" ($codex | ConvertTo-Json -Compress) }
 
 # PDF export drives the Microsoft Edge that Windows ships.
 try {
