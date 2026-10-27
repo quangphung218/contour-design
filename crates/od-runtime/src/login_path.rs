@@ -106,15 +106,23 @@ mod tests {
 
     /// A new binary's first exec can take seconds on a loaded Mac (it
     /// scans it), past the 3 s login shell limit; run a fresh fake shell
-    /// once before timing it.
+    /// once before timing it. On Linux the first exec can also fail with
+    /// "text file busy" (ETXTBSY) while another test's fork still holds the
+    /// script open from when it was written; retry until it runs.
     #[cfg(unix)]
     fn warm_up(shell: &Path) {
-        let _ = std::process::Command::new(shell)
-            .args(["-ilc", "true"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
+        for _ in 0..100 {
+            let started = std::process::Command::new(shell)
+                .args(["-ilc", "true"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            if started.is_ok() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 
     #[test]

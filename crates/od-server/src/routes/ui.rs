@@ -42,9 +42,10 @@ const ENUM_KEYS: [(&str, &[&str]); 2] = [
 /// Serialises read-modify-write of `app-config.json` within this process.
 static CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
-/// UI routes, serving the bundle found by [`resolve_ui_dist`].
-pub fn routes() -> Router<AppState> {
-    routes_with_dist(resolve_ui_dist())
+/// UI routes, serving the bundle found by [`resolve_ui_dist`] for the
+/// bundled content at `resource_root`.
+pub fn routes(resource_root: &Path) -> Router<AppState> {
+    routes_with_dist(resolve_ui_dist(resource_root))
 }
 
 /// UI routes serving the bundle in `dist`.
@@ -56,17 +57,33 @@ pub fn routes_with_dist(dist: PathBuf) -> Router<AppState> {
         .fallback(move |req: Request| serve_static(Arc::clone(&dist), req))
 }
 
-/// `OD_UI_DIST`, then `ui/` next to the executable (or one level up), then
-/// `crates/od-ui/dist` in the source tree.
+/// `OD_UI_DIST`, then `ui/` next to the executable (or one level up, or in
+/// `../Resources`), then `ui/` next to the bundled content (the Linux
+/// packages: `/usr/lib/Contour/{content,ui}`, the binary in `/usr/bin`),
+/// then `crates/od-ui/dist` in the source tree.
 #[must_use]
-pub fn resolve_ui_dist() -> PathBuf {
-    if let Some(dir) = std::env::var_os(UI_DIST_ENV).filter(|v| !v.is_empty()) {
+pub fn resolve_ui_dist(resource_root: &Path) -> PathBuf {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf));
+    ui_dist_in(
+        std::env::var_os(UI_DIST_ENV),
+        exe_dir.as_deref(),
+        resource_root,
+    )
+}
+
+/// [`resolve_ui_dist`] with the environment passed in.
+fn ui_dist_in(
+    env: Option<std::ffi::OsString>,
+    exe_dir: Option<&Path>,
+    resource_root: &Path,
+) -> PathBuf {
+    if let Some(dir) = env.filter(|v| !v.is_empty()) {
         return PathBuf::from(dir);
     }
     let source_tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../od-ui/dist");
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(Path::to_path_buf))
+    exe_dir
         .into_iter()
         .flat_map(|exe| {
             [
@@ -75,6 +92,7 @@ pub fn resolve_ui_dist() -> PathBuf {
                 exe.join("../Resources/ui"),
             ]
         })
+        .chain(resource_root.parent().map(|r| r.join("ui")))
         .find(|c| c.join("index.html").is_file())
         .unwrap_or(source_tree)
 }
@@ -590,6 +608,30 @@ mod tests {
             Value::Object(c),
             json!({"agentId": "claude", "theme": "dark"})
         );
+    }
+
+    /// The Linux packages put the binary in `/usr/bin` and the bundle in
+    /// `/usr/lib/Contour/ui`, next to the bundled content, not the binary.
+    #[test]
+    fn the_bundle_is_found_next_to_the_content_root() {
+        let tmp = std::env::temp_dir().join(format!("od-ui-dist-{}", std::process::id()));
+        let lib = tmp.join("usr/lib/Contour");
+        let bin = tmp.join("usr/bin");
+        for dir in [lib.join("ui"), lib.join("content/skills"), bin.clone()] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(lib.join("ui/index.html"), "<html>").unwrap();
+        let found = ui_dist_in(None, Some(&bin), &lib.join("content"));
+        assert_eq!(
+            found.canonicalize().unwrap(),
+            lib.join("ui").canonicalize().unwrap()
+        );
+        // OD_UI_DIST still wins; nothing found falls back to the source tree.
+        let custom = ui_dist_in(Some("/srv/ui".into()), Some(&bin), &lib.join("content"));
+        assert_eq!(custom, PathBuf::from("/srv/ui"));
+        let none = ui_dist_in(None, Some(&bin), &tmp.join("nowhere"));
+        assert!(none.ends_with("od-ui/dist"), "{none:?}");
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

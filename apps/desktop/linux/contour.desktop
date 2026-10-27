@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name={{name}}
+GenericName=Design Studio
+Comment={{comment}}
+Exec={{exec}}
+Icon={{icon}}
+StartupWMClass={{exec}}
+Terminal=false
+StartupNotify=true
+Categories=Graphics;Development;
+Keywords=design;prototype;slides;agent;claude;codex;

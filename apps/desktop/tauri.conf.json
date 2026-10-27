@@ -14,8 +14,19 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
+    "category": "GraphicsAndDesign",
+    "shortDescription": "Local-first AI design studio that drives your coding agent CLI",
+    "longDescription": "Contour turns a brief into HTML prototypes and slide decks with the coding agent CLI you already use (Claude Code, Codex, Cursor, Copilot and more), with a live preview, comments, versions and export. Everything runs on your machine; no account, no telemetry.",
+    "homepage": "https://github.com/quangphung218/contour-design",
+    "publisher": "Contour contributors",
     "macOS": {
       "minimumSystemVersion": "13.3"
+    },
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/contour.desktop",
+        "recommends": ["xdg-utils"]
+      }
     },
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "resources": {

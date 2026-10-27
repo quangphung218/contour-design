@@ -30,7 +30,9 @@ with `--daemon-url http://127.0.0.1:7460`. `make dev` expects 7456 because
 
 ### The UI is blank or shows "UI bundle not found"
 
-The daemon serves `crates/od-ui/dist` (or `OD_UI_DIST`). Build it:
+The Linux `.deb` and AppImage of 0.2.0-beta.2 and earlier open on this
+page: update to a newer release. From source, the daemon serves
+`crates/od-ui/dist` (or `OD_UI_DIST`). Build it:
 
 ```bash
 make ui-dist
@@ -60,6 +62,46 @@ yourself or start once with `OD_DATA_DIR` pointing at the old folder. On
 Windows, builds started without `HOME` kept their data in `.od` inside the
 folder they were started from; Contour does not move that one.
 
+## Ubuntu and other Linux
+
+### The window is blank or white (Wayland, NVIDIA)
+
+WebKitGTK's DMA-BUF renderer fails on some GPU drivers, mostly NVIDIA
+under Wayland. Start Contour with it turned off:
+
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=1 od-desktop
+```
+
+If that works, make it stick for the app menu: copy the menu entry and
+edit its `Exec` line.
+
+```bash
+cp /usr/share/applications/Contour.desktop ~/.local/share/applications/
+sed -i 's|^Exec=|Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 |' ~/.local/share/applications/Contour.desktop
+```
+
+Still blank: try `WEBKIT_DISABLE_COMPOSITING_MODE=1` as well, or log in with
+"Ubuntu on Xorg" from the login screen's gear menu.
+
+### The AppImage does not start: "dlopen(): error loading libfuse.so.2"
+
+AppImages need FUSE 2: `sudo apt install libfuse2` on Ubuntu 22.04,
+`sudo apt install libfuse2t64` on 24.04. Or run it without FUSE:
+`APPIMAGE_EXTRACT_AND_RUN=1 ./Contour_<version>_amd64.AppImage`. The
+`.deb` has neither problem.
+
+### The AppImage quits at start: "Couldn't open libGLESv2.so.2"
+
+The AppImage brings WebKitGTK but uses the system's OpenGL libraries, and
+a minimal install may lack OpenGL ES: `sudo apt install libgles2`. The
+`.deb` pulls in everything it needs.
+
+### `apt install` says "unable to locate package" or "is not a .deb"
+
+Give `apt` a path, with `./` in front: `sudo apt install ./Contour_<version>_amd64.deb`.
+Without it, `apt` searches its repositories for a package of that name.
+
 ## Agents
 
 ### No agent is detected
@@ -67,9 +109,10 @@ folder they were started from; Contour does not move that one.
 Detection looks for the binary on the daemon's `PATH`. In a terminal,
 `which claude` (or `codex`, …) must print a path.
 
-- Desktop app started from Finder: Contour reads `PATH` from your login
-  shell. Put the agent's folder on `PATH` in `~/.zprofile` or `~/.zshrc`,
-  quit the app and open it again.
+- Desktop app started from Finder or the Ubuntu app menu: Contour reads
+  `PATH` from your login shell (`$SHELL -il`). Put the agent's folder on
+  `PATH` in `~/.zprofile` or `~/.zshrc` (macOS), `~/.profile` or
+  `~/.bashrc` (Ubuntu), quit the app and open it again.
 - Installed it while Contour was open: press **Refresh** on the agent
   picker. Nothing is cached.
 - Check what the daemon sees: `curl -s http://127.0.0.1:7456/api/agents`.

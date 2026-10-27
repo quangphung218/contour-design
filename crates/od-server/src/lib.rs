@@ -88,7 +88,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/runs/{id}/events", get(runs::events))
         .route("/api/runs/{id}/cancel", post(runs::cancel))
         .route("/api/runs/{id}/steer", post(runs::steer))
-        .merge(routes::ui::routes())
+        .merge(routes::ui::routes(&state.config.resource_root))
         .merge(routes::export::routes())
         .merge(routes::file_ops::routes())
         .merge(routes::media::routes())

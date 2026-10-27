@@ -104,4 +104,18 @@ check "macOS tests come from ci.yml with only=macos" 'grep -qx "macos-tests: ./.
 check "the Windows build runs from ci.yml with only=windows" 'grep -qx "windows-build: ./.github/workflows/ci.yml only=windows" "$work/gates"'
 check "no job waits for the Windows build" 'grep -qx "waits for windows: " "$work/gates"'
 
+# The draft release waits for the Linux smoke test of the bundle just built.
+ruby -ryaml -e '
+  jobs = YAML.load_file(ARGV[0])["jobs"]
+  smoke = jobs["linux-smoke"] or abort("no job linux-smoke")
+  names = jobs["bundle"]["strategy"]["matrix"]["include"].map { |m| m["name"] }
+  upload = jobs["bundle"]["steps"].find { |s| s["uses"].to_s.start_with?("actions/upload-artifact") }
+  built = names.map { |n| upload["with"]["name"].sub("${{ matrix.name }}", n) }
+  puts "release needs: #{Array(jobs["release"]["needs"]).sort.join(",")}"
+  puts "smoke: #{smoke["uses"]} needs=#{Array(smoke["needs"]).join(",")}"
+  puts "smoke artifact built: #{built.include?(smoke["with"]["artifact"])}"' "$workflow" > "$work/smoke" 2>&1
+check "the draft release waits for the Linux smoke test" 'grep -qx "release needs: bundle,linux-smoke" "$work/smoke"'
+check "the Linux smoke test runs linux-smoke.yml after the bundles" 'grep -qx "smoke: ./.github/workflows/linux-smoke.yml needs=bundle" "$work/smoke"'
+check "the Linux smoke test gets an artifact the bundle job uploads" 'grep -qx "smoke artifact built: true" "$work/smoke"'
+
 [ "$failures" -eq 0 ] && echo "release.yml: all checks passed" || { echo "release.yml: $failures failed"; exit 1; }

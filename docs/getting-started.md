@@ -13,7 +13,7 @@ Releases are published on the repository's
 | Platform | File | Notes |
 |---|---|---|
 | macOS 13.3 or later (Apple silicon and Intel) | `Contour_<version>_universal.dmg` | Open the `.dmg` and drag Contour to Applications. Unsigned builds need one extra step the first time: see [Open an unsigned build on macOS](#open-an-unsigned-build-on-macos). |
-| Linux x64 | `Contour_<version>_amd64.AppImage` or `.deb` | `chmod +x` the AppImage and run it, or `sudo apt install ./Contour_<version>_amd64.deb`. |
+| Ubuntu 22.04 LTS or 24.04 LTS (x64) | `Contour_<version>_amd64.deb` or `Contour_<version>_amd64.AppImage` | `sudo apt install ./Contour_<version>_amd64.deb`, or run the AppImage. See [Install on Ubuntu](#install-on-ubuntu). Other x64 distributions with WebKitGTK 4.1 are best effort. |
 | Windows x64 | `Contour_<version>_x64_en-US.msi` | Best effort: Windows is compile-checked but not tested yet. |
 
 #### Open an unsigned build on macOS
@@ -43,8 +43,52 @@ xattr -dr com.apple.quarantine /Applications/Contour.app
 Check a download against `SHA256SUMS` from the same release:
 
 ```bash
-shasum -a 256 -c SHA256SUMS --ignore-missing
+shasum -a 256 -c SHA256SUMS --ignore-missing    # macOS
+sha256sum -c SHA256SUMS --ignore-missing        # Linux
 ```
+
+#### Install on Ubuntu
+
+Ubuntu 22.04 LTS and 24.04 LTS on x64 are supported; every release is
+installed and opened on both before it is published. Pick one of the two
+files.
+
+**The `.deb` (recommended).** `apt` pulls in WebKitGTK and GTK:
+
+```bash
+cd ~/Downloads
+sudo apt install ./Contour_<version>_amd64.deb
+```
+
+Contour is then in the app menu (Graphics and Development) and starts
+from a terminal as `od-desktop`. To update, install the newer `.deb` the
+same way.
+
+**The AppImage.** No install, but it needs FUSE 2, which Ubuntu does not
+ship by default:
+
+```bash
+sudo apt install libfuse2        # Ubuntu 22.04
+sudo apt install libfuse2t64     # Ubuntu 24.04
+chmod +x Contour_<version>_amd64.AppImage
+./Contour_<version>_amd64.AppImage
+```
+
+Without FUSE (some containers and VMs), let it unpack itself instead:
+`APPIMAGE_EXTRACT_AND_RUN=1 ./Contour_<version>_amd64.AppImage`.
+
+**Uninstall.** `sudo apt remove contour` removes the app and its menu
+entry; for the AppImage, delete the file. Your projects and settings stay
+in `~/.local/share/contour`; delete that folder too to remove them.
+
+**Logs.** `~/.local/share/contour/logs/daemon.log` (Help ▸ Report Issue
+opens the folder). Started from a terminal (`od-desktop`), the log also
+prints there.
+
+**Agents.** Opened from the app menu, Contour asks your login shell for
+its `PATH` (`bash -il`, which reads `~/.profile` and `~/.bashrc`), so
+agents installed with nvm, npm or the native installers (`~/.local/bin`)
+are found. PDF, image and PPTX export use Google Chrome or Chromium.
 
 ### Build from source
 
@@ -57,6 +101,15 @@ cd contour-design
 make setup
 make app-release      # optimised Contour.app, about 10 minutes the first time
 make install          # copies it to /Applications (macOS)
+```
+
+On Ubuntu, `scripts/linux-deps.sh` installs the build packages first, and
+the desktop packages come from Tauri:
+
+```bash
+scripts/linux-deps.sh
+make ui-release
+(cd apps/desktop && npx --yes @tauri-apps/cli@2.12.4 build --bundles deb,appimage)
 ```
 
 Or skip the desktop app and run the daemon with the UI in your browser:
