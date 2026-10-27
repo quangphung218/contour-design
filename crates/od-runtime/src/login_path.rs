@@ -5,7 +5,9 @@
 //! under `~/.local/bin`, Homebrew or npm are "not found". At startup the
 //! desktop asks the user's login shell for its `PATH` and appends the usual
 //! install folders as a fallback, keeping what the process already had
-//! first. [`crate::RunEngine::rescan_path`] asks again later.
+//! first. [`crate::RunEngine::rescan_path`] asks again later. Windows has
+//! no login shell: the `Path` a new session would get is read from the
+//! registry instead, where installers (npm, the Claude installer) put it.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -17,7 +19,7 @@ const SHELL_TIMEOUT: Duration = Duration::from_secs(3);
 const MARK: &str = "__OD_PATH__";
 
 /// Install folders of common agent CLIs, relative to `$HOME` or absolute.
-const FALLBACK_DIRS: &[&str] = &[
+const UNIX_FALLBACK_DIRS: &[&str] = &[
     "~/.local/bin",
     "/opt/homebrew/bin",
     "/usr/local/bin",
@@ -25,6 +27,23 @@ const FALLBACK_DIRS: &[&str] = &[
     "~/.bun/bin",
     "~/.cargo/bin",
     "~/.volta/bin",
+];
+
+/// The same on Windows, relative to `%USERPROFILE%`: the Claude installer,
+/// npm's global folder (`%APPDATA%\npm` by default), Bun, Cargo, Volta.
+const WINDOWS_FALLBACK_DIRS: &[&str] = &[
+    "~/.local/bin",
+    "~/AppData/Roaming/npm",
+    "~/.bun/bin",
+    "~/.cargo/bin",
+    "~/AppData/Local/Volta/bin",
+];
+
+/// The system's and then the user's environment, as Windows builds a new
+/// session's `Path` from them.
+const REGISTRY_KEYS: &[&str] = &[
+    r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+    r"HKCU\Environment",
 ];
 
 /// `$PATH` as the user's login shell sets it; `None` when the shell is
@@ -62,13 +81,91 @@ pub async fn login_shell_path(shell: &OsStr) -> Option<String> {
     Some(path).filter(|p| !p.trim().is_empty())
 }
 
+/// `Path` as a new Windows session would get it, from the registry; `None`
+/// off Windows or when `reg` gives nothing. A running app keeps the copy
+/// it started with, so an agent installed since is only found here.
+pub async fn registry_path() -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for key in REGISTRY_KEYS {
+        let mut cmd = tokio::process::Command::new("reg");
+        cmd.args(["query", key, "/v", "Path"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
+        let Ok(Ok(out)) = tokio::time::timeout(SHELL_TIMEOUT, cmd.output()).await else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        parts.extend(reg_path_value(&text, |name| std::env::var(name).ok()));
+    }
+    Some(parts.join(";")).filter(|p| !p.is_empty())
+}
+
+/// The `Path` value in `reg query <key> /v Path` output, with `%NAME%`
+/// expanded by `var` (a `REG_EXPAND_SZ` value is stored unexpanded).
+fn reg_path_value(out: &str, var: impl Fn(&str) -> Option<String>) -> Option<String> {
+    let value = out.lines().find_map(|line| {
+        let (name, rest) = line.trim_start().split_once("    ")?;
+        let rest = rest.trim_start();
+        let value = rest
+            .strip_prefix("REG_EXPAND_SZ")
+            .or_else(|| rest.strip_prefix("REG_SZ"))?;
+        name.eq_ignore_ascii_case("path").then(|| value.trim())
+    })?;
+    let mut expanded = String::new();
+    let mut rest = value;
+    while let Some(start) = rest.find('%') {
+        let Some(len) = rest[start + 1..].find('%') else {
+            break;
+        };
+        let name = &rest[start + 1..start + 1 + len];
+        expanded.push_str(&rest[..start]);
+        match var(name) {
+            Some(v) if !name.is_empty() => expanded.push_str(&v),
+            _ => expanded.push_str(&rest[start..start + len + 2]),
+        }
+        rest = &rest[start + len + 2..];
+    }
+    expanded.push_str(rest);
+    Some(expanded).filter(|v| !v.is_empty())
+}
+
+/// `HOME`, else `USERPROFILE` (Windows sets no `HOME`).
+#[must_use]
+pub fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+}
+
 /// `current`, then the login shell's entries, then the fallback folders;
 /// each folder once, in that order.
 pub fn merge(current: &OsStr, login: Option<&str>, home: Option<&Path>) -> OsString {
-    let fallback = FALLBACK_DIRS
+    let dirs = if cfg!(windows) {
+        WINDOWS_FALLBACK_DIRS
+    } else {
+        UNIX_FALLBACK_DIRS
+    };
+    merge_with(current, login, home, dirs)
+}
+
+fn merge_with(
+    current: &OsStr,
+    login: Option<&str>,
+    home: Option<&Path>,
+    fallback_dirs: &[&str],
+) -> OsString {
+    // One component at a time: on Windows the agent's path (shown in the
+    // UI) reads `C:\Users\u\AppData\Roaming\npm`, not `…\AppData/Roaming/npm`.
+    let fallback = fallback_dirs
         .iter()
         .filter_map(|d| match d.strip_prefix("~/") {
-            Some(rel) => home.map(|h| h.join(rel)),
+            Some(rel) => home.map(|h| rel.split('/').fold(h.to_path_buf(), |p, c| p.join(c))),
             None => Some(PathBuf::from(d)),
         });
     let mut seen = Vec::<PathBuf>::new();
@@ -94,10 +191,9 @@ pub async fn agent_path() -> OsString {
     let current = std::env::var_os("PATH").unwrap_or_default();
     let login = match default_shell() {
         Some(shell) => login_shell_path(&shell).await,
-        None => None,
+        None => registry_path().await,
     };
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    merge(&current, login.as_deref(), home.as_deref())
+    merge(&current, login.as_deref(), home_dir().as_deref())
 }
 
 #[cfg(test)]
@@ -156,6 +252,60 @@ mod tests {
         assert_eq!(dirs[0], PathBuf::from("/usr/bin"));
         assert!(dirs.contains(&PathBuf::from("/h/.local/bin")));
         assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
+    }
+
+    #[test]
+    fn windows_falls_back_to_npm_and_the_claude_installer() {
+        let home = Path::new("/c/Users/u");
+        let merged = merge_with(
+            OsStr::new("/c/Windows"),
+            Some("/c/Users/u/AppData/Roaming/npm"),
+            Some(home),
+            WINDOWS_FALLBACK_DIRS,
+        );
+        let dirs: Vec<PathBuf> = std::env::split_paths(&merged).collect();
+        assert_eq!(
+            dirs[..2],
+            [
+                PathBuf::from("/c/Windows"),
+                home.join("AppData").join("Roaming").join("npm")
+            ]
+        );
+        assert!(dirs.contains(&home.join(".local").join("bin")), "{dirs:?}");
+        // npm's folder from the registry and from the fallback list is one entry.
+        let unique: std::collections::HashSet<_> = dirs.iter().collect();
+        assert_eq!(unique.len(), dirs.len(), "{dirs:?}");
+    }
+
+    #[test]
+    fn reads_the_path_value_from_reg_query() {
+        let var = |name: &str| match name {
+            "USERPROFILE" => Some(r"C:\Users\u".to_owned()),
+            "SystemRoot" => Some(r"C:\Windows".to_owned()),
+            _ => None,
+        };
+        let user = "\r\nHKEY_CURRENT_USER\\Environment\r\n    Path    REG_EXPAND_SZ    %USERPROFILE%\\AppData\\Roaming\\npm;%NOPE%;C:\\tools\r\n\r\n";
+        assert_eq!(
+            reg_path_value(user, var).as_deref(),
+            Some(r"C:\Users\u\AppData\Roaming\npm;%NOPE%;C:\tools")
+        );
+        let machine = "HKEY_LOCAL_MACHINE\\...\\Environment\r\n    Path    REG_SZ    %SystemRoot%\\system32;C:\\100%\r\n";
+        assert_eq!(
+            reg_path_value(machine, var).as_deref(),
+            Some(r"C:\Windows\system32;C:\100%")
+        );
+        // Another value, or no value at all.
+        assert_eq!(
+            reg_path_value("    TEMP    REG_EXPAND_SZ    C:\\t\r\n", var),
+            None
+        );
+        assert_eq!(
+            reg_path_value(
+                "ERROR: The system was unable to find the specified registry key or value.",
+                var
+            ),
+            None
+        );
     }
 
     #[cfg(unix)]

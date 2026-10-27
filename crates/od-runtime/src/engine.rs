@@ -237,9 +237,10 @@ impl RunEngine {
                 login
             }
             None if !self.config().rescan_install_dirs => return false,
-            None => None,
+            // Windows: the registry's `Path` (an install since the app started).
+            None => crate::login_path::registry_path().await,
         };
-        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let home = crate::login_path::home_dir();
         let mut config = self
             .config
             .write()
