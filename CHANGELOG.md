@@ -23,6 +23,15 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Integrations ▸ Install (MCP into Claude Code, Codex) works from the
+  desktop app. It registered `<app> mcp`, which opened a second window
+  instead of serving MCP; the app now runs the MCP stdio server for `mcp`
+  (as `od mcp`), finds the running app's daemon from `daemon.lock` (its
+  port changes per launch), and an AppImage registers its `.AppImage`
+  file rather than the mount that goes when it quits. The Linux and
+  Windows smoke tests run the registered command.
+- Folder import, project locations and linked folders refuse the home
+  folder on Windows too (they read `HOME`, which Windows does not set).
 - Design system cards show the right colors when a `DESIGN.md` has
   Windows (CRLF) line ends, as every bundled one has in the Windows
   installer. Color tables were skipped, so 11 bundled systems showed other
