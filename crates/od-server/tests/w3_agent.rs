@@ -3,6 +3,7 @@
 //! left `applying`. No real agent, no network.
 
 #![allow(clippy::unwrap_used)] // tests fail loudly by design
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))] // helpers of the `sh` mock tests
 
 mod common;
 
@@ -52,6 +53,7 @@ async fn patch(d: &Daemon, path: &str, body: &Value) -> reqwest::Response {
         .unwrap()
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn session_mode_swaps_the_prompt_head_and_sticks_to_the_conversation() {
     let d = daemon().await;
@@ -113,6 +115,7 @@ async fn session_mode_swaps_the_prompt_head_and_sticks_to_the_conversation() {
     assert_eq!(missing.status(), 404);
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn memory_reaches_the_agent_and_can_be_forgotten() {
     let d = daemon().await;
@@ -180,6 +183,7 @@ async fn memory_reaches_the_agent_and_can_be_forgotten() {
     assert!(!prompts(&d)[1].contains("## Project memory"), "forgotten");
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn transcript_exports_as_markdown_and_json() {
     let d = daemon().await;
@@ -265,6 +269,7 @@ fn jury_reply() -> String {
         .collect()
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn the_design_jury_streams_scores_and_ships_the_artifact() {
     let d = daemon().await;
@@ -357,6 +362,7 @@ async fn the_design_jury_streams_scores_and_ships_the_artifact() {
 /// The shipped artifact cannot be written (a plain file is named
 /// `critique`): the run still settles, and the report says why it has no
 /// file.
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn a_jury_artifact_that_cannot_be_written_still_settles_the_run() {
     let d = daemon().await;

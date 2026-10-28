@@ -4,6 +4,7 @@
 //! only, no real agent.
 
 #![allow(clippy::unwrap_used)] // tests fail loudly by design
+#![cfg(unix)] // the mock agents are `sh` scripts
 
 mod common;
 

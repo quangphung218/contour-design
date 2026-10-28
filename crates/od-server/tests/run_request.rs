@@ -2,6 +2,7 @@
 //! idempotency keyed on everything the agent sees.
 
 #![allow(clippy::unwrap_used)] // tests fail loudly by design
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))] // helpers of the `sh` mock tests
 
 mod common;
 
@@ -21,6 +22,7 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
     )
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn a_skill_named_twice_is_in_the_prompt_once() {
     let content = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
