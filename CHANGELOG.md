@@ -13,9 +13,10 @@ All notable changes to Contour are recorded here. The format follows
 - Help ▸ Check for Updates… and Settings ▸ About ▸ Check for updates. On
   that click only, Contour asks GitHub Releases for the newest release,
   pre-releases included and drafts skipped, and shows its version with
-  links to the release notes and the download page, "You're up to date",
-  or a short error with Try again. Nothing is checked or downloaded on its
-  own. In every UI language.
+  View release (the release page: notes and downloads), "You're up to
+  date", or a short error with Try again (its own message when GitHub
+  rate limits the network). Nothing is checked or downloaded on its own.
+  Keyboard and screen reader friendly; in every UI language.
 
 ### Fixed
 

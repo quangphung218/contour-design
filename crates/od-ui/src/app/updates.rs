@@ -4,6 +4,7 @@
 
 use super::api;
 use super::icons::{Glyph, icon};
+use super::lib_ui::Modal;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use serde_json::Value;
@@ -21,6 +22,8 @@ enum Check {
         current: String,
     },
     Current(String),
+    /// GitHub's limit for requests without an account is used up.
+    RateLimited,
     Failed,
 }
 
@@ -32,8 +35,10 @@ pub fn request_check() {
 }
 
 async fn check() -> Check {
-    let Ok(v) = api::post::<_, Value>("/api/updates/check", &serde_json::json!({})).await else {
-        return Check::Failed;
+    let v = match api::post::<_, Value>("/api/updates/check", &serde_json::json!({})).await {
+        Ok(v) => v,
+        Err(e) if e.status == 429 => return Check::RateLimited,
+        Err(_) => return Check::Failed,
     };
     let current = v["current"].as_str().unwrap_or_default().to_owned();
     match (v["update"]["version"].as_str(), v["update"]["url"].as_str()) {
@@ -74,100 +79,87 @@ pub fn UpdateDialog() -> impl IntoView {
         leptos::ev::Custom::<web_sys::Event>::new(CHECK_EVENT),
         move |_| run(),
     );
+    on_cleanup(move || {
+        menu.remove();
+        asked.remove();
+    });
+    view! {
+        <Show when=move || state.with(Option::is_some)>
+            <UpdateModal state=state retry=Callback::new(move |()| run())/>
+        </Show>
+    }
+}
+
+/// The open dialog. Each state is its own [`Modal`], so focus moves to that
+/// state's main button; closing gives focus back to what had it before.
+#[component]
+fn UpdateModal(state: RwSignal<Option<Check>>, retry: Callback<()>) -> impl IntoView {
+    super::focus::return_focus_on_cleanup();
     // On the next task, as the shortcuts dialog does: the click that closes
     // must still reach its other listeners.
-    let close = move || {
+    let close = Callback::new(move |()| {
         leptos::task::spawn_local(async move {
             gloo_timers::future::TimeoutFuture::new(0).await;
             state.set(None);
         });
-    };
-    // Escape closes it wherever the focus is (it opens from a menu).
-    let keys = window_event_listener(leptos::ev::keydown, move |ev| {
-        if ev.key() == "Escape" && state.with_untracked(Option::is_some) {
-            close();
-        }
     });
-    on_cleanup(move || {
-        menu.remove();
-        asked.remove();
-        keys.remove();
-    });
-    let body = move || {
+    move || {
         state.get().map(|s| match s {
             Check::Checking => view! {
-                <div class="dialog-head">
-                    <span class="dialog-icon"><span class="spinner"></span></span>
-                    <div class="grow"><h2 id="update-title">{t(T::CheckingForUpdates)}</h2></div>
-                </div>
+                <Modal title=t(T::CheckForUpdates).to_owned() glyph=Glyph::Refresh on_close=close
+                    testid="update-dialog" autofocus="[data-testid=update-close]">
+                    <div class="dialog-body">
+                        <p class="row" role="status" data-testid="update-checking"><span class="spinner"></span>{t(T::CheckingForUpdates)}</p>
+                    </div>
+                    <div class="dialog-foot">
+                        <button class="btn" data-testid="update-close" on:click=move |_| close.run(())>{t(T::Close)}</button>
+                    </div>
+                </Modal>
             }
             .into_any(),
             Check::Update { version, url, current } => view! {
-                <div class="dialog-head">
-                    <span class="dialog-icon">{icon(Glyph::Download)}</span>
-                    <div class="grow">
-                        <h2 id="update-title" data-testid="update-available">{tf(T::UpdateAvailable, &[&version])}</h2>
-                        <p>{tf(T::UpdateYouHave, &[&current])}</p>
+                <Modal title=tf(T::UpdateAvailable, &[&version]) glyph=Glyph::Download on_close=close
+                    testid="update-dialog" autofocus="[data-testid=update-view]">
+                    <div class="dialog-body">
+                        <p role="status" data-testid="update-available">{tf(T::UpdateYouHave, &[&current])}</p>
                     </div>
-                </div>
-                <div class="dialog-body">
-                    <a href=url.clone() target="_blank" rel="noopener" data-testid="update-notes">
-                        {t(T::ReleaseNotes)}{icon(Glyph::ExternalLink)}
-                    </a>
-                </div>
-                <div class="dialog-foot">
-                    <button class="btn" data-testid="update-close" on:click=move |_| close()>{t(T::Close)}</button>
-                    <a class="btn primary" href=url target="_blank" rel="noopener" data-testid="update-download">
-                        {icon(Glyph::Download)}{t(T::OpenDownloadPage)}
-                    </a>
-                </div>
+                    <div class="dialog-foot">
+                        <button class="btn" data-testid="update-close" on:click=move |_| close.run(())>{t(T::Close)}</button>
+                        <a class="btn primary" href=url target="_blank" rel="noopener" data-testid="update-view">
+                            {t(T::ViewRelease)}{icon(Glyph::ExternalLink)}
+                        </a>
+                    </div>
+                </Modal>
             }
             .into_any(),
             Check::Current(current) => view! {
-                <div class="dialog-head">
-                    <span class="dialog-icon">{icon(Glyph::Check)}</span>
-                    <div class="grow">
-                        <h2 id="update-title" data-testid="update-current">{t(T::UpToDate)}</h2>
-                        <p>{tf(T::UpToDateHint, &[&current])}</p>
+                <Modal title=t(T::UpToDate).to_owned() glyph=Glyph::Check on_close=close
+                    testid="update-dialog" autofocus="[data-testid=update-close]">
+                    <div class="dialog-body">
+                        <p role="status" data-testid="update-current">{tf(T::UpToDateHint, &[&current])}</p>
                     </div>
-                </div>
-                <div class="dialog-foot">
-                    <button class="btn primary" data-testid="update-close" on:click=move |_| close()>{t(T::Close)}</button>
-                </div>
+                    <div class="dialog-foot">
+                        <button class="btn primary" data-testid="update-close" on:click=move |_| close.run(())>{t(T::Close)}</button>
+                    </div>
+                </Modal>
             }
             .into_any(),
-            Check::Failed => view! {
-                <div class="dialog-head">
-                    <span class="dialog-icon danger">{icon(Glyph::Warning)}</span>
-                    <div class="grow">
-                        <h2 id="update-title">{t(T::CheckForUpdates)}</h2>
-                        <p role="alert" data-testid="update-failed">{t(T::UpdateCheckFailed)}</p>
-                    </div>
-                </div>
-                <div class="dialog-foot">
-                    <button class="btn" data-testid="update-close" on:click=move |_| close()>{t(T::Close)}</button>
-                    <button class="btn primary" data-testid="update-retry" on:click=move |_| run()>{icon(Glyph::Refresh)}{t(T::TryAgain)}</button>
-                </div>
+            Check::RateLimited | Check::Failed => {
+                let message = if s == Check::RateLimited { T::UpdateRateLimited } else { T::UpdateCheckFailed };
+                view! {
+                    <Modal title=t(T::CheckForUpdates).to_owned() glyph=Glyph::Warning on_close=close
+                        testid="update-dialog" autofocus="[data-testid=update-retry]">
+                        <div class="dialog-body">
+                            <p role="alert" data-testid="update-failed">{t(message)}</p>
+                        </div>
+                        <div class="dialog-foot">
+                            <button class="btn" data-testid="update-close" on:click=move |_| close.run(())>{t(T::Close)}</button>
+                            <button class="btn primary" data-testid="update-retry" on:click=move |_| retry.run(())>{icon(Glyph::Refresh)}{t(T::TryAgain)}</button>
+                        </div>
+                    </Modal>
+                }
+                .into_any()
             }
-            .into_any(),
         })
-    };
-    view! {
-        <Show when=move || state.with(Option::is_some)>
-            <div class="overlay center" on:click=move |_| close()>
-                <div
-                    class="dialog update-dialog"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="update-title"
-                    aria-busy=move || (state.get() == Some(Check::Checking)).to_string()
-                    data-testid="update-dialog"
-                    tabindex="-1"
-                    on:click=|ev| ev.stop_propagation()
-                >
-                    {body}
-                </div>
-            </div>
-        </Show>
     }
 }

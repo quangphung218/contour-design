@@ -492,11 +492,11 @@ messages! {
     CheckingForUpdates => "Checking for updates…", "Đang kiểm tra bản cập nhật…";
     UpdateAvailable => "Version {0} is available", "Đã có phiên bản {0}";
     UpdateYouHave => "You have version {0}.", "Bản đang dùng: {0}.";
-    ReleaseNotes => "Release notes", "Ghi chú phát hành";
-    OpenDownloadPage => "Open download page", "Mở trang tải về";
+    ViewRelease => "View release", "Xem bản phát hành";
     UpToDate => "You're up to date", "Đã là bản mới nhất";
     UpToDateHint => "Version {0} is the newest.", "Phiên bản {0} là bản mới nhất.";
-    UpdateCheckFailed => "Couldn't check for updates. Check your internet connection and try again.", "Không kiểm tra được bản cập nhật. Kiểm tra kết nối mạng rồi thử lại.";
+    UpdateCheckFailed => "Couldn't reach GitHub. Try again in a few minutes.", "Không kết nối được GitHub. Thử lại sau ít phút.";
+    UpdateRateLimited => "GitHub is limiting requests from this network. Try again in an hour.", "GitHub đang giới hạn lượt hỏi từ mạng này. Thử lại sau một giờ.";
     TryAgain => "Try again", "Thử lại";
     Licenses => "Licenses", "Giấy phép";
     LicensesHint => "Contour is licensed under the Apache License 2.0. These files ship with the app.", "Contour dùng giấy phép Apache License 2.0. Các file này đi kèm app.";

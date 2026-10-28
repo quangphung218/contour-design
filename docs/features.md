@@ -320,8 +320,9 @@ files under the data folder and the API returns them masked.
   Shortcuts, Command Palette.
 - **Check for Updates** (Help menu, or Settings ▸ About ▸ Check for
   updates) asks GitHub Releases for the newest release, pre-releases
-  included, and shows its version with links to the release notes and the
-  download page, "You're up to date", or a short error. Only that click
+  included, and shows its version with View release (the release page,
+  with notes and downloads), "You're up to date", or a short error (its
+  own message when GitHub rate limits the network). Only that click
   calls out: the app never checks or updates on its own.
 - Started from Finder or the Dock, the app takes `PATH` from your login
   shell (plus `~/.local/bin`, Homebrew, npm, bun, cargo) to find agents.

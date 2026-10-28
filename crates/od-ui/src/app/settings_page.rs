@@ -995,7 +995,7 @@ fn About() -> impl IntoView {
                     <dt>{t(T::Platform)}</dt><dd class="mono">{format!("{} · {}", v["platform"].as_str().unwrap_or_default(), v["arch"].as_str().unwrap_or_default())}</dd>
                 })}
             </dl>
-            <div class="row">
+            <div class="row wrap">
                 <button class="btn" data-testid="check-updates" on:click=|_| super::updates::request_check()>{icon(Glyph::Refresh)}{t(T::CheckForUpdates)}</button>
                 <button class="btn" data-testid="export-diagnostics" disabled=move || exporting.get() on:click=export>
                     {move || if exporting.get() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::Download).into_any() }}

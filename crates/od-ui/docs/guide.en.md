@@ -55,5 +55,5 @@ The profile lives in `~/.dsh/profiles/open-design`, or under `$DSH_HOME` when th
 
 - **The agent does not answer:** Settings ▸ Models ▸ Test, or Refresh on onboarding.
 - **Export to PDF or images fails:** install Chrome, Edge or Chromium, or set `OD_CHROME_PATH`.
-- **A newer version:** Help ▸ Check for Updates (or Settings ▸ About ▸ Check for updates) shows the newest release and opens its download page. Contour only checks when you ask.
+- **A newer version:** Help ▸ Check for Updates (or Settings ▸ About ▸ Check for updates) shows the newest release; View release opens its page, with the notes and the downloads. Contour only checks when you ask.
 - **Report an issue:** Help ▸ Report Issue copies a diagnostics summary (version, platform, agents, recent runs, nothing secret) to the clipboard and opens the run log folder. Paste it wherever you report the problem. Settings ▸ About ▸ Export diagnostics saves a full archive.
