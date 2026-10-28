@@ -109,10 +109,7 @@ fn check_base(store: &Store, raw: &str) -> Result<PathBuf, String> {
     if dir.starts_with(&data_root) || data_root.starts_with(&dir) {
         return Err(format!("{raw}: overlaps the data directory"));
     }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .and_then(|h| h.canonicalize().ok());
-    if home.is_some_and(|h| h.starts_with(&dir)) {
+    if crate::routes::ui::is_home_or_parent(&dir) {
         return Err(format!("{raw}: the home folder itself cannot be a base"));
     }
     Ok(dir)

@@ -384,6 +384,16 @@ pub fn is_bundle(dir: &Path) -> bool {
         || dir.join("Contents").join("Info.plist").is_file()
 }
 
+/// `dir` (canonical) is the home folder or one of its parents: a project
+/// base there would hand the agent `~/.ssh` and the like. The home folder is
+/// `USERPROFILE` on Windows, which sets no `HOME`.
+#[must_use]
+pub fn is_home_or_parent(dir: &Path) -> bool {
+    od_runtime::login_path::home_dir()
+        .and_then(|h| h.canonicalize().ok())
+        .is_some_and(|h| h.starts_with(dir))
+}
+
 /// Creates a project whose files live in `dir` (never copied, spec 1.1).
 ///
 /// # Errors
@@ -424,10 +434,7 @@ pub fn import_folder(
     {
         return Err(bad("baseDir must not be inside a hidden folder"));
     }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .and_then(|h| h.canonicalize().ok());
-    if home.is_some_and(|h| h.starts_with(&dir)) {
+    if is_home_or_parent(&dir) {
         return Err(bad(
             "baseDir must not be the home folder or one of its parents",
         ));
@@ -545,6 +552,17 @@ async fn serve_static(dist: Arc<PathBuf>, req: Request) -> Response {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_home_folder_and_its_parents_are_refused() {
+        let home = od_runtime::login_path::home_dir()
+            .unwrap()
+            .canonicalize()
+            .unwrap();
+        assert!(is_home_or_parent(&home));
+        assert!(is_home_or_parent(home.parent().unwrap()));
+        assert!(!is_home_or_parent(&home.join("Projects")));
+    }
 
     fn obj(v: Value) -> Map<String, Value> {
         match v {

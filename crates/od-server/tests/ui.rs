@@ -139,7 +139,7 @@ async fn import_folder_points_at_folder() {
         json!({"baseDir": hidden}),
         json!({"baseDir": hidden.join("inside")}),
         json!({"baseDir": linked_hidden}),
-        json!({"baseDir": std::env::var("HOME").unwrap()}),
+        json!({"baseDir": od_runtime::login_path::home_dir().unwrap()}),
     ] {
         let (s, _) = call(&app, "POST", "/api/import/folder", Some(bad.clone())).await;
         assert_eq!(s, StatusCode::BAD_REQUEST, "{bad}");
