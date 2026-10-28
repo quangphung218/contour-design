@@ -179,6 +179,31 @@ fn opencode_run_json() {
     assert!(matches!(events.last(), Some(AgentEvent::Raw { .. })));
 }
 
+/// OpenCode 2: no `callID` (the part `id` is the call's) and `path` for
+/// the file (captured from `opencode run --standalone` 2.0.25).
+#[test]
+fn opencode_2_run_json() {
+    let (events, _) = replay(
+        StreamFormat::OpenCodeJson,
+        &ctx(),
+        "opencode/turn-run-json-v2.jsonl",
+    );
+    assert_eq!(session_ids(&events), ["ses_od2"]);
+    assert_eq!(text(&events), "I'll update the page.");
+    let uses = tool_uses(&events);
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].1, "Write");
+    assert_eq!(uses[0].2["file_path"], "index.html");
+    assert_eq!(
+        tool_results(&events),
+        [("84d06fd2-dfd7-499c-b36a-5f86466e8cf1".into(), false)]
+    );
+    assert!(
+        !events.iter().any(|e| matches!(e, AgentEvent::Raw { .. })),
+        "every frame is understood"
+    );
+}
+
 #[test]
 fn cursor_stream_json() {
     let (events, writes) = replay(
