@@ -134,3 +134,42 @@ fn without_a_flag_mcp_reaches_the_daemon_in_daemon_lock() {
     assert_ne!(result["isError"], true, "{result}");
     assert!(result.to_string().contains("p-from-the-lock"), "{result}");
 }
+
+/// A loopback URL with nothing listening: a port that was free a moment ago.
+fn dead_url() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    format!("http://{}", listener.local_addr().unwrap())
+}
+
+fn list_projects(data: &Path, args: &[&str]) -> Value {
+    let replies = session(
+        data,
+        args,
+        &[json!({"method": "tools/call", "params": {"name": "list_projects", "arguments": {}}})],
+    );
+    let result = replies[&2]["result"].clone();
+    assert_ne!(result["isError"], true, "{result}");
+    result
+}
+
+/// What beta ≤4 registered: `--daemon-url` with the port of an earlier
+/// launch. No daemon there, so the running app's in `daemon.lock` answers.
+#[test]
+fn a_dead_daemon_url_falls_back_on_daemon_lock() {
+    let data = tempfile::tempdir().unwrap();
+    let url = stub_daemon(json!({"projects": [{"id": "p-from-the-lock", "name": "Lock"}]}));
+    std::fs::write(data.path().join("daemon.lock"), &url).unwrap();
+    let result = list_projects(data.path(), &["--daemon-url", &dead_url()]);
+    assert!(result.to_string().contains("p-from-the-lock"), "{result}");
+}
+
+/// A `--daemon-url` with a daemon behind it still wins over `daemon.lock`.
+#[test]
+fn a_live_daemon_url_wins_over_daemon_lock() {
+    let data = tempfile::tempdir().unwrap();
+    let lock = stub_daemon(json!({"projects": [{"id": "p-from-the-lock", "name": "Lock"}]}));
+    std::fs::write(data.path().join("daemon.lock"), &lock).unwrap();
+    let flag = stub_daemon(json!({"projects": [{"id": "p-from-the-flag", "name": "Flag"}]}));
+    let result = list_projects(data.path(), &["--daemon-url", &flag]);
+    assert!(result.to_string().contains("p-from-the-flag"), "{result}");
+}

@@ -235,6 +235,16 @@ impl Daemon {
         (!message.trim().is_empty()).then_some(message)
     }
 
+    /// Whether `GET api/health` answers 2xx within `within`.
+    pub async fn is_up(&self, within: Duration) -> bool {
+        self.http
+            .get(self.url(&["api", "health"]))
+            .timeout(within)
+            .send()
+            .await
+            .is_ok_and(|res| res.status().is_success())
+    }
+
     /// A finished run's whole SSE log. Best effort: `None` on any failure.
     pub async fn run_events(&self, run_id: &str) -> Option<String> {
         let url = self.url(&["api", "runs", run_id, "events"]);
