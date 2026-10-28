@@ -233,10 +233,13 @@ pub fn Home() -> impl IntoView {
         }
         let text = scenario_text();
         let n = typed.get().and_then(|s| typewriter(&text, s)).unwrap_or(0);
-        if reduced || n == 0 {
-            return text;
-        }
-        text.chars().take(n).collect()
+        // "e.g.": an example brief, not an instruction to the user.
+        let shown: String = if reduced || n == 0 {
+            text
+        } else {
+            text.chars().take(n).collect()
+        };
+        tf(T::BriefExample, &[&shown])
     });
 
     let set_chip = move |c: Chip| {

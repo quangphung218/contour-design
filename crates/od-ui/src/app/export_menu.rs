@@ -86,6 +86,15 @@ impl Format {
         }
     }
 
+    /// Told apart in the download name: both PowerPoint kinds are `.pptx`.
+    fn name_suffix(self) -> &'static str {
+        match self {
+            Self::Pptx => "-images",
+            Self::PptxEditable => "-editable",
+            _ => "",
+        }
+    }
+
     fn mime(self) -> &'static str {
         match self {
             Self::Html | Self::JsxHtml => "text/html",
@@ -287,8 +296,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             .unwrap_or_else(|| "project".to_owned());
         let name = match &file {
             Some(f) if format == Format::Jsx => crate::jsx_export::download_name(f),
-            Some(f) if format.needs_file() => format!("{}.{}", stem(f), format.ext()),
-            _ => format!("{project}.{}", format.ext()),
+            Some(f) if format.needs_file() => {
+                format!("{}{}.{}", stem(f), format.name_suffix(), format.ext())
+            }
+            _ => format!("{project}{}.{}", format.name_suffix(), format.ext()),
         };
         busy.set(true);
         status.set(Some(Ok(tf(T::Exporting, &[format.ext()]))));

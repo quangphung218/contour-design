@@ -298,10 +298,7 @@ impl StudioCtx {
                             });
                         });
                     }
-                    tools.status.set(Some(tf(
-                        T::SavedVersion,
-                        &[&r.file.path, &r.version.version.to_string()],
-                    )));
+                    tools.saved(&r.file.path, r.version.version);
                     m.book.update_value(|book| book.written(part, &sent));
                     after();
                 }
