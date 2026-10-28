@@ -3,7 +3,7 @@
 // daemon and the app, and opening About, send it nothing; each click on
 // Check for updates sends one request. The dialog shows a newer release
 // (version, release notes, download page), "You're up to date", or a short
-// error, in English and Vietnamese; other languages fall back to English.
+// error, in English, Vietnamese and the other languages (German checked).
 // Every request leaving loopback is blocked and fails the test.
 // Port: OD_E2E_PORT + 11 (or OD_E2E_UPDATES_PORT). Run through ./run.sh.
 
@@ -155,7 +155,7 @@ try {
   await close();
   results.menu = 'ok';
 
-  // 6. Vietnamese; German has no update strings and shows English.
+  // 6. Vietnamese, and German from its locale file.
   await put('/api/app-config', { locale: 'vi' });
   await page.reload();
   await page.getByTestId('about-version').waitFor();
@@ -178,7 +178,7 @@ try {
   await page.getByTestId('about-version').waitFor();
   await page.getByTestId('check-updates').click();
   await page.getByTestId('update-current').waitFor();
-  assert.equal(await page.getByTestId('update-current').textContent(), "You're up to date");
+  assert.equal(await page.getByTestId('update-current').textContent(), 'Alles auf dem neuesten Stand');
   await close();
   results.i18n = 'ok';
 

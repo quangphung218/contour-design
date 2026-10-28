@@ -15,7 +15,7 @@ All notable changes to Contour are recorded here. The format follows
   pre-releases included and drafts skipped, and shows its version with
   links to the release notes and the download page, "You're up to date",
   or a short error with Try again. Nothing is checked or downloaded on its
-  own. In English and Vietnamese; other languages show English.
+  own. In every UI language.
 
 ### Fixed
 
