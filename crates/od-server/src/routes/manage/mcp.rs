@@ -44,7 +44,7 @@ fn launch(state: &AppState) -> LaunchSpec {
     let exe = std::env::current_exe()
         .ok()
         .map(|p| std::fs::canonicalize(&p).unwrap_or(p))
-        .map_or_else(|| "od".to_owned(), |p| p.to_string_lossy().into_owned());
+        .map_or_else(|| "od".to_owned(), |p| unverbatim(&p.to_string_lossy()));
     let mut args = vec!["mcp".to_owned()];
     if let Some(url) = state.config.daemon_url.as_deref() {
         if url.trim_end_matches('/') != od_mcp::DEFAULT_DAEMON_URL {
@@ -52,6 +52,16 @@ fn launch(state: &AppState) -> LaunchSpec {
         }
     }
     LaunchSpec { command: exe, args }
+}
+
+/// On Windows `canonicalize` gives a verbatim path (`\\?\C:\…`), which the
+/// agent would store as the server's command: the prefix goes.
+fn unverbatim(path: &str) -> String {
+    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        path.strip_prefix(r"\\?\").unwrap_or(path).to_owned()
+    }
 }
 
 fn toml_str(s: &str) -> String {
@@ -416,6 +426,19 @@ pub async fn catalog_route() -> ApiJson<CatalogResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_launch_command_is_not_a_verbatim_path() {
+        assert_eq!(
+            unverbatim(r"\\?\C:\Program Files\Contour\Contour.exe"),
+            r"C:\Program Files\Contour\Contour.exe"
+        );
+        assert_eq!(
+            unverbatim(r"\\?\UNC\server\share\od.exe"),
+            r"\\server\share\od.exe"
+        );
+        assert_eq!(unverbatim("/usr/local/bin/od"), "/usr/local/bin/od");
+    }
 
     #[test]
     fn snippets_carry_the_real_launch_command() {
