@@ -27,6 +27,8 @@ use tower::ServiceExt;
 #[derive(Default)]
 struct Fake {
     seen: Mutex<Vec<String>>,
+    /// File name of each page it loaded (Chrome titles a PDF after it).
+    names: Mutex<Vec<String>>,
     unavailable: bool,
 }
 
@@ -36,6 +38,8 @@ impl Fake {
             return Err(RenderError::Unavailable("this export needs Chrome".into()));
         }
         let html = std::fs::read_to_string(&target.html_path).unwrap();
+        let name = target.html_path.file_name().unwrap().to_string_lossy();
+        self.names.lock().unwrap().push(name.into_owned());
         let slides = html.matches("class=\"slide\"").count();
         self.seen.lock().unwrap().push(html);
         Ok(slides)
@@ -399,6 +403,30 @@ async fn html_export_errors_map_to_statuses() {
         .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
     assert_eq!(r.json()["error"]["code"], "PROJECT_NOT_FOUND");
+}
+
+/// Chrome titles a printed PDF after the page's file name, so the page is
+/// rendered under the exported file's name, not a generic `index.html`.
+#[tokio::test]
+async fn a_pdf_is_rendered_under_its_file_name() {
+    let h = harness();
+    let id = h.project("Site");
+    h.file(&id, "landing.html", "<!doctype html><p>Hi</p>");
+
+    let r = h
+        .post(
+            &format!("/api/projects/{id}/export/pdf"),
+            json!({ "fileName": "landing.html" }),
+        )
+        .await;
+
+    assert_eq!(
+        r.status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&r.body)
+    );
+    assert_eq!(*h.fake.names.lock().unwrap(), ["landing.html"]);
 }
 
 #[tokio::test]
