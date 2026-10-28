@@ -58,27 +58,48 @@ fn newest(releases: Vec<GhRelease>) -> Option<(Version, String)> {
         .max_by(|a, b| a.0.cmp(&b.0))
 }
 
+/// Why a check failed.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CheckError {
+    /// GitHub answered 403 or 429: its limit for unauthenticated requests
+    /// (60 an hour per IP address) is used up.
+    #[error("GitHub Releases is rate limiting this address")]
+    RateLimited,
+    #[error("{0}")]
+    Failed(String),
+}
+
 /// Fetches `url` (a GitHub releases list) and compares with `current`.
 ///
 /// # Errors
-/// The request failing, a non-2xx answer, or a body that is not a list.
-pub async fn check(url: &str, current: &str) -> Result<UpdateCheck, String> {
-    let now = Version::parse(current).map_err(|e| format!("this build's version: {e}"))?;
+/// [`CheckError::RateLimited`] on 403 or 429; otherwise the request
+/// failing, another non-2xx answer, or a body that is not a list.
+pub async fn check(url: &str, current: &str) -> Result<UpdateCheck, CheckError> {
+    let failed = |e: &dyn std::fmt::Display| CheckError::Failed(e.to_string());
+    let now = Version::parse(current).map_err(|e| failed(&format!("this build's version: {e}")))?;
     let http = reqwest::Client::builder()
         .user_agent(concat!("contour/", env!("CARGO_PKG_VERSION")))
         .timeout(TIMEOUT)
         .build()
-        .map_err(|e| e.to_string())?;
-    let releases: Vec<GhRelease> = http
+        .map_err(|e| failed(&e))?;
+    let res = http
         .get(url)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| failed(&e))?;
+    if matches!(
+        res.status(),
+        reqwest::StatusCode::FORBIDDEN | reqwest::StatusCode::TOO_MANY_REQUESTS
+    ) {
+        return Err(CheckError::RateLimited);
+    }
+    let releases: Vec<GhRelease> = res
+        .error_for_status()
+        .map_err(|e| failed(&e))?
         .json()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| failed(&e))?;
     let update = newest(releases)
         .filter(|(v, _)| *v > now)
         .map(|(v, url)| Release {
@@ -91,6 +112,7 @@ pub async fn check(url: &str, current: &str) -> Result<UpdateCheck, String> {
     })
 }
 
+/// 429 when GitHub rate limits (the UI says to wait), else 502.
 pub async fn check_route() -> ApiResult<Json<UpdateCheck>> {
     let url = std::env::var(RELEASES_URL_ENV)
         .ok()
@@ -101,8 +123,12 @@ pub async fn check_route() -> ApiResult<Json<UpdateCheck>> {
         .map(Json)
         .map_err(|e| {
             tracing::warn!(error = %e, "update check failed");
+            let status = match e {
+                CheckError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+                CheckError::Failed(_) => StatusCode::BAD_GATEWAY,
+            };
             ApiErr::new(
-                StatusCode::BAD_GATEWAY,
+                status,
                 ErrorCode::UpstreamUnavailable,
                 format!("cannot reach GitHub Releases: {e}"),
             )
@@ -182,13 +208,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_403_or_429_is_a_rate_limit() {
+        for status in [403, 429] {
+            let url = stub(status, json!({"message": "API rate limit exceeded"})).await;
+            assert_eq!(
+                check(&url, "0.2.0-beta.5").await,
+                Err(CheckError::RateLimited)
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn an_error_answer_or_no_server_is_an_error() {
-        let url = stub(403, json!({"message": "rate limited"})).await;
-        assert!(check(&url, "0.2.0-beta.5").await.is_err());
+        let url = stub(503, json!({"message": "unavailable"})).await;
+        assert!(matches!(
+            check(&url, "0.2.0-beta.5").await,
+            Err(CheckError::Failed(_))
+        ));
         let dead = {
             let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             format!("http://{}/releases", l.local_addr().unwrap())
         };
-        assert!(check(&dead, "0.2.0-beta.5").await.is_err());
+        assert!(matches!(
+            check(&dead, "0.2.0-beta.5").await,
+            Err(CheckError::Failed(_))
+        ));
     }
 }
