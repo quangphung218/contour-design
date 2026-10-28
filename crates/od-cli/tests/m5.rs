@@ -60,6 +60,7 @@ async fn real_daemon_with(tmp: &Path, engine: od_runtime::EngineConfig) -> Strin
             allowed_origins: Vec::new(),
             resource_root: empty,
             daemon_url: Some(url.clone()),
+            mcp_daemon_url: true,
         }),
         runs: Arc::new(od_server::RunContext::new(runs, engine)),
         preview: od_server::Preview::default(),

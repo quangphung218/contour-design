@@ -90,6 +90,7 @@ pub async fn daemon_with(opts: Options) -> Daemon {
             allowed_origins: Vec::new(),
             resource_root: content_root,
             daemon_url: Some(format!("http://{addr}")),
+            mcp_daemon_url: true,
         }),
         runs: Arc::new(RunContext::new(Arc::clone(&runs), engine)),
         preview: od_server::Preview::default(),

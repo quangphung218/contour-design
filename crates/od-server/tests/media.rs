@@ -112,6 +112,7 @@ fn harness() -> Harness {
             allowed_origins: Vec::new(),
             resource_root: content,
             daemon_url: None,
+            mcp_daemon_url: true,
         }),
         runs: Arc::new(od_server::RunContext::new(
             Arc::new(od_runs::Runs::new(data.join("runs"))),

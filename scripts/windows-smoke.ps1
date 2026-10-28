@@ -187,8 +187,8 @@ if ($codex.available -and $codex.path -eq "$laterDir\codex.cmd") { Ok "Check aga
 else { Fail "Check again does not find codex.cmd added to the user's Path" ($codex | ConvertTo-Json -Compress) }
 
 # Integrations > Connect Contour to your coding agent: Install runs
-# `<agent> mcp add … -- <this app> mcp --daemon-url <this daemon>` through
-# the same `.cmd` shims.
+# `<agent> mcp add … -- <this app> mcp` through the same `.cmd` shims; no
+# `--daemon-url`, as the app's port changes per launch.
 $registered = $null
 foreach ($mcp in @(@{ id = "claude"; dir = $agentDir; add = "mcp add --scope user contour -- " }, @{ id = "codex"; dir = $laterDir; add = "mcp add contour -- " })) {
   $res = try { Invoke-RestMethod -Method Post "$url/api/mcp/install/$($mcp.id)" } catch { [pscustomobject]@{ ok = $false; message = "$_" } }
@@ -197,16 +197,17 @@ foreach ($mcp in @(@{ id = "claude"; dir = $agentDir; add = "mcp add --scope use
   # The command after `--`, unquoted, then its arguments.
   $server = ""; $rest = ""
   if ($line -and $line.Substring($mcp.add.Length) -match '^"?(.+?\.exe)"? (.*)$') { $server = $Matches[1]; $rest = $Matches[2] }
-  if ($res.ok -and $server -eq $app -and $rest -eq "mcp --daemon-url $url") {
+  if ($res.ok -and $server -eq $app -and $rest -eq "mcp") {
     Ok "Integrations installs the MCP server into $($mcp.id): $($mcp.id) $line"
     $registered = @{ exe = $server; args = $rest }
   }
-  else { Fail "installing the MCP server into $($mcp.id) (ok=$($res.ok), server '$server' '$rest', want $app mcp --daemon-url $url)" "$($res.message)`n$($log -join "`n")" }
+  else { Fail "installing the MCP server into $($mcp.id) (ok=$($res.ok), server '$server' '$rest', want $app mcp)" "$($res.message)`n$($log -join "`n")" }
 }
 
 # The registered command, as the agent starts it: a GUI-subsystem binary
 # with pipes for stdin and stdout. It answers initialize and tools/list,
-# and list_projects reaches this app's daemon (no window, no second daemon).
+# and list_projects reaches this app's daemon through daemon.lock (no
+# window, no second daemon).
 if ($registered) {
   $psi = New-Object System.Diagnostics.ProcessStartInfo $registered.exe, $registered.args
   $psi.UseShellExecute = $false; $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true

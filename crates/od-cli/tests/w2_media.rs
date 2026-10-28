@@ -40,6 +40,7 @@ async fn real_daemon(tmp: &Path) -> (String, Arc<RunContext>) {
             allowed_origins: Vec::new(),
             resource_root: empty,
             daemon_url: Some(url.clone()),
+            mcp_daemon_url: true,
         }),
         runs: Arc::clone(&run_ctx),
         preview: od_server::Preview::default(),

@@ -42,6 +42,7 @@ fn harness_with(resource_root: &Path) -> Harness {
             allowed_origins: Vec::new(),
             resource_root: resource_root.to_path_buf(),
             daemon_url: None,
+            mcp_daemon_url: true,
         }),
         runs: Arc::new(od_server::RunContext::new(
             Arc::new(od_runs::Runs::new(data.join("runs"))),

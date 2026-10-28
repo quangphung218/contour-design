@@ -54,7 +54,7 @@ fn launch(state: &AppState) -> LaunchSpec {
         .map_or_else(|| "od".to_owned(), |p| unverbatim(&p.to_string_lossy()));
     let mut args = vec!["mcp".to_owned()];
     if let Some(url) = state.config.daemon_url.as_deref() {
-        if url.trim_end_matches('/') != od_mcp::DEFAULT_DAEMON_URL {
+        if state.config.mcp_daemon_url && url.trim_end_matches('/') != od_mcp::DEFAULT_DAEMON_URL {
             args.extend(["--daemon-url".to_owned(), url.to_owned()]);
         }
     }

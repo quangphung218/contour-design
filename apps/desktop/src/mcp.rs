@@ -2,9 +2,10 @@
 //! the command Integrations ▸ Install registers in an agent. No window and
 //! no daemon of its own: it talks to the app's daemon over HTTP.
 //!
-//! The app's daemon listens on a fresh port per launch, so the URL recorded
-//! in `<data>/daemon.lock` (the app running now) goes before `--daemon-url`
-//! (the port at install time); then `OD_DAEMON_URL`, then the CLI default.
+//! The URL is `--daemon-url`, else `OD_DAEMON_URL`, as `od` takes them, else
+//! the one recorded in `<data>/daemon.lock`: the app running now, whose port
+//! changes per launch (so Install registers no `--daemon-url`), else the CLI
+//! default.
 //! On Windows the app is a GUI-subsystem binary with no console, but the
 //! agent starts it with pipes for stdin and stdout, which it inherits.
 
@@ -20,9 +21,9 @@ pub fn run(args: &[OsString]) -> anyhow::Result<()> {
     let data = od_store::DataDir::from_env();
     let lock = std::fs::read_to_string(data.root().join(od_server::lock::LOCK_FILE)).ok();
     let url = daemon_url(
-        lock.as_deref(),
         flag.as_deref(),
         std::env::var("OD_DAEMON_URL").ok().as_deref(),
+        lock.as_deref(),
     );
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -48,8 +49,8 @@ fn parse_args(args: &[OsString]) -> anyhow::Result<Option<String>> {
     Ok(url)
 }
 
-fn daemon_url(lock: Option<&str>, flag: Option<&str>, env: Option<&str>) -> String {
-    [lock, flag, env]
+fn daemon_url(flag: Option<&str>, env: Option<&str>, lock: Option<&str>) -> String {
+    [flag, env, lock]
         .into_iter()
         .flatten()
         .map(str::trim)
@@ -63,15 +64,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_running_app_goes_before_the_port_at_install_time() {
-        let now = Some("http://127.0.0.1:5001\n");
-        let then = Some("http://127.0.0.1:4000");
-        assert_eq!(daemon_url(now, then, None), "http://127.0.0.1:5001");
-        assert_eq!(
-            daemon_url(None, then, Some("http://e")),
-            "http://127.0.0.1:4000"
-        );
-        assert_eq!(daemon_url(Some(""), None, Some("http://e")), "http://e");
+    fn the_flag_then_the_env_then_the_running_app() {
+        let lock = Some("http://127.0.0.1:5001\n");
+        let flag = Some("http://127.0.0.1:4000");
+        let env = Some("http://e");
+        assert_eq!(daemon_url(flag, env, lock), "http://127.0.0.1:4000");
+        assert_eq!(daemon_url(None, env, lock), "http://e");
+        assert_eq!(daemon_url(None, None, lock), "http://127.0.0.1:5001");
+        assert_eq!(daemon_url(Some(""), None, lock), "http://127.0.0.1:5001");
         assert_eq!(daemon_url(None, None, None), od_mcp::DEFAULT_DAEMON_URL);
     }
 

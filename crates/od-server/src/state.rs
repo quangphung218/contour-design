@@ -26,6 +26,10 @@ pub struct ServerConfig {
     pub resource_root: PathBuf,
     /// This daemon's base URL, exported to agents as `OD_DAEMON_URL`.
     pub daemon_url: Option<String>,
+    /// `<exe> mcp` (Integrations ▸ Install) gets `--daemon-url` for this
+    /// daemon. False in the desktop app: its port changes per launch, and
+    /// its `mcp` finds the running app from `daemon.lock`.
+    pub mcp_daemon_url: bool,
 }
 
 /// Run registry, engine and per-run tool tokens.

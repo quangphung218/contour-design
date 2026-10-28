@@ -163,19 +163,20 @@ page="$data/projects/$project_id/index.html"
   || fail "agent run $run_id ended '$status'" "$(ls -l "$data/projects/$project_id" 2>&1)"
 
 # Integrations > Connect Contour to your coding agent: Install runs
-# `claude mcp add --scope user contour -- <this app> mcp --daemon-url <url>`.
-# That command, started as the agent starts it (pipes, no display), answers
-# initialize and tools/list, and list_projects reaches this app's daemon.
+# `claude mcp add --scope user contour -- <this app> mcp` (no --daemon-url:
+# the app's port changes per launch). That command, started as the agent
+# starts it (pipes, no display), answers initialize and tools/list, and
+# list_projects reaches this app's daemon through daemon.lock.
 res="$(curl -fsS -X POST "$url/api/mcp/install/claude" 2>&1)"
 registered=()
 if [ "$(jq -r .ok <<< "$res" 2>/dev/null)" = true ] && [ -f "$agent_dir/mcp-add.args" ]; then
   while IFS= read -r arg; do registered+=("$arg"); done < <(sed '1,/^--$/d' "$agent_dir/mcp-add.args")
 fi
 want="$(realpath "$app")"
-if [ "${registered[0]:-}" = "$want" ] && [ "${registered[*]:1}" = "mcp --daemon-url $url" ]; then
+if [ "${registered[0]:-}" = "$want" ] && [ "${registered[*]:1}" = mcp ]; then
   ok "Integrations installs the MCP server into claude: ${registered[*]}"
 else
-  fail "installing the MCP server into claude (want $want mcp --daemon-url $url)" "$res
+  fail "installing the MCP server into claude (want $want mcp)" "$res
 $(cat "$agent_dir/mcp-add.args" 2>/dev/null)"
 fi
 if [ "${#registered[@]}" -gt 0 ]; then

@@ -81,6 +81,7 @@ async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Resu
             allowed_origins: Vec::new(),
             resource_root,
             daemon_url: Some(format!("http://{local}")),
+            mcp_daemon_url: false,
         }),
         runs: Arc::new(RunContext::new(
             Arc::clone(&runs),
