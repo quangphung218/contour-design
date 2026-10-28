@@ -320,7 +320,7 @@ fn InstallIntoAgents() -> impl IntoView {
                             Ok(m) => view! { <p class="ok-text small" role="status" data-testid="mcp-install-result">{icon(Glyph::CheckCircle)}{m}</p> }.into_any(),
                             Err(e) => view! { <p class="error-text small" role="alert" data-testid="mcp-install-result">{e}</p> }.into_any(),
                         })}
-                        <p class="muted small">{t(T::McpLaunchNote)}" "<code class="mono">{format!("{} {}", v["command"].as_str().unwrap_or_default(), v["args"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default())}</code></p>
+                        <p class="muted small">{t(T::McpLaunchNote)}" "<code class="mono launch-cmd">{format!("{} {}", v["command"].as_str().unwrap_or_default(), v["args"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default())}</code></p>
                     </div>
                 }
             })}

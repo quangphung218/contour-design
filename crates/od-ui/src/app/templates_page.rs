@@ -381,7 +381,7 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
                 <aside class="tpl-side">
                     <div class="row wrap">
                         <span class="badge outline">{mode_label(&mode_key(template.info.mode))}</span>
-                        {(!template.info.scenario.is_empty()).then(|| view! { <span class="badge outline">{template.info.scenario.clone()}</span> })}
+                        {(!template.info.scenario.is_empty()).then(|| view! { <span class="badge outline">{scenario_label(&template.info.scenario)}</span> })}
                     </div>
                     {(!prompt.is_empty()).then(|| view! {
                         <h4>{t(T::ExampleBrief)}</h4>

@@ -564,7 +564,6 @@ messages! {
     IntegrationsIntro => "External tools for the agent, and Contour inside other coding agents.", "Công cụ ngoài cho agent, và dùng Contour trong các agent khác.";
     ExternalTools => "External tools", "Công cụ ngoài";
     ConnectAgents => "Connect Contour to your coding agent", "Kết nối Contour với agent";
-    ConnectAgentsShort => "Coding agents", "Agent lập trình";
     ConnectAgentTab => "Connect an agent", "Kết nối agent";
     ConnectAgentsHint => "Register the Contour MCP server in another agent so it can read and edit your designs.", "Đăng ký MCP server của Contour trong agent khác để agent đó đọc và sửa design.";
     UseEverywhere => "Use everywhere", "Dùng ở mọi nơi";
@@ -588,7 +587,6 @@ messages! {
     InstallInCursor => "Install in Cursor", "Cài vào Cursor";
     InstallNow => "Install", "Cài";
     Uninstall => "Remove", "Gỡ";
-    Done => "Done", "Xong";
     McpLaunchNote => "Agents start the server with", "Agent khởi động server bằng";
     McpInstalling => "Updating the agent's settings…", "Đang cập nhật cài đặt của agent…";
     McpInstalledIn => "Contour is now available in {0}. Restart it to load the server.", "Đã thêm Contour vào {0}. Khởi động lại {0} để nạp server.";
