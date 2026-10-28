@@ -82,6 +82,11 @@ fn session(data: &Path, args: &[&str], requests: &[Value]) -> HashMap<u64, Value
 
 /// A daemon that answers every request with `body` (JSON).
 fn stub_daemon(body: Value) -> String {
+    stub_server("200 OK", body)
+}
+
+/// An HTTP server that answers every request with `status` and `body`.
+fn stub_server(status: &'static str, body: Value) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     std::thread::spawn(move || {
@@ -94,7 +99,7 @@ fn stub_daemon(body: Value) -> String {
             let body = body.to_string();
             let _ = write!(
                 conn,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
                 body.len()
             );
         }
@@ -172,4 +177,16 @@ fn a_live_daemon_url_wins_over_daemon_lock() {
     let flag = stub_daemon(json!({"projects": [{"id": "p-from-the-flag", "name": "Flag"}]}));
     let result = list_projects(data.path(), &["--daemon-url", &flag]);
     assert!(result.to_string().contains("p-from-the-flag"), "{result}");
+}
+
+/// The old port taken by another HTTP program: `/api/health` answers 404,
+/// so it is not the daemon and `daemon.lock` answers.
+#[test]
+fn a_daemon_url_that_is_not_a_daemon_falls_back_on_daemon_lock() {
+    let data = tempfile::tempdir().unwrap();
+    let url = stub_daemon(json!({"projects": [{"id": "p-from-the-lock", "name": "Lock"}]}));
+    std::fs::write(data.path().join("daemon.lock"), &url).unwrap();
+    let stranger = stub_server("404 Not Found", json!({"error": "not here"}));
+    let result = list_projects(data.path(), &["--daemon-url", &stranger]);
+    assert!(result.to_string().contains("p-from-the-lock"), "{result}");
 }
