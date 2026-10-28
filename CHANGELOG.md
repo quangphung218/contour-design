@@ -37,15 +37,18 @@ All notable changes to Contour are recorded here. The format follows
   `opencode run --help`: 2.x runs with `--standalone` (a private server,
   so the run's MCP settings apply and no background service is left
   behind) and `--auto` instead of `--dangerously-skip-permissions`; 1.x
-  keeps `--dir`. OpenCode 2's tool calls (no `callID`, `path` for the
-  file) show in the chat and count as written files.
+  keeps `--dir`; when the help does not answer in time, `opencode
+  --version` decides. Upgrading OpenCode while Contour runs takes effect
+  on the next run (and on Check again) without restarting the app.
+  OpenCode 2's tool calls (no `callID`, `path` for the file) show in the
+  chat and count as written files.
 - Studio on a phone: a deck hides the thumbnail column, so the slide gets
   the width, and Present wraps under the slide arrows instead of past the
-  edge.
+  edge. The slide buttons are 44 px touch targets.
 - Onboarding on a phone: the brand URL field takes the whole row; the
   Extract button goes under it.
 - Integrations on a phone shows all three tabs ("Connect an agent" is the
-  shorter label).
+  shorter label), and the agent launch command wraps inside its card.
 - Integrations ▸ Install says what happened with the client's name and
   what to do next ("Contour is now available in Cursor. Restart it to
   load the server.") instead of "installed contour into cursor", and shows
@@ -55,7 +58,8 @@ All notable changes to Contour are recorded here. The format follows
   `<file>-images.pptx` and `<file>-editable.pptx`.
 - A PDF export of a page without a `<title>` is titled after its file,
   not "index.html".
-- Template industries read "HR" and "AI", not "Hr" and "Ai".
+- Template industries read "HR" and "AI", not "Hr" and "Ai", in the
+  filter and on the template's detail badge.
 - MCP works again after upgrading from 0.2.0-beta.4 or earlier without
   pressing Install again. Those versions registered
   `<app> mcp --daemon-url http://127.0.0.1:<port>` with a port that is
