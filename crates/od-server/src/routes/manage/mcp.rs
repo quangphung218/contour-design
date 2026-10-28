@@ -44,6 +44,13 @@ fn launch(state: &AppState) -> LaunchSpec {
     let exe = std::env::current_exe()
         .ok()
         .map(|p| std::fs::canonicalize(&p).unwrap_or(p))
+        .map(|p| {
+            appimage_file(
+                &p,
+                std::env::var_os("APPIMAGE").as_deref(),
+                std::env::var_os("APPDIR").as_deref(),
+            )
+        })
         .map_or_else(|| "od".to_owned(), |p| unverbatim(&p.to_string_lossy()));
     let mut args = vec!["mcp".to_owned()];
     if let Some(url) = state.config.daemon_url.as_deref() {
@@ -61,6 +68,24 @@ fn unverbatim(path: &str) -> String {
         format!(r"\\{unc}")
     } else {
         path.strip_prefix(r"\\?\").unwrap_or(path).to_owned()
+    }
+}
+
+/// Inside an AppImage the binary runs from a mount (`/tmp/.mount_…`) that
+/// goes when the app quits: the agent gets the `.AppImage` file instead
+/// (`APPIMAGE`, set by its runtime), which passes `mcp …` on to the app.
+/// Only for the binary under `APPDIR`, not an `od` started from a terminal
+/// tab that inherited them.
+fn appimage_file(
+    exe: &std::path::Path,
+    appimage: Option<&std::ffi::OsStr>,
+    appdir: Option<&std::ffi::OsStr>,
+) -> std::path::PathBuf {
+    match (appimage, appdir) {
+        (Some(file), Some(dir)) if !file.is_empty() && !dir.is_empty() && exe.starts_with(dir) => {
+            std::path::PathBuf::from(file)
+        }
+        _ => exe.to_path_buf(),
     }
 }
 
@@ -426,6 +451,23 @@ pub async fn catalog_route() -> ApiJson<CatalogResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_appimage_registers_its_file_not_its_mount() {
+        use std::ffi::OsStr;
+        use std::path::Path;
+        let exe = Path::new("/tmp/.mount_ContouAbc/usr/bin/od-desktop");
+        let file = Some(OsStr::new("/home/u/Apps/Contour.AppImage"));
+        let dir = Some(OsStr::new("/tmp/.mount_ContouAbc"));
+        assert_eq!(
+            appimage_file(exe, file, dir),
+            Path::new("/home/u/Apps/Contour.AppImage")
+        );
+        // `od` from a terminal tab of the AppImage: not under APPDIR.
+        let od = Path::new("/usr/local/bin/od");
+        assert_eq!(appimage_file(od, file, dir), od);
+        assert_eq!(appimage_file(exe, None, None), exe);
+    }
 
     #[test]
     fn the_launch_command_is_not_a_verbatim_path() {
