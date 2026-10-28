@@ -5,7 +5,9 @@ entirely on your machine and works with the coding agent CLI you already
 have: Claude Code, Codex, Cursor, Copilot and a dozen more. No account, no
 cloud; nothing leaves your machine except calls to the services you
 configure: your agent or model provider, and any MCP server, media or
-research provider you add.
+research provider you add. Help ▸ Check for Updates asks GitHub Releases
+for the newest version only when you click it, sends nothing but its
+User-Agent, and never checks in the background.
 
 [![CI](https://github.com/quangphung218/contour-design/actions/workflows/ci.yml/badge.svg)](https://github.com/quangphung218/contour-design/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/quangphung218/contour-design?include_prereleases&sort=semver)](https://github.com/quangphung218/contour-design/releases)
@@ -105,7 +107,7 @@ claim (OpenDesign as of commit `e03d5c2`):
 
 | | Contour | OpenDesign |
 |---|---|---|
-| Telemetry | None. No analytics, crash-reporting or tracing client is in the code or its dependencies, and the end-to-end tests block every request the UI makes off the machine. | Product analytics and quality traces are on by default and can be turned off; safety and reliability telemetry is always enabled in builds configured with a telemetry destination ([PRIVACY.md](https://github.com/nexu-io/open-design/blob/e03d5c23f308c39f4de7c057568df66c29a84385/PRIVACY.md)). |
+| Telemetry | None. No analytics, crash-reporting or tracing client is in the code or its dependencies, and the end-to-end tests block every request the UI makes off the machine. The only other call is Check for Updates, to GitHub Releases, when you click it. | Product analytics and quality traces are on by default and can be turned off; safety and reliability telemetry is always enabled in builds configured with a telemetry destination ([PRIVACY.md](https://github.com/nexu-io/open-design/blob/e03d5c23f308c39f4de7c057568df66c29a84385/PRIVACY.md)). |
 | Account and cloud | None. Nothing to sign in to. | Optional OpenDesign Cloud with sign-in and its own model service ([README](https://github.com/nexu-io/open-design/blob/e03d5c23f308c39f4de7c057568df66c29a84385/README.md)). |
 | Network | Only the services you configure: your agent or model provider, and any MCP server, media or research provider you add. Contour never downloads a browser or updates itself. | Also its cloud, sharing and deploy services when you use them. |
 | Built with | Rust: axum daemon, Leptos/WASM UI, Tauri 2 shell. | TypeScript: Node daemon, Next.js UI, Electron shell. |
