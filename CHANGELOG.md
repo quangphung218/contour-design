@@ -8,6 +8,26 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Pull requests run the workspace tests on Windows (`test (windows-2025)`
+  in `ci.yml`), not only a compile check.
+- The Windows smoke test installs the MCP server into Claude Code and
+  Codex the way Integrations does, through npm-style `.cmd` shims, and
+  checks the command each one gets. It then installs the latest published
+  release, makes a project, installs the new `.msi` over it and checks
+  there is one uninstall entry with the new version, the app starts and
+  the data folder is untouched (`scripts/windows-upgrade-smoke.ps1`).
+
+### Fixed
+
+- Design system cards show the right colors when a `DESIGN.md` has
+  Windows (CRLF) line ends, as every bundled one has in the Windows
+  installer. Color tables were skipped, so 11 bundled systems showed other
+  swatches than on macOS and Linux.
+- On Windows, installing the MCP server into an agent gives it the app's
+  plain path (`C:\Program Files\…`), not the `\\?\C:\…` form.
+
 ## [0.2.0-beta.4] - 2026-10-28
 
 ### Added
