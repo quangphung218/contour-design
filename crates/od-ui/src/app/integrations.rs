@@ -60,7 +60,7 @@ pub fn Integrations() -> impl IntoView {
             </header>
             <div class="segmented integration-tabs" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true)>
                 {tab_button(Tab::Mcp, Glyph::Mcp, T::McpTitle, T::ExternalTools, "tab-mcp")}
-                {tab_button(Tab::Agents, Glyph::Agent, T::ConnectAgents, T::ConnectAgentsShort, "tab-agents")}
+                {tab_button(Tab::Agents, Glyph::Agent, T::ConnectAgentTab, T::ConnectAgents, "tab-agents")}
                 {tab_button(Tab::Everywhere, Glyph::Globe, T::UseEverywhere, T::UseEverywhereShort, "tab-everywhere")}
             </div>
             {move || match tab.get() {
@@ -221,20 +221,31 @@ fn InstallIntoAgents() -> impl IntoView {
         LocalResource::new(|| async { api::get::<Value>("/api/mcp/install-info").await.ok() });
     let client = RwSignal::new("claude".to_owned());
     let result = RwSignal::new(None::<Result<String, String>>);
-    let install = move |uninstall: bool| {
+    let busy = RwSignal::new(false);
+    // The daemon's message names the client by id ("installed contour into
+    // claude"); success is told here with the client's name and what to do
+    // next. Failures keep the daemon's message: it says what went wrong.
+    let install = move |uninstall: bool, name: String| {
         let id = client.get_untracked();
         result.set(None);
+        busy.set(true);
         leptos::task::spawn_local(async move {
             let url = format!("/api/mcp/install/{}", api::seg(&id));
             result.set(Some(
                 match api::post::<_, Value>(&url, &json!({ "uninstall": uninstall })).await {
-                    Ok(v) if v["ok"] == true => {
-                        Ok(v["message"].as_str().unwrap_or_default().to_owned())
-                    }
+                    Ok(v) if v["ok"] == true => Ok(tf(
+                        if uninstall {
+                            T::McpUninstalledIn
+                        } else {
+                            T::McpInstalledIn
+                        },
+                        &[&name],
+                    )),
                     Ok(v) => Err(v["message"].as_str().unwrap_or_default().to_owned()),
                     Err(e) => Err(e.to_string()),
                 },
             ));
+            busy.set(false);
         });
     };
     view! {
@@ -291,15 +302,23 @@ fn InstallIntoAgents() -> impl IntoView {
                                 view! { <a class="btn small" href=link data-testid="mcp-deeplink">{icon(Glyph::Link)}{t(T::InstallInCursor)}</a> }
                             })
                         }}
-                        {move || (current3()["installable"] == true).then(|| view! {
-                            <div class="row">
-                                <button class="btn primary small" data-testid="mcp-install-run" on:click=move |_| install(false)>{icon(Glyph::Download)}{t(T::InstallNow)}</button>
-                                <button class="btn ghost small" data-testid="mcp-uninstall-run" on:click=move |_| install(true)>{t(T::Uninstall)}</button>
-                            </div>
-                        })}
+                        {move || {
+                            let c = current3();
+                            (c["installable"] == true).then(|| {
+                                let name = c["name"].as_str().unwrap_or_default().to_owned();
+                                let name2 = name.clone();
+                                view! {
+                                    <div class="row">
+                                        <button class="btn primary small" data-testid="mcp-install-run" disabled=move || busy.get() on:click=move |_| install(false, name.clone())>{icon(Glyph::Download)}{t(T::InstallNow)}</button>
+                                        <button class="btn ghost small" data-testid="mcp-uninstall-run" disabled=move || busy.get() on:click=move |_| install(true, name2.clone())>{t(T::Uninstall)}</button>
+                                    </div>
+                                }
+                            })
+                        }}
+                        {move || busy.get().then(|| view! { <p class="muted small" role="status" data-testid="mcp-install-busy"><span class="spinner"></span>{t(T::McpInstalling)}</p> })}
                         {move || result.get().map(|r| match r {
-                            Ok(m) => view! { <p class="ok-text small" data-testid="mcp-install-result">{icon(Glyph::CheckCircle)}{if m.is_empty() { t(T::Done).to_owned() } else { m }}</p> }.into_any(),
-                            Err(e) => view! { <p class="error-text small" data-testid="mcp-install-result">{e}</p> }.into_any(),
+                            Ok(m) => view! { <p class="ok-text small" role="status" data-testid="mcp-install-result">{icon(Glyph::CheckCircle)}{m}</p> }.into_any(),
+                            Err(e) => view! { <p class="error-text small" role="alert" data-testid="mcp-install-result">{e}</p> }.into_any(),
                         })}
                         <p class="muted small">{t(T::McpLaunchNote)}" "<code class="mono">{format!("{} {}", v["command"].as_str().unwrap_or_default(), v["args"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default())}</code></p>
                     </div>

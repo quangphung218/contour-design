@@ -565,6 +565,7 @@ messages! {
     ConnectAgents => "Connect Contour to your coding agent", "Kết nối Contour với agent";
     ConnectAgentsShort => "Coding agents", "Agent lập trình";
     ConnectAgentsHint => "Register the Contour MCP server in another agent so it can read and edit your designs.", "Đăng ký MCP server của Contour trong agent khác để agent đó đọc và sửa design.";
+    ConnectAgentTab => "Connect an agent", "Kết nối agent";
     UseEverywhere => "Use everywhere", "Dùng ở mọi nơi";
     UseEverywhereShort => "CLI, HTTP, MCP", "CLI, HTTP, MCP";
     UseEverywhereHint => "Drive Contour from a terminal, a script or another agent.", "Điều khiển Contour từ terminal, script hoặc agent khác.";
@@ -589,6 +590,9 @@ messages! {
     Done => "Done", "Xong";
     McpLaunchNote => "Agents start the server with", "Agent khởi động server bằng";
     ForwardedTo => "Forwarded to:", "Được chuyển tới:";
+    McpInstalling => "Updating the agent's settings…", "Đang cập nhật cài đặt của agent…";
+    McpInstalledIn => "Contour is now available in {0}. Restart it to load the server.", "Đã thêm Contour vào {0}. Khởi động lại {0} để nạp server.";
+    McpUninstalledIn => "Contour was removed from {0}. Restart it to unload the server.", "Đã gỡ Contour khỏi {0}. Khởi động lại {0} để gỡ server.";
     NotForwardedTo => "Not forwarded to:", "Không chuyển tới:";
     ForwardedAcpNote => "ACP adapters marked stdio only receive stdio MCP servers from this list; HTTP entries are dropped at spawn time.", "Adapter ACP ghi stdio only chỉ nhận MCP server stdio trong danh sách này; mục HTTP bị bỏ khi chạy.";
     NotForwardedNote => "For those agents, configure MCP servers in the agent's own config file (for example ~/.codex/config.toml); the servers below are unused there.", "Với các agent này, cấu hình MCP server trong file cấu hình riêng của agent (ví dụ ~/.codex/config.toml); các server bên dưới không được dùng ở đó.";

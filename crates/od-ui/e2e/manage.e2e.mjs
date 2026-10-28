@@ -448,6 +448,7 @@ try {
   await page.getByTestId('mcp-deeplink').waitFor();
   await page.getByTestId('mcp-install-run').click();
   await page.getByTestId('mcp-install-result').waitFor();
+  assert.match(await page.getByTestId('mcp-install-result').textContent(), /^Contour is now available in Cursor\. Restart it/);
   const cursorCfg = JSON.parse(readFileSync(join(home, '.cursor', 'mcp.json'), 'utf8'));
   assert.equal(cursorCfg.mcpServers.contour.args[0], 'mcp');
   await page.screenshot({ path: OUT + 'integrations-agents.png' });
