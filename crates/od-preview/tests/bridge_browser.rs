@@ -20,21 +20,10 @@ use std::time::{Duration, Instant};
 const FRAME_W: u32 = 1280;
 const FRAME_H: u32 = 720;
 
+/// The browser the app's own export finds (`OD_CHROME_PATH`, the usual
+/// places on macOS, Linux and Windows, then `PATH`).
 fn chrome_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("OD_CHROME_PATH").filter(|p| !p.is_empty()) {
-        return Some(PathBuf::from(p));
-    }
-    let candidates = [
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/microsoft-edge",
-    ];
-    candidates.iter().map(PathBuf::from).find(|p| p.exists())
+    od_render_cdp::find_chrome().ok()
 }
 
 /// Host page: one sandboxed iframe plus helpers that record every message
