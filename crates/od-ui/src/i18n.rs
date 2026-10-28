@@ -478,7 +478,7 @@ messages! {
     ProviderDefault => "Provider default", "Mặc định của provider";
     MediaSaveHint => "Changes apply after Save.", "Thay đổi có hiệu lực sau khi Lưu.";
     About => "About", "Giới thiệu";
-    AboutHint => "Version, local diagnostics and first-run setup.", "Phiên bản, chẩn đoán cục bộ và thiết lập lần đầu.";
+    AboutHint => "Version, updates, local diagnostics and first-run setup.", "Phiên bản, bản cập nhật, chẩn đoán cục bộ và thiết lập lần đầu.";
     Version => "Version", "Phiên bản";
     Runtime => "Runtime", "Môi trường chạy";
     RuntimePackaged => "Desktop app", "App desktop";
@@ -488,6 +488,16 @@ messages! {
     DiagnosticsHint => "A zip built on this machine: versions, settings without keys, detected agents and recent run logs. Nothing is uploaded.", "File zip tạo trên máy này: phiên bản, cài đặt không kèm key, agent tìm thấy và log run gần đây. Không gửi lên đâu.";
     DiagnosticsSaved => "Saved diagnostics to {0}", "Đã lưu chẩn đoán vào {0}";
     ResetOnboarding => "Reset onboarding", "Chạy lại thiết lập ban đầu";
+    CheckForUpdates => "Check for updates", "Kiểm tra bản cập nhật";
+    CheckingForUpdates => "Checking for updates…", "Đang kiểm tra bản cập nhật…";
+    UpdateAvailable => "Version {0} is available", "Đã có phiên bản {0}";
+    UpdateYouHave => "You have version {0}.", "Bản đang dùng: {0}.";
+    ReleaseNotes => "Release notes", "Ghi chú phát hành";
+    OpenDownloadPage => "Open download page", "Mở trang tải về";
+    UpToDate => "You're up to date", "Đã là bản mới nhất";
+    UpToDateHint => "Version {0} is the newest.", "Phiên bản {0} là bản mới nhất.";
+    UpdateCheckFailed => "Couldn't check for updates. Check your internet connection and try again.", "Không kiểm tra được bản cập nhật. Kiểm tra kết nối mạng rồi thử lại.";
+    TryAgain => "Try again", "Thử lại";
     Licenses => "Licenses", "Giấy phép";
     LicensesHint => "Contour is licensed under the Apache License 2.0. These files ship with the app.", "Contour dùng giấy phép Apache License 2.0. Các file này đi kèm app.";
     Credits => "Credits", "Ghi công";

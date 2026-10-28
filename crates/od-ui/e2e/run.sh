@@ -39,3 +39,5 @@ node c3-runtimes.e2e.mjs
 node c4-depth.e2e.mjs
 # axe-core and narrow windows: port OD_E2E_PORT + 10.
 node a11y.e2e.mjs
+# Check for Updates against a stub GitHub Releases: port OD_E2E_PORT + 11.
+node updates.e2e.mjs

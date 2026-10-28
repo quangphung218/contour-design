@@ -55,4 +55,5 @@ Profile nằm ở `~/.dsh/profiles/open-design`, hoặc trong `$DSH_HOME` nếu 
 
 - **Agent không trả lời:** Settings ▸ Model ▸ Thử, hoặc Làm mới ở màn onboarding.
 - **Export PDF hay ảnh lỗi:** cài Chrome, Edge hoặc Chromium, hoặc đặt `OD_CHROME_PATH`.
+- **Bản mới:** Help ▸ Check for Updates (hoặc Settings ▸ About ▸ Kiểm tra bản cập nhật) cho biết bản phát hành mới nhất và mở trang tải về. Contour chỉ kiểm tra khi được bấm.
 - **Báo lỗi:** Help ▸ Report Issue chép bản tóm tắt chẩn đoán (phiên bản, nền tảng, agent, các run gần đây, không có gì bí mật) vào clipboard và mở thư mục log của run. Dán nó vào nơi báo lỗi. Settings ▸ About ▸ Export diagnostics lưu bản lưu trữ đầy đủ.

@@ -314,10 +314,15 @@ files under the data folder and the API returns them masked.
   sidecar process.
 - It shares the data folder with `od`. If an `od` daemon already owns it,
   the app says so and quits; stop `od` first.
-- **Project ▸ Open Folder…** (Cmd+O), **Help** ▸ Documentation, Report Issue
-  (copies a diagnostics summary with the last lines of the app log and opens
-  the log folder), Show Data
-  Folder, Keyboard Shortcuts, Command Palette.
+- **Project ▸ Open Folder…** (Cmd+O), **Help** ▸ Documentation, Check for
+  Updates… (below), Report Issue (copies a diagnostics summary with the last
+  lines of the app log and opens the log folder), Show Data Folder, Keyboard
+  Shortcuts, Command Palette.
+- **Check for Updates** (Help menu, or Settings ▸ About ▸ Check for
+  updates) asks GitHub Releases for the newest release, pre-releases
+  included, and shows its version with links to the release notes and the
+  download page, "You're up to date", or a short error. Only that click
+  calls out: the app never checks or updates on its own.
 - Started from Finder or the Dock, the app takes `PATH` from your login
   shell (plus `~/.local/bin`, Homebrew, npm, bun, cargo) to find agents.
 - Quitting stops every terminal shell and running agent.
@@ -392,4 +397,4 @@ account, a cloud service or outbound network ([decisions.md](decisions.md)):
 connectors (Composio), Orbit digests, Figma import, marketplace and registry,
 the floating pet, the built-in browser tab, Web Clipper, xAI OAuth, team
 spaces and sharing, deploy to Vercel/Cloudflare, cloud sign-in and
-auto-update. [parity.md](parity.md) marks them N/A.
+auto-update (Check for Updates only looks, when asked). [parity.md](parity.md) marks them N/A.

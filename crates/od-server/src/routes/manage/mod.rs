@@ -9,6 +9,7 @@ pub mod mcp;
 pub mod memory;
 pub mod projects;
 pub mod settings;
+pub mod updates;
 
 use crate::state::AppState;
 use axum::Router;
@@ -38,4 +39,5 @@ pub fn routes() -> Router<AppState> {
         .route("/api/mcp/install/{agent}", post(mcp::install_route))
         .route("/api/mcp/catalog", get(mcp::catalog_route))
         .route("/api/diagnostics/export", get(diagnostics::export))
+        .route("/api/updates/check", post(updates::check_route))
 }
