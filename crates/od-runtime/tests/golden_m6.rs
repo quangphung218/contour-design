@@ -432,6 +432,8 @@ fn plain_text_is_answer_text() {
     assert!(writes.is_empty());
     let all = text(&events);
     let original = std::fs::read_to_string(fixtures().join("plain/qwen-answer.txt")).unwrap();
+    // CRLF when git checks the fixture out on Windows; the replay reads lines.
+    let original = original.replace("\r\n", "\n");
     assert_eq!(all, original);
     let artifacts = od_runtime::artifact::extract(&all);
     let names: Vec<&str> = artifacts.iter().map(|a| a.file_name.as_str()).collect();
