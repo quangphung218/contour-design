@@ -5,8 +5,9 @@
 # version, checks that an agent CLI installed the way npm installs one (a
 # `.cmd` shim in a folder on the user's Path, which the app's own
 # environment does not have yet) is found and runs, that Check again finds
-# one installed while the app runs, exports a PDF through Edge, saves a
-# screenshot of the window, closes it and uninstalls. Logs go to the out dir.
+# one installed while the app runs, that Integrations installs the MCP
+# server into both, exports a PDF through Edge, saves a screenshot of the
+# window, closes it and uninstalls. Logs go to the out dir.
 # Usage: pwsh scripts/windows-smoke.ps1 <Contour_*.msi> [out-dir]
 # EXPECTED_VERSION overrides the version read from Cargo.toml; MSI_VERSION
 # is the installer's numeric version (scripts/msi-version.sh), checked when set.
@@ -100,12 +101,20 @@ foreach ($file in @("ui\index.html", "content\skills", "LICENSE", "NOTICE", "THI
 # and a `.cmd` shim side by side in a folder the installer adds to the user's
 # Path in the registry. The app is started below with this session's
 # environment, which does not have the folder: it must read the registry.
+# `claude mcp …` (the MCP install below) only records its arguments.
 $agentDir = Join-Path $env:LOCALAPPDATA "smoke-npm"
 New-Item -ItemType Directory -Force -Path $agentDir | Out-Null
 Copy-Item "$here\..\crates\od-ui\e2e\mock-agent\claude" "$agentDir\claude"
 $bash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
 if (-not (Test-Path $bash)) { Stop-Smoke "no Git Bash at $bash for the mock agent" }
-Set-Content -Path "$agentDir\claude.cmd" -Encoding ascii -Value "@`"$bash`" `"%~dp0claude`" %*"
+Set-Content -Path "$agentDir\claude.cmd" -Encoding ascii -Value @(
+  "@echo off",
+  "if not `"%~1`"==`"mcp`" goto run",
+  ">>`"%~dp0mcp-args.log`" echo %*",
+  "exit /b 0",
+  ":run",
+  "`"$bash`" `"%~dp0claude`" %*"
+)
 if (Get-Command claude -ErrorAction SilentlyContinue) { Stop-Smoke "a claude is already on this machine's PATH" (Get-Command claude).Source }
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 [Environment]::SetEnvironmentVariable("Path", (@($userPath, $agentDir) | Where-Object { $_ }) -join ";", "User")
@@ -161,7 +170,11 @@ else {
 # in the registry only, and Check again (POST /api/agents/rescan) finds it.
 $laterDir = Join-Path $env:LOCALAPPDATA "smoke-later"
 New-Item -ItemType Directory -Force -Path $laterDir | Out-Null
-Set-Content -Path "$laterDir\codex.cmd" -Encoding ascii -Value "@echo codex-cli 0.0.0-smoke"
+Set-Content -Path "$laterDir\codex.cmd" -Encoding ascii -Value @(
+  "@echo off",
+  "if `"%~1`"==`"mcp`" >>`"%~dp0mcp-args.log`" echo %*",
+  "echo codex-cli 0.0.0-smoke"
+)
 if (Get-Command codex -ErrorAction SilentlyContinue) { Fail "a codex is already on this machine's PATH" (Get-Command codex).Source }
 $before = (Invoke-RestMethod "$url/api/agents").agents | Where-Object { $_.id -eq "codex" }
 if ($before.available) { Fail "codex is found before it is installed" ($before | ConvertTo-Json -Compress) }
@@ -171,6 +184,20 @@ $rescan = Invoke-RestMethod -Method Post "$url/api/agents/rescan"
 $codex = $rescan.agents | Where-Object { $_.id -eq "codex" }
 if ($codex.available -and $codex.path -eq "$laterDir\codex.cmd") { Ok "Check again finds an agent installed while the app runs ($($codex.path))" }
 else { Fail "Check again does not find codex.cmd added to the user's Path" ($codex | ConvertTo-Json -Compress) }
+
+# Integrations > Connect Contour to your coding agent: Install runs
+# `<agent> mcp add … -- <this app> mcp --daemon-url <this daemon>` through
+# the same `.cmd` shims.
+foreach ($mcp in @(@{ id = "claude"; dir = $agentDir; add = "mcp add --scope user contour -- " }, @{ id = "codex"; dir = $laterDir; add = "mcp add contour -- " })) {
+  $res = try { Invoke-RestMethod -Method Post "$url/api/mcp/install/$($mcp.id)" } catch { [pscustomobject]@{ ok = $false; message = "$_" } }
+  $log = Get-Content "$($mcp.dir)\mcp-args.log" -ErrorAction SilentlyContinue
+  $line = $log | Where-Object { $_.StartsWith($mcp.add) } | Select-Object -First 1
+  # The command after `--`, unquoted, then its arguments.
+  $server = ""; $rest = ""
+  if ($line -and $line.Substring($mcp.add.Length) -match '^"?(.+?\.exe)"? (.*)$') { $server = $Matches[1]; $rest = $Matches[2] }
+  if ($res.ok -and $server -eq $app -and $rest -eq "mcp --daemon-url $url") { Ok "Integrations installs the MCP server into $($mcp.id): $($mcp.id) $line" }
+  else { Fail "installing the MCP server into $($mcp.id) (ok=$($res.ok), server '$server' '$rest', want $app mcp --daemon-url $url)" "$($res.message)`n$($log -join "`n")" }
+}
 
 # PDF export drives the Microsoft Edge that Windows ships.
 try {

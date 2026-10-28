@@ -2,9 +2,11 @@
 # installs the .msi silently, checks the files and the Start Menu shortcut,
 # opens Contour from it, waits for /api/health to report the version, runs
 # an agent turn through an npm-style `.cmd` on the user's Path, checks that
-# Check again finds one installed meanwhile, runs a PDF export through
-# Edge, saves a screenshot, closes the app and uninstalls
-# (scripts/windows-smoke.ps1).
+# Check again finds one installed meanwhile, installs the MCP server into
+# both through Integrations, runs a PDF export through Edge, saves a
+# screenshot, closes the app and uninstalls (scripts/windows-smoke.ps1).
+# Then installs the latest published release and the new .msi over it
+# (scripts/windows-upgrade-smoke.ps1).
 # release.yml calls it with the bundle it just built and drafts the release
 # only when it passes; a run without a Windows bundle (its build is best
 # effort) skips the smoke test instead. Pull requests that touch the
@@ -27,6 +29,9 @@ on:
       # PDF export through Edge.
       - crates/od-render-cdp/src/lib.rs
       - scripts/windows-smoke.ps1
+      - scripts/windows-upgrade-smoke.ps1
+      # The MCP install button (Integrations).
+      - crates/od-server/src/routes/manage/mcp.rs
       - scripts/msi-version.sh
       - .github/workflows/windows-smoke.yml
       # The windows-x64 bundle and the call that hands it over.
@@ -152,7 +157,7 @@ jobs:
       matrix:
         os: [windows-2025, windows-2022]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -167,6 +172,7 @@ jobs:
         shell: bash
         run: |
           version="$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/version=/,"");print;exit}' Cargo.toml)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "msi=$(scripts/msi-version.sh "$version")" >> "$GITHUB_OUTPUT"
       - name: Smoke test
         shell: pwsh
@@ -176,6 +182,42 @@ jobs:
           $files = @(Get-ChildItem dist-release -Filter *.msi)
           if ($files.Count -ne 1) { Write-Host "::error::want one .msi, found $($files.Count)"; exit 1 }
           ./scripts/windows-smoke.ps1 $files[0].FullName smoke-out
+      # The latest published release other than the one under test, for the
+      # upgrade. None (a first release, or no .msi in it) skips the upgrade
+      # with a warning.
+      - name: Previous release
+        id: previous
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tag="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 50 --json tagName,publishedAt \
+            --jq "[.[] | select(.tagName != \"v$VERSION\")] | sort_by(.publishedAt) | last | .tagName // empty")"
+          if [ -z "$tag" ]; then
+            echo "::warning::no published release other than v$VERSION; the upgrade smoke test is skipped"
+            exit 0
+          fi
+          if ! gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern '*.msi' --dir previous; then
+            echo "::warning::no .msi in $tag; the upgrade smoke test is skipped"
+            exit 0
+          fi
+          files=(previous/*.msi)
+          echo "upgrading from $tag (${files[0]})"
+          echo "msi=${files[0]}" >> "$GITHUB_OUTPUT"
+      - name: Upgrade smoke test
+        if: ${{ !cancelled() && steps.previous.outputs.msi }}
+        shell: pwsh
+        env:
+          MSI_VERSION: ${{ steps.version.outputs.msi }}
+          PREVIOUS: ${{ steps.previous.outputs.msi }}
+        run: |
+          # The smoke test above leaves its data folder; the upgrade starts clean.
+          $data = Join-Path $env:APPDATA "contour"
+          if (Test-Path $data) { Move-Item $data "$data-smoke" }
+          $files = @(Get-ChildItem dist-release -Filter *.msi)
+          ./scripts/windows-upgrade-smoke.ps1 $env:PREVIOUS $files[0].FullName smoke-out/upgrade
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

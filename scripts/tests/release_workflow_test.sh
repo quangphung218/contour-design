@@ -175,4 +175,31 @@ step "Installer version" "$work/wversion.sh" "$windows_smoke"
 (cd "$work" && env GITHUB_OUTPUT="$work/version-output" bash "$work/wversion.sh") >"$work/out" 2>&1; rc=$?
 check "the smoke test expects that same installer version" '[ $rc -eq 0 ] && grep -qx "msi=9.9.9.203" "$work/version-output"'
 
+# The upgrade starts from the latest published release that is not the one
+# under test (fake gh: RELEASES is `gh release list --json` output, MSI_TAGS
+# the tags with an .msi to download).
+cat > "$work/bin/gh" <<'SH'
+#!/bin/sh
+case "$1 $2" in
+  "release list")
+    while [ $# -gt 0 ]; do [ "$1" = --jq ] && { printf '%s' "$RELEASES" | jq -r "$2"; exit; }; shift; done ;;
+  "release download")
+    case " $MSI_TAGS " in *" $3 "*) mkdir -p previous && touch "previous/Contour_$3_x64_en-US.msi" ;; *) echo "no assets match" >&2; exit 1 ;; esac ;;
+esac
+SH
+chmod +x "$work/bin/gh"
+step "Previous release" "$work/previous.sh" "$windows_smoke"
+previous() {
+  rm -rf "$work/prev" && mkdir -p "$work/prev" && : > "$work/prev/output"
+  (cd "$work/prev" && env GITHUB_OUTPUT="$work/prev/output" GITHUB_REPOSITORY=o/r VERSION=9.9.9-rc.3 PATH="$work/bin:$PATH" \
+    RELEASES="$1" MSI_TAGS="$2" bash "$work/previous.sh") >"$work/out" 2>&1
+}
+both='[{"tagName":"v9.9.9-rc.2","publishedAt":"2026-01-01T00:00:00Z"},{"tagName":"v9.9.9-rc.3","publishedAt":"2026-01-02T00:00:00Z"},{"tagName":"v9.9.9-rc.1","publishedAt":"2025-12-01T00:00:00Z"}]'
+previous "$both" "v9.9.9-rc.1 v9.9.9-rc.2 v9.9.9-rc.3"; rc=$?
+check "upgrade from the latest release other than the one under test" '[ $rc -eq 0 ] && grep -qx "msi=previous/Contour_v9.9.9-rc.2_x64_en-US.msi" "$work/prev/output"'
+previous '[{"tagName":"v9.9.9-rc.3","publishedAt":"2026-01-02T00:00:00Z"}]' "v9.9.9-rc.3"; rc=$?
+check "no other release: the upgrade is skipped with a warning" '[ $rc -eq 0 ] && [ ! -s "$work/prev/output" ] && grep -q "::warning::no published release other than v9.9.9-rc.3" "$work/out"'
+previous "$both" ""; rc=$?
+check "no .msi in that release: the upgrade is skipped with a warning" '[ $rc -eq 0 ] && [ ! -s "$work/prev/output" ] && grep -q "::warning::no .msi in v9.9.9-rc.2" "$work/out"'
+
 [ "$failures" -eq 0 ] && echo "release.yml: all checks passed" || { echo "release.yml: $failures failed"; exit 1; }
