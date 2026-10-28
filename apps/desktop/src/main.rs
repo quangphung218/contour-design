@@ -33,6 +33,7 @@ const SETTINGS_MENU_ID: &str = "app-settings";
 const DATA_FOLDER_MENU_ID: &str = "help-data-folder";
 const DOCS_MENU_ID: &str = "help-docs";
 const REPORT_MENU_ID: &str = "help-report-issue";
+const UPDATES_MENU_ID: &str = "help-check-updates";
 /// Display name (window title, dialogs); `tauri.conf.json` `productName`.
 const APP_NAME: &str = "Contour";
 
@@ -263,9 +264,17 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         None::<&str>,
     )?;
     // Help ▸ Documentation opens the guide bundled in the UI; Report Issue
-    // copies a diagnostics summary and opens the log folder (no network).
+    // copies a diagnostics summary and opens the log folder (no network);
+    // Check for Updates asks GitHub Releases, only when chosen.
     let docs = MenuItem::with_id(app, DOCS_MENU_ID, "Documentation", true, None::<&str>)?;
     let report = MenuItem::with_id(app, REPORT_MENU_ID, "Report Issue", true, None::<&str>)?;
+    let updates = MenuItem::with_id(
+        app,
+        UPDATES_MENU_ID,
+        "Check for Updates…",
+        true,
+        None::<&str>,
+    )?;
     let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
     // macOS: Settings goes in the app menu, after About.
     #[cfg(target_os = "macos")]
@@ -274,8 +283,9 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     }
     #[cfg(not(target_os = "macos"))]
     project.append(&settings)?;
-    let items: [&dyn tauri::menu::IsMenuItem<tauri::Wry>; 6] =
-        [&docs, &separator, &report, &data, &shortcuts, &palette];
+    let items: [&dyn tauri::menu::IsMenuItem<tauri::Wry>; 7] = [
+        &docs, &separator, &updates, &report, &data, &shortcuts, &palette,
+    ];
     // The default menu already has a Help menu (About, on Linux and
     // Windows): the items go there rather than into a second "Help".
     let default_help = menu
@@ -335,6 +345,7 @@ fn main() -> anyhow::Result<()> {
             DATA_FOLDER_MENU_ID => show_data_folder(app),
             DOCS_MENU_ID => ui_action(app, "docs"),
             REPORT_MENU_ID => ui_action(app, "report-issue"),
+            UPDATES_MENU_ID => ui_action(app, "check-updates"),
             _ => {}
         })
         .setup(move |app| {

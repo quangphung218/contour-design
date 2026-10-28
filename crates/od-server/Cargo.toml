@@ -24,6 +24,7 @@ od-mcp.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls-native-roots"] }
 rusqlite.workspace = true
 regex.workspace = true
+semver.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 anyhow.workspace = true
 axum = { workspace = true, features = ["ws"] }

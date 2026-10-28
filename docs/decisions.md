@@ -12,6 +12,7 @@ Settled 2026-10-22 by the maintainer. Answers the 4 open questions in `spec.md` 
 
 ## General constraints
 - **No login, no cloud, no telemetry, no outbound network** except calls to the agent/provider the user configures. E2e tests block every request outside loopback.
+  - Exception (2026-10-28, owner): **Check for Updates** (Help menu, Settings ▸ About) calls the GitHub Releases API only when the user clicks it. It sends nothing but the request and its User-Agent, and never runs in the background. E2e tests check that start-up sends no request.
 - **Stack**: Cargo workspace, edition 2024, tokio, axum, rusqlite (bundled), Leptos CSR (UI), Tauri 2 (shell). Crate layout per `spec.md` §5.2.
 - **Performance**: follow the target table in `spec.md` §5.5; each milestone has benches for the parts it touches.
 - **Rust code** follows the `rust-skills` skill (`.claude/skills/rust-skills`).

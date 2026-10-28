@@ -21,7 +21,7 @@ pub fn focus_while_open<E>(
     E: ElementType + 'static,
     E::Output: JsCast + Clone + 'static,
 {
-    let opener = SendWrapper::new(document().active_element());
+    return_focus_on_cleanup();
     Effect::new(move |_| {
         let Some(el) = node.get() else {
             return;
@@ -34,6 +34,13 @@ pub fn focus_while_open<E>(
             }
         });
     });
+}
+
+/// Call in a component that takes the focus while it is shown: when it
+/// unmounts and focus was left on nothing, it goes back to the element
+/// that had it when the component mounted.
+pub fn return_focus_on_cleanup() {
+    let opener = SendWrapper::new(document().active_element());
     on_cleanup(move || {
         let opener = opener.take();
         after_render(move || {

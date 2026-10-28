@@ -62,6 +62,7 @@ mod studio;
 mod switcher;
 mod templates_page;
 mod terminal;
+mod updates;
 mod versions;
 
 use crate::events::{AgentInfo, AgentsResponse};
@@ -342,6 +343,7 @@ fn Shelled() -> impl IntoView {
             <Show when=move || shell.shortcuts.get()>
                 <shortcuts::ShortcutsDialog/>
             </Show>
+            <updates::UpdateDialog/>
             <ViewTracker/>
             <ScrollReset/>
             <notify::RunWatcher/>

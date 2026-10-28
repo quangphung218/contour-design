@@ -150,6 +150,13 @@ check "a missing artifact does not fail the download in the installer job" 'grep
 check "the smoke jobs run only when the installer job found an .msi" 'grep -qx "installer output: \${{ steps.find.outputs.msi }}" "$work/wjobs" && grep -qx "smoke needs: installer if: \${{ !cancelled() && needs.installer.outputs.msi == '"'"'true'"'"' }}" "$work/wjobs"'
 check "the smoke test runs on Windows Server 2025 and 2022" 'grep -qx "smoke runners: windows-2025,windows-2022" "$work/wjobs"'
 
+# Fetching the old .msi counts as a download: pull requests skip the upgrade.
+ruby -ryaml -e '
+  steps = YAML.load_file(ARGV[0])["jobs"]["smoke"]["steps"]
+  ifs = steps.select { |s| s["run"].to_s.include?("gh release download") }.map { |s| s["if"] }
+  puts "downloads: #{ifs.length} if: #{ifs.join("|")}"' "$windows_smoke" > "$work/wupgrade" 2>&1
+check "pull requests do not download the previous release" 'grep -qx "downloads: 1 if: \${{ !cancelled() && github.event_name != '"'"'pull_request'"'"' }}" "$work/wupgrade"'
+
 step "Find the installer" "$work/find.sh" "$windows_smoke"
 find_installer() {
   rm -rf "$work/find" && mkdir -p "$work/find/dist-release" && : > "$work/find/output"

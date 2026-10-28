@@ -52,6 +52,7 @@ regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking"] }
 rmcp = { version = "3", default-features = false, features = ["server", "transport-io"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
+semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

@@ -162,6 +162,23 @@ in the agent's own terminal. The run log is in
 Contour uses the agent's own login. Run the agent once in a terminal
 (`claude`, `codex login`, …) and sign in there.
 
+### MCP does not connect after an upgrade
+
+Up to 0.2.0-beta.4, Integrations ▸ Install registered
+`<app> mcp --daemon-url http://127.0.0.1:<port>` in Claude Code and Codex,
+with the port the app had that day. The app gets a new port at every
+launch, so that line pointed at nothing after a restart.
+
+In releases after 0.2.0-beta.5 the old line works with no change: when nothing
+answers at `--daemon-url` (or `OD_DAEMON_URL`) within 1 s, `mcp` uses the
+running app's URL from `<data folder>/daemon.lock` and says so on stderr
+(`mcp: no daemon at …; using the running app's … from daemon.lock`).
+Keep Contour open while the agent uses it.
+
+Still failing? Press **Install** again in Integrations. It replaces the old
+line with one that has no `--daemon-url`. Check what the agent has with
+`claude mcp get contour` or in `~/.codex/config.toml`.
+
 ## Export
 
 ### "this export needs Chrome, Edge or Chromium"

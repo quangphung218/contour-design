@@ -8,6 +8,32 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Help ▸ Check for Updates… and Settings ▸ About ▸ Check for updates. On
+  that click only, Contour asks GitHub Releases for the newest release,
+  pre-releases included and drafts skipped, and shows its version with
+  View release (the release page: notes and downloads), "You're up to
+  date", or a short error with Try again (its own message when GitHub
+  rate limits the network). Nothing is checked or downloaded on its own.
+  Keyboard and screen reader friendly; in every UI language.
+
+### Fixed
+
+- MCP works again after upgrading from 0.2.0-beta.4 or earlier without
+  pressing Install again. Those versions registered
+  `<app> mcp --daemon-url http://127.0.0.1:<port>` with a port that is
+  dead after the app restarts. When nothing answers at `--daemon-url` or
+  `OD_DAEMON_URL` within 1 s, `mcp` now uses the running app's URL from
+  `daemon.lock` and says so on stderr. See "MCP does not connect after an
+  upgrade" in docs/troubleshooting.md.
+
+### Changed
+
+- The Windows upgrade smoke test runs for releases and manual runs, not
+  on pull requests. Fetching the previous `.msi` counted as a download, so
+  pull requests made up most of the `.msi` download count.
+
 ## [0.2.0-beta.5] - 2026-10-28
 
 ### Added

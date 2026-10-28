@@ -2,7 +2,7 @@
 //! providers (local CLI with model, reasoning, test and advanced env, or an
 //! API provider), permissions, appearance, language, notifications, project
 //! locations, instructions and rules, memory, media providers, MCP servers,
-//! about (version, diagnostics, reset onboarding).
+//! about (version, update check, diagnostics, reset onboarding).
 
 use super::byok_form::{ByokForm, TestResultLine, TestState};
 use super::icons::{Glyph, icon};
@@ -944,7 +944,7 @@ fn MediaProviders() -> impl IntoView {
     }
 }
 
-/// About: version, local diagnostics export, reset onboarding.
+/// About: version, update check, local diagnostics export, reset onboarding.
 #[component]
 fn About() -> impl IntoView {
     let shell = Shell::get();
@@ -995,7 +995,8 @@ fn About() -> impl IntoView {
                     <dt>{t(T::Platform)}</dt><dd class="mono">{format!("{} · {}", v["platform"].as_str().unwrap_or_default(), v["arch"].as_str().unwrap_or_default())}</dd>
                 })}
             </dl>
-            <div class="row">
+            <div class="row wrap">
+                <button class="btn" data-testid="check-updates" on:click=|_| super::updates::request_check()>{icon(Glyph::Refresh)}{t(T::CheckForUpdates)}</button>
                 <button class="btn" data-testid="export-diagnostics" disabled=move || exporting.get() on:click=export>
                     {move || if exporting.get() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::Download).into_any() }}
                     {t(T::ExportDiagnostics)}

@@ -7,7 +7,9 @@
 # runs a PDF export through Edge, saves a screenshot, closes the app and
 # uninstalls (scripts/windows-smoke.ps1).
 # Then installs the latest published release and the new .msi over it
-# (scripts/windows-upgrade-smoke.ps1).
+# (scripts/windows-upgrade-smoke.ps1), in release runs and manual runs only:
+# fetching the old .msi counts as a download of that release, and pull
+# requests would make up most of the download count.
 # release.yml calls it with the bundle it just built and drafts the release
 # only when it passes; a run without a Windows bundle (its build is best
 # effort) skips the smoke test instead. Pull requests that touch the
@@ -183,12 +185,18 @@ jobs:
           $files = @(Get-ChildItem dist-release -Filter *.msi)
           if ($files.Count -ne 1) { Write-Host "::error::want one .msi, found $($files.Count)"; exit 1 }
           ./scripts/windows-smoke.ps1 $files[0].FullName smoke-out
+      # Pull requests skip the upgrade: every `gh release download` adds to
+      # the release's download count. release.yml and a manual run do it.
+      - name: Upgrade smoke test (skipped on pull requests)
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        shell: bash
+        run: echo "::notice::the upgrade smoke test runs in release.yml and on a manual run, not on pull requests, so the old .msi is not fetched (it would count as a download)"
       # The latest published release other than the one under test, for the
       # upgrade. None (a first release), or no .msi in it, skips the upgrade
       # with a warning; a failed API call or download fails the step.
       - name: Previous release
         id: previous
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
