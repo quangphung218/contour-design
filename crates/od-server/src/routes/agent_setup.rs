@@ -23,6 +23,8 @@ async fn detect(State(state): State<AppState>, Path(agent_id): Path<String>) -> 
     let Some(def) = od_runtime::def::find(&agent_id) else {
         return ApiErr::not_found("Unknown agent.").into_response();
     };
+    // The agent may have been upgraded: its next run probes its flags again.
+    state.runs.engine.forget_capabilities();
     let engine = state.runs.engine.config();
     let agent = od_runtime::detect::detect_in(
         def,

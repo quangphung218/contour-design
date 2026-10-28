@@ -189,15 +189,23 @@ pub struct RunEngine {
     /// Swapped whole when a rescan changes `path`.
     config: Arc<RwLock<Arc<EngineConfig>>>,
     active: Arc<Mutex<HashMap<String, Arc<Active>>>>,
-    capabilities: Arc<Mutex<HashMap<PathBuf, Probed>>>,
+    /// Keyed by the resolved binary; an upgrade in place changes its stamp.
+    capabilities: Arc<Mutex<HashMap<PathBuf, StampedProbe>>>,
 }
+
+/// Modification time and size of a binary, to notice it was replaced.
+type BinStamp = (std::time::SystemTime, u64);
+
+/// A probe result and the stamp of the binary it was taken from.
+type StampedProbe = (Option<BinStamp>, Probed);
 
 /// What the help probe of one binary gave.
 #[derive(Debug, Clone)]
 enum Probed {
     Flags(Vec<String>),
-    /// It failed (timed out, could not run) at this time.
-    Failed(std::time::Instant),
+    /// It failed (timed out, could not run) at this time; the flags are
+    /// what its `--version` implies instead.
+    Failed(std::time::Instant, Vec<String>),
 }
 
 impl RunEngine {
@@ -226,8 +234,10 @@ impl RunEngine {
     /// lack. New folders go after the current `path`, which is never
     /// shortened. The login shell's own `PATH` goes first, as in a new
     /// Terminal (a newer nvm Node before the one the app started with); one
-    /// that does not answer adds nothing. True when `path` changed.
+    /// that does not answer adds nothing. Probed help flags are dropped too
+    /// (an agent may have been upgraded). True when `path` changed.
     pub async fn rescan_path(&self) -> bool {
+        self.forget_capabilities();
         let login = match self.config().login_shell.clone() {
             Some(shell) => {
                 let login = crate::login_path::login_shell_path(&shell).await;
@@ -332,33 +342,57 @@ impl RunEngine {
         Ok(())
     }
 
+    /// Drops every probed help flag, so the next run probes its binary
+    /// again (Check again: an agent may have been upgraded).
+    pub fn forget_capabilities(&self) {
+        self.capabilities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+
     async fn capabilities_for(&self, def: &RuntimeDef, bin: &Path) -> Vec<String> {
+        let key = tokio::fs::canonicalize(bin)
+            .await
+            .unwrap_or_else(|_| bin.to_path_buf());
+        let stamp = tokio::fs::metadata(&key)
+            .await
+            .ok()
+            .and_then(|meta| Some((meta.modified().ok()?, meta.len())));
         let cached = self
             .capabilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(bin)
-            .cloned();
+            .get(&key)
+            .filter(|(seen, _)| *seen == stamp)
+            .map(|(_, probed)| probed.clone());
         match cached {
             Some(Probed::Flags(flags)) => return flags,
             // A failed probe is not "no flags", but probing a CLI whose
             // `--help` hangs on every run would add its timeout to each.
-            Some(Probed::Failed(at)) if at.elapsed() < self.config().probe_retry_after => {
-                return Vec::new();
+            Some(Probed::Failed(at, flags)) if at.elapsed() < self.config().probe_retry_after => {
+                return flags;
             }
             _ => {}
         }
-        let probed =
-            detect::probe_capabilities(def, bin, &self.config().path, self.config().probe_timeout)
-                .await;
-        let entry = probed
-            .clone()
-            .map_or_else(|| Probed::Failed(std::time::Instant::now()), Probed::Flags);
+        let config = self.config();
+        let entry =
+            match detect::probe_capabilities(def, bin, &config.path, config.probe_timeout).await {
+                Some(flags) => Probed::Flags(flags),
+                None => Probed::Failed(
+                    std::time::Instant::now(),
+                    detect::capabilities_from_version(def, bin, &config.path, config.probe_timeout)
+                        .await,
+                ),
+            };
+        let flags = match &entry {
+            Probed::Flags(flags) | Probed::Failed(_, flags) => flags.clone(),
+        };
         self.capabilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(bin.to_path_buf(), entry);
-        probed.unwrap_or_default()
+            .insert(key, (stamp, entry));
+        flags
     }
 
     async fn drive(&self, spec: LaunchSpec, active: &Active) -> RunOutcome {

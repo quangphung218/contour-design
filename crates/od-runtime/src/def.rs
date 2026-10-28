@@ -658,6 +658,27 @@ fn non_default(value: Option<&str>) -> Option<&str> {
 }
 
 impl RuntimeDef {
+    /// Help flags a `--version` output implies, for when `--help` could not
+    /// be read: OpenCode 2 must not get OpenCode 1's `--dir`.
+    #[must_use]
+    pub fn flags_from_version(&self, version: &str) -> Vec<String> {
+        if self.infers_flags_from_version()
+            && major_version(version).is_some_and(|major| major >= 2)
+        {
+            return [OPENCODE_STANDALONE_FLAG, OPENCODE_AUTO_FLAG]
+                .map(str::to_owned)
+                .to_vec();
+        }
+        Vec::new()
+    }
+
+    /// Whether [`Self::flags_from_version`] can give anything, so a CLI
+    /// whose help probe failed is not also asked for its version.
+    #[must_use]
+    pub fn infers_flags_from_version(&self) -> bool {
+        self.id == OPENCODE.id
+    }
+
     #[must_use]
     pub fn supports_steer(&self) -> bool {
         self.prompt_input == PromptInput::StreamJsonStdin
@@ -908,6 +929,14 @@ fn antigravity_args(input: &ArgvInput<'_>) -> Vec<String> {
         "stream-json",
     ]));
     args
+}
+
+/// The major of the first dotted version number in `text` (`opencode
+/// 2.0.25`, `v1.4.0`).
+fn major_version(text: &str) -> Option<u64> {
+    text.split(|c: char| !c.is_ascii_digit() && c != '.')
+        .find(|word| word.contains('.'))
+        .and_then(|word| word.split('.').next()?.parse().ok())
 }
 
 fn opencode_args(input: &ArgvInput<'_>) -> Vec<String> {
@@ -1211,6 +1240,21 @@ mod tests {
             ..ArgvInput::default()
         });
         assert_eq!(ask, ["run", "--format", "json"]);
+    }
+
+    #[test]
+    fn an_opencode_2_version_implies_its_argv() {
+        assert_eq!(
+            OPENCODE.flags_from_version("2.0.25\n"),
+            [OPENCODE_STANDALONE_FLAG, OPENCODE_AUTO_FLAG]
+        );
+        assert_eq!(
+            OPENCODE.flags_from_version("opencode v10.1.0"),
+            [OPENCODE_STANDALONE_FLAG, OPENCODE_AUTO_FLAG]
+        );
+        assert!(OPENCODE.flags_from_version("1.14.3").is_empty());
+        assert!(OPENCODE.flags_from_version("unknown").is_empty());
+        assert!(CLAUDE.flags_from_version("2.1.0 (Claude Code)").is_empty());
     }
 
     #[test]
