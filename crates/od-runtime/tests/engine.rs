@@ -5,7 +5,7 @@
 
 use od_contracts::{FailureCategory, RunStatus, sse};
 use od_runs::{RunMeta, Runs};
-use od_runtime::def::CLAUDE;
+use od_runtime::def::{CLAUDE, OPENCODE};
 use od_runtime::process::{self, SpawnSpec, group_alive, reap_orphan};
 use od_runtime::{EngineConfig, LaunchSpec, PermissionMode, RunEngine};
 use std::path::Path;
@@ -375,4 +375,117 @@ if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "--include-partial-messages
     assert!(info.available);
     assert_eq!(info.version.as_deref(), Some("mock 1.0"));
     assert_eq!(info.capabilities, ["--include-partial-messages"]);
+}
+
+/// An OpenCode mock: `help` is its `run --help` text (empty: the probe
+/// hangs), `version` its `--version`; a run logs its argv.
+fn write_opencode(dir: &Path, help: &str, version: &str, argv: &Path) {
+    let help = if help.is_empty() {
+        "exec sleep 30".to_owned()
+    } else {
+        format!("echo '{help}'; exit 0")
+    };
+    write_mock(
+        dir,
+        "opencode-cli",
+        &format!(
+            r#"if [ "$1" = "run" ] && [ "$2" = "--help" ]; then {help}; fi
+if [ "$1" = "--version" ]; then echo "{version}"; exit 0; fi
+echo "$@" >> "{argv}"
+cat > /dev/null
+printf '{{"type":"text","sessionID":"ses_1","part":{{"id":"p1","type":"text","text":"ok"}}}}\n'
+printf '{{"type":"step_finish","sessionID":"ses_1","part":{{"id":"p2","type":"step-finish","reason":"stop"}}}}\n'
+"#,
+            argv = argv.display()
+        ),
+    );
+}
+
+async fn run_opencode(engine: &RunEngine, runs: &Runs, id: &str, cwd: &Path) {
+    let (run, _) = runs
+        .create_or_reuse(RunMeta {
+            run_id: id.into(),
+            agent_id: "opencode".into(),
+            ..RunMeta::default()
+        })
+        .unwrap();
+    engine
+        .launch(LaunchSpec {
+            run: run.clone(),
+            def: &OPENCODE,
+            cwd: cwd.to_path_buf(),
+            prompt: "go".into(),
+            fallback_prompt: None,
+            model: None,
+            reasoning: None,
+            service_tier: None,
+            bin: None,
+            extra_dirs: Vec::new(),
+            resume_session_id: None,
+            permission: PermissionMode::Auto,
+            env: vec![("PATH".into(), engine.config().path.clone())],
+            project_id: None,
+            byok: None,
+            mcp: od_runtime::McpLaunch::default(),
+        })
+        .await
+        .unwrap();
+}
+
+fn logged(argv: &Path) -> Vec<String> {
+    std::fs::read_to_string(argv)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// OpenCode upgraded from 1 to 2 while the app runs: the replaced binary
+/// is probed again, so the next run drops OpenCode 1's `--dir`.
+#[tokio::test]
+async fn an_agent_upgraded_in_place_is_probed_again() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mocks = tmp.path().join("mocks");
+    std::fs::create_dir_all(&mocks).unwrap();
+    let argv = tmp.path().join("argv.log");
+    let runs = Runs::new(tmp.path().join("runs"));
+    let engine = RunEngine::new(EngineConfig::from_env().with_path_prefix(&mocks));
+
+    write_opencode(
+        &mocks,
+        "--dangerously-skip-permissions --dir",
+        "1.14.3",
+        &argv,
+    );
+    run_opencode(&engine, &runs, "v1", tmp.path()).await;
+    write_opencode(&mocks, "--standalone --auto", "2.0.25", &argv);
+    run_opencode(&engine, &runs, "v2", tmp.path()).await;
+
+    let lines = logged(&argv);
+    assert!(lines[0].contains("--dir"), "{lines:?}");
+    let last = lines.last().unwrap();
+    assert!(last.contains("--standalone"), "{lines:?}");
+    assert!(!last.contains("--dir"), "{lines:?}");
+}
+
+/// The help probe of OpenCode 2 fails (a slow first exec): its version
+/// still picks OpenCode 2's argv, not the `--dir` it rejects.
+#[tokio::test]
+async fn a_failed_help_probe_falls_back_to_the_version() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mocks = tmp.path().join("mocks");
+    std::fs::create_dir_all(&mocks).unwrap();
+    let argv = tmp.path().join("argv.log");
+    write_opencode(&mocks, "", "2.0.25", &argv);
+    let runs = Runs::new(tmp.path().join("runs"));
+    let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
+    config.probe_timeout = Duration::from_secs(3);
+    let engine = RunEngine::new(config);
+
+    run_opencode(&engine, &runs, "first", tmp.path()).await;
+
+    let lines = logged(&argv);
+    assert!(lines[0].contains("--standalone"), "{lines:?}");
+    assert!(lines[0].contains("--auto"), "{lines:?}");
+    assert!(!lines[0].contains("--dir"), "{lines:?}");
 }

@@ -317,6 +317,13 @@ pub const DEVIN: RuntimeDef = RuntimeDef {
 /// `run --help`, sent only in `Auto` mode).
 pub const OPENCODE_SKIP_PERMISSIONS_FLAG: &str = "--dangerously-skip-permissions";
 
+/// OpenCode 2's private-server flag; its presence in `run --help` marks a
+/// 2.x build, which dropped `--dir` and took `--auto` for the skip flag.
+pub const OPENCODE_STANDALONE_FLAG: &str = "--standalone";
+
+/// OpenCode 2's flag that skips its own permission prompts.
+pub const OPENCODE_AUTO_FLAG: &str = "--auto";
+
 pub const OPENCODE: RuntimeDef = RuntimeDef {
     id: "opencode",
     name: "OpenCode",
@@ -327,7 +334,11 @@ pub const OPENCODE: RuntimeDef = RuntimeDef {
     session: SessionIdSource::Captured,
     version_args: &["--version"],
     help_args: &["run", "--help"],
-    help_flags: &[OPENCODE_SKIP_PERMISSIONS_FLAG],
+    help_flags: &[
+        OPENCODE_SKIP_PERMISSIONS_FLAG,
+        OPENCODE_STANDALONE_FLAG,
+        OPENCODE_AUTO_FLAG,
+    ],
     extra_env: &[],
     idle_timeout: Duration::from_secs(600),
     resume_failure_markers: &["Session not found", "session not found"],
@@ -647,6 +658,27 @@ fn non_default(value: Option<&str>) -> Option<&str> {
 }
 
 impl RuntimeDef {
+    /// Help flags a `--version` output implies, for when `--help` could not
+    /// be read: OpenCode 2 must not get OpenCode 1's `--dir`.
+    #[must_use]
+    pub fn flags_from_version(&self, version: &str) -> Vec<String> {
+        if self.infers_flags_from_version()
+            && major_version(version).is_some_and(|major| major >= 2)
+        {
+            return [OPENCODE_STANDALONE_FLAG, OPENCODE_AUTO_FLAG]
+                .map(str::to_owned)
+                .to_vec();
+        }
+        Vec::new()
+    }
+
+    /// Whether [`Self::flags_from_version`] can give anything, so a CLI
+    /// whose help probe failed is not also asked for its version.
+    #[must_use]
+    pub fn infers_flags_from_version(&self) -> bool {
+        self.id == OPENCODE.id
+    }
+
     #[must_use]
     pub fn supports_steer(&self) -> bool {
         self.prompt_input == PromptInput::StreamJsonStdin
@@ -899,20 +931,35 @@ fn antigravity_args(input: &ArgvInput<'_>) -> Vec<String> {
     args
 }
 
+/// The major of the first dotted version number in `text` (`opencode
+/// 2.0.25`, `v1.4.0`).
+fn major_version(text: &str) -> Option<u64> {
+    text.split(|c: char| !c.is_ascii_digit() && c != '.')
+        .find(|word| word.contains('.'))
+        .and_then(|word| word.split('.').next()?.parse().ok())
+}
+
 fn opencode_args(input: &ArgvInput<'_>) -> Vec<String> {
+    let has = |flag: &str| input.capabilities.iter().any(|c| c == flag);
     let mut args: Vec<String> = ["run", "--format", "json"].map(str::to_owned).to_vec();
-    if input.permission == PermissionMode::Auto
-        && input
-            .capabilities
-            .iter()
-            .any(|c| c == OPENCODE_SKIP_PERMISSIONS_FLAG)
-    {
-        args.push(OPENCODE_SKIP_PERMISSIONS_FLAG.to_owned());
-    }
-    // Unconditional: OpenCode otherwise adopts the enclosing git root as
-    // its workspace and writes outside the project (opencode-permissions.ts).
-    if let Some(cwd) = input.cwd {
-        args.extend(["--dir".to_owned(), cwd.to_string_lossy().into_owned()]);
+    if has(OPENCODE_STANDALONE_FLAG) {
+        // OpenCode 2 rejects `--dir`; it takes the process cwd (the
+        // project) as its working directory. A private server keeps the
+        // run's environment (MCP config) and leaves no background service.
+        args.push(OPENCODE_STANDALONE_FLAG.to_owned());
+        if input.permission == PermissionMode::Auto && has(OPENCODE_AUTO_FLAG) {
+            args.push(OPENCODE_AUTO_FLAG.to_owned());
+        }
+    } else {
+        if input.permission == PermissionMode::Auto && has(OPENCODE_SKIP_PERMISSIONS_FLAG) {
+            args.push(OPENCODE_SKIP_PERMISSIONS_FLAG.to_owned());
+        }
+        // Unconditional: OpenCode 1 otherwise adopts the enclosing git root
+        // as its workspace and writes outside the project
+        // (opencode-permissions.ts).
+        if let Some(cwd) = input.cwd {
+            args.extend(["--dir".to_owned(), cwd.to_string_lossy().into_owned()]);
+        }
     }
     if let Some(id) = input.resume_session_id {
         args.extend(["-s".to_owned(), id.to_owned()]);
@@ -1193,6 +1240,48 @@ mod tests {
             ..ArgvInput::default()
         });
         assert_eq!(ask, ["run", "--format", "json"]);
+    }
+
+    #[test]
+    fn an_opencode_2_version_implies_its_argv() {
+        assert_eq!(
+            OPENCODE.flags_from_version("2.0.25\n"),
+            [OPENCODE_STANDALONE_FLAG, OPENCODE_AUTO_FLAG]
+        );
+        assert_eq!(
+            OPENCODE.flags_from_version("opencode v10.1.0"),
+            [OPENCODE_STANDALONE_FLAG, OPENCODE_AUTO_FLAG]
+        );
+        assert!(OPENCODE.flags_from_version("1.14.3").is_empty());
+        assert!(OPENCODE.flags_from_version("unknown").is_empty());
+        assert!(CLAUDE.flags_from_version("2.1.0 (Claude Code)").is_empty());
+    }
+
+    #[test]
+    fn opencode_2_runs_in_the_project_cwd_without_dir() {
+        let caps = vec![
+            OPENCODE_STANDALONE_FLAG.to_owned(),
+            OPENCODE_AUTO_FLAG.to_owned(),
+        ];
+        let cwd = std::path::Path::new("/p");
+        let args = OPENCODE.build_args(&ArgvInput {
+            cwd: Some(cwd),
+            model: Some("opencode/big-pickle"),
+            resume_session_id: Some("ses_1"),
+            capabilities: &caps,
+            ..ArgvInput::default()
+        });
+        assert_eq!(
+            args.join(" "),
+            "run --format json --standalone --auto -s ses_1 -m opencode/big-pickle"
+        );
+        let ask = OPENCODE.build_args(&ArgvInput {
+            cwd: Some(cwd),
+            capabilities: &caps,
+            permission: PermissionMode::Ask,
+            ..ArgvInput::default()
+        });
+        assert_eq!(ask, ["run", "--format", "json", "--standalone"]);
     }
 
     #[test]

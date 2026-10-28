@@ -446,8 +446,20 @@ try {
   assert.match(await page.getByTestId('mcp-snippet').textContent(), /^claude mcp add-json --scope user contour '/);
   await page.getByTestId('mcp-client').selectOption('cursor');
   await page.getByTestId('mcp-deeplink').waitFor();
+  // While the install runs, both buttons are locked and a busy line shows.
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route('**/api/mcp/install/**', async (route) => { await held; await route.continue(); });
   await page.getByTestId('mcp-install-run').click();
+  await page.getByTestId('mcp-install-busy').waitFor();
+  assert.equal(await page.getByTestId('mcp-install-run').isDisabled(), true);
+  assert.equal(await page.getByTestId('mcp-uninstall-run').isDisabled(), true);
+  release();
   await page.getByTestId('mcp-install-result').waitFor();
+  await page.unroute('**/api/mcp/install/**');
+  assert.equal(await page.getByTestId('mcp-install-busy').count(), 0);
+  assert.equal(await page.getByTestId('mcp-install-run').isDisabled(), false);
+  assert.match(await page.getByTestId('mcp-install-result').textContent(), /^Contour is now available in Cursor\. Restart it/);
   const cursorCfg = JSON.parse(readFileSync(join(home, '.cursor', 'mcp.json'), 'utf8'));
   assert.equal(cursorCfg.mcpServers.contour.args[0], 'mcp');
   await page.screenshot({ path: OUT + 'integrations-agents.png' });

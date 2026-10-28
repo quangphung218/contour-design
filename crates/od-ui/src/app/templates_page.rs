@@ -223,7 +223,7 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
             <select class="select-auto small" data-testid="tpl-scenario" aria-label=t(T::Industry) prop:value=move || scenario.get() on:change=move |ev| scenario.set(event_target_value(&ev))>
                 <option value="">{t(T::AllIndustries)}</option>
                 {move || scenarios.get().into_iter().map(|s| {
-                    let label = super::lib_ui::localized(&json!(s.replace('-', " "))).unwrap_or_default();
+                    let label = scenario_label(&s);
                     view! { <option value=s.clone()>{label}</option> }
                 }).collect_view()}
             </select>
@@ -381,7 +381,7 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
                 <aside class="tpl-side">
                     <div class="row wrap">
                         <span class="badge outline">{mode_label(&mode_key(template.info.mode))}</span>
-                        {(!template.info.scenario.is_empty()).then(|| view! { <span class="badge outline">{template.info.scenario.clone()}</span> })}
+                        {(!template.info.scenario.is_empty()).then(|| view! { <span class="badge outline">{scenario_label(&template.info.scenario)}</span> })}
                     </div>
                     {(!prompt.is_empty()).then(|| view! {
                         <h4>{t(T::ExampleBrief)}</h4>
@@ -612,10 +612,43 @@ fn MyTemplates() -> impl IntoView {
     }
 }
 
+/// An industry id as words: `customer-success` → "Customer success",
+/// acronyms in capitals (`hr` → "HR").
+fn scenario_label(id: &str) -> String {
+    const ACRONYMS: &[&str] = &["ai", "b2b", "b2c", "crm", "hr", "it", "seo", "ui", "ux"];
+    id.split('-')
+        .filter(|w| !w.is_empty())
+        .enumerate()
+        .map(|(i, w)| {
+            if ACRONYMS.contains(&w) {
+                w.to_uppercase()
+            } else if i == 0 {
+                let mut chars = w.chars();
+                chars
+                    .next()
+                    .map(|c| c.to_uppercase().chain(chars).collect())
+                    .unwrap_or_default()
+            } else {
+                w.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::i18n::{Locale, set_locale};
+
+    #[test]
+    fn industries_read_as_words_with_acronyms_in_capitals() {
+        assert_eq!(scenario_label("hr"), "HR");
+        assert_eq!(scenario_label("ai"), "AI");
+        assert_eq!(scenario_label("code-migration"), "Code migration");
+        assert_eq!(scenario_label("b2b-sales"), "B2B sales");
+        assert_eq!(scenario_label("marketing"), "Marketing");
+    }
     use std::collections::BTreeMap;
 
     #[test]

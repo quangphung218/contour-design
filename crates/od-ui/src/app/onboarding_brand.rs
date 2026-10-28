@@ -112,7 +112,7 @@ pub fn BrandStep(state: RwSignal<BrandState>, agent: RwSignal<Option<String>>) -
                     </ol>
                 }.into_any(),
                 other => view! {
-                    <div class="row">
+                    <div class="row brand-url-row">
                         <input class="input grow" type="url" data-testid="onboarding-brand-url"
                             aria-label=t(T::BrandStepUrl)
                             placeholder="acme.com"

@@ -117,6 +117,23 @@ pub async fn probe_capabilities(
     )
 }
 
+/// Help flags that `bin`'s version implies, for when its help probe failed:
+/// a new major then still gets its own argv rather than the old one's.
+pub async fn capabilities_from_version(
+    def: &RuntimeDef,
+    bin: &Path,
+    path: &OsStr,
+    timeout: Duration,
+) -> Vec<String> {
+    if !def.infers_flags_from_version() {
+        return Vec::new();
+    }
+    probe(bin, def.version_args, path, timeout)
+        .await
+        .map(|version| def.flags_from_version(&version))
+        .unwrap_or_default()
+}
+
 fn unavailable(def: &RuntimeDef, error: Option<String>) -> AgentInfo {
     AgentInfo {
         id: def.id.to_owned(),

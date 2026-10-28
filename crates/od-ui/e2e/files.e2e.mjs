@@ -539,9 +539,12 @@ try {
   results.exportJpeg = await tryExport('export-jpg', 'index.html');
   results.exportWebp = await tryExport('export-webp', 'index.html');
   results.exportPptxEditable = await tryExport('export-pptx-editable', 'deck.html');
+  results.exportPptxImages = await tryExport('export-pptx', 'deck.html');
   assert.ok(/download index\.webp|Chrome/.test(results.exportWebp), results.exportWebp);
   assert.ok(/download index\.jpg|Chrome/.test(results.exportJpeg), results.exportJpeg);
-  assert.ok(/download deck\.pptx|Chrome/.test(results.exportPptxEditable), results.exportPptxEditable);
+  // The two PowerPoint kinds are told apart by name.
+  assert.ok(/download deck-editable\.pptx|Chrome/.test(results.exportPptxEditable), results.exportPptxEditable);
+  assert.ok(/download deck-images\.pptx|Chrome/.test(results.exportPptxImages), results.exportPptxImages);
 
   // 12c. Finalize: the label follows DESIGN.md; the agent is asked for it.
   await page.locator('.tab', { hasText: 'index.html' }).locator('.tab-name').click();

@@ -355,12 +355,15 @@ pub(crate) async fn scratch(
 ) -> ExportResult<Scratch> {
     let bundled = bundle(entry, true).await?;
     let base = state.store.data_dir().root().join("export-render");
+    // Named after the entry: a page without a <title> gets its file's name
+    // as the PDF title, not "index.html".
+    let name = entry.filename(None, "html");
     tokio::task::spawn_blocking(move || {
         std::fs::create_dir_all(&base)?;
         let dir = tempfile::Builder::new()
             .prefix("render-")
             .tempdir_in(&base)?;
-        let path = dir.path().join("index.html");
+        let path = dir.path().join(name);
         std::fs::write(&path, bundled.html)?;
         Ok::<_, std::io::Error>((dir, path))
     })

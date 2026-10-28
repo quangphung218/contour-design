@@ -2,7 +2,7 @@
 //! `json-event-stream.ts`).
 //!
 //! OpenCode names its file tools in lower case with a camelCase
-//! `filePath`; they are mapped to Claude-shaped `Write`/`Edit`/`Read` with
+//! `filePath` (2.x: `path`); they are mapped to Claude-shaped `Write`/`Edit`/`Read` with
 //! `file_path` so the chat and `artifactPaths` treat them like every other
 //! agent's writes.
 
@@ -55,7 +55,8 @@ fn tool_input(state: Option<&Value>) -> Value {
     };
     if let Some(obj) = input.as_object_mut() {
         if !obj.contains_key("file_path") {
-            if let Some(path) = obj.get("filePath").cloned() {
+            // OpenCode 2 calls it `path`.
+            if let Some(path) = obj.get("filePath").or_else(|| obj.get("path")).cloned() {
                 obj.insert("file_path".to_owned(), path);
             }
         }
@@ -119,8 +120,9 @@ impl OpenCodeParser {
                 None => false,
             },
             "tool_use" => {
-                let (Some(tool), Some(call)) = (str_field(part, "tool"), str_field(part, "callID"))
-                else {
+                // OpenCode 2 has no `callID`; its part `id` is the call's.
+                let call = str_field(part, "callID").or_else(|| str_field(part, "id"));
+                let (Some(tool), Some(call)) = (str_field(part, "tool"), call) else {
                     return false;
                 };
                 let state = part.get("state").filter(|s| s.is_object());

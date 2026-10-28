@@ -82,6 +82,9 @@ pub struct Tools {
     lint_seq: StoredValue<u32>,
     /// Outcome of the last tool action (saved, failed…).
     pub status: RwSignal<Option<String>>,
+    /// The file `status` is about, when it is about one: shown only on
+    /// that file's tab (a save can finish after the tab changed).
+    pub status_for: RwSignal<Option<String>>,
     /// Project files (annotation images) sent with the next message.
     pub attachments: RwSignal<Vec<String>>,
     pub snapshot: RwSignal<Option<Snapshot>>,
@@ -110,6 +113,7 @@ impl Tools {
             lint: RwSignal::new(None),
             lint_seq: StoredValue::new(0),
             status: RwSignal::new(None),
+            status_for: RwSignal::new(None),
             attachments: RwSignal::new(Vec::new()),
             snapshot: RwSignal::new(None),
             deliverable: RwSignal::new(None),
@@ -138,7 +142,21 @@ impl Tools {
         self.tweak_values.set(BTreeMap::new());
         self.lint.set(None);
         self.status.set(None);
+        self.status_for.set(None);
         self.manual.forget();
+    }
+
+    /// A status line for whatever file is shown.
+    pub fn note(self, text: String) {
+        self.status.set(Some(text));
+        self.status_for.set(None);
+    }
+
+    /// "Saved to `path` as v`version`", tied to that file's tab.
+    pub fn saved(self, path: &str, version: u32) {
+        self.status
+            .set(Some(tf(T::SavedVersion, &[path, &version.to_string()])));
+        self.status_for.set(Some(path.to_owned()));
     }
 }
 
@@ -588,13 +606,10 @@ impl StudioCtx {
                             }
                         });
                     }
-                    tools.status.set(Some(tf(
-                        T::SavedVersion,
-                        &[&r.file.path, &r.version.version.to_string()],
-                    )));
+                    tools.saved(&r.file.path, r.version.version);
                 }
                 Err(e) => {
-                    tools.status.set(Some(tf(T::SaveFailed, &[&e.message])));
+                    tools.note(tf(T::SaveFailed, &[&e.message]));
                     if !styles {
                         self.reload_preview();
                     }
@@ -794,7 +809,7 @@ pub fn ToolHints(ctx: StudioCtx) -> impl IntoView {
             };
             hint.map(|h| view! { <p class="mode-hint">{icon(Glyph::Info)}{h}</p> })
         }}
-        {move || tools.status.get().map(|s| view! {
+        {move || tools.status.get().filter(|_| tools.status_for.with(|p| p.is_none() || *p == ctx.active())).map(|s| view! {
             <p class="tool-status" data-testid="tool-status">
                 {icon(Glyph::Info)}
                 <span class="grow">{s}</span>
@@ -1433,17 +1448,17 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
             match attach_annotation(ctx, list, w, h).await {
                 Ok(with_snapshot) => {
                     history.set(History::default());
-                    tools.status.set(Some(
+                    tools.note(
                         t(if with_snapshot {
                             T::DrawAttached
                         } else {
                             T::DrawAttachedNoSnapshot
                         })
                         .to_owned(),
-                    ));
+                    );
                     ctx.set_tool(None);
                 }
-                Err(e) => tools.status.set(Some(tf(T::DrawFailed, &[&e]))),
+                Err(e) => tools.note(tf(T::DrawFailed, &[&e])),
             }
             busy.set(false);
         });
