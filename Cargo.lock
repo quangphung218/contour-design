@@ -3597,6 +3597,7 @@ dependencies = [
  "anyhow",
  "axum",
  "od-content",
+ "od-mcp",
  "od-runtime",
  "od-server",
  "od-store",
@@ -3604,6 +3605,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "tempfile",
  "tokio",
  "tracing",
 ]
