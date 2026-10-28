@@ -18,8 +18,44 @@ All notable changes to Contour are recorded here. The format follows
   rate limits the network). Nothing is checked or downloaded on its own.
   Keyboard and screen reader friendly; in every UI language.
 
+### Changed
+
+- The Windows upgrade smoke test runs for releases and manual runs, not
+  on pull requests. Fetching the previous `.msi` counted as a download, so
+  pull requests made up most of the `.msi` download count.
+- The chat's Chat mode is called Ask in English, so a phone-width Studio
+  no longer shows two "Chat" controls (the Chat/Preview/Files switch and
+  the mode tabs).
+- Home's example briefs read "e.g. …", so they do not look like an
+  instruction.
+
 ### Fixed
 
+- OpenCode 2 works. Onboarding's agent test and every run failed with
+  "Unrecognized flag: --dir": OpenCode 2 dropped `--dir` and takes the
+  project from its working folder. Contour tells the two apart by
+  `opencode run --help`: 2.x runs with `--standalone` (a private server,
+  so the run's MCP settings apply and no background service is left
+  behind) and `--auto` instead of `--dangerously-skip-permissions`; 1.x
+  keeps `--dir`. OpenCode 2's tool calls (no `callID`, `path` for the
+  file) show in the chat and count as written files.
+- Studio on a phone: a deck hides the thumbnail column, so the slide gets
+  the width, and Present wraps under the slide arrows instead of past the
+  edge.
+- Onboarding on a phone: the brand URL field takes the whole row; the
+  Extract button goes under it.
+- Integrations on a phone shows all three tabs ("Connect an agent" is the
+  shorter label).
+- Integrations ▸ Install says what happened with the client's name and
+  what to do next ("Contour is now available in Cursor. Restart it to
+  load the server.") instead of "installed contour into cursor", and shows
+  that it is working while the agent's settings are updated.
+- "Saved to … as vN" shows only on the tab of the file that was saved.
+- The two PowerPoint exports download under different names:
+  `<file>-images.pptx` and `<file>-editable.pptx`.
+- A PDF export of a page without a `<title>` is titled after its file,
+  not "index.html".
+- Template industries read "HR" and "AI", not "Hr" and "Ai".
 - MCP works again after upgrading from 0.2.0-beta.4 or earlier without
   pressing Install again. Those versions registered
   `<app> mcp --daemon-url http://127.0.0.1:<port>` with a port that is
@@ -27,12 +63,6 @@ All notable changes to Contour are recorded here. The format follows
   `OD_DAEMON_URL` within 1 s, `mcp` now uses the running app's URL from
   `daemon.lock` and says so on stderr. See "MCP does not connect after an
   upgrade" in docs/troubleshooting.md.
-
-### Changed
-
-- The Windows upgrade smoke test runs for releases and manual runs, not
-  on pull requests. Fetching the previous `.msi` counted as a download, so
-  pull requests made up most of the `.msi` download count.
 
 ## [0.2.0-beta.5] - 2026-10-28
 
