@@ -611,7 +611,7 @@ The daemon does not need to know what sits underneath (see 5.3).
 - **Keep the daemon ↔ UI boundary as HTTP and SSE**, like the original app. Reason: the `od` CLI, the MCP server and the UI share one API, which preserves the dual-track rule; headless and Docker runs need no changes.
 - **UI and daemon share one process on desktop**: axum binds a random loopback port and the webview points at it. No sidecar IPC, no HMAC.
 - **Only one prompt set** (legacy). No rollout, no analytics.
-- **No outbound network**, except calls to agents or providers the user configured. No telemetry, no silent auto-update.
+- **No outbound network**, except calls to agents or providers the user configured, and Check for Updates (the GitHub Releases API, only when clicked; `decisions.md`). No telemetry, no silent auto-update.
 
 ### 5.2 Crate layout (Cargo workspace)
 
