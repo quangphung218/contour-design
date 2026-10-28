@@ -1,7 +1,8 @@
 # CI: lint, test, e2e and dependency policy. Pull requests and pushes to
-# main run on Linux only; the macOS tests and the Windows build run on a
-# manual dispatch (with the Linux jobs) or when release.yml calls this
-# workflow, once per platform (`only: macos`, `only: windows`). Docs links,
+# main run on Linux, plus the workspace tests on Windows; the macOS tests
+# and the Windows build run on a manual dispatch (with the other jobs) or
+# when release.yml calls this workflow, once per platform (`only: macos`,
+# `only: windows`). Docs links,
 # script tests, actionlint and commit messages live in docs.yml, which also
 # runs for docs-only changes. `make ci` runs the checks locally and is the
 # main gate on macOS (docs/development.md).
@@ -115,8 +116,38 @@ jobs:
           ffmpeg -version | head -n1
       - run: make test
 
-  # Windows is compile-checked only: Job Object, ConPTY and WebView2 are not
-  # exercised yet (README, Known limitations).
+  # The workspace tests on Windows: agent lookup (`.cmd` shims, the user's
+  # Path in the registry), the Job Object, paths and file URLs.
+  test-windows:
+    name: test (windows-2025)
+    if: ${{ !inputs.only }}
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: trunk
+      # The MP4 export tests need ffmpeg and ffprobe, and fail without them.
+      - name: ffmpeg
+        shell: bash
+        run: |
+          choco install ffmpeg -y --no-progress > /dev/null
+          ffmpeg -version | head -n1
+      - name: UI bundle
+        working-directory: crates/od-ui
+        run: trunk build
+      - run: cargo test --workspace --no-fail-fast
+
+  # The Windows build that release.yml calls (`only: windows`) and a manual
+  # run: every target, as the release bundle builds it.
   build-windows:
     name: build (windows)
     if: inputs.only == 'windows' || (!inputs.only && github.event_name == 'workflow_dispatch')
