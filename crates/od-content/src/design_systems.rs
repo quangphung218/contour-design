@@ -402,8 +402,9 @@ static FORM_B: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\*\*([A-Za-z][A-Za-z0-9 /&()+_-]{1,40}?)\*\*\s*\(?\s*`?(#[0-9a-fA-F]{3,8})")
         .expect("static regex")
 });
+// `\r?`: a DESIGN.md with CRLF line ends (checked out or saved on Windows).
 static FORM_C: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^[ \t]*\|(.+)\|[ \t]*$").expect("static regex"));
+    LazyLock::new(|| Regex::new(r"(?m)^[ \t]*\|(.+)\|[ \t]*\r?$").expect("static regex"));
 static HEX_WORD_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"#[0-9a-fA-F]{3,8}(?-u:\b)").expect("static regex"));
 static HEX_RE: LazyLock<Regex> =
@@ -561,6 +562,11 @@ mod tests {
         assert_eq!(
             extract_swatches(md),
             ["#fafafa", "#e5e5e5", "#111111", "#533afd"]
+        );
+        assert_eq!(
+            extract_swatches(&md.replace('\n', "\r\n")),
+            extract_swatches(md),
+            "CRLF line ends"
         );
     }
 
