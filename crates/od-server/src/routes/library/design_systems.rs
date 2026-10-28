@@ -1172,7 +1172,9 @@ mod tests {
 
     #[test]
     fn package_paths_stay_inside() {
-        let d = std::path::Path::new("/ds/tea");
+        // A real folder: on Windows `/ds/tea` is not absolute.
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
         assert!(inside(d, "assets/logo.svg").is_ok());
         assert!(inside(d, "../other/DESIGN.md").is_err());
         assert!(inside(d, ".open-design/project.json").is_err());

@@ -4,6 +4,7 @@
 //! editable PPTX route. No real agent, provider or browser is called.
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))] // helpers of the `sh` mock tests
 
 mod common;
 
@@ -77,6 +78,7 @@ async fn wait_job(d: &Daemon, id: &str) -> Value {
     panic!("design system job {id} did not finish");
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn design_system_from_a_brief_lists_next_to_bundled() {
     let d = daemon().await;
@@ -145,6 +147,7 @@ async fn design_system_from_a_brief_lists_next_to_bundled() {
     assert_eq!(jobs.as_array().unwrap().len(), 2);
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn design_system_generation_failures() {
     let d = daemon().await;

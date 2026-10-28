@@ -2,6 +2,7 @@
 //! No test calls a real `claude` or `codex`: shell mocks sit first on PATH.
 
 #![allow(clippy::unwrap_used)] // tests fail loudly by design
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))] // helpers of the `sh` mock tests
 
 mod common;
 
@@ -43,6 +44,7 @@ fn flag_value(argv: &str, flag: &str) -> Option<String> {
         .map(|w| w[1].to_owned())
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn second_turn_resumes_and_a_model_change_does_not() {
     let d = daemon().await;
@@ -130,6 +132,7 @@ async fn second_turn_resumes_and_a_model_change_does_not() {
     );
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn sse_reconnect_with_last_event_id_has_no_gap_or_duplicate() {
     let d = daemon().await;
@@ -203,6 +206,7 @@ cat >/dev/null
     );
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn cancel_kills_the_whole_tree_within_3_5_s() {
     let d = daemon().await;
@@ -293,6 +297,7 @@ wait
     assert_eq!(end.unwrap()["status"], "canceled");
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn steer_reaches_open_stdin_and_is_409_once_it_closed() {
     let d = daemon().await;
@@ -376,6 +381,7 @@ cat "{fixture}"
     )
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn codex_command_execution_streams_as_bash_tool_use_and_result() {
     let d = daemon().await;
@@ -436,6 +442,7 @@ async fn codex_command_execution_streams_as_bash_tool_use_and_result() {
     d.events(&live.run_id, None).await;
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn reused_client_request_id_returns_the_same_run() {
     let d = daemon().await;
@@ -465,6 +472,7 @@ async fn reused_client_request_id_returns_the_same_run() {
     assert_eq!(argv_lines(&d).len(), 1);
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn recorded_claude_stream_reaches_sse_as_the_golden_events() {
     let d = daemon().await;
@@ -517,6 +525,7 @@ async fn recorded_claude_stream_reaches_sse_as_the_golden_events() {
     );
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn transient_failure_without_output_is_retried_once() {
     let d = daemon().await;
@@ -555,6 +564,7 @@ cat >/dev/null
     assert_eq!(std::fs::read_to_string(count).unwrap().trim(), "2");
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn failed_resume_silently_reseeds_a_fresh_session() {
     let d = daemon().await;
@@ -611,6 +621,7 @@ cat >/dev/null
     );
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn silent_agent_times_out() {
     let d = daemon_with(Options {
@@ -637,6 +648,7 @@ async fn silent_agent_times_out() {
     assert!(events.iter().all(|e| e.event != "run_retry_attempted"));
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn agent_env_permission_mode_and_skill_staging() {
     let content = tempfile::tempdir().unwrap();
@@ -733,6 +745,7 @@ cat >/dev/null
     );
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn agents_endpoint_detects_mocks_and_missing_binaries() {
     let d = daemon().await;
@@ -832,6 +845,7 @@ async fn unknown_agent_and_run_are_rejected() {
     assert_eq!(res.status().as_u16(), 404);
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn conversation_that_moved_on_is_not_resumed() {
     let d = daemon().await;
@@ -860,6 +874,7 @@ async fn conversation_that_moved_on_is_not_resumed() {
     assert!(flag_value(&argv[1], "--resume").is_none());
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn retry_happens_at_most_once() {
     let d = daemon().await;
@@ -891,6 +906,7 @@ echo "read ECONNRESET" >&2; exit 1
     assert_eq!(std::fs::read_to_string(count).unwrap().trim(), "2");
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn failure_after_visible_output_is_not_retried() {
     let d = daemon().await;
@@ -921,6 +937,7 @@ echo "read ECONNRESET" >&2; exit 1
 /// Decision 1: `auto` by default; Settings › "Ask first" (`PUT
 /// /api/app-config`) switches Claude to `acceptEdits` and drops Codex's
 /// self-approval flag on the next run.
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn settings_permission_mode_reaches_the_agent_argv() {
     let d = daemon().await;

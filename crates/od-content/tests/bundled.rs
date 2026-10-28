@@ -489,7 +489,10 @@ fn prompt_teaches_the_tweaks_declaration() {
 /// app shows the note, and NOTICE lists the same brands.
 #[test]
 fn brand_named_design_systems_are_listed_in_notice() {
-    let notice = std::fs::read_to_string(content_root().join("../NOTICE")).unwrap();
+    // CRLF when git checks it out on Windows.
+    let notice = std::fs::read_to_string(content_root().join("../NOTICE"))
+        .unwrap()
+        .replace("\r\n", "\n");
     let idx = index();
     let brands: Vec<(String, String)> = idx
         .design_systems

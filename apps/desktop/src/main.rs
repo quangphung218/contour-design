@@ -8,6 +8,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod mcp;
+
 use anyhow::Context;
 use od_content::{ContentRoots, ContentStore};
 use od_server::routes::ui::import_folder;
@@ -79,6 +81,7 @@ async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Resu
             allowed_origins: Vec::new(),
             resource_root,
             daemon_url: Some(format!("http://{local}")),
+            mcp_daemon_url: false,
         }),
         runs: Arc::new(RunContext::new(
             Arc::clone(&runs),
@@ -309,6 +312,12 @@ fn show_data_folder(app: &AppHandle) {
 }
 
 fn main() -> anyhow::Result<()> {
+    // `<app> mcp`: the stdio server an agent starts (Integrations ▸ Install),
+    // without the window, the daemon or the app's log in `<data>/logs/`.
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if args.first().is_some_and(|a| a == "mcp") {
+        return mcp::run(&args[1..]);
+    }
     // Opened from Finder the app has no stdout or stderr: the log and any
     // panic also go to `<data>/logs/` (Help ▸ Report Issue reads it).
     let data_dir = od_server::logs::with_console(DataDir::from_env);

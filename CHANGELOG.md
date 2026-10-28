@@ -8,6 +8,38 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.5] - 2026-10-28
+
+### Added
+
+- Pull requests run the workspace tests on Windows (`test (windows-2025)`
+  in `ci.yml`), not only a compile check.
+- The Windows smoke test installs the MCP server into Claude Code and
+  Codex the way Integrations does, through npm-style `.cmd` shims, and
+  checks the command each one gets. It then installs the latest published
+  release, makes a project, installs the new `.msi` over it and checks
+  there is one uninstall entry with the new version, the app starts and
+  the data folder is untouched (`scripts/windows-upgrade-smoke.ps1`).
+
+### Fixed
+
+- Integrations ▸ Install (MCP into Claude Code, Codex) works from the
+  desktop app. It registered `<app> mcp`, which opened a second window
+  instead of serving MCP; the app now runs the MCP stdio server for `mcp`
+  (as `od mcp`). The app's port changes per launch, so it registers no
+  `--daemon-url`: `mcp` takes `--daemon-url`, then `OD_DAEMON_URL`, then
+  the running app's URL from `daemon.lock`. An AppImage registers its
+  `.AppImage` file rather than the mount that goes when it quits. The
+  Linux and Windows smoke tests run the registered command.
+- Folder import, project locations and linked folders refuse the home
+  folder on Windows too (they read `HOME`, which Windows does not set).
+- Design system cards show the right colors when a `DESIGN.md` has
+  Windows (CRLF) line ends, as every bundled one has in the Windows
+  installer. Color tables were skipped, so 11 bundled systems showed other
+  swatches than on macOS and Linux.
+- On Windows, installing the MCP server into an agent gives it the app's
+  plain path (`C:\Program Files\…`), not the `\\?\C:\…` form.
+
 ## [0.2.0-beta.4] - 2026-10-28
 
 ### Added
@@ -237,7 +269,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.4...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.5...HEAD
+[0.2.0-beta.5]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.4...v0.2.0-beta.5
 [0.2.0-beta.4]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.3...v0.2.0-beta.4
 [0.2.0-beta.3]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [0.2.0-beta.2]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.1...v0.2.0-beta.2

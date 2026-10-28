@@ -2,6 +2,7 @@
 //! source as manual versions, the deliverable check after a run.
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))] // helpers of the `sh` mock tests
 
 mod common;
 
@@ -201,6 +202,7 @@ cat >/dev/null
     )
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn deliverable_after_a_run() {
     let d = daemon().await;

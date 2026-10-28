@@ -286,6 +286,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             allowed_origins: opts.allowed_origins,
             resource_root: opts.resource_root,
             daemon_url: Some(format!("http://{local}")),
+            mcp_daemon_url: true,
         }),
         runs: Arc::new(RunContext::new(
             Arc::clone(&runs),

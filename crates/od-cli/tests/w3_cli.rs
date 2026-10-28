@@ -61,6 +61,7 @@ async fn daemon() -> Daemon {
             allowed_origins: Vec::new(),
             resource_root: content,
             daemon_url: Some(url.clone()),
+            mcp_daemon_url: true,
         }),
         runs: Arc::new(RunContext::new(runs, od_runtime::EngineConfig::from_env())),
         preview: od_server::Preview::default(),

@@ -5,7 +5,9 @@
 # the GNOME app menu starts it (bare PATH, no terminal), waits for the
 # in-process daemon's /api/health to report the expected version, checks
 # that an agent CLI set up by ~/.bashrc (as nvm does) is found and runs,
-# and saves a screenshot of the window and the app log in the out dir.
+# that Integrations installs the MCP server into it and the registered
+# command answers MCP over stdio, and saves a screenshot of the window and
+# the app log in the out dir.
 # Usage: scripts/linux-smoke.sh <Contour_*.deb | Contour_*.AppImage> [out-dir]
 # EXPECTED_VERSION overrides the version read from Cargo.toml; SMOKE_EXPORT=1
 # also installs Google Chrome and checks a PDF export.
@@ -100,7 +102,14 @@ fi
 id "$user" > /dev/null 2>&1 || useradd -m -s /bin/bash "$user"
 agent_dir="$home/.nvm/versions/node/v22.11.0/bin"
 install -d -o "$user" -g "$user" "$agent_dir" "$home/.local/share"
-install -m 0755 -o "$user" -g "$user" "$here/../crates/od-ui/e2e/mock-agent/claude" "$agent_dir/claude"
+install -m 0755 -o "$user" -g "$user" "$here/../crates/od-ui/e2e/mock-agent/claude" "$agent_dir/claude-mock"
+# `claude mcp …` (the MCP install below) only records its arguments, one per line.
+cat > "$agent_dir/claude" <<'SH'
+#!/bin/sh
+if [ "$1" = mcp ]; then printf '%s\n' "$@" > "$(dirname "$0")/mcp-$2.args"; exit 0; fi
+exec "$(dirname "$0")/claude-mock" "$@"
+SH
+chown "$user:$user" "$agent_dir/claude" && chmod 0755 "$agent_dir/claude"
 echo "export PATH=\"$agent_dir:\$PATH\"" >> "$home/.bashrc"
 
 Xvfb :99 -screen 0 1440x900x24 -nolisten tcp > "$out/xvfb.log" 2>&1 &
@@ -152,6 +161,53 @@ done
 page="$data/projects/$project_id/index.html"
 [ "$status" = succeeded ] && [ -s "$page" ] && ok "an agent run wrote $(basename "$page")" \
   || fail "agent run $run_id ended '$status'" "$(ls -l "$data/projects/$project_id" 2>&1)"
+
+# Integrations > Connect Contour to your coding agent: Install runs
+# `claude mcp add --scope user contour -- <this app> mcp` (no --daemon-url:
+# the app's port changes per launch). That command, started as the agent
+# starts it (pipes, no display), answers initialize and tools/list, and
+# list_projects reaches this app's daemon through daemon.lock.
+res="$(curl -fsS -X POST "$url/api/mcp/install/claude" 2>&1)"
+registered=()
+if [ "$(jq -r .ok <<< "$res" 2>/dev/null)" = true ] && [ -f "$agent_dir/mcp-add.args" ]; then
+  while IFS= read -r arg; do registered+=("$arg"); done < <(sed '1,/^--$/d' "$agent_dir/mcp-add.args")
+fi
+want="$(realpath "$app")"
+if [ "${registered[0]:-}" = "$want" ] && [ "${registered[*]:1}" = mcp ]; then
+  ok "Integrations installs the MCP server into claude: ${registered[*]}"
+else
+  fail "installing the MCP server into claude (want $want mcp)" "$res
+$(cat "$agent_dir/mcp-add.args" 2>/dev/null)"
+fi
+if [ "${#registered[@]}" -gt 0 ]; then
+  # stdin is a FIFO held open until the answers are in, as an agent holds it.
+  rm -f "$out/mcp-in" && mkfifo "$out/mcp-in"
+  runuser -u "$user" -- env -i HOME="$home" USER="$user" PATH=/usr/local/bin:/usr/bin:/bin \
+    ${APPIMAGE_EXTRACT_AND_RUN:+APPIMAGE_EXTRACT_AND_RUN=1} "${registered[@]}" \
+    < "$out/mcp-in" > "$out/mcp-stdio.log" 2> "$out/mcp-stderr.log" &
+  mcp_pid=$!
+  exec 7> "$out/mcp-in"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+    '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}' >&7
+  for _ in $(seq 1 120); do
+    [ "$(jq -s 'map(select(has("id"))) | length' "$out/mcp-stdio.log" 2>/dev/null)" = 3 ] && break
+    sleep 0.5
+  done
+  exec 7>&-
+  reply() { jq -c "select(.id == $1)" "$out/mcp-stdio.log" 2>/dev/null; }
+  if [ "$(reply 1 | jq -r .result.serverInfo.name)" = contour ] && reply 2 | jq -e '.result.tools | any(.name == "list_projects")' > /dev/null; then
+    ok "the registered command answers initialize and tools/list ($(reply 2 | jq '.result.tools | length') tools)"
+  else
+    fail "the registered command is not an MCP server" "$(cat "$out/mcp-stdio.log" "$out/mcp-stderr.log")"
+  fi
+  reply 3 | jq -e --arg p "$project_id" '(.result.isError | not) and (.result.content[0].text | contains($p))' > /dev/null \
+    && ok "its list_projects reaches this app's daemon" || fail "list_projects through the registered command" "$(reply 3)"
+  for _ in $(seq 1 40); do kill -0 "$mcp_pid" 2>/dev/null || break; sleep 0.5; done
+  if kill -0 "$mcp_pid" 2>/dev/null; then fail "the MCP server still runs 20 s after stdin closed"; kill "$mcp_pid"; else ok "it exits when stdin closes"; fi
+fi
 
 if [ "${SMOKE_EXPORT:-0}" = 1 ]; then
   curl -sS -X POST -H 'content-type: application/json' -d '{"fileName":"index.html"}' \

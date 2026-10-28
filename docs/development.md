@@ -255,16 +255,17 @@ cargo bench -p od-export --bench standalone       # standalone HTML export
 
 ## Continuous integration
 
-**CI on pull requests runs on Linux only.** macOS and Windows run when a
-release is built, or when someone starts CI by hand (Actions tab, "Run
-workflow"). On macOS the main gate is **`make ci` on your machine**: run it
+**CI on pull requests runs on Linux, plus the workspace tests on Windows.**
+macOS runs when a release is built, or when someone starts CI by hand
+(Actions tab, "Run workflow"). On macOS the main gate is **`make ci` on your machine**: run it
 before asking for review.
 
 | Job | Workflow | Pull request, push to `main` | Release, manual run | Steps |
 |---|---|---|---|---|
 | fmt + clippy | `ci.yml` | Ubuntu | manual run only | `make lint` |
 | test | `ci.yml` | Ubuntu | macOS (release); macOS and Ubuntu (manual) | ffmpeg (MP4 export tests), `make test` |
-| build (windows) | `ci.yml` | no | Windows (never blocks a release) | `trunk build`, `cargo build --workspace --all-targets` (no tests yet) |
+| test (windows-2025) | `ci.yml` | Windows | manual run only | ffmpeg, `trunk build`, `cargo test --workspace --no-fail-fast` |
+| build (windows) | `ci.yml` | no | Windows (never blocks a release) | `trunk build`, `cargo build --workspace --all-targets` |
 | e2e | `ci.yml` | Ubuntu | manual run only | `make e2e`, screenshots uploaded on failure |
 | cargo-deny | `ci.yml` | Ubuntu | manual run only | licences, advisories, bans, sources (`deny.toml`) |
 | docs | `docs.yml` | Ubuntu | manual run only | `scripts/check-links.sh`, script tests, actionlint |

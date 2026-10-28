@@ -145,10 +145,11 @@ mod tests {
             "-pix_fmt yuv420p",
             "-movflags +faststart",
             "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-            "/f/frame-%08d.png",
         ] {
             assert!(joined.contains(part), "{joined}");
         }
+        let frames = Path::new("/f").join("frame-%08d.png");
+        assert!(joined.contains(&*frames.to_string_lossy()), "{joined}");
         assert_eq!(args.last().map(String::as_str), Some("/o.mp4"));
     }
 }

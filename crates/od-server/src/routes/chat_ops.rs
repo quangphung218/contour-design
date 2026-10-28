@@ -145,10 +145,7 @@ pub fn check_dir(store: &Store, dir: &FsPath) -> Result<PathBuf, &'static str> {
     {
         return Err("the folder is inside a hidden folder");
     }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .and_then(|h| h.canonicalize().ok());
-    if home.is_some_and(|h| h.starts_with(&dir)) {
+    if super::ui::is_home_or_parent(&dir) {
         return Err("the home folder or one of its parents");
     }
     Ok(dir)

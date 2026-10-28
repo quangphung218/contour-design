@@ -26,7 +26,7 @@ make run        # daemon + UI at http://127.0.0.1:7456
 | `make e2e` | you touched the UI or an API the UI calls | Playwright against a real daemon and a mock agent |
 | `make deny` | you added or bumped a dependency | licence and advisory policy (`deny.toml`) |
 | `make links` | you edited Markdown | every relative link and heading anchor resolves |
-| `make ci` | before asking for review | all of the above plus actionlint and commitlint, as CI runs them; the macOS gate (CI on pull requests is Linux only) |
+| `make ci` | before asking for review | all of the above plus actionlint and commitlint, as CI runs them; the macOS gate (CI on pull requests does not run on macOS) |
 
 Also:
 
@@ -80,9 +80,9 @@ docs(docs): translate the spec to english
 
 - Every change lands through a pull request into `main`; nobody pushes to
   `main` directly.
-- CI must be green: lint, Linux tests, e2e, cargo-deny, docs links and
-  commit messages. CI on pull requests runs on Linux only; macOS and
-  Windows run at release time or on a manual run, so **`make ci` on macOS
+- CI must be green: lint, Linux and Windows tests, e2e, cargo-deny, docs
+  links and commit messages. CI on pull requests does not run on macOS;
+  macOS runs at release time or on a manual run, so **`make ci` on macOS
   is the main gate** there: say in the pull request that it passed.
 - A reviewer reads the diff against the spec and decisions, runs it when the
   change is visible, and asks for tests for every new guard or bug fix.

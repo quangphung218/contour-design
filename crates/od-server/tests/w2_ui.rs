@@ -2,6 +2,7 @@
 //! agent prompt), conversation fork, handoff. Mock CLIs only.
 
 #![allow(clippy::unwrap_used)] // tests fail loudly by design
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))] // helpers of the `sh` mock tests
 
 mod common;
 
@@ -42,6 +43,7 @@ async fn send(
     )
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn comments_round_trip_and_reach_the_prompt() {
     let d = daemon().await;
@@ -127,6 +129,7 @@ async fn comments_round_trip_and_reach_the_prompt() {
     assert_eq!(status, 404);
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn fork_copies_history_into_a_new_conversation() {
     let d = daemon().await;
@@ -273,6 +276,7 @@ async fn bundles_are_neither_imported_nor_opened() {
     assert!(!marker.exists(), "the bundle was launched");
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn comments_follow_the_run_that_applies_them() {
     let d = daemon().await;

@@ -221,13 +221,24 @@ mod tests {
         }
     }
 
+    /// A `PATH` value in this OS's form (`:` or `;` between folders).
+    fn path_of(dirs: &[&str]) -> OsString {
+        std::env::join_paths(dirs).unwrap()
+    }
+
     #[test]
     fn keeps_order_and_drops_repeats() {
-        let merged = merge(
-            OsStr::new("/usr/bin:/bin"),
+        let login = path_of(&[
             // nvm's folder is in no fallback list: only the login shell knows it.
-            Some("/Users/u/.nvm/versions/node/v22/bin:/usr/bin:/opt/homebrew/bin"),
+            "/Users/u/.nvm/versions/node/v22/bin",
+            "/usr/bin",
+            "/opt/homebrew/bin",
+        ]);
+        let merged = merge_with(
+            &path_of(&["/usr/bin", "/bin"]),
+            login.to_str(),
             Some(Path::new("/Users/u")),
+            UNIX_FALLBACK_DIRS,
         );
         let dirs: Vec<PathBuf> = std::env::split_paths(&merged).collect();
         assert_eq!(
@@ -247,7 +258,12 @@ mod tests {
 
     #[test]
     fn falls_back_without_a_login_shell() {
-        let merged = merge(OsStr::new("/usr/bin"), None, Some(Path::new("/h")));
+        let merged = merge_with(
+            OsStr::new("/usr/bin"),
+            None,
+            Some(Path::new("/h")),
+            UNIX_FALLBACK_DIRS,
+        );
         let dirs: Vec<PathBuf> = std::env::split_paths(&merged).collect();
         assert_eq!(dirs[0], PathBuf::from("/usr/bin"));
         assert!(dirs.contains(&PathBuf::from("/h/.local/bin")));
@@ -408,10 +424,13 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[tokio::test]
     /// A daemon started from a terminal (no login shell): rescan keeps its
     /// `PATH` first and adds the usual install folders, so `claude` from
-    /// the native installer (`~/.local/bin`) is found.
+    /// the native installer (`~/.local/bin`) is found. Unix only: on
+    /// Windows the rescan reads the user's `Path` from the registry, which
+    /// goes first (the Windows smoke test's Check again covers it).
+    #[cfg(unix)]
+    #[tokio::test]
     async fn rescan_without_a_login_shell_adds_the_install_folders() {
         let engine = crate::RunEngine::new(crate::EngineConfig {
             path: OsString::from("/only/here"),

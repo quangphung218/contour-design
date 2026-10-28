@@ -126,10 +126,13 @@ The row-by-row feature comparison with evidence is in
 - **Windows means Windows 10 and 11 on x64, smoke-tested.** Each release's
   `.msi` is installed, opened, runs an agent turn and a PDF export, and is
   uninstalled on Windows Server 2025 and 2022 before the release is drafted.
-  The unit tests, terminal tabs (ConPTY) and stopping an agent's process
-  tree (Job Objects) are only compile-checked there. The installer is
-  unsigned, and there is no ARM64 build. Onboarding links each agent's
-  setup page rather than giving an install command.
+  Upgrading over the previous release is smoke-tested too. Every pull
+  request runs the workspace tests on Windows, stopping an agent's process
+  tree (Job Objects) included; the tests that drive a mock agent CLI (a
+  `sh` script) and terminal tabs run on macOS and Linux only (ConPTY is
+  untested). The installer is unsigned, and there is no ARM64 build.
+  Onboarding links each agent's setup page rather than giving an install
+  command.
 - **External MCP servers reach Claude, ACP agents and OpenCode only**, as in
   the original app; ACP takes stdio servers only.
 - **Fully detached processes can survive.** An MCP stdio helper that

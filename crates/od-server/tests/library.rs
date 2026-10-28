@@ -5,6 +5,7 @@
 //! (mock agent). No request leaves loopback.
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))] // helpers of the `sh` mock tests
 
 mod common;
 
@@ -203,6 +204,7 @@ async fn wait_file(path: &Path) -> String {
     panic!("{} was not written", path.display());
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn plugins_install_use_and_uninstall() {
     let d = daemon().await;
@@ -725,6 +727,7 @@ async fn design_system_routes_stay_inside_the_package() {
     assert!(!v.to_string().contains("OUTSIDE"), "{v}");
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn design_system_kit_import_copy_and_revisions() {
     let d = daemon().await;
@@ -1055,6 +1058,7 @@ async fn design_system_kit_import_copy_and_revisions() {
     assert_eq!(s, 403);
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn design_system_from_sources() {
     use base64::Engine as _;

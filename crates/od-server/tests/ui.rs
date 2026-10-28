@@ -30,6 +30,7 @@ fn state(tmp: &Path) -> AppState {
             allowed_origins: Vec::new(),
             resource_root: empty,
             daemon_url: None,
+            mcp_daemon_url: true,
         }),
         runs: Arc::new(od_server::RunContext::new(
             Arc::new(od_runs::Runs::new(data.join("runs"))),
@@ -139,7 +140,7 @@ async fn import_folder_points_at_folder() {
         json!({"baseDir": hidden}),
         json!({"baseDir": hidden.join("inside")}),
         json!({"baseDir": linked_hidden}),
-        json!({"baseDir": std::env::var("HOME").unwrap()}),
+        json!({"baseDir": od_runtime::login_path::home_dir().unwrap()}),
     ] {
         let (s, _) = call(&app, "POST", "/api/import/folder", Some(bad.clone())).await;
         assert_eq!(s, StatusCode::BAD_REQUEST, "{bad}");

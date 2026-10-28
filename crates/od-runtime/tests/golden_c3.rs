@@ -529,13 +529,20 @@ fn every_adapter_argv_in_both_modes() {
          --resume s-old --permission-mode acceptEdits"
     );
 
+    // `/skills` has no drive letter, so on Windows it is not absolute and
+    // Qoder leaves it out.
+    let skills = if cfg!(windows) {
+        ""
+    } else {
+        " --add-dir /skills"
+    };
     assert_eq!(
         argv(&def::QODER, &with("performance", None)),
-        "-p --output-format stream-json --yolo -w /proj --model performance --add-dir /skills"
+        format!("-p --output-format stream-json --yolo -w /proj --model performance{skills}")
     );
     assert_eq!(
         argv(&def::QODER, &ask),
-        "-p --output-format stream-json -w /proj --add-dir /skills"
+        format!("-p --output-format stream-json -w /proj{skills}")
     );
 
     assert_eq!(argv(&def::MIMO, &base), "run --format json");

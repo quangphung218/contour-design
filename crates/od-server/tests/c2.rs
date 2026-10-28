@@ -4,6 +4,7 @@
 //! the Report Issue summary. No real agent, no network beyond loopback.
 
 #![allow(clippy::unwrap_used)] // tests fail loudly by design
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))] // helpers of the `sh` mock tests
 
 mod common;
 
@@ -70,6 +71,7 @@ async fn add_memory(d: &Daemon, kind: &str, text: &str) -> String {
     v["memory"]["id"].as_str().unwrap().to_owned()
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn memory_switch_hooks_and_index_decide_what_the_prompt_carries() {
     let d = daemon().await;
@@ -224,6 +226,7 @@ async fn memory_changes(reader: &mut SseReader, wait: Duration) -> Vec<Value> {
     out
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn chats_teach_memory_and_announce_it() {
     let d = daemon().await;
@@ -432,6 +435,7 @@ sleep 30
     )
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn interrupting_the_jury_stops_the_run_and_ships_the_best_round() {
     let d = daemon().await;
@@ -566,6 +570,7 @@ async fn fake_images() -> String {
 
 use axum::response::IntoResponse;
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn media_the_agent_generates_streams_progress_on_its_run() {
     let d = daemon().await;
@@ -661,6 +666,7 @@ cat >/dev/null
     assert_eq!(status, 200);
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn the_issue_summary_lists_facts_without_secrets() {
     let d = daemon().await;
