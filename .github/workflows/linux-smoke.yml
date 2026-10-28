@@ -1,7 +1,9 @@
 # Linux packages on a clean Ubuntu: installs the .deb with apt and runs the
 # AppImage in fresh ubuntu:22.04 and ubuntu:24.04 containers, opens Contour
 # under Xvfb, waits for /api/health to report the version, runs an agent
-# turn and saves a screenshot (scripts/linux-smoke.sh). release.yml calls it
+# turn, installs the MCP server into it through Integrations and runs the
+# registered command over stdio, and saves a screenshot
+# (scripts/linux-smoke.sh). release.yml calls it
 # with the bundle it just built and drafts the release only when it passes;
 # pull requests that touch the packaging, and a manual run, build the bundle
 # from the branch first.
@@ -17,6 +19,8 @@ on:
       - crates/od-runtime/src/login_path.rs
       # Starting the agent the smoke test runs.
       - crates/od-runtime/src/process.rs
+      # The MCP install button (Integrations) and the command it registers.
+      - crates/od-server/src/routes/manage/mcp.rs
       - scripts/linux-smoke.sh
       - scripts/linux-deps.sh
       - .github/workflows/linux-smoke.yml

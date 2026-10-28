@@ -3,8 +3,9 @@
 # opens Contour from it, waits for /api/health to report the version, runs
 # an agent turn through an npm-style `.cmd` on the user's Path, checks that
 # Check again finds one installed meanwhile, installs the MCP server into
-# both through Integrations, runs a PDF export through Edge, saves a
-# screenshot, closes the app and uninstalls (scripts/windows-smoke.ps1).
+# both through Integrations and runs the registered command over stdio,
+# runs a PDF export through Edge, saves a screenshot, closes the app and
+# uninstalls (scripts/windows-smoke.ps1).
 # Then installs the latest published release and the new .msi over it
 # (scripts/windows-upgrade-smoke.ps1).
 # release.yml calls it with the bundle it just built and drafts the release

@@ -6,8 +6,9 @@
 # `.cmd` shim in a folder on the user's Path, which the app's own
 # environment does not have yet) is found and runs, that Check again finds
 # one installed while the app runs, that Integrations installs the MCP
-# server into both, exports a PDF through Edge, saves a screenshot of the
-# window, closes it and uninstalls. Logs go to the out dir.
+# server into both and the command it registers answers MCP over stdio,
+# exports a PDF through Edge, saves a screenshot of the window, closes it
+# and uninstalls. Logs go to the out dir.
 # Usage: pwsh scripts/windows-smoke.ps1 <Contour_*.msi> [out-dir]
 # EXPECTED_VERSION overrides the version read from Cargo.toml; MSI_VERSION
 # is the installer's numeric version (scripts/msi-version.sh), checked when set.
@@ -188,6 +189,7 @@ else { Fail "Check again does not find codex.cmd added to the user's Path" ($cod
 # Integrations > Connect Contour to your coding agent: Install runs
 # `<agent> mcp add … -- <this app> mcp --daemon-url <this daemon>` through
 # the same `.cmd` shims.
+$registered = $null
 foreach ($mcp in @(@{ id = "claude"; dir = $agentDir; add = "mcp add --scope user contour -- " }, @{ id = "codex"; dir = $laterDir; add = "mcp add contour -- " })) {
   $res = try { Invoke-RestMethod -Method Post "$url/api/mcp/install/$($mcp.id)" } catch { [pscustomobject]@{ ok = $false; message = "$_" } }
   $log = Get-Content "$($mcp.dir)\mcp-args.log" -ErrorAction SilentlyContinue
@@ -195,8 +197,47 @@ foreach ($mcp in @(@{ id = "claude"; dir = $agentDir; add = "mcp add --scope use
   # The command after `--`, unquoted, then its arguments.
   $server = ""; $rest = ""
   if ($line -and $line.Substring($mcp.add.Length) -match '^"?(.+?\.exe)"? (.*)$') { $server = $Matches[1]; $rest = $Matches[2] }
-  if ($res.ok -and $server -eq $app -and $rest -eq "mcp --daemon-url $url") { Ok "Integrations installs the MCP server into $($mcp.id): $($mcp.id) $line" }
+  if ($res.ok -and $server -eq $app -and $rest -eq "mcp --daemon-url $url") {
+    Ok "Integrations installs the MCP server into $($mcp.id): $($mcp.id) $line"
+    $registered = @{ exe = $server; args = $rest }
+  }
   else { Fail "installing the MCP server into $($mcp.id) (ok=$($res.ok), server '$server' '$rest', want $app mcp --daemon-url $url)" "$($res.message)`n$($log -join "`n")" }
+}
+
+# The registered command, as the agent starts it: a GUI-subsystem binary
+# with pipes for stdin and stdout. It answers initialize and tools/list,
+# and list_projects reaches this app's daemon (no window, no second daemon).
+if ($registered) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo $registered.exe, $registered.args
+  $psi.UseShellExecute = $false; $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true
+  $mcpProc = [System.Diagnostics.Process]::Start($psi)
+  @(
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}',
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}',
+    '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}'
+  ) | ForEach-Object { $mcpProc.StandardInput.WriteLine($_) }
+  $mcpProc.StandardInput.Flush()
+  $replies = @{}; $mcpLines = @()
+  $deadline = (Get-Date).AddSeconds(60)
+  while ($replies.Count -lt 3 -and (Get-Date) -lt $deadline) {
+    $read = $mcpProc.StandardOutput.ReadLineAsync()
+    if (-not $read.Wait([int][Math]::Max(1, ($deadline - (Get-Date)).TotalMilliseconds)) -or $null -eq $read.Result) { break }
+    $mcpLines += $read.Result
+    $msg = try { $read.Result | ConvertFrom-Json } catch { $null }
+    if ($msg -and $null -ne $msg.id) { $replies[[int]$msg.id] = $msg }
+  }
+  $mcpProc.StandardInput.Close()
+  $exited = $mcpProc.WaitForExit(20000)
+  if (-not $exited) { $mcpProc.Kill() }
+  $mcpLines | Set-Content "$Out\mcp-stdio.log"
+  $tools = @($replies[2].result.tools | ForEach-Object { $_.name })
+  $listed = "$($replies[3].result.content | ForEach-Object { $_.text })"
+  if ($replies[1].result.serverInfo.name -eq "contour" -and $tools -contains "list_projects") { Ok "the registered command answers initialize and tools/list ($($tools.Count) tools)" }
+  else { Fail "the registered command '$($registered.exe) $($registered.args)' is not an MCP server" ($mcpLines -join "`n") }
+  if (-not $replies[3].result.isError -and $listed.Contains($project.project.id)) { Ok "its list_projects reaches this app's daemon" }
+  else { Fail "list_projects through the registered command" ($mcpLines -join "`n") }
+  if ($exited) { Ok "it exits when stdin closes" } else { Fail "the MCP server still runs 20 s after stdin closed" }
 }
 
 # PDF export drives the Microsoft Edge that Windows ships.
