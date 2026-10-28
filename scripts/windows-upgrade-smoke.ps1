@@ -65,7 +65,8 @@ function Install([string]$msi, [string]$log) {
   $p.ExitCode
 }
 # Opens the app from its Start Menu shortcut and returns the daemon's URL
-# once /api/health answers (a daemon.lock left by an earlier run does not count).
+# once /api/health answers. The daemon.lock an earlier run left goes first:
+# the app rewrites it once it listens, possibly on the same port as before.
 function Start-App {
   $lnk = @("$env:ProgramData\Microsoft\Windows\Start Menu\Programs", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs") |
     Where-Object { Test-Path $_ } |
@@ -74,11 +75,11 @@ function Start-App {
   if (-not $lnk) { Stop-Smoke "no Contour.lnk in the Start Menu" }
   $app = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk.FullName).TargetPath
   $script:installDir = Split-Path -Parent $app
-  $stale = Get-Content "$data\daemon.lock" -Raw -ErrorAction SilentlyContinue
+  Remove-Item "$data\daemon.lock" -ErrorAction SilentlyContinue
   Start-Process -FilePath $lnk.FullName
   for ($i = 0; $i -lt $timeout; $i++) {
     $url = Get-Content "$data\daemon.lock" -Raw -ErrorAction SilentlyContinue
-    if ($url -and $url -ne $stale) {
+    if ($url) {
       $url = $url.Trim()
       try { $health = Invoke-RestMethod "$url/api/health" -TimeoutSec 5; return @{ url = $url; version = $health.version } } catch { }
     }

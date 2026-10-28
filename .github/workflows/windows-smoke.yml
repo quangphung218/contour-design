@@ -184,8 +184,8 @@ jobs:
           if ($files.Count -ne 1) { Write-Host "::error::want one .msi, found $($files.Count)"; exit 1 }
           ./scripts/windows-smoke.ps1 $files[0].FullName smoke-out
       # The latest published release other than the one under test, for the
-      # upgrade. None (a first release, or no .msi in it) skips the upgrade
-      # with a warning.
+      # upgrade. None (a first release), or no .msi in it, skips the upgrade
+      # with a warning; a failed API call or download fails the step.
       - name: Previous release
         id: previous
         if: ${{ !cancelled() }}
@@ -195,15 +195,21 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           tag="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 50 --json tagName,publishedAt \
-            --jq "[.[] | select(.tagName != \"v$VERSION\")] | sort_by(.publishedAt) | last | .tagName // empty")"
+            --jq "[.[] | select(.tagName != \"v$VERSION\")] | sort_by(.publishedAt) | last | .tagName // empty")" \
+            || { echo "::error::listing the releases failed"; exit 1; }
           if [ -z "$tag" ]; then
             echo "::warning::no published release other than v$VERSION; the upgrade smoke test is skipped"
             exit 0
           fi
-          if ! gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern '*.msi' --dir previous; then
+          msis="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '[.assets[].name | select(endswith(".msi"))] | length')" \
+            || { echo "::error::reading the assets of $tag failed"; exit 1; }
+          if [ "$msis" = 0 ]; then
             echo "::warning::no .msi in $tag; the upgrade smoke test is skipped"
             exit 0
           fi
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern '*.msi' --dir previous \
+            || { echo "::error::downloading the .msi of $tag failed"; exit 1; }
           files=(previous/*.msi)
           echo "upgrading from $tag (${files[0]})"
           echo "msi=${files[0]}" >> "$GITHUB_OUTPUT"
