@@ -732,6 +732,17 @@ try {
   assert.doesNotMatch(await page.getByTestId('inspect-css').textContent(), /font-size/);
   await page.getByTestId('inspect-save').click();
   await page.getByTestId('tool-status').getByText('index.html').waitFor();
+  // "Saved to index.html" belongs to that file: another tab does not show it.
+  const openFile = async (query, name) => {
+    await page.keyboard.press('Control+p');
+    await page.getByTestId('switcher-input').fill(query);
+    await page.getByTestId('switcher-input').press('Enter');
+    await page.locator('.tab.active', { hasText: name }).waitFor();
+  };
+  await openFile('deck', 'deck.html');
+  await until(async () => (await page.getByTestId('tool-status').getByText('index.html').count()) === 0, 'saved note stays on its file');
+  await openFile('idx', 'index.html');
+  await page.getByTestId('tool-status').getByText('index.html').waitFor();
   await until(async () => indexOnDisk().includes('<h1 id="title" style="color: rgb(10, 125, 59)">'), 'style saved to source');
   let history = await (await fetch(`${BASE}/api/projects/${pid}/files/index.html/versions`)).json();
   let latest = history.versions[history.versions.length - 1];
