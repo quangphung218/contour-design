@@ -326,9 +326,11 @@ files under the data folder and the API returns them masked.
   calls out: the app never checks or updates on its own.
 - **Settings ▸ About ▸ Your usage** shows, from this machine only: the
   median time from creating a project to its first preview, the share of
-  projects exported or with 3+ chat turns (both for projects made empty
-  since 0.2.0-beta.7, not imported, remixed or duplicated ones), and the
-  share of runs that failed, by cause (runs you stopped are listed apart).
+  projects exported (Export menu, MP4, screenshot PNG, ZIP) or with 3+
+  chat turns (both for projects started empty since 0.2.0-beta.7: not
+  imported, remixed, duplicated or from a saved template, nor the media
+  library or an automation's per-run project), and the share of runs
+  that failed, by cause (runs you stopped are listed apart).
   Copy summary puts them on the clipboard, with the version, OS and agent,
   to paste into an issue or discussion; the text is shown before you copy.
 - Started from Finder or the Dock, the app takes `PATH` from your login

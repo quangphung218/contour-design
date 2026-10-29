@@ -4,6 +4,7 @@
 
 use od_contracts::CreateProjectRequest;
 use od_store::{DataDir, Store, db};
+use serde_json::json;
 
 fn open(dir: &std::path::Path) -> Store {
     Store::open(DataDir::new(dir)).unwrap()
@@ -154,7 +155,7 @@ fn usage_keeps_the_first_mark_and_counts_turns_since_recording_began() {
 }
 
 #[test]
-fn usage_leaves_out_projects_that_start_with_files() {
+fn usage_counts_only_projects_people_made_empty() {
     use od_contracts::ProjectMetadata;
     let tmp = tempfile::tempdir().unwrap();
     let store = open(tmp.path());
@@ -179,6 +180,31 @@ fn usage_leaves_out_projects_that_start_with_files() {
         .unwrap();
     let copy = store.duplicate_project(&made.id, None).unwrap();
     assert_eq!(copy.copied_files, ["index.html"]);
+    // From a saved template (`use_template`), the media library, and an
+    // automation's project for one run.
+    for metadata in [
+        json!({ "templateId": "t1" }),
+        json!({ "intent": "media-library" }),
+    ] {
+        store
+            .create_project(CreateProjectRequest {
+                name: "Not made here".to_owned(),
+                metadata: Some(serde_json::from_value(metadata).unwrap()),
+                ..CreateProjectRequest::default()
+            })
+            .unwrap();
+    }
+    let (automated, _) = store
+        .create_project(CreateProjectRequest {
+            name: "Routine · today".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    assert!(
+        store
+            .mark_usage(&automated.id, od_store::usage::UsageMark::Automated)
+            .unwrap()
+    );
 
     let (_, rows) = store.project_usage().unwrap();
     assert_eq!(rows.len(), 1, "only the project made here counts");

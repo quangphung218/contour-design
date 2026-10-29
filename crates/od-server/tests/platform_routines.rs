@@ -223,3 +223,34 @@ async fn bad_routines_and_foreign_callers_are_refused() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn a_project_made_for_each_run_is_not_in_your_usage() {
+    let d = common::daemon().await;
+    let gate = d.tmp.path().join("gate");
+    std::fs::write(&gate, "").unwrap();
+    write_mock(&d.mocks, "claude", &gated_claude(&gate));
+    d.project().await;
+    let made = || async { d.get_json("/api/usage").await["engaged"]["projects"].clone() };
+    assert_eq!(made().await, 1);
+    let res = d
+        .post(
+            "/api/routines",
+            &json!({"name": "Fresh each day", "targetMode": "create_each_run", "agentId": "claude",
+                    "prompt": "Make a page", "schedule": "0 9 * * *"}),
+        )
+        .await;
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let rid = res.json::<Value>().await.unwrap()["routine"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let res = d
+        .post(&format!("/api/routines/{rid}/run"), &json!({}))
+        .await;
+    assert_eq!(res.status(), StatusCode::ACCEPTED);
+    wait_status(&d, &rid, "succeeded").await;
+    let projects = d.get_json("/api/projects").await;
+    assert_eq!(projects["projects"].as_array().unwrap().len(), 2);
+    assert_eq!(made().await, 1, "the routine's project is no one's");
+}

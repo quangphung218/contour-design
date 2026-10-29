@@ -21,10 +21,12 @@ All notable changes to Contour are recorded here. The format follows
   text shows below the button, so it can be read first or copied by hand.
   With fewer than 3 projects or runs it says how many there are, "Not
   enough projects yet (1 of 3)", instead of a number. Previews (HTML and
-  React components) and exports are recorded from this version on, so the
-  first two numbers count projects created since 0.2.0-beta.7, leaving out
-  imported, remixed and duplicated ones. The bug report and feature
-  request templates point to it. In every UI language.
+  React components) and exports (Export menu, MP4, screenshot PNG, ZIP)
+  are recorded from this version on, so the first two numbers count
+  projects created since 0.2.0-beta.7 that someone started empty: not
+  imported, remixed, duplicated or made from a saved template, nor the
+  media library or an automation's project for one run. The bug report
+  and feature request templates point to it. In every UI language.
 
 ### Fixed
 

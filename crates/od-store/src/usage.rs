@@ -2,8 +2,9 @@
 //! was first previewed and whether it was ever exported. The database had
 //! neither before 0.2.0-beta.7, so recording starts when this schema first
 //! appears (`usage_since`) and only projects created after that count.
-//! Projects that start with someone else's files (imported, remixed,
-//! duplicated) never count: their preview shows at once.
+//! Only projects someone made here count: ones that start with files
+//! (imported, remixed, duplicated, from a saved template) preview at once,
+//! the media library holds uploads, and an automation's are no one's.
 //!
 //! Created idempotently on every open, like `project_views`.
 
@@ -35,6 +36,8 @@ pub enum UsageMark {
     /// The project started as a copy of another one (`duplicate_project`
     /// drops `importedFrom`, so this is its only trace).
     Copied,
+    /// An automation made the project for one of its runs.
+    Automated,
 }
 
 impl UsageMark {
@@ -43,6 +46,7 @@ impl UsageMark {
             Self::FirstPreview => "first_preview",
             Self::Export => "export",
             Self::Copied => "copied",
+            Self::Automated => "automated",
         }
     }
 }
@@ -87,8 +91,9 @@ impl Store {
         })
     }
 
-    /// When recording started, and every project created empty since:
-    /// imported, remixed and copied projects are left out.
+    /// When recording started, and every project a person made empty since:
+    /// imported, remixed, copied and template projects, the media library
+    /// and automations' projects are left out.
     ///
     /// # Errors
     /// SQLite errors.
@@ -105,7 +110,10 @@ impl Store {
                      WHERE c.project_id = p.id AND m.role = 'user') \
                  FROM projects p WHERE p.created_at >= ?1 \
                    AND json_extract(p.metadata_json, '$.importedFrom') IS NULL \
-                   AND NOT EXISTS (SELECT 1 FROM usage_marks WHERE project_id = p.id AND kind = 'copied')",
+                   AND json_extract(p.metadata_json, '$.templateId') IS NULL \
+                   AND json_extract(p.metadata_json, '$.intent') IS NOT 'media-library' \
+                   AND NOT EXISTS (SELECT 1 FROM usage_marks WHERE project_id = p.id \
+                     AND kind IN ('copied', 'automated'))",
             )?;
             let rows = stmt.query_map([since], |r| {
                 Ok(ProjectUsage {

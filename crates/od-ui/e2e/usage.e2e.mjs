@@ -9,11 +9,12 @@
 // under it on the clipboard with the version, OS, agent and the three
 // numbers but no project name, path or prompt. A refused clipboard says so
 // in plain words and opens the summary to copy by hand; a failed load
-// offers Try again. Opening the screen and copying send no request off the
-// machine (every request leaving loopback is blocked and fails the test).
-// Vietnamese, axe (WCAG 2.2 AA, light and dark), and 390 px without
-// overflow. Screenshots at 1440 and 390, light and dark, go to
-// test-results/usage (or OD_E2E_SHOTS).
+// offers Try again. Opening the screen and copying send no request off
+// the machine (every request leaving loopback is blocked and fails the
+// test). Vietnamese, axe (WCAG 2.2 AA, light and dark), and 390 px without
+// overflow. Last, a screenshot saved as PNG counts as an export.
+// Screenshots at 1440 and 390, light and dark, go to test-results/usage
+// (or OD_E2E_SHOTS).
 // Port: OD_E2E_PORT + 12 (or OD_E2E_USAGE_PORT). Run through ./run.sh.
 
 import { chromium } from 'playwright';
@@ -341,6 +342,16 @@ try {
   await shot('usage-1440-vi');
   await put('/api/app-config', { locale: 'en' });
   results.i18n = 'vi';
+
+  log('step', '6. Screenshot export');
+  // 6. Saving a screenshot of the preview as PNG is an export too.
+  await page.goto(`${BASE}/projects/${c}`);
+  await page.frameLocator('iframe[data-testid="preview"]').locator('p').waitFor();
+  await page.getByTestId('screenshot').click();
+  const [png] = await Promise.all([page.waitForEvent('download'), page.getByTestId('screenshot-save').click()]);
+  assert.match(png.suggestedFilename(), /\.png$/);
+  await until(async () => (await api('/api/usage')).body.engaged.engaged === 3, 'screenshot recorded as an export');
+  results.screenshotExport = 'counted';
 
   assert.deepEqual(external, [], 'no request left loopback');
   assert.deepEqual(pageErrors, [], 'no page errors');

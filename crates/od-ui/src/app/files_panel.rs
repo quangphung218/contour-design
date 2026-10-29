@@ -803,6 +803,7 @@ fn SelectionBar(ctx: StudioCtx, ui: FilesUi) -> impl IntoView {
                         .with_untracked(|p| p.as_ref().map(|p| p.name.clone()))
                         .unwrap_or_else(|| "files".to_owned());
                     download(&bytes, &format!("{name}.zip"), "application/zip");
+                    super::export_menu::mark_exported(&ctx.base()).await;
                 }
                 Err(e) => ctx.notice.set(Some(e.to_string())),
             }
@@ -886,7 +887,10 @@ fn RowMenu(ctx: StudioCtx, ui: FilesUi, key: String) -> impl IntoView {
                         leptos::task::spawn_local(async move {
                             let url = format!("{}/archive?root={}", ctx.base(), api::seg(&dir));
                             match api::get_bytes(&url).await {
-                                Ok(bytes) => { download(&bytes, &format!("{}.zip", ft::base(&dir)), "application/zip"); }
+                                Ok(bytes) => {
+                                    download(&bytes, &format!("{}.zip", ft::base(&dir)), "application/zip");
+                                    super::export_menu::mark_exported(&ctx.base()).await;
+                                }
                                 Err(e) => ctx.notice.set(Some(e.to_string())),
                             }
                         });
