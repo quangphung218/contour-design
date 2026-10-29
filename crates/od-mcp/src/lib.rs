@@ -6,6 +6,7 @@ pub mod brief;
 pub mod client;
 pub mod install;
 pub mod live;
+pub mod locate;
 pub mod server;
 pub mod tools;
 

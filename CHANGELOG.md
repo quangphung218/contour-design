@@ -15,6 +15,10 @@ All notable changes to Contour are recorded here. The format follows
   Before, a deck that does not scale itself (the html-ppt templates) was
   laid out again at the pane's width and its text ran off the slide. The
   slide thumbnails use the same size.
+- `od mcp` (the CLI) finds the app like `<app> mcp` does: a
+  `--daemon-url` or `OD_DAEMON_URL` with nothing answering within 1 s
+  gives way to the running app's URL in `daemon.lock`, said on stderr,
+  and with neither given it uses `daemon.lock` before the default port.
 - PDF, PNG and PowerPoint exports try Chrome or Edge once more when it
   does not start within 30 s, so the first export on a slow or freshly
   set up PC does not fail with "Timeout while resolving websocket URL".
