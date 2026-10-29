@@ -749,6 +749,18 @@ cat >/dev/null
 #[tokio::test]
 async fn agents_endpoint_detects_mocks_and_missing_binaries() {
     let d = daemon().await;
+    // Nothing installed yet: no agent found for setup.
+    let none = d.get_json("/api/agents").await;
+    assert!(
+        none["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|a| a["available"] == false),
+        "{none}"
+    );
+    let steps = d.get_json("/api/usage").await["setup"]["steps"].clone();
+    assert_eq!(steps.as_array().unwrap().len(), 1, "{steps}");
     write_mock(&d.mocks, "claude", &claude_hello(&d.mocks));
     let body = d.get_json("/api/agents").await;
     let agents = body["agents"].as_array().unwrap();
@@ -762,6 +774,9 @@ async fn agents_endpoint_detects_mocks_and_missing_binaries() {
     assert_eq!(claude["supportsSteer"], true);
     let codex = agents.iter().find(|a| a["id"] == "codex").unwrap();
     assert_eq!(codex["supportsSteer"], false);
+    // Finding an agent is setup step 2 (Settings ▸ About ▸ Your usage).
+    let steps = d.get_json("/api/usage").await["setup"]["steps"].clone();
+    assert_eq!(steps[1]["step"], "agent_found", "{steps}");
 }
 
 /// Onboarding ▸ Check again in the app: an agent installed after start in a

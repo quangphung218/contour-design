@@ -340,17 +340,27 @@ async fn byok_test_and_models_never_send_the_saved_key_elsewhere() {
             res.json::<Value>().await.unwrap()
         }
     };
-    let r = test(json!({"mode": "provider", "protocol": "openai", "baseUrl": base, "apiKey": "sk-good", "model": "m"})).await;
-    assert_eq!(
-        (r["ok"].clone(), r["kind"].clone(), r["sample"].clone()),
-        (json!(true), json!("success"), json!("ok"))
-    );
+    // Setup counts a passed test only (Settings ▸ About ▸ Your usage).
+    let tested = || async {
+        d.get_json("/api/usage").await["setup"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["step"] == "agent_tested")
+    };
     let r = test(
         json!({"mode": "provider", "protocol": "openai", "baseUrl": base, "apiKey": "sk-bad"}),
     )
     .await;
     assert_eq!(r["kind"], "auth_failed");
     assert_eq!(r["detail"], "bad key");
+    assert!(!tested().await, "a failed test is no setup step");
+    let r = test(json!({"mode": "provider", "protocol": "openai", "baseUrl": base, "apiKey": "sk-good", "model": "m"})).await;
+    assert_eq!(
+        (r["ok"].clone(), r["kind"].clone(), r["sample"].clone()),
+        (json!(true), json!("success"), json!("ok"))
+    );
+    assert!(tested().await);
     let r = test(
         json!({"mode": "provider", "protocol": "openai", "baseUrl": "ftp://x", "apiKey": "k"}),
     )
@@ -617,6 +627,25 @@ async fn agent_test_runs_the_cli_once_and_settings_reach_runs() {
     let d = common::daemon().await;
     let rec = d.tmp.path().join("rec");
     write_mock(&d.mocks, "claude", &claude(&rec, "ok"));
+    // Setup counts a passed test only (Settings ▸ About ▸ Your usage).
+    let tested = || async {
+        d.get_json("/api/usage").await["setup"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["step"] == "agent_tested")
+    };
+    let missing: Value = d
+        .post(
+            "/api/test/connection",
+            &json!({"mode": "agent", "agentId": "codex"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(missing["ok"], false);
+    assert!(!tested().await, "a failed test is no setup step");
 
     let r: Value = d
         .post(
@@ -632,6 +661,7 @@ async fn agent_test_runs_the_cli_once_and_settings_reach_runs() {
         (json!(true), json!("ok")),
         "{r}"
     );
+    assert!(tested().await);
     assert!(
         std::fs::read_to_string(rec.with_extension("prompt"))
             .unwrap()

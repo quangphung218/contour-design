@@ -80,8 +80,8 @@ pub(crate) fn host_frame_load(headers: &HeaderMap) -> bool {
             .is_none_or(|dest| dest.as_bytes() == b"iframe")
 }
 
-/// Records the project's first preview (Settings ▸ About ▸ Your usage).
-/// The preview reloads on every file change, so a project recorded once
+/// Records the project's first preview (Settings ▸ About ▸ Your usage),
+/// and the first preview of all as a setup step. The preview reloads on every file change, so a project recorded once
 /// in this process skips the database after that.
 pub(crate) async fn record_first_preview(state: &AppState, id: &str) {
     if state.preview.previewed().contains(id) {
@@ -97,6 +97,7 @@ pub(crate) async fn record_first_preview(state: &AppState, id: &str) {
         }
         Err(err) => tracing::warn!(error = %err.message, "recording the first preview failed"),
     }
+    crate::routes::manage::usage::record_setup(state, od_contracts::SetupStep::Preview).await;
 }
 
 /// Injected bytes differ from the file, so file validators and ranges no

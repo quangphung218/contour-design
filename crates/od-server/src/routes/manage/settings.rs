@@ -15,6 +15,7 @@
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::State;
+use od_contracts::SetupStep;
 use od_runs::{RunMeta, Runs};
 use od_runtime::byok::{self, ByokConfig, ByokProtocol};
 use od_runtime::byok_probe::{self, TestResult};
@@ -171,6 +172,9 @@ pub async fn test_connection(
             let result: TestResult =
                 byok_probe::test_connection(&config, byok_probe::TEST_TIMEOUT).await;
             tracing::info!(agent = "byok", ok = result.ok, category = ?result.kind, "connection test");
+            if result.ok {
+                super::usage::record_setup(&state, SetupStep::AgentTested).await;
+            }
             Ok(ApiJson(serde_json::to_value(result).unwrap_or(Value::Null)))
         }
         "agent" => {
@@ -179,6 +183,9 @@ pub async fn test_connection(
             let result = test_agent(&state, &agent, &req, AGENT_TEST_TIMEOUT).await?;
             let category = test_category(&result);
             tracing::info!(agent = %agent, ok = result.ok, category, "connection test");
+            if result.ok {
+                super::usage::record_setup(&state, SetupStep::AgentTested).await;
+            }
             // `category` lets onboarding tell a missing sign-in from other failures.
             let mut body = serde_json::to_value(result).unwrap_or(Value::Null);
             if let Value::Object(map) = &mut body {

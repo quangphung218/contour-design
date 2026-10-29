@@ -990,14 +990,20 @@ pub(crate) fn byok_configured(state: &AppState) -> bool {
 
 pub async fn agents(State(state): State<AppState>) -> ApiJson<AgentsResponse> {
     let config = state.runs.engine.config();
-    ApiJson(AgentsResponse {
-        agents: od_runtime::detect::detect_all_in(
-            config.path.clone(),
-            config.base_env.clone(),
-            byok_configured(&state),
-        )
-        .await,
-    })
+    let agents = od_runtime::detect::detect_all_in(
+        config.path.clone(),
+        config.base_env.clone(),
+        byok_configured(&state),
+    )
+    .await;
+    if agents
+        .iter()
+        .any(|a| a.available && a.id != od_runtime::def::BYOK.id)
+    {
+        crate::routes::manage::usage::record_setup(&state, od_contracts::SetupStep::AgentFound)
+            .await;
+    }
+    ApiJson(AgentsResponse { agents })
 }
 
 /// Onboarding ▸ Check again: the login shell's `PATH` is read again (an
