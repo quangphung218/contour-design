@@ -20,6 +20,21 @@ pub fn duration(ms: i64) -> String {
     }
 }
 
+/// A count with thousands separators, "123,456" (the English summary;
+/// the screen formats counts in the UI language).
+#[must_use]
+pub fn group(n: u32) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, d) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(d);
+    }
+    out
+}
+
 /// `part` of `whole` as a whole percentage, rounded.
 #[must_use]
 pub fn percent(part: u32, whole: u32) -> u32 {
@@ -48,10 +63,10 @@ pub fn summary(u: &UsageResponse, version: &str, os: &str, agent: Option<&str>) 
         Some(ms) => out.push_str(&format!(
             "median {} ({} projects, since {RECORDED_SINCE})\n",
             duration(ms),
-            fp.projects
+            group(fp.projects)
         )),
         None => out.push_str(&format!(
-            "not enough projects yet ({}, since {RECORDED_SINCE})\n",
+            "not enough projects yet ({} of {USAGE_MIN_SAMPLE}, since {RECORDED_SINCE})\n",
             fp.projects
         )),
     }
@@ -63,12 +78,12 @@ pub fn summary(u: &UsageResponse, version: &str, os: &str, agent: Option<&str>) 
         out.push_str(&format!(
             "{}% ({}/{}, since {RECORDED_SINCE})\n",
             percent(e.engaged, e.projects),
-            e.engaged,
-            e.projects
+            group(e.engaged),
+            group(e.projects)
         ));
     } else {
         out.push_str(&format!(
-            "not enough projects yet ({}, since {RECORDED_SINCE})\n",
+            "not enough projects yet ({} of {USAGE_MIN_SAMPLE}, since {RECORDED_SINCE})\n",
             e.projects
         ));
     }
@@ -78,19 +93,28 @@ pub fn summary(u: &UsageResponse, version: &str, os: &str, agent: Option<&str>) 
         out.push_str(&format!(
             "{}% ({}/{})",
             percent(r.failed, r.total),
-            r.failed,
-            r.total
+            group(r.failed),
+            group(r.total)
         ));
         let causes: Vec<String> = r
             .causes
             .iter()
-            .map(|c| format!("{} {}", c.cause, c.count))
+            .map(|c| format!("{} {}", c.cause, group(c.count)))
             .collect();
         if !causes.is_empty() {
             out.push_str(&format!(": {}", causes.join(", ")));
         }
     } else {
-        out.push_str(&format!("not enough runs yet ({})", r.total));
+        out.push_str(&format!(
+            "not enough runs yet ({} of {USAGE_MIN_SAMPLE})",
+            r.total
+        ));
+    }
+    if r.canceled > 0 {
+        out.push_str(&format!(
+            "; stopped by the user: {} (not counted)",
+            group(r.canceled)
+        ));
     }
     out
 }
@@ -107,6 +131,15 @@ mod tests {
         assert_eq!(duration(245_000), "4m 05s");
         assert_eq!(duration(7_800_000), "2h 10m");
         assert_eq!(duration(3 * 86_400_000 + 4 * 3_600_000), "3d 4h");
+    }
+
+    #[test]
+    fn counts_group_thousands() {
+        assert_eq!(group(0), "0");
+        assert_eq!(group(999), "999");
+        assert_eq!(group(1_000), "1,000");
+        assert_eq!(group(123_456), "123,456");
+        assert_eq!(group(1_234_567), "1,234,567");
     }
 
     #[test]
@@ -135,9 +168,9 @@ mod tests {
         assert_eq!(
             s,
             "Contour 0.2.0-beta.7 · macos aarch64 · agent: none\n\
-             Time to first preview: not enough projects yet (2, since 0.2.0-beta.7)\n\
-             Projects with an export or 3+ chat turns: not enough projects yet (2, since 0.2.0-beta.7)\n\
-             Failed runs: not enough runs yet (0)"
+             Time to first preview: not enough projects yet (2 of 3, since 0.2.0-beta.7)\n\
+             Projects with an export or 3+ chat turns: not enough projects yet (2 of 3, since 0.2.0-beta.7)\n\
+             Failed runs: not enough runs yet (0 of 3)"
         );
         assert!(!s.contains('%'), "no made-up 0%");
     }
@@ -155,18 +188,19 @@ mod tests {
                 engaged: 3,
             },
             runs: RunUsage {
-                total: 20,
-                failed: 3,
+                total: 12_345,
+                failed: 1_234,
                 causes: vec![
                     RunCause {
                         cause: "spawn_failed".into(),
-                        count: 2,
+                        count: 1_233,
                     },
                     RunCause {
-                        cause: "canceled".into(),
+                        cause: "timeout".into(),
                         count: 1,
                     },
                 ],
+                canceled: 2,
             },
         };
         let s = summary(&u, "0.2.0-beta.7", "macos aarch64", Some("claude"));
@@ -175,7 +209,8 @@ mod tests {
             "Contour 0.2.0-beta.7 · macos aarch64 · agent: claude\n\
              Time to first preview: median 4m 12s (4 projects, since 0.2.0-beta.7)\n\
              Projects with an export or 3+ chat turns: 75% (3/4, since 0.2.0-beta.7)\n\
-             Failed runs: 15% (3/20): spawn_failed 2, canceled 1"
+             Failed runs: 10% (1,234/12,345): spawn_failed 1,233, timeout 1; \
+             stopped by the user: 2 (not counted)"
         );
     }
 }

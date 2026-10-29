@@ -324,6 +324,13 @@ files under the data folder and the API returns them masked.
   with notes and downloads), "You're up to date", or a short error (its
   own message when GitHub rate limits the network). Only that click
   calls out: the app never checks or updates on its own.
+- **Settings ▸ About ▸ Your usage** shows, from this machine only: the
+  median time from creating a project to its first preview, the share of
+  projects exported or with 3+ chat turns (both for projects made empty
+  since 0.2.0-beta.7, not imported, remixed or duplicated ones), and the
+  share of runs that failed, by cause (runs you stopped are listed apart).
+  Copy summary puts them on the clipboard, with the version, OS and agent,
+  to paste into an issue or discussion; the text is shown before you copy.
 - Started from Finder or the Dock, the app takes `PATH` from your login
   shell (plus `~/.local/bin`, Homebrew, npm, bun, cargo) to find agents.
 - Quitting stops every terminal shell and running agent.

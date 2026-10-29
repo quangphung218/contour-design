@@ -71,6 +71,34 @@ fn host_load(headers: &HeaderMap) -> bool {
         .is_none_or(|site| matches!(site.as_bytes(), b"same-origin" | b"none"))
 }
 
+/// Whether the host page shows this document in its preview frame, rather
+/// than fetching it (an export) or a sandboxed page loading it.
+pub(crate) fn host_frame_load(headers: &HeaderMap) -> bool {
+    host_load(headers)
+        && headers
+            .get("sec-fetch-dest")
+            .is_none_or(|dest| dest.as_bytes() == b"iframe")
+}
+
+/// Records the project's first preview (Settings ▸ About ▸ Your usage).
+/// The preview reloads on every file change, so a project recorded once
+/// in this process skips the database after that.
+pub(crate) async fn record_first_preview(state: &AppState, id: &str) {
+    if state.preview.previewed().contains(id) {
+        return;
+    }
+    let project = id.to_owned();
+    match state
+        .blocking(move |s| s.mark_usage(&project, UsageMark::FirstPreview))
+        .await
+    {
+        Ok(_) => {
+            state.preview.previewed().insert(id.to_owned());
+        }
+        Err(err) => tracing::warn!(error = %err.message, "recording the first preview failed"),
+    }
+}
+
 /// Injected bytes differ from the file, so file validators and ranges no
 /// longer apply.
 fn strip_validators(headers: &mut HeaderMap) {
@@ -175,13 +203,7 @@ async fn raw_bridge(State(state): State<AppState>, mut req: Request, next: Next)
     strip_validators(req.headers_mut());
     let res = next.run(req).await;
     if host && res.status() == StatusCode::OK && is_html(res.headers()) {
-        let project = id.clone();
-        if let Err(err) = state
-            .blocking(move |s| s.mark_usage(&project, UsageMark::FirstPreview))
-            .await
-        {
-            tracing::warn!(error = %err.message, "recording the first preview failed");
-        }
+        record_first_preview(&state, &id).await;
     }
     let preview = &state.preview;
     with_bridge(res, Some(&base_href), || {

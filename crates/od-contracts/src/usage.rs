@@ -43,20 +43,22 @@ pub struct EngagedUsage {
 /// Chat turns that make a project count as used without an export.
 pub const ENGAGED_TURNS: u32 = 3;
 
-/// Finished runs, and the ones that did not succeed by cause.
+/// Runs that ended on their own, and the failed ones by cause. A run the
+/// user stopped is no failure: it is counted apart and left out of both.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunUsage {
-    /// Runs that ended (succeeded, failed or canceled).
+    /// Runs that succeeded or failed.
     pub total: u32,
-    /// Runs that failed or were canceled.
     pub failed: u32,
-    /// Most frequent first.
+    /// Failure causes, most frequent first.
     pub causes: Vec<RunCause>,
+    /// Runs the user stopped.
+    pub canceled: u32,
 }
 
 /// One cause: a `failureCategory` (`spawn_failed`, `agent_error`,
-/// `timeout`, …), `canceled`, or `other` for a failure without one.
+/// `timeout`, …), or `other` for a failure without one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunCause {

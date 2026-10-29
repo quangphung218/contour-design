@@ -2,7 +2,7 @@
 //! what is already on this machine, and never sent anywhere):
 //!
 //! - `GET /api/usage` time to first preview, projects put to use, and
-//!   finished runs by failure cause ([`UsageResponse`]).
+//!   finished runs by failure cause, Stops apart ([`UsageResponse`]).
 //! - `POST /api/projects/:id/exported` records the project's first export.
 //!   Exports run in several routes and one is read through `raw`, so the UI
 //!   reports a finished download here. The first preview is recorded by the
@@ -63,17 +63,18 @@ pub fn summarize(
         .filter(|p| p.exported || p.turns >= ENGAGED_TURNS)
         .count();
     let mut causes = BTreeMap::<&'static str, u32>::new();
-    let mut total = 0;
+    let (mut total, mut canceled) = (0, 0);
     for (status, category) in runs {
-        let cause = match status {
-            RunStatus::Running => continue,
-            RunStatus::Succeeded => None,
-            RunStatus::Canceled => Some("canceled"),
-            RunStatus::Failed => Some(category.map_or("other", cause_name)),
-        };
-        total += 1;
-        if let Some(cause) = cause {
-            *causes.entry(cause).or_default() += 1;
+        match status {
+            RunStatus::Running => {}
+            RunStatus::Canceled => canceled += 1,
+            RunStatus::Succeeded => total += 1,
+            RunStatus::Failed => {
+                total += 1;
+                *causes
+                    .entry(category.map_or("other", cause_name))
+                    .or_default() += 1;
+            }
         }
     }
     let mut causes: Vec<RunCause> = causes
@@ -99,6 +100,7 @@ pub fn summarize(
             total,
             failed: causes.iter().map(|c| c.count).sum(),
             causes,
+            canceled,
         },
     }
 }
@@ -182,11 +184,12 @@ mod tests {
     }
 
     #[test]
-    fn runs_split_by_cause_most_frequent_first_and_skip_live_ones() {
+    fn runs_split_by_cause_most_frequent_first_and_skip_live_and_stopped_ones() {
         let runs = [
             (RunStatus::Running, None),
             (RunStatus::Succeeded, None),
             (RunStatus::Succeeded, None),
+            (RunStatus::Canceled, None),
             (RunStatus::Canceled, None),
             (RunStatus::Failed, Some(FailureCategory::Timeout)),
             (RunStatus::Failed, Some(FailureCategory::SpawnFailed)),
@@ -194,23 +197,16 @@ mod tests {
             (RunStatus::Failed, None),
         ];
         let u = summarize(0, &[], &runs);
-        assert_eq!(u.runs.total, 7);
-        assert_eq!(u.runs.failed, 5);
+        assert_eq!(u.runs.total, 6);
+        assert_eq!(u.runs.failed, 4);
+        assert_eq!(u.runs.canceled, 2, "a Stop is no failure");
         let causes: Vec<(&str, u32)> = u
             .runs
             .causes
             .iter()
             .map(|c| (c.cause.as_str(), c.count))
             .collect();
-        assert_eq!(
-            causes,
-            [
-                ("spawn_failed", 2),
-                ("canceled", 1),
-                ("other", 1),
-                ("timeout", 1)
-            ]
-        );
+        assert_eq!(causes, [("spawn_failed", 2), ("other", 1), ("timeout", 1)]);
     }
 
     #[test]

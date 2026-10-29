@@ -170,18 +170,23 @@ pub async fn raw(
 
 /// `GET /api/projects/:id/react/<path>`: a `.jsx`/`.tsx` file as a page
 /// that renders the component (Studio preview, "Export React component as
-/// HTML"). Everything it runs is inlined; it fetches nothing.
+/// HTML"). Everything it runs is inlined; it fetches nothing. The first
+/// one the Studio frame shows is the project's first preview.
 ///
 /// # Errors
 /// Not a component file, unknown project or file, or a read error.
 pub async fn react(
     State(state): State<AppState>,
     Path((id, rest)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> ApiResult<Response> {
     if !od_preview::react_component::is_component(&rest) {
         return Err(ApiErr::bad_request("not a .jsx or .tsx file"));
     }
-    let (_, full) = state.blocking(move |s| s.stat_file(&id, &rest)).await?;
+    let project = id.clone();
+    let (_, full) = state
+        .blocking(move |s| s.stat_file(&project, &rest))
+        .await?;
     let source = tokio::fs::read_to_string(&full)
         .await
         .map_err(|e| ApiErr::internal(e.to_string()))?;
@@ -194,6 +199,9 @@ pub async fn react(
         .rsplit_once('.')
         .map_or(name.as_str(), |(stem, _)| stem);
     let html = od_preview::react_component::page(&source, title, typescript);
+    if crate::routes::preview::host_frame_load(&headers) {
+        crate::routes::preview::record_first_preview(&state, &id).await;
+    }
     Ok((
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),

@@ -152,3 +152,35 @@ fn usage_keeps_the_first_mark_and_counts_turns_since_recording_began() {
     store.delete_project(&project.id).unwrap();
     assert!(store.project_usage().unwrap().1.is_empty());
 }
+
+#[test]
+fn usage_leaves_out_projects_that_start_with_files() {
+    use od_contracts::ProjectMetadata;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let (made, _) = store
+        .create_project(CreateProjectRequest {
+            name: "Made".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    store
+        .create_file_exact(&made.id, "index.html", b"<p>hi</p>")
+        .unwrap();
+    store
+        .create_project(CreateProjectRequest {
+            name: "Imported".to_owned(),
+            metadata: Some(ProjectMetadata {
+                imported_from: Some("claude-design".to_owned()),
+                ..ProjectMetadata::default()
+            }),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    let copy = store.duplicate_project(&made.id, None).unwrap();
+    assert_eq!(copy.copied_files, ["index.html"]);
+
+    let (_, rows) = store.project_usage().unwrap();
+    assert_eq!(rows.len(), 1, "only the project made here counts");
+    assert_eq!(rows[0].created_at, made.created_at);
+}

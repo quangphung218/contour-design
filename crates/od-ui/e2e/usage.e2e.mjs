@@ -3,10 +3,13 @@
 // Then three projects: one gets three chat turns in the studio (its preview
 // is the first preview), one is exported from the Export menu, one is only
 // previewed; runs also fail for a missing agent (`codex` is not on PATH)
-// and a Stop. About then shows the median wait, 2 of 3 projects put to use
-// and 2 of 5 runs failed by cause, and Copy puts a summary on the clipboard
-// with the version, OS, agent and the three numbers but no project name,
-// path or prompt. Opening the screen and copying send no request off the
+// and a Stop; a duplicate of the exported one does not count. About then
+// shows the median wait, 2 of 3 projects put to use and 1 of 4 runs failed
+// by cause with the Stop listed apart, and Copy puts the summary shown
+// under it on the clipboard with the version, OS, agent and the three
+// numbers but no project name, path or prompt. A refused clipboard says so
+// in plain words and opens the summary to copy by hand; a failed load
+// offers Try again. Opening the screen and copying send no request off the
 // machine (every request leaving loopback is blocked and fails the test).
 // Vietnamese, axe (WCAG 2.2 AA, light and dark), and 390 px without
 // overflow. Screenshots at 1440 and 390, light and dark, go to
@@ -141,9 +144,9 @@ try {
   page.on('request', track);
   await openAbout();
   for (const [id, text] of [
-    ['usage-first-preview', 'Not enough projects yet'],
-    ['usage-engaged', 'Not enough projects yet'],
-    ['usage-runs', 'Not enough runs yet'],
+    ['usage-first-preview', 'Not enough projects yet (0 of 3)'],
+    ['usage-engaged', 'Not enough projects yet (0 of 3)'],
+    ['usage-runs', 'Not enough runs yet (0 of 3)'],
   ]) {
     assert.equal(await value(id).textContent(), text, id);
     assert.equal(await value(id).getAttribute('data-state'), 'not-enough', id);
@@ -156,10 +159,13 @@ try {
   assert.equal(
     empty,
     `Contour ${v.version} · ${v.platform} ${v.arch} · agent: claude\n` +
-      'Time to first preview: not enough projects yet (0, since 0.2.0-beta.7)\n' +
-      'Projects with an export or 3+ chat turns: not enough projects yet (0, since 0.2.0-beta.7)\n' +
-      'Failed runs: not enough runs yet (0)',
+      'Time to first preview: not enough projects yet (0 of 3, since 0.2.0-beta.7)\n' +
+      'Projects with an export or 3+ chat turns: not enough projects yet (0 of 3, since 0.2.0-beta.7)\n' +
+      'Failed runs: not enough runs yet (0 of 3)',
   );
+  // What Copy takes is on screen first, folded away.
+  assert.equal(await page.getByTestId('usage-preview').getAttribute('open'), null);
+  assert.equal(await page.getByTestId('usage-summary').textContent(), empty);
   await sleep(500);
   page.off('request', track);
   assert.deepEqual(external, [], 'nothing left loopback');
@@ -200,6 +206,9 @@ try {
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-html').click()]);
   assert.equal(download.suggestedFilename(), 'index.html');
   await until(async () => (await api('/api/usage')).body.engaged.engaged === 2, 'export recorded');
+  // A copy starts with B's page: it is no project made here.
+  assert.equal((await post(`/api/projects/${b}/duplicate`, {})).status, 200);
+  assert.equal((await api('/api/usage')).body.engaged.projects, 3, 'the duplicate is left out');
 
   log('step', 'Project C');
   // Project C: previewed only (the host's bridged load).
@@ -220,10 +229,11 @@ try {
   const u = (await api('/api/usage')).body;
   assert.equal(u.firstPreview.projects, 3);
   assert.deepEqual(u.engaged, { projects: 3, engaged: 2 });
-  assert.equal(u.runs.total, 5);
-  assert.equal(u.runs.failed, 2);
-  assert.deepEqual(u.runs.causes.map((x) => x.cause).sort(), ['canceled', 'spawn_failed']);
-  results.recorded = 'first preview ×3 (studio, studio, bridge), export from the menu, 2 failed runs of 5';
+  assert.equal(u.runs.total, 4, 'the Stop is no outcome');
+  assert.equal(u.runs.failed, 1);
+  assert.equal(u.runs.canceled, 1);
+  assert.deepEqual(u.runs.causes.map((x) => x.cause), ['spawn_failed']);
+  results.recorded = 'first preview ×3 (studio, studio, bridge), export from the menu, duplicate left out, 1 failed run of 4 + 1 Stop';
 
   log('step', '3. About shows');
   // 3. About shows the numbers; Copy carries them and nothing private.
@@ -232,9 +242,10 @@ try {
   await openAbout();
   assert.match(await value('usage-first-preview').textContent(), /^\d+(s|m \d\ds|h \d\dm|d \d+h) median · 3 projects$/);
   assert.equal(await value('usage-engaged').textContent(), '67% · 2 of 3 projects');
-  assert.equal(await value('usage-runs').textContent(), '40% · 2 of 5 runs');
+  assert.equal(await value('usage-runs').textContent(), '25% · 1 of 4 runs');
   const causes = await page.getByTestId('usage-causes').locator('li').allTextContents();
-  assert.deepEqual(causes.sort(), ['Agent missing or didn\'t start · 1', 'Canceled · 1']);
+  assert.deepEqual(causes, ['Agent missing or didn\'t start · 1']);
+  assert.equal(await page.getByTestId('usage-stopped').textContent(), 'Stopped by you: 1 (not counted)');
   await page.getByTestId('usage-copy').click();
   log('copied');
   await until(async () => (await clipboard()) !== empty, 'new summary copied');
@@ -244,7 +255,8 @@ try {
   assert.equal(lines[0], `Contour ${v.version} · ${v.platform} ${v.arch} · agent: claude`);
   assert.match(lines[1], /^Time to first preview: median \S+( \S+)? \(3 projects, since 0\.2\.0-beta\.7\)$/);
   assert.equal(lines[2], 'Projects with an export or 3+ chat turns: 67% (2/3, since 0.2.0-beta.7)');
-  assert.match(lines[3], /^Failed runs: 40% \(2\/5\): (spawn_failed 1, canceled 1|canceled 1, spawn_failed 1)$/);
+  assert.equal(lines[3], 'Failed runs: 25% (1/4): spawn_failed 1; stopped by the user: 1 (not counted)');
+  assert.equal(await page.getByTestId('usage-summary').textContent(), text, 'Copy takes what is shown');
   for (const secret of [...names, ...projects, 'secret prompt', 'index.html', scratch]) {
     assert.ok(!text.includes(secret), `summary leaks ${secret}`);
   }
@@ -254,6 +266,36 @@ try {
   assert.deepEqual(external, [], 'nothing left loopback');
   assert.ok(seen.every((u) => ['127.0.0.1'].includes(u.hostname) || u.protocol !== 'http:'), 'only loopback');
   results.numbers = text.replace(/\n/g, ' | ');
+
+  log('step', 'Clipboard refused');
+  // A refused clipboard: plain words, the summary opens to copy by hand.
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = () => Promise.reject(new Error('Write permission denied.'));
+  });
+  await page.getByTestId('usage-copy').click();
+  const refused = page.getByTestId('usage-copied');
+  await refused.filter({ hasText: "Couldn't copy." }).waitFor();
+  assert.equal(await refused.textContent(), "Couldn't copy. Select the summary below and copy it yourself.");
+  assert.notEqual(await page.getByTestId('usage-preview').getAttribute('open'), null, 'summary opened');
+  assert.ok(await page.getByTestId('usage-summary').isVisible());
+  results.refused = 'plain message, summary opened';
+
+  log('step', 'Load fails');
+  // A failed load offers Try again, which loads the numbers.
+  let failOnce = true;
+  await page.route('**/api/usage', (route) => {
+    if (!failOnce) return route.continue();
+    failOnce = false;
+    return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"code":"INTERNAL","message":"boom"}}' });
+  });
+  await page.goto(BASE + '/settings#settings-about');
+  await page.getByTestId('usage-error').waitFor();
+  assert.equal(await page.getByTestId('usage-copy').isDisabled(), true);
+  await page.getByTestId('usage-retry').click();
+  await section.locator('dl').waitFor();
+  assert.equal(await value('usage-engaged').textContent(), '67% · 2 of 3 projects');
+  await page.unroute('**/api/usage');
+  results.retry = 'error, Try again, numbers';
 
   log('step', '4. Screenshots');
   // 4. Screenshots and axe at 1440 and 390, light and dark; no overflow.

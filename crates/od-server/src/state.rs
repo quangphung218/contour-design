@@ -69,6 +69,17 @@ pub struct Preview {
     pub scopes: Arc<PreviewScopes>,
     pub edit_keys: Arc<EditKeys>,
     pub events: Arc<ProjectEvents>,
+    /// Projects whose first preview is already recorded, so the preview's
+    /// many reloads skip the database (Settings ▸ About ▸ Your usage).
+    pub previewed: Arc<Mutex<HashSet<String>>>,
+}
+
+impl Preview {
+    pub fn previewed(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.previewed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
 }
 
 /// Shared handler state.

@@ -17,6 +17,12 @@ body:
     validations:
       required: true
   - type: textarea
+    id: usage
+    attributes:
+      label: Your usage
+      description: Optional. Settings ▸ About ▸ Your usage ▸ Copy summary (worked out on your machine; no names, paths or prompts).
+      render: text
+  - type: textarea
     id: upstream
     attributes:
       label: OpenDesign parity

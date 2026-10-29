@@ -628,3 +628,50 @@ async fn the_hosts_first_bridged_page_is_the_projects_first_preview() {
     assert_eq!((after.engaged.projects, after.engaged.engaged), (1, 1));
     assert_eq!(after.runs.total, 0);
 }
+
+#[tokio::test]
+async fn a_react_component_in_the_frame_is_a_first_preview_but_its_export_is_not() {
+    let _timing = TIMING.read().await;
+    let a = app();
+    let id = a.project().await;
+    a.write(&id, "App.jsx", "export default () => <p>x</p>;")
+        .await;
+    let usage = || async {
+        serde_json::from_slice::<UsageResponse>(&a.get("/api/usage").await.body)
+            .unwrap()
+            .first_preview
+            .projects
+    };
+    let load = |dest: &'static str| {
+        Request::get(format!("/api/projects/{id}/react/App.jsx"))
+            .header("sec-fetch-site", "same-origin")
+            .header("sec-fetch-dest", dest)
+            .body(Body::empty())
+            .unwrap()
+    };
+    // "Export React component as HTML" fetches the same page.
+    assert_eq!(a.send(load("empty")).await.status, StatusCode::OK);
+    assert_eq!(usage().await, 0);
+    assert_eq!(a.send(load("iframe")).await.status, StatusCode::OK);
+    assert_eq!(usage().await, 1);
+}
+
+#[tokio::test]
+async fn a_recorded_first_preview_skips_the_database_on_reloads() {
+    let _timing = TIMING.read().await;
+    let a = app();
+    let id = a.project().await;
+    a.write(&id, "index.html", "<p>x</p>").await;
+    let page = format!("/api/projects/{id}/raw/index.html?bridge=1");
+    let marks = |sql: &str| {
+        Store::open(DataDir::new(&a.data))
+            .unwrap()
+            .with_conn(|c| Ok(c.execute(sql, [])?))
+            .unwrap()
+    };
+    a.get(&page).await;
+    assert_eq!(marks("DELETE FROM usage_marks"), 1);
+    // The process remembers the project: the reload writes nothing.
+    assert_eq!(a.get(&page).await.status, StatusCode::OK);
+    assert_eq!(marks("DELETE FROM usage_marks"), 0);
+}

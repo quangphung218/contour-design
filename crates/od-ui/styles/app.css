@@ -577,6 +577,10 @@ details.agent-missing[open] > summary .ico:last-child { transform: rotate(90deg)
 .usage-list dd { margin: 0; overflow-wrap: anywhere; }
 .usage-list dd[data-state="value"] { font-size: var(--text-md); font-weight: var(--weight-medium); }
 .usage-causes { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-0-5); }
+.about-usage .error-text { overflow-wrap: anywhere; }
+.usage-preview { margin-top: var(--space-3); }
+.usage-preview summary { cursor: pointer; color: var(--color-text-secondary); }
+.usage-preview pre { margin: var(--space-2) 0 0; padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-sunken); border: 1px solid var(--color-border-subtle); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .about-licenses { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--color-border-subtle); }
 .about-licenses h3 { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
 .about-licenses h4 { margin: var(--space-3) 0 var(--space-1-5); color: var(--color-text-tertiary); font-weight: 500; }
