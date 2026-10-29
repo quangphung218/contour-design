@@ -28,19 +28,28 @@ CREATE TABLE IF NOT EXISTS setup_since (
 );
 ";
 
-/// Creates the tables. On the first open of this schema, stamps whether
-/// setup is recorded (`fresh`: the database was just created) and, if so,
-/// records [`SetupStep::Opened`].
-pub(crate) fn ensure_schema(conn: &Connection, fresh: bool) -> rusqlite::Result<()> {
+/// Stamps a database being created as recording setup, and records
+/// [`SetupStep::Opened`]. Runs inside the first migration's transaction.
+pub(crate) fn stamp_new(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(SCHEMA)?;
     let now = crate::now_ms();
     conn.execute(
-        "INSERT OR IGNORE INTO setup_since (id, recorded, at) VALUES (1, ?1, ?2)",
-        params![fresh, now],
+        "INSERT INTO setup_since (id, recorded, at) VALUES (1, 1, ?1)",
+        [now],
     )?;
-    if fresh {
-        insert(conn, SetupStep::Opened, now)?;
-    }
+    insert(conn, SetupStep::Opened, now)?;
+    Ok(())
+}
+
+/// Creates the tables if missing. A database without the stamp predates
+/// setup recording ([`stamp_new`] stamps every new one), so it is stamped
+/// "not recorded".
+pub(crate) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(SCHEMA)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO setup_since (id, recorded, at) VALUES (1, 0, ?1)",
+        [crate::now_ms()],
+    )?;
     Ok(())
 }
 
