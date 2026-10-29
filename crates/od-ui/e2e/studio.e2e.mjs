@@ -542,7 +542,8 @@ try {
   await page.keyboard.type('echo e2e-$((6*7)); pwd');
   await page.keyboard.press('Enter');
   await until(async () => (await term.textContent()).includes('e2e-42'), 'echo output');
-  assert.match(await term.textContent(), new RegExp(`projects/${projectId}`), 'shell runs in the project folder');
+  // pwd prints after echo; the pane may show one line before the other.
+  await until(async () => (await term.textContent()).includes(`projects/${projectId}`), 'shell runs in the project folder');
   await page.screenshot({ path: OUT + 'terminal.png' });
   // Full-screen programs (xterm.js): top takes over the pane at its size and
   // q ends it. BSD top (macOS) draws on the alternate screen, procps top
