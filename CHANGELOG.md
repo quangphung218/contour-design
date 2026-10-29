@@ -8,6 +8,27 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Settings ▸ About ▸ Your usage shows how far first-run setup got, out of
+  5 steps: the app opened, an agent found, an agent (or API key) passed
+  its test, the first project, the first preview. Each step is recorded
+  once, the first time it happens, on this machine only and never sent
+  anywhere. It reads "Reached step 5 of 5" with the time from the first
+  open to the first preview, or the step setup stopped at ("Stopped at:
+  agent" for someone who quit at onboarding without an agent). Copy
+  summary adds the same as a `Setup:` line. A data folder made before this
+  version says "not recorded" instead of a guess. In every UI language.
+
+### Changed
+
+- Your usage: a number without enough data reads "Needs 3 projects to
+  measure (you have 1)", not "Not enough projects yet (1 of 3)", which
+  read like 1 of 3 projects exported. "Since 0.2.0-beta.7" is said once,
+  under the title, instead of under every number (in the summary, once on
+  its first line). The screen and the summary point to a GitHub issue
+  only: the repository has no Discussions. In every UI language.
+
 ## [0.2.0-beta.7] - 2026-10-29
 
 ### Added
@@ -19,7 +40,7 @@ All notable changes to Contour are recorded here. The format follows
   start, agent error, timed out…); runs you stopped are listed apart and
   not counted. Copy summary puts a short English summary on the clipboard
   (app version, OS, agent and the three numbers; no project name, path,
-  prompt or file content) to paste into a GitHub discussion or issue; the
+  prompt or file content) to paste into a GitHub issue; the
   text shows below the button, so it can be read first or copied by hand.
   With fewer than 3 projects or runs it says how many there are, "Not
   enough projects yet (1 of 3)", instead of a number. Previews (HTML and
