@@ -912,7 +912,6 @@ ImagePrompts = Görsel istemleri
 VideoPrompts = Video istemleri
 MyTemplates = Şablonlarım
 TemplateType = Tür
-TemplateKind = Şablon
 SearchTemplates = Şablon ara
 SearchPrompts = İstem ara
 TemplatesCount = {0} şablon

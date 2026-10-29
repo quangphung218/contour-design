@@ -913,7 +913,6 @@ ImagePrompts = 画像プロンプト
 VideoPrompts = 動画プロンプト
 MyTemplates = マイテンプレート
 TemplateType = タイプ
-TemplateKind = テンプレート
 SearchTemplates = テンプレートを検索
 SearchPrompts = プロンプトを検索
 TemplatesCount = テンプレート{0}件

@@ -913,7 +913,6 @@ ImagePrompts = Промпты для картинок
 VideoPrompts = Промпты для видео
 MyTemplates = Мои шаблоны
 TemplateType = Тип
-TemplateKind = Шаблон
 SearchTemplates = Поиск шаблонов
 SearchPrompts = Поиск промптов
 TemplatesCount = Шаблонов: {0}

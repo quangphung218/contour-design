@@ -912,7 +912,6 @@ ImagePrompts = Prompty obrazów
 VideoPrompts = Prompty wideo
 MyTemplates = Moje szablony
 TemplateType = Typ
-TemplateKind = Szablon
 SearchTemplates = Szukaj szablonów
 SearchPrompts = Szukaj promptów
 TemplatesCount = Szablony: {0}

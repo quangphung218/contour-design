@@ -913,7 +913,6 @@ ImagePrompts = promptهای تصویر
 VideoPrompts = promptهای ویدیو
 MyTemplates = قالب‌های من
 TemplateType = نوع
-TemplateKind = قالب
 SearchTemplates = جست‌وجوی قالب‌ها
 SearchPrompts = جست‌وجوی promptها
 TemplatesCount = {0} قالب

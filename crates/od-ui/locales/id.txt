@@ -913,7 +913,6 @@ ImagePrompts = Prompt gambar
 VideoPrompts = Prompt video
 MyTemplates = Templat saya
 TemplateType = Tipe
-TemplateKind = Templat
 SearchTemplates = Cari templat
 SearchPrompts = Cari prompt
 TemplatesCount = {0} templat

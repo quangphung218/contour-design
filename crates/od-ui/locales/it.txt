@@ -913,7 +913,6 @@ ImagePrompts = Prompt per immagini
 VideoPrompts = Prompt per video
 MyTemplates = I miei modelli
 TemplateType = Tipo
-TemplateKind = Modello
 SearchTemplates = Cerca modelli
 SearchPrompts = Cerca prompt
 TemplatesCount = {0} modelli

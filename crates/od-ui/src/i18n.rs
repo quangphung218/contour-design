@@ -1143,7 +1143,6 @@ messages! {
     VideoPrompts => "Video prompts", "Prompt video";
     MyTemplates => "My templates", "Template của tôi";
     TemplateType => "Type", "Loại";
-    TemplateKind => "Template", "Template";
     SearchTemplates => "Search templates", "Tìm template";
     SearchPrompts => "Search prompts", "Tìm prompt";
     TemplatesCount => "{0} templates", "{0} template";

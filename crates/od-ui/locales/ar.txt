@@ -913,7 +913,6 @@ ImagePrompts = طلبات الصور
 VideoPrompts = طلبات الفيديو
 MyTemplates = قوالبي
 TemplateType = النوع
-TemplateKind = القالب
 SearchTemplates = البحث في القوالب
 SearchPrompts = البحث في الطلبات
 TemplatesCount = {0} قوالب

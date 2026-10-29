@@ -913,7 +913,6 @@ ImagePrompts = 이미지 프롬프트
 VideoPrompts = 동영상 프롬프트
 MyTemplates = 내 템플릿
 TemplateType = 유형
-TemplateKind = 템플릿
 SearchTemplates = 템플릿 검색
 SearchPrompts = 프롬프트 검색
 TemplatesCount = 템플릿 {0}개

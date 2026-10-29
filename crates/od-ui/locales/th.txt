@@ -913,7 +913,6 @@ ImagePrompts = พรอมต์รูปภาพ
 VideoPrompts = พรอมต์วิดีโอ
 MyTemplates = เทมเพลตของฉัน
 TemplateType = ประเภท
-TemplateKind = เทมเพลต
 SearchTemplates = ค้นหาเทมเพลต
 SearchPrompts = ค้นหาพรอมต์
 TemplatesCount = {0} เทมเพลต

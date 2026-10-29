@@ -913,7 +913,6 @@ ImagePrompts = 图片提示词
 VideoPrompts = 视频提示词
 MyTemplates = 我的模板
 TemplateType = 类型
-TemplateKind = 模板
 SearchTemplates = 搜索模板
 SearchPrompts = 搜索提示词
 TemplatesCount = {0} 个模板

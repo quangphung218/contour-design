@@ -913,7 +913,6 @@ ImagePrompts = 圖片提示詞
 VideoPrompts = 影片提示詞
 MyTemplates = 我的範本
 TemplateType = 類型
-TemplateKind = 範本
 SearchTemplates = 搜尋範本
 SearchPrompts = 搜尋提示詞
 TemplatesCount = {0} 個範本

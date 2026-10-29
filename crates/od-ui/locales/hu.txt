@@ -913,7 +913,6 @@ ImagePrompts = Képprompt-ok
 VideoPrompts = Videóprompt-ok
 MyTemplates = Saját sablonok
 TemplateType = Típus
-TemplateKind = Sablon
 SearchTemplates = Sablonok keresése
 SearchPrompts = Promptok keresése
 TemplatesCount = {0} sablon
