@@ -230,8 +230,12 @@ try {
       const head = page.getByTestId('preview-toolbar');
       assert.ok((await head.boundingBox()).height < 70, 'preview head is one row');
       assert.equal(await page.getByTestId('tool-bar').isVisible(), false, 'edit tools folded');
-      await head.getByTestId('preview-more').click();
+      const more = head.getByTestId('preview-more');
+      const before = await more.boundingBox();
+      await more.click();
       await page.getByTestId('tool-bar').waitFor();
+      const after = await more.boundingBox();
+      assert.deepEqual([after.x, after.y], [before.x, before.y], 'More stays put when it opens the tools');
       assert.equal(await head.getByTestId('preview-more').getAttribute('aria-expanded'), 'true');
       // Every control in the rail and the preview head is a 44 px target.
       const small = await page.evaluate(() =>

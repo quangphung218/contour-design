@@ -977,6 +977,9 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   .preview-head > .preview-more { display: inline-flex; margin-left: auto; }
   .preview-head > .path-title { display: none; }
   .preview-head:not(.tools-open) > :is(.reload-preview, .tool-bar, .head-divider, .zoom, [data-testid="show-files"]) { display: none; }
+  /* Opened, they go after a line break, so More stays put on the first row. */
+  .preview-head > :is(.reload-preview, .tool-bar, .head-divider, .zoom, [data-testid="show-files"]) { order: 1; }
+  .preview-head.tools-open::before { content: ""; order: 1; flex-basis: 100%; }
   .preview-head > .icon-btn, .preview-head .segmented .seg { min-width: 44px; min-height: 44px; }
   .preview-head .tool-bar { flex-wrap: wrap; }
   .preview-head :is(.tool-bar, .zoom) :is(.icon-btn, .btn, .zoom-value) { min-width: 44px; min-height: 44px; }
