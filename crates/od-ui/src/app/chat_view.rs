@@ -1097,8 +1097,14 @@ mod tests {
     #[test]
     fn plan_updates_fold_into_the_plan_list() {
         assert!(folded_into_plan("TodoWrite", true));
-        assert!(!folded_into_plan("TodoWrite", false), "no plan read: the row stays");
-        assert!(!folded_into_plan("update_plan", true), "only TodoWrite fills the list");
+        assert!(
+            !folded_into_plan("TodoWrite", false),
+            "no plan read: the row stays"
+        );
+        assert!(
+            !folded_into_plan("update_plan", true),
+            "only TodoWrite fills the list"
+        );
         assert!(!folded_into_plan("Write", true));
     }
 

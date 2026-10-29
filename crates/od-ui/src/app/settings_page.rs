@@ -58,7 +58,8 @@ fn section_in_view() -> &'static str {
     let view = main.get_bounding_client_rect();
     let line = view.top() + READ_LINE;
     let top_of = |id: &str| {
-        super::element_by_id(&format!("settings-{id}")).map(|el| el.get_bounding_client_rect().top())
+        super::element_by_id(&format!("settings-{id}"))
+            .map(|el| el.get_bounding_client_rect().top())
     };
     for (id, _) in SECTIONS {
         if top_of(id).is_some_and(|top| top <= line) {
@@ -73,7 +74,9 @@ fn section_in_view() -> &'static str {
         current = SECTIONS
             .iter()
             .find(|(id, _)| hash == format!("#settings-{id}"))
-            .filter(|(id, _)| top_of(id).is_some_and(|top| top >= view.top() && top < view.bottom()))
+            .filter(|(id, _)| {
+                top_of(id).is_some_and(|top| top >= view.top() && top < view.bottom())
+            })
             .map_or(SECTIONS[SECTIONS.len() - 1].0, |(id, _)| id);
     }
     current
@@ -124,7 +127,8 @@ pub fn SettingsPage() -> impl IntoView {
     on_cleanup(move || {
         on_scroll.with_value(|s| {
             if let Some((main, track)) = s.as_deref() {
-                let _ = main.remove_event_listener_with_callback("scroll", track.as_ref().unchecked_ref());
+                let _ = main
+                    .remove_event_listener_with_callback("scroll", track.as_ref().unchecked_ref());
             }
         });
     });

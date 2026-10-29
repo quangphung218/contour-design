@@ -108,7 +108,11 @@ fn ForwardedNote() -> impl IntoView {
         }
         to.sort();
         not.sort();
-        let forwarded_to = if to.is_empty() { t(T::NoAgents).to_owned() } else { to.join(" · ") };
+        let forwarded_to = if to.is_empty() {
+            t(T::NoAgents).to_owned()
+        } else {
+            to.join(" · ")
+        };
         let summary = view! {
             <strong>{t(T::ForwardedTo)}</strong>" "<span data-testid="mcp-forwarded-to">{forwarded_to}</span>
         };
