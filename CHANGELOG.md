@@ -14,7 +14,9 @@ All notable changes to Contour are recorded here. The format follows
   preview, so a narrow window or a phone shows the same slide, smaller.
   Before, a deck that does not scale itself (the html-ppt templates) was
   laid out again at the pane's width and its text ran off the slide. The
-  slide thumbnails use the same size.
+  slide thumbnails use the same size. On a phone the slide sits at the
+  top of the preview, by the deck bar. A deck rewritten as a page is laid
+  out as a page again.
 - `od mcp` (the CLI) finds the app like `<app> mcp` does: a
   `--daemon-url` or `OD_DAEMON_URL` with nothing answering within 1 s
   gives way to the running app's URL in `daemon.lock`, said on stderr,
@@ -33,9 +35,12 @@ All notable changes to Contour are recorded here. The format follows
   dashboards said "operation", so the list showed "Operation" next to it.
 - When the agent crashes mid-turn, the chat shows its error ("Error:
   ENOSPC: no space left on device, write") instead of the last line of
-  its stack trace ("at writeFileSync (node:fs:…)"). A failed turn has
-  an Agent output disclosure with everything the agent wrote to stderr,
-  next to Retry, and "Failed" no longer breaks over two lines.
+  its stack trace ("at writeFileSync (node:fs:…)") or Node's version
+  line. A failed turn has an Agent output disclosure (with a chevron)
+  with everything the agent wrote to stderr, next to Retry, and "Failed"
+  no longer breaks over two lines.
+- A failed turn keeps its error message when the chat is reopened. Before,
+  only "See the message above" was left, over nothing.
 - PDF, PNG and PowerPoint exports try Chrome or Edge once more when it
   does not start within 30 s, so the first export on a slow or freshly
   set up PC does not fail with "Timeout while resolving websocket URL".
