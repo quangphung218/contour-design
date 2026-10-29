@@ -258,7 +258,7 @@ pub async fn mark_exported(base: &str) {
 
 #[component]
 pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
-    let open = RwSignal::new(false);
+    let open = ctx.export_open;
     let files_ui = super::files_panel::FilesUi::get();
     let template_open = RwSignal::new(false);
     let handoff_open = RwSignal::new(false);

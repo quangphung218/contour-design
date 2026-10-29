@@ -961,6 +961,16 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   .deck-bar { flex-wrap: wrap; row-gap: var(--space-1); }
   .deck-bar > .split-btn { margin-left: auto; }
 }
+/* Phone: the head is one row (reload, view, device, More); the edit and
+   zoom tools wait behind More and wrap onto a second row when it opens.
+   The file name is in the tab above. */
+.preview-more { display: none; }
+@media (max-width: 480px) {
+  .preview-head { flex-wrap: wrap; height: auto; min-height: 44px; padding-block: var(--space-1); }
+  .preview-head > .preview-more { display: inline-flex; margin-left: auto; }
+  .preview-head > .path-title { display: none; }
+  .preview-head:not(.tools-open) > :is(.tool-bar, .head-divider, .zoom, [data-testid="show-files"]) { display: none; }
+}
 /* Phone: the slide takes the width, at the top of the stage next to the
    deck bar; the counter and arrows replace the thumbnails. */
 @media (max-width: 480px) {

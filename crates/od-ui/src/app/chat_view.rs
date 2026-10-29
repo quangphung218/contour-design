@@ -742,7 +742,8 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     };
     move || {
         let steps = turn.with(next_steps);
-        let wrote_page = steps.iter().any(|s| matches!(s, NextStep::Open(_))) && sources.is_some();
+        let steps_wrote = steps.iter().any(|s| matches!(s, NextStep::Open(_)));
+        let wrote_page = steps_wrote && sources.is_some();
         (!steps.is_empty()).then(|| {
             let navigate = navigate.clone();
             view! {
@@ -789,6 +790,17 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                             }
                         })
                         .collect_view()}
+                    // The way out: on a phone the Export menu sits on the
+                    // Preview pane, so this opens it there.
+                    {steps_wrote.then(|| view! {
+                        <button class="chip next-step" data-testid="next-export"
+                            on:click=move |_| {
+                                ctx.pane.set(super::studio::NarrowPane::Preview);
+                                ctx.export_open.set(true);
+                            }>
+                            {icon(Glyph::Export)}{t(T::Export)}
+                        </button>
+                    })}
                     {wrote_page.then(|| crate::toolbox::FEATURED.iter().filter_map(|id| crate::toolbox::find(id)).map(|a| view! {
                         <button class="chip next-step" data-testid="next-toolbox" data-action=a.id
                             on:click=move |_| if let Some(sources) = sources {

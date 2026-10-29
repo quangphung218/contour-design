@@ -7,6 +7,9 @@
 //    a time, and follows as the page scrolls.
 // 3. When a run ends, the chat scrolls down so the Next chips under the
 //    reply show above the composer, in a short window and at 390 px.
+// 4. At 390 px the Export chip under the reply opens the Export menu on
+//    the Preview pane, and the preview head is one row, its edit and zoom
+//    tools behind More.
 // Port: OD_E2E_PORT + 13 (or OD_E2E_POLISH_PORT). Run through ./run.sh.
 
 import { chromium } from 'playwright';
@@ -186,6 +189,19 @@ try {
     });
     assert.ok(fit.overflow, `the chat scrolls at ${width}px`);
     assert.ok(fit.chipsBottom <= fit.listBottom + 1, `Next chips in view at ${width}px (${fit.chipsBottom} > ${fit.listBottom})`);
+    if (width === 390) {
+      log('4. 390 px: Export from the chat, a one-row preview head');
+      await steps.getByTestId('next-export').click();
+      await page.getByTestId('export-menu').waitFor();
+      await page.keyboard.press('Escape');
+      await until(async () => (await page.getByTestId('export-menu').count()) === 0, 'export menu closed');
+      const head = page.getByTestId('preview-toolbar');
+      assert.ok((await head.boundingBox()).height <= 52, 'preview head is one row');
+      assert.equal(await page.getByTestId('tool-bar').isVisible(), false, 'edit tools folded');
+      await head.getByTestId('preview-more').click();
+      await page.getByTestId('tool-bar').waitFor();
+      assert.equal(await head.getByTestId('preview-more').getAttribute('aria-expanded'), 'true');
+    }
   }
 
   assert.deepEqual(pageErrors, [], 'no page errors');

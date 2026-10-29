@@ -257,6 +257,11 @@ pub struct StudioCtx {
     /// Under 480 px: the one pane shown. Opening a file shows the preview.
     pub pane: RwSignal<NarrowPane>,
     pub history_open: RwSignal<bool>,
+    /// The Export menu is open (its button, or the Export chip in the chat).
+    pub export_open: RwSignal<bool>,
+    /// Under 480 px: the preview's edit and zoom tools show, on a row of
+    /// their own, instead of folded behind "More actions".
+    pub preview_tools_open: RwSignal<bool>,
     pub viewing: RwSignal<Option<ViewedVersion>>,
     /// Inspect, text edit, draw, tweaks, palette, lint (spec 1.2).
     pub tools: Tools,
@@ -1229,6 +1234,8 @@ pub fn Studio() -> impl IntoView {
         switcher_open: RwSignal::new(false),
         pane: RwSignal::new(NarrowPane::Chat),
         history_open: RwSignal::new(false),
+        export_open: RwSignal::new(false),
+        preview_tools_open: RwSignal::new(false),
         viewing: RwSignal::new(None),
         session_mode: RwSignal::new(SessionMode::default()),
         jury: RwSignal::new(false),
@@ -1650,7 +1657,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             <Show when=move || !ctx.side.open.get() fallback=move || view! { <SideChatView ctx=ctx/> }>
             {move || ctx.active_term.get().map(|id| view! { <TerminalView id=id/> })}
             <div class="preview-main" style=move || if ctx.active_term.with(Option::is_some) { "display:none" } else { "display:contents" }>
-            <div class="pane-head preview-head" data-testid="preview-toolbar">
+            <div class="pane-head preview-head" class:tools-open=move || ctx.preview_tools_open.get() data-testid="preview-toolbar">
                 <button class="icon-btn" aria-label=t(T::ReloadPreview) data-tip=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>
                     {icon(Glyph::Refresh)}
                 </button>
@@ -1700,6 +1707,20 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         })
                         .collect_view()}
                 </div>
+                // Phone width: the tools after this fold behind it, so the
+                // head stays one row and the page gets the height.
+                <button
+                    class="icon-btn preview-more"
+                    class:active=move || ctx.preview_tools_open.get()
+                    aria-label=t(T::MoreActions)
+                    data-tip=t(T::MoreActions)
+                    data-tip-pos="left"
+                    aria-expanded=move || ctx.preview_tools_open.get().to_string()
+                    data-testid="preview-more"
+                    on:click=move |_| ctx.preview_tools_open.update(|o| *o = !*o)
+                >
+                    {icon(Glyph::More)}
+                </button>
                 <span class="pane-title path-title mono" title=move || ctx.active().unwrap_or_default()>
                     {move || ctx.active().unwrap_or_default()}
                 </span>

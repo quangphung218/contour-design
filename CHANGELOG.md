@@ -46,6 +46,10 @@ All notable changes to Contour are recorded here. The format follows
   composer.
 - "Your first design is ready" shows at the bottom of the preview, no
   longer over the page's header and its first button.
+- On a phone (390 px) the preview head is one row: reload, Preview/Code,
+  device and More, which opens the edit and zoom tools on a second row.
+  The Next chips under a finished reply include Export, which opens the
+  Export menu on the Preview pane; before, the Chat pane had no way to it.
 
 ## [0.2.0-beta.7] - 2026-10-29
 
