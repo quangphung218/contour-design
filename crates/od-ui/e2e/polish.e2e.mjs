@@ -5,9 +5,11 @@
 //    to the top while the sections above it finish loading; a link with
 //    no section still opens Settings at its top.
 // 2. The Settings nav marks the section in view (`aria-current`), one at
-//    a time, and follows as the page scrolls.
+//    a time, and follows as the page scrolls. MCP Save is enabled (and
+//    primary) only with a change to save.
 // 3. When a run ends, the chat scrolls down so the Next chips under the
-//    reply show above the composer, in a short window and at 390 px.
+//    reply show above the composer, in a short window and at 390 px. A
+//    reply with a Plan shows no "Updated plan" rows.
 // 4. At 390 px the Export chip under the reply opens the Export menu on
 //    the Preview pane, and the preview head is one row, its edit and zoom
 //    tools behind More; the rail and the head are 44 px touch targets.
@@ -172,6 +174,19 @@ try {
   });
   await until(async () => (await current(page)).join() === 'settings-nav-about', 'about marked at the bottom');
 
+  log('2b. MCP Save only with a change');
+  await page.goto(BASE + '/integrations');
+  const save = page.getByTestId('mcp-save');
+  await save.waitFor();
+  await sleep(500);
+  assert.equal(await save.isDisabled(), true, 'Save disabled with nothing to save');
+  assert.equal(await save.evaluate((b) => b.classList.contains('primary')), false, 'Save not primary');
+  await page.getByTestId('mcp-add').click();
+  await until(async () => !(await save.isDisabled()), 'Save enabled after Add');
+  assert.equal(await save.evaluate((b) => b.classList.contains('primary')), true, 'Save primary after Add');
+  await save.click();
+  await until(async () => await save.isDisabled(), 'Save disabled again once saved');
+
   log('3. the chat shows the Next chips when a run ends');
   for (const [width, height] of [[1440, 640], [390, 844]]) {
     await page.setViewportSize({ width, height });
@@ -190,6 +205,9 @@ try {
         `turn ${turn} end at ${width}px`,
       );
     }
+    // The plan updates show in the Plan list, not as tool rows (#6).
+    assert.ok((await assistant.last().locator('.plan').count()) > 0, 'the reply has a Plan list');
+    assert.equal(await assistant.last().locator('.tool-name', { hasText: 'Updated plan' }).count(), 0, 'no "Updated plan" rows');
     const steps = assistant.last().getByTestId('next-steps');
     await steps.waitFor();
     await sleep(300);
