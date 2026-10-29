@@ -217,6 +217,11 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
     assert!(state["pgid"].is_null(), "{state}");
 }
 
+/// The help probe timeout of the probe tests: long enough that a mock
+/// which answers does so on a machine under heavy load (the default 5 s
+/// was not, with the load at 35), shorter than the mocks that hang.
+const LOADED_PROBE_TIMEOUT: Duration = Duration::from_secs(20);
+
 /// The first help probe times out (a first exec can be slow under load):
 /// that run goes without the optional flag, the next one probes again.
 #[tokio::test]
@@ -230,7 +235,7 @@ async fn a_help_probe_that_timed_out_is_tried_again() {
         "claude",
         &format!(
             r#"if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then
-  if [ ! -f "{marker}" ]; then touch "{marker}"; exec sleep 6; fi
+  if [ ! -f "{marker}" ]; then touch "{marker}"; exec sleep 60; fi
   echo "--include-partial-messages"; exit 0
 fi
 echo "$@" >> "{argv}"
@@ -245,6 +250,7 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
     let runs = Runs::new(tmp.path().join("runs"));
     let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
     config.probe_retry_after = Duration::ZERO;
+    config.probe_timeout = LOADED_PROBE_TIMEOUT;
     let engine = RunEngine::new(config);
     for id in ["first", "second"] {
         let (run, _) = runs
@@ -313,9 +319,11 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
         ),
     );
     let runs = Runs::new(tmp.path().join("runs"));
-    // The default probe timeout: a shorter one can end the probe under load
+    // A long probe timeout: a short one can end the probe under load
     // before the mock has even started, and then nothing was probed at all.
-    let engine = RunEngine::new(EngineConfig::from_env().with_path_prefix(&mocks));
+    let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
+    config.probe_timeout = LOADED_PROBE_TIMEOUT;
+    let engine = RunEngine::new(config);
     for id in ["first", "second"] {
         let (run, _) = runs
             .create_or_reuse(RunMeta {
