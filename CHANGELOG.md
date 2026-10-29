@@ -13,6 +13,15 @@ All notable changes to Contour are recorded here. The format follows
 - PDF, PNG and PowerPoint exports try Chrome or Edge once more when it
   does not start within 30 s, so the first export on a slow or freshly
   set up PC does not fail with "Timeout while resolving websocket URL".
+- Picking a `/` command or an `@` mention puts the caret after it at once:
+  text typed straight after the pick no longer lands in the wrong place
+  (`/search endstea tr` instead of `/search tea trends`).
+- Text edited in the preview right after it reloads is saved; it was
+  dropped without a word when typed before the reload had finished
+  setting up.
+- E (or Edit) on a design system that is still loading opens the DESIGN.md
+  editor once it has loaded, instead of showing the DESIGN.md tab with no
+  editor.
 
 ## [0.2.0-beta.6] - 2026-10-29
 
