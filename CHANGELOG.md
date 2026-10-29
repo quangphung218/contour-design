@@ -32,6 +32,39 @@ All notable changes to Contour are recorded here. The format follows
   [GitHub Discussions](https://github.com/quangphung218/contour-design/discussions),
   and to an issue with steps to reproduce for a bug. In every UI language.
 
+### Fixed
+
+- A link to a Settings section (the quick menu, the Memory toast,
+  `/settings#settings-about`) opens Settings at that section and keeps it
+  there while the sections above finish loading. Before, the page always
+  opened at its top. The chat's and Home's links to MCP servers now point
+  at that section too.
+- The Settings nav marks the section in view, and follows as the page
+  scrolls (`aria-current` for screen readers).
+- When a run ends the chat scrolls down to the Next chips under the reply.
+  Before, they showed only after the run and stayed half hidden behind the
+  composer.
+- "Your first design is ready" shows at the bottom of the preview, no
+  longer over the page's header and its first button.
+- On a phone (390 px) the preview head is one row: Preview/Code, device and
+  More, which opens reload and the edit and zoom tools on a second row.
+  The Next chips under a finished reply include Export, which opens the
+  Export menu on the Preview pane; before, the Chat pane had no way to it.
+- A reply with a Plan no longer repeats "Updated plan" as rows under it
+  each time the agent updates the plan: the Plan list shows the changes.
+- Integrations ▸ MCP opens with one line, "Forwarded to: …"; the notes on
+  stdio-only adapters and on agents not forwarded to are under Details.
+  With no MCP server yet, Add server is in the empty list, and Save stays
+  a plain, disabled button until there is a change to save.
+- On a phone (480 px or narrower) the rail, the menus, the Settings nav,
+  the Chat/Preview/Files switch, the Next chips, the preview head and the
+  Settings buttons are 44 px touch targets. The rail drops Collapse, which
+  does nothing there, and Keyboard shortcuts.
+- Home's template gallery links to every template, "All templates (124)",
+  next to "Show all 60" (the chosen type only), so the two counts no longer
+  look like a mismatch. Its industry tags read like the Templates page's:
+  "HR" and "AI", not "Hr" and "Ai".
+
 ## [0.2.0-beta.7] - 2026-10-29
 
 ### Added

@@ -11,7 +11,10 @@ use super::{Shell, api, desktop};
 use crate::i18n::{Locale, T, t, tf};
 use crate::settings::{AppConfig, PermissionMode, Theme};
 use leptos::prelude::*;
+use send_wrapper::SendWrapper;
 use serde_json::{Map, Value, json};
+use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::Closure;
 
 /// Longest global rules, as the original.
 const MAX_RULES: usize = 5000;
@@ -40,6 +43,44 @@ const SECTIONS: [(&str, T); 11] = [
     ("mcp", T::McpTitle),
     ("about", T::About),
 ];
+
+/// How far below the top of `<main>` a section counts as the one being read.
+const READ_LINE: f64 = 96.0;
+
+/// The section being read: the last one whose top has passed `READ_LINE`.
+/// At the bottom of the page, where the short last sections never reach
+/// that line, the one the URL points at if it shows, else the last one.
+fn section_in_view() -> &'static str {
+    let mut current = SECTIONS[0].0;
+    let Some(main) = super::element_by_id("main") else {
+        return current;
+    };
+    let view = main.get_bounding_client_rect();
+    let line = view.top() + READ_LINE;
+    let top_of = |id: &str| {
+        super::element_by_id(&format!("settings-{id}"))
+            .map(|el| el.get_bounding_client_rect().top())
+    };
+    for (id, _) in SECTIONS {
+        if top_of(id).is_some_and(|top| top <= line) {
+            current = id;
+        }
+    }
+    let at_bottom = main.scroll_top() + main.client_height() >= main.scroll_height() - 2;
+    if at_bottom {
+        let hash = web_sys::window()
+            .and_then(|w| w.location().hash().ok())
+            .unwrap_or_default();
+        current = SECTIONS
+            .iter()
+            .find(|(id, _)| hash == format!("#settings-{id}"))
+            .filter(|(id, _)| {
+                top_of(id).is_some_and(|top| top >= view.top() && top < view.bottom())
+            })
+            .map_or(SECTIONS[SECTIONS.len() - 1].0, |(id, _)| id);
+    }
+    current
+}
 
 fn obj(v: Option<&Value>) -> Map<String, Value> {
     v.and_then(Value::as_object).cloned().unwrap_or_default()
@@ -70,6 +111,27 @@ pub fn SettingsPage() -> impl IntoView {
     let language = RwSignal::new(shell.locale.get_untracked());
     let status = RwSignal::new(None::<Result<(), String>>);
     let api_mode = RwSignal::new(false);
+
+    // The nav marks the section in view, updated as `<main>` scrolls.
+    let in_view = RwSignal::new(SECTIONS[0].0);
+    let on_scroll = StoredValue::new(None::<SendWrapper<(web_sys::Element, Closure<dyn FnMut()>)>>);
+    Effect::new(move |_| {
+        let Some(main) = super::element_by_id("main") else {
+            return;
+        };
+        let track = Closure::<dyn FnMut()>::new(move || in_view.set(section_in_view()));
+        let _ = main.add_event_listener_with_callback("scroll", track.as_ref().unchecked_ref());
+        in_view.set(section_in_view());
+        on_scroll.set_value(Some(SendWrapper::new((main, track))));
+    });
+    on_cleanup(move || {
+        on_scroll.with_value(|s| {
+            if let Some((main, track)) = s.as_deref() {
+                let _ = main
+                    .remove_event_listener_with_callback("scroll", track.as_ref().unchecked_ref());
+            }
+        });
+    });
 
     // Fill the form once settings arrive.
     Effect::new(move |loaded: Option<bool>| {
@@ -251,7 +313,12 @@ pub fn SettingsPage() -> impl IntoView {
             <div class="settings-columns">
                 <nav class="settings-nav" aria-label=t(T::SettingsSections)>
                     {SECTIONS.into_iter().map(|(id, label)| view! {
-                        <a class="settings-nav-link" href=format!("#settings-{id}") data-testid=format!("settings-nav-{id}")>{t(label)}</a>
+                        <a
+                            class="settings-nav-link"
+                            href=format!("#settings-{id}")
+                            data-testid=format!("settings-nav-{id}")
+                            aria-current=move || (in_view.get() == id).then_some("location")
+                        >{t(label)}</a>
                     }).collect_view()}
                 </nav>
                 <div class="settings-main">

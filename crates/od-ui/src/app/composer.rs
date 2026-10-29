@@ -1078,7 +1078,7 @@ pub fn PlusMenu(
     let wrap = NodeRef::<Div>::new();
     close_outside(open, wrap);
     let navigate = super::leave_guard::use_leave();
-    let to_mcp = Callback::new(move |()| navigate("/settings#mcp"));
+    let to_mcp = Callback::new(move |()| navigate("/settings#settings-mcp"));
     let children = StoredValue::new(children);
     let add = move |c: Candidate| {
         open.set(false);

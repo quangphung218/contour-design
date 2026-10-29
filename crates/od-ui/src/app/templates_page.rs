@@ -627,7 +627,7 @@ fn MyTemplates() -> impl IntoView {
 
 /// An industry id as words: `customer-success` → "Customer success",
 /// acronyms in capitals (`hr` → "HR").
-fn scenario_label(id: &str) -> String {
+pub(super) fn scenario_label(id: &str) -> String {
     const ACRONYMS: &[&str] = &["ai", "b2b", "b2c", "crm", "hr", "it", "seo", "ui", "ux"];
     id.split('-')
         .filter(|w| !w.is_empty())

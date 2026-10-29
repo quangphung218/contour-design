@@ -580,26 +580,60 @@ fn ViewTracker() -> impl IntoView {
 
 /// A new page opens at its top: `<main>` keeps its scroll position across
 /// routes otherwise (scroll down onboarding, and Home opens scrolled past
-/// the brief). Back and forward leave it alone.
+/// the brief). A link to a section (`/settings#settings-about`) opens at
+/// that section instead, also when it is the URL the app was loaded at.
+/// Back and forward leave it alone.
 #[component]
 fn ScrollReset() -> impl IntoView {
     let location = use_location();
     let popped = StoredValue::new(false);
     let pop = window_event_listener(leptos::ev::popstate, move |_| popped.set_value(true));
     on_cleanup(move || pop.remove());
-    Effect::new(move |prev: Option<String>| {
+    Effect::new(move |prev: Option<(String, String)>| {
         let path = location.pathname.get();
+        let hash = location.hash.get();
         let back_or_forward = std::mem::take(&mut *popped.write_value());
-        if prev.is_some_and(|p| p != path) && !back_or_forward {
-            if let Some(main) = web_sys::window()
-                .and_then(|w| w.document())
-                .and_then(|d| d.get_element_by_id("main"))
-            {
+        let first = prev.is_none();
+        let moved = prev.is_some_and(|(p, h)| p != path || h != hash);
+        let anchor = hash.trim_start_matches('#').to_owned();
+        // The first run is a full load (a typed URL, a reload, `set_href`):
+        // the browser found no section to scroll to, the page renders later.
+        if (moved || first) && !back_or_forward && !anchor.is_empty() {
+            leptos::task::spawn_local(scroll_to_anchor(anchor));
+        } else if moved && !back_or_forward {
+            if let Some(main) = element_by_id("main") {
                 main.set_scroll_top(0);
             }
         }
-        path
+        (path, hash)
     });
+}
+
+fn element_by_id(id: &str) -> Option<web_sys::Element> {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id(id))
+}
+
+/// Scrolls `<main>` to the element `id` once the page has rendered, and
+/// again while sections above it finish loading and push it down, unless
+/// the user has scrolled since.
+async fn scroll_to_anchor(id: String) {
+    let mut placed = None;
+    for wait in [0, 150, 400, 1000] {
+        gloo_timers::future::TimeoutFuture::new(wait).await;
+        let Some(main) = element_by_id("main") else {
+            return;
+        };
+        if placed.is_some_and(|top| top != main.scroll_top()) {
+            return;
+        }
+        let Some(target) = element_by_id(&id) else {
+            continue;
+        };
+        target.scroll_into_view();
+        placed = Some(main.scroll_top());
+    }
 }
 
 /// Sends first-time users to onboarding once settings are known.

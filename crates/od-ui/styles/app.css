@@ -543,6 +543,7 @@ details.agent-missing[open] > summary .ico:last-child { transform: rotate(90deg)
 .settings-nav-link { padding: var(--space-1-5) var(--space-2-5); border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--color-text-secondary); transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
 .settings-nav-link:hover { background: var(--color-fill); color: var(--color-text); }
 .settings-nav-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus-ring); }
+.settings-nav-link[aria-current] { background: var(--color-surface-raised); color: var(--color-text); font-weight: var(--weight-medium); box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--color-border-subtle); }
 .settings-main { min-width: 0; }
 .settings-main .settings-section { grid-template-columns: 200px minmax(0, 1fr); scroll-margin-top: var(--space-6); }
 .settings-main > .settings-section:first-child { border-top: 0; padding-top: 0; }
@@ -614,6 +615,13 @@ pre.license-text { margin: var(--space-3) 0 0; padding: var(--space-3); max-heig
 .integrations .settings-section > :not(.section-intro) { grid-column: 1; }
 .forwarded { display: flex; flex-direction: column; gap: var(--space-1-5); font-size: var(--text-sm); }
 .forwarded p { margin: 0; }
+/* The one-line summary without Details: its label and agents on one line. */
+p.forwarded { display: block; }
+.forwarded > summary { display: flex; align-items: center; gap: var(--space-2); min-height: 32px; cursor: pointer; list-style: none; border-radius: var(--radius-sm); }
+.forwarded > summary::-webkit-details-marker { display: none; }
+.forwarded > summary .ico { width: var(--icon-sm); height: var(--icon-sm); color: var(--color-text-tertiary); transition: transform var(--duration-fast) var(--ease-out); }
+.forwarded > summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus-ring); }
+@media (max-width: 480px) { .forwarded > summary { min-height: 44px; } }
 .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-3); }
 .catalog-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); min-width: 0; }
 .catalog-card strong { overflow-wrap: anywhere; }
@@ -959,6 +967,23 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   /* Present wraps under the arrows instead of running off the edge. */
   .deck-bar { flex-wrap: wrap; row-gap: var(--space-1); }
   .deck-bar > .split-btn { margin-left: auto; }
+}
+/* Phone: the head is one row (view, device, More); reload and the edit
+   and zoom tools wait behind More and wrap onto a second row when it opens.
+   The file name is in the tab above. */
+.preview-more { display: none; }
+@media (max-width: 480px) {
+  .preview-head { flex-wrap: wrap; height: auto; min-height: 44px; padding-block: var(--space-1); }
+  .preview-head > .preview-more { display: inline-flex; margin-left: auto; }
+  .preview-head > .path-title { display: none; }
+  .preview-head:not(.tools-open) > :is(.reload-preview, .tool-bar, .head-divider, .zoom, [data-testid="show-files"]) { display: none; }
+  /* Opened, they go after a line break, so More stays put on the first row. */
+  .preview-head > :is(.reload-preview, .tool-bar, .head-divider, .zoom, [data-testid="show-files"]) { order: 1; }
+  .preview-head.tools-open::before { content: ""; order: 1; flex-basis: 100%; }
+  .preview-head > .icon-btn, .preview-head .segmented .seg { min-width: 44px; min-height: 44px; }
+  /* `.tool-bar` is `flex: none`: it must shrink to the row to wrap at all. */
+  .preview-head .tool-bar { flex: 1 1 100%; flex-wrap: wrap; }
+  .preview-head :is(.tool-bar, .zoom) :is(.icon-btn, .btn, .zoom-value) { min-width: 44px; min-height: 44px; }
 }
 /* Phone: the slide takes the width, at the top of the stage next to the
    deck bar; the counter and arrows replace the thumbnails. */
@@ -1472,11 +1497,12 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 .code-src .tok-emphasis { color: var(--color-code-keyword); }
 .code-src .tok-code { color: var(--color-code-string); }
 .code-src .tok-link { color: var(--color-code-tag); text-decoration: underline; text-underline-offset: 2px; }
-.first-artifact-hint { position: absolute; top: var(--space-3); right: var(--space-4); z-index: var(--z-raised); display: flex; align-items: flex-start; gap: var(--space-2-5); max-width: 320px; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3-5); border: 1px solid color-mix(in srgb, var(--color-accent) 26%, var(--color-border)); border-radius: var(--radius-lg); background: var(--color-surface-raised); box-shadow: var(--shadow-md); animation: hint-drop 2.4s var(--ease-out) both; }
+.first-artifact-hint { position: absolute; bottom: var(--space-4); right: var(--space-4); z-index: var(--z-raised); display: flex; align-items: flex-start; gap: var(--space-2-5); max-width: 320px; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3-5); border: 1px solid color-mix(in srgb, var(--color-accent) 26%, var(--color-border)); border-radius: var(--radius-lg); background: var(--color-surface-raised); box-shadow: var(--shadow-md); animation: hint-rise 2.4s var(--ease-out) both; }
 .first-artifact-hint-ico { display: inline-flex; margin-top: 1px; color: var(--color-accent-text); }
 .first-artifact-hint-body { display: flex; flex-direction: column; gap: var(--space-0-5); font-size: var(--text-sm); color: var(--color-text-secondary); }
 .first-artifact-hint-body strong { font-weight: var(--weight-semibold); color: var(--color-text); }
-@keyframes hint-drop { 0% { transform: translateY(-28px); } 19%, 32% { transform: translateY(0); } 44% { transform: translateY(-4px); } 56%, 64% { transform: translateY(0); } 76% { transform: translateY(-4px); } 88%, 100% { transform: translateY(0); } }
+/* Rises from the bottom edge, then nudges up twice. */
+@keyframes hint-rise { 0% { transform: translateY(28px); } 19%, 32% { transform: translateY(0); } 44% { transform: translateY(-4px); } 56%, 64% { transform: translateY(0); } 76% { transform: translateY(-4px); } 88%, 100% { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .first-artifact-hint { animation: none; } }
 .workspace-recovery-tip { position: fixed; left: var(--space-3); bottom: var(--space-3); z-index: var(--z-toast); display: flex; align-items: center; gap: var(--space-2); width: min(280px, calc(100vw - 24px)); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-raised); box-shadow: var(--shadow-sm); font-size: var(--text-xs); color: var(--color-text-secondary); pointer-events: none; animation: toast-in var(--duration-base) var(--ease-out); }
 .comments-board .segmented { align-self: flex-start; }
@@ -1548,3 +1574,24 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 /* Long labels (German, Russian…) keep their line; the selects wrap below. */
 .notification-settings .switch.grow { flex: 1 0 auto; }
 .notification-settings .switch > span { display: inline-flex; align-items: center; gap: var(--space-1-5); white-space: nowrap; }
+
+/* Phone: every control in the rail, menus, the Settings nav, the studio
+   switch, the Next chips, the Settings and empty-state buttons and Home's
+   gallery links is a full 44 px touch target. Collapse does
+   nothing while the rail is forced, and a phone has no keyboard
+   shortcuts, so both buttons go and the rail keeps its height. Last in
+   the file, over the rail's 40 px. */
+@media (max-width: 480px) {
+  .sidebar { padding-inline: calc((var(--sidebar-rail) - 44px) / 2); }
+  .sidebar .sidebar-toggle, .sidebar [data-testid="open-shortcuts"] { display: none; }
+  .sidebar .brand { justify-content: center; width: 44px; height: 44px; padding: 0; flex: none; margin: 0 auto; }
+  .sidebar :is(.palette-trigger, .nav-link), .sidebar.rail :is(.palette-trigger, .nav-link) { width: 44px; height: 44px; }
+  .menu-item { min-height: 44px; }
+  .settings-nav-link { display: inline-flex; align-items: center; min-height: 44px; }
+  .studio-switch .seg { min-height: 44px; }
+  .chip.next-step { min-height: 44px; }
+  .settings-section .row.end .btn, .empty-state .btn { min-height: 44px; }
+  .home-section .section-head .btn { min-height: 44px; }
+  /* The title keeps its line; Show all and All templates go under it. */
+  .home-section .section-head, .home-section .section-head > .row { flex-wrap: wrap; }
+}

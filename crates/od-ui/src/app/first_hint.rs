@@ -1,6 +1,7 @@
 //! One-time hint when the first artifact of a generation shows up in the
-//! Studio (upstream `FirstArtifactHint`): a small card in the preview's top
-//! corner pointing at the preview tools. It shows only for a project whose
+//! Studio (upstream `FirstArtifactHint`): a small card in the preview's
+//! bottom corner, clear of the page's own header and first call to action,
+//! pointing at the preview tools. It shows only for a project whose
 //! first run started with nothing to preview, waits for the run to end and
 //! the layout to settle, and the "seen" bit is spent when the user closes
 //! it, not when it shows (a remount before that shows it again). Any click

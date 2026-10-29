@@ -76,7 +76,8 @@ pub fn Integrations() -> impl IntoView {
     }
 }
 
-/// "Forwarded to: Claude Code · Kimi (stdio only)" from the installed agents.
+/// "Forwarded to: Claude Code · Kimi (stdio only)" from the installed agents,
+/// with the notes on stdio only and the agents not forwarded to folded away.
 #[component]
 fn ForwardedNote() -> impl IntoView {
     let shell = Shell::get();
@@ -107,16 +108,33 @@ fn ForwardedNote() -> impl IntoView {
         }
         to.sort();
         not.sort();
+        let forwarded_to = if to.is_empty() {
+            t(T::NoAgents).to_owned()
+        } else {
+            to.join(" · ")
+        };
+        let summary = view! {
+            <strong>{t(T::ForwardedTo)}</strong>" "<span data-testid="mcp-forwarded-to">{forwarded_to}</span>
+        };
+        // One line; the why behind stdio only and the agents left out
+        // wait behind Details.
+        if !acp && not.is_empty() {
+            return Some(view! { <p class="card padded forwarded" data-testid="mcp-forwarded">{summary}</p> }.into_any());
+        }
         Some(view! {
-            <div class="card padded forwarded" data-testid="mcp-forwarded">
-                <p><strong>{t(T::ForwardedTo)}</strong>" "<span data-testid="mcp-forwarded-to">{if to.is_empty() { t(T::NoAgents).to_owned() } else { to.join(" · ") }}</span></p>
+            <details class="card padded forwarded" data-testid="mcp-forwarded">
+                <summary>
+                    <span class="grow">{summary}</span>
+                    <span class="muted">{t(T::ForwardedDetails)}</span>
+                    {icon(Glyph::ChevronDown)}
+                </summary>
                 {acp.then(|| view! { <p class="muted small">{t(T::ForwardedAcpNote)}</p> })}
                 {(!not.is_empty()).then(|| view! {
                     <p><strong>{t(T::NotForwardedTo)}</strong>" "<span data-testid="mcp-not-forwarded">{not.join(" · ")}</span></p>
                     <p class="muted small">{t(T::NotForwardedNote)}</p>
                 })}
-            </div>
-        })
+            </details>
+        }.into_any())
     }
 }
 
