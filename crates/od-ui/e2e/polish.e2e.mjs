@@ -203,6 +203,8 @@ try {
       await until(
         async () => (await assistant.count()) === turn && (await assistant.nth(turn - 1).getAttribute('data-state')) === 'succeeded',
         `turn ${turn} end at ${width}px`,
+        // A loaded machine (load 20) took over 20 s for a mock turn.
+        60_000,
       );
     }
     // The plan updates show in the Plan list, not as tool rows (#6).
