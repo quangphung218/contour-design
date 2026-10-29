@@ -382,7 +382,8 @@ async fn events_stream_ready_then_file_changed_within_300ms() {
     for round in 0..5 {
         let started = Instant::now();
         std::fs::write(&file, format!("<h1>v{round}</h1>")).unwrap();
-        let changed = next_event(&mut body, "file-changed", Duration::from_secs(2)).await;
+        // A late event fails the median below; this only waits for it.
+        let changed = next_event(&mut body, "file-changed", Duration::from_secs(10)).await;
         took.push(started.elapsed());
         assert_eq!(changed["path"], "index.html");
         assert_eq!(changed["kind"], if round == 0 { "add" } else { "change" });

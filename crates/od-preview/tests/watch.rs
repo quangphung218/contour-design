@@ -18,6 +18,11 @@ fn native() -> ProjectEvents {
     })
 }
 
+/// How long a test waits for an expected event before failing. Generous on
+/// purpose: on a loaded machine FSEvents has handed over events more than
+/// 2 s late. The latency budget is checked apart (`…within_300ms`).
+const EVENT_WAIT: Duration = Duration::from_secs(10);
+
 async fn next_change(sub: &mut Subscription, within: Duration) -> (String, ChangeKind) {
     loop {
         match tokio::time::timeout(within, sub.recv()).await {
@@ -59,7 +64,7 @@ async fn write_reaches_subscriber_within_300ms() {
     for round in 0..7 {
         let started = Instant::now();
         std::fs::write(dir.path().join("index.html"), format!("<p>{round}</p>")).unwrap();
-        let (path, kind) = next_change(&mut sub, Duration::from_secs(2)).await;
+        let (path, kind) = next_change(&mut sub, EVENT_WAIT).await;
         took.push(started.elapsed());
         assert_eq!(path, "index.html");
         let expected = if round == 0 {
@@ -117,7 +122,7 @@ async fn burst_of_writes_settles_into_one_event() {
             std::fs::write(dir.path().join("a.css"), css).unwrap();
             tokio::time::sleep(Duration::from_millis(30)).await;
         }
-        let (path, _) = next_change(&mut sub, Duration::from_secs(2)).await;
+        let (path, _) = next_change(&mut sub, EVENT_WAIT).await;
         assert_eq!(path, "a.css");
         match tokio::time::timeout(Duration::from_millis(400), sub.recv()).await {
             Err(_) => return,
@@ -142,7 +147,7 @@ async fn unlink_nested_paths_and_ignored_files() {
     std::fs::write(dir.path().join(".open-design/project.json"), "{}").unwrap();
     std::fs::write(dir.path().join(".DS_Store"), "junk").unwrap();
     std::fs::remove_file(dir.path().join("deck/slide.html")).unwrap();
-    let (path, kind) = next_change(&mut sub, Duration::from_secs(2)).await;
+    let (path, kind) = next_change(&mut sub, EVENT_WAIT).await;
     assert_eq!(
         (path.as_str(), kind),
         ("deck/slide.html", ChangeKind::Unlink)
@@ -208,14 +213,8 @@ async fn watcher_is_shared_and_closed_with_last_subscriber() {
     quiet(&mut a).await;
 
     std::fs::write(dir.path().join("x.html"), "x").unwrap();
-    assert_eq!(
-        next_change(&mut a, Duration::from_secs(2)).await.0,
-        "x.html"
-    );
-    assert_eq!(
-        next_change(&mut b, Duration::from_secs(2)).await.0,
-        "x.html"
-    );
+    assert_eq!(next_change(&mut a, EVENT_WAIT).await.0, "x.html");
+    assert_eq!(next_change(&mut b, EVENT_WAIT).await.0, "x.html");
 
     drop(a);
     assert_eq!(hub.watched_projects(), 1);
