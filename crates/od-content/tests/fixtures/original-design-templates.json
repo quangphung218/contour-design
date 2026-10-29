@@ -757,7 +757,7 @@
   "surface": "web",
   "craftRequires": [],
   "platform": "desktop",
-  "scenario": "operation",
+  "scenario": "operations",
   "category": null,
   "previewType": "html",
   "designSystemRequired": true,
@@ -3394,7 +3394,7 @@
    "state-coverage"
   ],
   "platform": "desktop",
-  "scenario": "operation",
+  "scenario": "operations",
   "category": null,
   "previewType": "html",
   "designSystemRequired": true,

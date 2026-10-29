@@ -201,6 +201,25 @@ fn design_templates_match_original_loader() {
     );
 }
 
+/// One industry, one id: the Templates filter lists each id, so
+/// "operation" next to "operations" read as two industries.
+#[test]
+fn no_industry_is_the_plural_of_another() {
+    let idx = index();
+    let ids: std::collections::BTreeSet<&str> = idx
+        .design_templates
+        .iter()
+        .map(|t| t.info.scenario.as_str())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let twins: Vec<&str> = ids
+        .iter()
+        .copied()
+        .filter(|id| ids.contains(format!("{id}s").as_str()))
+        .collect();
+    assert!(twins.is_empty(), "industries with a plural twin: {twins:?}");
+}
+
 /// Nothing that ships points an agent or a page at a removed template.
 #[test]
 fn no_content_names_a_removed_template() {

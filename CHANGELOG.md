@@ -28,6 +28,8 @@ All notable changes to Contour are recorded here. The format follows
   Prototype and Video. The two dashboards it held are under Prototype,
   where they open; the chips read Prototype, Slide deck, Image, Video,
   Audio.
+- Templates ▸ All industries lists "Operations" once: the GitHub and live
+  dashboards said "operation", so the list showed "Operation" next to it.
 - PDF, PNG and PowerPoint exports try Chrome or Edge once more when it
   does not start within 30 s, so the first export on a slow or freshly
   set up PC does not fail with "Timeout while resolving websocket URL".

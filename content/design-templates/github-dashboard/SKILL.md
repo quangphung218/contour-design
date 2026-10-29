@@ -19,7 +19,7 @@ triggers:
 od:
   mode: prototype
   platform: desktop
-  scenario: operation
+  scenario: operations
   preview:
     type: html
     entry: index.html
