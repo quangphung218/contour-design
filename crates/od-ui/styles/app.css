@@ -1570,8 +1570,8 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 .notification-settings .switch > span { display: inline-flex; align-items: center; gap: var(--space-1-5); white-space: nowrap; }
 
 /* Phone: every control in the rail, menus, the Settings nav, the studio
-   switch, the Next chips and the Settings and empty-state buttons is a
-   full 44 px touch target. Collapse does
+   switch, the Next chips, the Settings and empty-state buttons and Home's
+   gallery links is a full 44 px touch target. Collapse does
    nothing while the rail is forced, and a phone has no keyboard
    shortcuts, so both buttons go and the rail keeps its height. Last in
    the file, over the rail's 40 px. */
@@ -1585,4 +1585,5 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
   .studio-switch .seg { min-height: 44px; }
   .chip.next-step { min-height: 44px; }
   .settings-section .row.end .btn, .empty-state .btn { min-height: 44px; }
+  .home-section .section-head .btn { min-height: 44px; }
 }

@@ -239,6 +239,11 @@ try {
           .map(({ e, b }) => `${e.getAttribute('aria-label') || e.textContent.trim()} ${Math.round(b.width)}×${Math.round(b.height)}`),
       );
       assert.deepEqual(small, [], 'touch targets under 44 px');
+      // Home's gallery links too.
+      await page.goto(BASE + '/');
+      const all = page.getByTestId('home-all-templates');
+      await all.waitFor();
+      assert.ok((await all.boundingBox()).height >= 44, 'All templates link is a 44 px target');
     }
   }
 
