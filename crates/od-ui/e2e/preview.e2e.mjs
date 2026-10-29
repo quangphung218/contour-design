@@ -130,6 +130,9 @@ try {
   await until(async () => (await assistant.first().getAttribute('data-state')) === 'succeeded', 'turn 1 end');
   await hint.waitFor();
   await hint.getByText('Your first design is ready').waitFor();
+  // It sits at the bottom of the preview, off the page's header and hero.
+  const [cardBox, previewBox] = [await hint.boundingBox(), await page.locator('iframe[data-testid="preview"]').boundingBox()];
+  assert.ok(cardBox.y > previewBox.y + previewBox.height / 2, 'hint in the lower half of the preview');
   await shot('first-artifact-hint');
   await page.getByTestId('first-artifact-hint-dismiss').click();
   await until(async () => (await hint.count()) === 0, 'hint closed');

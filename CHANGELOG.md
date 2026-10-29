@@ -44,6 +44,8 @@ All notable changes to Contour are recorded here. The format follows
 - When a run ends the chat scrolls down to the Next chips under the reply.
   Before, they showed only after the run and stayed half hidden behind the
   composer.
+- "Your first design is ready" shows at the bottom of the preview, no
+  longer over the page's header and its first button.
 
 ## [0.2.0-beta.7] - 2026-10-29
 
