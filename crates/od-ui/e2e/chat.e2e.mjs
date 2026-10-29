@@ -393,7 +393,7 @@ try {
   await crashed.getByTestId('next-retry').waitFor();
   await crashed.getByTestId('run-log').locator('summary').click();
   await until(async () => /at writeFileSync \(node:fs:2306:26\)/.test(await crashed.getByTestId('run-log-text').textContent()), 'agent output shown');
-  assert.match(await crashed.getByTestId('run-log-text').textContent(), /^file:\/\/\/opt\/claude-code\/cli\.js:4123\nError: ENOSPC/);
+  assert.match(await crashed.getByTestId('run-log-text').textContent(), /^node:fs:927\n[\s\S]*\nError: ENOSPC[\s\S]*\nNode\.js v26\.7\.0\n?$/);
   await page.screenshot({ path: OUT + 'chat-run-failed.png' });
   await crashed.getByTestId('next-retry').click();
   await lastTurnDone(turnsBefore + 2);

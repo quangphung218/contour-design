@@ -1223,13 +1223,19 @@ impl Attempt {
     }
 }
 
-/// The line of a failed agent's stderr that says what went wrong: the
-/// last one that is not part of a stack trace. A Node crash ends with its
-/// `at …` frames, so the last line alone would be a source location.
+/// The line of a failed agent's stderr that says what went wrong. With
+/// `at …` frames (a Node crash), the last line before the first frame that
+/// is not part of the trace: Node prints the error's fields (`{ code: … }`)
+/// and its own version after the frames. Otherwise the last line that is
+/// not part of a trace (Python ends with its exception).
 fn stderr_message(stderr: &str) -> Option<String> {
     let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
-    lines
+    let head = lines
         .iter()
+        .position(|l| l.trim().starts_with("at "))
+        .filter(|&first| first > 0)
+        .map_or(&lines[..], |first| &lines[..first]);
+    head.iter()
         .rev()
         .find(|l| !is_trace_line(l))
         .or(lines.last())
@@ -1407,12 +1413,18 @@ mod tests {
 
     #[test]
     fn a_crash_reads_as_its_error_not_its_stack_frame() {
-        let node = "file:///opt/claude-code/cli.js:4123\n\
-                    Error: ENOSPC: no space left on device, write\n    \
-                    at Object.writeSync (node:fs:927:3)\n    \
-                    at writeFileSync (node:fs:2306:26)\n";
+        // As Node 26 prints it: after the frames come the error's fields
+        // and `Node.js v…`, neither of which says what went wrong.
+        let node = include_str!("../tests/fixtures/node-crash.stderr");
         assert_eq!(
             stderr_message(node).as_deref(),
+            Some("Error: ENOSPC: no space left on device, write")
+        );
+        let bare = "file:///opt/claude-code/cli.js:4123\n\
+                    Error: ENOSPC: no space left on device, write\n    \
+                    at Object.writeSync (node:fs:927:3)\n";
+        assert_eq!(
+            stderr_message(bare).as_deref(),
             Some("Error: ENOSPC: no space left on device, write")
         );
         let python = "Traceback (most recent call last):\n  File \"x.py\", line 1, in <module>\nValueError: bad key\n";

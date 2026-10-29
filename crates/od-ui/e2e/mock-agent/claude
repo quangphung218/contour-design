@@ -90,15 +90,11 @@ case "$line" in *"The user applied plugin **"*) say "Plugin applied. ";; esac
 # Project memory: echo the first remembered fact.
 mem=$(printf '%s' "$line" | sed -n 's/.*## Project memory[^-]*\\n\\n- \([^\\"]*\).*/\1/p')
 [ -n "$mem" ] && say "Memory: $mem. "
-# `crash`: the CLI dies mid-turn the way Node does, a stack trace on
-# stderr and exit 1, with no result line and no file written.
+# `crash`: the CLI dies mid-turn the way Node does (stderr as Node 26
+# prints an uncaught error: source line, message, frames, error fields,
+# version) and exits 1, with no result line and no file written.
 case "$req" in *crash*)
-  {
-    printf 'file:///opt/claude-code/cli.js:4123\n'
-    printf 'Error: ENOSPC: no space left on device, write\n'
-    printf '    at Object.writeSync (node:fs:927:3)\n'
-    printf '    at writeFileSync (node:fs:2306:26)\n'
-  } >&2
+  cat "$(dirname "$0")/../../../od-runtime/tests/fixtures/node-crash.stderr" >&2
   exit 1
 ;; esac
 # Chat and plan modes answer without touching files.
