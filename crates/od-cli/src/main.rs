@@ -12,7 +12,7 @@ mod research_cmd;
 
 use anyhow::Context;
 use base64::Engine;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use client::Client;
 use od_contracts::{
     ChatRequest, CreateProjectRequest, CreateProjectResponse, CreateRunResponse,
@@ -195,7 +195,14 @@ enum FilesCommand {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+    // `od mcp` tells a URL someone gave (flag or env) from the default:
+    // only the default gives way to the running app's `daemon.lock`.
+    let daemon_url_given = !matches!(
+        matches.value_source("daemon_url"),
+        None | Some(clap::parser::ValueSource::DefaultValue)
+    );
     let result = match cli.command {
         None => run_daemon(StartArgs {
             host: std::env::var("OD_HOST").unwrap_or_else(|_| od_server::DEFAULT_HOST.to_owned()),
@@ -224,7 +231,10 @@ fn main() -> ExitCode {
         Some(Command::Lint(args)) => {
             Client::new(&cli.daemon_url).and_then(|c| lint_cmd::run(&c, args, cli.json))
         }
-        Some(Command::Mcp(args)) => return mcp_cmd::run(args, &cli.daemon_url, cli.json),
+        Some(Command::Mcp(args)) => {
+            let given = daemon_url_given.then_some(cli.daemon_url.as_str());
+            return mcp_cmd::run(args, &cli.daemon_url, given, cli.json);
+        }
         Some(Command::Media(cmd)) => {
             Client::new(&cli.daemon_url).and_then(|c| media_cmd::run(&c, cmd, cli.json))
         }

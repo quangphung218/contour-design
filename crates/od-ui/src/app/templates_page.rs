@@ -53,18 +53,31 @@ pub struct Saved {
     pub created_at: i64,
 }
 
+/// The type a template is filed under. A `template`-mode template (a
+/// dashboard) is a page that opens as a prototype project, so it is filed
+/// under Prototype: a "Template" type on a page of templates says nothing.
 fn mode_key(m: SkillMode) -> String {
+    if m == SkillMode::Template {
+        return "prototype".to_owned();
+    }
     serde_json::to_value(m)
         .ok()
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_default()
 }
 
+/// The type chips' order: pages first, then media; any other type after.
+const TYPE_ORDER: [&str; 5] = ["prototype", "deck", "image", "video", "audio"];
+
+fn type_rank(key: &str) -> (usize, &str) {
+    let rank = TYPE_ORDER.iter().position(|k| *k == key);
+    (rank.unwrap_or(TYPE_ORDER.len()), key)
+}
+
 fn mode_label(m: &str) -> String {
     match m {
         "prototype" => t(T::ChipPrototype).to_owned(),
         "deck" => t(T::ChipDeck).to_owned(),
-        "template" => t(T::TemplateKind).to_owned(),
         "image" => t(T::Image).to_owned(),
         "video" => t(T::Video).to_owned(),
         "audio" => t(T::SurfaceAudio).to_owned(),
@@ -153,7 +166,7 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
     let all = move || templates.get().unwrap_or_default();
     let modes = Memo::new(move |_| {
         let mut m: Vec<String> = all().iter().map(|s| mode_key(s.info.mode)).collect();
-        m.sort();
+        m.sort_by(|a, b| type_rank(a).cmp(&type_rank(b)));
         m.dedup();
         m
     });
@@ -640,6 +653,18 @@ fn scenario_label(id: &str) -> String {
 mod tests {
     use super::*;
     use crate::i18n::{Locale, set_locale};
+
+    #[test]
+    fn a_template_mode_template_is_filed_under_prototype() {
+        assert_eq!(mode_key(SkillMode::Template), "prototype");
+        assert_eq!(mode_key(SkillMode::Deck), "deck");
+        let mut keys = vec!["video", "audio", "deck", "zine", "image", "prototype"];
+        keys.sort_by(|a, b| type_rank(a).cmp(&type_rank(b)));
+        assert_eq!(
+            keys,
+            ["prototype", "deck", "image", "video", "audio", "zine"]
+        );
+    }
 
     #[test]
     fn industries_read_as_words_with_acronyms_in_capitals() {

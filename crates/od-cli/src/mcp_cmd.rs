@@ -35,9 +35,11 @@ enum McpCommand {
     },
 }
 
-pub fn run(args: McpArgs, daemon_url: &str, json: bool) -> ExitCode {
+/// `daemon_url` is `--daemon-url` / `OD_DAEMON_URL` or the default;
+/// `given` is the same URL when it was not the default.
+pub fn run(args: McpArgs, daemon_url: &str, given: Option<&str>, json: bool) -> ExitCode {
     let result = match args.command {
-        None => serve(daemon_url).map(|()| ExitCode::SUCCESS),
+        None => serve(given).map(|()| ExitCode::SUCCESS),
         Some(McpCommand::LiveArtifacts { project }) => {
             serve_live(daemon_url, project).map(|()| ExitCode::SUCCESS)
         }
@@ -79,8 +81,18 @@ fn stdio_runtime() -> anyhow::Result<tokio::runtime::Runtime> {
         .context("starting the async runtime")
 }
 
-fn serve(daemon_url: &str) -> anyhow::Result<()> {
-    stdio_runtime()?.block_on(od_mcp::serve_stdio(daemon_url))
+/// The stdio server, on the daemon [`od_mcp::locate`] picks: `given`, else
+/// the running app's in `daemon.lock`, else the default. A `given` URL with
+/// no daemon behind it (an install from beta ≤4, or the app's port of an
+/// earlier launch) gives way to `daemon.lock`.
+fn serve(given: Option<&str>) -> anyhow::Result<()> {
+    let data = od_store::DataDir::from_env();
+    let lock = std::fs::read_to_string(data.root().join(od_server::lock::LOCK_FILE)).ok();
+    let (url, fallback) = od_mcp::locate::daemon_urls(given, None, lock.as_deref());
+    stdio_runtime()?.block_on(async {
+        let url = od_mcp::locate::reachable(url, fallback).await?;
+        od_mcp::serve_stdio(&url).await
+    })
 }
 
 fn serve_live(daemon_url: &str, project: Option<String>) -> anyhow::Result<()> {

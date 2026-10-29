@@ -121,10 +121,57 @@ fn hit(q: &str, title: &str, description: &str) -> bool {
     q.is_empty() || format!("{title} {description}").to_lowercase().contains(&q)
 }
 
-fn tile(id: &str, title: &str) -> impl IntoView + use<> {
+fn tile(id: &str, label: String) -> impl IntoView + use<> {
     let class = format!("plugin-tile tint-{}", tint(id));
-    let label = initials(title);
     view! { <span class=class aria-hidden="true">{label}</span> }
+}
+
+/// The letters a plugin's tile shows, by id: its title's initials, unless
+/// another plugin has the same; then the first and last words' ("Export
+/// to Vue" → EV, not the ET of every Export plugin), then the first word's
+/// first two letters. Any language: only the words count.
+fn monograms(plugins: &[(String, String)]) -> std::collections::HashMap<String, String> {
+    fn first(word: &str) -> Option<char> {
+        word.chars().find(|c| c.is_alphanumeric())
+    }
+    let candidates = |title: &str| -> Vec<String> {
+        let words: Vec<&str> = title
+            .split_whitespace()
+            .filter(|w| first(w).is_some())
+            .collect();
+        let mut out = vec![initials(title)];
+        if let [a, .., b] = words.as_slice() {
+            let ends: String = first(a).into_iter().chain(first(b)).collect();
+            out.push(ends.to_uppercase());
+        }
+        if let Some(w) = words.first() {
+            let two: String = w.chars().filter(|c| c.is_alphanumeric()).take(2).collect();
+            out.push(two.to_uppercase());
+        }
+        out
+    };
+    let all: Vec<Vec<String>> = plugins.iter().map(|(_, title)| candidates(title)).collect();
+    let mut level = vec![0usize; all.len()];
+    // Every plugin in a clash moves on together, so siblings stay alike.
+    loop {
+        let shown: Vec<&String> = all.iter().zip(&level).map(|(c, &l)| &c[l]).collect();
+        let mut moved = false;
+        for i in 0..all.len() {
+            let clash = shown.iter().filter(|m| **m == shown[i]).count() > 1;
+            if clash && level[i] + 1 < all[i].len() {
+                level[i] += 1;
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    plugins
+        .iter()
+        .zip(all.iter().zip(&level))
+        .map(|((id, _), (c, &l))| (id.clone(), c[l].clone()))
+        .collect()
 }
 
 #[component]
@@ -146,6 +193,16 @@ pub fn PluginsPage() -> impl IntoView {
     );
     let creating = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
+    let monos = Memo::new(move |_| {
+        plugins.with(|list| {
+            let titled: Vec<(String, String)> = list
+                .iter()
+                .flatten()
+                .map(|p| (s(p, "id"), s(p, "title")))
+                .collect();
+            monograms(&titled)
+        })
+    });
 
     let reload = move || {
         leptos::task::spawn_local(async move {
@@ -235,8 +292,15 @@ pub fn PluginsPage() -> impl IntoView {
                 if rows.is_empty() {
                     return empty(personal).into_any();
                 }
+                let monos = monos.get();
                 rows.into_iter()
-                    .map(|p| view! { <PluginRow plugin=p open=open/> })
+                    .map(|p| {
+                        let mono = monos
+                            .get(&s(&p, "id"))
+                            .cloned()
+                            .unwrap_or_else(|| initials(&s(&p, "title")));
+                        view! { <PluginRow plugin=p mono=mono open=open/> }
+                    })
                     .collect_view()
                     .into_any()
             }
@@ -274,7 +338,10 @@ pub fn PluginsPage() -> impl IntoView {
                 <button class="btn primary" data-testid="plugins-create" on:click=move |_| creating.set(true)>{icon(Glyph::Add)}{t(T::Create)}</button>
             </header>
             {move || match open.get() {
-                Some(Open::Plugin(id)) => view! { <PluginDetail id=id on_back=Callback::new(move |()| open.set(None)) on_change=on_change/> }.into_any(),
+                Some(Open::Plugin(id)) => {
+                    let mono = monos.with_untracked(|m| m.get(&id).cloned());
+                    view! { <PluginDetail id=id mono=mono on_back=Callback::new(move |()| open.set(None)) on_change=on_change/> }.into_any()
+                }
                 Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_change=on_change/> }.into_any(),
                 None => view! {
                     <div class="lib-toolbar">
@@ -334,14 +401,14 @@ fn empty(personal: bool) -> impl IntoView {
 }
 
 #[component]
-fn PluginRow(plugin: Value, open: RwSignal<Option<Open>>) -> impl IntoView {
+fn PluginRow(plugin: Value, mono: String, open: RwSignal<Option<Open>>) -> impl IntoView {
     let id = s(&plugin, "id");
     let title = s(&plugin, "title");
     let id_open = id.clone();
     let id_use = id.clone();
     view! {
         <li class="plugin-row" data-testid="plugin-row" data-id=id.clone()>
-            {tile(&id, &title)}
+            {tile(&id, mono)}
             <button class="plugin-row-main" on:click=move |_| open.set(Some(Open::Plugin(id_open.clone())))>
                 // What it does for the user; kind, atoms and inputs are
                 // under Developer details on the plugin page.
@@ -361,7 +428,7 @@ fn SkillRow(skill: SkillSummary, open: RwSignal<Option<Open>>) -> impl IntoView 
     let id_use = id.clone();
     view! {
         <li class="plugin-row" data-testid="skill-row" data-id=id.clone()>
-            {tile(&id, &name)}
+            {tile(&id, initials(&name))}
             <button class="plugin-row-main" on:click=move |_| open.set(Some(Open::Skill(id_open.clone())))>
                 <span class="lib-row-title">{name.clone()}<span class="badge outline">{skill_category(&skill)}</span></span>
                 <span class="lib-row-sub">{skill_description(&skill)}</span>
@@ -566,6 +633,8 @@ fn sentences(text: &str) -> Vec<&str> {
 #[component]
 fn PluginDetail(
     id: String,
+    /// The tile's letters in the list, so both agree; `None`: initials.
+    mono: Option<String>,
     on_back: Callback<()>,
     on_change: Callback<Option<Open>>,
 ) -> impl IntoView {
@@ -662,7 +731,7 @@ fn PluginDetail(
                     let caps = list(&p["capabilities"]);
                     view! {
                         <header class="plugin-hero">
-                            {tile(&pid, &title)}
+                            {tile(&pid, mono.clone().unwrap_or_else(|| initials(&title)))}
                             <div class="grow">
                                 <h2>{title.clone()}</h2>
                                 <div class="row wrap">
@@ -805,7 +874,7 @@ fn SkillDetailView(
                     let use_skill = use_skill.clone();
                     view! {
                         <header class="plugin-hero">
-                            {tile(&d.info.id, &d.info.name)}
+                            {tile(&d.info.id, initials(&d.info.name))}
                             <div class="grow">
                                 <h2>{d.info.name.clone()}</h2>
                                 <div class="row wrap">
@@ -1072,6 +1141,35 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugins_whose_initials_clash_get_letters_of_their_own() {
+        let list = |titles: &[&str]| {
+            let plugins: Vec<(String, String)> = titles
+                .iter()
+                .map(|t| ((*t).to_owned(), (*t).to_owned()))
+                .collect();
+            let m = monograms(&plugins);
+            titles.iter().map(|t| m[*t].clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            list(&[
+                "Export to Next.js",
+                "Export to React",
+                "Export to Vue",
+                "New design"
+            ]),
+            ["EN", "ER", "EV", "ND"]
+        );
+        // Another language: the words, not English ones.
+        assert_eq!(
+            list(&["Xuất sang Next.js", "Xuất sang React", "Xuất sang Vue"]),
+            ["XN", "XR", "XV"]
+        );
+        // First and last words alike too: the first word's letters.
+        assert_eq!(list(&["Diff review", "Design refine"]), ["DI", "DE"]);
+        assert_eq!(list(&["Build test"]), ["BT"]);
+    }
 
     #[test]
     fn skill_text_drops_what_tells_the_agent_when_to_use_it() {

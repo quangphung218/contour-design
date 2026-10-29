@@ -1,0 +1,15 @@
+node:fs:927
+  return binding.writeString(fd, buffer, offset, length);
+                 ^
+
+Error: ENOSPC: no space left on device, write
+    at Object.writeSync (node:fs:927:3)
+    at writeFileSync (node:fs:2306:26)
+    at file:///opt/claude-code/cli.js:4123:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  errno: -28,
+  code: 'ENOSPC',
+  syscall: 'write'
+}
+
+Node.js v26.7.0

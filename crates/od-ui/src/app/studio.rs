@@ -1446,7 +1446,8 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
 fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     let device = RwSignal::new(Device::Desktop);
     let stage = NodeRef::<leptos::html::Div>::new();
-    let stage_width = observe_width(stage);
+    let stage_size = observe_size(stage);
+    let stage_width = Memo::new(move |_| stage_size.get().0);
     // A device wider than the stage is scaled down to fit, as the original.
     let zoom = Memo::new(move |_| match ctx.past_fit.get() {
         Some(_) => ctx.zoom.get(),
@@ -1462,6 +1463,32 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             ctx.past_fit.set(None);
         }
     });
+    // A deck lays out at its design size and is scaled to the stage, so a
+    // narrow pane shows the same slide, only smaller. Remembered per file:
+    // a reload (an auto-save) keeps the slide size instead of flashing the
+    // reflowed page until the bridge reports the deck again.
+    let deck_file = RwSignal::new(None::<String>);
+    Effect::new(move |_| {
+        if ctx.deck.with(Option::is_some) {
+            deck_file.set(ctx.active_untracked());
+        }
+    });
+    let slide_scale = Memo::new(move |_| {
+        let deck =
+            ctx.deck.with(Option::is_some) || deck_file.with(|f| f.is_some() && *f == ctx.active());
+        if !deck || device.get() != Device::Desktop {
+            return None;
+        }
+        slide_fit(stage_size.get(), zoom.get())
+    });
+    let frame_box = move || match slide_scale.get() {
+        Some(scale) => slide_box(scale),
+        None => zoom_box(device.get(), zoom.get()),
+    };
+    let frame_inner = move || match slide_scale.get() {
+        Some(scale) => slide_frame(scale),
+        None => zoomed(device.get(), zoom.get()),
+    };
     let src = Memo::new(move |_| {
         let path = ctx.active()?;
         let rev = ctx.preview_rev.get();
@@ -1484,6 +1511,21 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             format!("{raw}?v={rev}")
         })
     });
+    // A load that reports no deck (the file is a page now) forgets it. The
+    // bridge posts `od:deck-ready` on the frame's own load, so its message
+    // can land just after the frame's `load` event: give it a moment.
+    let forget_deck = move |_| {
+        let loaded = src.get_untracked();
+        leptos::task::spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(DECK_READY_WITHIN_MS).await;
+            // `try_`: the studio may be gone by then.
+            if src.try_get_untracked() == Some(loaded)
+                && ctx.deck.try_with_untracked(Option::is_none) == Some(true)
+            {
+                deck_file.try_set(None);
+            }
+        });
+    };
     // A new document: deck state comes back with its `od:deck-ready`.
     Effect::new(move |_| {
         src.track();
@@ -1565,8 +1607,8 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 url
             };
             view! {
-                <div class="frame-zoom" style=move || zoom_box(device.get(), zoom.get())>
-                <div class="frame-wrap" style=move || zoomed(device.get(), zoom.get())>
+                <div class="frame-zoom" style=frame_box>
+                <div class="frame-wrap" style=frame_inner>
                     // No allow-same-origin: artifact scripts run in an
                     // opaque origin and cannot call the daemon API.
                     <iframe
@@ -1575,6 +1617,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         title=t(T::Preview)
                         sandbox="allow-scripts allow-forms allow-popups allow-modals"
                         src=url
+                        on:load=forget_deck
                     ></iframe>
                     <CommentLayer ctx=ctx/>
                     {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
@@ -1744,12 +1787,13 @@ fn fit_cap(device: Device, stage: f64) -> Option<u32> {
     Some((stage * 100.0 / f64::from(px)).floor().clamp(1.0, 100.0) as u32)
 }
 
-/// Follows the content width of `node` (a `ResizeObserver`); 0 until it
-/// has been measured or where the observer is missing.
-fn observe_width(node: NodeRef<leptos::html::Div>) -> RwSignal<f64> {
+/// Follows the content size of `node`, (width, height) (a
+/// `ResizeObserver`); 0 until it has been measured or where the observer
+/// is missing.
+fn observe_size(node: NodeRef<leptos::html::Div>) -> RwSignal<(f64, f64)> {
     use wasm_bindgen::JsCast;
     type SizeCallback = wasm_bindgen::closure::Closure<dyn FnMut(js_sys::Array)>;
-    let width = RwSignal::new(0.0);
+    let size = RwSignal::new((0.0, 0.0));
     let observer = StoredValue::new(None::<SendWrapper<(web_sys::ResizeObserver, SizeCallback)>>);
     Effect::new(move |_| {
         let Some(el) = node.get() else {
@@ -1761,7 +1805,8 @@ fn observe_width(node: NodeRef<leptos::html::Div>) -> RwSignal<f64> {
                 .filter_map(|e| e.dyn_into::<web_sys::ResizeObserverEntry>().ok())
                 .next_back();
             if let Some(e) = last {
-                width.set(e.content_rect().width());
+                let rect = e.content_rect();
+                size.set((rect.width(), rect.height()));
             }
         });
         if let Ok(obs) = web_sys::ResizeObserver::new(on_size.as_ref().unchecked_ref()) {
@@ -1776,7 +1821,7 @@ fn observe_width(node: NodeRef<leptos::html::Div>) -> RwSignal<f64> {
             }
         });
     });
-    width
+    size
 }
 
 /// The box a zoomed preview takes in the stage: its on-screen size.
@@ -1806,6 +1851,42 @@ fn zoomed(device: Device, zoom: u32) -> String {
     format!(
         "width:{width};max-width:none;height:calc(100% * 100 / {zoom});transform:scale({});transform-origin:0 0",
         f64::from(zoom) / 100.0
+    )
+}
+
+/// How long after its frame loads a deck has to say `od:deck-ready`, ms.
+const DECK_READY_WITHIN_MS: u32 = 1_000;
+
+/// The size a deck lays out at, px: the deck framework's canvas
+/// (`DECK_FRAMEWORK_DIRECTIVE.md`) and html-ppt's design size.
+pub const SLIDE_SIZE: (f64, f64) = (1920.0, 1080.0);
+
+/// The scale a slide is shown at in a `stage` of (width, height) px: the
+/// whole slide fits, times the chosen zoom. `None` while the stage is not
+/// measured.
+fn slide_fit(stage: (f64, f64), zoom: u32) -> Option<f64> {
+    let (w, h) = stage;
+    if w < 1.0 || h < 1.0 {
+        return None;
+    }
+    let fit = (w / SLIDE_SIZE.0).min(h / SLIDE_SIZE.1);
+    Some(fit * f64::from(zoom) / 100.0)
+}
+
+/// The box a slide at `scale` takes in the stage, centred.
+fn slide_box(scale: f64) -> String {
+    format!(
+        "width:{:.2}px;height:{:.2}px;max-width:none;align-self:var(--slide-align, safe center)",
+        SLIDE_SIZE.0 * scale,
+        SLIDE_SIZE.1 * scale
+    )
+}
+
+/// The frame inside [`slide_box`]: the slide's design size, scaled.
+fn slide_frame(scale: f64) -> String {
+    format!(
+        "width:{}px;height:{}px;max-width:none;transform:scale({scale:.4});transform-origin:0 0",
+        SLIDE_SIZE.0, SLIDE_SIZE.1
     )
 }
 
@@ -1942,6 +2023,26 @@ mod tests {
             "width:calc(390px * 50 / 100);max-width:none"
         );
         assert_eq!(zoomed(Device::Tablet, 100), "width:820px;max-width:none");
+    }
+
+    #[test]
+    fn a_slide_keeps_its_design_size_and_scales_to_the_stage() {
+        // A phone-wide stage, 384 × 520: the slide is 384 px wide.
+        let phone = slide_fit((384.0, 520.0), 100).unwrap();
+        assert!((phone - 0.2).abs() < 1e-9);
+        assert_eq!(
+            slide_box(phone),
+            "width:384.00px;height:216.00px;max-width:none;align-self:var(--slide-align, safe center)"
+        );
+        // A wide, short stage: the height decides.
+        assert!((slide_fit((1600.0, 540.0), 100).unwrap() - 0.5).abs() < 1e-9);
+        // Zoom scales the fit; an unmeasured stage has none.
+        assert!((slide_fit((960.0, 1080.0), 200).unwrap() - 1.0).abs() < 1e-9);
+        assert_eq!(slide_fit((0.0, 0.0), 100), None);
+        assert_eq!(
+            slide_frame(0.5),
+            "width:1920px;height:1080px;max-width:none;transform:scale(0.5000);transform-origin:0 0"
+        );
     }
 
     #[test]

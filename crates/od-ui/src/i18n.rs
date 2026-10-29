@@ -1143,7 +1143,6 @@ messages! {
     VideoPrompts => "Video prompts", "Prompt video";
     MyTemplates => "My templates", "Template của tôi";
     TemplateType => "Type", "Loại";
-    TemplateKind => "Template", "Template";
     SearchTemplates => "Search templates", "Tìm template";
     SearchPrompts => "Search prompts", "Tìm prompt";
     TemplatesCount => "{0} templates", "{0} template";
@@ -1423,6 +1422,9 @@ messages! {
     NextVariations => "Try variations", "Thử phương án khác";
     NextRetry => "Retry", "Thử lại";
     NextSettings => "Open Settings", "Mở Cài đặt";
+    AgentOutput => "Agent output", "Output của agent";
+    AgentOutputEmpty => "The agent wrote nothing else before it stopped.", "Agent không ghi thêm gì trước khi dừng.";
+    AgentOutputFailed => "Couldn't load the agent output.", "Không tải được output của agent.";
     FollowupMobile => "Make it work well on a 390px phone screen.", "Chỉnh cho hiển thị tốt trên màn hình điện thoại 390px.";
     FollowupVariations => "Show me 3 different directions for this design.", "Đề xuất 3 hướng thiết kế khác nhau cho trang này.";
     StarterLanding => "A landing page for a tea shop", "Landing page cho một tiệm trà";
@@ -2099,5 +2101,48 @@ mod tests {
             failures.len(),
             failures.join("\n")
         );
+    }
+
+    /// Settings ▸ About checks for updates, and its subtitle says so in
+    /// every language, not only in English (beta.7).
+    #[test]
+    fn the_about_subtitle_mentions_updates_in_every_language() {
+        const UPDATES: &[(&str, &str)] = &[
+            ("ar", "التحديثات"),
+            ("de", "Updates"),
+            ("es-ES", "actualizaciones"),
+            ("fa", "به‌روزرسانی"),
+            ("fr", "mises à jour"),
+            ("hu", "frissítések"),
+            ("id", "pembaruan"),
+            ("it", "aggiornamenti"),
+            ("ja", "アップデート"),
+            ("ko", "업데이트"),
+            ("pl", "aktualizacje"),
+            ("pt-BR", "atualizações"),
+            ("ru", "обновления"),
+            ("th", "การอัปเดต"),
+            ("tr", "güncellemeler"),
+            ("uk", "оновлення"),
+            ("zh-CN", "更新"),
+            ("zh-TW", "更新"),
+        ];
+        assert!(T::AboutHint.text(Locale::En).contains("updates"));
+        assert!(T::AboutHint.text(Locale::Vi).contains("cập nhật"));
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let on_demand = Locale::ALL.iter().filter(|l| l.is_loaded_on_demand());
+        assert_eq!(
+            on_demand.count(),
+            UPDATES.len(),
+            "a language without a word here"
+        );
+        for (tag, word) in UPDATES {
+            let text = std::fs::read_to_string(dir.join(format!("{tag}.txt"))).unwrap();
+            let hint = text
+                .lines()
+                .find_map(|l| l.strip_prefix("AboutHint = "))
+                .unwrap_or_default();
+            assert!(hint.contains(word), "{tag}: {hint}");
+        }
     }
 }

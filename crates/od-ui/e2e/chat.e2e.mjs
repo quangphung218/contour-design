@@ -388,6 +388,57 @@ try {
   assert.equal(await page.getByTestId('reconnect').count(), 0);
   results.reconnect = 'ok';
 
+  // 14b. The agent crashes mid-turn (stack trace on stderr, exit 1): the
+  // turn says what went wrong in words, offers Retry, and shows the
+  // agent's whole output on request.
+  const turnsBefore = await page.getByTestId('assistant-msg').count();
+  await composer.fill('a pricing page, then crash');
+  await composer.press('Enter');
+  await lastTurnDone(turnsBefore + 1);
+  const crashed = page.getByTestId('assistant-msg').last();
+  assert.equal(await crashed.getAttribute('data-state'), 'failed');
+  const crashError = crashed.getByRole('alert');
+  await crashError.getByText('Error: ENOSPC: no space left on device, write').waitFor();
+  assert.equal(await crashError.count(), 1, 'one error message');
+  assert.doesNotMatch(await crashError.textContent(), /at writeFileSync|Node\.js v/, 'a stack frame is not the message');
+  const failedLine = crashed.locator('[data-testid="run-state"][data-phase="failed"] strong');
+  assert.equal(await failedLine.evaluate((e) => e.getClientRects().length), 1, '"Failed" on one line');
+  await crashed.getByTestId('next-retry').waitFor();
+  // The output's summary shows it opens (a chevron that turns) and is a
+  // full touch target on a phone.
+  const logSummary = crashed.getByTestId('run-log').locator('summary');
+  const chevron = logSummary.locator('.ico:last-child');
+  assert.equal(await logSummary.locator('.ico').count(), 2, 'icon and chevron');
+  assert.equal(await chevron.evaluate((e) => getComputedStyle(e).transform), 'none');
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  // (At 390 the chat may sit behind the preview tab: read the rule.)
+  assert.equal(await logSummary.evaluate((e) => getComputedStyle(e).minHeight), '44px', 'agent output summary is 44 px tall at 390');
+  await page.setViewportSize(viewport);
+  await logSummary.click();
+  await until(async () => (await chevron.evaluate((e) => getComputedStyle(e).transform)) !== 'none', 'chevron turns when open');
+  await until(async () => /at writeFileSync \(node:fs:2306:26\)/.test(await crashed.getByTestId('run-log-text').textContent()), 'agent output shown');
+  assert.match(await crashed.getByTestId('run-log-text').textContent(), /^node:fs:927\n[\s\S]*\nError: ENOSPC[\s\S]*\nNode\.js v26\.7\.0\n?$/);
+  await page.screenshot({ path: OUT + 'chat-run-failed.png' });
+  await crashed.getByTestId('next-retry').click();
+  await lastTurnDone(turnsBefore + 2);
+  assert.match(runBodies.at(-1).message, /a pricing page, then crash/);
+  // Reopened with the run's log out of reach: the output says it could not
+  // be loaded, not that the agent wrote nothing.
+  await page.route('**/api/runs/*/events', (route) => route.fulfill({ status: 500, body: 'down' }));
+  await page.reload();
+  const reopened = page.getByTestId('assistant-msg').nth(turnsBefore);
+  await page.getByTestId('assistant-msg').nth(turnsBefore + 1).waitFor();
+  await reopened.getByTestId('run-log').locator('summary').click();
+  await reopened.getByTestId('run-log-failed').waitFor();
+  await page.unroute('**/api/runs/*/events');
+  // Reopened: the failed turn still says what went wrong (the stored turn
+  // keeps only the agent's events; the message comes from the run's log).
+  await page.reload();
+  await page.getByTestId('assistant-msg').nth(turnsBefore).getByRole('alert').getByText('Error: ENOSPC: no space left on device, write').waitFor();
+  await page.screenshot({ path: OUT + 'chat-run-failed-reopened.png' });
+  results.runFailed = 'ok';
+
   // 15. Rename and delete conversations.
   await page.getByTestId('conversation-menu').click();
   await page.getByTestId('rename-conversation').click();

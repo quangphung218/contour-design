@@ -21,7 +21,7 @@ triggers:
 od:
   mode: prototype
   platform: desktop
-  scenario: operation
+  scenario: operations
   fidelity: high
   preview:
     type: html

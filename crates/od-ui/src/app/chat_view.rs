@@ -598,6 +598,9 @@ fn AssistantView(
             }}
             <super::chat_ops::TurnFiles turn=turn/>
             <RunLine turn=turn/>
+            <Show when=move || turn.with(|tn| matches!(run_phase(tn), RunPhase::Failed))>
+                <RunLog turn=turn/>
+            </Show>
             <Show when=move || is_last.get() && ctx.live_run.get().is_none()>
                 <super::chat_ops::ContinueTasks turn=turn/>
                 <NextSteps turn=turn item_id=item_id.get_value()/>
@@ -667,6 +670,51 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             <strong>{move || line.with(|l| l.2.clone())}</strong>
             {move || line.with(|l| l.3.clone()).map(|d| view! { <span class="muted">{d}</span> })}
         </div>
+    }
+}
+
+/// A failed turn's agent output (what it wrote to stderr), read from the
+/// run's log: the whole story behind the one line above. A turn reopened
+/// from history gets its error message back from the same log.
+#[component]
+fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
+    // `Err`: the log could not be read, which is not an agent that said
+    // nothing.
+    let log = RwSignal::new(None::<Result<String, ()>>);
+    match turn.with_untracked(|t| t.run_id.clone()) {
+        None => log.set(Some(Ok(String::new()))),
+        Some(id) => leptos::task::spawn_local(async move {
+            let url = format!("/api/runs/{}/events", super::api::seg(&id));
+            let record = super::api::get_text(&url)
+                .await
+                .map(|sse| crate::events::run_record(&sse));
+            if let Ok(crate::events::RunRecord {
+                error: Some(error), ..
+            }) = &record
+            {
+                turn.try_update(|t| {
+                    if !t.blocks.iter().any(|b| matches!(b, Block::Error(_))) {
+                        t.blocks.push(Block::Error(error.clone()));
+                    }
+                });
+            }
+            log.try_set(Some(record.map(|r| r.stderr).map_err(drop)));
+        }),
+    }
+    view! {
+        <details class="run-log" data-testid="run-log">
+            <summary>{icon(Glyph::Terminal)}{t(T::AgentOutput)}{icon(Glyph::ChevronDown)}</summary>
+            {move || match log.get() {
+                None => view! { <p class="muted">{t(T::Loading)}</p> }.into_any(),
+                Some(Err(())) => {
+                    view! { <p class="muted" data-testid="run-log-failed">{t(T::AgentOutputFailed)}</p> }.into_any()
+                }
+                Some(Ok(text)) if text.trim().is_empty() => {
+                    view! { <p class="muted">{t(T::AgentOutputEmpty)}</p> }.into_any()
+                }
+                Some(Ok(text)) => view! { <pre class="run-log-text" data-testid="run-log-text">{text}</pre> }.into_any(),
+            }}
+        </details>
     }
 }
 
