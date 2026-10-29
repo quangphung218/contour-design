@@ -179,8 +179,22 @@ async fn reading_a_file_is_not_a_change() {
             "x"
         );
     }
-    let got = tokio::time::timeout(Duration::from_millis(600), sub.recv()).await;
-    assert!(got.is_err(), "a read was reported: {got:?}");
+    // FSEvents may replay the setup write's creation at any delay; that is
+    // an `Add`, which no read can produce (a read let through would come
+    // as a `Change`).
+    let mut reported = Vec::new();
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(600), sub.recv()).await {
+        if !matches!(
+            event,
+            ProjectEvent::FileChanged {
+                kind: ChangeKind::Add,
+                ..
+            }
+        ) {
+            reported.push(event);
+        }
+    }
+    assert!(reported.is_empty(), "a read was reported: {reported:?}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
