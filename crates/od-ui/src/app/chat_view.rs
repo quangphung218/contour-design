@@ -67,15 +67,19 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     let draft = ctx.draft;
     let list_ref = NodeRef::<leptos::html::Div>::new();
 
-    // Keep the newest output in view while streaming.
+    // Keep the newest output in view while streaming, and once the run
+    // ends: the next steps under the last turn show only then, after this
+    // effect has run, so scroll again on the next frame.
     Effect::new(move |_| {
         ctx.items.with(|items| {
             if let Some(ItemKind::Assistant(turn)) = items.last().map(|i| &i.kind) {
                 turn.track();
             }
         });
+        ctx.live_run.track();
         if let Some(el) = list_ref.get() {
             el.set_scroll_top(el.scroll_height());
+            request_animation_frame(move || el.set_scroll_top(el.scroll_height()));
         }
     });
 

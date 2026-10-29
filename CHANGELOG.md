@@ -41,6 +41,9 @@ All notable changes to Contour are recorded here. The format follows
   at that section too.
 - The Settings nav marks the section in view, and follows as the page
   scrolls (`aria-current` for screen readers).
+- When a run ends the chat scrolls down to the Next chips under the reply.
+  Before, they showed only after the run and stayed half hidden behind the
+  composer.
 
 ## [0.2.0-beta.7] - 2026-10-29
 

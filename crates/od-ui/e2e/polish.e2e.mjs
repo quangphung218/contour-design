@@ -5,6 +5,8 @@
 //    no section still opens Settings at its top.
 // 2. The Settings nav marks the section in view (`aria-current`), one at
 //    a time, and follows as the page scrolls.
+// 3. When a run ends, the chat scrolls down so the Next chips under the
+//    reply show above the composer, in a short window and at 390 px.
 // Port: OD_E2E_PORT + 13 (or OD_E2E_POLISH_PORT). Run through ./run.sh.
 
 import { chromium } from 'playwright';
@@ -154,6 +156,37 @@ try {
     main.scrollTop = main.scrollHeight;
   });
   await until(async () => (await current(page)).join() === 'settings-nav-about', 'about marked at the bottom');
+
+  log('3. the chat shows the Next chips when a run ends');
+  for (const [width, height] of [[1440, 640], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    const r = await api('/api/projects', { method: 'POST', body: JSON.stringify({ name: `Scroll ${width}` }) });
+    assert.equal(r.status, 200);
+    await page.goto(`${BASE}/projects/${r.body.project.id}`);
+    const composer = page.getByTestId('composer');
+    await composer.waitFor();
+    const assistant = page.getByTestId('assistant-msg');
+    // Two turns with a plan: the conversation is taller than the chat.
+    for (let turn = 1; turn <= 2; turn++) {
+      await composer.fill(`plan a tea shop page, turn ${turn}`);
+      await composer.press('Enter');
+      await until(
+        async () => (await assistant.count()) === turn && (await assistant.nth(turn - 1).getAttribute('data-state')) === 'succeeded',
+        `turn ${turn} end at ${width}px`,
+      );
+    }
+    const steps = assistant.last().getByTestId('next-steps');
+    await steps.waitFor();
+    await sleep(300);
+    const fit = await page.evaluate(() => {
+      const list = document.querySelector('[data-testid=messages]');
+      const chips = document.querySelector('[data-testid=next-steps]').getBoundingClientRect();
+      const box = list.getBoundingClientRect();
+      return { overflow: list.scrollHeight > list.clientHeight, chipsBottom: chips.bottom, listBottom: box.bottom };
+    });
+    assert.ok(fit.overflow, `the chat scrolls at ${width}px`);
+    assert.ok(fit.chipsBottom <= fit.listBottom + 1, `Next chips in view at ${width}px (${fit.chipsBottom} > ${fit.listBottom})`);
+  }
 
   assert.deepEqual(pageErrors, [], 'no page errors');
   log('ok');
