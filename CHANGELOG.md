@@ -18,7 +18,8 @@ All notable changes to Contour are recorded here. The format follows
 - `od mcp` (the CLI) finds the app like `<app> mcp` does: a
   `--daemon-url` or `OD_DAEMON_URL` with nothing answering within 1 s
   gives way to the running app's URL in `daemon.lock`, said on stderr,
-  and with neither given it uses `daemon.lock` before the default port.
+  and with neither given it uses `daemon.lock` (the default port only
+  when there is none).
 - Settings ▸ About's subtitle mentions updates in every UI language, as
   it does in English and Vietnamese.
 - The three Export plugins no longer share the tile "ET": a plugin whose

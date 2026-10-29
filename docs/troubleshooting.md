@@ -174,8 +174,8 @@ answers at `--daemon-url` (or `OD_DAEMON_URL`) within 1 s, `mcp` uses the
 running app's URL from `<data folder>/daemon.lock` and says so on stderr
 (`mcp: no daemon at …; using the running app's … from daemon.lock`).
 The CLI's `od mcp` does the same from 0.2.0-beta.7, and without
-`--daemon-url` or `OD_DAEMON_URL` it reaches the running app through
-`daemon.lock` before trying the default port.
+`--daemon-url` or `OD_DAEMON_URL` it uses the URL in `daemon.lock`, and
+the default port only when there is no `daemon.lock`.
 Keep Contour open while the agent uses it.
 
 Still failing? Press **Install** again in Integrations. It replaces the old
