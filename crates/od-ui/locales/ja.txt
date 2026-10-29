@@ -986,6 +986,7 @@ CreateHint = Enter で作成、Shift+Enter で改行
 TemplatesTitle = テンプレートから開始
 TemplatesShowAll = すべて表示（{0}）
 TemplatesShowFewer = 表示を減らす
+TemplatesBrowseAll = すべてのテンプレート（{0}）
 TemplateSelected = 選択済み
 NoTemplates = この出力タイプのテンプレートはまだありません。
 ProjectsEmptyTitle = プロジェクトなし

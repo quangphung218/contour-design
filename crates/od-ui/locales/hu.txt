@@ -986,6 +986,7 @@ CreateHint = Enter: létrehozás, Shift+Enter: új sor
 TemplatesTitle = Indulás sablonból
 TemplatesShowAll = Mind ({0})
 TemplatesShowFewer = Kevesebb
+TemplatesBrowseAll = Összes sablon ({0})
 TemplateSelected = Kiválasztva
 NoTemplates = Ehhez a kimeneti típushoz még nincs sablon.
 ProjectsEmptyTitle = Még nincs projekt

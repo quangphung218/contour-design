@@ -986,6 +986,7 @@ CreateHint = Enter 创建，Shift+Enter 换行
 TemplatesTitle = 从模板开始
 TemplatesShowAll = 显示全部 {0} 个
 TemplatesShowFewer = 收起
+TemplatesBrowseAll = 全部模板（{0}）
 TemplateSelected = 已选
 NoTemplates = 此输出类型还没有模板。
 ProjectsEmptyTitle = 还没有项目

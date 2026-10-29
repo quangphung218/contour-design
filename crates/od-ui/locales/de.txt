@@ -986,6 +986,7 @@ CreateHint = Enter zum Erstellen, Umschalt+Enter für neue Zeile
 TemplatesTitle = Mit Vorlage starten
 TemplatesShowAll = Alle {0} anzeigen
 TemplatesShowFewer = Weniger anzeigen
+TemplatesBrowseAll = Alle Vorlagen ({0})
 TemplateSelected = Ausgewählt
 NoTemplates = Für diesen Ausgabetyp gibt es noch keine Vorlagen.
 ProjectsEmptyTitle = Noch keine Projekte

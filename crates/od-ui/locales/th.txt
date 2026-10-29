@@ -986,6 +986,7 @@ CreateHint = Enter เพื่อสร้าง Shift+Enter เพื่อข
 TemplatesTitle = เริ่มจากเทมเพลต
 TemplatesShowAll = แสดงทั้งหมด {0}
 TemplatesShowFewer = แสดงน้อยลง
+TemplatesBrowseAll = เทมเพลตทั้งหมด ({0})
 TemplateSelected = ที่เลือก
 NoTemplates = ยังไม่มีเทมเพลตสำหรับประเภทผลลัพธ์นี้
 ProjectsEmptyTitle = ยังไม่มีโปรเจกต์

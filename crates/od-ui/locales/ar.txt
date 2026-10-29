@@ -986,6 +986,7 @@ CreateHint = Enter للإنشاء، Shift+Enter لسطر جديد
 TemplatesTitle = ابدأ من قالب
 TemplatesShowAll = عرض الكل ({0})
 TemplatesShowFewer = عرض أقل
+TemplatesBrowseAll = كل القوالب ({0})
 TemplateSelected = المحدد
 NoTemplates = لا توجد قوالب لهذا النوع من المخرجات بعد.
 ProjectsEmptyTitle = لا توجد مشاريع بعد

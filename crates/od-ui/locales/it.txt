@@ -986,6 +986,7 @@ CreateHint = Invio per creare, Maiusc+Invio per andare a capo
 TemplatesTitle = Parti da un modello
 TemplatesShowAll = Mostra tutti ({0})
 TemplatesShowFewer = Mostra meno
+TemplatesBrowseAll = Tutti i modelli ({0})
 TemplateSelected = Selezionato
 NoTemplates = Ancora nessun modello per questo tipo di output.
 ProjectsEmptyTitle = Ancora nessun progetto

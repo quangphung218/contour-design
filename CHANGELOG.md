@@ -60,6 +60,10 @@ All notable changes to Contour are recorded here. The format follows
   the Chat/Preview/Files switch, the Next chips, the preview head and the
   Settings buttons are 44 px touch targets. The rail drops Collapse, which
   does nothing there, and Keyboard shortcuts.
+- Home's template gallery links to every template, "All templates (124)",
+  next to "Show all 60" (the chosen type only), so the two counts no longer
+  look like a mismatch. Its industry tags read like the Templates page's:
+  "HR" and "AI", not "Hr" and "Ai".
 
 ## [0.2.0-beta.7] - 2026-10-29
 

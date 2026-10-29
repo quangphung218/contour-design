@@ -1217,6 +1217,7 @@ messages! {
     TemplatesTitle => "Start from a template", "Bắt đầu từ template";
     TemplatesShowAll => "Show all {0}", "Xem cả {0}";
     TemplatesShowFewer => "Show fewer", "Thu gọn";
+    TemplatesBrowseAll => "All templates ({0})", "Tất cả template ({0})";
     TemplateSelected => "Selected", "Đang chọn";
     NoTemplates => "No templates for this output type yet.", "Chưa có template cho loại đầu ra này.";
     ProjectsEmptyTitle => "No projects yet", "Chưa có project nào";

@@ -985,6 +985,7 @@ CreateHint = Enter para criar, Shift+Enter para quebrar a linha
 TemplatesTitle = Começar de um modelo
 TemplatesShowAll = Mostrar todos ({0})
 TemplatesShowFewer = Mostrar menos
+TemplatesBrowseAll = Todos os modelos ({0})
 TemplateSelected = Selecionado
 NoTemplates = Ainda não há modelos para este tipo de saída.
 ProjectsEmptyTitle = Nenhum projeto ainda

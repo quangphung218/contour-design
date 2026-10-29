@@ -562,7 +562,14 @@ pub fn Home() -> impl IntoView {
 
                 // Track C2: the entry tabs.
                 <super::home_tabs::HomeTabs
-                    templates=move || view! { <Gallery templates=chip_templates selected=template pick=pick_template/> }
+                    templates=move || view! {
+                        <Gallery
+                            templates=chip_templates
+                            total=Signal::derive(move || templates.with(|t| t.as_ref().map_or(0, Vec::len)))
+                            selected=template
+                            pick=pick_template
+                        />
+                    }
                     systems=systems
                     design_system=design_system
                     brief=brief
@@ -1033,10 +1040,13 @@ fn FromFolderForm(typing: RwSignal<Option<String>>) -> impl IntoView {
 /// Settings key of the recent working folders (the original's name).
 const RECENT_DIRS_KEY: &str = "recentLinkedDirs";
 
-/// Featured templates of the chosen output type; a card picks it.
+/// Featured templates of the chosen output type; a card picks it. Show all
+/// unfolds that type here; the link next to it opens every type (`total`)
+/// on the Templates page, so the two counts read as part and whole.
 #[component]
 fn Gallery(
     templates: Signal<Option<Vec<SkillSummary>>>,
+    total: Signal<usize>,
     selected: RwSignal<Option<String>>,
     pick: Callback<SkillSummary>,
 ) -> impl IntoView {
@@ -1045,6 +1055,7 @@ fn Gallery(
         <section class="home-section">
             <div class="section-head">
                 <h2>{t(T::TemplatesTitle)}</h2>
+                <div class="row">
                 {move || {
                     let n = templates.with(|t| t.as_ref().map_or(0, Vec::len));
                     (n > GALLERY).then(|| view! {
@@ -1057,6 +1068,12 @@ fn Gallery(
                         </button>
                     })
                 }}
+                {move || (total.get() > 0).then(|| view! {
+                    <a class="btn ghost small" href="/templates" data-testid="home-all-templates">
+                        {tf(T::TemplatesBrowseAll, &[&total.get().to_string()])}
+                    </a>
+                })}
+                </div>
             </div>
             <div class="template-grid">
                 {move || match templates.get() {
@@ -1095,7 +1112,9 @@ fn TemplateCard(
         &template.info.description,
     );
     let tint = format!("cover tint-{}", tint_of(&template.info.id));
-    let tag = scenario_label(&template.info.scenario);
+    let tag = Some(template.info.scenario.trim())
+        .filter(|s| !s.is_empty())
+        .map(super::templates_page::scenario_label);
     let glyph = template_glyph(&template);
     let picked = template.clone();
     let picked_key = template.clone();
@@ -1208,20 +1227,6 @@ fn template_glyph(s: &SkillSummary) -> Glyph {
         "personal" => Glyph::FileText,
         _ => Glyph::Desktop,
     }
-}
-
-/// The scenario as a short tag, capitalised.
-fn scenario_label(scenario: &str) -> Option<String> {
-    let s = scenario.trim();
-    let mut chars = s.chars();
-    let first = chars.next()?;
-    Some(
-        first
-            .to_uppercase()
-            .chain(chars)
-            .collect::<String>()
-            .replace('-', " "),
-    )
 }
 
 /// The trademark note for a brand-named design system.

@@ -986,6 +986,7 @@ CreateHint = Enter برای ایجاد، Shift+Enter برای خط جدید
 TemplatesTitle = شروع از یک قالب
 TemplatesShowAll = نمایش همه {0}
 TemplatesShowFewer = نمایش کمتر
+TemplatesBrowseAll = همه قالب‌ها ({0})
 TemplateSelected = انتخاب‌شده
 NoTemplates = هنوز قالبی برای این نوع خروجی نیست.
 ProjectsEmptyTitle = هنوز پروژه‌ای نیست

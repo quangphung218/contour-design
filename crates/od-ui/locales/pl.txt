@@ -985,6 +985,7 @@ CreateHint = Enter tworzy, Shift+Enter dodaje nowy wiersz
 TemplatesTitle = Zacznij od szablonu
 TemplatesShowAll = Pokaż wszystkie {0}
 TemplatesShowFewer = Pokaż mniej
+TemplatesBrowseAll = Wszystkie szablony ({0})
 TemplateSelected = Wybrano
 NoTemplates = Brak szablonów dla tego typu wyniku.
 ProjectsEmptyTitle = Brak projektów

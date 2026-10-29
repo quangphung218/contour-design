@@ -986,6 +986,7 @@ CreateHint = Enter щоб створити, Shift+Enter для нового ря
 TemplatesTitle = Почати з шаблону
 TemplatesShowAll = Показати всі ({0})
 TemplatesShowFewer = Показати менше
+TemplatesBrowseAll = Усі шаблони ({0})
 TemplateSelected = Вибрано
 NoTemplates = Для цього типу результату шаблонів ще немає.
 ProjectsEmptyTitle = Проєктів ще немає

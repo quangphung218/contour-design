@@ -986,6 +986,7 @@ CreateHint = Enter로 생성, Shift+Enter로 줄바꿈
 TemplatesTitle = 템플릿에서 시작
 TemplatesShowAll = {0}개 모두 보기
 TemplatesShowFewer = 접기
+TemplatesBrowseAll = 모든 템플릿 ({0})
 TemplateSelected = 선택됨
 NoTemplates = 이 출력 유형에 맞는 템플릿이 아직 없습니다.
 ProjectsEmptyTitle = 프로젝트 없음

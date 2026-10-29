@@ -985,6 +985,7 @@ CreateHint = Oluşturmak için Enter, yeni satır için Shift+Enter
 TemplatesTitle = Bir şablondan başla
 TemplatesShowAll = Tümü ({0})
 TemplatesShowFewer = Daha az göster
+TemplatesBrowseAll = Tüm şablonlar ({0})
 TemplateSelected = Seçili
 NoTemplates = Bu çıktı türü için henüz şablon yok.
 ProjectsEmptyTitle = Henüz proje yok

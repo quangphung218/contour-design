@@ -986,6 +986,7 @@ CreateHint = Entrée pour créer, Maj+Entrée pour un saut de ligne
 TemplatesTitle = Partir d'un modèle
 TemplatesShowAll = Tout afficher ({0})
 TemplatesShowFewer = Afficher moins
+TemplatesBrowseAll = Tous les modèles ({0})
 TemplateSelected = Sélectionné
 NoTemplates = Aucun modèle pour ce type de sortie pour l'instant.
 ProjectsEmptyTitle = Aucun projet

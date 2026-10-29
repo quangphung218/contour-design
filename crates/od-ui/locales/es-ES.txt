@@ -986,6 +986,7 @@ CreateHint = Intro para crear, Mayús+Intro para salto de línea
 TemplatesTitle = Empieza desde una plantilla
 TemplatesShowAll = Mostrar las {0}
 TemplatesShowFewer = Mostrar menos
+TemplatesBrowseAll = Todas las plantillas ({0})
 TemplateSelected = Seleccionada
 NoTemplates = Aún no hay plantillas para este tipo de resultado.
 ProjectsEmptyTitle = Aún no hay proyectos
