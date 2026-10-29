@@ -75,7 +75,11 @@ type Client = RunningService<rmcp::RoleClient, ()>;
 
 async fn mcp(daemon_url: &str) -> Client {
     let mut cmd = tokio::process::Command::new(OD);
+    // A data folder with no `daemon.lock`: an unreachable URL must not fall
+    // back to the app running on this machine (its real projects).
+    let no_data = std::env::temp_dir().join(format!("od-m5-no-data-{}", std::process::id()));
     cmd.args(["--daemon-url", daemon_url, "mcp"])
+        .env("OD_DATA_DIR", no_data)
         .stderr(Stdio::null());
     ().serve(TokioChildProcess::new(cmd).unwrap())
         .await

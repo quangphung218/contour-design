@@ -134,6 +134,7 @@ pub fn open(path: &Path) -> Result<Connection> {
     crate::manage::ensure_schema(&conn)?;
     crate::comments::ensure_schema(&conn)?;
     crate::usage::ensure_schema(&conn)?;
+    crate::setup::ensure_schema(&conn)?;
     Ok(conn)
 }
 
@@ -155,6 +156,11 @@ fn migrate(conn: &mut Connection) -> Result<()> {
     for (index, sql) in MIGRATIONS.iter().enumerate().skip(current) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
+        if index == 0 {
+            // A new database: setup is recorded from here, in the same
+            // transaction, so no crash can leave it stamped "not recorded".
+            crate::setup::stamp_new(&tx)?;
+        }
         tx.execute_batch(&format!("PRAGMA user_version = {}", index + 1))?;
         tx.commit()?;
         tracing::info!(version = index + 1, "applied database migration");

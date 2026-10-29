@@ -194,19 +194,113 @@ fn usage_counts_only_projects_people_made_empty() {
             })
             .unwrap();
     }
-    let (automated, _) = store
+    store
+        .create_automation_project(CreateProjectRequest {
+            name: "Routine · today".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+
+    let (_, rows) = store.project_usage().unwrap();
+    assert_eq!(rows.len(), 1, "only the project made here counts");
+    assert_eq!(rows[0].created_at, made.created_at);
+}
+
+#[test]
+fn setup_records_each_step_once_in_a_new_data_folder() {
+    use od_contracts::SetupStep;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let steps = |s: &Store| -> Vec<SetupStep> {
+        s.setup_marks()
+            .unwrap()
+            .unwrap()
+            .iter()
+            .map(|m| m.step)
+            .collect()
+    };
+    assert_eq!(steps(&store), [SetupStep::Opened], "the first open counts");
+    let opened = store.setup_marks().unwrap().unwrap()[0].at;
+
+    assert!(store.mark_setup(SetupStep::AgentFound).unwrap());
+    let found = store.setup_marks().unwrap().unwrap()[1].at;
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    assert!(
+        !store.mark_setup(SetupStep::AgentFound).unwrap(),
+        "written once"
+    );
+    assert_eq!(
+        store.setup_marks().unwrap().unwrap()[1].at,
+        found,
+        "never overwritten"
+    );
+
+    // The media library is nobody's first project; a project made here is.
+    store
         .create_project(CreateProjectRequest {
+            name: "Media".to_owned(),
+            metadata: Some(serde_json::from_value(json!({ "intent": "media-library" })).unwrap()),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    assert!(!steps(&store).contains(&SetupStep::Project));
+    // Nor is an automation's project for one run.
+    store
+        .create_automation_project(CreateProjectRequest {
             name: "Routine · today".to_owned(),
             ..CreateProjectRequest::default()
         })
         .unwrap();
     assert!(
-        store
-            .mark_usage(&automated.id, od_store::usage::UsageMark::Automated)
-            .unwrap()
+        !steps(&store).contains(&SetupStep::Project),
+        "an automation made it"
     );
+    let (project, _) = store
+        .create_project(CreateProjectRequest {
+            name: "First".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    store.mark_setup(SetupStep::Preview).unwrap();
+    // Deleting the first project keeps its mark; reopening stamps nothing new.
+    store.delete_project(&project.id).unwrap();
+    drop(store);
+    let again = open(tmp.path());
+    assert_eq!(
+        steps(&again),
+        [
+            SetupStep::Opened,
+            SetupStep::AgentFound,
+            SetupStep::Project,
+            SetupStep::Preview
+        ],
+        "in step order"
+    );
+    assert_eq!(again.setup_marks().unwrap().unwrap()[0].at, opened);
+}
 
-    let (_, rows) = store.project_usage().unwrap();
-    assert_eq!(rows.len(), 1, "only the project made here counts");
-    assert_eq!(rows[0].created_at, made.created_at);
+#[test]
+fn setup_is_not_recorded_in_a_data_folder_from_before_it() {
+    use od_contracts::SetupStep;
+    let tmp = tempfile::tempdir().unwrap();
+    // A 0.2.0-beta.7 database: the schema without the setup tables.
+    drop(open(tmp.path()));
+    let conn = rusqlite::Connection::open(tmp.path().join("app.sqlite")).unwrap();
+    conn.execute_batch("DROP TABLE setup_marks; DROP TABLE setup_since;")
+        .unwrap();
+    drop(conn);
+    let store = open(tmp.path());
+    assert_eq!(store.setup_marks().unwrap(), None);
+    assert!(
+        !store.mark_setup(SetupStep::AgentFound).unwrap(),
+        "no guess"
+    );
+    store
+        .create_project(CreateProjectRequest {
+            name: "P".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    drop(store);
+    assert_eq!(open(tmp.path()).setup_marks().unwrap(), None, "for good");
 }

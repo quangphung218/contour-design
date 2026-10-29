@@ -1035,14 +1035,15 @@ fn count(n: u32) -> String {
         .into()
 }
 
-/// About ▸ Your usage: three numbers worked out by the daemon from what is
-/// on this machine (`GET /api/usage`), and Copy for a summary to paste into
-/// a discussion ([`crate::usage::summary`]), shown before it is copied. No
+/// About ▸ Your usage: how far first-run setup got and three numbers worked
+/// out by the daemon from what is on this machine (`GET /api/usage`), and
+/// Copy for a summary to paste into the "Share your usage" discussion
+/// ([`crate::usage::summary`]), shown before it is copied. No
 /// telemetry: nothing is sent.
 #[component]
 fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
-    use crate::usage::{RECORDED_SINCE, duration, enough, percent};
-    use od_contracts::{USAGE_MIN_SAMPLE, UsageResponse};
+    use crate::usage::{RECORDED_SINCE, SETUP_SINCE, duration, enough, percent};
+    use od_contracts::{SetupStep, USAGE_MIN_SAMPLE, UsageResponse};
     let shell = Shell::get();
     let usage = LocalResource::new(|| async {
         api::get::<UsageResponse>("/api/usage")
@@ -1082,8 +1083,6 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
             copied.set(Some(ok));
         });
     };
-    let since =
-        move || view! { <dd class="muted small">{tf(T::UsageSince, &[RECORDED_SINCE])}</dd> };
     let not_enough = |key: T, have: u32| {
         view! {
             <dd class="muted" data-state="not-enough">
@@ -1091,7 +1090,51 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
             </dd>
         }
     };
+    let setup_step = |step: SetupStep| {
+        t(match step {
+            SetupStep::Opened => T::SetupStepOpened,
+            SetupStep::AgentFound => T::SetupStepAgent,
+            SetupStep::AgentTested => T::SetupStepAgentTest,
+            SetupStep::Project => T::SetupStepProject,
+            SetupStep::Preview => T::SetupStepPreview,
+        })
+    };
     let numbers = move |u: UsageResponse| {
+        let setup = match u.setup {
+            None => view! {
+                <dd class="muted" data-state="not-recorded">
+                    {tf(T::UsageSetupNotRecorded, &[SETUP_SINCE])}
+                </dd>
+            }
+            .into_any(),
+            Some(s) => {
+                let took = s.took_ms.map(|ms| {
+                    view! {
+                        <dd class="muted small" data-testid="usage-setup-took">
+                            {tf(T::UsageSetupTook, &[&duration(ms)])}
+                        </dd>
+                    }
+                });
+                // Where setup stands now: it may still be under way.
+                let next = s.stopped_at.map(|step| {
+                    view! {
+                        <dd class="muted small" data-testid="usage-setup-next"
+                            data-step=step.as_str()>
+                            {tf(T::UsageSetupNext, &[setup_step(step)])}
+                        </dd>
+                    }
+                });
+                view! {
+                    <dd data-state="value">{tf(T::UsageSetupReached, &[
+                        &count(s.reached),
+                        &SetupStep::ALL.len().to_string(),
+                    ])}</dd>
+                    {took}
+                    {next}
+                }
+                .into_any()
+            }
+        };
         let fp = u.first_preview;
         let first_preview = match fp.median_ms.filter(|_| enough(fp.projects)) {
             Some(ms) => view! {
@@ -1142,11 +1185,14 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
         });
         view! {
             <dl class="usage-list">
+                <div data-testid="usage-setup">
+                    <dt>{t(T::UsageSetup)}</dt>{setup}
+                </div>
                 <div data-testid="usage-first-preview">
-                    <dt>{t(T::UsageFirstPreview)}</dt>{first_preview}{since}
+                    <dt>{t(T::UsageFirstPreview)}</dt>{first_preview}
                 </div>
                 <div data-testid="usage-engaged">
-                    <dt>{t(T::UsageEngaged)}</dt>{engaged}{since}
+                    <dt>{t(T::UsageEngaged)}</dt>{engaged}
                 </div>
                 <div data-testid="usage-runs">
                     <dt>{t(T::UsageFailedRuns)}</dt>{runs}{stopped}
@@ -1157,6 +1203,7 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
     view! {
         <section class="about-usage" data-testid="about-usage" aria-labelledby="about-usage-title">
             <h3 id="about-usage-title">{t(T::YourUsage)}</h3>
+            <p class="muted small" data-testid="usage-since">{tf(T::UsageSince, &[RECORDED_SINCE])}</p>
             <p class="muted small">{t(T::YourUsageHint)}</p>
             {move || match usage.get() {
                 None => view! { <span class="spinner"></span> }.into_any(),

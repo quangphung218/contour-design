@@ -1,12 +1,47 @@
-//! Settings ▸ About ▸ Your usage: how the three numbers read, and the
-//! short summary Copy puts on the clipboard. The summary is English
-//! whatever the UI language, for the maintainers who read the discussion,
-//! and carries no project name, path, prompt or file content.
+//! Settings ▸ About ▸ Your usage: how the numbers read, and the short
+//! summary Copy puts on the clipboard. The summary is English whatever the
+//! UI language, for the maintainers who read the "Share your usage"
+//! discussion on GitHub, and carries no project name, path, prompt or file
+//! content.
 
-use od_contracts::{ENGAGED_TURNS, USAGE_MIN_SAMPLE, UsageResponse};
+use od_contracts::{ENGAGED_TURNS, SetupStep, SetupUsage, USAGE_MIN_SAMPLE, UsageResponse};
 
 /// The first release that records previews and exports.
 pub const RECORDED_SINCE: &str = "0.2.0-beta.7";
+
+/// The first release that records first-run setup.
+pub const SETUP_SINCE: &str = "0.2.0-beta.8";
+
+/// A step's name in the English summary ("stopped at: agent").
+#[must_use]
+pub fn step_name(step: SetupStep) -> &'static str {
+    match step {
+        SetupStep::Opened => "open",
+        SetupStep::AgentFound => "agent",
+        SetupStep::AgentTested => "agent test",
+        SetupStep::Project => "first project",
+        SetupStep::Preview => "first preview",
+    }
+}
+
+/// The summary's setup line, without the "Setup: " label.
+#[must_use]
+pub fn setup_line(setup: Option<&SetupUsage>) -> String {
+    let Some(s) = setup else {
+        return format!("not recorded (data folder older than {SETUP_SINCE})");
+    };
+    let mut out = format!("reached step {} of {}", s.reached, SetupStep::ALL.len());
+    if let Some(ms) = s.took_ms {
+        out.push_str(&format!(
+            ", {} from first open to first preview",
+            duration(ms)
+        ));
+    }
+    if let Some(step) = s.stopped_at {
+        out.push_str(&format!(", stopped at: {}", step_name(step)));
+    }
+    out
+}
 
 /// "45s", "4m 05s", "2h 10m", "3d 4h".
 #[must_use]
@@ -54,21 +89,22 @@ pub fn enough(n: u32) -> bool {
 #[must_use]
 pub fn summary(u: &UsageResponse, version: &str, os: &str, agent: Option<&str>) -> String {
     let mut out = format!(
-        "Contour {version} · {os} · agent: {}\n",
+        "Contour {version} · {os} · agent: {} · since {RECORDED_SINCE}\n",
         agent.unwrap_or("none")
     );
+    out.push_str(&format!("Setup: {}\n", setup_line(u.setup.as_ref())));
+    let needs = |what: &str, have: u32| {
+        format!("needs {USAGE_MIN_SAMPLE} {what} to measure (you have {have})")
+    };
     let fp = &u.first_preview;
     out.push_str("Time to first preview: ");
     match fp.median_ms.filter(|_| enough(fp.projects)) {
         Some(ms) => out.push_str(&format!(
-            "median {} ({} projects, since {RECORDED_SINCE})\n",
+            "median {} ({} projects)\n",
             duration(ms),
             group(fp.projects)
         )),
-        None => out.push_str(&format!(
-            "not enough projects yet ({} of {USAGE_MIN_SAMPLE}, since {RECORDED_SINCE})\n",
-            fp.projects
-        )),
+        None => out.push_str(&format!("{}\n", needs("projects", fp.projects))),
     }
     let e = &u.engaged;
     out.push_str(&format!(
@@ -76,16 +112,13 @@ pub fn summary(u: &UsageResponse, version: &str, os: &str, agent: Option<&str>) 
     ));
     if enough(e.projects) {
         out.push_str(&format!(
-            "{}% ({}/{}, since {RECORDED_SINCE})\n",
+            "{}% ({}/{})\n",
             percent(e.engaged, e.projects),
             group(e.engaged),
             group(e.projects)
         ));
     } else {
-        out.push_str(&format!(
-            "not enough projects yet ({} of {USAGE_MIN_SAMPLE}, since {RECORDED_SINCE})\n",
-            e.projects
-        ));
+        out.push_str(&format!("{}\n", needs("projects", e.projects)));
     }
     let r = &u.runs;
     out.push_str("Failed runs: ");
@@ -105,10 +138,7 @@ pub fn summary(u: &UsageResponse, version: &str, os: &str, agent: Option<&str>) 
             out.push_str(&format!(": {}", causes.join(", ")));
         }
     } else {
-        out.push_str(&format!(
-            "not enough runs yet ({} of {USAGE_MIN_SAMPLE})",
-            r.total
-        ));
+        out.push_str(&needs("runs", r.total));
     }
     if r.canceled > 0 {
         out.push_str(&format!(
@@ -122,7 +152,7 @@ pub fn summary(u: &UsageResponse, version: &str, os: &str, agent: Option<&str>) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use od_contracts::{EngagedUsage, FirstPreviewUsage, RunCause, RunUsage};
+    use od_contracts::{EngagedUsage, FirstPreviewUsage, RunCause, RunUsage, SetupMark};
 
     #[test]
     fn durations_read_at_a_glance() {
@@ -163,14 +193,16 @@ mod tests {
                 engaged: 0,
             },
             runs: RunUsage::default(),
+            setup: None,
         };
         let s = summary(&u, "0.2.0-beta.7", "macos aarch64", None);
         assert_eq!(
             s,
-            "Contour 0.2.0-beta.7 · macos aarch64 · agent: none\n\
-             Time to first preview: not enough projects yet (2 of 3, since 0.2.0-beta.7)\n\
-             Projects with an export or 3+ chat turns: not enough projects yet (2 of 3, since 0.2.0-beta.7)\n\
-             Failed runs: not enough runs yet (0 of 3)"
+            "Contour 0.2.0-beta.7 · macos aarch64 · agent: none · since 0.2.0-beta.7\n\
+             Setup: not recorded (data folder older than 0.2.0-beta.8)\n\
+             Time to first preview: needs 3 projects to measure (you have 2)\n\
+             Projects with an export or 3+ chat turns: needs 3 projects to measure (you have 2)\n\
+             Failed runs: needs 3 runs to measure (you have 0)"
         );
         assert!(!s.contains('%'), "no made-up 0%");
     }
@@ -202,15 +234,52 @@ mod tests {
                 ],
                 canceled: 2,
             },
+            setup: Some(SetupUsage {
+                steps: Vec::new(),
+                reached: 5,
+                stopped_at: None,
+                took_ms: Some(750_000),
+            }),
         };
         let s = summary(&u, "0.2.0-beta.7", "macos aarch64", Some("claude"));
         assert_eq!(
             s,
-            "Contour 0.2.0-beta.7 · macos aarch64 · agent: claude\n\
-             Time to first preview: median 4m 12s (4 projects, since 0.2.0-beta.7)\n\
-             Projects with an export or 3+ chat turns: 75% (3/4, since 0.2.0-beta.7)\n\
+            "Contour 0.2.0-beta.7 · macos aarch64 · agent: claude · since 0.2.0-beta.7\n\
+             Setup: reached step 5 of 5, 12m 30s from first open to first preview\n\
+             Time to first preview: median 4m 12s (4 projects)\n\
+             Projects with an export or 3+ chat turns: 75% (3/4)\n\
              Failed runs: 10% (1,234/12,345): spawn_failed 1,233, timeout 1; \
              stopped by the user: 2 (not counted)"
+        );
+    }
+
+    #[test]
+    fn the_setup_line_says_where_setup_stopped() {
+        let stopped = SetupUsage {
+            steps: vec![SetupMark {
+                step: SetupStep::Opened,
+                at: 1,
+            }],
+            reached: 1,
+            stopped_at: Some(SetupStep::AgentFound),
+            took_ms: None,
+        };
+        assert_eq!(
+            setup_line(Some(&stopped)),
+            "reached step 1 of 5, stopped at: agent"
+        );
+        let tested = SetupUsage {
+            reached: 3,
+            stopped_at: Some(SetupStep::Project),
+            ..SetupUsage::default()
+        };
+        assert_eq!(
+            setup_line(Some(&tested)),
+            "reached step 3 of 5, stopped at: first project"
+        );
+        assert_eq!(
+            setup_line(None),
+            "not recorded (data folder older than 0.2.0-beta.8)"
         );
     }
 }

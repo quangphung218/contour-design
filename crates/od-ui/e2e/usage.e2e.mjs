@@ -1,5 +1,6 @@
-// UI e2e: Settings ▸ About ▸ Your usage. A fresh data folder says "Not
-// enough … yet" for all three numbers (no made-up 0%) and Copy says so too.
+// UI e2e: Settings ▸ About ▸ Your usage. A fresh data folder says "Needs
+// 3 … to measure" for all three numbers (no made-up 0%), setup stopped at
+// the agent test, "Since" once under the title, and Copy says so too.
 // Then three projects: one gets three chat turns in the studio (its preview
 // is the first preview), one is exported from the Export menu, one is only
 // previewed; runs also fail for a missing agent (`codex` is not on PATH)
@@ -111,6 +112,9 @@ try {
   }
   const v = (await api('/api/version')).body;
   await put('/api/app-config', { onboardingCompleted: true, agentId: 'claude' });
+  // Setup step 2 (the mock agent found) before the screen opens, so the
+  // summary below does not race the app's own detection.
+  await api('/api/agents');
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
@@ -138,31 +142,38 @@ try {
     await section.scrollIntoViewIfNeeded();
   };
 
-  // 1. Nothing yet: "Not enough", never a 0%. Opening the screen and
-  // copying stay on loopback.
+  // 1. Nothing yet: "Needs 3 … to measure", never a 0%. Setup stopped at
+  // the agent test. Opening the screen and copying stay on loopback.
   const seen = [];
   const track = (req) => seen.push(new URL(req.url()));
   page.on('request', track);
   await openAbout();
   for (const [id, text] of [
-    ['usage-first-preview', 'Not enough projects yet (0 of 3)'],
-    ['usage-engaged', 'Not enough projects yet (0 of 3)'],
-    ['usage-runs', 'Not enough runs yet (0 of 3)'],
+    ['usage-first-preview', 'Needs 3 projects to measure (you have 0)'],
+    ['usage-engaged', 'Needs 3 projects to measure (you have 0)'],
+    ['usage-runs', 'Needs 3 runs to measure (you have 0)'],
   ]) {
     assert.equal(await value(id).textContent(), text, id);
     assert.equal(await value(id).getAttribute('data-state'), 'not-enough', id);
   }
   assert.ok(!(await section.textContent()).includes('%'), 'no made-up percentage');
-  assert.equal(await page.getByTestId('usage-first-preview').getByText('Since 0.2.0-beta.7').count(), 1);
+  // "Since" once, under the title, not under every number.
+  assert.equal(await section.getByText('Since 0.2.0-beta.7', { exact: true }).count(), 1);
+  assert.equal(await page.getByTestId('usage-since').textContent(), 'Since 0.2.0-beta.7');
+  assert.equal(await value('usage-setup').textContent(), 'Reached step 2 of 5');
+  assert.equal(await page.getByTestId('usage-setup-next').textContent(), 'Next step: agent test');
+  // Where to paste it: the Discussions thread; a bug goes in an issue.
+  assert.match(await section.textContent(), /“Share your usage” discussion on GitHub; for a bug, open an issue with steps to reproduce/);
   await page.getByTestId('usage-copy').click();
-  await page.getByTestId('usage-copied').filter({ hasText: 'Summary copied.' }).waitFor();
+  await page.getByTestId('usage-copied').filter({ hasText: 'Summary copied. Paste it into the “Share your usage” discussion on GitHub.' }).waitFor();
   const empty = await clipboard();
   assert.equal(
     empty,
-    `Contour ${v.version} · ${v.platform} ${v.arch} · agent: claude\n` +
-      'Time to first preview: not enough projects yet (0 of 3, since 0.2.0-beta.7)\n' +
-      'Projects with an export or 3+ chat turns: not enough projects yet (0 of 3, since 0.2.0-beta.7)\n' +
-      'Failed runs: not enough runs yet (0 of 3)',
+    `Contour ${v.version} · ${v.platform} ${v.arch} · agent: claude · since 0.2.0-beta.7\n` +
+      'Setup: reached step 2 of 5, stopped at: agent test\n' +
+      'Time to first preview: needs 3 projects to measure (you have 0)\n' +
+      'Projects with an export or 3+ chat turns: needs 3 projects to measure (you have 0)\n' +
+      'Failed runs: needs 3 runs to measure (you have 0)',
   );
   // What Copy takes is on screen first, folded away.
   assert.equal(await page.getByTestId('usage-preview').getAttribute('open'), null);
@@ -174,7 +185,7 @@ try {
   assert.equal(usageCalls.length, 1, 'one local request for the numbers');
   assert.ok(seen.every((u) => u.hostname === '127.0.0.1' || u.protocol !== 'http:'), 'only loopback');
   await shot('usage-empty-1440');
-  results.empty = 'not enough ×3, copy says so, 0 external requests';
+  results.empty = 'needs 3 ×3, setup at step 2, copy says so, 0 external requests';
 
   log('step', '2. Project A');
   // 2. Project A: three turns in the studio, its page shown in the preview.
@@ -252,11 +263,13 @@ try {
   await until(async () => (await clipboard()) !== empty, 'new summary copied');
   const text = await clipboard();
   const lines = text.split('\n');
-  assert.equal(lines.length, 4, text);
-  assert.equal(lines[0], `Contour ${v.version} · ${v.platform} ${v.arch} · agent: claude`);
-  assert.match(lines[1], /^Time to first preview: median \S+( \S+)? \(3 projects, since 0\.2\.0-beta\.7\)$/);
-  assert.equal(lines[2], 'Projects with an export or 3+ chat turns: 67% (2/3, since 0.2.0-beta.7)');
-  assert.equal(lines[3], 'Failed runs: 25% (1/4): spawn_failed 1; stopped by the user: 1 (not counted)');
+  assert.equal(lines.length, 5, text);
+  assert.equal(lines[0], `Contour ${v.version} · ${v.platform} ${v.arch} · agent: claude · since 0.2.0-beta.7`);
+  // The agent test was never run here; the furthest step counts.
+  assert.match(lines[1], /^Setup: reached step 5 of 5, \S+( \S+)? from first open to first preview$/);
+  assert.match(lines[2], /^Time to first preview: median \S+( \S+)? \(3 projects\)$/);
+  assert.equal(lines[3], 'Projects with an export or 3+ chat turns: 67% (2/3)');
+  assert.equal(lines[4], 'Failed runs: 25% (1/4): spawn_failed 1; stopped by the user: 1 (not counted)');
   assert.equal(await page.getByTestId('usage-summary').textContent(), text, 'Copy takes what is shown');
   for (const secret of [...names, ...projects, 'secret prompt', 'index.html', scratch]) {
     assert.ok(!text.includes(secret), `summary leaks ${secret}`);
@@ -338,6 +351,7 @@ try {
   await section.scrollIntoViewIfNeeded();
   assert.equal(await section.locator('h3').textContent(), 'Số liệu sử dụng');
   assert.equal(await value('usage-engaged').textContent(), '67% · 2/3 project');
+  assert.equal(await value('usage-setup').textContent(), 'Đã tới bước 5/5');
   assert.equal(await page.getByTestId('usage-copy').textContent(), 'Chép tóm tắt');
   await shot('usage-1440-vi');
   await put('/api/app-config', { locale: 'en' });

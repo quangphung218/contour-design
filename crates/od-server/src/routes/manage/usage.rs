@@ -1,26 +1,37 @@
 //! Settings ▸ About ▸ Your usage (no telemetry: computed on request, from
 //! what is already on this machine, and never sent anywhere):
 //!
-//! - `GET /api/usage` time to first preview, projects put to use, and
-//!   finished runs by failure cause, Stops apart ([`UsageResponse`]).
+//! - `GET /api/usage` time to first preview, projects put to use,
+//!   finished runs by failure cause, Stops apart, and how far first-run
+//!   setup got ([`UsageResponse`]).
 //! - `POST /api/projects/:id/exported` records the project's first export.
 //!   Exports run in several routes and one is read through `raw`, so the UI
 //!   reports a finished download here. The first preview is recorded by the
 //!   preview route itself.
+//!
+//! Setup steps ([`SetupStep`]) are recorded where they happen: the first
+//! open by the store, an agent found by `GET /api/agents`, a passed test by
+//! `POST /api/test/connection`, the first project by the store and the
+//! first preview by the preview route.
 
 use crate::error::{ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::{Path, State};
 use od_contracts::{
     ENGAGED_TURNS, EngagedUsage, FailureCategory, FirstPreviewUsage, RunCause, RunStatus, RunUsage,
-    UsageResponse,
+    SetupMark, SetupStep, SetupUsage, UsageResponse,
 };
 use od_store::usage::{ProjectUsage, UsageMark};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub async fn usage(State(state): State<AppState>) -> ApiResult<ApiJson<UsageResponse>> {
-    let (since, projects) = state.blocking(|s| s.project_usage()).await?;
+    let (since, projects, setup) = state
+        .blocking(|s| {
+            let (since, projects) = s.project_usage()?;
+            Ok((since, projects, s.setup_marks()?))
+        })
+        .await?;
     let runs = state
         .runs
         .registry
@@ -31,7 +42,38 @@ pub async fn usage(State(state): State<AppState>) -> ApiResult<ApiJson<UsageResp
             (run.status(), category)
         })
         .collect::<Vec<_>>();
-    Ok(ApiJson(summarize(since, &projects, &runs)))
+    let mut usage = summarize(since, &projects, &runs);
+    usage.setup = setup.map(setup_usage);
+    Ok(ApiJson(usage))
+}
+
+/// Records a setup step the first time it happens. A failure is logged,
+/// never passed on: the request it rides on matters more.
+pub(crate) async fn record_setup(state: &AppState, step: SetupStep) {
+    if let Err(err) = state.blocking(move |s| s.mark_setup(step)).await {
+        tracing::warn!(error = %err.message, ?step, "recording a setup step failed");
+    }
+}
+
+/// How far setup got from its marks (in step order): the furthest step,
+/// the one after it until the first preview, and the time from the first
+/// open to the first preview.
+#[must_use]
+pub fn setup_usage(steps: Vec<SetupMark>) -> SetupUsage {
+    let furthest = steps.iter().map(|m| m.step).max();
+    let at = |step| steps.iter().find(|m| m.step == step).map(|m| m.at);
+    let took_ms = at(SetupStep::Opened)
+        .zip(at(SetupStep::Preview))
+        .map(|(open, preview)| (preview - open).max(0));
+    SetupUsage {
+        reached: furthest.map_or(0, SetupStep::number),
+        stopped_at: match furthest {
+            None => Some(SetupStep::Opened),
+            Some(step) => SetupStep::ALL.into_iter().find(|s| *s > step),
+        },
+        took_ms,
+        steps,
+    }
 }
 
 /// `{"recorded": bool}`: false when the project already had an export or
@@ -102,6 +144,7 @@ pub fn summarize(
             causes,
             canceled,
         },
+        setup: None,
     }
 }
 
@@ -207,6 +250,66 @@ mod tests {
             .map(|c| (c.cause.as_str(), c.count))
             .collect();
         assert_eq!(causes, [("spawn_failed", 2), ("other", 1), ("timeout", 1)]);
+    }
+
+    fn marks(steps: &[(SetupStep, i64)]) -> Vec<SetupMark> {
+        steps
+            .iter()
+            .map(|&(step, at)| SetupMark { step, at })
+            .collect()
+    }
+
+    #[test]
+    fn setup_stopped_at_the_agent_when_none_was_found() {
+        let u = setup_usage(marks(&[(SetupStep::Opened, 1_000)]));
+        assert_eq!(u.reached, 1);
+        assert_eq!(u.stopped_at, Some(SetupStep::AgentFound));
+        assert_eq!(u.took_ms, None);
+    }
+
+    #[test]
+    fn setup_through_the_first_preview_says_how_long_it_took() {
+        let u = setup_usage(marks(&[
+            (SetupStep::Opened, 1_000),
+            (SetupStep::AgentFound, 2_000),
+            (SetupStep::AgentTested, 5_000),
+            (SetupStep::Project, 9_000),
+            (SetupStep::Preview, 61_000),
+        ]));
+        assert_eq!((u.reached, u.stopped_at), (5, None));
+        assert_eq!(u.took_ms, Some(60_000));
+        assert_eq!(u.steps.len(), 5);
+    }
+
+    #[test]
+    fn setup_counts_the_furthest_step_even_with_one_skipped() {
+        // An API key passes its test without an agent ever found.
+        let u = setup_usage(marks(&[
+            (SetupStep::Opened, 1_000),
+            (SetupStep::AgentTested, 3_000),
+        ]));
+        assert_eq!(u.reached, 3);
+        assert_eq!(u.stopped_at, Some(SetupStep::Project));
+        // A clock step backwards is no negative time.
+        let back = setup_usage(marks(&[
+            (SetupStep::Opened, 5_000),
+            (SetupStep::Preview, 4_000),
+        ]));
+        assert_eq!(back.took_ms, Some(0));
+        let none = setup_usage(Vec::new());
+        assert_eq!(
+            (none.reached, none.stopped_at),
+            (0, Some(SetupStep::Opened))
+        );
+    }
+
+    #[test]
+    fn setup_step_names_match_the_wire_names() {
+        for step in SetupStep::ALL {
+            assert_eq!(serde_json::to_value(step).unwrap(), json!(step.as_str()));
+            assert_eq!(SetupStep::parse(step.as_str()), Some(step));
+        }
+        assert_eq!(SetupStep::ALL.map(SetupStep::number), [1, 2, 3, 4, 5]);
     }
 
     #[test]

@@ -8,6 +8,30 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Settings ▸ About ▸ Your usage shows how far first-run setup got, out of
+  5 steps: the app opened, an agent found, an agent (or API key) passed
+  its test, the first project, the first preview. Each step is recorded
+  once, the first time it happens, on this machine only and never sent
+  anywhere; an automation's project is not a first project. It reads
+  "Reached step 5 of 5" with the time from the first open to the first
+  preview, or the step still to come ("Next step: agent" for someone who
+  quit at onboarding without an agent). Copy summary adds a `Setup:` line
+  that names where setup stopped (`stopped at: agent`). A data folder
+  made before this version says "not recorded" instead of a guess. In
+  every UI language.
+
+### Changed
+
+- Your usage: a number without enough data reads "Needs 3 projects to
+  measure (you have 1)", not "Not enough projects yet (1 of 3)", which
+  read like 1 of 3 projects exported. "Since 0.2.0-beta.7" is said once,
+  under the title, instead of under every number (in the summary, once on
+  its first line). Copy summary points to the "Share your usage" thread in
+  [GitHub Discussions](https://github.com/quangphung218/contour-design/discussions),
+  and to an issue with steps to reproduce for a bug. In every UI language.
+
 ## [0.2.0-beta.7] - 2026-10-29
 
 ### Added

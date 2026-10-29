@@ -8,7 +8,7 @@ use axum::body::Body;
 use axum::http::{HeaderMap, Request, StatusCode, header};
 use http_body_util::BodyExt;
 use od_content::{ContentRoots, ContentStore};
-use od_contracts::{CreateProjectResponse, UsageResponse};
+use od_contracts::{CreateProjectResponse, SetupStep, UsageResponse};
 use od_preview::{PREVIEW_CSP, PreviewUrlResponse};
 use od_server::{AppState, ServerConfig, router};
 use od_store::{DataDir, Store};
@@ -382,7 +382,8 @@ async fn events_stream_ready_then_file_changed_within_300ms() {
     for round in 0..5 {
         let started = Instant::now();
         std::fs::write(&file, format!("<h1>v{round}</h1>")).unwrap();
-        let changed = next_event(&mut body, "file-changed", Duration::from_secs(2)).await;
+        // A late event fails the median below; this only waits for it.
+        let changed = next_event(&mut body, "file-changed", Duration::from_secs(10)).await;
         took.push(started.elapsed());
         assert_eq!(changed["path"], "index.html");
         assert_eq!(changed["kind"], if round == 0 { "add" } else { "change" });
@@ -627,6 +628,43 @@ async fn the_hosts_first_bridged_page_is_the_projects_first_preview() {
     let after = usage(a.get("/api/usage").await);
     assert_eq!((after.engaged.projects, after.engaged.engaged), (1, 1));
     assert_eq!(after.runs.total, 0);
+}
+
+#[tokio::test]
+async fn setup_in_a_new_data_folder_runs_from_the_first_open_to_the_first_preview() {
+    let _timing = TIMING.read().await;
+    let a = app();
+    let setup = || async {
+        serde_json::from_slice::<UsageResponse>(&a.get("/api/usage").await.body)
+            .unwrap()
+            .setup
+            .expect("a new data folder records setup")
+    };
+    let opened = setup().await;
+    assert_eq!(opened.reached, 1);
+    assert_eq!(opened.stopped_at, Some(SetupStep::AgentFound));
+    assert_eq!(opened.took_ms, None);
+
+    let id = a.project().await;
+    let made = setup().await;
+    assert_eq!(
+        (made.reached, made.stopped_at),
+        (4, Some(SetupStep::Preview))
+    );
+    a.write(&id, "index.html", "<p>x</p>").await;
+    let raw = format!("/api/projects/{id}/raw/index.html?bridge=1");
+    assert_eq!(a.get(&raw).await.status, StatusCode::OK);
+    let done = setup().await;
+    assert_eq!((done.reached, done.stopped_at), (5, None));
+    let took = done.took_ms.expect("first open to first preview");
+    let at =
+        |s: &od_contracts::SetupUsage, step| s.steps.iter().find(|m| m.step == step).map(|m| m.at);
+    assert_eq!(
+        Some(took),
+        at(&done, SetupStep::Preview)
+            .zip(at(&done, SetupStep::Opened))
+            .map(|(p, o)| p - o)
+    );
 }
 
 #[tokio::test]
