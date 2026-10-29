@@ -286,6 +286,18 @@ try {
   await page.getByTestId('deck-present').click();
   await frame.locator('body').press('Escape');
   await until(async () => !(await page.getByTestId('preview-pane').getAttribute('class')).includes('presenting'), 'Esc from the frame');
+  // The same file rewritten as a page is no longer laid out as a slide.
+  {
+    const pid = new URL(page.url()).pathname.split('/').pop();
+    const write = (content) => fetch(`${BASE}/api/projects/${pid}/files`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'deck.html', content }) });
+    const deckHtml = await (await fetch(`${BASE}/api/projects/${pid}/raw/deck.html`)).text();
+    await write('<!doctype html><h1>Not a deck any more</h1>');
+    await frame.getByRole('heading', { name: 'Not a deck any more' }).waitFor();
+    await until(async () => (await frame.locator('body').evaluate(() => innerWidth)) !== 1920, 'a page that was a deck reflows');
+    await write(deckHtml);
+    await until(async () => (await counter.textContent()) === '1 / 3', 'deck again 1/3');
+    await until(async () => (await frame.locator('body').evaluate(() => `${innerWidth}×${innerHeight}`)) === '1920×1080', 'a deck again lays out as a slide');
+  }
   results.deck = 'ok';
 
   // 11. Quick switcher and tabs.

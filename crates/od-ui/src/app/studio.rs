@@ -1511,6 +1511,21 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             format!("{raw}?v={rev}")
         })
     });
+    // A load that reports no deck (the file is a page now) forgets it. The
+    // bridge posts `od:deck-ready` on the frame's own load, so its message
+    // can land just after the frame's `load` event: give it a moment.
+    let forget_deck = move |_| {
+        let loaded = src.get_untracked();
+        leptos::task::spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(DECK_READY_WITHIN_MS).await;
+            // `try_`: the studio may be gone by then.
+            if src.try_get_untracked() == Some(loaded)
+                && ctx.deck.try_with_untracked(Option::is_none) == Some(true)
+            {
+                deck_file.try_set(None);
+            }
+        });
+    };
     // A new document: deck state comes back with its `od:deck-ready`.
     Effect::new(move |_| {
         src.track();
@@ -1602,6 +1617,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                         title=t(T::Preview)
                         sandbox="allow-scripts allow-forms allow-popups allow-modals"
                         src=url
+                        on:load=forget_deck
                     ></iframe>
                     <CommentLayer ctx=ctx/>
                     {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
@@ -1837,6 +1853,9 @@ fn zoomed(device: Device, zoom: u32) -> String {
         f64::from(zoom) / 100.0
     )
 }
+
+/// How long after its frame loads a deck has to say `od:deck-ready`, ms.
+const DECK_READY_WITHIN_MS: u32 = 1_000;
 
 /// The size a deck lays out at, px: the deck framework's canvas
 /// (`DECK_FRAMEWORK_DIRECTIVE.md`) and html-ppt's design size.
