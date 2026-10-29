@@ -981,7 +981,8 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   .preview-head > :is(.reload-preview, .tool-bar, .head-divider, .zoom, [data-testid="show-files"]) { order: 1; }
   .preview-head.tools-open::before { content: ""; order: 1; flex-basis: 100%; }
   .preview-head > .icon-btn, .preview-head .segmented .seg { min-width: 44px; min-height: 44px; }
-  .preview-head .tool-bar { flex-wrap: wrap; }
+  /* `.tool-bar` is `flex: none`: it must shrink to the row to wrap at all. */
+  .preview-head .tool-bar { flex: 1 1 100%; flex-wrap: wrap; }
   .preview-head :is(.tool-bar, .zoom) :is(.icon-btn, .btn, .zoom-value) { min-width: 44px; min-height: 44px; }
 }
 /* Phone: the slide takes the width, at the top of the stage next to the

@@ -236,6 +236,15 @@ try {
       await page.getByTestId('tool-bar').waitFor();
       const after = await more.boundingBox();
       assert.deepEqual([after.x, after.y], [before.x, before.y], 'More stays put when it opens the tools');
+      // Every tool shows, none cut off past the head's right edge.
+      const cut = await page.evaluate(() => {
+        const edge = document.querySelector('[data-testid=preview-toolbar]').getBoundingClientRect().right;
+        return [...document.querySelector('[data-testid=tool-bar]').children]
+          .map((e) => ({ e, r: e.getBoundingClientRect() }))
+          .filter(({ r }) => r.width > 0 && r.right > edge + 0.5)
+          .map(({ e, r }) => `${e.getAttribute('aria-label') || e.dataset.testid || e.className} ${Math.round(r.right)} > ${Math.round(edge)}`);
+      });
+      assert.deepEqual(cut, [], 'tools past the right edge');
       assert.equal(await head.getByTestId('preview-more').getAttribute('aria-expanded'), 'true');
       // Every control in the rail and the preview head is a 44 px target.
       const small = await page.evaluate(() =>
