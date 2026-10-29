@@ -288,7 +288,8 @@ try {
     failOnce = false;
     return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"code":"INTERNAL","message":"boom"}}' });
   });
-  await page.goto(BASE + '/settings#settings-about');
+  // Already on About: only a reload asks for the numbers again.
+  await page.reload();
   await page.getByTestId('usage-error').waitFor();
   assert.equal(await page.getByTestId('usage-copy').isDisabled(), true);
   await page.getByTestId('usage-retry').click();
