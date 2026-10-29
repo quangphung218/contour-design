@@ -32,12 +32,18 @@ fn for_save(v: &Value) -> Value {
     v
 }
 
+/// Whether `servers` would save as `saved`: the sign-in state (`oauth`,
+/// changed by Sign out) is not part of the list.
+fn same_as_saved(servers: &[Value], saved: &[Value]) -> bool {
+    servers.iter().map(for_save).eq(saved.iter().map(for_save))
+}
+
 #[component]
 pub fn McpSection() -> impl IntoView {
     let servers = RwSignal::new(Vec::<Value>::new());
     // The list as last loaded or saved: Save is for changes only.
     let saved = RwSignal::new(Vec::<Value>::new());
-    let changed = move || servers.with(|s| saved.with(|v| s != v));
+    let changed = move || servers.with(|s| saved.with(|v| !same_as_saved(s, v)));
     let status = RwSignal::new(None::<Result<(), String>>);
     // While a save is in flight the daemon still has the old list: a test
     // then would probe a server it does not know yet.
@@ -268,5 +274,23 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
                 <button class="btn small ghost danger" on:click=remove>{icon(Glyph::Delete)}{t(T::Remove)}</button>
             </div>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_as_saved;
+    use serde_json::json;
+
+    #[test]
+    fn signing_out_is_not_a_change_to_save() {
+        let saved =
+            [json!({"id": "a", "transport": "http", "url": "u", "oauth": {"connected": true}})];
+        let signed_out =
+            [json!({"id": "a", "transport": "http", "url": "u", "oauth": {"connected": false}})];
+        assert!(same_as_saved(&signed_out, &saved));
+        let edited = [json!({"id": "a", "transport": "http", "url": "v"})];
+        assert!(!same_as_saved(&edited, &saved));
+        assert!(!same_as_saved(&[], &saved), "a removed server is a change");
     }
 }
