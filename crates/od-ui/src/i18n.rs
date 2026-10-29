@@ -2102,4 +2102,47 @@ mod tests {
             failures.join("\n")
         );
     }
+
+    /// Settings ▸ About checks for updates, and its subtitle says so in
+    /// every language, not only in English (beta.7).
+    #[test]
+    fn the_about_subtitle_mentions_updates_in_every_language() {
+        const UPDATES: &[(&str, &str)] = &[
+            ("ar", "التحديثات"),
+            ("de", "Updates"),
+            ("es-ES", "actualizaciones"),
+            ("fa", "به‌روزرسانی"),
+            ("fr", "mises à jour"),
+            ("hu", "frissítések"),
+            ("id", "pembaruan"),
+            ("it", "aggiornamenti"),
+            ("ja", "アップデート"),
+            ("ko", "업데이트"),
+            ("pl", "aktualizacje"),
+            ("pt-BR", "atualizações"),
+            ("ru", "обновления"),
+            ("th", "การอัปเดต"),
+            ("tr", "güncellemeler"),
+            ("uk", "оновлення"),
+            ("zh-CN", "更新"),
+            ("zh-TW", "更新"),
+        ];
+        assert!(T::AboutHint.text(Locale::En).contains("updates"));
+        assert!(T::AboutHint.text(Locale::Vi).contains("cập nhật"));
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let on_demand = Locale::ALL.iter().filter(|l| l.is_loaded_on_demand());
+        assert_eq!(
+            on_demand.count(),
+            UPDATES.len(),
+            "a language without a word here"
+        );
+        for (tag, word) in UPDATES {
+            let text = std::fs::read_to_string(dir.join(format!("{tag}.txt"))).unwrap();
+            let hint = text
+                .lines()
+                .find_map(|l| l.strip_prefix("AboutHint = "))
+                .unwrap_or_default();
+            assert!(hint.contains(word), "{tag}: {hint}");
+        }
+    }
 }
