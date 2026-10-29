@@ -85,7 +85,7 @@ pub fn summarize(
         })
         .collect();
     // Stable: the map already ordered equal counts by name.
-    causes.sort_by(|a, b| b.count.cmp(&a.count));
+    causes.sort_by_key(|a| std::cmp::Reverse(a.count));
     UsageResponse {
         since,
         first_preview: FirstPreviewUsage {
