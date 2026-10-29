@@ -1214,19 +1214,38 @@ impl Attempt {
             .held_errors
             .last()
             .map(|e| e.message.clone())
-            .or_else(|| {
-                self.stderr_tail
-                    .lines()
-                    .rev()
-                    .find(|l| !l.trim().is_empty())
-                    .map(str::to_owned)
-            })
+            .or_else(|| stderr_message(&self.stderr_tail))
             .unwrap_or_else(|| match self.exit_code {
                 Some(code) => format!("agent exited with code {code}"),
                 None => "agent was terminated by a signal".to_owned(),
             });
         Some((classify(&evidence), message))
     }
+}
+
+/// The line of a failed agent's stderr that says what went wrong: the
+/// last one that is not part of a stack trace. A Node crash ends with its
+/// `at …` frames, so the last line alone would be a source location.
+fn stderr_message(stderr: &str) -> Option<String> {
+    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
+    lines
+        .iter()
+        .rev()
+        .find(|l| !is_trace_line(l))
+        .or(lines.last())
+        .map(|l| l.trim().to_owned())
+}
+
+/// A stack frame (`    at f (file:1:2)`, Python's `  File "…", line 1`,
+/// any indented line) or a bare source location (`file:///cli.js:4123`).
+fn is_trace_line(line: &str) -> bool {
+    let t = line.trim();
+    line.starts_with([' ', '\t'])
+        || t.starts_with("at ")
+        || (!t.contains(' ')
+            && t.rsplit(':')
+                .next()
+                .is_some_and(|n| n.parse::<u32>().is_ok()))
 }
 
 /// Transient vs. permanent, from error text and stderr.
@@ -1384,6 +1403,33 @@ mod tests {
         );
         assert_eq!(classify("read ECONNRESET"), FailureCategory::Transient);
         assert_eq!(classify("invalid model"), FailureCategory::AgentError);
+    }
+
+    #[test]
+    fn a_crash_reads_as_its_error_not_its_stack_frame() {
+        let node = "file:///opt/claude-code/cli.js:4123\n\
+                    Error: ENOSPC: no space left on device, write\n    \
+                    at Object.writeSync (node:fs:927:3)\n    \
+                    at writeFileSync (node:fs:2306:26)\n";
+        assert_eq!(
+            stderr_message(node).as_deref(),
+            Some("Error: ENOSPC: no space left on device, write")
+        );
+        let python = "Traceback (most recent call last):\n  File \"x.py\", line 1, in <module>\nValueError: bad key\n";
+        assert_eq!(
+            stderr_message(python).as_deref(),
+            Some("ValueError: bad key")
+        );
+        assert_eq!(
+            stderr_message("Invalid API key · Please run /login\n\n").as_deref(),
+            Some("Invalid API key · Please run /login")
+        );
+        // Nothing but frames: the last one beats no message at all.
+        assert_eq!(
+            stderr_message("    at a (x.js:1:1)\n").as_deref(),
+            Some("at a (x.js:1:1)")
+        );
+        assert_eq!(stderr_message("\n"), None);
     }
 
     #[test]

@@ -30,6 +30,11 @@ All notable changes to Contour are recorded here. The format follows
   Audio.
 - Templates ▸ All industries lists "Operations" once: the GitHub and live
   dashboards said "operation", so the list showed "Operation" next to it.
+- When the agent crashes mid-turn, the chat shows its error ("Error:
+  ENOSPC: no space left on device, write") instead of the last line of
+  its stack trace ("at writeFileSync (node:fs:…)"). A failed turn has
+  an Agent output disclosure with everything the agent wrote to stderr,
+  next to Retry, and "Failed" no longer breaks over two lines.
 - PDF, PNG and PowerPoint exports try Chrome or Edge once more when it
   does not start within 30 s, so the first export on a slow or freshly
   set up PC does not fail with "Timeout while resolving websocket URL".

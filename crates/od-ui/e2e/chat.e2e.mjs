@@ -377,6 +377,29 @@ try {
   assert.equal(await page.getByTestId('reconnect').count(), 0);
   results.reconnect = 'ok';
 
+  // 14b. The agent crashes mid-turn (stack trace on stderr, exit 1): the
+  // turn says what went wrong in words, offers Retry, and shows the
+  // agent's whole output on request.
+  const turnsBefore = await page.getByTestId('assistant-msg').count();
+  await composer.fill('a pricing page, then crash');
+  await composer.press('Enter');
+  await lastTurnDone(turnsBefore + 1);
+  const crashed = page.getByTestId('assistant-msg').last();
+  assert.equal(await crashed.getAttribute('data-state'), 'failed');
+  await crashed.getByText('Error: ENOSPC: no space left on device, write').waitFor();
+  assert.equal(await crashed.getByText('at writeFileSync', { exact: false }).count(), 0, 'a stack frame is not the message');
+  const failedLine = crashed.locator('[data-testid="run-state"][data-phase="failed"] strong');
+  assert.equal(await failedLine.evaluate((e) => e.getClientRects().length), 1, '"Failed" on one line');
+  await crashed.getByTestId('next-retry').waitFor();
+  await crashed.getByTestId('run-log').locator('summary').click();
+  await until(async () => /at writeFileSync \(node:fs:2306:26\)/.test(await crashed.getByTestId('run-log-text').textContent()), 'agent output shown');
+  assert.match(await crashed.getByTestId('run-log-text').textContent(), /^file:\/\/\/opt\/claude-code\/cli\.js:4123\nError: ENOSPC/);
+  await page.screenshot({ path: OUT + 'chat-run-failed.png' });
+  await crashed.getByTestId('next-retry').click();
+  await lastTurnDone(turnsBefore + 2);
+  assert.match(runBodies.at(-1).message, /a pricing page, then crash/);
+  results.runFailed = 'ok';
+
   // 15. Rename and delete conversations.
   await page.getByTestId('conversation-menu').click();
   await page.getByTestId('rename-conversation').click();

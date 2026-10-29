@@ -37,6 +37,25 @@ pub fn decode_frame(event: &str, data: &str) -> RunFrame {
     decoded.unwrap_or(RunFrame::Ignored)
 }
 
+/// What the agent wrote to stderr, from the whole SSE log of a finished
+/// run (`GET /api/runs/:id/events`): its `stderr` frames in order.
+#[must_use]
+pub fn stderr_of(sse: &str) -> String {
+    sse.replace("\r\n", "\n")
+        .split("\n\n")
+        .filter(|frame| frame.lines().any(|l| l == "event: stderr"))
+        .filter_map(|frame| {
+            let data: Vec<&str> = frame
+                .lines()
+                .filter_map(|l| l.strip_prefix("data:"))
+                .map(|d| d.strip_prefix(' ').unwrap_or(d))
+                .collect();
+            serde_json::from_str::<od_contracts::RunChunkPayload>(&data.join("\n")).ok()
+        })
+        .map(|p| p.chunk)
+        .collect()
+}
+
 /// `file-changed` payload of `GET /api/projects/:id/events`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct FileChanged {
@@ -48,6 +67,16 @@ pub struct FileChanged {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_run_log_gives_back_what_the_agent_wrote_to_stderr() {
+        let sse = "id: 1\nevent: start\ndata: {\"runId\":\"r\"}\n\n\
+                   id: 2\nevent: stderr\ndata: {\"chunk\":\"Error: ENOSPC\\n\"}\n\n\
+                   id: 3\nevent: stdout\ndata: {\"chunk\":\"not this\\n\"}\n\n\
+                   id: 4\nevent: stderr\ndata: {\"chunk\":\"    at w (node:fs:1:2)\\n\"}\n\n";
+        assert_eq!(stderr_of(sse), "Error: ENOSPC\n    at w (node:fs:1:2)\n");
+        assert_eq!(stderr_of("event: end\ndata: {}\n\n"), "");
+    }
 
     #[test]
     fn decodes_known_frames() {

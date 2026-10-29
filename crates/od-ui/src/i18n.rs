@@ -1422,6 +1422,8 @@ messages! {
     NextVariations => "Try variations", "Thử phương án khác";
     NextRetry => "Retry", "Thử lại";
     NextSettings => "Open Settings", "Mở Cài đặt";
+    AgentOutput => "Agent output", "Output của agent";
+    AgentOutputEmpty => "The agent wrote nothing else before it stopped.", "Agent không ghi thêm gì trước khi dừng.";
     FollowupMobile => "Make it work well on a 390px phone screen.", "Chỉnh cho hiển thị tốt trên màn hình điện thoại 390px.";
     FollowupVariations => "Show me 3 different directions for this design.", "Đề xuất 3 hướng thiết kế khác nhau cho trang này.";
     StarterLanding => "A landing page for a tea shop", "Landing page cho một tiệm trà";

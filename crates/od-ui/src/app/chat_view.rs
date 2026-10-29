@@ -598,6 +598,9 @@ fn AssistantView(
             }}
             <super::chat_ops::TurnFiles turn=turn/>
             <RunLine turn=turn/>
+            <Show when=move || turn.with(|tn| matches!(run_phase(tn), RunPhase::Failed))>
+                <RunLog turn=turn/>
+            </Show>
             <Show when=move || is_last.get() && ctx.live_run.get().is_none()>
                 <super::chat_ops::ContinueTasks turn=turn/>
                 <NextSteps turn=turn item_id=item_id.get_value()/>
@@ -667,6 +670,44 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             <strong>{move || line.with(|l| l.2.clone())}</strong>
             {move || line.with(|l| l.3.clone()).map(|d| view! { <span class="muted">{d}</span> })}
         </div>
+    }
+}
+
+/// A failed turn's agent output (what it wrote to stderr), read from the
+/// run's log when opened: the whole story behind the one line above.
+#[component]
+fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
+    use wasm_bindgen::JsCast;
+    let log = RwSignal::new(None::<String>);
+    let load = move |ev: leptos::ev::Event| {
+        let open = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            .is_some_and(|el| el.has_attribute("open"));
+        if !open || log.with_untracked(Option::is_some) {
+            return;
+        }
+        let Some(id) = turn.with_untracked(|t| t.run_id.clone()) else {
+            log.set(Some(String::new()));
+            return;
+        };
+        leptos::task::spawn_local(async move {
+            let url = format!("/api/runs/{}/events", super::api::seg(&id));
+            let text = super::api::get_text(&url).await.unwrap_or_default();
+            log.set(Some(crate::events::stderr_of(&text)));
+        });
+    };
+    view! {
+        <details class="run-log" data-testid="run-log" on:toggle=load>
+            <summary>{icon(Glyph::Terminal)}{t(T::AgentOutput)}</summary>
+            {move || match log.get() {
+                None => view! { <p class="muted">{t(T::Loading)}</p> }.into_any(),
+                Some(text) if text.trim().is_empty() => {
+                    view! { <p class="muted">{t(T::AgentOutputEmpty)}</p> }.into_any()
+                }
+                Some(text) => view! { <pre class="run-log-text" data-testid="run-log-text">{text}</pre> }.into_any(),
+            }}
+        </details>
     }
 }
 

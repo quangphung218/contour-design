@@ -764,13 +764,20 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .msg-error .ico { margin-top: 2px; }
 .run-status, .form-pending { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--text-sm); }
 .run-status .ico { width: var(--icon-sm); height: var(--icon-sm); flex: none; }
-.run-status strong { font-weight: var(--weight-medium); color: var(--color-text); }
+.run-status strong { flex: none; font-weight: var(--weight-medium); color: var(--color-text); }
 .run-status .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .run-status.done .ico { color: var(--color-success); }
 .run-status.failed { padding: var(--space-1-5) var(--space-2-5); border-radius: var(--radius-md); background: var(--color-danger-soft); }
 .run-status.failed .ico, .run-status.failed strong { color: var(--color-danger); }
 .run-status.failed .muted { white-space: normal; }
 .run-status.stopped .ico { color: var(--color-text-tertiary); }
+/* A failed turn's agent output, opened on demand. */
+.run-log { font-size: var(--text-sm); color: var(--color-text-secondary); }
+.run-log summary { display: inline-flex; align-items: center; gap: var(--space-1-5); min-height: 32px; cursor: pointer; border-radius: var(--radius-sm); }
+.run-log summary .ico { width: var(--icon-sm); height: var(--icon-sm); }
+.run-log summary:focus-visible { box-shadow: 0 0 0 3px var(--color-focus-ring); outline: none; }
+.run-log > p { margin: var(--space-1) 0 0; }
+.run-log-text { margin: var(--space-1) 0 0; max-height: 240px; overflow: auto; padding: var(--space-2) var(--space-2-5); border-radius: var(--radius-md); background: var(--color-surface-sunken); color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); white-space: pre-wrap; overflow-wrap: anywhere; }
 .next-steps { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); margin-top: var(--space-1); }
 .next-label { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--color-text-tertiary); margin-right: var(--space-0-5); }
 .next-step { height: 26px; font-size: var(--text-sm); }
