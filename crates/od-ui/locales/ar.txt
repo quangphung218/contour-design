@@ -1189,6 +1189,7 @@ NextRetry = إعادة محاولة
 NextSettings = فتح الإعدادات
 AgentOutput = مخرجات الوكيل
 AgentOutputEmpty = لم يكتب الوكيل أي شيء آخر قبل أن يتوقف.
+AgentOutputFailed = تعذّر تحميل مخرجات الوكيل.
 FollowupMobile = اجعله يعمل جيدًا على شاشة هاتف بعرض 390px.
 FollowupVariations = أرني 3 اتجاهات مختلفة لهذا التصميم.
 StarterLanding = صفحة هبوط لمتجر شاي

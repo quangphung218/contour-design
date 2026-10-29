@@ -1189,6 +1189,7 @@ NextRetry = Újrapróbálás
 NextSettings = Beállítások
 AgentOutput = Az agent kimenete
 AgentOutputEmpty = Az agent a leállás előtt nem írt mást.
+AgentOutputFailed = Nem sikerült betölteni az agent kimenetét.
 FollowupMobile = Legyen jó 390 px-es telefonképernyőn is.
 FollowupVariations = Mutass 3 különböző irányt ehhez a tervhez.
 StarterLanding = Nyitóoldal egy teaházhoz

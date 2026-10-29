@@ -398,6 +398,15 @@ try {
   await crashed.getByTestId('next-retry').click();
   await lastTurnDone(turnsBefore + 2);
   assert.match(runBodies.at(-1).message, /a pricing page, then crash/);
+  // Reopened with the run's log out of reach: the output says it could not
+  // be loaded, not that the agent wrote nothing.
+  await page.route('**/api/runs/*/events', (route) => route.fulfill({ status: 500, body: 'down' }));
+  await page.reload();
+  const reopened = page.getByTestId('assistant-msg').nth(turnsBefore);
+  await page.getByTestId('assistant-msg').nth(turnsBefore + 1).waitFor();
+  await reopened.getByTestId('run-log').locator('summary').click();
+  await reopened.getByTestId('run-log-failed').waitFor();
+  await page.unroute('**/api/runs/*/events');
   results.runFailed = 'ok';
 
   // 15. Rename and delete conversations.

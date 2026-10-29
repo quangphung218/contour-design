@@ -1189,6 +1189,7 @@ NextRetry = Повторить
 NextSettings = Открыть настройки
 AgentOutput = Вывод агента
 AgentOutputEmpty = Агент больше ничего не вывел перед остановкой.
+AgentOutputFailed = Не удалось загрузить вывод агента.
 FollowupMobile = Сделай так, чтобы всё хорошо работало на экране телефона 390 px.
 FollowupVariations = Покажи 3 разных направления для этого дизайна.
 StarterLanding = Лендинг для чайной лавки

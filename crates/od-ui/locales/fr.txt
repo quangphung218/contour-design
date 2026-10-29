@@ -1189,6 +1189,7 @@ NextRetry = Réessayer
 NextSettings = Ouvrir les Paramètres
 AgentOutput = Sortie de l'agent
 AgentOutputEmpty = L'agent n'a rien écrit d'autre avant de s'arrêter.
+AgentOutputFailed = Impossible de charger la sortie de l'agent.
 FollowupMobile = Fais en sorte que ça fonctionne bien sur un écran de téléphone de 390 px.
 FollowupVariations = Montre-moi 3 directions différentes pour ce design.
 StarterLanding = Une landing page pour un salon de thé

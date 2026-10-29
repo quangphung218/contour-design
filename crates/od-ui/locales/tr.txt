@@ -1188,6 +1188,7 @@ NextRetry = Tekrar dene
 NextSettings = Ayarlar'ı aç
 AgentOutput = Agent çıktısı
 AgentOutputEmpty = Agent durmadan önce başka bir şey yazmadı.
+AgentOutputFailed = Agent çıktısı yüklenemedi.
 FollowupMobile = 390px genişliğindeki bir telefon ekranında iyi çalışmasını sağla.
 FollowupVariations = Bu tasarım için 3 farklı yön göster.
 StarterLanding = Bir çay dükkânı için açılış sayfası

@@ -1188,6 +1188,7 @@ NextRetry = Ponów
 NextSettings = Otwórz Ustawienia
 AgentOutput = Wyjście agenta
 AgentOutputEmpty = Agent nie wypisał nic więcej przed zatrzymaniem.
+AgentOutputFailed = Nie udało się wczytać wyjścia agenta.
 FollowupMobile = Dopracuj, aby dobrze działało na ekranie telefonu 390px.
 FollowupVariations = Pokaż mi 3 różne kierunki dla tego projektu.
 StarterLanding = Strona docelowa dla herbaciarni

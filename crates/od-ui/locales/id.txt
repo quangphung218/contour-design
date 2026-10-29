@@ -1189,6 +1189,7 @@ NextRetry = Coba lagi
 NextSettings = Buka Pengaturan
 AgentOutput = Output agen
 AgentOutputEmpty = Agen tidak menulis apa pun lagi sebelum berhenti.
+AgentOutputFailed = Keluaran agen tidak dapat dimuat.
 FollowupMobile = Buat tampil baik di layar ponsel 390px.
 FollowupVariations = Tunjukkan 3 arah berbeda untuk desain ini.
 StarterLanding = Landing page untuk toko teh

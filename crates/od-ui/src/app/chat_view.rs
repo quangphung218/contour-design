@@ -678,7 +678,9 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
 #[component]
 fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     use wasm_bindgen::JsCast;
-    let log = RwSignal::new(None::<String>);
+    // `Err`: the log could not be read, which is not an agent that said
+    // nothing.
+    let log = RwSignal::new(None::<Result<String, ()>>);
     let load = move |ev: leptos::ev::Event| {
         let open = ev
             .target()
@@ -688,13 +690,15 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             return;
         }
         let Some(id) = turn.with_untracked(|t| t.run_id.clone()) else {
-            log.set(Some(String::new()));
+            log.set(Some(Ok(String::new())));
             return;
         };
         leptos::task::spawn_local(async move {
             let url = format!("/api/runs/{}/events", super::api::seg(&id));
-            let text = super::api::get_text(&url).await.unwrap_or_default();
-            log.set(Some(crate::events::stderr_of(&text)));
+            let text = super::api::get_text(&url).await;
+            log.set(Some(
+                text.map(|sse| crate::events::stderr_of(&sse)).map_err(drop),
+            ));
         });
     };
     view! {
@@ -702,10 +706,13 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             <summary>{icon(Glyph::Terminal)}{t(T::AgentOutput)}</summary>
             {move || match log.get() {
                 None => view! { <p class="muted">{t(T::Loading)}</p> }.into_any(),
-                Some(text) if text.trim().is_empty() => {
+                Some(Err(())) => {
+                    view! { <p class="muted" data-testid="run-log-failed">{t(T::AgentOutputFailed)}</p> }.into_any()
+                }
+                Some(Ok(text)) if text.trim().is_empty() => {
                     view! { <p class="muted">{t(T::AgentOutputEmpty)}</p> }.into_any()
                 }
-                Some(text) => view! { <pre class="run-log-text" data-testid="run-log-text">{text}</pre> }.into_any(),
+                Some(Ok(text)) => view! { <pre class="run-log-text" data-testid="run-log-text">{text}</pre> }.into_any(),
             }}
         </details>
     }

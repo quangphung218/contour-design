@@ -1189,6 +1189,7 @@ NextRetry = تلاش دوباره
 NextSettings = باز کردن تنظیمات
 AgentOutput = خروجی agent
 AgentOutputEmpty = agent پیش از توقف چیز دیگری ننوشت.
+AgentOutputFailed = خروجی agent بارگیری نشد.
 FollowupMobile = آن را برای صفحه گوشی ۳۹۰ پیکسلی خوب کار کند.
 FollowupVariations = ۳ جهت متفاوت برای این طرح نشانم بده.
 StarterLanding = صفحه فرود برای یک چای‌فروشی

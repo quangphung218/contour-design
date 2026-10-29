@@ -1189,6 +1189,7 @@ NextRetry = 重试
 NextSettings = 打开设置
 AgentOutput = agent 输出
 AgentOutputEmpty = agent 在停止前没有输出其他内容。
+AgentOutputFailed = 无法加载 agent 的输出。
 FollowupMobile = 让它在 390px 宽的手机屏幕上也能良好呈现。
 FollowupVariations = 为这个设计给我 3 个不同的方向。
 StarterLanding = 一家茶馆的落地页

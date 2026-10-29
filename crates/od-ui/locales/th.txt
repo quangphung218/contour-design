@@ -1189,6 +1189,7 @@ NextRetry = ลองอีกครั้ง
 NextSettings = เปิดการตั้งค่า
 AgentOutput = เอาต์พุตของเอเจนต์
 AgentOutputEmpty = เอเจนต์ไม่ได้เขียนอะไรเพิ่มก่อนหยุดทำงาน
+AgentOutputFailed = โหลดเอาต์พุตของเอเจนต์ไม่ได้
 FollowupMobile = ทำให้ใช้งานได้ดีบนหน้าจอโทรศัพท์กว้าง 390px
 FollowupVariations = แสดงดีไซน์นี้ 3 แนวทางที่ต่างกัน
 StarterLanding = แลนดิงเพจร้านชา

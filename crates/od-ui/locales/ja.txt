@@ -1189,6 +1189,7 @@ NextRetry = 再試行
 NextSettings = 設定を開く
 AgentOutput = エージェントの出力
 AgentOutputEmpty = エージェントは停止する前にほかに何も出力しませんでした。
+AgentOutputFailed = エージェントの出力を読み込めませんでした。
 FollowupMobile = 390pxのスマートフォン画面で快適に使えるようにしてください。
 FollowupVariations = このデザインの方向性を3パターン見せてください。
 StarterLanding = ティーショップのランディングページ
