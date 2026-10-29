@@ -1008,8 +1008,144 @@ fn About() -> impl IntoView {
                 Ok(m) => view! { <p class="ok-text small" data-testid="diagnostics-state">{m}</p> }.into_any(),
                 Err(e) => view! { <p class="error-text small" data-testid="diagnostics-state">{e}</p> }.into_any(),
             })}
+            <YourUsage version/>
             <Licenses/>
         </div>
+    }
+}
+
+/// A run's failure cause (`RunCause::cause`), for people.
+fn cause_label(cause: &str) -> &'static str {
+    t(match cause {
+        "spawn_failed" => T::CauseSpawnFailed,
+        "agent_error" => T::CauseAgentError,
+        "timeout" => T::CauseTimeout,
+        "canceled" => T::CauseCanceled,
+        "rate_limit" => T::CauseRateLimit,
+        "transient" => T::CauseTransient,
+        "tool_loop" => T::CauseToolLoop,
+        "daemon_restart" => T::CauseDaemonRestart,
+        _ => T::CauseOther,
+    })
+}
+
+/// About ▸ Your usage: three numbers worked out by the daemon from what is
+/// on this machine (`GET /api/usage`), and Copy for a summary to paste into
+/// a discussion ([`crate::usage::summary`]). No telemetry: nothing is sent.
+#[component]
+fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
+    use crate::usage::{RECORDED_SINCE, duration, enough, percent};
+    use od_contracts::UsageResponse;
+    let shell = Shell::get();
+    let usage = LocalResource::new(|| async {
+        api::get::<UsageResponse>("/api/usage")
+            .await
+            .map_err(|e| e.to_string())
+    });
+    let copied = RwSignal::new(None::<Result<(), String>>);
+    let copy = move |_| {
+        let Some(Ok(u)) = usage.get_untracked() else {
+            return;
+        };
+        let v = version.get_untracked().flatten().unwrap_or(Value::Null);
+        let os = format!(
+            "{} {}",
+            v["platform"].as_str().unwrap_or("unknown"),
+            v["arch"].as_str().unwrap_or_default()
+        );
+        let agent = shell.config.get_untracked().and_then(|c| c.agent_id);
+        let text = crate::usage::summary(
+            &u,
+            v["version"].as_str().unwrap_or("unknown"),
+            os.trim_end(),
+            agent.as_deref(),
+        );
+        leptos::task::spawn_local(async move {
+            copied.set(Some(super::export_menu::copy_text(&text).await));
+        });
+    };
+    let since =
+        move || view! { <dd class="muted small">{tf(T::UsageSince, &[RECORDED_SINCE])}</dd> };
+    let not_enough = |key: T| view! { <dd class="muted" data-state="not-enough">{t(key)}</dd> };
+    let numbers = move |u: UsageResponse| {
+        let fp = u.first_preview;
+        let first_preview = match fp.median_ms.filter(|_| enough(fp.projects)) {
+            Some(ms) => view! {
+                <dd data-state="value">{tf(T::UsageFirstPreviewValue, &[&duration(ms), &fp.projects.to_string()])}</dd>
+            }
+            .into_any(),
+            None => not_enough(T::UsageNotEnoughProjects).into_any(),
+        };
+        let e = u.engaged;
+        let engaged = if enough(e.projects) {
+            view! {
+                <dd data-state="value">{tf(T::UsageEngagedValue, &[
+                    &percent(e.engaged, e.projects).to_string(),
+                    &e.engaged.to_string(),
+                    &e.projects.to_string(),
+                ])}</dd>
+            }
+            .into_any()
+        } else {
+            not_enough(T::UsageNotEnoughProjects).into_any()
+        };
+        let r = u.runs;
+        let runs = if enough(r.total) {
+            view! {
+                <dd data-state="value">{tf(T::UsageFailedRunsValue, &[
+                    &percent(r.failed, r.total).to_string(),
+                    &r.failed.to_string(),
+                    &r.total.to_string(),
+                ])}</dd>
+                <dd>
+                    <ul class="usage-causes small" data-testid="usage-causes">
+                        {r.causes.into_iter().map(|c| view! {
+                            <li data-cause=c.cause.clone()>{cause_label(&c.cause)}" · "<span class="mono">{c.count}</span></li>
+                        }).collect_view()}
+                    </ul>
+                </dd>
+            }
+            .into_any()
+        } else {
+            not_enough(T::UsageNotEnoughRuns).into_any()
+        };
+        view! {
+            <dl class="usage-list">
+                <div data-testid="usage-first-preview">
+                    <dt>{t(T::UsageFirstPreview)}</dt>{first_preview}{since}
+                </div>
+                <div data-testid="usage-engaged">
+                    <dt>{t(T::UsageEngaged)}</dt>{engaged}{since}
+                </div>
+                <div data-testid="usage-runs">
+                    <dt>{t(T::UsageFailedRuns)}</dt>{runs}
+                </div>
+            </dl>
+        }
+    };
+    view! {
+        <section class="about-usage" data-testid="about-usage" aria-labelledby="about-usage-title">
+            <h3 id="about-usage-title">{t(T::YourUsage)}</h3>
+            <p class="muted small">{t(T::YourUsageHint)}</p>
+            {move || match usage.get() {
+                None => view! { <span class="spinner"></span> }.into_any(),
+                Some(Err(e)) => view! { <p class="error-text small" data-testid="usage-error">{e}</p> }.into_any(),
+                Some(Ok(u)) => numbers(u).into_any(),
+            }}
+            <div class="row wrap">
+                <button class="btn small" data-testid="usage-copy"
+                    disabled=move || !matches!(usage.get(), Some(Ok(_)))
+                    on:click=copy>
+                    {icon(Glyph::Clipboard)}{t(T::UsageCopy)}
+                </button>
+            </div>
+            <div role="status">
+                {move || copied.get().map(|r| match r {
+                    Ok(()) => view! { <p class="ok-text small" data-testid="usage-copied">{t(T::UsageCopied)}</p> }.into_any(),
+                    Err(e) => view! { <p class="error-text small" data-testid="usage-copied">{e}</p> }.into_any(),
+                })}
+            </div>
+        </section>
     }
 }
 

@@ -32,6 +32,7 @@ pub mod settings;
 pub mod sketch_model;
 pub mod speaker_notes;
 pub mod toolbox;
+pub mod usage;
 pub mod workspace;
 
 pub mod app;

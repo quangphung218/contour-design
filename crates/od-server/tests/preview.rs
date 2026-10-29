@@ -8,7 +8,7 @@ use axum::body::Body;
 use axum::http::{HeaderMap, Request, StatusCode, header};
 use http_body_util::BodyExt;
 use od_content::{ContentRoots, ContentStore};
-use od_contracts::CreateProjectResponse;
+use od_contracts::{CreateProjectResponse, UsageResponse};
 use od_preview::{PREVIEW_CSP, PreviewUrlResponse};
 use od_server::{AppState, ServerConfig, router};
 use od_store::{DataDir, Store};
@@ -567,4 +567,64 @@ async fn edit_key_goes_to_the_first_load_and_to_the_host_once() {
         StatusCode::NOT_FOUND,
         "taken once"
     );
+}
+
+#[tokio::test]
+async fn the_hosts_first_bridged_page_is_the_projects_first_preview() {
+    let _timing = TIMING.read().await;
+    let a = app();
+    let id = a.project().await;
+    let usage = |r: Reply| serde_json::from_slice::<UsageResponse>(&r.body).unwrap();
+    let fresh = usage(a.get("/api/usage").await);
+    assert!(fresh.since > 0);
+    assert_eq!(fresh.first_preview.projects, 0);
+    assert_eq!((fresh.engaged.projects, fresh.engaged.engaged), (1, 0));
+
+    // A missing file, a page loading itself in the sandbox, plain `raw`:
+    // none of them is a preview the user saw.
+    let raw = format!("/api/projects/{id}/raw/index.html");
+    assert_eq!(
+        a.get(&format!("{raw}?bridge=1")).await.status,
+        StatusCode::NOT_FOUND
+    );
+    a.write(&id, "index.html", "<p>x</p>").await;
+    let sandboxed = a
+        .send(
+            Request::get(format!("{raw}?bridge=1"))
+                .header("sec-fetch-site", "cross-site")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(sandboxed.status, StatusCode::OK);
+    assert_eq!(a.get(&raw).await.status, StatusCode::OK);
+    assert_eq!(usage(a.get("/api/usage").await).first_preview.projects, 0);
+
+    assert_eq!(
+        a.get(&format!("{raw}?bridge=1")).await.status,
+        StatusCode::OK
+    );
+    let seen = usage(a.get("/api/usage").await);
+    assert_eq!(seen.first_preview.projects, 1);
+    let first = seen.first_preview.median_ms.unwrap();
+    assert!(first >= 0);
+    // Later loads keep the first time.
+    a.get(&format!("{raw}?bridge=1")).await;
+    assert_eq!(
+        usage(a.get("/api/usage").await).first_preview.median_ms,
+        Some(first)
+    );
+
+    let exported = |r: Reply| {
+        assert_eq!(r.status, StatusCode::OK);
+        serde_json::from_slice::<Value>(&r.body).unwrap()["recorded"].clone()
+    };
+    let path = format!("/api/projects/{id}/exported");
+    assert_eq!(exported(a.post_json(&path, &json!({})).await), json!(true));
+    assert_eq!(exported(a.post_json(&path, &json!({})).await), json!(false));
+    let r = a.post_json("/api/projects/nope/exported", &json!({})).await;
+    assert_eq!(exported(r), json!(false), "nothing to record");
+    let after = usage(a.get("/api/usage").await);
+    assert_eq!((after.engaged.projects, after.engaged.engaged), (1, 1));
+    assert_eq!(after.runs.total, 0);
 }

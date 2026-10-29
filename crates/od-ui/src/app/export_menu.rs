@@ -340,6 +340,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                 Ok(bytes) => {
                     download(&bytes, &name, format.mime());
                     status.set(Some(Ok(tf(T::Exported, &[&name]))));
+                    // Settings ▸ About ▸ Your usage counts exported projects.
+                    let _ =
+                        api::post::<_, serde_json::Value>(&format!("{base}/exported"), &json!({}))
+                            .await;
                 }
                 Err(e) => status.set(Some(Err(tf(T::ExportFailed, &[&e.to_string()])))),
             }

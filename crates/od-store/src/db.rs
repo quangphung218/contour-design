@@ -133,6 +133,7 @@ pub fn open(path: &Path) -> Result<Connection> {
     crate::memory::ensure_schema(&conn)?;
     crate::manage::ensure_schema(&conn)?;
     crate::comments::ensure_schema(&conn)?;
+    crate::usage::ensure_schema(&conn)?;
     Ok(conn)
 }
 
