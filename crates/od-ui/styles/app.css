@@ -615,6 +615,8 @@ pre.license-text { margin: var(--space-3) 0 0; padding: var(--space-3); max-heig
 .integrations .settings-section > :not(.section-intro) { grid-column: 1; }
 .forwarded { display: flex; flex-direction: column; gap: var(--space-1-5); font-size: var(--text-sm); }
 .forwarded p { margin: 0; }
+/* The one-line summary without Details: its label and agents on one line. */
+p.forwarded { display: block; }
 .forwarded > summary { display: flex; align-items: center; gap: var(--space-2); min-height: 32px; cursor: pointer; list-style: none; border-radius: var(--radius-sm); }
 .forwarded > summary::-webkit-details-marker { display: none; }
 .forwarded > summary .ico { width: var(--icon-sm); height: var(--icon-sm); color: var(--color-text-tertiary); transition: transform var(--duration-fast) var(--ease-out); }
