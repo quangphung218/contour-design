@@ -16,28 +16,52 @@ cd "$here"
 [ -d node_modules/playwright ] && [ -d node_modules/axe-core ] || npm ci --no-audit --no-fund
 export OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$here/mock-agent" \
   OD_RESOURCE_ROOT="$root/content"
-# A fixed port collides when two worktrees run the e2e at once; pick a free
-# one (the other scenarios use the next ten ports, one each) unless one is given.
-if [ -z "${OD_E2E_PORT:-}" ]; then
-  OD_E2E_PORT="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
-  export OD_E2E_PORT
-fi
+# A fixed port collides when two worktrees run the e2e at once, so each
+# script gets a free port of its own, taken right before it starts, unless
+# OD_E2E_PORT is given (then the scripts use it and the next eleven ports).
+# The ports come from 20000-32767, below the ephemeral range on Linux
+# (32768-60999) and macOS (49152-65535): a port from listen(0) lies in that
+# range, and the browser's client sockets, open or in TIME_WAIT for a
+# minute, took base + n before its script bound it ("Address already in
+# use" on CI).
+fixed_port="${OD_E2E_PORT:-}"
+free_port() {
+  node -e '
+    const net = require("net");
+    const pick = (left) => {
+      const port = 20000 + Math.floor(Math.random() * 12768);
+      const s = net.createServer().once("error", () => {
+        if (left > 0) pick(left - 1); else process.exit(1);
+      });
+      s.listen(port, "127.0.0.1", () => { console.log(port); s.close(); });
+    };
+    pick(50);'
+}
+# run VAR script: runs the script with its port variable set to a free port.
+run() {
+  if [ -n "$fixed_port" ]; then
+    node "$2"
+  else
+    env "$1=$(free_port)" node "$2"
+  fi
+}
 if [ $# -gt 0 ]; then
+  [ -n "$fixed_port" ] || { OD_E2E_PORT="$(free_port)"; export OD_E2E_PORT; }
   for script in "$@"; do node "$script"; done
   exit 0
 fi
-node studio.e2e.mjs
-node design-system.e2e.mjs
-node library.e2e.mjs
-node manage.e2e.mjs
-node chat.e2e.mjs
-node files.e2e.mjs
-node preview.e2e.mjs
-# Wave C tracks: port OD_E2E_PORT + 5 + track number (C1 = +6 … C4 = +9).
-node c2.e2e.mjs
-node c3-runtimes.e2e.mjs
-node c4-depth.e2e.mjs
-# axe-core and narrow windows: port OD_E2E_PORT + 10.
-node a11y.e2e.mjs
-# Check for Updates against a stub GitHub Releases: port OD_E2E_PORT + 11.
-node updates.e2e.mjs
+run OD_E2E_PORT studio.e2e.mjs
+run OD_E2E_DS_PORT design-system.e2e.mjs
+run OD_E2E_LIB_PORT library.e2e.mjs
+run OD_E2E_MANAGE_PORT manage.e2e.mjs
+run OD_E2E_CHAT_PORT chat.e2e.mjs
+run OD_E2E_FILES_PORT files.e2e.mjs
+run OD_E2E_PREVIEW_PORT preview.e2e.mjs
+# Wave C tracks (with OD_E2E_PORT: + 5 + track number, C1 = +6 … C4 = +9).
+run OD_E2E_C2_PORT c2.e2e.mjs
+run OD_E2E_C3_PORT c3-runtimes.e2e.mjs
+run OD_E2E_C4_PORT c4-depth.e2e.mjs
+# axe-core and narrow windows (with OD_E2E_PORT: + 10).
+run OD_E2E_A11Y_PORT a11y.e2e.mjs
+# Check for Updates against a stub GitHub Releases (with OD_E2E_PORT: + 11).
+run OD_E2E_UPDATES_PORT updates.e2e.mjs
