@@ -3,6 +3,8 @@
 //    menu, from another page and as a fresh load, and does not drop back
 //    to the top while the sections above it finish loading; a link with
 //    no section still opens Settings at its top.
+// 2. The Settings nav marks the section in view (`aria-current`), one at
+//    a time, and follows as the page scrolls.
 // Port: OD_E2E_PORT + 13 (or OD_E2E_POLISH_PORT). Run through ./run.sh.
 
 import { chromium } from 'playwright';
@@ -47,6 +49,10 @@ const topInMain = (page, selector) =>
     return el ? el.getBoundingClientRect().top - main.top : null;
   }, selector);
 const mainScroll = (page) => page.evaluate(() => document.getElementById('main').scrollTop);
+const current = (page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('.settings-nav-link[aria-current]')].map((a) => a.dataset.testid),
+  );
 
 // The section `id` sits near the top of `<main>`.
 async function opensAt(page, id, label) {
@@ -128,6 +134,26 @@ try {
   await page.getByTestId('settings-nav-execution').waitFor();
   await sleep(800);
   assert.equal(await mainScroll(page), 0, 'plain /settings opens at the top');
+
+  log('2. the nav marks the section in view');
+  assert.deepEqual(await current(page), ['settings-nav-execution'], 'first section marked at the top');
+  assert.equal(await page.getByTestId('settings-nav-execution').getAttribute('aria-current'), 'location');
+  await page.getByTestId('settings-nav-memory').click();
+  await opensAt(page, 'memory', 'nav link');
+  await until(async () => (await current(page)).join() === 'settings-nav-memory', 'memory marked after its link');
+  // Scrolling by hand moves the mark.
+  await page.evaluate(() => {
+    const main = document.getElementById('main');
+    const el = document.getElementById('settings-appearance');
+    main.scrollBy(0, el.getBoundingClientRect().top - main.getBoundingClientRect().top);
+  });
+  await until(async () => (await current(page)).join() === 'settings-nav-appearance', 'appearance marked after scrolling');
+  // The bottom of the page marks the last section.
+  await page.evaluate(() => {
+    const main = document.getElementById('main');
+    main.scrollTop = main.scrollHeight;
+  });
+  await until(async () => (await current(page)).join() === 'settings-nav-about', 'about marked at the bottom');
 
   assert.deepEqual(pageErrors, [], 'no page errors');
   log('ok');

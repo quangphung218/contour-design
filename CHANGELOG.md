@@ -39,6 +39,8 @@ All notable changes to Contour are recorded here. The format follows
   there while the sections above finish loading. Before, the page always
   opened at its top. The chat's and Home's links to MCP servers now point
   at that section too.
+- The Settings nav marks the section in view, and follows as the page
+  scrolls (`aria-current` for screen readers).
 
 ## [0.2.0-beta.7] - 2026-10-29
 

@@ -543,6 +543,7 @@ details.agent-missing[open] > summary .ico:last-child { transform: rotate(90deg)
 .settings-nav-link { padding: var(--space-1-5) var(--space-2-5); border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--color-text-secondary); transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
 .settings-nav-link:hover { background: var(--color-fill); color: var(--color-text); }
 .settings-nav-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus-ring); }
+.settings-nav-link[aria-current] { background: var(--color-surface-raised); color: var(--color-text); font-weight: var(--weight-medium); box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--color-border-subtle); }
 .settings-main { min-width: 0; }
 .settings-main .settings-section { grid-template-columns: 200px minmax(0, 1fr); scroll-margin-top: var(--space-6); }
 .settings-main > .settings-section:first-child { border-top: 0; padding-top: 0; }
