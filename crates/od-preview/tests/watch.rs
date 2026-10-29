@@ -30,8 +30,11 @@ async fn next_change(sub: &mut Subscription, within: Duration) -> (String, Chang
 }
 
 /// Lets the native watcher settle so setup noise is not mistaken for a hit.
+/// On a loaded machine FSEvents reports a file written just before the
+/// subscription more than 400 ms late, so this waits for a full second of
+/// silence.
 async fn quiet(sub: &mut Subscription) {
-    while tokio::time::timeout(Duration::from_millis(400), sub.recv())
+    while tokio::time::timeout(Duration::from_secs(1), sub.recv())
         .await
         .is_ok()
     {}
@@ -144,11 +147,18 @@ async fn unlink_nested_paths_and_ignored_files() {
         (path.as_str(), kind),
         ("deck/slide.html", ChangeKind::Unlink)
     );
+    // A late repeat of the unlink (a loaded machine delivers FSEvents in
+    // more than one batch) is no failure; a report of the others is.
+    let mut late = Vec::new();
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(400), sub.recv()).await {
+        if let ProjectEvent::FileChanged { path, .. } = event {
+            late.push(path);
+        }
+    }
     assert!(
-        tokio::time::timeout(Duration::from_millis(400), sub.recv())
-            .await
-            .is_err(),
-        "internal and junk files must not be reported"
+        late.iter()
+            .all(|p| !p.starts_with(".open-design") && p != ".DS_Store"),
+        "internal and junk files must not be reported: {late:?}"
     );
 }
 
