@@ -129,11 +129,12 @@ pub fn open(path: &Path) -> Result<Connection> {
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
     let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
     conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;")?;
-    migrate(&mut conn)?;
+    let fresh = migrate(&mut conn)?;
     crate::memory::ensure_schema(&conn)?;
     crate::manage::ensure_schema(&conn)?;
     crate::comments::ensure_schema(&conn)?;
     crate::usage::ensure_schema(&conn)?;
+    crate::setup::ensure_schema(&conn, fresh)?;
     Ok(conn)
 }
 
@@ -143,7 +144,8 @@ pub fn schema_version() -> usize {
     MIGRATIONS.len()
 }
 
-fn migrate(conn: &mut Connection) -> Result<()> {
+/// Returns whether the database was new (no schema before this open).
+fn migrate(conn: &mut Connection) -> Result<bool> {
     let current: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     let current = usize::try_from(current).unwrap_or(0);
     if current > MIGRATIONS.len() {
@@ -159,7 +161,7 @@ fn migrate(conn: &mut Connection) -> Result<()> {
         tx.commit()?;
         tracing::info!(version = index + 1, "applied database migration");
     }
-    Ok(())
+    Ok(current == 0)
 }
 
 const PROJECT_COLUMNS: &str = "id, name, skill_id, design_system_id, pending_prompt, \

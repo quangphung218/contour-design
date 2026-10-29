@@ -191,6 +191,12 @@ impl Store {
             }
             db::insert_project(&tx, &project)?;
             db::insert_conversation(&tx, &conversation_id, &project.id, now)?;
+            // The media library is made on its own; it is nobody's first project.
+            let media = project.metadata.as_ref().and_then(|m| m.intent.as_deref())
+                == Some("media-library");
+            if !media {
+                crate::setup::insert(&tx, od_contracts::SetupStep::Project, now)?;
+            }
             root.ensure_exists()?;
             tx.commit()?;
         }

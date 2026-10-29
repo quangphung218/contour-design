@@ -1,5 +1,5 @@
 //! Settings ▸ About ▸ Your usage: numbers worked out from what is already
-//! on this machine, for beta users to paste into a discussion. Nothing here
+//! on this machine, for beta users to paste into a GitHub issue. Nothing here
 //! leaves the machine on its own (no telemetry, `docs/decisions.md`).
 
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,88 @@ pub struct UsageResponse {
     pub first_preview: FirstPreviewUsage,
     pub engaged: EngagedUsage,
     pub runs: RunUsage,
+    /// How far first-run setup got; `None` when the data folder is older
+    /// than 0.2.0-beta.8 and its setup was never recorded.
+    #[serde(default)]
+    pub setup: Option<SetupUsage>,
+}
+
+/// A first-run setup step, in order. Each is recorded once, the first
+/// time it happens in a data folder made by 0.2.0-beta.8 or later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SetupStep {
+    /// The app started on a new data folder.
+    Opened,
+    /// Agent detection found an installed coding agent.
+    AgentFound,
+    /// An agent (or an API key) passed its connection test.
+    AgentTested,
+    /// The first project was created.
+    Project,
+    /// A project was first shown in the preview.
+    Preview,
+}
+
+impl SetupStep {
+    pub const ALL: [Self; 5] = [
+        Self::Opened,
+        Self::AgentFound,
+        Self::AgentTested,
+        Self::Project,
+        Self::Preview,
+    ];
+
+    /// The wire and database name.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Opened => "opened",
+            Self::AgentFound => "agent_found",
+            Self::AgentTested => "agent_tested",
+            Self::Project => "project",
+            Self::Preview => "preview",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.as_str() == name)
+    }
+
+    /// 1 for [`Self::Opened`] … 5 for [`Self::Preview`].
+    #[must_use]
+    pub fn number(self) -> u32 {
+        match self {
+            Self::Opened => 1,
+            Self::AgentFound => 2,
+            Self::AgentTested => 3,
+            Self::Project => 4,
+            Self::Preview => 5,
+        }
+    }
+}
+
+/// When one setup step was first reached (Unix ms).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupMark {
+    pub step: SetupStep,
+    pub at: i64,
+}
+
+/// First-run setup: the steps reached and where it stopped.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupUsage {
+    /// Steps reached, in step order.
+    pub steps: Vec<SetupMark>,
+    /// The furthest step reached, 1 to 5 (0 with none).
+    pub reached: u32,
+    /// The step after the furthest one, until the first preview.
+    pub stopped_at: Option<SetupStep>,
+    /// From the first open to the first preview.
+    pub took_ms: Option<i64>,
 }
 
 /// Time from creating a project to its first preview.

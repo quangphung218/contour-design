@@ -14,6 +14,7 @@ pub mod manage;
 pub mod memory;
 pub mod memory_index;
 pub mod paths;
+pub mod setup;
 pub mod store;
 pub mod usage;
 pub mod versions;
