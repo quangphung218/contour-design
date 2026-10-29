@@ -250,6 +250,17 @@ try {
       const all = page.getByTestId('home-all-templates');
       await all.waitFor();
       assert.ok((await all.boundingBox()).height >= 44, 'All templates link is a 44 px target');
+      const fit = await page.evaluate(() => {
+        const headRow = document.querySelector('[data-testid=home-all-templates]').closest('.section-head');
+        const h2 = headRow.querySelector('h2');
+        const cs = getComputedStyle(h2);
+        const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3;
+        const lines = Math.round(h2.getBoundingClientRect().height / lineHeight);
+        const right = Math.max(...[...headRow.querySelectorAll('.btn')].map((b) => b.getBoundingClientRect().right));
+        return { lines, right, edge: headRow.getBoundingClientRect().right };
+      });
+      assert.equal(fit.lines, 1, 'Start from a template on one line');
+      assert.ok(fit.right <= fit.edge + 0.5, `gallery links inside the head (${fit.right} > ${fit.edge})`);
     }
   }
 

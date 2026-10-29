@@ -1591,4 +1591,6 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
   .chip.next-step { min-height: 44px; }
   .settings-section .row.end .btn, .empty-state .btn { min-height: 44px; }
   .home-section .section-head .btn { min-height: 44px; }
+  /* The title keeps its line; Show all and All templates go under it. */
+  .home-section .section-head, .home-section .section-head > .row { flex-wrap: wrap; }
 }
