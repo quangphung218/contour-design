@@ -731,6 +731,13 @@ try {
   await page.getByTestId('inspect-extract').click();
   await page.getByTestId('inspect-css').getByText('color: rgb(10, 125, 59);').waitFor();
   assert.doesNotMatch(await page.getByTestId('inspect-css').textContent(), /font-size/);
+  // Edit keys come back late from here on, so the text edit below is typed
+  // before its load's key is in: it is still written (it was dropped on a
+  // slow CI runner).
+  await page.route('**/edit-keys/**', async (r) => {
+    await sleep(1000);
+    await r.continue();
+  });
   await page.getByTestId('inspect-save').click();
   await page.getByTestId('tool-status').getByText('index.html').waitFor();
   // "Saved to index.html" belongs to that file: another tab does not show it.
