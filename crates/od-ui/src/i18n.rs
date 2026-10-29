@@ -511,7 +511,7 @@ messages! {
     UsageSetup => "First-run setup", "Cài đặt lần đầu";
     UsageSetupReached => "Reached step {0} of {1}", "Đã tới bước {0}/{1}";
     UsageSetupTook => "{0} from first open to first preview", "{0} từ lần mở đầu tới preview đầu tiên";
-    UsageSetupStopped => "Stopped at: {0}", "Dừng ở: {0}";
+    UsageSetupNext => "Next step: {0}", "Bước tiếp theo: {0}";
     UsageSetupNotRecorded => "Not recorded: this data folder is older than {0}", "Không có số liệu: thư mục dữ liệu có từ trước bản {0}";
     SetupStepOpened => "opening the app", "mở app";
     SetupStepAgent => "agent", "agent";

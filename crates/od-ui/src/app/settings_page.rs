@@ -1115,11 +1115,12 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
                         </dd>
                     }
                 });
-                let stopped = s.stopped_at.map(|step| {
+                // Where setup stands now: it may still be under way.
+                let next = s.stopped_at.map(|step| {
                     view! {
-                        <dd class="muted small" data-testid="usage-setup-stopped"
+                        <dd class="muted small" data-testid="usage-setup-next"
                             data-step=step.as_str()>
-                            {tf(T::UsageSetupStopped, &[setup_step(step)])}
+                            {tf(T::UsageSetupNext, &[setup_step(step)])}
                         </dd>
                     }
                 });
@@ -1129,7 +1130,7 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
                         &SetupStep::ALL.len().to_string(),
                     ])}</dd>
                     {took}
-                    {stopped}
+                    {next}
                 }
                 .into_any()
             }

@@ -161,7 +161,7 @@ try {
   assert.equal(await section.getByText('Since 0.2.0-beta.7', { exact: true }).count(), 1);
   assert.equal(await page.getByTestId('usage-since').textContent(), 'Since 0.2.0-beta.7');
   assert.equal(await value('usage-setup').textContent(), 'Reached step 2 of 5');
-  assert.equal(await page.getByTestId('usage-setup-stopped').textContent(), 'Stopped at: agent test');
+  assert.equal(await page.getByTestId('usage-setup-next').textContent(), 'Next step: agent test');
   // Where to paste it: the Discussions thread; a bug goes in an issue.
   assert.match(await section.textContent(), /“Share your usage” discussion on GitHub; for a bug, open an issue with steps to reproduce/);
   await page.getByTestId('usage-copy').click();

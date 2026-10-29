@@ -14,11 +14,13 @@ All notable changes to Contour are recorded here. The format follows
   5 steps: the app opened, an agent found, an agent (or API key) passed
   its test, the first project, the first preview. Each step is recorded
   once, the first time it happens, on this machine only and never sent
-  anywhere. It reads "Reached step 5 of 5" with the time from the first
-  open to the first preview, or the step setup stopped at ("Stopped at:
-  agent" for someone who quit at onboarding without an agent). Copy
-  summary adds the same as a `Setup:` line. A data folder made before this
-  version says "not recorded" instead of a guess. In every UI language.
+  anywhere; an automation's project is not a first project. It reads
+  "Reached step 5 of 5" with the time from the first open to the first
+  preview, or the step still to come ("Next step: agent" for someone who
+  quit at onboarding without an agent). Copy summary adds a `Setup:` line
+  that names where setup stopped (`stopped at: agent`). A data folder
+  made before this version says "not recorded" instead of a guess. In
+  every UI language.
 
 ### Changed
 

@@ -107,9 +107,11 @@ try {
   const row = page.getByTestId('usage-setup');
   assert.equal(await row.locator('dt').textContent(), 'First-run setup');
   assert.equal(await row.locator('dd').first().textContent(), 'Reached step 1 of 5');
-  const stopped = page.getByTestId('usage-setup-stopped');
-  assert.equal(await stopped.textContent(), 'Stopped at: agent');
-  assert.equal(await stopped.getAttribute('data-step'), 'agent_found');
+  // On screen, where setup stands (it may still be under way); the
+  // summary says where it stopped.
+  const next = page.getByTestId('usage-setup-next');
+  assert.equal(await next.textContent(), 'Next step: agent');
+  assert.equal(await next.getAttribute('data-step'), 'agent_found');
   assert.equal(await page.getByTestId('usage-setup-took').count(), 0, 'no time without a preview');
   const summary = await page.getByTestId('usage-summary').textContent();
   assert.equal(summary.split('\n')[1], 'Setup: reached step 1 of 5, stopped at: agent', summary);

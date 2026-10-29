@@ -328,8 +328,9 @@ files under the data folder and the API returns them masked.
   far first-run setup got (5 steps: app opened, agent found, agent or API
   key passed its test, first project, first preview; each recorded once,
   the first time, in a data folder made by 0.2.0-beta.8 or later; with the
-  time from the first open to the first preview, or the step it stopped
-  at; an older data folder says "not recorded"), the
+  time from the first open to the first preview, or the next step, which
+  the summary gives as where setup stopped; an automation's project is not
+  a first project; an older data folder says "not recorded"), the
   median time from creating a project to its first preview, the share of
   projects exported (Export menu, MP4, screenshot PNG, ZIP) or with 3+
   chat turns (both for projects started empty since 0.2.0-beta.7: not
