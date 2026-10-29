@@ -410,6 +410,7 @@ ForwardedTo = Diteruskan ke:
 NotForwardedTo = Tidak diteruskan ke:
 ForwardedAcpNote = Adapter ACP yang bertanda stdio hanya menerima server MCP stdio dari daftar ini; entri HTTP dibuang saat proses dijalankan.
 NotForwardedNote = Untuk agen tersebut, atur server MCP di file konfigurasi agen itu sendiri (misalnya ~/.codex/config.toml); server di bawah tidak dipakai di sana.
+ForwardedDetails = Detail
 StdioOnly = {0} (hanya stdio)
 NoAgents = tidak ada agen terpasang
 McpCatalog = Templat server

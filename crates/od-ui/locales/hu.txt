@@ -410,6 +410,7 @@ ForwardedTo = Továbbítva ide:
 NotForwardedTo = Nincs továbbítva ide:
 ForwardedAcpNote = A stdio only jelölésű ACP-adapterek csak a listában szereplő stdio MCP-szervereket kapják meg; a HTTP-bejegyzések indításkor kimaradnak.
 NotForwardedNote = Ezeknél az agenteknél az MCP-szervereket az agent saját konfigurációs fájljában állítsd be (például ~/.codex/config.toml); az alábbi szerverek ott nincsenek használatban.
+ForwardedDetails = Részletek
 StdioOnly = {0} (stdio only)
 NoAgents = nincs telepített agent
 McpCatalog = Szerversablonok

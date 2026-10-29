@@ -630,6 +630,7 @@ messages! {
     ForwardedAcpNote => "ACP adapters marked stdio only receive stdio MCP servers from this list; HTTP entries are dropped at spawn time.", "Adapter ACP ghi stdio only chỉ nhận MCP server stdio trong danh sách này; mục HTTP bị bỏ khi chạy.";
     NotForwardedNote => "For those agents, configure MCP servers in the agent's own config file (for example ~/.codex/config.toml); the servers below are unused there.", "Với các agent này, cấu hình MCP server trong file cấu hình riêng của agent (ví dụ ~/.codex/config.toml); các server bên dưới không được dùng ở đó.";
     StdioOnly => "{0} (stdio only)", "{0} (stdio only)";
+    ForwardedDetails => "Details", "Chi tiết";
     NoAgents => "no installed agent", "không có agent nào đã cài";
     McpCatalog => "Server templates", "Mẫu server";
     McpCatalogHint => "Ready-made servers. Adding one saves it to the list above; fill in keys or paths where a template asks.", "Server có sẵn. Thêm thì lưu vào danh sách trên; điền key hoặc đường dẫn nếu mẫu cần.";

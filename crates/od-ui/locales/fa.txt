@@ -410,6 +410,7 @@ ForwardedTo = ارسال‌شده به:
 NotForwardedTo = ارسال‌نشده به:
 ForwardedAcpNote = آداپتورهای ACP که فقط stdio هستند تنها سرورهای MCP از نوع stdio را از این فهرست می‌گیرند؛ موردهای HTTP هنگام اجرا کنار گذاشته می‌شوند.
 NotForwardedNote = برای آن agentها، سرورهای MCP را در فایل پیکربندی خود agent تنظیم کنید (مثلاً ~/.codex/config.toml)؛ سرورهای زیر آنجا استفاده نمی‌شوند.
+ForwardedDetails = جزئیات
 StdioOnly = {0} (فقط stdio)
 NoAgents = agent نصب‌شده‌ای نیست
 McpCatalog = قالب‌های سرور

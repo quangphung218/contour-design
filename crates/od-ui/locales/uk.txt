@@ -410,6 +410,7 @@ ForwardedTo = Передається до:
 NotForwardedTo = Не передається до:
 ForwardedAcpNote = Адаптери ACP зі stdio лише отримують із цього списку MCP-сервери stdio; записи HTTP відкидаються під час запуску.
 NotForwardedNote = Для цих агентів налаштуйте MCP-сервери в їхньому власному файлі конфігурації (наприклад, ~/.codex/config.toml); сервери нижче там не використовуються.
+ForwardedDetails = Подробиці
 StdioOnly = {0} (лише stdio)
 NoAgents = немає встановлених агентів
 McpCatalog = Шаблони серверів

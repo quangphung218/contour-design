@@ -410,6 +410,7 @@ ForwardedTo = يُمرَّر إلى:
 NotForwardedTo = لا يُمرَّر إلى:
 ForwardedAcpNote = محوّلات ACP المعلّمة stdio فقط تتلقى خوادم MCP من نوع stdio من هذه القائمة؛ وتُحذف عناصر HTTP عند التشغيل.
 NotForwardedNote = لهؤلاء الوكلاء، اضبط خوادم MCP في ملف إعداد الوكيل نفسه (مثل ~/.codex/config.toml)؛ والخوادم أدناه غير مستخدمة هناك.
+ForwardedDetails = التفاصيل
 StdioOnly = {0} (stdio فقط)
 NoAgents = لا يوجد وكيل مثبّت
 McpCatalog = قوالب الخوادم

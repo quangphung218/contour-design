@@ -52,6 +52,10 @@ All notable changes to Contour are recorded here. The format follows
   Export menu on the Preview pane; before, the Chat pane had no way to it.
 - A reply with a Plan no longer repeats "Updated plan" as rows under it
   each time the agent updates the plan: the Plan list shows the changes.
+- Integrations ▸ MCP opens with one line, "Forwarded to: …"; the notes on
+  stdio-only adapters and on agents not forwarded to are under Details.
+  With no MCP server yet, Add server is in the empty list, and Save stays
+  a plain, disabled button until there is a change to save.
 
 ## [0.2.0-beta.7] - 2026-10-29
 

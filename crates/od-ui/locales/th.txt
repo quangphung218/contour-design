@@ -410,6 +410,7 @@ ForwardedTo = ส่งต่อไปยัง:
 NotForwardedTo = ไม่ได้ส่งต่อไปยัง:
 ForwardedAcpNote = อะแดปเตอร์ ACP ที่ระบุว่า stdio only จะได้รับเฉพาะเซิร์ฟเวอร์ MCP แบบ stdio จากรายการนี้ รายการ HTTP จะถูกตัดออกตอนเริ่มทำงาน
 NotForwardedNote = สำหรับเอเจนต์เหล่านี้ ให้ตั้งค่าเซิร์ฟเวอร์ MCP ในไฟล์ตั้งค่าของเอเจนต์เอง (เช่น ~/.codex/config.toml) เซิร์ฟเวอร์ด้านล่างจะไม่ถูกใช้ที่นั่น
+ForwardedDetails = รายละเอียด
 StdioOnly = {0} (stdio only)
 NoAgents = ไม่มีเอเจนต์ที่ติดตั้ง
 McpCatalog = เทมเพลตเซิร์ฟเวอร์

@@ -409,6 +409,7 @@ ForwardedTo = İletildiği yer:
 NotForwardedTo = İletilmediği yer:
 ForwardedAcpNote = Yalnızca stdio olarak işaretlenmiş ACP adaptörleri bu listeden yalnızca stdio MCP sunucularını alır; HTTP girdileri başlatma sırasında atılır.
 NotForwardedNote = Bu agent'lar için MCP sunucularını agent'ın kendi yapılandırma dosyasında ayarlayın (örneğin ~/.codex/config.toml); aşağıdaki sunucular orada kullanılmaz.
+ForwardedDetails = Ayrıntılar
 StdioOnly = {0} (yalnızca stdio)
 NoAgents = kurulu agent yok
 McpCatalog = Sunucu şablonları

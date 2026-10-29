@@ -35,6 +35,9 @@ fn for_save(v: &Value) -> Value {
 #[component]
 pub fn McpSection() -> impl IntoView {
     let servers = RwSignal::new(Vec::<Value>::new());
+    // The list as last loaded or saved: Save is for changes only.
+    let saved = RwSignal::new(Vec::<Value>::new());
+    let changed = move || servers.with(|s| saved.with(|v| s != v));
     let status = RwSignal::new(None::<Result<(), String>>);
     // While a save is in flight the daemon still has the old list: a test
     // then would probe a server it does not know yet.
@@ -42,7 +45,9 @@ pub fn McpSection() -> impl IntoView {
     let reload = move || {
         leptos::task::spawn_local(async move {
             if let Ok(r) = api::get::<Value>("/api/mcp/servers").await {
-                servers.set(r["servers"].as_array().cloned().unwrap_or_default());
+                let list = r["servers"].as_array().cloned().unwrap_or_default();
+                saved.set(list.clone());
+                servers.set(list);
             }
         });
     };
@@ -54,7 +59,9 @@ pub fn McpSection() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match api::put::<_, Value>("/api/mcp/servers", &body).await {
                 Ok(r) => {
-                    servers.set(r["servers"].as_array().cloned().unwrap_or_default());
+                    let list = r["servers"].as_array().cloned().unwrap_or_default();
+                    saved.set(list.clone());
+                    servers.set(list);
                     status.set(Some(Ok(())));
                 }
                 Err(e) => status.set(Some(Err(e.to_string()))),
@@ -85,6 +92,7 @@ pub fn McpSection() -> impl IntoView {
                         <div class="card empty-state compact">
                             <span class="empty-icon">{icon(Glyph::Mcp)}</span>
                             <p>{t(T::McpNoServers)}</p>
+                            <button class="btn" data-testid="mcp-add" on:click=add>{icon(Glyph::Add)}{t(T::McpAdd)}</button>
                         </div>
                     }.into_any();
                 }
@@ -97,8 +105,11 @@ pub fn McpSection() -> impl IntoView {
                 Some(Err(e)) => view! { <span class="error-text" data-testid="mcp-error">{e}</span> }.into_any(),
                 None => ().into_any(),
             }}
-            <button class="btn" data-testid="mcp-add" on:click=add>{icon(Glyph::Add)}{t(T::McpAdd)}</button>
-            <button class="btn primary" data-testid="mcp-save" disabled=move || saving.get() on:click=save>{t(T::Save)}</button>
+            <Show when=move || rows.get() != 0>
+                <button class="btn" data-testid="mcp-add" on:click=add>{icon(Glyph::Add)}{t(T::McpAdd)}</button>
+            </Show>
+            // Primary only with something to save; the empty list has nothing.
+            <button class="btn" class:primary=changed data-testid="mcp-save" disabled=move || saving.get() || !changed() on:click=save>{t(T::Save)}</button>
         </div>
     }
 }

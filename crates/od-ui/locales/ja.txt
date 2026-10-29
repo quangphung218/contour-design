@@ -410,6 +410,7 @@ ForwardedTo = 転送先：
 NotForwardedTo = 転送されない先：
 ForwardedAcpNote = stdio のみと指定された ACP アダプターは、このリストから stdio の MCP サーバーだけを受け取ります。HTTP のエントリーは起動時に除外されます。
 NotForwardedNote = これらのエージェントでは、MCP サーバーをエージェント自身の設定ファイル（例: ~/.codex/config.toml）で設定してください。下のサーバーは使用されません。
+ForwardedDetails = 詳細
 StdioOnly = {0}（stdio のみ）
 NoAgents = インストール済みのエージェントなし
 McpCatalog = サーバーテンプレート

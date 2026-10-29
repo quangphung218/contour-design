@@ -410,6 +410,7 @@ ForwardedTo = Reenviado a:
 NotForwardedTo = No reenviado a:
 ForwardedAcpNote = Los adaptadores ACP marcados como solo stdio únicamente reciben de esta lista los servidores MCP stdio; las entradas HTTP se descartan al iniciar.
 NotForwardedNote = En esos agentes, configura los servidores MCP en el propio archivo de configuración del agente (por ejemplo ~/.codex/config.toml); los servidores de abajo no se usan ahí.
+ForwardedDetails = Detalles
 StdioOnly = {0} (solo stdio)
 NoAgents = ningún agente instalado
 McpCatalog = Plantillas de servidor
