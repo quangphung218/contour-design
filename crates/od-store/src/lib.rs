@@ -15,6 +15,7 @@ pub mod memory;
 pub mod memory_index;
 pub mod paths;
 pub mod store;
+pub mod usage;
 pub mod versions;
 
 pub use chat::{AgentSession, NewTurn};

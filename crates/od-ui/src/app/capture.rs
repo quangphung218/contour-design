@@ -114,6 +114,7 @@ fn save_file(ctx: StudioCtx, busy: RwSignal<bool>) {
         match res.map(|png| data_url_bytes(&png)) {
             Ok(Some(bytes)) => {
                 download(&bytes, &format!("{stem}.png"), "image/png");
+                super::export_menu::mark_exported(&ctx.base()).await;
             }
             Ok(None) => ctx.notice.set(Some(t(T::ScreenshotFailed).to_owned())),
             Err(e) => ctx.notice.set(Some(e)),

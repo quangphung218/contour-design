@@ -1008,8 +1008,191 @@ fn About() -> impl IntoView {
                 Ok(m) => view! { <p class="ok-text small" data-testid="diagnostics-state">{m}</p> }.into_any(),
                 Err(e) => view! { <p class="error-text small" data-testid="diagnostics-state">{e}</p> }.into_any(),
             })}
+            <YourUsage version/>
             <Licenses/>
         </div>
+    }
+}
+
+/// A run's failure cause (`RunCause::cause`), for people.
+fn cause_label(cause: &str) -> &'static str {
+    t(match cause {
+        "spawn_failed" => T::CauseSpawnFailed,
+        "agent_error" => T::CauseAgentError,
+        "timeout" => T::CauseTimeout,
+        "rate_limit" => T::CauseRateLimit,
+        "transient" => T::CauseTransient,
+        "tool_loop" => T::CauseToolLoop,
+        "daemon_restart" => T::CauseDaemonRestart,
+        _ => T::CauseOther,
+    })
+}
+
+/// A count in the UI language, "12,345" or "12.345".
+fn count(n: u32) -> String {
+    js_sys::Number::from(f64::from(n))
+        .to_locale_string(crate::i18n::locale().tag())
+        .into()
+}
+
+/// About ▸ Your usage: three numbers worked out by the daemon from what is
+/// on this machine (`GET /api/usage`), and Copy for a summary to paste into
+/// a discussion ([`crate::usage::summary`]), shown before it is copied. No
+/// telemetry: nothing is sent.
+#[component]
+fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
+    use crate::usage::{RECORDED_SINCE, duration, enough, percent};
+    use od_contracts::{USAGE_MIN_SAMPLE, UsageResponse};
+    let shell = Shell::get();
+    let usage = LocalResource::new(|| async {
+        api::get::<UsageResponse>("/api/usage")
+            .await
+            .map_err(|e| e.to_string())
+    });
+    let summary = Memo::new(move |_| {
+        let Some(Ok(u)) = usage.get() else {
+            return None;
+        };
+        let v = version.get().flatten().unwrap_or(Value::Null);
+        let os = format!(
+            "{} {}",
+            v["platform"].as_str().unwrap_or("unknown"),
+            v["arch"].as_str().unwrap_or_default()
+        );
+        let agent = shell.config.get().and_then(|c| c.agent_id);
+        Some(crate::usage::summary(
+            &u,
+            v["version"].as_str().unwrap_or("unknown"),
+            os.trim_end(),
+            agent.as_deref(),
+        ))
+    });
+    let copied = RwSignal::new(None::<bool>);
+    let shown = RwSignal::new(false);
+    let copy = move |_| {
+        let Some(text) = summary.get_untracked() else {
+            return;
+        };
+        leptos::task::spawn_local(async move {
+            let ok = super::export_menu::copy_text(&text).await.is_ok();
+            // The text stays one selection away when the clipboard refuses.
+            if !ok {
+                shown.set(true);
+            }
+            copied.set(Some(ok));
+        });
+    };
+    let since =
+        move || view! { <dd class="muted small">{tf(T::UsageSince, &[RECORDED_SINCE])}</dd> };
+    let not_enough = |key: T, have: u32| {
+        view! {
+            <dd class="muted" data-state="not-enough">
+                {tf(key, &[&count(have), &count(USAGE_MIN_SAMPLE)])}
+            </dd>
+        }
+    };
+    let numbers = move |u: UsageResponse| {
+        let fp = u.first_preview;
+        let first_preview = match fp.median_ms.filter(|_| enough(fp.projects)) {
+            Some(ms) => view! {
+                <dd data-state="value">{tf(T::UsageFirstPreviewValue, &[&duration(ms), &count(fp.projects)])}</dd>
+            }
+            .into_any(),
+            None => not_enough(T::UsageNotEnoughProjects, fp.projects).into_any(),
+        };
+        let e = u.engaged;
+        let engaged = if enough(e.projects) {
+            view! {
+                <dd data-state="value">{tf(T::UsageEngagedValue, &[
+                    &percent(e.engaged, e.projects).to_string(),
+                    &count(e.engaged),
+                    &count(e.projects),
+                ])}</dd>
+            }
+            .into_any()
+        } else {
+            not_enough(T::UsageNotEnoughProjects, e.projects).into_any()
+        };
+        let r = u.runs;
+        let runs = if enough(r.total) {
+            view! {
+                <dd data-state="value">{tf(T::UsageFailedRunsValue, &[
+                    &percent(r.failed, r.total).to_string(),
+                    &count(r.failed),
+                    &count(r.total),
+                ])}</dd>
+                <dd>
+                    <ul class="usage-causes small" data-testid="usage-causes">
+                        {r.causes.into_iter().map(|c| view! {
+                            <li data-cause=c.cause.clone()>{cause_label(&c.cause)}" · "<span class="mono">{count(c.count)}</span></li>
+                        }).collect_view()}
+                    </ul>
+                </dd>
+            }
+            .into_any()
+        } else {
+            not_enough(T::UsageNotEnoughRuns, r.total).into_any()
+        };
+        let stopped = (r.canceled > 0).then(|| {
+            view! {
+                <dd class="muted small" data-testid="usage-stopped">
+                    {tf(T::UsageStopped, &[&count(r.canceled)])}
+                </dd>
+            }
+        });
+        view! {
+            <dl class="usage-list">
+                <div data-testid="usage-first-preview">
+                    <dt>{t(T::UsageFirstPreview)}</dt>{first_preview}{since}
+                </div>
+                <div data-testid="usage-engaged">
+                    <dt>{t(T::UsageEngaged)}</dt>{engaged}{since}
+                </div>
+                <div data-testid="usage-runs">
+                    <dt>{t(T::UsageFailedRuns)}</dt>{runs}{stopped}
+                </div>
+            </dl>
+        }
+    };
+    view! {
+        <section class="about-usage" data-testid="about-usage" aria-labelledby="about-usage-title">
+            <h3 id="about-usage-title">{t(T::YourUsage)}</h3>
+            <p class="muted small">{t(T::YourUsageHint)}</p>
+            {move || match usage.get() {
+                None => view! { <span class="spinner"></span> }.into_any(),
+                Some(Err(e)) => view! {
+                    <p class="error-text small" data-testid="usage-error">{e}</p>
+                    <div class="row">
+                        <button class="btn small" data-testid="usage-retry" on:click=move |_| usage.refetch()>
+                            {t(T::TryAgain)}
+                        </button>
+                    </div>
+                }
+                .into_any(),
+                Some(Ok(u)) => numbers(u).into_any(),
+            }}
+            <div class="row wrap">
+                <button class="btn small" data-testid="usage-copy"
+                    disabled=move || summary.with(Option::is_none)
+                    on:click=copy>
+                    {icon(Glyph::Clipboard)}{t(T::UsageCopy)}
+                </button>
+            </div>
+            <div role="status">
+                {move || copied.get().map(|ok| if ok {
+                    view! { <p class="ok-text small" data-testid="usage-copied">{t(T::UsageCopied)}</p> }.into_any()
+                } else {
+                    view! { <p class="error-text small" data-testid="usage-copied">{t(T::UsageCopyFailed)}</p> }.into_any()
+                })}
+            </div>
+            {move || summary.get().map(|text| view! {
+                <details class="usage-preview" data-testid="usage-preview"
+                    prop:open=move || shown.get()>
+                    <summary class="small">{t(T::UsagePreview)}</summary>
+                    <pre class="mono small" data-testid="usage-summary">{text}</pre>
+                </details>
+            })}
+        </section>
     }
 }
 

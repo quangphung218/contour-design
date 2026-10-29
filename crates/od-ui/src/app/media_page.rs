@@ -901,13 +901,10 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
         status.set(None);
         let body = json!({ "fileName": "index.html", "fps": fps.get_untracked(), "output": "media/hyperframes.mp4" });
         leptos::task::spawn_local(async move {
-            match api::post::<_, Value>(
-                &format!("/api/projects/{}/export/mp4", api::seg(&pid)),
-                &body,
-            )
-            .await
-            {
+            let base = format!("/api/projects/{}", api::seg(&pid));
+            match api::post::<_, Value>(&format!("{base}/export/mp4"), &body).await {
                 Ok(v) => {
+                    super::export_menu::mark_exported(&base).await;
                     status.set(Some(Ok(tf(
                         T::Mp4Saved,
                         &[v["file"]["name"]

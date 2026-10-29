@@ -107,6 +107,8 @@ async fn launch(state: AppState, routine: Routine) -> ApiResult<Launched> {
                         name: title.clone(),
                         ..od_contracts::CreateProjectRequest::default()
                     })?;
+                    // Your usage counts projects people make, not these.
+                    s.mark_usage(&project.id, od_store::usage::UsageMark::Automated)?;
                     s.update_conversation(
                         &project.id,
                         &cid,

@@ -245,6 +245,17 @@ fn stem(path: &str) -> &str {
     name.rsplit_once('.').map_or(name, |(s, _)| s)
 }
 
+/// Settings ▸ About ▸ Your usage counts exported projects: call after a
+/// file left the project (Export menu, MP4, screenshot, ZIP). `base` is
+/// the project's `/api/projects/<id>`. A failure only logs, the file is
+/// already saved.
+pub async fn mark_exported(base: &str) {
+    let path = format!("{base}/exported");
+    if let Err(e) = api::post::<_, serde_json::Value>(&path, &json!({})).await {
+        leptos::logging::warn!("{path}: {e}");
+    }
+}
+
 #[component]
 pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     let open = RwSignal::new(false);
@@ -340,6 +351,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                 Ok(bytes) => {
                     download(&bytes, &name, format.mime());
                     status.set(Some(Ok(tf(T::Exported, &[&name]))));
+                    mark_exported(&base).await;
                 }
                 Err(e) => status.set(Some(Err(tf(T::ExportFailed, &[&e.to_string()])))),
             }

@@ -4,6 +4,7 @@
 
 use od_contracts::CreateProjectRequest;
 use od_store::{DataDir, Store, db};
+use serde_json::json;
 
 fn open(dir: &std::path::Path) -> Store {
     Store::open(DataDir::new(dir)).unwrap()
@@ -69,4 +70,143 @@ fn deleting_a_project_cascades_to_conversations() {
             Ok(())
         })
         .unwrap();
+}
+
+#[test]
+fn usage_keeps_the_first_mark_and_counts_turns_since_recording_began() {
+    use od_store::NewTurn;
+    use od_store::usage::UsageMark;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let (project, conversation) = store
+        .create_project(CreateProjectRequest {
+            name: "P".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    // Made before recording began: left out.
+    let (old, _) = store
+        .create_project(CreateProjectRequest {
+            name: "Old".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    store
+        .with_conn(|c| {
+            c.execute(
+                "UPDATE projects SET created_at = 0 WHERE id = ?1",
+                [&old.id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    assert!(
+        store
+            .mark_usage(&project.id, UsageMark::FirstPreview)
+            .unwrap()
+    );
+    assert!(
+        !store
+            .mark_usage(&project.id, UsageMark::FirstPreview)
+            .unwrap()
+    );
+    assert!(!store.mark_usage("missing", UsageMark::Export).unwrap());
+    assert!(!store.mark_usage("../x", UsageMark::Export).unwrap());
+    for i in 0..2 {
+        store
+            .begin_turn(&NewTurn {
+                conversation_id: &conversation,
+                user_message_id: &format!("u{i}"),
+                assistant_message_id: &format!("a{i}"),
+                content: "hi",
+                attachments: &[],
+                agent_id: "claude",
+                run_id: &format!("r{i}"),
+            })
+            .unwrap();
+    }
+
+    let (since, rows) = store.project_usage().unwrap();
+    assert!(since > 0 && since <= project.created_at);
+    assert_eq!(rows.len(), 1);
+    let first = store
+        .with_conn(|c| {
+            Ok(c.query_row(
+                "SELECT at FROM usage_marks WHERE kind = 'first_preview'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(rows[0].first_preview_at, Some(first));
+    assert!(!rows[0].exported);
+    assert_eq!(rows[0].turns, 2);
+
+    store.mark_usage(&project.id, UsageMark::Export).unwrap();
+    assert!(store.project_usage().unwrap().1[0].exported);
+
+    // The stamp survives a reopen; the marks go with their project.
+    drop(store);
+    let store = open(tmp.path());
+    assert_eq!(store.project_usage().unwrap().0, since);
+    store.delete_project(&project.id).unwrap();
+    assert!(store.project_usage().unwrap().1.is_empty());
+}
+
+#[test]
+fn usage_counts_only_projects_people_made_empty() {
+    use od_contracts::ProjectMetadata;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let (made, _) = store
+        .create_project(CreateProjectRequest {
+            name: "Made".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    store
+        .create_file_exact(&made.id, "index.html", b"<p>hi</p>")
+        .unwrap();
+    store
+        .create_project(CreateProjectRequest {
+            name: "Imported".to_owned(),
+            metadata: Some(ProjectMetadata {
+                imported_from: Some("claude-design".to_owned()),
+                ..ProjectMetadata::default()
+            }),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    let copy = store.duplicate_project(&made.id, None).unwrap();
+    assert_eq!(copy.copied_files, ["index.html"]);
+    // From a saved template (`use_template`), the media library, and an
+    // automation's project for one run.
+    for metadata in [
+        json!({ "templateId": "t1" }),
+        json!({ "intent": "media-library" }),
+    ] {
+        store
+            .create_project(CreateProjectRequest {
+                name: "Not made here".to_owned(),
+                metadata: Some(serde_json::from_value(metadata).unwrap()),
+                ..CreateProjectRequest::default()
+            })
+            .unwrap();
+    }
+    let (automated, _) = store
+        .create_project(CreateProjectRequest {
+            name: "Routine · today".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    assert!(
+        store
+            .mark_usage(&automated.id, od_store::usage::UsageMark::Automated)
+            .unwrap()
+    );
+
+    let (_, rows) = store.project_usage().unwrap();
+    assert_eq!(rows.len(), 1, "only the project made here counts");
+    assert_eq!(rows[0].created_at, made.created_at);
 }

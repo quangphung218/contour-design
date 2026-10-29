@@ -30,6 +30,7 @@ use od_preview::{
     MAX_INJECT_BYTES, PREVIEW_CSP, PREVIEW_IFRAME_SANDBOX, PreviewUrlResponse, ProjectEvent,
     encode_path, encode_segment, inject_bridge_keyed, is_edit_key_id, is_scope_token,
 };
+use od_store::usage::UsageMark;
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,13 +40,13 @@ pub const BRIDGE_HEADER: &str = "x-od-bridge";
 const KEEPALIVE: Duration = Duration::from_secs(25);
 
 /// Adds the preview routes to `api` and the bridge rewrite for `raw`.
-pub fn mount(api: Router<AppState>, preview: Preview) -> Router<AppState> {
+pub fn mount(api: Router<AppState>, state: &AppState) -> Router<AppState> {
     api.route("/api/projects/{id}/preview-url", get(preview_url))
         .route("/api/projects/{id}/preview/{scope}/{*path}", get(scoped))
         .route("/api/projects/{id}/events", get(events))
         .route("/api/projects/{id}/edit-keys/{kid}", post(claim_edit_key))
-        .layer(middleware::from_fn_with_state(preview.clone(), raw_bridge))
-        .layer(Extension(preview))
+        .layer(middleware::from_fn_with_state(state.clone(), raw_bridge))
+        .layer(Extension(state.preview.clone()))
 }
 
 fn wants_bridge(query: Option<&str>) -> bool {
@@ -68,6 +69,34 @@ fn host_load(headers: &HeaderMap) -> bool {
     headers
         .get("sec-fetch-site")
         .is_none_or(|site| matches!(site.as_bytes(), b"same-origin" | b"none"))
+}
+
+/// Whether the host page shows this document in its preview frame, rather
+/// than fetching it (an export) or a sandboxed page loading it.
+pub(crate) fn host_frame_load(headers: &HeaderMap) -> bool {
+    host_load(headers)
+        && headers
+            .get("sec-fetch-dest")
+            .is_none_or(|dest| dest.as_bytes() == b"iframe")
+}
+
+/// Records the project's first preview (Settings ▸ About ▸ Your usage).
+/// The preview reloads on every file change, so a project recorded once
+/// in this process skips the database after that.
+pub(crate) async fn record_first_preview(state: &AppState, id: &str) {
+    if state.preview.previewed().contains(id) {
+        return;
+    }
+    let project = id.to_owned();
+    match state
+        .blocking(move |s| s.mark_usage(&project, UsageMark::FirstPreview))
+        .await
+    {
+        Ok(_) => {
+            state.preview.previewed().insert(id.to_owned());
+        }
+        Err(err) => tracing::warn!(error = %err.message, "recording the first preview failed"),
+    }
 }
 
 /// Injected bytes differ from the file, so file validators and ranges no
@@ -147,7 +176,9 @@ async fn with_bridge(
 
 /// Middleware on `raw`: `?bridge=1` turns the file into a srcDoc-ready
 /// document whose relative URLs resolve under the project's live scope.
-async fn raw_bridge(State(preview): State<Preview>, mut req: Request, next: Next) -> Response {
+/// The first such page the host loads is the project's first preview
+/// (Settings ▸ About ▸ Your usage).
+async fn raw_bridge(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     if req.method() != Method::GET || !wants_bridge(req.uri().query()) {
         return next.run(req).await;
     }
@@ -156,7 +187,7 @@ async fn raw_bridge(State(preview): State<Preview>, mut req: Request, next: Next
     };
     let dir = file.rsplit_once('/').map_or("", |(dir, _)| dir);
     // Project ids are URL-safe (`is_safe_id`), so the encoded form is the id.
-    let scope = preview.scopes.acquire(id);
+    let scope = state.preview.scopes.acquire(id);
     let base_href = if dir.is_empty() {
         format!("/api/projects/{id}/preview/{}/", scope.token)
     } else {
@@ -164,12 +195,17 @@ async fn raw_bridge(State(preview): State<Preview>, mut req: Request, next: Next
     };
     // A page that names a fresh id on each of its own loads would get a
     // key each time and slip past the bridge's reload guard.
+    let host = host_load(req.headers());
     let kid = edit_key_id(req.uri().query())
-        .filter(|_| host_load(req.headers()))
+        .filter(|_| host)
         .map(str::to_owned);
     let id = id.to_owned();
     strip_validators(req.headers_mut());
     let res = next.run(req).await;
+    if host && res.status() == StatusCode::OK && is_html(res.headers()) {
+        record_first_preview(&state, &id).await;
+    }
+    let preview = &state.preview;
     with_bridge(res, Some(&base_href), || {
         kid.and_then(|kid| preview.edit_keys.issue(&id, &kid))
     })

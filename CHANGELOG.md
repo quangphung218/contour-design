@@ -8,6 +8,26 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Settings ▸ About ▸ Your usage: three numbers worked out on this machine
+  and never sent anywhere. Time from creating a project to its first
+  preview (median), the share of projects exported or with 3+ chat turns,
+  and the share of runs that failed, by cause (agent missing or didn't
+  start, agent error, timed out…); runs you stopped are listed apart and
+  not counted. Copy summary puts a short English summary on the clipboard
+  (app version, OS, agent and the three numbers; no project name, path,
+  prompt or file content) to paste into a GitHub discussion or issue; the
+  text shows below the button, so it can be read first or copied by hand.
+  With fewer than 3 projects or runs it says how many there are, "Not
+  enough projects yet (1 of 3)", instead of a number. Previews (HTML and
+  React components) and exports (Export menu, MP4, screenshot PNG, ZIP)
+  are recorded from this version on, so the first two numbers count
+  projects created since 0.2.0-beta.7 that someone started empty: not
+  imported, remixed, duplicated or made from a saved template, nor the
+  media library or an automation's project for one run. The bug report
+  and feature request templates point to it. In every UI language.
+
 ### Fixed
 
 - A deck lays out at its 1920×1080 design size and is scaled to fit the

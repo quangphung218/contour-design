@@ -7,6 +7,7 @@ body:
       value: |
         Thanks for reporting. Security problems go through SECURITY.md, not here.
         Help ▸ Report Issue in the desktop app copies a diagnostics summary you can paste below.
+        Settings ▸ About ▸ Your usage ▸ Copy summary copies a few numbers about your use (no names, paths or prompts) you can paste too.
   - type: textarea
     id: what
     attributes:

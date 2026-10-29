@@ -304,7 +304,10 @@ impl Store {
             }
             Ok(copied)
         };
-        match copy() {
+        match copy().and_then(|copied| {
+            self.mark_usage(&project.id, crate::usage::UsageMark::Copied)?;
+            Ok(copied)
+        }) {
             Ok(copied_files) => Ok(DuplicateProjectResponse {
                 project,
                 conversation_id,

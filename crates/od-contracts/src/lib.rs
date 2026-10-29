@@ -16,6 +16,7 @@ pub mod preview_tools;
 pub mod projects;
 pub mod runs;
 pub mod system;
+pub mod usage;
 
 pub use agent_w3::*;
 pub use c2::*;
@@ -28,6 +29,7 @@ pub use preview_tools::*;
 pub use projects::*;
 pub use runs::*;
 pub use system::*;
+pub use usage::*;
 
 /// Deserializes a field that distinguishes "absent" from "explicit null".
 ///
