@@ -1,6 +1,7 @@
 // UI e2e: the beta.7 design review fixes that need a real page to check.
 // 1. A link to a Settings section opens at that section, from the quick
-//    menu, from another page and as a fresh load, and does not drop back
+//    menu, from another page, as a fresh load or reload and from Home's
+//    `/mcp` (a full load), and does not drop back
 //    to the top while the sections above it finish loading; a link with
 //    no section still opens Settings at its top.
 // 2. The Settings nav marks the section in view (`aria-current`), one at
@@ -123,9 +124,20 @@ try {
   });
   await page.waitForURL('**/settings#settings-about');
   await opensAt(page, 'about', 'in-app link');
-  // A fresh load.
+  // A fresh load: from another path, so the browser loads the page anew
+  // (from /settings#… a goto that only changes the hash stays in the page).
+  await page.goto(BASE + '/projects');
+  await page.locator('h1').first().waitFor();
   await page.goto(BASE + '/settings#settings-notifications');
   await opensAt(page, 'notifications', 'fresh load');
+  await page.reload();
+  await opensAt(page, 'notifications', 'reload');
+  // Home's `/mcp` loads Settings anew (`location.set_href`).
+  await page.goto(BASE + '/');
+  await page.getByTestId('brief').fill('/mcp');
+  await page.getByTestId('brief').press('Enter');
+  await page.waitForURL('**/settings#settings-mcp');
+  await opensAt(page, 'mcp', 'Home /mcp');
   // No section: Settings opens at its top, not where the last page was.
   await page.goto(BASE + '/');
   await page.getByTestId('brief').waitFor();

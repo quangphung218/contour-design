@@ -581,7 +581,8 @@ fn ViewTracker() -> impl IntoView {
 /// A new page opens at its top: `<main>` keeps its scroll position across
 /// routes otherwise (scroll down onboarding, and Home opens scrolled past
 /// the brief). A link to a section (`/settings#settings-about`) opens at
-/// that section instead. Back and forward leave it alone.
+/// that section instead, also when it is the URL the app was loaded at.
+/// Back and forward leave it alone.
 #[component]
 fn ScrollReset() -> impl IntoView {
     let location = use_location();
@@ -592,15 +593,16 @@ fn ScrollReset() -> impl IntoView {
         let path = location.pathname.get();
         let hash = location.hash.get();
         let back_or_forward = std::mem::take(&mut *popped.write_value());
+        let first = prev.is_none();
         let moved = prev.is_some_and(|(p, h)| p != path || h != hash);
-        if moved && !back_or_forward {
-            let anchor = hash.trim_start_matches('#').to_owned();
-            if anchor.is_empty() {
-                if let Some(main) = element_by_id("main") {
-                    main.set_scroll_top(0);
-                }
-            } else {
-                leptos::task::spawn_local(scroll_to_anchor(anchor));
+        let anchor = hash.trim_start_matches('#').to_owned();
+        // The first run is a full load (a typed URL, a reload, `set_href`):
+        // the browser found no section to scroll to, the page renders later.
+        if (moved || first) && !back_or_forward && !anchor.is_empty() {
+            leptos::task::spawn_local(scroll_to_anchor(anchor));
+        } else if moved && !back_or_forward {
+            if let Some(main) = element_by_id("main") {
+                main.set_scroll_top(0);
             }
         }
         (path, hash)
