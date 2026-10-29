@@ -393,7 +393,19 @@ try {
   const failedLine = crashed.locator('[data-testid="run-state"][data-phase="failed"] strong');
   assert.equal(await failedLine.evaluate((e) => e.getClientRects().length), 1, '"Failed" on one line');
   await crashed.getByTestId('next-retry').waitFor();
-  await crashed.getByTestId('run-log').locator('summary').click();
+  // The output's summary shows it opens (a chevron that turns) and is a
+  // full touch target on a phone.
+  const logSummary = crashed.getByTestId('run-log').locator('summary');
+  const chevron = logSummary.locator('.ico:last-child');
+  assert.equal(await logSummary.locator('.ico').count(), 2, 'icon and chevron');
+  assert.equal(await chevron.evaluate((e) => getComputedStyle(e).transform), 'none');
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  // (At 390 the chat may sit behind the preview tab: read the rule.)
+  assert.equal(await logSummary.evaluate((e) => getComputedStyle(e).minHeight), '44px', 'agent output summary is 44 px tall at 390');
+  await page.setViewportSize(viewport);
+  await logSummary.click();
+  await until(async () => (await chevron.evaluate((e) => getComputedStyle(e).transform)) !== 'none', 'chevron turns when open');
   await until(async () => /at writeFileSync \(node:fs:2306:26\)/.test(await crashed.getByTestId('run-log-text').textContent()), 'agent output shown');
   assert.match(await crashed.getByTestId('run-log-text').textContent(), /^node:fs:927\n[\s\S]*\nError: ENOSPC[\s\S]*\nNode\.js v26\.7\.0\n?$/);
   await page.screenshot({ path: OUT + 'chat-run-failed.png' });

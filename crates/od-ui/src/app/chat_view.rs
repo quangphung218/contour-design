@@ -703,7 +703,7 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     }
     view! {
         <details class="run-log" data-testid="run-log">
-            <summary>{icon(Glyph::Terminal)}{t(T::AgentOutput)}</summary>
+            <summary>{icon(Glyph::Terminal)}{t(T::AgentOutput)}{icon(Glyph::ChevronDown)}</summary>
             {move || match log.get() {
                 None => view! { <p class="muted">{t(T::Loading)}</p> }.into_any(),
                 Some(Err(())) => {
