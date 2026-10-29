@@ -18,7 +18,7 @@ export OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$
   OD_RESOURCE_ROOT="$root/content"
 # A fixed port collides when two worktrees run the e2e at once, so each
 # script gets a free port of its own, taken right before it starts, unless
-# OD_E2E_PORT is given (then the scripts use it and the next thirteen ports).
+# OD_E2E_PORT is given (then the scripts use it and the next fourteen ports).
 # The ports come from 20000-32767, below the ephemeral range on Linux
 # (32768-60999) and macOS (49152-65535): a port from listen(0) lies in that
 # range, and the browser's client sockets, open or in TIME_WAIT for a
@@ -69,5 +69,6 @@ run OD_E2E_UPDATES_PORT updates.e2e.mjs
 run OD_E2E_USAGE_PORT usage.e2e.mjs
 # First-run setup stopped at the agent (with OD_E2E_PORT: + 13).
 run OD_E2E_SETUP_PORT setup.e2e.mjs
-# Beta.7 design review fixes (with OD_E2E_PORT: + 13).
+# Beta.7 design review fixes (with OD_E2E_PORT: + 14; + 13 is the setup
+# script's in #23).
 run OD_E2E_POLISH_PORT polish.e2e.mjs

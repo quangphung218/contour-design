@@ -13,7 +13,7 @@
 // 4. At 390 px the Export chip under the reply opens the Export menu on
 //    the Preview pane, and the preview head is one row, its edit and zoom
 //    tools behind More; the rail and the head are 44 px touch targets.
-// Port: OD_E2E_PORT + 13 (or OD_E2E_POLISH_PORT). Run through ./run.sh.
+// Port: OD_E2E_PORT + 14 (or OD_E2E_POLISH_PORT). Run through ./run.sh.
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
@@ -24,7 +24,7 @@ import assert from 'node:assert/strict';
 
 const BIN = process.env.OD_E2E_BIN;
 const MOCK_AGENTS = process.env.OD_MOCK_AGENTS;
-const PORT = Number(process.env.OD_E2E_POLISH_PORT || Number(process.env.OD_E2E_PORT || 17461) + 13);
+const PORT = Number(process.env.OD_E2E_POLISH_PORT || Number(process.env.OD_E2E_PORT || 17461) + 14);
 const BASE = `http://127.0.0.1:${PORT}`;
 assert.ok(BIN, 'OD_E2E_BIN must point at the built `od` binary');
 assert.ok(MOCK_AGENTS, 'OD_MOCK_AGENTS must point at the mock agent folder');
