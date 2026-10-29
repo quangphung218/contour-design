@@ -19,6 +19,8 @@ All notable changes to Contour are recorded here. The format follows
   `--daemon-url` or `OD_DAEMON_URL` with nothing answering within 1 s
   gives way to the running app's URL in `daemon.lock`, said on stderr,
   and with neither given it uses `daemon.lock` before the default port.
+- Settings ▸ About's subtitle mentions updates in every UI language, as
+  it does in English and Vietnamese.
 - PDF, PNG and PowerPoint exports try Chrome or Edge once more when it
   does not start within 30 s, so the first export on a slow or freshly
   set up PC does not fail with "Timeout while resolving websocket URL".
