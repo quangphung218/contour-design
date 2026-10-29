@@ -97,6 +97,9 @@ pub struct Tools {
     /// That load's edit key, once claimed: bridge messages that write the
     /// source must carry it.
     edit_key: StoredValue<Option<String>>,
+    /// Text edits the bridge sent before that key came back: written once
+    /// it does, so typing right after a reload is not lost.
+    early_text_edits: StoredValue<Vec<pb::TextEdit>>,
     pub manual: super::manual_edit::Manual,
 }
 
@@ -120,6 +123,7 @@ impl Tools {
             frame_kid: StoredValue::new(String::new()),
             claimed_kid: StoredValue::new(String::new()),
             edit_key: StoredValue::new(None),
+            early_text_edits: StoredValue::new(Vec::new()),
             manual: super::manual_edit::Manual::new(),
         }
     }
@@ -130,6 +134,7 @@ impl Tools {
         let kid = format!("load-{:08x}{:08x}{:08x}", part(), part(), part());
         self.frame_kid.set_value(kid.clone());
         self.edit_key.set_value(None);
+        self.early_text_edits.set_value(Vec::new());
         kid
     }
 
@@ -450,6 +455,13 @@ impl StudioCtx {
                 && tools.frame_kid.get_value() == kid
             {
                 tools.edit_key.set_value(Some(r.key));
+                for e in tools
+                    .early_text_edits
+                    .try_update_value(std::mem::take)
+                    .unwrap_or_default()
+                {
+                    self.write_text_edit(&e);
+                }
             }
             if let Some(i) = tools.inspected.get_untracked() {
                 bridge::post_main(&pb::inspect(&i.selector));
@@ -488,23 +500,10 @@ impl StudioCtx {
                 }
             }
             BridgeMsg::TextEdit(e) => {
-                let active = self.active_untracked();
-                let key = tools.edit_key.get_value();
-                if accepted_text_edit(
-                    e,
-                    tools.tool.get_untracked(),
-                    active.as_deref(),
-                    key.as_deref(),
-                ) {
-                    self.save_edits(
-                        vec![SourceEdit {
-                            selector: e.selector.clone(),
-                            text: Some(e.text.clone()),
-                            expect_text: Some(e.before.clone()),
-                            ..SourceEdit::default()
-                        }],
-                        false,
-                    );
+                if tools.edit_key.with_value(Option::is_none) {
+                    tools.early_text_edits.update_value(|l| l.push(e.clone()));
+                } else {
+                    self.write_text_edit(e);
                 }
             }
             BridgeMsg::Tweaks { tweaks } => {
@@ -580,6 +579,29 @@ impl StudioCtx {
     /// Writes `edits` into the shown file as a manual version. Style saves
     /// drop the saved overrides; a refused text edit reloads the frame so it
     /// shows the source again.
+    /// Writes a text edit from the bridge to the source, if it is one the
+    /// host should write ([`accepted_text_edit`]).
+    fn write_text_edit(self, e: &pb::TextEdit) {
+        let active = self.active_untracked();
+        let key = self.tools.edit_key.get_value();
+        if accepted_text_edit(
+            e,
+            self.tools.tool.get_untracked(),
+            active.as_deref(),
+            key.as_deref(),
+        ) {
+            self.save_edits(
+                vec![SourceEdit {
+                    selector: e.selector.clone(),
+                    text: Some(e.text.clone()),
+                    expect_text: Some(e.before.clone()),
+                    ..SourceEdit::default()
+                }],
+                false,
+            );
+        }
+    }
+
     fn save_edits(self, edits: Vec<SourceEdit>, styles: bool) {
         let Some(file) = self.active_untracked() else {
             return;

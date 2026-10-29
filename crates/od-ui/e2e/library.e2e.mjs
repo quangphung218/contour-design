@@ -162,6 +162,16 @@ try {
   results.kit = 'ok';
 
   // Copy the preset, then edit its DESIGN.md with E and save.
+  // The copy's kit comes in late, so E below lands while it loads: the
+  // editor still opens (it stayed shut on a slow CI runner).
+  await page.route(
+    (u) => u.pathname.includes('airbnb-copy') && u.pathname.endsWith('/kit'),
+    async (r) => {
+      await sleep(1000);
+      await r.continue();
+    },
+    { times: 1 },
+  );
   await page.getByTestId('ds-copy').click();
   await until(async () => (await detail.getAttribute('data-id')) === 'user:airbnb-copy', 'the copy is selected');
   await page.getByTestId('kit-tab-kit').click();
