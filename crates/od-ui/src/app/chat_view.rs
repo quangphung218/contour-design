@@ -593,8 +593,11 @@ fn AssistantView(
             <super::media_rows::MediaRows turn=turn/>
             {move || {
                 turn.with(|t| {
+                    // The Plan list at the top already shows each plan update.
+                    let has_plan = !t.todos.is_empty();
                     t.blocks
                         .iter()
+                        .filter(|b| !matches!(b, Block::Tool(call) if folded_into_plan(&call.name, has_plan)))
                         .cloned()
                         .map(|b| render_block(b, turn, is_last))
                         .collect_view()
@@ -895,6 +898,12 @@ pub(super) fn render_block(
     }
 }
 
+/// Whether a tool call shows as the reply's Plan list instead of a row of
+/// its own: `TodoWrite` once a plan was read from it (only it fills the list).
+fn folded_into_plan(name: &str, has_plan: bool) -> bool {
+    has_plan && name == "TodoWrite"
+}
+
 /// What a tool call did, in words: the agents' own tool names
 /// (`TodoWrite`, `Bash`) mean nothing to most people. Unknown tools keep
 /// their name.
@@ -1083,7 +1092,15 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
 
 #[cfg(test)]
 mod tests {
-    use super::tool_label;
+    use super::{folded_into_plan, tool_label};
+
+    #[test]
+    fn plan_updates_fold_into_the_plan_list() {
+        assert!(folded_into_plan("TodoWrite", true));
+        assert!(!folded_into_plan("TodoWrite", false), "no plan read: the row stays");
+        assert!(!folded_into_plan("update_plan", true), "only TodoWrite fills the list");
+        assert!(!folded_into_plan("Write", true));
+    }
 
     #[test]
     fn tools_read_as_what_they_did() {

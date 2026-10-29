@@ -50,6 +50,8 @@ All notable changes to Contour are recorded here. The format follows
   device and More, which opens the edit and zoom tools on a second row.
   The Next chips under a finished reply include Export, which opens the
   Export menu on the Preview pane; before, the Chat pane had no way to it.
+- A reply with a Plan no longer repeats "Updated plan" as rows under it
+  each time the agent updates the plan: the Plan list shows the changes.
 
 ## [0.2.0-beta.7] - 2026-10-29
 
