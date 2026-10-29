@@ -37,23 +37,46 @@ pub fn decode_frame(event: &str, data: &str) -> RunFrame {
     decoded.unwrap_or(RunFrame::Ignored)
 }
 
-/// What the agent wrote to stderr, from the whole SSE log of a finished
-/// run (`GET /api/runs/:id/events`): its `stderr` frames in order.
+/// What a finished run's whole SSE log (`GET /api/runs/:id/events`) says
+/// about how it went: the agent's `stderr` in order, and the error it
+/// ended with. A stored turn keeps neither, only the agent's events.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunRecord {
+    pub stderr: String,
+    pub error: Option<String>,
+}
+
 #[must_use]
-pub fn stderr_of(sse: &str) -> String {
-    sse.replace("\r\n", "\n")
-        .split("\n\n")
-        .filter(|frame| frame.lines().any(|l| l == "event: stderr"))
-        .filter_map(|frame| {
-            let data: Vec<&str> = frame
-                .lines()
-                .filter_map(|l| l.strip_prefix("data:"))
-                .map(|d| d.strip_prefix(' ').unwrap_or(d))
-                .collect();
-            serde_json::from_str::<od_contracts::RunChunkPayload>(&data.join("\n")).ok()
-        })
-        .map(|p| p.chunk)
-        .collect()
+pub fn run_record(sse: &str) -> RunRecord {
+    let mut record = RunRecord::default();
+    for frame in sse.replace("\r\n", "\n").split("\n\n") {
+        let mut event = "";
+        let mut data = Vec::new();
+        for line in frame.lines() {
+            if let Some(name) = line.strip_prefix("event:") {
+                event = name.trim();
+            } else if let Some(d) = line.strip_prefix("data:") {
+                data.push(d.strip_prefix(' ').unwrap_or(d));
+            }
+        }
+        let data = data.join("\n");
+        if event == "stderr" {
+            if let Ok(p) = serde_json::from_str::<od_contracts::RunChunkPayload>(&data) {
+                record.stderr.push_str(&p.chunk);
+            }
+            continue;
+        }
+        match decode_frame(event, &data) {
+            RunFrame::Error(message) => record.error = Some(message),
+            RunFrame::End(end) => {
+                if let Some(error) = end.error.filter(|e| !e.is_empty()) {
+                    record.error = Some(error);
+                }
+            }
+            _ => {}
+        }
+    }
+    record
 }
 
 /// `file-changed` payload of `GET /api/projects/:id/events`.
@@ -69,13 +92,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_run_log_gives_back_what_the_agent_wrote_to_stderr() {
+    fn a_run_log_gives_back_the_agents_stderr_and_its_error() {
         let sse = "id: 1\nevent: start\ndata: {\"runId\":\"r\"}\n\n\
                    id: 2\nevent: stderr\ndata: {\"chunk\":\"Error: ENOSPC\\n\"}\n\n\
                    id: 3\nevent: stdout\ndata: {\"chunk\":\"not this\\n\"}\n\n\
-                   id: 4\nevent: stderr\ndata: {\"chunk\":\"    at w (node:fs:1:2)\\n\"}\n\n";
-        assert_eq!(stderr_of(sse), "Error: ENOSPC\n    at w (node:fs:1:2)\n");
-        assert_eq!(stderr_of("event: end\ndata: {}\n\n"), "");
+                   id: 4\nevent: stderr\ndata: {\"chunk\":\"    at w (node:fs:1:2)\\n\"}\n\n\
+                   id: 5\nevent: end\ndata: {\"status\":\"failed\",\"code\":1,\"terminalAt\":1,\"error\":\"Error: ENOSPC\"}\n\n";
+        assert_eq!(
+            run_record(sse),
+            RunRecord {
+                stderr: "Error: ENOSPC\n    at w (node:fs:1:2)\n".into(),
+                error: Some("Error: ENOSPC".into()),
+            }
+        );
+        let ok = "event: end\ndata: {\"status\":\"succeeded\",\"code\":0,\"terminalAt\":1}\n\n";
+        assert_eq!(run_record(ok), RunRecord::default());
     }
 
     #[test]

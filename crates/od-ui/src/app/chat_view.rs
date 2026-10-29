@@ -674,35 +674,35 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
 }
 
 /// A failed turn's agent output (what it wrote to stderr), read from the
-/// run's log when opened: the whole story behind the one line above.
+/// run's log: the whole story behind the one line above. A turn reopened
+/// from history gets its error message back from the same log.
 #[component]
 fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
-    use wasm_bindgen::JsCast;
     // `Err`: the log could not be read, which is not an agent that said
     // nothing.
     let log = RwSignal::new(None::<Result<String, ()>>);
-    let load = move |ev: leptos::ev::Event| {
-        let open = ev
-            .target()
-            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-            .is_some_and(|el| el.has_attribute("open"));
-        if !open || log.with_untracked(Option::is_some) {
-            return;
-        }
-        let Some(id) = turn.with_untracked(|t| t.run_id.clone()) else {
-            log.set(Some(Ok(String::new())));
-            return;
-        };
-        leptos::task::spawn_local(async move {
+    match turn.with_untracked(|t| t.run_id.clone()) {
+        None => log.set(Some(Ok(String::new()))),
+        Some(id) => leptos::task::spawn_local(async move {
             let url = format!("/api/runs/{}/events", super::api::seg(&id));
-            let text = super::api::get_text(&url).await;
-            log.set(Some(
-                text.map(|sse| crate::events::stderr_of(&sse)).map_err(drop),
-            ));
-        });
-    };
+            let record = super::api::get_text(&url)
+                .await
+                .map(|sse| crate::events::run_record(&sse));
+            if let Ok(crate::events::RunRecord {
+                error: Some(error), ..
+            }) = &record
+            {
+                turn.try_update(|t| {
+                    if !t.blocks.iter().any(|b| matches!(b, Block::Error(_))) {
+                        t.blocks.push(Block::Error(error.clone()));
+                    }
+                });
+            }
+            log.try_set(Some(record.map(|r| r.stderr).map_err(drop)));
+        }),
+    }
     view! {
-        <details class="run-log" data-testid="run-log" on:toggle=load>
+        <details class="run-log" data-testid="run-log">
             <summary>{icon(Glyph::Terminal)}{t(T::AgentOutput)}</summary>
             {move || match log.get() {
                 None => view! { <p class="muted">{t(T::Loading)}</p> }.into_any(),

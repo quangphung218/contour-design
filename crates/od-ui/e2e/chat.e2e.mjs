@@ -386,8 +386,10 @@ try {
   await lastTurnDone(turnsBefore + 1);
   const crashed = page.getByTestId('assistant-msg').last();
   assert.equal(await crashed.getAttribute('data-state'), 'failed');
-  await crashed.getByText('Error: ENOSPC: no space left on device, write').waitFor();
-  assert.equal(await crashed.getByText('at writeFileSync', { exact: false }).count(), 0, 'a stack frame is not the message');
+  const crashError = crashed.getByRole('alert');
+  await crashError.getByText('Error: ENOSPC: no space left on device, write').waitFor();
+  assert.equal(await crashError.count(), 1, 'one error message');
+  assert.doesNotMatch(await crashError.textContent(), /at writeFileSync|Node\.js v/, 'a stack frame is not the message');
   const failedLine = crashed.locator('[data-testid="run-state"][data-phase="failed"] strong');
   assert.equal(await failedLine.evaluate((e) => e.getClientRects().length), 1, '"Failed" on one line');
   await crashed.getByTestId('next-retry').waitFor();
@@ -407,6 +409,11 @@ try {
   await reopened.getByTestId('run-log').locator('summary').click();
   await reopened.getByTestId('run-log-failed').waitFor();
   await page.unroute('**/api/runs/*/events');
+  // Reopened: the failed turn still says what went wrong (the stored turn
+  // keeps only the agent's events; the message comes from the run's log).
+  await page.reload();
+  await page.getByTestId('assistant-msg').nth(turnsBefore).getByRole('alert').getByText('Error: ENOSPC: no space left on device, write').waitFor();
+  await page.screenshot({ path: OUT + 'chat-run-failed-reopened.png' });
   results.runFailed = 'ok';
 
   // 15. Rename and delete conversations.
