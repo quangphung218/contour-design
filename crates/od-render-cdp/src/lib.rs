@@ -49,17 +49,7 @@ pub const NO_SANDBOX_ENV: &str = "OD_CHROME_NO_SANDBOX";
 
 /// Longest wait for a launched browser to show the page. Normally under two
 /// seconds; past this the browser is taken as unable to render here.
-const OPEN_TIMEOUT: Duration = Duration::from_secs(90);
-
-/// Browser launches tried when DevTools does not answer within the launch
-/// timeout (30 s each).
-const LAUNCH_ATTEMPTS: u32 = 2;
-
-/// Why a launch failed: only a timeout is worth one more try.
-enum LaunchError {
-    Timeout(RenderError),
-    Other(RenderError),
-}
+const OPEN_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Smallest and largest slide edge we trust from measurement.
 const SLIDE_MIN_PX: u32 = 320;
@@ -440,51 +430,11 @@ fn sweep_stale_profiles(_tmp: &Path) {}
 
 impl Session {
     async fn open(exe: &Path, target: &RenderTarget, no_sandbox: bool) -> RenderResult<Self> {
-        // A cold first start (Windows scanning a fresh profile) can miss the
-        // launch timeout once; a second launch with a new profile is warm.
-        let mut attempt = 1;
-        let (browser, mut handler, profile) = loop {
-            match Self::launch(exe, no_sandbox).await {
-                Err(LaunchError::Timeout(_)) if attempt < LAUNCH_ATTEMPTS => attempt += 1,
-                Err(LaunchError::Timeout(e) | LaunchError::Other(e)) => return Err(e),
-                Ok(launched) => break launched,
-            }
-        };
-        let handler = tokio::spawn(async move { while handler.next().await.is_some() {} });
-        let mut session = Self {
-            page: browser
-                .new_page("about:blank")
-                .await
-                .map_err(failed("opening a page"))?,
-            browser,
-            handler,
-            gate: None,
-            width: target.width.max(1),
-            height: target.height.max(1),
-            _profile: profile,
-        };
-        session.resize(session.width, session.height).await?;
-        let url = file_url(&target.html_path)?;
-        session.gate = Some(session.only_allow(url.clone()).await?);
-        session
-            .page
-            .goto(url)
-            .await
-            .map_err(failed("loading the page"))?;
-        Ok(session)
-    }
-
-    async fn launch(
-        exe: &Path,
-        no_sandbox: bool,
-    ) -> Result<(Browser, chromiumoxide::Handler, Profile), LaunchError> {
         let profile = Profile::new()
-            .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))
-            .map_err(LaunchError::Other)?;
+            .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))?;
         let tmp = profile
             .tmp()
-            .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))
-            .map_err(LaunchError::Other)?;
+            .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))?;
         let mut config = BrowserConfig::builder();
         if no_sandbox {
             config = config.no_sandbox();
@@ -510,18 +460,32 @@ impl Session {
             .arg("disable-domain-reliability")
             .arg("metrics-recording-only")
             .build()
-            .map_err(|e| RenderError::Unavailable(format!("browser config: {e}")))
-            .map_err(LaunchError::Other)?;
-        match Browser::launch(config).await {
-            Ok((browser, handler)) => Ok((browser, handler, profile)),
-            Err(e) => {
-                let err = RenderError::Unavailable(format!("cannot start {}: {e}", exe.display()));
-                Err(match e {
-                    chromiumoxide::error::CdpError::LaunchTimeout(_) => LaunchError::Timeout(err),
-                    _ => LaunchError::Other(err),
-                })
-            }
-        }
+            .map_err(|e| RenderError::Unavailable(format!("browser config: {e}")))?;
+        let (browser, mut handler) = Browser::launch(config).await.map_err(|e| {
+            RenderError::Unavailable(format!("cannot start {}: {e}", exe.display()))
+        })?;
+        let handler = tokio::spawn(async move { while handler.next().await.is_some() {} });
+        let mut session = Self {
+            page: browser
+                .new_page("about:blank")
+                .await
+                .map_err(failed("opening a page"))?,
+            browser,
+            handler,
+            gate: None,
+            width: target.width.max(1),
+            height: target.height.max(1),
+            _profile: profile,
+        };
+        session.resize(session.width, session.height).await?;
+        let url = file_url(&target.html_path)?;
+        session.gate = Some(session.only_allow(url.clone()).await?);
+        session
+            .page
+            .goto(url)
+            .await
+            .map_err(failed("loading the page"))?;
+        Ok(session)
     }
 
     /// Pauses every request and lets only `allowed` (the page itself)
