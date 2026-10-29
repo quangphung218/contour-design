@@ -565,16 +565,15 @@ pub fn MentionArea(
         }
         open.set(next);
     };
-    let place_caret = move |byte: usize| {
-        leptos::task::spawn_local(async move {
-            gloo_timers::future::TimeoutFuture::new(0).await;
-            if let Some(el) = area.get_untracked() {
-                let text = el.value();
-                let at = u32::try_from(mention::utf16_offset(&text, byte)).unwrap_or(u32::MAX);
-                let _ = el.focus();
-                let _ = el.set_selection_range(at, at);
-            }
-        });
+    // Right away, not after a tick: keys typed before a deferred caret
+    // move landed where the pick ended (`/search endstea tr`).
+    let place_caret = move |text: &str, byte: usize| {
+        if let Some(el) = area.get_untracked() {
+            el.set_value(text);
+            let at = u32::try_from(mention::utf16_offset(text, byte)).unwrap_or(u32::MAX);
+            let _ = el.focus();
+            let _ = el.set_selection_range(at, at);
+        }
     };
     let pick = move |row: Row| {
         let Some((_, trigger)) = open.get_untracked() else {
@@ -613,8 +612,8 @@ pub fn MentionArea(
             Row::Mention(c) => stage(context, c),
             Row::Command(_) => {}
         }
+        place_caret(&next, byte);
         draft.set(next);
-        place_caret(byte);
     };
 
     let on_key = move |ev: web_sys::KeyboardEvent| {

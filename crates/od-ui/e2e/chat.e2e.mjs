@@ -269,9 +269,20 @@ try {
   // 9. / commands: /search expands, /mcp opens the MCP settings.
   await composer.pressSequentially('/se');
   await page.locator('[data-testid="mention-item"][data-kind="command"]', { hasText: '/search' }).waitFor();
-  await composer.press('Enter');
-  assert.equal(await composer.inputValue(), '/search ');
-  await composer.pressSequentially('tea trends');
+  // Keys typed before the next task stay where they were typed: the caret
+  // used to move after a tick, so they ended up split (`/search endstea tr`
+  // on a busy CI runner).
+  await composer.evaluate(async (el) => {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    for (const ch of 'tea tr') {
+      el.setRangeText(ch, el.selectionStart, el.selectionEnd, 'end');
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  });
+  assert.equal(await composer.inputValue(), '/search tea tr');
+  await composer.pressSequentially('ends');
   await composer.press('Enter');
   await lastTurnDone(3);
   assert.match(runBodies[2].message, /^Research this topic: tea trends/);
