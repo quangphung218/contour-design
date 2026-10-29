@@ -26,8 +26,9 @@ All notable changes to Contour are recorded here. The format follows
   measure (you have 1)", not "Not enough projects yet (1 of 3)", which
   read like 1 of 3 projects exported. "Since 0.2.0-beta.7" is said once,
   under the title, instead of under every number (in the summary, once on
-  its first line). The screen and the summary point to a GitHub issue
-  only: the repository has no Discussions. In every UI language.
+  its first line). Copy summary points to the "Share your usage" thread in
+  [GitHub Discussions](https://github.com/quangphung218/contour-design/discussions),
+  and to an issue with steps to reproduce for a bug. In every UI language.
 
 ## [0.2.0-beta.7] - 2026-10-29
 
@@ -40,7 +41,7 @@ All notable changes to Contour are recorded here. The format follows
   start, agent error, timed out…); runs you stopped are listed apart and
   not counted. Copy summary puts a short English summary on the clipboard
   (app version, OS, agent and the three numbers; no project name, path,
-  prompt or file content) to paste into a GitHub issue; the
+  prompt or file content) to paste into a GitHub discussion or issue; the
   text shows below the button, so it can be read first or copied by hand.
   With fewer than 3 projects or runs it says how many there are, "Not
   enough projects yet (1 of 3)", instead of a number. Previews (HTML and

@@ -1037,7 +1037,7 @@ fn count(n: u32) -> String {
 
 /// About ▸ Your usage: how far first-run setup got and three numbers worked
 /// out by the daemon from what is on this machine (`GET /api/usage`), and
-/// Copy for a summary to paste into a GitHub issue
+/// Copy for a summary to paste into the "Share your usage" discussion
 /// ([`crate::usage::summary`]), shown before it is copied. No
 /// telemetry: nothing is sent.
 #[component]

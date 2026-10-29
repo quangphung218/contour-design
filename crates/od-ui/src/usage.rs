@@ -1,7 +1,8 @@
 //! Settings ▸ About ▸ Your usage: how the numbers read, and the short
 //! summary Copy puts on the clipboard. The summary is English whatever the
-//! UI language, for the maintainers who read the GitHub issue, and carries
-//! no project name, path, prompt or file content.
+//! UI language, for the maintainers who read the "Share your usage"
+//! discussion on GitHub, and carries no project name, path, prompt or file
+//! content.
 
 use od_contracts::{ENGAGED_TURNS, SetupStep, SetupUsage, USAGE_MIN_SAMPLE, UsageResponse};
 
@@ -202,10 +203,6 @@ mod tests {
              Time to first preview: needs 3 projects to measure (you have 2)\n\
              Projects with an export or 3+ chat turns: needs 3 projects to measure (you have 2)\n\
              Failed runs: needs 3 runs to measure (you have 0)"
-        );
-        assert!(
-            !s.to_lowercase().contains("discussion"),
-            "the repo has none"
         );
         assert!(!s.contains('%'), "no made-up 0%");
     }

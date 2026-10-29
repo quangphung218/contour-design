@@ -490,7 +490,7 @@ messages! {
     DiagnosticsSaved => "Saved diagnostics to {0}", "Đã lưu chẩn đoán vào {0}";
     ResetOnboarding => "Reset onboarding", "Chạy lại thiết lập ban đầu";
     YourUsage => "Your usage", "Số liệu sử dụng";
-    YourUsageHint => "Worked out on this machine from your projects and runs, and never sent anywhere. Copy the summary to paste it into a GitHub issue.", "Tính ngay trên máy này từ các project và run, không gửi đi đâu. Chép bản tóm tắt để dán vào một issue trên GitHub.";
+    YourUsageHint => "Worked out on this machine from your projects and runs, and never sent anywhere. Copy the summary to paste it into the “Share your usage” discussion on GitHub; for a bug, open an issue with steps to reproduce.", "Tính ngay trên máy này từ các project và run, không gửi đi đâu. Chép bản tóm tắt để dán vào discussion “Share your usage” trên GitHub; gặp bug thì mở issue kèm các bước tái hiện.";
     UsageFirstPreview => "Time to first preview", "Thời gian tới preview đầu tiên";
     UsageFirstPreviewValue => "{0} median · {1} projects", "Trung vị {0} · {1} project";
     UsageEngaged => "Projects exported or with 3+ chat turns", "Project đã export hoặc có từ 3 lượt chat";
@@ -501,7 +501,7 @@ messages! {
     UsageNotEnoughRuns => "Needs {1} runs to measure (you have {0})", "Cần {1} run để tính (hiện có {0})";
     UsageSince => "Since {0}", "Từ bản {0}";
     UsageCopy => "Copy summary", "Chép tóm tắt";
-    UsageCopied => "Summary copied. Paste it into a GitHub issue.", "Đã chép tóm tắt. Dán vào một issue trên GitHub.";
+    UsageCopied => "Summary copied. Paste it into the “Share your usage” discussion on GitHub.", "Đã chép tóm tắt. Dán vào discussion “Share your usage” trên GitHub.";
     UsageCopyFailed => "Couldn't copy. Select the summary below and copy it yourself.", "Không chép được. Chọn đoạn tóm tắt bên dưới rồi tự chép.";
     UsagePreview => "What Copy puts on the clipboard", "Nội dung sẽ được chép";
     CauseSpawnFailed => "Agent missing or didn't start", "Thiếu agent hoặc agent không chạy được";

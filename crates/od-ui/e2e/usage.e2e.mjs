@@ -162,9 +162,10 @@ try {
   assert.equal(await page.getByTestId('usage-since').textContent(), 'Since 0.2.0-beta.7');
   assert.equal(await value('usage-setup').textContent(), 'Reached step 2 of 5');
   assert.equal(await page.getByTestId('usage-setup-stopped').textContent(), 'Stopped at: agent test');
-  assert.ok(!/discussion/i.test(await section.textContent()), 'the repo has no Discussions');
+  // Where to paste it: the Discussions thread; a bug goes in an issue.
+  assert.match(await section.textContent(), /“Share your usage” discussion on GitHub; for a bug, open an issue with steps to reproduce/);
   await page.getByTestId('usage-copy').click();
-  await page.getByTestId('usage-copied').filter({ hasText: 'Summary copied.' }).waitFor();
+  await page.getByTestId('usage-copied').filter({ hasText: 'Summary copied. Paste it into the “Share your usage” discussion on GitHub.' }).waitFor();
   const empty = await clipboard();
   assert.equal(
     empty,

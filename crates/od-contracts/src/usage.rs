@@ -1,6 +1,7 @@
 //! Settings ▸ About ▸ Your usage: numbers worked out from what is already
-//! on this machine, for beta users to paste into a GitHub issue. Nothing here
-//! leaves the machine on its own (no telemetry, `docs/decisions.md`).
+//! on this machine, for beta users to paste into the "Share your usage"
+//! discussion on GitHub. Nothing here leaves the machine on its own (no
+//! telemetry, `docs/decisions.md`).
 
 use serde::{Deserialize, Serialize};
 

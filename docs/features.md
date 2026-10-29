@@ -337,7 +337,10 @@ files under the data folder and the API returns them masked.
   library or an automation's per-run project), and the share of runs
   that failed, by cause (runs you stopped are listed apart).
   Copy summary puts them on the clipboard, with the version, OS and agent,
-  to paste into a GitHub issue; the text is shown before you copy.
+  to paste into the "Share your usage" thread in
+  [GitHub Discussions](https://github.com/quangphung218/contour-design/discussions)
+  (a bug goes in an issue, with steps to reproduce); the text is shown
+  before you copy.
 - Started from Finder or the Dock, the app takes `PATH` from your login
   shell (plus `~/.local/bin`, Homebrew, npm, bun, cargo) to find agents.
 - Quitting stops every terminal shell and running agent.
