@@ -21,6 +21,9 @@ All notable changes to Contour are recorded here. The format follows
   and with neither given it uses `daemon.lock` before the default port.
 - Settings ▸ About's subtitle mentions updates in every UI language, as
   it does in English and Vietnamese.
+- The three Export plugins no longer share the tile "ET": a plugin whose
+  initials match another's shows other letters of its name (Export to
+  Vue is EV, to React ER, to Next.js EN), in every UI language.
 - PDF, PNG and PowerPoint exports try Chrome or Edge once more when it
   does not start within 30 s, so the first export on a slow or freshly
   set up PC does not fail with "Timeout while resolving websocket URL".
