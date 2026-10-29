@@ -270,6 +270,18 @@ try {
   assert.deepEqual(await frame.locator('body').evaluate(() => [innerWidth, innerHeight]), [1920, 1080]);
   const slideBox = await page.getByTestId('preview').boundingBox();
   assert.ok(Math.abs(slideBox.width / slideBox.height - 16 / 9) < 0.01, `slide shown ${slideBox.width}×${slideBox.height}`);
+  // On a phone the slide sits at the top of the stage, by the deck bar,
+  // not in the middle of the empty space below it.
+  {
+    const viewport = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByTestId('pane-preview').click();
+    await until(async () => (await page.getByTestId('preview').boundingBox())?.width < 390, 'slide fits 390');
+    const stage = await page.locator('.preview-stage').boundingBox();
+    const slide = await page.getByTestId('preview').boundingBox();
+    assert.ok(slide.y - stage.y <= 12, `slide ${slide.y - stage.y}px below the stage top at 390`);
+    await page.setViewportSize(viewport);
+  }
   assert.equal(await page.getByTestId('deck-thumb').count(), 3);
   await page.getByTestId('deck-notes').click();
   await page.getByTestId('speaker-notes').getByText('Notes for slide two').waitFor();

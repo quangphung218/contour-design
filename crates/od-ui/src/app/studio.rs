@@ -1876,7 +1876,7 @@ fn slide_fit(stage: (f64, f64), zoom: u32) -> Option<f64> {
 /// The box a slide at `scale` takes in the stage, centred.
 fn slide_box(scale: f64) -> String {
     format!(
-        "width:{:.2}px;height:{:.2}px;max-width:none;align-self:safe center",
+        "width:{:.2}px;height:{:.2}px;max-width:none;align-self:var(--slide-align, safe center)",
         SLIDE_SIZE.0 * scale,
         SLIDE_SIZE.1 * scale
     )
@@ -2032,7 +2032,7 @@ mod tests {
         assert!((phone - 0.2).abs() < 1e-9);
         assert_eq!(
             slide_box(phone),
-            "width:384.00px;height:216.00px;max-width:none;align-self:safe center"
+            "width:384.00px;height:216.00px;max-width:none;align-self:var(--slide-align, safe center)"
         );
         // A wide, short stage: the height decides.
         assert!((slide_fit((1600.0, 540.0), 100).unwrap() - 0.5).abs() < 1e-9);

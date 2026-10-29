@@ -948,11 +948,11 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   .deck-bar { flex-wrap: wrap; row-gap: var(--space-1); }
   .deck-bar > .split-btn { margin-left: auto; }
 }
-/* Phone: the slide takes the width; the counter and arrows replace the
-   thumbnails. */
+/* Phone: the slide takes the width, at the top of the stage next to the
+   deck bar; the counter and arrows replace the thumbnails. */
 @media (max-width: 480px) {
   .preview-body > .thumb-rail { display: none; }
-  .preview-body > .preview-stage { padding: var(--space-2); }
+  .preview-body > .preview-stage { padding: var(--space-2); --slide-align: start; }
 }
 .path-title { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--color-text-secondary); }
 .preview-main { display: contents; }
