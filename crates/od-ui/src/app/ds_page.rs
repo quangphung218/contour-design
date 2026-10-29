@@ -479,6 +479,8 @@ fn DsDetail(
     let tab = RwSignal::new(KitTab::Kit);
     let notice = RwSignal::new(None::<Result<String, String>>);
     let editing = RwSignal::new(None::<String>);
+    // E (or Edit) pressed before the kit loaded.
+    let edit_on_load = RwSignal::new(false);
     let feedback_open = RwSignal::new(false);
     let feedback = RwSignal::new(String::new());
     let feedback_section = RwSignal::new(String::new());
@@ -525,6 +527,21 @@ fn DsDetail(
         }
     });
 
+    Effect::new(move |_| {
+        if !edit_on_load.get() {
+            return;
+        }
+        let body = kit.with(|k| {
+            k.as_ref()
+                .and_then(|k| k.as_ref().ok())
+                .map(|k| k.body.clone())
+        });
+        if let Some(body) = body {
+            edit_on_load.set(false);
+            editing.set(Some(body));
+        }
+    });
+
     let say = move |r: Result<String, String>| notice.set(Some(r));
     let post = {
         let load = load.clone();
@@ -567,7 +584,11 @@ fn DsDetail(
                     .map(|k| k.body.clone())
             });
             tab.set(KitTab::Design);
-            editing.set(body);
+            match body {
+                Some(body) => editing.set(Some(body)),
+                // Still loading: the editor opens once the kit is in.
+                None => edit_on_load.set(true),
+            }
         }
     };
     let save_edit = {
