@@ -81,8 +81,9 @@ pub(crate) fn host_frame_load(headers: &HeaderMap) -> bool {
 }
 
 /// Records the project's first preview (Settings ▸ About ▸ Your usage),
-/// and the first preview of all as a setup step. The preview reloads on every file change, so a project recorded once
-/// in this process skips the database after that.
+/// and the first preview of all as a setup step. The preview reloads on
+/// every file change, so a project recorded once in this process skips the
+/// database after that.
 pub(crate) async fn record_first_preview(state: &AppState, id: &str) {
     if state.preview.previewed().contains(id) {
         return;
