@@ -10,6 +10,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- A deck lays out at its 1920×1080 design size and is scaled to fit the
+  preview, so a narrow window or a phone shows the same slide, smaller.
+  Before, a deck that does not scale itself (the html-ppt templates) was
+  laid out again at the pane's width and its text ran off the slide. The
+  slide thumbnails use the same size.
 - PDF, PNG and PowerPoint exports try Chrome or Edge once more when it
   does not start within 30 s, so the first export on a slow or freshly
   set up PC does not fail with "Timeout while resolving websocket URL".

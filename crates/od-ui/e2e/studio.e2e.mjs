@@ -265,6 +265,11 @@ try {
   await page.getByTestId('deck-next').click();
   await until(async () => (await counter.textContent()) === '2 / 3', 'deck next 2/3');
   await frame.getByRole('heading', { name: 'Slide two' }).waitFor();
+  // A deck lays out at its 1920×1080 design size and is scaled to the
+  // pane, so a narrow pane shows the same slide, smaller.
+  assert.deepEqual(await frame.locator('body').evaluate(() => [innerWidth, innerHeight]), [1920, 1080]);
+  const slideBox = await page.getByTestId('preview').boundingBox();
+  assert.ok(Math.abs(slideBox.width / slideBox.height - 16 / 9) < 0.01, `slide shown ${slideBox.width}×${slideBox.height}`);
   assert.equal(await page.getByTestId('deck-thumb').count(), 3);
   await page.getByTestId('deck-notes').click();
   await page.getByTestId('speaker-notes').getByText('Notes for slide two').waitFor();
