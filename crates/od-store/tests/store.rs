@@ -194,17 +194,12 @@ fn usage_counts_only_projects_people_made_empty() {
             })
             .unwrap();
     }
-    let (automated, _) = store
-        .create_project(CreateProjectRequest {
+    store
+        .create_automation_project(CreateProjectRequest {
             name: "Routine · today".to_owned(),
             ..CreateProjectRequest::default()
         })
         .unwrap();
-    assert!(
-        store
-            .mark_usage(&automated.id, od_store::usage::UsageMark::Automated)
-            .unwrap()
-    );
 
     let (_, rows) = store.project_usage().unwrap();
     assert_eq!(rows.len(), 1, "only the project made here counts");
@@ -249,6 +244,17 @@ fn setup_records_each_step_once_in_a_new_data_folder() {
         })
         .unwrap();
     assert!(!steps(&store).contains(&SetupStep::Project));
+    // Nor is an automation's project for one run.
+    store
+        .create_automation_project(CreateProjectRequest {
+            name: "Routine · today".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    assert!(
+        !steps(&store).contains(&SetupStep::Project),
+        "an automation made it"
+    );
     let (project, _) = store
         .create_project(CreateProjectRequest {
             name: "First".to_owned(),

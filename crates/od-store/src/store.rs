@@ -153,6 +153,30 @@ impl Store {
     /// # Errors
     /// [`StoreError::BadRequest`] for an empty name or unsafe/duplicate id.
     pub fn create_project(&self, req: CreateProjectRequest) -> Result<(Project, String)> {
+        self.create_project_by(req, true)
+    }
+
+    /// [`Self::create_project`] for an automation's run: neither a setup
+    /// step nor counted in Your usage ([`crate::usage::UsageMark::Automated`]).
+    ///
+    /// # Errors
+    /// As [`Self::create_project`].
+    pub fn create_automation_project(
+        &self,
+        req: CreateProjectRequest,
+    ) -> Result<(Project, String)> {
+        let (project, cid) = self.create_project_by(req, false)?;
+        self.mark_usage(&project.id, crate::usage::UsageMark::Automated)?;
+        Ok((project, cid))
+    }
+
+    /// `by_person`: someone made it, so it can be their first project
+    /// (setup step [`od_contracts::SetupStep::Project`]).
+    fn create_project_by(
+        &self,
+        req: CreateProjectRequest,
+        by_person: bool,
+    ) -> Result<(Project, String)> {
         let name = req.name.trim();
         if name.is_empty() {
             return Err(StoreError::BadRequest("name required".to_owned()));
@@ -194,7 +218,7 @@ impl Store {
             // The media library is made on its own; it is nobody's first project.
             let media = project.metadata.as_ref().and_then(|m| m.intent.as_deref())
                 == Some("media-library");
-            if !media {
+            if by_person && !media {
                 crate::setup::insert(&tx, od_contracts::SetupStep::Project, now)?;
             }
             root.ensure_exists()?;

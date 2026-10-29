@@ -103,12 +103,12 @@ async fn launch(state: AppState, routine: Routine) -> ApiResult<Launched> {
                 }
                 // A fresh, isolated project per fire, in its first conversation.
                 TargetMode::CreateEachRun => {
-                    let (project, cid) = s.create_project(od_contracts::CreateProjectRequest {
-                        name: title.clone(),
-                        ..od_contracts::CreateProjectRequest::default()
-                    })?;
                     // Your usage counts projects people make, not these.
-                    s.mark_usage(&project.id, od_store::usage::UsageMark::Automated)?;
+                    let (project, cid) =
+                        s.create_automation_project(od_contracts::CreateProjectRequest {
+                            name: title.clone(),
+                            ..od_contracts::CreateProjectRequest::default()
+                        })?;
                     s.update_conversation(
                         &project.id,
                         &cid,
