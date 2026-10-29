@@ -80,7 +80,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     });
 
     let navigate = super::leave_guard::use_leave();
-    let to_mcp = Callback::new(move |()| navigate("/settings#mcp"));
+    let to_mcp = Callback::new(move |()| navigate("/settings#settings-mcp"));
     let send = move || {
         if ctx
             .chat

@@ -69,3 +69,5 @@ run OD_E2E_UPDATES_PORT updates.e2e.mjs
 run OD_E2E_USAGE_PORT usage.e2e.mjs
 # First-run setup stopped at the agent (with OD_E2E_PORT: + 13).
 run OD_E2E_SETUP_PORT setup.e2e.mjs
+# Beta.7 design review fixes (with OD_E2E_PORT: + 13).
+run OD_E2E_POLISH_PORT polish.e2e.mjs

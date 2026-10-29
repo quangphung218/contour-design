@@ -400,7 +400,7 @@ pub fn Home() -> impl IntoView {
                         on_files=stage_files
                         on_mcp_settings=Callback::new(move |()| {
                             if let Some(w) = web_sys::window() {
-                                let _ = w.location().set_href("/settings#mcp");
+                                let _ = w.location().set_href("/settings#settings-mcp");
                             }
                         })
                         on_notice=Callback::new(move |m: String| error.set(Some(m)))

@@ -32,6 +32,14 @@ All notable changes to Contour are recorded here. The format follows
   [GitHub Discussions](https://github.com/quangphung218/contour-design/discussions),
   and to an issue with steps to reproduce for a bug. In every UI language.
 
+### Fixed
+
+- A link to a Settings section (the quick menu, the Memory toast,
+  `/settings#settings-about`) opens Settings at that section and keeps it
+  there while the sections above finish loading. Before, the page always
+  opened at its top. The chat's and Home's links to MCP servers now point
+  at that section too.
+
 ## [0.2.0-beta.7] - 2026-10-29
 
 ### Added
