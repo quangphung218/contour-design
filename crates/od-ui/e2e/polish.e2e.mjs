@@ -9,7 +9,7 @@
 //    reply show above the composer, in a short window and at 390 px.
 // 4. At 390 px the Export chip under the reply opens the Export menu on
 //    the Preview pane, and the preview head is one row, its edit and zoom
-//    tools behind More.
+//    tools behind More; the rail and the head are 44 px touch targets.
 // Port: OD_E2E_PORT + 13 (or OD_E2E_POLISH_PORT). Run through ./run.sh.
 
 import { chromium } from 'playwright';
@@ -196,11 +196,19 @@ try {
       await page.keyboard.press('Escape');
       await until(async () => (await page.getByTestId('export-menu').count()) === 0, 'export menu closed');
       const head = page.getByTestId('preview-toolbar');
-      assert.ok((await head.boundingBox()).height <= 52, 'preview head is one row');
+      assert.ok((await head.boundingBox()).height < 70, 'preview head is one row');
       assert.equal(await page.getByTestId('tool-bar').isVisible(), false, 'edit tools folded');
       await head.getByTestId('preview-more').click();
       await page.getByTestId('tool-bar').waitFor();
       assert.equal(await head.getByTestId('preview-more').getAttribute('aria-expanded'), 'true');
+      // Every control in the rail and the preview head is a 44 px target.
+      const small = await page.evaluate(() =>
+        [...document.querySelectorAll('.sidebar :is(a, button), [data-testid=preview-toolbar] :is(button, .seg)')]
+          .map((e) => ({ e, b: e.getBoundingClientRect() }))
+          .filter(({ b }) => b.width > 0 && (b.width < 44 || b.height < 44))
+          .map(({ e, b }) => `${e.getAttribute('aria-label') || e.textContent.trim()} ${Math.round(b.width)}×${Math.round(b.height)}`),
+      );
+      assert.deepEqual(small, [], 'touch targets under 44 px');
     }
   }
 

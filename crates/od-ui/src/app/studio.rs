@@ -1658,7 +1658,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             {move || ctx.active_term.get().map(|id| view! { <TerminalView id=id/> })}
             <div class="preview-main" style=move || if ctx.active_term.with(Option::is_some) { "display:none" } else { "display:contents" }>
             <div class="pane-head preview-head" class:tools-open=move || ctx.preview_tools_open.get() data-testid="preview-toolbar">
-                <button class="icon-btn" aria-label=t(T::ReloadPreview) data-tip=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>
+                <button class="icon-btn reload-preview" aria-label=t(T::ReloadPreview) data-tip=t(T::ReloadPreview) on:click=move |_| ctx.reload_preview()>
                     {icon(Glyph::Refresh)}
                 </button>
                 <div class="segmented small" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ViewAs)>

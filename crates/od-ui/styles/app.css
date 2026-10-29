@@ -966,15 +966,18 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   .deck-bar { flex-wrap: wrap; row-gap: var(--space-1); }
   .deck-bar > .split-btn { margin-left: auto; }
 }
-/* Phone: the head is one row (reload, view, device, More); the edit and
-   zoom tools wait behind More and wrap onto a second row when it opens.
+/* Phone: the head is one row (view, device, More); reload and the edit
+   and zoom tools wait behind More and wrap onto a second row when it opens.
    The file name is in the tab above. */
 .preview-more { display: none; }
 @media (max-width: 480px) {
   .preview-head { flex-wrap: wrap; height: auto; min-height: 44px; padding-block: var(--space-1); }
   .preview-head > .preview-more { display: inline-flex; margin-left: auto; }
   .preview-head > .path-title { display: none; }
-  .preview-head:not(.tools-open) > :is(.tool-bar, .head-divider, .zoom, [data-testid="show-files"]) { display: none; }
+  .preview-head:not(.tools-open) > :is(.reload-preview, .tool-bar, .head-divider, .zoom, [data-testid="show-files"]) { display: none; }
+  .preview-head > .icon-btn, .preview-head .segmented .seg { min-width: 44px; min-height: 44px; }
+  .preview-head .tool-bar { flex-wrap: wrap; }
+  .preview-head :is(.tool-bar, .zoom) :is(.icon-btn, .btn, .zoom-value) { min-width: 44px; min-height: 44px; }
 }
 /* Phone: the slide takes the width, at the top of the stage next to the
    deck bar; the counter and arrows replace the thumbnails. */
@@ -1565,3 +1568,21 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 /* Long labels (German, Russian…) keep their line; the selects wrap below. */
 .notification-settings .switch.grow { flex: 1 0 auto; }
 .notification-settings .switch > span { display: inline-flex; align-items: center; gap: var(--space-1-5); white-space: nowrap; }
+
+/* Phone: every control in the rail, menus, the Settings nav, the studio
+   switch, the Next chips and the Settings and empty-state buttons is a
+   full 44 px touch target. Collapse does
+   nothing while the rail is forced, and a phone has no keyboard
+   shortcuts, so both buttons go and the rail keeps its height. Last in
+   the file, over the rail's 40 px. */
+@media (max-width: 480px) {
+  .sidebar { padding-inline: calc((var(--sidebar-rail) - 44px) / 2); }
+  .sidebar .sidebar-toggle, .sidebar [data-testid="open-shortcuts"] { display: none; }
+  .sidebar .brand { justify-content: center; width: 44px; height: 44px; padding: 0; flex: none; margin: 0 auto; }
+  .sidebar :is(.palette-trigger, .nav-link), .sidebar.rail :is(.palette-trigger, .nav-link) { width: 44px; height: 44px; }
+  .menu-item { min-height: 44px; }
+  .settings-nav-link { display: inline-flex; align-items: center; min-height: 44px; }
+  .studio-switch .seg { min-height: 44px; }
+  .chip.next-step { min-height: 44px; }
+  .settings-section .row.end .btn, .empty-state .btn { min-height: 44px; }
+}

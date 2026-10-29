@@ -56,6 +56,10 @@ All notable changes to Contour are recorded here. The format follows
   stdio-only adapters and on agents not forwarded to are under Details.
   With no MCP server yet, Add server is in the empty list, and Save stays
   a plain, disabled button until there is a change to save.
+- On a phone (480 px or narrower) the rail, the menus, the Settings nav,
+  the Chat/Preview/Files switch, the Next chips, the preview head and the
+  Settings buttons are 44 px touch targets. The rail drops Collapse, which
+  does nothing there, and Keyboard shortcuts.
 
 ## [0.2.0-beta.7] - 2026-10-29
 
