@@ -91,6 +91,25 @@ impl Store {
         })
     }
 
+    /// Whether the project's preview can be the first-run setup step, as its
+    /// creation can be [`od_contracts::SetupStep::Project`]: not the media
+    /// library, nor an automation's project. False for an unknown project.
+    ///
+    /// # Errors
+    /// SQLite errors.
+    pub fn is_setup_project(&self, project_id: &str) -> Result<bool> {
+        self.with_conn(|conn| {
+            Ok(conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM projects p WHERE p.id = ?1 \
+                   AND json_extract(p.metadata_json, '$.intent') IS NOT 'media-library' \
+                   AND NOT EXISTS (SELECT 1 FROM usage_marks WHERE project_id = p.id \
+                     AND kind = 'automated'))",
+                [project_id],
+                |r| r.get(0),
+            )?)
+        })
+    }
+
     /// When recording started, and every project a person made empty since:
     /// imported, remixed, copied and template projects, the media library
     /// and automations' projects are left out.
