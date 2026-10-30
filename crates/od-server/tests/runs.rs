@@ -779,6 +779,39 @@ async fn agents_endpoint_detects_mocks_and_missing_binaries() {
     assert_eq!(steps[1]["step"], "agent_found", "{steps}");
 }
 
+/// A saved API key makes BYOK available in the list, but it is not an
+/// agent found for setup: that step is for an installed CLI.
+#[tokio::test]
+async fn a_saved_api_key_alone_is_not_an_agent_found() {
+    let d = daemon().await;
+    let res = d
+        .http
+        .put(format!("{}/api/app-config", d.base))
+        .json(&json!({ "byok": {"protocol": "anthropic", "apiKey": "sk-ant-e2e-1234"} }))
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status().is_success(), "{}", res.text().await.unwrap());
+    let body = d.get_json("/api/agents").await;
+    let available = body["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["available"] == true)
+        .map(|a| a["id"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(available, [json!("byok")], "{body}");
+    let steps = d.get_json("/api/usage").await["setup"]["steps"].clone();
+    assert!(
+        steps
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|m| m["step"] != "agent_found"),
+        "{steps}"
+    );
+}
+
 /// Onboarding ▸ Check again in the app: an agent installed after start in a
 /// folder only the login shell's new `PATH` names (a new nvm Node) is not
 /// found by a plain detection, and is found once rescan asks the shell.
