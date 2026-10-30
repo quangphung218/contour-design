@@ -8,6 +8,13 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Your usage: an agent found from its setup dialog (DeepSeek Harness,
+  detected again after installing `dsh`) is setup step 2 at once. Before,
+  the step waited for the next agent list, so quitting before the test
+  read "stopped at: agent" and the step got a later time.
+
 ## [0.2.0-beta.8] - 2026-10-30
 
 ### Added
