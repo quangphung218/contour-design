@@ -23,6 +23,17 @@ fn native() -> ProjectEvents {
 /// 2 s late. The latency budget is checked apart (`…within_300ms`).
 const EVENT_WAIT: Duration = Duration::from_secs(10);
 
+/// A missed timing budget fails on CI (`CI=true`) and only warns on a dev
+/// Mac. There every watcher hangs off `fseventsd`, one daemon for the whole
+/// machine: other builds churning files kept it at 100-165% CPU, and it
+/// handed this test's writes over 0.2-2 s late (or not within a minute)
+/// while od-preview's own pipeline still took its ~215 ms. A missing event
+/// (`EVENT_WAIT`) fails everywhere.
+fn over_budget(msg: &str) {
+    assert!(std::env::var("CI").as_deref() != Ok("true"), "{msg}");
+    eprintln!("warning: timing budget missed outside CI: {msg}");
+}
+
 async fn next_change(sub: &mut Subscription, within: Duration) -> (String, ChangeKind) {
     loop {
         match tokio::time::timeout(within, sub.recv()).await {
@@ -86,17 +97,16 @@ async fn write_reaches_subscriber_within_300ms() {
     // write in ~12 ms, yet notify's 20 ms tick fired up to 90 ms late and
     // the median reached 313-342 ms with nothing else running (runs
     // 40301330126, 40307950498, 40309239949). That alone eats the 100 ms
-    // left after the window, so the budget is checked on real Macs
-    // (`make check`) and on the Linux runner; on the macOS runner the event
-    // and the window above still are.
+    // left after the window, so the budget is checked on the Linux runner
+    // (a dev Mac only warns, see `over_budget`); on the macOS runner the
+    // event and the window above still are.
     if cfg!(target_os = "macos") && std::env::var_os("GITHUB_ACTIONS").is_some() {
         eprintln!("300 ms budget not checked on the GitHub macOS runner: median {median:?}");
         return;
     }
-    assert!(
-        median <= Duration::from_millis(300),
-        "median {median:?} of {took:?}"
-    );
+    if median > Duration::from_millis(300) {
+        over_budget(&format!("median {median:?} of {took:?}"));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -130,7 +140,10 @@ async fn burst_of_writes_settles_into_one_event() {
         }
         quiet(&mut sub).await;
     }
-    panic!("a burst must settle into a single event, got extra {extras:?}");
+    // FSEvents splits a burst only when it hands writes over late.
+    over_budget(&format!(
+        "a burst must settle into a single event, got extra {extras:?}"
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
