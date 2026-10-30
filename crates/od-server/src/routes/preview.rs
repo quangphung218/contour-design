@@ -9,8 +9,8 @@
 //!   `raw?bridge=1&key=<id>` also hands the bridge a fresh edit key the
 //!   first time `<id>` is served; `POST /api/projects/:id/edit-keys/<id>`
 //!   gives it to the host, once (see `od_preview::edit_key`).
-//! - `GET /api/projects/:id/events` streams `ready`, `file-changed` and
-//!   `conversation-created` over SSE.
+//! - `GET /api/projects/:id/events` streams `ready`, `file-changed`,
+//!   `reload-all` and `conversation-created` over SSE.
 
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::routes::raw;
@@ -81,24 +81,31 @@ pub(crate) fn host_frame_load(headers: &HeaderMap) -> bool {
 }
 
 /// Records the project's first preview (Settings ▸ About ▸ Your usage),
-/// and the first preview of all as a setup step. The preview reloads on
-/// every file change, so a project recorded once in this process skips the
-/// database after that.
+/// and the first preview of all as a setup step, unless an automation made
+/// the project or it is the media library (neither is a first project
+/// either). The preview reloads on every file change, so a project recorded
+/// once in this process skips the database after that.
 pub(crate) async fn record_first_preview(state: &AppState, id: &str) {
     if state.preview.previewed().contains(id) {
         return;
     }
     let project = id.to_owned();
     match state
-        .blocking(move |s| s.mark_usage(&project, UsageMark::FirstPreview))
+        .blocking(move |s| {
+            s.mark_usage(&project, UsageMark::FirstPreview)?;
+            s.is_setup_project(&project)
+        })
         .await
     {
-        Ok(_) => {
+        Ok(setup) => {
             state.preview.previewed().insert(id.to_owned());
+            if setup {
+                crate::routes::manage::usage::record_setup(state, od_contracts::SetupStep::Preview)
+                    .await;
+            }
         }
         Err(err) => tracing::warn!(error = %err.message, "recording the first preview failed"),
     }
-    crate::routes::manage::usage::record_setup(state, od_contracts::SetupStep::Preview).await;
 }
 
 /// Injected bytes differ from the file, so file validators and ranges no

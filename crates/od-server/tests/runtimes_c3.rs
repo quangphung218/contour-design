@@ -49,6 +49,16 @@ async fn agent(d: &common::Daemon, id: &str) -> Value {
         .clone()
 }
 
+/// Whether setup step 2 (an agent found) is recorded.
+async fn agent_found(d: &common::Daemon) -> bool {
+    let usage = d.get_json("/api/usage").await;
+    usage["setup"]["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["step"] == "agent_found")
+}
+
 async fn detect(d: &common::Daemon, id: &str) -> (u16, Value) {
     let res = d
         .post(&format!("/api/agents/{id}/detect"), &json!({}))
@@ -113,11 +123,14 @@ async fn deepseek_harness_is_detected_again_once_the_user_sets_it_up() {
     std::fs::write(profile.join("old"), "").unwrap();
     let (_, body) = detect(&d, "deepseek-harness").await;
     assert_eq!(body["agent"]["needsSetup"], true, "{body}");
+    assert!(!agent_found(&d).await, "nothing available yet");
 
     std::fs::remove_file(profile.join("old")).unwrap();
     let (_, body) = detect(&d, "deepseek-harness").await;
     assert_eq!(body["agent"]["available"], true, "{body}");
     assert_eq!(body["agent"]["version"], "0.1.2-rc.1");
+    // Found from the dialog, with no `GET /api/agents` since: setup step 2.
+    assert!(agent_found(&d).await);
     assert!(body["agent"].get("needsSetup").is_none());
     assert_eq!(agent(&d, "deepseek-harness").await["available"], true);
 
@@ -281,4 +294,5 @@ async fn byok_is_detected_once_a_key_is_saved() {
     assert!(res.status().is_success(), "{}", res.text().await.unwrap());
     let (_, body) = detect(&d, "byok").await;
     assert_eq!(body["agent"]["available"], true, "{body}");
+    assert!(!agent_found(&d).await, "a saved key is not an agent found");
 }

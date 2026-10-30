@@ -745,10 +745,14 @@ impl StudioCtx {
         let url = format!("{}/events", self.base());
         let stream = Sse::open(
             &url,
-            &["file-changed", "conversation-created"],
+            &["file-changed", "reload-all", "conversation-created"],
             move |name, data| {
                 if name == "conversation-created" {
                     self.reload_conversations();
+                } else if name == "reload-all" {
+                    // The watcher lost events: any file may have changed.
+                    self.refresh_files();
+                    self.reload_preview();
                 } else if let Ok(changed) = serde_json::from_str::<FileChanged>(&data) {
                     self.on_file_changed(changed);
                 }

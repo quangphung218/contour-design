@@ -33,5 +33,11 @@ async fn detect(State(state): State<AppState>, Path(agent_id): Path<String>) -> 
         super::runs::byok_configured(&state),
     )
     .await;
+    // Found here first (the user installed it from the setup dialog): setup
+    // step 2, as in `GET /api/agents`. A saved API key is not an agent.
+    if agent.available && def.id != od_runtime::def::BYOK.id {
+        crate::routes::manage::usage::record_setup(&state, od_contracts::SetupStep::AgentFound)
+            .await;
+    }
     Json(json!({ "agent": agent })).into_response()
 }

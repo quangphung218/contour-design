@@ -188,7 +188,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
   | Version | `GET/POST .../files/<path>/versions`, `POST .../versions/:vid/restore` |
   | Conversation | `GET/POST .../conversations`, `GET .../conversations/:cid/messages`, `PUT .../messages/:mid` |
   | Run | `POST /api/runs` → 202 `{runId…}` (idempotent on `clientRequestId`); `POST /api/chat` (creates a run and streams in the response); `GET /api/runs/:id/events` (SSE); `POST /api/runs/:id/cancel`; `POST /api/runs/:id/steer` |
-  | Project events | `GET /api/projects/:id/events` (SSE: `ready`, `file-changed {path, kind: add/change/unlink}`, `conversation-created`) |
+  | Project events | `GET /api/projects/:id/events` (SSE: `ready`, `file-changed {path, kind: add/change/unlink}`, `reload-all`, `conversation-created`) |
   | Export | `POST .../export/{html,pdf,pdf-image,image,pptx}`, `GET .../archive` |
   | Config | `GET/PUT /api/app-config`, `GET/PUT /api/media/config` |
   | Active project | `POST/GET /api/active` |
@@ -562,6 +562,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
 - One watcher per project, reference-counted by subscribers; created on the first subscriber, closed when the last one leaves.
 - Waits for the file to settle for 200 ms. Ignores symlinks and junk files. Falls back to polling when watch handles run out.
 - Events go over the project SSE. The client reconnects with 1–30 s backoff; on an event it refreshes the file list, and the changed `?v=` makes the iframe reload.
+- When the watcher drops events (FSEvents `MustScanSubDirs`, an inotify queue overflow; notify's `Flag::Rescan`) it names no path, so a `reload-all` goes out after the same 200 ms settle: the client refreshes the file list and reloads the preview, whichever file it shows. Contour addition; the original stays silent.
 - **Criterion for the Rust version**: file write → preview updates in ≤ 500 ms (excluding webview render time).
 
 ### 4.2 Export: what needs a browser engine

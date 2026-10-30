@@ -668,6 +668,56 @@ async fn setup_in_a_new_data_folder_runs_from_the_first_open_to_the_first_previe
 }
 
 #[tokio::test]
+async fn an_automations_project_or_the_media_library_is_not_the_first_preview() {
+    let _timing = TIMING.read().await;
+    let a = app();
+    let steps = || async {
+        serde_json::from_slice::<UsageResponse>(&a.get("/api/usage").await.body)
+            .unwrap()
+            .setup
+            .unwrap()
+            .steps
+            .into_iter()
+            .map(|m| m.step)
+            .collect::<Vec<_>>()
+    };
+    // Neither is a first project, so neither is a first preview.
+    let (automated, _) = Store::open(DataDir::new(&a.data))
+        .unwrap()
+        .create_automation_project(od_contracts::CreateProjectRequest {
+            name: "Routine · today".to_owned(),
+            ..od_contracts::CreateProjectRequest::default()
+        })
+        .unwrap();
+    let r = a
+        .post_json(
+            "/api/projects",
+            &json!({ "name": "Media library", "metadata": { "intent": "media-library" } }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text());
+    let media = serde_json::from_slice::<CreateProjectResponse>(&r.body)
+        .unwrap()
+        .project
+        .id;
+    for id in [&automated.id, &media] {
+        a.write(id, "index.html", "<p>x</p>").await;
+        let raw = format!("/api/projects/{id}/raw/index.html?bridge=1");
+        assert_eq!(a.get(&raw).await.status, StatusCode::OK);
+    }
+    assert_eq!(steps().await, [SetupStep::Opened]);
+
+    let id = a.project().await;
+    a.write(&id, "index.html", "<p>x</p>").await;
+    let raw = format!("/api/projects/{id}/raw/index.html?bridge=1");
+    assert_eq!(a.get(&raw).await.status, StatusCode::OK);
+    assert_eq!(
+        steps().await,
+        [SetupStep::Opened, SetupStep::Project, SetupStep::Preview]
+    );
+}
+
+#[tokio::test]
 async fn a_react_component_in_the_frame_is_a_first_preview_but_its_export_is_not() {
     let _timing = TIMING.read().await;
     let a = app();
