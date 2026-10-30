@@ -9,8 +9,8 @@
 //!   `raw?bridge=1&key=<id>` also hands the bridge a fresh edit key the
 //!   first time `<id>` is served; `POST /api/projects/:id/edit-keys/<id>`
 //!   gives it to the host, once (see `od_preview::edit_key`).
-//! - `GET /api/projects/:id/events` streams `ready`, `file-changed` and
-//!   `conversation-created` over SSE.
+//! - `GET /api/projects/:id/events` streams `ready`, `file-changed`,
+//!   `reload-all` and `conversation-created` over SSE.
 
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::routes::raw;

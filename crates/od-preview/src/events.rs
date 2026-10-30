@@ -1,6 +1,8 @@
 //! Project events (spec 4.1 live reload): one file watcher per project,
 //! shared by every subscriber and closed when the last one leaves. Writes
-//! settle for 200 ms before a `file-changed` event goes out.
+//! settle for 200 ms before a `file-changed` event goes out. When the
+//! watcher drops events (FSEvents `MustScanSubDirs`, an inotify queue
+//! overflow) a `reload-all` goes out instead of nothing.
 
 use notify::event::{AccessKind, AccessMode};
 use notify::{EventKind, PollWatcher, RecommendedWatcher, RecursiveMode};
@@ -47,6 +49,9 @@ pub enum ProjectEvent {
         path: String,
         kind: ChangeKind,
     },
+    /// The watcher lost events, so any file may have changed: reload the
+    /// file list and the preview.
+    ReloadAll,
     #[serde(rename_all = "camelCase")]
     ConversationCreated {
         project_id: String,
@@ -64,6 +69,7 @@ impl ProjectEvent {
         match self {
             Self::Ready { .. } => "ready",
             Self::FileChanged { .. } => "file-changed",
+            Self::ReloadAll => "reload-all",
             Self::ConversationCreated { .. } => "conversation-created",
         }
     }
@@ -300,6 +306,9 @@ struct Settle {
     window: Duration,
     /// Relative path → (last raw event, created in the meantime).
     pending: HashMap<String, (Instant, bool)>,
+    /// The last event telling us the watcher dropped some, which names no
+    /// path: until it settles too.
+    rescan: Option<Instant>,
 }
 
 impl Settle {
@@ -307,11 +316,16 @@ impl Settle {
         Self {
             window,
             pending: HashMap::new(),
+            rescan: None,
         }
     }
 
     fn add(&mut self, root: &Path, events: &[DebouncedEvent]) {
         for event in events {
+            if event.need_rescan() {
+                self.rescan = Some(self.rescan.map_or(event.time, |t| t.max(event.time)));
+                continue;
+            }
             // inotify reports every open and read-only close. Taking those
             // for changes made the preview's own read of a file reload it,
             // forever.
@@ -335,8 +349,19 @@ impl Settle {
     fn next_due(&self) -> Option<Instant> {
         self.pending
             .values()
-            .map(|(last, _)| *last + self.window)
+            .map(|(last, _)| *last)
+            .chain(self.rescan)
+            .map(|last| last + self.window)
             .min()
+    }
+
+    /// Whether a rescan is quiet for the window by `now`; it is then taken.
+    fn take_rescan(&mut self, now: Instant) -> bool {
+        let settled = self.rescan.is_some_and(|last| last + self.window <= now);
+        if settled {
+            self.rescan = None;
+        }
+        settled
     }
 
     /// Paths quiet for the window by `now`, in path order.
@@ -377,9 +402,13 @@ fn spawn_settle(
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => return,
                 }
-                let due = settle.take_due(Instant::now());
+                let now = Instant::now();
+                let due = settle.take_due(now);
                 for event in classify(&root, due, &mut known) {
                     let _ = tx.send(event);
+                }
+                if settle.take_rescan(now) {
+                    let _ = tx.send(ProjectEvent::ReloadAll);
                 }
             }
         })?;
@@ -562,5 +591,45 @@ mod tests {
         assert!(settle.take_due(t0 + ms(319)).is_empty());
         assert_eq!(settle.take_due(t0 + ms(320)), [("a.css".to_owned(), true)]);
         assert_eq!(settle.next_due(), None);
+    }
+
+    /// What FSEvents `MustScanSubDirs` and an inotify overflow come out as:
+    /// no path, only the flag.
+    fn rescan(time: Instant) -> DebouncedEvent {
+        DebouncedEvent::new(
+            notify::Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan),
+            time,
+        )
+    }
+
+    #[test]
+    fn a_rescan_settles_like_a_path() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut settle = Settle::new(DEBOUNCE);
+        settle.add(Path::new("/r"), &[rescan(t0), rescan(t0 + ms(50))]);
+        assert_eq!(settle.next_due(), Some(t0 + ms(250)));
+        assert!(!settle.take_rescan(t0 + ms(249)));
+        assert!(settle.take_rescan(t0 + ms(250)));
+        assert!(!settle.take_rescan(t0 + ms(500)), "taken once");
+        assert_eq!(settle.next_due(), None);
+    }
+
+    #[tokio::test]
+    async fn dropped_events_reach_subscribers_as_reload_all() {
+        let root = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = broadcast::channel(8);
+        let batches = spawn_settle(root.path().to_owned(), tx, DEBOUNCE).unwrap();
+        batches.send(vec![rescan(Instant::now())]).unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("a reload-all within 5 s")
+            .unwrap();
+        assert_eq!(event, ProjectEvent::ReloadAll);
+        assert_eq!(event.name(), "reload-all");
+        assert_eq!(
+            serde_json::to_value(&event).unwrap(),
+            json!({"type": "reload-all"})
+        );
     }
 }

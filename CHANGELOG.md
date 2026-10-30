@@ -18,6 +18,9 @@ All notable changes to Contour are recorded here. The format follows
   library, is no longer the first preview of setup, as neither is the
   first project. Before, setup could read "Reached step 5 of 5" with no
   project made.
+- Live reload: when macOS drops file events under load (FSEvents
+  `MustScanSubDirs`) or Linux's inotify queue overflows, the preview and
+  file list reload, instead of missing the change until the next write.
 
 ## [0.2.0-beta.8] - 2026-10-30
 
