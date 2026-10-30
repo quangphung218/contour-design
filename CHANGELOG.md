@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.8] - 2026-10-30
+
 ### Added
 
 - Settings ▸ About ▸ Your usage shows how far first-run setup got, out of
@@ -456,7 +458,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.7...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.8...HEAD
+[0.2.0-beta.8]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.7...v0.2.0-beta.8
 [0.2.0-beta.7]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.6...v0.2.0-beta.7
 [0.2.0-beta.6]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.5...v0.2.0-beta.6
 [0.2.0-beta.5]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.4...v0.2.0-beta.5
