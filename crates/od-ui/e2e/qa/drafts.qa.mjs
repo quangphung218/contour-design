@@ -431,9 +431,15 @@ test('DL-23', 'Ctrl/Cmd-click on a link with an edit not applied opens a new tab
 });
 
 test("DL-24", "The browser's Back with an edit not applied asks: Cancel stays with the text", async ({ d, newPage }) => {
-  const s = await editLead(newPage, d, { from: '/projects' });
-  await stayThenLeave(s, () => s.page.evaluate(() => history.back()));
-});
+  // Four fresh tries: the guard's history entries go wrong about one try in
+  // two (QA-033), so a single try passes by chance.
+  for (let i = 1; i <= 4; i++) {
+    const s = await editLead(newPage, d, { from: '/projects' });
+    await stayThenLeave(s, () => s.page.evaluate(() => history.back()))
+      .catch((e) => assert.fail(`try ${i} of 4: ${e.message}`));
+    await s.context.close();
+  }
+}, { knownBug: 'QA-033', timeout: 120_000 });
 
 test('DL-25', 'The unapplied-edit question opens with the focus on Cancel', async ({ d, newPage }) => {
   const { page, panel } = await editLead(newPage, d);

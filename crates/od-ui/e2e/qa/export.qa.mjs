@@ -212,4 +212,20 @@ test('EXP-11', 'Esc that closes the Export menu does not stop a running Design J
   }
 });
 
+test('EXP-13', 'Every format the Export menu offers for a plain page gives a file', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d, 'Plain page', { 'index.html': PAGE });
+  await page.getByTestId('export').click();
+  for (const g of ['export-image', 'export-powerpoint']) if (await page.getByTestId(g).count()) await page.getByTestId(g).click();
+  const offered = [];
+  for (const item of ['export-pptx', 'export-pptx-editable', 'export-mp4']) if (await page.getByTestId(item).count()) offered.push(item);
+  await page.keyboard.press('Escape');
+  const refused = [];
+  for (const item of offered) {
+    const res = await exportVia(page, item);
+    if (!res.bytes) refused.push(`${item}: ${res.text}`);
+    await page.keyboard.press('Escape');
+  }
+  assert.equal(refused.length, 0, `offered, then refused: ${refused.join(' | ')}`);
+}, { skip: CHROME ? undefined : 'no Chrome, Edge or Chromium on this machine', knownBug: 'QA-031', timeout: 200_000 });
+
 await run('export');
