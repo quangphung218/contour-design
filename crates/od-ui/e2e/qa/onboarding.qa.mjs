@@ -315,24 +315,22 @@ test('ONB-10', 'On a phone-sized window the install commands fit and Copy stays 
   assert.equal(await overflowsX(page), false, 'the page scrolls sideways');
 }, noAgent);
 
-test('ONB-11', 'On Windows the install cards give only the setup page and the API key path, no command', async ({ d, newPage }) => {
+test('ONB-11', 'On Windows the install cards give the setup page and the API key path, no command', async ({ d, newPage }) => {
   const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
   const { page } = await newPage({ userAgent });
   await page.goto(d.base + '/onboarding');
   await page.getByTestId('agent-install').first().waitFor();
-  // Detection cannot find what the Windows installers put down yet (README):
-  // no command, no Check again, nothing about Terminal.
+  // No command and nothing about Terminal; Check again is offered on
+  // Windows too (features.md, Agents).
   assert.equal(await page.getByTestId('install-command').count(), 0, 'an install command shown on Windows');
   assert.equal(await page.getByTestId('install-signin').count(), 0);
-  assert.equal(await page.getByTestId('agents-check-again').count(), 0, 'Check again shown on Windows');
-  assert.equal(await page.getByTestId('onboarding-check-again').count(), 0, 'Check again shown on Windows');
   for (const id of ['claude', 'codex']) {
     const href = await page.locator(`[data-testid="agent-install"][data-agent="${id}"] [data-testid="install-docs"]`).getAttribute('href');
     assert.match(href, /^https:\/\//, `${id} has no setup page`);
   }
   assert.equal(await page.getByTestId('agents-none').innerText(), 'No coding agent found yet. Install one from its guide below, or use an API key.');
   await page.getByTestId('byok-alt').waitFor();
-  assert.doesNotMatch(await page.locator('.onboarding-card').innerText(), /Terminal|Check again/);
+  assert.doesNotMatch(await page.locator('.onboarding-card').innerText(), /Terminal/);
 }, noAgent);
 
 test('ONB-12', 'An agent installed but not signed in says how to sign in, and Check again tests it again', async ({ d, newPage }) => {

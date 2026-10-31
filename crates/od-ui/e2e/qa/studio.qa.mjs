@@ -187,6 +187,8 @@ test('STU-15', 'On a phone-width window, Tablet can still be zoomed in to read, 
   await frame(page).locator('#title').waitFor();
   await device(page, 'Tablet');
   const fit = await settledDrawn(page, 'Tablet shrunk to fit');
+  // At phone width the zoom tools wait behind More (one-row preview head).
+  await page.getByTestId('preview-more').click();
   const plus = page.getByTestId('zoom-in');
   assert.equal(await plus.isEnabled(), true, `+ is off at ${fit}% (label ${await zoomLabel(page)}%): the page cannot be made readable`);
   await plus.click();
