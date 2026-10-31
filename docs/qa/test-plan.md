@@ -116,6 +116,7 @@ time when needed.
 | STU-16 | A + that is off says why | Window 1360×860, Tablet | + until off, hover | Tooltip gives the reason, not just "Zoom in" | P2 | auto (QA-025) |
 | STU-17 | The Studio names the project | A project | Open it at 1440 and 1024 | The chat head shows the project name (the page heading) above the conversation, at least 100 px wide | P2 | auto |
 | STU-18 | The first-design hint goes away by itself | New browser, empty project | First turn, then a second turn without closing the hint | The hint is gone after the second turn and after a reload | P3 | auto |
+| STU-19 | Manual edit picks the text clicked inside a marked section | Page whose `<article>` has `data-od-id` (as the real Claude writes) | Manual edit, click a paragraph in it | The paragraph is picked, its text in Content (as in a plain section) | P0 | auto (QA-027) |
 
 ## 5. Export (`export.qa.mjs`)
 
@@ -135,6 +136,7 @@ Goal: the user takes the design out of Contour.
 | EXP-10 | Esc that closes the Export menu leaves comment mode on | Comment mode on, Export open | Esc | Menu closes; comment mode stays on | P1 | auto (QA-013) |
 | EXP-11 | Esc that closes the Export menu does not stop a running Design Jury | Jury on and running, Export open | Esc | Menu closes; jury still running | P1 | auto (QA-013) |
 | EXP-12 | The Export menu lists what applies, grouped | A page open | Open Export, unfold Image and PowerPoint | No greyed formats; no Markdown or JSX for a page; "MP4 video"; Image ▸ PNG, JPEG, WebP; PowerPoint ▸ Slides as images, Editable text | P2 | auto |
+| EXP-13 | Every format offered for a plain page works | A page, not a deck, Chrome | Export ▸ PowerPoint (both), MP4 | Each offered item gives a file; one that does not apply is not offered | P1 | auto (QA-031) |
 
 ## 6. Manage projects (`projects.qa.mjs`)
 
@@ -238,9 +240,32 @@ the guard, so that is what is checked.
 | DL-21 | A sent and answered message is not back in the composer after a reload | Project open | Send, wait for the answer, reload | Composer empty | P1 | auto |
 | DL-22 | Duplicate project with an edit not applied asks first | Typed in Content | "…" ▸ Duplicate: Cancel, then Leave | The app's question; Cancel stays with the text; Leave opens the copy | P1 | auto (QA-020) |
 | DL-23 | Ctrl/Cmd-click on a link with an edit not applied | Typed in Content | Ctrl/Cmd-click Projects | New tab on Projects; this tab stays with the text, no question | P2 | auto (QA-021) |
-| DL-24 | The browser's Back with an edit not applied asks | Came from Projects; typed in Content | Back: Cancel, then OK | As DL-14 | P1 | auto (QA-022) |
+| DL-24 | The browser's Back with an edit not applied asks | Came from Projects; typed in Content | Back: Cancel, then OK; four fresh tries | As DL-14, every try | P1 | auto (QA-022, QA-033) |
 | DL-25 | The leave question opens with the focus on Cancel | Typed in Content | Click Projects | Focus on Cancel; Enter stays | P2 | auto (QA-023) |
 | DL-26 | A failed Duplicate after Leave keeps the guard | Typed in Content; `/duplicate` answers 500 | "…" ▸ Duplicate ▸ Leave, then reload | Error shown, page stays; the reload still asks | P2 | auto (QA-020) |
+
+## 11. The app itself fails (`resilience.qa.mjs`)
+
+Goal: quitting, a crash, a folder without write access or a full disk
+never lose work, never leave half-made things, and say what happened in
+the user's words.
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| RES-01 | Quit while the agent works stops the agent | A turn running (agent that ignores a closed pipe, as Node does) | Quit (SIGTERM) | Nothing is written into the project after the quit (features.md: quitting stops every running agent) | P0 | auto (QA-026) |
+| RES-02 | A turn cut short by a crash says so | A turn running | Crash (SIGKILL), open again | Turn failed, words about Contour closing, Retry; no "daemon", no "check the agent in Settings" | P1 | auto (QA-030) |
+| RES-03 | A folder that cannot be written to leaves no half project | Folder mode 555 | Open folder twice | Opens, or an error and no new project | P1 | auto (QA-028) |
+| RES-04 | A folder that cannot be written to is explained | Same | Open folder | Plain message about write access, no OS error text | P1 | auto (QA-029) |
+| RES-05 | Full disk: nothing lost, plain message | Data folder on a full 40 MB disk image | Create a project; send a message; reload | Message back in the composer, files intact; a plain "disk full" message | P1 | manual (QA-029: needs `hdiutil`) |
+
+## 12. Contour as an MCP server (`mcp.qa.mjs`)
+
+Goal: the user's coding agent works on Contour projects through `od mcp`.
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| MCP-01 | Create, write, read; delete needs confirm | Daemon running; client on `od mcp` (stdio) | `create_project` "  Quán phở 🍜  ", `write_file`, `get_file` by name, `write_file ../x`, `delete_project` without confirm | Name trimmed, emoji kept, project in the app; file read back; `../` refused; delete refused | P0 | auto |
+| MCP-02 | A name with a space reads back | Same | `write_file "trang chủ.html"`, `get_file` same name | The file | P2 | auto (QA-032) |
 
 ## Not automated, and why
 
@@ -248,7 +273,9 @@ the guard, so that is what is checked.
   launch PATH and single-instance with `od`. Playwright drives the browser
   UI only; the desktop app needs a manual pass on a built `Contour.app`.
 - **Real agents and real BYOK providers**: the suite uses the mock CLI and
-  a fake provider on loopback (no outbound network by design).
+  a fake provider on loopback (no outbound network by design). Round 4
+  ran five turns of the real Claude Code by hand (bugs.md, round 4);
+  QA-026 and QA-027 were found that way and then reproduced with the mock.
 - **MP4 export**: needs ffmpeg and a HyperFrames composition; out of scope.
 - **ONB-09b in the desktop app**: Check again asks the login shell for its
   `PATH` again only in the app (a CLI daemon has none); the suite covers it

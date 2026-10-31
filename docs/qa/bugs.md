@@ -34,8 +34,30 @@ Round 3 fixes (5203152…0a68f88): QA-018…025 fixed, one commit each;
 After the review (d80fe89…ab025b1): QA-018, QA-020 and QA-024 got a
 follow-up each (see their entries); DL-26 is new; 113 of 113 pass twice.
 
+Round 4 (branch `quangphung218/qa-oct31` at a570888, main after beta.8 and
+PR #28): the suite (133 tests) first ran 129 pass, 4 unexpected. CHAT-13,
+ONB-11 and STU-15 asserted UI changed on purpose since (a13c83bf, 450ebf3b,
+bd9d0a15) and now follow features.md; STU-01 fails only under load (macOS
+FSEvents delivered changes 1–12 s late with the load average at 8–10; a
+build from before 0eb67dfc is just as late, so no regression). QA-026…032
+come from a manual pass on the real daemon with the mock agents, a full
+40 MB disk image, a read-only folder, `od mcp` driven over stdio, and five
+turns of the real Claude Code 2.1.316 (Vietnamese brief, follow-up, Stop,
+quit and crash mid-run, export of its page). Each has a red test, except
+the full-disk half of QA-029 (manual: needs a disk image). QA-033 showed
+up as DL-24 going red in the full run after passing in the first one; it
+reproduces by hand about one try in two.
+
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
+| QA-026 | 🟠 | Quitting Contour while the agent works leaves the agent running: it keeps editing the project after the app is gone | `resilience.qa.mjs` RES-01 | Open |
+| QA-027 | 🟠 | Manual edit: clicking text inside a section with `data-od-id` picks the whole section, so the text cannot be edited by clicking it (every page the real Claude writes) | `studio.qa.mjs` STU-19 | Open |
+| QA-028 | 🟠 | Opening a folder Contour cannot write to shows an error but adds a project anyway, one more per try | `resilience.qa.mjs` RES-03 | Open |
+| QA-029 | 🟡 | Storage errors reach the user raw: "The daemon hit an error: io error: Permission denied (os error 13) (HTTP 500)", "… No space left on device (os error 28)" | `resilience.qa.mjs` RES-04; full disk manual | Open |
+| QA-030 | 🟡 | A turn cut short because Contour closed or crashed says "daemon restarted" and "check the agent in Settings", with an Open Settings button | `resilience.qa.mjs` RES-02 | Open |
+| QA-031 | 🟡 | The Export menu offers PowerPoint and MP4 for a plain page; both end in "Export failed: The request was not accepted: … (HTTP 422)" | `export.qa.mjs` EXP-13 | Open |
+| QA-032 | 🔵 | MCP `write_file` saves "trang chủ.html" as "trang-chủ.html"; `get_file` on the name the agent used answers 404 | `mcp.qa.mjs` MCP-02 | Open |
+| QA-033 | 🟡 | With an edit not applied, the browser's Back works one try in two: after Cancel, a second Back does nothing, or Leave stays on the page | `drafts.qa.mjs` DL-24 | Open |
 | QA-018 | 🔴 | With a BYOK provider saved without a key on a host the daemon calls public (`http://ollama:11434`, `gpu-box`), every Settings save (theme, language…) is refused with 400 | `settings.qa.mjs` SET-07, SET-08 | Fixed |
 | QA-019 | 🟠 | A message steered into the running turn comes back in the composer after a reload | `drafts.qa.mjs` DL-20 | Fixed |
 | QA-022 | 🟠 | The browser's Back with an edit not applied leaves at once; the typed text is lost | `drafts.qa.mjs` DL-24 | Fixed |
@@ -523,3 +545,170 @@ Reported by the UX review of 759581a.
 - **Code**: `studio.rs:1502`, the `zoom-in` button: a fixed
   `data-tip=t(T::ZoomIn)`. Make it reactive on `can_zoom(true)` and say why.
 - **Fixed** (0a68f88): the zoom-in button's `data-tip` reads "Fits the pane" (18 locales) while the fit stops it.
+
+## QA-026 🟠 Quitting Contour while the agent works leaves the agent running
+
+- **Steps**: send a turn that takes a while (real Claude: "Add a contact.html
+  page and link it from index.html"); while it runs, quit Contour (Cmd+Q in
+  the app; for `od`, Ctrl-C or `kill`).
+- **Expected**: features.md, Desktop app: "Quitting stops every terminal
+  shell and running agent." Nothing changes in the project after the quit.
+- **Actual**: the agent process lives on with no parent. With Claude Code
+  2.1.316 it finished the turn 40 s after the quit and wrote `contact.html`
+  and a new `index.html` into the project; no version was recorded and
+  the turn shows "Failed" on the next launch. Only that next launch kills
+  it ("killed an orphaned agent" in the log) when it is still going. A
+  crash (SIGKILL) gives the same, which is expected; a quit should not.
+  A long turn keeps spending the user's tokens on a closed app.
+- **Evidence**: `lsof -d cwd` shows the `claude` process in the project
+  folder after the daemon exited; project listing before and after.
+- **Test**: `resilience.qa.mjs` RES-01 (the QA mock `qa-linger` ignores a
+  closed pipe as Node does and writes `linger.html` after 6 s; the test
+  quits the daemon after 1 s and checks the file never appears).
+- **Code**: `crates/od-server/src/state.rs` `AppState::shutdown` only
+  calls `terminals.close_all()`; `serve` (`lib.rs:309`) and the desktop
+  app (`apps/desktop/src/main.rs:432`) both end through it. Cancel every
+  live run there the way Stop does (SIGTERM to the process group, 3 s,
+  SIGKILL), and mark those turns canceled.
+
+## QA-027 🟠 Manual edit picks the whole section instead of the text clicked
+
+- **Steps**: a page whose sections carry `data-od-id` (every page the real
+  Claude Code wrote in this round: the prompt asks for it) ▸ Manual edit ▸
+  click a paragraph inside a section.
+- **Expected**: the paragraph is picked and its text is in Content, as for
+  a paragraph in a section without `data-od-id`, and as in the original app
+  (`edit-mode/bridge.ts` `closestTarget` stops at the nearest element with
+  a source path, and `srcdoc.ts` gives every element one).
+- **Actual**: the `<article>` (or `<footer>`) is picked: "This element holds
+  other elements. Edit its markup in the Html tab, or pick a layer inside
+  it." The paragraph can still be picked from the layer list, but not by
+  clicking it on the page. On the real Claude page, 3 of 3 paragraphs tried
+  picked their section.
+- **Test**: `studio.qa.mjs` STU-19 (same page with one marked and one plain
+  section; the plain one picks `<p>`, the marked one `<article>`).
+- **Code**: `bridges/od-bridge.js:513` and `:532` (hover and click) call
+  `odTarget(e.target)`, which climbs to the nearest `data-od-id`. That is
+  right for comments (the original's `comment-bridge.ts` does the same),
+  not for manual edit: use `e.target` in that mode; `selectorFor` already
+  names a child as `[data-od-id=…] > p:nth-of-type(1)`.
+
+## QA-028 🟠 A folder that cannot be written to adds a project although opening it failed
+
+- **Steps**: a folder with `index.html`, mode 555 (or owned by another
+  user, or on a read-only volume) ▸ Projects ▸ Open folder ▸ its path ▸
+  Open. Try again after the error.
+- **Expected**: either the project opens (it can be read; writes fail
+  later with a clear message), or an error and no project, as PRJ-09 asks
+  for a bad ZIP ("no half project").
+- **Actual**: an error (see QA-029), and yet a project named after the
+  folder is in Projects, MCP `list_projects` and the API, one more per try
+  (two tries, two "ro folder" projects). They open and list the file.
+- **Evidence**: `POST /api/import/folder` → 500 `io error: Permission
+  denied (os error 13)`; `GET /api/projects` then lists it.
+- **Test**: `resilience.qa.mjs` RES-03.
+- **Code**: `crates/od-store/src/store.rs` `create_project_by` commits the
+  project row (`tx.commit()`, line 225), then `write_manifest` (line 227)
+  writes `<folder>/.open-design/project.json` and fails; the row stays.
+  Write the manifest before the commit, or delete the row when it fails.
+  Any create that fails there (a full disk, too) leaves the same half
+  project. Whether a read-only folder should open at all is the
+  maintainer's call (`import_folder`, `routes/ui.rs:405`).
+
+## QA-029 🟡 Storage errors reach the user as OS errors
+
+- **Steps**: (a) open a read-only folder (QA-028); (b) with the data folder
+  on a full disk (a 40 MB disk image filled with `dd`), create a project or
+  send a message.
+- **Expected**: a message that says what is wrong and what to do: the
+  folder cannot be written to (name it); the disk is full, free some space.
+- **Actual**: (a) "The daemon hit an error: io error: Permission denied (os
+  error 13) (HTTP 500)"; (b) "The daemon hit an error: io error: No space
+  left on device (os error 28) (HTTP 500)" in the chat, followed by
+  "Failed. See the message above, then retry or check the agent in
+  Settings." and an Open Settings button (the agent never ran). Nothing was
+  lost: the typed message came back to the composer after a reload, and
+  `index.html` was intact.
+- **Test**: `resilience.qa.mjs` RES-04 for (a). (b) is manual (needs
+  `hdiutil`); steps above.
+- **Code**: `crates/od-server/src/error.rs`: `StoreError::Io` becomes
+  `INTERNAL_ERROR` with the io text. Map `PermissionDenied`, `StorageFull`
+  (and `ReadOnlyFilesystem`) to codes of their own with a plain message and
+  the path; the UI's run-failure line (QA-030) should not point at the
+  agent for them.
+
+## QA-030 🟡 A turn cut short by Contour closing blames the agent
+
+- **Steps**: a turn running ▸ Contour crashes or is quit (or the Mac
+  restarts) ▸ open Contour and the project.
+- **Expected**: the turn says Contour closed during it and offers Retry.
+- **Actual**: "daemon restarted" in a red box, then "Failed. See the
+  message above, then retry or check the agent in Settings." with Retry
+  and Open Settings. A user does not know "daemon"; the agent was fine.
+  Retry works (the turn runs again).
+- **Test**: `resilience.qa.mjs` RES-02 (SIGKILL mid-run, restart, read the
+  turn).
+- **Code**: `crates/od-runs/src/run.rs:201` writes `"daemon restarted"`;
+  the failure line and the Open Settings chip come from the chat's failed
+  state (`crates/od-ui/src/app/chat_view.rs`) whatever the cause. Your usage
+  already tells the cause apart (`daemon_restart`); use it for the words
+  and leave Settings out.
+
+## QA-031 🟡 Export offers PowerPoint and MP4 for a page, then refuses
+
+- **Steps**: a plain page (the real Claude's tea shop page, or any
+  `index.html` that is not a deck) ▸ Export ▸ PowerPoint ▸ Slides as images
+  (or Editable text), or Export ▸ MP4 video.
+- **Expected**: a format in the menu works for the open file (the menu's
+  own rule, `export_menu.rs` `rows_for`: "a format that does not apply is
+  left out"). The original app shows PPTX only for a deck
+  (`FileViewer.tsx` `showPptxExport = … && deckExportSignal`).
+- **Actual**: "Export failed: The request was not accepted: this artifact
+  is not a slide deck; export it as PDF or an image instead (HTTP 422)";
+  for MP4: "… HyperFrames HTML has no [data-composition-id] root (HTTP 422)".
+- **Test**: `export.qa.mjs` EXP-13 (every offered PPTX/MP4 item must give
+  a file). EXP-12 asserts that PowerPoint and "MP4 video" are listed for a
+  page; if the fix hides them, EXP-12 changes with it.
+- **Code**: `crates/od-ui/src/app/export_menu.rs` `Format::fits` decides by
+  the file name only; PowerPoint needs the deck signal the preview already
+  has (`deck.rs`), MP4 a `[data-composition-id]` root. Or export a page as
+  a one-slide deck.
+
+## QA-032 🔵 MCP: a file written under a name with a space cannot be read back under it
+
+- **Steps**: an MCP client (Claude Code after `od mcp install claude`) ▸
+  `write_file {path: "trang chủ.html"}` ▸ `get_file {path: "trang chủ.html"}`.
+- **Expected**: the file the agent just wrote.
+- **Actual**: `write_file` saves `trang-chủ.html` (spaces become `-`, as
+  uploads do) and says so in its answer; `get_file` with the agent's own
+  name answers "daemon 404 on /api/projects/…/raw/trang%20ch%E1%BB%A7.html:
+  file not found". Agents tend to reuse their own name. The original app
+  does the same (`projects.ts` sanitizes on write only), so this is a
+  maintainer's call.
+- **Test**: `mcp.qa.mjs` MCP-02.
+- **Code**: `crates/od-mcp/src/tools.rs` `get_file` (and `delete_file`):
+  try the sanitized name when the given one is missing, or have
+  `write_file`'s text say "saved as trang-chủ.html".
+
+## QA-033 🟡 Back with an edit not applied works one try in two
+
+- **Steps**: Projects ▸ a project ▸ Manual edit ▸ a paragraph ▸ type in
+  Content (do not Apply) ▸ browser Back ▸ Cancel ▸ Back again ▸ Leave.
+- **Expected** (QA-022): each Back asks; Cancel stays with the text; Leave
+  goes back to Projects.
+- **Actual**: in 6 fresh tries by hand (`history.back()`, 800 ms between
+  steps), 2 behaved; in 3 the second Back did nothing at all (no question,
+  no navigation; the user presses Back and nothing happens); in 1 the
+  question came but Leave stayed on the page. In the failing tries
+  `history.length` is one higher than in the good ones (5 instead of 4),
+  either right after typing or after the first Back: the guard holds one
+  entry of its own too many.
+- **Test**: `drafts.qa.mjs` DL-24, now four fresh tries in one test, so it
+  is red every run (a single try passed by chance in the first full run).
+- **Code**: `crates/od-ui/src/app/leave_guard.rs`: the arming `Effect`
+  (line 143) and `on_pop` (line 151) both `push_entry`, and `Leave::Back`
+  works out `go(-1)` or `go(-2)` by comparing URLs, which are the same for
+  every entry of the page. Mark the guard's entry (`history.state`, e.g.
+  `{odGuard: true}`) and decide from the state, not the URL, whether Back
+  landed on the page's own entry; push only when the current entry is not
+  already the guard's.
