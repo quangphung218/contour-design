@@ -703,8 +703,12 @@ Reported by the UX review of 759581a.
   `history.length` is one higher than in the good ones (5 instead of 4),
   either right after typing or after the first Back: the guard holds one
   entry of its own too many.
-- **Test**: `drafts.qa.mjs` DL-24, now four fresh tries in one test, so it
-  is red every run (a single try passed by chance in the first full run).
+- **Test**: `drafts.qa.mjs` DL-24, now eight fresh tries in one test. It
+  is a race: red in 1 of 3 runs at a load average of 5 (and in the first
+  full run with a single try), green in the others, so a "known bug now
+  passing" for QA-033 does not close it; run DL-24 a few times
+  (`QA_ONLY=DL-24 make e2e-qa F=drafts`). The `history.length` check in
+  the steps above shows it more often than the test does.
 - **Code**: `crates/od-ui/src/app/leave_guard.rs`: the arming `Effect`
   (line 143) and `on_pop` (line 151) both `push_entry`, and `Leave::Back`
   works out `go(-1)` or `go(-2)` by comparing URLs, which are the same for
