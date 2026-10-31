@@ -41,7 +41,7 @@ Goal: a first-time user reaches Home with a working agent or API key.
 | ONB-09 | On a phone, "API key required" sits with the key field and Save stays in place | Viewport 390×844, no agent | API key ▸ Anthropic ▸ empty key | Hint tied to the key field; Save next to Test or at the right edge; no sideways scroll | P2 | auto (QA-016) |
 | ONB-09b | Check again after installing an agent detects it | Start without agent, then install one | Press Check again | The new agent is listed and picked, no restart | P2 | auto (in ONB-03; the login shell rescan in `od-server` tests) |
 | ONB-10 | Phone width, no agent: the install cards fit | PATH without any agent CLI | Open `/onboarding` at 390 px | No sideways scroll; Copy stays inside its card; Copy and Install guide are at least 44 px high | P2 | auto |
-| ONB-11 | Windows, no agent: setup pages only | PATH without any agent CLI, Windows browser | Open `/onboarding` | No install command, no Check again, nothing about Terminal; each card links its setup page; the API key path is offered | P2 | auto |
+| ONB-11 | Windows, no agent: setup pages only | PATH without any agent CLI, Windows browser | Open `/onboarding` | No install command, nothing about Terminal (Check again is offered, as on the other systems); each card links its setup page; the API key path is offered | P2 | auto |
 | ONB-12 | Installed but not signed in | Mock `claude` fails every prompt until signed in | Open `/onboarding`; sign in; Check again | The failed test shows "Then open a new Terminal window and run claude to sign in."; after Check again the test passes and Continue is on | P1 | auto |
 | ONB-13 | Installed agent fails its test, not a sign-in issue | Mock `claude` rejects every prompt | Open `/onboarding` at 1440×900 | Claude stays a card; Codex install card and the API key path are shown; no sign-in hint, no brand step; Continue is off; the test result and "Claude Code did not pass its test…" sit under the Claude card, above the install cards, inside the first 900 px | P1 | auto |
 | ONB-14 | Brand extraction uses the tested agent | Broken mock `claude`, working mock `codex` | Pick Codex; wait for its test; enter a website; Extract | The extraction request names `codex` as its agent | P2 | auto |
@@ -86,7 +86,7 @@ of runs.
 | CHAT-08 | Vietnamese message round-trips through the agent | Project | Send "làm cho tối hơn" | The user bubble and the agent echo show the same text | P1 | auto |
 | CHAT-11 | Queued message while running goes out after the run | Slow run | Send a second message while running | It is queued, then sent when the first run ends | P1 | exist (studio) |
 | CHAT-12 | Messages are named by what was asked | Two turns | Open Messages | Titles are the prompts' first lines, newest first; the state is a badge | P2 | auto |
-| CHAT-13 | The chat says what the agent did in words | A turn with a plan | Send "plan…" | Tool rows read "Updated plan", "Wrote"; files read "1 new"; no `TodoWrite` | P2 | auto |
+| CHAT-13 | The chat says what the agent did in words | A turn with a plan | Send "plan…" | The plan shows as the reply's Plan list; tool rows read "Wrote"; files read "1 new"; no `TodoWrite` | P2 | auto |
 | CHAT-12 | Daemon dies mid-session: the user is told | Project open | Kill daemon | A visible "cannot reach" notice, not a frozen UI | P1 | exist (preview, recovery tip) |
 | CHAT-09 | A message sent right after opening a project shows in the chat | Fresh project | Send as soon as the composer shows | User message and answer are shown | P1 | auto as CHAT-09 (QA-002) |
 | CHAT-10 | Switching to another conversation while the first still loads shows only the one picked | Two conversations with one turn each; the first transcript held | Open project, pick the other conversation, let the first answer arrive | Only the picked conversation's messages | P1 | auto (QA-002 guard) |
@@ -112,10 +112,11 @@ time when needed.
 | STU-12 | Deep link to a project that does not exist | — | Open `/projects/nope` | A clear "not found" with All projects as the only way out; no Retry, no preview steps, composer off; no crash | P1 | auto |
 | STU-13 | A page with spaces and Vietnamese letters in the user's own folder previews | Folder with `trang chủ.html` | Open folder, open the file | Preview renders it | P1 | auto |
 | STU-14 | With Tablet shrunk to fit, the zoom label shows the real size, also after + | Window 1360×860, Tablet | Read the label once the frame has stopped resizing, press + | Label = drawn size of the 820 px page; + changes the page or is off | P2 | auto (QA-015) |
-| STU-15 | Tablet on a phone-width window can still be zoomed in | Window 390×844, Tablet | Press + | + is on at the fit; the page gets bigger; the pane scrolls | P2 | auto (QA-024) |
+| STU-15 | Tablet on a phone-width window can still be zoomed in | Window 390×844, Tablet | More, then + | + is on at the fit; the page gets bigger; the pane scrolls | P2 | auto (QA-024) |
 | STU-16 | A + that is off says why | Window 1360×860, Tablet | + until off, hover | Tooltip gives the reason, not just "Zoom in" | P2 | auto (QA-025) |
 | STU-17 | The Studio names the project | A project | Open it at 1440 and 1024 | The chat head shows the project name (the page heading) above the conversation, at least 100 px wide | P2 | auto |
 | STU-18 | The first-design hint goes away by itself | New browser, empty project | First turn, then a second turn without closing the hint | The hint is gone after the second turn and after a reload | P3 | auto |
+| STU-19 | Manual edit picks the text clicked inside a marked section | Page whose `<article>` has `data-od-id` (as the real Claude writes) | Manual edit, click a paragraph in it | The paragraph is picked, its text in Content (as in a plain section) | P0 | auto (QA-027) |
 
 ## 5. Export (`export.qa.mjs`)
 
@@ -135,6 +136,7 @@ Goal: the user takes the design out of Contour.
 | EXP-10 | Esc that closes the Export menu leaves comment mode on | Comment mode on, Export open | Esc | Menu closes; comment mode stays on | P1 | auto (QA-013) |
 | EXP-11 | Esc that closes the Export menu does not stop a running Design Jury | Jury on and running, Export open | Esc | Menu closes; jury still running | P1 | auto (QA-013) |
 | EXP-12 | The Export menu lists what applies, grouped | A page open | Open Export, unfold Image and PowerPoint | No greyed formats; no Markdown or JSX for a page; "MP4 video"; Image ▸ PNG, JPEG, WebP; PowerPoint ▸ Slides as images, Editable text | P2 | auto |
+| EXP-13 | Every format offered for a plain page works | A page, not a deck, Chrome | Export ▸ PowerPoint (both), MP4 | Each offered item gives a file; one that does not apply is not offered | P1 | auto (QA-031) |
 
 ## 6. Manage projects (`projects.qa.mjs`)
 
@@ -238,9 +240,32 @@ the guard, so that is what is checked.
 | DL-21 | A sent and answered message is not back in the composer after a reload | Project open | Send, wait for the answer, reload | Composer empty | P1 | auto |
 | DL-22 | Duplicate project with an edit not applied asks first | Typed in Content | "…" ▸ Duplicate: Cancel, then Leave | The app's question; Cancel stays with the text; Leave opens the copy | P1 | auto (QA-020) |
 | DL-23 | Ctrl/Cmd-click on a link with an edit not applied | Typed in Content | Ctrl/Cmd-click Projects | New tab on Projects; this tab stays with the text, no question | P2 | auto (QA-021) |
-| DL-24 | The browser's Back with an edit not applied asks | Came from Projects; typed in Content | Back: Cancel, then OK | As DL-14 | P1 | auto (QA-022) |
+| DL-24 | The browser's Back with an edit not applied asks | Came from Projects; typed in Content | Back: Cancel, then OK; eight fresh tries | As DL-14, every try | P1 | auto (QA-022, QA-033) |
 | DL-25 | The leave question opens with the focus on Cancel | Typed in Content | Click Projects | Focus on Cancel; Enter stays | P2 | auto (QA-023) |
 | DL-26 | A failed Duplicate after Leave keeps the guard | Typed in Content; `/duplicate` answers 500 | "…" ▸ Duplicate ▸ Leave, then reload | Error shown, page stays; the reload still asks | P2 | auto (QA-020) |
+
+## 11. The app itself fails (`resilience.qa.mjs`)
+
+Goal: quitting, a crash, a folder without write access or a full disk
+never lose work, never leave half-made things, and say what happened in
+the user's words.
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| RES-01 | Quit while the agent works stops the agent | A turn running (agent that ignores a closed pipe, as Node does) | Quit (SIGTERM) | Nothing is written into the project after the quit (features.md: quitting stops every running agent) | P0 | auto (QA-026) |
+| RES-02 | A turn cut short by a crash says so | A turn running | Crash (SIGKILL), open again | Turn failed, words about Contour closing, Retry; no "daemon", no "check the agent in Settings" | P1 | auto (QA-030) |
+| RES-03 | A folder that cannot be written to leaves no half project | Folder mode 555 | Open folder twice | Opens, or an error and no new project | P1 | auto (QA-028) |
+| RES-04 | A folder that cannot be written to is explained | Same | Open folder | Plain message about write access, no OS error text | P1 | auto (QA-029) |
+| RES-05 | Full disk: nothing lost, plain message | Data folder on a full 40 MB disk image | Create a project; send a message; reload | Message back in the composer, files intact; a plain "disk full" message | P1 | manual (QA-029: needs `hdiutil`) |
+
+## 12. Contour as an MCP server (`mcp.qa.mjs`)
+
+Goal: the user's coding agent works on Contour projects through `od mcp`.
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| MCP-01 | Create, write, read; delete needs confirm | Daemon running; client on `od mcp` (stdio) | `create_project` "  Quán phở 🍜  ", `write_file`, `get_file` by name, `write_file ../x`, `delete_project` without confirm | Name trimmed, emoji kept, project in the app; file read back; `../` refused; delete refused | P0 | auto |
+| MCP-02 | A name with a space reads back | Same | `write_file "trang chủ.html"`, `get_file` same name | The file | P2 | auto (QA-032) |
 
 ## Not automated, and why
 
@@ -248,7 +273,9 @@ the guard, so that is what is checked.
   launch PATH and single-instance with `od`. Playwright drives the browser
   UI only; the desktop app needs a manual pass on a built `Contour.app`.
 - **Real agents and real BYOK providers**: the suite uses the mock CLI and
-  a fake provider on loopback (no outbound network by design).
+  a fake provider on loopback (no outbound network by design). Round 4
+  ran five turns of the real Claude Code by hand (bugs.md, round 4);
+  QA-026 and QA-027 were found that way and then reproduced with the mock.
 - **MP4 export**: needs ffmpeg and a HyperFrames composition; out of scope.
 - **ONB-09b in the desktop app**: Check again asks the login shell for its
   `PATH` again only in the app (a CLI daemon has none); the suite covers it

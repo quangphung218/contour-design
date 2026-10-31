@@ -202,7 +202,8 @@ test('CHAT-13', 'The chat says what the agent did in words, not tool names', asy
   await waitTurn(page, 0);
   const turn = page.getByTestId('assistant-msg').first();
   const tools = await turn.locator('.tool-name').allInnerTexts();
-  assert.ok(tools.includes('Updated plan'), `tools: ${tools}`);
+  // The plan is the reply's Plan list (its TodoWrite rows fold into it).
+  assert.match(await turn.locator('details.plan').innerText(), /Write the page/);
   assert.ok(tools.includes('Wrote'), `tools: ${tools}`);
   assert.doesNotMatch(await turn.innerText(), /TodoWrite|Write \d/);
   const files = await turn.getByTestId('turn-files').innerText();

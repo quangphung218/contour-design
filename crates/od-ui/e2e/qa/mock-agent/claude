@@ -5,6 +5,8 @@
 # - `qa-crash`: prints to stderr and exits 3 without a result line.
 # - `qa-jury-slow`: a Design Jury that closes round 1, then thinks until
 #   it is interrupted.
+# - `qa-linger`: streams for 6 s ignoring a closed pipe, as Node does,
+#   then writes linger.html.
 shared="$(cd "$(dirname "$0")/../../mock-agent" && pwd)/claude"
 case "$1" in --version) exec "$shared" "$@";; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then exec "$shared" "$@"; fi
@@ -22,6 +24,19 @@ case "$req" in *qa-crash*)
   printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
   echo "mock: model overloaded, try again later" >&2
   exit 3
+;; esac
+
+case "$req" in *qa-linger*)
+  # Like a real CLI (Node ignores EPIPE): keeps working when the daemon is
+  # gone, then writes linger.html.
+  trap '' PIPE
+  printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+  printf '{"type":"assistant","message":{"id":"qa-l1","role":"assistant","content":[{"type":"text","text":"Lingering. "}]}}\n'
+  i=0
+  while [ $i -lt 30 ]; do sleep 0.2; printf '{"type":"assistant","message":{"id":"qa-l%s","role":"assistant","content":[{"type":"text","text":"."}]}}\n' "$i" 2>/dev/null; i=$((i + 1)); done
+  printf '<h1>written after six seconds</h1>' > linger.html
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n' 2>/dev/null
+  exit 0
 ;; esac
 
 case "$req" in *qa-jury-slow*)

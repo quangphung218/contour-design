@@ -187,6 +187,8 @@ test('STU-15', 'On a phone-width window, Tablet can still be zoomed in to read, 
   await frame(page).locator('#title').waitFor();
   await device(page, 'Tablet');
   const fit = await settledDrawn(page, 'Tablet shrunk to fit');
+  // At phone width the zoom tools wait behind More (one-row preview head).
+  await page.getByTestId('preview-more').click();
   const plus = page.getByTestId('zoom-in');
   assert.equal(await plus.isEnabled(), true, `+ is off at ${fit}% (label ${await zoomLabel(page)}%): the page cannot be made readable`);
   await plus.click();
@@ -284,5 +286,26 @@ test('STU-13', "A page named with spaces and Vietnamese letters in the user's ow
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// What a real agent writes: sections carry data-od-id (the prompt asks for
+// it, for comments), the text inside them does not.
+const CARDS = '<!doctype html><html><body>' +
+  '<article class="dish" data-od-id="dish-chin"><h2>Phở chín</h2><p class="desc">Nạm, gầu luộc chín.</p></article>' +
+  '<article class="dish"><h2>Phở tái</h2><p class="desc">Thịt bò thái mỏng.</p></article></body></html>';
+
+test('STU-19', 'Manual edit: clicking a paragraph inside a marked section picks that paragraph, so its text can be edited', async ({ d, newPage }) => {
+  const { page } = await studio(newPage, d, { 'index.html': CARDS });
+  await frame(page).locator('p.desc').first().waitFor();
+  await page.getByTestId('manual-edit-mode').click();
+  const panel = page.getByTestId('manual-edit-panel');
+  const picked = async () => panel.getByTestId('manual-element').getAttribute('data-tag', { timeout: 3000 });
+  // The section without data-od-id behaves: the paragraph is picked.
+  await frame(page).locator('article:not([data-od-id]) p.desc').click();
+  await until(async () => (await picked()) === 'p', 'the plain section\'s paragraph picked');
+  // Same click inside the marked section.
+  await frame(page).locator('[data-od-id="dish-chin"] p.desc').click();
+  await until(async () => (await panel.getByTestId('manual-text').inputValue({ timeout: 200 })) === 'Nạm, gầu luộc chín.', 'paragraph text in Content', 5000)
+    .catch(async () => assert.fail(`picked <${await picked()}> instead of <p>: the user cannot edit the paragraph by clicking it`));
+}, { knownBug: 'QA-027' });
 
 await run('studio');
