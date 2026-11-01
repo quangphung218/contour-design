@@ -8,7 +8,9 @@ use od_contracts::{
     CraftDetail, CraftResponse, DesignSystemDetail, DesignSystemsResponse, DesignTemplatesResponse,
     SkillDetail, SkillSummary, SkillsResponse,
 };
+use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
 
 fn summaries(entries: &[SkillEntry]) -> Vec<SkillSummary> {
     entries
@@ -94,6 +96,28 @@ pub(crate) fn rebrand_example(html: Vec<u8>) -> Vec<u8> {
     }
 }
 
+/// `<link>` tags (stylesheet, preconnect) and CSS `@import`s that load
+/// Google Fonts.
+static GOOGLE_FONTS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?is)<link\b[^>]*\bfonts\.(?:googleapis|gstatic)\.com[^>]*>[ \t]*\n?|@import\s+(?:url\(\s*)?["']?https?://fonts\.googleapis\.com[^;]*;"#,
+    )
+    .expect("static regex")
+});
+
+/// Example pages without their Google Fonts: the gallery fetches nothing
+/// beyond loopback, so its CSP has nothing to block, and the fonts fall
+/// back to the page's own font stack (the files on disk are unchanged).
+pub(crate) fn without_google_fonts(html: Vec<u8>) -> Vec<u8> {
+    match String::from_utf8(html) {
+        Ok(text) => GOOGLE_FONTS
+            .replace_all(&text, "")
+            .into_owned()
+            .into_bytes(),
+        Err(e) => e.into_bytes(),
+    }
+}
+
 /// `GET /api/design-templates/:id/example`: the template's rendered
 /// example page, for the Home gallery thumbnails.
 pub async fn get_design_template_example(
@@ -109,7 +133,7 @@ pub async fn get_design_template_example(
     let html = tokio::fs::read(&path)
         .await
         .map_err(|_| ApiErr::not_found("design template example not found"))?;
-    let html = rebrand_example(html);
+    let html = without_google_fonts(rebrand_example(html));
     Ok((
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
@@ -181,7 +205,32 @@ pub async fn get_craft(
 
 #[cfg(test)]
 mod tests {
-    use super::rebrand_example;
+    use super::{rebrand_example, without_google_fonts};
+
+    #[test]
+    fn gallery_examples_load_no_google_fonts() {
+        let page = r#"<head>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz@9..144&display=swap');
+    @import "https://fonts.googleapis.com/css?family=Lato";
+    body { font-family: 'Inter', system-ui, sans-serif; }
+  </style>
+</head>"#;
+        let out = String::from_utf8(without_google_fonts(page.as_bytes().to_vec())).unwrap();
+        assert!(!out.contains("fonts.g"), "{out}");
+        assert!(
+            out.contains(r#"<link rel="stylesheet" href="assets/styles.css">"#),
+            "{out}"
+        );
+        assert!(out.contains("font-family: 'Inter', system-ui"), "{out}");
+        assert_eq!(without_google_fonts(vec![0xff, b'O']), vec![0xff, b'O']);
+    }
 
     #[test]
     fn gallery_examples_show_the_new_name() {

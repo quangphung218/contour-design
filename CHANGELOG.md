@@ -21,6 +21,9 @@ All notable changes to Contour are recorded here. The format follows
   project and the agent's reply no longer move it to the top; sending a
   message or Retry does. A queued message counts from when you queued it,
   and a scheduled run moves nothing.
+- The template gallery no longer asks Google Fonts for every preview
+  (the page's policy blocked it anyway): the example pages are served
+  without those links and use their fallback fonts.
 
 ## [0.2.0-beta.10] - 2026-11-01
 
