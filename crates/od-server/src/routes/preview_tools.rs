@@ -155,11 +155,19 @@ async fn deliverable(
     })?;
     let end = run.end_payload();
     let project_id = run.meta().project_id.clone();
+    let run_id = id;
     let res = blocking(&state, move |s| {
         let succeeded = end
             .as_ref()
             .is_some_and(|e| e.status == RunStatus::Succeeded);
-        let touched = end.map(|e| e.artifact_paths).unwrap_or_default();
+        let mut touched = end.map(|e| e.artifact_paths).unwrap_or_default();
+        // What its media tasks rendered (`od media generate`) is the run's
+        // output too: a Motion run delivers the MP4.
+        for path in crate::routes::w3::media_tasks::run_outputs(s, &run_id) {
+            if !touched.contains(&path) {
+                touched.push(path);
+            }
+        }
         let project = project_id.and_then(|p| s.get_project(&p).ok());
         let listing = project.as_ref().and_then(|p| {
             let dir = s.project_root(p).ok()?.dir;

@@ -12,7 +12,7 @@
 //! is created with `CREATE TABLE IF NOT EXISTS` instead of a numbered
 //! migration, so it never collides with another track's `user_version`.
 
-use super::Deps;
+use super::{Deps, motion};
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
@@ -113,14 +113,21 @@ fn parse(body: &Value) -> ApiResult<GenerateRequest> {
 }
 
 /// Generates and writes the file; the result is what `media/generate`
-/// returns.
-fn worker(store: Arc<Store>, deps: &Deps) -> Worker {
+/// returns. `hyperframes-html` renders the composition instead
+/// ([`super::motion::render`]).
+fn worker(state: AppState, deps: &Deps) -> Worker {
     let env = Arc::clone(&deps.env);
+    let renderer = Arc::clone(&deps.renderer);
     let limits = deps.limits;
     Arc::new(move |task: TaskRecord| {
-        let store = Arc::clone(&store);
+        let state = state.clone();
+        let store = Arc::clone(&state.store);
         let env = Arc::clone(&env);
+        let renderer = Arc::clone(&renderer);
         Box::pin(async move {
+            if task.request.get("model").and_then(Value::as_str) == Some(motion::MODEL) {
+                return motion::render(&state, renderer.as_ref(), env.as_ref(), &task).await;
+            }
             let req: GenerateRequest =
                 serde_json::from_value(task.request.clone()).map_err(|e| e.to_string())?;
             let config = ConfigFile::in_dir(store.data_dir().root());
@@ -159,11 +166,7 @@ pub fn open_queue(state: &AppState, deps: &Deps) -> TaskQueue {
             Arc::new(od_media::tasks::MemoryPersist::default())
         }
     };
-    let queue = TaskQueue::new(
-        deps.media_concurrency,
-        persist,
-        worker(Arc::clone(&state.store), deps),
-    );
+    let queue = TaskQueue::new(deps.media_concurrency, persist, worker(state.clone(), deps));
     if tokio::runtime::Handle::try_current().is_ok() {
         let (requeued, interrupted) = queue.restore();
         if requeued + interrupted > 0 {
@@ -173,9 +176,30 @@ pub fn open_queue(state: &AppState, deps: &Deps) -> TaskQueue {
     queue
 }
 
+/// Absolute paths of the files `run_id`'s finished media tasks wrote
+/// (`OD_RUN_ID` sent with the task): they count as the run's output.
+#[must_use]
+pub fn run_outputs(store: &Store, run_id: &str) -> Vec<String> {
+    store
+        .with_conn(|c| {
+            let mut stmt = c.prepare(
+                "SELECT record_json FROM media_tasks WHERE status = 'done' ORDER BY created_at",
+            )?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            Ok(rows
+                .filter_map(Result::ok)
+                .filter_map(|j| serde_json::from_str::<TaskRecord>(&j).ok())
+                .filter(|r| r.request.get("runId").and_then(Value::as_str) == Some(run_id))
+                .filter_map(|r| Some(r.result?.get("path")?.as_str()?.to_owned()))
+                .collect())
+        })
+        .unwrap_or_default()
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/projects/{id}/media/tasks", post(submit))
+        .route("/api/projects/{id}/media/scaffold", post(motion::scaffold))
         .route("/api/media/tasks", get(list))
         .route("/api/media/tasks/{id}", get(get_one))
         .route("/api/media/tasks/{id}/cancel", post(cancel))
@@ -192,7 +216,9 @@ pub async fn submit(
     ApiJson(body): ApiJson<Value>,
 ) -> ApiResult<impl IntoResponse> {
     let req = parse(&body)?;
-    if od_media::find_model(req.model.trim(), req.surface).is_none() {
+    if req.model.trim() == motion::MODEL {
+        motion::check(&body).map_err(ApiErr::bad_request)?;
+    } else if od_media::find_model(req.model.trim(), req.surface).is_none() {
         return Err(ApiErr::bad_request(format!(
             "unknown media model {:?}",
             req.model

@@ -7,10 +7,13 @@
 //!   and a plugin's validated pipeline ([`pipeline`]).
 //! - `/api/media/tasks*`, `POST /api/projects/:id/media/tasks`: queued media
 //!   generation with a concurrency limit, cancel and restore ([`media_tasks`]).
+//! - `POST /api/projects/:id/media/scaffold` and the local
+//!   `hyperframes-html` model: Motion source → MP4 ([`motion`]).
 //! - `POST /api/projects/:id/export/pptx-editable` ([`pptx`]).
 
 pub mod design_systems;
 pub mod media_tasks;
+pub mod motion;
 pub mod pipeline;
 pub mod pptx;
 
