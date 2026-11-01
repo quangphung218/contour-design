@@ -237,10 +237,13 @@ pub fn insert_project(conn: &Connection, project: &Project) -> Result<()> {
     Ok(())
 }
 
+/// Writes every field but `updated_at`: only [`insert_project`] and
+/// [`mark_project_sent`] set it, so a project read before a send and
+/// written after it cannot take the send back.
 pub fn update_project(conn: &Connection, project: &Project) -> Result<()> {
     conn.execute(
         "UPDATE projects SET name = ?2, skill_id = ?3, design_system_id = ?4, pending_prompt = ?5, \
-         metadata_json = ?6, custom_instructions = ?7, updated_at = ?8 WHERE id = ?1",
+         metadata_json = ?6, custom_instructions = ?7 WHERE id = ?1",
         params![
             project.id,
             project.name,
@@ -249,7 +252,6 @@ pub fn update_project(conn: &Connection, project: &Project) -> Result<()> {
             project.pending_prompt,
             metadata_json(project)?,
             project.custom_instructions,
-            project.updated_at,
         ],
     )?;
     Ok(())

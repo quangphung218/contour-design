@@ -360,3 +360,25 @@ fn only_a_send_moves_a_project_up_recent_projects() {
     assert_eq!(store.get_project(&a.id).unwrap().updated_at, 3000);
     assert!(store.mark_project_sent("missing", 1).is_err());
 }
+
+/// A project read before a send and written after it (a Motion render
+/// setting `entryFile`, a critique toggle) keeps the send's time.
+#[test]
+fn a_stale_project_write_does_not_take_a_send_back() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let (project, _) = store
+        .create_project(CreateProjectRequest {
+            name: "A".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    let mut stale = store.get_project(&project.id).unwrap();
+    let sent = stale.updated_at + 60_000;
+    store.mark_project_sent(&project.id, sent).unwrap();
+    stale.name = "Renamed".to_owned();
+    store.with_conn(|c| db::update_project(c, &stale)).unwrap();
+    let now = store.get_project(&project.id).unwrap();
+    assert_eq!(now.name, "Renamed");
+    assert_eq!(now.updated_at, sent);
+}
