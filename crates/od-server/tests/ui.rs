@@ -169,6 +169,16 @@ async fn read_only_folder_is_refused_without_a_project() {
         )
         .await;
         assert_ne!(s, StatusCode::OK, "{}", String::from_utf8_lossy(&b));
+        // QA-029: a code of its own and plain words naming the folder.
+        assert_eq!(s, StatusCode::FORBIDDEN, "{}", String::from_utf8_lossy(&b));
+        let err = &json_of(&b)["error"];
+        assert_eq!(err["code"], "NO_WRITE_PERMISSION");
+        let message = err["message"].as_str().unwrap();
+        assert!(!message.contains("os error"), "{message}");
+        assert!(
+            message.contains("ro-site") && message.contains("permission"),
+            "{message}"
+        );
     }
     let (_, b) = call(&app, "GET", "/api/projects", None).await;
     let projects = json_of(&b)["projects"].as_array().unwrap().len();

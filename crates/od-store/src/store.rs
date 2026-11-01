@@ -137,12 +137,12 @@ impl Store {
             return Ok(());
         }
         let path = root.dir.join(PROJECT_MANIFEST_PATH);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let manifest = ProjectManifest::from(project);
-        fs::write(path, serde_json::to_vec_pretty(&manifest)?)?;
-        Ok(())
+        let bytes = serde_json::to_vec_pretty(&manifest)?;
+        path.parent()
+            .map_or(Ok(()), fs::create_dir_all)
+            .and_then(|()| fs::write(&path, bytes))
+            .map_err(|e| StoreError::from(e).in_folder(&root.dir))
     }
 
     /// Creates the row, a first conversation, the folder and its manifest.

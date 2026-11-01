@@ -26,6 +26,8 @@ ErrNotFound = Не знайдено
 ErrConflict = Конфлікт зі змінами, що тривають
 ErrTooLarge = Завелике
 ErrServer = Помилка daemon
+ErrNoWritePermission = Немає дозволу на запис
+ErrStorageFull = Диск заповнено
 # Home
 HomeTitle = Що хочете спроєктувати?
 BriefPlaceholder = Опишіть сторінку, екран застосунку або презентацію…

@@ -238,6 +238,8 @@ messages! {
     ErrConflict => "Conflicts with a change in progress", "Đang vướng một thay đổi khác";
     ErrTooLarge => "Too large", "Dữ liệu quá lớn";
     ErrServer => "The daemon hit an error", "Daemon bị lỗi";
+    ErrNoWritePermission => "No permission to write", "Không có quyền ghi";
+    ErrStorageFull => "Disk full", "Ổ đĩa đã đầy";
 
     // Home
     HomeTitle => "What do you want to design?", "Hôm nay thiết kế gì?";

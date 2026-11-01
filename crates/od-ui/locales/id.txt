@@ -26,6 +26,8 @@ ErrNotFound = Tidak ditemukan
 ErrConflict = Bentrok dengan perubahan yang sedang berjalan
 ErrTooLarge = Terlalu besar
 ErrServer = Daemon mengalami error
+ErrNoWritePermission = Tidak ada izin menulis
+ErrStorageFull = Disk penuh
 # Home
 HomeTitle = Mau mendesain apa?
 BriefPlaceholder = Jelaskan sebuah halaman, layar aplikasi, atau deck…

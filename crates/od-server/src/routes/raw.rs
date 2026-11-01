@@ -152,7 +152,7 @@ pub async fn raw(
 
     let mut handle = tokio::fs::File::open(&full)
         .await
-        .map_err(|e| ApiErr::from(od_store::StoreError::Io(e)))?;
+        .map_err(|e| ApiErr::from(od_store::StoreError::from(e)))?;
     if start > 0 {
         handle
             .seek(SeekFrom::Start(start))

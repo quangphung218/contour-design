@@ -104,6 +104,6 @@ test('RES-04', 'A folder Contour cannot write to is named in plain words, not as
   } finally {
     ro.cleanup();
   }
-}, { knownBug: 'QA-029' });
+});
 
 await run('resilience');

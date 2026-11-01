@@ -53,7 +53,7 @@ reproduces by hand about one try in two.
 | QA-026 | 🟠 | Quitting Contour while the agent works leaves the agent running: it keeps editing the project after the app is gone | `resilience.qa.mjs` RES-01 | Open |
 | QA-027 | 🟠 | Manual edit: clicking text inside a section with `data-od-id` picks the whole section, so the text cannot be edited by clicking it (every page the real Claude writes) | `studio.qa.mjs` STU-19 | Open |
 | QA-028 | 🟠 | Opening a folder Contour cannot write to shows an error but adds a project anyway, one more per try | `resilience.qa.mjs` RES-03 | Fixed |
-| QA-029 | 🟡 | Storage errors reach the user raw: "The daemon hit an error: io error: Permission denied (os error 13) (HTTP 500)", "… No space left on device (os error 28)" | `resilience.qa.mjs` RES-04; full disk manual | Open |
+| QA-029 | 🟡 | Storage errors reach the user raw: "The daemon hit an error: io error: Permission denied (os error 13) (HTTP 500)", "… No space left on device (os error 28)" | `resilience.qa.mjs` RES-04; full disk manual | Fixed |
 | QA-030 | 🟡 | A turn cut short because Contour closed or crashed says "daemon restarted" and "check the agent in Settings", with an Open Settings button | `resilience.qa.mjs` RES-02 | Open |
 | QA-031 | 🟡 | The Export menu offers PowerPoint and MP4 for a plain page; both end in "Export failed: The request was not accepted: … (HTTP 422)" | `export.qa.mjs` EXP-13 | Open |
 | QA-032 | 🔵 | MCP `write_file` saves "trang chủ.html" as "trang-chủ.html"; `get_file` on the name the agent used answers 404 | `mcp.qa.mjs` MCP-02 | Open |
@@ -643,6 +643,17 @@ Reported by the UX review of 759581a.
   (and `ReadOnlyFilesystem`) to codes of their own with a plain message and
   the path; the UI's run-failure line (QA-030) should not point at the
   agent for them.
+- **Fixed**: `StoreError` sorts I/O and SQLite errors as they are made:
+  `EACCES`/`EPERM`/`EROFS` (and `SQLITE_READONLY`) become
+  `NoWritePermission`, answered 403 `NO_WRITE_PERMISSION`; `ENOSPC` (and
+  `SQLITE_FULL`) become `StorageFull`, 507 `STORAGE_FULL`. The message is
+  a plain sentence that names the folder when the store knows it (project
+  manifest). The UI shows these two codes as "No permission to write: …" /
+  "Disk full: …" with no "daemon" and no HTTP status. Tests: `od-store`
+  `error.rs`, `od-server` `error.rs` and `tests/ui.rs`, `od-ui` `api.rs`;
+  RES-04 no longer `knownBug`. The full disk (b) is covered by the unit
+  tests only, not retried on a disk image. The chat's "check the agent in
+  Settings" line is QA-030's.
 
 ## QA-030 🟡 A turn cut short by Contour closing blames the agent
 

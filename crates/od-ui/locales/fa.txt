@@ -26,6 +26,8 @@ ErrNotFound = پیدا نشد
 ErrConflict = با تغییر در حال انجام تداخل دارد
 ErrTooLarge = خیلی بزرگ
 ErrServer = daemon با خطا مواجه شد
+ErrNoWritePermission = اجازهٔ نوشتن وجود ندارد
+ErrStorageFull = دیسک پر است
 # Home
 HomeTitle = امروز چه چیزی طراحی کنیم؟
 BriefPlaceholder = یک صفحه وب، یک صفحه اپ یا یک اسلاید را توصیف کنید…
