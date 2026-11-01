@@ -466,6 +466,12 @@ impl StudioCtx {
 
     /// Sends a user turn, or queues it while a run is going.
     pub fn send(self, text: String, shell: Shell) {
+        self.send_at(text, shell, js_sys::Date::now() as i64);
+    }
+
+    /// [`Self::send`] for a turn the user sent at `sent_at` (epoch ms):
+    /// a queued message keeps its own time for Recent projects.
+    fn send_at(self, text: String, shell: Shell, sent_at: i64) {
         let text = text.trim().to_owned();
         if text.is_empty() {
             return;
@@ -478,6 +484,7 @@ impl StudioCtx {
                 q.push(Queued {
                     id: api::random_id(),
                     text,
+                    sent_at,
                 });
             });
             return;
@@ -542,6 +549,7 @@ impl StudioCtx {
                 }
                 files
             },
+            sent_at: Some(sent_at),
         };
         self.tools.deliverable.set(None);
         self.live_run.set(Some(String::new()));
@@ -606,7 +614,7 @@ impl StudioCtx {
             .queue
             .try_update(|q| (!q.is_empty()).then(|| q.remove(0)));
         if let Some(Some(next)) = next {
-            self.send(next.text, shell);
+            self.send_at(next.text, shell, next.sent_at);
         }
     }
 

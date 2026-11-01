@@ -1105,6 +1105,15 @@ async fn content_endpoints_serve_real_catalogue() {
         );
         assert!(!csp.contains("script-src"), "no script runs: {csp}");
     }
+    // Nothing for the CSP to block: no example asks Google Fonts.
+    for id in &with_example {
+        let page = h.get(&format!("/api/design-templates/{id}/example")).await;
+        let html = String::from_utf8_lossy(&page.body);
+        assert!(
+            !html.contains("fonts.googleapis.com") && !html.contains("fonts.gstatic.com"),
+            "{id} still loads Google Fonts"
+        );
+    }
     let without = templates.iter().find(|t| t["hasExample"] == false);
     if let Some(t) = without {
         let id = t["id"].as_str().unwrap();

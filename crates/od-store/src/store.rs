@@ -271,10 +271,24 @@ impl Store {
             }
             project.metadata = metadata;
         }
-        project.updated_at = crate::now_ms().max(project.updated_at);
+        // `updated_at` orders Recent projects by the user's last send
+        // (`mark_project_sent`): a rename or a metadata change keeps it.
         db::update_project(&self.conn(), &project)?;
         self.write_manifest(&project)?;
         Ok(project)
+    }
+
+    /// Records that the user sent a turn in project `id` at `at` (epoch
+    /// ms), which moves it up Recent projects. Never moves it back: a
+    /// queued message sent late keeps the time it was queued.
+    ///
+    /// # Errors
+    /// [`StoreError::ProjectNotFound`] or SQLite errors.
+    pub fn mark_project_sent(&self, id: &str, at: i64) -> Result<()> {
+        if !db::mark_project_sent(&self.conn(), id, at)? {
+            return Err(StoreError::ProjectNotFound);
+        }
+        Ok(())
     }
 
     /// Deletes the row and, for managed projects, the folder. Imported

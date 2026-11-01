@@ -109,3 +109,59 @@ async fn the_run_list_names_what_was_asked() {
     let one: Value = d.get_json(&format!("/api/runs/{}", run.run_id)).await;
     assert_eq!(one["run"]["prompt"], "A tea shop landing page");
 }
+
+/// Recent projects (spec L6): a rename or a scheduled run (no `sentAt`)
+/// keeps the order; a send moves the project up at the time it was sent,
+/// so a queued message sent late does not pass a later send elsewhere.
+#[tokio::test]
+async fn only_a_send_moves_a_project_up_recent_projects() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
+    let (first, _) = d.project().await;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let (second, _) = d.project().await;
+    let order = || async {
+        let list: Value = d.get_json("/api/projects").await;
+        list["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(order().await, [second.clone(), first.clone()]);
+
+    let res = d
+        .http
+        .patch(format!("{}/api/projects/{first}", d.base))
+        .json(&json!({"name": "Renamed"}))
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status().is_success(), "{}", res.status());
+    let run = |project: &str, sent_at: Option<i64>| {
+        let mut body = json!({"agentId": "claude", "projectId": project, "message": "go"});
+        if let Some(at) = sent_at {
+            body["sentAt"] = json!(at);
+        }
+        body
+    };
+    let queued_at = od_store::now_ms();
+    let scheduled = d.start(run(&first, None)).await;
+    end_of(&d.events(&scheduled.run_id, None).await);
+    assert_eq!(
+        order().await,
+        [second.clone(), first.clone()],
+        "a rename and a run nobody sent keep the order"
+    );
+
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let sent = d.start(run(&first, Some(od_store::now_ms()))).await;
+    end_of(&d.events(&sent.run_id, None).await);
+    assert_eq!(order().await, [first.clone(), second.clone()]);
+
+    // Queued in `second` before the send above, sent only now.
+    let late = d.start(run(&second, Some(queued_at))).await;
+    end_of(&d.events(&late.run_id, None).await);
+    assert_eq!(order().await, [first, second]);
+}

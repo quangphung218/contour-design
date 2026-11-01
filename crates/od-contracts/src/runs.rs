@@ -304,6 +304,11 @@ pub struct ChatRequest {
     /// Answers to the plugin's `od.inputs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin_inputs: Option<serde_json::Map<String, serde_json::Value>>,
+    /// When the user sent this turn (epoch ms): for a queued message, when
+    /// it was queued. Only a turn with it moves the project up Recent
+    /// projects; scheduled runs leave it out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sent_at: Option<i64>,
 }
 
 /// `POST /api/runs` → 202.

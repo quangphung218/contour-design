@@ -252,6 +252,9 @@ pub fn main_code(args: Vec<OsString>) -> u8 {
         matches.value_source("daemon_url"),
         None | Some(clap::parser::ValueSource::DefaultValue)
     );
+    // Client commands run by hand (no flag, no env) reach the running app
+    // through `daemon.lock` when the default URL has no daemon, as `mcp`.
+    let client = || Client::new(&client_daemon_url(&cli.daemon_url, daemon_url_given));
     let result = match cli.command {
         None => run_daemon(StartArgs {
             host: std::env::var("OD_HOST").unwrap_or_else(|_| od_server::DEFAULT_HOST.to_owned()),
@@ -263,38 +266,56 @@ pub fn main_code(args: Vec<OsString>) -> u8 {
         }),
         Some(Command::Daemon(DaemonCommand::Start(args))) => run_daemon(args),
         Some(Command::Daemon(DaemonCommand::Status)) => {
-            Client::new(&cli.daemon_url).and_then(|c| daemon_status(&c, cli.json))
+            client().and_then(|c| daemon_status(&c, cli.json))
         }
-        Some(Command::Project(cmd)) => {
-            Client::new(&cli.daemon_url).and_then(|c| project(&c, cmd, cli.json))
-        }
-        Some(Command::Files(cmd)) => {
-            Client::new(&cli.daemon_url).and_then(|c| files(&c, cmd, cli.json))
-        }
-        Some(Command::Run(cmd)) => {
-            Client::new(&cli.daemon_url).and_then(|c| run(&c, cmd, cli.json))
-        }
-        Some(Command::Export(args)) => {
-            Client::new(&cli.daemon_url).and_then(|c| export_cmd::run(&c, args, cli.json))
-        }
-        Some(Command::Lint(args)) => {
-            Client::new(&cli.daemon_url).and_then(|c| lint_cmd::run(&c, args, cli.json))
-        }
+        Some(Command::Project(cmd)) => client().and_then(|c| project(&c, cmd, cli.json)),
+        Some(Command::Files(cmd)) => client().and_then(|c| files(&c, cmd, cli.json)),
+        Some(Command::Run(cmd)) => client().and_then(|c| run(&c, cmd, cli.json)),
+        Some(Command::Export(args)) => client().and_then(|c| export_cmd::run(&c, args, cli.json)),
+        Some(Command::Lint(args)) => client().and_then(|c| lint_cmd::run(&c, args, cli.json)),
         Some(Command::Mcp(args)) => {
             let given = daemon_url_given.then_some(cli.daemon_url.as_str());
             return mcp_cmd::run(args, &cli.daemon_url, given, cli.json);
         }
-        Some(Command::Media(cmd)) => {
-            Client::new(&cli.daemon_url).and_then(|c| media_cmd::run(&c, cmd, cli.json))
-        }
-        Some(Command::Plugin(cmd)) => {
-            Client::new(&cli.daemon_url).and_then(|c| plugin_cmd::run(&c, cmd, cli.json))
-        }
-        Some(Command::Research(cmd)) => {
-            Client::new(&cli.daemon_url).and_then(|c| research_cmd::run(&c, cmd, cli.json))
-        }
+        Some(Command::Media(cmd)) => client().and_then(|c| media_cmd::run(&c, cmd, cli.json)),
+        Some(Command::Plugin(cmd)) => client().and_then(|c| plugin_cmd::run(&c, cmd, cli.json)),
+        Some(Command::Research(cmd)) => client().and_then(|c| research_cmd::run(&c, cmd, cli.json)),
     };
     exit_code(result)
+}
+
+/// The daemon a client command talks to: `url` when someone gave it (flag
+/// or env) or it answers, else the running app's from `<data>/daemon.lock`.
+fn client_daemon_url(url: &str, given: bool) -> String {
+    if given {
+        return url.to_owned();
+    }
+    let data = od_store::DataDir::from_env();
+    let lock = std::fs::read_to_string(data.root().join(od_server::lock::LOCK_FILE)).ok();
+    pick_daemon_url(url, lock.as_deref(), daemon_answers)
+}
+
+/// `url`, unless `lock` names another daemon and `url` does not answer.
+fn pick_daemon_url(url: &str, lock: Option<&str>, answers: impl FnOnce(&str) -> bool) -> String {
+    match lock.map(str::trim).filter(|l| !l.is_empty() && *l != url) {
+        Some(lock) if !answers(url) => lock.to_owned(),
+        _ => url.to_owned(),
+    }
+}
+
+/// Whether a daemon answers `GET <url>/api/health` within
+/// [`od_mcp::locate::HEALTH_WITHIN`].
+fn daemon_answers(url: &str) -> bool {
+    let Ok(http) = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(od_mcp::locate::HEALTH_WITHIN)
+        .build()
+    else {
+        return false;
+    };
+    http.get(format!("{}/api/health", url.trim_end_matches('/')))
+        .send()
+        .is_ok_and(|res| res.status().is_success())
 }
 
 /// The exit code of a command's result; prints its error.
@@ -602,6 +623,28 @@ mod tests {
     #[test]
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn a_silent_default_url_gives_way_to_daemon_lock() {
+        let default = "http://127.0.0.1:7456";
+        let lock = Some("http://127.0.0.1:5001\n");
+        assert_eq!(
+            pick_daemon_url(default, lock, |_| false),
+            "http://127.0.0.1:5001"
+        );
+        assert_eq!(pick_daemon_url(default, lock, |_| true), default);
+        assert_eq!(pick_daemon_url(default, None, |_| false), default);
+        assert_eq!(pick_daemon_url(default, Some(" "), |_| false), default);
+        let mut asked = false;
+        assert_eq!(
+            pick_daemon_url(default, Some(default), |_| {
+                asked = true;
+                false
+            }),
+            default
+        );
+        assert!(!asked, "no health check when the lock names the same URL");
     }
 
     #[test]
