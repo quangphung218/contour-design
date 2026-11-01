@@ -772,9 +772,10 @@ ANSWER
         [
             // The artifact the engine wrote is listed once, by its own Write.
             named("Write", "index.html"),
-            named("Edit", "notes.txt"),
+            // Renders and images first, then the rest.
             named("Write", "poster.png"),
             named("Write", "renders/clip.mp4"),
+            named("Edit", "notes.txt"),
         ]
     );
     let results = agent_events(&events, "tool_result");
@@ -801,4 +802,46 @@ async fn runs_outside_a_project_do_not_compare_files() {
     let outcome = h.engine.launch(spec).await.unwrap();
     assert_eq!(outcome.status, RunStatus::Succeeded);
     assert!(agent_events(&events_of(&run).await, "tool_use").is_empty());
+}
+
+#[tokio::test]
+async fn a_thousand_shell_frames_are_one_row() {
+    let h = Harness::new();
+    write_mock(
+        &h.mocks,
+        "qwen",
+        r#"cat > /dev/null
+mkdir -p frames
+i=1
+while [ $i -le 1000 ]; do : > "frames/$(printf %04d $i).png"; i=$((i+1)); done
+printf 'mp4' > film.mp4
+echo done
+"#,
+    );
+    let mut spec = h.spec("frames", &QWEN, &[]);
+    spec.project_id = Some("p1".into());
+    let run = spec.run.clone();
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Succeeded);
+    assert_eq!(
+        std::fs::read_dir(h.project.join("frames")).unwrap().count(),
+        1000
+    );
+    let events = events_of(&run).await;
+    let uses = agent_events(&events, "tool_use");
+    assert_eq!(uses.len(), 2, "{uses:?}");
+    assert!(
+        uses[0]["input"]["file_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("film.mp4")
+    );
+    assert!(
+        uses[1]["input"]["file_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("frames/")
+    );
+    assert_eq!(uses[1]["input"]["files"], 1000);
+    assert_eq!(agent_events(&events, "tool_result").len(), 2);
 }

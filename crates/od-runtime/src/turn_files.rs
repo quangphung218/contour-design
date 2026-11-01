@@ -6,6 +6,11 @@
 //! every file that is new or changed (mtime or size) and that no write tool
 //! already reported joins the turn as a `Write` (new) or `Edit` (changed).
 //!
+//! A folder with more than [`GROUP_OVER`] such files (frames from `ffmpeg`)
+//! becomes one row, `frames/ (N files)`, and a turn adds at most
+//! [`MAX_ROWS`] rows plus one `+N more`: thousands of frames must not flood
+//! the chat or the stored message.
+//!
 //! The walk skips what the file listing skips (hidden entries, `.git`,
 //! `node_modules`, build and cache folders, the app's own folders), stops
 //! at [`MAX_DEPTH`], and gives up past [`MAX_FILES`]: a truncated snapshot
@@ -17,7 +22,7 @@ use od_store::paths::is_ignored_dir_name;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -25,6 +30,28 @@ use std::time::SystemTime;
 pub const MAX_FILES: usize = 20_000;
 /// Folder levels below the project root that are walked.
 pub const MAX_DEPTH: usize = 12;
+/// A folder with more new or changed files than this is one row.
+pub const GROUP_OVER: usize = 20;
+/// Rows a turn adds at most; the rest are counted in one `+N more`.
+pub const MAX_ROWS: usize = 50;
+/// Tool name of the `+N more` row (not a write tool: it names no file).
+pub const MORE_TOOL: &str = "TurnFilesMore";
+
+/// How far a snapshot walks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    pub max_files: usize,
+    pub max_depth: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            max_files: MAX_FILES,
+            max_depth: MAX_DEPTH,
+        }
+    }
+}
 
 /// Sidecar the store writes next to an artifact; never a turn file.
 const ARTIFACT_SUFFIX: &str = ".artifact.json";
@@ -46,15 +73,19 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Walks `root`. A missing root is an empty, complete snapshot.
+    /// Walks `root` within the default [`Limits`]. A missing root is an
+    /// empty, complete snapshot.
     #[must_use]
     pub fn take(root: &Path) -> Self {
-        let mut snap = Self {
-            files: HashMap::new(),
-            complete: true,
-        };
-        snap.complete = walk(root, "", 0, &mut snap.files);
-        snap
+        Self::take_within(root, Limits::default())
+    }
+
+    /// [`Self::take`] within `limits`.
+    #[must_use]
+    pub fn take_within(root: &Path, limits: Limits) -> Self {
+        let mut files = HashMap::new();
+        let complete = walk(root, "", 0, limits, &mut files);
+        Self { files, complete }
     }
 
     /// Files seen.
@@ -68,15 +99,21 @@ impl Snapshot {
         self.files.is_empty()
     }
 
-    /// Whether the walk saw every file (it stopped at [`MAX_FILES`] otherwise).
+    /// Whether the walk saw every file (it stopped at `max_files` otherwise).
     #[must_use]
     pub fn is_complete(&self) -> bool {
         self.complete
     }
 }
 
-/// Returns false once [`MAX_FILES`] is passed.
-fn walk(dir: &Path, rel_dir: &str, depth: usize, out: &mut HashMap<String, Stamp>) -> bool {
+/// Returns false once `limits.max_files` is passed.
+fn walk(
+    dir: &Path,
+    rel_dir: &str,
+    depth: usize,
+    limits: Limits,
+    out: &mut HashMap<String, Stamp>,
+) -> bool {
     let Ok(entries) = fs::read_dir(dir) else {
         return true;
     };
@@ -94,9 +131,9 @@ fn walk(dir: &Path, rel_dir: &str, depth: usize, out: &mut HashMap<String, Stamp
             continue;
         };
         if file_type.is_dir() {
-            if depth < MAX_DEPTH
+            if depth < limits.max_depth
                 && !is_ignored_dir_name(&name)
-                && !walk(&entry.path(), &rel, depth + 1, out)
+                && !walk(&entry.path(), &rel, depth + 1, limits, out)
             {
                 return false;
             }
@@ -108,7 +145,7 @@ fn walk(dir: &Path, rel_dir: &str, depth: usize, out: &mut HashMap<String, Stamp
         let Ok(meta) = entry.metadata() else {
             continue;
         };
-        if out.len() >= MAX_FILES {
+        if out.len() >= limits.max_files {
             return false;
         }
         out.insert(
@@ -149,24 +186,118 @@ pub fn diff(before: &Snapshot, after: &Snapshot) -> Vec<(String, Change)> {
     out
 }
 
-/// `path` relative to `cwd` (or to its macOS `/private` twin), or as
-/// given when it is already relative.
+/// `path` relative to `cwd`, with `/` separators (`a/b.html`), or as
+/// given when it is already relative. Windows paths (`C:\p\a\b.html`)
+/// and the macOS `/private` twin of `cwd` match too.
 fn relative_to(path: &str, cwd: &Path) -> Option<String> {
-    let path = path.trim();
-    if !path.starts_with('/') {
-        let rel = path.trim_start_matches("./");
-        return (!rel.is_empty()).then(|| rel.to_owned());
+    let path = path.trim().replace('\\', "/");
+    let cwd = cwd.to_string_lossy().replace('\\', "/");
+    let cwd = Path::new(cwd.trim_end_matches('/'));
+    let absolute = path.starts_with('/') || is_drive_path(&path);
+    let rel = if absolute {
+        let twin = cwd.to_string_lossy().strip_prefix("/private").map_or_else(
+            || PathBuf::from(format!("/private{}", cwd.display())),
+            PathBuf::from,
+        );
+        [cwd, twin.as_path()]
+            .iter()
+            .find_map(|root| Path::new(&path).strip_prefix(root).ok())?
+            .to_string_lossy()
+            .replace('\\', "/")
+    } else {
+        path.trim_start_matches("./").to_owned()
+    };
+    (!rel.is_empty()).then_some(rel)
+}
+
+/// `C:/…` (separators already turned to `/`).
+fn is_drive_path(path: &str) -> bool {
+    let b = path.as_bytes();
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/'
+}
+
+/// `rel` (`a/b.mp4`) under `cwd`, with the platform's separators.
+fn absolute(cwd: &Path, rel: &str) -> PathBuf {
+    rel.split('/')
+        .fold(cwd.to_path_buf(), |p, part| p.join(part))
+}
+
+/// One row the turn gains: a file, or a folder standing for `files` files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    /// `a/b.mp4`, or `frames/` for a folder.
+    pub path: String,
+    pub change: Change,
+    /// Files a folder row stands for; `None` for a file.
+    pub files: Option<usize>,
+}
+
+/// Files people open first (renders, pages), listed before the rest.
+fn is_result_file(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    [
+        ".mp4", ".mov", ".webm", ".gif", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".html", ".pdf",
+        ".mp3", ".wav",
+    ]
+    .iter()
+    .any(|e| lower.ends_with(e))
+}
+
+/// Turns the changed files into rows: each folder holding more than
+/// [`GROUP_OVER`] of them (directly) becomes one row; result files come
+/// first, then folders, then the rest, each by path. At most [`MAX_ROWS`]
+/// rows; the second value counts the files left out.
+#[must_use]
+pub fn plan_rows(changes: &[(String, Change)]) -> (Vec<Row>, usize) {
+    let parent = |p: &str| p.rsplit_once('/').map(|(d, _)| d.to_owned());
+    let mut per_dir: HashMap<String, (usize, bool)> = HashMap::new();
+    for (path, change) in changes {
+        if let Some(dir) = parent(path) {
+            let e = per_dir.entry(dir).or_insert((0, true));
+            e.0 += 1;
+            e.1 &= *change == Change::Added;
+        }
     }
-    let cwd = cwd.to_string_lossy();
-    let cwd = cwd.trim_end_matches('/');
-    let twin = cwd
-        .strip_prefix("/private")
-        .map_or_else(|| format!("/private{cwd}"), str::to_owned);
-    [cwd, twin.as_str()]
+    let mut files = Vec::new();
+    for (path, change) in changes {
+        let grouped = parent(path).is_some_and(|d| per_dir[&d].0 > GROUP_OVER);
+        if !grouped {
+            files.push(Row {
+                path: path.clone(),
+                change: *change,
+                files: None,
+            });
+        }
+    }
+    let mut folders: Vec<Row> = per_dir
+        .into_iter()
+        .filter(|(_, (n, _))| *n > GROUP_OVER)
+        .map(|(dir, (n, all_added))| Row {
+            path: format!("{dir}/"),
+            change: if all_added {
+                Change::Added
+            } else {
+                Change::Modified
+            },
+            files: Some(n),
+        })
+        .collect();
+    folders.sort_by(|a, b| a.path.cmp(&b.path));
+    files.sort_by(|a, b| {
+        is_result_file(&b.path)
+            .cmp(&is_result_file(&a.path))
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    let split = files.iter().take_while(|r| is_result_file(&r.path)).count();
+    let rest = files.split_off(split);
+    let mut rows: Vec<Row> = files.into_iter().chain(folders).chain(rest).collect();
+    let omitted = rows
         .iter()
-        .find_map(|root| path.strip_prefix(root)?.strip_prefix('/'))
-        .filter(|rel| !rel.is_empty())
-        .map(str::to_owned)
+        .skip(MAX_ROWS)
+        .map(|r| r.files.unwrap_or(1))
+        .sum();
+    rows.truncate(MAX_ROWS);
+    (rows, omitted)
 }
 
 /// Project paths a write tool already reported in `events`.
@@ -192,6 +323,26 @@ fn tool_written(events: &[Arc<RunEvent>], cwd: &Path) -> HashSet<String> {
         .collect()
 }
 
+/// One tool call and its result.
+fn emit_row(run: &Run, id: String, name: &str, input: Value, content: String) {
+    run.emit_json(
+        od_contracts::sse::AGENT,
+        &AgentEvent::ToolUse {
+            id: id.clone(),
+            name: name.to_owned(),
+            input,
+        },
+    );
+    run.emit_json(
+        od_contracts::sse::AGENT,
+        &AgentEvent::ToolResult {
+            tool_use_id: id,
+            content,
+            is_error: false,
+        },
+    );
+}
+
 /// The run's events so far (it has not ended, so this does not wait).
 async fn history(run: &Arc<Run>) -> Vec<Arc<RunEvent>> {
     let last = run.info().last_event_id;
@@ -208,7 +359,7 @@ async fn history(run: &Arc<Run>) -> Vec<Arc<RunEvent>> {
 
 /// Snapshots `cwd` again and adds each file the turn changed outside the
 /// write tools as a `Write`/`Edit` with its result. Call before the run
-/// ends: an ended run takes no events. Returns how many were added.
+/// ends: an ended run takes no events. Returns how many rows were added.
 pub async fn report(run: &Arc<Run>, cwd: &Path, before: &Snapshot) -> usize {
     let started = std::time::Instant::now();
     let root = cwd.to_path_buf();
@@ -233,36 +384,45 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, before: &Snapshot) -> usize {
     } else {
         tool_written(&history(run).await, cwd)
     };
-    let mut added = 0usize;
-    for (rel, change) in changes.into_iter().filter(|(p, _)| !known.contains(p)) {
-        added += 1;
-        let id = format!("turn-file-{added}");
-        let abs = cwd.join(&rel).to_string_lossy().into_owned();
-        let (name, verb) = match change {
+    let changes: Vec<(String, Change)> = changes
+        .into_iter()
+        .filter(|(p, _)| !known.contains(p))
+        .collect();
+    let (rows, omitted) = plan_rows(&changes);
+    for (i, row) in rows.iter().enumerate() {
+        let id = format!("turn-file-{}", i + 1);
+        let abs = absolute(cwd, &row.path).to_string_lossy().into_owned();
+        let (name, verb) = match row.change {
             Change::Added => ("Write", "created"),
             Change::Modified => ("Edit", "changed"),
         };
-        run.emit_json(
-            od_contracts::sse::AGENT,
-            &AgentEvent::ToolUse {
-                id: id.clone(),
-                name: name.to_owned(),
-                input: json!({ "file_path": abs, "description": "written outside the file tools" }),
-            },
-        );
-        run.emit_json(
-            od_contracts::sse::AGENT,
-            &AgentEvent::ToolResult {
-                tool_use_id: id,
-                content: format!("{rel} {verb} during the turn"),
-                is_error: false,
-            },
+        let (input, content) = match row.files {
+            None => (
+                json!({ "file_path": abs, "description": "written outside the file tools" }),
+                format!("{} {verb} during the turn", row.path),
+            ),
+            Some(n) => (
+                json!({ "file_path": abs, "files": n, "description": "written outside the file tools" }),
+                format!("{} ({n} files) {verb} during the turn", row.path),
+            ),
+        };
+        emit_row(run, id, name, input, content);
+    }
+    if omitted > 0 {
+        emit_row(
+            run,
+            "turn-file-more".to_owned(),
+            MORE_TOOL,
+            json!({ "files": omitted, "description": format!("+{omitted} more files changed outside the file tools") }),
+            format!("+{omitted} more files changed during the turn"),
         );
     }
+    let added = rows.len();
     tracing::info!(
         run = %run.id(),
         files = after.len(),
         added,
+        omitted,
         scan_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         "turn files compared"
     );
@@ -344,6 +504,105 @@ mod tests {
             assert_eq!(after.len(), 5000);
         }
         println!("two snapshots + diff of 5000 files, worst of 5: {worst:?}");
+    }
+
+    #[test]
+    fn windows_paths_match_the_snapshot_keys() {
+        let cwd = Path::new(r"C:\p");
+        assert_eq!(
+            relative_to(r"C:\p\a\b.html", cwd).as_deref(),
+            Some("a/b.html")
+        );
+        assert_eq!(
+            relative_to("C:/p/index.html", cwd).as_deref(),
+            Some("index.html")
+        );
+        assert_eq!(relative_to(r"a\b.html", cwd).as_deref(), Some("a/b.html"));
+        assert_eq!(relative_to(r"D:\other\b.html", cwd), None);
+    }
+
+    #[test]
+    fn the_walk_stops_past_max_files_and_below_max_depth() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        for i in 0..5 {
+            fs::write(root.join(format!("f{i}.txt")), "x").unwrap();
+        }
+        let tight = Limits {
+            max_files: 4,
+            max_depth: MAX_DEPTH,
+        };
+        assert!(!Snapshot::take_within(root, tight).is_complete());
+        let roomy = Limits {
+            max_files: 5,
+            max_depth: MAX_DEPTH,
+        };
+        assert!(Snapshot::take_within(root, roomy).is_complete());
+
+        fs::create_dir_all(root.join("a/b")).unwrap();
+        fs::write(root.join("a/one.txt"), "x").unwrap();
+        fs::write(root.join("a/b/two.txt"), "x").unwrap();
+        let shallow = Snapshot::take_within(
+            root,
+            Limits {
+                max_files: MAX_FILES,
+                max_depth: 1,
+            },
+        );
+        assert!(shallow.files.contains_key("a/one.txt"));
+        assert!(!shallow.files.contains_key("a/b/two.txt"));
+        assert!(Snapshot::take(root).files.contains_key("a/b/two.txt"));
+    }
+
+    fn added(paths: impl IntoIterator<Item = String>) -> Vec<(String, Change)> {
+        paths.into_iter().map(|p| (p, Change::Added)).collect()
+    }
+
+    #[test]
+    fn a_folder_of_frames_is_one_row() {
+        let mut changes = added((1..=1000).map(|i| format!("frames/{i:04}.png")));
+        changes.push(("clip.mp4".to_owned(), Change::Added));
+        changes.push(("notes.txt".to_owned(), Change::Modified));
+        // 20 files in a folder stay files; 21 become a row.
+        changes.extend(added((0..20).map(|i| format!("small/{i}.txt"))));
+        let (rows, omitted) = plan_rows(&changes);
+        assert_eq!(omitted, 0);
+        assert_eq!(rows.len(), 23);
+        assert_eq!(
+            rows[0],
+            Row {
+                path: "clip.mp4".into(),
+                change: Change::Added,
+                files: None
+            }
+        );
+        assert_eq!(
+            rows[1],
+            Row {
+                path: "frames/".into(),
+                change: Change::Added,
+                files: Some(1000)
+            }
+        );
+        assert_eq!(rows[2].path, "notes.txt");
+        let edited = plan_rows(
+            &[
+                added((0..21).map(|i| format!("f/{i}.png"))),
+                vec![("f/old.png".to_owned(), Change::Modified)],
+            ]
+            .concat(),
+        )
+        .0;
+        assert_eq!(edited[0].change, Change::Modified, "a folder with an edit");
+    }
+
+    #[test]
+    fn a_turn_adds_at_most_max_rows() {
+        let changes = added((0..120).map(|i| format!("page{i:03}.txt")));
+        let (rows, omitted) = plan_rows(&changes);
+        assert_eq!(rows.len(), MAX_ROWS);
+        assert_eq!(omitted, 120 - MAX_ROWS);
+        assert_eq!(rows[0].path, "page000.txt");
     }
 
     #[test]
