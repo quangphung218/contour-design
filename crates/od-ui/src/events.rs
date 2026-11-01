@@ -7,8 +7,8 @@ use serde::Deserialize;
 
 pub use od_contracts::{
     AgentEvent, AgentInfo, AgentsResponse, ChatRequest, ConversationsResponse, CreateRunResponse,
-    Message, MessageRole, MessagesResponse, RunEndPayload, RunErrorPayload, RunStartPayload,
-    RunStatus,
+    FailureCategory, Message, MessageRole, MessagesResponse, RunEndPayload, RunErrorPayload,
+    RunStartPayload, RunStatus,
 };
 
 /// One decoded SSE frame of `GET /api/runs/:id/events`.
@@ -28,13 +28,34 @@ pub fn decode_frame(event: &str, data: &str) -> RunFrame {
     let decoded = match event {
         "start" => serde_json::from_str(data).map(RunFrame::Start),
         "agent" => serde_json::from_str(data).map(RunFrame::Agent),
-        "error" => {
-            serde_json::from_str::<RunErrorPayload>(data).map(|e| RunFrame::Error(e.message))
-        }
+        "error" => serde_json::from_str::<RunErrorPayload>(data).map(|e| {
+            RunFrame::Error(
+                if e.code.as_deref() == Some(od_contracts::DAEMON_RESTART_CODE) {
+                    app_closed()
+                } else {
+                    e.message
+                },
+            )
+        }),
         "end" => serde_json::from_str(data).map(RunFrame::End),
         _ => return RunFrame::Ignored,
     };
     decoded.unwrap_or(RunFrame::Ignored)
+}
+
+/// A run cut short because Contour closed or crashed (the daemon's
+/// `daemon_restart`), told in the user's words: the agent was fine.
+pub(crate) fn app_closed() -> String {
+    crate::i18n::t(crate::i18n::T::RunAppClosed).to_owned()
+}
+
+/// The error a run ended with, as the chat shows it.
+#[must_use]
+pub fn end_error(end: &RunEndPayload) -> Option<String> {
+    if end.failure_category == Some(FailureCategory::DaemonRestart) {
+        return Some(app_closed());
+    }
+    end.error.clone().filter(|e| !e.is_empty())
 }
 
 /// What a finished run's whole SSE log (`GET /api/runs/:id/events`) says
@@ -44,6 +65,8 @@ pub fn decode_frame(event: &str, data: &str) -> RunFrame {
 pub struct RunRecord {
     pub stderr: String,
     pub error: Option<String>,
+    /// Why it failed, when the daemon said.
+    pub failure: Option<FailureCategory>,
 }
 
 #[must_use]
@@ -69,9 +92,10 @@ pub fn run_record(sse: &str) -> RunRecord {
         match decode_frame(event, &data) {
             RunFrame::Error(message) => record.error = Some(message),
             RunFrame::End(end) => {
-                if let Some(error) = end.error.filter(|e| !e.is_empty()) {
+                if let Some(error) = end_error(&end) {
                     record.error = Some(error);
                 }
+                record.failure = end.failure_category;
             }
             _ => {}
         }
@@ -92,6 +116,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_run_log_cut_short_by_contour_closing_keeps_the_cause() {
+        let sse = "id: 1\nevent: start\ndata: {\"runId\":\"r\"}\n\n\
+                   id: 2\nevent: error\ndata: {\"message\":\"the daemon restarted while this run was in progress\",\"code\":\"DAEMON_RESTART\"}\n\n\
+                   id: 3\nevent: end\ndata: {\"status\":\"failed\",\"code\":null,\"terminalAt\":1,\"failureCategory\":\"daemon_restart\",\"error\":\"daemon restarted\"}\n\n";
+        let record = run_record(sse);
+        assert_eq!(
+            record.failure,
+            Some(od_contracts::FailureCategory::DaemonRestart)
+        );
+        let error = record.error.unwrap();
+        assert!(error.contains("Contour closed"), "{error}");
+        assert!(!error.to_lowercase().contains("daemon"), "{error}");
+    }
+
+    #[test]
     fn a_run_log_gives_back_the_agents_stderr_and_its_error() {
         let sse = "id: 1\nevent: start\ndata: {\"runId\":\"r\"}\n\n\
                    id: 2\nevent: stderr\ndata: {\"chunk\":\"Error: ENOSPC\\n\"}\n\n\
@@ -103,6 +142,7 @@ mod tests {
             RunRecord {
                 stderr: "Error: ENOSPC\n    at w (node:fs:1:2)\n".into(),
                 error: Some("Error: ENOSPC".into()),
+                failure: None,
             }
         );
         let ok = "event: end\ndata: {\"status\":\"succeeded\",\"code\":0,\"terminalAt\":1}\n\n";

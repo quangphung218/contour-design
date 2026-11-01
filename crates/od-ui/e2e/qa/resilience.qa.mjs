@@ -48,7 +48,7 @@ test('RES-02', 'A turn cut short because Contour closed says so, and does not se
   assert.doesNotMatch(text, /check the agent in Settings/i, 'the agent is blamed for a turn Contour cut short');
   assert.equal(await turn.getByRole('button', { name: 'Open Settings' }).count(), 0, 'Open Settings offered for a turn Contour cut short');
   await turn.getByRole('button', { name: 'Retry' }).waitFor();
-}, { knownBug: 'QA-030', timeout: 60_000, daemon: {} });
+}, { timeout: 60_000, daemon: {} });
 
 /** A folder with a page in it that the user may read but not write. */
 function readOnlyFolder() {

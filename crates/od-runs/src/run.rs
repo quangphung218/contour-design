@@ -187,7 +187,7 @@ impl Run {
         let run = Self::with_state(dir, state.meta, next_id, RunStatus::Running, None, None)?;
         run.emit_error(
             "the daemon restarted while this run was in progress",
-            Some("DAEMON_RESTART"),
+            Some(od_contracts::DAEMON_RESTART_CODE),
         );
         run.finish(RunEndPayload {
             status: RunStatus::Failed,

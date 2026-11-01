@@ -546,20 +546,36 @@ impl Store {
     }
 
     /// At startup: messages still marked running belong to runs that died
-    /// with the daemon. Their batches are folded in and they become failed.
+    /// with the daemon. Their batches are folded in, closed by an `error`
+    /// event coded [`od_contracts::DAEMON_RESTART_CODE`] (so the chat can
+    /// say Contour closed, without the run's log), and they become failed.
     ///
     /// # Errors
-    /// SQLite errors.
+    /// SQLite or JSON errors.
     pub fn fail_interrupted_messages(&self) -> Result<usize> {
-        let ids: Vec<(String, String, Option<i64>)> = self.with_conn(|conn| {
+        type Row = (String, String, Option<i64>, Option<String>);
+        let ids: Vec<Row> = self.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, content, last_run_event_id FROM messages WHERE run_status = 'running'",
+                "SELECT id, content, last_run_event_id, run_id FROM messages \
+                 WHERE run_status = 'running'",
             )?;
-            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
             Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
         })?;
-        for (id, content, last) in &ids {
+        let cause = serde_json::to_value(od_contracts::AgentEvent::Error {
+            message: "the daemon restarted while this run was in progress".to_owned(),
+            code: Some(od_contracts::DAEMON_RESTART_CODE.to_owned()),
+            terminal: true,
+        })?;
+        for (id, content, last, run_id) in &ids {
             let last = last.and_then(|v| u64::try_from(v).ok()).unwrap_or(0);
+            self.append_event_batch(
+                id,
+                run_id.as_deref().unwrap_or_default(),
+                i64::MAX,
+                std::slice::from_ref(&cause),
+                last,
+            )?;
             self.finish_assistant_message(id, content, RunStatus::Failed, last)?;
         }
         // Comments a dead run was applying go back to the next turn.
@@ -826,7 +842,14 @@ mod tests {
         let messages = store.list_messages(&conv).unwrap_or_default();
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[1].run_status, Some(RunStatus::Failed));
-        assert_eq!(messages[1].events.len(), 2);
+        // The cause goes with the turn (QA-030): the chat tells "Contour
+        // closed" apart from an agent error without the run's log.
+        assert_eq!(messages[1].events.len(), 3);
+        assert_eq!(messages[1].events[2]["type"], "error");
+        assert_eq!(
+            messages[1].events[2]["code"],
+            od_contracts::DAEMON_RESTART_CODE
+        );
         assert_eq!(messages[1].last_run_event_id, Some(5));
         assert_eq!(
             store
