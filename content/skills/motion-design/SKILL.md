@@ -377,9 +377,28 @@ disagree, follow this section.
   from a CDN. Use GSAP only if the project already has a local copy.
 - The scaffold loops the film in its own preview player. There is no
   `window.__odMotionPlayer`; keep the scaffold's `pause()` and `seek()`.
-- The MP4 is picture only: `<audio>` tracks are not mixed in. Do not create
-  sound for a film unless the user asks; if they do, say the MP4 will be
-  silent in this version. Never mux audio yourself.
+- Sound: `media generate` mixes the `<audio>` tracks of `index.html`, and of
+  the sub-compositions it loads with `data-composition-src`, into one AAC
+  track cut to the film's length. It reads `data-start`, `data-duration` and
+  `data-volume` (0–1). A sub-composition's track starts at that element's
+  `data-start` and stops at its end; its `src` is relative to its own file.
+- Only local audio files inside the composition folder are mixed (WAV, MP3,
+  OGG, FLAC, AAC, M4A), with a relative `src`. A URL fails the render as
+  "local only"; so do `loop`, `data-playback-rate` and `data-media-start`.
+  Audio-reactive analysis, ducking and looping are not done: pre-trim and
+  pre-mix the files instead.
+- With `od-motion-audio=required`, a track whose file is missing fails the
+  render with the file's name and no MP4 is written: add the file, then
+  render again.
+- If you have no audio file (none supplied, and you cannot write an original
+  WAV into the composition folder), make the film silent: declare
+  `content="silent"`, leave out `<audio>`, and tell the user plainly that the
+  MP4 has no sound. Never call `ffmpeg` to synthesize, mix or mux audio
+  yourself.
+- The `media generate` summary says what went into the MP4 ("AAC, 2 audio
+  tracks mixed", "no audio" or "silent by design"). That line is your audio
+  check: do not probe the MP4. The scaffold's preview player shows the
+  picture only; the sound is in the MP4.
 - To revise, edit the same source and render to the same `--output`: the new
   MP4 replaces the old one.
 
