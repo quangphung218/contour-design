@@ -929,6 +929,17 @@ fn tool_label(name: &str) -> String {
     t(key).to_owned()
 }
 
+/// The label and summary of a tool row. The engine's `+N more` row (files
+/// changed outside the file tools past its row limit) reads as a localized
+/// count, never as its internal tool name or English description.
+fn tool_texts(call: &ToolCall) -> (String, String) {
+    if call.name == crate::chat::MORE_FILES_TOOL {
+        let n = call.files.unwrap_or(0).to_string();
+        return (tf(T::UnlistedFiles, &[&n]), String::new());
+    }
+    (tool_label(&call.name), call.summary.clone())
+}
+
 /// One tool call. A call still without a result once the run is over
 /// (the agent never reported back) stops spinning and shows a plain ring.
 #[component]
@@ -946,11 +957,17 @@ fn ToolRow(call: ToolCall, live: Signal<bool>) -> impl IntoView {
         Some(false) => icon(Glyph::Check).into_any(),
         Some(true) => icon(Glyph::Failed).into_any(),
     };
+    let (label, summary) = tool_texts(&call);
+    let title = if call.name == crate::chat::MORE_FILES_TOOL {
+        label.clone()
+    } else {
+        call.name.clone()
+    };
     view! {
         <div class=class>
             <span class="tool-icon">{mark}</span>
-            <span class="tool-name" title=call.name.clone()>{tool_label(&call.name)}</span>
-            <span class="tool-summary mono">{call.summary}</span>
+            <span class="tool-name" title=title>{label}</span>
+            <span class="tool-summary mono">{summary}</span>
         </div>
     }
 }
@@ -1101,7 +1118,7 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
 
 #[cfg(test)]
 mod tests {
-    use super::{folded_into_plan, tool_label};
+    use super::{ToolCall, folded_into_plan, tool_label, tool_texts};
 
     #[test]
     fn plan_updates_fold_into_the_plan_list() {
@@ -1123,5 +1140,21 @@ mod tests {
         assert_eq!(tool_label("Write"), "Wrote");
         assert_eq!(tool_label("MultiEdit"), "Edited");
         assert_eq!(tool_label("mcp__contour__list"), "mcp__contour__list");
+    }
+
+    #[test]
+    fn the_more_files_row_never_shows_its_internal_name() {
+        let call = ToolCall {
+            id: "turn-file-more".into(),
+            name: crate::chat::MORE_FILES_TOOL.into(),
+            summary: "+70 more files changed outside the file tools".into(),
+            path: None,
+            result: Some(false),
+            files: Some(70),
+        };
+        let (label, summary) = tool_texts(&call);
+        assert_eq!(label, "+70 more files not listed");
+        assert!(summary.is_empty());
+        assert!(!label.contains("TurnFilesMore"));
     }
 }
