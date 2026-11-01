@@ -57,16 +57,26 @@ impl From<LiveError> for ApiErr {
 /// One line per live create, update or refresh, so the agent tool, the
 /// MCP/API and the UI paths can be counted: `op`, `via`
 /// (`tool_token` for an agent run, `api` without one, `ui`), `source`
-/// (the artifact's refresh source type, `none`, or `unknown` on failure)
-/// and `result`.
-fn logged(op: &str, via: &str, result: ApiResult<Json<Value>>) -> ApiResult<Json<Value>> {
-    let (source, outcome) = outcome(op, &result);
+/// (the artifact's refresh source type, `none`, or `unknown` on a failure
+/// whose artifact could not be read) and `result`. `stored` is the source
+/// type read from a failed refresh's `sourceJson`.
+fn logged(
+    op: &str,
+    via: &str,
+    stored: Option<String>,
+    result: ApiResult<Json<Value>>,
+) -> ApiResult<Json<Value>> {
+    let (source, outcome) = outcome(op, &result, stored);
     tracing::info!(op, via, source = %source, result = outcome, "live artifact");
     result
 }
 
 /// The `source` and `result` fields of [`logged`].
-fn outcome(op: &str, result: &ApiResult<Json<Value>>) -> (String, &'static str) {
+fn outcome(
+    op: &str,
+    result: &ApiResult<Json<Value>>,
+    stored: Option<String>,
+) -> (String, &'static str) {
     match result {
         Ok(Json(v)) => (
             v.pointer("/artifact/document/sourceJson/type")
@@ -76,10 +86,16 @@ fn outcome(op: &str, result: &ApiResult<Json<Value>>) -> (String, &'static str) 
             "ok",
         ),
         Err(e) => (
-            "unknown".to_owned(),
+            stored.unwrap_or_else(|| "unknown".to_owned()),
             match e.status {
                 StatusCode::NOT_FOUND => "not_found",
-                StatusCode::UNPROCESSABLE_ENTITY | StatusCode::CONFLICT if op == "refresh" => {
+                // A source file that cannot be read is a failed refresh,
+                // not a daemon error.
+                StatusCode::UNPROCESSABLE_ENTITY
+                | StatusCode::CONFLICT
+                | StatusCode::INTERNAL_SERVER_ERROR
+                    if op == "refresh" =>
+                {
                     "refresh_failed"
                 }
                 StatusCode::UNPROCESSABLE_ENTITY | StatusCode::BAD_REQUEST => "validation_error",
@@ -114,6 +130,28 @@ async fn open(state: &AppState, project_id: Option<String>) -> ApiResult<(Projec
 }
 
 /// Runs live-store work off the async runtime.
+/// Refreshes `aid`. On failure, also the refresh source type stored in its
+/// `sourceJson`, for the log line.
+async fn refresh_with_source(
+    root: ProjectRoot,
+    store: LiveStore,
+    aid: String,
+) -> (ApiResult<Json<Value>>, Option<String>) {
+    let id = aid.clone();
+    match live(store.clone(), move |s| s.refresh(&root, &id)).await {
+        Ok(out) => (Ok(Json(json!(out))), None),
+        Err(err) => {
+            let stored = live(store, move |s| s.get(&aid))
+                .await
+                .ok()
+                .and_then(|a| a.document.source_json)
+                .and_then(|src| serde_json::to_value(src.kind).ok())
+                .and_then(|v| v.as_str().map(str::to_owned));
+            (Err(err), stored)
+        }
+    }
+}
+
 async fn live<T, F>(store: LiveStore, f: F) -> ApiResult<T>
 where
     T: Send + 'static,
@@ -236,7 +274,7 @@ pub async fn patch(
         Ok(Json(json!({ "artifact": artifact })))
     }
     .await;
-    logged("update", "ui", result)
+    logged("update", "ui", None, result)
 }
 
 pub async fn delete(
@@ -254,13 +292,11 @@ pub async fn refresh(
     Path(aid): Path<String>,
     Query(q): Query<ProjectQuery>,
 ) -> ApiResult<Json<Value>> {
-    let result = async {
-        let (root, store) = open(&state, q.project_id).await?;
-        let out = live(store, move |s| s.refresh(&root, &aid)).await?;
-        Ok(Json(json!(out)))
-    }
-    .await;
-    logged("refresh", "ui", result)
+    let (result, stored) = match open(&state, q.project_id).await {
+        Ok((root, store)) => refresh_with_source(root, store, aid).await,
+        Err(err) => (Err(err), None),
+    };
+    logged("refresh", "ui", stored, result)
 }
 
 // ---------------------------------------------------------------------------
@@ -325,7 +361,7 @@ pub async fn tool_create(
         Ok(Json(json!({ "artifact": artifact })))
     }
     .await;
-    logged("create", via, result)
+    logged("create", via, None, result)
 }
 
 pub async fn tool_list(
@@ -375,7 +411,7 @@ pub async fn tool_update(
         Ok(Json(json!({ "artifact": artifact })))
     }
     .await;
-    logged("update", via, result)
+    logged("update", via, None, result)
 }
 
 pub async fn tool_refresh(
@@ -384,6 +420,7 @@ pub async fn tool_refresh(
     ApiJson(body): ApiJson<ToolBody>,
 ) -> ApiResult<Json<Value>> {
     let mut via = "api";
+    let mut stored = None;
     let result = async {
         let caller = tool_caller(
             &state,
@@ -396,11 +433,12 @@ pub async fn tool_refresh(
         }
         let aid = artifact_id(&body)?;
         let (root, store) = open(&state, caller.project_id).await?;
-        let out = live(store, move |s| s.refresh(&root, &aid)).await?;
-        Ok(Json(json!(out)))
+        let (out, source) = refresh_with_source(root, store, aid).await;
+        stored = source;
+        out
     }
     .await;
-    logged("refresh", via, result)
+    logged("refresh", via, stored, result)
 }
 
 #[cfg(test)]
@@ -412,9 +450,12 @@ mod tests {
         let ok = Ok(Json(
             json!({"artifact": {"document": {"sourceJson": {"type": "local_file"}}}}),
         ));
-        assert_eq!(outcome("create", &ok), ("local_file".to_owned(), "ok"));
+        assert_eq!(
+            outcome("create", &ok, None),
+            ("local_file".to_owned(), "ok")
+        );
         let plain = Ok(Json(json!({"artifact": {"document": {}}})));
-        assert_eq!(outcome("update", &plain).0, "none");
+        assert_eq!(outcome("update", &plain, None).0, "none");
         let invalid = || {
             ApiErr::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -422,14 +463,66 @@ mod tests {
                 "x",
             )
         };
-        assert_eq!(outcome("create", &Err(invalid())).1, "validation_error");
-        assert_eq!(outcome("refresh", &Err(invalid())).1, "refresh_failed");
+        assert_eq!(
+            outcome("create", &Err(invalid()), None).1,
+            "validation_error"
+        );
+        assert_eq!(
+            outcome("refresh", &Err(invalid()), None).1,
+            "refresh_failed"
+        );
         let conflict = ApiErr::new(StatusCode::CONFLICT, ErrorCode::Conflict, "no source");
         assert_eq!(
-            outcome("refresh", &Err(conflict)),
+            outcome("refresh", &Err(conflict), None),
             ("unknown".to_owned(), "refresh_failed")
         );
         let gone = ApiErr::new(StatusCode::NOT_FOUND, ErrorCode::NotFound, "x");
-        assert_eq!(outcome("update", &Err(gone)).1, "not_found");
+        assert_eq!(outcome("update", &Err(gone), None).1, "not_found");
+        // An I/O failure while refreshing is a failed refresh; other ops
+        // keep `error`.
+        let io = || ApiErr::internal("disk full");
+        assert_eq!(
+            outcome("refresh", &Err(io()), Some("local_file".to_owned())),
+            ("local_file".to_owned(), "refresh_failed")
+        );
+        assert_eq!(outcome("update", &Err(io()), None).1, "error");
+    }
+
+    #[tokio::test]
+    async fn a_refresh_that_fails_on_io_names_its_stored_source() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("p1");
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        std::fs::write(dir.join("data/kpis.json"), r#"{"rows":[1]}"#).unwrap();
+        let root = ProjectRoot {
+            dir: dir.clone(),
+            imported: false,
+        };
+        let store = LiveStore::new(dir, "p1");
+        let input: od_live::CreateInput = serde_json::from_value(json!({
+            "title": "KPIs",
+            "document": {
+                "dataJson": { "rows": [] },
+                "sourceJson": {
+                    "type": "local_file",
+                    "input": { "path": "data/kpis.json" },
+                    "outputMapping": { "dataPaths": [{ "from": "json.rows", "to": "rows" }] },
+                    "refreshPermission": "manual_refresh_granted_for_read_only"
+                }
+            }
+        }))
+        .unwrap();
+        let a = store.create(input, None, None, None).unwrap();
+        // `data.json` cannot be replaced: the refresh fails on I/O.
+        let data = store.paths(&a.id).unwrap().dir.join("data.json");
+        std::fs::remove_file(&data).unwrap();
+        std::fs::create_dir_all(data.join("blocker")).unwrap();
+        let (result, stored) = refresh_with_source(root, store, a.id).await;
+        let err = result.unwrap_err();
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            outcome("refresh", &Err(err), stored),
+            ("local_file".to_owned(), "refresh_failed")
+        );
     }
 }
