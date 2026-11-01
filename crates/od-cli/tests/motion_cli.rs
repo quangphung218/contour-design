@@ -298,7 +298,17 @@ fn scaffold_then_generate_renders_the_film() {
         eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
         return;
     }
-    let d = start(&[]);
+    // Inside another sandbox (the maintainer's pre-merge check runs `make
+    // check` under sandbox-exec) Chrome cannot start its own; the test opts
+    // out there, as a user would with OD_CHROME_NO_SANDBOX=1 (as m5.rs).
+    let sandboxed =
+        !od_render_cdp::find_chrome().is_ok_and(|c| od_render_cdp::chrome_sandbox_works(&c));
+    let env: &[(&str, &str)] = if sandboxed {
+        &[(od_render_cdp::NO_SANDBOX_ENV, "1")]
+    } else {
+        &[]
+    };
+    let d = start(env);
     let pid = project(&d);
     assert!(scaffold(&d, &pid).status.success());
     let out = generate(&d, &pid);
