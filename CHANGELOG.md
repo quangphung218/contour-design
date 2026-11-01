@@ -15,10 +15,13 @@ All notable changes to Contour are recorded here. The format follows
   from the turn like a file written with the Write tool. New files are
   listed as written, changed files as edited; folders the file list skips
   (`.git`, `node_modules`, build output, hidden folders) are skipped here
-  too, and a project with more than 20,000 files is not compared.
+  too, and a project with more than 20,000 files is not compared. A
+  folder with more than 20 such files (frames from `ffmpeg`) shows as one
+  row, `frames/ (1000 files)`, and a turn lists at most 50 rows plus
+  "+N more files not listed".
 - A live artifact refresh that fails while reading or writing its files
   is logged as `refresh_failed` with its source type, not as `error` with
-  `unknown`.
+  `unknown`. Other daemon errors during a refresh stay `error`.
 - Renaming a project returns the time it was last updated as stored, even
   when a message was sent in the meantime.
 
