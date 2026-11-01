@@ -280,7 +280,9 @@ pub fn plan_rows(changes: &[(String, Change)]) -> (Vec<Row>, usize) {
     let mut folders: Vec<Row> = Vec::new();
     for (dir, entries) in &per_dir {
         let mut by_ext: HashMap<String, usize> = HashMap::new();
-        for (path, _) in entries {
+        // Films and pages keep their own row, so they never pick the
+        // extension to group (30 films beside 25 frames still group them).
+        for (path, _) in entries.iter().filter(|(p, _)| !keeps_its_row(p)) {
             *by_ext.entry(extension(path)).or_default() += 1;
         }
         // Ties go to the alphabetically first extension, so runs agree.
@@ -660,6 +662,19 @@ mod tests {
         let (rows, _) = plan_rows(&changes);
         assert_eq!(rows.len(), 30);
         assert!(rows.iter().all(|r| r.files.is_none()));
+    }
+
+    #[test]
+    fn frames_group_even_when_films_outnumber_them() {
+        let mut changes = added((0..30).map(|i| format!("out2/{i:02}.mp4")));
+        changes.extend(added((0..25).map(|i| format!("out2/{i:02}.png"))));
+        let (rows, omitted) = plan_rows(&changes);
+        assert_eq!(omitted, 0);
+        assert_eq!(rows.len(), 31);
+        assert!(
+            rows.iter()
+                .any(|r| r.path == "out2/" && r.files == Some(25))
+        );
     }
 
     #[test]

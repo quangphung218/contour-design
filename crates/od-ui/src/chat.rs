@@ -483,8 +483,16 @@ pub fn summarize_input(name: &str, input: &Value) -> String {
 /// `path` relative to the project folder `cwd`; `None` when it lies outside.
 /// Without a cwd (a stored turn) only the `…/projects/<id>/` layout is known.
 fn project_relative(path: &str, cwd: Option<&str>) -> Option<String> {
-    let path = path.trim();
-    let rel = if path.starts_with('/') {
+    // Windows paths (`C:\p\a.mp4`) compare as `C:/p/a.mp4`.
+    let path = path.trim().replace('\\', "/");
+    let cwd = cwd.map(|c| c.replace('\\', "/"));
+    let path = path.as_str();
+    let cwd = cwd.as_deref();
+    let is_drive = |p: &str| {
+        let b = p.as_bytes();
+        b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/'
+    };
+    let rel = if path.starts_with('/') || is_drive(path) {
         match cwd.map(|c| c.trim_end_matches('/')) {
             Some(cwd) => {
                 // macOS: the daemon may name `/var/…` while the agent
@@ -532,6 +540,19 @@ mod tests {
 
     fn agent(v: Value) -> RunFrame {
         decode_frame("agent", &v.to_string())
+    }
+
+    #[test]
+    fn windows_paths_are_project_relative() {
+        assert_eq!(
+            project_relative("C:\\p\\renders\\clip.mp4", Some("C:\\p")).as_deref(),
+            Some("renders/clip.mp4")
+        );
+        assert_eq!(project_relative("D:\\other\\x.mp4", Some("C:\\p")), None);
+        assert_eq!(
+            project_relative("/u/p/a/b.html", Some("/u/p")).as_deref(),
+            Some("a/b.html")
+        );
     }
 
     #[test]
