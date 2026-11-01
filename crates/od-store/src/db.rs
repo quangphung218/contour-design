@@ -239,11 +239,13 @@ pub fn insert_project(conn: &Connection, project: &Project) -> Result<()> {
 
 /// Writes every field but `updated_at`: only [`insert_project`] and
 /// [`mark_project_sent`] set it, so a project read before a send and
-/// written after it cannot take the send back.
-pub fn update_project(conn: &Connection, project: &Project) -> Result<()> {
-    conn.execute(
+/// written after it cannot take the send back. Returns the stored
+/// `updated_at`, read back by the write itself (a send may have moved it
+/// since `project` was read). `None` when the project is gone.
+pub fn update_project(conn: &Connection, project: &Project) -> Result<Option<i64>> {
+    let updated_at = conn.query_row(
         "UPDATE projects SET name = ?2, skill_id = ?3, design_system_id = ?4, pending_prompt = ?5, \
-         metadata_json = ?6, custom_instructions = ?7 WHERE id = ?1",
+         metadata_json = ?6, custom_instructions = ?7 WHERE id = ?1 RETURNING updated_at",
         params![
             project.id,
             project.name,
@@ -253,8 +255,13 @@ pub fn update_project(conn: &Connection, project: &Project) -> Result<()> {
             metadata_json(project)?,
             project.custom_instructions,
         ],
-    )?;
-    Ok(())
+        |row| row.get(0),
+    );
+    match updated_at {
+        Ok(at) => Ok(Some(at)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
 }
 
 /// `updated_at` becomes `at` unless it is already later. Returns whether
