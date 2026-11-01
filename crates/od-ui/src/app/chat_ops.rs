@@ -297,6 +297,7 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
         let writes = ops.iter().filter(|(_, op)| *op == FileOp::Write).count();
         let edits = ops.len() - writes;
         let live = turn.with(|t| t.state.is_live());
+        let unlisted = turn.with(AssistantTurn::unlisted_files);
         let total = ops.len();
         let shown = if expanded.get() { total } else { FILES_SHOWN };
         let mut counts = Vec::new();
@@ -317,7 +318,11 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                         .into_iter()
                         .take(shown)
                         .map(|(path, op)| {
-                            let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
+                            // A folder row (`frames/`) stands for many files.
+                            let name = match turn.with_untracked(|t| t.folder_files(&path)) {
+                                Some(n) => tf(T::FolderFiles, &[&path, &n.to_string()]),
+                                None => path.rsplit('/').next().unwrap_or(&path).to_owned(),
+                            };
                             let exists = ctx.files.with(|f| f.iter().any(|x| x.path == path));
                             let raw = format!("{}/raw/{}", ctx.base(), api::file_path(&path));
                             let open_path = path.clone();
@@ -354,13 +359,46 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                         })
                         .collect_view()}
                 </ul>
-                {(total > FILES_SHOWN).then(|| view! {
+                {move || more_line(total, unlisted, expanded.get()).note.map(|note| view! {
+                    <p class="subtle" data-testid="turn-files-unlisted">{note}</p>
+                })}
+                {move || more_line(total, unlisted, expanded.get()).button.map(|label| view! {
                     <button class="btn ghost small" data-testid="turn-files-more" on:click=move |_| expanded.update(|e| *e = !*e)>
-                        {move || if expanded.get() { t(T::TemplatesShowFewer).to_owned() } else { tf(T::MoreN, &[&(total - FILES_SHOWN).to_string()]) }}
+                        {label}
                     </button>
                 })}
             </div>
         })
+    }
+}
+
+/// What follows the rows of "Files from this turn": never two "+N more".
+#[derive(Debug, PartialEq, Eq)]
+struct MoreLine {
+    /// The expand / collapse button.
+    button: Option<String>,
+    /// Files the engine did not list, said once the list is open.
+    note: Option<String>,
+}
+
+/// Collapsed, one button counts the hidden rows and the unlisted files
+/// together; open, the unlisted files are a note above "Show fewer".
+fn more_line(total: usize, unlisted: u64, expanded: bool) -> MoreLine {
+    let hidden = u64::try_from(total.saturating_sub(FILES_SHOWN)).unwrap_or(u64::MAX);
+    let note = (unlisted > 0).then(|| tf(T::UnlistedFiles, &[&unlisted.to_string()]));
+    if hidden == 0 {
+        return MoreLine { button: None, note };
+    }
+    if expanded {
+        MoreLine {
+            button: Some(t(T::TemplatesShowFewer).to_owned()),
+            note,
+        }
+    } else {
+        MoreLine {
+            button: Some(tf(T::MoreN, &[&(hidden + unlisted).to_string()])),
+            note: None,
+        }
     }
 }
 
@@ -685,5 +723,43 @@ pub fn DesignSystemSwitch(ctx: StudioCtx) -> impl IntoView {
                 }).collect_view()}
             </select>
         </label>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_more_line_at_a_time() {
+        // 50 rows (4 shown) and 70 files never listed.
+        assert_eq!(
+            more_line(50, 70, false),
+            MoreLine {
+                button: Some("+116 more".into()),
+                note: None
+            }
+        );
+        assert_eq!(
+            more_line(50, 70, true),
+            MoreLine {
+                button: Some(t(T::TemplatesShowFewer).to_owned()),
+                note: Some("+70 more files not listed".into())
+            }
+        );
+        assert_eq!(
+            more_line(10, 0, false),
+            MoreLine {
+                button: Some("+6 more".into()),
+                note: None
+            }
+        );
+        assert_eq!(
+            more_line(3, 0, false),
+            MoreLine {
+                button: None,
+                note: None
+            }
+        );
     }
 }

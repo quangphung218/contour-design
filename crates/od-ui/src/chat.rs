@@ -47,6 +47,9 @@ pub struct ToolCall {
     pub path: Option<String>,
     /// `Some(is_error)` once the result arrived.
     pub result: Option<bool>,
+    /// Files a folder row of "Files from this turn" stands for, or the
+    /// count of a `+N more` row (`files` in the input).
+    pub files: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -283,12 +286,14 @@ impl AssistantTurn {
                     })
                     .flatten()
                     .map(str::to_owned);
+                let files = input.get("files").and_then(Value::as_u64);
                 self.blocks.push(Block::Tool(ToolCall {
                     id,
                     name,
                     summary,
                     path,
                     result: None,
+                    files,
                 }));
             }
             AgentEvent::ToolResult {
@@ -394,7 +399,42 @@ impl AssistantTurn {
         }
         out
     }
+
+    /// Files the folder row `rel` (`frames/`) of [`Self::file_ops`] stands
+    /// for; `None` for a file.
+    #[must_use]
+    pub fn folder_files(&self, rel: &str) -> Option<u64> {
+        self.blocks.iter().find_map(|b| match b {
+            Block::Tool(c)
+                if c.files.is_some()
+                    && c.path
+                        .as_deref()
+                        .and_then(|p| project_relative(p, self.cwd.as_deref()))
+                        .as_deref()
+                        == Some(rel) =>
+            {
+                c.files
+            }
+            _ => None,
+        })
+    }
+
+    /// Files changed outside the file tools that the turn did not list
+    /// (the `+N more` row the engine adds past its row limit).
+    #[must_use]
+    pub fn unlisted_files(&self) -> u64 {
+        self.blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Tool(c) if c.name == MORE_FILES_TOOL => c.files,
+                _ => None,
+            })
+            .sum()
+    }
 }
+
+/// Tool name of the engine's `+N more` row (`od_runtime::turn_files::MORE_TOOL`).
+pub const MORE_FILES_TOOL: &str = "TurnFilesMore";
 
 /// How a turn touched a file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -443,8 +483,16 @@ pub fn summarize_input(name: &str, input: &Value) -> String {
 /// `path` relative to the project folder `cwd`; `None` when it lies outside.
 /// Without a cwd (a stored turn) only the `…/projects/<id>/` layout is known.
 fn project_relative(path: &str, cwd: Option<&str>) -> Option<String> {
-    let path = path.trim();
-    let rel = if path.starts_with('/') {
+    // Windows paths (`C:\p\a.mp4`) compare as `C:/p/a.mp4`.
+    let path = path.trim().replace('\\', "/");
+    let cwd = cwd.map(|c| c.replace('\\', "/"));
+    let path = path.as_str();
+    let cwd = cwd.as_deref();
+    let is_drive = |p: &str| {
+        let b = p.as_bytes();
+        b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/'
+    };
+    let rel = if path.starts_with('/') || is_drive(path) {
         match cwd.map(|c| c.trim_end_matches('/')) {
             Some(cwd) => {
                 // macOS: the daemon may name `/var/…` while the agent
@@ -492,6 +540,19 @@ mod tests {
 
     fn agent(v: Value) -> RunFrame {
         decode_frame("agent", &v.to_string())
+    }
+
+    #[test]
+    fn windows_paths_are_project_relative() {
+        assert_eq!(
+            project_relative("C:\\p\\renders\\clip.mp4", Some("C:\\p")).as_deref(),
+            Some("renders/clip.mp4")
+        );
+        assert_eq!(project_relative("D:\\other\\x.mp4", Some("C:\\p")), None);
+        assert_eq!(
+            project_relative("/u/p/a/b.html", Some("/u/p")).as_deref(),
+            Some("a/b.html")
+        );
     }
 
     #[test]
@@ -546,12 +607,44 @@ mod tests {
                     summary: "index.html".into(),
                     path: Some("/data/projects/p1/index.html".into()),
                     result: Some(false),
+                    files: None,
                 }),
                 Block::Text(" done".into()),
             ]
         );
         assert_eq!(t.text(), "Hello done");
         assert_eq!(t.touched_files(), vec!["index.html".to_owned()]);
+    }
+
+    #[test]
+    fn folder_rows_and_the_more_row_carry_their_counts() {
+        let mut t = AssistantTurn::new();
+        t.apply(decode_frame(
+            "start",
+            r#"{"runId":"r1","agentId":"claude","bin":"claude","protocolVersion":1,"cwd":"/p"}"#,
+        ));
+        t.apply(agent(
+            json!({"type": "tool_use", "id": "a", "name": "Write",
+            "input": {"file_path": "/p/frames/", "files": 1000}}),
+        ));
+        t.apply(agent(
+            json!({"type": "tool_use", "id": "b", "name": "Write",
+            "input": {"file_path": "/p/clip.mp4"}}),
+        ));
+        t.apply(agent(
+            json!({"type": "tool_use", "id": "c", "name": MORE_FILES_TOOL,
+            "input": {"files": 70, "description": "+70 more"}}),
+        ));
+        assert_eq!(
+            t.file_ops(),
+            [
+                ("frames/".to_owned(), FileOp::Write),
+                ("clip.mp4".to_owned(), FileOp::Write)
+            ]
+        );
+        assert_eq!(t.folder_files("frames/"), Some(1000));
+        assert_eq!(t.folder_files("clip.mp4"), None);
+        assert_eq!(t.unlisted_files(), 70);
     }
 
     #[test]

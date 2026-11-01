@@ -1639,6 +1639,8 @@ messages! {
     OpenNamed => "Open {0}", "Mở {0}";
     DownloadNamed => "Download {0}", "Tải {0}";
     MoreN => "+{0} more", "+{0} file nữa";
+    FolderFiles => "{0} ({1} files)", "{0} ({1} file)";
+    UnlistedFiles => "+{0} more files not listed", "+{0} file nữa không liệt kê";
     CopyMessage => "Copy", "Sao chép";
     CopiedMessage => "Copied", "Đã chép";
     ContinueRemaining => "Continue remaining tasks", "Làm tiếp phần còn lại";

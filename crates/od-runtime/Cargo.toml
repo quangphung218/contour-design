@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 od-contracts.workspace = true
 od-runs.workspace = true
+od-store.workspace = true
 hex.workspace = true
 regex.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls-native-roots"] }

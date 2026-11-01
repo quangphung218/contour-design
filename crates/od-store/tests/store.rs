@@ -377,8 +377,28 @@ fn a_stale_project_write_does_not_take_a_send_back() {
     let sent = stale.updated_at + 60_000;
     store.mark_project_sent(&project.id, sent).unwrap();
     stale.name = "Renamed".to_owned();
-    store.with_conn(|c| db::update_project(c, &stale)).unwrap();
+    let written = store.with_conn(|c| db::update_project(c, &stale)).unwrap();
+    // The write answers with the stored time, not the stale one it was given.
+    assert_eq!(written, Some(sent));
     let now = store.get_project(&project.id).unwrap();
     assert_eq!(now.name, "Renamed");
     assert_eq!(now.updated_at, sent);
+}
+
+#[test]
+fn updating_a_missing_project_reports_it_gone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let (project, _) = store
+        .create_project(CreateProjectRequest {
+            name: "A".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    let mut gone = store.get_project(&project.id).unwrap();
+    gone.id = "missing".to_owned();
+    assert_eq!(
+        store.with_conn(|c| db::update_project(c, &gone)).unwrap(),
+        None
+    );
 }

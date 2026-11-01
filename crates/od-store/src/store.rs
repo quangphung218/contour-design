@@ -272,8 +272,10 @@ impl Store {
             project.metadata = metadata;
         }
         // `updated_at` orders Recent projects by the user's last send
-        // (`mark_project_sent`): a rename or a metadata change keeps it.
-        db::update_project(&self.conn(), &project)?;
+        // (`mark_project_sent`): a rename or a metadata change keeps it,
+        // and the reply carries the stored value, not the one read above.
+        project.updated_at =
+            db::update_project(&self.conn(), &project)?.ok_or(StoreError::ProjectNotFound)?;
         self.write_manifest(&project)?;
         Ok(project)
     }
