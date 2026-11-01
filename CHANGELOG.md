@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.10] - 2026-11-01
+
 ### Added
 
 - Motion makes an MP4 with Contour's own tools. `od media scaffold`
@@ -39,6 +41,9 @@ All notable changes to Contour are recorded here. The format follows
 - `od media wait` accepts `--since` and exits 2 while the task still runs,
   as the copied HyperFrames and e-commerce skills expect. The desktop app
   keeps these exit codes (2, 66) instead of turning them into 1.
+- A composition whose timeline never runs (a missing local script, or a
+  script that throws before registering `window.__timelines.main`) now
+  fails with the reason instead of rendering a still MP4.
 
 ## [0.2.0-beta.9] - 2026-11-01
 
@@ -538,7 +543,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.9...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.10...HEAD
+[0.2.0-beta.10]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.9...v0.2.0-beta.10
 [0.2.0-beta.9]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.8...v0.2.0-beta.9
 [0.2.0-beta.8]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.7...v0.2.0-beta.8
 [0.2.0-beta.7]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.6...v0.2.0-beta.7
