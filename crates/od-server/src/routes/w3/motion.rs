@@ -396,7 +396,11 @@ pub struct AudioPlan {
 /// The file `src` names from folder `from`, which must exist inside the
 /// composition folder `root` (both canonical). `what` names it in errors.
 fn local_file(root: &FsPath, from: &FsPath, src: &str, what: &str) -> Result<PathBuf, String> {
-    let src = src.split(['?', '#']).next().unwrap_or_default();
+    let raw = src.split(['?', '#']).next().unwrap_or_default();
+    // A URL path: `my%20song.wav` is the file `my song.wav`, as a browser
+    // loads it.
+    let decoded = percent_decode(raw);
+    let src = decoded.as_str();
     let missing = || {
         format!(
             "{what}: {src} is not in the composition folder. Add the file there (Contour mixes local files only) or remove the track, then render again"
@@ -412,6 +416,28 @@ fn local_file(root: &FsPath, from: &FsPath, src: &str, what: &str) -> Result<Pat
         return Err(missing());
     }
     Ok(path)
+}
+
+/// `src` with each `%XX` turned back into its byte; a `%` not followed by
+/// two hex digits, or bytes that are not UTF-8, leave `src` as written.
+fn percent_decode(src: &str) -> String {
+    let raw = src.as_bytes();
+    let mut out = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        let hex = |b: Option<&u8>| b.and_then(|b| char::from(*b).to_digit(16));
+        match (raw[i], hex(raw.get(i + 1)), hex(raw.get(i + 2))) {
+            (b'%', Some(h), Some(l)) => {
+                out.push(u8::try_from(h * 16 + l).unwrap_or(b'%'));
+                i += 3;
+            }
+            (b, _, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| src.to_owned())
 }
 
 /// Collects the `<audio>` tracks of a composition: those of `html` (its
@@ -444,19 +470,42 @@ pub fn audio_plan(dir: &FsPath, html: &str, film_seconds: f64) -> Result<AudioPl
         None,
         hyperframes::audio_tags(html).map_err(|e| format!("index.html: {e}"))?,
     )];
-    for sub in hyperframes::composition_refs(html).map_err(|e| format!("index.html: {e}"))? {
+    let required = policy == AudioPolicy::Required;
+    for sub in hyperframes::composition_refs(html) {
         let what = format!("index.html data-composition-src={:?}", sub.src);
-        if !hyperframes::is_local_src(&sub.src) {
-            return Err(format!("{what}: Contour loads local sub-compositions only"));
-        }
-        let file = local_file(&root, &root, &sub.src, &what)?;
-        let text = std::fs::read(&file).map_err(|e| format!("{what}: {e}"))?;
+        // A sub-composition that cannot be read only matters when the
+        // film requires sound: the audio plan never blocks a film that
+        // rendered without it.
+        let file = if hyperframes::is_local_src(&sub.src) {
+            local_file(&root, &root, &sub.src, &what)
+        } else {
+            Err(format!("{what}: Contour loads local sub-compositions only"))
+        };
+        let (file, text) = match file.and_then(|f| {
+            std::fs::read(&f)
+                .map(|t| (f, t))
+                .map_err(|e| format!("{what}: {e}"))
+        }) {
+            Ok(read) => read,
+            Err(e) if required => return Err(e),
+            Err(e) => {
+                tracing::debug!(error = %e, "audio plan: sub-composition skipped");
+                continue;
+            }
+        };
         let tags = hyperframes::audio_tags(&String::from_utf8_lossy(&text))
             .map_err(|e| format!("{}: {e}", sub.src))?;
+        if tags.is_empty() {
+            continue;
+        }
+        // Its tracks need to know where it starts in the film.
+        let (start, duration) = sub
+            .timing
+            .map_err(|e| format!("index.html {e}: it has <audio> tracks, so its data-start and data-duration must be seconds"))?;
         let folder = file
             .parent()
             .map_or_else(|| root.clone(), FsPath::to_path_buf);
-        sources.push((sub.src, folder, sub.start, sub.duration, tags));
+        sources.push((sub.src, folder, start, duration, tags));
     }
     let mut tracks = Vec::new();
     for (label, folder, offset, cut, tags) in sources {
@@ -991,5 +1040,53 @@ mod tests {
             ]
         );
         assert_eq!(plan.policy, AudioPolicy::None);
+    }
+
+    #[test]
+    fn percent_encoded_sources_name_their_file() {
+        assert_eq!(percent_decode("my%20song.wav"), "my song.wav");
+        assert_eq!(percent_decode("a%2Fb%zz%4"), "a/b%zz%4");
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("my song.wav"), b"RIFF").unwrap();
+        let plan = audio_plan(tmp.path(), r#"<audio src="my%20song.wav"></audio>"#, 5.0).unwrap();
+        assert_eq!(plan.tracks.len(), 1);
+    }
+
+    #[test]
+    fn a_sub_composition_without_audio_never_fails_the_plan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("quiet.html"),
+            "<template><p>no sound</p></template>",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("loud.html"),
+            r#"<template><audio src="a.wav"></audio></template>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.wav"), b"RIFF").unwrap();
+        // Clip references, URLs and missing files: skipped, the film is silent.
+        let html = r#"<div data-composition-src="quiet.html" data-start="intro + 2"></div>
+<div data-composition-src="https://cdn.example/x.html"></div>
+<div data-composition-src="gone.html" data-start="el-1"></div>"#;
+        let plan = audio_plan(dir, html, 5.0).unwrap();
+        assert!(plan.tracks.is_empty());
+        // A film that requires sound still fails on what it cannot read.
+        let required = format!(r#"<meta name="od-motion-audio" content="required">{html}"#);
+        let err = audio_plan(dir, &required, 5.0).unwrap_err();
+        assert!(err.contains("local sub-compositions only"), "{err}");
+        // A sub-composition with a track needs numeric timing.
+        let err = audio_plan(
+            dir,
+            r#"<div data-composition-src="loud.html" data-start="intro + 2"></div>"#,
+            5.0,
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("loud.html") && err.contains("<audio> tracks"),
+            "{err}"
+        );
     }
 }

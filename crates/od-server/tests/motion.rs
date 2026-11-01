@@ -642,3 +642,26 @@ async fn audio_errors_fail_the_task_without_an_mp4() {
         std::fs::remove_file(h.path(&pid, "motion-source/film/index.html")).unwrap();
     }
 }
+
+#[tokio::test]
+async fn a_silent_film_with_a_clip_reference_still_renders() {
+    let h = harness();
+    let pid = h.project("Film");
+    h.write(
+        &pid,
+        "motion-source/film/compositions/outro.html",
+        b"<template><div data-composition-id=\"outro\"><p>end</p></div></template>",
+    );
+    h.film(
+        &pid,
+        1.0,
+        "",
+        r#"<div data-composition-id="outro" data-composition-src="compositions/outro.html" data-start="intro + 2"></div>"#,
+    )
+    .await;
+    let task = h.render(&pid, "").await;
+    assert_eq!(task["status"], "done", "{task}");
+    assert_eq!(task["result"]["audioTracks"], 0, "{task}");
+    let (streams, _) = probe(&h.path(&pid, "film.mp4"));
+    assert!(streams.iter().all(|s| !s.contains("Audio:")), "{streams:?}");
+}

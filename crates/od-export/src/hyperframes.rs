@@ -162,10 +162,10 @@ pub struct AudioTag {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompositionRef {
     pub src: String,
-    /// `data-start` in the parent, seconds.
-    pub start: f64,
-    /// `data-duration` in the parent: the sub-composition is cut there.
-    pub duration: Option<f64>,
+    /// `data-start` (seconds, default 0) and `data-duration` in the
+    /// parent, or why they are not numbers (a clip reference such as
+    /// `"intro + 2"`). Only a sub-composition with audio needs them.
+    pub timing: Result<(f64, Option<f64>), String>,
 }
 
 /// Most tracks one film may mix.
@@ -319,23 +319,19 @@ fn has_bare_attr(tag: &str, name: &str) -> bool {
 }
 
 /// The sub-compositions `html` loads, with where they sit in its time.
-///
-/// # Errors
-/// A `data-start` or `data-duration` that is not a number of seconds.
-pub fn composition_refs(html: &str) -> Result<Vec<CompositionRef>, String> {
+#[must_use]
+pub fn composition_refs(html: &str) -> Vec<CompositionRef> {
     let mut out = Vec::new();
     for tag in tags(html, &COMPOSITION_SRC) {
         let src = attr(tag, "data-composition-src")
             .unwrap_or_default()
             .to_owned();
         let what = format!("data-composition-src={src:?}");
-        out.push(CompositionRef {
-            start: seconds(tag, "data-start", &what)?.unwrap_or(0.0),
-            duration: seconds(tag, "data-duration", &what)?,
-            src,
-        });
+        let timing = seconds(tag, "data-start", &what)
+            .and_then(|start| Ok((start.unwrap_or(0.0), seconds(tag, "data-duration", &what)?)));
+        out.push(CompositionRef { src, timing });
     }
-    Ok(out)
+    out
 }
 
 #[cfg(test)]
@@ -462,21 +458,28 @@ mod tests {
         let html = r#"<div data-composition-id="main" data-width="64" data-height="36">
             <div id="el-1" data-composition-id="intro" data-composition-src="compositions/intro.html" data-start="4" data-duration="3"></div>
             <div data-composition-src="compositions/outro.html"></div></div>"#;
-        let refs = composition_refs(html).unwrap();
+        let refs = composition_refs(html);
         assert_eq!(
             refs,
             [
                 CompositionRef {
                     src: "compositions/intro.html".into(),
-                    start: 4.0,
-                    duration: Some(3.0)
+                    timing: Ok((4.0, Some(3.0)))
                 },
                 CompositionRef {
                     src: "compositions/outro.html".into(),
-                    start: 0.0,
-                    duration: None
+                    timing: Ok((0.0, None))
                 },
             ]
+        );
+        let clip =
+            composition_refs(r#"<div data-composition-src="a.html" data-start="intro + 2"></div>"#);
+        assert!(
+            clip[0]
+                .timing
+                .as_ref()
+                .unwrap_err()
+                .contains("clip references")
         );
     }
 }
