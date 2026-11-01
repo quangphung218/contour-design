@@ -3552,6 +3552,7 @@ dependencies = [
  "od-runtime",
  "od-server",
  "od-store",
+ "regex",
  "reqwest 0.12.28",
  "rmcp",
  "serde",
@@ -3596,6 +3597,7 @@ version = "0.2.0-beta.9"
 dependencies = [
  "anyhow",
  "axum",
+ "od-cli",
  "od-content",
  "od-mcp",
  "od-runtime",

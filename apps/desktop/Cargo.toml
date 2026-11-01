@@ -14,6 +14,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+od-cli.workspace = true
 od-content.workspace = true
 od-mcp.workspace = true
 od-runtime.workspace = true
