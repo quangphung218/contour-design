@@ -410,6 +410,22 @@ fn probe(mp4: &Path) -> (Vec<String>, Vec<i16>) {
     (streams, samples)
 }
 
+/// The container duration of the first `kind` (`v` or `a`) stream of
+/// `mp4`, read with the ffprobe next to ffmpeg.
+fn duration(mp4: &Path, kind: &str) -> f64 {
+    let ffmpeg = od_render_cdp::ffmpeg::find_ffmpeg().unwrap();
+    let out = std::process::Command::new(ffmpeg.with_file_name("ffprobe"))
+        .args(["-v", "error", "-select_streams", &format!("{kind}:0")])
+        .args(["-show_entries", "stream=duration", "-of", "csv=p=0"])
+        .arg(mp4)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.trim()
+        .parse()
+        .unwrap_or_else(|_| panic!("ffprobe {kind}: {text:?}"))
+}
+
 /// Root mean square of `samples` between `from` and `to` seconds (8 kHz).
 fn rms(samples: &[i16], from: f64, to: f64) -> f64 {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -501,10 +517,17 @@ async fn music_and_voice_are_mixed_at_their_offsets() {
     let audio: Vec<_> = streams.iter().filter(|s| s.contains("Audio:")).collect();
     assert_eq!(audio.len(), 1, "{streams:?}");
     assert!(audio[0].contains("aac"), "{streams:?}");
-    // As long as the picture (10 s): music is 12 s and gets cut.
-    #[allow(clippy::cast_precision_loss)]
-    let seconds = samples.len() as f64 / 8_000.0;
-    assert!((seconds - 10.0).abs() <= 0.1, "audio lasts {seconds} s");
+    // As long as the picture (10 s): music is 12 s and gets cut. Measured
+    // on the container, not by decoding: ffmpeg 6 decodes the AAC end
+    // padding as extra samples (10.112 s from the same file), ffmpeg 7+
+    // trims it.
+    let mp4 = h.path(&pid, "film.mp4");
+    let (video_s, audio_s) = (duration(&mp4, "v"), duration(&mp4, "a"));
+    assert!((video_s - 10.0).abs() <= 0.01, "video lasts {video_s} s");
+    assert!(
+        (audio_s - video_s).abs() <= 0.1,
+        "audio {audio_s} s, video {video_s} s"
+    );
     // The voice sounds from 2 s to 5 s, over quieter music.
     let (before, voice, after) = (
         rms(&samples, 0.2, 1.8),
