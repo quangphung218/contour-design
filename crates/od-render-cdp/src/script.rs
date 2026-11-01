@@ -141,8 +141,9 @@ pub fn print_slides(w: u32, h: u32) -> String {
 /// Installs the frame bridge over `window.__timelines` and waits for the
 /// root composition's timeline to register: not at all without scripts,
 /// 1 s when the root declares `data-duration`, else up to 15 s. Resolves to
-/// `{duration, timelines}`: `duration` in seconds is the root's
-/// `data-duration`, else the longest registered timeline.
+/// `{duration, timelines, rootId, rootTimeline}`: `duration` in seconds is
+/// the root's `data-duration`, else the longest registered timeline;
+/// `rootTimeline` whether `window.__timelines[rootId]` exists.
 pub fn frame_ready() -> String {
     r#"(async () => {
   const root = document.querySelector('[data-composition-id]');
@@ -196,7 +197,9 @@ pub fn frame_ready() -> String {
       if (Number.isFinite(d) && d > duration) duration = d;
     }
   }
-  return { duration, timelines: timelines().length };
+  const all = window.__timelines;
+  const rootTimeline = !!(all && typeof all === 'object' && (id ? all[id] : timelines().length > 0));
+  return { duration, timelines: timelines().length, rootId: id, rootTimeline };
 })()"#
         .to_owned()
 }

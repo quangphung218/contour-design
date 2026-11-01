@@ -292,23 +292,81 @@ fn a_broken_composition_names_the_missing_field() {
     assert!(text(&out).contains("media scaffold"), "{}", text(&out));
 }
 
+/// Daemon env for a real render. Inside another sandbox (the maintainer's
+/// pre-merge check runs `make check` under sandbox-exec) Chrome cannot
+/// start its own; the test opts out there, as a user would with
+/// OD_CHROME_NO_SANDBOX=1 (as m5.rs).
+fn chrome_env() -> &'static [(&'static str, &'static str)] {
+    let sandboxed =
+        !od_render_cdp::find_chrome().is_ok_and(|c| od_render_cdp::chrome_sandbox_works(&c));
+    if sandboxed {
+        &[(od_render_cdp::NO_SANDBOX_ENV, "1")]
+    } else {
+        &[]
+    }
+}
+
+#[test]
+fn a_missing_local_script_is_named() {
+    let d = start(&[]);
+    let pid = project(&d);
+    assert!(scaffold(&d, &pid).status.success());
+    let index = project_dir(&d, &pid).join("motion-source/film/index.html");
+    let html = std::fs::read_to_string(&index).unwrap();
+    // What the copied skill used to promise: a GSAP the scaffold lacks.
+    let with_gsap = html.replacen(
+        "<script>",
+        r#"<script src="./gsap.min.js"></script><script>"#,
+        1,
+    );
+    std::fs::write(&index, with_gsap).unwrap();
+    let out = generate(&d, &pid);
+    assert!(!out.status.success(), "{}", text(&out));
+    let all = text(&out);
+    assert!(
+        all.contains("loads ./gsap.min.js, which is not in the project"),
+        "{all}"
+    );
+    assert!(!project_dir(&d, &pid).join("film.mp4").exists());
+}
+
+#[test]
+fn a_timeline_that_never_registers_fails_the_render() {
+    if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
+        eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
+        return;
+    }
+    let d = start(chrome_env());
+    let pid = project(&d);
+    assert!(scaffold(&d, &pid).status.success());
+    let index = project_dir(&d, &pid).join("motion-source/film/index.html");
+    let html = std::fs::read_to_string(&index).unwrap();
+    // The page still names window.__timelines, but throws before it gets
+    // there: the frames would all be the same.
+    let throws = html.replacen(
+        "<script>",
+        "<script>throw new Error('before registering');",
+        1,
+    );
+    assert!(throws.contains("window.__timelines.main"));
+    std::fs::write(&index, throws).unwrap();
+    let out = generate(&d, &pid);
+    assert!(!out.status.success(), "{}", text(&out));
+    let all = text(&out);
+    assert!(
+        all.contains("window.__timelines.main was never registered"),
+        "{all}"
+    );
+    assert!(!project_dir(&d, &pid).join("film.mp4").exists());
+}
+
 #[test]
 fn scaffold_then_generate_renders_the_film() {
     if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
         eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
         return;
     }
-    // Inside another sandbox (the maintainer's pre-merge check runs `make
-    // check` under sandbox-exec) Chrome cannot start its own; the test opts
-    // out there, as a user would with OD_CHROME_NO_SANDBOX=1 (as m5.rs).
-    let sandboxed =
-        !od_render_cdp::find_chrome().is_ok_and(|c| od_render_cdp::chrome_sandbox_works(&c));
-    let env: &[(&str, &str)] = if sandboxed {
-        &[(od_render_cdp::NO_SANDBOX_ENV, "1")]
-    } else {
-        &[]
-    };
-    let d = start(env);
+    let d = start(chrome_env());
     let pid = project(&d);
     assert!(scaffold(&d, &pid).status.success());
 

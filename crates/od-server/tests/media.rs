@@ -283,7 +283,8 @@ async fn mp4_export_encodes_the_composition() {
         vec![(
             FrameOptions {
                 fps: 30,
-                duration_ms: 2000
+                duration_ms: 2000,
+                require_timeline: false,
             },
             321,
             181

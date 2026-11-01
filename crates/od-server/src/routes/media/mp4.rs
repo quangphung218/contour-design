@@ -39,7 +39,8 @@ fn bad(code: ErrorCode, status: StatusCode, message: impl Into<String>) -> Expor
 
 /// Captures `entry` (a composition read as `comp`) at `fps` and encodes
 /// it with `ffmpeg`: the MP4, its frames, and the PNG of the frame at each
-/// of `keep` (seconds), clamped to the last frame.
+/// of `keep` (seconds), clamped to the last frame. `require_timeline`:
+/// fail when the page never registered its root timeline.
 ///
 /// # Errors
 /// Renderer and ffmpeg failures, I/O.
@@ -53,6 +54,7 @@ pub(crate) async fn render_mp4(
     fps: u32,
     ffmpeg: &std::path::Path,
     keep: &[f64],
+    require_timeline: bool,
 ) -> ExportResult<(Vec<u8>, FrameSet, Vec<Vec<u8>>)> {
     base.width = Some(comp.width);
     base.height = Some(comp.height);
@@ -64,6 +66,7 @@ pub(crate) async fn render_mp4(
             FrameOptions {
                 fps,
                 duration_ms: comp.duration_ms.unwrap_or(0),
+                require_timeline,
             },
             &frames_dir,
         )
@@ -152,6 +155,7 @@ pub async fn export_mp4(
         fps,
         &ffmpeg,
         &[],
+        false,
     )
     .await?;
     let Some(output) = output else {

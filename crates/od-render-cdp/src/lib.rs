@@ -870,6 +870,12 @@ impl CdpRenderer {
         let result = tokio::time::timeout(FRAME_CAPTURE_TIMEOUT, async {
             s.settle().await?;
             let meta = s.eval(&script::frame_ready()).await?;
+            if options.require_timeline && meta.get("rootTimeline") != Some(&Value::Bool(true)) {
+                let id = meta.get("rootId").and_then(Value::as_str).unwrap_or("main");
+                return Err(RenderError::Failed(format!(
+                    "window.__timelines.{id} was never registered: a script failed, was blocked or never ran, so the film would not move. Check the page's scripts (local files only; nothing is downloaded)"
+                )));
+            }
             let duration_ms = if options.duration_ms > 0 {
                 options.duration_ms
             } else {

@@ -310,6 +310,27 @@ fn local_scripts(html: &str) -> Vec<String> {
         .collect()
 }
 
+/// The project path of script `src` loaded by a page in `dir`: `./` and
+/// `..` resolved, query and fragment dropped. `None` when it leaves the
+/// project or is absolute.
+fn script_path(dir: &str, src: &str) -> Option<String> {
+    let src = src.split(['?', '#']).next().unwrap_or_default();
+    if src.starts_with('/') || src.is_empty() {
+        return None;
+    }
+    let mut parts: Vec<&str> = dir.split('/').filter(|p| !p.is_empty()).collect();
+    for seg in src.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            s => parts.push(s),
+        }
+    }
+    Some(parts.join("/"))
+}
+
 /// Whether `html` declares `<meta name="od-motion-output" content="video">`.
 #[must_use]
 pub fn declares_video(html: &str) -> bool {
@@ -450,10 +471,15 @@ async fn render_task(
     let (html, scripts) = state
         .blocking(move |s| {
             let html = String::from_utf8_lossy(&s.read_file(&pid, &entry_name)?.1).into_owned();
+            // Each local script's text, or `None` when it is not there.
             let scripts = local_scripts(&html)
                 .into_iter()
-                .filter_map(|src| s.read_file(&pid, &format!("{dir}/{src}")).ok())
-                .map(|(_, b)| String::from_utf8_lossy(&b).into_owned())
+                .map(|src| {
+                    let text = script_path(&dir, &src)
+                        .and_then(|p| s.read_file(&pid, &p).ok())
+                        .map(|(_, b)| String::from_utf8_lossy(&b).into_owned());
+                    (src, text)
+                })
                 .collect::<Vec<_>>();
             Ok((html, scripts))
         })
@@ -464,6 +490,14 @@ async fn render_task(
                 e.message, checked.dir
             )
         })?;
+    // A script the page cannot load leaves the timeline unregistered and
+    // the film standing still: refuse it by name.
+    if let Some((src, _)) = scripts.iter().find(|(_, text)| text.is_none()) {
+        return Err(format!(
+            "index.html loads {src}, which is not in the project. Contour bundles no GSAP or other library and downloads nothing: add the file next to index.html or write the motion without it, then render again"
+        ));
+    }
+    let scripts: Vec<String> = scripts.into_iter().filter_map(|(_, t)| t).collect();
     let (comp, poster) = check_composition(&html, &scripts)?;
     let fps = req.fps.unwrap_or(comp.fps);
     let ffmpeg = find_ffmpeg_with(env(FFMPEG_PATH_ENV).map(Into::into))
@@ -477,7 +511,7 @@ async fn render_task(
     let seconds = comp.duration_ms.unwrap_or(0) as f64 / 1000.0;
     let keep = [seconds * 0.1, poster, seconds * 0.95];
     let (bytes, frames, review) = render_mp4(
-        state, renderer, &entry, &mut base, &comp, fps, &ffmpeg, &keep,
+        state, renderer, &entry, &mut base, &comp, fps, &ffmpeg, &keep, true,
     )
     .await
     .map_err(|e| {
@@ -678,6 +712,24 @@ mod tests {
         assert_eq!(comp.duration_ms, Some(3000));
         assert!((poster - 1.5).abs() < 1e-9);
         assert!(declares_video(&html));
+    }
+
+    #[test]
+    fn script_paths_resolve_inside_the_project() {
+        assert_eq!(
+            script_path("m/film", "./gsap.min.js").as_deref(),
+            Some("m/film/gsap.min.js")
+        );
+        assert_eq!(
+            script_path("m/film", "js/a.js?v=2#x").as_deref(),
+            Some("m/film/js/a.js")
+        );
+        assert_eq!(
+            script_path("m/film", "../lib/a.js").as_deref(),
+            Some("m/lib/a.js")
+        );
+        assert_eq!(script_path("m", "../../a.js"), None);
+        assert_eq!(script_path("m", "/a.js"), None);
     }
 
     #[test]
