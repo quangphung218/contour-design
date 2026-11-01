@@ -206,7 +206,7 @@ enum FilesCommand {
 /// The daemon (`daemon start`, no subcommand) and `mcp` are left out: the
 /// app is the daemon, and it serves `mcp` itself.
 pub const CLIENT_COMMANDS: &[&str] = &[
-    "project", "files", "run", "export", "lint", "media", "plugin", "research",
+    "project", "files", "run", "export", "lint", "media", "plugin", "research", "tools",
 ];
 
 /// `args` (with the program name first) minus a second argument naming
@@ -615,6 +615,23 @@ fn watch_run(client: &Client, id: &str, after: Option<u64>) -> anyhow::Result<()
 mod tests {
     use super::*;
     use clap::CommandFactory;
+
+    /// A client command missing here makes the desktop app open its window
+    /// instead of answering `$OD_BIN <command>` (beta.11 shipped `tools`
+    /// that way).
+    #[test]
+    fn the_desktop_app_answers_every_client_command() {
+        for sub in Cli::command().get_subcommands() {
+            let name = sub.get_name();
+            if matches!(name, "daemon" | "mcp" | "help") {
+                continue;
+            }
+            assert!(
+                CLIENT_COMMANDS.contains(&name),
+                "{name} is not in CLIENT_COMMANDS"
+            );
+        }
+    }
 
     #[test]
     fn exit_codes_keep_their_number() {

@@ -19,6 +19,7 @@ All notable changes to Contour are recorded here. The format follows
   page shows in the project's Live tab without the agent calling the API
   or writing `index.html`. `od tools connectors list` prints an empty list
   and `execute` says Contour has no connectors yet.
+  The desktop app answers these commands too.
 
 ### Changed
 
