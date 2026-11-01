@@ -35,20 +35,7 @@ const ALLOWED: &[(&str, &[&str], &str)] = &[
     (
         "tools directions",
         &["plugins/_official/atoms/direction-picker/"],
-        "spec 2.6 agent-invoked `od tools` group, not built yet; outside the Motion brief (beta.10)",
-    ),
-    (
-        "tools connectors",
-        &["design-templates/live-artifact/"],
-        "spec 2.6 agent-invoked `od tools` group, not built yet; outside the Motion brief (beta.10)",
-    ),
-    (
-        "tools live-artifacts",
-        &[
-            "design-templates/live-artifact/",
-            "design-templates/live-dashboard/",
-        ],
-        "spec 2.6 agent-invoked `od tools` group, not built yet; outside the Motion brief (beta.10)",
+        "N/A: Contour inlines the whole direction library in the prompt (spec 2.4 legacy prompt); the atom's \"In Contour\" line says never to call it",
     ),
 ];
 
@@ -108,7 +95,7 @@ struct Use {
 fn scan(files: &[(String, String)]) -> (Vec<Use>, Vec<Use>) {
     let var = Regex::new(r"\$\{?(OD_[A-Z0-9_]+)").unwrap();
     let cmd =
-        Regex::new(r#"\$\{?OD_BIN\}?"?\s+([a-z][a-z0-9-]*)(?:\s+([a-z][a-z0-9-]*))?([^\n`|;]*)"#)
+        Regex::new(r#"\$\{?OD_BIN\}?"?\s+([a-z][a-z0-9-]*)(?:\s+([a-z][a-z0-9-]*))?(?:\s+([a-z][a-z0-9-]*))?([^\n`|;]*)"#)
             .unwrap();
     let flag = Regex::new(r"(?:^|\s)--([a-z][a-z0-9-]*)").unwrap();
     let (mut vars, mut cmds) = (Vec::new(), Vec::new());
@@ -121,11 +108,15 @@ fn scan(files: &[(String, String)]) -> (Vec<Use>, Vec<Use>) {
             });
         }
         for c in cmd.captures_iter(text) {
-            let name = match c.get(2) {
-                Some(sub) => format!("{} {}", &c[1], sub.as_str()),
-                None => c[1].to_owned(),
-            };
-            let rest = c.get(3).map_or("", |m| m.as_str());
+            // Up to three words (`tools live-artifacts create`); a word
+            // that is not a subcommand is checked in `check_command`.
+            let name = [c.get(1), c.get(2), c.get(3)]
+                .into_iter()
+                .flatten()
+                .map(|m| m.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let rest = c.get(4).map_or("", |m| m.as_str());
             let flags = flag.captures_iter(rest).map(|f| f[1].to_owned()).collect();
             cmds.push(Use {
                 file: file.clone(),
@@ -141,16 +132,23 @@ fn scan(files: &[(String, String)]) -> (Vec<Use>, Vec<Use>) {
 fn check_command(od: &clap::Command, u: &Use) -> Option<String> {
     let mut words = u.name.split(' ');
     let group = words.next()?;
-    let Some(g) = od.find_subcommand(group) else {
+    let Some(mut target) = od.find_subcommand(group) else {
         return Some(format!("`od {}` does not exist (no `od {group}`)", u.name));
     };
-    let target = match words.next() {
-        Some(sub) if g.has_subcommands() => match g.find_subcommand(sub) {
-            Some(s) => s,
-            None => return Some(format!("`od {group} {sub}` does not exist")),
-        },
-        _ => g,
-    };
+    let mut path = vec![group];
+    // Walk down the subcommands; a word after a leaf is an argument.
+    for word in words {
+        if !target.has_subcommands() {
+            break;
+        }
+        match target.find_subcommand(word) {
+            Some(sub) => {
+                target = sub;
+                path.push(word);
+            }
+            None => return Some(format!("`od {} {word}` does not exist", path.join(" "))),
+        }
+    }
     let known = |f: &str| {
         target.get_arguments().any(|a| a.get_long() == Some(f))
             || od.get_arguments().any(|a| a.get_long() == Some(f))
@@ -159,13 +157,14 @@ fn check_command(od: &clap::Command, u: &Use) -> Option<String> {
     u.flags
         .iter()
         .find(|f| !known(f))
-        .map(|f| format!("`od {}` has no --{f}", u.name))
+        .map(|f| format!("`od {}` has no --{f}", path.join(" ")))
 }
 
 fn allowed(u: &Use) -> bool {
-    ALLOWED
-        .iter()
-        .any(|(name, dirs, _)| *name == u.name && dirs.iter().any(|d| u.file.starts_with(d)))
+    ALLOWED.iter().any(|(name, dirs, _)| {
+        (u.name == *name || u.name.starts_with(&format!("{name} ")))
+            && dirs.iter().any(|d| u.file.starts_with(d))
+    })
 }
 
 /// Violations of the contract in `files`.
@@ -243,7 +242,11 @@ fn a_missing_host_command_or_variable_fails() {
         (r#"`"$OD_BIN" media generate --warp 9`"#, "--warp"),
         ("Read `$OD_SECRET_THING` first.", "OD_SECRET_THING"),
         // An allowed name outside its folders is still a violation.
-        (r#"`"$OD_BIN" tools connectors list`"#, "tools connectors"),
+        (r#"`"$OD_BIN" tools directions --id x`"#, "tools directions"),
+        (
+            r#"`"$OD_BIN" tools live-artifacts publish`"#,
+            "tools live-artifacts publish",
+        ),
         ("`$OD_HYPERFRAMES_BIN lint`", "OD_HYPERFRAMES_BIN"),
     ];
     for (text, want) in cases {
