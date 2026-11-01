@@ -51,13 +51,13 @@ reproduces by hand about one try in two.
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
 | QA-026 | 🟠 | Quitting Contour while the agent works leaves the agent running: it keeps editing the project after the app is gone | `resilience.qa.mjs` RES-01 | Fixed |
-| QA-027 | 🟠 | Manual edit: clicking text inside a section with `data-od-id` picks the whole section, so the text cannot be edited by clicking it (every page the real Claude writes) | `studio.qa.mjs` STU-19 | Open |
+| QA-027 | 🟠 | Manual edit: clicking text inside a section with `data-od-id` picks the whole section, so the text cannot be edited by clicking it (every page the real Claude writes) | `studio.qa.mjs` STU-19 | Fixed |
 | QA-028 | 🟠 | Opening a folder Contour cannot write to shows an error but adds a project anyway, one more per try | `resilience.qa.mjs` RES-03 | Fixed |
 | QA-029 | 🟡 | Storage errors reach the user raw: "The daemon hit an error: io error: Permission denied (os error 13) (HTTP 500)", "… No space left on device (os error 28)" | `resilience.qa.mjs` RES-04; full disk manual | Fixed |
 | QA-030 | 🟡 | A turn cut short because Contour closed or crashed says "daemon restarted" and "check the agent in Settings", with an Open Settings button | `resilience.qa.mjs` RES-02 | Fixed |
-| QA-031 | 🟡 | The Export menu offers PowerPoint and MP4 for a plain page; both end in "Export failed: The request was not accepted: … (HTTP 422)" | `export.qa.mjs` EXP-13 | Open |
+| QA-031 | 🟡 | The Export menu offers PowerPoint and MP4 for a plain page; both end in "Export failed: The request was not accepted: … (HTTP 422)" | `export.qa.mjs` EXP-13 | Fixed |
 | QA-032 | 🔵 | MCP `write_file` saves "trang chủ.html" as "trang-chủ.html"; `get_file` on the name the agent used answers 404 | `mcp.qa.mjs` MCP-02 | Fixed |
-| QA-033 | 🟡 | With an edit not applied, the browser's Back works one try in two: after Cancel, a second Back does nothing, or Leave stays on the page | `drafts.qa.mjs` DL-24 | Open |
+| QA-033 | 🟡 | With an edit not applied, the browser's Back works one try in two: after Cancel, a second Back does nothing, or Leave stays on the page | `drafts.qa.mjs` DL-24, DL-27 | Fixed |
 | QA-018 | 🔴 | With a BYOK provider saved without a key on a host the daemon calls public (`http://ollama:11434`, `gpu-box`), every Settings save (theme, language…) is refused with 400 | `settings.qa.mjs` SET-07, SET-08 | Fixed |
 | QA-019 | 🟠 | A message steered into the running turn comes back in the composer after a reload | `drafts.qa.mjs` DL-20 | Fixed |
 | QA-022 | 🟠 | The browser's Back with an edit not applied leaves at once; the typed text is lost | `drafts.qa.mjs` DL-24 | Fixed |
@@ -607,6 +607,9 @@ Reported by the UX review of 759581a.
   right for comments (the original's `comment-bridge.ts` does the same),
   not for manual edit: use `e.target` in that mode; `selectorFor` already
   names a child as `[data-od-id=…] > p:nth-of-type(1)`.
+- **Fixed** (8f7a6ce4): `od:select-mode` carries `exact`; the host sets it
+  for manual edit only and the bridge then picks `e.target`. Comments still
+  climb to the nearest `data-od-id`.
 
 ## QA-028 🟠 A folder that cannot be written to adds a project although opening it failed
 
@@ -717,6 +720,10 @@ Reported by the UX review of 759581a.
   the file name only; PowerPoint needs the deck signal the preview already
   has (`deck.rs`), MP4 a `[data-composition-id]` root. Or export a page as
   a one-slide deck.
+- **Fixed** (f72703a4): the bridge posts `od:export-fit` (slides found by
+  the renderer's own selectors, a composition root or not) on ready and
+  load; the menu leaves PowerPoint and MP4 out until the page has them.
+  EXP-12 now asserts both are left out for a plain page.
 
 ## QA-032 🔵 MCP: a file written under a name with a space cannot be read back under it
 
@@ -768,3 +775,15 @@ Reported by the UX review of 759581a.
   `{odGuard: true}`) and decide from the state, not the URL, whether Back
   landed on the page's own entry; push only when the current entry is not
   already the guard's.
+- **Fixed** (44d85f34), not reproduced as DL-24 on the machine the fix was
+  made on: DL-24 (eight tries) passed 3 of 3 runs before and after the fix
+  (load 3–7), and a `history.length` probe before the fix stayed at 4 in 22 tries. Root
+  cause found instead: a new preview URL (an agent write, or a late file
+  event just after the Studio opens) set a new `src` on the live iframe,
+  which adds an entry to the tab's history; Back then went back inside the
+  iframe, the page saw no `popstate`, and Leave's `go(-2)` stayed on the
+  page (`history.length` 5). The leave guard itself was not at fault. The
+  preview iframe is now keyed by its URL, and a new iframe's first load
+  adds no entry. DL-27 forces the reload between the edit and Back: red
+  on the build without the fix in 2 of 2 runs, green with it. If DL-24
+  goes red again elsewhere, look at the guard's `go(-1)`/`go(-2)` above.
