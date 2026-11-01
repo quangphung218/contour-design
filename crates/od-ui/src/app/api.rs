@@ -95,6 +95,21 @@ pub async fn post_bytes<B: Serialize>(path: &str, body: &B) -> ApiResult<Vec<u8>
     res.binary().await.map_err(network)
 }
 
+/// [`post_bytes`] plus the value of response header `header`.
+pub async fn post_bytes_with_header<B: Serialize>(
+    path: &str,
+    body: &B,
+    header: &str,
+) -> ApiResult<(Vec<u8>, Option<String>)> {
+    let req = Request::post(path).json(body).map_err(network)?;
+    let res = req.send().await.map_err(network)?;
+    if !res.ok() {
+        return Err(error_of(res).await);
+    }
+    let value = res.headers().get(header);
+    Ok((res.binary().await.map_err(network)?, value))
+}
+
 /// `GET` returning raw bytes (archive download).
 pub async fn get_bytes(path: &str) -> ApiResult<Vec<u8>> {
     let res = Request::get(path).send().await.map_err(network)?;

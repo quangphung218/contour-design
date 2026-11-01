@@ -326,14 +326,20 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         leptos::task::spawn_local(async move {
             let base = ctx.base();
             let res = match format {
-                Format::Zip => api::get_bytes(&format!("{base}/archive")).await,
+                Format::Zip => api::get_bytes(&format!("{base}/archive"))
+                    .await
+                    .map(|b| (b, None)),
                 Format::Markdown | Format::Jsx => {
                     let path = file.clone().unwrap_or_default();
-                    api::get_bytes(&format!("{base}/raw/{}", api::file_path(&path))).await
+                    api::get_bytes(&format!("{base}/raw/{}", api::file_path(&path)))
+                        .await
+                        .map(|b| (b, None))
                 }
                 Format::JsxHtml => {
                     let path = file.clone().unwrap_or_default();
-                    api::get_bytes(&format!("{base}/react/{}", api::file_path(&path))).await
+                    api::get_bytes(&format!("{base}/react/{}", api::file_path(&path)))
+                        .await
+                        .map(|b| (b, None))
                 }
                 _ => {
                     let kind = match format {
@@ -352,14 +358,21 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                     } else if format == Format::Webp {
                         body["imageFormat"] = json!("webp");
                     }
-                    api::post_bytes(&format!("{base}/export/{kind}"), &body).await
+                    // An MP4 says how many audio tracks it mixes.
+                    api::post_bytes_with_header(
+                        &format!("{base}/export/{kind}"),
+                        &body,
+                        "x-od-audio-tracks",
+                    )
+                    .await
                 }
             };
             busy.set(false);
             match res {
-                Ok(bytes) => {
+                Ok((bytes, tracks)) => {
                     download(&bytes, &name, format.mime());
-                    status.set(Some(Ok(tf(T::Exported, &[&name]))));
+                    let note = audio_note(tracks.and_then(|n| n.trim().parse().ok()));
+                    status.set(Some(Ok(format!("{}{note}", tf(T::Exported, &[&name])))));
                     mark_exported(&base).await;
                 }
                 Err(e) => status.set(Some(Err(tf(T::ExportFailed, &[&e.to_string()])))),
@@ -583,9 +596,20 @@ pub(super) async fn copy_text(text: &str) -> Result<(), String> {
         .map_err(|e| format!("{e:?}"))
 }
 
+/// ` · no audio` or ` · N audio tracks` after an MP4 export, from its
+/// `x-od-audio-tracks` header (or `audioTracks`); empty when unknown.
+pub fn audio_note(tracks: Option<u64>) -> String {
+    match tracks {
+        None => String::new(),
+        Some(0) => format!(" · {}", t(T::ExportNoAudio)),
+        Some(1) => format!(" · {}", t(T::ExportAudioTrack)),
+        Some(n) => format!(" · {}", tf(T::ExportAudioTracks, &[&n.to_string()])),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{DesignMd, design_md_state, toast_expired};
+    use super::{DesignMd, audio_note, design_md_state, toast_expired};
     use od_contracts::{FileKind, ProjectFile};
 
     fn file(path: &str, mtime: f64) -> ProjectFile {
@@ -647,6 +671,14 @@ mod tests {
             .collect();
         all.dedup();
         assert_eq!(all.len(), 12);
+    }
+
+    #[test]
+    fn an_mp4_export_says_how_much_sound_it_carries() {
+        assert_eq!(audio_note(None), "");
+        assert!(audio_note(Some(0)).contains("no audio"));
+        assert!(audio_note(Some(1)).contains("1 audio track"));
+        assert!(audio_note(Some(2)).contains("2 audio tracks"));
     }
 
     #[test]
