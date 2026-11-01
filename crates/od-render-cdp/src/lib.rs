@@ -869,7 +869,7 @@ impl CdpRenderer {
         let s = self.open(target).await?;
         let result = tokio::time::timeout(FRAME_CAPTURE_TIMEOUT, async {
             s.settle().await?;
-            let meta = s.eval(&script::frame_ready()).await?;
+            let meta = s.eval(&script::frame_ready(options.require_timeline)).await?;
             if options.require_timeline && meta.get("rootTimeline") != Some(&Value::Bool(true)) {
                 let id = meta.get("rootId").and_then(Value::as_str).unwrap_or("main");
                 return Err(RenderError::Failed(format!(

@@ -8,6 +8,12 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A Motion render that requires a timeline waits up to 15 s for it to
+  register, even when the composition declares `data-duration`; a
+  timeline added by a slow script no longer fails the render.
+
 ## [0.2.0-beta.10] - 2026-11-01
 
 ### Added

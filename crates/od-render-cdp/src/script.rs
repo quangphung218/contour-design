@@ -140,11 +140,13 @@ pub fn print_slides(w: u32, h: u32) -> String {
 
 /// Installs the frame bridge over `window.__timelines` and waits for the
 /// root composition's timeline to register: not at all without scripts,
-/// 1 s when the root declares `data-duration`, else up to 15 s. Resolves to
+/// 1 s when the root declares `data-duration` and `require_timeline` is
+/// off, else up to 15 s (a required timeline may register late, after a
+/// declared duration). Resolves to
 /// `{duration, timelines, rootId, rootTimeline}`: `duration` in seconds is
 /// the root's `data-duration`, else the longest registered timeline;
 /// `rootTimeline` whether `window.__timelines[rootId]` exists.
-pub fn frame_ready() -> String {
+pub fn frame_ready(require_timeline: bool) -> String {
     r#"(async () => {
   const root = document.querySelector('[data-composition-id]');
   const id = root && root.getAttribute('data-composition-id');
@@ -155,10 +157,12 @@ pub fn frame_ready() -> String {
   };
   // Scripts may register timelines late (GSAP loading). Nothing to wait
   // for without scripts; with a declared duration, only a short grace:
-  // `seek` looks timelines up again on every frame anyway.
+  // `seek` looks timelines up again on every frame anyway. A required
+  // timeline gets the full wait: the render fails without it.
+  const requireTimeline = __OD_REQUIRE_TIMELINE__;
   const declaredAtStart = Number(root && root.getAttribute('data-duration'));
   const wait = !document.querySelector('script') ? 0
-    : Number.isFinite(declaredAtStart) && declaredAtStart > 0 ? 1000 : 15000;
+    : !requireTimeline && Number.isFinite(declaredAtStart) && declaredAtStart > 0 ? 1000 : 15000;
   const deadline = Date.now() + wait;
   while (Date.now() < deadline) {
     const all = window.__timelines;
@@ -201,7 +205,7 @@ pub fn frame_ready() -> String {
   const rootTimeline = !!(all && typeof all === 'object' && (id ? all[id] : timelines().length > 0));
   return { duration, timelines: timelines().length, rootId: id, rootTimeline };
 })()"#
-        .to_owned()
+        .replace("__OD_REQUIRE_TIMELINE__", if require_timeline { "true" } else { "false" })
 }
 
 /// Seeks every timeline to `seconds` and waits two frames.

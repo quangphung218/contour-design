@@ -187,3 +187,54 @@ async fn a_composition_without_timelines_does_not_wait_15_s() {
     let took = started.elapsed();
     assert!(took < std::time::Duration::from_secs(8), "took {took:?}");
 }
+
+/// Declares its duration but registers the timeline 2 s late, as a slow
+/// script would. Green after the timeline seeks to 0.
+const LATE_TIMELINE: &str = r#"<!doctype html><html><head><style>
+html,body{margin:0;background:#000}
+#stage{width:320px;height:180px;background:rgb(220,30,30)}
+</style></head><body>
+<div id="stage" data-composition-id="main" data-width="320" data-height="180" data-fps="10" data-duration="0.5"></div>
+<script>
+  setTimeout(() => {
+    const stage = document.getElementById('stage');
+    window.__timelines = window.__timelines || {};
+    window.__timelines.main = {
+      pause() {},
+      duration() { return 0.5; },
+      seek(t) { stage.style.background = 'rgb(30,200,30)'; return this; },
+    };
+  }, 2000);
+</script></body></html>"#;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_required_timeline_registered_late_still_renders() {
+    if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
+        eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
+        return;
+    }
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
+    let dir = tempfile::tempdir().unwrap();
+    let html = dir.path().join("index.html");
+    std::fs::write(&html, LATE_TIMELINE).unwrap();
+    let mut target = RenderTarget::new(html);
+    target.width = 320;
+    target.height = 180;
+    let frames_dir = dir.path().join("frames");
+    let frames = renderer
+        .render_frames(
+            &target,
+            FrameOptions {
+                fps: 10,
+                duration_ms: 500,
+                require_timeline: true,
+            },
+            &frames_dir,
+        )
+        .await
+        .unwrap();
+    assert_eq!(frames.count, 5);
+    let first = std::fs::read(frames_dir.join(frame_file_name(0))).unwrap();
+    let green = pixel(&first, 100, 100);
+    assert!(green[1] > 180 && green[0] < 80, "first frame {green:?}");
+}
