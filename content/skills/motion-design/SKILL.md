@@ -387,14 +387,17 @@ disagree, follow this section.
   "local only"; so do `loop`, `data-playback-rate` and `data-media-start`.
   Audio-reactive analysis, ducking and looping are not done: pre-trim and
   pre-mix the files instead.
-- With `od-motion-audio=required`, a track whose file is missing fails the
-  render with the file's name and no MP4 is written: add the file, then
-  render again.
+- A track whose file is missing fails the render with the file's name and
+  no MP4 is written, unless the film declares `content="silent"`: add the
+  file (or remove the track), then render again.
 - If you have no audio file (none supplied, and you cannot write an original
   WAV into the composition folder), make the film silent: declare
   `content="silent"`, leave out `<audio>`, and tell the user plainly that the
   MP4 has no sound. Never call `ffmpeg` to synthesize, mix or mux audio
   yourself.
+- If you synthesized the music yourself, say so in your reply: it is a
+  placeholder. Tell the user they can replace `assets/music.wav` with their
+  own file (same name, or update the `src`) and ask you to render again.
 - The `media generate` summary says what went into the MP4 ("AAC, 2 audio
   tracks mixed", "no audio" or "silent by design"). That line is your audio
   check: do not probe the MP4. The scaffold's preview player shows the
