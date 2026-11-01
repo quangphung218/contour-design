@@ -61,7 +61,7 @@ pub fn Onboarding() -> impl IntoView {
                 Ok(v) => TestState::Done(v),
                 Err(e) => TestState::Failed(e.to_string()),
             };
-            if seq.get_value() == mine {
+            if is_latest(seq, mine) {
                 test.set(Some(res));
             }
         });
@@ -89,7 +89,9 @@ pub fn Onboarding() -> impl IntoView {
                 still_none.set(shell.agents.with_untracked(
                     |a| matches!(a, Some(Ok(list)) if !list.iter().any(installed)),
                 ));
-                if let Some(agent) = had.filter(|a| picked.get_untracked().as_ref() == Some(a)) {
+                if let Some(agent) =
+                    had.filter(|a| picked.try_get_untracked().flatten().as_ref() == Some(a))
+                {
                     run_test(agent);
                 }
             });
@@ -255,6 +257,13 @@ const CHROME_URL: &str = "https://www.google.com/chrome/";
 
 /// On this machine: ready, or installed and waiting for setup (DeepSeek
 /// Harness without its profile). BYOK is not an agent here.
+/// Whether test `mine` is still the latest one. False once onboarding is
+/// gone (Continue or Skip while the test ran): its counter is disposed and
+/// reading it would panic.
+fn is_latest(seq: StoredValue<u32>, mine: u32) -> bool {
+    seq.try_get_value() == Some(mine)
+}
+
 fn installed(a: &AgentInfo) -> bool {
     (a.available || a.needs_setup) && a.id != "byok"
 }
@@ -590,6 +599,17 @@ mod tests {
             error: None,
             needs_setup,
         }
+    }
+
+    #[test]
+    fn a_test_answering_after_onboarding_closed_is_dropped() {
+        // Continue (or Skip) while the connection test runs: the screen is
+        // gone when the answer comes, and so is its counter.
+        let owner = Owner::new();
+        let seq = owner.with(|| StoredValue::new(1u32));
+        assert!(is_latest(seq, 1));
+        owner.cleanup();
+        assert!(!is_latest(seq, 1));
     }
 
     #[test]

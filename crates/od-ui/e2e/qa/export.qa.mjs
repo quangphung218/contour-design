@@ -156,8 +156,9 @@ test('EXP-12', 'The Export menu folds images and PowerPoint under one name each 
   await menu.waitFor();
   assert.equal(await page.getByTestId('export-png').count(), 0, 'image formats unfolded from the start');
   assert.equal(await menu.locator('[data-testid^="export-"]:disabled').count(), 0, 'greyed formats without a reason');
-  for (const id of ['export-md', 'export-jsx', 'export-jsx-html']) assert.equal(await page.getByTestId(id).count(), 0, `${id} for a page`);
-  assert.equal((await page.getByTestId('export-mp4').innerText()).trim(), 'MP4 video');
+  // A plain page has no slides and no composition root: PowerPoint and MP4
+  // would end in a 422 (QA-031).
+  for (const id of ['export-md', 'export-jsx', 'export-jsx-html', 'export-powerpoint', 'export-mp4']) assert.equal(await page.getByTestId(id).count(), 0, `${id} for a page`);
   assert.doesNotMatch(await menu.innerText(), /HyperFrames/);
   const image = page.getByTestId('export-image');
   await image.click();
@@ -166,9 +167,14 @@ test('EXP-12', 'The Export menu folds images and PowerPoint under one name each 
     await menu.locator('.menu-sub').evaluateAll((els) => els.map((e) => e.innerText.trim())),
     ['PNG', 'JPEG', 'WebP'],
   );
-  await page.getByTestId('export-powerpoint').click();
+  // A deck folds the two PowerPoint kinds under one name.
+  const deck = await studio(newPage, d, 'Menu shape deck', { 'deck.html': DECK }, 'deck.html');
+  await deck.page.getByTestId('export').click();
+  const deckMenu = deck.page.getByTestId('export-menu');
+  await deckMenu.waitFor();
+  await deck.page.getByTestId('export-powerpoint').click();
   assert.deepEqual(
-    await menu.locator('.menu-sub').evaluateAll((els) => els.map((e) => e.innerText.trim())),
+    await deckMenu.locator('.menu-sub').evaluateAll((els) => els.map((e) => e.innerText.trim())),
     ['Slides as images', 'Editable text'],
   );
 });
@@ -226,6 +232,6 @@ test('EXP-13', 'Every format the Export menu offers for a plain page gives a fil
     await page.keyboard.press('Escape');
   }
   assert.equal(refused.length, 0, `offered, then refused: ${refused.join(' | ')}`);
-}, { skip: CHROME ? undefined : 'no Chrome, Edge or Chromium on this machine', knownBug: 'QA-031', timeout: 200_000 });
+}, { skip: CHROME ? undefined : 'no Chrome, Edge or Chromium on this machine', timeout: 200_000 });
 
 await run('export');

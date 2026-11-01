@@ -442,6 +442,19 @@ pub fn default_skill(chip: Chip, skills: &[SkillSummary]) -> Option<String> {
         .map(|s| s.info.id.clone())
 }
 
+/// The skill a Home chip sends when no template is picked. A chip with a
+/// skill of its own (Web clone, Motion…) runs it, as [`default_skill`]
+/// finds it; Prototype, Deck and Video have none and send no `skillId`,
+/// as the original's Home does (`activeSkill?.id ?? null`), so the daemon
+/// does not run a featured skill the user never chose.
+#[must_use]
+pub fn home_skill(chip: Chip, skills: &[SkillSummary]) -> Option<String> {
+    if chip.preferred().is_empty() {
+        return None;
+    }
+    default_skill(chip, skills)
+}
+
 /// The entry of an i18n map for the UI language, else English.
 #[must_use]
 pub fn in_locale(map: Option<&std::collections::BTreeMap<String, String>>) -> Option<&String> {
@@ -540,7 +553,7 @@ impl HomeIntent {
             skill_id: self
                 .template_id
                 .clone()
-                .or_else(|| default_skill(self.chip, skills)),
+                .or_else(|| home_skill(self.chip, skills)),
             design_system_id: self.design_system_id.clone(),
             pending_prompt: Some(self.brief.trim().to_owned()).filter(|p| !p.is_empty()),
             metadata: Some(self.metadata()),
@@ -607,6 +620,56 @@ mod tests {
     }
 
     #[test]
+    fn plain_chips_send_no_skill_without_a_template() {
+        // The original's Home sends `skillId: activeSkill?.id ?? null`: a chip
+        // with no skill of its own leaves the pick to the daemon.
+        let skills = vec![
+            skill("top-proto", "prototype", Some(1.0), &["prototype"]),
+            skill("my-deck", "deck", Some(1.0), &["deck"]),
+            skill("my-video", "video", Some(1.0), &["video"]),
+            skill("web-clone", "prototype", None, &[]),
+            skill("motion-design", "video", None, &[]),
+        ];
+        let intent = |chip| HomeIntent {
+            brief: "Tea shop".into(),
+            chip,
+            design_system_id: None,
+            template_id: None,
+            media: MediaOptions::defaults(chip),
+            linked_dirs: Vec::new(),
+        };
+        for chip in [Chip::Prototype, Chip::Deck, Chip::Video] {
+            assert_eq!(
+                intent(chip).create_request(&skills).skill_id,
+                None,
+                "{chip:?}"
+            );
+            let picked = HomeIntent {
+                template_id: Some("tpl".into()),
+                ..intent(chip)
+            };
+            assert_eq!(
+                picked.create_request(&skills).skill_id.as_deref(),
+                Some("tpl")
+            );
+        }
+        assert_eq!(
+            intent(Chip::WebClone)
+                .create_request(&skills)
+                .skill_id
+                .as_deref(),
+            Some("web-clone")
+        );
+        assert_eq!(
+            intent(Chip::Motion)
+                .create_request(&skills)
+                .skill_id
+                .as_deref(),
+            Some("motion-design")
+        );
+    }
+
+    #[test]
     fn names_from_brief() {
         assert_eq!(
             project_name("\n  A landing page for tea\nmore"),
@@ -631,7 +694,7 @@ mod tests {
             linked_dirs: Vec::new(),
         };
         let req = intent.create_request(&skills);
-        assert_eq!(req.skill_id.as_deref(), Some("proto"));
+        assert_eq!(req.skill_id, None);
         assert_eq!(req.pending_prompt.as_deref(), Some("Tea shop"));
         assert_eq!(
             req.metadata.and_then(|m| m.kind),

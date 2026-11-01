@@ -226,6 +226,8 @@ pub enum BridgeMsg {
     Ready,
     #[serde(rename = "od:deck-ready")]
     DeckReady { count: u32 },
+    #[serde(rename = "od:export-fit")]
+    ExportFit(ExportFit),
     #[serde(rename = "od:slide-state")]
     SlideState { active: u32, count: u32 },
     #[serde(rename = "od:esc")]
@@ -328,10 +330,13 @@ pub fn layers_request() -> Value {
     json!({ "type": "od:layers-request" })
 }
 
-/// Host → bridge: comment (selection) mode on or off.
+/// Host → bridge: selection mode on or off. A click picks the nearest
+/// element with `data-od-id` (comments, inspect: a comment sticks to the
+/// part the agent named), or with `exact` the element under the pointer
+/// (manual edit: the text clicked must be the one edited).
 #[must_use]
-pub fn select_mode(enabled: bool) -> Value {
-    json!({ "type": "od:select-mode", "enabled": enabled })
+pub fn select_mode(enabled: bool, exact: bool) -> Value {
+    json!({ "type": "od:select-mode", "enabled": enabled, "exact": enabled && exact })
 }
 
 /// Host → bridge: report (and keep reporting) where these comments'
@@ -410,6 +415,19 @@ pub fn slide_state_request() -> Value {
     json!({ "type": "od:slide-state-request" })
 }
 
+/// What the daemon's exporters will accept for the previewed page, by
+/// their own rules (`od:export-fit`): PowerPoint needs a slide the renderer
+/// finds (`od_export::renderer::SLIDE_SELECTOR`), MP4 a
+/// `[data-composition-id]` root.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportFit {
+    #[serde(default)]
+    pub slides: u32,
+    #[serde(default)]
+    pub composition: bool,
+}
+
 /// Where a deck stands, as last reported by the bridge (0-based active).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeckState {
@@ -435,6 +453,13 @@ mod tests {
         assert_eq!(
             BridgeMsg::decode(r#"{"type":"od:deck-ready","count":3,"capabilities":[]}"#),
             Some(BridgeMsg::DeckReady { count: 3 })
+        );
+        assert_eq!(
+            BridgeMsg::decode(r#"{"type":"od:export-fit","slides":2,"composition":false}"#),
+            Some(BridgeMsg::ExportFit(ExportFit {
+                slides: 2,
+                composition: false
+            }))
         );
         let Some(BridgeMsg::Select(p)) = BridgeMsg::decode(
             r#"{"type":"od:select","odId":null,"selector":"html > body:nth-of-type(1)","tag":"body","text":"x","rect":{"x":1,"y":2,"width":3,"height":4}}"#,
@@ -529,7 +554,10 @@ mod tests {
         );
         assert_eq!(Slide::Next.message()["action"], "next");
         assert!(Slide::Next.message().get("index").is_none());
-        assert_eq!(select_mode(true)["enabled"], true);
+        assert_eq!(select_mode(true, false)["enabled"], true);
+        assert_eq!(select_mode(true, false)["exact"], false);
+        assert_eq!(select_mode(true, true)["exact"], true);
+        assert_eq!(select_mode(false, true)["exact"], false);
     }
 
     #[test]

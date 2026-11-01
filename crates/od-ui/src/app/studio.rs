@@ -250,6 +250,9 @@ pub struct StudioCtx {
     pub frame_ready: RwSignal<u32>,
     /// Set once the previewed file turns out to be a deck.
     pub deck: RwSignal<Option<DeckState>>,
+    /// What the exporters accept for the previewed page (`od:export-fit`);
+    /// `None` until its bridge says.
+    pub export_fit: RwSignal<Option<pb::ExportFit>>,
     pub notes: RwSignal<Vec<String>>,
     pub show_notes: RwSignal<bool>,
     pub presenting: RwSignal<bool>,
@@ -924,7 +927,7 @@ impl StudioCtx {
         if !on {
             self.comment_draft.set(None);
         }
-        bridge::post_main(&pb::select_mode(on));
+        bridge::post_main(&pb::select_mode(on, false));
     }
 
     pub fn slide(self, cmd: Slide) {
@@ -935,7 +938,7 @@ impl StudioCtx {
         match (source, msg) {
             (Source::Main, BridgeMsg::Ready) => {
                 if self.comment_mode.get_untracked() {
-                    bridge::post_main(&pb::select_mode(true));
+                    bridge::post_main(&pb::select_mode(true, false));
                 }
                 self.pin_rects.set(HashMap::new());
                 self.frame_ready.update(|n| *n = n.wrapping_add(1));
@@ -986,6 +989,7 @@ impl StudioCtx {
                     self.last_slide.set_value(Some((path, active)));
                 }
             }
+            (Source::Main, BridgeMsg::ExportFit(fit)) => self.export_fit.set(Some(fit)),
             (Source::Main, BridgeMsg::Esc) => self.presenting.set(false),
             (Source::Main, BridgeMsg::Select(picked)) => {
                 if self.comment_mode.get_untracked() {
@@ -1232,6 +1236,7 @@ pub fn Studio() -> impl IntoView {
         anchors: RwSignal::new(HashMap::new()),
         frame_ready: RwSignal::new(0),
         deck: RwSignal::new(None),
+        export_fit: RwSignal::new(None),
         notes: RwSignal::new(Vec::new()),
         show_notes: RwSignal::new(false),
         presenting: RwSignal::new(false),
@@ -1541,6 +1546,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     Effect::new(move |_| {
         src.track();
         ctx.deck.set(None);
+        ctx.export_fit.set(None);
         ctx.comment_draft.set(None);
     });
     // Speaker notes follow the document and its slide count.
@@ -1622,14 +1628,22 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <div class="frame-wrap" style=frame_inner>
                     // No allow-same-origin: artifact scripts run in an
                     // opaque origin and cannot call the daemon API.
-                    <iframe
-                        class="preview-frame"
-                        data-testid="preview"
-                        title=t(T::Preview)
-                        sandbox="allow-scripts allow-forms allow-popups allow-modals"
-                        src=url
-                        on:load=forget_deck
-                    ></iframe>
+                    // One iframe per URL. Leptos rebuilds a view of the same
+                    // shape in place, and a new `src` on a live iframe adds an
+                    // entry to the tab's history: Back then stepped the
+                    // preview back to an older load instead of leaving, and
+                    // the leave guard lost count (QA-033). A new iframe's
+                    // first load adds none.
+                    <For each=move || std::iter::once(url.clone()) key=|u: &String| u.clone() let:url>
+                        <iframe
+                            class="preview-frame"
+                            data-testid="preview"
+                            title=t(T::Preview)
+                            sandbox="allow-scripts allow-forms allow-popups allow-modals"
+                            src=url
+                            on:load=forget_deck
+                        ></iframe>
+                    </For>
                     <CommentLayer ctx=ctx/>
                     {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
                 </div>

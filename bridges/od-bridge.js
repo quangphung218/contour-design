@@ -417,6 +417,10 @@
   // are named by the nearest `data-od-id`, else by a structural selector.
   // ---------------------------------------------------------------------
   var selectMode = false;
+  // Manual edit: pick the element under the pointer, not the nearest
+  // `data-od-id` around it (its text is what the user wants to edit;
+  // `selectorFor` still names it from that `data-od-id`).
+  var selectExact = false;
   var hovered = null;
   var overlay = null;
 
@@ -424,6 +428,11 @@
     for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
       if (n.hasAttribute('data-od-id')) return n;
     }
+    return el && el.nodeType === 1 ? el : null;
+  }
+
+  function pickTarget(el) {
+    if (!selectExact) return odTarget(el);
     return el && el.nodeType === 1 ? el : null;
   }
 
@@ -502,15 +511,16 @@
     overlay.style.display = 'block';
   }
 
-  function setSelectMode(on) {
+  function setSelectMode(on, exact) {
     selectMode = !!on;
+    selectExact = !!on && !!exact;
     hovered = null;
     showOverlay(null);
   }
 
   document.addEventListener('mousemove', function (e) {
     if (!selectMode) return;
-    var el = odTarget(e.target);
+    var el = pickTarget(e.target);
     if (!el || el === hovered || el === overlay) return;
     hovered = el;
     showOverlay(el);
@@ -529,7 +539,7 @@
 
   document.addEventListener('click', function (e) {
     if (!selectMode) return;
-    var el = odTarget(e.target);
+    var el = pickTarget(e.target);
     if (!el) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1146,7 +1156,7 @@
         reportState(true);
         break;
       case 'od:select-mode':
-        setSelectMode(data.enabled);
+        setSelectMode(data.enabled, data.exact);
         break;
       case 'od:snapshot':
         snapshot(data);
@@ -1205,6 +1215,32 @@
     }
   });
 
+  // ---------------------------------------------------------------------
+  // Export fit: what the daemon's exporters accept for this page, by their
+  // own rules, so the Export menu offers only those. Selectors are
+  // `od_export::renderer::SLIDE_SELECTOR` and `SLIDE_CLONE_SELECTOR`
+  // (od-render-cdp tests keep them equal).
+  // ---------------------------------------------------------------------
+  var EXPORT_SLIDE_SELECTOR = '.slide, [data-screen-label], .deck-slide, .ppt-slide';
+  var EXPORT_SLIDE_CLONE_SELECTOR = '.mini-slide, .overview, .notes-overlay, .thumb';
+  var lastFit = '';
+
+  function announceExportFit() {
+    var slideCount = 0;
+    var all = document.querySelectorAll(EXPORT_SLIDE_SELECTOR);
+    for (var i = 0; i < all.length; i++) {
+      if (!all[i].closest(EXPORT_SLIDE_CLONE_SELECTOR)) slideCount++;
+    }
+    var fit = {
+      slides: slideCount,
+      composition: !!document.querySelector('[data-composition-id]')
+    };
+    var key = fit.slides + ':' + fit.composition;
+    if (key === lastFit) return;
+    lastFit = key;
+    post('od:export-fit', fit);
+  }
+
   function onReady() {
     post('od:ready', {
       protocolVersion: PROTOCOL_VERSION,
@@ -1215,6 +1251,7 @@
     });
     watchSize();
     announceDeck();
+    announceExportFit();
     announceTweaks();
   }
 
@@ -1224,5 +1261,8 @@
     later(onReady);
   }
   // Decks built by script after DOMContentLoaded.
-  window.addEventListener('load', announceDeck);
+  window.addEventListener('load', function () {
+    announceDeck();
+    announceExportFit();
+  });
 })();
