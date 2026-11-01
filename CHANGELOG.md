@@ -8,6 +8,20 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Files the agent writes with a shell command (`ffmpeg`, `python`, `cp`)
+  now show in "Files from this turn", so a rendered MP4 or image opens
+  from the turn like a file written with the Write tool. New files are
+  listed as written, changed files as edited; folders the file list skips
+  (`.git`, `node_modules`, build output, hidden folders) are skipped here
+  too, and a project with more than 20,000 files is not compared.
+- A live artifact refresh that fails while reading or writing its files
+  is logged as `refresh_failed` with its source type, not as `error` with
+  `unknown`.
+- Renaming a project returns the time it was last updated as stored, even
+  when a message was sent in the meantime.
+
 ## [0.2.0-beta.11] - 2026-11-01
 
 ### Added
