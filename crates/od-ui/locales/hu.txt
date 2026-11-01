@@ -26,6 +26,8 @@ ErrNotFound = Nem található
 ErrConflict = Ütközik egy folyamatban lévő módosítással
 ErrTooLarge = Túl nagy
 ErrServer = A daemon hibába ütközött
+ErrNoWritePermission = Nincs írási jogosultság
+ErrStorageFull = Megtelt a lemez
 # Home
 HomeTitle = Mit szeretnél tervezni?
 BriefPlaceholder = Írj le egy oldalt, egy app-képernyőt vagy egy diasort…

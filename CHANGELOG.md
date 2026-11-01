@@ -10,6 +10,15 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Opening a folder Contour cannot write to is refused and no longer adds a
+  project, one more per try. Read-only folders are not supported.
+- A folder Contour may not write to, or a full disk, is named in plain
+  words ("No permission to write: …", "Disk full: …") instead of "The
+  daemon hit an error: io error: … (os error 13) (HTTP 500)". The API
+  answers `NO_WRITE_PERMISSION` (403) and `STORAGE_FULL` (507).
+- MCP: a file `write_file` saves under another name ("trang chủ.html" as
+  "trang-chủ.html") says so in `savedAs`, and `get_file` and
+  `delete_file` find it under the agent's own name.
 - Your usage: an agent found from its setup dialog (DeepSeek Harness,
   detected again after installing `dsh`) is setup step 2 at once. Before,
   the step waited for the next agent list, so quitting before the test

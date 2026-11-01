@@ -26,6 +26,8 @@ ErrNotFound = Bulunamadı
 ErrConflict = Devam eden bir değişiklikle çakışıyor
 ErrTooLarge = Çok büyük
 ErrServer = Daemon bir hatayla karşılaştı
+ErrNoWritePermission = Yazma izni yok
+ErrStorageFull = Disk dolu
 # Home
 HomeTitle = Ne tasarlamak istiyorsunuz?
 BriefPlaceholder = Bir sayfayı, uygulama ekranını veya sunumu anlatın…

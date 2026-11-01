@@ -643,7 +643,16 @@ async fn get_file(daemon: &Daemon, args: &Map<String, Value>) -> ToolResult {
             .and_then(|a| a.file_name.clone())
             .ok_or_else(|| invalid("path is required (no active file to default to)."))?,
     };
-    let raw = daemon.raw(&r.id, &path).await?;
+    let (path, raw) = match daemon.raw(&r.id, &path).await {
+        Err(e) if e.status() == Some(404) => {
+            let Some(stored) = stored_name(&path) else {
+                return Err(e.into());
+            };
+            let raw = daemon.raw(&r.id, &stored).await?;
+            (stored, raw)
+        }
+        other => (path, other?),
+    };
     if !is_text_mime(&raw.mime) {
         return Err(invalid(format!(
             "file at \"{path}\" has mime \"{}\"; od mcp only returns text. Use list_files for its metadata.",
@@ -997,24 +1006,50 @@ async fn write_file(daemon: &Daemon, args: &Map<String, Value>) -> ToolResult {
         .ok_or_else(|| invalid("content is required (string)."))?;
     let body =
         json!({ "name": path, "content": content, "encoding": encoding(args)?, "overwrite": true });
-    let res = daemon
+    let mut res = daemon
         .post(&["api", "projects", &r.id, "files"], &body)
         .await?;
+    // The daemon renames like uploads ("trang chủ.html" → "trang-chủ.html");
+    // say which name the file has now (QA-032).
+    let saved = res["file"]["name"].as_str().unwrap_or(path).to_owned();
+    if saved != path {
+        res["note"] = json!(format!(
+            "saved as \"{saved}\" (file names use - for spaces); get_file and delete_file accept either name"
+        ));
+    }
+    res["savedAs"] = json!(saved);
     Ok(ToolOutput::json(r.annotate(res)))
+}
+
+/// The name the daemon stores `path` under when it differs from `path`:
+/// `write_file` turns spaces into `-` (`sanitize_path`). Used when the
+/// agent's own name is not found.
+fn stored_name(path: &str) -> Option<String> {
+    od_store::paths::sanitize_path(path)
+        .ok()
+        .filter(|stored| stored != path)
 }
 
 async fn delete_file(daemon: &Daemon, args: &Map<String, Value>) -> ToolResult {
     let r = resolve(daemon, args).await?;
     let path = req_str(args, "path")?;
-    let res = daemon
-        .delete(&path_segments(&["api", "projects", &r.id, "files"], path))
-        .await?;
+    let base = ["api", "projects", r.id.as_str(), "files"];
+    let (deleted, res) = match daemon.delete(&path_segments(&base, path)).await {
+        Err(e) if e.status() == Some(404) => {
+            let Some(stored) = stored_name(path) else {
+                return Err(e.into());
+            };
+            let res = daemon.delete(&path_segments(&base, &stored)).await?;
+            (stored, res)
+        }
+        other => (path.to_owned(), other?),
+    };
     let mut payload = if res.is_object() {
         res
     } else {
         json!({ "ok": true })
     };
-    payload["deleted"] = json!(path);
+    payload["deleted"] = json!(deleted);
     Ok(ToolOutput::json(r.annotate(payload)))
 }
 
@@ -1291,6 +1326,17 @@ mod tests {
     fn slugs_ignore_case_separators_and_copy_suffix() {
         assert_eq!(slug("My Deck (2)"), "my-deck");
         assert_eq!(slug("my_deck"), "my-deck");
+    }
+
+    #[test]
+    fn stored_name_only_when_the_daemon_renames() {
+        assert_eq!(
+            stored_name("trang chủ.html").as_deref(),
+            Some("trang-chủ.html")
+        );
+        assert_eq!(stored_name("a b/c  d.css").as_deref(), Some("a-b/c-d.css"));
+        assert_eq!(stored_name("index.html"), None);
+        assert_eq!(stored_name("../x.html"), None);
     }
 
     #[test]

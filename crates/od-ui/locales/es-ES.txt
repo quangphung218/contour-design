@@ -26,6 +26,8 @@ ErrNotFound = No encontrado
 ErrConflict = Entra en conflicto con un cambio en curso
 ErrTooLarge = Demasiado grande
 ErrServer = El daemon encontró un error
+ErrNoWritePermission = Sin permiso de escritura
+ErrStorageFull = Disco lleno
 # Home
 HomeTitle = ¿Qué quieres diseñar?
 BriefPlaceholder = Describe una página, una pantalla de app o una presentación…

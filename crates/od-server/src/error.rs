@@ -77,6 +77,8 @@ impl From<StoreError> for ApiErr {
             StoreError::ProjectFolderMissing | StoreError::Conflict(_) => {
                 (S::CONFLICT, ErrorCode::Conflict)
             }
+            StoreError::NoWritePermission(_) => (S::FORBIDDEN, ErrorCode::NoWritePermission),
+            StoreError::StorageFull => (S::INSUFFICIENT_STORAGE, ErrorCode::StorageFull),
             _ => {
                 tracing::error!(error = %err, "store error");
                 (S::INTERNAL_SERVER_ERROR, ErrorCode::InternalError)
@@ -100,5 +102,28 @@ pub struct ApiJson<T>(pub T);
 impl<T: serde::Serialize> IntoResponse for ApiJson<T> {
     fn into_response(self) -> Response {
         Json(self.0).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// QA-029: a refused write and a full disk get codes of their own and
+    /// no OS error text.
+    #[test]
+    fn write_refusals_and_full_disks_are_not_internal_errors() {
+        let denied = ApiErr::from(StoreError::from(std::io::Error::from(
+            std::io::ErrorKind::PermissionDenied,
+        )));
+        assert_eq!(denied.status, StatusCode::FORBIDDEN);
+        assert_eq!(denied.code, ErrorCode::NoWritePermission);
+        assert!(!denied.message.contains("os error"), "{}", denied.message);
+        let full = ApiErr::from(StoreError::from(std::io::Error::from(
+            std::io::ErrorKind::StorageFull,
+        )));
+        assert_eq!(full.status, StatusCode::INSUFFICIENT_STORAGE);
+        assert_eq!(full.code, ErrorCode::StorageFull);
+        assert!(full.message.contains("disk is full"), "{}", full.message);
     }
 }

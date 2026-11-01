@@ -26,6 +26,8 @@ ErrNotFound = 找不到
 ErrConflict = 與進行中的變更衝突
 ErrTooLarge = 內容過大
 ErrServer = 背景服務發生錯誤
+ErrNoWritePermission = 沒有寫入權限
+ErrStorageFull = 磁碟已滿
 # Home
 HomeTitle = 你想設計什麼？
 BriefPlaceholder = 描述一個網頁、應用程式畫面或簡報…

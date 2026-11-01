@@ -80,6 +80,6 @@ test('MCP-02', 'A file an agent writes under a name with a space can be read bac
   } finally {
     mcp.close();
   }
-}, { knownBug: 'QA-032' });
+});
 
 await run('mcp');

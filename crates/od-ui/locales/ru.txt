@@ -26,6 +26,8 @@ ErrNotFound = Не найдено
 ErrConflict = Конфликт с изменением в процессе
 ErrTooLarge = Слишком велик
 ErrServer = Ошибка демона
+ErrNoWritePermission = Нет прав на запись
+ErrStorageFull = Диск заполнен
 # Home
 HomeTitle = Что будем проектировать?
 BriefPlaceholder = Опишите страницу, экран приложения или презентацию…

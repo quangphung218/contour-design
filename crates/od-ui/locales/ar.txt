@@ -26,6 +26,8 @@ ErrNotFound = غير موجود
 ErrConflict = يتعارض مع تغيير قيد التنفيذ
 ErrTooLarge = كبير جدًا
 ErrServer = واجه daemon خطأ
+ErrNoWritePermission = لا يوجد إذن بالكتابة
+ErrStorageFull = القرص ممتلئ
 # Home
 HomeTitle = ماذا تريد أن تصمم؟
 BriefPlaceholder = صف صفحة أو شاشة تطبيق أو عرض شرائح…

@@ -26,6 +26,8 @@ ErrNotFound = 未找到
 ErrConflict = 与正在进行的更改冲突
 ErrTooLarge = 内容过大
 ErrServer = daemon 出错了
+ErrNoWritePermission = 没有写入权限
+ErrStorageFull = 磁盘已满
 # Home
 HomeTitle = 想设计点什么？
 BriefPlaceholder = 描述一个页面、应用界面或幻灯片…

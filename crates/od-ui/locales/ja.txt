@@ -26,6 +26,8 @@ ErrNotFound = 見つかりません
 ErrConflict = 進行中の変更と競合しています
 ErrTooLarge = サイズが大きすぎます
 ErrServer = デーモンでエラーが発生しました
+ErrNoWritePermission = 書き込み権限がありません
+ErrStorageFull = ディスク容量不足
 # Home
 HomeTitle = 何をデザインしますか？
 BriefPlaceholder = ページ、アプリ画面、スライドデッキを説明してください…

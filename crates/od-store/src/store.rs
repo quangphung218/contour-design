@@ -137,12 +137,12 @@ impl Store {
             return Ok(());
         }
         let path = root.dir.join(PROJECT_MANIFEST_PATH);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let manifest = ProjectManifest::from(project);
-        fs::write(path, serde_json::to_vec_pretty(&manifest)?)?;
-        Ok(())
+        let bytes = serde_json::to_vec_pretty(&manifest)?;
+        path.parent()
+            .map_or(Ok(()), fs::create_dir_all)
+            .and_then(|()| fs::write(&path, bytes))
+            .map_err(|e| StoreError::from(e).in_folder(&root.dir))
     }
 
     /// Creates the row, a first conversation, the folder and its manifest.
@@ -222,9 +222,18 @@ impl Store {
                 crate::setup::insert(&tx, od_contracts::SetupStep::Project, now)?;
             }
             root.ensure_exists()?;
+            // The manifest goes first: a folder that cannot be written to
+            // (read-only, full disk) rolls the row back instead of leaving
+            // a half project (QA-028).
+            if let Err(err) = self.write_manifest(&project) {
+                if !root.imported {
+                    // Only the folder made just above; never a user folder.
+                    let _ = fs::remove_dir_all(&root.dir);
+                }
+                return Err(err);
+            }
             tx.commit()?;
         }
-        self.write_manifest(&project)?;
         Ok((project, conversation_id))
     }
 

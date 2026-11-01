@@ -26,6 +26,8 @@ ErrNotFound = ไม่พบ
 ErrConflict = ขัดแย้งกับการเปลี่ยนแปลงที่กำลังทำอยู่
 ErrTooLarge = ใหญ่เกินไป
 ErrServer = daemon เกิดข้อผิดพลาด
+ErrNoWritePermission = ไม่มีสิทธิ์เขียน
+ErrStorageFull = ดิสก์เต็ม
 # Home
 HomeTitle = วันนี้อยากออกแบบอะไร
 BriefPlaceholder = อธิบายหน้าเว็บ หน้าจอแอป หรือชุดสไลด์…

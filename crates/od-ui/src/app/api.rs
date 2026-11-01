@@ -2,20 +2,26 @@
 
 use crate::i18n::{T as Msg, t, tf};
 use gloo_net::http::{Request, Response};
-use od_contracts::ApiErrorResponse;
+use od_contracts::{ApiErrorResponse, ErrorCode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::fmt;
 
-/// A failed call: HTTP status (0 for network errors) and a readable message.
+/// A failed call: HTTP status (0 for network errors), the daemon's error
+/// code when it sent one, and a readable message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpError {
     pub status: u16,
+    pub code: Option<ErrorCode>,
     pub message: String,
 }
 
 impl fmt::Display for HttpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // A cause the user can act on: their words, no status, no "daemon".
+        if let Some(hint) = self.code.and_then(code_hint) {
+            return write!(f, "{}: {}", t(hint), self.message);
+        }
         match (self.status, status_hint(self.status)) {
             (0, _) => write!(f, "{}", self.message),
             (status, Some(hint)) => write!(f, "{}: {} (HTTP {status})", t(hint), self.message),
@@ -38,6 +44,15 @@ fn status_hint(status: u16) -> Option<Msg> {
     })
 }
 
+/// Codes whose message already says what to do (QA-029).
+fn code_hint(code: ErrorCode) -> Option<Msg> {
+    match code {
+        ErrorCode::NoWritePermission => Some(Msg::ErrNoWritePermission),
+        ErrorCode::StorageFull => Some(Msg::ErrStorageFull),
+        _ => None,
+    }
+}
+
 impl std::error::Error for HttpError {}
 
 pub type ApiResult<T> = Result<T, HttpError>;
@@ -45,6 +60,7 @@ pub type ApiResult<T> = Result<T, HttpError>;
 fn network(e: gloo_net::Error) -> HttpError {
     HttpError {
         status: 0,
+        code: None,
         message: tf(Msg::DaemonUnreachable, &[&e.to_string()]),
     }
 }
@@ -52,16 +68,21 @@ fn network(e: gloo_net::Error) -> HttpError {
 async fn error_of(res: Response) -> HttpError {
     let status = res.status();
     let body = res.text().await.unwrap_or_default();
-    let message = serde_json::from_str::<ApiErrorResponse>(&body)
-        .map(|e| e.error.message)
+    let (code, message) = serde_json::from_str::<ApiErrorResponse>(&body)
+        .map(|e| (Some(e.error.code), e.error.message))
         .unwrap_or_else(|_| {
-            if body.trim().is_empty() {
+            let text = if body.trim().is_empty() {
                 res.status_text()
             } else {
                 body
-            }
+            };
+            (None, text)
         });
-    HttpError { status, message }
+    HttpError {
+        status,
+        code,
+        message,
+    }
 }
 
 /// `POST` returning raw bytes (exports).
@@ -99,6 +120,7 @@ async fn decode<T: DeserializeOwned>(res: Response) -> ApiResult<T> {
     }
     res.json::<T>().await.map_err(|e| HttpError {
         status,
+        code: None,
         message: tf(Msg::UnexpectedResponse, &[&e.to_string()]),
     })
 }
@@ -170,6 +192,7 @@ mod tests {
     fn errors_lead_with_what_went_wrong() {
         let e = |status| HttpError {
             status,
+            code: None,
             message: "project p1 not found".to_owned(),
         };
         assert_eq!(
@@ -179,5 +202,36 @@ mod tests {
         assert_eq!(status_hint(503), Some(Msg::ErrServer));
         assert_eq!(e(418).to_string(), "project p1 not found (HTTP 418)");
         assert_eq!(e(0).to_string(), "project p1 not found");
+    }
+
+    #[test]
+    fn write_refusals_and_full_disks_read_as_plain_words() {
+        let e = |status, code, message: &str| HttpError {
+            status,
+            code: Some(code),
+            message: message.to_owned(),
+        };
+        let denied = e(
+            403,
+            ErrorCode::NoWritePermission,
+            "Contour has no permission to write to the folder /a.",
+        )
+        .to_string();
+        assert_eq!(
+            denied,
+            "No permission to write: Contour has no permission to write to the folder /a."
+        );
+        let full = e(
+            507,
+            ErrorCode::StorageFull,
+            "The disk is full. Free some space, then try again.",
+        )
+        .to_string();
+        assert!(!full.contains("HTTP") && !full.contains("daemon"), "{full}");
+        // Other codes keep the status hint.
+        assert_eq!(
+            e(404, ErrorCode::NotFound, "gone").to_string(),
+            "Not found: gone (HTTP 404)"
+        );
     }
 }

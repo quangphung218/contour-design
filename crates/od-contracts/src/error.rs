@@ -35,6 +35,11 @@ pub enum ErrorCode {
     UnsupportedMediaType,
     /// Export: Chrome is missing or the render failed.
     UpstreamUnavailable,
+    /// The OS refused a write (read-only folder or volume); the message
+    /// names the folder when known.
+    NoWritePermission,
+    /// The disk is full.
+    StorageFull,
 }
 
 /// Error payload: `{ "error": { "code": "...", "message": "..." } }`.

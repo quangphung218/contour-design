@@ -87,7 +87,7 @@ test('RES-03', 'Opening a folder Contour cannot write to either opens it or leav
   } finally {
     ro.cleanup();
   }
-}, { knownBug: 'QA-028' });
+});
 
 test('RES-04', 'A folder Contour cannot write to is named in plain words, not as an OS error', async ({ d, newPage }) => {
   const ro = readOnlyFolder();
@@ -104,6 +104,6 @@ test('RES-04', 'A folder Contour cannot write to is named in plain words, not as
   } finally {
     ro.cleanup();
   }
-}, { knownBug: 'QA-029' });
+});
 
 await run('resilience');
