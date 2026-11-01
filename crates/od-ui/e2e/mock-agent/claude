@@ -125,6 +125,29 @@ case "$req" in *slow*)
   while [ $i -lt 40 ]; do say "step$i "; i=$((i + 1)); sleep 0.25; done
 ;; esac
 
+# `motion film`: the motion-design route through the host, as the skill
+# says: `media scaffold`, write the composition, `media generate`. The MP4
+# joins the turn through OD_RUN_ID (the daemon adds it, not this script).
+case "$req" in *"motion film"*)
+  bash_call() { # id, command label, then the command
+    id="$1"; label="$2"; shift 2
+    printf '{"type":"assistant","message":{"id":"m%s-%s","role":"assistant","content":[{"type":"tool_use","id":"%s","name":"Bash","input":{"command":"%s"}}]}}\n' "$$" "$id" "$id" "$label"
+    if "$@" >"motion-$id.log" 2>&1; then res="ok"; err=false; else res="failed"; err=true; fi
+    rm -f "motion-$id.log"
+    printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"%s","content":"%s","is_error":%s}]}}\n' "$id" "$res" "$err"
+  }
+  bash_call "scaffold-$$" "od media scaffold" "$OD_NODE_BIN" "$OD_BIN" media scaffold --project "$OD_PROJECT_ID" \
+    --composition-dir motion-source/film --width 320 --height 180 --duration 1
+  src=motion-source/film/index.html
+  printf '{"type":"assistant","message":{"id":"m%s-src","role":"assistant","content":[{"type":"tool_use","id":"src-%s","name":"Edit","input":{"file_path":"%s/%s","old_string":"Title","new_string":"Turn %s"}}]}}\n' "$$" "$$" "$PWD" "$src" "$turn"
+  sed "s/>[^<]*<\/div>\$/>Turn $turn<\/div>/" "$src" > "$src.tmp" && mv "$src.tmp" "$src"
+  printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"src-%s","content":"ok"}]}}\n' "$$"
+  bash_call "render-$$" "od media generate" "$OD_NODE_BIN" "$OD_BIN" media generate --project "$OD_PROJECT_ID" \
+    --surface video --model hyperframes-html --composition-dir motion-source/film --output film.mp4
+  say "Rendered film.mp4 ($res)."
+  end_turn
+;; esac
+
 if [ -z "$skip" ]; then
 tool="tool-$$"
 target=index.html

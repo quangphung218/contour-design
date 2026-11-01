@@ -72,3 +72,6 @@ run OD_E2E_SETUP_PORT setup.e2e.mjs
 # Beta.7 design review fixes (with OD_E2E_PORT: + 14; + 13 is the setup
 # script's in #23).
 run OD_E2E_POLISH_PORT polish.e2e.mjs
+# Motion → MP4 through `od media` with the real renderer and ffmpeg
+# (with OD_E2E_PORT: + 15).
+run OD_E2E_MOTION_PORT motion.e2e.mjs
