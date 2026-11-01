@@ -110,6 +110,55 @@ async fn ok(client: &Client, name: &str, args: Value) -> Value {
     structured
 }
 
+/// QA-032: `write_file` keeps renaming "trang chủ.html" to "trang-chủ.html"
+/// (as the original app does) but says so, and the agent's own name still
+/// reads and deletes the file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mcp_file_written_under_a_spaced_name_reads_back_under_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let url = real_daemon(tmp.path()).await;
+    let client = mcp(&url).await;
+    let created = ok(&client, "create_project", json!({ "name": "Trang chủ" })).await;
+    let id = created["project"]["id"].as_str().unwrap().to_owned();
+
+    let (err, text, wrote) = call(
+        &client,
+        "write_file",
+        json!({ "project": id, "path": "trang chủ.html", "content": "<h1>Xin chào</h1>" }),
+    )
+    .await;
+    assert!(!err, "{text}");
+    assert_eq!(wrote["file"]["name"], "trang-chủ.html");
+    assert_eq!(wrote["savedAs"], "trang-chủ.html", "{text}");
+
+    let (err, text, _) = call(
+        &client,
+        "get_file",
+        json!({ "project": id, "path": "trang chủ.html" }),
+    )
+    .await;
+    assert!(
+        !err,
+        "wrote \"trang chủ.html\", reading it back says: {text}"
+    );
+    assert!(text.ends_with("<h1>Xin chào</h1>"), "{text}");
+
+    let deleted = ok(
+        &client,
+        "delete_file",
+        json!({ "project": id, "path": "trang chủ.html" }),
+    )
+    .await;
+    assert_eq!(deleted["deleted"], "trang-chủ.html");
+    let (err, _, _) = call(
+        &client,
+        "get_file",
+        json!({ "project": id, "path": "trang-chủ.html" }),
+    )
+    .await;
+    assert!(err, "the file is still there after delete_file");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_file_tools_and_active_project_over_stdio() {
     let tmp = tempfile::tempdir().unwrap();

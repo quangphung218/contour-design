@@ -56,7 +56,7 @@ reproduces by hand about one try in two.
 | QA-029 | 🟡 | Storage errors reach the user raw: "The daemon hit an error: io error: Permission denied (os error 13) (HTTP 500)", "… No space left on device (os error 28)" | `resilience.qa.mjs` RES-04; full disk manual | Fixed |
 | QA-030 | 🟡 | A turn cut short because Contour closed or crashed says "daemon restarted" and "check the agent in Settings", with an Open Settings button | `resilience.qa.mjs` RES-02 | Open |
 | QA-031 | 🟡 | The Export menu offers PowerPoint and MP4 for a plain page; both end in "Export failed: The request was not accepted: … (HTTP 422)" | `export.qa.mjs` EXP-13 | Open |
-| QA-032 | 🔵 | MCP `write_file` saves "trang chủ.html" as "trang-chủ.html"; `get_file` on the name the agent used answers 404 | `mcp.qa.mjs` MCP-02 | Open |
+| QA-032 | 🔵 | MCP `write_file` saves "trang chủ.html" as "trang-chủ.html"; `get_file` on the name the agent used answers 404 | `mcp.qa.mjs` MCP-02 | Fixed |
 | QA-033 | 🟡 | With an edit not applied, the browser's Back works one try in two: after Cancel, a second Back does nothing, or Leave stays on the page | `drafts.qa.mjs` DL-24 | Open |
 | QA-018 | 🔴 | With a BYOK provider saved without a key on a host the daemon calls public (`http://ollama:11434`, `gpu-box`), every Settings save (theme, language…) is refused with 400 | `settings.qa.mjs` SET-07, SET-08 | Fixed |
 | QA-019 | 🟠 | A message steered into the running turn comes back in the composer after a reload | `drafts.qa.mjs` DL-20 | Fixed |
@@ -707,6 +707,14 @@ Reported by the UX review of 759581a.
 - **Code**: `crates/od-mcp/src/tools.rs` `get_file` (and `delete_file`):
   try the sanitized name when the given one is missing, or have
   `write_file`'s text say "saved as trang-chủ.html".
+- **Fixed**: renaming stays as in the original (maintainer's call).
+  `write_file` adds `savedAs` (the stored name) and, when it differs from
+  the given path, a `note` saying so. `get_file` and `delete_file` try the
+  given name first and, on 404, the name `write_file` would store it under
+  (`od_store::paths::sanitize_path`); the answer names the real file. Test:
+  `od-cli` `tests/m5.rs`
+  `mcp_file_written_under_a_spaced_name_reads_back_under_it`; MCP-02 no
+  longer `knownBug`.
 
 ## QA-033 🟡 Back with an edit not applied works one try in two
 
