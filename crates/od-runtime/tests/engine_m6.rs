@@ -721,3 +721,84 @@ async fn byok_without_a_key_fails_fast() {
     assert_eq!(outcome.status, RunStatus::Failed);
     assert_eq!(outcome.failure_category, Some(FailureCategory::SpawnFailed));
 }
+
+// ------------------------------------------------------------ spec L4
+
+#[tokio::test]
+async fn files_written_by_shell_commands_join_the_turn() {
+    let h = Harness::new();
+    std::fs::write(h.project.join("notes.txt"), "old").unwrap();
+    std::fs::write(h.project.join("same.txt"), "same").unwrap();
+    // The agent renders with ffmpeg / python / cp: no Write tool for these.
+    write_mock(
+        &h.mocks,
+        "qwen",
+        r#"cat > /dev/null
+mkdir -p renders node_modules/pkg .hidden
+printf 'mp4' > renders/clip.mp4
+printf 'png' > poster.png
+printf 'longer text' > notes.txt
+printf 'x' > node_modules/pkg/a.js
+printf 'x' > .hidden/b
+cat <<'ANSWER'
+Done.
+<artifact identifier="index" type="text/html" title="Landing">
+<h1>Hi</h1>
+</artifact>
+ANSWER
+"#,
+    );
+    let mut spec = h.spec("shell-files", &QWEN, &[]);
+    spec.project_id = Some("p1".into());
+    let run = spec.run.clone();
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Succeeded);
+    let events = events_of(&run).await;
+    let uses: Vec<(String, String)> = agent_events(&events, "tool_use")
+        .iter()
+        .map(|u| {
+            let path = u["input"]["file_path"].as_str().unwrap();
+            let rel = Path::new(path)
+                .strip_prefix(&h.project)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            (u["name"].as_str().unwrap().to_owned(), rel)
+        })
+        .collect();
+    let named = |name: &str, rel: &str| (name.to_owned(), rel.to_owned());
+    assert_eq!(
+        uses,
+        [
+            // The artifact the engine wrote is listed once, by its own Write.
+            named("Write", "index.html"),
+            named("Edit", "notes.txt"),
+            named("Write", "poster.png"),
+            named("Write", "renders/clip.mp4"),
+        ]
+    );
+    let results = agent_events(&events, "tool_result");
+    assert_eq!(results.len(), uses.len());
+    assert!(
+        results
+            .iter()
+            .all(|r| r["isError"] != true && r["is_error"] != true)
+    );
+    // The events land before `end`, so the stored turn keeps them.
+    assert_eq!(events.last().unwrap().event, sse::END);
+}
+
+#[tokio::test]
+async fn runs_outside_a_project_do_not_compare_files() {
+    let h = Harness::new();
+    write_mock(
+        &h.mocks,
+        "qwen",
+        "cat > /dev/null\nprintf 'mp4' > clip.mp4\necho done\n",
+    );
+    let spec = h.spec("no-project", &QWEN, &[]);
+    let run = spec.run.clone();
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Succeeded);
+    assert!(agent_events(&events_of(&run).await, "tool_use").is_empty());
+}

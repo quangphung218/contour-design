@@ -22,6 +22,7 @@ pub mod parse;
 pub mod process;
 pub mod stage;
 pub mod tokens;
+pub mod turn_files;
 
 pub use def::{PermissionMode, RuntimeDef};
 pub use engine::{EngineConfig, LaunchSpec, McpLaunch, RunEngine, RunOutcome, SteerError};

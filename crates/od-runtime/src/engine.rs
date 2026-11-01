@@ -10,7 +10,7 @@ use crate::def::{
 use crate::guard::{ToolLoopGuard, ToolLoopLimits, Verdict};
 use crate::parse::{SessionContext, StreamParser, parser_for};
 use crate::process::{self, KILL_GRACE, SpawnSpec};
-use crate::{artifact, detect};
+use crate::{artifact, detect, turn_files};
 use od_contracts::{
     AgentEvent, FailureCategory, RUN_PROTOCOL_VERSION, RunChunkPayload, RunEndPayload,
     RunErrorPayload, RunRetryPayload, RunStartPayload, RunStatus, sse,
@@ -292,7 +292,18 @@ impl RunEngine {
         let engine = self.clone();
         tokio::spawn(async move {
             let run_id = spec.run.id().to_owned();
-            let outcome = engine.drive(spec, &active).await;
+            // Project runs only: what the agent changes there is the turn's
+            // result (spec L4); taken before the agent can write.
+            let before = match spec.project_id {
+                Some(_) => {
+                    let cwd = spec.cwd.clone();
+                    tokio::task::spawn_blocking(move || turn_files::Snapshot::take(&cwd))
+                        .await
+                        .ok()
+                }
+                None => None,
+            };
+            let outcome = engine.drive(spec, &active, before).await;
             engine.active().remove(&run_id);
             outcome
         })
@@ -412,7 +423,12 @@ impl RunEngine {
         flags
     }
 
-    async fn drive(&self, spec: LaunchSpec, active: &Active) -> RunOutcome {
+    async fn drive(
+        &self,
+        spec: LaunchSpec,
+        active: &Active,
+        before: Option<turn_files::Snapshot>,
+    ) -> RunOutcome {
         let run = &spec.run;
         let def = spec.def;
         let is_byok = def.stream_format == StreamFormat::Byok;
@@ -448,11 +464,13 @@ impl RunEngine {
             None if is_byok => PathBuf::new(),
             None => {
                 let message = format!("`{}` was not found on PATH", def.bin);
-                return finish(
-                    run,
+                return finish_turn(
+                    &spec,
+                    before.as_ref(),
                     Finish::failed(FailureCategory::SpawnFailed, message, None),
                     &[],
-                );
+                )
+                .await;
             }
         };
         let capabilities = if is_byok {
@@ -480,21 +498,25 @@ impl RunEngine {
                     def.name,
                     MAX_PROMPT_ARG_BYTES
                 );
-                return finish(
-                    run,
+                return finish_turn(
+                    &spec,
+                    before.as_ref(),
                     Finish::failed(FailureCategory::SpawnFailed, message, None),
                     &[],
-                );
+                )
+                .await;
             }
             let files = match PromptFiles::stage(def, &prompt) {
                 Ok(files) => files,
                 Err(err) => {
                     let message = format!("could not stage the prompt file: {err}");
-                    return finish(
-                        run,
+                    return finish_turn(
+                        &spec,
+                        before.as_ref(),
                         Finish::failed(FailureCategory::SpawnFailed, message, None),
                         &[],
-                    );
+                    )
+                    .await;
                 }
             };
             let mut args = def.build_args(&ArgvInput {
@@ -536,7 +558,7 @@ impl RunEngine {
                 let mut f = Finish::canceled(attempt.exit_code, attempt.signal.clone());
                 f.session_id = session;
                 f.resumed = resume.is_some();
-                return finish(run, f, &attempt.text_parts);
+                return finish_turn(&spec, before.as_ref(), f, &attempt.text_parts).await;
             }
             let failed = attempt.failure.is_some();
             if failed
@@ -575,7 +597,7 @@ impl RunEngine {
                     tokio::time::sleep(delay).await;
                     if active.canceled.load(Ordering::SeqCst) {
                         let f = Finish::canceled(None, None);
-                        return finish(run, f, &[]);
+                        return finish_turn(&spec, before.as_ref(), f, &[]).await;
                     }
                     continue;
                 }
@@ -601,7 +623,7 @@ impl RunEngine {
             f.resumed = resume.is_some();
             f.resume_failed = resume_failed;
             f.artifact_paths = attempt.written_files;
-            return finish(run, f, &attempt.text_parts);
+            return finish_turn(&spec, before.as_ref(), f, &attempt.text_parts).await;
         }
     }
 
@@ -1374,6 +1396,20 @@ impl Finish {
         f.error = Some(message);
         f
     }
+}
+
+/// [`finish`], after adding the files the turn changed outside the write
+/// tools (the run takes no events once it has ended).
+async fn finish_turn(
+    spec: &LaunchSpec,
+    before: Option<&turn_files::Snapshot>,
+    f: Finish,
+    text_parts: &[String],
+) -> RunOutcome {
+    if let Some(before) = before {
+        turn_files::report(&spec.run, &spec.cwd, before).await;
+    }
+    finish(&spec.run, f, text_parts)
 }
 
 fn finish(run: &Run, f: Finish, text_parts: &[String]) -> RunOutcome {
