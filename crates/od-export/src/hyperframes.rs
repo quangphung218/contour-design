@@ -173,9 +173,10 @@ pub const MAX_AUDIO_TRACKS: usize = 32;
 
 static COMMENT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)<!--.*?-->").expect("static regex"));
-static META: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<meta\b").expect("static regex"));
+static META: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)<meta[\s/>]").expect("static regex"));
 static AUDIO: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?is)<audio\b").expect("static regex"));
+    LazyLock::new(|| Regex::new(r"(?is)<audio[\s/>]").expect("static regex"));
 static COMPOSITION_SRC: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?is)<[a-z][a-z0-9-]*\s[^>]*?\bdata-composition-src\s*="#).expect("static regex")
 });
@@ -417,6 +418,12 @@ mod tests {
             ]
         );
         assert!(audio_tags("<p>none</p>").unwrap().is_empty());
+        // A custom element such as <audio-wave> is not an audio track.
+        assert!(
+            audio_tags("<audio-wave bars=\"8\"></audio-wave>")
+                .unwrap()
+                .is_empty()
+        );
         // `auto` plays the whole file, like no data-duration.
         let auto =
             audio_tags(r#"<audio src="vo.wav" data-start="1" data-duration="AUTO"></audio>"#)
