@@ -276,7 +276,14 @@ pub fn audio_tags(html: &str) -> Result<Vec<AudioTag>, String> {
             }
         }
         let start = seconds(tag, "data-start", &what)?.unwrap_or(0.0);
-        let duration = seconds(tag, "data-duration", &what)?;
+        // `data-duration="auto"` (the HyperFrames TTS reference writes it)
+        // means the file's own length, as no attribute does.
+        let duration = if attr(tag, "data-duration").is_some_and(|d| d.eq_ignore_ascii_case("auto"))
+        {
+            None
+        } else {
+            seconds(tag, "data-duration", &what)?
+        };
         if duration == Some(0.0) {
             return Err(format!("{what}: data-duration must be above 0"));
         }
@@ -410,6 +417,12 @@ mod tests {
             ]
         );
         assert!(audio_tags("<p>none</p>").unwrap().is_empty());
+        // `auto` plays the whole file, like no data-duration.
+        let auto =
+            audio_tags(r#"<audio src="vo.wav" data-start="1" data-duration="AUTO"></audio>"#)
+                .unwrap();
+        assert_eq!(auto[0].duration, None);
+        assert_eq!(auto[0].start, 1.0);
     }
 
     #[test]
