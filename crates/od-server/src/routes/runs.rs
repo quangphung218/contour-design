@@ -112,9 +112,15 @@ pub async fn create(
         safe_client_id(req.assistant_message_id.as_deref())?.unwrap_or_else(new_id);
     let project_id = req.project_id.clone();
     let conversation_id = req.conversation_id.clone();
+    // A send or a Retry moves the project up Recent projects, at the time
+    // the user sent it (a queued message is sent later); never later than now.
+    let sent_at = req.sent_at.map(|at| at.min(od_runs::now_ms()));
     let (project, conversation) = state
         .blocking(move |s| {
             let project = s.get_project(&project_id)?;
+            if let Some(at) = sent_at {
+                s.mark_project_sent(&project.id, at)?;
+            }
             let conversation = match conversation_id {
                 Some(cid) => s.get_conversation(&project.id, &cid)?,
                 None => s.latest_or_new_conversation(&project.id)?,

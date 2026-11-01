@@ -17,6 +17,10 @@ All notable changes to Contour are recorded here. The format follows
   running app through `daemon.lock` when nothing answers at the default
   `127.0.0.1:7456`, as `od-desktop mcp` does. A URL given with
   `--daemon-url` or `OD_DAEMON_URL` is used as is.
+- Recent projects follow your last message: renaming or opening a
+  project and the agent's reply no longer move it to the top; sending a
+  message or Retry does. A queued message counts from when you queued it,
+  and a scheduled run moves nothing.
 
 ## [0.2.0-beta.10] - 2026-11-01
 

@@ -778,6 +778,7 @@ impl SideChat {
                     .config
                     .with_untracked(|c| c.as_ref().and_then(|c| c.model.clone())),
                 locale: Some(shell.locale.get_untracked().tag().to_owned()),
+                sent_at: Some(js_sys::Date::now() as i64),
                 ..ChatRequest::default()
             };
             match api::post::<_, CreateRunResponse>("/api/runs", &side_turn(req)).await {

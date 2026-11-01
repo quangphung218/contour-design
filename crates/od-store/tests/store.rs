@@ -304,3 +304,59 @@ fn setup_is_not_recorded_in_a_data_folder_from_before_it() {
     drop(store);
     assert_eq!(open(tmp.path()).setup_marks().unwrap(), None, "for good");
 }
+
+/// Recent projects follow the user's last send (spec L6): a rename keeps
+/// the order, a send moves the project up, a late send of an earlier
+/// (queued) message never moves it back.
+#[test]
+fn only_a_send_moves_a_project_up_recent_projects() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let create = |name: &str| {
+        store
+            .create_project(CreateProjectRequest {
+                name: name.to_owned(),
+                ..CreateProjectRequest::default()
+            })
+            .unwrap()
+            .0
+    };
+    let (a, b) = (create("A"), create("B"));
+    store
+        .with_conn(|c| {
+            c.execute(
+                "UPDATE projects SET updated_at = 1000 WHERE id = ?1",
+                [&a.id],
+            )?;
+            c.execute(
+                "UPDATE projects SET updated_at = 2000 WHERE id = ?1",
+                [&b.id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let order = || {
+        store
+            .list_projects()
+            .unwrap()
+            .into_iter()
+            .map(|p| p.name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(order(), ["B", "A"]);
+
+    let renamed = store
+        .update_project(
+            &a.id,
+            serde_json::from_value(json!({ "name": "A2", "pendingPrompt": "" })).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(renamed.updated_at, 1000);
+    assert_eq!(order(), ["B", "A2"]);
+
+    store.mark_project_sent(&a.id, 3000).unwrap();
+    assert_eq!(order(), ["A2", "B"]);
+    store.mark_project_sent(&a.id, 2500).unwrap();
+    assert_eq!(store.get_project(&a.id).unwrap().updated_at, 3000);
+    assert!(store.mark_project_sent("missing", 1).is_err());
+}

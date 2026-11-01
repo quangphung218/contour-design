@@ -255,6 +255,15 @@ pub fn update_project(conn: &Connection, project: &Project) -> Result<()> {
     Ok(())
 }
 
+/// `updated_at` becomes `at` unless it is already later. Returns whether
+/// the project exists.
+pub fn mark_project_sent(conn: &Connection, id: &str, at: i64) -> Result<bool> {
+    Ok(conn.execute(
+        "UPDATE projects SET updated_at = MAX(updated_at, ?2) WHERE id = ?1",
+        params![id, at],
+    )? > 0)
+}
+
 /// Returns whether a row was deleted. Conversations, messages and comments
 /// go with it through `ON DELETE CASCADE`.
 pub fn delete_project(conn: &Connection, id: &str) -> Result<bool> {

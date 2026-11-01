@@ -104,6 +104,8 @@ pub fn add_missing(list: &mut Vec<String>, files: Vec<String>) {
 pub struct Queued {
     pub id: String,
     pub text: String,
+    /// When the user queued it (epoch ms): the time it counts as sent.
+    pub sent_at: i64,
 }
 
 /// Moves the item at `from` to `to` (both clamped), for drag and drop and
