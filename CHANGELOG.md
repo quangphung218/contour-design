@@ -16,7 +16,10 @@ All notable changes to Contour are recorded here. The format follows
   `od media generate --model hyperframes-html --composition-dir <dir>`
   renders it with the Chrome and ffmpeg already installed, as a task that
   `od media wait` follows, and prints the film's length, fps and size plus
-  three review frames. `od media models` lists the model.
+  three review frames. `od media models` lists the model. It prints
+  `queued <task-id>` on stderr first; for a film over 20 s the skill
+  queues with `--no-wait` and waits in 90 s calls, so a render longer than
+  the agent's shell limit is not lost. A failed render is logged.
 - The rendered MP4 shows in "Files from this turn" (an edit when a
   re-render replaced it), counts as the turn's deliverable, and opens in
   the preview when the composition declares
@@ -34,7 +37,8 @@ All notable changes to Contour are recorded here. The format follows
   fails with "ffmpeg required" or "Chrome required" and how to install
   it, and the skill tells the agent to stop and report it.
 - `od media wait` accepts `--since` and exits 2 while the task still runs,
-  as the copied HyperFrames and e-commerce skills expect.
+  as the copied HyperFrames and e-commerce skills expect. The desktop app
+  keeps these exit codes (2, 66) instead of turning them into 1.
 
 ## [0.2.0-beta.9] - 2026-11-01
 

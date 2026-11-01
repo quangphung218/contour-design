@@ -352,6 +352,15 @@ disagree, follow this section.
 - The host commands above are the whole pipeline. Never render frames,
   encode, probe or screenshot the film yourself: no `ffmpeg`, `ffprobe`,
   Chrome, headless browser, Playwright or Puppeteer calls, even to check.
+- A film longer than 20 s can render for minutes, past your shell's time
+  limit. Queue it with `media generate … --no-wait`, which prints the task
+  id, then run `"$OD_NODE_BIN" "$OD_BIN" media wait <id> --timeout 90` again
+  until it exits 0: exit 2 means still rendering, any other code is a
+  failure to report. `media generate` also prints `queued <id>` on stderr
+  first, so a cut-off call can be resumed the same way. Never start a
+  second render of the same film while one runs.
+- Leave out the `<link rel="alternate">` MP4 link: Contour does not read it
+  and finds the film through `media generate`.
 - `media generate` prints the MP4's duration, fps, size and codec, then three
   `review frame` PNG paths (opening, poster, ending) taken from the actual
   render. They are your bounded visual check: open them with your file
