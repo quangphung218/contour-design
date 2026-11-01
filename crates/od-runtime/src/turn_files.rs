@@ -6,8 +6,9 @@
 //! every file that is new or changed (mtime or size) and that no write tool
 //! already reported joins the turn as a `Write` (new) or `Edit` (changed).
 //!
-//! A folder with more than [`GROUP_OVER`] such files (frames from `ffmpeg`)
-//! becomes one row, `frames/ (N files)`, and a turn adds at most
+//! More than [`GROUP_OVER`] such files of a folder's most common extension
+//! (frames from `ffmpeg`) become one row, `frames/ (N files)`, while a
+//! film, page or file of another kind there keeps its own row. A turn adds at most
 //! [`MAX_ROWS`] rows plus one `+N more`: thousands of frames must not flood
 //! the chat or the stored message.
 //!
@@ -243,43 +244,79 @@ fn is_result_file(path: &str) -> bool {
     .any(|e| lower.ends_with(e))
 }
 
-/// Turns the changed files into rows: each folder holding more than
-/// [`GROUP_OVER`] of them (directly) becomes one row; result files come
-/// first, then folders, then the rest, each by path. At most [`MAX_ROWS`]
-/// rows; the second value counts the files left out.
+/// Files that keep a row of their own even inside a grouped folder: a
+/// film, a page or a document is what people open.
+fn keeps_its_row(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    [".mp4", ".mov", ".webm", ".gif", ".html", ".pdf"]
+        .iter()
+        .any(|e| lower.ends_with(e))
+}
+
+/// Lower-case extension of the file name (`""` without one).
+fn extension(path: &str) -> String {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name.rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
+/// Turns the changed files into rows. In each folder, the files sharing
+/// its most common extension (frames) become one row once there are more
+/// than [`GROUP_OVER`] of them; films, pages, documents and files of any
+/// other extension keep their own row. Result files come first, then
+/// folders, then the rest, each by path. At most [`MAX_ROWS`] rows; the
+/// second value counts the files left out (a folder row counts its files).
 #[must_use]
 pub fn plan_rows(changes: &[(String, Change)]) -> (Vec<Row>, usize) {
     let parent = |p: &str| p.rsplit_once('/').map(|(d, _)| d.to_owned());
-    let mut per_dir: HashMap<String, (usize, bool)> = HashMap::new();
+    let mut per_dir: HashMap<String, Vec<(&str, Change)>> = HashMap::new();
     for (path, change) in changes {
         if let Some(dir) = parent(path) {
-            let e = per_dir.entry(dir).or_insert((0, true));
-            e.0 += 1;
-            e.1 &= *change == Change::Added;
+            per_dir.entry(dir).or_default().push((path, *change));
         }
     }
-    let mut files = Vec::new();
-    for (path, change) in changes {
-        let grouped = parent(path).is_some_and(|d| per_dir[&d].0 > GROUP_OVER);
-        if !grouped {
-            files.push(Row {
-                path: path.clone(),
-                change: *change,
-                files: None,
-            });
+    let mut grouped: HashSet<&str> = HashSet::new();
+    let mut folders: Vec<Row> = Vec::new();
+    for (dir, entries) in &per_dir {
+        let mut by_ext: HashMap<String, usize> = HashMap::new();
+        for (path, _) in entries {
+            *by_ext.entry(extension(path)).or_default() += 1;
         }
-    }
-    let mut folders: Vec<Row> = per_dir
-        .into_iter()
-        .filter(|(_, (n, _))| *n > GROUP_OVER)
-        .map(|(dir, (n, all_added))| Row {
+        // Ties go to the alphabetically first extension, so runs agree.
+        let Some(major) = by_ext
+            .into_iter()
+            .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(&a.0)))
+            .map(|(e, _)| e)
+        else {
+            continue;
+        };
+        let members: Vec<&(&str, Change)> = entries
+            .iter()
+            .filter(|(p, _)| extension(p) == major && !keeps_its_row(p))
+            .collect();
+        if members.len() <= GROUP_OVER {
+            continue;
+        }
+        grouped.extend(members.iter().map(|(p, _)| *p));
+        let all_added = members.iter().all(|(_, c)| *c == Change::Added);
+        folders.push(Row {
             path: format!("{dir}/"),
             change: if all_added {
                 Change::Added
             } else {
                 Change::Modified
             },
-            files: Some(n),
+            files: Some(members.len()),
+        });
+    }
+    let mut files: Vec<Row> = changes
+        .iter()
+        .filter(|(p, _)| !grouped.contains(p.as_str()))
+        .map(|(path, change)| Row {
+            path: path.clone(),
+            change: *change,
+            files: None,
         })
         .collect();
     folders.sort_by(|a, b| a.path.cmp(&b.path));
@@ -594,6 +631,46 @@ mod tests {
         )
         .0;
         assert_eq!(edited[0].change, Change::Modified, "a folder with an edit");
+    }
+
+    #[test]
+    fn a_film_among_frames_keeps_a_row_that_opens() {
+        let mut changes = added((1..=1000).map(|i| format!("frames/{i:04}.png")));
+        changes.push(("frames/film.mp4".to_owned(), Change::Added));
+        changes.push(("frames/index.html".to_owned(), Change::Added));
+        changes.push(("frames/log.txt".to_owned(), Change::Added));
+        let (rows, omitted) = plan_rows(&changes);
+        assert_eq!(omitted, 0);
+        let shown: Vec<(&str, Option<usize>)> =
+            rows.iter().map(|r| (r.path.as_str(), r.files)).collect();
+        assert_eq!(
+            shown,
+            [
+                ("frames/film.mp4", None),
+                ("frames/index.html", None),
+                ("frames/", Some(1000)),
+                ("frames/log.txt", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn films_keep_their_rows_even_when_they_are_the_folder_majority() {
+        let changes = added((0..30).map(|i| format!("clips/{i:02}.mp4")));
+        let (rows, _) = plan_rows(&changes);
+        assert_eq!(rows.len(), 30);
+        assert!(rows.iter().all(|r| r.files.is_none()));
+    }
+
+    #[test]
+    fn a_folder_past_the_row_limit_counts_all_its_files() {
+        // 60 root images fill the 50 rows; `frames/` (1000) falls past them.
+        let mut changes = added((0..60).map(|i| format!("img{i:02}.png")));
+        changes.extend(added((0..1000).map(|i| format!("frames/{i:04}.png"))));
+        let (rows, omitted) = plan_rows(&changes);
+        assert_eq!(rows.len(), MAX_ROWS);
+        assert!(rows.iter().all(|r| r.files.is_none()));
+        assert_eq!(omitted, 10 + 1000);
     }
 
     #[test]

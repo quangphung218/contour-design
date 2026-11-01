@@ -806,6 +806,7 @@ async fn runs_outside_a_project_do_not_compare_files() {
 
 #[tokio::test]
 async fn a_thousand_shell_frames_are_one_row() {
+    // The film rendered next to its frames keeps a row that opens.
     let h = Harness::new();
     write_mock(
         &h.mocks,
@@ -814,7 +815,7 @@ async fn a_thousand_shell_frames_are_one_row() {
 mkdir -p frames
 i=1
 while [ $i -le 1000 ]; do : > "frames/$(printf %04d $i).png"; i=$((i+1)); done
-printf 'mp4' > film.mp4
+printf 'mp4' > frames/film.mp4
 echo done
 "#,
     );
@@ -825,7 +826,7 @@ echo done
     assert_eq!(outcome.status, RunStatus::Succeeded);
     assert_eq!(
         std::fs::read_dir(h.project.join("frames")).unwrap().count(),
-        1000
+        1001
     );
     let events = events_of(&run).await;
     let uses = agent_events(&events, "tool_use");
@@ -834,7 +835,7 @@ echo done
         uses[0]["input"]["file_path"]
             .as_str()
             .unwrap()
-            .ends_with("film.mp4")
+            .ends_with("frames/film.mp4")
     );
     assert!(
         uses[1]["input"]["file_path"]
