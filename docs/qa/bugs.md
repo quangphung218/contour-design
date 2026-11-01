@@ -50,7 +50,7 @@ reproduces by hand about one try in two.
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
-| QA-026 | 🟠 | Quitting Contour while the agent works leaves the agent running: it keeps editing the project after the app is gone | `resilience.qa.mjs` RES-01 | Open |
+| QA-026 | 🟠 | Quitting Contour while the agent works leaves the agent running: it keeps editing the project after the app is gone | `resilience.qa.mjs` RES-01 | Fixed |
 | QA-027 | 🟠 | Manual edit: clicking text inside a section with `data-od-id` picks the whole section, so the text cannot be edited by clicking it (every page the real Claude writes) | `studio.qa.mjs` STU-19 | Open |
 | QA-028 | 🟠 | Opening a folder Contour cannot write to shows an error but adds a project anyway, one more per try | `resilience.qa.mjs` RES-03 | Fixed |
 | QA-029 | 🟡 | Storage errors reach the user raw: "The daemon hit an error: io error: Permission denied (os error 13) (HTTP 500)", "… No space left on device (os error 28)" | `resilience.qa.mjs` RES-04; full disk manual | Fixed |
@@ -570,6 +570,13 @@ Reported by the UX review of 759581a.
   app (`apps/desktop/src/main.rs:432`) both end through it. Cancel every
   live run there the way Stop does (SIGTERM to the process group, 3 s,
   SIGKILL), and mark those turns canceled.
+- **Fixed**: `AppState::shutdown` now calls `RunContext::stop_all`
+  alongside `close_all`: every run in flight is canceled as by Stop (abort
+  line, SIGTERM to the group, SIGKILL after 3 s), a run not launched yet
+  gets a pending cancel, and shutdown waits (at most 8 s) for the launch
+  and finalize tasks, now kept in a `TaskTracker`, so each turn is stored
+  as canceled. `od` and the desktop app both end through it. Guarded by
+  `od-server/tests/runs.rs` `shutdown_stops_running_agents_like_stop`.
 
 ## QA-027 🟠 Manual edit picks the whole section instead of the text clicked
 

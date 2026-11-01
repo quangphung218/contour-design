@@ -152,7 +152,7 @@ pub async fn create(
 
     // axum drops this future when the client disconnects. Once the run is
     // registered it must launch or end, so the rest runs in its own task.
-    let task = tokio::spawn({
+    let task = state.runs.tasks.spawn({
         let state = state.clone();
         let run = Arc::clone(&run);
         let conversation_id = conversation.id.clone();
@@ -645,7 +645,7 @@ async fn prepare_and_launch(
         .await;
         return Ok(resumed);
     };
-    tokio::spawn(persist_run(
+    state.runs.tasks.spawn(persist_run(
         state.clone(),
         Arc::clone(run),
         handle,

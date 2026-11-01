@@ -7,6 +7,8 @@ use od_store::{Store, StoreError};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
+use tokio_util::task::TaskTracker;
 
 /// Default daemon port, shared with the CLI.
 pub const DEFAULT_PORT: u16 = 7456;
@@ -40,7 +42,14 @@ pub struct RunContext {
     pub tokens: ToolTokens,
     /// Runs canceled after registering but before their agent launched.
     pending_cancels: Mutex<HashSet<String>>,
+    /// Launch and finalize tasks of chat runs: shutdown waits for them so
+    /// each turn is recorded as it ended.
+    pub tasks: TaskTracker,
 }
+
+/// How long shutdown waits for stopped runs: the abort line's grace, then
+/// SIGTERM's, then a little for the store.
+const STOP_ALL_LIMIT: Duration = Duration::from_secs(8);
 
 impl RunContext {
     #[must_use]
@@ -50,6 +59,36 @@ impl RunContext {
             engine: RunEngine::new(engine),
             tokens: ToolTokens::default(),
             pending_cancels: Mutex::default(),
+            tasks: TaskTracker::new(),
+        }
+    }
+
+    /// Stops every live run the way Stop does (abort line, SIGTERM to the
+    /// process group, SIGKILL after the grace) and waits until each has
+    /// ended and its turn is recorded as canceled, or the limit passes.
+    pub async fn stop_all(&self) {
+        {
+            let mut pending = self.pending_cancels();
+            self.engine.cancel_all();
+            for run in self.registry.list() {
+                if !run.status().is_terminal() && !self.engine.cancel(run.id()) {
+                    // Registered but not launched yet: the launch step ends it.
+                    pending.insert(run.id().to_owned());
+                }
+            }
+        }
+        self.tasks.close();
+        let done = async {
+            self.tasks.wait().await;
+            while self.engine.in_flight() > 0 {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        };
+        if tokio::time::timeout(STOP_ALL_LIMIT, done).await.is_err() {
+            tracing::warn!(
+                in_flight = self.engine.in_flight(),
+                "runs still ending at shutdown"
+            );
         }
     }
 
@@ -95,10 +134,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Ends what the daemon started that would outlive it: the terminal
-    /// tabs' shells and their jobs. Call once the server stopped serving.
+    /// Ends what the daemon started that would outlive it: running agents
+    /// (stopped as by Stop, their turns recorded as canceled) and the
+    /// terminal tabs' shells and their jobs. Call once the server stopped
+    /// serving.
     pub async fn shutdown(&self) {
-        self.platform.terminals.close_all().await;
+        tokio::join!(self.runs.stop_all(), self.platform.terminals.close_all());
     }
 
     /// Runs blocking store work off the async runtime.

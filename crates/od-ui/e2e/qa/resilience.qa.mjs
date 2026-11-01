@@ -29,7 +29,7 @@ test('RES-01', 'Quitting Contour while the agent works stops the agent: nothing 
   const late = join(d.data, 'projects', id, 'linger.html');
   assert.ok(!existsSync(late), 'the agent kept working after Contour quit and wrote linger.html into the project');
   await d.spawn();
-}, { knownBug: 'QA-026', timeout: 60_000, daemon: {} });
+}, { timeout: 60_000, daemon: {} });
 
 test('RES-02', 'A turn cut short because Contour closed says so, and does not send the user to the agent settings', async ({ d, api, newPage }) => {
   const id = await createProject(d, 'Crash mid-run');

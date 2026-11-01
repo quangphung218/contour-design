@@ -311,6 +311,23 @@ impl RunEngine {
         true
     }
 
+    /// [`Self::cancel`] for every run in flight (daemon shutdown). Returns
+    /// how many were asked to stop.
+    pub fn cancel_all(&self) -> usize {
+        let active: Vec<Arc<Active>> = self.active().values().cloned().collect();
+        for run in &active {
+            run.canceled.store(true, Ordering::SeqCst);
+            run.cancel.notify_one();
+        }
+        active.len()
+    }
+
+    /// Runs whose agent is still being driven.
+    #[must_use]
+    pub fn in_flight(&self) -> usize {
+        self.active().len()
+    }
+
     /// Writes one more user message to a live stream-json stdin.
     ///
     /// # Errors

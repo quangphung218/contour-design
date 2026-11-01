@@ -1026,3 +1026,68 @@ async fn settings_permission_mode_reaches_the_agent_argv() {
     );
     assert!(!argv[3].contains(network), "{}", argv[3]);
 }
+
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn shutdown_stops_running_agents_like_stop() {
+    // QA-026: quitting must not leave the agent editing the project.
+    let d = daemon_with(Options {
+        kill_grace: Duration::from_millis(500),
+        ..Options::default()
+    })
+    .await;
+    let late = d.mocks.join("late.html");
+    // Like a Node CLI: ignores the closed pipe and keeps working, then
+    // writes a file 3 s after it started.
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!(
+            r#"{PROBES}
+trap '' PIPE
+IFS= read -r line
+printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+i=0
+while [ $i -lt 15 ]; do sleep 0.2; printf '{{"type":"assistant","message":{{"id":"m%s","content":[{{"type":"text","text":"."}}]}}}}\n' "$i" 2>/dev/null; i=$((i + 1)); done
+printf 'late' > "{late}"
+"#,
+            late = late.display()
+        ),
+    );
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project,
+                      "conversationId": conversation, "message": "go"}))
+        .await;
+    let started = Instant::now();
+    let mut reader = d.stream(&run.run_id, None).await;
+    while let Some(ev) = reader.next().await {
+        if ev.event == "agent" && ev.data["type"] == "status" {
+            break;
+        }
+    }
+
+    tokio::time::timeout(Duration::from_secs(10), d.state.shutdown())
+        .await
+        .expect("shutdown did not return");
+    let reg = d.state.runs.registry.get(&run.run_id).unwrap();
+    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
+    // The turn is recorded as stopped before shutdown returns.
+    let body = d
+        .get_json(&format!(
+            "/api/projects/{project}/conversations/{conversation}/messages"
+        ))
+        .await;
+    let assistant = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "assistant")
+        .cloned()
+        .unwrap();
+    assert_eq!(assistant["runStatus"], "canceled");
+    if let Some(left) = Duration::from_secs(4).checked_sub(started.elapsed()) {
+        tokio::time::sleep(left).await;
+    }
+    assert!(!late.exists(), "the agent kept working after shutdown");
+}
