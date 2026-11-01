@@ -52,7 +52,7 @@ reproduces by hand about one try in two.
 |---|---|---|---|---|
 | QA-026 | 🟠 | Quitting Contour while the agent works leaves the agent running: it keeps editing the project after the app is gone | `resilience.qa.mjs` RES-01 | Open |
 | QA-027 | 🟠 | Manual edit: clicking text inside a section with `data-od-id` picks the whole section, so the text cannot be edited by clicking it (every page the real Claude writes) | `studio.qa.mjs` STU-19 | Open |
-| QA-028 | 🟠 | Opening a folder Contour cannot write to shows an error but adds a project anyway, one more per try | `resilience.qa.mjs` RES-03 | Open |
+| QA-028 | 🟠 | Opening a folder Contour cannot write to shows an error but adds a project anyway, one more per try | `resilience.qa.mjs` RES-03 | Fixed |
 | QA-029 | 🟡 | Storage errors reach the user raw: "The daemon hit an error: io error: Permission denied (os error 13) (HTTP 500)", "… No space left on device (os error 28)" | `resilience.qa.mjs` RES-04; full disk manual | Open |
 | QA-030 | 🟡 | A turn cut short because Contour closed or crashed says "daemon restarted" and "check the agent in Settings", with an Open Settings button | `resilience.qa.mjs` RES-02 | Open |
 | QA-031 | 🟡 | The Export menu offers PowerPoint and MP4 for a plain page; both end in "Export failed: The request was not accepted: … (HTTP 422)" | `export.qa.mjs` EXP-13 | Open |
@@ -614,6 +614,13 @@ Reported by the UX review of 759581a.
   Any create that fails there (a full disk, too) leaves the same half
   project. Whether a read-only folder should open at all is the
   maintainer's call (`import_folder`, `routes/ui.rs:405`).
+- **Fixed**: `create_project_by` writes the manifest inside the
+  transaction, before `tx.commit()`; when it fails the row rolls back (and
+  a data-folder project's new folder is removed). Read-only folders are not
+  supported (maintainer's call): opening one is refused, with no project
+  left. Test: `od-server` `tests/ui.rs`
+  `read_only_folder_is_refused_without_a_project`; RES-03 no longer
+  `knownBug`.
 
 ## QA-029 🟡 Storage errors reach the user as OS errors
 

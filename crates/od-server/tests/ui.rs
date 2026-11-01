@@ -147,6 +147,35 @@ async fn import_folder_points_at_folder() {
     }
 }
 
+/// QA-028: a folder Contour cannot write to is refused, and leaves no
+/// project behind however often the user tries.
+#[cfg(unix)]
+#[tokio::test]
+async fn read_only_folder_is_refused_without_a_project() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::Builder::new().prefix("od-ui-").tempdir().unwrap();
+    let app = router(state(tmp.path()));
+    let folder = tmp.path().join("ro-site");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("index.html"), "<h1>hi</h1>").unwrap();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    for _ in 0..2 {
+        let (s, b) = call(
+            &app,
+            "POST",
+            "/api/import/folder",
+            Some(json!({"baseDir": folder})),
+        )
+        .await;
+        assert_ne!(s, StatusCode::OK, "{}", String::from_utf8_lossy(&b));
+    }
+    let (_, b) = call(&app, "GET", "/api/projects", None).await;
+    let projects = json_of(&b)["projects"].as_array().unwrap().len();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(projects, 0, "a refused folder left {projects} project(s)");
+}
+
 #[tokio::test]
 async fn static_bundle_and_spa_fallback() {
     let tmp = tempfile::tempdir().unwrap();

@@ -222,9 +222,18 @@ impl Store {
                 crate::setup::insert(&tx, od_contracts::SetupStep::Project, now)?;
             }
             root.ensure_exists()?;
+            // The manifest goes first: a folder that cannot be written to
+            // (read-only, full disk) rolls the row back instead of leaving
+            // a half project (QA-028).
+            if let Err(err) = self.write_manifest(&project) {
+                if !root.imported {
+                    // Only the folder made just above; never a user folder.
+                    let _ = fs::remove_dir_all(&root.dir);
+                }
+                return Err(err);
+            }
             tx.commit()?;
         }
-        self.write_manifest(&project)?;
         Ok((project, conversation_id))
     }
 
