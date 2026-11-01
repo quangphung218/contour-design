@@ -1,5 +1,6 @@
 //! `od media`: queued media generation, its tasks, models and prompt
-//! templates, through the daemon's `/api/media/*` routes.
+//! templates, through the daemon's `/api/media/*` routes. `scaffold` and
+//! `generate --model hyperframes-html` make and render a Motion film.
 
 use crate::client::Client;
 use crate::exit::Exit;
@@ -9,14 +10,25 @@ use std::time::{Duration, Instant};
 
 #[derive(Debug, Subcommand)]
 pub enum MediaCommand {
-    /// Queue a generation; waits for it unless --no-wait.
+    /// Queue a generation; waits for it unless --no-wait. With
+    /// `--model hyperframes-html --composition-dir <dir>`, renders that
+    /// composition to MP4 with the installed Chrome and ffmpeg.
     Generate(GenerateArgs),
-    /// Wait for a task to end; prints it. Fails unless it is done.
+    /// Create a HyperFrames composition folder (index.html,
+    /// hyperframes.json, meta.json) to edit, then render with generate.
+    /// A folder that already has index.html is left as it is.
+    Scaffold(ScaffoldArgs),
+    /// Wait for a task to end; prints it. Fails unless it is done: exit 2
+    /// when it is still running at --timeout, 1 when it failed.
     Wait {
         task: String,
         /// Give up after this many seconds.
         #[arg(long, default_value_t = 900)]
         timeout: u64,
+        /// Progress cursor of the original's polling loop; accepted and
+        /// ignored (this wait blocks until the task ends or --timeout).
+        #[arg(long)]
+        since: Option<String>,
     },
     /// List media tasks, oldest first.
     Tasks {
@@ -36,7 +48,7 @@ pub enum MediaCommand {
 
 #[derive(Debug, Args)]
 pub struct GenerateArgs {
-    #[arg(long)]
+    #[arg(long, env = "OD_PROJECT_ID", hide_env_values = true)]
     project: String,
     #[arg(long, value_parser = ["image", "video", "audio"])]
     surface: String,
@@ -54,11 +66,40 @@ pub struct GenerateArgs {
     duration: Option<f64>,
     #[arg(long)]
     voice: Option<String>,
+    /// hyperframes-html: the composition folder, relative to the project.
+    #[arg(long)]
+    composition_dir: Option<String>,
+    /// hyperframes-html: frame rate instead of the composition's data-fps.
+    #[arg(long)]
+    fps: Option<u32>,
+    /// The agent run the output belongs to (shown in its turn).
+    #[arg(long, env = "OD_RUN_ID", hide_env_values = true)]
+    run: Option<String>,
     /// Print the queued task and return at once.
     #[arg(long)]
     no_wait: bool,
     #[arg(long, default_value_t = 900)]
     timeout: u64,
+}
+
+#[derive(Debug, Args)]
+pub struct ScaffoldArgs {
+    #[arg(long, env = "OD_PROJECT_ID", hide_env_values = true)]
+    project: String,
+    /// New folder for the composition, relative to the project.
+    #[arg(long)]
+    composition_dir: String,
+    #[arg(long)]
+    width: Option<u32>,
+    #[arg(long)]
+    height: Option<u32>,
+    #[arg(long)]
+    fps: Option<u32>,
+    /// Film length in seconds.
+    #[arg(long)]
+    duration: Option<f64>,
+    #[arg(long, env = "OD_RUN_ID", hide_env_values = true)]
+    run: Option<String>,
 }
 
 fn print_task(task: &Value, json_out: bool) -> anyhow::Result<()> {
@@ -73,7 +114,25 @@ fn print_task(task: &Value, json_out: bool) -> anyhow::Result<()> {
         task["result"]["name"].as_str(),
         task["error"].as_str(),
     ) {
-        ("done", Some(name), _) => println!("{id}\t{status}\t{name}"),
+        ("done", Some(name), _) => {
+            println!("{id}\t{status}\t{name}");
+            // A local render says what it made and where to look.
+            if let Some(note) = task["result"]["providerNote"]
+                .as_str()
+                .filter(|_| task["result"]["provider"] == "hyperframes")
+            {
+                println!("{note}");
+                for f in task["result"]["reviewFrames"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some(f) = f.as_str() {
+                        println!("review frame\t{f}");
+                    }
+                }
+            }
+        }
         (_, _, Some(err)) => println!("{id}\t{status}\t{err}"),
         _ => println!("{id}\t{status}"),
     }
@@ -105,8 +164,14 @@ fn finish(task: &Value, json_out: bool) -> anyhow::Result<()> {
     print_task(task, json_out)?;
     match task["status"].as_str() {
         Some("done") => Ok(()),
-        Some("queued" | "running") => Err(Exit::new(1, "timed out waiting for the task").into()),
-        Some(other) => Err(Exit::new(1, format!("task {other}")).into()),
+        // 2, "still running", as the original's polling loop expects.
+        Some("queued" | "running") => Err(Exit::new(2, "timed out waiting for the task").into()),
+        Some(other) => {
+            let why = task["error"]
+                .as_str()
+                .map_or(String::new(), |e| format!(": {e}"));
+            Err(Exit::new(1, format!("task {other}{why}")).into())
+        }
         None => Err(Exit::new(1, "no task in the response").into()),
     }
 }
@@ -117,6 +182,9 @@ pub fn run(client: &Client, cmd: MediaCommand, json_out: bool) -> anyhow::Result
             let mut body = json!({ "surface": a.surface, "model": a.model, "prompt": a.prompt });
             for (k, v) in [
                 ("output", a.output.map(Value::from)),
+                ("compositionDir", a.composition_dir.map(Value::from)),
+                ("fps", a.fps.map(Value::from)),
+                ("runId", a.run.map(Value::from)),
                 ("aspect", a.aspect.map(Value::from)),
                 ("duration", a.duration.map(Value::from)),
                 ("length", a.duration.map(Value::from)),
@@ -139,7 +207,35 @@ pub fn run(client: &Client, cmd: MediaCommand, json_out: bool) -> anyhow::Result
             let task = wait(client, &id, Duration::from_secs(a.timeout))?;
             finish(&task, json_out)
         }
-        MediaCommand::Wait { task, timeout } => {
+        MediaCommand::Scaffold(a) => {
+            let mut body = json!({ "compositionDir": a.composition_dir });
+            for (k, v) in [
+                ("width", a.width.map(Value::from)),
+                ("height", a.height.map(Value::from)),
+                ("fps", a.fps.map(Value::from)),
+                ("duration", a.duration.map(Value::from)),
+                ("runId", a.run.map(Value::from)),
+            ] {
+                if let Some(v) = v {
+                    body[k] = v;
+                }
+            }
+            let res: Value = client.send_json(
+                "POST",
+                &["api", "projects", &a.project, "media", "scaffold"],
+                &body,
+            )?;
+            if json_out {
+                println!("{}", serde_json::to_string_pretty(&res)?);
+                return Ok(());
+            }
+            println!("{}", res["message"].as_str().unwrap_or_default());
+            for f in res["files"].as_array().into_iter().flatten() {
+                println!("{}", f.as_str().unwrap_or_default());
+            }
+            Ok(())
+        }
+        MediaCommand::Wait { task, timeout, .. } => {
             let task = wait(client, &task, Duration::from_secs(timeout))?;
             finish(&task, json_out)
         }
@@ -178,7 +274,12 @@ pub fn run(client: &Client, cmd: MediaCommand, json_out: bool) -> anyhow::Result
                 };
                 println!("provider\t{}\t{state}", p["id"].as_str().unwrap_or(""));
             }
-            for m in res["models"].as_array().into_iter().flatten() {
+            for m in res["models"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .chain(res["localModels"].as_array().into_iter().flatten())
+            {
                 println!(
                     "{}\t{}\t{}",
                     m["surface"].as_str().unwrap_or(""),
