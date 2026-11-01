@@ -249,8 +249,9 @@ pause/resume or unlock audio blocked by browser autoplay. The internal
 `window.__odMotionPlayer` interface retains play/pause, seek and replay. Preserve its `script[data-od-motion-source-player]`. Do not create
 competing controls or start a second playback clock. The renderer sets
 `window.__odMotionRender` before author scripts to disable preview chrome and
-scaling during capture. The scaffold includes pinned GSAP 3.14.2 at
-`./gsap.min.js`; preserve and reference that local file. No download is needed. Prefer installed/system fonts with Chinese coverage; an unrequested font
+scaling during capture. In Contour the scaffold has no `./gsap.min.js` and
+no GSAP is bundled: do not reference that file (a missing local script fails
+the render). See "In Contour" below. Prefer installed/system fonts with Chinese coverage; an unrequested font
 must not block delivery. If an optional download fails, use an available font
 instead of probing more mirrors, installing font tools or creating environments.
 For an existing standalone source without the host player, put controls outside the
