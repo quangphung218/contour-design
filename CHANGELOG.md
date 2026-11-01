@@ -40,6 +40,19 @@ All notable changes to Contour are recorded here. The format follows
 - Live reload: when macOS drops file events under load (FSEvents
   `MustScanSubDirs`) or Linux's inotify queue overflows, the preview and
   file list reload, instead of missing the change until the next write.
+- Manual edit: clicking text inside a marked section picks that text, so
+  a paragraph of a page the agent wrote can be edited. Before, the click
+  picked the whole section (QA-027).
+- Export: PowerPoint and MP4 are offered only when the page has slides or
+  a composition root. Before, a plain page offered both and the export
+  failed with HTTP 422 (QA-031).
+- Studio: with an edit not applied, the browser's Back asks every time,
+  even after the preview reloaded. Before, a reload could make Back do
+  nothing or Leave stay on the page (QA-033).
+- Home: Prototype, Slide deck and Video with no template send no skill,
+  as the original does; the daemon decides. Before, a featured skill the
+  user never picked was used.
+- Onboarding: Continue while the connection test runs no longer panics.
 
 ## [0.2.0-beta.8] - 2026-10-30
 
