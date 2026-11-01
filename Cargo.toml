@@ -32,10 +32,10 @@ od-cli = { path = "crates/od-cli" }
 anyhow = "1"
 arc-swap = "1"
 axum = { version = "0.8", features = ["multipart", "macros"] }
-base64 = "0.22"
+base64 = "0.23"
 chromiumoxide = { version = "0.9", default-features = false }
 clap = { version = "4", features = ["derive", "env"] }
-criterion = { version = "0.5", default-features = false }
+criterion = { version = "0.7", default-features = false }
 flate2 = "1"
 futures-util = "0.3"
 hex = "0.4"
@@ -43,11 +43,11 @@ http-body-util = "0.1"
 httpdate = "1"
 lol_html = "3"
 lopdf = { version = "0.46", default-features = false }
-nix = { version = "0.30", default-features = false, features = ["signal", "process", "fs"] }
+nix = { version = "0.31", default-features = false, features = ["signal", "process", "fs"] }
 notify = "8"
 notify-debouncer-full = "0.7"
 png = "0.18"
-quick-xml = "0.38"
+quick-xml = "0.41"
 rayon = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking"] }
@@ -56,7 +56,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-sha2 = "0.10"
+sha2 = "0.11"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "sync", "io-util", "process", "time"] }
