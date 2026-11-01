@@ -344,6 +344,35 @@ existing film; re-render only when the requested change affects the video.
    viewer provides preview/download. On later video edits re-render the same
    linked MP4 so the download matches the current source.
 
+### In Contour
+
+Contour is the host here. Where this section and the rest of this skill
+disagree, follow this section.
+
+- The host commands above are the whole pipeline. Never render frames,
+  encode, probe or screenshot the film yourself: no `ffmpeg`, `ffprobe`,
+  Chrome, headless browser, Playwright or Puppeteer calls, even to check.
+- `media generate` prints the MP4's duration, fps, size and codec, then three
+  `review frame` PNG paths (opening, poster, ending) taken from the actual
+  render. They are your bounded visual check: open them with your file
+  reading tool.
+- If `media generate` fails with `ffmpeg required` or `Chrome required`, stop.
+  Keep the source and tell the user what to install, as the message says. Do
+  not build a renderer or pipeline of your own and do not deliver HTML as the
+  film. Any other error names the missing field (`data-duration`,
+  `window.__timelines.main`, `data-poster-time`): fix it and render again.
+- The scaffold ships no GSAP and Contour never downloads one. Write the
+  motion as plain time-driven JavaScript inside the scaffold's timeline, whose
+  `seek(t)` draws every element from `t`. Do not fetch GSAP or other scripts
+  from a CDN. Use GSAP only if the project already has a local copy.
+- The scaffold loops the film in its own preview player. There is no
+  `window.__odMotionPlayer`; keep the scaffold's `pause()` and `seek()`.
+- The MP4 is picture only: `<audio>` tracks are not mixed in. Do not create
+  sound for a film unless the user asks; if they do, say the MP4 will be
+  silent in this version. Never mux audio yourself.
+- To revise, edit the same source and render to the same `--output`: the new
+  MP4 replaces the old one.
+
 If the host reports a renderer failure, preserve the editable source and report
 that blocker truthfully. Never fabricate a download or label HTML-only output
 as a finished video. Only actual user-requested video-motion production, and
