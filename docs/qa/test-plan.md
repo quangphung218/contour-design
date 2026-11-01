@@ -58,7 +58,7 @@ gets a project that starts working.
 | HOME-03 | Vietnamese and emoji brief keeps every character | Onboarded | Brief "Trang đặt bàn quán phở 🍜 – giờ mở cửa" | The user message and project name show the exact text | P1 | auto |
 | HOME-04 | Very long brief (5,000 chars) works | Onboarded | Paste a long brief, Enter | Project created, message stored whole; layout does not overflow horizontally | P2 | auto |
 | HOME-05 | Pressing Enter twice quickly creates one project only | Onboarded | Enter, Enter | Exactly one new project | P1 | auto |
-| HOME-06 | Slide deck type creates a deck project | Onboarded | Pick Slide deck chip, brief, Enter | Project kind is deck; the run request carries the deck skill | P0 | auto |
+| HOME-06 | Slide deck type creates a deck project | Onboarded | Pick Slide deck chip, no template, brief, Enter | Project kind is deck; the project and the run request carry no skill (as the original) | P0 | auto |
 | HOME-07 | Chosen design system is sent with the first run | Onboarded | Pick a design system, brief, Enter | Run request carries `designSystemId`; project shows that system | P0 | auto |
 | HOME-08 | Chosen template is sent as the skill of the first run | Onboarded | Pick a template, brief, Enter | Run request carries the template as `skillId` | P0 | auto |
 | HOME-09 | Video (Motion) type creates a video project | Onboarded | Pick Video chip, Enter | Project kind is video | P1 | auto |

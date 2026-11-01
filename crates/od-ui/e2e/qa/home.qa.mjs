@@ -90,7 +90,7 @@ test('HOME-05', 'Pressing Enter twice quickly creates only one project', async (
   assert.equal(made.length, 1, `created ${made.length} projects: ${made.map((p) => p.name).join(', ')}`);
 });
 
-test('HOME-06', 'Choosing Slide deck creates a deck project with a deck skill', async ({ d, api, newPage }) => {
+test('HOME-06', 'Choosing Slide deck with no template creates a deck project with no skill', async ({ d, api, newPage }) => {
   const { page, runs } = await home(newPage, d);
   await page.getByTestId('chip').filter({ hasText: 'Slide deck' }).click();
   await page.getByTestId('brief').fill('Quarterly review deck');
@@ -98,8 +98,11 @@ test('HOME-06', 'Choosing Slide deck creates a deck project with a deck skill', 
   await page.waitForURL('**/projects/*');
   const p = await projectOf(api, page);
   assert.match(p.metadata.kind, /deck|slide/i);
-  assert.ok(p.skillId, 'deck project has no skill');
+  // As the original's Home (`activeSkill?.id ?? null`): no template picked,
+  // no skill sent; the daemon decides.
+  assert.equal(p.skillId ?? null, null, `deck project got skill ${p.skillId}`);
   await until(() => runs.length > 0, 'first run');
+  assert.equal(runs[0].skillId ?? null, null, `first run got skill ${runs[0].skillId}`);
 });
 
 test('HOME-07', 'The chosen design system is used by the new project and its first run', async ({ d, api, newPage }) => {
