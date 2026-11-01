@@ -205,8 +205,26 @@ fn template(rel: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
+/// One pass takes about 35 s. Chrome very rarely stalls with no error (one
+/// of 67 pre-merge `make check` runs on 2026-11-01 hung here until the
+/// 15 minute limit): a stalled pass is dropped after this long (which
+/// kills its Chrome) and run once more on a fresh browser.
+const PASS_LIMIT: Duration = Duration::from_secs(150);
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bridge_in_headless_chrome() {
+    for attempt in 1..=2 {
+        match tokio::time::timeout(PASS_LIMIT, bridge_pass()).await {
+            Ok(()) => return,
+            Err(_) if attempt == 1 => {
+                eprintln!("bridge pass stalled for {PASS_LIMIT:?}; retrying on a fresh Chrome");
+            }
+            Err(_) => panic!("bridge pass stalled twice ({PASS_LIMIT:?} each)"),
+        }
+    }
+}
+
+async fn bridge_pass() {
     let Some(h) = Harness::start().await else {
         return;
     };

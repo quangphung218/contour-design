@@ -3,7 +3,6 @@
 use anyhow::Context;
 use clap::{Args, Subcommand};
 use od_mcp::install::{self, Agent, InstallOptions, LaunchSpec, SERVER_NAME};
-use std::process::ExitCode;
 
 #[derive(Debug, Args)]
 pub struct McpArgs {
@@ -37,12 +36,10 @@ enum McpCommand {
 
 /// `daemon_url` is `--daemon-url` / `OD_DAEMON_URL` or the default;
 /// `given` is the same URL when it was not the default.
-pub fn run(args: McpArgs, daemon_url: &str, given: Option<&str>, json: bool) -> ExitCode {
+pub fn run(args: McpArgs, daemon_url: &str, given: Option<&str>, json: bool) -> u8 {
     let result = match args.command {
-        None => serve(given).map(|()| ExitCode::SUCCESS),
-        Some(McpCommand::LiveArtifacts { project }) => {
-            serve_live(daemon_url, project).map(|()| ExitCode::SUCCESS)
-        }
+        None => serve(given).map(|()| 0),
+        Some(McpCommand::LiveArtifacts { project }) => serve_live(daemon_url, project).map(|()| 0),
         Some(McpCommand::Install {
             agent,
             print,
@@ -61,7 +58,7 @@ pub fn run(args: McpArgs, daemon_url: &str, given: Option<&str>, json: bool) -> 
     };
     result.unwrap_or_else(|err| {
         eprintln!("error: {err:#}");
-        ExitCode::FAILURE
+        1
     })
 }
 
@@ -104,12 +101,7 @@ fn serve_live(daemon_url: &str, project: Option<String>) -> anyhow::Result<()> {
     ))
 }
 
-fn install(
-    agent: &str,
-    daemon_url: &str,
-    name: &str,
-    opts: InstallOptions,
-) -> anyhow::Result<ExitCode> {
+fn install(agent: &str, daemon_url: &str, name: &str, opts: InstallOptions) -> anyhow::Result<u8> {
     let agent = Agent::parse(agent).map_err(anyhow::Error::msg)?;
     let exe = std::env::current_exe().context("locating the od binary")?;
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
@@ -157,5 +149,5 @@ fn install(
     } else {
         code
     };
-    Ok(ExitCode::from(u8::try_from(code).unwrap_or(1)))
+    Ok(u8::try_from(code).unwrap_or(1))
 }

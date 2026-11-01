@@ -324,9 +324,21 @@ fn show_data_folder(app: &AppHandle) {
 fn main() -> anyhow::Result<()> {
     // `<app> mcp`: the stdio server an agent starts (Integrations ▸ Install),
     // without the window, the daemon or the app's log in `<data>/logs/`.
-    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    // `"$OD_NODE_BIN" "$OD_BIN" media …` from an agent: both variables
+    // name this binary (it is the `od` of the app's runs).
+    let all = od_cli::strip_self_arg(std::env::args_os().collect());
+    let args = &all[1.min(all.len())..];
     if args.first().is_some_and(|a| a == "mcp") {
         return mcp::run(&args[1..]);
+    }
+    // `<app> media generate …` and the other client commands: the CLI,
+    // without the window, against the running app's daemon.
+    if args
+        .first()
+        .is_some_and(|a| od_cli::CLIENT_COMMANDS.iter().any(|c| a == *c))
+    {
+        // The CLI's own code: 2 (task still running) and 66 stay as they are.
+        std::process::exit(i32::from(od_cli::main_code(all)));
     }
     // Opened from Finder the app has no stdout or stderr: the log and any
     // panic also go to `<data>/logs/` (Help ▸ Report Issue reads it).

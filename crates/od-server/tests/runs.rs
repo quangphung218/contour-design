@@ -710,6 +710,7 @@ cat >/dev/null
         "OD_TOOL_TOKEN=odt_",
         "OD_PROJECT_DIR=",
         "OD_BIN=",
+        "OD_NODE_BIN=",
         "CLAUDE_CODE_ENABLE_TODO_TOOLS=1",
     ] {
         assert!(env.contains(key), "missing {key} in {env}");

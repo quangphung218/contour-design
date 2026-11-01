@@ -80,10 +80,11 @@ pub async fn models(
     State(state): State<AppState>,
     Extension(deps): Extension<Deps>,
 ) -> Json<Value> {
-    Json(od_media::models_json(
-        &config_file(&state),
-        deps.env.as_ref(),
-    ))
+    let mut v = od_media::models_json(&config_file(&state), deps.env.as_ref());
+    // Rendered on this machine from a composition the agent wrote, so not
+    // a choice for the prompt-based pickers that read `models`.
+    v["localModels"] = json!([crate::routes::w3::motion::catalogue_entry()]);
+    Json(v)
 }
 
 async fn run(

@@ -6,6 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+name = "od_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "od"
 path = "src/main.rs"
@@ -33,6 +37,7 @@ od-export.workspace = true
 od-render-cdp.workspace = true
 od-runs.workspace = true
 od-runtime.workspace = true
+regex.workspace = true
 reqwest.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-child-process"] }
 tempfile.workspace = true

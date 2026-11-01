@@ -15,8 +15,9 @@ use crate::preview_bridge::{
 use crate::sketch_model::{History, Pen, Stroke};
 use leptos::prelude::*;
 use od_contracts::{
-    ContentEncoding, DeliverableResponse, DeliverableValidation, FileResponse, LintResponse,
-    LintSeverity, SourceEdit, SourceEditRequest, SourceEditResponse, WriteFileRequest,
+    ContentEncoding, DeliverableResponse, DeliverableValidation, FileKind, FileResponse,
+    LintResponse, LintSeverity, SourceEdit, SourceEditRequest, SourceEditResponse,
+    WriteFileRequest,
 };
 use std::collections::BTreeMap;
 use wasm_bindgen::JsCast;
@@ -357,6 +358,14 @@ fn other_page(d: &DeliverableResponse, written: &[String]) -> Option<String> {
         .iter()
         .find(|f| is_html_path(f) && Some(f.as_str()) != d.entry_file.as_deref())
         .cloned()
+}
+
+/// The video a run delivered as its entry: a Motion film rendered by
+/// `od media generate` opens when the turn ends, in place of its source.
+fn delivered_video(d: &DeliverableResponse, written: &[String]) -> Option<String> {
+    let entry = d.entry_file.as_deref()?;
+    (d.valid && d.artifact_kind == Some(FileKind::Video) && written.iter().any(|f| f == entry))
+        .then(|| entry.to_owned())
 }
 
 fn deliverable_message(d: &DeliverableResponse) -> Option<String> {
@@ -707,6 +716,9 @@ impl StudioCtx {
                     // A tab, not the pane: a phone stays on the chat.
                     self.show_tab(&page);
                     return;
+                }
+                if let Some(video) = delivered_video(&d, &written) {
+                    self.show_tab(&video);
                 }
                 let _ = tools.deliverable.try_set((!d.valid).then_some(d));
             }
@@ -1797,6 +1809,34 @@ mod tests {
             deliverable_message(&d(DeliverableValidation::EntryNotTouched))
                 .unwrap()
                 .contains("index.html")
+        );
+    }
+
+    #[test]
+    fn a_rendered_film_opens_in_place_of_its_source() {
+        let d = |valid, kind| DeliverableResponse {
+            valid,
+            validation: if valid {
+                DeliverableValidation::Valid
+            } else {
+                DeliverableValidation::EntryNotTouched
+            },
+            entry_file: Some("film.mp4".into()),
+            artifact_kind: Some(kind),
+        };
+        let wrote = vec![
+            "motion-source/film/index.html".to_owned(),
+            "film.mp4".to_owned(),
+        ];
+        assert_eq!(
+            delivered_video(&d(true, FileKind::Video), &wrote).as_deref(),
+            Some("film.mp4")
+        );
+        assert_eq!(delivered_video(&d(false, FileKind::Video), &wrote), None);
+        assert_eq!(delivered_video(&d(true, FileKind::Html), &wrote), None);
+        assert_eq!(
+            delivered_video(&d(true, FileKind::Video), &wrote[..1]),
+            None
         );
     }
 

@@ -177,7 +177,7 @@ installation of AE, Blender, a paid provider or a new framework the default.
 
 ## Author reliable editable motion
 
-For a new Open Design film, use timeline-driven HTML with GSAP and optional
+For a new Open Design film, use timeline-driven HTML (GSAP only from a local copy) and optional
 SVG/Canvas. HTML/SVG suit typography, crisp diagrams and UI; Canvas suits dense
 marks, fields and procedural worlds. Combine them when useful. Preserve an
 existing supported renderer instead of rebuilding it just to fit this default.
@@ -249,8 +249,9 @@ pause/resume or unlock audio blocked by browser autoplay. The internal
 `window.__odMotionPlayer` interface retains play/pause, seek and replay. Preserve its `script[data-od-motion-source-player]`. Do not create
 competing controls or start a second playback clock. The renderer sets
 `window.__odMotionRender` before author scripts to disable preview chrome and
-scaling during capture. The scaffold includes pinned GSAP 3.14.2 at
-`./gsap.min.js`; preserve and reference that local file. No download is needed. Prefer installed/system fonts with Chinese coverage; an unrequested font
+scaling during capture. In Contour the scaffold has no `./gsap.min.js` and
+no GSAP is bundled: do not reference that file (a missing local script fails
+the render). See "In Contour" below. Prefer installed/system fonts with Chinese coverage; an unrequested font
 must not block delivery. If an optional download fails, use an available font
 instead of probing more mirrors, installing font tools or creating environments.
 For an existing standalone source without the host player, put controls outside the
@@ -322,7 +323,7 @@ existing film; re-render only when the requested change affects the video.
 2. Author `motion-source/film/index.html`. Its composition root must have
    `data-composition-id="main"`, `data-start="0"`, `data-duration`, `data-width`,
    `data-height` and `data-fps`. Register the seekable master timeline at
-   `window.__timelines.main`. Use actual GSAP animations, not a placeholder
+   `window.__timelines.main`. Animate for real, not with a placeholder
    timeline. Keep assets/fonts local and relative to this source directory.
    Include `<meta name="od-motion-output" content="video">` and
    `<link rel="alternate" type="video/mp4" href="../../film.mp4">` in the head.
@@ -343,6 +344,44 @@ existing film; re-render only when the requested change affects the video.
    HTML in the final response using project-relative Markdown links. The file
    viewer provides preview/download. On later video edits re-render the same
    linked MP4 so the download matches the current source.
+
+### In Contour
+
+Contour is the host here. Where this section and the rest of this skill
+disagree, follow this section.
+
+- The host commands above are the whole pipeline. Never render frames,
+  encode, probe or screenshot the film yourself: no `ffmpeg`, `ffprobe`,
+  Chrome, headless browser, Playwright or Puppeteer calls, even to check.
+- A film longer than 20 s can render for minutes, past your shell's time
+  limit. Queue it with `media generate … --no-wait`, which prints the task
+  id, then run `"$OD_NODE_BIN" "$OD_BIN" media wait <id> --timeout 90` again
+  until it exits 0: exit 2 means still rendering, any other code is a
+  failure to report. `media generate` also prints `queued <id>` on stderr
+  first, so a cut-off call can be resumed the same way. Never start a
+  second render of the same film while one runs.
+- Leave out the `<link rel="alternate">` MP4 link: Contour does not read it
+  and finds the film through `media generate`.
+- `media generate` prints the MP4's duration, fps, size and codec, then three
+  `review frame` PNG paths (opening, poster, ending) taken from the actual
+  render. They are your bounded visual check: open them with your file
+  reading tool.
+- If `media generate` fails with `ffmpeg required` or `Chrome required`, stop.
+  Keep the source and tell the user what to install, as the message says. Do
+  not build a renderer or pipeline of your own and do not deliver HTML as the
+  film. Any other error names the missing field (`data-duration`,
+  `window.__timelines.main`, `data-poster-time`): fix it and render again.
+- The scaffold ships no GSAP and Contour never downloads one. Write the
+  motion as plain time-driven JavaScript inside the scaffold's timeline, whose
+  `seek(t)` draws every element from `t`. Do not fetch GSAP or other scripts
+  from a CDN. Use GSAP only if the project already has a local copy.
+- The scaffold loops the film in its own preview player. There is no
+  `window.__odMotionPlayer`; keep the scaffold's `pause()` and `seek()`.
+- The MP4 is picture only: `<audio>` tracks are not mixed in. Do not create
+  sound for a film unless the user asks; if they do, say the MP4 will be
+  silent in this version. Never mux audio yourself.
+- To revise, edit the same source and render to the same `--output`: the new
+  MP4 replaces the old one.
 
 If the host reports a renderer failure, preserve the editable source and report
 that blocker truthfully. Never fabricate a download or label HTML-only output

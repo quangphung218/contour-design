@@ -22,7 +22,15 @@ const STDERR_TAIL: usize = 8_000;
 /// # Errors
 /// [`RenderError::Unavailable`] naming what to install or set.
 pub fn find_ffmpeg() -> RenderResult<PathBuf> {
-    if let Some(path) = std::env::var_os(FFMPEG_PATH_ENV).filter(|v| !v.is_empty()) {
+    find_ffmpeg_with(std::env::var_os(FFMPEG_PATH_ENV))
+}
+
+/// [`find_ffmpeg`] with `configured` in place of `OD_FFMPEG_PATH`.
+///
+/// # Errors
+/// [`RenderError::Unavailable`] naming what to install or set.
+pub fn find_ffmpeg_with(configured: Option<std::ffi::OsString>) -> RenderResult<PathBuf> {
+    if let Some(path) = configured.filter(|v| !v.is_empty()) {
         let path = PathBuf::from(path);
         return if path.is_file() {
             Ok(path)

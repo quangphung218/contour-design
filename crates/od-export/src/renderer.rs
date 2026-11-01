@@ -100,6 +100,10 @@ pub struct FrameOptions {
     /// Timeline length; `0` asks the renderer to measure the page's
     /// registered timelines instead.
     pub duration_ms: u64,
+    /// Fail unless the root composition registered its timeline in
+    /// `window.__timelines` (a script that failed, was blocked or never
+    /// ran would give a film that does not move).
+    pub require_timeline: bool,
 }
 
 /// Output of [`Renderer::render_frames`]: `count` PNGs named

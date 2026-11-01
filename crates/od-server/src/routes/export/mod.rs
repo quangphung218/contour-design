@@ -68,6 +68,16 @@ pub struct ExportErr {
 }
 
 impl ExportErr {
+    /// The message the response carries.
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// A tool the export needs (Chrome, ffmpeg) is missing or cannot start.
+    pub(crate) fn unavailable(&self) -> bool {
+        self.status == StatusCode::SERVICE_UNAVAILABLE
+    }
+
     pub(crate) fn new(status: StatusCode, code: ErrorCode, message: impl Into<String>) -> Self {
         Self {
             status,

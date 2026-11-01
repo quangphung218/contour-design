@@ -27,6 +27,7 @@ od-job = { path = "crates/od-job" }
 od-term = { path = "crates/od-term" }
 od-automation = { path = "crates/od-automation" }
 od-mcp-client = { path = "crates/od-mcp-client" }
+od-cli = { path = "crates/od-cli" }
 
 anyhow = "1"
 arc-swap = "1"

@@ -110,6 +110,7 @@ async fn composition_becomes_a_60_frame_h264_mp4() {
             FrameOptions {
                 fps: meta.fps,
                 duration_ms: meta.duration_ms.unwrap(),
+                require_timeline: false,
             },
             &frames_dir,
         )
@@ -176,6 +177,7 @@ async fn a_composition_without_timelines_does_not_wait_15_s() {
             FrameOptions {
                 fps: 10,
                 duration_ms: 500,
+                require_timeline: false,
             },
             &dir.path().join("frames"),
         )

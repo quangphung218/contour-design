@@ -5,7 +5,7 @@
 //! is returned as JSON instead of a download).
 
 use crate::routes::export::{
-    ExportErr, ExportRequest, ExportResult, attachment, internal, resolve_entry, scratch,
+    Entry, ExportErr, ExportRequest, ExportResult, attachment, internal, resolve_entry, scratch,
 };
 use crate::state::AppState;
 use axum::body::Bytes;
@@ -14,8 +14,9 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use od_contracts::ErrorCode;
-use od_export::hyperframes::{self, MAX_FPS};
-use od_export::{FrameOptions, Renderer};
+use od_export::hyperframes::{self, Composition, MAX_FPS};
+use od_export::renderer::frame_file_name;
+use od_export::{FrameOptions, FrameSet, Renderer};
 use od_render_cdp::ffmpeg::{encode_mp4, find_ffmpeg};
 use serde::Deserialize;
 use serde_json::json;
@@ -34,6 +35,63 @@ pub struct Mp4Request {
 
 fn bad(code: ErrorCode, status: StatusCode, message: impl Into<String>) -> ExportErr {
     ExportErr::new(status, code, message)
+}
+
+/// Captures `entry` (a composition read as `comp`) at `fps` and encodes
+/// it with `ffmpeg`: the MP4, its frames, and the PNG of the frame at each
+/// of `keep` (seconds), clamped to the last frame. `require_timeline`:
+/// fail when the page never registered its root timeline.
+///
+/// # Errors
+/// Renderer and ffmpeg failures, I/O.
+#[allow(clippy::too_many_arguments)] // one call per route, all required
+pub(crate) async fn render_mp4(
+    state: &AppState,
+    renderer: &dyn Renderer,
+    entry: &Entry,
+    base: &mut ExportRequest,
+    comp: &Composition,
+    fps: u32,
+    ffmpeg: &std::path::Path,
+    keep: &[f64],
+    require_timeline: bool,
+) -> ExportResult<(Vec<u8>, FrameSet, Vec<Vec<u8>>)> {
+    base.width = Some(comp.width);
+    base.height = Some(comp.height);
+    let scratch = scratch(state, entry, base).await?;
+    let frames_dir = scratch.dir.path().join("frames");
+    let frames = renderer
+        .render_frames(
+            &scratch.target,
+            FrameOptions {
+                fps,
+                duration_ms: comp.duration_ms.unwrap_or(0),
+                require_timeline,
+            },
+            &frames_dir,
+        )
+        .await?;
+    let mp4 = scratch.dir.path().join("out.mp4");
+    encode_mp4(ffmpeg, &frames_dir, frames.fps, &mp4).await?;
+    let bytes = tokio::fs::read(&mp4).await.map_err(internal)?;
+    let mut kept = Vec::with_capacity(keep.len());
+    for t in keep {
+        let png = frames_dir.join(frame_file_name(frame_at(*t, frames)));
+        kept.push(tokio::fs::read(&png).await.map_err(internal)?);
+    }
+    Ok((bytes, frames, kept))
+}
+
+/// 0-based index of the frame shown at `seconds`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // clamped
+fn frame_at(seconds: f64, frames: FrameSet) -> u32 {
+    let last = frames.count.saturating_sub(1);
+    let i = (seconds.max(0.0) * f64::from(frames.fps)).floor();
+    if i.is_finite() && i < f64::from(last) {
+        i as u32
+    } else {
+        last
+    }
 }
 
 pub async fn export_mp4(
@@ -88,23 +146,18 @@ pub async fn export_mp4(
         .unwrap_or(comp.fps);
     // Fail fast, before minutes of capture, when ffmpeg is missing.
     let ffmpeg = find_ffmpeg()?;
-    req.base.width = Some(comp.width);
-    req.base.height = Some(comp.height);
-    let scratch = scratch(&state, &entry, &req.base).await?;
-    let frames_dir = scratch.dir.path().join("frames");
-    let frames = renderer
-        .render_frames(
-            &scratch.target,
-            FrameOptions {
-                fps,
-                duration_ms: comp.duration_ms.unwrap_or(0),
-            },
-            &frames_dir,
-        )
-        .await?;
-    let mp4 = scratch.dir.path().join("out.mp4");
-    encode_mp4(&ffmpeg, &frames_dir, frames.fps, &mp4).await?;
-    let bytes = tokio::fs::read(&mp4).await.map_err(internal)?;
+    let (bytes, frames, _) = render_mp4(
+        &state,
+        renderer.as_ref(),
+        &entry,
+        &mut req.base,
+        &comp,
+        fps,
+        &ffmpeg,
+        &[],
+        false,
+    )
+    .await?;
     let Some(output) = output else {
         return Ok(attachment(
             "video/mp4",
