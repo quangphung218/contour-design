@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.12] - 2026-11-02
+
 ### Fixed
 
 - Files the agent writes with a shell command (`ffmpeg`, `python`, `cp`)
@@ -604,7 +606,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.11...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.12...HEAD
+[0.2.0-beta.12]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.11...v0.2.0-beta.12
 [0.2.0-beta.11]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.10...v0.2.0-beta.11
 [0.2.0-beta.10]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.9...v0.2.0-beta.10
 [0.2.0-beta.9]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.8...v0.2.0-beta.9
