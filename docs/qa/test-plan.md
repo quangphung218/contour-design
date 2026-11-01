@@ -243,6 +243,7 @@ the guard, so that is what is checked.
 | DL-24 | The browser's Back with an edit not applied asks | Came from Projects; typed in Content | Back: Cancel, then OK; eight fresh tries | As DL-14, every try | P1 | auto (QA-022, QA-033) |
 | DL-25 | The leave question opens with the focus on Cancel | Typed in Content | Click Projects | Focus on Cancel; Enter stays | P2 | auto (QA-023) |
 | DL-26 | A failed Duplicate after Leave keeps the guard | Typed in Content; `/duplicate` answers 500 | "…" ▸ Duplicate ▸ Leave, then reload | Error shown, page stays; the reload still asks | P2 | auto (QA-020) |
+| DL-27 | A preview reload does not take the browser's Back | Came from Projects; typed in Content | The page saved again (preview reloads) ▸ Back: Cancel, then Back: Leave | Each Back asks; Leave goes to Projects | P1 | auto (QA-033) |
 
 ## 11. The app itself fails (`resilience.qa.mjs`)
 

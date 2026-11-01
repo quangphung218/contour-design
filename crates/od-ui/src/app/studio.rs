@@ -1628,14 +1628,22 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <div class="frame-wrap" style=frame_inner>
                     // No allow-same-origin: artifact scripts run in an
                     // opaque origin and cannot call the daemon API.
-                    <iframe
-                        class="preview-frame"
-                        data-testid="preview"
-                        title=t(T::Preview)
-                        sandbox="allow-scripts allow-forms allow-popups allow-modals"
-                        src=url
-                        on:load=forget_deck
-                    ></iframe>
+                    // One iframe per URL. Leptos rebuilds a view of the same
+                    // shape in place, and a new `src` on a live iframe adds an
+                    // entry to the tab's history: Back then stepped the
+                    // preview back to an older load instead of leaving, and
+                    // the leave guard lost count (QA-033). A new iframe's
+                    // first load adds none.
+                    <For each=move || std::iter::once(url.clone()) key=|u: &String| u.clone() let:url>
+                        <iframe
+                            class="preview-frame"
+                            data-testid="preview"
+                            title=t(T::Preview)
+                            sandbox="allow-scripts allow-forms allow-popups allow-modals"
+                            src=url
+                            on:load=forget_deck
+                        ></iframe>
+                    </For>
                     <CommentLayer ctx=ctx/>
                     {move || (ctx.tools.tool.get() == Some(Tool::Draw)).then(|| view! { <DrawLayer ctx=ctx/> })}
                 </div>

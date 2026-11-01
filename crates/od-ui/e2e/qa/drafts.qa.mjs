@@ -7,7 +7,7 @@
 // system in localStorage, and warns before leaving with unsaved manual edits.
 
 import assert from 'node:assert/strict';
-import { test, run, createProject, until, sleep, waitTurn } from './lib.mjs';
+import { test, run, createProject, until, sleep, waitTurn, writeFile } from './lib.mjs';
 
 const PAGE = '<!doctype html><html><body><h1 data-od-id="t">Hello tea</h1>' +
   '<p class="lead" data-od-id="lead">Fresh leaves daily.</p></body></html>';
@@ -439,7 +439,27 @@ test("DL-24", "The browser's Back with an edit not applied asks: Cancel stays wi
       .catch((e) => assert.fail(`try ${i} of 8: ${e.message}`));
     await s.context.close();
   }
-}, { knownBug: 'QA-033', timeout: 200_000 });
+}, { timeout: 200_000 });
+
+test('DL-27', "A preview reload with an edit not applied does not take the browser's Back", async ({ d, newPage }) => {
+  // QA-033 made certain: the page saved again (the agent, or a late file
+  // event) reloads the preview between the edit and Back.
+  const { page, panel, id } = await editLead(newPage, d, { from: '/projects' });
+  await panel.getByTestId('manual-text').fill('Not applied');
+  const loads = [];
+  page.on('framenavigated', (f) => { if (f !== page.mainFrame()) loads.push(f.url()); });
+  await writeFile(d, id, 'page.html', PAGE);
+  await until(() => loads.length > 0, 'the preview reloads');
+  await page.getByTestId('preview').waitFor();
+  const state = leaveAnswers(page);
+  const back = () => page.evaluate(() => history.back());
+  assert.ok(await tryLeave(page, state, false, back), 'Back after a preview reload did not ask');
+  await sleep(300);
+  assert.equal(new URL(page.url()).pathname, `/projects/${id}`, 'Cancel still left the page');
+  assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied', 'the reload lost the text');
+  assert.ok(await tryLeave(page, state, true, back), 'the second Back did not ask');
+  await until(() => new URL(page.url()).pathname === '/projects', 'Leave goes back to Projects', 3000);
+});
 
 test('DL-25', 'The unapplied-edit question opens with the focus on Cancel', async ({ d, newPage }) => {
   const { page, panel } = await editLead(newPage, d);
