@@ -54,6 +54,10 @@ pub fn agent_env(
         run.project_dir.map(|p| p.as_os_str().to_owned()),
     );
     set("OD_BIN", run.od_bin.map(|p| p.as_os_str().to_owned()));
+    // Prompts call `"$OD_NODE_BIN" "$OD_BIN" …` (the original runs a JS
+    // CLI under Node). `od` is native and skips an argument naming itself,
+    // so both variables name the same binary (docs/decisions.md #6).
+    set("OD_NODE_BIN", run.od_bin.map(|p| p.as_os_str().to_owned()));
     set("OD_RUN_ID", run.run_id.map(Into::into));
     for (k, v) in def.extra_env {
         env.push(((*k).into(), (*v).into()));
@@ -81,6 +85,7 @@ mod tests {
             &RunEnv {
                 tool_token: Some("tok"),
                 project_id: Some("p1"),
+                od_bin: Some(Path::new("/app/od")),
                 ..RunEnv::default()
             },
         );
@@ -94,6 +99,8 @@ mod tests {
         assert_eq!(get("HOME").as_deref(), Some("/home/u"));
         assert_eq!(get("PATH").as_deref(), Some("/mock:/usr/bin"));
         assert_eq!(get("OD_TOOL_TOKEN").as_deref(), Some("tok"));
+        assert_eq!(get("OD_BIN").as_deref(), Some("/app/od"));
+        assert_eq!(get("OD_NODE_BIN").as_deref(), Some("/app/od"));
         assert_eq!(get("CLAUDE_CODE_ENABLE_TODO_TOOLS").as_deref(), Some("1"));
     }
 }
