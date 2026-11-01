@@ -22,6 +22,7 @@ use od_render_cdp::ffmpeg::{AudioTrack, encode_mp4_with_audio, find_ffmpeg};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,11 +100,16 @@ fn frame_at(seconds: f64, frames: FrameSet) -> u32 {
     }
 }
 
+/// Response header of a downloaded MP4: how many audio tracks it mixes, for
+/// the Export toast and `od export` (the JSON form says `audioTracks`).
+pub const AUDIO_TRACKS_HEADER: &str = "x-od-audio-tracks";
+
 /// One line per MP4 export about its sound, with the fields of the
 /// `media generate` log, so both ways out of a film are counted.
-fn log_audio(project: &str, policy: &str, tracks: usize, mux: &str) {
+fn log_audio(project: &str, started: Instant, policy: &str, tracks: usize, mux: &str) {
     tracing::info!(
         project,
+        render_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         audio_policy = policy,
         audio_tracks = tracks,
         audio_mux = mux,
@@ -117,6 +123,7 @@ pub async fn export_mp4(
     Path(id): Path<String>,
     body: Bytes,
 ) -> ExportResult<Response> {
+    let started = Instant::now();
     let mut req: Mp4Request = if body.iter().all(u8::is_ascii_whitespace) {
         Mp4Request::default()
     } else {
@@ -179,11 +186,15 @@ pub async fn export_mp4(
         .await
         .map_err(internal)?
         .map_err(|e| {
-            log_audio(&entry.project.id, policy, 0, "refused");
+            log_audio(&entry.project.id, started, policy, 0, "refused");
+            // Export keeps refusing (a film that names a track must not
+            // leave silently), but says how to get the picture alone.
             bad(
                 ErrorCode::ValidationFailed,
                 StatusCode::UNPROCESSABLE_ENTITY,
-                e,
+                format!(
+                    "{e} Or declare <meta name=\"od-motion-audio\" content=\"silent\"> to export without sound."
+                ),
             )
         })?;
     let tracks = plan.tracks.len();
@@ -200,19 +211,23 @@ pub async fn export_mp4(
         &plan.tracks,
     )
     .await
-    .inspect_err(|_| log_audio(&entry.project.id, policy, tracks, "failed"))?;
+    .inspect_err(|_| log_audio(&entry.project.id, started, policy, tracks, "failed"))?;
     log_audio(
         &entry.project.id,
+        started,
         policy,
         tracks,
         if tracks == 0 { "none" } else { "mixed" },
     );
     let Some(output) = output else {
-        return Ok(attachment(
+        let mut res = attachment(
             "video/mp4",
             &entry.filename(req.base.title.as_deref(), "mp4"),
             bytes,
-        ));
+        );
+        res.headers_mut()
+            .insert(AUDIO_TRACKS_HEADER, axum::http::HeaderValue::from(tracks));
+        return Ok(res);
     };
     let project_id = entry.project.id.clone();
     let file = state
@@ -224,6 +239,7 @@ pub async fn export_mp4(
         "fps": frames.fps,
         "width": frames.width,
         "height": frames.height,
+        "audioTracks": tracks,
     }))
     .into_response())
 }

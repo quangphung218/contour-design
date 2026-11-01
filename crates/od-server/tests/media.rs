@@ -277,6 +277,7 @@ async fn mp4_export_encodes_the_composition() {
             .unwrap()
             .contains("Promo.mp4")
     );
+    assert_eq!(res.headers["x-od-audio-tracks"], "0");
     let seen = h.frames.seen.lock().unwrap().clone();
     assert_eq!(
         seen,
@@ -395,9 +396,19 @@ async fn mp4_export_mixes_the_composition_audio() {
         "{}",
         String::from_utf8_lossy(&res.body)
     );
+    assert_eq!(res.json()["audioTracks"], 1);
     let mut got = streams(&h.project_dir(&id).join("out.mp4"));
     got.sort();
     assert_eq!(got, ["aac:audio", "h264:video"]);
+    // A download says it in a header, for the Export toast and `od export`.
+    let res = h
+        .post(
+            &format!("/api/projects/{id}/export/mp4"),
+            json!({ "fileName": "comp/index.html" }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.headers["x-od-audio-tracks"], "1");
 
     // Required sound with a missing file: refused before any capture.
     let required = with_audio
@@ -417,6 +428,10 @@ async fn mp4_export_mixes_the_composition_audio() {
     assert_eq!(res.status, StatusCode::UNPROCESSABLE_ENTITY);
     let msg = res.json()["error"]["message"].as_str().unwrap().to_owned();
     assert!(msg.contains("assets/gone.wav"), "{msg}");
+    assert!(
+        msg.contains(r#"content="silent"> to export without sound"#),
+        "{msg}"
+    );
     assert_eq!(h.frames.seen.lock().unwrap().len(), before, "no capture");
     assert!(!h.project_dir(&id).join("out2.mp4").exists());
 }
