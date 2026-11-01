@@ -177,7 +177,7 @@ installation of AE, Blender, a paid provider or a new framework the default.
 
 ## Author reliable editable motion
 
-For a new Open Design film, use timeline-driven HTML with GSAP and optional
+For a new Open Design film, use timeline-driven HTML (GSAP only from a local copy) and optional
 SVG/Canvas. HTML/SVG suit typography, crisp diagrams and UI; Canvas suits dense
 marks, fields and procedural worlds. Combine them when useful. Preserve an
 existing supported renderer instead of rebuilding it just to fit this default.
@@ -323,7 +323,7 @@ existing film; re-render only when the requested change affects the video.
 2. Author `motion-source/film/index.html`. Its composition root must have
    `data-composition-id="main"`, `data-start="0"`, `data-duration`, `data-width`,
    `data-height` and `data-fps`. Register the seekable master timeline at
-   `window.__timelines.main`. Use actual GSAP animations, not a placeholder
+   `window.__timelines.main`. Animate for real, not with a placeholder
    timeline. Keep assets/fonts local and relative to this source directory.
    Include `<meta name="od-motion-output" content="video">` and
    `<link rel="alternate" type="video/mp4" href="../../film.mp4">` in the head.
