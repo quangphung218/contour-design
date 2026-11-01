@@ -185,7 +185,9 @@ async fn a_composition_without_timelines_does_not_wait_15_s() {
         .unwrap();
     assert_eq!(frames.count, 5);
     let took = started.elapsed();
-    assert!(took < std::time::Duration::from_secs(8), "took {took:?}");
+    // Under the 15 s timeline wait with room for a slow Chrome start (a
+    // Windows runner took 8.9 s).
+    assert!(took < std::time::Duration::from_secs(12), "took {took:?}");
 }
 
 /// Declares its duration but registers the timeline 2 s late, as a slow
