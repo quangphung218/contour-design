@@ -97,3 +97,32 @@ async fn cancel_before_launch_is_not_lost() {
     let assistant = messages.iter().find(|m| m["role"] == "assistant").unwrap();
     assert_eq!(assistant["runStatus"], "canceled", "{assistant}");
 }
+
+#[tokio::test]
+async fn shutdown_before_launch_is_not_lost() {
+    // QA-026: quitting while a run is still being prepared stops it too.
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &format!("{PROBES}{SLOW}"));
+    let (project, conversation) = d.project().await;
+    let (fut, run_id) = create_until_registered(&d, &project).await;
+    tokio::time::timeout(Duration::from_secs(10), d.state.runs.stop_all())
+        .await
+        .expect("stop_all did not return");
+    let reg = d.state.runs.registry.get(&run_id).unwrap();
+    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
+    // The turn is recorded as stopped before stop_all returns.
+    let body = d
+        .get_json(&format!(
+            "/api/projects/{project}/conversations/{conversation}/messages"
+        ))
+        .await;
+    let assistant = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "assistant")
+        .cloned()
+        .unwrap();
+    assert_eq!(assistant["runStatus"], "canceled", "{assistant}");
+    let _ = fut.await;
+}

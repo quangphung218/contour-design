@@ -6,10 +6,9 @@
 use od_content::{ContentRoots, ContentStore};
 use od_contracts::{CreateProjectRequest, CreateProjectResponse, CreateRunResponse};
 use od_runtime::EngineConfig;
-use od_server::{AppState, RunContext, ServerConfig, router};
+use od_server::{AppState, RunContext, ServerConfig};
 use od_store::{DataDir, Store};
 use serde_json::{Value, json};
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,6 +20,9 @@ pub struct Daemon {
     pub mocks: PathBuf,
     pub state: AppState,
     pub http: reqwest::Client,
+    /// Stops the server as Ctrl-C or SIGTERM stops `od daemon`.
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    served: Option<tokio::task::JoinHandle<std::io::Result<()>>>,
 }
 
 pub struct Options {
@@ -96,10 +98,12 @@ pub async fn daemon_with(opts: Options) -> Daemon {
         preview: od_server::Preview::default(),
         platform: od_server::Platform::from_env(),
     };
-    let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let served = tokio::spawn(od_server::serve_until(listener, state.clone(), async {
+        if stopped.await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    }));
     Daemon {
         tmp,
         base: format!("http://{addr}"),
@@ -107,6 +111,8 @@ pub async fn daemon_with(opts: Options) -> Daemon {
         mocks,
         state,
         http: reqwest::Client::builder().no_proxy().build().unwrap(),
+        stop: Some(stop),
+        served: Some(served),
     }
 }
 
@@ -146,6 +152,18 @@ pub struct SseEvent {
 }
 
 impl Daemon {
+    /// Stops the server the way a signal stops `od daemon` and waits until
+    /// `serve_until` returns.
+    pub async fn stop_serving(&mut self) -> std::io::Result<()> {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(());
+        }
+        match self.served.take() {
+            Some(served) => served.await.unwrap(),
+            None => Ok(()),
+        }
+    }
+
     pub async fn post(&self, path: &str, body: &Value) -> reqwest::Response {
         self.http
             .post(format!("{}{path}", self.base))

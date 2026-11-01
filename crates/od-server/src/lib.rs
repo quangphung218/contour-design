@@ -16,9 +16,11 @@ use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 use od_content::{ContentRoots, ContentStore, RESOURCE_ROOT_ENV};
 use od_store::{DataDir, Store};
+use std::future::IntoFuture;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub use lock::{DaemonLock, LockError};
 pub use routes::platform::Platform;
@@ -240,7 +242,7 @@ pub fn shutdown_signal() -> std::io::Result<impl std::future::Future<Output = ()
 }
 
 /// Opens the store, indexes content, binds and serves until Ctrl-C or
-/// SIGTERM, then ends the terminal tabs' shells.
+/// SIGTERM, then stops the running agents and ends the terminal tabs' shells.
 ///
 /// # Errors
 /// Refuses a non-loopback bind without `OD_API_TOKEN`; store, bind and I/O
@@ -302,11 +304,53 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         startup_ms = started.elapsed().as_millis(),
         "od daemon listening"
     );
-    let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
-    let served = axum::serve(listener, app)
-        .with_graceful_shutdown(stop)
-        .await;
-    state.shutdown().await;
-    served?;
+    serve_until(listener, state, stop).await?;
     Ok(())
+}
+
+/// How long the server waits, after the runs stopped, for open responses
+/// (event streams of runs started meanwhile, slow downloads) to finish.
+const DRAIN_LIMIT: Duration = Duration::from_secs(5);
+
+/// Serves `state` on `listener` until `stop` resolves, then stops the
+/// running agents at once, drains open responses for up to a few seconds
+/// and ends what else the daemon started (terminal tabs).
+///
+/// The runs stop before the drain: a run's event stream stays open until
+/// the run ends, so draining first would let the agent keep working.
+///
+/// # Errors
+/// I/O errors from serving.
+pub async fn serve_until(
+    listener: tokio::net::TcpListener,
+    state: AppState,
+    stop: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel::<()>();
+    let runs = Arc::clone(&state.runs);
+    let graceful = async move {
+        stop.await;
+        runs.stop_all().await;
+        let _ = stopped_tx.send(());
+    };
+    let app = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
+    let server = axum::serve(listener, app)
+        .with_graceful_shutdown(graceful)
+        .into_future();
+    let drain_over = async {
+        if stopped_rx.await.is_err() {
+            // The server ended without a stop: nothing to time out.
+            std::future::pending::<()>().await;
+        }
+        tokio::time::sleep(DRAIN_LIMIT).await;
+    };
+    let served = tokio::select! {
+        served = server => served,
+        () = drain_over => {
+            tracing::warn!("responses still open at shutdown; closing them");
+            Ok(())
+        }
+    };
+    state.shutdown().await;
+    served
 }

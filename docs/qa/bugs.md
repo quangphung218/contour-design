@@ -575,8 +575,16 @@ Reported by the UX review of 759581a.
   line, SIGTERM to the group, SIGKILL after 3 s), a run not launched yet
   gets a pending cancel, and shutdown waits (at most 8 s) for the launch
   and finalize tasks, now kept in a `TaskTracker`, so each turn is stored
-  as canceled. `od` and the desktop app both end through it. Guarded by
-  `od-server/tests/runs.rs` `shutdown_stops_running_agents_like_stop`.
+  as canceled. The desktop app ends through it. `od` (`serve_until` in
+  `lib.rs`) stops the runs as soon as the signal comes, before the server
+  drains open responses: a run's event stream stays open until the run
+  ends, so draining first let the agent finish its turn whenever the
+  browser watched the run. The drain then gets at most 5 s, as an open
+  project's event stream never ends on its own. Guarded by
+  `od-server/tests/runs.rs` `shutdown_stops_running_agents_like_stop`,
+  `stopping_the_server_stops_runs_whose_stream_is_open`,
+  `stopping_the_server_does_not_wait_for_project_streams`, and
+  `run_create_drop.rs` `shutdown_before_launch_is_not_lost`.
 
 ## QA-027 🟠 Manual edit picks the whole section instead of the text clicked
 
