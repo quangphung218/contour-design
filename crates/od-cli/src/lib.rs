@@ -236,6 +236,14 @@ pub fn command() -> clap::Command {
 /// Runs `od` with `args` (program name first), after [`strip_self_arg`].
 #[must_use]
 pub fn main_with(args: Vec<OsString>) -> ExitCode {
+    ExitCode::from(main_code(args))
+}
+
+/// [`main_with`] as the number the process exits with: 0, the code of an
+/// [`exit::Exit`] (2 for a task still running, 66 for a plugin
+/// capability), else 1. The desktop app exits with it as is.
+#[must_use]
+pub fn main_code(args: Vec<OsString>) -> u8 {
     let matches = Cli::command().get_matches_from(strip_self_arg(args));
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
     // `od mcp` tells a URL someone gave (flag or env) from the default:
@@ -286,18 +294,23 @@ pub fn main_with(args: Vec<OsString>) -> ExitCode {
             Client::new(&cli.daemon_url).and_then(|c| research_cmd::run(&c, cmd, cli.json))
         }
     };
+    exit_code(result)
+}
+
+/// The exit code of a command's result; prints its error.
+fn exit_code(result: anyhow::Result<()>) -> u8 {
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(err) => match err.downcast_ref::<exit::Exit>() {
             Some(e) => {
                 if !e.printed {
                     eprintln!("error: {}", e.message);
                 }
-                ExitCode::from(e.code)
+                e.code
             }
             None => {
                 eprintln!("error: {err:#}");
-                ExitCode::FAILURE
+                1
             }
         },
     }
@@ -574,6 +587,17 @@ fn watch_run(client: &Client, id: &str, after: Option<u64>) -> anyhow::Result<()
 mod tests {
     use super::*;
     use clap::CommandFactory;
+
+    #[test]
+    fn exit_codes_keep_their_number() {
+        assert_eq!(exit_code(Ok(())), 0);
+        assert_eq!(
+            exit_code(Err(exit::Exit::new(2, "still running").into())),
+            2
+        );
+        assert_eq!(exit_code(Err(exit::Exit::new(66, "capability").into())), 66);
+        assert_eq!(exit_code(Err(anyhow::anyhow!("other"))), 1);
+    }
 
     #[test]
     fn cli_definition_is_valid() {

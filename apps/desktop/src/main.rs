@@ -337,10 +337,8 @@ fn main() -> anyhow::Result<()> {
         .first()
         .is_some_and(|a| od_cli::CLIENT_COMMANDS.iter().any(|c| a == *c))
     {
-        // `ExitCode` hides its number on stable: 0 or 1 (the CLI's
-        // own codes, 66 for a plugin, become 1 here).
-        let ok = od_cli::main_with(all) == std::process::ExitCode::SUCCESS;
-        std::process::exit(i32::from(!ok));
+        // The CLI's own code: 2 (task still running) and 66 stay as they are.
+        std::process::exit(i32::from(od_cli::main_code(all)));
     }
     // Opened from Finder the app has no stdout or stderr: the log and any
     // panic also go to `<data>/logs/` (Help ▸ Report Issue reads it).
