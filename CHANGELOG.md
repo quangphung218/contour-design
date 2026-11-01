@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.11] - 2026-11-01
+
 ### Added
 
 - `od tools live-artifacts create|list|update|refresh`: the command the
@@ -31,8 +33,8 @@ All notable changes to Contour are recorded here. The format follows
   film's length, with each track's start, length and volume). A track
   whose file is missing fails with the file's name and writes no MP4,
   unless the film is declared silent; a remote URL fails as "local only".
-  A film without `<audio>` renders as before. Export ▸ MP4 and `od export --format mp4`
-  mix the same tracks. Mixing 2 or more tracks needs ffmpeg 4.4 or newer.
+  A film without `<audio>` renders as before. Export ▸ MP4 and
+  `od export --format mp4` mix the same tracks. Mixing 2 or more tracks needs ffmpeg 4.4 or newer.
 - A Motion render that requires a timeline waits up to 15 s for it to
   register, even when the composition declares `data-duration`; a
   timeline added by a slow script no longer fails the render.
@@ -583,7 +585,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.10...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.11...HEAD
+[0.2.0-beta.11]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.10...v0.2.0-beta.11
 [0.2.0-beta.10]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.9...v0.2.0-beta.10
 [0.2.0-beta.9]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.8...v0.2.0-beta.9
 [0.2.0-beta.8]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.7...v0.2.0-beta.8
