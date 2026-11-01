@@ -905,12 +905,22 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
             match api::post::<_, Value>(&format!("{base}/export/mp4"), &body).await {
                 Ok(v) => {
                     super::export_menu::mark_exported(&base).await;
-                    status.set(Some(Ok(tf(
+                    let saved = tf(
                         T::Mp4Saved,
                         &[v["file"]["name"]
                             .as_str()
                             .unwrap_or("media/hyperframes.mp4")],
-                    ))));
+                    );
+                    let note = super::export_menu::audio_note(v["audioTracks"].as_u64());
+                    // "Saved media/x.mp4 · 1 audio track."
+                    // Keep the locale's own full stop ("." or "。").
+                    let (head, stop) = match saved.chars().last() {
+                        Some(c @ ('.' | '。')) => {
+                            (&saved[..saved.len() - c.len_utf8()], c.to_string())
+                        }
+                        _ => (saved.as_str(), String::new()),
+                    };
+                    status.set(Some(Ok(format!("{head}{note}{stop}"))));
                     on_saved.run(());
                 }
                 Err(e) => status.set(Some(Err(e.to_string()))),

@@ -8,8 +8,31 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `od tools live-artifacts create|list|update|refresh`: the command the
+  Live data page skill calls to register its page. It reads
+  `artifact.json` with the `data.json`, `template.html` and
+  `provenance.json` next to it and uses the agent run's token, so the
+  page shows in the project's Live tab without the agent calling the API
+  or writing `index.html`. `od tools connectors list` prints an empty list
+  and `execute` says Contour has no connectors yet.
+
+### Changed
+
+- The six Live data page examples no longer promise data synced from your
+  apps or email: they say the page refreshes from a file in your project.
+
 ### Fixed
 
+- Motion films have their sound: `od media generate --model
+  hyperframes-html` mixes the `<audio>` tracks of the composition and of
+  the sub-compositions it loads into the MP4 (one AAC track, cut to the
+  film's length, with each track's start, length and volume). A track
+  whose file is missing fails with the file's name and writes no MP4,
+  unless the film is declared silent; a remote URL fails as "local only".
+  A film without `<audio>` renders as before. Export ▸ MP4 and `od export --format mp4`
+  mix the same tracks. Mixing 2 or more tracks needs ffmpeg 4.4 or newer.
 - A Motion render that requires a timeline waits up to 15 s for it to
   register, even when the composition declares `data-duration`; a
   timeline added by a slow script no longer fails the render.

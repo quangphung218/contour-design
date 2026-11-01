@@ -18,22 +18,22 @@ od:
   examples:
     baby-health-live:
       en_name: "Baby health tracker (live data)"
-      en_description: "A calm panel for a newborn's first month: sleep, feeds and growth, synced from your tracking apps."
+      en_description: "A calm panel for a newborn's first month: sleep, feeds and growth, refreshed from a log file in your project."
     competitor-radar-live:
       en_name: "Competitor radar (live data)"
-      en_description: "Competitors ranked by threat level, with the latest signals from your sources in one refreshable view."
+      en_description: "Competitors ranked by threat level, with the latest signals refreshed from a notes file in your project."
     crm-table-live:
       en_name: "CRM table (live data)"
-      en_description: "A sales pipeline filled in from your email, with stage, ARR, owner and next action for each lead."
+      en_description: "A sales pipeline with stage, ARR, owner and next action for each lead, refreshed from a file in your project."
     crypto-dashboard:
       en_name: "Crypto portfolio (live data)"
-      en_description: "A crypto portfolio with holdings, prices and performance charts that refresh on demand."
+      en_description: "A crypto portfolio with holdings, prices and performance charts, refreshed from a file in your project."
     monday-operator-live:
       en_name: "Monday briefing (live data)"
-      en_description: "A Monday-morning memo with the week's revenue and the few things that need your attention."
+      en_description: "A Monday-morning memo with the week's revenue and the few things that need your attention, refreshed from a file in your project."
     stock-dashboard:
       en_name: "Stock portfolio (live data)"
-      en_description: "A stock portfolio with positions, gains and charts that refresh on demand."
+      en_description: "A stock portfolio with positions, gains and charts, refreshed from a file in your project."
   mode: prototype
   scenario: live
   preview:
@@ -72,6 +72,42 @@ live-artifact/
 ## Current status
 
 Use the references in this directory as the source of truth for the live artifact file contract. Prefer daemon wrapper commands over raw HTTP when registering or updating live artifacts.
+
+### In Contour
+
+Contour is the host here. Where this section and the rest of this skill
+disagree, follow this section.
+
+- Contour has no connectors yet. `tools connectors list` prints an empty
+  list and `tools connectors execute` always fails: do not call it, and do
+  not ask the user to connect anything. The data comes from files in the
+  project (a JSON file the user added, or one you write from what the user
+  gives you) or from the user directly. When there is no data, ask the user
+  for it or say clearly that the numbers are sample data.
+- For a page the user can refresh later, point `document.sourceJson` in
+  `artifact.json` at a `.json` file in the project (256 KB at most) and map
+  each top-level key of `data.json` from it:
+
+  ```json
+  "sourceJson": {
+    "type": "local_file",
+    "input": { "path": "data/portfolio.json" },
+    "outputMapping": { "dataPaths": [ { "from": "json.summary", "to": "summary" } ] },
+    "refreshPermission": "manual_refresh_granted_for_read_only"
+  }
+  ```
+
+  Refresh then re-reads that file. Without `sourceJson` the page still
+  previews, and Refresh says it has no source.
+- Run `tools live-artifacts create --input artifact.json` from the folder
+  that holds the four source files: it sends `data.json`, `template.html`
+  and `provenance.json` from next to `artifact.json`. It prints one JSON
+  line; `"ok": true` with `artifact.id` means the page is registered and
+  shows in the project's Live tab. Use that id for `update` and `refresh`.
+- A validation error (a `<script>` in `template.html`, a binding that does
+  not resolve, a forbidden key) exits non-zero with the daemon's message:
+  fix the files and run the same command again. Never `curl` the daemon or
+  write `index.html` yourself.
 
 ## When to use this skill
 

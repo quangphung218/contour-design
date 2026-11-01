@@ -24,6 +24,9 @@ Resolve the direction from what you already have, in this order:
    `"$OD_NODE_BIN" "$OD_BIN" tools directions --id <id>` to retrieve the full
    specification — never infer colors or fonts from the name alone.
 
+In Contour: the full direction library is already in your instructions;
+never call `od tools directions`.
+
 **Do not ask the user to choose a visual direction.** Not as a question-form,
 not as a markdown list of options, not as a "which of these feels right?"
 follow-up. The direction is yours to resolve; asking spends the user's turn on

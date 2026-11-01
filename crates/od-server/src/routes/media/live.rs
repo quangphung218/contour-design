@@ -54,6 +54,42 @@ impl From<LiveError> for ApiErr {
     }
 }
 
+/// One line per live create, update or refresh, so the agent tool, the
+/// MCP/API and the UI paths can be counted: `op`, `via`
+/// (`tool_token` for an agent run, `api` without one, `ui`), `source`
+/// (the artifact's refresh source type, `none`, or `unknown` on failure)
+/// and `result`.
+fn logged(op: &str, via: &str, result: ApiResult<Json<Value>>) -> ApiResult<Json<Value>> {
+    let (source, outcome) = outcome(op, &result);
+    tracing::info!(op, via, source = %source, result = outcome, "live artifact");
+    result
+}
+
+/// The `source` and `result` fields of [`logged`].
+fn outcome(op: &str, result: &ApiResult<Json<Value>>) -> (String, &'static str) {
+    match result {
+        Ok(Json(v)) => (
+            v.pointer("/artifact/document/sourceJson/type")
+                .and_then(Value::as_str)
+                .unwrap_or("none")
+                .to_owned(),
+            "ok",
+        ),
+        Err(e) => (
+            "unknown".to_owned(),
+            match e.status {
+                StatusCode::NOT_FOUND => "not_found",
+                StatusCode::UNPROCESSABLE_ENTITY | StatusCode::CONFLICT if op == "refresh" => {
+                    "refresh_failed"
+                }
+                StatusCode::UNPROCESSABLE_ENTITY | StatusCode::BAD_REQUEST => "validation_error",
+                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => "unauthorized",
+                _ => "error",
+            },
+        ),
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectQuery {
@@ -190,13 +226,17 @@ pub async fn patch(
     Query(q): Query<ProjectQuery>,
     ApiJson(body): ApiJson<PatchBody>,
 ) -> ApiResult<Json<Value>> {
-    let (_, store) = open(&state, q.project_id).await?;
-    let input = update_input(body.input)?;
-    let artifact = live(store, move |s| {
-        s.update(&aid, input, body.template_html.as_deref(), None)
-    })
-    .await?;
-    Ok(Json(json!({ "artifact": artifact })))
+    let result = async {
+        let (_, store) = open(&state, q.project_id).await?;
+        let input = update_input(body.input)?;
+        let artifact = live(store, move |s| {
+            s.update(&aid, input, body.template_html.as_deref(), None)
+        })
+        .await?;
+        Ok(Json(json!({ "artifact": artifact })))
+    }
+    .await;
+    logged("update", "ui", result)
 }
 
 pub async fn delete(
@@ -214,9 +254,13 @@ pub async fn refresh(
     Path(aid): Path<String>,
     Query(q): Query<ProjectQuery>,
 ) -> ApiResult<Json<Value>> {
-    let (root, store) = open(&state, q.project_id).await?;
-    let out = live(store, move |s| s.refresh(&root, &aid)).await?;
-    Ok(Json(json!(out)))
+    let result = async {
+        let (root, store) = open(&state, q.project_id).await?;
+        let out = live(store, move |s| s.refresh(&root, &aid)).await?;
+        Ok(Json(json!(out)))
+    }
+    .await;
+    logged("refresh", "ui", result)
 }
 
 // ---------------------------------------------------------------------------
@@ -249,31 +293,39 @@ pub async fn tool_create(
     headers: HeaderMap,
     ApiJson(body): ApiJson<ToolBody>,
 ) -> ApiResult<Json<Value>> {
-    let caller = tool_caller(
-        &state,
-        &headers,
-        "/api/tools/live-artifacts/create",
-        body.project_id.as_deref(),
-    )?;
-    let input: CreateInput = serde_json::from_value(body.input.unwrap_or_else(|| json!({})))
-        .map_err(|e| {
-            ApiErr::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                ErrorCode::ValidationFailed,
-                e.to_string(),
+    let mut via = "api";
+    let result = async {
+        let caller = tool_caller(
+            &state,
+            &headers,
+            "/api/tools/live-artifacts/create",
+            body.project_id.as_deref(),
+        )?;
+        if caller.run_id.is_some() {
+            via = "tool_token";
+        }
+        let input: CreateInput = serde_json::from_value(body.input.unwrap_or_else(|| json!({})))
+            .map_err(|e| {
+                ApiErr::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    ErrorCode::ValidationFailed,
+                    e.to_string(),
+                )
+            })?;
+        let (_, store) = open(&state, caller.project_id).await?;
+        let artifact = live(store, move |s| {
+            s.create(
+                input,
+                body.template_html.as_deref(),
+                body.provenance_json,
+                caller.run_id,
             )
-        })?;
-    let (_, store) = open(&state, caller.project_id).await?;
-    let artifact = live(store, move |s| {
-        s.create(
-            input,
-            body.template_html.as_deref(),
-            body.provenance_json,
-            caller.run_id,
-        )
-    })
-    .await?;
-    Ok(Json(json!({ "artifact": artifact })))
+        })
+        .await?;
+        Ok(Json(json!({ "artifact": artifact })))
+    }
+    .await;
+    logged("create", via, result)
 }
 
 pub async fn tool_list(
@@ -297,25 +349,33 @@ pub async fn tool_update(
     headers: HeaderMap,
     ApiJson(body): ApiJson<ToolBody>,
 ) -> ApiResult<Json<Value>> {
-    let caller = tool_caller(
-        &state,
-        &headers,
-        "/api/tools/live-artifacts/update",
-        body.project_id.as_deref(),
-    )?;
-    let aid = artifact_id(&body)?;
-    let input = update_input(body.input.unwrap_or_else(|| json!({})))?;
-    let (_, store) = open(&state, caller.project_id).await?;
-    let artifact = live(store, move |s| {
-        s.update(
-            &aid,
-            input,
-            body.template_html.as_deref(),
-            body.provenance_json,
-        )
-    })
-    .await?;
-    Ok(Json(json!({ "artifact": artifact })))
+    let mut via = "api";
+    let result = async {
+        let caller = tool_caller(
+            &state,
+            &headers,
+            "/api/tools/live-artifacts/update",
+            body.project_id.as_deref(),
+        )?;
+        if caller.run_id.is_some() {
+            via = "tool_token";
+        }
+        let aid = artifact_id(&body)?;
+        let input = update_input(body.input.unwrap_or_else(|| json!({})))?;
+        let (_, store) = open(&state, caller.project_id).await?;
+        let artifact = live(store, move |s| {
+            s.update(
+                &aid,
+                input,
+                body.template_html.as_deref(),
+                body.provenance_json,
+            )
+        })
+        .await?;
+        Ok(Json(json!({ "artifact": artifact })))
+    }
+    .await;
+    logged("update", via, result)
 }
 
 pub async fn tool_refresh(
@@ -323,14 +383,53 @@ pub async fn tool_refresh(
     headers: HeaderMap,
     ApiJson(body): ApiJson<ToolBody>,
 ) -> ApiResult<Json<Value>> {
-    let caller = tool_caller(
-        &state,
-        &headers,
-        "/api/tools/live-artifacts/refresh",
-        body.project_id.as_deref(),
-    )?;
-    let aid = artifact_id(&body)?;
-    let (root, store) = open(&state, caller.project_id).await?;
-    let out = live(store, move |s| s.refresh(&root, &aid)).await?;
-    Ok(Json(json!(out)))
+    let mut via = "api";
+    let result = async {
+        let caller = tool_caller(
+            &state,
+            &headers,
+            "/api/tools/live-artifacts/refresh",
+            body.project_id.as_deref(),
+        )?;
+        if caller.run_id.is_some() {
+            via = "tool_token";
+        }
+        let aid = artifact_id(&body)?;
+        let (root, store) = open(&state, caller.project_id).await?;
+        let out = live(store, move |s| s.refresh(&root, &aid)).await?;
+        Ok(Json(json!(out)))
+    }
+    .await;
+    logged("refresh", via, result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_fields_name_the_source_and_the_result() {
+        let ok = Ok(Json(
+            json!({"artifact": {"document": {"sourceJson": {"type": "local_file"}}}}),
+        ));
+        assert_eq!(outcome("create", &ok), ("local_file".to_owned(), "ok"));
+        let plain = Ok(Json(json!({"artifact": {"document": {}}})));
+        assert_eq!(outcome("update", &plain).0, "none");
+        let invalid = || {
+            ApiErr::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ErrorCode::ValidationFailed,
+                "x",
+            )
+        };
+        assert_eq!(outcome("create", &Err(invalid())).1, "validation_error");
+        assert_eq!(outcome("refresh", &Err(invalid())).1, "refresh_failed");
+        let conflict = ApiErr::new(StatusCode::CONFLICT, ErrorCode::Conflict, "no source");
+        assert_eq!(
+            outcome("refresh", &Err(conflict)),
+            ("unknown".to_owned(), "refresh_failed")
+        );
+        let gone = ApiErr::new(StatusCode::NOT_FOUND, ErrorCode::NotFound, "x");
+        assert_eq!(outcome("update", &Err(gone)).1, "not_found");
+    }
 }

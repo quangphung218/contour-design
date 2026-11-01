@@ -65,7 +65,7 @@ pub struct ExportArgs {
 }
 
 pub fn run(client: &Client, args: ExportArgs, json: bool) -> anyhow::Result<()> {
-    let (bytes, name, mime) = if args.format == Format::Zip {
+    let download = if args.format == Format::Zip {
         let mut query = Vec::new();
         if let Some(root) = &args.root {
             query.push(("root", root.as_str()));
@@ -99,6 +99,12 @@ pub fn run(client: &Client, args: ExportArgs, json: bool) -> anyhow::Result<()> 
         }
         client.post_download(&["api", "projects", &args.project, "export", route], &body)?
     };
+    let crate::client::Download {
+        bytes,
+        name,
+        mime,
+        audio_tracks,
+    } = download;
     let target = match args.out {
         Some(p) if p.as_os_str() == "-" => {
             std::io::stdout().write_all(&bytes)?;
@@ -111,10 +117,39 @@ pub fn run(client: &Client, args: ExportArgs, json: bool) -> anyhow::Result<()> 
     if json {
         println!(
             "{}",
-            json!({ "path": target, "bytes": bytes.len(), "contentType": mime })
+            json!({ "path": target, "bytes": bytes.len(), "contentType": mime, "audioTracks": audio_tracks })
         );
     } else {
-        println!("wrote {} ({} bytes)", target.display(), bytes.len());
+        println!(
+            "wrote {} ({} bytes){}",
+            target.display(),
+            bytes.len(),
+            audio_note(audio_tracks)
+        );
     }
     Ok(())
+}
+
+/// ` · no audio` or ` · N audio tracks` for an MP4 export; empty for
+/// other formats (no header).
+fn audio_note(tracks: Option<u32>) -> String {
+    match tracks {
+        None => String::new(),
+        Some(0) => " · no audio".to_owned(),
+        Some(1) => " · 1 audio track".to_owned(),
+        Some(n) => format!(" · {n} audio tracks"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mp4_exports_say_how_much_sound_they_carry() {
+        assert_eq!(audio_note(None), "");
+        assert_eq!(audio_note(Some(0)), " · no audio");
+        assert_eq!(audio_note(Some(1)), " · 1 audio track");
+        assert_eq!(audio_note(Some(3)), " · 3 audio tracks");
+    }
 }

@@ -837,6 +837,9 @@ messages! {
     ExportPptx => "PowerPoint (PPTX)", "PowerPoint (PPTX)";
     Exporting => "Exporting {0}…", "Đang xuất {0}…";
     Exported => "Exported {0}", "Đã xuất {0}";
+    ExportNoAudio => "no audio", "không có tiếng";
+    ExportAudioTrack => "1 audio track", "1 track âm thanh";
+    ExportAudioTracks => "{0} audio tracks", "{0} track âm thanh";
     ExportFailed => "Export failed: {0}", "Xuất không thành công: {0}";
     Handoff => "Handoff", "Bàn giao";
     HandoffOpenFolder => "Open project folder", "Mở thư mục project";

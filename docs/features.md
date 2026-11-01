@@ -141,7 +141,7 @@ Files go to the current folder by default; `--out -` writes to stdout.
 | `image` | PNG/JPEG of one slide (`--index`), the whole deck stacked, or the page | Chrome |
 | `pptx` | PowerPoint, one image per slide | Chrome |
 | `pptx-editable` | PowerPoint with native text boxes and shapes | Chrome |
-| `mp4` | video from a HyperFrames composition | Chrome, `ffmpeg` |
+| `mp4` | video from a HyperFrames composition, with its local `<audio>` tracks mixed in (Export ▸ MP4, `od export --format mp4` and `od media generate` alike) | Chrome, `ffmpeg`; 4.4 or newer for a film with 2 or more audio tracks |
 
 The UI also exports Markdown, a React component as standalone HTML (React
 and Sucrase are bundled, no CDN), and saves a project as a template.
@@ -384,6 +384,8 @@ daemon, `od <command> --help` lists the options.
 | `od media generate\|wait\|cancel` | media tasks |
 | `od plugin list\|info\|apply\|validate` | plugins |
 | `od mcp`, `od mcp install` | MCP server and installer |
+| `od tools live-artifacts create\|list\|update\|refresh` | live artifacts of an agent run's project (needs the run's `OD_TOOL_TOKEN`) |
+| `od tools connectors list\|execute` | none yet: `list` is empty, `execute` fails |
 
 ## Environment variables
 

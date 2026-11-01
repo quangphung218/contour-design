@@ -13,6 +13,8 @@ pub struct Client {
     http: Http,
     /// No total timeout: event streams stay open for the whole run.
     streaming: Http,
+    /// `Authorization: Bearer` for the agent tool endpoints (`OD_TOOL_TOKEN`).
+    token: Option<String>,
 }
 
 /// One SSE event of a run stream.
@@ -36,7 +38,15 @@ impl Client {
             base,
             http,
             streaming,
+            token: None,
         })
+    }
+
+    /// Sends `token` as a bearer token with every request.
+    #[must_use]
+    pub fn with_token(mut self, token: String) -> Self {
+        self.token = Some(token);
+        self
     }
 
     pub fn base(&self) -> &Url {
@@ -54,6 +64,10 @@ impl Client {
     }
 
     fn send(&self, req: RequestBuilder) -> anyhow::Result<Response> {
+        let req = match &self.token {
+            Some(t) => req.bearer_auth(t),
+            None => req,
+        };
         let res = req.send().map_err(|e| {
             if e.is_connect() {
                 anyhow!(
@@ -180,13 +194,12 @@ impl Client {
             .json()?)
     }
 
-    /// `GET` a download: bytes, the `Content-Disposition` file name and the
-    /// content type.
+    /// `GET` a download ([`Download`]).
     pub fn get_download(
         &self,
         segments: &[&str],
         query: &[(&str, &str)],
-    ) -> anyhow::Result<(Vec<u8>, Option<String>, String)> {
+    ) -> anyhow::Result<Download> {
         let mut url = self.url(segments)?;
         if !query.is_empty() {
             url.query_pairs_mut().extend_pairs(query);
@@ -199,7 +212,7 @@ impl Client {
         &self,
         segments: &[&str],
         body: &B,
-    ) -> anyhow::Result<(Vec<u8>, Option<String>, String)> {
+    ) -> anyhow::Result<Download> {
         // Browser exports can take minutes on long decks.
         let req = self
             .http
@@ -210,7 +223,17 @@ impl Client {
     }
 }
 
-fn download(res: Response) -> anyhow::Result<(Vec<u8>, Option<String>, String)> {
+/// A downloaded export.
+pub struct Download {
+    pub bytes: Vec<u8>,
+    /// The `Content-Disposition` file name.
+    pub name: Option<String>,
+    pub mime: String,
+    /// `x-od-audio-tracks` of an MP4 export: how many tracks it mixes.
+    pub audio_tracks: Option<u32>,
+}
+
+fn download(res: Response) -> anyhow::Result<Download> {
     let header = |name| {
         res.headers()
             .get(name)
@@ -219,7 +242,16 @@ fn download(res: Response) -> anyhow::Result<(Vec<u8>, Option<String>, String)> 
     };
     let name = header(reqwest::header::CONTENT_DISPOSITION).and_then(|d| attachment_name(&d));
     let mime = header(reqwest::header::CONTENT_TYPE).unwrap_or_default();
-    Ok((res.bytes()?.to_vec(), name, mime))
+    let audio_tracks = header(reqwest::header::HeaderName::from_static(
+        "x-od-audio-tracks",
+    ))
+    .and_then(|n| n.trim().parse().ok());
+    Ok(Download {
+        bytes: res.bytes()?.to_vec(),
+        name,
+        mime,
+        audio_tracks,
+    })
 }
 
 /// The file name of a `Content-Disposition` header (`filename*` preferred),
