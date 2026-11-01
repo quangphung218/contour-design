@@ -6,6 +6,7 @@ use super::icons::{Glyph, icon};
 use super::menu_scrim::MenuScrim;
 use super::studio::StudioCtx;
 use crate::i18n::{T, t, tf};
+use crate::preview_bridge::ExportFit;
 use leptos::prelude::*;
 use od_contracts::{HandoffResponse, OkResponse};
 use serde_json::json;
@@ -131,13 +132,21 @@ impl Format {
     }
 
     /// Whether the format applies to `path`: Markdown files export as
-    /// Markdown, everything else needs an HTML page.
-    fn fits(self, path: Option<&str>) -> bool {
+    /// Markdown, everything else needs an HTML page. PowerPoint and MP4
+    /// also need what their exporter checks on the page (`fit`, unknown
+    /// until the preview says): slides, a `[data-composition-id]` root.
+    /// Offered without them, they end in a 422 (QA-031).
+    fn fits(self, path: Option<&str>, fit: Option<ExportFit>) -> bool {
+        let fit = fit.unwrap_or_default();
         match (self, path) {
             (Self::Zip, _) => true,
             (_, None) => false,
             (Self::Markdown, Some(p)) => crate::file_tree::is_markdown(p),
             (Self::Jsx | Self::JsxHtml, Some(p)) => crate::jsx_export::is_component(p),
+            (Self::Pptx | Self::PptxEditable, Some(p)) => {
+                super::studio::is_html_path(p) && fit.slides > 0
+            }
+            (Self::Mp4, Some(p)) => super::studio::is_html_path(p) && fit.composition,
             (_, Some(p)) => super::studio::is_html_path(p),
         }
     }
@@ -200,11 +209,11 @@ const ROWS: [Row; 9] = [
 /// The rows that apply to the open file `path`; a format that does not
 /// (Markdown next to a page, PDF with nothing open) is left out, not shown
 /// greyed without a reason.
-fn rows_for(path: Option<&str>) -> Vec<Row> {
+fn rows_for(path: Option<&str>, fit: Option<ExportFit>) -> Vec<Row> {
     ROWS.into_iter()
         .filter(|r| match r {
-            Row::One(f) => f.fits(path),
-            Row::Group(g) => g.formats().iter().any(|f| f.fits(path)),
+            Row::One(f) => f.fits(path, fit),
+            Row::Group(g) => g.formats().iter().any(|f| f.fits(path, fit)),
         })
         .collect()
 }
@@ -404,7 +413,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                 <div class="menu" role="menu" data-testid="export-menu">
                     {move || {
                         let path = ctx.active();
-                        rows_for(path.as_deref())
+                        rows_for(path.as_deref(), ctx.export_fit.get())
                             .into_iter()
                             .map(|row| match row {
                                 Row::One(f) => format_item(f, export, false).into_any(),
@@ -612,16 +621,20 @@ mod tests {
 
     #[test]
     fn the_menu_lists_only_what_the_open_file_exports_to() {
-        use super::{Format, Group, Row, rows_for};
-        assert_eq!(rows_for(None), [Row::One(Format::Zip)]);
-        let page = rows_for(Some("deck.html"));
+        use super::{ExportFit, Format, Group, Row, rows_for};
+        assert_eq!(rows_for(None, None), [Row::One(Format::Zip)]);
+        let deck = ExportFit {
+            slides: 3,
+            composition: false,
+        };
+        let page = rows_for(Some("deck.html"), Some(deck));
         assert!(page.contains(&Row::Group(Group::Image)));
         assert!(page.contains(&Row::Group(Group::PowerPoint)));
-        assert!(page.contains(&Row::One(Format::Mp4)));
+        assert!(!page.contains(&Row::One(Format::Mp4)));
         assert!(!page.contains(&Row::One(Format::Markdown)));
         assert!(!page.contains(&Row::One(Format::Jsx)));
         assert_eq!(
-            rows_for(Some("notes.md")),
+            rows_for(Some("notes.md"), None),
             [Row::One(Format::Zip), Row::One(Format::Markdown)]
         );
         // Every format is reachable once.
@@ -634,6 +647,27 @@ mod tests {
             .collect();
         all.dedup();
         assert_eq!(all.len(), 12);
+    }
+
+    #[test]
+    fn a_plain_page_is_not_offered_powerpoint_or_mp4() {
+        // QA-031: the daemon answers 422 for both on a page without slides
+        // or a composition root.
+        use super::{ExportFit, Format, Group, Row, rows_for};
+        for fit in [None, Some(ExportFit::default())] {
+            let page = rows_for(Some("index.html"), fit);
+            assert!(page.contains(&Row::One(Format::Pdf)));
+            assert!(page.contains(&Row::Group(Group::Image)));
+            assert!(!page.contains(&Row::Group(Group::PowerPoint)), "{fit:?}");
+            assert!(!page.contains(&Row::One(Format::Mp4)), "{fit:?}");
+        }
+        let motion = ExportFit {
+            slides: 0,
+            composition: true,
+        };
+        let page = rows_for(Some("index.html"), Some(motion));
+        assert!(page.contains(&Row::One(Format::Mp4)));
+        assert!(!page.contains(&Row::Group(Group::PowerPoint)));
     }
 
     #[test]

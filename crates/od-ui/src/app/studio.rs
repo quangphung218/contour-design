@@ -250,6 +250,9 @@ pub struct StudioCtx {
     pub frame_ready: RwSignal<u32>,
     /// Set once the previewed file turns out to be a deck.
     pub deck: RwSignal<Option<DeckState>>,
+    /// What the exporters accept for the previewed page (`od:export-fit`);
+    /// `None` until its bridge says.
+    pub export_fit: RwSignal<Option<pb::ExportFit>>,
     pub notes: RwSignal<Vec<String>>,
     pub show_notes: RwSignal<bool>,
     pub presenting: RwSignal<bool>,
@@ -986,6 +989,7 @@ impl StudioCtx {
                     self.last_slide.set_value(Some((path, active)));
                 }
             }
+            (Source::Main, BridgeMsg::ExportFit(fit)) => self.export_fit.set(Some(fit)),
             (Source::Main, BridgeMsg::Esc) => self.presenting.set(false),
             (Source::Main, BridgeMsg::Select(picked)) => {
                 if self.comment_mode.get_untracked() {
@@ -1232,6 +1236,7 @@ pub fn Studio() -> impl IntoView {
         anchors: RwSignal::new(HashMap::new()),
         frame_ready: RwSignal::new(0),
         deck: RwSignal::new(None),
+        export_fit: RwSignal::new(None),
         notes: RwSignal::new(Vec::new()),
         show_notes: RwSignal::new(false),
         presenting: RwSignal::new(false),
@@ -1541,6 +1546,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     Effect::new(move |_| {
         src.track();
         ctx.deck.set(None);
+        ctx.export_fit.set(None);
         ctx.comment_draft.set(None);
     });
     // Speaker notes follow the document and its slide count.
