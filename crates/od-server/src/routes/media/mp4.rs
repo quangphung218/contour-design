@@ -17,7 +17,7 @@ use od_contracts::ErrorCode;
 use od_export::hyperframes::{self, Composition, MAX_FPS};
 use od_export::renderer::frame_file_name;
 use od_export::{FrameOptions, FrameSet, Renderer};
-use od_render_cdp::ffmpeg::{encode_mp4, find_ffmpeg};
+use od_render_cdp::ffmpeg::{AudioTrack, encode_mp4_with_audio, find_ffmpeg};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
@@ -40,7 +40,9 @@ fn bad(code: ErrorCode, status: StatusCode, message: impl Into<String>) -> Expor
 /// Captures `entry` (a composition read as `comp`) at `fps` and encodes
 /// it with `ffmpeg`: the MP4, its frames, and the PNG of the frame at each
 /// of `keep` (seconds), clamped to the last frame. `require_timeline`:
-/// fail when the page never registered its root timeline.
+/// fail when the page never registered its root timeline. `audio` is
+/// mixed into one AAC stream as long as the captured film; none leaves
+/// the MP4 picture only.
 ///
 /// # Errors
 /// Renderer and ffmpeg failures, I/O.
@@ -55,6 +57,7 @@ pub(crate) async fn render_mp4(
     ffmpeg: &std::path::Path,
     keep: &[f64],
     require_timeline: bool,
+    audio: &[AudioTrack],
 ) -> ExportResult<(Vec<u8>, FrameSet, Vec<Vec<u8>>)> {
     base.width = Some(comp.width);
     base.height = Some(comp.height);
@@ -72,7 +75,8 @@ pub(crate) async fn render_mp4(
         )
         .await?;
     let mp4 = scratch.dir.path().join("out.mp4");
-    encode_mp4(ffmpeg, &frames_dir, frames.fps, &mp4).await?;
+    let film_seconds = f64::from(frames.count) / f64::from(frames.fps.max(1));
+    encode_mp4_with_audio(ffmpeg, &frames_dir, frames.fps, &mp4, audio, film_seconds).await?;
     let bytes = tokio::fs::read(&mp4).await.map_err(internal)?;
     let mut kept = Vec::with_capacity(keep.len());
     for t in keep {
@@ -156,6 +160,7 @@ pub async fn export_mp4(
         &ffmpeg,
         &[],
         false,
+        &[],
     )
     .await?;
     let Some(output) = output else {

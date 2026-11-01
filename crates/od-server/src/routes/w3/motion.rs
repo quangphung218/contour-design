@@ -24,14 +24,15 @@ use axum::Json;
 use axum::extract::{Path, State};
 use od_contracts::{AgentEvent, UpdateProjectRequest, sse};
 use od_export::Renderer;
-use od_export::hyperframes::{self, Composition, MAX_FPS};
+use od_export::hyperframes::{self, AudioPolicy, Composition, MAX_AUDIO_TRACKS, MAX_FPS};
 use od_media::EnvLookup;
 use od_media::tasks::TaskRecord;
-use od_render_cdp::ffmpeg::{FFMPEG_PATH_ENV, find_ffmpeg_with};
+use od_render_cdp::ffmpeg::{AudioTrack, FFMPEG_PATH_ENV, audio_format, find_ffmpeg_with};
 use od_store::paths::validate_project_path;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -382,6 +383,132 @@ pub fn check_composition(html: &str, scripts: &[String]) -> Result<(Composition,
 }
 
 // ---------------------------------------------------------------------------
+// Audio
+
+/// The sound a render mixes: the film's policy and its tracks as files.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AudioPlan {
+    pub policy: AudioPolicy,
+    /// The tracks that sound inside the film, in film time.
+    pub tracks: Vec<AudioTrack>,
+}
+
+/// The file `src` names from folder `from`, which must exist inside the
+/// composition folder `root` (both canonical). `what` names it in errors.
+fn local_file(root: &FsPath, from: &FsPath, src: &str, what: &str) -> Result<PathBuf, String> {
+    let src = src.split(['?', '#']).next().unwrap_or_default();
+    let missing = || {
+        format!(
+            "{what}: {src} is not in the composition folder. Add the file there (Contour mixes local files only) or remove the track, then render again"
+        )
+    };
+    let path = from.join(src).canonicalize().map_err(|_| missing())?;
+    if !path.starts_with(root) {
+        return Err(format!(
+            "{what}: {src} is outside the composition folder; keep audio and sub-compositions inside it"
+        ));
+    }
+    if !path.is_file() {
+        return Err(missing());
+    }
+    Ok(path)
+}
+
+/// Collects the `<audio>` tracks of a composition: those of `html` (its
+/// `index.html`) and of each sub-composition it loads with
+/// `data-composition-src`, shifted by that element's `data-start` and cut
+/// at its `data-duration`. A sub-composition's `src` paths are relative to
+/// its own file. `dir` is the composition folder on disk; tracks that start
+/// after `film_seconds` are left out.
+///
+/// # Errors
+/// A track or sub-composition that is not a local file in `dir`, an
+/// unsupported attribute or format, more than [`MAX_AUDIO_TRACKS`], or a
+/// `required` film without a track that sounds.
+pub fn audio_plan(dir: &FsPath, html: &str, film_seconds: f64) -> Result<AudioPlan, String> {
+    let policy = hyperframes::audio_policy(html);
+    if policy == AudioPolicy::Silent {
+        return Ok(AudioPlan {
+            policy,
+            tracks: Vec::new(),
+        });
+    }
+    let root = dir
+        .canonicalize()
+        .map_err(|e| format!("composition folder {}: {e}", dir.display()))?;
+    // (file the tags come from, its folder, start offset, cut, tags)
+    let mut sources = vec![(
+        "index.html".to_owned(),
+        root.clone(),
+        0.0,
+        None,
+        hyperframes::audio_tags(html).map_err(|e| format!("index.html: {e}"))?,
+    )];
+    for sub in hyperframes::composition_refs(html).map_err(|e| format!("index.html: {e}"))? {
+        let what = format!("index.html data-composition-src={:?}", sub.src);
+        if !hyperframes::is_local_src(&sub.src) {
+            return Err(format!("{what}: Contour loads local sub-compositions only"));
+        }
+        let file = local_file(&root, &root, &sub.src, &what)?;
+        let text = std::fs::read(&file).map_err(|e| format!("{what}: {e}"))?;
+        let tags = hyperframes::audio_tags(&String::from_utf8_lossy(&text))
+            .map_err(|e| format!("{}: {e}", sub.src))?;
+        let folder = file
+            .parent()
+            .map_or_else(|| root.clone(), FsPath::to_path_buf);
+        sources.push((sub.src, folder, sub.start, sub.duration, tags));
+    }
+    let mut tracks = Vec::new();
+    for (label, folder, offset, cut, tags) in sources {
+        for tag in tags {
+            let what = format!("{label} <audio src={:?}>", tag.src);
+            let path = local_file(&root, &folder, &tag.src, &what)?;
+            let format = audio_format(&path).ok_or_else(|| {
+                format!("{what}: not a supported audio file; use WAV, MP3, OGG, FLAC, AAC or M4A")
+            })?;
+            // Inside a sub-composition the track stops where it ends.
+            let duration = match (tag.duration, cut.map(|c: f64| c - tag.start)) {
+                (_, Some(left)) if left <= 0.0 => continue,
+                (Some(d), Some(left)) => Some(d.min(left)),
+                (d, left) => d.or(left),
+            };
+            let start = offset + tag.start;
+            if start >= film_seconds {
+                continue;
+            }
+            tracks.push(AudioTrack {
+                path,
+                format,
+                start,
+                duration,
+                volume: tag.volume,
+            });
+        }
+    }
+    if tracks.len() > MAX_AUDIO_TRACKS {
+        return Err(format!(
+            "the film has {} audio tracks; Contour mixes at most {MAX_AUDIO_TRACKS}. Pre-mix some of them into one file",
+            tracks.len()
+        ));
+    }
+    if policy == AudioPolicy::Required && tracks.is_empty() {
+        return Err("index.html declares od-motion-audio=required but has no <audio> track that plays inside the film. Add one with a local src (for example <audio src=\"assets/music.wav\" data-start=\"0\" data-volume=\"0.3\">), or declare content=\"silent\" and tell the user the film is silent".to_owned());
+    }
+    Ok(AudioPlan { policy, tracks })
+}
+
+/// What the render log says about sound: the policy, the track count and
+/// what happened to the mux.
+#[derive(Debug, Clone, Copy)]
+struct AudioLog {
+    policy: &'static str,
+    tracks: usize,
+    /// `mixed`, `none` (no track), `refused` (the plan failed), `failed`
+    /// (the render or encode failed) or `not-reached`.
+    mux: &'static str,
+}
+
+// ---------------------------------------------------------------------------
 // Render
 
 /// `ffmpeg required: …` with how to install it.
@@ -412,7 +539,12 @@ pub async fn render(
     task: &TaskRecord,
 ) -> Result<Value, String> {
     let started = Instant::now();
-    let result = render_task(state, renderer, env, task, started).await;
+    let mut audio = AudioLog {
+        policy: AudioPolicy::None.as_str(),
+        tracks: 0,
+        mux: "not-reached",
+    };
+    let result = render_task(state, renderer, env, task, started, &mut audio).await;
     if let Err(error) = &result {
         let run_id = task
             .request
@@ -424,6 +556,9 @@ pub async fn render(
             run_id,
             project = %task.project_id,
             render_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            audio_policy = audio.policy,
+            audio_tracks = audio.tracks,
+            audio_mux = audio.mux,
             error = %error,
             "od media generate hyperframes-html failed"
         );
@@ -461,6 +596,7 @@ async fn render_task(
     env: &EnvLookup,
     task: &TaskRecord,
     started: Instant,
+    audio_log: &mut AudioLog,
 ) -> Result<Value, String> {
     let checked = check(&task.request)?;
     let req: MotionRequest =
@@ -468,9 +604,10 @@ async fn render_task(
     let project_id = task.project_id.clone();
     let entry_path = format!("{}/index.html", checked.dir);
     let (pid, dir, entry_name) = (project_id.clone(), checked.dir.clone(), entry_path.clone());
-    let (html, scripts) = state
+    let (html, scripts, comp_dir) = state
         .blocking(move |s| {
             let html = String::from_utf8_lossy(&s.read_file(&pid, &entry_name)?.1).into_owned();
+            let comp_dir = s.project_root(&s.get_project(&pid)?)?.dir.join(&dir);
             // Each local script's text, or `None` when it is not there.
             let scripts = local_scripts(&html)
                 .into_iter()
@@ -481,7 +618,7 @@ async fn render_task(
                     (src, text)
                 })
                 .collect::<Vec<_>>();
-            Ok((html, scripts))
+            Ok((html, scripts, comp_dir))
         })
         .await
         .map_err(|e| {
@@ -499,6 +636,18 @@ async fn render_task(
     }
     let scripts: Vec<String> = scripts.into_iter().filter_map(|(_, t)| t).collect();
     let (comp, poster) = check_composition(&html, &scripts)?;
+    #[allow(clippy::cast_precision_loss)]
+    let seconds = comp.duration_ms.unwrap_or(0) as f64 / 1000.0;
+    // Sound is checked before minutes of capture: a required track that
+    // is missing writes no MP4.
+    audio_log.policy = hyperframes::audio_policy(&html).as_str();
+    let plan_html = html.clone();
+    let plan = tokio::task::spawn_blocking(move || audio_plan(&comp_dir, &plan_html, seconds))
+        .await
+        .map_err(|e| e.to_string())?
+        .inspect_err(|_| audio_log.mux = "refused")?;
+    audio_log.tracks = plan.tracks.len();
+    audio_log.mux = "failed";
     let fps = req.fps.unwrap_or(comp.fps);
     let ffmpeg = find_ffmpeg_with(env(FFMPEG_PATH_ENV).map(Into::into))
         .map_err(|e| ffmpeg_missing(&e.to_string()))?;
@@ -507,11 +656,18 @@ async fn render_task(
     let entry = crate::routes::export::resolve_entry(state, project_id.clone(), &base)
         .await
         .map_err(|e| e.message().to_owned())?;
-    #[allow(clippy::cast_precision_loss)]
-    let seconds = comp.duration_ms.unwrap_or(0) as f64 / 1000.0;
     let keep = [seconds * 0.1, poster, seconds * 0.95];
     let (bytes, frames, review) = render_mp4(
-        state, renderer, &entry, &mut base, &comp, fps, &ffmpeg, &keep, true,
+        state,
+        renderer,
+        &entry,
+        &mut base,
+        &comp,
+        fps,
+        &ffmpeg,
+        &keep,
+        true,
+        &plan.tracks,
     )
     .await
     .map_err(|e| {
@@ -570,8 +726,19 @@ async fn render_task(
         .map_err(|e| e.message)?;
     #[allow(clippy::cast_precision_loss)]
     let duration_sec = f64::from(frames.count) / f64::from(frames.fps.max(1));
+    audio_log.mux = if plan.tracks.is_empty() {
+        "none"
+    } else {
+        "mixed"
+    };
+    let sound = match (plan.tracks.len(), plan.policy) {
+        (0, AudioPolicy::Silent) => "silent by design".to_owned(),
+        (0, _) => "no audio".to_owned(),
+        (1, _) => "AAC, 1 audio track mixed".to_owned(),
+        (n, _) => format!("AAC, {n} audio tracks mixed"),
+    };
     let summary = format!(
-        "Rendered {} ({:.2} s, {} fps, {}×{}, h264 yuv420p) from {}",
+        "Rendered {} ({:.2} s, {} fps, {}×{}, h264 yuv420p, {sound}) from {}",
         file.name, duration_sec, frames.fps, frames.width, frames.height, entry_path
     );
     if let Some(run_id) = req.run_id.as_deref().filter(|r| !r.is_empty()) {
@@ -585,6 +752,9 @@ async fn render_task(
         frames = frames.count,
         render_ms = u64::try_from(render_ms).unwrap_or(u64::MAX),
         edited,
+        audio_policy = audio_log.policy,
+        audio_tracks = audio_log.tracks,
+        audio_mux = audio_log.mux,
         "od media generate hyperframes-html done"
     );
     Ok(json!({
@@ -601,6 +771,8 @@ async fn render_task(
         "height": frames.height,
         "durationSec": duration_sec,
         "posterTime": poster,
+        "audioPolicy": plan.policy.as_str(),
+        "audioTracks": plan.tracks.len(),
         "reviewFrames": review_paths,
         "edited": edited,
         "renderMs": u64::try_from(render_ms).unwrap_or(u64::MAX),
@@ -779,5 +951,45 @@ mod tests {
         );
         let c = chrome_missing("this export needs Chrome, Edge or Chromium");
         assert!(c.starts_with("Chrome required"), "{c}");
+    }
+
+    #[test]
+    fn audio_plan_places_tracks_in_film_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        for f in ["m.wav", "late.wav", "sub/a.wav", "sub/b.wav", "sub/c.wav"] {
+            std::fs::write(dir.join(f), b"RIFF").unwrap();
+        }
+        std::fs::write(
+            dir.join("sub/s.html"),
+            r#"<template><audio src="a.wav" data-start="1" data-duration="5"></audio>
+<audio src="b.wav"></audio><audio src="c.wav" data-start="3"></audio></template>"#,
+        )
+        .unwrap();
+        let html = r#"<audio src="m.wav" data-volume="0.3"></audio>
+<audio src="late.wav" data-start="10"></audio>
+<div data-composition-src="sub/s.html" data-start="4" data-duration="3"></div>"#;
+        let plan = audio_plan(dir, html, 10.0).unwrap();
+        let got: Vec<_> = plan
+            .tracks
+            .iter()
+            .map(|t| {
+                let name = t.path.file_name().unwrap().to_string_lossy().into_owned();
+                (name, t.start, t.duration, t.volume)
+            })
+            .collect();
+        assert_eq!(
+            got,
+            [
+                // late.wav starts at the film's end: left out.
+                ("m.wav".to_owned(), 0.0, None, 0.3),
+                // Cut where the 3 s sub-composition ends.
+                ("a.wav".to_owned(), 5.0, Some(2.0), 1.0),
+                ("b.wav".to_owned(), 4.0, Some(3.0), 1.0),
+                // c.wav starts when the sub-composition is over: left out.
+            ]
+        );
+        assert_eq!(plan.policy, AudioPolicy::None);
     }
 }

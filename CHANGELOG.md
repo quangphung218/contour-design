@@ -10,6 +10,13 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Motion films have their sound: `od media generate --model
+  hyperframes-html` mixes the `<audio>` tracks of the composition and of
+  the sub-compositions it loads into the MP4 (one AAC track, cut to the
+  film's length, with each track's start, length and volume). A film that
+  requires audio and points to a missing file fails with the file's name
+  and writes no MP4; a remote URL fails as "local only". A film without
+  `<audio>` renders as before.
 - A Motion render that requires a timeline waits up to 15 s for it to
   register, even when the composition declares `data-duration`; a
   timeline added by a slow script no longer fails the render.

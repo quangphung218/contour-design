@@ -349,3 +349,296 @@ async fn a_bad_request_is_refused_before_queueing() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Audio: `<audio>` tracks mixed into the MP4 (real ffmpeg).
+
+/// A mono 16-bit WAV of `seconds` of a sine at `freq` Hz, peak `amp` (0–1).
+fn wav(seconds: f64, freq: f64, amp: f64) -> Vec<u8> {
+    const RATE: u32 = 8_000;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let n = (seconds * f64::from(RATE)) as u32;
+    let mut out = Vec::with_capacity(44 + 2 * n as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + 2 * n).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // mono
+    out.extend_from_slice(&RATE.to_le_bytes());
+    out.extend_from_slice(&(RATE * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(2 * n).to_le_bytes());
+    for i in 0..n {
+        let t = f64::from(i) / f64::from(RATE);
+        #[allow(clippy::cast_possible_truncation)]
+        let s = (amp * 32_000.0 * (2.0 * std::f64::consts::PI * freq * t).sin()) as i16;
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    out
+}
+
+/// What ffmpeg reads from `mp4`: its stream lines (`Video:` / `Audio:`)
+/// and the first audio stream decoded to mono 8 kHz samples.
+fn probe(mp4: &Path) -> (Vec<String>, Vec<i16>) {
+    let ffmpeg = od_render_cdp::ffmpeg::find_ffmpeg().unwrap();
+    let info = std::process::Command::new(&ffmpeg)
+        .args(["-hide_banner", "-i"])
+        .arg(mp4)
+        .output()
+        .unwrap();
+    let streams = String::from_utf8_lossy(&info.stderr)
+        .lines()
+        .filter(|l| l.trim_start().starts_with("Stream #"))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let pcm = std::process::Command::new(&ffmpeg)
+        .args(["-v", "error", "-i"])
+        .arg(mp4)
+        .args([
+            "-map", "0:a:0?", "-ac", "1", "-ar", "8000", "-f", "s16le", "-",
+        ])
+        .output()
+        .unwrap();
+    let samples = pcm
+        .stdout
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .collect();
+    (streams, samples)
+}
+
+/// Root mean square of `samples` between `from` and `to` seconds (8 kHz).
+fn rms(samples: &[i16], from: f64, to: f64) -> f64 {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let at = |t: f64| ((t * 8_000.0) as usize).min(samples.len());
+    let part = &samples[at(from)..at(to)];
+    #[allow(clippy::cast_precision_loss)]
+    let mean = part.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / part.len().max(1) as f64;
+    mean.sqrt()
+}
+
+impl Harness {
+    /// Scaffolds `motion-source/film` (64×36, 10 fps, `seconds` long) and
+    /// adds `head` to its `<head>` and `body` before `</body>`.
+    async fn film(&self, pid: &str, seconds: f64, head: &str, body: &str) {
+        let (status, v) = self
+            .post(
+                &format!("/api/projects/{pid}/media/scaffold"),
+                json!({"compositionDir": "motion-source/film", "width": 64, "height": 36,
+                    "fps": 10, "duration": seconds}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        let (_, html) = self
+            .state
+            .store
+            .read_file(pid, "motion-source/film/index.html")
+            .unwrap();
+        let html = String::from_utf8(html)
+            .unwrap()
+            .replace("</head>", &format!("{head}\n</head>"))
+            .replace("</body>", &format!("{body}\n</body>"));
+        self.write(pid, "motion-source/film/index.html", html.as_bytes());
+    }
+
+    fn write(&self, pid: &str, name: &str, bytes: &[u8]) {
+        self.state
+            .store
+            .write_file(pid, name, bytes, true, None)
+            .unwrap();
+    }
+
+    fn path(&self, pid: &str, name: &str) -> std::path::PathBuf {
+        let project = self.state.store.get_project(pid).unwrap();
+        self.state
+            .store
+            .project_root(&project)
+            .unwrap()
+            .dir
+            .join(name)
+    }
+}
+
+const REQUIRED: &str = r#"<meta name="od-motion-audio" content="required">"#;
+
+#[tokio::test]
+async fn music_and_voice_are_mixed_at_their_offsets() {
+    let h = harness();
+    let pid = h.project("Film");
+    h.write(
+        &pid,
+        "motion-source/film/assets/music.wav",
+        &wav(12.0, 220.0, 0.2),
+    );
+    h.write(
+        &pid,
+        "motion-source/film/assets/voice.wav",
+        &wav(3.0, 440.0, 0.9),
+    );
+    h.film(
+        &pid,
+        10.0,
+        REQUIRED,
+        r#"<audio src="assets/music.wav" data-start="0" data-volume="0.3"></audio>
+<audio src="assets/voice.wav" data-start="2" data-duration="3"></audio>"#,
+    )
+    .await;
+    let task = h.render(&pid, "").await;
+    assert_eq!(task["status"], "done", "{task}");
+    assert_eq!(task["result"]["audioTracks"], 2, "{task}");
+    assert_eq!(task["result"]["audioPolicy"], "required", "{task}");
+    assert!(
+        task["result"]["providerNote"]
+            .as_str()
+            .unwrap()
+            .contains("AAC, 2 audio tracks mixed"),
+        "{task}"
+    );
+    let (streams, samples) = probe(&h.path(&pid, "film.mp4"));
+    let audio: Vec<_> = streams.iter().filter(|s| s.contains("Audio:")).collect();
+    assert_eq!(audio.len(), 1, "{streams:?}");
+    assert!(audio[0].contains("aac"), "{streams:?}");
+    // As long as the picture (10 s): music is 12 s and gets cut.
+    #[allow(clippy::cast_precision_loss)]
+    let seconds = samples.len() as f64 / 8_000.0;
+    assert!((seconds - 10.0).abs() <= 0.1, "audio lasts {seconds} s");
+    // The voice sounds from 2 s to 5 s, over quieter music.
+    let (before, voice, after) = (
+        rms(&samples, 0.2, 1.8),
+        rms(&samples, 2.2, 4.8),
+        rms(&samples, 5.2, 9.8),
+    );
+    assert!(before > 100.0, "music plays from 0 s: {before}");
+    assert!(voice > 3.0 * before, "voice at 2–5 s: {voice} vs {before}");
+    assert!(
+        after < 2.0 * before,
+        "voice stops at 5 s: {after} vs {before}"
+    );
+}
+
+#[tokio::test]
+async fn a_track_in_a_sub_composition_is_mixed_at_its_start() {
+    let h = harness();
+    let pid = h.project("Film");
+    h.write(
+        &pid,
+        "motion-source/film/compositions/voice.wav",
+        &wav(5.0, 440.0, 0.9),
+    );
+    h.write(
+        &pid,
+        "motion-source/film/compositions/vo.html",
+        br#"<template id="vo-template"><div data-composition-id="vo" data-width="64" data-height="36">
+<audio src="voice.wav" data-start="0"></audio></div></template>"#,
+    );
+    h.film(
+        &pid,
+        6.0,
+        "",
+        r#"<div data-composition-id="vo" data-composition-src="compositions/vo.html" data-start="2" data-duration="2"></div>"#,
+    )
+    .await;
+    let task = h.render(&pid, "").await;
+    assert_eq!(task["status"], "done", "{task}");
+    assert_eq!(task["result"]["audioTracks"], 1, "{task}");
+    assert_eq!(task["result"]["audioPolicy"], "none", "{task}");
+    let (_, samples) = probe(&h.path(&pid, "film.mp4"));
+    // Silent before 2 s, the voice for the 2 s the sub-composition lasts.
+    let (before, voice, after) = (
+        rms(&samples, 0.2, 1.8),
+        rms(&samples, 2.2, 3.8),
+        rms(&samples, 4.2, 5.8),
+    );
+    assert!(voice > 1_000.0, "{voice}");
+    assert!(before < 50.0 && after < 50.0, "{before} {after}");
+}
+
+#[tokio::test]
+async fn a_film_without_audio_stays_picture_only() {
+    let h = harness();
+    let pid = h.project("Film");
+    // A silent film keeps its tracks out of the MP4.
+    h.write(
+        &pid,
+        "motion-source/film/assets/music.wav",
+        &wav(1.0, 220.0, 0.5),
+    );
+    for (head, body, policy) in [
+        ("", "", "none"),
+        (
+            r#"<meta name="od-motion-audio" content="silent">"#,
+            r#"<audio src="assets/music.wav"></audio>"#,
+            "silent",
+        ),
+    ] {
+        h.film(&pid, 1.0, head, body).await;
+        let task = h.render(&pid, "").await;
+        assert_eq!(task["status"], "done", "{task}");
+        assert_eq!(task["result"]["audioTracks"], 0, "{task}");
+        assert_eq!(task["result"]["audioPolicy"], policy, "{task}");
+        let (streams, samples) = probe(&h.path(&pid, "film.mp4"));
+        assert!(streams.iter().all(|s| !s.contains("Audio:")), "{streams:?}");
+        assert_eq!(
+            streams.iter().filter(|s| s.contains("Video: h264")).count(),
+            1
+        );
+        assert!(samples.is_empty());
+        std::fs::remove_dir_all(h.path(&pid, "motion-source/film")).unwrap();
+        std::fs::remove_file(h.path(&pid, "film.mp4")).unwrap();
+        h.write(
+            &pid,
+            "motion-source/film/assets/music.wav",
+            &wav(1.0, 220.0, 0.5),
+        );
+    }
+}
+
+#[tokio::test]
+async fn audio_errors_fail_the_task_without_an_mp4() {
+    let h = harness();
+    let pid = h.project("Film");
+    h.write(
+        &pid,
+        "motion-source/film/assets/a.wav",
+        &wav(1.0, 220.0, 0.5),
+    );
+    h.write(&pid, "outside.wav", &wav(1.0, 220.0, 0.5));
+    for (head, body, want) in [
+        (
+            REQUIRED,
+            r#"<audio src="assets/music.wav" data-start="0"></audio>"#,
+            "assets/music.wav is not in the composition folder",
+        ),
+        (REQUIRED, "", "no <audio> track"),
+        (
+            "",
+            r#"<audio src="https://cdn.example/a.mp3"></audio>"#,
+            "local files only",
+        ),
+        ("", r#"<audio src="assets/a.wav" loop></audio>"#, "loop"),
+        (
+            "",
+            r#"<audio src="../../outside.wav"></audio>"#,
+            "outside the composition folder",
+        ),
+        (
+            "",
+            r#"<audio src="assets/a.wav" data-volume="2"></audio>"#,
+            "data-volume",
+        ),
+    ] {
+        h.film(&pid, 1.0, head, body).await;
+        let task = h.render(&pid, "").await;
+        assert_eq!(task["status"], "failed", "{body}: {task}");
+        let error = task["error"].to_string();
+        assert!(error.contains(want), "{body}: {error}");
+        assert!(
+            !h.path(&pid, "film.mp4").exists(),
+            "{body}: no MP4 is written"
+        );
+        std::fs::remove_file(h.path(&pid, "motion-source/film/index.html")).unwrap();
+    }
+}

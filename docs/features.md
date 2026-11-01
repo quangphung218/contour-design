@@ -141,7 +141,7 @@ Files go to the current folder by default; `--out -` writes to stdout.
 | `image` | PNG/JPEG of one slide (`--index`), the whole deck stacked, or the page | Chrome |
 | `pptx` | PowerPoint, one image per slide | Chrome |
 | `pptx-editable` | PowerPoint with native text boxes and shapes | Chrome |
-| `mp4` | video from a HyperFrames composition | Chrome, `ffmpeg` |
+| `mp4` | video from a HyperFrames composition, with its local `<audio>` tracks mixed in | Chrome, `ffmpeg` |
 
 The UI also exports Markdown, a React component as standalone HTML (React
 and Sucrase are bundled, no CDN), and saves a project as a template.
