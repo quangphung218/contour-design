@@ -8,6 +8,34 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Motion makes an MP4 with Contour's own tools. `od media scaffold`
+  creates an editable composition (`index.html`, `hyperframes.json`,
+  `meta.json`) and leaves a folder that already has a source alone.
+  `od media generate --model hyperframes-html --composition-dir <dir>`
+  renders it with the Chrome and ffmpeg already installed, as a task that
+  `od media wait` follows, and prints the film's length, fps and size plus
+  three review frames. `od media models` lists the model.
+- The rendered MP4 shows in "Files from this turn" (an edit when a
+  re-render replaced it), counts as the turn's deliverable, and opens in
+  the preview when the composition declares
+  `<meta name="od-motion-output" content="video">`.
+- A test checks that every `$OD_*` variable and `"$OD_BIN" <group>
+  <command> --flag` in the bundled content exists in Contour; the few
+  that do not yet are listed with a reason.
+
+### Fixed
+
+- The Motion chip no longer leaves the agent to build its own headless
+  Chrome and ffmpeg pipeline: `"$OD_NODE_BIN" "$OD_BIN" …` in skills now
+  runs `od` (both variables name it), and the desktop app answers those
+  commands without opening a window. Without ffmpeg or Chrome, the render
+  fails with "ffmpeg required" or "Chrome required" and how to install
+  it, and the skill tells the agent to stop and report it.
+- `od media wait` accepts `--since` and exits 2 while the task still runs,
+  as the copied HyperFrames and e-commerce skills expect.
+
 ## [0.2.0-beta.9] - 2026-11-01
 
 ### Fixed
