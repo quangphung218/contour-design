@@ -168,6 +168,8 @@ pub struct AssistantTurn {
     pub critique: Option<CritiqueReport>,
     /// Media the agent generated during the run (track C2), in start order.
     pub media: Vec<od_contracts::MediaTask>,
+    /// Why the run failed, from its `end` (or its log, for a stored turn).
+    pub failure: Option<od_contracts::FailureCategory>,
 }
 
 impl Default for AssistantTurn {
@@ -189,6 +191,7 @@ impl AssistantTurn {
             cwd: None,
             critique: None,
             media: Vec::new(),
+            failure: None,
         }
     }
 
@@ -223,17 +226,23 @@ impl AssistantTurn {
             RunFrame::End(end) => {
                 self.state = end.status.into();
                 self.status = None;
-                if let Some(error) = end.error.filter(|e| !e.is_empty()) {
-                    let already = self
-                        .blocks
-                        .iter()
-                        .any(|b| matches!(b, Block::Error(m) if *m == error));
-                    if !already {
-                        self.blocks.push(Block::Error(error));
-                    }
+                self.failure = end.failure_category;
+                if let Some(error) = crate::events::end_error(&end) {
+                    self.push_error(error);
                 }
             }
             RunFrame::Ignored => {}
+        }
+    }
+
+    /// Adds an error block unless the same one is already shown.
+    fn push_error(&mut self, error: String) {
+        if !self
+            .blocks
+            .iter()
+            .any(|b| matches!(b, Block::Error(m) if *m == error))
+        {
+            self.blocks.push(Block::Error(error));
         }
     }
 
@@ -294,6 +303,12 @@ impl AssistantTurn {
                 if let Some(call) = call {
                     call.result = Some(is_error);
                 }
+            }
+            AgentEvent::Error { code, .. }
+                if code.as_deref() == Some(od_contracts::DAEMON_RESTART_CODE) =>
+            {
+                self.failure = Some(od_contracts::FailureCategory::DaemonRestart);
+                self.push_error(crate::events::app_closed());
             }
             AgentEvent::Error { message, .. } => self.blocks.push(Block::Error(message)),
             AgentEvent::ToolLoop {
@@ -627,6 +642,50 @@ mod tests {
             TurnState::Running,
             "first agent event implies running"
         );
+    }
+
+    #[test]
+    fn a_turn_cut_short_by_contour_closing_says_so_in_plain_words() {
+        // QA-030: what the restarted daemon replays for a run it found running.
+        let mut t = AssistantTurn::new();
+        t.apply(decode_frame(
+            "error",
+            r#"{"message":"the daemon restarted while this run was in progress","code":"DAEMON_RESTART"}"#,
+        ));
+        t.apply(decode_frame(
+            "end",
+            r#"{"status":"failed","code":null,"terminalAt":1,"retryable":true,"failureCategory":"daemon_restart","error":"daemon restarted"}"#,
+        ));
+        assert_eq!(t.state, TurnState::Failed);
+        assert_eq!(
+            t.failure,
+            Some(od_contracts::FailureCategory::DaemonRestart)
+        );
+        let [Block::Error(message)] = t.blocks.as_slice() else {
+            panic!("one error block: {:?}", t.blocks);
+        };
+        assert!(message.contains("Contour closed"), "{message}");
+        assert!(!message.to_lowercase().contains("daemon"), "{message}");
+    }
+
+    #[test]
+    fn a_stored_turn_cut_short_by_contour_closing_knows_it_at_once() {
+        // QA-030: the restarted daemon stores the cause with the message,
+        // so the turn is right before its run log loads.
+        let mut t = AssistantTurn::new();
+        t.apply(RunFrame::Agent(AgentEvent::Error {
+            message: "the daemon restarted while this run was in progress".into(),
+            code: Some(od_contracts::DAEMON_RESTART_CODE.into()),
+            terminal: true,
+        }));
+        assert_eq!(
+            t.failure,
+            Some(od_contracts::FailureCategory::DaemonRestart)
+        );
+        let [Block::Error(message)] = t.blocks.as_slice() else {
+            panic!("one error block: {:?}", t.blocks);
+        };
+        assert!(message.contains("Contour closed"), "{message}");
     }
 
     #[test]

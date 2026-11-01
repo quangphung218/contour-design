@@ -412,7 +412,8 @@ fn main() -> anyhow::Result<()> {
                     let _ = window.navigate(url);
                 }
                 // SIGTERM (logout, `kill`) and Ctrl-C quit through
-                // `RunEvent::Exit`, which ends the terminal tabs' shells.
+                // `RunEvent::Exit`, which stops running agents and ends the
+                // terminal tabs' shells.
                 match od_server::shutdown_signal() {
                     Ok(stop) => {
                         stop.await;
@@ -426,7 +427,8 @@ fn main() -> anyhow::Result<()> {
         .build(tauri::generate_context!())
         .context("building the desktop app")?
         .run(|app, event| {
-            // The terminal tabs' shells would outlive the app.
+            // Running agents and the terminal tabs' shells would outlive
+            // the app: stop them (agents as by Stop) before it exits.
             if let RunEvent::Exit = event {
                 if let Some(daemon) = app.try_state::<Daemon>() {
                     tauri::async_runtime::block_on(daemon.state.shutdown());

@@ -50,11 +50,11 @@ reproduces by hand about one try in two.
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
-| QA-026 | 🟠 | Quitting Contour while the agent works leaves the agent running: it keeps editing the project after the app is gone | `resilience.qa.mjs` RES-01 | Open |
+| QA-026 | 🟠 | Quitting Contour while the agent works leaves the agent running: it keeps editing the project after the app is gone | `resilience.qa.mjs` RES-01 | Fixed |
 | QA-027 | 🟠 | Manual edit: clicking text inside a section with `data-od-id` picks the whole section, so the text cannot be edited by clicking it (every page the real Claude writes) | `studio.qa.mjs` STU-19 | Open |
 | QA-028 | 🟠 | Opening a folder Contour cannot write to shows an error but adds a project anyway, one more per try | `resilience.qa.mjs` RES-03 | Fixed |
 | QA-029 | 🟡 | Storage errors reach the user raw: "The daemon hit an error: io error: Permission denied (os error 13) (HTTP 500)", "… No space left on device (os error 28)" | `resilience.qa.mjs` RES-04; full disk manual | Fixed |
-| QA-030 | 🟡 | A turn cut short because Contour closed or crashed says "daemon restarted" and "check the agent in Settings", with an Open Settings button | `resilience.qa.mjs` RES-02 | Open |
+| QA-030 | 🟡 | A turn cut short because Contour closed or crashed says "daemon restarted" and "check the agent in Settings", with an Open Settings button | `resilience.qa.mjs` RES-02 | Fixed |
 | QA-031 | 🟡 | The Export menu offers PowerPoint and MP4 for a plain page; both end in "Export failed: The request was not accepted: … (HTTP 422)" | `export.qa.mjs` EXP-13 | Open |
 | QA-032 | 🔵 | MCP `write_file` saves "trang chủ.html" as "trang-chủ.html"; `get_file` on the name the agent used answers 404 | `mcp.qa.mjs` MCP-02 | Fixed |
 | QA-033 | 🟡 | With an edit not applied, the browser's Back works one try in two: after Cancel, a second Back does nothing, or Leave stays on the page | `drafts.qa.mjs` DL-24 | Open |
@@ -570,6 +570,21 @@ Reported by the UX review of 759581a.
   app (`apps/desktop/src/main.rs:432`) both end through it. Cancel every
   live run there the way Stop does (SIGTERM to the process group, 3 s,
   SIGKILL), and mark those turns canceled.
+- **Fixed**: `AppState::shutdown` now calls `RunContext::stop_all`
+  alongside `close_all`: every run in flight is canceled as by Stop (abort
+  line, SIGTERM to the group, SIGKILL after 3 s), a run not launched yet
+  gets a pending cancel, and shutdown waits (at most 8 s) for the launch
+  and finalize tasks, now kept in a `TaskTracker`, so each turn is stored
+  as canceled. The desktop app ends through it. `od` (`serve_until` in
+  `lib.rs`) stops the runs as soon as the signal comes, before the server
+  drains open responses: a run's event stream stays open until the run
+  ends, so draining first let the agent finish its turn whenever the
+  browser watched the run. The drain then gets at most 5 s, as an open
+  project's event stream never ends on its own. Guarded by
+  `od-server/tests/runs.rs` `shutdown_stops_running_agents_like_stop`,
+  `stopping_the_server_stops_runs_whose_stream_is_open`,
+  `stopping_the_server_does_not_wait_for_project_streams`, and
+  `run_create_drop.rs` `shutdown_before_launch_is_not_lost`.
 
 ## QA-027 🟠 Manual edit picks the whole section instead of the text clicked
 
@@ -671,6 +686,17 @@ Reported by the UX review of 759581a.
   state (`crates/od-ui/src/app/chat_view.rs`) whatever the cause. Your usage
   already tells the cause apart (`daemon_restart`); use it for the words
   and leave Settings out.
+- **Fixed**: the chat reads the cause. A `daemon_restart` end, or an
+  `error` coded `DAEMON_RESTART` (`od_contracts::DAEMON_RESTART_CODE`),
+  sets `AssistantTurn::failure`; the turn then says "Contour closed while
+  this turn was running, so it stopped partway." with the hint "Retry to
+  run it again." and offers Retry only. At startup
+  `Store::fail_interrupted_messages` now closes each interrupted message
+  with that coded `error` event, so a reopened turn knows the cause at
+  once; before, it learned it only from the run log, loaded after the
+  turn was drawn. Guarded by the unit tests named
+  `…cut_short_by_contour_closing…` in `od-ui` (`chat.rs`, `events.rs`,
+  `guide.rs`) and the `fail_interrupted_messages` test in `od-store`.
 
 ## QA-031 🟡 Export offers PowerPoint and MP4 for a page, then refuses
 

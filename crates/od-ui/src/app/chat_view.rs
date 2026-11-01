@@ -662,7 +662,16 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                 "failed",
                 Some(Glyph::Warning),
                 t(T::RunFailed).to_owned(),
-                Some(t(T::RunFailedHint).to_owned()),
+                Some(
+                    t(
+                        if tn.failure == Some(od_contracts::FailureCategory::DaemonRestart) {
+                            T::RunAppClosedHint
+                        } else {
+                            T::RunFailedHint
+                        },
+                    )
+                    .to_owned(),
+                ),
             ),
             RunPhase::Stopped => ("stopped", Some(Glyph::Stop), t(T::Stopped).to_owned(), None),
         })
@@ -695,13 +704,13 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             let record = super::api::get_text(&url)
                 .await
                 .map(|sse| crate::events::run_record(&sse));
-            if let Ok(crate::events::RunRecord {
-                error: Some(error), ..
-            }) = &record
-            {
+            if let Ok(rec) = &record {
                 turn.try_update(|t| {
-                    if !t.blocks.iter().any(|b| matches!(b, Block::Error(_))) {
-                        t.blocks.push(Block::Error(error.clone()));
+                    t.failure = t.failure.or(rec.failure);
+                    if let Some(error) = &rec.error {
+                        if !t.blocks.iter().any(|b| matches!(b, Block::Error(_))) {
+                            t.blocks.push(Block::Error(error.clone()));
+                        }
                     }
                 });
             }

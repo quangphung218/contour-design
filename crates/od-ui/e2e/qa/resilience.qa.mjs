@@ -29,7 +29,7 @@ test('RES-01', 'Quitting Contour while the agent works stops the agent: nothing 
   const late = join(d.data, 'projects', id, 'linger.html');
   assert.ok(!existsSync(late), 'the agent kept working after Contour quit and wrote linger.html into the project');
   await d.spawn();
-}, { knownBug: 'QA-026', timeout: 60_000, daemon: {} });
+}, { timeout: 60_000, daemon: {} });
 
 test('RES-02', 'A turn cut short because Contour closed says so, and does not send the user to the agent settings', async ({ d, api, newPage }) => {
   const id = await createProject(d, 'Crash mid-run');
@@ -48,7 +48,7 @@ test('RES-02', 'A turn cut short because Contour closed says so, and does not se
   assert.doesNotMatch(text, /check the agent in Settings/i, 'the agent is blamed for a turn Contour cut short');
   assert.equal(await turn.getByRole('button', { name: 'Open Settings' }).count(), 0, 'Open Settings offered for a turn Contour cut short');
   await turn.getByRole('button', { name: 'Retry' }).waitFor();
-}, { knownBug: 'QA-030', timeout: 60_000, daemon: {} });
+}, { timeout: 60_000, daemon: {} });
 
 /** A folder with a page in it that the user may read but not write. */
 function readOnlyFolder() {

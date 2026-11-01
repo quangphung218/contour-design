@@ -1026,3 +1026,139 @@ async fn settings_permission_mode_reaches_the_agent_argv() {
     );
     assert!(!argv[3].contains(network), "{}", argv[3]);
 }
+
+/// Mocks `claude` like a Node CLI: ignores the closed pipe and keeps
+/// working, then writes the returned file 3 s after it started.
+#[cfg(unix)]
+fn late_writer(d: &Daemon) -> std::path::PathBuf {
+    let late = d.mocks.join("late.html");
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!(
+            r#"{PROBES}
+trap '' PIPE
+IFS= read -r line
+printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+i=0
+while [ $i -lt 15 ]; do sleep 0.2; printf '{{"type":"assistant","message":{{"id":"m%s","content":[{{"type":"text","text":"."}}]}}}}\n' "$i" 2>/dev/null; i=$((i + 1)); done
+printf 'late' > "{late}"
+"#,
+            late = late.display()
+        ),
+    );
+    late
+}
+
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn shutdown_stops_running_agents_like_stop() {
+    // QA-026: quitting must not leave the agent editing the project.
+    let d = daemon_with(Options {
+        kill_grace: Duration::from_millis(500),
+        ..Options::default()
+    })
+    .await;
+    let late = late_writer(&d);
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project,
+                      "conversationId": conversation, "message": "go"}))
+        .await;
+    let started = Instant::now();
+    let mut reader = d.stream(&run.run_id, None).await;
+    while let Some(ev) = reader.next().await {
+        if ev.event == "agent" && ev.data["type"] == "status" {
+            break;
+        }
+    }
+
+    tokio::time::timeout(Duration::from_secs(10), d.state.shutdown())
+        .await
+        .expect("shutdown did not return");
+    let reg = d.state.runs.registry.get(&run.run_id).unwrap();
+    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
+    // The turn is recorded as stopped before shutdown returns.
+    let body = d
+        .get_json(&format!(
+            "/api/projects/{project}/conversations/{conversation}/messages"
+        ))
+        .await;
+    let assistant = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "assistant")
+        .cloned()
+        .unwrap();
+    assert_eq!(assistant["runStatus"], "canceled");
+    if let Some(left) = Duration::from_secs(4).checked_sub(started.elapsed()) {
+        tokio::time::sleep(left).await;
+    }
+    assert!(!late.exists(), "the agent kept working after shutdown");
+}
+
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn stopping_the_server_stops_runs_whose_stream_is_open() {
+    // QA-026 for `od daemon`: the UI keeps the run's event stream open, and
+    // the server waits for open responses before it stops. The agent must
+    // stop at the signal, not when it is done.
+    let mut d = daemon_with(Options {
+        kill_grace: Duration::from_millis(500),
+        ..Options::default()
+    })
+    .await;
+    let late = late_writer(&d);
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project,
+                      "conversationId": conversation, "message": "go"}))
+        .await;
+    let started = Instant::now();
+    let mut reader = d.stream(&run.run_id, None).await;
+    while let Some(ev) = reader.next().await {
+        if ev.event == "agent" && ev.data["type"] == "status" {
+            break;
+        }
+    }
+
+    // The stream stays open, as in the browser.
+    tokio::time::timeout(Duration::from_secs(10), d.stop_serving())
+        .await
+        .expect("the server did not stop")
+        .unwrap();
+    let reg = d.state.runs.registry.get(&run.run_id).unwrap();
+    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
+    if let Some(left) = Duration::from_secs(4).checked_sub(started.elapsed()) {
+        tokio::time::sleep(left).await;
+    }
+    assert!(!late.exists(), "the agent kept working after the stop");
+    drop(reader);
+}
+
+#[tokio::test]
+async fn stopping_the_server_does_not_wait_for_project_streams() {
+    // An open project shows its file events over a stream that only ends
+    // when the client leaves: the stop must not wait for the browser.
+    let mut d = daemon().await;
+    let (project, _) = d.project().await;
+    let res = d
+        .http
+        .get(format!("{}/api/projects/{project}/events", d.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 200);
+    let started = Instant::now();
+    tokio::time::timeout(Duration::from_secs(15), d.stop_serving())
+        .await
+        .expect("the server waited for the project stream")
+        .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+    drop(res);
+}

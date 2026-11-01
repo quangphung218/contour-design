@@ -168,6 +168,11 @@ impl RunStatus {
     }
 }
 
+/// `error.code` of a run (and of its stored turn) that the daemon found
+/// running at startup: Contour closed or crashed mid-run
+/// ([`FailureCategory::DaemonRestart`]).
+pub const DAEMON_RESTART_CODE: &str = "DAEMON_RESTART";
+
 /// Why a run failed, as surfaced on `end.failureCategory`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

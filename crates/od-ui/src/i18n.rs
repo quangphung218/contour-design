@@ -1453,6 +1453,8 @@ messages! {
     RunFilesWritten => "{0} files written", "Đã ghi {0} file";
     RunFailed => "Failed", "Lỗi";
     RunFailedHint => "See the message above, then retry or check the agent in Settings.", "Xem thông báo ở trên, rồi thử lại hoặc kiểm tra agent trong Cài đặt.";
+    RunAppClosed => "Contour closed while this turn was running, so it stopped partway.", "Contour đã đóng khi lượt này đang chạy nên lượt dừng giữa chừng.";
+    RunAppClosedHint => "Retry to run it again.", "Bấm Thử lại để chạy lại lượt này.";
     NextSteps => "Next", "Tiếp theo";
     NextOpen => "View {0}", "Xem {0}";
     NextComment => "Comment on the page", "Bình luận lên trang";

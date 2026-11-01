@@ -3,6 +3,7 @@
 
 use crate::chat::{AssistantTurn, Block, TodoStatus, TurnState, plan_progress};
 use crate::question_form;
+use od_contracts::FailureCategory;
 
 /// The run status line of one turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +65,10 @@ pub enum Followup {
 pub fn next_steps(turn: &AssistantTurn) -> Vec<NextStep> {
     match turn.state {
         TurnState::Pending | TurnState::Running => Vec::new(),
+        // Contour closed mid-run: the agent was fine, Settings would not help.
+        TurnState::Failed if turn.failure == Some(FailureCategory::DaemonRestart) => {
+            vec![NextStep::Retry]
+        }
         TurnState::Failed => vec![NextStep::Retry, NextStep::Settings],
         TurnState::Canceled => vec![NextStep::Retry],
         TurnState::Succeeded if asks_questions(turn) => Vec::new(),
@@ -230,6 +235,16 @@ mod tests {
         assert_eq!(steps[0], NextStep::Open("index.html".to_owned()));
         assert!(steps.contains(&NextStep::Comment));
         assert!(steps.contains(&NextStep::Prompt(Followup::Mobile)));
+    }
+
+    #[test]
+    fn a_turn_cut_short_by_contour_closing_offers_only_a_retry() {
+        // QA-030: the agent was fine; Settings is no way out.
+        let t = AssistantTurn {
+            failure: Some(od_contracts::FailureCategory::DaemonRestart),
+            ..turn(TurnState::Failed, vec![])
+        };
+        assert_eq!(next_steps(&t), [NextStep::Retry]);
     }
 
     #[test]
