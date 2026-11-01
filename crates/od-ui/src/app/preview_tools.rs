@@ -41,6 +41,15 @@ impl Tool {
     fn selects(self) -> bool {
         matches!(self, Self::Inspect | Self::Manual)
     }
+
+    /// The bridge's selection mode for `tool`, with comment mode on or
+    /// off. Manual edit picks the element clicked, not the section around
+    /// it that carries `data-od-id` (QA-027): only an element without
+    /// children can have its text edited.
+    fn select_mode(tool: Option<Self>, comments: bool) -> serde_json::Value {
+        let selects = tool.is_some_and(Self::selects) || (tool == Some(Self::Comments) && comments);
+        pb::select_mode(selects, tool == Some(Self::Manual))
+    }
 }
 
 /// Properties the inspect panel shows, in order.
@@ -388,9 +397,7 @@ impl StudioCtx {
         if tool == Some(Tool::Manual) {
             self.enter_manual();
         }
-        let selects = tool.is_some_and(Tool::selects)
-            || (tool == Some(Tool::Comments) && self.comment_mode.get_untracked());
-        bridge::post_main(&pb::select_mode(selects));
+        bridge::post_main(&Tool::select_mode(tool, self.comment_mode.get_untracked()));
         let doc = self.active_untracked();
         bridge::post_main(&pb::edit_mode(tool == Some(Tool::EditText), doc.as_deref()));
     }
@@ -417,8 +424,9 @@ impl StudioCtx {
     pub fn tools_ready(self) {
         let tools = self.tools;
         match tools.tool.get_untracked() {
-            Some(Tool::Inspect) => bridge::post_main(&pb::select_mode(true)),
-            Some(Tool::Manual) => bridge::post_main(&pb::select_mode(true)),
+            Some(t @ (Tool::Inspect | Tool::Manual)) => {
+                bridge::post_main(&Tool::select_mode(Some(t), false));
+            }
             Some(Tool::EditText) => {
                 let doc = self.active_untracked();
                 bridge::post_main(&pb::edit_mode(true, doc.as_deref()));
@@ -1549,6 +1557,20 @@ pub fn watch_lint(ctx: StudioCtx) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manual_edit_picks_the_element_clicked() {
+        let exact = |tool, comments| Tool::select_mode(tool, comments)["exact"].clone();
+        assert_eq!(
+            Tool::select_mode(Some(Tool::Manual), false)["enabled"],
+            true
+        );
+        assert_eq!(exact(Some(Tool::Manual), false), true);
+        // Comments and inspect keep naming the nearest data-od-id.
+        assert_eq!(exact(Some(Tool::Inspect), false), false);
+        assert_eq!(exact(Some(Tool::Comments), true), false);
+        assert_eq!(Tool::select_mode(None, false)["enabled"], false);
+    }
 
     #[test]
     fn a_reinspect_after_a_reload_is_the_same_element() {

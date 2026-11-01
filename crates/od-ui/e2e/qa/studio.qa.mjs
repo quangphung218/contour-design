@@ -306,6 +306,6 @@ test('STU-19', 'Manual edit: clicking a paragraph inside a marked section picks 
   await frame(page).locator('[data-od-id="dish-chin"] p.desc').click();
   await until(async () => (await panel.getByTestId('manual-text').inputValue({ timeout: 200 })) === 'Nạm, gầu luộc chín.', 'paragraph text in Content', 5000)
     .catch(async () => assert.fail(`picked <${await picked()}> instead of <p>: the user cannot edit the paragraph by clicking it`));
-}, { knownBug: 'QA-027' });
+});
 
 await run('studio');

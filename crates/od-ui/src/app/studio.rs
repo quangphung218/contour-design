@@ -924,7 +924,7 @@ impl StudioCtx {
         if !on {
             self.comment_draft.set(None);
         }
-        bridge::post_main(&pb::select_mode(on));
+        bridge::post_main(&pb::select_mode(on, false));
     }
 
     pub fn slide(self, cmd: Slide) {
@@ -935,7 +935,7 @@ impl StudioCtx {
         match (source, msg) {
             (Source::Main, BridgeMsg::Ready) => {
                 if self.comment_mode.get_untracked() {
-                    bridge::post_main(&pb::select_mode(true));
+                    bridge::post_main(&pb::select_mode(true, false));
                 }
                 self.pin_rects.set(HashMap::new());
                 self.frame_ready.update(|n| *n = n.wrapping_add(1));

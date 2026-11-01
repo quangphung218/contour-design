@@ -328,10 +328,13 @@ pub fn layers_request() -> Value {
     json!({ "type": "od:layers-request" })
 }
 
-/// Host → bridge: comment (selection) mode on or off.
+/// Host → bridge: selection mode on or off. A click picks the nearest
+/// element with `data-od-id` (comments, inspect: a comment sticks to the
+/// part the agent named), or with `exact` the element under the pointer
+/// (manual edit: the text clicked must be the one edited).
 #[must_use]
-pub fn select_mode(enabled: bool) -> Value {
-    json!({ "type": "od:select-mode", "enabled": enabled })
+pub fn select_mode(enabled: bool, exact: bool) -> Value {
+    json!({ "type": "od:select-mode", "enabled": enabled, "exact": enabled && exact })
 }
 
 /// Host → bridge: report (and keep reporting) where these comments'
@@ -529,7 +532,10 @@ mod tests {
         );
         assert_eq!(Slide::Next.message()["action"], "next");
         assert!(Slide::Next.message().get("index").is_none());
-        assert_eq!(select_mode(true)["enabled"], true);
+        assert_eq!(select_mode(true, false)["enabled"], true);
+        assert_eq!(select_mode(true, false)["exact"], false);
+        assert_eq!(select_mode(true, true)["exact"], true);
+        assert_eq!(select_mode(false, true)["exact"], false);
     }
 
     #[test]
