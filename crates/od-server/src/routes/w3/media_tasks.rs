@@ -125,6 +125,7 @@ fn worker(state: AppState, deps: &Deps) -> Worker {
         let env = Arc::clone(&env);
         let renderer = Arc::clone(&renderer);
         Box::pin(async move {
+            // `submit` stores the model trimmed.
             if task.request.get("model").and_then(Value::as_str) == Some(motion::MODEL) {
                 return motion::render(&state, renderer.as_ref(), env.as_ref(), &task).await;
             }
@@ -213,9 +214,11 @@ pub async fn submit(
     State(state): State<AppState>,
     Extension(queue): Extension<TaskQueue>,
     Path(id): Path<String>,
-    ApiJson(body): ApiJson<Value>,
+    ApiJson(mut body): ApiJson<Value>,
 ) -> ApiResult<impl IntoResponse> {
     let req = parse(&body)?;
+    // The worker reads the stored body: store the model as it is matched.
+    body["model"] = Value::from(req.model.trim());
     if req.model.trim() == motion::MODEL {
         motion::check(&body).map_err(ApiErr::bad_request)?;
     } else if od_media::find_model(req.model.trim(), req.surface).is_none() {

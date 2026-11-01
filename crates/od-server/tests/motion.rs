@@ -113,7 +113,8 @@ fn harness() -> Harness {
         renderer: Arc::new(Frames),
         env: Arc::new(|_: &str| None),
         limits: od_media::Limits::default(),
-        media_concurrency: 1,
+        // Two at once, as the daemon default: renders of one project overlap.
+        media_concurrency: 2,
     };
     let app = routes_with(&state, deps).with_state(state.clone());
     Harness {
@@ -265,6 +266,62 @@ async fn a_render_joins_the_asking_run_only() {
         }
         tries += 1;
         assert!(tries < 100, "{events:?}");
+    }
+}
+
+#[tokio::test]
+async fn overlapping_renders_keep_their_own_review_frames() {
+    let h = harness();
+    let pid = h.project("Film");
+    let (status, _) = h
+        .post(
+            &format!("/api/projects/{pid}/media/scaffold"),
+            json!({"compositionDir": "motion-source/film", "width": 64, "height": 36, "duration": 1}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    // Queued together; the second spells the model with spaces, which
+    // the queue stores trimmed so the worker renders it too.
+    let mut ids = Vec::new();
+    for (model, output) in [
+        ("hyperframes-html", "a.mp4"),
+        (" hyperframes-html ", "b.mp4"),
+    ] {
+        let (status, v) = h
+            .post(
+                &format!("/api/projects/{pid}/media/tasks"),
+                json!({"surface": "video", "model": model,
+                    "compositionDir": "motion-source/film", "output": output}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{v}");
+        assert_eq!(v["task"]["request"]["model"], "hyperframes-html", "{v}");
+        ids.push(v["task"]["id"].as_str().unwrap().to_owned());
+    }
+    let mut dirs = Vec::new();
+    for id in &ids {
+        let task = h.task(id).await;
+        assert_eq!(task["status"], "done", "{task}");
+        let frames: Vec<&str> = task["result"]["reviewFrames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f.as_str().unwrap())
+            .collect();
+        assert_eq!(frames.len(), 3, "{task}");
+        let dir = Path::new(frames[0]).parent().unwrap().to_path_buf();
+        assert!(dir.ends_with(id.as_str()), "{}", dir.display());
+        dirs.push((
+            dir,
+            frames.iter().map(|f| (*f).to_owned()).collect::<Vec<_>>(),
+        ));
+    }
+    assert_ne!(dirs[0].0, dirs[1].0);
+    // Both sets survive the other render.
+    for (_, frames) in &dirs {
+        for f in frames {
+            assert!(std::fs::read(f).unwrap().starts_with(b"\x89PNG"), "{f}");
+        }
     }
 }
 

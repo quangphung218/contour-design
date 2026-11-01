@@ -148,8 +148,6 @@ fn scaffold_html(width: u32, height: u32, fps: u32, duration: f64) -> String {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Motion</title>
 <meta name="od-motion-output" content="video">
-<!-- Point this at the MP4 you render, relative to this file: -->
-<link rel="alternate" type="video/mp4" href="../../film.mp4">
 <style>
   html, body {{ margin: 0; background: #0b0b0c; }}
   #stage {{ position: relative; overflow: hidden; width: {width}px; height: {height}px;
@@ -380,7 +378,8 @@ fn chrome_missing(detail: &str) -> String {
 }
 
 /// Runs one `hyperframes-html` task: render, write the MP4, attach it to
-/// the run, keep three review frames.
+/// the run, keep three review frames. A failure is logged with the run
+/// and the time spent, so the daemon log counts failed renders too.
 ///
 /// # Errors
 /// A message for the agent: what is missing in the composition, or which
@@ -392,6 +391,56 @@ pub async fn render(
     task: &TaskRecord,
 ) -> Result<Value, String> {
     let started = Instant::now();
+    let result = render_task(state, renderer, env, task, started).await;
+    if let Err(error) = &result {
+        let run_id = task
+            .request
+            .get("runId")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        tracing::warn!(
+            task = %task.id,
+            run_id,
+            project = %task.project_id,
+            render_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            error = %error,
+            "od media generate hyperframes-html failed"
+        );
+    }
+    result
+}
+
+/// How long the review frames of an earlier render are kept: a render
+/// still running (another task of the project) has written none yet.
+const REVIEW_KEEP: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Removes the review folders under `dir` older than [`REVIEW_KEEP`],
+/// except `keep`.
+fn prune_reviews(dir: &std::path::Path, keep: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > REVIEW_KEEP);
+        if path != keep && path.is_dir() && old {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+    }
+}
+
+async fn render_task(
+    state: &AppState,
+    renderer: &dyn Renderer,
+    env: &EnvLookup,
+    task: &TaskRecord,
+    started: Instant,
+) -> Result<Value, String> {
     let checked = check(&task.request)?;
     let req: MotionRequest =
         serde_json::from_value(task.request.clone()).map_err(|e| e.to_string())?;
@@ -441,6 +490,7 @@ pub async fn render(
             (false, _) => m.to_owned(),
         }
     })?;
+    let task_id = task.id.clone();
     let (pid, output, video) = (
         project_id.clone(),
         checked.output.clone(),
@@ -468,9 +518,11 @@ pub async fn render(
             }
             // Review frames live in the data folder, never in the user's
             // project (an imported folder takes no hidden files).
-            let review_dir = s.data_dir().root().join("media-review").join(&pid);
-            let _ = std::fs::remove_dir_all(&review_dir);
+            // One folder per task: two renders of a project never share one.
+            let project_reviews = s.data_dir().root().join("media-review").join(&pid);
+            let review_dir = project_reviews.join(&task_id);
             std::fs::create_dir_all(&review_dir)?;
+            prune_reviews(&project_reviews, &review_dir);
             let mut paths = Vec::new();
             for (name, png) in ["opening", "poster", "ending"].iter().zip(&review) {
                 let path = review_dir.join(format!("{name}.png"));
