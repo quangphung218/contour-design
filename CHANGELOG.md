@@ -22,7 +22,10 @@ All notable changes to Contour are recorded here. The format follows
 - Quitting Contour (or stopping `od`) while the agent works stops the
   agent, as Stop does, and records the turn as stopped. Before, an agent
   that ignores a closed pipe (Claude Code) kept editing the project after
-  the app was gone (QA-026).
+  the app was gone (QA-026). `od` stops the agent as soon as it gets Ctrl-C
+  or SIGTERM, even with the run open in the browser, and no longer waits
+  for the browser to close an open project. Quitting can take a few
+  seconds when the agent ignores SIGTERM: Contour waits for it to end.
 - A turn cut short because Contour closed or crashed says so ("Contour
   closed while this turn was running") and offers Retry, instead of
   "daemon restarted" and a pointer to the agent in Settings (QA-030).
