@@ -19,6 +19,13 @@ All notable changes to Contour are recorded here. The format follows
 - MCP: a file `write_file` saves under another name ("trang chủ.html" as
   "trang-chủ.html") says so in `savedAs`, and `get_file` and
   `delete_file` find it under the agent's own name.
+- Quitting Contour (or stopping `od`) while the agent works stops the
+  agent, as Stop does, and records the turn as stopped. Before, an agent
+  that ignores a closed pipe (Claude Code) kept editing the project after
+  the app was gone (QA-026).
+- A turn cut short because Contour closed or crashed says so ("Contour
+  closed while this turn was running") and offers Retry, instead of
+  "daemon restarted" and a pointer to the agent in Settings (QA-030).
 - Your usage: an agent found from its setup dialog (DeepSeek Harness,
   detected again after installing `dsh`) is setup step 2 at once. Before,
   the step waited for the next agent list, so quitting before the test
