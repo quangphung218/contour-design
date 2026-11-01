@@ -297,6 +297,7 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
         let writes = ops.iter().filter(|(_, op)| *op == FileOp::Write).count();
         let edits = ops.len() - writes;
         let live = turn.with(|t| t.state.is_live());
+        let unlisted = turn.with(AssistantTurn::unlisted_files);
         let total = ops.len();
         let shown = if expanded.get() { total } else { FILES_SHOWN };
         let mut counts = Vec::new();
@@ -317,7 +318,11 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                         .into_iter()
                         .take(shown)
                         .map(|(path, op)| {
-                            let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
+                            // A folder row (`frames/`) stands for many files.
+                            let name = match turn.with_untracked(|t| t.folder_files(&path)) {
+                                Some(n) => tf(T::FolderFiles, &[&path, &n.to_string()]),
+                                None => path.rsplit('/').next().unwrap_or(&path).to_owned(),
+                            };
                             let exists = ctx.files.with(|f| f.iter().any(|x| x.path == path));
                             let raw = format!("{}/raw/{}", ctx.base(), api::file_path(&path));
                             let open_path = path.clone();
@@ -354,6 +359,9 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                         })
                         .collect_view()}
                 </ul>
+                {(unlisted > 0).then(|| view! {
+                    <p class="subtle" data-testid="turn-files-unlisted">{tf(T::UnlistedFiles, &[&unlisted.to_string()])}</p>
+                })}
                 {(total > FILES_SHOWN).then(|| view! {
                     <button class="btn ghost small" data-testid="turn-files-more" on:click=move |_| expanded.update(|e| *e = !*e)>
                         {move || if expanded.get() { t(T::TemplatesShowFewer).to_owned() } else { tf(T::MoreN, &[&(total - FILES_SHOWN).to_string()]) }}
