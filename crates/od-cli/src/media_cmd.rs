@@ -200,6 +200,11 @@ pub fn run(client: &Client, cmd: MediaCommand, json_out: bool) -> anyhow::Result
                 &body,
             )?;
             let task = &res["task"];
+            // First, before any wait: an agent whose shell cuts the wait
+            // short still knows which task to `media wait` for.
+            if let Some(id) = task["id"].as_str() {
+                eprintln!("queued {id}");
+            }
             if a.no_wait {
                 return print_task(task, json_out);
             }

@@ -311,8 +311,62 @@ fn scaffold_then_generate_renders_the_film() {
     let d = start(env);
     let pid = project(&d);
     assert!(scaffold(&d, &pid).status.success());
+
+    // The long-film route of the skill: queue, then wait in short calls
+    // (exit 2 while it renders) until one exits 0.
+    let out = od(
+        &d,
+        &[
+            "media",
+            "generate",
+            "--project",
+            &pid,
+            "--surface",
+            "video",
+            "--model",
+            "hyperframes-html",
+            "--composition-dir",
+            "motion-source/film",
+            "--output",
+            "film.mp4",
+            "--no-wait",
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let id = stderr
+        .lines()
+        .find_map(|l| l.strip_prefix("queued "))
+        .unwrap_or_else(|| panic!("no `queued <id>` on stderr: {stderr}"))
+        .to_owned();
+    let first = od(
+        &d,
+        &["media", "wait", &id, "--timeout", "0", "--since", "0"],
+    );
+    assert_eq!(
+        first.status.code(),
+        Some(2),
+        "still rendering: {}",
+        text(&first)
+    );
+    let mut done = None;
+    for _ in 0..60 {
+        let out = od(&d, &["media", "wait", &id, "--timeout", "5"]);
+        match out.status.code() {
+            Some(2) => {}
+            code => {
+                done = Some((code, text(&out)));
+                break;
+            }
+        }
+    }
+    let (code, all) = done.expect("the render ended");
+    assert_eq!(code, Some(0), "{all}");
+
+    // Blocking form: `queued <id>` first, then the result.
     let out = generate(&d, &pid);
     assert!(out.status.success(), "{}", text(&out));
+    assert!(String::from_utf8_lossy(&out.stderr).starts_with("queued "));
     let all = text(&out);
     assert!(all.contains("\tdone\tfilm.mp4"), "{all}");
     assert!(all.contains("h264 yuv420p"), "{all}");
