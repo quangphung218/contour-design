@@ -319,6 +319,108 @@ async fn mp4_export_encodes_the_composition() {
     assert_eq!(std::fs::read_dir(scratch).unwrap().count(), 0);
 }
 
+/// A mono 16-bit 8 kHz WAV of `seconds` of a 440 Hz tone.
+fn wav(seconds: u32) -> Vec<u8> {
+    let n = seconds * 8_000;
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + 2 * n).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    for v in [1u16, 1] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    for v in [8_000u32, 16_000] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    for v in [2u16, 16] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(2 * n).to_le_bytes());
+    for i in 0..n {
+        let t = f64::from(i) / 8_000.0;
+        #[allow(clippy::cast_possible_truncation)]
+        let v = (12_000.0 * (2.0 * std::f64::consts::PI * 440.0 * t).sin()) as i16;
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
+/// `codec_type:codec_name` of every stream of `mp4`.
+fn streams(mp4: &Path) -> Vec<String> {
+    let ffmpeg = od_render_cdp::ffmpeg::find_ffmpeg().expect("ffmpeg is required");
+    let out = std::process::Command::new(ffmpeg.with_file_name("ffprobe"))
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,codec_name",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(mp4)
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            let mut parts: Vec<&str> = l.split(',').collect();
+            parts.sort_unstable();
+            parts.join(":")
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn mp4_export_mixes_the_composition_audio() {
+    let h = harness();
+    let id = h.project("Motion");
+    h.file(&id, "comp/assets/music.wav", wav(3));
+    let with_audio = COMPOSITION.replace(
+        "</body>",
+        r#"<audio src="assets/music.wav" data-volume="0.5"></audio></body>"#,
+    );
+    h.file(&id, "comp/index.html", &with_audio);
+    let res = h
+        .post(
+            &format!("/api/projects/{id}/export/mp4"),
+            json!({ "fileName": "comp/index.html", "output": "out.mp4" }),
+        )
+        .await;
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&res.body)
+    );
+    let mut got = streams(&h.project_dir(&id).join("out.mp4"));
+    got.sort();
+    assert_eq!(got, ["aac:audio", "h264:video"]);
+
+    // Required sound with a missing file: refused before any capture.
+    let required = with_audio
+        .replace(
+            "<body>",
+            r#"<head><meta name="od-motion-audio" content="required"></head><body>"#,
+        )
+        .replace("assets/music.wav", "assets/gone.wav");
+    h.file(&id, "comp/index.html", &required);
+    let before = h.frames.seen.lock().unwrap().len();
+    let res = h
+        .post(
+            &format!("/api/projects/{id}/export/mp4"),
+            json!({ "fileName": "comp/index.html", "output": "out2.mp4" }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let msg = res.json()["error"]["message"].as_str().unwrap().to_owned();
+    assert!(msg.contains("assets/gone.wav"), "{msg}");
+    assert_eq!(h.frames.seen.lock().unwrap().len(), before, "no capture");
+    assert!(!h.project_dir(&id).join("out2.mp4").exists());
+}
+
 #[tokio::test]
 async fn mp4_export_rejects_non_compositions() {
     let h = harness();

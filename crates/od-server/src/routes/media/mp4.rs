@@ -7,6 +7,7 @@
 use crate::routes::export::{
     Entry, ExportErr, ExportRequest, ExportResult, attachment, internal, resolve_entry, scratch,
 };
+use crate::routes::w3::motion::audio_plan;
 use crate::state::AppState;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
@@ -98,6 +99,18 @@ fn frame_at(seconds: f64, frames: FrameSet) -> u32 {
     }
 }
 
+/// One line per MP4 export about its sound, with the fields of the
+/// `media generate` log, so both ways out of a film are counted.
+fn log_audio(project: &str, policy: &str, tracks: usize, mux: &str) {
+    tracing::info!(
+        project,
+        audio_policy = policy,
+        audio_tracks = tracks,
+        audio_mux = mux,
+        "export mp4 audio"
+    );
+}
+
 pub async fn export_mp4(
     State(state): State<AppState>,
     Extension(renderer): Extension<Arc<dyn Renderer>>,
@@ -150,6 +163,30 @@ pub async fn export_mp4(
         .unwrap_or(comp.fps);
     // Fail fast, before minutes of capture, when ffmpeg is missing.
     let ffmpeg = find_ffmpeg()?;
+    // The composition's sound, as `od media generate` mixes it: checked
+    // before capture, so a required track that is missing writes nothing.
+    let html = String::from_utf8_lossy(&html).into_owned();
+    let policy = hyperframes::audio_policy(&html).as_str();
+    let comp_dir = match entry.path.rsplit_once('/') {
+        Some((dir, _)) => entry.root.dir.join(dir),
+        None => entry.root.dir.clone(),
+    };
+    #[allow(clippy::cast_precision_loss)] // film lengths are far below 2^52 ms
+    let film_seconds = comp
+        .duration_ms
+        .map_or(f64::INFINITY, |ms| ms as f64 / 1000.0);
+    let plan = tokio::task::spawn_blocking(move || audio_plan(&comp_dir, &html, film_seconds))
+        .await
+        .map_err(internal)?
+        .map_err(|e| {
+            log_audio(&entry.project.id, policy, 0, "refused");
+            bad(
+                ErrorCode::ValidationFailed,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                e,
+            )
+        })?;
+    let tracks = plan.tracks.len();
     let (bytes, frames, _) = render_mp4(
         &state,
         renderer.as_ref(),
@@ -160,9 +197,16 @@ pub async fn export_mp4(
         &ffmpeg,
         &[],
         false,
-        &[],
+        &plan.tracks,
     )
-    .await?;
+    .await
+    .inspect_err(|_| log_audio(&entry.project.id, policy, tracks, "failed"))?;
+    log_audio(
+        &entry.project.id,
+        policy,
+        tracks,
+        if tracks == 0 { "none" } else { "mixed" },
+    );
     let Some(output) = output else {
         return Ok(attachment(
             "video/mp4",
