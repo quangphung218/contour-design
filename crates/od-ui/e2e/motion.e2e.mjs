@@ -46,6 +46,25 @@ const probe = (file) => JSON.parse(execFileSync(ffprobe, [
   '-of', 'json', file,
 ]).toString());
 
+// Whether Chrome can start its own sandbox here, as chrome_sandbox_works
+// asks in the Rust tests. Ubuntu 23.10+ (the CI runner) refuses it ("No
+// usable sandbox"); only there the test runs Chrome without it, as a user
+// would with OD_CHROME_NO_SANDBOX=1. The product never falls back by itself.
+const CHROME = process.env.OD_CHROME_PATH || chromium.executablePath();
+function chromeSandboxWorks(exe) {
+  const profile = mkdtempSync(join(tmpdir(), 'od-e2e-chrome-'));
+  try {
+    execFileSync(exe, ['--headless=new', '--no-first-run', '--disable-gpu', '--dump-dom', 'about:blank', `--user-data-dir=${profile}`],
+      { stdio: 'ignore', timeout: 20_000 });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
+}
+const sandboxed = !chromeSandboxWorks(CHROME);
+
 const data = mkdtempSync(join(tmpdir(), 'od-e2e-motion-'));
 mkdirSync(OUT, { recursive: true });
 const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
@@ -57,7 +76,8 @@ const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
     OD_OPEN_COMMAND: '/usr/bin/true',
     SHELL: '/bin/sh',
     // The frames come from the browser Playwright installed.
-    OD_CHROME_PATH: process.env.OD_CHROME_PATH || chromium.executablePath(),
+    OD_CHROME_PATH: CHROME,
+    ...(sandboxed ? { OD_CHROME_NO_SANDBOX: '1' } : {}),
   },
 });
 let browser;
@@ -105,6 +125,7 @@ try {
   assert.equal(s1.r_frame_rate, '30/1');
   assert.equal(s1.nb_read_frames, '30');
   assert.ok(Math.abs(Number(p1.format.duration) - 1) < 0.05, `duration ${p1.format.duration}`);
+  results.chromeSandbox = !sandboxed;
   results.mp4 = `${s1.codec_name} ${s1.pix_fmt} ${s1.r_frame_rate} ${p1.format.duration}s`;
 
   await turnFile(0, 'film.mp4').waitFor();
