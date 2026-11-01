@@ -384,6 +384,8 @@ daemon, `od <command> --help` lists the options.
 | `od media generate\|wait\|cancel` | media tasks |
 | `od plugin list\|info\|apply\|validate` | plugins |
 | `od mcp`, `od mcp install` | MCP server and installer |
+| `od tools live-artifacts create\|list\|update\|refresh` | live artifacts of an agent run's project (needs the run's `OD_TOOL_TOKEN`) |
+| `od tools connectors list\|execute` | none yet: `list` is empty, `execute` fails |
 
 ## Environment variables
 

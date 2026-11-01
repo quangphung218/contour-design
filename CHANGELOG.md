@@ -8,6 +8,21 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `od tools live-artifacts create|list|update|refresh`: the command the
+  Live data page skill calls to register its page. It reads
+  `artifact.json` with the `data.json`, `template.html` and
+  `provenance.json` next to it and uses the agent run's token, so the
+  page shows in the project's Live tab without the agent calling the API
+  or writing `index.html`. `od tools connectors list` prints an empty list
+  and `execute` says Contour has no connectors yet.
+
+### Changed
+
+- The six Live data page examples no longer promise data synced from your
+  apps or email: they say the page refreshes from a file in your project.
+
 ### Fixed
 
 - Motion films have their sound: `od media generate --model

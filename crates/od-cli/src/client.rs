@@ -13,6 +13,8 @@ pub struct Client {
     http: Http,
     /// No total timeout: event streams stay open for the whole run.
     streaming: Http,
+    /// `Authorization: Bearer` for the agent tool endpoints (`OD_TOOL_TOKEN`).
+    token: Option<String>,
 }
 
 /// One SSE event of a run stream.
@@ -36,7 +38,15 @@ impl Client {
             base,
             http,
             streaming,
+            token: None,
         })
+    }
+
+    /// Sends `token` as a bearer token with every request.
+    #[must_use]
+    pub fn with_token(mut self, token: String) -> Self {
+        self.token = Some(token);
+        self
     }
 
     pub fn base(&self) -> &Url {
@@ -54,6 +64,10 @@ impl Client {
     }
 
     fn send(&self, req: RequestBuilder) -> anyhow::Result<Response> {
+        let req = match &self.token {
+            Some(t) => req.bearer_auth(t),
+            None => req,
+        };
         let res = req.send().map_err(|e| {
             if e.is_connect() {
                 anyhow!(

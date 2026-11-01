@@ -12,6 +12,7 @@ mod mcp_cmd;
 mod media_cmd;
 mod plugin_cmd;
 mod research_cmd;
+mod tools_cmd;
 
 use anyhow::Context;
 use base64::Engine;
@@ -79,6 +80,9 @@ enum Command {
     /// Web research (Tavily) with the key from Settings ▸ Media.
     #[command(subcommand)]
     Research(research_cmd::ResearchCommand),
+    /// Agent tools the skills call: live artifacts, connectors (none yet).
+    #[command(subcommand)]
+    Tools(tools_cmd::ToolsCommand),
 }
 
 #[derive(Debug, Subcommand)]
@@ -280,6 +284,9 @@ pub fn main_code(args: Vec<OsString>) -> u8 {
         Some(Command::Media(cmd)) => client().and_then(|c| media_cmd::run(&c, cmd, cli.json)),
         Some(Command::Plugin(cmd)) => client().and_then(|c| plugin_cmd::run(&c, cmd, cli.json)),
         Some(Command::Research(cmd)) => client().and_then(|c| research_cmd::run(&c, cmd, cli.json)),
+        Some(Command::Tools(cmd)) => {
+            tools_cmd::run(client, std::env::var(tools_cmd::TOOL_TOKEN_ENV).ok(), cmd)
+        }
     };
     exit_code(result)
 }
