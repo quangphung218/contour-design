@@ -681,6 +681,19 @@ mod tests {
         assert_eq!(t.row_files("frames/"), 1000);
         assert_eq!(t.row_files("clip.mp4"), 1);
         assert_eq!(t.files_count(), 1071, "files, not the 2 rows");
+        // A row without `edited` (a run from before QA-036) edits none.
+        assert_eq!(t.unlisted_edited(), 0);
+    }
+
+    #[test]
+    fn the_more_row_says_how_many_of_its_files_were_edited() {
+        let mut t = AssistantTurn::new();
+        t.apply(agent(
+            json!({"type": "tool_use", "id": "turn-file-more", "name": MORE_FILES_TOOL,
+            "input": {"files": 10, "edited": 6, "description": "+10 more"}}),
+        ));
+        assert_eq!(t.unlisted_files(), 10);
+        assert_eq!(t.unlisted_edited(), 6);
     }
 
     #[test]
