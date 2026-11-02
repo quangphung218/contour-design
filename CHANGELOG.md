@@ -8,6 +8,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The last30days template's report page names system fonts only, so its
+  preview no longer asks Google Fonts for Inter and JetBrains Mono.
+
 ## [0.2.0-beta.14] - 2026-11-02
 
 ### Added
