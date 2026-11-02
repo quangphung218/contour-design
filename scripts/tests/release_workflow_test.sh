@@ -15,12 +15,15 @@ check() {
   if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; [ -f "$work/out" ] && sed 's/^/     /' "$work/out"; failures=$((failures + 1)); fi
 }
 
-# step <name> <file> [workflow]: the `run:` script of the step with that
-# name (in release.yml unless another workflow is given).
+# step <[job/]name> <file> [workflow]: the `run:` script of the step with
+# that name, in that job if one is given (in release.yml unless another
+# workflow is given).
 step() {
   ruby -ryaml -e '
     wf = YAML.load_file(ARGV[0])
-    s = wf["jobs"].values.flat_map { |j| j["steps"] || [] }.find { |x| x["name"] == ARGV[1] }
+    job, name = ARGV[1].include?("/") ? ARGV[1].split("/", 2) : [nil, ARGV[1]]
+    jobs = job ? [wf["jobs"].fetch(job)] : wf["jobs"].values
+    s = jobs.flat_map { |j| j["steps"] || [] }.find { |x| x["name"] == name }
     abort("no step #{ARGV[1]}") unless s
     print s["run"].gsub(/\$\{\{\s*matrix\.args\s*\}\}/, "--bundles app")' "${3:-$workflow}" "$1" > "$2"
 }
@@ -35,7 +38,8 @@ ruby -ryaml -e '
       puts "#{job}/#{s["name"]}"
     end
   end' "$workflow" > "$work/secret-steps"
-check "signing secrets appear only in the Tauri bundle step" '[ "$(cat "$work/secret-steps")" = "bundle/Tauri bundle" ]'
+# The Linux and Windows bundles never see them: they are not in that job.
+check "signing secrets appear only in the macOS Tauri bundle step" '[ "$(cat "$work/secret-steps")" = "macos-universal/Tauri bundle" ]'
 check "nothing writes to GITHUB_ENV" '! grep -q GITHUB_ENV "$workflow"'
 
 # Signing env reaching the Tauri CLI (fake npx records APPLE_* it sees).
@@ -46,15 +50,16 @@ env | grep '^APPLE_' | sort > "$WORK/npx-env"
 printf '%s\n' "$@" > "$WORK/npx-args"
 SH
 chmod +x "$work/bin/npx"
-step "Tauri bundle" "$work/bundle.sh"
-bundle() { (cd "$work" && env WORK="$work" PATH="$work/bin:$PATH" TAURI_CLI_VERSION=0 "$@" bash "$work/bundle.sh") >"$work/out" 2>&1; }
+step "macos-universal/Tauri bundle" "$work/macos-bundle.sh"
+step "bundle/Tauri bundle" "$work/bundle.sh"
+bundle() { (cd "$work" && env WORK="$work" PATH="$work/bin:$PATH" TAURI_CLI_VERSION=0 "$@" bash "$work/macos-bundle.sh") >"$work/out" 2>&1; }
 empty="APPLE_CERTIFICATE= APPLE_CERTIFICATE_PASSWORD= APPLE_SIGNING_IDENTITY= APPLE_ID= APPLE_PASSWORD= APPLE_TEAM_ID="
 bundle RUNNER_OS=macOS $empty
 check "no secrets: unsigned build, warning, no empty APPLE_* passed on" '[ ! -s "$work/npx-env" ] && grep -q "::warning::macOS signing secrets are not set" "$work/out"'
 bundle RUNNER_OS=macOS $empty APPLE_CERTIFICATE=c APPLE_CERTIFICATE_PASSWORD=p APPLE_SIGNING_IDENTITY=i
 check "signing only: certificate passed on, notarisation unset" '[ "$(cut -d= -f1 "$work/npx-env" | LC_ALL=C sort | tr "\n" " ")" = "APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY " ] && grep -q "not notarised" "$work/out" && ! grep -qE "=(c|p|i)$" "$work/out"'
-bundle RUNNER_OS=Linux $empty
-check "other runners get no APPLE_* at all" '[ ! -s "$work/npx-env" ]'
+bundle RUNNER_OS=macOS $empty APPLE_CERTIFICATE=c APPLE_CERTIFICATE_PASSWORD=p APPLE_SIGNING_IDENTITY=i APPLE_ID=a APPLE_PASSWORD=w APPLE_TEAM_ID=t
+check "signing and notarising: all six passed on" '[ "$(wc -l < "$work/npx-env" | tr -d " ")" = 6 ] && ! grep -q "::warning::" "$work/out"'
 
 # MSI version: the step runs in apps/desktop and calls ../../scripts/msi-version.sh.
 mkdir -p "$work/apps/desktop" && ln -s "$here/.." "$work/scripts"
@@ -93,16 +98,19 @@ check "a published release keeps its notes" '! grep -q "release edit" "$work/gh-
 release ""; rc=$?
 check "no release yet: a draft is created" '[ $rc -eq 0 ] && grep -q "release create v9.9.9 .*--draft" "$work/gh-calls"'
 
-# Tests before bundles: macOS gates them, the Windows build never does.
+# The bundles start without waiting for any tests; the draft release waits
+# for the macOS tests (below) and never for the Windows build.
 ruby -ryaml -e '
   jobs = YAML.load_file(ARGV[0])["jobs"]
   call = ->(name) { j = jobs[name] or abort("no job #{name}"); "#{j["uses"]} only=#{(j["with"] || {})["only"]}" }
   puts "bundle needs: #{Array(jobs["bundle"]["needs"]).sort.join(",")}"
+  puts "macos-binary needs: #{Array(jobs["macos-binary"]["needs"]).sort.join(",")}"
+  puts "ui needs: #{Array(jobs["ui"]["needs"]).sort.join(",")}"
   puts "macos-tests: #{call.("macos-tests")}"
   puts "windows-build: #{call.("windows-build")}"
   waiting = jobs.select { |_, j| Array(j["needs"]).include?("windows-build") }.keys
   puts "waits for windows: #{waiting.join(",")}"' "$workflow" > "$work/gates" 2>&1
-check "bundles wait for the macOS tests, not for Windows" 'grep -qx "bundle needs: check,macos-tests" "$work/gates"'
+check "bundles start after the version check, not after the tests" 'grep -qx "bundle needs: check,ui" "$work/gates" && grep -qx "macos-binary needs: check" "$work/gates" && grep -qx "ui needs: check" "$work/gates"'
 check "macOS tests come from ci.yml with only=macos" 'grep -qx "macos-tests: ./.github/workflows/ci.yml only=macos" "$work/gates"'
 check "the Windows build runs from ci.yml with only=windows" 'grep -qx "windows-build: ./.github/workflows/ci.yml only=windows" "$work/gates"'
 check "no job waits for the Windows build" 'grep -qx "waits for windows: " "$work/gates"'
@@ -131,10 +139,37 @@ ruby -ryaml -e '
   puts "smoke: #{smoke["uses"]} needs=#{Array(smoke["needs"]).join(",")}"
   puts "smoke artifact: #{smoke["with"]["artifact"] == upload["with"]["name"].sub("${{ matrix.name }}", "windows-x64")}"
   puts "windows bundle best effort: #{windows["best_effort"]} continue-on-error: #{jobs["bundle"]["continue-on-error"]}"' "$workflow" > "$work/wsmoke" 2>&1
-check "the draft release waits for the Windows smoke test" 'grep -qx "release needs: bundle,linux-smoke,windows-smoke" "$work/smoke"'
+check "the draft release waits for the macOS tests, every bundle and both smoke tests" 'grep -qx "release needs: bundle,linux-smoke,macos-tests,macos-universal,windows-smoke" "$work/smoke"'
 check "the Windows smoke test runs windows-smoke.yml after the bundles" 'grep -qx "smoke: ./.github/workflows/windows-smoke.yml needs=bundle" "$work/wsmoke"'
 check "the Windows smoke test gets the .msi artifact the bundle job uploads" 'grep -qx "smoke artifact: true" "$work/wsmoke"'
 check "the Windows bundle stays best effort" 'grep -qx "windows bundle best effort: true continue-on-error: \${{ matrix.best_effort }}" "$work/wsmoke"'
+
+# The macOS universal bundle: two arch binaries and the shared UI, joined in
+# one job; the draft collects every bundle-* artifact and nothing else.
+ruby -ryaml -rjson -e '
+  jobs = YAML.load_file(ARGV[0])["jobs"]
+  dl = jobs["release"]["steps"].find { |s| s["uses"].to_s.start_with?("actions/download-artifact") }
+  puts "draft downloads: #{dl["with"]["pattern"]}"
+  puts "macos-universal needs: #{Array(jobs["macos-universal"]["needs"]).sort.join(",")}"
+  puts "macos-binary targets: #{jobs["macos-binary"]["strategy"]["matrix"]["target"].sort.join(",")}"
+  steps = jobs["bundle"]["steps"]
+  get = steps.index { |s| s["uses"].to_s.start_with?("actions/download-artifact") && s.dig("with", "name") == "ui-dist" }
+  present = steps.index { |s| s["name"] == "UI bundle present" }
+  tauri = steps.index { |s| s["name"] == "Tauri bundle" }
+  ok = get && present && tauri && get < present && present < tauri && steps[present]["run"].include?("crates/od-ui/dist/index.html")
+  puts "bundle checks the UI before Tauri: #{ok ? true : false}"
+  dist = JSON.parse(File.read(ARGV[1])).dig("build", "frontendDist").to_s
+  puts "frontendDist is the UI: #{File.expand_path(dist, File.dirname(ARGV[1])) == File.expand_path(ARGV[2])}"
+  caches = jobs.values.flat_map { |j| j["steps"] || [] }.select { |s| s["uses"].to_s.start_with?("Swatinem/rust-cache") }
+  puts "caches saved on manual runs only: #{!caches.empty? && caches.all? { |s| s.dig("with", "save-if") == "${{ github.event_name == \x27workflow_dispatch\x27 }}" }}"
+' "$workflow" "$here/../../apps/desktop/tauri.conf.json" "$here/../../crates/od-ui/dist" > "$work/mac" 2>&1
+check "the draft release collects only bundle-* artifacts" 'grep -qx "draft downloads: bundle-\*" "$work/mac"'
+check "the universal bundle waits for both macOS binaries and the UI" 'grep -qx "macos-universal needs: macos-binary,ui" "$work/mac"'
+check "macOS binaries are built for Apple silicon and Intel" 'grep -qx "macos-binary targets: aarch64-apple-darwin,x86_64-apple-darwin" "$work/mac"'
+check "the Linux and Windows bundles check the downloaded UI before Tauri" 'grep -qx "bundle checks the UI before Tauri: true" "$work/mac"'
+# The macOS binaries build against an empty UI placeholder (release.yml).
+check "frontendDist (compiled in) is not the UI resource folder" 'grep -qx "frontendDist is the UI: false" "$work/mac"'
+check "Rust caches are saved on manual runs only, not by tags" 'grep -qx "caches saved on manual runs only: true" "$work/mac"'
 
 # windows-smoke.yml: the smoke jobs run only when "find the installer" found
 # one, and that step decides from what the bundle job left.

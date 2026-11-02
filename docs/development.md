@@ -275,8 +275,9 @@ before asking for review.
 
 `ci.yml` skips changes that only touch `docs/**` or Markdown; `docs.yml`
 always runs. `release.yml` calls `ci.yml` twice: the macOS tests, which
-every bundle waits for (each release is tested on macOS), and the Windows
-build, which runs alongside and never blocks the release.
+run alongside the bundles and which the draft release waits for (each
+release is tested on macOS), and the Windows build, which never blocks the
+release.
 
 Actions are pinned to commit SHAs, permissions are read-only, and a newer
 push cancels the running workflow for the same branch. Dependabot opens at
