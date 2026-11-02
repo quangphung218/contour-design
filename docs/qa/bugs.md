@@ -820,6 +820,11 @@ Reported by the UX review of 759581a.
   `None`. Map it to `ProjectKind::Video` and, as Home's Motion chip does
   (`crates/od-ui/src/intent.rs`, `Chip::Motion`), set intent
   `motion-design` and `videoModel: hyperframes-html` in `remix`.
+- **Fixed**: `kind_of` maps `SkillMode::Video` to `ProjectKind::Video`,
+  and `remix_metadata` gives a film intent `motion-design` and
+  `videoModel: hyperframes-html`. TPL-16 was red before the fix, green
+  after; `motion_templates_preview_and_remix` (od-server `tests/library.rs`)
+  checks the three fields on every Motion template.
 
 ## QA-035 🟡 "The run ended without writing any file" after a run that wrote files with shell
 

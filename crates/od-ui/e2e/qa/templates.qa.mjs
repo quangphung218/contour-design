@@ -308,7 +308,7 @@ test('TPL-16', 'A remixed film is tagged like one started with Use template (Med
   await card.waitFor();
   const badge = (await card.locator('.badge').first().innerText()).trim();
   assert.equal(badge, 'Media', `the remixed film's card says "${badge}"`);
-}, { knownBug: 'QA-034' });
+});
 
 const ffprobe = ['/opt/homebrew/bin/ffprobe', '/usr/local/bin/ffprobe', '/usr/bin/ffprobe'].find(existsSync);
 const probe = (file) => JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0',

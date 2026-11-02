@@ -25,6 +25,9 @@ All notable changes to Contour are recorded here. The format follows
 - Past 50 rows, the header of "Files from this turn" counts the files not
   listed too, so it agrees with "Done · N files written" (it said "50 new"
   beside 60 written).
+- Remixing a Motion film makes a film project (Media, intent
+  `motion-design`, the HyperFrames video model), as Use template does; it
+  used to be filed as a Prototype.
 
 ## [0.2.0-beta.14] - 2026-11-02
 

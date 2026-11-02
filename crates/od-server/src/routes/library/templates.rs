@@ -269,7 +269,30 @@ fn kind_of(entry: &SkillEntry) -> Option<ProjectKind> {
     match entry.info.mode {
         SkillMode::Deck => Some(ProjectKind::Deck),
         SkillMode::Prototype | SkillMode::Template => Some(ProjectKind::Prototype),
+        SkillMode::Video => Some(ProjectKind::Video),
         _ => None,
+    }
+}
+
+/// A remixed template's project metadata. A film is set up as Home's
+/// Motion chip sets one up (`od-ui` `intent.rs`): intent `motion-design`
+/// and the HyperFrames video model, so it is filed and run as a film
+/// (QA-034).
+fn remix_metadata(kind: Option<ProjectKind>) -> ProjectMetadata {
+    let film = kind == Some(ProjectKind::Video);
+    ProjectMetadata {
+        kind,
+        intent: film.then(|| "motion-design".to_owned()),
+        entry_file: Some("index.html".to_owned()),
+        imported_from: Some("template-remix".to_owned()),
+        extra: if film {
+            [("videoModel".to_owned(), json!("hyperframes-html"))]
+                .into_iter()
+                .collect()
+        } else {
+            serde_json::Map::new()
+        },
+        ..ProjectMetadata::default()
     }
 }
 
@@ -302,12 +325,7 @@ pub async fn remix(
                 skill_id: Some(skill_id),
                 design_system_id: None,
                 pending_prompt: non_empty(body.prompt),
-                metadata: Some(ProjectMetadata {
-                    kind,
-                    entry_file: Some("index.html".to_owned()),
-                    imported_from: Some("template-remix".to_owned()),
-                    ..ProjectMetadata::default()
-                }),
+                metadata: Some(remix_metadata(kind)),
                 custom_instructions: None,
                 conversation_id: None,
             })?;
