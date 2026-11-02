@@ -1,7 +1,8 @@
 //! Gallery examples written for Contour (`od.origin: contour` in
 //! SKILL.md): ten WebGL pages, fourteen decks and six landing pages. Each
 //! one parses, is filed under the right type, ships a preview page and
-//! Contour's Apache-2.0 LICENSE, and loads nothing from outside loopback.
+//! Contour's Apache-2.0 LICENSE. No design template, Contour's or copied,
+//! loads anything from outside loopback.
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
@@ -111,8 +112,16 @@ fn no_example_license_names_the_original_app() {
     );
 }
 
+/// XML namespace names: identifiers an SVG or XHTML element is tagged with
+/// (`xmlns`, `createElementNS`), never fetched.
+const XML_NAMESPACES: [&str; 3] = [
+    "http://www.w3.org/2000/svg",
+    "http://www.w3.org/1999/xlink",
+    "http://www.w3.org/1999/xhtml",
+];
+
 /// Every `http(s)://`, `ws(s)://` or protocol-relative `//host` URL in HTML, CSS or JS
-/// text, except loopback.
+/// text, except loopback and XML namespace names.
 fn external_urls(text: &str) -> Vec<String> {
     let url = Regex::new(
         r#"(?i)(?:https?|wss?)://[^\s"'<>)]+|["'(=]\s*//[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s"'<>)]*"#,
@@ -129,30 +138,65 @@ fn external_urls(text: &str) -> Vec<String> {
             let host = u.split("//").nth(1).unwrap_or_default();
             !(host.starts_with("127.0.0.1") || host.starts_with("localhost"))
         })
+        .filter(|u| !XML_NAMESPACES.contains(&u.as_str()))
         .collect()
 }
 
-#[test]
-fn examples_load_nothing_from_outside_loopback() {
-    let mut hits = Vec::new();
-    for (dir, _) in contour_examples() {
-        for entry in std::fs::read_dir(&dir).unwrap() {
-            let path = entry.unwrap().path();
-            let ext = path
+/// The files a template's preview or its output loads: `example.html`, and
+/// the HTML, CSS and JS under `examples/` and `assets/`. SKILL.md and
+/// `references/` are instructions to the agent and may name URLs.
+fn served_files(dir: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for path in entries.map(|e| e.unwrap().path()) {
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path
                 .extension()
                 .and_then(|e| e.to_str())
-                .unwrap_or_default();
-            if !["html", "css", "js"].contains(&ext) {
-                continue;
+                .is_some_and(|e| ["html", "css", "js", "mjs", "svg"].contains(&e))
+            {
+                out.push(path);
             }
+        }
+    }
+    let mut out = Vec::new();
+    let example = dir.join("example.html");
+    if example.is_file() {
+        out.push(example);
+    }
+    walk(&dir.join("examples"), &mut out);
+    walk(&dir.join("assets"), &mut out);
+    out.sort();
+    out
+}
+
+/// The preview CSP blocks every request outside loopback, so a CDN script,
+/// stylesheet, web font or image would show as broken. Links point at `#`.
+#[test]
+fn no_template_loads_anything_from_outside_loopback() {
+    let mut hits = Vec::new();
+    let mut checked = 0;
+    for entry in std::fs::read_dir(templates_root()).unwrap() {
+        let dir = entry.unwrap().path();
+        if !dir.join("SKILL.md").is_file() {
+            continue;
+        }
+        for path in served_files(&dir) {
             let text = std::fs::read_to_string(&path).unwrap();
+            checked += 1;
             for u in external_urls(&text) {
                 hits.push(format!("{}: {u}", path.display()));
             }
-            assert!(!text.contains("@import"), "{}: @import", path.display());
+            if text.contains("@import") {
+                hits.push(format!("{}: @import", path.display()));
+            }
         }
     }
-    assert!(hits.is_empty(), "external URLs: {hits:#?}");
+    assert!(checked >= 200, "only {checked} files checked");
+    assert!(hits.is_empty(), "{} external URLs: {hits:#?}", hits.len());
 }
 
 #[test]
@@ -172,6 +216,11 @@ fn the_url_check_catches_external_and_spares_loopback() {
     );
     assert!(external_urls("new WebSocket('ws://127.0.0.1:7456/ws')").is_empty());
     assert!(external_urls("a // comment. not a url").is_empty());
+    assert!(external_urls(r#"<svg xmlns="http://www.w3.org/2000/svg">"#).is_empty());
+    assert_eq!(
+        external_urls(r#"<image href="http://www.w3.org/2000/svg/logo.png">"#).len(),
+        1
+    );
 }
 
 /// The gallery runs no script, so the poster is what the card shows; it

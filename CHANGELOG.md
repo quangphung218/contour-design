@@ -28,6 +28,14 @@ All notable changes to Contour are recorded here. The format follows
 - The counts of "Files from this turn" ("N new · M edited", "+N more")
   and the "Done · N files written" line now count files, not rows: a
   folder row such as `frames/ (1000 files)` counts as 1000 files.
+- Template examples and the files a template's output copies load nothing
+  from outside loopback, so the preview no longer blocks a request and
+  shows a broken page. Google Fonts are gone and every font stack ends in
+  system fonts; the Chart.js charts in four decks are drawn as SVG in the
+  page; the guizang-ppt deck carries its 34 Lucide icons (ISC) instead of
+  loading Lucide from unpkg; contributor avatars show initials; demo links
+  to outside sites (tickers, Gmail, Linear, Notion, GitHub) point at `#`.
+  A test checks every template, not only the 30 written for Contour.
 
 ## [0.2.0-beta.13] - 2026-11-02
 

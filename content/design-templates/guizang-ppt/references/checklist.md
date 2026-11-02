@@ -24,14 +24,10 @@ Read it through once before generating a deck; after generating, self-check item
 
 **Symptom**: using emoji (🎯 💡 ✅) in a Chinese editorial-magazine style instantly ruins the tone.
 
-**What to do**: use the Lucide icon library, referenced via CDN:
+**What to do**: use Lucide icons. template.html already carries the icon set (no CDN; the preview blocks network requests), so only write the tag:
 
 ```html
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-...
 <i data-lucide="target" class="ico-md"></i>
-...
-<script>lucide.createIcons();</script>
 ```
 
 Common icon names: `target / palette / search-check / compass / share-2 / crown / check-circle / x-circle / plus / arrow-right / grid-2x2 / network`

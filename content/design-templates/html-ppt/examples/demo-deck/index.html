@@ -8,7 +8,6 @@
 <link rel="stylesheet" href="../../assets/base.css">
 <link rel="stylesheet" id="theme-link" href="../../assets/themes/aurora.css">
 <link rel="stylesheet" href="../../assets/animations/animations.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body data-themes="aurora,minimal-white,editorial-serif,tokyo-night,catppuccin-mocha,xiaohongshu-white,neo-brutalism,sunset-warm" data-theme-base="../../assets/themes/">
 
@@ -108,7 +107,39 @@
   <section class="slide" data-title="Chart">
     <p class="kicker">Numbers · 实际效果</p>
     <h2 class="h2">做 deck 的时间分布，使用前/使用后</h2>
-    <div class="card mt-l" style="height:440px;padding:24px"><canvas id="chart"></canvas></div>
+    <div class="card mt-l" style="height:440px;padding:24px"><svg class="chart-svg" viewBox="0 0 640 360" role="img" aria-label="做 deck 的时间分布，使用前/使用后" style="display:block;width:100%;height:100%" font-family="inherit">
+  <line x1="56" x2="624" y1="316.0" y2="316.0" style="stroke:var(--border)" stroke-width="1"/>
+  <text x="46" y="320.0" text-anchor="end" style="fill:var(--text-2)" font-size="13">0</text>
+  <line x1="56" x2="624" y1="262.4" y2="262.4" style="stroke:var(--border)" stroke-width="1"/>
+  <text x="46" y="266.4" text-anchor="end" style="fill:var(--text-2)" font-size="13">20</text>
+  <line x1="56" x2="624" y1="208.8" y2="208.8" style="stroke:var(--border)" stroke-width="1"/>
+  <text x="46" y="212.8" text-anchor="end" style="fill:var(--text-2)" font-size="13">40</text>
+  <line x1="56" x2="624" y1="155.2" y2="155.2" style="stroke:var(--border)" stroke-width="1"/>
+  <text x="46" y="159.2" text-anchor="end" style="fill:var(--text-2)" font-size="13">60</text>
+  <line x1="56" x2="624" y1="101.6" y2="101.6" style="stroke:var(--border)" stroke-width="1"/>
+  <text x="46" y="105.6" text-anchor="end" style="fill:var(--text-2)" font-size="13">80</text>
+  <line x1="56" x2="624" y1="48.0" y2="48.0" style="stroke:var(--border)" stroke-width="1"/>
+  <text x="46" y="52.0" text-anchor="end" style="fill:var(--text-2)" font-size="13">100</text>
+  <text x="112.8" y="338.0" text-anchor="middle" style="fill:var(--text-2)" font-size="14">写内容</text>
+  <text x="226.4" y="338.0" text-anchor="middle" style="fill:var(--text-2)" font-size="14">挑版式</text>
+  <text x="340.0" y="338.0" text-anchor="middle" style="fill:var(--text-2)" font-size="14">调样式</text>
+  <text x="453.6" y="338.0" text-anchor="middle" style="fill:var(--text-2)" font-size="14">出图</text>
+  <text x="567.2" y="338.0" text-anchor="middle" style="fill:var(--text-2)" font-size="14">动效</text>
+  <rect x="192.5" y="19" width="10" height="10" style="fill:var(--accent-2)"/>
+  <text x="212.5" y="28" style="fill:var(--text-2)" font-size="13">使用前 (分钟)</text>
+  <rect x="320.0" y="19" width="10" height="10" style="fill:var(--accent)"/>
+  <text x="340.0" y="28" style="fill:var(--text-2)" font-size="13">使用后 (分钟)</text>
+  <rect x="73.0" y="69.4" width="39.8" height="246.6" style="fill:var(--accent-2)"/>
+  <rect x="186.6" y="187.4" width="39.8" height="128.6" style="fill:var(--accent-2)"/>
+  <rect x="300.2" y="219.5" width="39.8" height="96.5" style="fill:var(--accent-2)"/>
+  <rect x="413.8" y="257.0" width="39.8" height="59.0" style="fill:var(--accent-2)"/>
+  <rect x="527.4" y="278.5" width="39.8" height="37.5" style="fill:var(--accent-2)"/>
+  <rect x="112.8" y="267.8" width="39.8" height="48.2" style="fill:var(--accent)"/>
+  <rect x="226.4" y="308.0" width="39.8" height="8.0" style="fill:var(--accent)"/>
+  <rect x="340.0" y="310.6" width="39.8" height="5.4" style="fill:var(--accent)"/>
+  <rect x="453.6" y="313.3" width="39.8" height="2.7" style="fill:var(--accent)"/>
+  <rect x="567.2" y="313.3" width="39.8" height="2.7" style="fill:var(--accent)"/>
+</svg></div>
     <div class="deck-footer"><span class="dim2">data</span><span class="slide-number" data-current="6" data-total="8"></span></div>
     <div class="notes">使用后，「写内容」时间占比大幅上升，其他一切下降——这正是我们想要的。</div>
   </section>
@@ -141,21 +172,4 @@
 
 </div>
 <script src="../../assets/runtime.js"></script>
-<script>
-addEventListener('DOMContentLoaded',()=>{
-  const css=getComputedStyle(document.documentElement);
-  const a1=css.getPropertyValue('--accent').trim();
-  const a2=css.getPropertyValue('--accent-2').trim();
-  const text2=css.getPropertyValue('--text-2').trim();
-  const border=css.getPropertyValue('--border').trim();
-  new Chart(document.getElementById('chart'),{type:'bar',
-    data:{labels:['写内容','挑版式','调样式','出图','动效'],
-      datasets:[
-        {label:'使用前 (分钟)',data:[92,48,36,22,14],backgroundColor:a2,borderRadius:6},
-        {label:'使用后 (分钟)',data:[18,3,2,1,1],backgroundColor:a1,borderRadius:6}]},
-    options:{plugins:{legend:{labels:{color:text2}}},
-      scales:{x:{ticks:{color:text2},grid:{color:border}},
-              y:{ticks:{color:text2},grid:{color:border}}}}});
-});
-</script>
 </body></html>

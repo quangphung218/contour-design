@@ -49,6 +49,7 @@ VENDORED = [
     ("@jridgewell/resolve-uri", "3.1.2", "MIT", ["crates/od-preview/vendor/react-runtime/licenses/@jridgewell-resolve-uri.LICENSE"]),
     ("@jridgewell/sourcemap-codec", "1.6.0", "MIT", ["crates/od-preview/vendor/react-runtime/licenses/@jridgewell-sourcemap-codec.LICENSE"]),
     ("@jridgewell/trace-mapping", "0.3.31", "MIT", ["crates/od-preview/vendor/react-runtime/licenses/@jridgewell-trace-mapping.LICENSE"]),
+    ("Lucide icons (34, in the guizang-ppt deck template)", "1.58.0", "ISC", ["content/design-templates/guizang-ppt/assets/LICENSE.lucide"]),
 ]
 
 # One alternative of an `A OR B` expression is picked, in this order.

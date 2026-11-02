@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Plan a Community-Growth Campaign like a Head of Growth - Marketing &amp; GTM</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;600;700&display=swap');
 
         :root {
             --coral: #E85D5D;
@@ -458,7 +456,7 @@
             min-height: 0;
         }
 
-        .slide-4 .chart-wrapper canvas {
+        .slide-4 .chart-wrapper svg {
             max-height: 100%;
         }
 
@@ -1156,7 +1154,42 @@
             </div>
             <div class="chart-container">
                 <div class="chart-wrapper">
-                    <canvas id="growthChart"></canvas>
+                    <svg class="chart-svg" viewBox="0 0 640 360" role="img" aria-label="GitHub stars and Discord joins by month" style="display:block;width:100%;height:100%" font-family="inherit">
+  <line x1="56" x2="624" y1="316.0" y2="316.0" stroke="rgba(26,26,26,0.08)" stroke-width="1"/>
+  <text x="46" y="320.0" text-anchor="end" fill="#B0B0B0" font-size="11">0</text>
+  <line x1="56" x2="624" y1="262.4" y2="262.4" stroke="rgba(26,26,26,0.08)" stroke-width="1"/>
+  <text x="46" y="266.4" text-anchor="end" fill="#B0B0B0" font-size="11">50</text>
+  <line x1="56" x2="624" y1="208.8" y2="208.8" stroke="rgba(26,26,26,0.08)" stroke-width="1"/>
+  <text x="46" y="212.8" text-anchor="end" fill="#B0B0B0" font-size="11">100</text>
+  <line x1="56" x2="624" y1="155.2" y2="155.2" stroke="rgba(26,26,26,0.08)" stroke-width="1"/>
+  <text x="46" y="159.2" text-anchor="end" fill="#B0B0B0" font-size="11">150</text>
+  <line x1="56" x2="624" y1="101.6" y2="101.6" stroke="rgba(26,26,26,0.08)" stroke-width="1"/>
+  <text x="46" y="105.6" text-anchor="end" fill="#B0B0B0" font-size="11">200</text>
+  <line x1="56" x2="624" y1="48.0" y2="48.0" stroke="rgba(26,26,26,0.08)" stroke-width="1"/>
+  <text x="46" y="52.0" text-anchor="end" fill="#B0B0B0" font-size="11">250</text>
+  <text x="103.3" y="338.0" text-anchor="middle" fill="#6B6B6B" font-size="12">Jan</text>
+  <text x="198.0" y="338.0" text-anchor="middle" fill="#6B6B6B" font-size="12">Feb</text>
+  <text x="292.7" y="338.0" text-anchor="middle" fill="#6B6B6B" font-size="12">Mar</text>
+  <text x="387.3" y="338.0" text-anchor="middle" fill="#6B6B6B" font-size="12">Apr</text>
+  <text x="482.0" y="338.0" text-anchor="middle" fill="#6B6B6B" font-size="12">May</text>
+  <text x="576.7" y="338.0" text-anchor="middle" fill="#6B6B6B" font-size="12">Jun</text>
+  <rect x="151.6" y="19" width="10" height="10" fill="#E85D5D"/>
+  <text x="171.6" y="28" fill="#6B6B6B" font-size="11">GitHub Stars (K)</text>
+  <rect x="293.1" y="19" width="10" height="10" fill="#1A1A1A"/>
+  <text x="313.1" y="28" fill="#6B6B6B" font-size="11">Discord Joins (x10/week)</text>
+  <rect x="70.2" y="307.4" width="33.1" height="8.6" fill="#E85D5D" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="164.9" y="298.8" width="33.1" height="17.2" fill="#E85D5D" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="259.5" y="287.1" width="33.1" height="28.9" fill="#E85D5D" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="354.2" y="274.2" width="33.1" height="41.8" fill="#E85D5D" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="448.9" y="262.4" width="33.1" height="53.6" fill="#E85D5D" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="543.5" y="251.7" width="33.1" height="64.3" fill="#E85D5D" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="103.3" y="273.1" width="33.1" height="42.9" fill="#1A1A1A" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="198.0" y="235.6" width="33.1" height="80.4" fill="#1A1A1A" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="292.7" y="198.1" width="33.1" height="117.9" fill="#1A1A1A" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="387.3" y="155.2" width="33.1" height="160.8" fill="#1A1A1A" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="482.0" y="117.7" width="33.1" height="198.3" fill="#1A1A1A" stroke="#1A1A1A" stroke-width="2"/>
+  <rect x="576.7" y="83.4" width="33.1" height="232.6" fill="#1A1A1A" stroke="#1A1A1A" stroke-width="2"/>
+</svg>
                 </div>
                 <div class="chart-sidebar">
                     <div class="sidebar-item">
@@ -1411,76 +1444,6 @@
                 prevSlide();
             }
         });
-
-        // Chart.js initialization for Slide 4
-        function initChart() {
-            const ctx = document.getElementById('growthChart');
-            if (!ctx) return;
-
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-                    datasets: [{
-                        label: 'GitHub Stars (K)',
-                        data: [8, 16, 27, 39, 50, 60],
-                        backgroundColor: '#E85D5D',
-                        borderColor: '#1A1A1A',
-                        borderWidth: 2,
-                        borderRadius: 0,
-                        borderSkipped: false,
-                    }, {
-                        label: 'Discord Joins (x10/week)',
-                        data: [40, 75, 110, 150, 185, 217],
-                        backgroundColor: '#1A1A1A',
-                        borderColor: '#1A1A1A',
-                        borderWidth: 2,
-                        borderRadius: 0,
-                        borderSkipped: false,
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                            labels: {
-                                font: { family: 'Inter', size: 12 },
-                                color: '#6B6B6B',
-                                usePointStyle: true,
-                                pointStyle: 'rect',
-                                padding: 20
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            grid: { display: false },
-                            ticks: {
-                                font: { family: 'Inter', size: 12 },
-                                color: '#6B6B6B'
-                            }
-                        },
-                        y: {
-                            border: { display: false },
-                            grid: {
-                                color: 'rgba(26,26,26,0.08)',
-                                drawBorder: false
-                            },
-                            ticks: {
-                                font: { family: 'Inter', size: 11 },
-                                color: '#B0B0B0',
-                                callback: function(value) { return value; }
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
-        // Initialize chart after a short delay to ensure canvas is visible
-        setTimeout(initChart, 300);
 
         // Initial nav update
         updateNav();

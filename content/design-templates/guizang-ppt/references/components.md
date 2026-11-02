@@ -303,7 +303,7 @@ When the image isn't in place yet, use a dashed frame as a placeholder:
 
 ## Icons
 
-**Emoji are strictly forbidden**. Use Lucide via CDN (already included in template.html).
+**Emoji are strictly forbidden**. Use Lucide icons: template.html draws the names listed below from a set built into the page, with no network request. A name outside the list draws nothing; write that icon as inline `<svg>` instead.
 
 ```html
 <i data-lucide="compass" class="ico-lg"></i>     <!-- large icon (for pillars) -->
