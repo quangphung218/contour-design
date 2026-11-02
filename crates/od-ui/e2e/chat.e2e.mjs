@@ -185,8 +185,11 @@ try {
   await brief.pressSequentially('Clone it with @web');
   await page.getByTestId('mention-palette').waitFor();
   const third = page.locator('[data-testid="mention-item"]').nth(2);
-  await third.hover();
-  assert.equal(await third.getAttribute('aria-selected'), 'true');
+  const thirdBox = await third.boundingBox();
+  await page.mouse.move(thirdBox.x + thirdBox.width / 2, thirdBox.y + thirdBox.height / 2, { steps: 3 });
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-testid="mention-item"]')[2]?.getAttribute('aria-selected') === 'true',
+  );
   await brief.pressSequentially('-cl');
   // Enter picks the highlighted row: wait until the list is ranked for the
   // whole query, or a fast run picks a row ranked for "@web".
