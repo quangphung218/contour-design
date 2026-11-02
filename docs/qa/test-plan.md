@@ -268,6 +268,72 @@ Goal: the user's coding agent works on Contour projects through `od mcp`.
 | MCP-01 | Create, write, read; delete needs confirm | Daemon running; client on `od mcp` (stdio) | `create_project` "  Quán phở 🍜  ", `write_file`, `get_file` by name, `write_file ../x`, `delete_project` without confirm | Name trimmed, emoji kept, project in the app; file read back; `../` refused; delete refused | P0 | auto |
 | MCP-02 | A name with a space reads back | Same | `write_file "trang chủ.html"`, `get_file` same name | The file | P2 | auto (QA-032) |
 
+## 13. Templates added on 2 Nov (`templates.qa.mjs`)
+
+Goal: a user finds the 48 new templates (18 Motion films, 10 WebGL pages,
+14 decks, 6 landing pages), previews them, and starts a project from one
+with Use template or Remix; a film ends as an MP4. Expected results from
+CHANGELOG 0.2.0-beta.13/14 and features.md (Templates).
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| TPL-01 | The Motion industry lists the 18 films | Bundled content | Templates ▸ Industry Motion | Option reads "Motion"; exactly the 18 films, each typed Video | P0 | auto |
+| TPL-02 | Type chips find the new pages and decks | Same | Prototype; then Deck | All 10 WebGL and 6 landing pages under Prototype, no deck; all 14 decks under Deck | P0 | auto |
+| TPL-03 | Filters that match nothing | Same | Industry Motion + type Deck; Clear filters | Empty state; Clear filters brings every template back | P1 | auto |
+| TPL-04 | Search ignores case | Same | Motion, search "LOGO" | Logo reveal found | P2 | auto |
+| TPL-05 | A film plays in the sandboxed preview | Same | Open Kinetic type | The frame moves (no scripts in the preview) | P0 | auto |
+| TPL-06 | WebGL pages show their poster | Same | Open each of the 10 | Visible text in each preview | P0 | auto |
+| TPL-07 | Decks show their first slide | Same | Open each of the 14 | Text visible, nothing wider than the frame | P0 | auto |
+| TPL-08 | Keyboard only | Same | Focus a Motion card, Enter, Esc | Preview opens, then closes | P2 | auto |
+| TPL-09 | Phone width | 390×844 | Motion filter, open a film | No sideways scroll; Use template on screen | P2 | auto |
+| TPL-10 | Use template on a film | Same | Preview ▸ Use template, Enter | Home under Motion, the film picked, brief = example prompt; project with the template as skill, kind video, model hyperframes-html | P0 | auto |
+| TPL-11 | Use template on a page or deck | Same | WebGL, landing, deck | Prototype, Prototype, Deck chip | P0 | auto |
+| TPL-12 | Another chip after Use template on a film | TPL-10 | Pick Prototype, send | The film template is not sent; the project is not a video | P1 | auto |
+| TPL-13 | A link to a template that does not exist | — | Open `/?template=motion-does-not-exist` | Plain Home, nothing picked, no error | P1 | auto |
+| TPL-14 | Remix a film | Same | Preview ▸ Remix | Project opens on the film page; Export offers MP4 | P0 | auto |
+| TPL-15 | Remix pressed twice | Same | Double-click Remix | One project | P1 | auto |
+| TPL-16 | A remixed film is tagged like a film | Remix a film | Home recent card | "Media", as a film started with Use template | P1 | auto (QA-034) |
+| TPL-17 | Export ▸ MP4 of a remixed film | TPL-14, Chrome + ffmpeg | Export ▸ MP4 video | h264 MP4 as long as `data-duration` | P0 | auto |
+| TPL-18 | `od media generate` as the film's skill says | Chrome + ffmpeg | `media scaffold`, copy example, `media generate` | `film.mp4`, h264 1920×1080, length = `data-duration` | P0 | auto |
+
+## 14. Files from this turn, written with shell commands (`turnfiles.qa.mjs`)
+
+Goal: files the agent makes with `ffmpeg`, `python` or `cp` show under the
+turn like files from the Write tool, frames fold into one row, counts are
+in files, and two runs of one project do not swap files. Expected results
+from CHANGELOG 0.2.0-beta.12/14. The QA mock answers `qa-sh <shape>` with
+plain shell writes.
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| TF-01 | A shell-written file opens from the turn | Empty project | `qa-sh name` ("báo cáo 🍜.txt") | One row, New, "1 new"; Open shows it; Download gives it | P0 | auto |
+| TF-02 | A shell edit is an edit | `notes.txt` exists | `qa-sh edit` | One row, Edited, "1 edited" | P0 | auto |
+| TF-03 | 30 frames fold into one row | Empty project | `qa-sh frames-30` (+ film.mp4 there) | `frames/ (30 files)` and `film.mp4` rows; "31 new"; "Done · 31 files written"; the film opens | P0 | auto |
+| TF-04 | 20 frames do not fold | Same | `qa-sh frames-20` | 21 single rows; "+N more" = rows not shown | P1 | auto |
+| TF-05 | Two kinds, none past 20 | Same | `qa-sh kinds` (11 PNG + 10 JPG) | 21 rows | P2 | auto |
+| TF-06 | More than 50 rows | Same | `qa-sh rows-60` | 50 rows, "+10 more files not listed"; header and Done both count 60 | P2 | auto (QA-036) |
+| TF-07 | Reload keeps the folder row | TF-03 shape (25) | Reload | `frames/ (25 files)`, "26 new", "26 files written" | P1 | auto |
+| TF-08 | Vietnamese UI | locale vi | `qa-sh frames-22` | `frames/ (22 file)`, "23 mới", "Đã ghi 23 file" | P2 | auto |
+| TF-09 | Two runs at once: own files only | Two tabs, two conversations | A writes `a.txt` by shell after B ended; B writes `index.html` with Write | A lists `a.txt` only; B lists `index.html` only | P0 | auto |
+| TF-10 | Two runs at once, both by shell | Same | A writes at once and keeps running; B writes after A ended | Neither lists the other's file; B lists `b.txt` | P0 | auto |
+| TF-11 | A later turn with no files | TF-03 shape | Second turn writes nothing | No "Files from this turn" | P1 | auto |
+| TF-12 | No "without writing any file" beside listed files | Empty project | `qa-sh page` (index.html by shell) | Turn lists index.html, preview shows it, no deliverable warning | P1 | auto (QA-035) |
+| TF-13 | Stop after a shell render | Empty project | `qa-sh early-render.mp4-20`, Stop | Canceled turn still lists `render.mp4` | P1 | auto |
+
+## 15. Previews ask nothing off loopback (`templates.qa.mjs`)
+
+Goal: no template preview (old or new) loads fonts, scripts or images from
+the internet. The harness blocks and records any request whose host is not
+`127.0.0.1`, `localhost` or `[::1]`; any such request fails the test. Random
+picks are seeded by `QA_SEED` (printed) so a red run can be replayed.
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| NET-01 | The whole gallery | Bundled content | Scroll every card into view | No request off loopback | P0 | auto |
+| NET-02 | 24 random previews | Same | 12 new + 12 older: open the preview and Open in new tab (scripts on) | No request off loopback | P0 | auto |
+| NET-03 | 6 random remixes | Same | 3 new + 3 older: Remix, open the studio preview | No request off loopback | P0 | auto |
+| NET-04 | Every example on the installed app | `Contour.app` 0.2.0-beta.14 running | Load all 164 examples with scripts on | No request off loopback, no page error | P0 | manual (scratch script, round 5) |
+
 ## Not automated, and why
 
 - **Desktop shell (Tauri)**: native menus, Cmd+O folder dialog, Finder
@@ -277,7 +343,8 @@ Goal: the user's coding agent works on Contour projects through `od mcp`.
   a fake provider on loopback (no outbound network by design). Round 4
   ran five turns of the real Claude Code by hand (bugs.md, round 4);
   QA-026 and QA-027 were found that way and then reproduced with the mock.
-- **MP4 export**: needs ffmpeg and a HyperFrames composition; out of scope.
+- **MP4 export**: covered for the Motion templates by TPL-17 and TPL-18
+  (need Chrome and ffmpeg); other compositions are `motion.e2e.mjs`.
 - **ONB-09b in the desktop app**: Check again asks the login shell for its
   `PATH` again only in the app (a CLI daemon has none); the suite covers it
   with a fake shell in `od-server` tests, the real shell needs a manual pass.

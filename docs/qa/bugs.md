@@ -48,6 +48,21 @@ the full-disk half of QA-029 (manual: needs a disk image). QA-033 showed
 up as DL-24 going red in the full run after passing in the first one; it
 reproduces by hand about one try in two.
 
+Round 5 (branch `quangphung218/qa-beta14` at 8eeaad2f; product code the
+same as the v0.2.0-beta.14 release commit c37b31de, only content and one
+e2e test differ): the 2 Nov work. New suites `templates.qa.mjs` (21 tests:
+the 48 new templates, Use template, Remix, MP4, previews off loopback) and
+`turnfiles.qa.mjs` (13 tests: files written with shell commands, folder
+rows, counts, two runs of one project). The installed `Contour.app`
+0.2.0-beta.14 also had all 164 template examples loaded with scripts on:
+no request left loopback, no page error. QA-034…036 each have a red test.
+
+| ID | Sev | Summary | Test | Status |
+|---|---|---|---|---|
+| QA-035 | 🟡 | A run that writes its files with shell commands (ffmpeg, python, cp) ends with "The run ended without writing any file." while the turn lists them and says "Done · N files written" | `turnfiles.qa.mjs` TF-12 | Open |
+| QA-034 | 🔵 | Remix of a Motion film makes a project tagged Prototype, not Media (no kind, intent or video model); Use template on the same film makes a video project | `templates.qa.mjs` TPL-16 | Open |
+| QA-036 | 🔵 | Past 50 rows the header counts only listed files: "50 new" beside "Done · 60 files written" | `turnfiles.qa.mjs` TF-06 | Open |
+
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
 | QA-026 | 🟠 | Quitting Contour while the agent works leaves the agent running: it keeps editing the project after the app is gone | `resilience.qa.mjs` RES-01 | Fixed |
@@ -787,3 +802,63 @@ Reported by the UX review of 759581a.
   adds no entry. DL-27 forces the reload between the edit and Back: red
   on the build without the fix in 2 of 2 runs, green with it. If DL-24
   goes red again elsewhere, look at the guard's `go(-1)`/`go(-2)` above.
+
+## QA-034 🔵 A remixed Motion film is tagged Prototype, not Media
+
+- **Steps**: Templates ▸ Industry Motion ▸ any film (e.g. End screen) ▸
+  Remix. Go Home or to Projects.
+- **Expected**: the project is a film, as when the same template is
+  started with Use template (`metadata.kind: video`, intent
+  `motion-design`, `videoModel: hyperframes-html`): its card says Media.
+- **Actual**: the card says Prototype. The project has `skillId` set to
+  the film but no `kind`, no intent and no video model, so the agent's
+  project metadata does not say it is a film and Projects files it with
+  pages. Export ▸ MP4 still works (TPL-17).
+- **Test**: `templates.qa.mjs` TPL-16.
+- **Code**: `crates/od-server/src/routes/library/templates.rs:268`
+  `kind_of` maps only Deck and Prototype/Template; `SkillMode::Video` gets
+  `None`. Map it to `ProjectKind::Video` and, as Home's Motion chip does
+  (`crates/od-ui/src/intent.rs`, `Chip::Motion`), set intent
+  `motion-design` and `videoModel: hyperframes-html` in `remix`.
+
+## QA-035 🟡 "The run ended without writing any file" after a run that wrote files with shell
+
+- **Steps**: a project; the agent writes `index.html` with a shell
+  command (`python gen.py > index.html`, here the QA mock's
+  `qa-sh page`) and no Write tool.
+- **Expected**: the turn lists `index.html`, the preview shows it, no
+  warning (beta.12: shell-written files show in the turn like files from
+  the Write tool).
+- **Actual**: the turn says "Files from this turn · 1 new · index.html"
+  and "Done · 1 file written", the preview shows the page, and the
+  composer carries the warning "The run ended without writing any file."
+  Same for any shell-only turn (a `.txt`, frames from ffmpeg): the user is
+  told the work is missing right beside it.
+- **Test**: `turnfiles.qa.mjs` TF-12 (screenshot in
+  `test-results/qa/shots/TF-12.png`).
+- **Code**: `crates/od-server/src/routes/preview_tools.rs:163` reads the
+  run's `artifact_paths`, which hold only Write/Edit tool paths
+  (`crates/od-runtime/src/engine.rs:634`, `attempt.written_files`).
+  `turn_files::report` (`engine.rs:1419`, in `finish_turn`) emits the
+  shell-written files as events but does not add them to
+  `f.artifact_paths`. Have `report` return the paths it listed (folder
+  rows as their files, or at least the rows) and append them to
+  `f.artifact_paths` before `finish`.
+
+## QA-036 🔵 Past 50 rows the header counts fewer files than the Done line
+
+- **Steps**: the agent writes one file in each of 60 folders with a shell
+  command (`qa-sh rows-60`).
+- **Expected** (beta.14: the counts "N new · M edited", "+N more" and
+  "Done · N files written" count files): the header and the Done line
+  agree, 60.
+- **Actual**: header "50 new", Done "60 files written"; "+56 more" and,
+  opened, "+10 more files not listed" are right.
+- **Test**: `turnfiles.qa.mjs` TF-06.
+- **Code**: `crates/od-ui/src/app/chat_ops.rs:377` `file_counts` adds up
+  the listed rows only; the `TurnFilesMore` files (`unlisted_files`) are
+  left out of the header, while `files_count` (the Done line) adds them.
+  The engine's `+N more` row does not say new or edited; either carry the
+  split in it (`od_runtime::turn_files`, `MORE_TOOL`) or show the unlisted
+  files in the header as their own count.
+
