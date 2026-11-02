@@ -10,6 +10,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- In the @ list, Enter picks the top row for what was typed even when the
+  pointer rests over the list; before, the row under the pointer kept
+  taking the highlight and the list redrew in a loop.
+- pulldown-cmark 0.13.6 (RUSTSEC-2026-0433).
 - The last30days template's report page names system fonts only, so its
   preview no longer asks Google Fonts for Inter and JetBrains Mono.
 
