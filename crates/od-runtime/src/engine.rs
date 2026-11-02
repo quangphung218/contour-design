@@ -191,6 +191,8 @@ pub struct RunEngine {
     active: Arc<Mutex<HashMap<String, Arc<Active>>>>,
     /// Keyed by the resolved binary; an upgrade in place changes its stamp.
     capabilities: Arc<Mutex<HashMap<PathBuf, StampedProbe>>>,
+    /// Project runs' time windows, so overlapping runs keep their files apart.
+    turn_windows: turn_files::Windows,
 }
 
 /// Modification time and size of a binary, to notice it was replaced.
@@ -215,6 +217,7 @@ impl RunEngine {
             config: Arc::new(RwLock::new(Arc::new(config))),
             active: Arc::default(),
             capabilities: Arc::default(),
+            turn_windows: turn_files::Windows::default(),
         }
     }
 
@@ -294,16 +297,22 @@ impl RunEngine {
             let run_id = spec.run.id().to_owned();
             // Project runs only: what the agent changes there is the turn's
             // result (spec L4); taken before the agent can write.
-            let before = match spec.project_id {
-                Some(_) => {
-                    let cwd = spec.cwd.clone();
-                    tokio::task::spawn_blocking(move || turn_files::Snapshot::take(&cwd))
-                        .await
-                        .ok()
+            // The window starts before the snapshot, so whatever the agent
+            // stamps falls inside it.
+            let turn = match spec.project_id.clone() {
+                Some(project) => {
+                    let windows = engine.turn_windows.clone();
+                    let (cwd, id) = (spec.cwd.clone(), run_id.clone());
+                    tokio::task::spawn_blocking(move || {
+                        let start = std::time::SystemTime::now();
+                        windows.open(&project, &id, start, turn_files::Snapshot::take(&cwd))
+                    })
+                    .await
+                    .ok()
                 }
                 None => None,
             };
-            let outcome = engine.drive(spec, &active, before).await;
+            let outcome = engine.drive(spec, &active, turn).await;
             engine.active().remove(&run_id);
             outcome
         })
@@ -427,7 +436,7 @@ impl RunEngine {
         &self,
         spec: LaunchSpec,
         active: &Active,
-        before: Option<turn_files::Snapshot>,
+        before: Option<turn_files::Turn>,
     ) -> RunOutcome {
         let run = &spec.run;
         let def = spec.def;
@@ -1402,7 +1411,7 @@ impl Finish {
 /// tools (the run takes no events once it has ended).
 async fn finish_turn(
     spec: &LaunchSpec,
-    before: Option<&turn_files::Snapshot>,
+    before: Option<&turn_files::Turn>,
     f: Finish,
     text_parts: &[String],
 ) -> RunOutcome {

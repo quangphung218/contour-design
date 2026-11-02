@@ -16,6 +16,12 @@
 //! `node_modules`, build and cache folders, the app's own folders), stops
 //! at [`MAX_DEPTH`], and gives up past [`MAX_FILES`]: a truncated snapshot
 //! cannot tell a new file from an unseen one, so it reports nothing.
+//!
+//! Two runs of one project share its tree. When another run of the project
+//! ran at any point of this one ([`Windows`]), a file no write tool reported
+//! is this run's only when its mtime falls inside this run and outside every
+//! other run: a file changed while both ran cannot be told apart, so neither
+//! lists it (its `Write`/`Edit` tool row still shows where one was used).
 
 use od_contracts::AgentEvent;
 use od_runs::{Run, RunEvent};
@@ -24,7 +30,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 /// Files past this many make the snapshot incomplete.
@@ -158,6 +164,116 @@ fn walk(
         );
     }
     true
+}
+
+/// When each project run ran, by project id, so overlapping runs of one
+/// project do not claim each other's files. Cheap to clone.
+#[derive(Debug, Clone, Default)]
+pub struct Windows(Arc<Mutex<HashMap<String, Vec<Window>>>>);
+
+#[derive(Debug, Clone)]
+struct Window {
+    run_id: String,
+    start: SystemTime,
+    end: Option<SystemTime>,
+}
+
+impl Windows {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<Window>>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Opens `run_id`'s window at `start`, taken before `before` was.
+    #[must_use]
+    pub fn open(&self, project: &str, run_id: &str, start: SystemTime, before: Snapshot) -> Turn {
+        let window = Window {
+            run_id: run_id.to_owned(),
+            start,
+            end: None,
+        };
+        self.lock()
+            .entry(project.to_owned())
+            .or_default()
+            .push(window);
+        Turn {
+            windows: self.clone(),
+            project: project.to_owned(),
+            run_id: run_id.to_owned(),
+            start,
+            before,
+        }
+    }
+
+    /// Other runs of `project` that overlapped `[start, now]`, as closed
+    /// ranges (a run still going ends at the far future).
+    fn others(
+        &self,
+        project: &str,
+        run_id: &str,
+        start: SystemTime,
+    ) -> Vec<(SystemTime, SystemTime)> {
+        let far = SystemTime::now() + std::time::Duration::from_secs(86_400);
+        self.lock()
+            .get(project)
+            .into_iter()
+            .flatten()
+            .filter(|w| w.run_id != run_id && w.end.is_none_or(|e| e >= start))
+            .map(|w| (w.start, w.end.unwrap_or(far)))
+            .collect()
+    }
+
+    fn close(&self, project: &str, run_id: &str) {
+        let mut map = self.lock();
+        let Some(list) = map.get_mut(project) else {
+            return;
+        };
+        let now = SystemTime::now();
+        list.iter_mut()
+            .filter(|w| w.run_id == run_id)
+            .for_each(|w| w.end = Some(now));
+        // A closed window matters only to a run open when it closed.
+        let oldest = list
+            .iter()
+            .filter(|w| w.end.is_none())
+            .map(|w| w.start)
+            .min();
+        list.retain(|w| matches!((oldest, w.end), (Some(o), Some(e)) if e >= o) || w.end.is_none());
+        if list.is_empty() {
+            map.remove(project);
+        }
+    }
+}
+
+/// One project run's turn: the snapshot before it and its window, closed
+/// on drop.
+#[derive(Debug)]
+pub struct Turn {
+    windows: Windows,
+    project: String,
+    run_id: String,
+    start: SystemTime,
+    before: Snapshot,
+}
+
+impl Drop for Turn {
+    fn drop(&mut self) {
+        self.windows.close(&self.project, &self.run_id);
+    }
+}
+
+/// Whether a file stamped `mtime` belongs to a run that started at `start`
+/// while `others` (closed ranges) ran in the same project.
+fn is_ours(
+    mtime: Option<SystemTime>,
+    start: SystemTime,
+    others: &[(SystemTime, SystemTime)],
+) -> bool {
+    if others.is_empty() {
+        return true;
+    }
+    mtime.is_some_and(|m| m >= start && !others.iter().any(|(s, e)| *s <= m && m <= *e))
 }
 
 /// How the turn touched a file.
@@ -399,7 +515,8 @@ async fn history(run: &Arc<Run>) -> Vec<Arc<RunEvent>> {
 /// Snapshots `cwd` again and adds each file the turn changed outside the
 /// write tools as a `Write`/`Edit` with its result. Call before the run
 /// ends: an ended run takes no events. Returns how many rows were added.
-pub async fn report(run: &Arc<Run>, cwd: &Path, before: &Snapshot) -> usize {
+pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
+    let before = &turn.before;
     let started = std::time::Instant::now();
     let root = cwd.to_path_buf();
     let after = match tokio::task::spawn_blocking(move || Snapshot::take(&root)).await {
@@ -423,9 +540,17 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, before: &Snapshot) -> usize {
     } else {
         tool_written(&history(run).await, cwd)
     };
+    let others = turn.windows.others(&turn.project, &turn.run_id, turn.start);
     let changes: Vec<(String, Change)> = changes
         .into_iter()
         .filter(|(p, _)| !known.contains(p))
+        .filter(|(p, _)| {
+            is_ours(
+                after.files.get(p).and_then(|s| s.mtime),
+                turn.start,
+                &others,
+            )
+        })
         .collect();
     let (rows, omitted) = plan_rows(&changes);
     for (i, row) in rows.iter().enumerate() {
@@ -710,5 +835,118 @@ mod tests {
         );
         assert_eq!(relative_to("./d.txt", cwd).as_deref(), Some("d.txt"));
         assert_eq!(relative_to("/elsewhere/e", cwd), None);
+    }
+}
+
+#[cfg(test)]
+mod overlap_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use od_runs::{RunMeta, Runs};
+    use std::time::Duration;
+
+    fn ago(secs: u64) -> SystemTime {
+        SystemTime::now() - Duration::from_secs(secs)
+    }
+
+    /// Writes `rel` under `root` stamped `mtime`.
+    fn write_at(root: &Path, rel: &str, mtime: SystemTime) {
+        let path = root.join(rel);
+        fs::write(&path, rel).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+    }
+
+    /// Paths of the rows `report` added.
+    async fn listed(run: &Arc<Run>) -> Vec<String> {
+        let mut out: Vec<String> = history(run)
+            .await
+            .iter()
+            .filter(|e| e.data.get("type").and_then(Value::as_str) == Some("tool_use"))
+            .filter(|e| {
+                e.data["id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("turn-file"))
+            })
+            .filter_map(|e| e.data["input"]["file_path"].as_str())
+            .map(|p| p.rsplit(['/', '\\']).next().unwrap().to_owned())
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn run(runs: &Runs, id: &str) -> Arc<Run> {
+        let meta = RunMeta {
+            run_id: id.into(),
+            agent_id: "claude".into(),
+            ..RunMeta::default()
+        };
+        runs.create_or_reuse(meta).unwrap().0
+    }
+
+    #[tokio::test]
+    async fn overlapping_runs_of_one_project_keep_their_files_apart() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (root, runs) = (tmp.path().join("p"), Runs::new(tmp.path().join("runs")));
+        fs::create_dir_all(&root).unwrap();
+        let windows = Windows::default();
+        let (a, b) = (run(&runs, "a"), run(&runs, "b"));
+        // A runs from 100 s ago; B joins 50 s ago and is still going.
+        let turn_a = windows.open("p1", "a", ago(100), Snapshot::take(&root));
+        write_at(&root, "a_alone.txt", ago(80));
+        let turn_b = windows.open("p1", "b", ago(50), Snapshot::take(&root));
+        write_at(&root, "both_running.txt", ago(20));
+        // B's agent wrote this with its Write tool.
+        b.emit_json(
+            od_contracts::sse::AGENT,
+            &json!({ "type": "tool_use", "id": "t1", "name": "Write",
+                     "input": { "file_path": root.join("b_tool.txt") } }),
+        );
+        write_at(&root, "b_tool.txt", ago(10));
+        report(&a, &root, &turn_a).await;
+        assert_eq!(listed(&a).await, ["a_alone.txt"]);
+        drop(turn_a);
+        write_at(
+            &root,
+            "b_alone.txt",
+            SystemTime::now() + Duration::from_secs(5),
+        );
+        report(&b, &root, &turn_b).await;
+        // b_tool.txt has B's own tool row; both_running.txt is nobody's.
+        assert_eq!(listed(&b).await, ["b_alone.txt"]);
+        drop(turn_b);
+        assert!(windows.lock().is_empty(), "closed windows are dropped");
+    }
+
+    #[tokio::test]
+    async fn a_run_alone_keeps_files_stamped_before_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (root, runs) = (tmp.path().join("p"), Runs::new(tmp.path().join("runs")));
+        fs::create_dir_all(&root).unwrap();
+        let windows = Windows::default();
+        // A finished run of the project does not overlap this one.
+        drop(windows.open("p1", "old", ago(300), Snapshot::take(&root)));
+        let a = run(&runs, "a");
+        let turn = windows.open("p1", "a", SystemTime::now(), Snapshot::take(&root));
+        // `cp -p` keeps the source's old mtime.
+        write_at(&root, "copied.txt", ago(3600));
+        report(&a, &root, &turn).await;
+        assert_eq!(listed(&a).await, ["copied.txt"]);
+    }
+
+    #[test]
+    fn a_file_stamped_while_another_run_ran_is_not_ours() {
+        let start = ago(100);
+        assert!(is_ours(Some(ago(200)), start, &[]));
+        let others = [(ago(50), ago(10))];
+        assert!(is_ours(Some(ago(60)), start, &others));
+        assert!(is_ours(Some(ago(5)), start, &others));
+        assert!(!is_ours(Some(ago(30)), start, &others));
+        assert!(!is_ours(Some(ago(200)), start, &others));
+        assert!(!is_ours(None, start, &others));
     }
 }

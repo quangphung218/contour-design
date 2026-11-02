@@ -8,6 +8,15 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- "Files from this turn" no longer lists files another run of the same
+  project wrote while this one ran. When two runs of a project overlap, a
+  file written outside the file tools joins a turn only when it changed
+  while that run ran and no other run of the project did; a file changed
+  while both ran is listed by neither (a Write or Edit tool row still shows
+  it in the run that used the tool).
+
 ## [0.2.0-beta.13] - 2026-11-02
 
 ### Added
