@@ -86,20 +86,38 @@ fn every_example_ships_a_preview_and_contours_license() {
             .unwrap_or_else(|_| panic!("{id}: no LICENSE"));
         assert!(license.contains("Apache License") && license.contains("Version 2.0"));
         assert!(license.contains("Copyright 2026 Quang Phung and contributors"));
-        // Written for Contour: no upstream to credit.
-        assert!(
-            !license.contains("Open Design"),
-            "{id}: LICENSE names the original app"
-        );
     }
 }
 
-/// Every `http(s)://` or protocol-relative `//host` URL in HTML, CSS or JS
+/// Written for Contour, not copied: no LICENSE of the 30 credits the
+/// original app (the root LICENSE does, for the copied content).
+#[test]
+fn no_example_license_names_the_original_app() {
+    let examples = contour_examples();
+    assert_eq!(examples.len(), 30);
+    let named: Vec<String> = examples
+        .iter()
+        .filter(|(dir, _)| {
+            let license = std::fs::read_to_string(dir.join("LICENSE")).unwrap();
+            ["Open Design", "OpenDesign", "nexu-io"]
+                .iter()
+                .any(|n| license.contains(n))
+        })
+        .map(|(dir, _)| folder(dir))
+        .collect();
+    assert!(
+        named.is_empty(),
+        "LICENSE names the original app: {named:?}"
+    );
+}
+
+/// Every `http(s)://`, `ws(s)://` or protocol-relative `//host` URL in HTML, CSS or JS
 /// text, except loopback.
 fn external_urls(text: &str) -> Vec<String> {
-    let url =
-        Regex::new(r#"(?i)https?://[^\s"'<>)]+|["'(=]\s*//[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s"'<>)]*"#)
-            .unwrap();
+    let url = Regex::new(
+        r#"(?i)(?:https?|wss?)://[^\s"'<>)]+|["'(=]\s*//[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s"'<>)]*"#,
+    )
+    .unwrap();
     url.find_iter(text)
         .map(|m| {
             m.as_str()
@@ -148,6 +166,11 @@ fn the_url_check_catches_external_and_spares_loopback() {
         1
     );
     assert!(external_urls("fetch('http://127.0.0.1:7456/api')").is_empty());
+    assert_eq!(
+        external_urls("new WebSocket('wss://live.example.org/feed')").len(),
+        1
+    );
+    assert!(external_urls("new WebSocket('ws://127.0.0.1:7456/ws')").is_empty());
     assert!(external_urls("a // comment. not a url").is_empty());
 }
 
