@@ -227,6 +227,11 @@ path:
 export OD_HYPERFRAMES_BIN="$HOME/tools/hyperframes/bin/hyperframes"
 ```
 
+The path must be a file Contour can execute, because `od` runs it as is.
+A bare `cli.mjs` or `cli.js` needs a `#!/usr/bin/env node` first line and
+`chmod +x`; otherwise point at a wrapper that runs Node, such as the
+`hyperframes` that `npm install -g` puts in npm's `bin` folder.
+
 The film still renders to MP4 without it (`media generate`).
 
 ## Building
