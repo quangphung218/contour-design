@@ -419,6 +419,21 @@ impl AssistantTurn {
         })
     }
 
+    /// Files the row `rel` of [`Self::file_ops`] stands for: a folder
+    /// row's count (`frames/ (1000 files)` is 1000), 1 for a file.
+    #[must_use]
+    pub fn row_files(&self, rel: &str) -> u64 {
+        self.folder_files(rel).unwrap_or(1)
+    }
+
+    /// Files the turn wrote or edited, counting each file a folder row
+    /// stands for and the unlisted ones, never rows.
+    #[must_use]
+    pub fn files_count(&self) -> u64 {
+        let listed: u64 = self.touched_files().iter().map(|r| self.row_files(r)).sum();
+        listed + self.unlisted_files()
+    }
+
     /// Files changed outside the file tools that the turn did not list
     /// (the `+N more` row the engine adds past its row limit).
     #[must_use]
@@ -645,6 +660,9 @@ mod tests {
         assert_eq!(t.folder_files("frames/"), Some(1000));
         assert_eq!(t.folder_files("clip.mp4"), None);
         assert_eq!(t.unlisted_files(), 70);
+        assert_eq!(t.row_files("frames/"), 1000);
+        assert_eq!(t.row_files("clip.mp4"), 1);
+        assert_eq!(t.files_count(), 1071, "files, not the 2 rows");
     }
 
     #[test]

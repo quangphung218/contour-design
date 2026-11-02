@@ -224,6 +224,28 @@ pub fn strip_self_arg(mut args: Vec<OsString>) -> Vec<OsString> {
     args
 }
 
+/// `od "$OD_HYPERFRAMES_BIN" lint …`: the HyperFrames design template
+/// runs its CLI through `"$OD_NODE_BIN"` (the original's Node), which is
+/// `od`. When the first argument is the CLI `OD_HYPERFRAMES_BIN` names,
+/// runs it with the rest and returns its exit code (1 when it cannot
+/// start); `None` for any other command line.
+fn run_hyperframes(args: &[OsString]) -> Option<u8> {
+    // `od_render_cdp::hyperframes_cli::HYPERFRAMES_BIN_ENV`.
+    let bin = std::env::var_os("OD_HYPERFRAMES_BIN").filter(|v| !v.is_empty())?;
+    let first = args.get(1)?;
+    if !same_file(Path::new(first), Path::new(&bin)) {
+        return None;
+    }
+    let status = std::process::Command::new(first).args(&args[2..]).status();
+    Some(match status {
+        Ok(s) => s.code().and_then(|c| u8::try_from(c).ok()).unwrap_or(1),
+        Err(err) => {
+            eprintln!("od: cannot run {}: {err}", Path::new(first).display());
+            1
+        }
+    })
+}
+
 fn same_file(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
@@ -248,7 +270,11 @@ pub fn main_with(args: Vec<OsString>) -> ExitCode {
 /// capability), else 1. The desktop app exits with it as is.
 #[must_use]
 pub fn main_code(args: Vec<OsString>) -> u8 {
-    let matches = Cli::command().get_matches_from(strip_self_arg(args));
+    let args = strip_self_arg(args);
+    if let Some(code) = run_hyperframes(&args) {
+        return code;
+    }
+    let matches = Cli::command().get_matches_from(args);
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
     // `od mcp` tells a URL someone gave (flag or env) from the default:
     // only the default gives way to the running app's `daemon.lock`.

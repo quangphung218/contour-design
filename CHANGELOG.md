@@ -8,6 +8,27 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `OD_HYPERFRAMES_BIN` points Contour at a HyperFrames CLI in place of the
+  `hyperframes` found in Homebrew's folder, the system folders or on
+  `PATH`. Agent runs get the CLI found as `OD_HYPERFRAMES_BIN`, so the
+  HyperFrames template's `"$OD_NODE_BIN" "$OD_HYPERFRAMES_BIN" lint` runs
+  it (`od` hands that command line to the CLI). Without one the variable
+  is not set; MP4 rendering never needed it.
+
+### Fixed
+
+- "Files from this turn" no longer lists files another run of the same
+  project wrote while this one ran. When two runs of a project overlap, a
+  file written outside the file tools joins a turn only when it changed
+  while that run ran and no other run of the project did; a file changed
+  while both ran is listed by neither (a Write or Edit tool row still shows
+  it in the run that used the tool).
+- The counts of "Files from this turn" ("N new · M edited", "+N more")
+  and the "Done · N files written" line now count files, not rows: a
+  folder row such as `frames/ (1000 files)` counts as 1000 files.
+
 ## [0.2.0-beta.13] - 2026-11-02
 
 ### Added

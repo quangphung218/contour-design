@@ -215,6 +215,25 @@ Chrome cannot start at all, export fails with "cannot start": at once when the b
 It needs `ffmpeg` on `PATH`, in Homebrew's folder, or at `OD_FFMPEG_PATH`:
 `brew install ffmpeg`.
 
+### The agent cannot run `"$OD_HYPERFRAMES_BIN" lint`
+
+The HyperFrames template's checks (`lint`, `validate`, `inspect`) and
+`transcribe`/`tts` need the HyperFrames CLI, which Contour does not ship.
+Contour gives the agent the `hyperframes` it finds in Homebrew's folder, the
+system folders or on `PATH`; to use another one, start Contour with its
+path:
+
+```sh
+export OD_HYPERFRAMES_BIN="$HOME/tools/hyperframes/bin/hyperframes"
+```
+
+The path must be a file Contour can execute, because `od` runs it as is.
+A bare `cli.mjs` or `cli.js` needs a `#!/usr/bin/env node` first line and
+`chmod +x`; otherwise point at a wrapper that runs Node, such as the
+`hyperframes` that `npm install -g` puts in npm's `bin` folder.
+
+The film still renders to MP4 without it (`media generate`).
+
 ## Building
 
 ### `error: linker` / missing `webkit2gtk` on Linux

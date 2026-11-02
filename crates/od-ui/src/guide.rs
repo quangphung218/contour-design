@@ -14,9 +14,10 @@ pub enum RunPhase {
     Working {
         step: Option<(usize, usize)>,
     },
-    /// Finished; `files` is how many files the turn wrote.
+    /// Finished; `files` is how many files the turn wrote (a folder row
+    /// counts its files).
     Done {
-        files: usize,
+        files: u64,
     },
     Failed,
     Stopped,
@@ -30,7 +31,7 @@ pub fn run_phase(turn: &AssistantTurn) -> RunPhase {
             step: plan_progress(&turn.todos).map(|(n, m, _)| (n, m)),
         },
         TurnState::Succeeded => RunPhase::Done {
-            files: turn.touched_files().len(),
+            files: turn.files_count(),
         },
         TurnState::Failed => RunPhase::Failed,
         TurnState::Canceled => RunPhase::Stopped,
@@ -216,6 +217,16 @@ mod tests {
             vec![write("index.html"), write("index.html"), write("a.css")],
         );
         assert_eq!(run_phase(&done), RunPhase::Done { files: 2 });
+        // A folder row counts its files, not one.
+        let frames = Block::Tool(ToolCall {
+            files: Some(1000),
+            ..match write("frames/") {
+                Block::Tool(c) => c,
+                _ => unreachable!(),
+            }
+        });
+        let done = turn(TurnState::Succeeded, vec![frames, write("clip.mp4")]);
+        assert_eq!(run_phase(&done), RunPhase::Done { files: 1001 });
         assert_eq!(
             run_phase(&turn(TurnState::Failed, vec![])),
             RunPhase::Failed
