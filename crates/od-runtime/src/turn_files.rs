@@ -527,8 +527,11 @@ async fn history(run: &Arc<Run>) -> Vec<Arc<RunEvent>> {
 
 /// Snapshots `cwd` again and adds each file the turn changed outside the
 /// write tools as a `Write`/`Edit` with its result. Call before the run
-/// ends: an ended run takes no events. Returns how many rows were added.
-pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
+/// ends: an ended run takes no events. Returns the absolute path of every
+/// file it found (each file of a folder row and of the `+N more` row too):
+/// the run's `artifact_paths` add them, so the deliverable check sees a
+/// page written by a shell command (QA-035).
+pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> Vec<String> {
     let before = &turn.before;
     let started = std::time::Instant::now();
     let root = cwd.to_path_buf();
@@ -536,7 +539,7 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
         Ok(snap) => snap,
         Err(err) => {
             tracing::warn!(run = %run.id(), error = %err, "turn files: snapshot failed");
-            return 0;
+            return Vec::new();
         }
     };
     if !before.is_complete() || !after.is_complete() {
@@ -545,7 +548,7 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
             limit = MAX_FILES,
             "turn files: project too large to compare, shell-written files not listed"
         );
-        return 0;
+        return Vec::new();
     }
     let changes = diff(before, &after);
     let known = if changes.is_empty() {
@@ -594,16 +597,18 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
             format!("+{omitted} more files changed during the turn"),
         );
     }
-    let added = rows.len();
     tracing::info!(
         run = %run.id(),
         files = after.len(),
-        added,
+        added = rows.len(),
         omitted,
         scan_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         "turn files compared"
     );
-    added
+    changes
+        .iter()
+        .map(|(p, _)| absolute(cwd, p).to_string_lossy().into_owned())
+        .collect()
 }
 
 #[cfg(test)]
@@ -932,9 +937,12 @@ mod overlap_tests {
             "b_alone.txt",
             SystemTime::now() + Duration::from_secs(5),
         );
-        report(&b, &root, &turn_b).await;
+        let paths = report(&b, &root, &turn_b).await;
         // b_tool.txt has B's own tool row; both_running.txt is nobody's.
         assert_eq!(listed(&b).await, ["b_alone.txt"]);
+        // The run's artifact paths gain what it wrote outside its tools
+        // (QA-035), not what its tools wrote (already there).
+        assert_eq!(paths, [root.join("b_alone.txt").to_string_lossy()]);
         drop(turn_b);
         assert!(windows.lock().is_empty(), "closed windows are dropped");
     }

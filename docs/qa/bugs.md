@@ -844,6 +844,12 @@ Reported by the UX review of 759581a.
   `f.artifact_paths`. Have `report` return the paths it listed (folder
   rows as their files, or at least the rows) and append them to
   `f.artifact_paths` before `finish`.
+- **Fixed**: `turn_files::report` returns the absolute path of every file
+  it found (each file behind a folder row or the `+N more` row too), and
+  `finish_turn` appends them to `f.artifact_paths`, so the deliverable
+  check sees the shell-written entry. TF-12 was red before the fix, green
+  after; unit test in `turn_files.rs`
+  (`overlapping_runs_of_one_project_keep_their_files_apart`).
 
 ## QA-036 🔵 Past 50 rows the header counts fewer files than the Done line
 

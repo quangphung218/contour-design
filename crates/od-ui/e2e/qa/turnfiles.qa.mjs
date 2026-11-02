@@ -214,7 +214,7 @@ test('TF-12', 'A page the agent writes with a shell command is not followed by "
   const warn = page.getByTestId('deliverable-warning');
   const text = (await warn.count()) ? (await warn.innerText()).trim() : '';
   assert.equal(text, '', 'warning shown beside a turn that lists the file');
-}, { knownBug: 'QA-035' });
+});
 
 test('TF-13', 'Stop after the agent rendered a file with shell: the turn still lists the file it left', async ({ d, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Stopped render');

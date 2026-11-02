@@ -18,6 +18,10 @@ All notable changes to Contour are recorded here. The format follows
 - pulldown-cmark 0.13.6 (RUSTSEC-2026-0433).
 - The last30days template's report page names system fonts only, so its
   preview no longer asks Google Fonts for Inter and JetBrains Mono.
+- A run that writes its page only with a shell command (no Write tool) no
+  longer ends with "The run ended without writing any file." beside the
+  turn that lists the page: the run's written files now include the files
+  found outside the file tools.
 
 ## [0.2.0-beta.14] - 2026-11-02
 

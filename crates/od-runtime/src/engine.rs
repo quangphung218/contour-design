@@ -1412,11 +1412,15 @@ impl Finish {
 async fn finish_turn(
     spec: &LaunchSpec,
     before: Option<&turn_files::Turn>,
-    f: Finish,
+    mut f: Finish,
     text_parts: &[String],
 ) -> RunOutcome {
     if let Some(before) = before {
-        turn_files::report(&spec.run, &spec.cwd, before).await;
+        for path in turn_files::report(&spec.run, &spec.cwd, before).await {
+            if !f.artifact_paths.contains(&path) {
+                f.artifact_paths.push(path);
+            }
+        }
     }
     finish(&spec.run, f, text_parts)
 }
