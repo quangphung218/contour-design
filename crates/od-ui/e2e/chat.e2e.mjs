@@ -179,9 +179,25 @@ try {
   results.createPlugin = 'ok';
 
   // 5. @ mention a skill from the palette (keyboard) and a plugin from "+".
+  // A click elsewhere blurs the field; typing on at once must keep the list
+  // it opens (the blur used to close it 150 ms later).
+  await title.click();
   await brief.fill('');
-  await brief.pressSequentially('Clone it with @web-cl');
+  await brief.pressSequentially('@web');
+  await page.waitForTimeout(400);
+  assert.ok(await page.getByTestId('mention-palette').isVisible(), 'the @ list stays open after a blur');
+  await brief.fill('');
+  // Highlight a lower row with the pointer, then keep typing: the new
+  // query's top row is what Enter picks, not the row under the pointer.
+  await brief.pressSequentially('Clone it with @web');
   await page.getByTestId('mention-palette').waitFor();
+  const third = page.locator('[data-testid="mention-item"]').nth(2);
+  const thirdBox = await third.boundingBox();
+  await page.mouse.move(thirdBox.x + thirdBox.width / 2, thirdBox.y + thirdBox.height / 2, { steps: 3 });
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-testid="mention-item"]')[2]?.getAttribute('aria-selected') === 'true',
+  );
+  await brief.pressSequentially('-cl');
   // Enter picks the highlighted row: wait until the list is ranked for the
   // whole query, or a fast run picks a row ranked for "@web".
   await page

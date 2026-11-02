@@ -558,8 +558,10 @@ pub fn MentionArea(
         let next = mention::slash_at(&text, at)
             .map(|t| (true, t))
             .or_else(|| mention::mention_at(&text, at).map(|t| (false, t)));
-        if next.as_ref().map(|(s, t)| (*s, t.start))
-            != open.get_untracked().map(|(s, t)| (s, t.start))
+        // A new query ranks a new list: Enter then picks its top row, not
+        // the row that was highlighted in the list before.
+        if next.as_ref().map(|(s, t)| (*s, t.start, t.query.clone()))
+            != open.with_untracked(|o| o.as_ref().map(|(s, t)| (*s, t.start, t.query.clone())))
         {
             index.set(0);
         }
@@ -727,10 +729,21 @@ pub fn MentionArea(
                     if let Some(cb) = on_focus {
                         cb.run(false);
                     }
-                    // After a click on a row has landed.
+                    // After a click on a row has landed; not if the field has
+                    // the focus again by then (typing on right after a click
+                    // elsewhere would lose the list it just opened).
                     leptos::task::spawn_local(async move {
                         gloo_timers::future::TimeoutFuture::new(150).await;
-                        open.set(None);
+                        // The composer may be gone by now (Home → Studio).
+                        let refocused = area.try_get_untracked().flatten().is_some_and(|el| {
+                            document().active_element().is_some_and(|a| {
+                                let el: &web_sys::Element = el.as_ref();
+                                a == *el
+                            })
+                        });
+                        if !refocused {
+                            open.set(None);
+                        }
                     });
                 }
             ></textarea>
@@ -787,7 +800,9 @@ fn Palette(
                     data-kind=kind
                     aria-selected=move || (index.get() == i).to_string()
                     on:mousedown=|ev| ev.prevent_default()
-                    on:mouseenter=move |_| index.set(i)
+                    // Only a moving pointer highlights: a list drawn under a resting
+                    // pointer keeps the keyboard's row.
+                    on:mousemove=move |_| if index.get_untracked() != i { index.set(i) }
                     on:click=move |_| pick.run(row.clone())
                 >
                     {icon(glyph)}
