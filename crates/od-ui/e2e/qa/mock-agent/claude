@@ -47,5 +47,54 @@ case "$req" in *qa-jury-slow*)
   exit 0
 ;; esac
 
+# Turn files written with shell commands (no Write tool), as ffmpeg,
+# python or cp do. `qa-sh <word>` picks the shape:
+# - `frames-N`: N PNG frames in frames/ plus frames/film.mp4
+# - `kinds`: 11 PNG and 10 JPG in shots/ (no kind past 20)
+# - `rows-N`: one file in each of N folders (d01/f.txt …)
+# - `edit`: appends to notes.txt (made earlier by the test)
+# - `name`: "báo cáo 🍜.txt" at the root
+# - `page`: index.html, as `python gen.py > index.html` would
+# - `late-<file>-<s>`: sleeps <s> seconds, then writes <file>
+# - `early-<file>-<s>`: writes <file> at once, then sleeps <s> seconds
+case "$req" in *qa-sh\ *)
+  word=$(printf '%s' "$req" | sed -e 's/.*qa-sh \([^ \\]*\).*/\1/')
+  printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+  printf '{"type":"assistant","message":{"id":"qa-sh-%s","role":"assistant","content":[{"type":"tool_use","id":"sh-%s","name":"Bash","input":{"command":"qa-sh %s"}}]}}\n' "$$" "$$" "$word"
+  case "$word" in
+  frames-*)
+    n=${word#frames-}; mkdir -p frames; i=1
+    while [ "$i" -le "$n" ]; do printf 'png%s' "$i" > "frames/f$(printf '%04d' "$i").png"; i=$((i + 1)); done
+    printf 'mp4' > frames/film.mp4
+    ;;
+  kinds)
+    mkdir -p shots; i=1
+    while [ "$i" -le 11 ]; do printf 'p' > "shots/s$i.png"; i=$((i + 1)); done
+    i=1
+    while [ "$i" -le 10 ]; do printf 'j' > "shots/s$i.jpg"; i=$((i + 1)); done
+    ;;
+  rows-*)
+    n=${word#rows-}; i=1
+    while [ "$i" -le "$n" ]; do d=$(printf 'd%02d' "$i"); mkdir -p "$d"; printf 'row %s' "$i" > "$d/f.txt"; i=$((i + 1)); done
+    ;;
+  edit) printf '\nmore from the shell\n' >> notes.txt ;;
+  name) printf 'xin chào' > 'báo cáo 🍜.txt' ;;
+  page) printf '<!doctype html><html><body><h1 id="title">Shell page</h1></body></html>' > index.html ;;
+  late-*)
+    rest=${word#late-}; f=${rest%-*}; s=${rest##*-}
+    sleep "$s"; printf 'late' > "$f"
+    ;;
+  early-*)
+    rest=${word#early-}; f=${rest%-*}; s=${rest##*-}
+    printf 'early' > "$f"; sleep "$s"
+    ;;
+  esac
+  printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"sh-%s","content":"ok"}]}}\n' "$$"
+  printf '{"type":"assistant","message":{"id":"qa-sh-%s-t","role":"assistant","content":[{"type":"text","text":"Shell done: %s."}]}}\n' "$$" "$word"
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null
+  exit 0
+;; esac
+
 # Not ours: hand the line (and the rest of stdin) to the shared mock.
 { printf '%s\n' "$line"; cat; } | exec "$shared" "$@"
