@@ -257,7 +257,7 @@ jobs:
             macos-binary/macos-binary-aarch64-apple-darwin/od-desktop \
             macos-binary/macos-binary-x86_64-apple-darwin/od-desktop
           chmod +x "$out/od-desktop"
-          lipo -verify_arch "$out/od-desktop" arm64 x86_64
+          lipo "$out/od-desktop" -verify_arch arm64 x86_64
           lipo -info "$out/od-desktop"
           test -f crates/od-ui/dist/index.html
       # Signing and notarisation are optional. The secrets reach only this
