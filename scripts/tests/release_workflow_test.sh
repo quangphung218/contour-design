@@ -144,6 +144,33 @@ check "the Windows smoke test runs windows-smoke.yml after the bundles" 'grep -q
 check "the Windows smoke test gets the .msi artifact the bundle job uploads" 'grep -qx "smoke artifact: true" "$work/wsmoke"'
 check "the Windows bundle stays best effort" 'grep -qx "windows bundle best effort: true continue-on-error: \${{ matrix.best_effort }}" "$work/wsmoke"'
 
+# The macOS universal bundle: two arch binaries and the shared UI, joined in
+# one job; the draft collects every bundle-* artifact and nothing else.
+ruby -ryaml -rjson -e '
+  jobs = YAML.load_file(ARGV[0])["jobs"]
+  dl = jobs["release"]["steps"].find { |s| s["uses"].to_s.start_with?("actions/download-artifact") }
+  puts "draft downloads: #{dl["with"]["pattern"]}"
+  puts "macos-universal needs: #{Array(jobs["macos-universal"]["needs"]).sort.join(",")}"
+  puts "macos-binary targets: #{jobs["macos-binary"]["strategy"]["matrix"]["target"].sort.join(",")}"
+  steps = jobs["bundle"]["steps"]
+  get = steps.index { |s| s["uses"].to_s.start_with?("actions/download-artifact") && s.dig("with", "name") == "ui-dist" }
+  present = steps.index { |s| s["name"] == "UI bundle present" }
+  tauri = steps.index { |s| s["name"] == "Tauri bundle" }
+  ok = get && present && tauri && get < present && present < tauri && steps[present]["run"].include?("crates/od-ui/dist/index.html")
+  puts "bundle checks the UI before Tauri: #{ok ? true : false}"
+  dist = JSON.parse(File.read(ARGV[1])).dig("build", "frontendDist").to_s
+  puts "frontendDist is the UI: #{File.expand_path(dist, File.dirname(ARGV[1])) == File.expand_path(ARGV[2])}"
+  caches = jobs.values.flat_map { |j| j["steps"] || [] }.select { |s| s["uses"].to_s.start_with?("Swatinem/rust-cache") }
+  puts "caches saved on manual runs only: #{!caches.empty? && caches.all? { |s| s.dig("with", "save-if") == "${{ github.event_name == \x27workflow_dispatch\x27 }}" }}"
+' "$workflow" "$here/../../apps/desktop/tauri.conf.json" "$here/../../crates/od-ui/dist" > "$work/mac" 2>&1
+check "the draft release collects only bundle-* artifacts" 'grep -qx "draft downloads: bundle-\*" "$work/mac"'
+check "the universal bundle waits for both macOS binaries and the UI" 'grep -qx "macos-universal needs: macos-binary,ui" "$work/mac"'
+check "macOS binaries are built for Apple silicon and Intel" 'grep -qx "macos-binary targets: aarch64-apple-darwin,x86_64-apple-darwin" "$work/mac"'
+check "the Linux and Windows bundles check the downloaded UI before Tauri" 'grep -qx "bundle checks the UI before Tauri: true" "$work/mac"'
+# The macOS binaries build against an empty UI placeholder (release.yml).
+check "frontendDist (compiled in) is not the UI resource folder" 'grep -qx "frontendDist is the UI: false" "$work/mac"'
+check "Rust caches are saved on manual runs only, not by tags" 'grep -qx "caches saved on manual runs only: true" "$work/mac"'
+
 # windows-smoke.yml: the smoke jobs run only when "find the installer" found
 # one, and that step decides from what the bundle job left.
 ruby -ryaml -e '
