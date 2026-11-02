@@ -28,14 +28,21 @@ All notable changes to Contour are recorded here. The format follows
 - The counts of "Files from this turn" ("N new · M edited", "+N more")
   and the "Done · N files written" line now count files, not rows: a
   folder row such as `frames/ (1000 files)` counts as 1000 files.
-- Template examples and the files a template's output copies load nothing
-  from outside loopback, so the preview no longer blocks a request and
-  shows a broken page. Google Fonts are gone and every font stack ends in
-  system fonts; the Chart.js charts in four decks are drawn as SVG in the
-  page; the guizang-ppt deck carries its 34 Lucide icons (ISC) instead of
-  loading Lucide from unpkg; contributor avatars show initials; demo links
-  to outside sites (tickers, Gmail, Linear, Notion, GitHub) point at `#`.
-  A test checks every template, not only the 30 written for Contour.
+- Design templates load nothing from outside loopback, so the preview no
+  longer blocks a request and shows a broken page. This covers each
+  example page and the pages and assets a template's output copies
+  (`examples/`, `assets/`, `templates/`). Google Fonts are gone and every
+  font stack ends in system fonts (condensed display faces fall back to
+  Avenir Next Condensed, Arial Narrow or Impact). Chart.js charts are drawn
+  as SVG in the page: three example decks, the html-ppt demo deck and the
+  html-ppt bar, line, pie and radar chart pages. The html-ppt code page
+  colours its snippet in the page instead of loading highlight.js. The
+  guizang-ppt deck carries its 34 Lucide icons (ISC) instead of loading
+  Lucide from unpkg, and warns in the console for an icon it lacks.
+  Contributor avatars show initials, and demo links to outside sites
+  (tickers, Gmail, Linear, Notion, GitHub) point at `#`. A test checks
+  every template, counting only `localhost`, `127.0.0.1` and `[::1]` as
+  loopback.
 
 ## [0.2.0-beta.13] - 2026-11-02
 

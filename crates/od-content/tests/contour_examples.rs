@@ -120,8 +120,22 @@ const XML_NAMESPACES: [&str; 3] = [
     "http://www.w3.org/1999/xhtml",
 ];
 
+/// The host of `scheme://host…` or `//host…`, lowercased: the authority without
+/// user info or port, `[::1]` kept in brackets.
+fn host_of(url: &str) -> String {
+    let rest = url.split_once("//").map_or(url, |(_, r)| r);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = if host_port.starts_with('[') {
+        host_port.split_inclusive(']').next().unwrap_or_default()
+    } else {
+        host_port.split(':').next().unwrap_or_default()
+    };
+    host.to_ascii_lowercase()
+}
+
 /// Every `http(s)://`, `ws(s)://` or protocol-relative `//host` URL in HTML, CSS or JS
-/// text, except loopback and XML namespace names.
+/// text, except loopback (`localhost`, `127.0.0.1`, `[::1]`) and XML namespace names.
 fn external_urls(text: &str) -> Vec<String> {
     let url = Regex::new(
         r#"(?i)(?:https?|wss?)://[^\s"'<>)]+|["'(=]\s*//[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s"'<>)]*"#,
@@ -134,16 +148,14 @@ fn external_urls(text: &str) -> Vec<String> {
                 .trim_start()
                 .to_owned()
         })
-        .filter(|u| {
-            let host = u.split("//").nth(1).unwrap_or_default();
-            !(host.starts_with("127.0.0.1") || host.starts_with("localhost"))
-        })
+        .filter(|u| !["localhost", "127.0.0.1", "[::1]"].contains(&host_of(u).as_str()))
         .filter(|u| !XML_NAMESPACES.contains(&u.as_str()))
         .collect()
 }
 
 /// The files a template's preview or its output loads: `example.html`, and
-/// the HTML, CSS and JS under `examples/` and `assets/`. SKILL.md and
+/// the HTML, CSS and JS under `examples/`, `assets/` and `templates/` (the
+/// pages the agent copies). SKILL.md and
 /// `references/` are instructions to the agent and may name URLs.
 fn served_files(dir: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -169,6 +181,7 @@ fn served_files(dir: &Path) -> Vec<PathBuf> {
     }
     walk(&dir.join("examples"), &mut out);
     walk(&dir.join("assets"), &mut out);
+    walk(&dir.join("templates"), &mut out);
     out.sort();
     out
 }
@@ -215,6 +228,18 @@ fn the_url_check_catches_external_and_spares_loopback() {
         1
     );
     assert!(external_urls("new WebSocket('ws://127.0.0.1:7456/ws')").is_empty());
+    assert!(external_urls("fetch('http://localhost:7456/api')").is_empty());
+    assert!(external_urls("fetch('HTTP://LOCALHOST/api')").is_empty());
+    assert!(external_urls("fetch('http://[::1]:7456/api')").is_empty());
+    // A host that only starts like loopback is somewhere else.
+    for u in [
+        "https://localhost.evil.com/x.js",
+        "https://127.0.0.1.evil.com/x.js",
+        "https://localhost@evil.com/x.js",
+        "https://localhostevil.com/x.js",
+    ] {
+        assert_eq!(external_urls(&format!("<script src=\"{u}\">")), [u], "{u}");
+    }
     assert!(external_urls("a // comment. not a url").is_empty());
     assert!(external_urls(r#"<svg xmlns="http://www.w3.org/2000/svg">"#).is_empty());
     assert_eq!(

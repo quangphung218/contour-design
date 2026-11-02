@@ -4,27 +4,38 @@
 <link rel="stylesheet" href="../../assets/base.css">
 <link rel="stylesheet" id="theme-link" href="../../assets/themes/minimal-white.css">
 <link rel="stylesheet" href="../../assets/animations/animations.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head><body class="single">
 <div class="deck"><section class="slide is-active" data-title="Bar chart">
   <p class="kicker">Chart · 柱状图</p>
   <h2 class="h2">季度 MRR 趋势</h2>
-  <div class="card mt-l" style="height:520px;padding:28px"><canvas id="c"></canvas></div>
-  <script>
-    addEventListener('DOMContentLoaded',()=>{
-      const css=getComputedStyle(document.documentElement);
-      const accent=css.getPropertyValue('--accent').trim();
-      const text2=css.getPropertyValue('--text-2').trim();
-      const border=css.getPropertyValue('--border').trim();
-      new Chart(document.getElementById('c'),{type:'bar',
-        data:{labels:['Q1','Q2','Q3','Q4','Q1 +1','Q2 +1','Q3 +1','Q4 +1'],
-          datasets:[{label:'MRR (K)',data:[42,58,73,96,124,158,204,261],
-            backgroundColor:accent,borderRadius:8,barThickness:36}]},
-        options:{plugins:{legend:{labels:{color:text2}}},
-          scales:{x:{ticks:{color:text2},grid:{color:border}},
-                  y:{ticks:{color:text2},grid:{color:border}}}}});
-    });
-  </script>
+  <div class="card mt-l" style="height:520px;padding:28px"><svg class="chart-svg" viewBox="0 0 640 360" role="img" aria-label="季度 MRR 趋势" style="display:block;width:100%;height:100%" font-family="inherit">
+  <line x1="56" x2="624" y1="316.0" y2="316.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="46" y="320.0" text-anchor="end" font-size="13" style="fill:var(--text-2)">0</text>
+  <line x1="56" x2="624" y1="226.7" y2="226.7" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="46" y="230.7" text-anchor="end" font-size="13" style="fill:var(--text-2)">100</text>
+  <line x1="56" x2="624" y1="137.3" y2="137.3" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="46" y="141.3" text-anchor="end" font-size="13" style="fill:var(--text-2)">200</text>
+  <line x1="56" x2="624" y1="48.0" y2="48.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="46" y="52.0" text-anchor="end" font-size="13" style="fill:var(--text-2)">300</text>
+  <text x="91.5" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">Q1</text>
+  <text x="162.5" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">Q2</text>
+  <text x="233.5" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">Q3</text>
+  <text x="304.5" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">Q4</text>
+  <text x="375.5" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">Q1 +1</text>
+  <text x="446.5" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">Q2 +1</text>
+  <text x="517.5" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">Q3 +1</text>
+  <text x="588.5" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">Q4 +1</text>
+  <rect x="275.6" y="19" width="10" height="10" style="fill:var(--accent)"/>
+  <text x="295.6" y="28" font-size="13" style="fill:var(--text-2)">MRR (K)</text>
+  <rect x="66.7" y="278.5" width="49.7" height="37.5" style="fill:var(--accent)"/>
+  <rect x="137.7" y="264.2" width="49.7" height="51.8" style="fill:var(--accent)"/>
+  <rect x="208.7" y="250.8" width="49.7" height="65.2" style="fill:var(--accent)"/>
+  <rect x="279.6" y="230.2" width="49.7" height="85.8" style="fill:var(--accent)"/>
+  <rect x="350.6" y="205.2" width="49.7" height="110.8" style="fill:var(--accent)"/>
+  <rect x="421.6" y="174.9" width="49.7" height="141.1" style="fill:var(--accent)"/>
+  <rect x="492.6" y="133.8" width="49.7" height="182.2" style="fill:var(--accent)"/>
+  <rect x="563.6" y="82.8" width="49.7" height="233.2" style="fill:var(--accent)"/>
+</svg></div>
 </section></div>
 <script src="../../assets/runtime.js"></script>
 </body></html>

@@ -161,7 +161,7 @@ mkdir -p "项目/XXX/ppt/images"
 cp "<SKILL_ROOT>/assets/template.html" "项目/XXX/ppt/index.html"
 ```
 
-`template.html` is a **complete, runnable** file: CSS, WebGL shader, paging JS, font/icon CDNs are all preset; only inside `<main id="deck">` are there 3 example slides (cover, act divider, blank filler page).
+`template.html` is a **complete, runnable** file: CSS, WebGL shader, paging JS, system font stacks and the built-in Lucide icon set are all preset, and it loads nothing from the network (the preview blocks CDNs); only inside `<main id="deck">` are there 3 example slides (cover, act divider, blank filler page).
 
 #### 2.1 · Placeholders you must change (**easy to miss**)
 
