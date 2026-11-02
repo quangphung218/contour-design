@@ -294,8 +294,7 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
         if ops.is_empty() {
             return None;
         }
-        let writes = ops.iter().filter(|(_, op)| *op == FileOp::Write).count();
-        let edits = ops.len() - writes;
+        let (writes, edits, hidden) = turn.with(|t| file_counts(t, &ops));
         let live = turn.with(|t| t.state.is_live());
         let unlisted = turn.with(AssistantTurn::unlisted_files);
         let total = ops.len();
@@ -359,10 +358,10 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                         })
                         .collect_view()}
                 </ul>
-                {move || more_line(total, unlisted, expanded.get()).note.map(|note| view! {
+                {move || more_line(hidden, unlisted, expanded.get()).note.map(|note| view! {
                     <p class="subtle" data-testid="turn-files-unlisted">{note}</p>
                 })}
-                {move || more_line(total, unlisted, expanded.get()).button.map(|label| view! {
+                {move || more_line(hidden, unlisted, expanded.get()).button.map(|label| view! {
                     <button class="btn ghost small" data-testid="turn-files-more" on:click=move |_| expanded.update(|e| *e = !*e)>
                         {label}
                     </button>
@@ -370,6 +369,24 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             </div>
         })
     }
+}
+
+/// Files written, files edited, and files in the rows past
+/// [`FILES_SHOWN`] of `ops`: files, not rows (`frames/ (1000 files)` is
+/// 1000).
+fn file_counts(turn: &AssistantTurn, ops: &[(String, FileOp)]) -> (u64, u64, u64) {
+    let (mut writes, mut edits, mut hidden) = (0, 0, 0);
+    for (i, (path, op)) in ops.iter().enumerate() {
+        let n = turn.row_files(path);
+        match op {
+            FileOp::Write => writes += n,
+            FileOp::Edit => edits += n,
+        }
+        if i >= FILES_SHOWN {
+            hidden += n;
+        }
+    }
+    (writes, edits, hidden)
 }
 
 /// What follows the rows of "Files from this turn": never two "+N more".
@@ -381,10 +398,10 @@ struct MoreLine {
     note: Option<String>,
 }
 
-/// Collapsed, one button counts the hidden rows and the unlisted files
-/// together; open, the unlisted files are a note above "Show fewer".
-fn more_line(total: usize, unlisted: u64, expanded: bool) -> MoreLine {
-    let hidden = u64::try_from(total.saturating_sub(FILES_SHOWN)).unwrap_or(u64::MAX);
+/// Collapsed, one button counts the files of the hidden rows (`hidden`, a
+/// folder row counting its files) and the unlisted files together; open,
+/// the unlisted files are a note above "Show fewer".
+fn more_line(hidden: u64, unlisted: u64, expanded: bool) -> MoreLine {
     let note = (unlisted > 0).then(|| tf(T::UnlistedFiles, &[&unlisted.to_string()]));
     if hidden == 0 {
         return MoreLine { button: None, note };
@@ -731,31 +748,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn counts_are_files_not_rows() {
+        use crate::chat::{Block, ToolCall};
+        let row = |path: &str, name: &str, files: Option<u64>| {
+            Block::Tool(ToolCall {
+                id: path.to_owned(),
+                name: name.to_owned(),
+                summary: path.to_owned(),
+                path: Some(path.to_owned()),
+                result: Some(false),
+                files,
+            })
+        };
+        let mut blocks = vec![
+            row("clip.mp4", "Write", None),
+            row("notes.md", "Edit", None),
+        ];
+        blocks.extend((0..3).map(|i| row(&format!("f{i}.txt"), "Edit", None)));
+        // Past the rows shown: a folder of 1000 frames.
+        blocks.push(row("frames/", "Write", Some(1000)));
+        let turn = AssistantTurn {
+            blocks,
+            ..AssistantTurn::new()
+        };
+        assert_eq!(file_counts(&turn, &turn.file_ops()), (1001, 4, 1001));
+    }
+
+    #[test]
     fn one_more_line_at_a_time() {
-        // 50 rows (4 shown) and 70 files never listed.
+        // 46 files in hidden rows and 70 files never listed.
         assert_eq!(
-            more_line(50, 70, false),
+            more_line(46, 70, false),
             MoreLine {
                 button: Some("+116 more".into()),
                 note: None
             }
         );
         assert_eq!(
-            more_line(50, 70, true),
+            more_line(46, 70, true),
             MoreLine {
                 button: Some(t(T::TemplatesShowFewer).to_owned()),
                 note: Some("+70 more files not listed".into())
             }
         );
         assert_eq!(
-            more_line(10, 0, false),
+            more_line(6, 0, false),
             MoreLine {
                 button: Some("+6 more".into()),
                 note: None
             }
         );
         assert_eq!(
-            more_line(3, 0, false),
+            more_line(0, 0, false),
             MoreLine {
                 button: None,
                 note: None

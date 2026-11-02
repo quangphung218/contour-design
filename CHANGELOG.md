@@ -16,6 +16,9 @@ All notable changes to Contour are recorded here. The format follows
   while that run ran and no other run of the project did; a file changed
   while both ran is listed by neither (a Write or Edit tool row still shows
   it in the run that used the tool).
+- The counts of "Files from this turn" ("N new · M edited", "+N more")
+  and the "Done · N files written" line now count files, not rows: a
+  folder row such as `frames/ (1000 files)` counts as 1000 files.
 
 ## [0.2.0-beta.13] - 2026-11-02
 
