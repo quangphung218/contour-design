@@ -179,6 +179,13 @@ try {
   results.createPlugin = 'ok';
 
   // 5. @ mention a skill from the palette (keyboard) and a plugin from "+".
+  // A click elsewhere blurs the field; typing on at once must keep the list
+  // it opens (the blur used to close it 150 ms later).
+  await title.click();
+  await brief.fill('');
+  await brief.pressSequentially('@web');
+  await page.waitForTimeout(400);
+  assert.ok(await page.getByTestId('mention-palette').isVisible(), 'the @ list stays open after a blur');
   await brief.fill('');
   // Highlight a lower row with the pointer, then keep typing: the new
   // query's top row is what Enter picks, not the row under the pointer.

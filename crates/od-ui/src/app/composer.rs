@@ -729,10 +729,21 @@ pub fn MentionArea(
                     if let Some(cb) = on_focus {
                         cb.run(false);
                     }
-                    // After a click on a row has landed.
+                    // After a click on a row has landed; not if the field has
+                    // the focus again by then (typing on right after a click
+                    // elsewhere would lose the list it just opened).
                     leptos::task::spawn_local(async move {
                         gloo_timers::future::TimeoutFuture::new(150).await;
-                        open.set(None);
+                        // The composer may be gone by now (Home → Studio).
+                        let refocused = area.try_get_untracked().flatten().is_some_and(|el| {
+                            document().active_element().is_some_and(|a| {
+                                let el: &web_sys::Element = el.as_ref();
+                                a == *el
+                            })
+                        });
+                        if !refocused {
+                            open.set(None);
+                        }
                     });
                 }
             ></textarea>
