@@ -4,29 +4,31 @@
 <link rel="stylesheet" href="../../assets/base.css">
 <link rel="stylesheet" id="theme-link" href="../../assets/themes/tokyo-night.css">
 <link rel="stylesheet" href="../../assets/animations/animations.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/tokyo-night-dark.min.css">
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/core.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/javascript.min.js"></script>
-<script>addEventListener('DOMContentLoaded',()=>{hljs.registerLanguage('javascript',window.hljsLangJavascript||window.hljs.getLanguage('javascript'));document.querySelectorAll('pre code').forEach(el=>hljs.highlightElement(el))})</script>
+<style>
+/* Code colours written into the page (Tokyo Night), no highlighter to load. */
+pre code{color:#c0caf5}
+.tok-c{color:#565f89;font-style:italic}.tok-k{color:#bb9af7}.tok-s{color:#9ece6a}
+.tok-n{color:#ff9e64}.tok-f{color:#7aa2f7}.tok-b{color:#2ac3de}.tok-o{color:#89ddff}
+</style>
 </head><body class="single">
 <div class="deck"><section class="slide is-active" data-title="Code">
   <p class="kicker">Snippet · 运行时核心</p>
   <h2 class="h2">按一下键盘，幻灯片就跑起来了</h2>
-<pre class="card mt-m" style="padding:24px"><code class="language-javascript">// runtime.js — keyboard-driven deck
-function go(n) {
-  n = Math.max(0, Math.min(total - 1, n));
-  slides.forEach((s, i) => {
-    s.classList.toggle('is-active', i === n);
+<pre class="card mt-m" style="padding:24px"><code class="language-javascript"><span class="tok-c">// runtime.js — keyboard-driven deck</span>
+<span class="tok-k">function</span> <span class="tok-f">go</span>(n) {
+  n <span class="tok-o">=</span> <span class="tok-b">Math</span>.<span class="tok-f">max</span>(<span class="tok-n">0</span>, <span class="tok-b">Math</span>.<span class="tok-f">min</span>(total <span class="tok-o">-</span> <span class="tok-n">1</span>, n));
+  slides.<span class="tok-f">forEach</span>((s, i) <span class="tok-o">=&gt;</span> {
+    s.classList.<span class="tok-f">toggle</span>(<span class="tok-s">'is-active'</span>, i <span class="tok-o">===</span> n);
   });
-  idx = n;
-  barFill.style.width = ((n + 1) / total * 100) + '%';
-  history.replaceState(null, '', '#/' + (n + 1));
+  idx <span class="tok-o">=</span> n;
+  barFill.style.width <span class="tok-o">=</span> ((n <span class="tok-o">+</span> <span class="tok-n">1</span>) <span class="tok-o">/</span> total <span class="tok-o">*</span> <span class="tok-n">100</span>) <span class="tok-o">+</span> <span class="tok-s">'%'</span>;
+  <span class="tok-b">history</span>.<span class="tok-f">replaceState</span>(<span class="tok-k">null</span>, <span class="tok-s">''</span>, <span class="tok-s">'#/'</span> <span class="tok-o">+</span> (n <span class="tok-o">+</span> <span class="tok-n">1</span>));
 }
 
-document.addEventListener('keydown', (e) =&gt; {
-  if (e.key === 'ArrowRight' || e.key === ' ') go(idx + 1);
-  if (e.key === 'ArrowLeft') go(idx - 1);
-  if (e.key === 't') cycleTheme();
+<span class="tok-b">document</span>.<span class="tok-f">addEventListener</span>(<span class="tok-s">'keydown'</span>, (e) <span class="tok-o">=&gt;</span> {
+  <span class="tok-k">if</span> (e.key <span class="tok-o">===</span> <span class="tok-s">'ArrowRight'</span> <span class="tok-o">||</span> e.key <span class="tok-o">===</span> <span class="tok-s">' '</span>) <span class="tok-f">go</span>(idx <span class="tok-o">+</span> <span class="tok-n">1</span>);
+  <span class="tok-k">if</span> (e.key <span class="tok-o">===</span> <span class="tok-s">'ArrowLeft'</span>) <span class="tok-f">go</span>(idx <span class="tok-o">-</span> <span class="tok-n">1</span>);
+  <span class="tok-k">if</span> (e.key <span class="tok-o">===</span> <span class="tok-s">'t'</span>) <span class="tok-f">cycleTheme</span>();
 });</code></pre>
 </section></div>
 <script src="../../assets/runtime.js"></script>

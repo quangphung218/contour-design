@@ -4,28 +4,52 @@
 <link rel="stylesheet" href="../../assets/base.css">
 <link rel="stylesheet" id="theme-link" href="../../assets/themes/minimal-white.css">
 <link rel="stylesheet" href="../../assets/animations/animations.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head><body class="single">
 <div class="deck"><section class="slide is-active" data-title="Radar chart">
   <p class="kicker">Chart · 雷达图</p>
   <h2 class="h2">把 html-ppt 和竞品放一张图</h2>
-  <div class="card mt-l" style="height:520px;padding:28px"><canvas id="c"></canvas></div>
-  <script>
-    addEventListener('DOMContentLoaded',()=>{
-      const css=getComputedStyle(document.documentElement);
-      const a1=css.getPropertyValue('--accent').trim();
-      const a2=css.getPropertyValue('--accent-2').trim();
-      const text2=css.getPropertyValue('--text-2').trim();
-      new Chart(document.getElementById('c'),{type:'radar',
-        data:{labels:['上手','美观','自定义','性能','导出','生态'],
-          datasets:[
-            {label:'html-ppt',data:[9,9,10,10,9,6],borderColor:a1,backgroundColor:a1+'33',borderWidth:3,pointRadius:5},
-            {label:'reveal.js',data:[8,7,9,8,8,10],borderColor:a2,backgroundColor:a2+'22',borderWidth:3,pointRadius:5}]},
-        options:{plugins:{legend:{labels:{color:text2}}},
-          scales:{r:{suggestedMin:0,suggestedMax:10,ticks:{color:text2,backdropColor:'transparent'},
-                     pointLabels:{color:text2,font:{size:14}},grid:{color:'rgba(0,0,0,.08)'},angleLines:{color:'rgba(0,0,0,.08)'}}}}});
-    });
-  </script>
+  <div class="card mt-l" style="height:520px;padding:28px"><svg class="chart-svg" viewBox="0 0 640 400" role="img" aria-label="html-ppt vs reveal.js" style="display:block;width:100%;height:100%" font-family="inherit">
+  <polygon points="320.0,168.0 344.2,182.0 344.2,210.0 320.0,224.0 295.8,210.0 295.8,182.0" fill="none" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="336.1" y="179.0" font-size="11" style="fill:var(--text-2)">2</text>
+  <polygon points="320.0,140.0 368.5,168.0 368.5,224.0 320.0,252.0 271.5,224.0 271.5,168.0" fill="none" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="348.2" y="158.0" font-size="11" style="fill:var(--text-2)">4</text>
+  <polygon points="320.0,112.0 392.7,154.0 392.7,238.0 320.0,280.0 247.3,238.0 247.3,154.0" fill="none" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="360.4" y="137.0" font-size="11" style="fill:var(--text-2)">6</text>
+  <polygon points="320.0,84.0 417.0,140.0 417.0,252.0 320.0,308.0 223.0,252.0 223.0,140.0" fill="none" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="372.5" y="116.0" font-size="11" style="fill:var(--text-2)">8</text>
+  <polygon points="320.0,56.0 441.2,126.0 441.2,266.0 320.0,336.0 198.8,266.0 198.8,126.0" fill="none" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="384.6" y="95.0" font-size="11" style="fill:var(--text-2)">10</text>
+  <line x1="320.0" y1="196" x2="320.0" y2="56.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="320.0" y="41.4" text-anchor="middle" font-size="14" style="fill:var(--text-2)">上手</text>
+  <line x1="320.0" y1="196" x2="441.2" y2="126.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="458.2" y="121.2" text-anchor="start" font-size="14" style="fill:var(--text-2)">美观</text>
+  <line x1="320.0" y1="196" x2="441.2" y2="266.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="458.2" y="280.8" text-anchor="start" font-size="14" style="fill:var(--text-2)">自定义</text>
+  <line x1="320.0" y1="196" x2="320.0" y2="336.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="320.0" y="360.6" text-anchor="middle" font-size="14" style="fill:var(--text-2)">性能</text>
+  <line x1="320.0" y1="196" x2="198.8" y2="266.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="181.8" y="280.8" text-anchor="end" font-size="14" style="fill:var(--text-2)">导出</text>
+  <line x1="320.0" y1="196" x2="198.8" y2="126.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="181.8" y="121.2" text-anchor="end" font-size="14" style="fill:var(--text-2)">生态</text>
+  <polygon points="320.0,70.0 429.1,133.0 441.2,266.0 320.0,336.0 210.9,259.0 247.3,154.0" fill-opacity="0.2" stroke-width="3" style="fill:var(--accent);stroke:var(--accent)"/>
+  <circle cx="320.0" cy="70.0" r="5" style="fill:var(--accent)"/>
+  <circle cx="429.1" cy="133.0" r="5" style="fill:var(--accent)"/>
+  <circle cx="441.2" cy="266.0" r="5" style="fill:var(--accent)"/>
+  <circle cx="320.0" cy="336.0" r="5" style="fill:var(--accent)"/>
+  <circle cx="210.9" cy="259.0" r="5" style="fill:var(--accent)"/>
+  <circle cx="247.3" cy="154.0" r="5" style="fill:var(--accent)"/>
+  <polygon points="320.0,84.0 404.9,147.0 429.1,259.0 320.0,308.0 223.0,252.0 198.8,126.0" fill-opacity="0.13" stroke-width="3" style="fill:var(--accent-2);stroke:var(--accent-2)"/>
+  <circle cx="320.0" cy="84.0" r="5" style="fill:var(--accent-2)"/>
+  <circle cx="404.9" cy="147.0" r="5" style="fill:var(--accent-2)"/>
+  <circle cx="429.1" cy="259.0" r="5" style="fill:var(--accent-2)"/>
+  <circle cx="320.0" cy="308.0" r="5" style="fill:var(--accent-2)"/>
+  <circle cx="223.0" cy="252.0" r="5" style="fill:var(--accent-2)"/>
+  <circle cx="198.8" cy="126.0" r="5" style="fill:var(--accent-2)"/>
+  <rect x="219.4" y="378" width="12" height="12" style="fill:var(--accent)"/>
+  <text x="239.4" y="389" font-size="13" style="fill:var(--text-2)">html-ppt</text>
+  <rect x="316.1" y="378" width="12" height="12" style="fill:var(--accent-2)"/>
+  <text x="336.1" y="389" font-size="13" style="fill:var(--text-2)">reveal.js</text>
+</svg></div>
 </section></div>
 <script src="../../assets/runtime.js"></script>
 </body></html>

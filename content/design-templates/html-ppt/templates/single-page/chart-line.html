@@ -4,32 +4,66 @@
 <link rel="stylesheet" href="../../assets/base.css">
 <link rel="stylesheet" id="theme-link" href="../../assets/themes/minimal-white.css">
 <link rel="stylesheet" href="../../assets/animations/animations.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head><body class="single">
 <div class="deck"><section class="slide is-active" data-title="Line chart">
   <p class="kicker">Chart · 折线图</p>
   <h2 class="h2">日活与留存并排看</h2>
-  <div class="card mt-l" style="height:520px;padding:28px"><canvas id="c"></canvas></div>
-  <script>
-    addEventListener('DOMContentLoaded',()=>{
-      const css=getComputedStyle(document.documentElement);
-      const accent=css.getPropertyValue('--accent').trim();
-      const acc2=css.getPropertyValue('--accent-2').trim();
-      const text2=css.getPropertyValue('--text-2').trim();
-      const border=css.getPropertyValue('--border').trim();
-      new Chart(document.getElementById('c'),{type:'line',
-        data:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12'],
-          datasets:[
-            {label:'DAU (K)',data:[12,14,15,19,24,28,33,38,45,51,58,66],
-              borderColor:accent,backgroundColor:accent+'22',fill:true,tension:.4,borderWidth:3,pointRadius:4},
-            {label:'Retention %',data:[38,40,42,45,48,50,53,55,58,60,62,64],
-              borderColor:acc2,backgroundColor:acc2+'22',fill:true,tension:.4,borderWidth:3,pointRadius:4}
-          ]},
-        options:{plugins:{legend:{labels:{color:text2}}},
-          scales:{x:{ticks:{color:text2},grid:{color:border}},
-                  y:{ticks:{color:text2},grid:{color:border}}}}});
-    });
-  </script>
+  <div class="card mt-l" style="height:520px;padding:28px"><svg class="chart-svg" viewBox="0 0 640 360" role="img" aria-label="DAU and retention by week" style="display:block;width:100%;height:100%" font-family="inherit">
+  <line x1="56" x2="624" y1="316.0" y2="316.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="46" y="320.0" text-anchor="end" font-size="13" style="fill:var(--text-2)">0</text>
+  <line x1="56" x2="624" y1="249.0" y2="249.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="46" y="253.0" text-anchor="end" font-size="13" style="fill:var(--text-2)">20</text>
+  <line x1="56" x2="624" y1="182.0" y2="182.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="46" y="186.0" text-anchor="end" font-size="13" style="fill:var(--text-2)">40</text>
+  <line x1="56" x2="624" y1="115.0" y2="115.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="46" y="119.0" text-anchor="end" font-size="13" style="fill:var(--text-2)">60</text>
+  <line x1="56" x2="624" y1="48.0" y2="48.0" stroke-width="1" style="stroke:var(--border)"/>
+  <text x="46" y="52.0" text-anchor="end" font-size="13" style="fill:var(--text-2)">80</text>
+  <text x="79.7" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W1</text>
+  <text x="127.0" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W2</text>
+  <text x="174.3" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W3</text>
+  <text x="221.7" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W4</text>
+  <text x="269.0" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W5</text>
+  <text x="316.3" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W6</text>
+  <text x="363.7" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W7</text>
+  <text x="411.0" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W8</text>
+  <text x="458.3" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W9</text>
+  <text x="505.7" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W10</text>
+  <text x="553.0" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W11</text>
+  <text x="600.3" y="338.0" text-anchor="middle" font-size="14" style="fill:var(--text-2)">W12</text>
+  <rect x="215.4" y="19" width="10" height="10" style="fill:var(--accent)"/>
+  <text x="235.4" y="28" font-size="13" style="fill:var(--text-2)">DAU (K)</text>
+  <rect x="304.3" y="19" width="10" height="10" style="fill:var(--accent-2)"/>
+  <text x="324.3" y="28" font-size="13" style="fill:var(--text-2)">Retention %</text>
+  <path d="M79.7,275.8 C86.0,274.9 114.4,270.4 127.0,269.1 C139.6,267.8 161.7,268.0 174.3,265.8 C187.0,263.5 209.0,256.4 221.7,252.3 C234.3,248.3 256.4,239.6 269.0,235.6 C281.6,231.6 303.7,226.2 316.3,222.2 C329.0,218.2 351.0,209.9 363.7,205.4 C376.3,201.0 398.4,194.1 411.0,188.7 C423.6,183.3 445.7,171.1 458.3,165.2 C471.0,159.4 493.0,151.0 505.7,145.2 C518.3,139.3 540.4,128.4 553.0,121.7 C565.6,115.0 594.0,98.5 600.3,94.9 L600.3,316.0 L79.7,316.0 Z" fill-opacity="0.13" style="fill:var(--accent)"/>
+  <path d="M79.7,275.8 C86.0,274.9 114.4,270.4 127.0,269.1 C139.6,267.8 161.7,268.0 174.3,265.8 C187.0,263.5 209.0,256.4 221.7,252.3 C234.3,248.3 256.4,239.6 269.0,235.6 C281.6,231.6 303.7,226.2 316.3,222.2 C329.0,218.2 351.0,209.9 363.7,205.4 C376.3,201.0 398.4,194.1 411.0,188.7 C423.6,183.3 445.7,171.1 458.3,165.2 C471.0,159.4 493.0,151.0 505.7,145.2 C518.3,139.3 540.4,128.4 553.0,121.7 C565.6,115.0 594.0,98.5 600.3,94.9" fill="none" stroke-width="3" style="stroke:var(--accent)"/>
+  <circle cx="79.7" cy="275.8" r="4" style="fill:var(--accent)"/>
+  <circle cx="127.0" cy="269.1" r="4" style="fill:var(--accent)"/>
+  <circle cx="174.3" cy="265.8" r="4" style="fill:var(--accent)"/>
+  <circle cx="221.7" cy="252.3" r="4" style="fill:var(--accent)"/>
+  <circle cx="269.0" cy="235.6" r="4" style="fill:var(--accent)"/>
+  <circle cx="316.3" cy="222.2" r="4" style="fill:var(--accent)"/>
+  <circle cx="363.7" cy="205.4" r="4" style="fill:var(--accent)"/>
+  <circle cx="411.0" cy="188.7" r="4" style="fill:var(--accent)"/>
+  <circle cx="458.3" cy="165.2" r="4" style="fill:var(--accent)"/>
+  <circle cx="505.7" cy="145.2" r="4" style="fill:var(--accent)"/>
+  <circle cx="553.0" cy="121.7" r="4" style="fill:var(--accent)"/>
+  <circle cx="600.3" cy="94.9" r="4" style="fill:var(--accent)"/>
+  <path d="M79.7,188.7 C86.0,187.8 114.4,183.8 127.0,182.0 C139.6,180.2 161.7,177.5 174.3,175.3 C187.0,173.1 209.0,167.9 221.7,165.2 C234.3,162.6 256.4,157.4 269.0,155.2 C281.6,153.0 303.7,150.7 316.3,148.5 C329.0,146.3 351.0,140.7 363.7,138.5 C376.3,136.2 398.4,134.0 411.0,131.8 C423.6,129.5 445.7,123.9 458.3,121.7 C471.0,119.5 493.0,116.8 505.7,115.0 C518.3,113.2 540.4,110.1 553.0,108.3 C565.6,106.5 594.0,102.5 600.3,101.6 L600.3,316.0 L79.7,316.0 Z" fill-opacity="0.13" style="fill:var(--accent-2)"/>
+  <path d="M79.7,188.7 C86.0,187.8 114.4,183.8 127.0,182.0 C139.6,180.2 161.7,177.5 174.3,175.3 C187.0,173.1 209.0,167.9 221.7,165.2 C234.3,162.6 256.4,157.4 269.0,155.2 C281.6,153.0 303.7,150.7 316.3,148.5 C329.0,146.3 351.0,140.7 363.7,138.5 C376.3,136.2 398.4,134.0 411.0,131.8 C423.6,129.5 445.7,123.9 458.3,121.7 C471.0,119.5 493.0,116.8 505.7,115.0 C518.3,113.2 540.4,110.1 553.0,108.3 C565.6,106.5 594.0,102.5 600.3,101.6" fill="none" stroke-width="3" style="stroke:var(--accent-2)"/>
+  <circle cx="79.7" cy="188.7" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="127.0" cy="182.0" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="174.3" cy="175.3" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="221.7" cy="165.2" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="269.0" cy="155.2" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="316.3" cy="148.5" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="363.7" cy="138.5" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="411.0" cy="131.8" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="458.3" cy="121.7" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="505.7" cy="115.0" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="553.0" cy="108.3" r="4" style="fill:var(--accent-2)"/>
+  <circle cx="600.3" cy="101.6" r="4" style="fill:var(--accent-2)"/>
+</svg></div>
 </section></div>
 <script src="../../assets/runtime.js"></script>
 </body></html>

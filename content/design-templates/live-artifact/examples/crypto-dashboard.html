@@ -4,9 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Quiver · Crypto Live Portfolio</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
 <style>
   :root {
     /* DeFi terminal — deeper, warmer black with crypto-native accents */
@@ -63,7 +60,7 @@
   body {
     background:
       /* Hex grid SVG overlay — DeFi/web3 aesthetic */
-      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'><path d='M28 0 L52 14 L52 38 L28 52 L4 38 L4 14 Z' fill='none' stroke='%23ff00aa' stroke-opacity='0.04' stroke-width='0.7'/></svg>"),
+      url("data:image/svg+xml;utf8,<svg xmlns='#' width='56' height='48' viewBox='0 0 56 48'><path d='M28 0 L52 14 L52 38 L28 52 L4 38 L4 14 Z' fill='none' stroke='%23ff00aa' stroke-opacity='0.04' stroke-width='0.7'/></svg>"),
       radial-gradient(1200px 600px at 80% -10%, rgba(255,0,170,0.10), transparent 60%),
       radial-gradient(900px 500px at -10% 30%, rgba(247,147,26,0.07), transparent 60%),
       radial-gradient(1200px 800px at 50% 110%, rgba(0,255,157,0.05), transparent 60%),
@@ -967,9 +964,9 @@
           <div class="meta">
             <div class="sym-row">
               <span class="sym" id="tkSym">BTC</span>
-              <a class="ext" id="tkLinkExch" href="https://www.coinbase.com/price/bitcoin" target="_blank" rel="noopener">Coinbase <span class="ico">↗</span></a>
-              <a class="ext" id="tkLinkYahoo" href="https://www.binance.com/en/price/bitcoin" target="_blank" rel="noopener">Binance <span class="ico">↗</span></a>
-              <a class="ext" id="tkLinkTV" href="https://coinmarketcap.com/currencies/bitcoin/" target="_blank" rel="noopener">CoinMarketCap <span class="ico">↗</span></a>
+              <a class="ext" id="tkLinkExch" href="#">Coinbase <span class="ico">↗</span></a>
+              <a class="ext" id="tkLinkYahoo" href="#">Binance <span class="ico">↗</span></a>
+              <a class="ext" id="tkLinkTV" href="#">CoinMarketCap <span class="ico">↗</span></a>
             </div>
             <div class="name" id="tkName">Bitcoin · L1 · Mkt cap $1.35T · Dominance 54.2%</div>
           </div>
@@ -1306,7 +1303,7 @@
             <div class="sym-cell">
               <span class="sym-mark" style="background:linear-gradient(135deg,#f7931a,#a35e00);color:#1a0e00;">₿</span>
               <span class="name-block">
-                <span class="sym-name">BTC <a class="ext-mini" href="https://www.coinbase.com/price/bitcoin" target="_blank" rel="noopener" onclick="event.stopPropagation()">Coinbase ↗</a></span>
+                <span class="sym-name">BTC <a class="ext-mini" href="#" onclick="event.stopPropagation()">Coinbase ↗</a></span>
                 <span class="sym-co">Bitcoin · Ledger Nano X</span>
               </span>
             </div>
@@ -1326,7 +1323,7 @@
             <div class="sym-cell">
               <span class="sym-mark" style="background:linear-gradient(135deg,#14f195,#9945ff);color:#0a0020;">◎</span>
               <span class="name-block">
-                <span class="sym-name">SOL <a class="ext-mini" href="https://www.coinbase.com/price/solana" target="_blank" rel="noopener" onclick="event.stopPropagation()">Coinbase ↗</a></span>
+                <span class="sym-name">SOL <a class="ext-mini" href="#" onclick="event.stopPropagation()">Coinbase ↗</a></span>
                 <span class="sym-co">Solana · Phantom (staked 18.4)</span>
               </span>
             </div>
@@ -1346,7 +1343,7 @@
             <div class="sym-cell">
               <span class="sym-mark" style="background:linear-gradient(135deg,#627eea,#3c5ed7);color:#fff;">Ξ</span>
               <span class="name-block">
-                <span class="sym-name">ETH <a class="ext-mini" href="https://www.coinbase.com/price/ethereum" target="_blank" rel="noopener" onclick="event.stopPropagation()">Coinbase ↗</a></span>
+                <span class="sym-name">ETH <a class="ext-mini" href="#" onclick="event.stopPropagation()">Coinbase ↗</a></span>
                 <span class="sym-co">Ethereum · MetaMask · 8.4 staked</span>
               </span>
             </div>
@@ -1366,7 +1363,7 @@
             <div class="sym-cell">
               <span class="sym-mark" style="background:linear-gradient(135deg,#2a5ada,#1d3ea0);color:#fff;">L</span>
               <span class="name-block">
-                <span class="sym-name">LINK <a class="ext-mini" href="https://www.coinbase.com/price/chainlink" target="_blank" rel="noopener" onclick="event.stopPropagation()">Coinbase ↗</a></span>
+                <span class="sym-name">LINK <a class="ext-mini" href="#" onclick="event.stopPropagation()">Coinbase ↗</a></span>
                 <span class="sym-co">Chainlink · MetaMask</span>
               </span>
             </div>
@@ -1386,7 +1383,7 @@
             <div class="sym-cell">
               <span class="sym-mark" style="background:linear-gradient(135deg,#e84142,#7a0d0e);color:#fff;">A</span>
               <span class="name-block">
-                <span class="sym-name">AVAX <a class="ext-mini" href="https://www.coinbase.com/price/avalanche" target="_blank" rel="noopener" onclick="event.stopPropagation()">Coinbase ↗</a></span>
+                <span class="sym-name">AVAX <a class="ext-mini" href="#" onclick="event.stopPropagation()">Coinbase ↗</a></span>
                 <span class="sym-co">Avalanche · Core wallet</span>
               </span>
             </div>
@@ -1406,7 +1403,7 @@
             <div class="sym-cell">
               <span class="sym-mark" style="background:linear-gradient(135deg,#e6007a,#860146);color:#fff;">●</span>
               <span class="name-block">
-                <span class="sym-name">DOT <a class="ext-mini" href="https://www.coinbase.com/price/polkadot" target="_blank" rel="noopener" onclick="event.stopPropagation()">Coinbase ↗</a></span>
+                <span class="sym-name">DOT <a class="ext-mini" href="#" onclick="event.stopPropagation()">Coinbase ↗</a></span>
                 <span class="sym-co">Polkadot · Polkadot.js</span>
               </span>
             </div>
@@ -1426,7 +1423,7 @@
             <div class="sym-cell">
               <span class="sym-mark" style="background:linear-gradient(135deg,#c2a633,#8a7321);color:#1a1100;">Ð</span>
               <span class="name-block">
-                <span class="sym-name">DOGE <a class="ext-mini" href="https://www.coinbase.com/price/dogecoin" target="_blank" rel="noopener" onclick="event.stopPropagation()">Coinbase ↗</a></span>
+                <span class="sym-name">DOGE <a class="ext-mini" href="#" onclick="event.stopPropagation()">Coinbase ↗</a></span>
                 <span class="sym-co">Dogecoin · Hot wallet</span>
               </span>
             </div>
@@ -1504,7 +1501,7 @@
           </div>
           <div class="watch-foot">
             <span>Vol $812M</span>
-            <a href="https://www.coinbase.com/price/sui" target="_blank" rel="noopener">Coinbase ↗</a>
+            <a href="#">Coinbase ↗</a>
           </div>
         </div>
 
@@ -1522,7 +1519,7 @@
           </div>
           <div class="watch-foot">
             <span>Vol $1.4B</span>
-            <a href="https://www.coinbase.com/price/dogecoin" target="_blank" rel="noopener">Coinbase ↗</a>
+            <a href="#">Coinbase ↗</a>
           </div>
         </div>
 
@@ -1540,7 +1537,7 @@
           </div>
           <div class="watch-foot">
             <span>Vol $640M</span>
-            <a href="https://www.coinbase.com/price/avalanche" target="_blank" rel="noopener">Coinbase ↗</a>
+            <a href="#">Coinbase ↗</a>
           </div>
         </div>
 
@@ -1558,7 +1555,7 @@
           </div>
           <div class="watch-foot">
             <span>Vol $312M</span>
-            <a href="https://www.coinbase.com/price/near-protocol" target="_blank" rel="noopener">Coinbase ↗</a>
+            <a href="#">Coinbase ↗</a>
           </div>
         </div>
 
@@ -1577,7 +1574,7 @@
           </div>
           <div class="watch-foot">
             <span>Vol $84M</span>
-            <a href="https://www.coinbase.com/price/celestia" target="_blank" rel="noopener">Coinbase ↗</a>
+            <a href="#">Coinbase ↗</a>
           </div>
         </div>
 
@@ -1595,7 +1592,7 @@
           </div>
           <div class="watch-foot">
             <span>Vol $186M</span>
-            <a href="https://www.coinbase.com/price/arbitrum" target="_blank" rel="noopener">Coinbase ↗</a>
+            <a href="#">Coinbase ↗</a>
           </div>
         </div>
 
@@ -1613,7 +1610,7 @@
           </div>
           <div class="watch-foot">
             <span>Vol $920M</span>
-            <a href="https://www.coinbase.com/price/bnb" target="_blank" rel="noopener">Coinbase ↗</a>
+            <a href="#">Coinbase ↗</a>
           </div>
         </div>
 
@@ -1631,7 +1628,7 @@
           </div>
           <div class="watch-foot">
             <span>Vol $1.2B</span>
-            <a href="https://www.coinbase.com/price/xrp" target="_blank" rel="noopener">Coinbase ↗</a>
+            <a href="#">Coinbase ↗</a>
           </div>
         </div>
       </div>
@@ -1729,9 +1726,9 @@
       name: 'Bitcoin', sector: 'L1 · Mkt cap $1.35T · Dominance 54.2%',
       icon: '₿', bg: 'linear-gradient(135deg,#f7931a,#a35e00)', fg: '#1a0e00',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/bitcoin',
-               yahoo: 'https://www.binance.com/en/price/bitcoin',
-               tv: 'https://coinmarketcap.com/currencies/bitcoin/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 68412, dayChg: 1236.40, dayPct: 1.84, dir: 'up',
       open: 67176, high: 68920, low: 66840, vol: '$28.4B', pe: '19.74M / 21M', range52: '$73,750 (Mar)',
       arch: 'bull-strong'
@@ -1740,9 +1737,9 @@
       name: 'Ethereum', sector: 'L1 · Mkt cap $435B · Gas 12 gwei',
       icon: 'Ξ', bg: 'linear-gradient(135deg,#627eea,#3c5ed7)', fg: '#ffffff',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/ethereum',
-               yahoo: 'https://www.binance.com/en/price/ethereum',
-               tv: 'https://coinmarketcap.com/currencies/ethereum/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 3612, dayChg: 74.20, dayPct: 2.10, dir: 'up',
       open: 3540, high: 3624, low: 3522, vol: '$14.2B', pe: '120.4M', range52: '$4,890 (Mar)',
       arch: 'bull-mild'
@@ -1751,9 +1748,9 @@
       name: 'Solana', sector: 'L1 · Mkt cap $87B · DePIN settlement',
       icon: '◎', bg: 'linear-gradient(135deg,#14f195,#9945ff)', fg: '#0a0020',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/solana',
-               yahoo: 'https://www.binance.com/en/price/solana',
-               tv: 'https://coinmarketcap.com/currencies/solana/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 186.42, dayChg: 8.22, dayPct: 4.62, dir: 'up',
       open: 178.20, high: 188.40, low: 177.30, vol: '$3.8B', pe: '466.4M', range52: '$259 (Mar)',
       arch: 'bull-strong'
@@ -1762,9 +1759,9 @@
       name: 'BNB', sector: 'L1 · Mkt cap $89B · Native to BNB Chain',
       icon: 'B', bg: 'linear-gradient(135deg,#f3ba2f,#a17500)', fg: '#1a0f00',
       exch: 'Binance',
-      links: { exch: 'https://www.binance.com/en/price/bnb',
-               yahoo: 'https://www.coinbase.com/price/bnb',
-               tv: 'https://coinmarketcap.com/currencies/bnb/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 612.40, dayChg: 5.72, dayPct: 0.94, dir: 'up',
       open: 606.80, high: 614.20, low: 604.40, vol: '$920M', pe: '147.6M', range52: '$721 (Jun)',
       arch: 'bull-mild'
@@ -1773,9 +1770,9 @@
       name: 'XRP', sector: 'Payments · Mkt cap $33B',
       icon: 'X', bg: 'linear-gradient(135deg,#23292f,#000)', fg: '#ffffff',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/xrp',
-               yahoo: 'https://www.binance.com/en/price/xrp',
-               tv: 'https://coinmarketcap.com/currencies/xrp/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 0.5824, dayChg: -0.0024, dayPct: -0.42, dir: 'down',
       open: 0.5848, high: 0.5896, low: 0.5780, vol: '$1.2B', pe: '56.6B', range52: '$0.74 (Jul)',
       arch: 'choppy'
@@ -1784,9 +1781,9 @@
       name: 'Cardano', sector: 'L1 · Mkt cap $15.4B',
       icon: 'A', bg: 'linear-gradient(135deg,#0033ad,#001a5e)', fg: '#ffffff',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/cardano',
-               yahoo: 'https://www.binance.com/en/price/cardano',
-               tv: 'https://coinmarketcap.com/currencies/cardano/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 0.4318, dayChg: 0.0051, dayPct: 1.20, dir: 'up',
       open: 0.4267, high: 0.4332, low: 0.4240, vol: '$284M', pe: '35.7B', range52: '$0.81 (Mar)',
       arch: 'bull-mild'
@@ -1795,9 +1792,9 @@
       name: 'Dogecoin', sector: 'Memecoin · Mkt cap $27B',
       icon: 'Ð', bg: 'linear-gradient(135deg,#c2a633,#8a7321)', fg: '#1a1100',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/dogecoin',
-               yahoo: 'https://www.binance.com/en/price/dogecoin',
-               tv: 'https://coinmarketcap.com/currencies/dogecoin/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 0.1842, dayChg: 0.0118, dayPct: 6.84, dir: 'up',
       open: 0.1724, high: 0.1872, low: 0.1716, vol: '$1.4B', pe: '146.6B', range52: '$0.225 (Mar)',
       arch: 'bull-strong'
@@ -1806,9 +1803,9 @@
       name: 'Avalanche', sector: 'L1 · Mkt cap $14.4B',
       icon: 'A', bg: 'linear-gradient(135deg,#e84142,#7a0d0e)', fg: '#ffffff',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/avalanche',
-               yahoo: 'https://www.binance.com/en/price/avalanche',
-               tv: 'https://coinmarketcap.com/currencies/avalanche/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 36.84, dayChg: 1.02, dayPct: 2.86, dir: 'up',
       open: 35.82, high: 37.20, low: 35.40, vol: '$640M', pe: '391.2M', range52: '$58.20 (Mar)',
       arch: 'bull-mild'
@@ -1817,9 +1814,9 @@
       name: 'Chainlink', sector: 'Oracle · Mkt cap $9.0B',
       icon: 'L', bg: 'linear-gradient(135deg,#2a5ada,#1d3ea0)', fg: '#ffffff',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/chainlink',
-               yahoo: 'https://www.binance.com/en/price/chainlink',
-               tv: 'https://coinmarketcap.com/currencies/chainlink/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 14.92, dayChg: 0.21, dayPct: 1.40, dir: 'up',
       open: 14.71, high: 14.96, low: 14.62, vol: '$248M', pe: '604.7M', range52: '$22.30 (Mar)',
       arch: 'bull-mild'
@@ -1828,9 +1825,9 @@
       name: 'Polkadot', sector: 'L0 · Mkt cap $9.6B',
       icon: '●', bg: 'linear-gradient(135deg,#e6007a,#860146)', fg: '#ffffff',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/polkadot',
-               yahoo: 'https://www.binance.com/en/price/polkadot',
-               tv: 'https://coinmarketcap.com/currencies/polkadot/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 7.18, dayChg: -0.045, dayPct: -0.62, dir: 'down',
       open: 7.225, high: 7.26, low: 7.14, vol: '$192M', pe: '1.34B', range52: '$11.84 (Mar)',
       arch: 'bear'
@@ -1839,9 +1836,9 @@
       name: 'Sui Network', sector: 'L1 · Mkt cap $5.8B',
       icon: 'S', bg: 'linear-gradient(135deg,#4ca3df,#1a4f8a)', fg: '#ffffff',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/sui',
-               yahoo: 'https://www.binance.com/en/price/sui',
-               tv: 'https://coinmarketcap.com/currencies/sui/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 2.18, dayChg: 0.169, dayPct: 8.40, dir: 'up',
       open: 2.011, high: 2.21, low: 1.992, vol: '$812M', pe: '2.66B', range52: '$2.21 (today)',
       arch: 'bull-strong'
@@ -1850,9 +1847,9 @@
       name: 'NEAR Protocol', sector: 'L1 · Mkt cap $5.9B',
       icon: 'N', bg: 'linear-gradient(135deg,#000,#5f6368)', fg: '#ffffff',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/near-protocol',
-               yahoo: 'https://www.binance.com/en/price/near-protocol',
-               tv: 'https://coinmarketcap.com/currencies/near-protocol/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 5.42, dayChg: 0.168, dayPct: 3.20, dir: 'up',
       open: 5.252, high: 5.46, low: 5.21, vol: '$312M', pe: '1.09B', range52: '$8.46 (Mar)',
       arch: 'bull-strong'
@@ -1861,9 +1858,9 @@
       name: 'Celestia', sector: 'Modular DA · Mkt cap $1.6B',
       icon: 'T', bg: 'linear-gradient(135deg,#7b2bf9,#3d0e8c)', fg: '#ffffff',
       exch: 'Binance',
-      links: { exch: 'https://www.binance.com/en/price/celestia',
-               yahoo: 'https://www.coinbase.com/price/celestia',
-               tv: 'https://coinmarketcap.com/currencies/celestia/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 7.84, dayChg: -0.094, dayPct: -1.18, dir: 'down',
       open: 7.934, high: 7.96, low: 7.74, vol: '$84M', pe: '204M', range52: '$20.80 (Feb)',
       arch: 'bear'
@@ -1872,9 +1869,9 @@
       name: 'Arbitrum', sector: 'L2 · Mkt cap $2.7B',
       icon: 'A', bg: 'linear-gradient(135deg,#28a0f0,#1565a8)', fg: '#ffffff',
       exch: 'Coinbase',
-      links: { exch: 'https://www.coinbase.com/price/arbitrum',
-               yahoo: 'https://www.binance.com/en/price/arbitrum',
-               tv: 'https://coinmarketcap.com/currencies/arbitrum/' },
+      links: { exch: '#',
+               yahoo: '#',
+               tv: '#' },
       px: 0.6420, dayChg: 0.006, dayPct: 0.95, dir: 'up',
       open: 0.636, high: 0.648, low: 0.632, vol: '$186M', pe: '4.21B', range52: '$2.39 (Jan)',
       arch: 'bull-mild'

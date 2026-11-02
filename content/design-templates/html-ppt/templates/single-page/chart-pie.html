@@ -4,13 +4,28 @@
 <link rel="stylesheet" href="../../assets/base.css">
 <link rel="stylesheet" id="theme-link" href="../../assets/themes/minimal-white.css">
 <link rel="stylesheet" href="../../assets/animations/animations.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head><body class="single">
 <div class="deck"><section class="slide is-active" data-title="Pie chart">
   <p class="kicker">Chart · 环形图</p>
   <h2 class="h2">时间都花在了哪里</h2>
   <div class="grid g2 mt-l" style="align-items:center">
-    <div class="card" style="height:460px;padding:28px"><canvas id="c"></canvas></div>
+    <div class="card" style="height:460px;padding:28px"><svg class="chart-svg" viewBox="0 0 560 360" role="img" aria-label="时间分布" style="display:block;width:100%;height:100%" font-family="inherit">
+  <path d="M180.0,20.0 A160,160 0 1 1 130.6,332.2 L149.3,274.3 A99.2,99.2 0 1 0 180.0,80.8 Z" style="fill:var(--accent)"/>
+  <path d="M130.6,332.2 A160,160 0 0 1 21.3,200.1 L81.6,192.4 A99.2,99.2 0 0 0 149.3,274.3 Z" style="fill:var(--accent-2)"/>
+  <path d="M21.3,200.1 A160,160 0 0 1 63.4,70.5 L107.7,112.1 A99.2,99.2 0 0 0 81.6,192.4 Z" style="fill:var(--accent-3)"/>
+  <path d="M63.4,70.5 A160,160 0 0 1 130.6,27.8 L149.3,85.7 A99.2,99.2 0 0 0 107.7,112.1 Z" style="fill:var(--good)"/>
+  <path d="M130.6,27.8 A160,160 0 0 1 180.0,20.0 L180.0,80.8 A99.2,99.2 0 0 0 149.3,85.7 Z" style="fill:var(--warn)"/>
+  <rect x="372" y="109" width="14" height="14" style="fill:var(--accent)"/>
+  <text x="396" y="121" font-size="15" style="fill:var(--text-2)">写内容</text>
+  <rect x="372" y="139" width="14" height="14" style="fill:var(--accent-2)"/>
+  <text x="396" y="151" font-size="15" style="fill:var(--text-2)">挑版式</text>
+  <rect x="372" y="169" width="14" height="14" style="fill:var(--accent-3)"/>
+  <text x="396" y="181" font-size="15" style="fill:var(--text-2)">调样式</text>
+  <rect x="372" y="199" width="14" height="14" style="fill:var(--good)"/>
+  <text x="396" y="211" font-size="15" style="fill:var(--text-2)">出图</text>
+  <rect x="372" y="229" width="14" height="14" style="fill:var(--warn)"/>
+  <text x="396" y="241" font-size="15" style="fill:var(--text-2)">动效</text>
+</svg></div>
     <div class="card">
       <h4>Takeaways</h4>
       <p class="dim">超过一半的时间都在写内容，动效只占 5%。说明值得把动效做成可复用模板。</p>
@@ -20,17 +35,6 @@
       </ul>
     </div>
   </div>
-  <script>
-    addEventListener('DOMContentLoaded',()=>{
-      const css=getComputedStyle(document.documentElement);
-      const colors=['--accent','--accent-2','--accent-3','--good','--warn'].map(k=>css.getPropertyValue(k).trim());
-      const text2=css.getPropertyValue('--text-2').trim();
-      new Chart(document.getElementById('c'),{type:'doughnut',
-        data:{labels:['写内容','挑版式','调样式','出图','动效'],
-          datasets:[{data:[55,18,14,8,5],backgroundColor:colors,borderWidth:0}]},
-        options:{cutout:'62%',plugins:{legend:{position:'right',labels:{color:text2}}}}});
-    });
-  </script>
 </section></div>
 <script src="../../assets/runtime.js"></script>
 </body></html>

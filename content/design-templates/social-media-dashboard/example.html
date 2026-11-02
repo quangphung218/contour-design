@@ -5,9 +5,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenDesign · Social Analytics</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
       /* Totality Festival Design System — bind palette */
@@ -706,6 +703,11 @@
       border: 2px solid var(--glass-border);
       box-shadow: 0 0 16px rgba(0, 227, 253, 0.2);
       transition: all 0.3s ease;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 15px;
+      background: linear-gradient(135deg, rgba(0, 227, 253, 0.25), rgba(255, 255, 255, 0.06));
     }
 
     .contributor-avatar:hover {
@@ -1233,11 +1235,11 @@
   <script>
     // Real GitHub contributors — only verified avatar IDs to avoid 404s
     const githubContributors = [
-      { login: "pftom", avatar: "https://avatars.githubusercontent.com/u/26423749?v=4", contributions: 26 },
-      { login: "lefarcen", avatar: "https://avatars.githubusercontent.com/u/20859779?v=4", contributions: 18 },
-      { login: "Sid-Qin", avatar: "https://avatars.githubusercontent.com/u/201593046?v=4", contributions: 17 },
-      { login: "nettee", avatar: "https://avatars.githubusercontent.com/u/3953668?v=4", contributions: 10 },
-      { login: "alchemistklk", avatar: "https://avatars.githubusercontent.com/u/56862773?v=4", contributions: 8 }
+      { login: "pftom", contributions: 26 },
+      { login: "lefarcen", contributions: 18 },
+      { login: "Sid-Qin", contributions: 17 },
+      { login: "nettee", contributions: 10 },
+      { login: "alchemistklk", contributions: 8 }
     ];
 
     // Platform data
@@ -1404,8 +1406,7 @@
         const item = document.createElement('div');
         item.className = 'contributor-item';
         item.innerHTML = `
-          <img src="${contributor.avatar}" alt="${contributor.login}" class="contributor-avatar"
-               onerror="this.style.display='none'; this.nextElementSibling.style.fontWeight='600';">
+          <div class="contributor-avatar" role="img" aria-label="${contributor.login}">${contributor.login.slice(0, 2).toUpperCase()}</div>
           <div class="contributor-name">${contributor.login}</div>
           <div class="contributor-commits">${contributor.contributions} commits</div>
         `;

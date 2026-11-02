@@ -10,8 +10,8 @@
   --radius:0px;--radius-sm:0px;--radius-lg:2px;
   --shadow:none;
   --shadow-lg:0 4px 0 var(--accent);
-  --font-sans:'Oswald','Inter','Noto Sans SC',sans-serif;
-  --font-display:'Oswald','Inter','Noto Sans SC',sans-serif;
+  --font-sans:'Oswald','Avenir Next Condensed','Arial Narrow','Inter','Noto Sans SC',sans-serif;
+  --font-display:'Oswald','Avenir Next Condensed','Arial Narrow',Impact,'Noto Sans SC',sans-serif;
 }
 h1.title,h2.title,.h1,.h2{font-weight:700;text-transform:uppercase;letter-spacing:-.01em}
 .card{border:2px solid var(--text-1);box-shadow:6px 6px 0 var(--accent)}
