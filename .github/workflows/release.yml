@@ -70,8 +70,8 @@ jobs:
       ref: ${{ github.event.inputs.tag || github.ref_name }}
 
   # Rust caches saved by a tag run are scoped to that tag, so the next tag
-  # finds none (only main's caches are shared); the cache helps re-runs of
-  # the same tag.
+  # finds none (only main's caches are shared). Only a manual run saves them
+  # (`save-if`): dispatched from main, its caches reach every later tag.
   # The UI comes from the ui job below, built once for every bundle.
   bundle:
     name: bundle (${{ matrix.name }})
@@ -107,6 +107,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: release-${{ matrix.name }}
+          save-if: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -174,12 +175,15 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: release-${{ matrix.target }}
+          save-if: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       # The UI is a bundle resource, read from disk at run time and not
       # compiled in; tauri-build only needs its folder to exist. The real one
-      # comes from the ui job when the bundle is made.
+      # comes from the ui job when the bundle is made. This holds while
+      # tauri.conf.json's frontendDist (compiled in) is not crates/od-ui/dist
+      # (scripts/tests/release_workflow_test.sh checks it).
       - name: UI placeholder
         run: mkdir -p crates/od-ui/dist
       # `tauri build` rather than `cargo build`: it turns on the features a
@@ -192,7 +196,7 @@ jobs:
           name: macos-binary-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/od-desktop
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   # The UI (wasm) is the same on every OS: built once here for the Linux,
   # Windows and macOS bundles. Ubuntu builds it fastest (6-9 minutes, against
@@ -214,6 +218,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: release-ui
+          save-if: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: trunk
@@ -225,7 +230,7 @@ jobs:
           name: ui-dist
           path: crates/od-ui/dist
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   macos-universal:
     name: bundle (macos-universal)
