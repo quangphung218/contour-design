@@ -67,21 +67,21 @@ td.mono{font-size:calc(24*var(--u))}
 </head>
 <body>
 <main class="deck-stage" id="deck-stage">
-<section class="slide active" data-screen-label="01">
+<section class="slide active light" data-screen-label="01">
 <div class="margin">INC-2291<br>v1.2 final<br>blameless</div><span class="sev">SEV-1</span>
 <p class="mono" style="font-size:calc(24*var(--u));color:#6b6b66">Tallyrun · Postmortem · 9 October 2026</p>
 <h1>Checkout failed for 47 minutes after a config push.</h1>
 <div class="meta"><div><b>14:02–14:49</b>UTC, 8 October</div><div><b>Payments API</b>card checkout only</div><div><b>Resolved</b>by rollback</div></div>
 <p class="pen" style="font-size:calc(38*var(--u));margin-top:calc(60*var(--u))">Read before Thursday's review →</p>
 </section>
-<section class="slide" data-screen-label="02">
+<section class="slide light" data-screen-label="02">
 <div class="margin">IMPACT</div><h2>Who felt it.</h2>
 <div class="nums"><div><b class="circ">31%</b><p>of card checkouts failed during the window (peak 58% at 14:21)</p></div>
 <div><b>18,400</b><p>failed attempts; about 6,900 customers retried and succeeded later</p></div>
 <div><b>€212k</b><p>in merchant sales we estimate were lost, before retries</p></div></div>
 <p class="pen" style="font-size:calc(34*var(--u));margin-top:calc(50*var(--u))">no data lost · no double charges — checked by reconciliation 9 Oct</p>
 </section>
-<section class="slide" data-screen-label="03">
+<section class="slide light" data-screen-label="03">
 <div class="margin">TIMELINE<br>UTC</div><h2>Minute by minute.</h2>
 <div class="tl">
 <div class="ev"><span class="t">13:58</span>Connection-pool config change merged and rolled to 100%<span class="pen">no canary — why?</span></div>
@@ -92,18 +92,18 @@ td.mono{font-size:calc(24*var(--u))}
 <div class="ev"><span class="t">14:44</span>Rollback started</div>
 <div class="ev"><span class="t">14:49</span>Error rate back under 0.3%</div></div>
 </section>
-<section class="slide" data-screen-label="04">
+<section class="slide light" data-screen-label="04">
 <div class="margin">CAUSE</div><h2>What we assumed, and what was true.</h2>
 <p class="cause"><span class="strike">“Halving the pool size is safe: we never use more than 40 connections.”</span></p>
 <p class="cause">We never used more than 40 <mark>on average</mark>. At peak, card auth briefly holds 70+ while it waits on the network, so requests queued until they timed out.</p>
 <p class="pen" style="font-size:calc(34*var(--u));margin-top:calc(40*var(--u))">the dashboard showed 1-min averages, not peaks</p>
 </section>
-<section class="slide" data-screen-label="05">
+<section class="slide light" data-screen-label="05">
 <div class="margin">REVIEW</div><h2>What helped, what hurt.</h2>
 <div class="cols"><div class="good"><h3>Helped</h3><ul><li>Rollback took 5 minutes, one command</li><li>Status page updated within 10 min</li><li>Idempotency keys prevented double charges</li></ul></div>
 <div class="bad"><h3>Hurt</h3><ul><li>Config changes skip the canary stage</li><li>Pool metrics graphed as averages only</li><li>Deploy log not linked from the alert</li></ul></div></div>
 </section>
-<section class="slide" data-screen-label="06">
+<section class="slide light" data-screen-label="06">
 <div class="margin">ACTIONS</div><h2>Five actions, each with one owner.</h2>
 <table><tr><th>ACTION</th><th>OWNER</th><th>DUE</th><th>TICKET</th></tr>
 <tr><td>Route config changes through the 5% canary</td><td>Platform</td><td>24 Oct</td><td class="mono">PLAT-881</td></tr>

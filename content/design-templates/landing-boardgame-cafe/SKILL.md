@@ -42,7 +42,7 @@ Roll & Brew (invented), a board-game café, shows how a visit works, the library
 
 ## Visual system
 
-Table felt `#1f6f5c`, card cream `#fff7e6`, and four player colours used as tokens: red `#e5484d`, yellow `#f5b700`, blue `#3b82f6`, purple `#8b5cf6`. Type: Arial Rounded MT Bold / Nunito-like system rounded stacks, with Avenir Next for body.
+Table felt `#1f6f5c`, card cream `#fff7e6`, and four player colours used as tokens: red `#e5484d`, yellow `#f5b700`, blue `#3b82f6`, orange `#f97316`. Type: Arial Rounded MT Bold / Nunito-like system rounded stacks, with Avenir Next for body.
 
 ## Sections
 

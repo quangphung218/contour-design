@@ -19,6 +19,14 @@ html.gl-off .gl-note{display:block}
 .overlay{position:fixed;z-index:2;pointer-events:none}
 .overlay a,.overlay button{pointer-events:auto}
 @media (prefers-reduced-motion: reduce){#gl{transition:none}}
+/* Narrow frames (phones, the studio preview after Remix): the text blocks
+   leave their corners and stack in the page over the visual, each on a
+   panel of the page colour, so nothing overlaps or runs off the edge. */
+@media (max-width:860px){
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  body{padding:16px 0 24px}
+  .overlay{position:relative!important;inset:auto!important;transform:none!important;width:auto!important;max-width:none!important;margin:0 16px 12px;padding:16px;border-radius:12px;background:color-mix(in srgb,var(--bg) 84%,transparent);overflow-wrap:anywhere}
+}
 .fallback{background:
   radial-gradient(22% 30% at 42% 46%, #f4f4f6 0%, #9a9aa3 35%, #2c2c33 70%, transparent 72%),
   radial-gradient(16% 22% at 60% 54%, #ffffff 0%, #8c8c95 40%, #24242a 72%, transparent 74%),
@@ -46,7 +54,7 @@ h1{font-family:Impact,Haettenschweiler,'Arial Narrow Bold','Arial Narrow',sans-s
   <div class="date">Fri 13 Mar · Warehouse 9</div>
   <div class="acts">Aiko Rheims · Tunde Vale · Static Orchard<br>doors 22:00 — close 06:00<br><a class="cta" href="#tickets">Tickets</a></div>
 </div>
-<p class="gl-note" role="status">Static poster: this browser has no WebGL.</p>
+<p class="gl-note" role="status">Static poster: WebGL is not available here.</p>
 <script>
 var GLX = (function () {
   var root = document.documentElement;

@@ -19,6 +19,14 @@ html.gl-off .gl-note{display:block}
 .overlay{position:fixed;z-index:2;pointer-events:none}
 .overlay a,.overlay button{pointer-events:auto}
 @media (prefers-reduced-motion: reduce){#gl{transition:none}}
+/* Narrow frames (phones, the studio preview after Remix): the text blocks
+   leave their corners and stack in the page over the visual, each on a
+   panel of the page colour, so nothing overlaps or runs off the edge. */
+@media (max-width:860px){
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  body{padding:16px 0 24px}
+  .overlay{position:relative!important;inset:auto!important;transform:none!important;width:auto!important;max-width:none!important;margin:0 16px 12px;padding:16px;border-radius:12px;background:color-mix(in srgb,var(--bg) 84%,transparent);overflow-wrap:anywhere}
+}
 .overlay.hero{left:6vw;top:9vh;max-width:34rem}
 .kicker{font:500 .76rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.18em;text-transform:uppercase;color:#7cc6ec}
 h1{margin-top:1rem;font-weight:500;font-size:clamp(2.2rem,4.8vw,4.2rem);line-height:1.04;letter-spacing:-.02em}
@@ -43,7 +51,7 @@ h1{margin-top:1rem;font-weight:500;font-size:clamp(2.2rem,4.8vw,4.2rem);line-hei
   <div class="buoy">B-12 · Harbour mouth<b>0.9 m · 7 s</b>steady</div>
   <div class="buoy">B-19 · North reef<b>14.2 °C</b>water temperature, +0.6 in 24 h</div>
 </div>
-<p class="gl-note" role="status">Static poster: this browser has no WebGL.</p>
+<p class="gl-note" role="status">Static poster: WebGL is not available here.</p>
 <script>
 var GLX = (function () {
   var root = document.documentElement;

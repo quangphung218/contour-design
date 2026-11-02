@@ -19,6 +19,14 @@ html.gl-off .gl-note{display:block}
 .overlay{position:fixed;z-index:2;pointer-events:none}
 .overlay a,.overlay button{pointer-events:auto}
 @media (prefers-reduced-motion: reduce){#gl{transition:none}}
+/* Narrow frames (phones, the studio preview after Remix): the text blocks
+   leave their corners and stack in the page over the visual, each on a
+   panel of the page colour, so nothing overlaps or runs off the edge. */
+@media (max-width:860px){
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  body{padding:16px 0 24px}
+  .overlay{position:relative!important;inset:auto!important;transform:none!important;width:auto!important;max-width:none!important;margin:0 16px 12px;padding:16px;border-radius:12px;background:color-mix(in srgb,var(--bg) 84%,transparent);overflow-wrap:anywhere}
+}
 .overlay.brand{left:5vw;top:6vh}
 .call{font-family:Impact,'Arial Narrow Bold','Arial Narrow',sans-serif;font-size:clamp(3rem,9vw,8rem);line-height:.85;letter-spacing:.02em;color:#ffb35c;text-shadow:6px 6px 0 #2b1b3d}
 .freq{margin-top:.6rem;font-size:1rem;letter-spacing:.2em;color:#ffb35c;background:#2b1b3d;display:inline-block;padding:.2rem .5rem}
@@ -43,7 +51,7 @@ html.gl-off .gl-note{display:block}
   <div class="bar"></div>
 </div>
 <div class="overlay listen"><a href="#live">Listen live</a></div>
-<p class="gl-note" role="status">Static poster: this browser has no WebGL.</p>
+<p class="gl-note" role="status">Static poster: WebGL is not available here.</p>
 <script>
 var GLX = (function () {
   var root = document.documentElement;

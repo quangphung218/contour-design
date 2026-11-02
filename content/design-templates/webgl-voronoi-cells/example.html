@@ -19,6 +19,14 @@ html.gl-off .gl-note{display:block}
 .overlay{position:fixed;z-index:2;pointer-events:none}
 .overlay a,.overlay button{pointer-events:auto}
 @media (prefers-reduced-motion: reduce){#gl{transition:none}}
+/* Narrow frames (phones, the studio preview after Remix): the text blocks
+   leave their corners and stack in the page over the visual, each on a
+   panel of the page colour, so nothing overlaps or runs off the edge. */
+@media (max-width:860px){
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  body{padding:16px 0 24px}
+  .overlay{position:relative!important;inset:auto!important;transform:none!important;width:auto!important;max-width:none!important;margin:0 16px 12px;padding:16px;border-radius:12px;background:color-mix(in srgb,var(--bg) 84%,transparent);overflow-wrap:anywhere}
+}
 .overlay.hero{left:6vw;top:50%;transform:translateY(-50%);max-width:32rem;padding:2rem 2.2rem;border-radius:18px;background:rgba(5,11,16,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(63,224,208,.25)}
 .kicker{font:500 .74rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
 h1{margin-top:1rem;font-weight:500;font-size:clamp(2.2rem,4.4vw,3.8rem);line-height:1.05;letter-spacing:-.02em}
@@ -42,7 +50,7 @@ h1{margin-top:1rem;font-weight:500;font-size:clamp(2.2rem,4.4vw,3.8rem);line-hei
   <div class="row"><a class="cta" href="#demo">Book a lab demo</a><a class="ghost" href="#data">Sample dataset</a></div>
 </div>
 <div class="overlay readout">CH1 membrane 488 nm · <b>CH2 nucleus 561 nm</b><br>40× · 37.0 °C · 5% CO₂ · t = 31 h 12 min</div>
-<p class="gl-note" role="status">Static poster: this browser has no WebGL.</p>
+<p class="gl-note" role="status">Static poster: WebGL is not available here.</p>
 <script>
 var GLX = (function () {
   var root = document.documentElement;

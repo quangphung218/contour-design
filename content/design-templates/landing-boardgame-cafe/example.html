@@ -8,20 +8,20 @@
 *{box-sizing:border-box;margin:0;padding:0}
 img,svg{display:block;max-width:100%}
 a{color:inherit}
-:root{--felt:#1f6f5c;--cream:#fff7e6;--ink:#1b2430;--red:#e5484d;--yel:#f5b700;--blue:#3b82f6;--pur:#8b5cf6}
+:root{--felt:#1f6f5c;--cream:#fff7e6;--ink:#1b2430;--red:#e5484d;--yel:#f5b700;--blue:#3b82f6;--org:#f97316}
 body{background:var(--cream);color:var(--ink);font-family:'Avenir Next','Segoe UI','Helvetica Neue',sans-serif;line-height:1.55}
-.round{font-family:'Arial Rounded MT Bold','Arial Rounded MT','Avenir Next',sans-serif}
+.round{font-family:ui-rounded,'Arial Rounded MT Bold','Arial Rounded MT','Avenir Next',sans-serif}
 .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
 .top{background:var(--felt);color:var(--cream);background-image:radial-gradient(rgba(255,255,255,.06) 1px,transparent 1px);background-size:6px 6px}
 nav{display:flex;justify-content:space-between;align-items:center;padding:22px 0}
-nav b{font-family:'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:1.5rem}
+nav b{font-family:ui-rounded,'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:1.5rem}
 nav a{color:var(--cream);text-decoration:none;margin-left:22px;font-weight:600}
 .hero{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center;padding:40px 0 90px}
-h1{font-family:'Arial Rounded MT Bold','Arial Rounded MT','Avenir Next',sans-serif;font-size:clamp(2.8rem,6.6vw,5.4rem);line-height:.98;letter-spacing:-.01em}
+h1{font-family:ui-rounded,'Arial Rounded MT Bold','Arial Rounded MT','Avenir Next',sans-serif;font-size:clamp(2.8rem,6.6vw,5.4rem);line-height:.98;letter-spacing:-.01em}
 h1 em{font-style:normal;color:var(--yel)}
 .hero p{margin-top:20px;font-size:1.15rem;max-width:30rem;opacity:.92}
-.btn{display:inline-block;margin-top:28px;padding:16px 28px;border-radius:16px;background:var(--yel);color:var(--ink);text-decoration:none;font-family:'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:1.1rem;box-shadow:0 6px 0 #b98900}
-.pieces{position:relative;height:360px}
+.btn{display:inline-block;margin-top:28px;padding:16px 28px;border-radius:16px;background:var(--yel);color:var(--ink);text-decoration:none;font-family:ui-rounded,'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:1.1rem;box-shadow:0 6px 0 #b98900}
+.pieces{position:relative;height:360px;overflow:hidden}
 .die{position:absolute;width:120px;height:120px;border-radius:22px;background:#fff;box-shadow:0 10px 0 #d9d2c2,0 20px 30px rgba(0,0,0,.25);display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:16px}
 .die i{width:20px;height:20px;border-radius:50%;background:var(--ink);align-self:center;justify-self:center}
 .d1{left:30px;top:40px;transform:rotate(-12deg)}
@@ -29,30 +29,30 @@ h1 em{font-style:normal;color:var(--yel)}
 .d2 i{background:#fff}
 .meeple{position:absolute;width:110px}
 section{padding:80px 0}
-h2{font-family:'Arial Rounded MT Bold','Arial Rounded MT','Avenir Next',sans-serif;font-size:clamp(2rem,4vw,3rem);line-height:1.05}
+h2{font-family:ui-rounded,'Arial Rounded MT Bold','Arial Rounded MT','Avenir Next',sans-serif;font-size:clamp(2rem,4vw,3rem);line-height:1.05}
 .track{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:40px;position:relative}
 .track::before{content:"";position:absolute;left:5%;right:5%;top:46px;height:14px;border-radius:7px;background:repeating-linear-gradient(90deg,var(--ink) 0 18px,transparent 18px 30px);opacity:.25}
 .sq{position:relative;text-align:center;padding:0 14px}
-.sq .tok{width:92px;height:92px;border-radius:50%;margin:0 auto;display:grid;place-items:center;color:#fff;font-family:'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:2.2rem;box-shadow:inset 0 -8px 0 rgba(0,0,0,.18)}
-.sq h3{font-family:'Arial Rounded MT Bold','Avenir Next',sans-serif;margin-top:16px;font-size:1.25rem}
+.sq .tok{width:92px;height:92px;border-radius:50%;margin:0 auto;display:grid;place-items:center;color:#fff;font-family:ui-rounded,'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:2.2rem;box-shadow:inset 0 -8px 0 rgba(0,0,0,.18)}
+.sq h3{font-family:ui-rounded,'Arial Rounded MT Bold','Avenir Next',sans-serif;margin-top:16px;font-size:1.25rem}
 .games{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;margin-top:40px}
 .game{background:#fff;border-radius:20px;padding:22px;border:3px solid var(--ink);box-shadow:6px 6px 0 var(--ink)}
 .art{height:120px;border-radius:12px;margin-bottom:16px}
-.game h3{font-family:'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:1.2rem}
+.game h3{font-family:ui-rounded,'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:1.2rem}
 .game dl{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-top:10px;font-size:.9rem}
 .game dt{color:#5b6573}
 .pips{display:flex;gap:4px;align-items:center}
 .pips i{width:10px;height:10px;border-radius:50%;background:#d8d1c2}
-.pips i.on{background:var(--pur)}
+.pips i.on{background:var(--org)}
 .prices{display:grid;grid-template-columns:repeat(3,1fr);gap:26px;margin-top:40px}
 .price{border-radius:28px;padding:34px;color:#fff;box-shadow:inset 0 -10px 0 rgba(0,0,0,.15)}
-.price b{display:block;font-family:'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:3.2rem;line-height:1}
-.price h3{font-family:'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:1.3rem;margin-bottom:12px}
+.price b{display:block;font-family:ui-rounded,'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:3.2rem;line-height:1}
+.price h3{font-family:ui-rounded,'Arial Rounded MT Bold','Avenir Next',sans-serif;font-size:1.3rem;margin-bottom:12px}
 .events{background:var(--felt);color:var(--cream);border-radius:32px;padding:50px;display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
 .events li{list-style:none;padding:12px 0;border-top:1px solid rgba(255,247,230,.2);font-size:1.05rem}
 .events li b{color:var(--yel);margin-right:10px}
 footer{padding:40px 0 60px;color:#5b6573;font-size:.9rem}
-@media (max-width:860px){.hero,.events{grid-template-columns:1fr}.track,.games,.prices{grid-template-columns:1fr 1fr}}
+@media (max-width:860px){.hero,.events{grid-template-columns:1fr}.track,.games,.prices{grid-template-columns:1fr 1fr}.pieces{zoom:.7;max-width:460px}.events{padding:28px}}
 @media (max-width:520px){.track,.games,.prices{grid-template-columns:1fr}}
 </style>
 </head>
@@ -60,19 +60,19 @@ footer{padding:40px 0 60px;color:#5b6573;font-size:.9rem}
 <div class="top"><div class="wrap">
 <nav><b>Roll &amp; Brew</b><div><a href="#how">How it works</a><a href="#games">Games</a><a href="#prices">Prices</a></div></nav>
 <header class="hero"><div><h1>Six hundred games. <em>One table</em> with your name on it.</h1><p>Grab a table, pick anything off our shelves, and let a game guru teach you the rules while the coffee's still hot.</p><a class="btn" href="#book">Book a table</a></div>
-<div class="pieces"><div class="die d1" aria-hidden="true"><i style="grid-area:1/1"></i><i style="grid-area:2/2"></i><i style="grid-area:3/3"></i></div><div class="die d2" aria-hidden="true"><i style="grid-area:1/1"></i><i style="grid-area:1/3"></i><i style="grid-area:2/2"></i><i style="grid-area:3/1"></i><i style="grid-area:3/3"></i></div><svg class="meeple" style="left:330px;top:30px;transform:rotate(8deg)" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 8a14 14 0 0 1 14 14c0 6-3 10-6 12l26 10c6 2 8 12 0 14l-18 2 14 30H58l-8-16-8 16H20l14-30-18-2c-8-2-6-12 0-14l26-10c-3-2-6-6-6-12A14 14 0 0 1 50 8z" fill="#f5b700" stroke="#1b2430" stroke-width="4"/></svg><svg class="meeple" style="left:300px;top:210px;transform:rotate(-10deg)" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 8a14 14 0 0 1 14 14c0 6-3 10-6 12l26 10c6 2 8 12 0 14l-18 2 14 30H58l-8-16-8 16H20l14-30-18-2c-8-2-6-12 0-14l26-10c-3-2-6-6-6-12A14 14 0 0 1 50 8z" fill="#3b82f6" stroke="#1b2430" stroke-width="4"/></svg><svg class="meeple" style="left:60px;top:220px;transform:rotate(4deg)" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 8a14 14 0 0 1 14 14c0 6-3 10-6 12l26 10c6 2 8 12 0 14l-18 2 14 30H58l-8-16-8 16H20l14-30-18-2c-8-2-6-12 0-14l26-10c-3-2-6-6-6-12A14 14 0 0 1 50 8z" fill="#8b5cf6" stroke="#1b2430" stroke-width="4"/></svg></div></header>
+<div class="pieces"><div class="die d1" aria-hidden="true"><i style="grid-area:1/1"></i><i style="grid-area:2/2"></i><i style="grid-area:3/3"></i></div><div class="die d2" aria-hidden="true"><i style="grid-area:1/1"></i><i style="grid-area:1/3"></i><i style="grid-area:2/2"></i><i style="grid-area:3/1"></i><i style="grid-area:3/3"></i></div><svg class="meeple" style="left:330px;top:30px;transform:rotate(8deg)" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 8a14 14 0 0 1 14 14c0 6-3 10-6 12l26 10c6 2 8 12 0 14l-18 2 14 30H58l-8-16-8 16H20l14-30-18-2c-8-2-6-12 0-14l26-10c-3-2-6-6-6-12A14 14 0 0 1 50 8z" fill="#f5b700" stroke="#1b2430" stroke-width="4"/></svg><svg class="meeple" style="left:300px;top:210px;transform:rotate(-10deg)" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 8a14 14 0 0 1 14 14c0 6-3 10-6 12l26 10c6 2 8 12 0 14l-18 2 14 30H58l-8-16-8 16H20l14-30-18-2c-8-2-6-12 0-14l26-10c-3-2-6-6-6-12A14 14 0 0 1 50 8z" fill="#3b82f6" stroke="#1b2430" stroke-width="4"/></svg><svg class="meeple" style="left:60px;top:220px;transform:rotate(4deg)" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 8a14 14 0 0 1 14 14c0 6-3 10-6 12l26 10c6 2 8 12 0 14l-18 2 14 30H58l-8-16-8 16H20l14-30-18-2c-8-2-6-12 0-14l26-10c-3-2-6-6-6-12A14 14 0 0 1 50 8z" fill="#f97316" stroke="#1b2430" stroke-width="4"/></svg></div></header>
 </div></div>
 <div class="wrap">
 <section id="how"><h2>How a visit works</h2><div class="track">
 <div class="sq"><div class="tok" style="background:var(--red)">1</div><h3>Book or walk in</h3><p>Tables for 2 to 10. Walk-ins welcome before 18:00.</p></div>
 <div class="sq"><div class="tok" style="background:var(--yel)">2</div><h3>Pick a game</h3><p>Tell a guru what you like; they'll bring three to choose from.</p></div>
 <div class="sq"><div class="tok" style="background:var(--blue)">3</div><h3>Learn in 5 minutes</h3><p>We teach at the table, then leave you to it.</p></div>
-<div class="sq"><div class="tok" style="background:var(--pur)">4</div><h3>Play all evening</h3><p>No time limit on weekdays. Order food at the counter.</p></div></div></section>
-<section id="games"><h2>Most played this month</h2><div class="games"><div class="game"><div class="art" style="background:linear-gradient(135deg,#3b82f6,#1f6f5c)"></div><h3>Harbour Lords</h3><dl><dt>Players</dt><dd>2–4</dd><dt>Time</dt><dd>60 min</dd><dt>Weight</dt><dd class="pips"><i class="on"></i><i class="on"></i><i class="on"></i><i class=""></i></dd></dl></div><div class="game"><div class="art" style="background:linear-gradient(135deg,#8b5cf6,#e5484d)"></div><h3>Tiny Dungeons</h3><dl><dt>Players</dt><dd>1–5</dd><dt>Time</dt><dd>30 min</dd><dt>Weight</dt><dd class="pips"><i class="on"></i><i class="on"></i><i class=""></i><i class=""></i></dd></dl></div><div class="game"><div class="art" style="background:linear-gradient(135deg,#f5b700,#1f6f5c)"></div><h3>Seed &amp; Soil</h3><dl><dt>Players</dt><dd>2–5</dd><dt>Time</dt><dd>45 min</dd><dt>Weight</dt><dd class="pips"><i class="on"></i><i class="on"></i><i class=""></i><i class=""></i></dd></dl></div><div class="game"><div class="art" style="background:linear-gradient(135deg,#e5484d,#f5b700)"></div><h3>Heist at Noon</h3><dl><dt>Players</dt><dd>3–8</dd><dt>Time</dt><dd>20 min</dd><dt>Weight</dt><dd class="pips"><i class="on"></i><i class=""></i><i class=""></i><i class=""></i></dd></dl></div></div></section>
+<div class="sq"><div class="tok" style="background:var(--org)">4</div><h3>Play all evening</h3><p>No time limit on weekdays. Order food at the counter.</p></div></div></section>
+<section id="games"><h2>Most played this month</h2><div class="games"><div class="game"><div class="art" style="background:linear-gradient(135deg,#3b82f6,#1f6f5c)"></div><h3>Harbour Lords</h3><dl><dt>Players</dt><dd>2–4</dd><dt>Time</dt><dd>60 min</dd><dt>Weight</dt><dd class="pips"><i class="on"></i><i class="on"></i><i class="on"></i><i class=""></i></dd></dl></div><div class="game"><div class="art" style="background:linear-gradient(135deg,#f97316,#e5484d)"></div><h3>Tiny Dungeons</h3><dl><dt>Players</dt><dd>1–5</dd><dt>Time</dt><dd>30 min</dd><dt>Weight</dt><dd class="pips"><i class="on"></i><i class="on"></i><i class=""></i><i class=""></i></dd></dl></div><div class="game"><div class="art" style="background:linear-gradient(135deg,#f5b700,#1f6f5c)"></div><h3>Seed &amp; Soil</h3><dl><dt>Players</dt><dd>2–5</dd><dt>Time</dt><dd>45 min</dd><dt>Weight</dt><dd class="pips"><i class="on"></i><i class="on"></i><i class=""></i><i class=""></i></dd></dl></div><div class="game"><div class="art" style="background:linear-gradient(135deg,#e5484d,#f5b700)"></div><h3>Heist at Noon</h3><dl><dt>Players</dt><dd>3–8</dd><dt>Time</dt><dd>20 min</dd><dt>Weight</dt><dd class="pips"><i class="on"></i><i class=""></i><i class=""></i><i class=""></i></dd></dl></div></div></section>
 <section id="prices"><h2>Table cover</h2><div class="prices">
 <div class="price" style="background:var(--blue)"><h3>Weekday</h3><b>£5</b>per person, play as long as you like</div>
 <div class="price" style="background:var(--red)"><h3>Weekend</h3><b>£7</b>per person, 3-hour slots</div>
-<div class="price" style="background:var(--pur)"><h3>Under 12s</h3><b>£2</b>with a grown-up, any day</div></div></section>
+<div class="price" style="background:var(--org)"><h3>Under 12s</h3><b>£2</b>with a grown-up, any day</div></div></section>
 <section id="book"><div class="events"><div><h2>This week</h2><ul><li><b>Tue</b>Learn-to-play night: cooperative games</li><li><b>Thu</b>Quiz &amp; dice, teams of four</li><li><b>Sat</b>Family morning, 10:00–12:00</li><li><b>Sun</b>Long-game club: 4-hour epics</li></ul></div>
 <div><p style="font-size:1.2rem">Friday and Saturday evenings fill up by Wednesday. Book a table and we'll set out your first game before you arrive.</p><a class="btn" href="#book">Book a table</a></div></div></section>
 <footer>Roll &amp; Brew · 22 Kiln Street · open 11:00–23:00, closed Mondays · illustrative sample page</footer>

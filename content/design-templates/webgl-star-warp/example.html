@@ -19,6 +19,14 @@ html.gl-off .gl-note{display:block}
 .overlay{position:fixed;z-index:2;pointer-events:none}
 .overlay a,.overlay button{pointer-events:auto}
 @media (prefers-reduced-motion: reduce){#gl{transition:none}}
+/* Narrow frames (phones, the studio preview after Remix): the text blocks
+   leave their corners and stack in the page over the visual, each on a
+   panel of the page colour, so nothing overlaps or runs off the edge. */
+@media (max-width:860px){
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  body{padding:16px 0 24px}
+  .overlay{position:relative!important;inset:auto!important;transform:none!important;width:auto!important;max-width:none!important;margin:0 16px 12px;padding:16px;border-radius:12px;background:color-mix(in srgb,var(--bg) 84%,transparent);overflow-wrap:anywhere}
+}
 .overlay.center{left:50%;top:50%;transform:translate(-50%,-50%);text-align:center}
 .kicker{font:500 .78rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.3em;text-transform:uppercase;color:var(--accent)}
 .overlay.center{text-shadow:0 2px 18px #03040a}
@@ -41,7 +49,7 @@ h1{margin-top:1.6rem;font-weight:500;font-size:clamp(1.2rem,2.2vw,1.7rem);letter
   <h1>Six cubesats. One rideshare. Weather data every 40 minutes.</h1>
 </div>
 <div class="overlay foot"><span>Rideshare slot 3 of 11 · sun-synchronous 540 km</span><span>Window opens 14 Feb 2027 · 09:12 UTC</span></div>
-<p class="gl-note" role="status">Static poster: this browser has no WebGL.</p>
+<p class="gl-note" role="status">Static poster: WebGL is not available here.</p>
 <script>
 var GLX = (function () {
   var root = document.documentElement;

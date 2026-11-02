@@ -19,6 +19,14 @@ html.gl-off .gl-note{display:block}
 .overlay{position:fixed;z-index:2;pointer-events:none}
 .overlay a,.overlay button{pointer-events:auto}
 @media (prefers-reduced-motion: reduce){#gl{transition:none}}
+/* Narrow frames (phones, the studio preview after Remix): the text blocks
+   leave their corners and stack in the page over the visual, each on a
+   panel of the page colour, so nothing overlaps or runs off the edge. */
+@media (max-width:860px){
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  body{padding:16px 0 24px}
+  .overlay{position:relative!important;inset:auto!important;transform:none!important;width:auto!important;max-width:none!important;margin:0 16px 12px;padding:16px;border-radius:12px;background:color-mix(in srgb,var(--bg) 84%,transparent);overflow-wrap:anywhere}
+}
 .overlay.name{left:6vw;top:14vh;max-width:30rem}
 .kicker{font:500 .78rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
 h1{margin-top:1rem;font-weight:600;font-size:clamp(2.8rem,6.5vw,5.8rem);letter-spacing:-.035em;line-height:.95}
@@ -28,6 +36,14 @@ h1{margin-top:1rem;font-weight:600;font-size:clamp(2.8rem,6.5vw,5.8rem);letter-s
 .cta{padding:.8rem 1.4rem;border-radius:999px;background:#23201b;color:#efe6da;text-decoration:none;font-size:.95rem}
 .overlay.specs{left:6vw;bottom:8vh;display:grid;grid-template-columns:repeat(3,minmax(0,9rem));gap:1.4rem;font:.78rem/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#4e473e}
 .specs b{display:block;font:600 1.3rem/1.2 'Avenir Next',Avenir,sans-serif;color:#23201b}
+@media (max-width:860px){
+  body{display:flex;flex-direction:column}
+  .overlay{order:0}
+  .overlay.specs{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .fallback,#gl{order:1;position:relative;inset:auto;flex:none;width:100%;height:58vh}
+  .fallback{margin-bottom:-58vh}
+  .fallback svg{transform:translateX(-32%)}
+}
 </style>
 </head>
 <body>
@@ -61,7 +77,7 @@ h1{margin-top:1rem;font-weight:600;font-size:clamp(2.8rem,6.5vw,5.8rem);letter-s
   <div><b>20 h</b>battery at room volume</div>
   <div><b>1.4 kg</b>wool and aluminium</div>
 </div>
-<p class="gl-note" role="status">Static poster: this browser has no WebGL.</p>
+<p class="gl-note" role="status">Static poster: WebGL is not available here.</p>
 <script>
 var GLX = (function () {
   var root = document.documentElement;
@@ -235,7 +251,8 @@ GLX.fragment([
   '}',
   'void main(){',
   '  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;',
-  '  uv.x -= 0.32 * min(1.0, uRes.x / uRes.y - 0.9);',
+  '  float asp = uRes.x / uRes.y;',
+  '  if (asp < 1.0) uv *= 1.2; else uv.x -= 0.32 * min(1.0, asp - 0.9);',
   '  ANG = uTime * 0.45 + (uPointer.x - 0.5) * 2.0;',
   '  vec3 ro = vec3(0.0, 0.9, 5.2), ta = vec3(0.0, -0.1, 0.0);',
   '  vec3 f = normalize(ta - ro), r = normalize(cross(f, vec3(0.0, 1.0, 0.0))), u = cross(r, f);',
