@@ -563,6 +563,11 @@ async fn motion_templates_preview_and_remix() {
         .await;
         assert_eq!(s, 200, "{id}: {v}");
         assert_eq!(v["project"]["skillId"], id);
+        // A film, as Use template makes it (QA-034).
+        let meta = &v["project"]["metadata"];
+        assert_eq!(meta["kind"], "video", "{id}");
+        assert_eq!(meta["intent"], "motion-design", "{id}");
+        assert_eq!(meta["videoModel"], "hyperframes-html", "{id}");
         let pid = v["project"]["id"].as_str().unwrap();
         let html = d
             .http

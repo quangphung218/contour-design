@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.15] - 2026-11-02
+
 ### Fixed
 
 - In the @ list, Enter picks the top row for what was typed even when the
@@ -18,6 +20,16 @@ All notable changes to Contour are recorded here. The format follows
 - pulldown-cmark 0.13.6 (RUSTSEC-2026-0433).
 - The last30days template's report page names system fonts only, so its
   preview no longer asks Google Fonts for Inter and JetBrains Mono.
+- A run that writes its page only with a shell command (no Write tool) no
+  longer ends with "The run ended without writing any file." beside the
+  turn that lists the page: the run's written files now include the files
+  found outside the file tools.
+- Past 50 rows, the header of "Files from this turn" counts the files not
+  listed too, so it agrees with "Done · N files written" (it said "50 new"
+  beside 60 written).
+- Remixing a Motion film makes a film project (Media, intent
+  `motion-design`, the HyperFrames video model), as Use template does; it
+  used to be filed as a Prototype.
 
 ## [0.2.0-beta.14] - 2026-11-02
 
@@ -684,7 +696,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.14...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.15...HEAD
+[0.2.0-beta.15]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.14...v0.2.0-beta.15
 [0.2.0-beta.14]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.13...v0.2.0-beta.14
 [0.2.0-beta.13]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.12...v0.2.0-beta.13
 [0.2.0-beta.12]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.11...v0.2.0-beta.12

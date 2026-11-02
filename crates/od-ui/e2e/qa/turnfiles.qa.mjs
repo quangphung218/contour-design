@@ -126,7 +126,7 @@ test('TF-06', '60 files in 60 folders: the turn lists 50 rows and one "+N more" 
   assert.match(note, /\+10 more files not listed/);
   // The header counts files too: it must not say fewer than the Done line.
   assert.equal(t.head, '60 new', `header "${t.head}" beside "${t.done}"`);
-}, { knownBug: 'QA-036' });
+});
 
 test('TF-07', 'After a reload the turn still shows the folder row and its file count', async ({ d, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Reload frames');
@@ -214,7 +214,7 @@ test('TF-12', 'A page the agent writes with a shell command is not followed by "
   const warn = page.getByTestId('deliverable-warning');
   const text = (await warn.count()) ? (await warn.innerText()).trim() : '';
   assert.equal(text, '', 'warning shown beside a turn that lists the file');
-}, { knownBug: 'QA-035' });
+});
 
 test('TF-13', 'Stop after the agent rendered a file with shell: the turn still lists the file it left', async ({ d, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Stopped render');

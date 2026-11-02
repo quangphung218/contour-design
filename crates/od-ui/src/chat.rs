@@ -50,6 +50,9 @@ pub struct ToolCall {
     /// Files a folder row of "Files from this turn" stands for, or the
     /// count of a `+N more` row (`files` in the input).
     pub files: Option<u64>,
+    /// Of a `+N more` row's files, those edited rather than new (`edited`
+    /// in the input).
+    pub edited: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -287,6 +290,7 @@ impl AssistantTurn {
                     .flatten()
                     .map(str::to_owned);
                 let files = input.get("files").and_then(Value::as_u64);
+                let edited = input.get("edited").and_then(Value::as_u64);
                 self.blocks.push(Block::Tool(ToolCall {
                     id,
                     name,
@@ -294,6 +298,7 @@ impl AssistantTurn {
                     path,
                     result: None,
                     files,
+                    edited,
                 }));
             }
             AgentEvent::ToolResult {
@@ -442,6 +447,18 @@ impl AssistantTurn {
             .iter()
             .filter_map(|b| match b {
                 Block::Tool(c) if c.name == MORE_FILES_TOOL => c.files,
+                _ => None,
+            })
+            .sum()
+    }
+
+    /// Of [`Self::unlisted_files`], the files edited rather than new.
+    #[must_use]
+    pub fn unlisted_edited(&self) -> u64 {
+        self.blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Tool(c) if c.name == MORE_FILES_TOOL => c.edited,
                 _ => None,
             })
             .sum()
@@ -623,6 +640,7 @@ mod tests {
                     path: Some("/data/projects/p1/index.html".into()),
                     result: Some(false),
                     files: None,
+                    edited: None,
                 }),
                 Block::Text(" done".into()),
             ]
@@ -663,6 +681,19 @@ mod tests {
         assert_eq!(t.row_files("frames/"), 1000);
         assert_eq!(t.row_files("clip.mp4"), 1);
         assert_eq!(t.files_count(), 1071, "files, not the 2 rows");
+        // A row without `edited` (a run from before QA-036) edits none.
+        assert_eq!(t.unlisted_edited(), 0);
+    }
+
+    #[test]
+    fn the_more_row_says_how_many_of_its_files_were_edited() {
+        let mut t = AssistantTurn::new();
+        t.apply(agent(
+            json!({"type": "tool_use", "id": "turn-file-more", "name": MORE_FILES_TOOL,
+            "input": {"files": 10, "edited": 6, "description": "+10 more"}}),
+        ));
+        assert_eq!(t.unlisted_files(), 10);
+        assert_eq!(t.unlisted_edited(), 6);
     }
 
     #[test]

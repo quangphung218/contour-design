@@ -42,6 +42,7 @@ pub const GROUP_OVER: usize = 20;
 /// Rows a turn adds at most; the rest are counted in one `+N more`.
 pub const MAX_ROWS: usize = 50;
 /// Tool name of the `+N more` row (not a write tool: it names no file).
+/// Its input counts the `files` left out and, of them, the `edited` ones.
 pub const MORE_TOOL: &str = "TurnFilesMore";
 
 /// How far a snapshot walks.
@@ -398,6 +399,33 @@ fn extension(path: &str) -> String {
 /// second value counts the files left out (a folder row counts its files).
 #[must_use]
 pub fn plan_rows(changes: &[(String, Change)]) -> (Vec<Row>, usize) {
+    let mut rows = all_rows(changes);
+    let rest = rows.split_off(MAX_ROWS.min(rows.len()));
+    (rows, Left::of(&rest).files)
+}
+
+/// Files in the rows past [`MAX_ROWS`] (a folder row counts its files).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct Left {
+    files: usize,
+    /// Of them, the files changed rather than created.
+    edited: usize,
+}
+
+impl Left {
+    fn of(rows: &[Row]) -> Self {
+        rows.iter().fold(Self::default(), |acc, r| {
+            let n = r.files.unwrap_or(1);
+            Self {
+                files: acc.files + n,
+                edited: acc.edited + if r.change == Change::Modified { n } else { 0 },
+            }
+        })
+    }
+}
+
+/// Every row of [`plan_rows`], in order, before the [`MAX_ROWS`] cut.
+fn all_rows(changes: &[(String, Change)]) -> Vec<Row> {
     let parent = |p: &str| p.rsplit_once('/').map(|(d, _)| d.to_owned());
     let mut per_dir: HashMap<String, Vec<(&str, Change)>> = HashMap::new();
     for (path, change) in changes {
@@ -458,14 +486,7 @@ pub fn plan_rows(changes: &[(String, Change)]) -> (Vec<Row>, usize) {
     });
     let split = files.iter().take_while(|r| is_result_file(&r.path)).count();
     let rest = files.split_off(split);
-    let mut rows: Vec<Row> = files.into_iter().chain(folders).chain(rest).collect();
-    let omitted = rows
-        .iter()
-        .skip(MAX_ROWS)
-        .map(|r| r.files.unwrap_or(1))
-        .sum();
-    rows.truncate(MAX_ROWS);
-    (rows, omitted)
+    files.into_iter().chain(folders).chain(rest).collect()
 }
 
 /// Project paths a write tool already reported in `events`.
@@ -527,8 +548,11 @@ async fn history(run: &Arc<Run>) -> Vec<Arc<RunEvent>> {
 
 /// Snapshots `cwd` again and adds each file the turn changed outside the
 /// write tools as a `Write`/`Edit` with its result. Call before the run
-/// ends: an ended run takes no events. Returns how many rows were added.
-pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
+/// ends: an ended run takes no events. Returns the absolute path of every
+/// file it found (each file of a folder row and of the `+N more` row too):
+/// the run's `artifact_paths` add them, so the deliverable check sees a
+/// page written by a shell command (QA-035).
+pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> Vec<String> {
     let before = &turn.before;
     let started = std::time::Instant::now();
     let root = cwd.to_path_buf();
@@ -536,7 +560,7 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
         Ok(snap) => snap,
         Err(err) => {
             tracing::warn!(run = %run.id(), error = %err, "turn files: snapshot failed");
-            return 0;
+            return Vec::new();
         }
     };
     if !before.is_complete() || !after.is_complete() {
@@ -545,7 +569,7 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
             limit = MAX_FILES,
             "turn files: project too large to compare, shell-written files not listed"
         );
-        return 0;
+        return Vec::new();
     }
     let changes = diff(before, &after);
     let known = if changes.is_empty() {
@@ -565,7 +589,9 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
             )
         })
         .collect();
-    let (rows, omitted) = plan_rows(&changes);
+    let mut rows = all_rows(&changes);
+    let left = Left::of(&rows.split_off(MAX_ROWS.min(rows.len())));
+    let omitted = left.files;
     for (i, row) in rows.iter().enumerate() {
         let id = format!("turn-file-{}", i + 1);
         let abs = absolute(cwd, &row.path).to_string_lossy().into_owned();
@@ -590,20 +616,22 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> usize {
             run,
             "turn-file-more".to_owned(),
             MORE_TOOL,
-            json!({ "files": omitted, "description": format!("+{omitted} more files changed outside the file tools") }),
+            json!({ "files": omitted, "edited": left.edited, "description": format!("+{omitted} more files changed outside the file tools") }),
             format!("+{omitted} more files changed during the turn"),
         );
     }
-    let added = rows.len();
     tracing::info!(
         run = %run.id(),
         files = after.len(),
-        added,
+        added = rows.len(),
         omitted,
         scan_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         "turn files compared"
     );
-    added
+    changes
+        .iter()
+        .map(|(p, _)| absolute(cwd, p).to_string_lossy().into_owned())
+        .collect()
 }
 
 #[cfg(test)]
@@ -827,6 +855,22 @@ mod tests {
     }
 
     #[test]
+    fn the_files_past_the_row_limit_say_how_many_were_edited() {
+        // 50 new pages fill the rows; 6 edited and 4 new fall past them.
+        let mut changes = added((0..54).map(|i| format!("page{i:02}.txt")));
+        changes.extend((0..6).map(|i| (format!("zz{i}.txt"), Change::Modified)));
+        let mut rows = all_rows(&changes);
+        let left = Left::of(&rows.split_off(MAX_ROWS));
+        assert_eq!(
+            left,
+            Left {
+                files: 10,
+                edited: 6
+            }
+        );
+    }
+
+    #[test]
     fn a_turn_adds_at_most_max_rows() {
         let changes = added((0..120).map(|i| format!("page{i:03}.txt")));
         let (rows, omitted) = plan_rows(&changes);
@@ -932,9 +976,12 @@ mod overlap_tests {
             "b_alone.txt",
             SystemTime::now() + Duration::from_secs(5),
         );
-        report(&b, &root, &turn_b).await;
+        let paths = report(&b, &root, &turn_b).await;
         // b_tool.txt has B's own tool row; both_running.txt is nobody's.
         assert_eq!(listed(&b).await, ["b_alone.txt"]);
+        // The run's artifact paths gain what it wrote outside its tools
+        // (QA-035), not what its tools wrote (already there).
+        assert_eq!(paths, [root.join("b_alone.txt").to_string_lossy()]);
         drop(turn_b);
         assert!(windows.lock().is_empty(), "closed windows are dropped");
     }

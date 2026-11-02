@@ -476,7 +476,12 @@ async fn mcp_run_tools_against_the_real_run_engine() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_lists_tools_with_the_daemon_down() {
-    let url = format!("http://127.0.0.1:{}", free_port());
+    // Port 0: no process can listen there, so the connect fails at once.
+    // A port from `free_port` is released before use, and a daemon of a
+    // test running beside this one could take it and answer ("daemon
+    // request failed", not "cannot reach"); a held socket that does not
+    // listen makes macOS wait for the connect timeout instead.
+    let url = "http://127.0.0.1:0".to_owned();
     let client = mcp(&url).await;
     assert_eq!(client.list_all_tools().await.unwrap().len(), 20);
     let (err, text, _) = call(&client, "list_projects", json!({})).await;

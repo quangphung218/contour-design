@@ -1151,6 +1151,7 @@ mod tests {
             path: None,
             result: Some(false),
             files: Some(70),
+            edited: None,
         };
         let (label, summary) = tool_texts(&call);
         assert_eq!(label, "+70 more files not listed");

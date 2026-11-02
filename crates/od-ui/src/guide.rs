@@ -184,6 +184,7 @@ mod tests {
             path: Some(path.to_owned()),
             result: Some(false),
             files: None,
+            edited: None,
         })
     }
 
@@ -348,6 +349,7 @@ mod tests {
                 path: Some(path.to_owned()),
                 result: Some(false),
                 files: None,
+                edited: None,
             })
         };
         let t = turn(

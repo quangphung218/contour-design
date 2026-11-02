@@ -787,6 +787,17 @@ ANSWER
     );
     // The events land before `end`, so the stored turn keeps them.
     assert_eq!(events.last().unwrap().event, sse::END);
+    // The run's written files take them in too, so the deliverable check
+    // sees them (QA-035).
+    let end = run.end_payload().unwrap();
+    for rel in ["renders/clip.mp4", "poster.png", "notes.txt"] {
+        let abs = h.project.join(rel).to_string_lossy().into_owned();
+        assert!(
+            end.artifact_paths.contains(&abs),
+            "{abs} not in {:?}",
+            end.artifact_paths
+        );
+    }
 }
 
 #[tokio::test]

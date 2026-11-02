@@ -820,6 +820,11 @@ Reported by the UX review of 759581a.
   `None`. Map it to `ProjectKind::Video` and, as Home's Motion chip does
   (`crates/od-ui/src/intent.rs`, `Chip::Motion`), set intent
   `motion-design` and `videoModel: hyperframes-html` in `remix`.
+- **Fixed**: `kind_of` maps `SkillMode::Video` to `ProjectKind::Video`,
+  and `remix_metadata` gives a film intent `motion-design` and
+  `videoModel: hyperframes-html`. TPL-16 was red before the fix, green
+  after; `motion_templates_preview_and_remix` (od-server `tests/library.rs`)
+  checks the three fields on every Motion template.
 
 ## QA-035 🟡 "The run ended without writing any file" after a run that wrote files with shell
 
@@ -844,6 +849,12 @@ Reported by the UX review of 759581a.
   `f.artifact_paths`. Have `report` return the paths it listed (folder
   rows as their files, or at least the rows) and append them to
   `f.artifact_paths` before `finish`.
+- **Fixed**: `turn_files::report` returns the absolute path of every file
+  it found (each file behind a folder row or the `+N more` row too), and
+  `finish_turn` appends them to `f.artifact_paths`, so the deliverable
+  check sees the shell-written entry. TF-12 was red before the fix, green
+  after; unit test in `turn_files.rs`
+  (`overlapping_runs_of_one_project_keep_their_files_apart`).
 
 ## QA-036 🔵 Past 50 rows the header counts fewer files than the Done line
 
@@ -861,4 +872,10 @@ Reported by the UX review of 759581a.
   The engine's `+N more` row does not say new or edited; either carry the
   split in it (`od_runtime::turn_files`, `MORE_TOOL`) or show the unlisted
   files in the header as their own count.
+- **Fixed**: the engine's `+N more` row now carries `edited` (of its
+  `files`, those changed rather than created), and `file_counts` adds the
+  unlisted files to the header's new and edited counts. TF-06 was red
+  before the fix, green after; unit tests
+  `the_files_past_the_row_limit_say_how_many_were_edited` (od-runtime) and
+  `counts_take_in_the_files_not_listed` (od-ui).
 

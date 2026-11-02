@@ -17,7 +17,7 @@ use od_contracts::{
 };
 use od_runs::Run;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -1412,11 +1412,17 @@ impl Finish {
 async fn finish_turn(
     spec: &LaunchSpec,
     before: Option<&turn_files::Turn>,
-    f: Finish,
+    mut f: Finish,
     text_parts: &[String],
 ) -> RunOutcome {
     if let Some(before) = before {
-        turn_files::report(&spec.run, &spec.cwd, before).await;
+        // Thousands of frames can come back: no quadratic `contains`.
+        let mut seen: HashSet<String> = f.artifact_paths.iter().cloned().collect();
+        for path in turn_files::report(&spec.run, &spec.cwd, before).await {
+            if seen.insert(path.clone()) {
+                f.artifact_paths.push(path);
+            }
+        }
     }
     finish(&spec.run, f, text_parts)
 }
