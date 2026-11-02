@@ -182,7 +182,13 @@ try {
   await brief.fill('');
   await brief.pressSequentially('Clone it with @web-cl');
   await page.getByTestId('mention-palette').waitFor();
-  await page.locator('[data-testid="mention-item"][data-kind="skill"]').first().waitFor();
+  // Enter picks the highlighted row: wait until the list is ranked for the
+  // whole query, or a fast run picks a row ranked for "@web".
+  await page
+    .locator('[data-testid="mention-item"]')
+    .first()
+    .filter({ hasText: 'web-clone' })
+    .waitFor();
   await brief.press('Enter');
   await page.locator('[data-testid="context-chip"][data-kind="skill"]').getByText('web-clone').waitFor();
   assert.match(await brief.inputValue(), /@web-clone $/);

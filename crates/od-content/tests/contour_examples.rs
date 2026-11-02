@@ -321,3 +321,28 @@ fn decks_follow_the_navigation_contract() {
         assert!(!html.contains("scrollIntoView"), "{id}");
     }
 }
+
+/// Scripts a template runs write pages too (last30days renders its report
+/// with `html_render.py`): no file a template ships may name Google Fonts,
+/// whose requests the preview blocks.
+#[test]
+fn no_template_file_links_google_fonts() {
+    fn walk(dir: &Path, hits: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, hits);
+            } else if path.extension().is_none_or(|e| e != "md") {
+                let Ok(text) = std::fs::read_to_string(&path) else {
+                    continue; // binary assets
+                };
+                if text.contains("fonts.googleapis.com") || text.contains("fonts.gstatic.com") {
+                    hits.push(path.display().to_string());
+                }
+            }
+        }
+    }
+    let mut hits = Vec::new();
+    walk(&templates_root(), &mut hits);
+    assert!(hits.is_empty(), "Google Fonts in {hits:#?}");
+}
