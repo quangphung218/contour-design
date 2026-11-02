@@ -185,9 +185,12 @@ impl Windows {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Opens `run_id`'s window at `start`, taken before `before` was.
+    /// Opens `run_id`'s window at `start`. Call before the snapshot, then
+    /// give it to [`Turn::with_before`]: a run that closes while this one
+    /// takes it must already see this window, or its window is dropped and
+    /// its files land in this turn.
     #[must_use]
-    pub fn open(&self, project: &str, run_id: &str, start: SystemTime, before: Snapshot) -> Turn {
+    pub fn open(&self, project: &str, run_id: &str, start: SystemTime) -> Turn {
         let window = Window {
             run_id: run_id.to_owned(),
             start,
@@ -202,7 +205,8 @@ impl Windows {
             project: project.to_owned(),
             run_id: run_id.to_owned(),
             start,
-            before,
+            // Incomplete until `with_before`: a turn without one lists nothing.
+            before: Snapshot::default(),
         }
     }
 
@@ -255,6 +259,15 @@ pub struct Turn {
     run_id: String,
     start: SystemTime,
     before: Snapshot,
+}
+
+impl Turn {
+    /// The turn with `before`, the snapshot taken once its window opened.
+    #[must_use]
+    pub fn with_before(mut self, before: Snapshot) -> Self {
+        self.before = before;
+        self
+    }
 }
 
 impl Drop for Turn {
@@ -896,9 +909,13 @@ mod overlap_tests {
         let windows = Windows::default();
         let (a, b) = (run(&runs, "a"), run(&runs, "b"));
         // A runs from 100 s ago; B joins 50 s ago and is still going.
-        let turn_a = windows.open("p1", "a", ago(100), Snapshot::take(&root));
+        let turn_a = windows
+            .open("p1", "a", ago(100))
+            .with_before(Snapshot::take(&root));
         write_at(&root, "a_alone.txt", ago(80));
-        let turn_b = windows.open("p1", "b", ago(50), Snapshot::take(&root));
+        let turn_b = windows
+            .open("p1", "b", ago(50))
+            .with_before(Snapshot::take(&root));
         write_at(&root, "both_running.txt", ago(20));
         // B's agent wrote this with its Write tool.
         b.emit_json(
@@ -929,13 +946,48 @@ mod overlap_tests {
         fs::create_dir_all(&root).unwrap();
         let windows = Windows::default();
         // A finished run of the project does not overlap this one.
-        drop(windows.open("p1", "old", ago(300), Snapshot::take(&root)));
+        drop(windows.open("p1", "old", ago(300)));
         let a = run(&runs, "a");
-        let turn = windows.open("p1", "a", SystemTime::now(), Snapshot::take(&root));
+        let turn = windows
+            .open("p1", "a", SystemTime::now())
+            .with_before(Snapshot::take(&root));
         // `cp -p` keeps the source's old mtime.
         write_at(&root, "copied.txt", ago(3600));
         report(&a, &root, &turn).await;
         assert_eq!(listed(&a).await, ["copied.txt"]);
+    }
+
+    #[tokio::test]
+    async fn a_run_that_ends_while_another_takes_its_snapshot_keeps_its_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (root, runs) = (tmp.path().join("p"), Runs::new(tmp.path().join("runs")));
+        fs::create_dir_all(&root).unwrap();
+        let windows = Windows::default();
+        let turn_b = windows.open("p1", "b", ago(100));
+        // A's window opens, then A takes its snapshot; meanwhile B writes
+        // a file (after the walk passed it) and ends.
+        let turn_a = windows.open("p1", "a", ago(50));
+        let before = Snapshot::take(&root);
+        write_at(&root, "b_late.txt", ago(40));
+        drop(turn_b);
+        let turn_a = turn_a.with_before(before);
+        let a = run(&runs, "a");
+        report(&a, &root, &turn_a).await;
+        assert_eq!(listed(&a).await, Vec::<String>::new());
+    }
+
+    #[test]
+    fn others_are_the_runs_that_overlapped() {
+        let windows = Windows::default();
+        let x = windows.open("p1", "x", ago(300));
+        drop(windows.open("p1", "y", ago(200)));
+        // A opens after Y closed; X is still going.
+        let a = windows.open("p1", "a", SystemTime::now() + Duration::from_secs(1));
+        let others = windows.others("p1", "a", a.start);
+        assert_eq!(others.len(), 1, "only X: {others:?}");
+        assert_eq!(others[0].0, x.start);
+        // Another project is never an overlap.
+        assert!(windows.others("p2", "a", a.start).is_empty());
     }
 
     #[test]

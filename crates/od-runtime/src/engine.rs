@@ -297,18 +297,18 @@ impl RunEngine {
             let run_id = spec.run.id().to_owned();
             // Project runs only: what the agent changes there is the turn's
             // result (spec L4); taken before the agent can write.
-            // The window starts before the snapshot, so whatever the agent
-            // stamps falls inside it.
-            let turn = match spec.project_id.clone() {
+            // The window opens before the snapshot: whatever the agent
+            // stamps falls inside it, and a run of the project that ends
+            // during the walk keeps its window for this one.
+            let turn = match spec.project_id.as_deref() {
                 Some(project) => {
-                    let windows = engine.turn_windows.clone();
-                    let (cwd, id) = (spec.cwd.clone(), run_id.clone());
-                    tokio::task::spawn_blocking(move || {
-                        let start = std::time::SystemTime::now();
-                        windows.open(&project, &id, start, turn_files::Snapshot::take(&cwd))
-                    })
-                    .await
-                    .ok()
+                    let start = std::time::SystemTime::now();
+                    let turn = engine.turn_windows.open(project, &run_id, start);
+                    let cwd = spec.cwd.clone();
+                    tokio::task::spawn_blocking(move || turn_files::Snapshot::take(&cwd))
+                        .await
+                        .ok()
+                        .map(|before| turn.with_before(before))
                 }
                 None => None,
             };
