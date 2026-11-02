@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Example: bike share year in numbers</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Example: bike share year in numbers: a 12 s, 1920x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 12 s film
+   (1 s = 8.333%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 19.2px
+   on the 1920px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+@property --n { syntax: '<integer>'; inherits: false; initial-value: 0; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 12s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1920 / 1080)); aspect-ratio: 1920 / 1080;
+  background: #0b3d3a; color: #f2fbf9; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.num { counter-reset: n var(--n); font-variant-numeric: tabular-nums; }
+.num::before { content: counter(n); }
+
+.top { position: absolute; left: 6.7708cqw; right: 6.7708cqw; top: 5.2083cqw; display: flex; justify-content: space-between; align-items: flex-end; }
+.ttl { font-size: 3.6458cqw; font-weight: 900; letter-spacing: -0.1042cqw; line-height: 1; }
+.ttl small { display: block; font: 600 1.3542cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.3125cqw; color: #7fd8c9; margin-bottom: 0.9375cqw; }
+.stats { position: absolute; left: 6.7708cqw; right: 6.7708cqw; top: 13.5417cqw; display: flex; gap: 2.0833cqw; }
+.st { flex: 1; border-top: 0.2083cqw solid #7fd8c9; padding-top: 1.25cqw; }
+.st .v { font-size: 5.8333cqw; font-weight: 900; letter-spacing: -0.1562cqw; line-height: 1; }
+.st .k { font-size: 1.4583cqw; color: #a9d9d1; margin-top: 0.5208cqw; }
+.chart { position: absolute; left: 6.7708cqw; top: 31.25cqw; width: 52.0833cqw; height: 17.7083cqw; overflow: visible; }
+.chart .ln { fill: none; stroke: #ffd166; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 100; }
+.chart .base { stroke: rgba(242,251,249,.25); stroke-width: 2; }
+.chart text { fill: #a9d9d1; font: 600 0.9375cqw ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.call { position: absolute; left: 61.4583cqw; top: 33.3333cqw; width: 31.25cqw; font-size: 2.2917cqw; font-weight: 800; line-height: 1.15; }
+.call small { display: block; font-size: 1.3542cqw; font-weight: 500; color: #a9d9d1; margin-top: 0.625cqw; }
+.pin { fill: #ffd166; transform-box: fill-box; transform-origin: center; }
+.end { position: absolute; inset: 0; background: #ffd166; color: #0b3d3a; display: grid; place-items: center; font-size: 7.8125cqw; font-weight: 900; letter-spacing: -0.2604cqw; }
+
+@keyframes k1 {
+  0% { opacity: 0; transform: translateY(2.0833cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  1.667% { opacity: 0; transform: translateY(2.0833cqw); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  8.333% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { opacity: 0; transform: translateY(2.6042cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  6.667% { opacity: 0; transform: translateY(2.6042cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  12.5% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { --n: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  8.333% { --n: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  26.667% { --n: 412; animation-timing-function: linear; }
+  100% { --n: 412; animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { opacity: 0; transform: translateY(2.6042cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  9.167% { opacity: 0; transform: translateY(2.6042cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  15% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { --n: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  10.833% { --n: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  29.167% { --n: 1850; animation-timing-function: linear; }
+  100% { --n: 1850; animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { opacity: 0; transform: translateY(2.6042cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  11.667% { opacity: 0; transform: translateY(2.6042cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  17.5% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { --n: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  13.333% { --n: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  31.667% { --n: 96; animation-timing-function: linear; }
+  100% { --n: 96; animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  26.667% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.65,0,.35,1); }
+  50% { stroke-dashoffset: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { opacity: 0; transform: scale(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  41.667% { opacity: 0; transform: scale(0); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  45.833% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  46.667% { opacity: 1; transform: scale(1); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  50% { opacity: 1; transform: scale(1.4); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  53.333% { opacity: 1; transform: scale(1); animation-timing-function: linear; }
+  100% { opacity: 1; transform: scale(1); animation-timing-function: linear; }
+}
+@keyframes k10 {
+  0% { opacity: 0; transform: translateX(3.125cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  45% { opacity: 0; transform: translateX(3.125cqw); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  50.833% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k11 {
+  0% { clip-path: circle(0% at 50% 50%); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  80% { clip-path: circle(0% at 50% 50%); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  85.833% { clip-path: circle(80% at 50% 50%); animation-timing-function: linear; }
+  100% { clip-path: circle(80% at 50% 50%); animation-timing-function: linear; }
+}
+#ttl { animation: k1 var(--film) linear infinite both; }
+#s1 { animation: k2 var(--film) linear infinite both; }
+#n1 { animation: k3 var(--film) linear infinite both; }
+#s2 { animation: k4 var(--film) linear infinite both; }
+#n2 { animation: k5 var(--film) linear infinite both; }
+#s3 { animation: k6 var(--film) linear infinite both; }
+#n3 { animation: k7 var(--film) linear infinite both; }
+#ln { animation: k8 var(--film) linear infinite both; }
+#pin { animation: k9 var(--film) linear infinite both; }
+#call { animation: k10 var(--film) linear infinite both; }
+#end { animation: k11 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="12"
+  data-width="1920" data-height="1080" data-fps="30" data-poster-time="6.8">
+<div class="top"><div class="ttl" id="ttl"><small>RIVERSIDE BIKES</small>2026 in numbers</div></div>
+<div class="stats">
+  <div class="st" id="s1"><div class="v"><span class="num" id="n1"></span>k</div><div class="k">trips taken</div></div>
+  <div class="st" id="s2"><div class="v"><span class="num" id="n2"></span></div><div class="k">bikes on the street</div></div>
+  <div class="st" id="s3"><div class="v"><span class="num" id="n3"></span></div><div class="k">stations</div></div>
+</div>
+<svg class="chart" viewBox="0 0 1000 340" aria-hidden="true">
+  <line class="base" x1="0" y1="300" x2="1000" y2="300"/>
+  <path class="ln" id="ln" d="M40 212 L120 200 L200 176 L280 148 L360 116 L440 92 L520 68 L600 72 L680 104 L760 136 L840 180 L920 204" pathLength="100"/>
+  <circle class="pin" id="pin" cx="520" cy="68" r="14"/>
+  <text x="30" y="332">JAN</text><text x="490" y="332">JUL</text><text x="910" y="332">DEC</text>
+</svg>
+<div class="call" id="call">July was the busiest month<small>58k trips, one every 46 seconds</small></div>
+<div class="end" id="end">Thanks for riding</div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 12;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>

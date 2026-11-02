@@ -523,6 +523,61 @@ async fn contour_examples_preview_and_remix() {
     assert_eq!(seen, 30, "Contour's own gallery examples");
 }
 
+/// Every Motion template (Industry "Motion") opens in the preview as a
+/// composition `media generate` accepts, and Remix makes a project from it.
+#[tokio::test]
+async fn motion_templates_preview_and_remix() {
+    use od_server::routes::w3::motion::check_composition;
+    let d = daemon().await;
+    let list = d.get_json("/api/design-templates").await;
+    let motion: Vec<&Value> = list["designTemplates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|t| t["scenario"] == "motion")
+        .collect();
+    assert!(motion.len() >= 18, "only {} Motion templates", motion.len());
+    for t in motion {
+        let id = t["id"].as_str().unwrap();
+        assert_eq!(t["mode"], "video", "{id}");
+        assert_eq!(t["hasExample"], true, "{id}");
+        let res = d
+            .http
+            .get(format!("{}/api/design-templates/{id}/example", d.base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status().as_u16(), 200, "{id}");
+        let example = res.text().await.unwrap();
+        let (comp, poster) =
+            check_composition(&example, &[]).unwrap_or_else(|e| panic!("{id}: {e}"));
+        let seconds = comp.duration_ms.unwrap() / 1000;
+        assert!((5..=15).contains(&seconds), "{id}: {seconds} s");
+        assert!(poster > 0.0, "{id}: poster at {poster}");
+        let (s, v) = call(
+            &d,
+            "POST",
+            &format!("/api/design-templates/{id}/remix"),
+            None,
+        )
+        .await;
+        assert_eq!(s, 200, "{id}: {v}");
+        assert_eq!(v["project"]["skillId"], id);
+        let pid = v["project"]["id"].as_str().unwrap();
+        let html = d
+            .http
+            .get(format!("{}/api/projects/{pid}/raw/index.html", d.base))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(html.contains("window.__timelines.main"), "{id}");
+        assert!(html.contains(&example[..example.len().min(400)]), "{id}");
+    }
+}
+
 /// A 1×1 PNG.
 const PNG: &[u8] = &[
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0,

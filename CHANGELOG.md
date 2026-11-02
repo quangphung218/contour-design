@@ -10,6 +10,16 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Added
 
+- 18 Motion templates in Templates, filed under the Industry "Motion": 13
+  templates to adapt (logo reveal, kinetic typography, animated bar chart,
+  KPI counters, lower third, quote card, countdown, vertical social story,
+  channel intro, transition pack, end screen, chapter title cards, product
+  feature callouts) and 5 finished examples (a product teaser, a bike
+  share year in numbers, a 9:16 app story, an event opener, a weather
+  card). Each is a 5–15 s HyperFrames film that previews on its card,
+  opens with Remix or "Use template", and renders to MP4 with
+  `media generate`. They are written for Contour under Apache-2.0, use
+  system fonts and inline SVG, download nothing and are silent.
 - 30 new gallery templates written for Contour: 10 WebGL pages (noise
   gradient, particle flock, rotating 3D product, data globe, topographic
   contours, liquid chrome, star warp, cell field, ocean point grid,

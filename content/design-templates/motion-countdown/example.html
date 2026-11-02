@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Countdown</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Countdown: a 10 s, 1920x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 10 s film
+   (1 s = 10.000%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 19.2px
+   on the 1920px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+@property --n { syntax: '<integer>'; inherits: false; initial-value: 0; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 10s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1920 / 1080)); aspect-ratio: 1920 / 1080;
+  background: #1a1033; color: #fdf8ff; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.center { position: absolute; inset: 0; display: grid; place-items: center; }
+.ring { position: absolute; width: 33.3333cqw; height: 33.3333cqw; }
+.ring circle { fill: none; stroke-width: 14; }
+.ring .track { stroke: rgba(253,248,255,.12); }
+.ring .prog { stroke: #ff5fa2; stroke-linecap: round; stroke-dasharray: 100; transform: rotate(-90deg); transform-origin: 50% 50%; transform-box: fill-box; }
+.digit { position: absolute; font-size: 19.7917cqw; font-weight: 900; letter-spacing: -0.5208cqw; line-height: 1; font-variant-numeric: tabular-nums; }
+.live { position: absolute; font-size: 8.8542cqw; font-weight: 900; letter-spacing: -0.2083cqw; }
+.live em { font-style: normal; color: #ff5fa2; }
+.burst { position: absolute; width: 46.875cqw; height: 46.875cqw; }
+.burst line { stroke: #ffd23f; stroke-width: 10; stroke-linecap: round; stroke-dasharray: 100; }
+.sub { position: absolute; bottom: 6.25cqw; left: 0; right: 0; text-align: center; font: 600 1.5625cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.4167cqw; color: #b9a8d9; }
+
+@keyframes k1 {
+  0% { stroke-dashoffset: 100; opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  4.5% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: linear; }
+  5% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: linear; }
+  14.8% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: linear; }
+  15% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: linear; }
+  24.8% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: linear; }
+  25% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: linear; }
+  34.8% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: linear; }
+  35% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: linear; }
+  44.8% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: linear; }
+  45% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: linear; }
+  54.8% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  55% { stroke-dashoffset: 100; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 100; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { transform: scale(.7); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  1% { transform: scale(.7); opacity: 0; animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  6% { transform: none; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  54% { transform: none; opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  58% { transform: scale(1.4); opacity: 0; animation-timing-function: linear; }
+  100% { transform: scale(1.4); opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { opacity: 0; transform: scale(1.8); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  4.9% { opacity: 0; transform: scale(1.8); animation-timing-function: steps(1,end); }
+  5% { opacity: 1; transform: scale(1.8); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  8.5% { opacity: 1; transform: scale(1); animation-timing-function: linear; }
+  13.5% { opacity: 1; transform: scale(.94); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  15% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { opacity: 0; transform: scale(1.8); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  14.9% { opacity: 0; transform: scale(1.8); animation-timing-function: steps(1,end); }
+  15% { opacity: 1; transform: scale(1.8); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  18.5% { opacity: 1; transform: scale(1); animation-timing-function: linear; }
+  23.5% { opacity: 1; transform: scale(.94); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  25% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { opacity: 0; transform: scale(1.8); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  24.9% { opacity: 0; transform: scale(1.8); animation-timing-function: steps(1,end); }
+  25% { opacity: 1; transform: scale(1.8); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  28.5% { opacity: 1; transform: scale(1); animation-timing-function: linear; }
+  33.5% { opacity: 1; transform: scale(.94); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  35% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { opacity: 0; transform: scale(1.8); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  34.9% { opacity: 0; transform: scale(1.8); animation-timing-function: steps(1,end); }
+  35% { opacity: 1; transform: scale(1.8); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  38.5% { opacity: 1; transform: scale(1); animation-timing-function: linear; }
+  43.5% { opacity: 1; transform: scale(.94); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  45% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { opacity: 0; transform: scale(1.8); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  44.9% { opacity: 0; transform: scale(1.8); animation-timing-function: steps(1,end); }
+  45% { opacity: 1; transform: scale(1.8); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  48.5% { opacity: 1; transform: scale(1); animation-timing-function: linear; }
+  53.5% { opacity: 1; transform: scale(.94); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  55% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { opacity: 0; transform: scale(.4); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  56% { opacity: 0; transform: scale(.4); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  62% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  93% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  99% { opacity: 0; transform: none; animation-timing-function: linear; }
+  100% { opacity: 0; transform: none; animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  62% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  68% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k10 {
+  0% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  62% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  68% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k11 {
+  0% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  62% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  68% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k12 {
+  0% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  62% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  68% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k13 {
+  0% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  62% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  68% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k14 {
+  0% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  62% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  68% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k15 {
+  0% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  62% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  68% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k16 {
+  0% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  62% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  68% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k17 {
+  0% { opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  2% { opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  7% { opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  53% { opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  56% { opacity: 0; animation-timing-function: linear; }
+  100% { opacity: 0; animation-timing-function: linear; }
+}
+#prog { animation: k1 var(--film) linear infinite both; }
+#ring { animation: k2 var(--film) linear infinite both; }
+#d5 { animation: k3 var(--film) linear infinite both; }
+#d4 { animation: k4 var(--film) linear infinite both; }
+#d3 { animation: k5 var(--film) linear infinite both; }
+#d2 { animation: k6 var(--film) linear infinite both; }
+#d1 { animation: k7 var(--film) linear infinite both; }
+#live { animation: k8 var(--film) linear infinite both; }
+#r1 { animation: k9 var(--film) linear infinite both; }
+#r2 { animation: k10 var(--film) linear infinite both; }
+#r3 { animation: k11 var(--film) linear infinite both; }
+#r4 { animation: k12 var(--film) linear infinite both; }
+#r5 { animation: k13 var(--film) linear infinite both; }
+#r6 { animation: k14 var(--film) linear infinite both; }
+#r7 { animation: k15 var(--film) linear infinite both; }
+#r8 { animation: k16 var(--film) linear infinite both; }
+#sub { animation: k17 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="10"
+  data-width="1920" data-height="1080" data-fps="30" data-poster-time="1.5">
+<div class="center">
+  <svg class="ring" id="ring" viewBox="0 0 200 200"><circle class="track" cx="100" cy="100" r="90"/><circle class="prog" id="prog" cx="100" cy="100" r="90" pathLength="100"/></svg>
+  <div class="digit" id="d5">5</div><div class="digit" id="d4">4</div><div class="digit" id="d3">3</div><div class="digit" id="d2">2</div><div class="digit" id="d1">1</div>
+  <svg class="burst" viewBox="0 0 200 200" aria-hidden="true">
+    <line id="r1" x1="100" y1="40" x2="100" y2="6" pathLength="100"/><line id="r2" x1="142" y1="58" x2="166" y2="34" pathLength="100"/>
+    <line id="r3" x1="160" y1="100" x2="194" y2="100" pathLength="100"/><line id="r4" x1="142" y1="142" x2="166" y2="166" pathLength="100"/>
+    <line id="r5" x1="100" y1="160" x2="100" y2="194" pathLength="100"/><line id="r6" x1="58" y1="142" x2="34" y2="166" pathLength="100"/>
+    <line id="r7" x1="40" y1="100" x2="6" y2="100" pathLength="100"/><line id="r8" x1="58" y1="58" x2="34" y2="34" pathLength="100"/>
+  </svg>
+  <div class="live" id="live">We're <em>live</em></div>
+</div>
+<div class="sub" id="sub">STARTING IN</div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 10;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>

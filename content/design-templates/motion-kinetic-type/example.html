@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kinetic typography</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Kinetic typography: a 8 s, 1920x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 8 s film
+   (1 s = 12.500%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 19.2px
+   on the 1920px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+@property --n { syntax: '<integer>'; inherits: false; initial-value: 0; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 8s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1920 / 1080)); aspect-ratio: 1920 / 1080;
+  background: #f3ede2; color: #1b1a17; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.scene { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 9.375cqw; }
+.big { font-size: 11.9792cqw; font-weight: 900; line-height: .9; letter-spacing: -0.3125cqw; }
+.big span { display: inline-block; }
+.red { color: #e4472b; }
+#b2 { transform-origin: left center; }
+.end { font-family: ui-serif, "Iowan Old Style", Charter, Georgia, "Times New Roman", serif; font-size: 7.8125cqw; font-weight: 700; line-height: 1; letter-spacing: -0.1042cqw; }
+.end em { color: #e4472b; font-style: italic; }
+.bar { position: absolute; left: 0; right: 0; bottom: 0; height: 0.9375cqw; background: #1b1a17; transform-origin: left; }
+.count { position: absolute; right: 4.1667cqw; top: 3.3333cqw; font: 600 1.4583cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.2083cqw; }
+
+@keyframes k1 {
+  0% { transform: translateX(-83.3333cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  2.5% { transform: translateX(-83.3333cqw); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  8.75% { transform: none; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  30% { transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  34.375% { transform: translateY(-36.4583cqw); animation-timing-function: linear; }
+  100% { transform: translateY(-36.4583cqw); animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { transform: scale(2.4); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  7.5% { transform: scale(2.4); opacity: 0; animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  13.125% { transform: none; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  30.625% { transform: none; opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  35% { transform: translateY(36.4583cqw); opacity: 1; animation-timing-function: linear; }
+  100% { transform: translateY(36.4583cqw); opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { transform: translateY(-26.0417cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  33.75% { transform: translateY(-26.0417cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  40% { transform: none; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57.5% { transform: none; opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  61.875% { transform: translateX(20.8333cqw); opacity: 0; animation-timing-function: linear; }
+  100% { transform: translateX(20.8333cqw); opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { transform: scaleX(0); opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  38.75% { transform: scaleX(0); opacity: 1; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  45% { transform: scaleX(1); opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  57.5% { transform: scaleX(1); opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  61.875% { transform: scaleX(0); opacity: 1; animation-timing-function: linear; }
+  100% { transform: scaleX(0); opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { opacity: 0; transform: translateY(4.1667cqw); filter: blur(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  63.75% { opacity: 0; transform: translateY(4.1667cqw); filter: blur(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  72.5% { opacity: 1; transform: none; filter: blur(0cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  92.5% { opacity: 1; transform: none; filter: blur(0cqw); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  98.75% { opacity: 0; transform: none; filter: blur(0cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: none; filter: blur(0cqw); animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { transform: scaleX(0); animation-timing-function: linear; }
+  100% { transform: scaleX(1); animation-timing-function: linear; }
+}
+#a1 { animation: k1 var(--film) linear infinite both; }
+#a2 { animation: k2 var(--film) linear infinite both; }
+#b1 { animation: k3 var(--film) linear infinite both; }
+#b2 { animation: k4 var(--film) linear infinite both; }
+#c1 { animation: k5 var(--film) linear infinite both; }
+#bar { animation: k6 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="8"
+  data-width="1920" data-height="1080" data-fps="30" data-poster-time="6.6">
+<div class="scene"><div class="big"><span id="a1">Make it</span></div><div class="big red"><span id="a2">move.</span></div></div>
+<div class="scene"><div class="big"><span id="b1">Make it</span></div><div class="big red"><span id="b2">matter.</span></div></div>
+<div class="scene"><div class="end" id="c1">Ideas deserve <em>motion.</em></div></div>
+<div class="bar" id="bar"></div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 8;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>

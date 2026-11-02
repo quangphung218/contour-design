@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logo reveal</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Logo reveal: a 6 s, 1920x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 6 s film
+   (1 s = 16.667%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 19.2px
+   on the 1920px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+@property --n { syntax: '<integer>'; inherits: false; initial-value: 0; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 6s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1920 / 1080)); aspect-ratio: 1920 / 1080;
+  background: #0f1115; color: #f4efe6; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.num { counter-reset: n var(--n); font-variant-numeric: tabular-nums; }
+.num::before { content: counter(n); }
+
+.center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.875cqw; }
+.glow { position: absolute; left: 50%; top: 46%; width: 46.875cqw; height: 46.875cqw; margin: -23.4375cqw 0 0 -23.4375cqw; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,122,69,.22) 0%, rgba(255,122,69,0) 60%); }
+.mark { width: 11.4583cqw; height: 11.4583cqw; }
+.mark path, .mark circle, .mark rect { fill: none; stroke-width: 6; stroke-linecap: round; stroke-dasharray: 100; }
+.mark .a { stroke: #ff7a45; } .mark .b { stroke: #ffd166; } .mark .c { stroke: #f4efe6; }
+.mark .dot { fill: #ffd166; stroke: none; stroke-dasharray: none; transform-origin: 5.7292cqw 5.7292cqw; transform-box: view-box; }
+.word { display: flex; gap: 0.3125cqw; font-weight: 800; font-size: 6.25cqw; letter-spacing: 0.4167cqw; line-height: 1; overflow: hidden; padding: 0.5208cqw 0; position: relative; }
+.word span { display: inline-block; }
+.sweep { position: absolute; top: 0; bottom: 0; width: 8.3333cqw; left: -10.4167cqw;
+  background: linear-gradient(100deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.55) 50%, rgba(255,255,255,0) 100%); mix-blend-mode: overlay; }
+.tag { font-size: 1.7708cqw; letter-spacing: 0.625cqw; text-transform: uppercase; color: #c9c1b3; }
+.rule { width: 21.875cqw; height: 0.1562cqw; background: #ff7a45; transform-origin: center; }
+
+@keyframes k1 {
+  0% { opacity: 0; transform: scale(.6); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  1.667% { opacity: 0; transform: scale(.6); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  28.333% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  88.333% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  98.333% { opacity: 0; transform: none; animation-timing-function: linear; }
+  100% { opacity: 0; transform: none; animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  3.333% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.65,0,.35,1); }
+  21.667% { stroke-dashoffset: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  8.333% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  25% { stroke-dashoffset: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  13.333% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  28.333% { stroke-dashoffset: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { transform: scale(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  26.667% { transform: scale(0); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  35% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  29.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  39.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  30.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  40.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  31.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  41.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  32.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  42.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k10 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  33.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  43.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k11 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  34.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  44.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k12 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  35.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  45.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k13 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  36.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  46.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k14 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  37.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  47.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k15 {
+  0% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  38.333% { transform: translateY(7.2917cqw); opacity: 0; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  48.333% { transform: none; opacity: 1; animation-timing-function: linear; }
+  100% { transform: none; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k16 {
+  0% { transform: translateX(0cqw); opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  46.667% { transform: translateX(0cqw); opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  48.333% { transform: translateX(0cqw); opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  58.333% { transform: translateX(0cqw); opacity: 1; animation-timing-function: cubic-bezier(.65,0,.35,1); }
+  60% { transform: translateX(62.5cqw); opacity: 0; animation-timing-function: linear; }
+  100% { transform: translateX(62.5cqw); opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k17 {
+  0% { transform: scaleX(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  43.333% { transform: scaleX(0); animation-timing-function: cubic-bezier(.65,0,.35,1); }
+  53.333% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k18 {
+  0% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  48.333% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  60% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k19 {
+  0% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  88.333% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  98.333% { opacity: 0; transform: scale(.96); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.96); animation-timing-function: linear; }
+}
+#glow { animation: k1 var(--film) linear infinite both; }
+#m1 { animation: k2 var(--film) linear infinite both; }
+#m2 { animation: k3 var(--film) linear infinite both; }
+#m3 { animation: k4 var(--film) linear infinite both; }
+#m4 { animation: k5 var(--film) linear infinite both; }
+#l1 { animation: k6 var(--film) linear infinite both; }
+#l2 { animation: k7 var(--film) linear infinite both; }
+#l3 { animation: k8 var(--film) linear infinite both; }
+#l4 { animation: k9 var(--film) linear infinite both; }
+#l5 { animation: k10 var(--film) linear infinite both; }
+#l6 { animation: k11 var(--film) linear infinite both; }
+#l7 { animation: k12 var(--film) linear infinite both; }
+#l8 { animation: k13 var(--film) linear infinite both; }
+#l9 { animation: k14 var(--film) linear infinite both; }
+#l10 { animation: k15 var(--film) linear infinite both; }
+#sweep { animation: k16 var(--film) linear infinite both; }
+#rule { animation: k17 var(--film) linear infinite both; }
+#tag { animation: k18 var(--film) linear infinite both; }
+.center { animation: k19 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="6"
+  data-width="1920" data-height="1080" data-fps="30" data-poster-time="3.4">
+<div class="glow" id="glow"></div>
+<div class="center">
+  <svg class="mark" viewBox="0 0 220 220" aria-hidden="true">
+    <circle class="a" id="m1" cx="110" cy="110" r="96" pathLength="100"/>
+    <path class="b" id="m2" d="M40 150 L110 40 L180 150 Z" pathLength="100"/>
+    <rect class="c" id="m3" x="78" y="104" width="64" height="64" pathLength="100"/>
+    <circle class="dot" id="m4" cx="110" cy="136" r="12"/>
+  </svg>
+  <div class="word" id="word">
+    <span id="l1">L</span><span id="l2">U</span><span id="l3">M</span><span id="l4">E</span><span id="l5">N</span>
+    <span id="l6">&nbsp;</span><span id="l7">&amp;</span><span id="l8">&nbsp;</span><span id="l9">C</span><span id="l10">O</span>
+    <i class="sweep" id="sweep"></i>
+  </div>
+  <div class="rule" id="rule"></div>
+  <div class="tag" id="tag">Light for small rooms</div>
+</div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 6;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>
