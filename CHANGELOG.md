@@ -20,9 +20,10 @@ All notable changes to Contour are recorded here. The format follows
   co-op, tea subscription, board-game café, CLI tool, architecture studio,
   farm box). Filter by Prototype or Deck to find them. Each loads nothing
   from the network: system fonts and drawings in the page. A WebGL page
-  shows a still poster in the gallery and in browsers without WebGL; a
-  deck scales to any frame without script and moves with keys, wheel,
-  swipe or its dots.
+  shows a still poster in the gallery and in browsers without WebGL, and
+  stacks its text above the visual on a phone; a deck scales to any frame
+  without script and moves with keys, wheel, swipe or its dots. Remixed,
+  none of them shows a P0 lint finding.
 
 ## [0.2.0-beta.12] - 2026-11-02
 
