@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.15] - 2026-11-02
+
 ### Fixed
 
 - In the @ list, Enter picks the top row for what was typed even when the
@@ -694,7 +696,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.14...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.15...HEAD
+[0.2.0-beta.15]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.14...v0.2.0-beta.15
 [0.2.0-beta.14]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.13...v0.2.0-beta.14
 [0.2.0-beta.13]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.12...v0.2.0-beta.13
 [0.2.0-beta.12]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.11...v0.2.0-beta.12
