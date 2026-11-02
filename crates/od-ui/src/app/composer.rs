@@ -558,8 +558,10 @@ pub fn MentionArea(
         let next = mention::slash_at(&text, at)
             .map(|t| (true, t))
             .or_else(|| mention::mention_at(&text, at).map(|t| (false, t)));
-        if next.as_ref().map(|(s, t)| (*s, t.start))
-            != open.get_untracked().map(|(s, t)| (s, t.start))
+        // A new query ranks a new list: Enter then picks its top row, not
+        // the row that was highlighted in the list before.
+        if next.as_ref().map(|(s, t)| (*s, t.start, t.query.clone()))
+            != open.with_untracked(|o| o.as_ref().map(|(s, t)| (*s, t.start, t.query.clone())))
         {
             index.set(0);
         }
@@ -787,7 +789,9 @@ fn Palette(
                     data-kind=kind
                     aria-selected=move || (index.get() == i).to_string()
                     on:mousedown=|ev| ev.prevent_default()
-                    on:mouseenter=move |_| index.set(i)
+                    // Only a moving pointer highlights: a list drawn under a resting
+                    // pointer keeps the keyboard's row.
+                    on:mousemove=move |_| if index.get_untracked() != i { index.set(i) }
                     on:click=move |_| pick.run(row.clone())
                 >
                     {icon(glyph)}

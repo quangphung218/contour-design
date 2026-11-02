@@ -180,8 +180,14 @@ try {
 
   // 5. @ mention a skill from the palette (keyboard) and a plugin from "+".
   await brief.fill('');
-  await brief.pressSequentially('Clone it with @web-cl');
+  // Highlight a lower row with the pointer, then keep typing: the new
+  // query's top row is what Enter picks, not the row under the pointer.
+  await brief.pressSequentially('Clone it with @web');
   await page.getByTestId('mention-palette').waitFor();
+  const third = page.locator('[data-testid="mention-item"]').nth(2);
+  await third.hover();
+  assert.equal(await third.getAttribute('aria-selected'), 'true');
+  await brief.pressSequentially('-cl');
   // Enter picks the highlighted row: wait until the list is ranked for the
   // whole query, or a fast run picks a row ranked for "@web".
   await page
