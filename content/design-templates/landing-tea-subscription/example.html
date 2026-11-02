@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Second Flush · Tea subscription</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+img,svg{display:block;max-width:100%}
+a{color:inherit}
+:root{--paper:#f6f4ee;--green:#5f7357;--leaf:#2f3d2b;--amber:#b77a2f;--line:#dedbd0}
+body{background:var(--paper);color:var(--leaf);font-family:'Avenir Next','Segoe UI','Helvetica Neue',sans-serif;line-height:1.6}
+.wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+.serif{font-family:'Hoefler Text','Iowan Old Style',Georgia,serif}
+nav{display:flex;justify-content:space-between;align-items:center;padding:28px 0;font-size:.95rem}
+nav b{font-family:'Hoefler Text','Iowan Old Style',Georgia,serif;font-size:1.4rem;font-weight:400}
+nav a{text-decoration:none;color:var(--green);margin-left:26px}
+.hero{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center;padding:50px 0 90px}
+h1{font-family:'Hoefler Text','Iowan Old Style',Georgia,serif;font-weight:400;font-size:clamp(2.6rem,5.6vw,4.6rem);line-height:1.04;letter-spacing:-.01em}
+.hero p{margin-top:22px;font-size:1.15rem;color:#4c5a47;max-width:28rem}
+.btn{display:inline-block;margin-top:30px;padding:15px 28px;border-radius:999px;background:var(--amber);color:#fff;text-decoration:none;font-weight:600}
+.note{margin-top:12px;font-size:.9rem;color:#7a8473}
+.cup{position:relative;max-width:420px;margin:0 auto}
+.steam{position:absolute;left:0;right:0;top:-10px;height:160px;display:flex;justify-content:center;gap:26px}
+.steam i{width:18px;height:150px;border-radius:50%;border-left:4px solid rgba(95,115,87,.35);animation:rise 6s ease-in-out infinite;opacity:0}
+.steam i:nth-child(2){animation-delay:2s}.steam i:nth-child(3){animation-delay:4s}
+@keyframes rise{0%{transform:translateY(40px) scaleY(.6);opacity:0}30%{opacity:.9}100%{transform:translateY(-40px) scaleY(1.1) skewX(-12deg);opacity:0}}
+@media (prefers-reduced-motion:reduce){.steam i{animation:none;opacity:.6}}
+section{padding:80px 0;border-top:1px solid var(--line)}
+h2{font-family:'Hoefler Text','Iowan Old Style',Georgia,serif;font-weight:400;font-size:clamp(2rem,3.6vw,2.8rem);line-height:1.1}
+.lead{color:#5d6a57;margin-top:10px;max-width:36rem}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:26px;margin-top:40px}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:30px}
+.leaf{width:48px;height:48px;border-radius:0 50% 0 50%;background:var(--green);opacity:.85}
+.card h3{font-family:'Hoefler Text','Iowan Old Style',Georgia,serif;font-weight:400;font-size:1.5rem;margin-top:18px}
+.card .meta{font-size:.85rem;color:#7a8473;text-transform:uppercase;letter-spacing:.08em;margin-top:4px}
+.card p{margin-top:14px;color:#4c5a47}
+.tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.tags span{font-size:.82rem;padding:4px 12px;border-radius:999px;background:#eef0e8;color:var(--green)}
+.ritual{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;margin-top:40px}
+.ritual b{display:block;font-family:'Hoefler Text','Iowan Old Style',Georgia,serif;font-weight:400;font-size:3rem;color:var(--green)}
+.plan{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center}
+.plancard{background:var(--leaf);color:var(--paper);border-radius:24px;padding:44px}
+.plancard .price{font-family:'Hoefler Text','Iowan Old Style',Georgia,serif;font-size:3.6rem;line-height:1}
+.plancard .price small{font-size:1rem;font-family:'Avenir Next','Segoe UI',sans-serif;opacity:.8}
+.plancard ul{margin:24px 0 0 0;list-style:none}
+.plancard li{padding:10px 0;border-top:1px solid rgba(246,244,238,.2)}
+.plancard .btn{margin-top:26px}
+details{border-bottom:1px solid var(--line);padding:20px 0}
+summary{cursor:pointer;font-family:'Hoefler Text','Iowan Old Style',Georgia,serif;font-size:1.3rem;list-style:none}
+summary::after{content:"+";float:right;color:var(--amber)}
+details[open] summary::after{content:"–"}
+details p{margin-top:10px;color:#4c5a47;max-width:44rem}
+footer{padding:40px 0 60px;font-size:.9rem;color:#7a8473;border-top:1px solid var(--line)}
+@media (max-width:760px){.hero,.cards,.ritual,.plan{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><b>Second Flush</b><div><a href="#harvests">This month</a><a href="#plan">Plan</a><a href="#faq">FAQ</a></div></nav>
+<header class="hero"><div><h1>Three small harvests, every month.</h1><p>Loose-leaf teas from growers who pick by hand, in batches too small for supermarkets. Each tin names the garden and the day it was picked.</p><a class="btn" href="#plan">Start with October's box</a><p class="note">£19 a month · skip or cancel any time</p></div>
+<div class="cup"><div class="steam" aria-hidden="true"><i></i><i></i><i></i></div><svg viewBox="0 0 420 320"><ellipse cx="210" cy="285" rx="170" ry="22" fill="#e6e2d6"/>
+<path d="M90 140h220c0 90-40 140-110 140S90 230 90 140z" fill="#fff" stroke="#2f3d2b" stroke-width="5"/>
+<path d="M310 165c50 0 50 60 0 60" fill="none" stroke="#2f3d2b" stroke-width="5"/>
+<ellipse cx="200" cy="140" rx="110" ry="16" fill="#c9a46a" stroke="#2f3d2b" stroke-width="5"/>
+<path d="M60 278c90 10 210 10 300 0" stroke="#2f3d2b" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div></header>
+<section id="harvests"><h2>October's harvests</h2><p class="lead">Picked between 2 and 19 September, packed within two weeks.</p><div class="cards">
+<div class="card"><div class="leaf"></div><h3>Misty Ridge oolong</h3><p class="meta">Grower Lin Hsu · 1,100 m</p><p>Rolled tight and lightly roasted. Opens over three steeps.</p><div class="tags"><span>orchid</span><span>toasted rice</span><span>honey</span></div></div>
+<div class="card"><div class="leaf" style="background:#8a9a6a"></div><h3>Autumn first-cut green</h3><p class="meta">Grower Aiko Mori · 400 m</p><p>Steamed the same afternoon. Brew cooler than you think.</p><div class="tags"><span>sweet pea</span><span>seaweed</span><span>pine</span></div></div>
+<div class="card"><div class="leaf" style="background:#9a6a3a"></div><h3>Hill-garden black</h3><p class="meta">Grower R. Thapa · 1,800 m</p><p>Full-bodied, takes milk well, gentle enough without.</p><div class="tags"><span>malt</span><span>stone fruit</span><span>cocoa</span></div></div></div></section>
+<section><h2>The slow cup</h2><div class="ritual"><div><b>3 g</b>One heaped teaspoon for a 250 ml cup. Weigh it once, then trust your spoon.</div><div><b>80 °C</b>For the green; 90 °C for oolong; just off the boil for the black.</div><div><b>2 min</b>Then taste. Re-steep the same leaves up to three times.</div></div></section>
+<section id="plan" class="plan"><div><h2>One plan, no tiers.</h2><p class="lead">Every member gets the same three harvests. We'd rather send you less tea that's better than more that isn't.</p></div>
+<div class="plancard"><p class="price">£19 <small>a month, postage included</small></p><ul><li>3 tins × 30 g, about 30 cups</li><li>Tasting card with the grower's note</li><li>Skip a month or cancel in two clicks</li></ul><a class="btn" href="#join">Start my box</a></div></section>
+<section id="faq"><h2>Questions</h2>
+<details><summary>When does my box arrive?</summary><p>Boxes ship on the 5th of each month. Join before the 1st to get the current month's harvests.</p></details>
+<details><summary>Can I change teas I don't like?</summary><p>Tell us what you didn't enjoy and we'll swap it for a reserve tea from the same month.</p></details>
+<details><summary>Are the tins recyclable?</summary><p>Yes, steel tins and paper labels. Or send five back with your next return label and we refill them.</p></details>
+<details><summary>Do growers get a fair price?</summary><p>We pay a fixed price per kilo agreed before the harvest, published on every tasting card.</p></details></section>
+<footer>Second Flush · small-batch tea, sent monthly · an illustrative sample page</footer>
+</div>
+</body>
+</html>

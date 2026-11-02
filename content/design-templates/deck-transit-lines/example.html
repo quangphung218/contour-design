@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en" data-od-deck-protocol="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Port Aldor Transit · Network 2027</title>
+<style>
+:root{--shell:#1b1b1b;--bg:#fbfbf7;--fg:#141414;--accent:#e2312b;--muted:#6a6a64;--body-font:'Helvetica Neue',Helvetica,Arial,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html{--u:calc(100vw / 1920)}
+html.deck-on{--u:calc(min(100vw, 177.7778vh) / 1920)}
+html,body{background:var(--shell);color:var(--fg)}
+body{font-family:var(--body-font);-webkit-font-smoothing:antialiased}
+.deck-stage{width:calc(1920*var(--u))}
+.slide{position:relative;width:calc(1920*var(--u));height:calc(1080*var(--u));overflow:hidden;display:flex;flex-direction:column;background:var(--bg);color:var(--fg)}
+html.deck-on,html.deck-on body{height:100%;overflow:hidden}
+html.deck-on .deck-stage{position:fixed;left:50%;top:50%;height:calc(1080*var(--u));transform:translate(-50%,-50%)}
+html.deck-on .slide{position:absolute;inset:0}
+@media screen{html.deck-on .slide:not(.active){display:none!important}}
+.deck-dots{display:none}
+html.deck-on .deck-dots{display:flex;position:fixed;left:50%;bottom:10px;transform:translateX(-50%);gap:8px;z-index:10;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28)}
+.deck-dots button{width:8px;height:8px;padding:0;border:0;border-radius:4px;background:rgba(255,255,255,.55);cursor:pointer;transition:width .2s}
+.deck-dots button[aria-current="true"]{width:22px;background:#fff}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,html.deck-on{--u:1px}
+  html,body,html.deck-on body{height:auto!important;overflow:visible!important;background:none}
+  html.deck-on .deck-stage{position:static;transform:none;height:auto}
+  html.deck-on .slide{position:relative;inset:auto}
+  .slide{break-after:page}
+  .deck-dots{display:none!important}
+}
+</style>
+<style>
+.slide{padding:calc(110*var(--u)) calc(130*var(--u))}
+.top{position:absolute;left:calc(130*var(--u));right:calc(130*var(--u));top:calc(56*var(--u));display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:calc(22*var(--u));letter-spacing:calc(1*var(--u))}
+.badge{display:inline-grid;place-items:center;width:calc(64*var(--u));height:calc(64*var(--u));border-radius:50%;color:#fff;font-weight:800;font-size:calc(30*var(--u))}
+h1{font-size:calc(116*var(--u));line-height:.95;font-weight:800;letter-spacing:calc(-4*var(--u));max-width:calc(880*var(--u));margin-top:calc(80*var(--u))}
+h2{font-size:calc(80*var(--u));line-height:1;font-weight:800;letter-spacing:calc(-2*var(--u));max-width:calc(1300*var(--u));margin-top:calc(40*var(--u))}
+.lede{font-size:calc(32*var(--u));line-height:1.4;margin-top:calc(32*var(--u));max-width:calc(900*var(--u));color:#3a3a36}
+.map{position:absolute;right:calc(80*var(--u));top:calc(190*var(--u));width:calc(760*var(--u))}
+.big{font-size:calc(260*var(--u));font-weight:800;letter-spacing:calc(-10*var(--u));line-height:.9;color:#e2312b}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:calc(90*var(--u));margin-top:calc(40*var(--u));align-items:center}
+.muted{color:#6a6a64}
+.trips{margin-top:calc(60*var(--u));display:grid;gap:calc(34*var(--u))}
+.trip{display:grid;grid-template-columns:calc(520*var(--u)) 1fr;align-items:center;gap:calc(30*var(--u))}
+.trip .t{font-size:calc(30*var(--u));font-weight:700}
+.trip .t small{display:block;font-size:calc(22*var(--u));font-weight:500;color:#6a6a64;margin-top:calc(4*var(--u))}
+.pair{display:grid;gap:calc(8*var(--u))}
+.pair div{height:calc(30*var(--u));border-radius:calc(15*var(--u));display:flex;align-items:center;justify-content:flex-end;padding-right:calc(14*var(--u));color:#fff;font-weight:700;font-size:calc(20*var(--u))}
+.pair .old{background:#b9b9b1}
+.legend{display:flex;gap:calc(40*var(--u));font-size:calc(22*var(--u));margin-top:calc(40*var(--u));color:#3a3a36}
+.legend i{display:inline-block;width:calc(44*var(--u));height:calc(12*var(--u));border-radius:calc(6*var(--u));margin-right:calc(12*var(--u));vertical-align:middle}
+.phases{position:relative;margin-top:calc(110*var(--u));display:grid;grid-template-columns:repeat(4,1fr)}
+.phases::before{content:"";position:absolute;left:0;right:0;top:calc(26*var(--u));height:calc(16*var(--u));border-radius:calc(8*var(--u));background:#1f63c6}
+.phase{position:relative;padding-right:calc(30*var(--u))}
+.phase .dot{width:calc(68*var(--u));height:calc(68*var(--u));border-radius:50%;background:#fff;border:calc(10*var(--u)) solid #141414}
+.phase h3{font-size:calc(38*var(--u));margin-top:calc(34*var(--u));font-weight:800}
+.phase p{font-size:calc(26*var(--u));line-height:1.4;margin-top:calc(10*var(--u));color:#3a3a36}
+.asks{margin-top:calc(60*var(--u));display:grid;gap:calc(26*var(--u))}
+.asks div{display:flex;gap:calc(30*var(--u));align-items:center;font-size:calc(40*var(--u));font-weight:700}
+.foot{position:absolute;left:calc(130*var(--u));bottom:calc(56*var(--u));font-size:calc(20*var(--u));color:#6a6a64}
+</style>
+</head>
+<body>
+<main class="deck-stage" id="deck-stage">
+<section class="slide active" data-screen-label="01">
+<div class="top"><span>PORT ALDOR TRANSIT · NETWORK 2027</span><span>Transport Committee · 4 March</span></div>
+<h1>Five lines. Every ten minutes.</h1>
+<p class="lede" style="max-width:calc(760*var(--u))">A proposal to replace 31 overlapping bus routes with five straight, frequent lines, at today's operating budget.</p>
+<svg class="map" viewBox="0 0 820 720" fill="none" stroke-linecap="round" stroke-linejoin="round">
+<path d="M40 120H360L520 280H780" stroke="#e2312b" stroke-width="22"/>
+<path d="M120 680V420L300 240H520V40" stroke="#1f63c6" stroke-width="22"/>
+<path d="M40 420H300L460 580H780" stroke="#1d9a5b" stroke-width="22"/>
+<path d="M660 680V480L520 340V280" stroke="#f2b705" stroke-width="22"/>
+<path d="M40 280H230L300 350V560" stroke="#7b3fa0" stroke-width="22"/>
+<g fill="#fff" stroke="#141414" stroke-width="7"><circle cx="300" cy="240" r="22"/><circle cx="520" cy="280" r="22"/><circle cx="300" cy="420" r="22"/><circle cx="360" cy="120" r="16"/><circle cx="520" cy="40" r="16"/><circle cx="460" cy="580" r="16"/><circle cx="660" cy="480" r="16"/><circle cx="120" cy="680" r="16"/><circle cx="780" cy="280" r="16"/><circle cx="780" cy="580" r="16"/><circle cx="40" cy="280" r="16"/></g>
+<g fill="#141414" font-family="Helvetica Neue, Arial, sans-serif" font-weight="700" font-size="22"><text x="320" y="225">Central</text><text x="540" y="265">Harbour</text><text x="320" y="405">Market Sq.</text></g></svg>
+</section>
+<section class="slide" data-screen-label="02">
+<div class="top"><span><span class="badge" style="background:#141414">!</span></span><span>Today's network</span></div>
+<div class="split"><div><p class="big">31</p><h2 style="margin-top:calc(10*var(--u))">routes, most running every 30 minutes or worse.</h2><p class="lede">Riders need a timetable to travel at all. Two out of three trips across town need a change.</p></div><svg viewBox="0 0 760 560" fill="none" stroke="#b9b9b1" stroke-width="9" stroke-linecap="round">
+<path d="M20 80C200 40 260 300 420 200S700 60 740 300"/><path d="M40 500C160 300 380 520 480 300S680 420 720 120"/><path d="M60 220C300 260 260 40 500 120S640 520 700 500"/><path d="M20 360C220 440 300 160 520 420"/><path d="M200 540C240 380 420 380 380 40"/><path d="M100 40C160 200 560 200 600 540"/><path d="M20 300C120 280 640 260 740 200"/><path d="M300 20C340 200 160 420 260 540"/></svg></div>
+</section>
+<section class="slide" data-screen-label="03">
+<div class="top"><span><span class="badge" style="background:#e2312b">1</span> <span class="badge" style="background:#1f63c6">2</span> <span class="badge" style="background:#1d9a5b">3</span> <span class="badge" style="background:#f2b705">4</span> <span class="badge" style="background:#7b3fa0">5</span></span><span>Proposed network</span></div>
+<h2 style="margin-top:calc(90*var(--u));max-width:calc(760*var(--u))">Three interchanges connect every line.</h2>
+<p class="lede" style="max-width:calc(700*var(--u))">Central, Harbour and Market Square: change once, at a covered stop, and wait under ten minutes.</p>
+<div class="legend" style="flex-direction:column;gap:calc(18*var(--u))"><span><i style="background:#e2312b"></i>1 · Northgate – Harbour</span><span><i style="background:#1f63c6"></i>2 · University – Hospital</span><span><i style="background:#1d9a5b"></i>3 · Westfield – Old Docks</span><span><i style="background:#f2b705"></i>4 · Airport road – Harbour</span><span><i style="background:#7b3fa0"></i>5 · Hillside – Market Sq.</span></div>
+<svg class="map" viewBox="0 0 820 720" fill="none" stroke-linecap="round" stroke-linejoin="round">
+<path d="M40 120H360L520 280H780" stroke="#e2312b" stroke-width="22"/>
+<path d="M120 680V420L300 240H520V40" stroke="#1f63c6" stroke-width="22"/>
+<path d="M40 420H300L460 580H780" stroke="#1d9a5b" stroke-width="22"/>
+<path d="M660 680V480L520 340V280" stroke="#f2b705" stroke-width="22"/>
+<path d="M40 280H230L300 350V560" stroke="#7b3fa0" stroke-width="22"/>
+<g fill="#fff" stroke="#141414" stroke-width="7"><circle cx="300" cy="240" r="22"/><circle cx="520" cy="280" r="22"/><circle cx="300" cy="420" r="22"/><circle cx="360" cy="120" r="16"/><circle cx="520" cy="40" r="16"/><circle cx="460" cy="580" r="16"/><circle cx="660" cy="480" r="16"/><circle cx="120" cy="680" r="16"/><circle cx="780" cy="280" r="16"/><circle cx="780" cy="580" r="16"/><circle cx="40" cy="280" r="16"/></g>
+<g fill="#141414" font-family="Helvetica Neue, Arial, sans-serif" font-weight="700" font-size="22"><text x="320" y="225">Central</text><text x="540" y="265">Harbour</text><text x="320" y="405">Market Sq.</text></g></svg>
+</section>
+<section class="slide" data-screen-label="04">
+<div class="top"><span>DOOR-TO-DOOR TIME, WEEKDAY 08:00</span><span>Modelled on 2025 ticket data</span></div>
+<h2>Common trips get 10 to 26 minutes shorter.</h2>
+<div class="trips"><div class="trip"><p class="t">Northgate → General Hospital<small>one change today</small></p><div class="pair"><div class="old" style="width:81%">52 min</div><div style="width:48%;background:#1d9a5b">31 min</div></div></div><div class="trip"><p class="t">Old Docks → University<small>two changes today</small></p><div class="pair"><div class="old" style="width:100%">64 min</div><div style="width:59%;background:#1d9a5b">38 min</div></div></div><div class="trip"><p class="t">Market Sq. → Airport road<small>direct today, but every 30 min</small></p><div class="pair"><div class="old" style="width:64%">41 min</div><div style="width:52%;background:#1d9a5b">33 min</div></div></div><div class="trip"><p class="t">Westfield estates → Central<small>direct, every 20 min</small></p><div class="pair"><div class="old" style="width:55%">35 min</div><div style="width:34%;background:#1d9a5b">22 min</div></div></div></div>
+<div class="legend"><span><i style="background:#b9b9b1"></i>Today</span><span><i style="background:#1d9a5b"></i>Network 2027</span></div>
+</section>
+<section class="slide" data-screen-label="05">
+<div class="top"><span>PHASE-IN</span><span>No line opens without its interchange</span></div>
+<h2>Four steps over eighteen months.</h2>
+<div class="phases">
+<div class="phase"><div class="dot"></div><h3>Sep 2026</h3><p>Consult riders on stop moves; publish the final map.</p></div>
+<div class="phase"><div class="dot"></div><h3>Jan 2027</h3><p>Lines 1 and 2 open with Central interchange.</p></div>
+<div class="phase"><div class="dot"></div><h3>Jun 2027</h3><p>Lines 3 and 5; Market Square shelters built.</p></div>
+<div class="phase"><div class="dot"></div><h3>Mar 2028</h3><p>Line 4 to the airport road; last old routes retire.</p></div>
+</div>
+</section>
+<section class="slide" data-screen-label="06">
+<div class="top"><span>DECISION</span><span>Transport Committee · 4 March</span></div>
+<h2>We ask the committee to approve three things.</h2>
+<div class="asks">
+<div><span class="badge" style="background:#e2312b">1</span>The five-line map as the 2027 network.</div>
+<div><span class="badge" style="background:#1f63c6">2</span>€2.4 M from the shelter fund for three interchanges.</div>
+<div><span class="badge" style="background:#1d9a5b">3</span>Public consultation from 1 September.</div>
+</div>
+<p class="foot">Operating cost: €38.1 M a year today, €37.9 M modelled for Network 2027.</p>
+</section>
+</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.deck-stage > .slide'));
+  if (!slides.length) return;
+  var KEY = 'deck:' + (location.pathname || '/') + ':' + document.title;
+  var idx = 0;
+  try {
+    var saved = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (saved >= 0 && saved < slides.length) idx = saved;
+  } catch (_) {}
+  var dots = document.createElement('nav');
+  dots.className = 'deck-dots';
+  dots.setAttribute('aria-label', 'Slides');
+  slides.forEach(function (_, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Slide ' + (i + 1));
+    b.addEventListener('click', function (e) { e.stopPropagation(); go(i); focusDeck(); });
+    dots.appendChild(b);
+  });
+  document.body.appendChild(dots);
+  function post(msg) { try { window.parent.postMessage(msg, '*'); } catch (_) {} }
+  function paint() {
+    slides.forEach(function (s, i) {
+      var on = i === idx;
+      s.classList.toggle('active', on);
+      s.classList.toggle('is-active', on);
+      s.setAttribute('aria-hidden', on ? 'false' : 'true');
+    });
+    Array.prototype.forEach.call(dots.children, function (b, i) {
+      if (i === idx) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+    post({ type: 'od:slide-state', protocolVersion: 1, active: idx, count: slides.length });
+  }
+  function go(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    paint();
+    try { localStorage.setItem(KEY, String(idx)); } catch (_) {}
+  }
+  function editable(t) {
+    return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  }
+  function onKey(e) {
+    if (e.__deckDone || editable(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key, to = null;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') to = idx + 1;
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') to = idx - 1;
+    else if (k === 'Home') to = 0;
+    else if (k === 'End') to = slides.length - 1;
+    if (to === null) return;
+    e.__deckDone = true;
+    e.preventDefault();
+    go(to);
+  }
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('keydown', onKey, true);
+  var acc = 0, lock = false, resetTimer = 0;
+  window.addEventListener('wheel', function (e) {
+    if (editable(e.target)) return;
+    e.preventDefault();
+    if (lock) return;
+    acc += e.deltaX + e.deltaY;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(function () { acc = 0; }, 180);
+    if (Math.abs(acc) > 40) {
+      go(idx + (acc > 0 ? 1 : -1));
+      acc = 0;
+      lock = true;
+      setTimeout(function () { lock = false; }, 420);
+    }
+  }, { passive: false });
+  var sx = 0, sy = 0;
+  window.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  window.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) go(idx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'od:slide') return;
+    if (d.protocolVersion != null && d.protocolVersion !== 1) return;
+    if (d.action === 'go' && typeof d.index === 'number' && isFinite(d.index)) go(Math.floor(d.index));
+    else if (d.action === 'next') go(idx + 1);
+    else if (d.action === 'prev') go(idx - 1);
+    else if (d.action === 'first') go(0);
+    else if (d.action === 'last') go(slides.length - 1);
+  });
+  document.body.setAttribute('tabindex', '-1');
+  document.body.style.outline = 'none';
+  function focusDeck() { try { window.focus(); document.body.focus({ preventScroll: true }); } catch (_) {} }
+  document.addEventListener('pointerdown', focusDeck);
+  window.addEventListener('load', focusDeck);
+  root.classList.add('deck-on');
+  paint();
+  focusDeck();
+  post({ type: 'od:deck-ready', protocolVersion: 1, capabilities: ['absolute-navigation', 'state-events'] });
+})();
+</script>
+</body>
+</html>

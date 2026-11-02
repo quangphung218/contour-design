@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en" data-od-deck-protocol="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harwick City Museum · The River Workers</title>
+<style>
+:root{--shell:#cfcac1;--bg:#efece6;--fg:#111111;--accent:#2d5d7c;--muted:#6e6a63;--body-font:'Helvetica Neue',Helvetica,Arial,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html{--u:calc(100vw / 1920)}
+html.deck-on{--u:calc(min(100vw, 177.7778vh) / 1920)}
+html,body{background:var(--shell);color:var(--fg)}
+body{font-family:var(--body-font);-webkit-font-smoothing:antialiased}
+.deck-stage{width:calc(1920*var(--u))}
+.slide{position:relative;width:calc(1920*var(--u));height:calc(1080*var(--u));overflow:hidden;display:flex;flex-direction:column;background:var(--bg);color:var(--fg)}
+html.deck-on,html.deck-on body{height:100%;overflow:hidden}
+html.deck-on .deck-stage{position:fixed;left:50%;top:50%;height:calc(1080*var(--u));transform:translate(-50%,-50%)}
+html.deck-on .slide{position:absolute;inset:0}
+@media screen{html.deck-on .slide:not(.active){display:none!important}}
+.deck-dots{display:none}
+html.deck-on .deck-dots{display:flex;position:fixed;left:50%;bottom:10px;transform:translateX(-50%);gap:8px;z-index:10;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28)}
+.deck-dots button{width:8px;height:8px;padding:0;border:0;border-radius:4px;background:rgba(255,255,255,.55);cursor:pointer;transition:width .2s}
+.deck-dots button[aria-current="true"]{width:22px;background:#fff}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,html.deck-on{--u:1px}
+  html,body,html.deck-on body{height:auto!important;overflow:visible!important;background:none}
+  html.deck-on .deck-stage{position:static;transform:none;height:auto}
+  html.deck-on .slide{position:relative;inset:auto}
+  .slide{break-after:page}
+  .deck-dots{display:none!important}
+}
+</style>
+<style>
+.slide{padding:calc(120*var(--u)) calc(150*var(--u))}
+.w{font-family:Didot,'Bodoni 72','Bodoni MT',Georgia,serif;font-weight:400}
+h1{font-family:Didot,'Bodoni 72','Bodoni MT',Georgia,serif;font-weight:400;font-size:calc(170*var(--u));line-height:.95;letter-spacing:calc(-3*var(--u));margin-top:auto}
+h2{font-family:Didot,'Bodoni 72','Bodoni MT',Georgia,serif;font-weight:400;font-size:calc(78*var(--u));line-height:1.08;max-width:calc(1300*var(--u))}
+.corner{position:absolute;right:calc(150*var(--u));top:calc(120*var(--u));text-align:right;font-size:calc(24*var(--u));line-height:1.6;color:#6e6a63}
+.sub{font-size:calc(30*var(--u));margin-top:calc(30*var(--u));color:#6e6a63;max-width:calc(900*var(--u));line-height:1.5}
+.cols{columns:2;column-gap:calc(90*var(--u));margin-top:calc(60*var(--u));font-family:Didot,'Bodoni 72',Georgia,serif;font-size:calc(34*var(--u));line-height:1.55;max-width:calc(1500*var(--u))}
+.objs{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(70*var(--u));margin-top:calc(70*var(--u))}
+.frame{height:calc(430*var(--u));background:#e3dfd7;border:calc(14*var(--u)) solid #111;display:grid;place-items:center}
+.label{margin-top:calc(28*var(--u));font-size:calc(22*var(--u));line-height:1.5;color:#3d3a35;border-left:calc(3*var(--u)) solid #2d5d7c;padding-left:calc(20*var(--u))}
+.label b{display:block;font-size:calc(26*var(--u));color:#111}
+.label code{font:calc(20*var(--u)) ui-monospace,Menlo,monospace;color:#6e6a63}
+.plan{display:grid;grid-template-columns:calc(900*var(--u)) 1fr;gap:calc(80*var(--u));margin-top:calc(50*var(--u));align-items:center}
+.rooms li{list-style:none;font-size:calc(30*var(--u));line-height:1.4;padding:calc(18*var(--u)) 0;border-top:calc(1*var(--u)) solid #c9c4ba}
+.rooms b{color:#2d5d7c;margin-right:calc(14*var(--u))}
+table{border-collapse:collapse;margin-top:calc(60*var(--u));font-size:calc(32*var(--u));width:calc(1200*var(--u))}
+td{padding:calc(24*var(--u)) 0;border-bottom:calc(1*var(--u)) solid #c9c4ba}
+td:last-child{text-align:right;font-family:Didot,'Bodoni 72',Georgia,serif;font-size:calc(52*var(--u))}
+.ask{display:grid;grid-template-columns:1fr 1fr;gap:calc(100*var(--u));margin-top:calc(70*var(--u))}
+.ask .n{font-family:Didot,'Bodoni 72',Georgia,serif;font-size:calc(150*var(--u));line-height:1}
+.ask p{font-size:calc(28*var(--u));line-height:1.5;color:#3d3a35;margin-top:calc(16*var(--u))}
+</style>
+</head>
+<body>
+<main class="deck-stage" id="deck-stage">
+<section class="slide active" data-screen-label="01">
+<div class="corner">Harwick City Museum<br>Proposal to the Board<br>Gallery 3 · Spring 2027</div>
+<p style="font-size:calc(24*var(--u));letter-spacing:calc(4*var(--u));color:#6e6a63;text-transform:uppercase">A temporary exhibition</p>
+<h1>The River<br>Workers</h1>
+<p class="sub">Ferrymen, rope makers and lamp lighters: the trades that kept the Harwick running, and the people who did them.</p>
+</section>
+<section class="slide" data-screen-label="02">
+<h2>A city that forgot its own river.</h2>
+<div class="cols"><p>For two centuries most people in Harwick earned their living within a mile of the water. Our stores hold more than four hundred objects from that working river, and almost none of them have been on display since 1983.</p>
+<p>This exhibition brings them out, alongside oral histories recorded this year with the last ferry crew and the families of the rope walk. It asks visitors one question at the door: who built the river city you walked here through?</p></div>
+</section>
+<section class="slide" data-screen-label="03">
+<h2>Three objects carry the story.</h2>
+<div class="objs"><div><div class="frame"><svg viewBox="0 0 120 160" style="width:calc(150*var(--u))" fill="none" stroke="#111" stroke-width="5"><path d="M60 10v60a30 30 0 1 1-30 30"/><circle cx="60" cy="10" r="6"/></svg></div><p class="label"><b>Ferryman's boat hook</b>Unknown maker, c. 1890<br>Iron, ash wood<br><code>HCM 1974.112</code></p></div>
+<div><div class="frame"><svg viewBox="0 0 120 160" style="width:calc(150*var(--u))" fill="none" stroke="#111" stroke-width="5"><path d="M40 30h40l10 20H30zM35 50h50v70H35zM50 120v20h20v-20M60 10v20"/><path d="M60 70v28" stroke="#2d5d7c"/></svg></div><p class="label"><b>Lamplighter's lantern</b>Corran &amp; Sons, 1912<br>Tin, glass, brass<br><code>HCM 1951.034</code></p></div>
+<div><div class="frame"><svg viewBox="0 0 160 120" style="width:calc(190*var(--u))" fill="none" stroke="#111" stroke-width="5"><path d="M10 20l70 10 70-10v90l-70 10-70-10z"/><path d="M80 30v90M25 45l40 5M25 65l40 5M95 50l40-5M95 70l40-5"/></svg></div><p class="label"><b>Rope-walk wage ledger</b>Harwick Rope Co., 1921–24<br>Paper, cloth binding<br><code>HCM 2003.009</code></p></div></div>
+</section>
+<section class="slide" data-screen-label="04">
+<h2>Four rooms, one walk upstream.</h2>
+<div class="plan"><svg viewBox="0 0 900 520" fill="none" stroke="#111" stroke-width="5">
+<rect x="20" y="20" width="860" height="480"/><path d="M300 20v300M600 20v200M600 300v200M300 400v100M20 320h280"/>
+<path d="M60 470C160 400 200 250 380 230S560 120 700 150 820 380 760 440" stroke="#2d5d7c" stroke-width="4" stroke-dasharray="14 12"/>
+<g fill="#111" stroke="none" font-family="Helvetica Neue, Arial" font-size="30"><text x="120" y="170">1</text><text x="430" y="120">2</text><text x="720" y="120">3</text><text x="430" y="420">4</text></g>
+<path d="M60 500v-40" stroke="#2d5d7c"/><text x="80" y="480" fill="#2d5d7c" stroke="none" font-family="Helvetica Neue, Arial" font-size="22">enter</text></svg><ul class="rooms"><li><b>1</b>The ferry: crossings and crews</li><li><b>2</b>The rope walk: wages and work songs</li><li><b>3</b>Light on the water: lamps and night shifts</li><li><b>4</b>Voices: recorded memories, seats to listen</li></ul></div>
+</section>
+<section class="slide" data-screen-label="05">
+<h2>Who it is for.</h2>
+<table><tr><td>Visitors over 12 weeks</td><td>38,000</td></tr><tr><td>School groups (KS2 river topic)</td><td>140</td></tr><tr><td>Families from the old river wards</td><td>2,500</td></tr><tr><td>Oral-history listening sessions</td><td>24</td></tr></table>
+</section>
+<section class="slide" data-screen-label="06">
+<h2>We ask the Board to approve.</h2>
+<div class="ask"><div><p class="n">£186k</p><p>Total budget: conservation £52k, build £71k, oral history £28k, learning £20k, marketing £15k.</p></div>
+<div><p class="n">Mar 2027</p><p>Opening, if approved today. Grant decision from the Heritage Fund expected in December covers £110k of the total.</p></div></div>
+</section>
+</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.deck-stage > .slide'));
+  if (!slides.length) return;
+  var KEY = 'deck:' + (location.pathname || '/') + ':' + document.title;
+  var idx = 0;
+  try {
+    var saved = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (saved >= 0 && saved < slides.length) idx = saved;
+  } catch (_) {}
+  var dots = document.createElement('nav');
+  dots.className = 'deck-dots';
+  dots.setAttribute('aria-label', 'Slides');
+  slides.forEach(function (_, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Slide ' + (i + 1));
+    b.addEventListener('click', function (e) { e.stopPropagation(); go(i); focusDeck(); });
+    dots.appendChild(b);
+  });
+  document.body.appendChild(dots);
+  function post(msg) { try { window.parent.postMessage(msg, '*'); } catch (_) {} }
+  function paint() {
+    slides.forEach(function (s, i) {
+      var on = i === idx;
+      s.classList.toggle('active', on);
+      s.classList.toggle('is-active', on);
+      s.setAttribute('aria-hidden', on ? 'false' : 'true');
+    });
+    Array.prototype.forEach.call(dots.children, function (b, i) {
+      if (i === idx) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+    post({ type: 'od:slide-state', protocolVersion: 1, active: idx, count: slides.length });
+  }
+  function go(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    paint();
+    try { localStorage.setItem(KEY, String(idx)); } catch (_) {}
+  }
+  function editable(t) {
+    return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  }
+  function onKey(e) {
+    if (e.__deckDone || editable(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key, to = null;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') to = idx + 1;
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') to = idx - 1;
+    else if (k === 'Home') to = 0;
+    else if (k === 'End') to = slides.length - 1;
+    if (to === null) return;
+    e.__deckDone = true;
+    e.preventDefault();
+    go(to);
+  }
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('keydown', onKey, true);
+  var acc = 0, lock = false, resetTimer = 0;
+  window.addEventListener('wheel', function (e) {
+    if (editable(e.target)) return;
+    e.preventDefault();
+    if (lock) return;
+    acc += e.deltaX + e.deltaY;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(function () { acc = 0; }, 180);
+    if (Math.abs(acc) > 40) {
+      go(idx + (acc > 0 ? 1 : -1));
+      acc = 0;
+      lock = true;
+      setTimeout(function () { lock = false; }, 420);
+    }
+  }, { passive: false });
+  var sx = 0, sy = 0;
+  window.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  window.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) go(idx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'od:slide') return;
+    if (d.protocolVersion != null && d.protocolVersion !== 1) return;
+    if (d.action === 'go' && typeof d.index === 'number' && isFinite(d.index)) go(Math.floor(d.index));
+    else if (d.action === 'next') go(idx + 1);
+    else if (d.action === 'prev') go(idx - 1);
+    else if (d.action === 'first') go(0);
+    else if (d.action === 'last') go(slides.length - 1);
+  });
+  document.body.setAttribute('tabindex', '-1');
+  document.body.style.outline = 'none';
+  function focusDeck() { try { window.focus(); document.body.focus({ preventScroll: true }); } catch (_) {} }
+  document.addEventListener('pointerdown', focusDeck);
+  window.addEventListener('load', focusDeck);
+  root.classList.add('deck-on');
+  paint();
+  focusDeck();
+  post({ type: 'od:deck-ready', protocolVersion: 1, capabilities: ['absolute-navigation', 'state-events'] });
+})();
+</script>
+</body>
+</html>

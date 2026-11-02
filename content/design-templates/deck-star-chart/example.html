@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en" data-od-deck-protocol="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kellmore Astronomical Society · Five planets</title>
+<style>
+:root{--shell:#03050e;--bg:#0a1230;--fg:#f4f1e6;--accent:#e9c46a;--muted:#8f97b8;--body-font:Baskerville,'Iowan Old Style','Palatino Linotype',Georgia,serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html{--u:calc(100vw / 1920)}
+html.deck-on{--u:calc(min(100vw, 177.7778vh) / 1920)}
+html,body{background:var(--shell);color:var(--fg)}
+body{font-family:var(--body-font);-webkit-font-smoothing:antialiased}
+.deck-stage{width:calc(1920*var(--u))}
+.slide{position:relative;width:calc(1920*var(--u));height:calc(1080*var(--u));overflow:hidden;display:flex;flex-direction:column;background:var(--bg);color:var(--fg)}
+html.deck-on,html.deck-on body{height:100%;overflow:hidden}
+html.deck-on .deck-stage{position:fixed;left:50%;top:50%;height:calc(1080*var(--u));transform:translate(-50%,-50%)}
+html.deck-on .slide{position:absolute;inset:0}
+@media screen{html.deck-on .slide:not(.active){display:none!important}}
+.deck-dots{display:none}
+html.deck-on .deck-dots{display:flex;position:fixed;left:50%;bottom:10px;transform:translateX(-50%);gap:8px;z-index:10;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28)}
+.deck-dots button{width:8px;height:8px;padding:0;border:0;border-radius:4px;background:rgba(255,255,255,.55);cursor:pointer;transition:width .2s}
+.deck-dots button[aria-current="true"]{width:22px;background:#fff}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,html.deck-on{--u:1px}
+  html,body,html.deck-on body{height:auto!important;overflow:visible!important;background:none}
+  html.deck-on .deck-stage{position:static;transform:none;height:auto}
+  html.deck-on .slide{position:relative;inset:auto}
+  .slide{break-after:page}
+  .deck-dots{display:none!important}
+}
+</style>
+<style>
+.slide{background:radial-gradient(calc(1400*var(--u)) calc(900*var(--u)) at 70% 20%,#14205a 0%,#0a1230 45%,#060a1c 100%);padding:calc(120*var(--u)) calc(140*var(--u))}
+.sky{position:absolute;inset:0;width:100%;height:100%}
+.cap{font:600 calc(20*var(--u))/1 'Avenir Next','Helvetica Neue',sans-serif;letter-spacing:calc(6*var(--u));text-transform:uppercase;color:#8f97b8;position:relative}
+h1{position:relative;font-size:calc(128*var(--u));line-height:1.02;font-weight:400;margin-top:calc(44*var(--u));max-width:calc(1150*var(--u))}
+h1 em{font-style:normal;color:#e9c46a}
+h2{position:relative;font-size:calc(76*var(--u));line-height:1.08;font-weight:400;margin-top:calc(30*var(--u));max-width:calc(1100*var(--u))}
+.lede{position:relative;font-size:calc(32*var(--u));line-height:1.5;margin-top:calc(34*var(--u));max-width:calc(860*var(--u));color:#c8cbe0}
+.chartwrap{display:grid;grid-template-columns:calc(640*var(--u)) 1fr;gap:calc(80*var(--u));align-items:center;margin-top:calc(20*var(--u));position:relative}
+.steps{counter-reset:s;display:grid;gap:calc(26*var(--u))}
+.steps p{font-size:calc(30*var(--u));line-height:1.45;color:#dfe0ee;padding-left:calc(70*var(--u));position:relative}
+.steps p::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:calc(-2*var(--u));width:calc(46*var(--u));height:calc(46*var(--u));border-radius:50%;border:calc(2*var(--u)) solid #e9c46a;color:#e9c46a;font:600 calc(22*var(--u))/calc(42*var(--u)) 'Avenir Next',sans-serif;text-align:center}
+.mag{display:flex;align-items:flex-end;justify-content:space-between;margin-top:calc(110*var(--u));position:relative;padding:0 calc(30*var(--u))}
+.mag div{text-align:center;color:#c8cbe0;font:500 calc(24*var(--u))/1.4 'Avenir Next','Helvetica Neue',sans-serif}
+.mag i{display:block;margin:0 auto calc(26*var(--u));border-radius:50%;background:#f4f1e6;box-shadow:0 0 calc(30*var(--u)) rgba(244,241,230,.6)}
+.mag b{display:block;font-size:calc(34*var(--u));color:#f4f1e6}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:calc(14*var(--u));margin-top:calc(56*var(--u));position:relative}
+.cal div{height:calc(120*var(--u));border:calc(1*var(--u)) solid #2c3870;border-radius:calc(10*var(--u));padding:calc(14*var(--u));font:500 calc(20*var(--u))/1 'Avenir Next',sans-serif;color:#8f97b8}
+.cal div b{display:block;margin-top:calc(18*var(--u));font:400 calc(26*var(--u))/1.15 Baskerville,Georgia,serif;color:#f4f1e6}
+.cal div.hi{border-color:#e9c46a;background:rgba(233,196,106,.08)}
+.cal div.hi b{color:#e9c46a}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:calc(100*var(--u));margin-top:calc(60*var(--u));position:relative}
+.cols h3{font:600 calc(22*var(--u))/1 'Avenir Next',sans-serif;letter-spacing:calc(5*var(--u));text-transform:uppercase;color:#e9c46a;margin-bottom:calc(26*var(--u))}
+.cols li{list-style:none;font-size:calc(32*var(--u));line-height:1.4;padding:calc(16*var(--u)) 0;border-top:calc(1*var(--u)) solid #2c3870;color:#dfe0ee}
+.meet{position:relative;margin-top:calc(70*var(--u));display:flex;gap:calc(80*var(--u));font:500 calc(26*var(--u))/1.5 'Avenir Next','Helvetica Neue',sans-serif;color:#c8cbe0}
+.meet b{display:block;color:#f4f1e6;font-size:calc(36*var(--u))}
+</style>
+</head>
+<body>
+<main class="deck-stage" id="deck-stage">
+<section class="slide active" data-screen-label="01">
+<svg class="sky" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><g fill="#f4f1e6"><circle cx="487" cy="267" r="0.8" opacity="0.72"/><circle cx="1281" cy="134" r="1.3" opacity="0.94"/><circle cx="960" cy="531" r="1.1" opacity="0.43"/><circle cx="1468" cy="963" r="1.1" opacity="0.68"/><circle cx="813" cy="308" r="0.6" opacity="0.41"/><circle cx="1896" cy="1071" r="0.8" opacity="0.31"/><circle cx="1591" cy="131" r="0.6" opacity="0.97"/><circle cx="87" cy="616" r="2.1" opacity="0.88"/><circle cx="551" cy="968" r="1.3" opacity="0.94"/><circle cx="793" cy="874" r="0.8" opacity="0.86"/><circle cx="910" cy="274" r="2.8" opacity="0.37"/><circle cx="278" cy="1013" r="0.6" opacity="0.98"/><circle cx="893" cy="616" r="0.8" opacity="0.88"/><circle cx="1175" cy="718" r="1.1" opacity="0.59"/><circle cx="475" cy="689" r="1.6" opacity="0.95"/><circle cx="1753" cy="572" r="3.7" opacity="0.77"/><circle cx="334" cy="668" r="3.5" opacity="0.93"/><circle cx="1165" cy="213" r="1.8" opacity="0.45"/><circle cx="1703" cy="546" r="0.7" opacity="0.34"/><circle cx="1748" cy="990" r="0.6" opacity="0.86"/><circle cx="840" cy="308" r="0.6" opacity="0.6"/><circle cx="850" cy="243" r="0.6" opacity="0.73"/><circle cx="92" cy="773" r="1.8" opacity="0.53"/><circle cx="1804" cy="571" r="1.0" opacity="1.0"/><circle cx="634" cy="14" r="0.6" opacity="0.72"/><circle cx="64" cy="404" r="3.5" opacity="0.5"/><circle cx="539" cy="319" r="1.7" opacity="0.99"/><circle cx="695" cy="642" r="0.7" opacity="0.4"/><circle cx="1764" cy="773" r="0.8" opacity="0.91"/><circle cx="790" cy="210" r="1.4" opacity="0.96"/><circle cx="1038" cy="555" r="0.9" opacity="0.8"/><circle cx="486" cy="616" r="0.9" opacity="0.48"/><circle cx="620" cy="694" r="0.6" opacity="0.59"/><circle cx="1187" cy="644" r="0.6" opacity="0.73"/><circle cx="1294" cy="272" r="0.6" opacity="0.74"/><circle cx="954" cy="722" r="1.6" opacity="0.55"/><circle cx="1447" cy="571" r="1.9" opacity="0.32"/><circle cx="124" cy="43" r="3.5" opacity="0.48"/><circle cx="934" cy="611" r="1.3" opacity="0.52"/><circle cx="745" cy="379" r="0.7" opacity="0.56"/><circle cx="1219" cy="540" r="0.7" opacity="0.56"/><circle cx="1581" cy="55" r="3.5" opacity="0.78"/><circle cx="269" cy="634" r="1.0" opacity="0.76"/><circle cx="551" cy="488" r="0.7" opacity="0.77"/><circle cx="1330" cy="198" r="0.6" opacity="0.53"/><circle cx="683" cy="459" r="0.9" opacity="0.9"/><circle cx="346" cy="163" r="0.7" opacity="0.76"/><circle cx="1812" cy="923" r="0.7" opacity="0.85"/><circle cx="69" cy="390" r="0.7" opacity="0.89"/><circle cx="1177" cy="375" r="2.7" opacity="0.54"/><circle cx="1695" cy="175" r="2.3" opacity="0.54"/><circle cx="265" cy="862" r="0.7" opacity="0.86"/><circle cx="555" cy="951" r="0.7" opacity="0.59"/><circle cx="859" cy="838" r="0.6" opacity="0.59"/><circle cx="408" cy="9" r="0.9" opacity="0.88"/><circle cx="1275" cy="1044" r="0.9" opacity="0.97"/><circle cx="1899" cy="454" r="0.6" opacity="0.62"/><circle cx="1542" cy="1062" r="3.5" opacity="0.68"/><circle cx="1822" cy="465" r="2.6" opacity="0.9"/><circle cx="587" cy="245" r="2.3" opacity="0.33"/><circle cx="1850" cy="1049" r="3.1" opacity="0.93"/><circle cx="1842" cy="880" r="1.2" opacity="0.31"/><circle cx="1526" cy="247" r="0.6" opacity="0.51"/><circle cx="1357" cy="40" r="1.1" opacity="0.59"/><circle cx="1869" cy="232" r="0.7" opacity="0.48"/><circle cx="1764" cy="977" r="2.3" opacity="0.34"/><circle cx="452" cy="404" r="0.6" opacity="0.92"/><circle cx="244" cy="350" r="0.6" opacity="0.49"/><circle cx="1821" cy="263" r="2.4" opacity="0.31"/><circle cx="1287" cy="819" r="0.6" opacity="0.49"/><circle cx="550" cy="1079" r="1.0" opacity="0.34"/><circle cx="661" cy="3" r="2.6" opacity="0.84"/><circle cx="94" cy="255" r="0.6" opacity="0.64"/><circle cx="67" cy="176" r="1.0" opacity="0.64"/><circle cx="321" cy="644" r="0.6" opacity="0.57"/><circle cx="797" cy="622" r="0.8" opacity="0.43"/><circle cx="673" cy="877" r="0.6" opacity="0.69"/><circle cx="1466" cy="778" r="2.2" opacity="0.7"/><circle cx="87" cy="764" r="0.9" opacity="0.76"/><circle cx="1108" cy="778" r="1.4" opacity="0.33"/><circle cx="1815" cy="883" r="0.6" opacity="0.74"/><circle cx="1556" cy="645" r="0.8" opacity="0.79"/><circle cx="943" cy="36" r="0.6" opacity="0.68"/><circle cx="1423" cy="146" r="2.3" opacity="0.46"/><circle cx="266" cy="57" r="3.2" opacity="0.56"/><circle cx="1838" cy="536" r="0.6" opacity="0.78"/><circle cx="1665" cy="770" r="1.6" opacity="0.81"/><circle cx="1154" cy="211" r="2.3" opacity="0.8"/><circle cx="969" cy="293" r="0.6" opacity="0.57"/><circle cx="1079" cy="188" r="1.2" opacity="0.76"/></g></svg><p class="cap">Kellmore Astronomical Society · Free evening talk</p>
+<h1>Five planets from <em>your balcony.</em></h1>
+<p class="lede">No telescope, no dark-sky trip. A city sky still shows Venus, Mars, Jupiter, Saturn and, on a good night, Mercury.</p>
+</section>
+<section class="slide" data-screen-label="02">
+<svg class="sky" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><g fill="#f4f1e6"><circle cx="487" cy="267" r="0.8" opacity="0.72"/><circle cx="1281" cy="134" r="1.3" opacity="0.94"/><circle cx="960" cy="531" r="1.1" opacity="0.43"/><circle cx="1468" cy="963" r="1.1" opacity="0.68"/><circle cx="813" cy="308" r="0.6" opacity="0.41"/><circle cx="1896" cy="1071" r="0.8" opacity="0.31"/><circle cx="1591" cy="131" r="0.6" opacity="0.97"/><circle cx="87" cy="616" r="2.1" opacity="0.88"/><circle cx="551" cy="968" r="1.3" opacity="0.94"/><circle cx="793" cy="874" r="0.8" opacity="0.86"/><circle cx="910" cy="274" r="2.8" opacity="0.37"/><circle cx="278" cy="1013" r="0.6" opacity="0.98"/><circle cx="893" cy="616" r="0.8" opacity="0.88"/><circle cx="1175" cy="718" r="1.1" opacity="0.59"/><circle cx="475" cy="689" r="1.6" opacity="0.95"/><circle cx="1753" cy="572" r="3.7" opacity="0.77"/><circle cx="334" cy="668" r="3.5" opacity="0.93"/><circle cx="1165" cy="213" r="1.8" opacity="0.45"/><circle cx="1703" cy="546" r="0.7" opacity="0.34"/><circle cx="1748" cy="990" r="0.6" opacity="0.86"/><circle cx="840" cy="308" r="0.6" opacity="0.6"/><circle cx="850" cy="243" r="0.6" opacity="0.73"/><circle cx="92" cy="773" r="1.8" opacity="0.53"/><circle cx="1804" cy="571" r="1.0" opacity="1.0"/><circle cx="634" cy="14" r="0.6" opacity="0.72"/><circle cx="64" cy="404" r="3.5" opacity="0.5"/><circle cx="539" cy="319" r="1.7" opacity="0.99"/><circle cx="695" cy="642" r="0.7" opacity="0.4"/><circle cx="1764" cy="773" r="0.8" opacity="0.91"/><circle cx="790" cy="210" r="1.4" opacity="0.96"/><circle cx="1038" cy="555" r="0.9" opacity="0.8"/><circle cx="486" cy="616" r="0.9" opacity="0.48"/><circle cx="620" cy="694" r="0.6" opacity="0.59"/><circle cx="1187" cy="644" r="0.6" opacity="0.73"/><circle cx="1294" cy="272" r="0.6" opacity="0.74"/><circle cx="954" cy="722" r="1.6" opacity="0.55"/><circle cx="1447" cy="571" r="1.9" opacity="0.32"/><circle cx="124" cy="43" r="3.5" opacity="0.48"/><circle cx="934" cy="611" r="1.3" opacity="0.52"/><circle cx="745" cy="379" r="0.7" opacity="0.56"/><circle cx="1219" cy="540" r="0.7" opacity="0.56"/><circle cx="1581" cy="55" r="3.5" opacity="0.78"/><circle cx="269" cy="634" r="1.0" opacity="0.76"/><circle cx="551" cy="488" r="0.7" opacity="0.77"/><circle cx="1330" cy="198" r="0.6" opacity="0.53"/><circle cx="683" cy="459" r="0.9" opacity="0.9"/><circle cx="346" cy="163" r="0.7" opacity="0.76"/><circle cx="1812" cy="923" r="0.7" opacity="0.85"/><circle cx="69" cy="390" r="0.7" opacity="0.89"/><circle cx="1177" cy="375" r="2.7" opacity="0.54"/><circle cx="1695" cy="175" r="2.3" opacity="0.54"/><circle cx="265" cy="862" r="0.7" opacity="0.86"/><circle cx="555" cy="951" r="0.7" opacity="0.59"/><circle cx="859" cy="838" r="0.6" opacity="0.59"/><circle cx="408" cy="9" r="0.9" opacity="0.88"/><circle cx="1275" cy="1044" r="0.9" opacity="0.97"/><circle cx="1899" cy="454" r="0.6" opacity="0.62"/><circle cx="1542" cy="1062" r="3.5" opacity="0.68"/><circle cx="1822" cy="465" r="2.6" opacity="0.9"/><circle cx="587" cy="245" r="2.3" opacity="0.33"/><circle cx="1850" cy="1049" r="3.1" opacity="0.93"/><circle cx="1842" cy="880" r="1.2" opacity="0.31"/><circle cx="1526" cy="247" r="0.6" opacity="0.51"/><circle cx="1357" cy="40" r="1.1" opacity="0.59"/><circle cx="1869" cy="232" r="0.7" opacity="0.48"/><circle cx="1764" cy="977" r="2.3" opacity="0.34"/><circle cx="452" cy="404" r="0.6" opacity="0.92"/><circle cx="244" cy="350" r="0.6" opacity="0.49"/><circle cx="1821" cy="263" r="2.4" opacity="0.31"/><circle cx="1287" cy="819" r="0.6" opacity="0.49"/><circle cx="550" cy="1079" r="1.0" opacity="0.34"/><circle cx="661" cy="3" r="2.6" opacity="0.84"/><circle cx="94" cy="255" r="0.6" opacity="0.64"/><circle cx="67" cy="176" r="1.0" opacity="0.64"/><circle cx="321" cy="644" r="0.6" opacity="0.57"/><circle cx="797" cy="622" r="0.8" opacity="0.43"/><circle cx="673" cy="877" r="0.6" opacity="0.69"/><circle cx="1466" cy="778" r="2.2" opacity="0.7"/><circle cx="87" cy="764" r="0.9" opacity="0.76"/><circle cx="1108" cy="778" r="1.4" opacity="0.33"/><circle cx="1815" cy="883" r="0.6" opacity="0.74"/><circle cx="1556" cy="645" r="0.8" opacity="0.79"/><circle cx="943" cy="36" r="0.6" opacity="0.68"/><circle cx="1423" cy="146" r="2.3" opacity="0.46"/><circle cx="266" cy="57" r="3.2" opacity="0.56"/><circle cx="1838" cy="536" r="0.6" opacity="0.78"/><circle cx="1665" cy="770" r="1.6" opacity="0.81"/><circle cx="1154" cy="211" r="2.3" opacity="0.8"/><circle cx="969" cy="293" r="0.6" opacity="0.57"/><circle cx="1079" cy="188" r="1.2" opacity="0.76"/></g></svg><p class="cap">Finding Jupiter this month</p>
+<div class="chartwrap"><svg viewBox="0 0 640 560" fill="#f4f1e6" style="position:relative">
+<g stroke="#5d6a9a" stroke-width="2" fill="none"><path d="M90 420L180 330L300 300L420 220L520 120"/><path d="M300 300L330 430L460 470"/><circle cx="320" cy="280" r="250" stroke-dasharray="4 10"/></g>
+<circle cx="90" cy="420" r="7"/><circle cx="180" cy="330" r="9"/><circle cx="300" cy="300" r="12"/><circle cx="420" cy="220" r="8"/><circle cx="520" cy="120" r="10"/><circle cx="330" cy="430" r="6"/><circle cx="460" cy="470" r="8"/>
+<circle cx="560" cy="300" r="13" fill="#e9c46a"/><circle cx="560" cy="300" r="30" fill="none" stroke="#e9c46a" stroke-width="2"/>
+<text x="470" y="355" font-family="Avenir Next, sans-serif" font-size="22" fill="#e9c46a">Jupiter</text>
+<text x="60" y="465" font-family="Avenir Next, sans-serif" font-size="20" fill="#8f97b8">the Plough</text></svg>
+<div class="steps"><p>Face east at 21:00 and find the Plough's handle.</p><p>Follow the curve of the handle down past the bright pair.</p><p>The steady gold light that doesn't twinkle is Jupiter.</p></div></div>
+</section>
+<section class="slide" data-screen-label="03">
+<svg class="sky" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><g fill="#f4f1e6"><circle cx="487" cy="267" r="0.8" opacity="0.72"/><circle cx="1281" cy="134" r="1.3" opacity="0.94"/><circle cx="960" cy="531" r="1.1" opacity="0.43"/><circle cx="1468" cy="963" r="1.1" opacity="0.68"/><circle cx="813" cy="308" r="0.6" opacity="0.41"/><circle cx="1896" cy="1071" r="0.8" opacity="0.31"/><circle cx="1591" cy="131" r="0.6" opacity="0.97"/><circle cx="87" cy="616" r="2.1" opacity="0.88"/><circle cx="551" cy="968" r="1.3" opacity="0.94"/><circle cx="793" cy="874" r="0.8" opacity="0.86"/><circle cx="910" cy="274" r="2.8" opacity="0.37"/><circle cx="278" cy="1013" r="0.6" opacity="0.98"/><circle cx="893" cy="616" r="0.8" opacity="0.88"/><circle cx="1175" cy="718" r="1.1" opacity="0.59"/><circle cx="475" cy="689" r="1.6" opacity="0.95"/><circle cx="1753" cy="572" r="3.7" opacity="0.77"/><circle cx="334" cy="668" r="3.5" opacity="0.93"/><circle cx="1165" cy="213" r="1.8" opacity="0.45"/><circle cx="1703" cy="546" r="0.7" opacity="0.34"/><circle cx="1748" cy="990" r="0.6" opacity="0.86"/><circle cx="840" cy="308" r="0.6" opacity="0.6"/><circle cx="850" cy="243" r="0.6" opacity="0.73"/><circle cx="92" cy="773" r="1.8" opacity="0.53"/><circle cx="1804" cy="571" r="1.0" opacity="1.0"/><circle cx="634" cy="14" r="0.6" opacity="0.72"/><circle cx="64" cy="404" r="3.5" opacity="0.5"/><circle cx="539" cy="319" r="1.7" opacity="0.99"/><circle cx="695" cy="642" r="0.7" opacity="0.4"/><circle cx="1764" cy="773" r="0.8" opacity="0.91"/><circle cx="790" cy="210" r="1.4" opacity="0.96"/><circle cx="1038" cy="555" r="0.9" opacity="0.8"/><circle cx="486" cy="616" r="0.9" opacity="0.48"/><circle cx="620" cy="694" r="0.6" opacity="0.59"/><circle cx="1187" cy="644" r="0.6" opacity="0.73"/><circle cx="1294" cy="272" r="0.6" opacity="0.74"/><circle cx="954" cy="722" r="1.6" opacity="0.55"/><circle cx="1447" cy="571" r="1.9" opacity="0.32"/><circle cx="124" cy="43" r="3.5" opacity="0.48"/><circle cx="934" cy="611" r="1.3" opacity="0.52"/><circle cx="745" cy="379" r="0.7" opacity="0.56"/><circle cx="1219" cy="540" r="0.7" opacity="0.56"/><circle cx="1581" cy="55" r="3.5" opacity="0.78"/><circle cx="269" cy="634" r="1.0" opacity="0.76"/><circle cx="551" cy="488" r="0.7" opacity="0.77"/><circle cx="1330" cy="198" r="0.6" opacity="0.53"/><circle cx="683" cy="459" r="0.9" opacity="0.9"/><circle cx="346" cy="163" r="0.7" opacity="0.76"/><circle cx="1812" cy="923" r="0.7" opacity="0.85"/><circle cx="69" cy="390" r="0.7" opacity="0.89"/><circle cx="1177" cy="375" r="2.7" opacity="0.54"/><circle cx="1695" cy="175" r="2.3" opacity="0.54"/><circle cx="265" cy="862" r="0.7" opacity="0.86"/><circle cx="555" cy="951" r="0.7" opacity="0.59"/><circle cx="859" cy="838" r="0.6" opacity="0.59"/><circle cx="408" cy="9" r="0.9" opacity="0.88"/><circle cx="1275" cy="1044" r="0.9" opacity="0.97"/><circle cx="1899" cy="454" r="0.6" opacity="0.62"/><circle cx="1542" cy="1062" r="3.5" opacity="0.68"/><circle cx="1822" cy="465" r="2.6" opacity="0.9"/><circle cx="587" cy="245" r="2.3" opacity="0.33"/><circle cx="1850" cy="1049" r="3.1" opacity="0.93"/><circle cx="1842" cy="880" r="1.2" opacity="0.31"/><circle cx="1526" cy="247" r="0.6" opacity="0.51"/><circle cx="1357" cy="40" r="1.1" opacity="0.59"/><circle cx="1869" cy="232" r="0.7" opacity="0.48"/><circle cx="1764" cy="977" r="2.3" opacity="0.34"/><circle cx="452" cy="404" r="0.6" opacity="0.92"/><circle cx="244" cy="350" r="0.6" opacity="0.49"/><circle cx="1821" cy="263" r="2.4" opacity="0.31"/><circle cx="1287" cy="819" r="0.6" opacity="0.49"/><circle cx="550" cy="1079" r="1.0" opacity="0.34"/><circle cx="661" cy="3" r="2.6" opacity="0.84"/><circle cx="94" cy="255" r="0.6" opacity="0.64"/><circle cx="67" cy="176" r="1.0" opacity="0.64"/><circle cx="321" cy="644" r="0.6" opacity="0.57"/><circle cx="797" cy="622" r="0.8" opacity="0.43"/><circle cx="673" cy="877" r="0.6" opacity="0.69"/><circle cx="1466" cy="778" r="2.2" opacity="0.7"/><circle cx="87" cy="764" r="0.9" opacity="0.76"/><circle cx="1108" cy="778" r="1.4" opacity="0.33"/><circle cx="1815" cy="883" r="0.6" opacity="0.74"/><circle cx="1556" cy="645" r="0.8" opacity="0.79"/><circle cx="943" cy="36" r="0.6" opacity="0.68"/><circle cx="1423" cy="146" r="2.3" opacity="0.46"/><circle cx="266" cy="57" r="3.2" opacity="0.56"/><circle cx="1838" cy="536" r="0.6" opacity="0.78"/><circle cx="1665" cy="770" r="1.6" opacity="0.81"/><circle cx="1154" cy="211" r="2.3" opacity="0.8"/><circle cx="969" cy="293" r="0.6" opacity="0.57"/><circle cx="1079" cy="188" r="1.2" opacity="0.76"/></g></svg><p class="cap">Brightness, as astronomers count it</p>
+<h2>Lower numbers mean brighter. Cities hide everything past 3.</h2>
+<div class="mag">
+<div><i style="width:calc(84*var(--u));height:calc(84*var(--u))"></i><b>−4.4</b>Venus</div>
+<div><i style="width:calc(66*var(--u));height:calc(66*var(--u))"></i><b>−2.5</b>Jupiter</div>
+<div><i style="width:calc(44*var(--u));height:calc(44*var(--u))"></i><b>0.1</b>Vega</div>
+<div><i style="width:calc(30*var(--u));height:calc(30*var(--u))"></i><b>0.9</b>Saturn</div>
+<div><i style="width:calc(16*var(--u));height:calc(16*var(--u))"></i><b>2.0</b>Polaris</div>
+<div><i style="width:calc(8*var(--u));height:calc(8*var(--u));opacity:.5"></i><b>4.5</b>lost to streetlights</div>
+</div>
+</section>
+<section class="slide" data-screen-label="04">
+<svg class="sky" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><g fill="#f4f1e6"><circle cx="487" cy="267" r="0.8" opacity="0.72"/><circle cx="1281" cy="134" r="1.3" opacity="0.94"/><circle cx="960" cy="531" r="1.1" opacity="0.43"/><circle cx="1468" cy="963" r="1.1" opacity="0.68"/><circle cx="813" cy="308" r="0.6" opacity="0.41"/><circle cx="1896" cy="1071" r="0.8" opacity="0.31"/><circle cx="1591" cy="131" r="0.6" opacity="0.97"/><circle cx="87" cy="616" r="2.1" opacity="0.88"/><circle cx="551" cy="968" r="1.3" opacity="0.94"/><circle cx="793" cy="874" r="0.8" opacity="0.86"/><circle cx="910" cy="274" r="2.8" opacity="0.37"/><circle cx="278" cy="1013" r="0.6" opacity="0.98"/><circle cx="893" cy="616" r="0.8" opacity="0.88"/><circle cx="1175" cy="718" r="1.1" opacity="0.59"/><circle cx="475" cy="689" r="1.6" opacity="0.95"/><circle cx="1753" cy="572" r="3.7" opacity="0.77"/><circle cx="334" cy="668" r="3.5" opacity="0.93"/><circle cx="1165" cy="213" r="1.8" opacity="0.45"/><circle cx="1703" cy="546" r="0.7" opacity="0.34"/><circle cx="1748" cy="990" r="0.6" opacity="0.86"/><circle cx="840" cy="308" r="0.6" opacity="0.6"/><circle cx="850" cy="243" r="0.6" opacity="0.73"/><circle cx="92" cy="773" r="1.8" opacity="0.53"/><circle cx="1804" cy="571" r="1.0" opacity="1.0"/><circle cx="634" cy="14" r="0.6" opacity="0.72"/><circle cx="64" cy="404" r="3.5" opacity="0.5"/><circle cx="539" cy="319" r="1.7" opacity="0.99"/><circle cx="695" cy="642" r="0.7" opacity="0.4"/><circle cx="1764" cy="773" r="0.8" opacity="0.91"/><circle cx="790" cy="210" r="1.4" opacity="0.96"/><circle cx="1038" cy="555" r="0.9" opacity="0.8"/><circle cx="486" cy="616" r="0.9" opacity="0.48"/><circle cx="620" cy="694" r="0.6" opacity="0.59"/><circle cx="1187" cy="644" r="0.6" opacity="0.73"/><circle cx="1294" cy="272" r="0.6" opacity="0.74"/><circle cx="954" cy="722" r="1.6" opacity="0.55"/><circle cx="1447" cy="571" r="1.9" opacity="0.32"/><circle cx="124" cy="43" r="3.5" opacity="0.48"/><circle cx="934" cy="611" r="1.3" opacity="0.52"/><circle cx="745" cy="379" r="0.7" opacity="0.56"/><circle cx="1219" cy="540" r="0.7" opacity="0.56"/><circle cx="1581" cy="55" r="3.5" opacity="0.78"/><circle cx="269" cy="634" r="1.0" opacity="0.76"/><circle cx="551" cy="488" r="0.7" opacity="0.77"/><circle cx="1330" cy="198" r="0.6" opacity="0.53"/><circle cx="683" cy="459" r="0.9" opacity="0.9"/><circle cx="346" cy="163" r="0.7" opacity="0.76"/><circle cx="1812" cy="923" r="0.7" opacity="0.85"/><circle cx="69" cy="390" r="0.7" opacity="0.89"/><circle cx="1177" cy="375" r="2.7" opacity="0.54"/><circle cx="1695" cy="175" r="2.3" opacity="0.54"/><circle cx="265" cy="862" r="0.7" opacity="0.86"/><circle cx="555" cy="951" r="0.7" opacity="0.59"/><circle cx="859" cy="838" r="0.6" opacity="0.59"/><circle cx="408" cy="9" r="0.9" opacity="0.88"/><circle cx="1275" cy="1044" r="0.9" opacity="0.97"/><circle cx="1899" cy="454" r="0.6" opacity="0.62"/><circle cx="1542" cy="1062" r="3.5" opacity="0.68"/><circle cx="1822" cy="465" r="2.6" opacity="0.9"/><circle cx="587" cy="245" r="2.3" opacity="0.33"/><circle cx="1850" cy="1049" r="3.1" opacity="0.93"/><circle cx="1842" cy="880" r="1.2" opacity="0.31"/><circle cx="1526" cy="247" r="0.6" opacity="0.51"/><circle cx="1357" cy="40" r="1.1" opacity="0.59"/><circle cx="1869" cy="232" r="0.7" opacity="0.48"/><circle cx="1764" cy="977" r="2.3" opacity="0.34"/><circle cx="452" cy="404" r="0.6" opacity="0.92"/><circle cx="244" cy="350" r="0.6" opacity="0.49"/><circle cx="1821" cy="263" r="2.4" opacity="0.31"/><circle cx="1287" cy="819" r="0.6" opacity="0.49"/><circle cx="550" cy="1079" r="1.0" opacity="0.34"/><circle cx="661" cy="3" r="2.6" opacity="0.84"/><circle cx="94" cy="255" r="0.6" opacity="0.64"/><circle cx="67" cy="176" r="1.0" opacity="0.64"/><circle cx="321" cy="644" r="0.6" opacity="0.57"/><circle cx="797" cy="622" r="0.8" opacity="0.43"/><circle cx="673" cy="877" r="0.6" opacity="0.69"/><circle cx="1466" cy="778" r="2.2" opacity="0.7"/><circle cx="87" cy="764" r="0.9" opacity="0.76"/><circle cx="1108" cy="778" r="1.4" opacity="0.33"/><circle cx="1815" cy="883" r="0.6" opacity="0.74"/><circle cx="1556" cy="645" r="0.8" opacity="0.79"/><circle cx="943" cy="36" r="0.6" opacity="0.68"/><circle cx="1423" cy="146" r="2.3" opacity="0.46"/><circle cx="266" cy="57" r="3.2" opacity="0.56"/><circle cx="1838" cy="536" r="0.6" opacity="0.78"/><circle cx="1665" cy="770" r="1.6" opacity="0.81"/><circle cx="1154" cy="211" r="2.3" opacity="0.8"/><circle cx="969" cy="293" r="0.6" opacity="0.57"/><circle cx="1079" cy="188" r="1.2" opacity="0.76"/></g></svg><p class="cap">A week of evenings · 20:30–22:00</p>
+<h2>Two nights worth staying in for.</h2>
+<div class="cal"><div class="hi">Mon 3<b>Moon + Venus</b></div><div class="">Tue 4<b>Venus low W</b></div><div class="">Wed 5<b>Cloud likely</b></div><div class="">Thu 6<b>Jupiter E</b></div><div class="">Fri 7<b>Saturn S</b></div><div class="hi">Sat 8<b>Jupiter + Moon</b></div><div class="">Sun 9<b>Mars at dawn</b></div></div>
+<p class="lede">Moon pairings are the easiest way in: find the Moon, and the bright point beside it is the planet.</p>
+</section>
+<section class="slide" data-screen-label="05">
+<svg class="sky" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><g fill="#f4f1e6"><circle cx="487" cy="267" r="0.8" opacity="0.72"/><circle cx="1281" cy="134" r="1.3" opacity="0.94"/><circle cx="960" cy="531" r="1.1" opacity="0.43"/><circle cx="1468" cy="963" r="1.1" opacity="0.68"/><circle cx="813" cy="308" r="0.6" opacity="0.41"/><circle cx="1896" cy="1071" r="0.8" opacity="0.31"/><circle cx="1591" cy="131" r="0.6" opacity="0.97"/><circle cx="87" cy="616" r="2.1" opacity="0.88"/><circle cx="551" cy="968" r="1.3" opacity="0.94"/><circle cx="793" cy="874" r="0.8" opacity="0.86"/><circle cx="910" cy="274" r="2.8" opacity="0.37"/><circle cx="278" cy="1013" r="0.6" opacity="0.98"/><circle cx="893" cy="616" r="0.8" opacity="0.88"/><circle cx="1175" cy="718" r="1.1" opacity="0.59"/><circle cx="475" cy="689" r="1.6" opacity="0.95"/><circle cx="1753" cy="572" r="3.7" opacity="0.77"/><circle cx="334" cy="668" r="3.5" opacity="0.93"/><circle cx="1165" cy="213" r="1.8" opacity="0.45"/><circle cx="1703" cy="546" r="0.7" opacity="0.34"/><circle cx="1748" cy="990" r="0.6" opacity="0.86"/><circle cx="840" cy="308" r="0.6" opacity="0.6"/><circle cx="850" cy="243" r="0.6" opacity="0.73"/><circle cx="92" cy="773" r="1.8" opacity="0.53"/><circle cx="1804" cy="571" r="1.0" opacity="1.0"/><circle cx="634" cy="14" r="0.6" opacity="0.72"/><circle cx="64" cy="404" r="3.5" opacity="0.5"/><circle cx="539" cy="319" r="1.7" opacity="0.99"/><circle cx="695" cy="642" r="0.7" opacity="0.4"/><circle cx="1764" cy="773" r="0.8" opacity="0.91"/><circle cx="790" cy="210" r="1.4" opacity="0.96"/><circle cx="1038" cy="555" r="0.9" opacity="0.8"/><circle cx="486" cy="616" r="0.9" opacity="0.48"/><circle cx="620" cy="694" r="0.6" opacity="0.59"/><circle cx="1187" cy="644" r="0.6" opacity="0.73"/><circle cx="1294" cy="272" r="0.6" opacity="0.74"/><circle cx="954" cy="722" r="1.6" opacity="0.55"/><circle cx="1447" cy="571" r="1.9" opacity="0.32"/><circle cx="124" cy="43" r="3.5" opacity="0.48"/><circle cx="934" cy="611" r="1.3" opacity="0.52"/><circle cx="745" cy="379" r="0.7" opacity="0.56"/><circle cx="1219" cy="540" r="0.7" opacity="0.56"/><circle cx="1581" cy="55" r="3.5" opacity="0.78"/><circle cx="269" cy="634" r="1.0" opacity="0.76"/><circle cx="551" cy="488" r="0.7" opacity="0.77"/><circle cx="1330" cy="198" r="0.6" opacity="0.53"/><circle cx="683" cy="459" r="0.9" opacity="0.9"/><circle cx="346" cy="163" r="0.7" opacity="0.76"/><circle cx="1812" cy="923" r="0.7" opacity="0.85"/><circle cx="69" cy="390" r="0.7" opacity="0.89"/><circle cx="1177" cy="375" r="2.7" opacity="0.54"/><circle cx="1695" cy="175" r="2.3" opacity="0.54"/><circle cx="265" cy="862" r="0.7" opacity="0.86"/><circle cx="555" cy="951" r="0.7" opacity="0.59"/><circle cx="859" cy="838" r="0.6" opacity="0.59"/><circle cx="408" cy="9" r="0.9" opacity="0.88"/><circle cx="1275" cy="1044" r="0.9" opacity="0.97"/><circle cx="1899" cy="454" r="0.6" opacity="0.62"/><circle cx="1542" cy="1062" r="3.5" opacity="0.68"/><circle cx="1822" cy="465" r="2.6" opacity="0.9"/><circle cx="587" cy="245" r="2.3" opacity="0.33"/><circle cx="1850" cy="1049" r="3.1" opacity="0.93"/><circle cx="1842" cy="880" r="1.2" opacity="0.31"/><circle cx="1526" cy="247" r="0.6" opacity="0.51"/><circle cx="1357" cy="40" r="1.1" opacity="0.59"/><circle cx="1869" cy="232" r="0.7" opacity="0.48"/><circle cx="1764" cy="977" r="2.3" opacity="0.34"/><circle cx="452" cy="404" r="0.6" opacity="0.92"/><circle cx="244" cy="350" r="0.6" opacity="0.49"/><circle cx="1821" cy="263" r="2.4" opacity="0.31"/><circle cx="1287" cy="819" r="0.6" opacity="0.49"/><circle cx="550" cy="1079" r="1.0" opacity="0.34"/><circle cx="661" cy="3" r="2.6" opacity="0.84"/><circle cx="94" cy="255" r="0.6" opacity="0.64"/><circle cx="67" cy="176" r="1.0" opacity="0.64"/><circle cx="321" cy="644" r="0.6" opacity="0.57"/><circle cx="797" cy="622" r="0.8" opacity="0.43"/><circle cx="673" cy="877" r="0.6" opacity="0.69"/><circle cx="1466" cy="778" r="2.2" opacity="0.7"/><circle cx="87" cy="764" r="0.9" opacity="0.76"/><circle cx="1108" cy="778" r="1.4" opacity="0.33"/><circle cx="1815" cy="883" r="0.6" opacity="0.74"/><circle cx="1556" cy="645" r="0.8" opacity="0.79"/><circle cx="943" cy="36" r="0.6" opacity="0.68"/><circle cx="1423" cy="146" r="2.3" opacity="0.46"/><circle cx="266" cy="57" r="3.2" opacity="0.56"/><circle cx="1838" cy="536" r="0.6" opacity="0.78"/><circle cx="1665" cy="770" r="1.6" opacity="0.81"/><circle cx="1154" cy="211" r="2.3" opacity="0.8"/><circle cx="969" cy="293" r="0.6" opacity="0.57"/><circle cx="1079" cy="188" r="1.2" opacity="0.76"/></g></svg><p class="cap">What you need</p>
+<h2>Ten minutes of dark eyes beats any gadget.</h2>
+<div class="cols"><div><h3>Kit</h3><ul><li>Any 8×42 or 10×50 binoculars</li><li>A red torch, or red cellophane on a phone</li><li>A folding chair, facing away from lights</li></ul></div>
+<div><h3>Habits</h3><ul><li>No bright screens for ten minutes</li><li>Look slightly beside faint objects</li><li>Keep a one-line log: date, time, what you saw</li></ul></div></div>
+</section>
+<section class="slide" data-screen-label="06">
+<svg class="sky" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><g fill="#f4f1e6"><circle cx="487" cy="267" r="0.8" opacity="0.72"/><circle cx="1281" cy="134" r="1.3" opacity="0.94"/><circle cx="960" cy="531" r="1.1" opacity="0.43"/><circle cx="1468" cy="963" r="1.1" opacity="0.68"/><circle cx="813" cy="308" r="0.6" opacity="0.41"/><circle cx="1896" cy="1071" r="0.8" opacity="0.31"/><circle cx="1591" cy="131" r="0.6" opacity="0.97"/><circle cx="87" cy="616" r="2.1" opacity="0.88"/><circle cx="551" cy="968" r="1.3" opacity="0.94"/><circle cx="793" cy="874" r="0.8" opacity="0.86"/><circle cx="910" cy="274" r="2.8" opacity="0.37"/><circle cx="278" cy="1013" r="0.6" opacity="0.98"/><circle cx="893" cy="616" r="0.8" opacity="0.88"/><circle cx="1175" cy="718" r="1.1" opacity="0.59"/><circle cx="475" cy="689" r="1.6" opacity="0.95"/><circle cx="1753" cy="572" r="3.7" opacity="0.77"/><circle cx="334" cy="668" r="3.5" opacity="0.93"/><circle cx="1165" cy="213" r="1.8" opacity="0.45"/><circle cx="1703" cy="546" r="0.7" opacity="0.34"/><circle cx="1748" cy="990" r="0.6" opacity="0.86"/><circle cx="840" cy="308" r="0.6" opacity="0.6"/><circle cx="850" cy="243" r="0.6" opacity="0.73"/><circle cx="92" cy="773" r="1.8" opacity="0.53"/><circle cx="1804" cy="571" r="1.0" opacity="1.0"/><circle cx="634" cy="14" r="0.6" opacity="0.72"/><circle cx="64" cy="404" r="3.5" opacity="0.5"/><circle cx="539" cy="319" r="1.7" opacity="0.99"/><circle cx="695" cy="642" r="0.7" opacity="0.4"/><circle cx="1764" cy="773" r="0.8" opacity="0.91"/><circle cx="790" cy="210" r="1.4" opacity="0.96"/><circle cx="1038" cy="555" r="0.9" opacity="0.8"/><circle cx="486" cy="616" r="0.9" opacity="0.48"/><circle cx="620" cy="694" r="0.6" opacity="0.59"/><circle cx="1187" cy="644" r="0.6" opacity="0.73"/><circle cx="1294" cy="272" r="0.6" opacity="0.74"/><circle cx="954" cy="722" r="1.6" opacity="0.55"/><circle cx="1447" cy="571" r="1.9" opacity="0.32"/><circle cx="124" cy="43" r="3.5" opacity="0.48"/><circle cx="934" cy="611" r="1.3" opacity="0.52"/><circle cx="745" cy="379" r="0.7" opacity="0.56"/><circle cx="1219" cy="540" r="0.7" opacity="0.56"/><circle cx="1581" cy="55" r="3.5" opacity="0.78"/><circle cx="269" cy="634" r="1.0" opacity="0.76"/><circle cx="551" cy="488" r="0.7" opacity="0.77"/><circle cx="1330" cy="198" r="0.6" opacity="0.53"/><circle cx="683" cy="459" r="0.9" opacity="0.9"/><circle cx="346" cy="163" r="0.7" opacity="0.76"/><circle cx="1812" cy="923" r="0.7" opacity="0.85"/><circle cx="69" cy="390" r="0.7" opacity="0.89"/><circle cx="1177" cy="375" r="2.7" opacity="0.54"/><circle cx="1695" cy="175" r="2.3" opacity="0.54"/><circle cx="265" cy="862" r="0.7" opacity="0.86"/><circle cx="555" cy="951" r="0.7" opacity="0.59"/><circle cx="859" cy="838" r="0.6" opacity="0.59"/><circle cx="408" cy="9" r="0.9" opacity="0.88"/><circle cx="1275" cy="1044" r="0.9" opacity="0.97"/><circle cx="1899" cy="454" r="0.6" opacity="0.62"/><circle cx="1542" cy="1062" r="3.5" opacity="0.68"/><circle cx="1822" cy="465" r="2.6" opacity="0.9"/><circle cx="587" cy="245" r="2.3" opacity="0.33"/><circle cx="1850" cy="1049" r="3.1" opacity="0.93"/><circle cx="1842" cy="880" r="1.2" opacity="0.31"/><circle cx="1526" cy="247" r="0.6" opacity="0.51"/><circle cx="1357" cy="40" r="1.1" opacity="0.59"/><circle cx="1869" cy="232" r="0.7" opacity="0.48"/><circle cx="1764" cy="977" r="2.3" opacity="0.34"/><circle cx="452" cy="404" r="0.6" opacity="0.92"/><circle cx="244" cy="350" r="0.6" opacity="0.49"/><circle cx="1821" cy="263" r="2.4" opacity="0.31"/><circle cx="1287" cy="819" r="0.6" opacity="0.49"/><circle cx="550" cy="1079" r="1.0" opacity="0.34"/><circle cx="661" cy="3" r="2.6" opacity="0.84"/><circle cx="94" cy="255" r="0.6" opacity="0.64"/><circle cx="67" cy="176" r="1.0" opacity="0.64"/><circle cx="321" cy="644" r="0.6" opacity="0.57"/><circle cx="797" cy="622" r="0.8" opacity="0.43"/><circle cx="673" cy="877" r="0.6" opacity="0.69"/><circle cx="1466" cy="778" r="2.2" opacity="0.7"/><circle cx="87" cy="764" r="0.9" opacity="0.76"/><circle cx="1108" cy="778" r="1.4" opacity="0.33"/><circle cx="1815" cy="883" r="0.6" opacity="0.74"/><circle cx="1556" cy="645" r="0.8" opacity="0.79"/><circle cx="943" cy="36" r="0.6" opacity="0.68"/><circle cx="1423" cy="146" r="2.3" opacity="0.46"/><circle cx="266" cy="57" r="3.2" opacity="0.56"/><circle cx="1838" cy="536" r="0.6" opacity="0.78"/><circle cx="1665" cy="770" r="1.6" opacity="0.81"/><circle cx="1154" cy="211" r="2.3" opacity="0.8"/><circle cx="969" cy="293" r="0.6" opacity="0.57"/><circle cx="1079" cy="188" r="1.2" opacity="0.76"/></g></svg><p class="cap">Come out with us</p>
+<h2>Next session: binoculars on the library roof.</h2>
+<div class="meet"><div><b>Saturday 8th, 20:30</b>Kellmore Library roof terrace</div><div><b>Free, no booking</b>Society binoculars to borrow</div><div><b>Cloudy?</b>We move inside for the talk on Saturn's rings</div></div>
+</section>
+</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.deck-stage > .slide'));
+  if (!slides.length) return;
+  var KEY = 'deck:' + (location.pathname || '/') + ':' + document.title;
+  var idx = 0;
+  try {
+    var saved = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (saved >= 0 && saved < slides.length) idx = saved;
+  } catch (_) {}
+  var dots = document.createElement('nav');
+  dots.className = 'deck-dots';
+  dots.setAttribute('aria-label', 'Slides');
+  slides.forEach(function (_, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Slide ' + (i + 1));
+    b.addEventListener('click', function (e) { e.stopPropagation(); go(i); focusDeck(); });
+    dots.appendChild(b);
+  });
+  document.body.appendChild(dots);
+  function post(msg) { try { window.parent.postMessage(msg, '*'); } catch (_) {} }
+  function paint() {
+    slides.forEach(function (s, i) {
+      var on = i === idx;
+      s.classList.toggle('active', on);
+      s.classList.toggle('is-active', on);
+      s.setAttribute('aria-hidden', on ? 'false' : 'true');
+    });
+    Array.prototype.forEach.call(dots.children, function (b, i) {
+      if (i === idx) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+    post({ type: 'od:slide-state', protocolVersion: 1, active: idx, count: slides.length });
+  }
+  function go(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    paint();
+    try { localStorage.setItem(KEY, String(idx)); } catch (_) {}
+  }
+  function editable(t) {
+    return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  }
+  function onKey(e) {
+    if (e.__deckDone || editable(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key, to = null;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') to = idx + 1;
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') to = idx - 1;
+    else if (k === 'Home') to = 0;
+    else if (k === 'End') to = slides.length - 1;
+    if (to === null) return;
+    e.__deckDone = true;
+    e.preventDefault();
+    go(to);
+  }
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('keydown', onKey, true);
+  var acc = 0, lock = false, resetTimer = 0;
+  window.addEventListener('wheel', function (e) {
+    if (editable(e.target)) return;
+    e.preventDefault();
+    if (lock) return;
+    acc += e.deltaX + e.deltaY;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(function () { acc = 0; }, 180);
+    if (Math.abs(acc) > 40) {
+      go(idx + (acc > 0 ? 1 : -1));
+      acc = 0;
+      lock = true;
+      setTimeout(function () { lock = false; }, 420);
+    }
+  }, { passive: false });
+  var sx = 0, sy = 0;
+  window.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  window.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) go(idx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'od:slide') return;
+    if (d.protocolVersion != null && d.protocolVersion !== 1) return;
+    if (d.action === 'go' && typeof d.index === 'number' && isFinite(d.index)) go(Math.floor(d.index));
+    else if (d.action === 'next') go(idx + 1);
+    else if (d.action === 'prev') go(idx - 1);
+    else if (d.action === 'first') go(0);
+    else if (d.action === 'last') go(slides.length - 1);
+  });
+  document.body.setAttribute('tabindex', '-1');
+  document.body.style.outline = 'none';
+  function focusDeck() { try { window.focus(); document.body.focus({ preventScroll: true }); } catch (_) {} }
+  document.addEventListener('pointerdown', focusDeck);
+  window.addEventListener('load', focusDeck);
+  root.classList.add('deck-on');
+  paint();
+  focusDeck();
+  post({ type: 'od:deck-ready', protocolVersion: 1, capabilities: ['absolute-navigation', 'state-events'] });
+})();
+</script>
+</body>
+</html>

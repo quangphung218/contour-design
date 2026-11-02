@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spoke & Pedal · Fix your own bike</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+img,svg{display:block;max-width:100%}
+a{color:inherit}
+:root{--paper:#f4f0e6;--pink:#ff48b0;--blue:#0078bf;--ink:#1d1a3a}
+body{background:var(--paper);color:var(--ink);font-family:'Helvetica Neue',Arial,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:0 32px}
+nav{display:flex;justify-content:space-between;align-items:center;padding:24px 0;font:700 15px/1 ui-monospace,'Courier New',monospace;text-transform:uppercase;letter-spacing:.08em}
+nav a{text-decoration:none;margin-left:22px}
+.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center;padding:40px 0 70px;position:relative}
+.dots{position:absolute;right:-60px;top:20px;width:420px;height:420px;border-radius:50%;background:radial-gradient(var(--pink) 30%,transparent 32%) 0 0/14px 14px;opacity:.55;mix-blend-mode:multiply;z-index:0}
+h1{position:relative;font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-weight:900;font-size:clamp(3rem,8vw,6.6rem);line-height:.88;text-transform:uppercase;letter-spacing:-.02em}
+h1 .b{color:var(--blue);mix-blend-mode:multiply;display:block}
+h1 .p{color:var(--pink);mix-blend-mode:multiply;display:block;transform:translate(4px,-3px)}
+.hero p{position:relative;margin-top:24px;font:1.1rem/1.6 ui-monospace,'Courier New',monospace;max-width:30rem}
+.btn{display:inline-block;margin-top:28px;padding:16px 26px;background:var(--blue);color:var(--paper);font:700 1rem/1 'Arial Black',Arial,sans-serif;text-transform:uppercase;text-decoration:none;box-shadow:5px 5px 0 var(--pink)}
+.bike{position:relative;z-index:1}
+section{padding:70px 0;border-top:3px dashed var(--ink)}
+h2{font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-size:clamp(2rem,4.5vw,3.4rem);text-transform:uppercase;line-height:.95;color:var(--blue);mix-blend-mode:multiply}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:36px}
+.step{border:3px solid var(--ink);padding:26px;background:var(--paper);position:relative}
+.step b{font:900 3rem/1 'Arial Black',Arial,sans-serif;color:var(--pink);mix-blend-mode:multiply}
+.step h3{font:900 1.3rem/1.15 'Arial Black',Arial,sans-serif;text-transform:uppercase;margin-top:10px}
+.step p{font:1rem/1.55 ui-monospace,'Courier New',monospace;margin-top:10px}
+.menu{margin-top:30px;font:1.05rem/1 ui-monospace,'Courier New',monospace;max-width:760px}
+.menu div{display:flex;align-items:baseline;gap:10px;padding:14px 0}
+.menu div::after{content:"";order:1;flex:1;border-bottom:3px dotted var(--blue)}
+.menu b{order:2;font-family:'Arial Black',Arial,sans-serif;color:var(--pink);mix-blend-mode:multiply;font-size:1.3rem}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:30px}
+.day{border:3px solid var(--ink);padding:16px 10px;text-align:center;font:700 .95rem/1.4 ui-monospace,'Courier New',monospace;min-height:120px}
+.day.open{background:var(--blue);color:var(--paper)}
+.day span{display:block;font-family:'Arial Black',Arial,sans-serif;font-size:1.3rem;margin-bottom:8px}
+.cta{background:var(--pink);color:var(--ink);padding:70px 40px;margin:70px 0;position:relative}
+.cta::before{content:"";position:absolute;inset:0;transform:translate(6px,6px);background:var(--blue);mix-blend-mode:multiply;opacity:.35;z-index:0}
+.cta>*{position:relative}
+.cta h2{color:var(--ink);mix-blend-mode:normal}
+.cta p{font:1.1rem/1.6 ui-monospace,'Courier New',monospace;margin-top:16px;max-width:36rem}
+.cta .btn{background:var(--ink);box-shadow:5px 5px 0 var(--blue)}
+footer{padding:30px 0 50px;font:.9rem/1.6 ui-monospace,'Courier New',monospace}
+@media (max-width:760px){.hero,.steps{grid-template-columns:1fr}.week{grid-template-columns:repeat(2,1fr)}.dots{width:240px;height:240px;right:-40px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><b>Spoke &amp; Pedal</b><div><a href="#how">How it works</a><a href="#prices">Prices</a><a href="#hours">Hours</a></div></nav>
+<header class="hero"><span class="dots"></span><div><h1><span class="b">Fix your</span><span class="p">own bike.</span></h1>
+<p>A volunteer workshop under the railway arches. Our tools, our stands, our mechanics showing you how. You do the fixing; you keep the skill.</p>
+<a class="btn" href="#hours">Drop in this week</a></div><svg class="bike" viewBox="0 0 420 300" fill="none" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+<g stroke="#0078bf" style="mix-blend-mode:multiply"><circle cx="95" cy="200" r="78"/><circle cx="325" cy="200" r="78"/><path d="M95 200L170 90H280L325 200M170 90L215 200H95M280 90L300 60h30"/></g>
+<g stroke="#ff48b0" style="mix-blend-mode:multiply" transform="translate(5 -4)"><circle cx="95" cy="200" r="18"/><circle cx="325" cy="200" r="18"/><path d="M215 200l-20-130h-30M215 200h30"/></g></svg></header>
+<section id="how"><h2>How it works</h2><div class="steps">
+<div class="step"><b>1</b><h3>Bring the bike</h3><p>No booking. Sign the clipboard by the door and grab a stand.</p></div>
+<div class="step"><b>2</b><h3>Fix it with us</h3><p>A volunteer mechanic shows you how. Tools, grease and advice are free.</p></div>
+<div class="step"><b>3</b><h3>Pay for parts</h3><p>Second-hand parts at cost. Pay what you can for stand time.</p></div></div></section>
+<section id="prices"><h2>Fix-it menu</h2><div class="menu">
+<div>Puncture repair, with a new tube<b>£5</b></div><div>Brake pads, pair, fitted by you<b>£6</b></div><div>Used chain, checked<b>£8</b></div><div>Gear cable and housing<b>£4</b></div><div>Stand time, per visit<b>pay what you can</b></div></div></section>
+<section id="hours"><h2>Open hours</h2><div class="week">
+<div class="day"><span>Mon</span>closed</div><div class="day open"><span>Tue</span>17–20</div><div class="day"><span>Wed</span>closed</div><div class="day open"><span>Thu</span>17–20</div><div class="day"><span>Fri</span>closed</div><div class="day open"><span>Sat</span>10–16<br>kids' bikes</div><div class="day"><span>Sun</span>closed</div></div></section>
+<div class="cta"><h2>Volunteer one evening a month</h2><p>You don't need to be a mechanic. We need people to welcome visitors, sort donated parts and make the tea. We'll teach you the rest.</p><a class="btn" href="#volunteer">Join the rota</a></div>
+<footer>Spoke &amp; Pedal · Arch 14, Viaduct Road · Run by volunteers since 2019 · Printed in two inks, on purpose.</footer>
+</div>
+</body>
+</html>

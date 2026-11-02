@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en" data-od-deck-protocol="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Osteria Brava · Autumn menu briefing</title>
+<style>
+:root{--shell:#7e3520;--bg:#f3e7d3;--fg:#3b3a1f;--accent:#b9502e;--muted:#7d6e57;--body-font:'Gill Sans','Gill Sans MT','Avenir Next',Avenir,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html{--u:calc(100vw / 1920)}
+html.deck-on{--u:calc(min(100vw, 177.7778vh) / 1920)}
+html,body{background:var(--shell);color:var(--fg)}
+body{font-family:var(--body-font);-webkit-font-smoothing:antialiased}
+.deck-stage{width:calc(1920*var(--u))}
+.slide{position:relative;width:calc(1920*var(--u));height:calc(1080*var(--u));overflow:hidden;display:flex;flex-direction:column;background:var(--bg);color:var(--fg)}
+html.deck-on,html.deck-on body{height:100%;overflow:hidden}
+html.deck-on .deck-stage{position:fixed;left:50%;top:50%;height:calc(1080*var(--u));transform:translate(-50%,-50%)}
+html.deck-on .slide{position:absolute;inset:0}
+@media screen{html.deck-on .slide:not(.active){display:none!important}}
+.deck-dots{display:none}
+html.deck-on .deck-dots{display:flex;position:fixed;left:50%;bottom:10px;transform:translateX(-50%);gap:8px;z-index:10;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28)}
+.deck-dots button{width:8px;height:8px;padding:0;border:0;border-radius:4px;background:rgba(255,255,255,.55);cursor:pointer;transition:width .2s}
+.deck-dots button[aria-current="true"]{width:22px;background:#fff}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,html.deck-on{--u:1px}
+  html,body,html.deck-on body{height:auto!important;overflow:visible!important;background:none}
+  html.deck-on .deck-stage{position:static;transform:none;height:auto}
+  html.deck-on .slide{position:relative;inset:auto}
+  .slide{break-after:page}
+  .deck-dots{display:none!important}
+}
+</style>
+<style>
+.slide{padding:calc(100*var(--u)) calc(130*var(--u))}
+.slide.terra{background:#b9502e;align-items:center;justify-content:center}
+.card{background:#f3e7d3;color:#3b3a1f;padding:calc(80*var(--u)) calc(110*var(--u));text-align:center;border-radius:calc(6*var(--u));box-shadow:0 calc(30*var(--u)) calc(60*var(--u)) rgba(60,20,10,.35);outline:calc(2*var(--u)) solid #b9502e;outline-offset:calc(-24*var(--u));width:calc(1100*var(--u))}
+.sc{font-size:calc(22*var(--u));letter-spacing:calc(6*var(--u));text-transform:uppercase;color:#7d6e57}
+.serif{font-family:Didot,'Bodoni 72','Bodoni MT',Georgia,serif}
+.card h1{font-family:Didot,'Bodoni 72','Bodoni MT',Georgia,serif;font-weight:400;font-size:calc(120*var(--u));line-height:1;margin:calc(34*var(--u)) 0}
+.card p{font-size:calc(30*var(--u));line-height:1.45}
+.rule{width:calc(120*var(--u));height:calc(2*var(--u));background:#b9502e;margin:calc(34*var(--u)) auto}
+h2{font-family:Didot,'Bodoni 72','Bodoni MT',Georgia,serif;font-weight:400;font-size:calc(84*var(--u));line-height:1.05;margin-top:calc(24*var(--u));max-width:calc(1300*var(--u))}
+.lede{font-size:calc(32*var(--u));line-height:1.5;margin-top:calc(30*var(--u));max-width:calc(1000*var(--u))}
+.tags{display:flex;gap:calc(24*var(--u));margin-top:calc(60*var(--u))}
+.tags span{padding:calc(18*var(--u)) calc(34*var(--u));border:calc(2*var(--u)) solid #b9502e;border-radius:calc(999*var(--u));font-size:calc(28*var(--u));letter-spacing:calc(2*var(--u));text-transform:uppercase;color:#b9502e}
+.dishes{display:grid;grid-template-columns:1fr 1fr;gap:calc(36*var(--u));margin-top:calc(44*var(--u))}
+.dish{background:#fbf5ea;border:calc(1*var(--u)) solid #d9c6a8;border-radius:calc(8*var(--u));padding:calc(30*var(--u)) calc(36*var(--u));display:grid;grid-template-columns:calc(140*var(--u)) 1fr auto;gap:calc(30*var(--u));align-items:center}
+.dish h3{font-family:Didot,'Bodoni 72',Georgia,serif;font-weight:400;font-size:calc(40*var(--u));line-height:1.1}
+.dish p{font-size:calc(22*var(--u));line-height:1.4;color:#7d6e57;margin-top:calc(8*var(--u))}
+.dish .price{font-family:Didot,'Bodoni 72',Georgia,serif;font-size:calc(44*var(--u));color:#d9442b}
+.dish .al{font-size:calc(18*var(--u));letter-spacing:calc(2*var(--u));color:#b9502e;margin-top:calc(10*var(--u))}
+.farms{margin-top:calc(50*var(--u));display:grid;gap:calc(4*var(--u))}
+.farm{display:grid;grid-template-columns:1fr calc(420*var(--u)) calc(160*var(--u));align-items:baseline;padding:calc(22*var(--u)) 0;border-bottom:calc(1*var(--u)) solid #d9c6a8;font-size:calc(32*var(--u))}
+.farm span{color:#7d6e57;font-size:calc(26*var(--u))}
+.farm b{font-family:Didot,'Bodoni 72',Georgia,serif;font-weight:400;font-size:calc(44*var(--u));color:#b9502e;text-align:right}
+.time{margin-top:calc(70*var(--u));display:grid;grid-template-columns:repeat(5,1fr);border-top:calc(3*var(--u)) solid #3b3a1f}
+.time div{padding:calc(24*var(--u)) calc(24*var(--u)) 0 0;position:relative}
+.time div::before{content:"";position:absolute;top:calc(-13*var(--u));left:0;width:calc(22*var(--u));height:calc(22*var(--u));border-radius:50%;background:#b9502e}
+.time b{display:block;font-family:Didot,'Bodoni 72',Georgia,serif;font-weight:400;font-size:calc(46*var(--u))}
+.time p{font-size:calc(25*var(--u));line-height:1.4;margin-top:calc(8*var(--u));color:#5b5034}
+</style>
+</head>
+<body>
+<main class="deck-stage" id="deck-stage">
+<section class="slide active terra" data-screen-label="01">
+<div class="card"><p class="sc">Osteria Brava · Staff briefing</p><h1>The autumn menu</h1><div class="rule"></div><p>Four new plates, two farms, one slower second seating.<br>Live from Thursday 2 October.</p></div>
+</section>
+<section class="slide" data-screen-label="02">
+<p class="sc">The idea</p>
+<h2>Cook what the hills give us in October, and say where it came from.</h2>
+<p class="lede">Every new dish is built around one ingredient from a farm within 60 km. Servers name the farm when they set the plate down.</p>
+<div class="tags"><span>Pumpkin</span><span>Leeks</span><span>Figs</span><span>Hazelnuts</span></div>
+</section>
+<section class="slide" data-screen-label="03">
+<p class="sc">Four new plates · allergens in letters</p>
+<div class="dishes"><div class="dish"><svg viewBox="0 0 140 140"><circle cx="70" cy="70" r="66" fill="#fff" stroke="#d9c6a8" stroke-width="2"/><circle cx="70" cy="70" r="46" fill="none" stroke="#efe3cf" stroke-width="2"/><ellipse cx="62" cy="72" rx="30" ry="20" fill="#e09a3c"/><circle cx="84" cy="60" r="12" fill="#7b8a3a"/><path d="M48 58q8-10 16 0" stroke="#3b3a1f" stroke-width="2.5" fill="none"/></svg><div><h3>Pumpkin tortelli</h3><p>brown butter, sage, aged ricotta</p><p class="al">G · E · M</p></div><span class="price">€16</span></div><div class="dish"><svg viewBox="0 0 140 140"><circle cx="70" cy="70" r="66" fill="#fff" stroke="#d9c6a8" stroke-width="2"/><circle cx="70" cy="70" r="46" fill="none" stroke="#efe3cf" stroke-width="2"/><ellipse cx="62" cy="72" rx="30" ry="20" fill="#c9cf9c"/><circle cx="84" cy="60" r="12" fill="#b9502e"/><path d="M48 58q8-10 16 0" stroke="#3b3a1f" stroke-width="2.5" fill="none"/></svg><div><h3>Charred leeks</h3><p>hazelnut romesco, chives</p><p class="al">N · SU</p></div><span class="price">€11</span></div><div class="dish"><svg viewBox="0 0 140 140"><circle cx="70" cy="70" r="66" fill="#fff" stroke="#d9c6a8" stroke-width="2"/><circle cx="70" cy="70" r="46" fill="none" stroke="#efe3cf" stroke-width="2"/><ellipse cx="62" cy="72" rx="30" ry="20" fill="#6d3524"/><circle cx="84" cy="60" r="12" fill="#e6c871"/><path d="M48 58q8-10 16 0" stroke="#3b3a1f" stroke-width="2.5" fill="none"/></svg><div><h3>Braised beef cheek</h3><p>polenta, salsa verde</p><p class="al">M · SU</p></div><span class="price">€26</span></div><div class="dish"><svg viewBox="0 0 140 140"><circle cx="70" cy="70" r="66" fill="#fff" stroke="#d9c6a8" stroke-width="2"/><circle cx="70" cy="70" r="46" fill="none" stroke="#efe3cf" stroke-width="2"/><ellipse cx="62" cy="72" rx="30" ry="20" fill="#7a3f5c"/><circle cx="84" cy="60" r="12" fill="#d9a95a"/><path d="M48 58q8-10 16 0" stroke="#3b3a1f" stroke-width="2.5" fill="none"/></svg><div><h3>Fig & walnut tart</h3><p>crème fraîche, honey</p><p class="al">G · E · M · N</p></div><span class="price">€9</span></div></div>
+<p class="lede" style="font-size:calc(22*var(--u));margin-top:calc(26*var(--u))">G gluten · E egg · M milk · N nuts · SU sulphites. Full matrix on the pass.</p>
+</section>
+<section class="slide" data-screen-label="04">
+<p class="sc">Where it comes from</p>
+<h2>Two new farms, all inside an hour.</h2>
+<div class="farms">
+<div class="farm">Campo Alto<span>pumpkin, leeks, sage</span><b>18 km</b></div>
+<div class="farm">Fattoria Rinaldi<span>beef, ricotta</span><b>41 km</b></div>
+<div class="farm">Noccioleto Vale<span>hazelnuts, walnuts</span><b>57 km</b></div>
+<div class="farm">Orto di Casa<span>figs, chives, herbs</span><b>2 km</b></div>
+</div>
+</section>
+<section class="slide" data-screen-label="05">
+<p class="sc">Service · second seating</p>
+<h2>The second seating moves to 21:00.</h2>
+<div class="time">
+<div><b>21:00</b><p>Seat, water, bread with the new hazelnut oil</p></div>
+<div><b>21:10</b><p>Order taken; name the farm for each new dish</p></div>
+<div><b>21:25</b><p>Starters; charred leeks go out first</p></div>
+<div><b>21:55</b><p>Mains; tortelli plated to order, 4 min</p></div>
+<div><b>22:40</b><p>Tart and digestivo; last orders 22:45</p></div>
+</div>
+</section>
+<section class="slide terra" data-screen-label="06">
+<div class="card"><p class="sc">Tasting</p><h1>Wednesday, 16:00</h1><div class="rule"></div><p>Everyone on Thursday's rota tastes all four plates.<br>Questions on sourcing: Giulia. On allergens: Marco at the pass.</p></div>
+</section>
+</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.deck-stage > .slide'));
+  if (!slides.length) return;
+  var KEY = 'deck:' + (location.pathname || '/') + ':' + document.title;
+  var idx = 0;
+  try {
+    var saved = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (saved >= 0 && saved < slides.length) idx = saved;
+  } catch (_) {}
+  var dots = document.createElement('nav');
+  dots.className = 'deck-dots';
+  dots.setAttribute('aria-label', 'Slides');
+  slides.forEach(function (_, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Slide ' + (i + 1));
+    b.addEventListener('click', function (e) { e.stopPropagation(); go(i); focusDeck(); });
+    dots.appendChild(b);
+  });
+  document.body.appendChild(dots);
+  function post(msg) { try { window.parent.postMessage(msg, '*'); } catch (_) {} }
+  function paint() {
+    slides.forEach(function (s, i) {
+      var on = i === idx;
+      s.classList.toggle('active', on);
+      s.classList.toggle('is-active', on);
+      s.setAttribute('aria-hidden', on ? 'false' : 'true');
+    });
+    Array.prototype.forEach.call(dots.children, function (b, i) {
+      if (i === idx) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+    post({ type: 'od:slide-state', protocolVersion: 1, active: idx, count: slides.length });
+  }
+  function go(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    paint();
+    try { localStorage.setItem(KEY, String(idx)); } catch (_) {}
+  }
+  function editable(t) {
+    return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  }
+  function onKey(e) {
+    if (e.__deckDone || editable(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key, to = null;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') to = idx + 1;
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') to = idx - 1;
+    else if (k === 'Home') to = 0;
+    else if (k === 'End') to = slides.length - 1;
+    if (to === null) return;
+    e.__deckDone = true;
+    e.preventDefault();
+    go(to);
+  }
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('keydown', onKey, true);
+  var acc = 0, lock = false, resetTimer = 0;
+  window.addEventListener('wheel', function (e) {
+    if (editable(e.target)) return;
+    e.preventDefault();
+    if (lock) return;
+    acc += e.deltaX + e.deltaY;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(function () { acc = 0; }, 180);
+    if (Math.abs(acc) > 40) {
+      go(idx + (acc > 0 ? 1 : -1));
+      acc = 0;
+      lock = true;
+      setTimeout(function () { lock = false; }, 420);
+    }
+  }, { passive: false });
+  var sx = 0, sy = 0;
+  window.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  window.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) go(idx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'od:slide') return;
+    if (d.protocolVersion != null && d.protocolVersion !== 1) return;
+    if (d.action === 'go' && typeof d.index === 'number' && isFinite(d.index)) go(Math.floor(d.index));
+    else if (d.action === 'next') go(idx + 1);
+    else if (d.action === 'prev') go(idx - 1);
+    else if (d.action === 'first') go(0);
+    else if (d.action === 'last') go(slides.length - 1);
+  });
+  document.body.setAttribute('tabindex', '-1');
+  document.body.style.outline = 'none';
+  function focusDeck() { try { window.focus(); document.body.focus({ preventScroll: true }); } catch (_) {} }
+  document.addEventListener('pointerdown', focusDeck);
+  window.addEventListener('load', focusDeck);
+  root.classList.add('deck-on');
+  paint();
+  focusDeck();
+  post({ type: 'od:deck-ready', protocolVersion: 1, capabilities: ['absolute-navigation', 'state-events'] });
+})();
+</script>
+</body>
+</html>

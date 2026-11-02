@@ -26,6 +26,12 @@ LICENSE files added by Contour for third-party content that OpenDesign copied wi
 - content/skills/chat-motion-overlay/assets/avatar-library/ (6 PNG mascots) ships as found in OpenDesign
   e03d5c2; OpenDesign does not record their origin.
 
+Written for Contour, not copied:
+- content/design-templates/webgl-*/ (10, except webgl-experience), deck-*/ (14) and landing-*/ (6): templates
+  marked `od.origin: contour` in SKILL.md. Copyright Quang Phung and contributors, Apache License 2.0; each
+  folder carries that LICENSE. Names, text, colours, shaders and drawings are original; they use system
+  fonts and fetch nothing over the network.
+
 Excluded or not yet copied:
 - Fonts: the 4 directories above contain no font files (.woff/.woff2/.ttf/.otf/.eot), so nothing had to be excluded.
 - prompt-templates/: see M6 below.

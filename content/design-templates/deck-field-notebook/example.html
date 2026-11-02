@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en" data-od-deck-protocol="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hivewise co-op · Season 2026 report</title>
+<style>
+:root{--shell:#d9d1bd;--bg:#f6f0df;--fg:#2f3719;--accent:#d99a1e;--muted:#7b7466;--body-font:'Iowan Old Style',Palatino,'Palatino Linotype',Georgia,serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html{--u:calc(100vw / 1920)}
+html.deck-on{--u:calc(min(100vw, 177.7778vh) / 1920)}
+html,body{background:var(--shell);color:var(--fg)}
+body{font-family:var(--body-font);-webkit-font-smoothing:antialiased}
+.deck-stage{width:calc(1920*var(--u))}
+.slide{position:relative;width:calc(1920*var(--u));height:calc(1080*var(--u));overflow:hidden;display:flex;flex-direction:column;background:var(--bg);color:var(--fg)}
+html.deck-on,html.deck-on body{height:100%;overflow:hidden}
+html.deck-on .deck-stage{position:fixed;left:50%;top:50%;height:calc(1080*var(--u));transform:translate(-50%,-50%)}
+html.deck-on .slide{position:absolute;inset:0}
+@media screen{html.deck-on .slide:not(.active){display:none!important}}
+.deck-dots{display:none}
+html.deck-on .deck-dots{display:flex;position:fixed;left:50%;bottom:10px;transform:translateX(-50%);gap:8px;z-index:10;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28)}
+.deck-dots button{width:8px;height:8px;padding:0;border:0;border-radius:4px;background:rgba(255,255,255,.55);cursor:pointer;transition:width .2s}
+.deck-dots button[aria-current="true"]{width:22px;background:#fff}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,html.deck-on{--u:1px}
+  html,body,html.deck-on body{height:auto!important;overflow:visible!important;background:none}
+  html.deck-on .deck-stage{position:static;transform:none;height:auto}
+  html.deck-on .slide{position:relative;inset:auto}
+  .slide{break-after:page}
+  .deck-dots{display:none!important}
+}
+</style>
+<style>
+.slide{background-color:#f6f0df;background-image:linear-gradient(transparent calc(47*var(--u)),#cfdde6 calc(47*var(--u)),#cfdde6 calc(48*var(--u)));background-size:100% calc(48*var(--u));padding:calc(120*var(--u)) calc(150*var(--u)) calc(96*var(--u)) calc(210*var(--u))}
+.slide::before{content:"";position:absolute;left:calc(150*var(--u));top:0;bottom:0;width:calc(2*var(--u));background:#e3a49a}
+.eyebrow{font:600 calc(18*var(--u))/1 'Avenir Next','Helvetica Neue',sans-serif;letter-spacing:calc(4*var(--u));text-transform:uppercase;color:#7b7466}
+h1{font-size:calc(132*var(--u));line-height:1;font-weight:600;letter-spacing:calc(-2*var(--u));margin-top:calc(36*var(--u));max-width:calc(1100*var(--u))}
+h2{font-size:calc(76*var(--u));line-height:1.05;font-weight:600;letter-spacing:calc(-1*var(--u));margin-top:calc(24*var(--u));max-width:calc(1300*var(--u))}
+.lede{font-size:calc(34*var(--u));line-height:1.45;margin-top:calc(36*var(--u));max-width:calc(1000*var(--u));color:#4a5230}
+.note{font-family:'Bradley Hand','Segoe Print','Comic Sans MS',cursive;font-size:calc(30*var(--u));color:#7b7466;transform:rotate(-2deg);display:inline-block}
+.hexes{position:absolute;right:calc(120*var(--u));top:calc(150*var(--u));width:calc(560*var(--u))}
+.tally{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(56*var(--u));margin-top:calc(80*var(--u))}
+.tally .n{font-size:calc(128*var(--u));line-height:1;font-weight:600;color:#2f3719;white-space:nowrap}
+.tally .n.hi{color:#d99a1e}
+.tally .l{font-size:calc(30*var(--u));margin-top:calc(16*var(--u));line-height:1.35}
+.tally .note{margin-top:calc(20*var(--u));font-size:calc(26*var(--u))}
+.chart{display:flex;align-items:flex-end;gap:calc(34*var(--u));height:calc(480*var(--u));margin-top:calc(64*var(--u));border-bottom:calc(3*var(--u)) solid #2f3719;padding:0 calc(10*var(--u))}
+.chart .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+.chart .v{font:600 calc(26*var(--u))/1 'Avenir Next','Helvetica Neue',sans-serif;margin-bottom:calc(10*var(--u))}
+.chart .b{width:100%;background:repeating-linear-gradient(45deg,#3f4a24 0 calc(6*var(--u)),#5a6833 calc(6*var(--u)) calc(12*var(--u)));border-radius:calc(6*var(--u)) calc(6*var(--u)) 0 0}
+.chart .b.hi{background:#d99a1e}
+.chart .m{font:500 calc(24*var(--u))/1 'Avenir Next','Helvetica Neue',sans-serif;color:#7b7466;margin-top:calc(14*var(--u));position:absolute;bottom:calc(-44*var(--u))}
+.chart .col{position:relative}
+.plate{display:grid;grid-template-columns:calc(760*var(--u)) 1fr;gap:calc(80*var(--u));margin-top:calc(56*var(--u));align-items:center}
+.labels li{list-style:none;font-size:calc(30*var(--u));line-height:1.4;padding:calc(16*var(--u)) 0;border-bottom:calc(1*var(--u)) dashed #a49c88}
+.labels b{font-family:'Avenir Next','Helvetica Neue',sans-serif;color:#d99a1e;margin-right:calc(16*var(--u))}
+.asks{margin-top:calc(56*var(--u));display:grid;gap:calc(30*var(--u))}
+.ask{display:grid;grid-template-columns:calc(110*var(--u)) 1fr;align-items:start}
+.ask .k{font-size:calc(88*var(--u));line-height:.9;color:#d99a1e;font-weight:600}
+.ask h3{font-size:calc(44*var(--u));line-height:1.15}
+.ask p{font-size:calc(28*var(--u));color:#4a5230;margin-top:calc(6*var(--u))}
+.sign{margin-top:calc(90*var(--u));font-family:'Bradley Hand','Segoe Print',cursive;font-size:calc(56*var(--u));color:#3f4a24}
+.small{font:500 calc(22*var(--u))/1.4 'Avenir Next','Helvetica Neue',sans-serif;color:#7b7466;margin-top:calc(16*var(--u))}
+</style>
+</head>
+<body>
+<main class="deck-stage" id="deck-stage">
+<section class="slide active" data-screen-label="01">
+<p class="eyebrow">Hivewise rooftop co-op · Members' meeting · Season 2026</p>
+<h1>The year the bees stayed.</h1>
+<p class="lede">Twenty-three hives on eleven roofs, kept by ninety-four members who mostly had never opened one before March.</p>
+<p class="note" style="margin-top:calc(40*var(--u))">— field notes, compiled by the hive leads</p>
+<svg class="hexes" viewBox="0 0 280 260" fill="none" stroke="#3f4a24" stroke-width="2.2" stroke-linejoin="round">
+<path d="M70 20l35 20v40l-35 20-35-20V40z"/><path d="M140 20l35 20v40l-35 20-35-20V40z" fill="#d99a1e" fill-opacity=".85"/><path d="M105 80l35 20v40l-35 20-35-20v-40z"/>
+<path d="M175 80l35 20v40l-35 20-35-20v-40z" fill="#d99a1e" fill-opacity=".45"/><path d="M140 140l35 20v40l-35 20-35-20v-40z"/><path d="M210 140l35 20v40l-35 20-35-20v-40z" stroke-dasharray="5 6"/>
+<path d="M232 40c10-14 30-10 30 4s-20 14-24 6" stroke-width="1.6"/><circle cx="246" cy="36" r="4" fill="#3f4a24"/></svg>
+</section>
+<section class="slide" data-screen-label="02">
+<p class="eyebrow">The season in three entries</p>
+<h2>More colonies survived than we planned for.</h2>
+<div class="tally">
+<div><div class="n">23</div><p class="l">hives through winter<br>out of 25 we started with</p><span class="note">two lost to damp, roof 6</span></div>
+<div><div class="n hi">591 kg</div><p class="l">honey extracted,<br>up from 340 kg last year</p><span class="note">July alone: 188 kg!</span></div>
+<div><div class="n">9</div><p class="l">swarms caught and rehoused<br>by the call-out rota</p><span class="note">avg. response 47 min</span></div>
+</div>
+</section>
+<section class="slide" data-screen-label="03">
+<p class="eyebrow">Honey extracted by month, all roofs</p>
+<h2>The lime trees carried July.</h2>
+<div class="chart"><div class="col"><span class="v">18 kg</span><div class="b" style="height:calc(36*var(--u))"></div><span class="m">Apr</span></div><div class="col"><span class="v">64 kg</span><div class="b" style="height:calc(129*var(--u))"></div><span class="m">May</span></div><div class="col"><span class="v">122 kg</span><div class="b" style="height:calc(247*var(--u))"></div><span class="m">Jun</span></div><div class="col"><span class="v">188 kg</span><div class="b hi" style="height:calc(380*var(--u))"></div><span class="m">Jul</span></div><div class="col"><span class="v">141 kg</span><div class="b" style="height:calc(285*var(--u))"></div><span class="m">Aug</span></div><div class="col"><span class="v">58 kg</span><div class="b" style="height:calc(117*var(--u))"></div><span class="m">Sep</span></div></div>
+<p class="small" style="margin-top:calc(70*var(--u))">Weighed after filtering at the shared kitchen. October to March: no extraction.</p>
+</section>
+<section class="slide" data-screen-label="04">
+<p class="eyebrow">Specimen plate · Hive 14, library roof</p>
+<h2>What we changed in one hive, and why.</h2>
+<div class="plate">
+<svg viewBox="0 0 380 300" fill="none" stroke="#3f4a24" stroke-width="2.5" stroke-linejoin="round">
+<rect x="90" y="40" width="200" height="40" fill="#efe3c0"/><rect x="80" y="80" width="220" height="70"/><rect x="80" y="150" width="220" height="70" fill="#f3d48c"/><rect x="70" y="220" width="240" height="22" fill="#3f4a24"/>
+<path d="M120 242v40M260 242v40"/><text x="310" y="64" fill="#d99a1e" stroke="none" font-size="22" font-family="Avenir Next, sans-serif">A</text><text x="310" y="120" fill="#d99a1e" stroke="none" font-size="22" font-family="Avenir Next, sans-serif">B</text><text x="310" y="190" fill="#d99a1e" stroke="none" font-size="22" font-family="Avenir Next, sans-serif">C</text><text x="320" y="238" fill="#d99a1e" stroke="none" font-size="22" font-family="Avenir Next, sans-serif">D</text></svg>
+<ul class="labels">
+<li><b>A</b>Insulated roof: cut winter losses on exposed sites</li>
+<li><b>B</b>Brood box moved off the parapet edge</li>
+<li><b>C</b>One super instead of two: lighter lifts for new members</li>
+<li><b>D</b>Raised stand: no more pooling water after storms</li>
+</ul></div>
+</section>
+<section class="slide" data-screen-label="05">
+<p class="eyebrow">Next season · three asks of members</p>
+<h2>Help us keep twenty-five roofs humming.</h2>
+<div class="asks">
+<div class="ask"><span class="k">1</span><div><h3>Join the swarm rota for one month.</h3><p>We need 12 more people on call between May and July.</p></div></div>
+<div class="ask"><span class="k">2</span><div><h3>Find us two new roofs near water.</h3><p>Flat, reachable by stairs, owner happy to sign the one-page agreement.</p></div></div>
+<div class="ask"><span class="k">3</span><div><h3>Vote yes on the €18 dues change.</h3><p>Covers insurance and a second extractor; honey share stays at 2 jars a member.</p></div></div>
+</div>
+</section>
+<section class="slide" data-screen-label="06">
+<p class="eyebrow">Thank you</p>
+<h2>Every jar on the table tonight came from a roof you climbed.</h2>
+<p class="lede">Questions to the hive leads after the vote. Jars by the door: one per member, take the label you like.</p>
+<p class="sign">— Ines, Bram &amp; Ola, hive leads</p>
+</section>
+</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.deck-stage > .slide'));
+  if (!slides.length) return;
+  var KEY = 'deck:' + (location.pathname || '/') + ':' + document.title;
+  var idx = 0;
+  try {
+    var saved = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (saved >= 0 && saved < slides.length) idx = saved;
+  } catch (_) {}
+  var dots = document.createElement('nav');
+  dots.className = 'deck-dots';
+  dots.setAttribute('aria-label', 'Slides');
+  slides.forEach(function (_, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Slide ' + (i + 1));
+    b.addEventListener('click', function (e) { e.stopPropagation(); go(i); focusDeck(); });
+    dots.appendChild(b);
+  });
+  document.body.appendChild(dots);
+  function post(msg) { try { window.parent.postMessage(msg, '*'); } catch (_) {} }
+  function paint() {
+    slides.forEach(function (s, i) {
+      var on = i === idx;
+      s.classList.toggle('active', on);
+      s.classList.toggle('is-active', on);
+      s.setAttribute('aria-hidden', on ? 'false' : 'true');
+    });
+    Array.prototype.forEach.call(dots.children, function (b, i) {
+      if (i === idx) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+    post({ type: 'od:slide-state', protocolVersion: 1, active: idx, count: slides.length });
+  }
+  function go(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    paint();
+    try { localStorage.setItem(KEY, String(idx)); } catch (_) {}
+  }
+  function editable(t) {
+    return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  }
+  function onKey(e) {
+    if (e.__deckDone || editable(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key, to = null;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') to = idx + 1;
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') to = idx - 1;
+    else if (k === 'Home') to = 0;
+    else if (k === 'End') to = slides.length - 1;
+    if (to === null) return;
+    e.__deckDone = true;
+    e.preventDefault();
+    go(to);
+  }
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('keydown', onKey, true);
+  var acc = 0, lock = false, resetTimer = 0;
+  window.addEventListener('wheel', function (e) {
+    if (editable(e.target)) return;
+    e.preventDefault();
+    if (lock) return;
+    acc += e.deltaX + e.deltaY;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(function () { acc = 0; }, 180);
+    if (Math.abs(acc) > 40) {
+      go(idx + (acc > 0 ? 1 : -1));
+      acc = 0;
+      lock = true;
+      setTimeout(function () { lock = false; }, 420);
+    }
+  }, { passive: false });
+  var sx = 0, sy = 0;
+  window.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  window.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) go(idx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'od:slide') return;
+    if (d.protocolVersion != null && d.protocolVersion !== 1) return;
+    if (d.action === 'go' && typeof d.index === 'number' && isFinite(d.index)) go(Math.floor(d.index));
+    else if (d.action === 'next') go(idx + 1);
+    else if (d.action === 'prev') go(idx - 1);
+    else if (d.action === 'first') go(0);
+    else if (d.action === 'last') go(slides.length - 1);
+  });
+  document.body.setAttribute('tabindex', '-1');
+  document.body.style.outline = 'none';
+  function focusDeck() { try { window.focus(); document.body.focus({ preventScroll: true }); } catch (_) {} }
+  document.addEventListener('pointerdown', focusDeck);
+  window.addEventListener('load', focusDeck);
+  root.classList.add('deck-on');
+  paint();
+  focusDeck();
+  post({ type: 'od:deck-ready', protocolVersion: 1, capabilities: ['absolute-navigation', 'state-events'] });
+})();
+</script>
+</body>
+</html>
