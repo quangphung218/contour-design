@@ -459,6 +459,70 @@ async fn saved_templates_and_remix() {
     assert!(html.contains(&example[..example.len().min(200)]));
 }
 
+/// The gallery examples written for Contour (`od.origin: contour`): each
+/// is listed with its type, serves a preview page, and Remix turns it into
+/// a project of that type holding the same page.
+#[tokio::test]
+async fn contour_examples_preview_and_remix() {
+    let d = daemon().await;
+    let list = d.get_json("/api/design-templates").await;
+    let listed = list["designTemplates"].as_array().unwrap();
+    let mut seen = 0;
+    for entry in std::fs::read_dir(content_root().join("design-templates")).unwrap() {
+        let dir = entry.unwrap().path();
+        let Ok(raw) = std::fs::read_to_string(dir.join("SKILL.md")) else {
+            continue; // AGENTS.md
+        };
+        let (data, _) = od_content::frontmatter::parse(&raw).unwrap();
+        if data["od"]["origin"] != "contour" {
+            continue;
+        }
+        seen += 1;
+        let id = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let mode = data["od"]["mode"].as_str().unwrap();
+        let card = listed
+            .iter()
+            .find(|t| t["id"] == id.as_str())
+            .unwrap_or_else(|| panic!("{id} is not listed"));
+        assert_eq!(card["mode"], mode, "{id}");
+        assert_eq!(card["hasExample"], true, "{id}");
+
+        let res = d
+            .http
+            .get(format!("{}/api/design-templates/{id}/example", d.base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status().as_u16(), 200, "{id}");
+        let example = res.text().await.unwrap();
+        assert!(example.starts_with("<!doctype html>"), "{id}");
+
+        let (s, v) = call(
+            &d,
+            "POST",
+            &format!("/api/design-templates/{id}/remix"),
+            None,
+        )
+        .await;
+        assert_eq!(s, 200, "{id}: {v}");
+        assert_eq!(v["project"]["skillId"], id.as_str());
+        let kind = if mode == "deck" { "deck" } else { "prototype" };
+        assert_eq!(v["project"]["metadata"]["kind"], kind, "{id}");
+        let pid = v["project"]["id"].as_str().unwrap();
+        let html = d
+            .http
+            .get(format!("{}/api/projects/{pid}/raw/index.html", d.base))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert_eq!(html, example, "{id}: the project holds the example page");
+    }
+    assert_eq!(seen, 30, "Contour's own gallery examples");
+}
+
 /// A 1×1 PNG.
 const PNG: &[u8] = &[
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0,
