@@ -479,6 +479,19 @@ pub fn template_name(s: &SkillSummary) -> String {
         .unwrap_or(words)
 }
 
+/// The chip a template opens under (`/?template=<id>`): a deck under
+/// Deck, a film under Motion (its skill and intent run the render), any
+/// page under Prototype. The chip must list the template
+/// ([`templates_for`]), or the composer drops it.
+#[must_use]
+pub fn chip_for_template(mode: SkillMode) -> Chip {
+    match mode {
+        SkillMode::Deck => Chip::Deck,
+        SkillMode::Video => Chip::Motion,
+        _ => Chip::Prototype,
+    }
+}
+
 /// Templates offered for a chip (same mode), featured first, then by the
 /// name shown.
 #[must_use]
@@ -817,6 +830,27 @@ mod tests {
         assert_eq!(list.len(), RECENT_DIRS);
         assert_eq!(list[0], "/new");
         assert!(!list.contains(&"/d4".to_owned()));
+    }
+
+    #[test]
+    fn a_video_template_opens_under_motion() {
+        let t = vec![
+            skill("motion-countdown", "video", None, &[]),
+            skill("deck-a", "deck", None, &[]),
+            skill("page-a", "prototype", None, &[]),
+        ];
+        for s in &t {
+            let chip = chip_for_template(s.info.mode);
+            let listed = templates_for(chip, &t);
+            assert!(
+                listed.iter().any(|l| l.info.id == s.info.id),
+                "{}",
+                s.info.id
+            );
+        }
+        assert_eq!(chip_for_template(SkillMode::Video), Chip::Motion);
+        assert_eq!(chip_for_template(SkillMode::Deck), Chip::Deck);
+        assert_eq!(chip_for_template(SkillMode::Template), Chip::Prototype);
     }
 
     #[test]

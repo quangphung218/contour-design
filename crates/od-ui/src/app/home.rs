@@ -13,8 +13,8 @@ use super::lib_ui::query_param;
 use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::{
-    ASPECTS, AUDIO_KINDS, Chip, HomeIntent, MediaOptions, RESOLUTIONS, push_recent_dir,
-    scenarios_for, templates_for, typewriter,
+    ASPECTS, AUDIO_KINDS, Chip, HomeIntent, MediaOptions, RESOLUTIONS, chip_for_template,
+    push_recent_dir, scenarios_for, templates_for, typewriter,
 };
 use crate::mention::Candidate;
 use crate::settings::AppConfig;
@@ -22,7 +22,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use od_contracts::{
     CreateProjectResponse, DesignSystemSummary, DesignSystemsResponse, DesignTemplatesResponse,
-    Platform, SkillMode, SkillSummary, SkillsResponse,
+    Platform, SkillSummary, SkillsResponse,
 };
 
 /// Templates shown before "Show all".
@@ -155,11 +155,7 @@ pub fn Home() -> impl IntoView {
         };
         wanted_template.set_value(None);
         if let Some(s) = list.iter().find(|s| s.info.id == id) {
-            chip.set(if s.info.mode == SkillMode::Deck {
-                Chip::Deck
-            } else {
-                Chip::Prototype
-            });
+            chip.set(chip_for_template(s.info.mode));
             template.set(Some(id));
             if brief.with_untracked(|b| b.trim().is_empty()) {
                 brief.set(s.info.example_prompt.clone());

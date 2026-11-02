@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animated quote card</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Animated quote card: a 8 s, 1080x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 8 s film
+   (1 s = 12.500%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 10.8px
+   on the 1080px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+@property --n { syntax: '<integer>'; inherits: false; initial-value: 0; }
+html, body { margin: 0; height: 100%; background: #f1ece0; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 8s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1080 / 1080)); aspect-ratio: 1080 / 1080;
+  background: #f1ece0; color: #173a2f; font-family: ui-serif, "Iowan Old Style", Charter, Georgia, "Times New Roman", serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.wrap { position: absolute; inset: 0; padding: 11.1111cqw 10.1852cqw; display: flex; flex-direction: column; justify-content: center; gap: 4.0741cqw; }
+.mark { width: 13.8889cqw; height: 11.1111cqw; }
+.mark path { fill: none; stroke: #c4572e; stroke-width: 10; stroke-linecap: round; stroke-dasharray: 100; }
+.q { font-size: 7.037cqw; line-height: 1.12; font-weight: 600; letter-spacing: -0.0926cqw; }
+.q span { display: inline-block; }
+.rule { width: 11.1111cqw; height: 0.3704cqw; background: #c4572e; transform-origin: left; }
+.who { font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 2.7778cqw; font-weight: 700; letter-spacing: 0.0926cqw; }
+.who small { display: block; font-weight: 500; color: #4f6b61; margin-top: 0.7407cqw; font-size: 2.4074cqw; }
+.corner { position: absolute; right: 6.4815cqw; bottom: 5.5556cqw; font: 600 2.037cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #4f6b61; letter-spacing: 0.2778cqw; }
+
+@keyframes k1 {
+  0% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  2.5% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.65,0,.35,1); }
+  13.75% { stroke-dashoffset: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  5.625% { stroke-dashoffset: 100; animation-timing-function: cubic-bezier(.65,0,.35,1); }
+  16.875% { stroke-dashoffset: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  17% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  23.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  19% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  25.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  21% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  27.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  23% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  29.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  25% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  31.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  27% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  33.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  29% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  35.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k10 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  31% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  37.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k11 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  33% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  39.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k12 {
+  0% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  35% { opacity: 0; transform: translateY(2.2222cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  41.25% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k13 {
+  0% { transform: scaleX(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  42.5% { transform: scaleX(0); animation-timing-function: cubic-bezier(.65,0,.35,1); }
+  50% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k14 {
+  0% { opacity: 0; transform: translateY(2.7778cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  46.25% { opacity: 0; transform: translateY(2.7778cqw); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  53.75% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k15 {
+  0% { opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  5% { opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  15% { opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  91.25% { opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  98.75% { opacity: 0; animation-timing-function: linear; }
+  100% { opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k16 {
+  0% { opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  91.25% { opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  98.75% { opacity: 0; animation-timing-function: linear; }
+  100% { opacity: 0; animation-timing-function: linear; }
+}
+#p1 { animation: k1 var(--film) linear infinite both; }
+#p2 { animation: k2 var(--film) linear infinite both; }
+#q1 { animation: k3 var(--film) linear infinite both; }
+#q2 { animation: k4 var(--film) linear infinite both; }
+#q3 { animation: k5 var(--film) linear infinite both; }
+#q4 { animation: k6 var(--film) linear infinite both; }
+#q5 { animation: k7 var(--film) linear infinite both; }
+#q6 { animation: k8 var(--film) linear infinite both; }
+#q7 { animation: k9 var(--film) linear infinite both; }
+#q8 { animation: k10 var(--film) linear infinite both; }
+#q9 { animation: k11 var(--film) linear infinite both; }
+#q10 { animation: k12 var(--film) linear infinite both; }
+#rule { animation: k13 var(--film) linear infinite both; }
+#who { animation: k14 var(--film) linear infinite both; }
+#corner { animation: k15 var(--film) linear infinite both; }
+.wrap { animation: k16 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="8"
+  data-width="1080" data-height="1080" data-fps="30" data-poster-time="5">
+<div class="wrap">
+  <svg class="mark" viewBox="0 0 150 120" aria-hidden="true">
+    <path id="p1" d="M60 20 C20 30 10 60 14 100 L54 100 L54 62 L30 62 C30 44 40 34 62 30" pathLength="100"/>
+    <path id="p2" d="M136 20 C96 30 86 60 90 100 L130 100 L130 62 L106 62 C106 44 116 34 138 30" pathLength="100"/>
+  </svg>
+  <div class="q"><span id="q1">Good</span> <span id="q2">design</span> <span id="q3">is</span> <span id="q4">a</span> <span id="q5">quiet</span> <span id="q6">promise,</span> <span id="q7">kept</span> <span id="q8">every</span> <span id="q9">single</span> <span id="q10">day.</span></div>
+  <div class="rule" id="rule"></div>
+  <div class="who" id="who">Ana Ruiz<small>Studio founder</small></div>
+</div>
+<div class="corner" id="corner">VOL. 07</div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 8;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>

@@ -200,6 +200,10 @@ fn contour_only_templates() -> Vec<String> {
         .collect()
 }
 
+/// Templates written for Contour, not copied from the original: the Motion
+/// set (Industry "Motion"). The original loader never saw them.
+const CONTOUR_SCENARIO: &str = "motion";
+
 #[test]
 fn design_templates_match_original_loader() {
     let idx = index();
@@ -213,7 +217,19 @@ fn design_templates_match_original_loader() {
         contour_only.iter().all(|id| !theirs.contains_key(id)),
         "an id marked `od.origin: contour` exists in the original app"
     );
-    let mut ours = ours_skills(&idx.design_templates);
+    assert!(
+        theirs
+            .values()
+            .all(|t| t["scenario"].as_str() != Some(CONTOUR_SCENARIO)),
+        "the original has no {CONTOUR_SCENARIO} Industry"
+    );
+    let copied: Vec<_> = idx
+        .design_templates
+        .iter()
+        .filter(|t| t.info.scenario != CONTOUR_SCENARIO)
+        .cloned()
+        .collect();
+    let mut ours = ours_skills(&copied);
     ours.retain(|id, _| {
         let parent = id.split(':').next().unwrap_or(id);
         !contour_only.iter().any(|c| c == parent)
@@ -223,6 +239,87 @@ fn design_templates_match_original_loader() {
         &without_example_text(ours),
         &without_example_text(theirs),
     );
+}
+
+/// The Motion set: at least 5 finished examples and 13 templates, each a
+/// video-mode HyperFrames composition of 5–15 s that ships its own
+/// Apache-2.0 LICENSE and needs nothing from the network.
+#[test]
+fn motion_templates_ship_complete() {
+    let idx = index();
+    let root = content_root().join("design-templates");
+    let duration =
+        regex::Regex::new(r#"data-composition-id="main"[^>]*?data-duration="([0-9.]+)""#).unwrap();
+    let banned = regex::Regex::new(
+        r#"(?i)https?://(?:[^\s"'<>]*)|//cdn|@import|<link\b[^>]*stylesheet|<img\b|url\(|Math\.random|Date\.now|setTimeout|setInterval"#,
+    )
+    .unwrap();
+    let comment = regex::Regex::new(r"(?s)/\*.*?\*/").unwrap();
+    let fixed_px = regex::Regex::new(r"\b\d+(?:\.\d+)?px\b").unwrap();
+    let motion: Vec<_> = idx
+        .design_templates
+        .iter()
+        .filter(|t| t.info.scenario == CONTOUR_SCENARIO)
+        .collect();
+    let kind = |k: &str| {
+        motion
+            .iter()
+            .filter(|t| t.info.category.as_deref() == Some(k))
+            .count()
+    };
+    assert!(
+        kind("motion-example") >= 5,
+        "examples: {}",
+        kind("motion-example")
+    );
+    assert!(
+        kind("motion-template") >= 13,
+        "templates: {}",
+        kind("motion-template")
+    );
+    assert_eq!(
+        motion.len(),
+        kind("motion-example") + kind("motion-template")
+    );
+    for t in motion {
+        let id = &t.info.id;
+        assert_eq!(t.info.mode, SkillMode::Video, "{id}");
+        let dir = root.join(id);
+        let license = std::fs::read_to_string(dir.join("LICENSE"))
+            .unwrap_or_else(|e| panic!("{id}: LICENSE: {e}"));
+        assert!(license.contains("Apache License"), "{id}: not Apache-2.0");
+        assert!(
+            !license.contains("Open Design"),
+            "{id}: written for Contour, so its LICENSE credits no one else"
+        );
+        let html = std::fs::read_to_string(
+            t.example_html()
+                .unwrap_or_else(|| panic!("{id}: no example.html")),
+        )
+        .unwrap();
+        let seconds: f64 = duration
+            .captures(&html)
+            .unwrap_or_else(|| panic!("{id}: no data-duration on the root"))[1]
+            .parse()
+            .unwrap();
+        assert!((5.0..=15.0).contains(&seconds), "{id}: {seconds} s");
+        assert!(
+            html.contains("window.__timelines.main"),
+            "{id}: no master timeline"
+        );
+        assert!(
+            html.contains(r#"name="od-motion-output" content="video""#),
+            "{id}"
+        );
+        // Fixed px would not scale with the preview: the stage is sized in
+        // vw/vh and everything inside it in cqw. Comments may quote px.
+        let code = comment.replace_all(&html, "");
+        let px: Vec<&str> = fixed_px.find_iter(&code).map(|m| m.as_str()).collect();
+        assert!(px.is_empty(), "{id}: fixed sizes {px:?}");
+        // The Apache licence text names its own URL; the film names none.
+        let hits: Vec<&str> = banned.find_iter(&html).map(|m| m.as_str()).collect();
+        assert!(hits.is_empty(), "{id}: {hits:?}");
+    }
 }
 
 /// One industry, one id: the Templates filter lists each id, so

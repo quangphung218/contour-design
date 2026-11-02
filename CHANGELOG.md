@@ -8,8 +8,20 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.13] - 2026-11-02
+
 ### Added
 
+- 18 Motion templates in Templates, filed under the Industry "Motion": 13
+  templates to adapt (logo reveal, kinetic typography, animated bar chart,
+  KPI counters, lower third, quote card, countdown, vertical social story,
+  channel intro, transition pack, end screen, chapter title cards, product
+  feature callouts) and 5 finished examples (a product teaser, a bike
+  share year in numbers, a 9:16 app story, an event opener, a weather
+  card). Each is a 5–15 s HyperFrames film that previews on its card,
+  opens with Remix or "Use template", and renders to MP4 with
+  `media generate`. They are written for Contour under Apache-2.0, use
+  system fonts and inline SVG, download nothing and are silent.
 - 30 new gallery templates written for Contour: 10 WebGL pages (noise
   gradient, particle flock, rotating 3D product, data globe, topographic
   contours, liquid chrome, star warp, cell field, ocean point grid,
@@ -623,7 +635,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.12...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.13...HEAD
+[0.2.0-beta.13]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.12...v0.2.0-beta.13
 [0.2.0-beta.12]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.11...v0.2.0-beta.12
 [0.2.0-beta.11]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.10...v0.2.0-beta.11
 [0.2.0-beta.10]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.9...v0.2.0-beta.10

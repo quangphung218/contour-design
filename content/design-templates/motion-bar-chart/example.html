@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animated bar chart</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Animated bar chart: a 10 s, 1920x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 10 s film
+   (1 s = 10.000%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 19.2px
+   on the 1920px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+@property --n { syntax: '<integer>'; inherits: false; initial-value: 0; }
+html, body { margin: 0; height: 100%; background: #0e1a2b; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 10s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1920 / 1080)); aspect-ratio: 1920 / 1080;
+  background: #0e1a2b; color: #eaf1f8; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.num { counter-reset: n var(--n); font-variant-numeric: tabular-nums; }
+.num::before { content: counter(n); }
+
+.wrap { position: absolute; inset: 0; padding: 5.7292cqw 8.3333cqw 6.25cqw; display: flex; flex-direction: column; gap: 2.0833cqw; }
+h1 { margin: 0; font-size: 3.75cqw; font-weight: 800; letter-spacing: -0.0521cqw; }
+.sub { font-size: 1.5625cqw; color: #8fa6bf; margin-top: -1.25cqw; }
+.chart { position: relative; flex: 1; display: flex; align-items: flex-end; gap: 2.9167cqw; padding: 0 2.0833cqw; border-bottom: 0.2083cqw solid #3b5170; }
+.axis { position: absolute; left: 0; right: 0; bottom: -0.2083cqw; height: 0.2083cqw; background: #eaf1f8; transform-origin: left; }
+.col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 0.7292cqw; height: 100%; }
+.bar { width: 100%; background: #3d6a99; border-radius: 0.5208cqw 0.5208cqw 0 0; transform-origin: bottom; }
+.bar.hi { background: #2ad4b0; }
+.val { font-size: 2.0833cqw; font-weight: 700; }
+.lab { position: absolute; bottom: -3.3333cqw; font-size: 1.4583cqw; color: #8fa6bf; }
+.col { position: relative; }
+.take { position: absolute; right: 8.3333cqw; top: 6.25cqw; padding: 0.9375cqw 1.5625cqw; border-radius: 52.0312cqw; background: #2ad4b0; color: #0e1a2b; font-size: 1.7708cqw; font-weight: 800; }
+.grid { position: absolute; left: 8.3333cqw; right: 8.3333cqw; height: 0.1042cqw; background: rgba(234,241,248,.08); }
+
+@keyframes k1 {
+  0% { opacity: 0; transform: translateY(2.0833cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  2% { opacity: 0; transform: translateY(2.0833cqw); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  9% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  4.5% { opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  10.5% { opacity: 1; animation-timing-function: linear; }
+  100% { opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { transform: scaleX(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  6% { transform: scaleX(0); animation-timing-function: cubic-bezier(.65,0,.35,1); }
+  14% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { transform: scaleY(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  12% { transform: scaleY(0); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  23% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  12% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  14% { --n: 0; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  23% { --n: 38; opacity: 1; animation-timing-function: linear; }
+  100% { --n: 38; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { transform: scaleY(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  16.5% { transform: scaleY(0); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  27.5% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  16.5% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  18.5% { --n: 0; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  27.5% { --n: 52; opacity: 1; animation-timing-function: linear; }
+  100% { --n: 52; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { transform: scaleY(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  21% { transform: scaleY(0); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  32% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  21% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  23% { --n: 0; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  32% { --n: 47; opacity: 1; animation-timing-function: linear; }
+  100% { --n: 47; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k10 {
+  0% { transform: scaleY(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  25.5% { transform: scaleY(0); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  36.5% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k11 {
+  0% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  25.5% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  27.5% { --n: 0; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  36.5% { --n: 71; opacity: 1; animation-timing-function: linear; }
+  100% { --n: 71; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k12 {
+  0% { transform: scaleY(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  30% { transform: scaleY(0); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  41% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k13 {
+  0% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  30% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  32% { --n: 0; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  41% { --n: 64; opacity: 1; animation-timing-function: linear; }
+  100% { --n: 64; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k14 {
+  0% { transform: scaleY(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  34.5% { transform: scaleY(0); animation-timing-function: cubic-bezier(.16,1,.3,1); }
+  45.5% { transform: none; animation-timing-function: linear; }
+  100% { transform: none; animation-timing-function: linear; }
+}
+@keyframes k15 {
+  0% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  34.5% { --n: 0; opacity: 0; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  36.5% { --n: 0; opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  45.5% { --n: 88; opacity: 1; animation-timing-function: linear; }
+  100% { --n: 88; opacity: 1; animation-timing-function: linear; }
+}
+@keyframes k16 {
+  0% { opacity: 0; transform: scale(.6); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  52% { opacity: 0; transform: scale(.6); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  58% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  93% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  98% { opacity: 0; transform: none; animation-timing-function: linear; }
+  100% { opacity: 0; transform: none; animation-timing-function: linear; }
+}
+@keyframes k17 {
+  0% { opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  93% { opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  99% { opacity: 0; animation-timing-function: linear; }
+  100% { opacity: 0; animation-timing-function: linear; }
+}
+#title { animation: k1 var(--film) linear infinite both; }
+#sub { animation: k2 var(--film) linear infinite both; }
+#axis { animation: k3 var(--film) linear infinite both; }
+#b1 { animation: k4 var(--film) linear infinite both; }
+#v1 { animation: k5 var(--film) linear infinite both; }
+#b2 { animation: k6 var(--film) linear infinite both; }
+#v2 { animation: k7 var(--film) linear infinite both; }
+#b3 { animation: k8 var(--film) linear infinite both; }
+#v3 { animation: k9 var(--film) linear infinite both; }
+#b4 { animation: k10 var(--film) linear infinite both; }
+#v4 { animation: k11 var(--film) linear infinite both; }
+#b5 { animation: k12 var(--film) linear infinite both; }
+#v5 { animation: k13 var(--film) linear infinite both; }
+#b6 { animation: k14 var(--film) linear infinite both; }
+#v6 { animation: k15 var(--film) linear infinite both; }
+#take { animation: k16 var(--film) linear infinite both; }
+.wrap { animation: k17 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="10"
+  data-width="1920" data-height="1080" data-fps="30" data-poster-time="6.5">
+<div class="grid" style="top:21.875cqw"></div><div class="grid" style="top:31.25cqw"></div><div class="grid" style="top:40.625cqw"></div>
+<div class="wrap">
+  <h1 id="title">Weekly sign-ups</h1>
+  <div class="sub" id="sub">Thousands per period · sample data</div>
+  <div class="chart"><div class="col"><div class="val num" id="v1"></div><div class="bar" id="b1" style="height:11.875cqw"></div><div class="lab">Q1</div></div><div class="col"><div class="val num" id="v2"></div><div class="bar" id="b2" style="height:16.25cqw"></div><div class="lab">Q2</div></div><div class="col"><div class="val num" id="v3"></div><div class="bar" id="b3" style="height:14.6875cqw"></div><div class="lab">Q3</div></div><div class="col"><div class="val num" id="v4"></div><div class="bar" id="b4" style="height:22.1875cqw"></div><div class="lab">Q4</div></div><div class="col"><div class="val num" id="v5"></div><div class="bar" id="b5" style="height:20cqw"></div><div class="lab">Q5</div></div><div class="col"><div class="val num" id="v6"></div><div class="bar hi" id="b6" style="height:27.5cqw"></div><div class="lab">Q6</div></div><div class="axis" id="axis"></div></div>
+</div>
+<div class="take" id="take">Up 2.3× since Q1</div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 10;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>
