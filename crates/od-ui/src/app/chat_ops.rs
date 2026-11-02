@@ -373,9 +373,13 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
 
 /// Files written, files edited, and files in the rows past
 /// [`FILES_SHOWN`] of `ops`: files, not rows (`frames/ (1000 files)` is
-/// 1000).
+/// 1000). Written and edited count the files the engine did not list too
+/// (its `+N more` row), so they add up to the Done line (QA-036).
 fn file_counts(turn: &AssistantTurn, ops: &[(String, FileOp)]) -> (u64, u64, u64) {
-    let (mut writes, mut edits, mut hidden) = (0, 0, 0);
+    let unlisted_edits = turn.unlisted_edited();
+    let mut edits = unlisted_edits;
+    let mut writes = turn.unlisted_files().saturating_sub(unlisted_edits);
+    let mut hidden = 0;
     for (i, (path, op)) in ops.iter().enumerate() {
         let n = turn.row_files(path);
         match op {
@@ -758,6 +762,7 @@ mod tests {
                 path: Some(path.to_owned()),
                 result: Some(false),
                 files,
+                edited: None,
             })
         };
         let mut blocks = vec![
@@ -772,6 +777,42 @@ mod tests {
             ..AssistantTurn::new()
         };
         assert_eq!(file_counts(&turn, &turn.file_ops()), (1001, 4, 1001));
+    }
+
+    #[test]
+    fn counts_take_in_the_files_not_listed() {
+        use crate::chat::{Block, ToolCall};
+        // 50 new rows, then the engine's `+10 more` of which 6 are edited.
+        let mut blocks: Vec<Block> = (0..50)
+            .map(|i| {
+                let path = format!("d{i}/a.txt");
+                Block::Tool(ToolCall {
+                    id: path.clone(),
+                    name: "Write".to_owned(),
+                    summary: path.clone(),
+                    path: Some(path),
+                    result: Some(false),
+                    files: None,
+                    edited: None,
+                })
+            })
+            .collect();
+        blocks.push(Block::Tool(ToolCall {
+            id: "turn-file-more".to_owned(),
+            name: crate::chat::MORE_FILES_TOOL.to_owned(),
+            summary: "+10 more".to_owned(),
+            path: None,
+            result: Some(false),
+            files: Some(10),
+            edited: Some(6),
+        }));
+        let turn = AssistantTurn {
+            blocks,
+            ..AssistantTurn::new()
+        };
+        let (writes, edits, _) = file_counts(&turn, &turn.file_ops());
+        assert_eq!((writes, edits), (54, 6));
+        assert_eq!(writes + edits, turn.files_count(), "as the Done line");
     }
 
     #[test]

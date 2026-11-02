@@ -867,4 +867,10 @@ Reported by the UX review of 759581a.
   The engine's `+N more` row does not say new or edited; either carry the
   split in it (`od_runtime::turn_files`, `MORE_TOOL`) or show the unlisted
   files in the header as their own count.
+- **Fixed**: the engine's `+N more` row now carries `edited` (of its
+  `files`, those changed rather than created), and `file_counts` adds the
+  unlisted files to the header's new and edited counts. TF-06 was red
+  before the fix, green after; unit tests
+  `the_files_past_the_row_limit_say_how_many_were_edited` (od-runtime) and
+  `counts_take_in_the_files_not_listed` (od-ui).
 

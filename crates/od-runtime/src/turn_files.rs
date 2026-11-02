@@ -42,6 +42,7 @@ pub const GROUP_OVER: usize = 20;
 /// Rows a turn adds at most; the rest are counted in one `+N more`.
 pub const MAX_ROWS: usize = 50;
 /// Tool name of the `+N more` row (not a write tool: it names no file).
+/// Its input counts the `files` left out and, of them, the `edited` ones.
 pub const MORE_TOOL: &str = "TurnFilesMore";
 
 /// How far a snapshot walks.
@@ -398,6 +399,33 @@ fn extension(path: &str) -> String {
 /// second value counts the files left out (a folder row counts its files).
 #[must_use]
 pub fn plan_rows(changes: &[(String, Change)]) -> (Vec<Row>, usize) {
+    let mut rows = all_rows(changes);
+    let rest = rows.split_off(MAX_ROWS.min(rows.len()));
+    (rows, Left::of(&rest).files)
+}
+
+/// Files in the rows past [`MAX_ROWS`] (a folder row counts its files).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct Left {
+    files: usize,
+    /// Of them, the files changed rather than created.
+    edited: usize,
+}
+
+impl Left {
+    fn of(rows: &[Row]) -> Self {
+        rows.iter().fold(Self::default(), |acc, r| {
+            let n = r.files.unwrap_or(1);
+            Self {
+                files: acc.files + n,
+                edited: acc.edited + if r.change == Change::Modified { n } else { 0 },
+            }
+        })
+    }
+}
+
+/// Every row of [`plan_rows`], in order, before the [`MAX_ROWS`] cut.
+fn all_rows(changes: &[(String, Change)]) -> Vec<Row> {
     let parent = |p: &str| p.rsplit_once('/').map(|(d, _)| d.to_owned());
     let mut per_dir: HashMap<String, Vec<(&str, Change)>> = HashMap::new();
     for (path, change) in changes {
@@ -458,14 +486,7 @@ pub fn plan_rows(changes: &[(String, Change)]) -> (Vec<Row>, usize) {
     });
     let split = files.iter().take_while(|r| is_result_file(&r.path)).count();
     let rest = files.split_off(split);
-    let mut rows: Vec<Row> = files.into_iter().chain(folders).chain(rest).collect();
-    let omitted = rows
-        .iter()
-        .skip(MAX_ROWS)
-        .map(|r| r.files.unwrap_or(1))
-        .sum();
-    rows.truncate(MAX_ROWS);
-    (rows, omitted)
+    files.into_iter().chain(folders).chain(rest).collect()
 }
 
 /// Project paths a write tool already reported in `events`.
@@ -568,7 +589,9 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> Vec<String> {
             )
         })
         .collect();
-    let (rows, omitted) = plan_rows(&changes);
+    let mut rows = all_rows(&changes);
+    let left = Left::of(&rows.split_off(MAX_ROWS.min(rows.len())));
+    let omitted = left.files;
     for (i, row) in rows.iter().enumerate() {
         let id = format!("turn-file-{}", i + 1);
         let abs = absolute(cwd, &row.path).to_string_lossy().into_owned();
@@ -593,7 +616,7 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> Vec<String> {
             run,
             "turn-file-more".to_owned(),
             MORE_TOOL,
-            json!({ "files": omitted, "description": format!("+{omitted} more files changed outside the file tools") }),
+            json!({ "files": omitted, "edited": left.edited, "description": format!("+{omitted} more files changed outside the file tools") }),
             format!("+{omitted} more files changed during the turn"),
         );
     }
@@ -829,6 +852,22 @@ mod tests {
         assert_eq!(rows.len(), MAX_ROWS);
         assert!(rows.iter().all(|r| r.files.is_none()));
         assert_eq!(omitted, 10 + 1000);
+    }
+
+    #[test]
+    fn the_files_past_the_row_limit_say_how_many_were_edited() {
+        // 50 new pages fill the rows; 6 edited and 4 new fall past them.
+        let mut changes = added((0..54).map(|i| format!("page{i:02}.txt")));
+        changes.extend((0..6).map(|i| (format!("zz{i}.txt"), Change::Modified)));
+        let mut rows = all_rows(&changes);
+        let left = Left::of(&rows.split_off(MAX_ROWS));
+        assert_eq!(
+            left,
+            Left {
+                files: 10,
+                edited: 6
+            }
+        );
     }
 
     #[test]

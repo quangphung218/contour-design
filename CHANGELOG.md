@@ -22,6 +22,9 @@ All notable changes to Contour are recorded here. The format follows
   longer ends with "The run ended without writing any file." beside the
   turn that lists the page: the run's written files now include the files
   found outside the file tools.
+- Past 50 rows, the header of "Files from this turn" counts the files not
+  listed too, so it agrees with "Done · N files written" (it said "50 new"
+  beside 60 written).
 
 ## [0.2.0-beta.14] - 2026-11-02
 

@@ -126,7 +126,7 @@ test('TF-06', '60 files in 60 folders: the turn lists 50 rows and one "+N more" 
   assert.match(note, /\+10 more files not listed/);
   // The header counts files too: it must not say fewer than the Done line.
   assert.equal(t.head, '60 new', `header "${t.head}" beside "${t.done}"`);
-}, { knownBug: 'QA-036' });
+});
 
 test('TF-07', 'After a reload the turn still shows the folder row and its file count', async ({ d, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Reload frames');
