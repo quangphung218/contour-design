@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en" data-od-deck-protocol="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tallyrun · INC-2291 postmortem</title>
+<style>
+:root{--shell:#2b2b2b;--bg:#fdfcf8;--fg:#1e1e1e;--accent:#d22b2b;--muted:#6b6b66;--body-font:Charter,'Iowan Old Style',Georgia,serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html{--u:calc(100vw / 1920)}
+html.deck-on{--u:calc(min(100vw, 177.7778vh) / 1920)}
+html,body{background:var(--shell);color:var(--fg)}
+body{font-family:var(--body-font);-webkit-font-smoothing:antialiased}
+.deck-stage{width:calc(1920*var(--u))}
+.slide{position:relative;width:calc(1920*var(--u));height:calc(1080*var(--u));overflow:hidden;display:flex;flex-direction:column;background:var(--bg);color:var(--fg)}
+html.deck-on,html.deck-on body{height:100%;overflow:hidden}
+html.deck-on .deck-stage{position:fixed;left:50%;top:50%;height:calc(1080*var(--u));transform:translate(-50%,-50%)}
+html.deck-on .slide{position:absolute;inset:0}
+@media screen{html.deck-on .slide:not(.active){display:none!important}}
+.deck-dots{display:none}
+html.deck-on .deck-dots{display:flex;position:fixed;left:50%;bottom:10px;transform:translateX(-50%);gap:8px;z-index:10;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28)}
+.deck-dots button{width:8px;height:8px;padding:0;border:0;border-radius:4px;background:rgba(255,255,255,.55);cursor:pointer;transition:width .2s}
+.deck-dots button[aria-current="true"]{width:22px;background:#fff}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,html.deck-on{--u:1px}
+  html,body,html.deck-on body{height:auto!important;overflow:visible!important;background:none}
+  html.deck-on .deck-stage{position:static;transform:none;height:auto}
+  html.deck-on .slide{position:relative;inset:auto}
+  .slide{break-after:page}
+  .deck-dots{display:none!important}
+}
+</style>
+<style>
+.slide{padding:calc(100*var(--u)) calc(140*var(--u)) calc(90*var(--u)) calc(300*var(--u))}
+.slide::before{content:"";position:absolute;left:calc(240*var(--u));top:0;bottom:0;width:calc(2*var(--u));background:#e9a3a3}
+.margin{position:absolute;left:calc(60*var(--u));top:calc(100*var(--u));width:calc(160*var(--u));font:500 calc(20*var(--u))/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#6b6b66}
+.pen{font-family:'Bradley Hand','Segoe Print','Comic Sans MS',cursive;color:#d22b2b}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+h1{font-size:calc(108*var(--u));line-height:1.02;font-weight:700;letter-spacing:calc(-2*var(--u));margin-top:calc(60*var(--u));max-width:calc(1300*var(--u))}
+h2{font-size:calc(66*var(--u));line-height:1.08;font-weight:700;letter-spacing:calc(-1*var(--u));max-width:calc(1350*var(--u))}
+mark{background:linear-gradient(transparent 35%,#fff27a 35% 90%,transparent 90%);color:inherit}
+.meta{display:flex;gap:calc(60*var(--u));margin-top:calc(50*var(--u));font:500 calc(24*var(--u))/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#6b6b66}
+.meta b{display:block;color:#1e1e1e;font-size:calc(30*var(--u))}
+.sev{position:absolute;right:calc(140*var(--u));top:calc(110*var(--u));border:calc(6*var(--u)) solid #d22b2b;color:#d22b2b;font:800 calc(54*var(--u))/1 'Avenir Next','Helvetica Neue',sans-serif;padding:calc(16*var(--u)) calc(30*var(--u));transform:rotate(6deg);letter-spacing:calc(4*var(--u))}
+.nums{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(60*var(--u));margin-top:calc(70*var(--u))}
+.nums b{display:inline-block;font-size:calc(120*var(--u));letter-spacing:calc(-3*var(--u));line-height:1;padding:calc(10*var(--u)) calc(20*var(--u))}
+.nums b.circ{border:calc(5*var(--u)) solid #d22b2b;border-radius:50%}
+.nums p{font-size:calc(28*var(--u));line-height:1.4;margin-top:calc(16*var(--u))}
+.tl{margin-top:calc(40*var(--u))}
+.ev{display:grid;grid-template-columns:calc(150*var(--u)) 1fr calc(380*var(--u));gap:calc(30*var(--u));padding:calc(17*var(--u)) 0;border-bottom:calc(1*var(--u)) solid #e6e2d8;font-size:calc(28*var(--u));align-items:baseline}
+.ev .t{font:600 calc(26*var(--u)) ui-monospace,SFMono-Regular,Menlo,monospace}
+.ev .pen{font-size:calc(28*var(--u))}
+.strike{text-decoration:line-through;text-decoration-color:#d22b2b;text-decoration-thickness:calc(6*var(--u));color:#6b6b66}
+.cause{font-size:calc(44*var(--u));line-height:1.35;margin-top:calc(44*var(--u));max-width:calc(1350*var(--u))}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:calc(80*var(--u));margin-top:calc(50*var(--u))}
+.cols h3{font:700 calc(24*var(--u)) 'Avenir Next',sans-serif;letter-spacing:calc(4*var(--u));text-transform:uppercase;margin-bottom:calc(16*var(--u))}
+.cols li{font-size:calc(30*var(--u));line-height:1.4;padding:calc(14*var(--u)) 0 calc(14*var(--u)) calc(40*var(--u));position:relative;list-style:none;border-bottom:calc(1*var(--u)) solid #e6e2d8}
+.cols li::before{position:absolute;left:0;font-weight:700}
+.good li::before{content:"+";color:#2f7a3e}
+.bad li::before{content:"−";color:#d22b2b}
+table{border-collapse:collapse;margin-top:calc(44*var(--u));width:100%;font-size:calc(28*var(--u))}
+th{font:600 calc(20*var(--u)) ui-monospace,Menlo,monospace;letter-spacing:calc(2*var(--u));color:#6b6b66;text-align:left;padding:calc(12*var(--u)) calc(16*var(--u));border-bottom:calc(3*var(--u)) solid #1e1e1e}
+td{padding:calc(20*var(--u)) calc(16*var(--u));border-bottom:calc(1*var(--u)) solid #e6e2d8;vertical-align:top}
+td.mono{font-size:calc(24*var(--u))}
+</style>
+</head>
+<body>
+<main class="deck-stage" id="deck-stage">
+<section class="slide active light" data-screen-label="01">
+<div class="margin">INC-2291<br>v1.2 final<br>blameless</div><span class="sev">SEV-1</span>
+<p class="mono" style="font-size:calc(24*var(--u));color:#6b6b66">Tallyrun · Postmortem · 9 October 2026</p>
+<h1>Checkout failed for 47 minutes after a config push.</h1>
+<div class="meta"><div><b>14:02–14:49</b>UTC, 8 October</div><div><b>Payments API</b>card checkout only</div><div><b>Resolved</b>by rollback</div></div>
+<p class="pen" style="font-size:calc(38*var(--u));margin-top:calc(60*var(--u))">Read before Thursday's review →</p>
+</section>
+<section class="slide light" data-screen-label="02">
+<div class="margin">IMPACT</div><h2>Who felt it.</h2>
+<div class="nums"><div><b class="circ">31%</b><p>of card checkouts failed during the window (peak 58% at 14:21)</p></div>
+<div><b>18,400</b><p>failed attempts; about 6,900 customers retried and succeeded later</p></div>
+<div><b>€212k</b><p>in merchant sales we estimate were lost, before retries</p></div></div>
+<p class="pen" style="font-size:calc(34*var(--u));margin-top:calc(50*var(--u))">no data lost · no double charges — checked by reconciliation 9 Oct</p>
+</section>
+<section class="slide light" data-screen-label="03">
+<div class="margin">TIMELINE<br>UTC</div><h2>Minute by minute.</h2>
+<div class="tl">
+<div class="ev"><span class="t">13:58</span>Connection-pool config change merged and rolled to 100%<span class="pen">no canary — why?</span></div>
+<div class="ev"><span class="t">14:02</span>Card auth latency p99 jumps from 0.4 s to 9 s</div>
+<div class="ev"><span class="t">14:09</span>Alert fires: checkout error rate &gt; 5%<span class="pen">7 min to alert</span></div>
+<div class="ev"><span class="t">14:16</span>Incident declared; on-call suspects the card network</div>
+<div class="ev"><span class="t">14:38</span>Config change spotted in the deploy log<span class="pen">22 min on wrong lead</span></div>
+<div class="ev"><span class="t">14:44</span>Rollback started</div>
+<div class="ev"><span class="t">14:49</span>Error rate back under 0.3%</div></div>
+</section>
+<section class="slide light" data-screen-label="04">
+<div class="margin">CAUSE</div><h2>What we assumed, and what was true.</h2>
+<p class="cause"><span class="strike">“Halving the pool size is safe: we never use more than 40 connections.”</span></p>
+<p class="cause">We never used more than 40 <mark>on average</mark>. At peak, card auth briefly holds 70+ while it waits on the network, so requests queued until they timed out.</p>
+<p class="pen" style="font-size:calc(34*var(--u));margin-top:calc(40*var(--u))">the dashboard showed 1-min averages, not peaks</p>
+</section>
+<section class="slide light" data-screen-label="05">
+<div class="margin">REVIEW</div><h2>What helped, what hurt.</h2>
+<div class="cols"><div class="good"><h3>Helped</h3><ul><li>Rollback took 5 minutes, one command</li><li>Status page updated within 10 min</li><li>Idempotency keys prevented double charges</li></ul></div>
+<div class="bad"><h3>Hurt</h3><ul><li>Config changes skip the canary stage</li><li>Pool metrics graphed as averages only</li><li>Deploy log not linked from the alert</li></ul></div></div>
+</section>
+<section class="slide light" data-screen-label="06">
+<div class="margin">ACTIONS</div><h2>Five actions, each with one owner.</h2>
+<table><tr><th>ACTION</th><th>OWNER</th><th>DUE</th><th>TICKET</th></tr>
+<tr><td>Route config changes through the 5% canary</td><td>Platform</td><td>24 Oct</td><td class="mono">PLAT-881</td></tr>
+<tr><td>Graph pool usage as p99 and max, not mean</td><td>Observability</td><td>17 Oct</td><td class="mono">OBS-412</td></tr>
+<tr><td>Link the last three deploys in every alert</td><td>On-call tooling</td><td>31 Oct</td><td class="mono">OCT-097</td></tr>
+<tr><td>Alert on checkout errors at 2% over 2 min</td><td>Payments</td><td>17 Oct</td><td class="mono">PAY-1290</td></tr>
+<tr><td>Load-test pool limits at 3× peak each quarter</td><td>Payments</td><td>Q1</td><td class="mono">PAY-1291</td></tr></table>
+</section>
+</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.deck-stage > .slide'));
+  if (!slides.length) return;
+  var KEY = 'deck:' + (location.pathname || '/') + ':' + document.title;
+  var idx = 0;
+  try {
+    var saved = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (saved >= 0 && saved < slides.length) idx = saved;
+  } catch (_) {}
+  var dots = document.createElement('nav');
+  dots.className = 'deck-dots';
+  dots.setAttribute('aria-label', 'Slides');
+  slides.forEach(function (_, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Slide ' + (i + 1));
+    b.addEventListener('click', function (e) { e.stopPropagation(); go(i); focusDeck(); });
+    dots.appendChild(b);
+  });
+  document.body.appendChild(dots);
+  function post(msg) { try { window.parent.postMessage(msg, '*'); } catch (_) {} }
+  function paint() {
+    slides.forEach(function (s, i) {
+      var on = i === idx;
+      s.classList.toggle('active', on);
+      s.classList.toggle('is-active', on);
+      s.setAttribute('aria-hidden', on ? 'false' : 'true');
+    });
+    Array.prototype.forEach.call(dots.children, function (b, i) {
+      if (i === idx) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+    post({ type: 'od:slide-state', protocolVersion: 1, active: idx, count: slides.length });
+  }
+  function go(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    paint();
+    try { localStorage.setItem(KEY, String(idx)); } catch (_) {}
+  }
+  function editable(t) {
+    return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  }
+  function onKey(e) {
+    if (e.__deckDone || editable(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key, to = null;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') to = idx + 1;
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') to = idx - 1;
+    else if (k === 'Home') to = 0;
+    else if (k === 'End') to = slides.length - 1;
+    if (to === null) return;
+    e.__deckDone = true;
+    e.preventDefault();
+    go(to);
+  }
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('keydown', onKey, true);
+  var acc = 0, lock = false, resetTimer = 0;
+  window.addEventListener('wheel', function (e) {
+    if (editable(e.target)) return;
+    e.preventDefault();
+    if (lock) return;
+    acc += e.deltaX + e.deltaY;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(function () { acc = 0; }, 180);
+    if (Math.abs(acc) > 40) {
+      go(idx + (acc > 0 ? 1 : -1));
+      acc = 0;
+      lock = true;
+      setTimeout(function () { lock = false; }, 420);
+    }
+  }, { passive: false });
+  var sx = 0, sy = 0;
+  window.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  window.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) go(idx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'od:slide') return;
+    if (d.protocolVersion != null && d.protocolVersion !== 1) return;
+    if (d.action === 'go' && typeof d.index === 'number' && isFinite(d.index)) go(Math.floor(d.index));
+    else if (d.action === 'next') go(idx + 1);
+    else if (d.action === 'prev') go(idx - 1);
+    else if (d.action === 'first') go(0);
+    else if (d.action === 'last') go(slides.length - 1);
+  });
+  document.body.setAttribute('tabindex', '-1');
+  document.body.style.outline = 'none';
+  function focusDeck() { try { window.focus(); document.body.focus({ preventScroll: true }); } catch (_) {} }
+  document.addEventListener('pointerdown', focusDeck);
+  window.addEventListener('load', focusDeck);
+  root.classList.add('deck-on');
+  paint();
+  focusDeck();
+  post({ type: 'od:deck-ready', protocolVersion: 1, capabilities: ['absolute-navigation', 'state-events'] });
+})();
+</script>
+</body>
+</html>

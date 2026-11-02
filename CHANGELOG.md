@@ -8,6 +8,23 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- 30 new gallery templates written for Contour: 10 WebGL pages (noise
+  gradient, particle flock, rotating 3D product, data globe, topographic
+  contours, liquid chrome, star warp, cell field, ocean point grid,
+  dithered pixel scene), 14 decks (field notebook, transit map, star
+  chart, menu cards, lab notebook, gallery wall, ledger, departure board,
+  warming stripes, taped moodboard, redline postmortem, floodlit season
+  review, clinic flow, type specimen) and 6 landing pages (risograph bike
+  co-op, tea subscription, board-game café, CLI tool, architecture studio,
+  farm box). Filter by Prototype or Deck to find them. Each loads nothing
+  from the network: system fonts and drawings in the page. A WebGL page
+  shows a still poster in the gallery and in browsers without WebGL, and
+  stacks its text above the visual on a phone; a deck scales to any frame
+  without script and moves with keys, wheel, swipe or its dots. Remixed,
+  none of them shows a P0 lint finding.
+
 ## [0.2.0-beta.12] - 2026-11-02
 
 ### Fixed

@@ -186,6 +186,20 @@ fn skills_match_original_loader() {
 /// page and deck.
 const REMOVED_TEMPLATES: [&str; 2] = ["open-design-landing", "open-design-landing-deck"];
 
+/// Templates written for Contour (`od.origin: contour`): the original app
+/// never had them, so the golden run cannot list them.
+fn contour_only_templates() -> Vec<String> {
+    dirs(&content_root().join("design-templates"))
+        .into_iter()
+        .filter_map(|dir| {
+            let raw = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+            let (data, _) = od_content::frontmatter::parse(&raw).unwrap();
+            (data["od"]["origin"] == "contour")
+                .then(|| dir.file_name().unwrap().to_string_lossy().into_owned())
+        })
+        .collect()
+}
+
 #[test]
 fn design_templates_match_original_loader() {
     let idx = index();
@@ -194,9 +208,19 @@ fn design_templates_match_original_loader() {
         let parent = id.split(':').next().unwrap_or(id);
         !REMOVED_TEMPLATES.contains(&parent)
     });
+    let contour_only = contour_only_templates();
+    assert!(
+        contour_only.iter().all(|id| !theirs.contains_key(id)),
+        "an id marked `od.origin: contour` exists in the original app"
+    );
+    let mut ours = ours_skills(&idx.design_templates);
+    ours.retain(|id, _| {
+        let parent = id.split(':').next().unwrap_or(id);
+        !contour_only.iter().any(|c| c == parent)
+    });
     assert_same(
         "design-templates",
-        &without_example_text(ours_skills(&idx.design_templates)),
+        &without_example_text(ours),
         &without_example_text(theirs),
     );
 }

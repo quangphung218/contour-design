@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perigee Labs · Starfield warp</title>
+<style>
+:root{--bg:#03040a;--fg:#eef3ff;--accent:#7fe0d6;--font:'Avenir Next',Avenir,'Helvetica Neue',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--fg);overflow:hidden}
+body{font-family:var(--font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity .8s ease}
+html.gl-on #gl{opacity:1}
+.fallback{position:fixed;inset:0;overflow:hidden}
+html.gl-on .fallback{visibility:hidden;transition:visibility 0s .8s}
+.fallback svg{position:absolute;inset:0;width:100%;height:100%}
+.gl-note{display:none;position:fixed;right:20px;bottom:18px;z-index:3;font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;padding:6px 10px;border-radius:6px;background:rgba(0,0,0,.45);color:#fff}
+html.gl-off .gl-note{display:block}
+.overlay{position:fixed;z-index:2;pointer-events:none}
+.overlay a,.overlay button{pointer-events:auto}
+@media (prefers-reduced-motion: reduce){#gl{transition:none}}
+/* Narrow frames (phones, the studio preview after Remix): the text blocks
+   leave their corners and stack in the page over the visual, each on a
+   panel of the page colour, so nothing overlaps or runs off the edge. */
+@media (max-width:860px){
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  body{padding:16px 0 24px}
+  .overlay{position:relative!important;inset:auto!important;transform:none!important;width:auto!important;max-width:none!important;margin:0 16px 12px;padding:16px;border-radius:12px;background:color-mix(in srgb,var(--bg) 84%,transparent);overflow-wrap:anywhere}
+}
+.overlay.center{left:50%;top:50%;transform:translate(-50%,-50%);text-align:center}
+.kicker{font:500 .78rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.3em;text-transform:uppercase;color:var(--accent)}
+.overlay.center{text-shadow:0 2px 18px #03040a}
+.count{margin-top:1.2rem;display:flex;gap:clamp(.8rem,2.5vw,2.4rem);justify-content:center;font:300 clamp(2.6rem,7vw,6rem)/1 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;text-shadow:0 0 30px rgba(127,224,214,.35)}
+.count small{display:block;margin-top:.6rem;font-size:.7rem;letter-spacing:.22em;color:#8d9ab8}
+h1{margin-top:1.6rem;font-weight:500;font-size:clamp(1.2rem,2.2vw,1.7rem);letter-spacing:.02em}
+.overlay.foot{left:4vw;right:4vw;bottom:4vh;display:flex;justify-content:space-between;font:.75rem ui-monospace,SFMono-Regular,Menlo,monospace;color:#8d9ab8;letter-spacing:.08em}
+.overlay.brand{left:4vw;top:4vh;font-weight:600;letter-spacing:.32em;text-transform:uppercase;font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="fallback" aria-hidden="true" data-webgl-fallback>
+<svg viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><defs><radialGradient id="neb" cx=".5" cy=".5" r=".6"><stop offset="0" stop-color="#1c1640"/><stop offset=".5" stop-color="#0b0b22"/><stop offset="1" stop-color="#03040a"/></radialGradient></defs><rect width="1920" height="1080" fill="url(#neb)"/><g stroke="#bcd7ff" stroke-linecap="round"><line x1="562.8" y1="662.5" x2="423.3" y2="705.5" stroke-width="1.7" opacity="0.6"/><line x1="604.1" y1="618" x2="509.1" y2="638.9" stroke-width="1.6" opacity="0.5"/><line x1="1107" y1="877.7" x2="1147.8" y2="971.4" stroke-width="1.6" opacity="0.5"/><line x1="981.5" y1="462.4" x2="985.7" y2="447.2" stroke-width="1" opacity="0.3"/><line x1="1551.1" y1="918.6" x2="1724.5" y2="1029.7" stroke-width="2.4" opacity="0.8"/><line x1="1862.3" y1="783.1" x2="2188.2" y2="870.9" stroke-width="2.9" opacity="0.9"/><line x1="690.9" y1="149.7" x2="648" y2="87.5" stroke-width="1.9" opacity="0.6"/><line x1="1342.6" y1="576.2" x2="1394.2" y2="581" stroke-width="1.7" opacity="0.5"/><line x1="1016.1" y1="682.3" x2="1023.3" y2="700.4" stroke-width="1.1" opacity="0.4"/><line x1="665.3" y1="607.9" x2="567.9" y2="630.4" stroke-width="1.5" opacity="0.5"/><line x1="462.6" y1="479.9" x2="340.8" y2="465.2" stroke-width="1.9" opacity="0.6"/><line x1="794.1" y1="269.4" x2="762.6" y2="218.1" stroke-width="1.5" opacity="0.5"/><line x1="1913.7" y1="526" x2="2228.5" y2="521.3" stroke-width="2.9" opacity="0.9"/><line x1="907.1" y1="345.1" x2="897.7" y2="310.5" stroke-width="1.2" opacity="0.4"/><line x1="942.3" y1="610.7" x2="936.8" y2="632.7" stroke-width="1" opacity="0.3"/><line x1="352.6" y1="979" x2="221" y2="1074.1" stroke-width="2.5" opacity="0.8"/><line x1="1684.5" y1="344.5" x2="1771.5" y2="321" stroke-width="2.5" opacity="0.8"/><line x1="1168.9" y1="1347.7" x2="1218.5" y2="1539.6" stroke-width="2.7" opacity="0.9"/><line x1="1223.6" y1="507.3" x2="1260" y2="502.8" stroke-width="1.4" opacity="0.4"/><line x1="504.5" y1="58.3" x2="419.2" y2="-32" stroke-width="2.3" opacity="0.7"/><line x1="1143.3" y1="651.7" x2="1209.4" y2="692.1" stroke-width="1.3" opacity="0.4"/><line x1="964.5" y1="450.7" x2="965.3" y2="434.4" stroke-width="1" opacity="0.3"/><line x1="1016.3" y1="581.5" x2="1034.3" y2="594.7" stroke-width="1" opacity="0.3"/><line x1="1142.2" y1="913.1" x2="1184.5" y2="999.6" stroke-width="1.7" opacity="0.6"/><line x1="1180.7" y1="1104.6" x2="1214.5" y2="1190.8" stroke-width="2.1" opacity="0.7"/><line x1="905" y1="470.2" x2="892.6" y2="454.5" stroke-width="1" opacity="0.3"/><line x1="999.5" y1="706" x2="1013.8" y2="766.2" stroke-width="1.2" opacity="0.4"/><line x1="1023.9" y1="356.8" x2="1045.7" y2="294.3" stroke-width="1.2" opacity="0.4"/><line x1="1024.3" y1="795" x2="1045.7" y2="880.1" stroke-width="1.4" opacity="0.4"/><line x1="908" y1="475.7" x2="888.9" y2="452" stroke-width="1" opacity="0.3"/><line x1="997.4" y1="698.8" x2="1009" y2="748.6" stroke-width="1.2" opacity="0.4"/><line x1="870.3" y1="705.8" x2="857.8" y2="728.8" stroke-width="1.2" opacity="0.4"/><line x1="1330.7" y1="775.7" x2="1397.8" y2="818.3" stroke-width="1.8" opacity="0.6"/><line x1="763.2" y1="394.6" x2="717.2" y2="360.6" stroke-width="1.3" opacity="0.4"/><line x1="1290.4" y1="453.3" x2="1377.5" y2="430.4" stroke-width="1.6" opacity="0.5"/><line x1="1039.8" y1="451.2" x2="1052.4" y2="437.2" stroke-width="1.1" opacity="0.3"/><line x1="1557.6" y1="152.4" x2="1666.6" y2="81.7" stroke-width="2.4" opacity="0.8"/><line x1="1187.2" y1="1111.7" x2="1267.9" y2="1314.8" stroke-width="2.2" opacity="0.7"/><line x1="1252.9" y1="1379.7" x2="1352.6" y2="1665.6" stroke-width="2.8" opacity="0.9"/><line x1="732.5" y1="366.9" x2="699.3" y2="341.6" stroke-width="1.4" opacity="0.5"/><line x1="1840.2" y1="758.3" x2="1998.3" y2="797.5" stroke-width="2.8" opacity="0.9"/><line x1="914.3" y1="384.2" x2="899.4" y2="333.4" stroke-width="1.2" opacity="0.4"/><line x1="806.7" y1="433.7" x2="781.6" y2="416.3" stroke-width="1.2" opacity="0.4"/><line x1="946.6" y1="468.8" x2="944.2" y2="456.2" stroke-width="1" opacity="0.3"/><line x1="255" y1="264.1" x2="62.1" y2="188.6" stroke-width="2.5" opacity="0.8"/><line x1="800.7" y1="1368.8" x2="773.5" y2="1510.5" stroke-width="2.7" opacity="0.9"/><line x1="1129.3" y1="557.7" x2="1168.5" y2="561.8" stroke-width="1.2" opacity="0.4"/><line x1="1067.7" y1="583" x2="1090.6" y2="592.1" stroke-width="1.1" opacity="0.3"/><line x1="874.5" y1="498.4" x2="856.5" y2="489.6" stroke-width="1" opacity="0.3"/><line x1="1681.7" y1="-49.9" x2="1886.8" y2="-217.5" stroke-width="2.9" opacity="0.9"/><line x1="800.8" y1="128.7" x2="776.1" y2="64.9" stroke-width="1.8" opacity="0.6"/><line x1="1020" y1="553.4" x2="1040.8" y2="558.1" stroke-width="0.9" opacity="0.3"/><line x1="685" y1="-324.3" x2="650.5" y2="-432.6" stroke-width="2.8" opacity="0.9"/><line x1="736.9" y1="283.2" x2="669.4" y2="205.4" stroke-width="1.6" opacity="0.5"/><line x1="557.6" y1="1410.6" x2="501.8" y2="1531.4" stroke-width="2.9" opacity="0.9"/><line x1="373.2" y1="365.1" x2="170.7" y2="304.8" stroke-width="2.2" opacity="0.7"/><line x1="913.6" y1="-31" x2="898.8" y2="-212.8" stroke-width="2.1" opacity="0.7"/><line x1="1157.3" y1="423.3" x2="1214.7" y2="389.4" stroke-width="1.3" opacity="0.4"/><line x1="1594.8" y1="83.9" x2="1737.2" y2="-18.4" stroke-width="2.5" opacity="0.8"/><line x1="1154.4" y1="-206.7" x2="1205.6" y2="-403.3" stroke-width="2.5" opacity="0.8"/><line x1="780.9" y1="361" x2="733.3" y2="313.4" stroke-width="1.4" opacity="0.4"/><line x1="901.2" y1="492" x2="884.7" y2="478.6" stroke-width="1" opacity="0.3"/><line x1="1752.5" y1="506.7" x2="1991.9" y2="496.7" stroke-width="2.6" opacity="0.8"/><line x1="493.9" y1="933.4" x2="370.2" y2="1037.8" stroke-width="2.2" opacity="0.7"/><line x1="272.2" y1="809.7" x2="175.3" y2="847.7" stroke-width="2.4" opacity="0.8"/><line x1="960.1" y1="476.7" x2="960.1" y2="459.6" stroke-width="0.9" opacity="0.3"/><line x1="815.2" y1="557.4" x2="772.6" y2="562.5" stroke-width="1.1" opacity="0.4"/><line x1="487.1" y1="548.2" x2="321.6" y2="551" stroke-width="1.9" opacity="0.6"/><line x1="957.8" y1="600.7" x2="957.3" y2="612.5" stroke-width="0.9" opacity="0.3"/><line x1="903.3" y1="423.1" x2="894.1" y2="404.1" stroke-width="1.1" opacity="0.3"/><line x1="1393.8" y1="248" x2="1493.8" y2="180.7" stroke-width="2" opacity="0.6"/><line x1="1123.6" y1="407.6" x2="1170.5" y2="369.7" stroke-width="1.3" opacity="0.4"/><line x1="1053.5" y1="818.8" x2="1083.5" y2="908.4" stroke-width="1.5" opacity="0.5"/><line x1="1641.3" y1="132.5" x2="1788.6" y2="44.5" stroke-width="2.6" opacity="0.8"/><line x1="784.2" y1="438.8" x2="757.1" y2="423.3" stroke-width="1.3" opacity="0.4"/><line x1="223" y1="556.4" x2="-21.8" y2="561.8" stroke-width="2.4" opacity="0.8"/><line x1="745.5" y1="-322.8" x2="704.9" y2="-486.1" stroke-width="2.8" opacity="0.9"/><line x1="1111.5" y1="812.1" x2="1140.1" y2="863.4" stroke-width="1.5" opacity="0.5"/><line x1="1022.5" y1="812.4" x2="1039.8" y2="887.7" stroke-width="1.4" opacity="0.5"/><line x1="758.1" y1="547.8" x2="691.6" y2="550.3" stroke-width="1.2" opacity="0.4"/><line x1="1271.1" y1="504.7" x2="1314.2" y2="499.9" stroke-width="1.5" opacity="0.5"/><line x1="1728.7" y1="694.1" x2="1828.9" y2="714.2" stroke-width="2.5" opacity="0.8"/><line x1="850.3" y1="127.6" x2="828.7" y2="46.3" stroke-width="1.7" opacity="0.6"/><line x1="975.9" y1="480.5" x2="978.3" y2="471.3" stroke-width="0.9" opacity="0.3"/><line x1="900.1" y1="557.5" x2="880.5" y2="563.2" stroke-width="0.9" opacity="0.3"/><line x1="967.8" y1="638.8" x2="968.9" y2="651.8" stroke-width="1" opacity="0.3"/><line x1="748.2" y1="316.8" x2="689.4" y2="254.8" stroke-width="1.5" opacity="0.5"/><line x1="567.2" y1="-38.3" x2="425.9" y2="-246.3" stroke-width="2.4" opacity="0.8"/><line x1="908.7" y1="422.5" x2="896.5" y2="394.5" stroke-width="1.1" opacity="0.3"/><line x1="986.3" y1="594.7" x2="992.5" y2="607.7" stroke-width="0.9" opacity="0.3"/><line x1="933.8" y1="425.5" x2="928.9" y2="404" stroke-width="1.1" opacity="0.3"/><line x1="640" y1="1006.2" x2="559.9" y2="1122.8" stroke-width="2.1" opacity="0.7"/><line x1="481.8" y1="121.4" x2="377.4" y2="30" stroke-width="2.2" opacity="0.7"/><line x1="1175.9" y1="-260.2" x2="1206.5" y2="-373.7" stroke-width="2.6" opacity="0.9"/><line x1="1502.3" y1="295.5" x2="1585" y2="258.3" stroke-width="2.1" opacity="0.7"/><line x1="495.6" y1="679.6" x2="334.3" y2="728" stroke-width="1.9" opacity="0.6"/><line x1="656.2" y1="837" x2="552.9" y2="938" stroke-width="1.7" opacity="0.6"/><line x1="1215.2" y1="-303.3" x2="1275.4" y2="-502.3" stroke-width="2.8" opacity="0.9"/><line x1="883.7" y1="433.2" x2="860.8" y2="401.1" stroke-width="1.1" opacity="0.3"/><line x1="1169.2" y1="83.2" x2="1231.8" y2="-53.6" stroke-width="1.9" opacity="0.6"/><line x1="1147.5" y1="1338.6" x2="1216" y2="1630.2" stroke-width="2.6" opacity="0.8"/><line x1="1348.8" y1="484.3" x2="1472.3" y2="466.6" stroke-width="1.7" opacity="0.5"/><line x1="603.1" y1="1293.7" x2="483.9" y2="1545.4" stroke-width="2.7" opacity="0.9"/><line x1="915.5" y1="602.5" x2="905.3" y2="616.9" stroke-width="1" opacity="0.3"/><line x1="342" y1="337.9" x2="192.5" y2="289" stroke-width="2.2" opacity="0.7"/><line x1="1650.2" y1="664.5" x2="1744.1" y2="681.5" stroke-width="2.4" opacity="0.8"/><line x1="995.2" y1="431.3" x2="1002.4" y2="409.1" stroke-width="1.1" opacity="0.3"/><line x1="983.3" y1="443.8" x2="987" y2="428.7" stroke-width="1" opacity="0.3"/><line x1="366.9" y1="478.2" x2="171.2" y2="457.8" stroke-width="2.1" opacity="0.7"/><line x1="631.6" y1="-279.8" x2="551.8" y2="-479.2" stroke-width="2.8" opacity="0.9"/><line x1="1033.8" y1="515.6" x2="1046.8" y2="511.3" stroke-width="1" opacity="0.3"/><line x1="778.3" y1="509.3" x2="723.4" y2="500" stroke-width="1.2" opacity="0.4"/><line x1="716.5" y1="249.8" x2="635.9" y2="153.8" stroke-width="1.6" opacity="0.5"/><line x1="774.6" y1="466.6" x2="734.7" y2="450.8" stroke-width="1.2" opacity="0.4"/><line x1="1422.6" y1="-138.4" x2="1502.2" y2="-255.1" stroke-width="2.6" opacity="0.8"/><line x1="1501.4" y1="-197.6" x2="1637.3" y2="-382.8" stroke-width="2.8" opacity="0.9"/><line x1="844.3" y1="482.9" x2="814.9" y2="468.4" stroke-width="1.1" opacity="0.3"/><line x1="497.1" y1="530.8" x2="438.3" y2="529.6" stroke-width="1.8" opacity="0.6"/><line x1="1325.4" y1="468.9" x2="1405.8" y2="453.2" stroke-width="1.6" opacity="0.5"/><line x1="1092.1" y1="142.5" x2="1124.2" y2="46.1" stroke-width="1.7" opacity="0.6"/><line x1="934.1" y1="473.3" x2="927.4" y2="456.3" stroke-width="1" opacity="0.3"/><line x1="190" y1="1003.4" x2="-80.2" y2="1166" stroke-width="2.8" opacity="0.9"/><line x1="920" y1="869.4" x2="914" y2="919.4" stroke-width="1.5" opacity="0.5"/><line x1="311" y1="827.3" x2="87.1" y2="926.4" stroke-width="2.4" opacity="0.8"/><line x1="758.9" y1="569.9" x2="725.1" y2="574.9" stroke-width="1.3" opacity="0.4"/><line x1="329.2" y1="-36.9" x2="233.1" y2="-124.8" stroke-width="2.7" opacity="0.9"/><line x1="971.4" y1="478.9" x2="973.3" y2="468.6" stroke-width="0.9" opacity="0.3"/><line x1="1038.8" y1="1088" x2="1054.6" y2="1197.9" stroke-width="2" opacity="0.7"/><line x1="665.8" y1="917.5" x2="622.8" y2="972.7" stroke-width="1.9" opacity="0.6"/><line x1="949.1" y1="449.3" x2="946.3" y2="426.8" stroke-width="1" opacity="0.3"/><line x1="959.6" y1="667.3" x2="959.4" y2="699.4" stroke-width="1.1" opacity="0.3"/><line x1="731.4" y1="635.9" x2="680.3" y2="657.4" stroke-width="1.4" opacity="0.4"/><line x1="854" y1="520.2" x2="835.9" y2="516.8" stroke-width="1" opacity="0.3"/><line x1="621.4" y1="173.4" x2="536" y2="80.9" stroke-width="1.9" opacity="0.6"/><line x1="1239.2" y1="162" x2="1332.5" y2="35.7" stroke-width="1.8" opacity="0.6"/><line x1="1027.1" y1="1153.2" x2="1048.7" y2="1351" stroke-width="2.2" opacity="0.7"/><line x1="1125.7" y1="423.8" x2="1158.6" y2="400.7" stroke-width="1.2" opacity="0.4"/><line x1="1082.7" y1="475.3" x2="1128.1" y2="451.4" stroke-width="1.1" opacity="0.4"/><line x1="1033.1" y1="477.6" x2="1046.2" y2="466.4" stroke-width="1" opacity="0.3"/><line x1="936" y1="377.8" x2="932.5" y2="354.4" stroke-width="1.2" opacity="0.4"/><line x1="1101.2" y1="291.3" x2="1146" y2="212.3" stroke-width="1.4" opacity="0.5"/><line x1="1149.8" y1="732.2" x2="1205" y2="788.1" stroke-width="1.4" opacity="0.4"/><line x1="1088.2" y1="554.4" x2="1125.5" y2="558.5" stroke-width="1.1" opacity="0.3"/><line x1="1736.7" y1="56.5" x2="1852.3" y2="-15.5" stroke-width="2.8" opacity="0.9"/><line x1="322.5" y1="517.2" x2="165.9" y2="511.6" stroke-width="2.2" opacity="0.7"/><line x1="911.8" y1="427.3" x2="905.2" y2="411.8" stroke-width="1.1" opacity="0.3"/><line x1="1010.8" y1="580" x2="1023.9" y2="590.4" stroke-width="0.9" opacity="0.3"/><line x1="537" y1="500.5" x2="470.7" y2="494.3" stroke-width="1.7" opacity="0.6"/><line x1="1012.3" y1="659.8" x2="1029.5" y2="699.3" stroke-width="1.1" opacity="0.3"/><line x1="1815.5" y1="487.8" x2="1938.5" y2="480.3" stroke-width="2.7" opacity="0.9"/><line x1="1784.5" y1="878.2" x2="1978.7" y2="957.8" stroke-width="2.8" opacity="0.9"/><line x1="979.4" y1="330.5" x2="984" y2="280.9" stroke-width="1.3" opacity="0.4"/><line x1="668" y1="511.9" x2="589.2" y2="504.3" stroke-width="1.5" opacity="0.5"/><line x1="1527.9" y1="587.4" x2="1715.8" y2="603.1" stroke-width="2.1" opacity="0.7"/><line x1="1091.6" y1="825.5" x2="1131.7" y2="912.5" stroke-width="1.5" opacity="0.5"/><line x1="855.8" y1="610.6" x2="838.9" y2="621.9" stroke-width="1.1" opacity="0.3"/><line x1="899.1" y1="535.2" x2="878.1" y2="533.5" stroke-width="0.9" opacity="0.3"/><line x1="1143.2" y1="-4" x2="1204.7" y2="-186.4" stroke-width="2.1" opacity="0.7"/><line x1="773.4" y1="342.8" x2="723" y2="289.6" stroke-width="1.4" opacity="0.4"/><line x1="25.2" y1="514.8" x2="-275.1" y2="506.7" stroke-width="2.9" opacity="0.9"/><line x1="916.6" y1="1374.6" x2="903.3" y2="1630.1" stroke-width="2.7" opacity="0.9"/><line x1="1083.9" y1="-157.4" x2="1111.4" y2="-311.8" stroke-width="2.4" opacity="0.8"/><line x1="1591.5" y1="59.9" x2="1777" y2="-81.1" stroke-width="2.6" opacity="0.8"/><line x1="1030" y1="-102.8" x2="1045.5" y2="-245.1" stroke-width="2.2" opacity="0.7"/><line x1="947.5" y1="468.1" x2="945" y2="453.4" stroke-width="1" opacity="0.3"/><line x1="900.5" y1="551.8" x2="888.1" y2="554.3" stroke-width="0.9" opacity="0.3"/><line x1="649" y1="170.2" x2="593.6" y2="104.3" stroke-width="1.9" opacity="0.6"/><line x1="1458.1" y1="359.5" x2="1559.9" y2="322.6" stroke-width="2" opacity="0.6"/><line x1="731.4" y1="180.9" x2="673.5" y2="90" stroke-width="1.7" opacity="0.6"/><line x1="222" y1="1153.7" x2="14.9" y2="1325.9" stroke-width="2.9" opacity="0.9"/><line x1="766.3" y1="-72.4" x2="695.6" y2="-295.9" stroke-width="2.2" opacity="0.7"/><line x1="1429" y1="607.7" x2="1571.9" y2="628.4" stroke-width="1.9" opacity="0.6"/><line x1="948.8" y1="808.8" x2="947.3" y2="844.5" stroke-width="1.4" opacity="0.4"/><line x1="1043.3" y1="773.5" x2="1055.4" y2="807.3" stroke-width="1.4" opacity="0.4"/><line x1="955.4" y1="1368" x2="954.2" y2="1581.2" stroke-width="2.6" opacity="0.9"/><line x1="48" y1="495.2" x2="-191" y2="483.4" stroke-width="2.8" opacity="0.9"/><line x1="1458.3" y1="524.7" x2="1618.9" y2="519.7" stroke-width="1.9" opacity="0.6"/><line x1="1363.7" y1="749.5" x2="1488.8" y2="814.5" stroke-width="1.8" opacity="0.6"/><line x1="1787.2" y1="781" x2="1919.5" y2="819.5" stroke-width="2.7" opacity="0.9"/><line x1="849.4" y1="559.8" x2="822.4" y2="564.7" stroke-width="1" opacity="0.3"/><line x1="906.7" y1="495.2" x2="887.7" y2="479.3" stroke-width="1" opacity="0.3"/><line x1="623.8" y1="722.9" x2="533.2" y2="772.2" stroke-width="1.7" opacity="0.5"/><line x1="839.6" y1="675.6" x2="805.5" y2="714" stroke-width="1.2" opacity="0.4"/><line x1="793.1" y1="473.1" x2="743.2" y2="453.1" stroke-width="1.2" opacity="0.4"/><line x1="942.6" y1="598.4" x2="939.5" y2="609" stroke-width="0.9" opacity="0.3"/><line x1="1062.5" y1="568.2" x2="1094.2" y2="576.9" stroke-width="1" opacity="0.3"/><line x1="330.6" y1="1061" x2="137.3" y2="1221" stroke-width="2.6" opacity="0.8"/><line x1="1857.4" y1="832.6" x2="2177" y2="936.8" stroke-width="2.9" opacity="0.9"/><line x1="1701.2" y1="908.9" x2="1869.7" y2="992.8" stroke-width="2.6" opacity="0.9"/><line x1="47.4" y1="669.2" x2="-117.7" y2="692.6" stroke-width="2.8" opacity="0.9"/><line x1="98" y1="412.6" x2="-161.2" y2="374.2" stroke-width="2.7" opacity="0.9"/><line x1="48.6" y1="723.7" x2="-246.8" y2="783.2" stroke-width="2.9" opacity="0.9"/><line x1="889.8" y1="486.5" x2="870.4" y2="471.7" stroke-width="1" opacity="0.3"/><line x1="834.5" y1="575.9" x2="817.8" y2="580.7" stroke-width="1.1" opacity="0.3"/><line x1="869.4" y1="523.8" x2="848.5" y2="520.1" stroke-width="1" opacity="0.3"/><line x1="804.2" y1="265.3" x2="775.3" y2="214.3" stroke-width="1.5" opacity="0.5"/><line x1="712.9" y1="399.6" x2="635.2" y2="355.4" stroke-width="1.4" opacity="0.5"/><line x1="21.2" y1="356.2" x2="-315" y2="290.4" stroke-width="2.9" opacity="0.9"/><line x1="945.1" y1="390" x2="942.9" y2="367.7" stroke-width="1.1" opacity="0.4"/><line x1="1483.5" y1="121.7" x2="1628.1" y2="6.1" stroke-width="2.3" opacity="0.7"/><line x1="851.2" y1="672.9" x2="819.5" y2="711.6" stroke-width="1.2" opacity="0.4"/><line x1="548.1" y1="362.1" x2="433.5" y2="312.6" stroke-width="1.8" opacity="0.6"/><line x1="962.6" y1="417" x2="963.1" y2="394.6" stroke-width="1.1" opacity="0.3"/><line x1="1794.9" y1="433" x2="2078.5" y2="396.7" stroke-width="2.7" opacity="0.9"/><line x1="1028" y1="557.2" x2="1040.8" y2="560.5" stroke-width="1" opacity="0.3"/><line x1="529.8" y1="758.5" x2="467.2" y2="790.3" stroke-width="1.9" opacity="0.6"/><line x1="889" y1="521" x2="878.9" y2="518.3" stroke-width="1" opacity="0.3"/><line x1="778.4" y1="176.4" x2="728" y2="75.4" stroke-width="1.7" opacity="0.5"/><line x1="724.6" y1="780.8" x2="683.9" y2="822.4" stroke-width="1.5" opacity="0.5"/><line x1="614.7" y1="1057.1" x2="500.9" y2="1227.5" stroke-width="2.2" opacity="0.7"/><line x1="1040.5" y1="580.6" x2="1066.5" y2="593.7" stroke-width="1" opacity="0.3"/><line x1="496.1" y1="83.4" x2="415.7" y2="4.3" stroke-width="2.2" opacity="0.7"/><line x1="815" y1="614.6" x2="768.3" y2="638.7" stroke-width="1.2" opacity="0.4"/><line x1="609.4" y1="918.3" x2="480.6" y2="1057.3" stroke-width="1.9" opacity="0.6"/><line x1="775.5" y1="899.9" x2="719" y2="1010.2" stroke-width="1.7" opacity="0.5"/><line x1="1215.9" y1="401" x2="1270.2" y2="371.5" stroke-width="1.4" opacity="0.5"/><line x1="1605.3" y1="990.6" x2="1695.4" y2="1053.6" stroke-width="2.5" opacity="0.8"/><line x1="1324.3" y1="749.4" x2="1412.2" y2="799.9" stroke-width="1.7" opacity="0.6"/><line x1="884.8" y1="365.2" x2="861.2" y2="310.3" stroke-width="1.2" opacity="0.4"/><line x1="1080.7" y1="602.5" x2="1115.2" y2="620.4" stroke-width="1.1" opacity="0.3"/><line x1="1128.8" y1="635.2" x2="1179.7" y2="663.8" stroke-width="1.2" opacity="0.4"/><line x1="898.2" y1="371.6" x2="888.5" y2="345.4" stroke-width="1.2" opacity="0.4"/><line x1="584.5" y1="1006.9" x2="505" y2="1105.7" stroke-width="2.1" opacity="0.7"/><line x1="1388.9" y1="929.7" x2="1501.4" y2="1031.9" stroke-width="2.1" opacity="0.7"/><line x1="1723" y1="111.5" x2="1988.8" y2="-37.8" stroke-width="2.7" opacity="0.9"/><line x1="318.4" y1="803.5" x2="192.5" y2="855.1" stroke-width="2.3" opacity="0.8"/><line x1="849.8" y1="783.6" x2="810.8" y2="869.8" stroke-width="1.4" opacity="0.4"/><line x1="1083.8" y1="443.6" x2="1109.8" y2="423.4" stroke-width="1.1" opacity="0.4"/><line x1="801.9" y1="718.1" x2="767.3" y2="757" stroke-width="1.3" opacity="0.4"/><line x1="864.3" y1="621.6" x2="839.3" y2="643" stroke-width="1.1" opacity="0.3"/><line x1="1075.6" y1="160.9" x2="1113.6" y2="36.1" stroke-width="1.7" opacity="0.5"/><line x1="852.8" y1="495.4" x2="819.5" y2="481.5" stroke-width="1.1" opacity="0.3"/><line x1="1090.7" y1="418.6" x2="1107.1" y2="403.4" stroke-width="1.2" opacity="0.4"/><line x1="562" y1="500.8" x2="457.8" y2="490.5" stroke-width="1.7" opacity="0.5"/><line x1="1461.7" y1="432.5" x2="1622.8" y2="398" stroke-width="1.9" opacity="0.6"/><line x1="1330.4" y1="697.7" x2="1447.9" y2="747.7" stroke-width="1.7" opacity="0.5"/><line x1="1026" y1="578.5" x2="1046" y2="590.2" stroke-width="1" opacity="0.3"/><line x1="1022.3" y1="494.2" x2="1039.6" y2="481.4" stroke-width="1" opacity="0.3"/><line x1="1345.2" y1="1029.5" x2="1454" y2="1167.6" stroke-width="2.2" opacity="0.7"/><line x1="964" y1="680" x2="965.3" y2="723.6" stroke-width="1.1" opacity="0.4"/><line x1="320" y1="452.8" x2="180.1" y2="433.7" stroke-width="2.2" opacity="0.7"/><line x1="480.5" y1="1319" x2="342.4" y2="1543.4" stroke-width="2.8" opacity="0.9"/><line x1="567.2" y1="555.7" x2="449.2" y2="560.4" stroke-width="1.7" opacity="0.5"/><line x1="741.4" y1="-271.8" x2="692.8" y2="-452.6" stroke-width="2.7" opacity="0.9"/><line x1="1204.5" y1="69.2" x2="1286" y2="-87.8" stroke-width="2" opacity="0.6"/><line x1="1212.2" y1="-148.2" x2="1298.5" y2="-383.6" stroke-width="2.4" opacity="0.8"/><line x1="1443.5" y1="408.7" x2="1564.8" y2="375.7" stroke-width="1.9" opacity="0.6"/><line x1="788.1" y1="-131" x2="749.4" y2="-282.2" stroke-width="2.3" opacity="0.8"/><line x1="870.9" y1="588.6" x2="843.7" y2="603.5" stroke-width="1" opacity="0.3"/><line x1="1207.4" y1="526" x2="1247.4" y2="523.7" stroke-width="1.4" opacity="0.4"/><line x1="1041.7" y1="817.1" x2="1057.5" y2="870.5" stroke-width="1.4" opacity="0.5"/><line x1="1028.5" y1="526.8" x2="1042" y2="524.2" stroke-width="1" opacity="0.3"/><line x1="1342.6" y1="876.5" x2="1462.7" y2="982.2" stroke-width="1.9" opacity="0.6"/><line x1="990.3" y1="603.8" x2="997.4" y2="618.8" stroke-width="1" opacity="0.3"/><line x1="240.5" y1="120.2" x2="147.7" y2="66" stroke-width="2.7" opacity="0.9"/><line x1="1053.3" y1="615.9" x2="1069.6" y2="629.1" stroke-width="1.1" opacity="0.3"/><line x1="1013.9" y1="1126.3" x2="1028.4" y2="1283.9" stroke-width="2.1" opacity="0.7"/><line x1="979.6" y1="658.9" x2="983.4" y2="681.5" stroke-width="1.1" opacity="0.3"/><line x1="1258.1" y1="1103.1" x2="1317.1" y2="1214.5" stroke-width="2.2" opacity="0.7"/><line x1="280.9" y1="327.7" x2="118" y2="276.7" stroke-width="2.4" opacity="0.8"/></g></svg>
+</div>
+<canvas id="gl" aria-hidden="true"></canvas>
+<div class="overlay brand">Perigee Labs</div>
+<div class="overlay center">
+  <p class="kicker">Mission PL-1 · Lift-off in</p>
+  <div class="count" id="count"><div><span data-u="d">41</span><small>days</small></div><div><span data-u="h">06</span><small>hours</small></div><div><span data-u="m">22</span><small>min</small></div><div><span data-u="s">09</span><small>sec</small></div></div>
+  <h1>Six cubesats. One rideshare. Weather data every 40 minutes.</h1>
+</div>
+<div class="overlay foot"><span>Rideshare slot 3 of 11 · sun-synchronous 540 km</span><span>Window opens 14 Feb 2027 · 09:12 UTC</span></div>
+<p class="gl-note" role="status">Static poster: WebGL is not available here.</p>
+<script>
+var GLX = (function () {
+  var root = document.documentElement;
+  function fail(why) {
+    root.classList.remove('gl-on');
+    root.classList.add('gl-off');
+    if (why) console.warn('[webgl] ' + why);
+    return null;
+  }
+  function compile(gl, type, src) {
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(s));
+      return null;
+    }
+    return s;
+  }
+  function program(gl, vs, fs) {
+    var v = compile(gl, gl.VERTEX_SHADER, vs), f = compile(gl, gl.FRAGMENT_SHADER, fs);
+    if (!v || !f) return null;
+    var p = gl.createProgram();
+    gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); return null; }
+    return p;
+  }
+  function start(setup) {
+    var canvas = document.getElementById('gl');
+    var gl = null;
+    try {
+      var opts = { alpha: false, antialias: true, premultipliedAlpha: false };
+      gl = canvas.getContext('webgl2', opts) || canvas.getContext('webgl', opts);
+    } catch (_) {}
+    if (!gl) return fail('no WebGL context; showing the static poster');
+    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var pointer = [0.5, 0.5], targetPointer = [0.5, 0.5];
+    window.addEventListener('pointermove', function (e) {
+      targetPointer = [e.clientX / innerWidth, 1 - e.clientY / innerHeight];
+    }, { passive: true });
+    var draw = setup(gl, { program: function (vs, fs) { return program(gl, vs, fs); } });
+    if (!draw) return fail('shader setup failed; showing the static poster');
+    function resize() {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var w = Math.max(1, Math.round(canvas.clientWidth * dpr));
+      var h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      gl.viewport(0, 0, w, h);
+    }
+    var t0 = performance.now(), raf = 0, shown = false, lost = false;
+    function frame(now) {
+      raf = 0;
+      if (lost) return;
+      resize();
+      pointer[0] += (targetPointer[0] - pointer[0]) * 0.06;
+      pointer[1] += (targetPointer[1] - pointer[1]) * 0.06;
+      var t = still ? 6.0 : (now - t0) / 1000;
+      draw(t, [canvas.width, canvas.height], pointer);
+      if (!shown) {
+        shown = true;
+        var err = gl.getError();
+        if (err !== gl.NO_ERROR) console.warn('[webgl] getError after first frame: ' + err);
+        root.classList.add('gl-on');
+      }
+      if (!still && !document.hidden) raf = requestAnimationFrame(frame);
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && !raf && !still) raf = requestAnimationFrame(frame);
+    });
+    window.addEventListener('resize', function () { if (still && !raf) raf = requestAnimationFrame(frame); });
+    canvas.addEventListener('webglcontextlost', function (e) { e.preventDefault(); lost = true; fail('context lost'); });
+    raf = requestAnimationFrame(frame);
+    return gl;
+  }
+  // Full-screen triangle + one fragment shader with uRes, uTime, uPointer.
+  var FS_VERT = 'attribute vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }';
+  function fragment(src, extra) {
+    return start(function (gl, h) {
+      var p = h.program(FS_VERT, src);
+      if (!p) return null;
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      var loc = gl.getAttribLocation(p, 'aPos');
+      var uRes = gl.getUniformLocation(p, 'uRes');
+      var uTime = gl.getUniformLocation(p, 'uTime');
+      var uPointer = gl.getUniformLocation(p, 'uPointer');
+      return function (t, res, ptr) {
+        gl.useProgram(p);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        gl.uniform2f(uRes, res[0], res[1]);
+        gl.uniform1f(uTime, t);
+        if (uPointer) gl.uniform2f(uPointer, ptr[0], ptr[1]);
+        if (extra) extra(gl, p, t);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      };
+    });
+  }
+  // Column-major perspective and look-at for the 3D point scenes.
+  function perspective(fovy, aspect, near, far) {
+    var f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+    return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0];
+  }
+  function mul(a, b) {
+    var o = new Array(16);
+    for (var c = 0; c < 4; c++) for (var r = 0; r < 4; r++) {
+      var s = 0;
+      for (var k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+      o[c * 4 + r] = s;
+    }
+    return o;
+  }
+  function lookAt(eye, at, up) {
+    function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+    function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+    function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+    function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+    var z = norm(sub(eye, at)), x = norm(cross(up, z)), y = cross(z, x);
+    return [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, eye), -dot(y, eye), -dot(z, eye), 1];
+  }
+  return { start: start, fragment: fragment, perspective: perspective, mul: mul, lookAt: lookAt };
+})();
+var TARGET = Date.parse('2027-02-14T09:12:00Z');
+(function tick() {
+  var left = Math.max(0, TARGET - Date.now()) / 1000;
+  var v = { d: Math.floor(left / 86400), h: Math.floor(left / 3600) % 24, m: Math.floor(left / 60) % 60, s: Math.floor(left) % 60 };
+  document.querySelectorAll('#count [data-u]').forEach(function (el) {
+    var n = v[el.getAttribute('data-u')];
+    el.textContent = (n < 10 ? '0' : '') + n;
+  });
+  setTimeout(tick, 1000);
+})();
+GLX.fragment([
+  'precision highp float;',
+  'uniform vec2 uRes;',
+  'uniform float uTime;',
+  'uniform vec2 uPointer;',
+  '',
+  'float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }',
+  'float noise(vec2 p){',
+  '  vec2 i = floor(p), f = fract(p);',
+  '  vec2 u = f * f * (3.0 - 2.0 * f);',
+  '  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);',
+  '}',
+  'float fbm(vec2 p){',
+  '  float v = 0.0, a = 0.5;',
+  '  mat2 m = mat2(1.6, 1.2, -1.2, 1.6);',
+  '  for (int i = 0; i < 5; i++) { v += a * noise(p); p = m * p; a *= 0.5; }',
+  '  return v;',
+  '}',
+  '',
+  '#define SPEED 0.35',
+  'void main(){',
+  '  vec2 c = 0.5 * uRes + (uPointer - 0.5) * uRes * 0.08;',
+  '  vec2 p = (gl_FragCoord.xy - c) / uRes.y;',
+  '  float r = length(p), a = atan(p.y, p.x);',
+  '  vec3 col = vec3(0.012, 0.016, 0.04);',
+  '  vec2 q = p * 1.4;',
+  '  col += vec3(0.36, 0.24, 0.77) * 0.22 * smoothstep(0.35, 0.8, fbm(q * 2.0 + uTime * 0.02));',
+  '  col += vec3(0.12, 0.64, 0.64) * 0.14 * smoothstep(0.4, 0.85, fbm(q * 2.6 - uTime * 0.015 + 4.0));',
+  '  for (int i = 0; i < 4; i++) {',
+  '    float fi = float(i);',
+  '    float depth = fract(log(r + 0.001) * 0.6 - uTime * SPEED * (0.6 + 0.25 * fi) + fi * 0.27);',
+  '    float sectors = 90.0 + 50.0 * fi;',
+  '    float cell = floor(a / 6.2831 * sectors);',
+  '    float h = hash(vec2(cell, fi * 13.1));',
+  '    float ring = floor((log(r + 0.001) * 0.6 - uTime * SPEED * (0.6 + 0.25 * fi)) );',
+  '    float h2 = hash(vec2(cell, ring + fi * 7.0));',
+  '    if (h2 > 0.9) {',
+  '      float ca = (cell + 0.5) / sectors * 6.2831;',
+  '      float ang = abs(a - ca) * r * sectors * 0.9;',
+  '      float streak = smoothstep(0.0, 0.25, depth) * smoothstep(1.0, 0.55, depth);',
+  '      float w = smoothstep(0.035, 0.0, ang * 0.02);',
+  '      col += vec3(0.74, 0.84, 1.0) * w * streak * (0.15 + 0.6 * r) * (0.4 + 0.6 * h);',
+  '    }',
+  '  }',
+  '  col *= mix(0.18, 1.0, smoothstep(0.08, 0.55, r));',
+  '  col *= smoothstep(1.5, 0.2, r);',
+  '  gl_FragColor = vec4(col, 1.0);',
+  '}'
+].join('\n'));
+</script>
+</body>
+</html>

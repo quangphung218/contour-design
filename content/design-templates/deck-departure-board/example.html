@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en" data-od-deck-protocol="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Easthaven Rail Hub · Q3 operations</title>
+<style>
+:root{--shell:#000;--bg:#111214;--fg:#f2f2f2;--accent:#ffb000;--muted:#8a8d93;--body-font:'Helvetica Neue',Helvetica,Arial,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html{--u:calc(100vw / 1920)}
+html.deck-on{--u:calc(min(100vw, 177.7778vh) / 1920)}
+html,body{background:var(--shell);color:var(--fg)}
+body{font-family:var(--body-font);-webkit-font-smoothing:antialiased}
+.deck-stage{width:calc(1920*var(--u))}
+.slide{position:relative;width:calc(1920*var(--u));height:calc(1080*var(--u));overflow:hidden;display:flex;flex-direction:column;background:var(--bg);color:var(--fg)}
+html.deck-on,html.deck-on body{height:100%;overflow:hidden}
+html.deck-on .deck-stage{position:fixed;left:50%;top:50%;height:calc(1080*var(--u));transform:translate(-50%,-50%)}
+html.deck-on .slide{position:absolute;inset:0}
+@media screen{html.deck-on .slide:not(.active){display:none!important}}
+.deck-dots{display:none}
+html.deck-on .deck-dots{display:flex;position:fixed;left:50%;bottom:10px;transform:translateX(-50%);gap:8px;z-index:10;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28)}
+.deck-dots button{width:8px;height:8px;padding:0;border:0;border-radius:4px;background:rgba(255,255,255,.55);cursor:pointer;transition:width .2s}
+.deck-dots button[aria-current="true"]{width:22px;background:#fff}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,html.deck-on{--u:1px}
+  html,body,html.deck-on body{height:auto!important;overflow:visible!important;background:none}
+  html.deck-on .deck-stage{position:static;transform:none;height:auto}
+  html.deck-on .slide{position:relative;inset:auto}
+  .slide{break-after:page}
+  .deck-dots{display:none!important}
+}
+</style>
+<style>
+.slide{padding:calc(100*var(--u)) calc(120*var(--u))}
+.head{display:flex;justify-content:space-between;align-items:center;font:600 calc(24*var(--u)) ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:calc(4*var(--u));color:#8a8d93;border-bottom:calc(2*var(--u)) solid #2a2d33;padding-bottom:calc(24*var(--u))}
+.head b{color:#ffb000;font-weight:600}
+.flaps{display:flex;gap:calc(10*var(--u));flex-wrap:wrap;margin-top:calc(70*var(--u))}
+.f{display:inline-grid;place-items:center;width:calc(104*var(--u));height:calc(150*var(--u));background:linear-gradient(#1d1f23 0 49.4%,#000 49.4% 50.6%,#24272c 50.6%);border-radius:calc(8*var(--u));font:700 calc(104*var(--u))/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#ffb000}
+.f.sm{width:calc(64*var(--u));height:calc(92*var(--u));font-size:calc(62*var(--u));border-radius:calc(6*var(--u))}
+.f.sp{background:transparent}
+.say{font-size:calc(34*var(--u));line-height:1.45;color:#c9cbd0;margin-top:calc(50*var(--u));max-width:calc(1300*var(--u))}
+table{width:100%;border-collapse:separate;border-spacing:0 calc(10*var(--u));margin-top:calc(40*var(--u));font:600 calc(34*var(--u)) ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:calc(2*var(--u))}
+th{font-size:calc(20*var(--u));color:#8a8d93;text-align:left;padding:0 calc(22*var(--u));letter-spacing:calc(4*var(--u))}
+td{background:#1d1f23;padding:calc(22*var(--u));color:#ffb000;border-top:calc(1*var(--u)) solid #2a2d33}
+td.ok{color:#3ddc84}
+td.late{color:#ffb000}
+td.bad{color:#ff4d4d}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(60*var(--u));margin-top:calc(80*var(--u))}
+.kpi p{font:500 calc(26*var(--u))/1.4 'Helvetica Neue',Arial,sans-serif;color:#c9cbd0;margin-top:calc(26*var(--u))}
+.kpi .flaps{margin-top:0}
+.bar{display:grid;grid-template-columns:calc(520*var(--u)) 1fr calc(160*var(--u));align-items:center;gap:calc(26*var(--u));margin-top:calc(22*var(--u));font:600 calc(30*var(--u)) ui-monospace,SFMono-Regular,Menlo,monospace;color:#ffb000}
+.bar span.t{height:calc(46*var(--u));background:repeating-linear-gradient(90deg,#ffb000 0 calc(22*var(--u)),#111214 calc(22*var(--u)) calc(26*var(--u)))}
+.bar b{text-align:right;color:#f2f2f2}
+.ann{margin-top:calc(50*var(--u));display:grid;gap:calc(22*var(--u))}
+.ann div{display:grid;grid-template-columns:calc(130*var(--u)) 1fr;gap:calc(30*var(--u));align-items:center;background:#1d1f23;padding:calc(26*var(--u)) calc(30*var(--u));border-left:calc(8*var(--u)) solid #ffb000}
+.ann b{font:700 calc(64*var(--u)) ui-monospace,SFMono-Regular,Menlo,monospace;color:#ffb000}
+.ann p{font-size:calc(34*var(--u));line-height:1.35}
+</style>
+</head>
+<body>
+<main class="deck-stage" id="deck-stage">
+<section class="slide active dark" data-screen-label="01">
+<div class="head"><span>EASTHAVEN RAIL HUB</span><b>Q3 2026 · OPERATIONS REVIEW</b></div>
+<div class="flaps"><span class="f">O</span><span class="f">N</span><span class="f sp"></span><span class="f">T</span><span class="f">I</span><span class="f">M</span><span class="f">E</span></div><div class="flaps" style="margin-top:calc(14*var(--u))"><span class="f">9</span><span class="f">4</span><span class="f">.</span><span class="f">2</span><span class="f">%</span></div>
+<p class="say">Up from 89.7% in Q2. 2,816 departures, 41,950 containers handled, one crane out for six weeks.</p>
+</section>
+<section class="slide dark" data-screen-label="02">
+<div class="head"><span>DEPARTURES · TUESDAY 16 SEP · A TYPICAL DAY</span><b>BOARD 1</b></div>
+<table><tr><th>SERVICE</th><th>DESTINATION</th><th>SCHED.</th><th>STATUS</th></tr><tr><td>RS 4410</td><td>ROTTERDAM</td><td>06:12</td><td class="ok">ON TIME</td></tr><tr><td>RS 4418</td><td>DUISBURG</td><td>07:40</td><td class="late">+9 MIN</td></tr><tr><td>RS 5102</td><td>MILANO SMISTAM.</td><td>09:05</td><td class="ok">ON TIME</td></tr><tr><td>RS 5120</td><td>POZNAN</td><td>10:30</td><td class="bad">CANCELLED</td></tr><tr><td>RS 6007</td><td>LYON VENISSIEUX</td><td>12:15</td><td class="ok">ON TIME</td></tr></table>
+<p class="say">Four of five on time; the Poznań cancellation came from a border crew change, not from us.</p>
+</section>
+<section class="slide dark" data-screen-label="03">
+<div class="head"><span>THE QUARTER IN THREE COUNTERS</span><b>Q3 vs Q2</b></div>
+<div class="kpis"><div class="kpi"><div class="flaps"><span class="f sm">9</span><span class="f sm">4</span><span class="f sm">.</span><span class="f sm">2</span></div><p>% departures within 5 min of plan (Q2: 89.7)</p></div>
+<div class="kpi"><div class="flaps"><span class="f sm">3</span><span class="f sm">1</span><span class="f sm">H</span></div><p>median container dwell, gate-in to train (Q2: 38 h)</p></div>
+<div class="kpi"><div class="flaps"><span class="f sm">1</span><span class="f sm">2</span></div><p>cancellations, of which 3 caused by the hub (Q2: 21)</p></div></div>
+</section>
+<section class="slide dark" data-screen-label="04">
+<div class="head"><span>DELAY CAUSES · TRAIN-MINUTES LOST</span><b>Q3 TOTAL 4,520</b></div>
+<div class="bar"><span>CRANE MAINTENANCE</span><span class="t" style="width:100%"></span><b>1,840</b></div><div class="bar"><span>LATE INBOUND TRAINS</span><span class="t" style="width:71%"></span><b>1,310</b></div><div class="bar"><span>CUSTOMS HOLDS</span><span class="t" style="width:41%"></span><b>760</b></div><div class="bar"><span>STAFF SHORTFALL</span><span class="t" style="width:23%"></span><b>420</b></div><div class="bar"><span>WEATHER</span><span class="t" style="width:10%"></span><b>190</b></div>
+<p class="say">Crane 3's gearbox explains 41% of lost minutes. It is back since 2 September.</p>
+</section>
+<section class="slide dark" data-screen-label="05">
+<div class="head"><span>NEXT QUARTER · ANNOUNCEMENTS</span><b>Q4 2026</b></div>
+<div class="ann"><div><b>P1</b><p>Night shift for crane maintenance: no planned work between 05:00 and 22:00.</p></div>
+<div><b>P2</b><p>Pre-cleared customs lane for the two Milan services, starting 6 October.</p></div>
+<div><b>P3</b><p>Live dwell board at the gate, so hauliers see slot times before arriving.</p></div></div>
+</section>
+<section class="slide dark" data-screen-label="06">
+<div class="head"><span>ASK OF THE BOARD</span><b>DECISION TODAY</b></div>
+<div class="flaps"><span class="f sm">A</span><span class="f sm">P</span><span class="f sm">P</span><span class="f sm">R</span><span class="f sm">O</span><span class="f sm">V</span><span class="f sm">E</span></div><div class="flaps" style="margin-top:calc(10*var(--u))"><span class="f sm">€</span><span class="f sm">6</span><span class="f sm">4</span><span class="f sm">0</span><span class="f sm">K</span><span class="f sm sp"></span><span class="f sm">C</span><span class="f sm">R</span><span class="f sm">A</span><span class="f sm">N</span><span class="f sm">E</span><span class="f sm sp"></span><span class="f sm">4</span></div>
+<p class="say">A fourth crane removes the single point of failure that cost us 1,840 minutes this quarter. Payback modelled at 26 months.</p>
+</section>
+</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.deck-stage > .slide'));
+  if (!slides.length) return;
+  var KEY = 'deck:' + (location.pathname || '/') + ':' + document.title;
+  var idx = 0;
+  try {
+    var saved = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (saved >= 0 && saved < slides.length) idx = saved;
+  } catch (_) {}
+  var dots = document.createElement('nav');
+  dots.className = 'deck-dots';
+  dots.setAttribute('aria-label', 'Slides');
+  slides.forEach(function (_, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Slide ' + (i + 1));
+    b.addEventListener('click', function (e) { e.stopPropagation(); go(i); focusDeck(); });
+    dots.appendChild(b);
+  });
+  document.body.appendChild(dots);
+  function post(msg) { try { window.parent.postMessage(msg, '*'); } catch (_) {} }
+  function paint() {
+    slides.forEach(function (s, i) {
+      var on = i === idx;
+      s.classList.toggle('active', on);
+      s.classList.toggle('is-active', on);
+      s.setAttribute('aria-hidden', on ? 'false' : 'true');
+    });
+    Array.prototype.forEach.call(dots.children, function (b, i) {
+      if (i === idx) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+    post({ type: 'od:slide-state', protocolVersion: 1, active: idx, count: slides.length });
+  }
+  function go(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    paint();
+    try { localStorage.setItem(KEY, String(idx)); } catch (_) {}
+  }
+  function editable(t) {
+    return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  }
+  function onKey(e) {
+    if (e.__deckDone || editable(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key, to = null;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') to = idx + 1;
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') to = idx - 1;
+    else if (k === 'Home') to = 0;
+    else if (k === 'End') to = slides.length - 1;
+    if (to === null) return;
+    e.__deckDone = true;
+    e.preventDefault();
+    go(to);
+  }
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('keydown', onKey, true);
+  var acc = 0, lock = false, resetTimer = 0;
+  window.addEventListener('wheel', function (e) {
+    if (editable(e.target)) return;
+    e.preventDefault();
+    if (lock) return;
+    acc += e.deltaX + e.deltaY;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(function () { acc = 0; }, 180);
+    if (Math.abs(acc) > 40) {
+      go(idx + (acc > 0 ? 1 : -1));
+      acc = 0;
+      lock = true;
+      setTimeout(function () { lock = false; }, 420);
+    }
+  }, { passive: false });
+  var sx = 0, sy = 0;
+  window.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  window.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) go(idx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'od:slide') return;
+    if (d.protocolVersion != null && d.protocolVersion !== 1) return;
+    if (d.action === 'go' && typeof d.index === 'number' && isFinite(d.index)) go(Math.floor(d.index));
+    else if (d.action === 'next') go(idx + 1);
+    else if (d.action === 'prev') go(idx - 1);
+    else if (d.action === 'first') go(0);
+    else if (d.action === 'last') go(slides.length - 1);
+  });
+  document.body.setAttribute('tabindex', '-1');
+  document.body.style.outline = 'none';
+  function focusDeck() { try { window.focus(); document.body.focus({ preventScroll: true }); } catch (_) {} }
+  document.addEventListener('pointerdown', focusDeck);
+  window.addEventListener('load', focusDeck);
+  root.classList.add('deck-on');
+  paint();
+  focusDeck();
+  post({ type: 'od:deck-ready', protocolVersion: 1, capabilities: ['absolute-navigation', 'state-events'] });
+})();
+</script>
+</body>
+</html>

@@ -75,3 +75,6 @@ run OD_E2E_POLISH_PORT polish.e2e.mjs
 # Motion → MP4 through `od media` with the real renderer and ffmpeg
 # (with OD_E2E_PORT: + 15).
 run OD_E2E_MOTION_PORT motion.e2e.mjs
+# One of Contour's own gallery decks, remixed and driven by keys and dots
+# (with OD_E2E_PORT: + 16).
+run OD_E2E_GALLERY_PORT gallery.e2e.mjs

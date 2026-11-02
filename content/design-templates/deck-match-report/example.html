@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en" data-od-deck-protocol="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Rovers · Season review</title>
+<style>
+:root{--shell:#06170d;--bg:#0f3d22;--fg:#f5f5ef;--accent:#ffd400;--muted:#a8c4b0;--body-font:'Avenir Next','Helvetica Neue',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html{--u:calc(100vw / 1920)}
+html.deck-on{--u:calc(min(100vw, 177.7778vh) / 1920)}
+html,body{background:var(--shell);color:var(--fg)}
+body{font-family:var(--body-font);-webkit-font-smoothing:antialiased}
+.deck-stage{width:calc(1920*var(--u))}
+.slide{position:relative;width:calc(1920*var(--u));height:calc(1080*var(--u));overflow:hidden;display:flex;flex-direction:column;background:var(--bg);color:var(--fg)}
+html.deck-on,html.deck-on body{height:100%;overflow:hidden}
+html.deck-on .deck-stage{position:fixed;left:50%;top:50%;height:calc(1080*var(--u));transform:translate(-50%,-50%)}
+html.deck-on .slide{position:absolute;inset:0}
+@media screen{html.deck-on .slide:not(.active){display:none!important}}
+.deck-dots{display:none}
+html.deck-on .deck-dots{display:flex;position:fixed;left:50%;bottom:10px;transform:translateX(-50%);gap:8px;z-index:10;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28)}
+.deck-dots button{width:8px;height:8px;padding:0;border:0;border-radius:4px;background:rgba(255,255,255,.55);cursor:pointer;transition:width .2s}
+.deck-dots button[aria-current="true"]{width:22px;background:#fff}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,html.deck-on{--u:1px}
+  html,body,html.deck-on body{height:auto!important;overflow:visible!important;background:none}
+  html.deck-on .deck-stage{position:static;transform:none;height:auto}
+  html.deck-on .slide{position:relative;inset:auto}
+  .slide{break-after:page}
+  .deck-dots{display:none!important}
+}
+</style>
+<style>
+.slide{background:repeating-linear-gradient(90deg,#0f3d22 0 calc(160*var(--u)),#124628 calc(160*var(--u)) calc(320*var(--u)));padding:calc(100*var(--u)) calc(130*var(--u))}
+.slide::after{content:"";position:absolute;inset:0;background:radial-gradient(calc(900*var(--u)) calc(500*var(--u)) at 15% -10%,rgba(255,255,255,.18),transparent 70%),radial-gradient(calc(900*var(--u)) calc(500*var(--u)) at 85% -10%,rgba(255,255,255,.18),transparent 70%);pointer-events:none}
+.cap{font-weight:700;font-size:calc(22*var(--u));letter-spacing:calc(5*var(--u));text-transform:uppercase;color:#ffd400}
+h1{font-family:Futura,'Avenir Next',sans-serif;font-weight:800;font-size:calc(150*var(--u));line-height:.92;text-transform:uppercase;margin-top:calc(30*var(--u));max-width:calc(1200*var(--u))}
+h2{font-family:Futura,'Avenir Next',sans-serif;font-weight:800;font-size:calc(76*var(--u));line-height:1;text-transform:uppercase;margin-top:calc(20*var(--u));max-width:calc(1400*var(--u))}
+.lede{font-size:calc(32*var(--u));line-height:1.45;margin-top:calc(30*var(--u));max-width:calc(1000*var(--u));color:#dfeee3}
+.crest{position:absolute;right:calc(150*var(--u));top:calc(170*var(--u));width:calc(440*var(--u))}
+.board{margin-top:calc(50*var(--u));background:#0b0b0b;border:calc(10*var(--u)) solid #2a2a2a;border-radius:calc(14*var(--u));padding:calc(40*var(--u)) calc(50*var(--u));display:grid;grid-template-columns:repeat(4,1fr);gap:calc(30*var(--u));text-align:center;box-shadow:0 calc(20*var(--u)) calc(50*var(--u)) rgba(0,0,0,.5)}
+.board b{display:block;font:700 calc(150*var(--u))/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#ffb300;text-shadow:0 0 calc(18*var(--u)) rgba(255,179,0,.55)}
+.board span{font-weight:700;font-size:calc(24*var(--u));letter-spacing:calc(4*var(--u));color:#9b9b9b}
+.pitchwrap{display:grid;grid-template-columns:calc(980*var(--u)) 1fr;gap:calc(70*var(--u));margin-top:calc(30*var(--u));align-items:center}
+.pitchwrap p{font-size:calc(30*var(--u));line-height:1.5;color:#dfeee3}
+.pitchwrap p+p{margin-top:calc(24*var(--u))}
+.dots{margin-top:calc(60*var(--u));position:relative;height:calc(300*var(--u));border-bottom:calc(3*var(--u)) solid #f5f5ef}
+.dots i{position:absolute;width:calc(40*var(--u));height:calc(40*var(--u));border-radius:50%;background:#ffd400;border:calc(3*var(--u)) solid #0f3d22}
+.scale{display:flex;justify-content:space-between;font-size:calc(24*var(--u));color:#a8c4b0;margin-top:calc(14*var(--u))}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(50*var(--u));margin-top:calc(70*var(--u))}
+.three div{border-top:calc(8*var(--u)) solid #ffd400;padding-top:calc(26*var(--u))}
+.three b{font-family:Futura,'Avenir Next',sans-serif;font-weight:800;font-size:calc(44*var(--u));text-transform:uppercase;display:block;line-height:1.05}
+.three p{font-size:calc(28*var(--u));line-height:1.45;margin-top:calc(14*var(--u));color:#dfeee3}
+.dates{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(40*var(--u));margin-top:calc(70*var(--u))}
+.dates div{background:rgba(0,0,0,.35);padding:calc(34*var(--u));border-radius:calc(12*var(--u))}
+.dates b{display:block;font:700 calc(56*var(--u)) ui-monospace,SFMono-Regular,Menlo,monospace;color:#ffd400}
+.dates p{font-size:calc(28*var(--u));margin-top:calc(10*var(--u));line-height:1.4}
+</style>
+</head>
+<body>
+<main class="deck-stage" id="deck-stage">
+<section class="slide active dark" data-screen-label="01">
+<p class="cap">Riverside Rovers FC · Under-12s · Parents' evening</p>
+<h1>Season 2025/26 under the lights</h1>
+<p class="lede">We won more than we lost, but that's not the headline. Every child played at least 55% of the minutes, and the team learned to keep the ball.</p><svg class="crest" viewBox="0 0 220 260"><path d="M110 8l96 30v80c0 70-46 116-96 134C60 234 14 188 14 118V38z" fill="#0b0b0b" stroke="#ffd400" stroke-width="8"/>
+<path d="M40 150c30-20 50 20 70 0s40-20 70 0" fill="none" stroke="#f5f5ef" stroke-width="8" stroke-linecap="round"/><path d="M40 180c30-20 50 20 70 0s40-20 70 0" fill="none" stroke="#f5f5ef" stroke-width="8" stroke-linecap="round" opacity=".5"/>
+<text x="110" y="110" text-anchor="middle" font-family="Futura, Avenir Next, sans-serif" font-weight="800" font-size="46" fill="#ffd400">RR</text></svg>
+</section>
+<section class="slide dark" data-screen-label="02">
+<p class="cap">Results · league and cup</p>
+<h2>A season on the scoreboard.</h2>
+<div class="board"><div><b>14</b><span>WON</span></div><div><b>05</b><span>DRAWN</span></div><div><b>07</b><span>LOST</span></div><div><b>+19</b><span>GOAL DIFF.</span></div></div>
+<p class="lede">Fourth of eleven in the league. Cup run ended in the semi-final, 2–3 after extra time.</p>
+</section>
+<section class="slide dark" data-screen-label="03">
+<p class="cap">What we worked on</p>
+<h2>Building from the back.</h2>
+<div class="pitchwrap"><svg viewBox="0 0 980 620" fill="none" stroke="#f5f5ef" stroke-width="4">
+<rect x="10" y="10" width="960" height="600" rx="4"/><path d="M490 10v600"/><circle cx="490" cy="310" r="80"/><rect x="10" y="170" width="140" height="280"/><rect x="830" y="170" width="140" height="280"/>
+<g stroke="#ffd400" stroke-width="5" stroke-dasharray="14 10"><path d="M90 310L230 180"/><path d="M230 180L250 430"/><path d="M250 430L470 360"/><path d="M470 360L700 230"/></g>
+<g fill="#ffd400" stroke="#0f3d22" stroke-width="4"><circle cx="90" cy="310" r="20"/><circle cx="230" cy="180" r="20"/><circle cx="250" cy="430" r="20"/><circle cx="470" cy="360" r="20"/><circle cx="700" cy="230" r="20"/></g>
+<g fill="#f5f5ef" stroke="none" font-family="Avenir Next, sans-serif" font-size="24" font-weight="700"><text x="60" y="360">GK</text><text x="200" y="150">CB</text><text x="220" y="480">CB</text><text x="440" y="410">CM</text><text x="680" y="200">W</text></g></svg><div><p>In September we kicked it long from goal kicks 9 times in 10. By March it was 3 in 10.</p><p>The pattern we drilled every Tuesday: keeper to centre-back, switch, into midfield, out to the wing.</p></div></div>
+</section>
+<section class="slide dark" data-screen-label="04">
+<p class="cap">Minutes played · each dot is one player</p>
+<h2>Nobody sat on the bench all season.</h2>
+<div class="dots"><i style="left:55.3%;top:calc(40*var(--u))"></i><i style="left:56.6%;top:calc(100*var(--u))"></i><i style="left:58.2%;top:calc(160*var(--u))"></i><i style="left:60.5%;top:calc(220*var(--u))"></i><i style="left:61.3%;top:calc(40*var(--u))"></i><i style="left:69.9%;top:calc(100*var(--u))"></i><i style="left:70.2%;top:calc(160*var(--u))"></i><i style="left:73.1%;top:calc(220*var(--u))"></i><i style="left:73.5%;top:calc(40*var(--u))"></i><i style="left:75.1%;top:calc(100*var(--u))"></i><i style="left:77.2%;top:calc(160*var(--u))"></i><i style="left:79.7%;top:calc(220*var(--u))"></i><i style="left:83.1%;top:calc(40*var(--u))"></i><i style="left:84.0%;top:calc(100*var(--u))"></i><i style="left:89.7%;top:calc(160*var(--u))"></i><i style="left:90.9%;top:calc(220*var(--u))"></i></div><div class="scale"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100% of minutes</span></div>
+<p class="lede">Lowest share 55%, highest 95%. The two lowest missed games with injury, not selection.</p>
+</section>
+<section class="slide dark" data-screen-label="05">
+<p class="cap">Next season</p>
+<h2>Three changes.</h2>
+<div class="three"><div><b>9-a-side to 11-a-side</b><p>Bigger pitch from September. Two extra friendlies in August to get used to it.</p></div>
+<div><b>Second session</b><p>Thursday 18:00 on the 3G pitch, ball skills only, optional and free.</p></div>
+<div><b>Girls' squad</b><p>Eleven girls signed up for a new under-12 team. We need one more coach.</p></div></div>
+</section>
+<section class="slide dark" data-screen-label="06">
+<p class="cap">Dates and asks</p>
+<h2>See you in August.</h2>
+<div class="dates"><div><b>16 Aug</b><p>Pre-season starts, 10:00, Riverside Park</p></div><div><b>£95</b><p>Season fee, kit included; bursaries available, ask Sam</p></div><div><b>2 coaches</b><p>Volunteers wanted; we pay for the FA badge course</p></div></div>
+</section>
+</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.deck-stage > .slide'));
+  if (!slides.length) return;
+  var KEY = 'deck:' + (location.pathname || '/') + ':' + document.title;
+  var idx = 0;
+  try {
+    var saved = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (saved >= 0 && saved < slides.length) idx = saved;
+  } catch (_) {}
+  var dots = document.createElement('nav');
+  dots.className = 'deck-dots';
+  dots.setAttribute('aria-label', 'Slides');
+  slides.forEach(function (_, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Slide ' + (i + 1));
+    b.addEventListener('click', function (e) { e.stopPropagation(); go(i); focusDeck(); });
+    dots.appendChild(b);
+  });
+  document.body.appendChild(dots);
+  function post(msg) { try { window.parent.postMessage(msg, '*'); } catch (_) {} }
+  function paint() {
+    slides.forEach(function (s, i) {
+      var on = i === idx;
+      s.classList.toggle('active', on);
+      s.classList.toggle('is-active', on);
+      s.setAttribute('aria-hidden', on ? 'false' : 'true');
+    });
+    Array.prototype.forEach.call(dots.children, function (b, i) {
+      if (i === idx) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+    post({ type: 'od:slide-state', protocolVersion: 1, active: idx, count: slides.length });
+  }
+  function go(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    paint();
+    try { localStorage.setItem(KEY, String(idx)); } catch (_) {}
+  }
+  function editable(t) {
+    return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  }
+  function onKey(e) {
+    if (e.__deckDone || editable(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key, to = null;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') to = idx + 1;
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') to = idx - 1;
+    else if (k === 'Home') to = 0;
+    else if (k === 'End') to = slides.length - 1;
+    if (to === null) return;
+    e.__deckDone = true;
+    e.preventDefault();
+    go(to);
+  }
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('keydown', onKey, true);
+  var acc = 0, lock = false, resetTimer = 0;
+  window.addEventListener('wheel', function (e) {
+    if (editable(e.target)) return;
+    e.preventDefault();
+    if (lock) return;
+    acc += e.deltaX + e.deltaY;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(function () { acc = 0; }, 180);
+    if (Math.abs(acc) > 40) {
+      go(idx + (acc > 0 ? 1 : -1));
+      acc = 0;
+      lock = true;
+      setTimeout(function () { lock = false; }, 420);
+    }
+  }, { passive: false });
+  var sx = 0, sy = 0;
+  window.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  window.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) go(idx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'od:slide') return;
+    if (d.protocolVersion != null && d.protocolVersion !== 1) return;
+    if (d.action === 'go' && typeof d.index === 'number' && isFinite(d.index)) go(Math.floor(d.index));
+    else if (d.action === 'next') go(idx + 1);
+    else if (d.action === 'prev') go(idx - 1);
+    else if (d.action === 'first') go(0);
+    else if (d.action === 'last') go(slides.length - 1);
+  });
+  document.body.setAttribute('tabindex', '-1');
+  document.body.style.outline = 'none';
+  function focusDeck() { try { window.focus(); document.body.focus({ preventScroll: true }); } catch (_) {} }
+  document.addEventListener('pointerdown', focusDeck);
+  window.addEventListener('load', focusDeck);
+  root.classList.add('deck-on');
+  paint();
+  focusDeck();
+  post({ type: 'od:deck-ready', protocolVersion: 1, capabilities: ['absolute-navigation', 'state-events'] });
+})();
+</script>
+</body>
+</html>
