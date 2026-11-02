@@ -9,6 +9,7 @@
 //! other request, `file://` or network, is failed through CDP `Fetch`.
 
 pub mod ffmpeg;
+pub mod hyperframes_cli;
 mod script;
 
 use chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams;

@@ -402,6 +402,7 @@ daemon, `od <command> --help` lists the options.
 | `OD_RESCAN_INSTALL_DIRS` | `0`: Check again in a terminal-started daemon keeps its `PATH` instead of adding `~/.local/bin`, Homebrew and the other usual install folders (tests) | `1` |
 | `OD_CHROME_NO_SANDBOX` | `1` starts Chrome without its own sandbox. **Security risk:** Chrome then renders agent-written HTML without isolation. Only for a Contour that already runs inside another sandbox (`sandbox-exec`, some containers), where Chrome cannot start its own; Contour never turns it on by itself | off |
 | `OD_FFMPEG_PATH` | `ffmpeg` for MP4 | `PATH`, Homebrew |
+| `OD_HYPERFRAMES_BIN` | HyperFrames CLI (`lint`, `validate`, `inspect`, `transcribe`, `tts`) the HyperFrames template runs; Contour renders MP4 without it. Passed to agent runs as `OD_HYPERFRAMES_BIN`; a path that names no file turns the CLI off instead of falling back | `hyperframes` in Homebrew's or the system folder, then on `PATH`; none: not set for the agent |
 | `OD_TERMINAL_SHELL` | shell of terminal tabs | `$SHELL` |
 | `OD_MEDIA_CONCURRENCY` | media tasks in parallel | `2` |
 | `OD_OPENAI_API_KEY`, `OD_FAL_KEY`, `OD_ELEVENLABS_API_KEY` | media keys (or `media-config.json`) | — |

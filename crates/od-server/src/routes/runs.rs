@@ -590,6 +590,7 @@ async fn prepare_and_launch(
                 od_runtime::tokens::MIN_TOOL_TOKEN_TTL,
             );
             let od_bin = std::env::current_exe().ok();
+            let hyperframes_bin = od_render_cdp::hyperframes_cli::find_hyperframes();
             let data_root = state.store.data_dir().root().to_path_buf();
             let mut env = agent_env(
                 def,
@@ -603,6 +604,7 @@ async fn prepare_and_launch(
                     project_dir: Some(&prepared.cwd),
                     od_bin: od_bin.as_deref(),
                     run_id: Some(run.id()),
+                    hyperframes_bin: hyperframes_bin.as_deref(),
                 },
             );
             env.extend(mcp.env);

@@ -15,6 +15,9 @@ pub struct RunEnv<'a> {
     /// Path of the `od` binary, so the agent can call `od tools …`.
     pub od_bin: Option<&'a Path>,
     pub run_id: Option<&'a str>,
+    /// HyperFrames CLI found for the run (`OD_HYPERFRAMES_BIN`), run by
+    /// the agent as `"$OD_NODE_BIN" "$OD_HYPERFRAMES_BIN" lint …`.
+    pub hyperframes_bin: Option<&'a Path>,
 }
 
 /// `base` minus every inherited `OD_*` key, with `PATH` replaced and the
@@ -59,6 +62,10 @@ pub fn agent_env(
     // so both variables name the same binary (docs/decisions.md #6).
     set("OD_NODE_BIN", run.od_bin.map(|p| p.as_os_str().to_owned()));
     set("OD_RUN_ID", run.run_id.map(Into::into));
+    set(
+        "OD_HYPERFRAMES_BIN",
+        run.hyperframes_bin.map(|p| p.as_os_str().to_owned()),
+    );
     for (k, v) in def.extra_env {
         env.push(((*k).into(), (*v).into()));
     }
@@ -75,6 +82,7 @@ mod tests {
         let base = vec![
             ("OD_API_TOKEN".into(), "secret".into()),
             ("OD_STALE".into(), "x".into()),
+            ("OD_HYPERFRAMES_BIN".into(), "/stale/hyperframes".into()),
             ("HOME".into(), "/home/u".into()),
             ("PATH".into(), "/usr/bin".into()),
         ];
@@ -86,6 +94,7 @@ mod tests {
                 tool_token: Some("tok"),
                 project_id: Some("p1"),
                 od_bin: Some(Path::new("/app/od")),
+                hyperframes_bin: Some(Path::new("/opt/hf/hyperframes")),
                 ..RunEnv::default()
             },
         );
@@ -101,6 +110,11 @@ mod tests {
         assert_eq!(get("OD_TOOL_TOKEN").as_deref(), Some("tok"));
         assert_eq!(get("OD_BIN").as_deref(), Some("/app/od"));
         assert_eq!(get("OD_NODE_BIN").as_deref(), Some("/app/od"));
+        assert_eq!(
+            get("OD_HYPERFRAMES_BIN").as_deref(),
+            Some("/opt/hf/hyperframes"),
+            "the CLI found for the run, never an inherited value"
+        );
         assert_eq!(get("CLAUDE_CODE_ENABLE_TODO_TOOLS").as_deref(), Some("1"));
     }
 }

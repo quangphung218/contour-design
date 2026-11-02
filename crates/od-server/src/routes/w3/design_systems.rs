@@ -294,6 +294,7 @@ pub async fn generate(
             project_dir: Some(&staging),
             od_bin: od_bin.as_deref(),
             run_id: Some(&run_id),
+            hyperframes_bin: None,
         },
     );
     let handle = engine.launch(LaunchSpec {

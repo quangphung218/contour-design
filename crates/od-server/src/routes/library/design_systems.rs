@@ -1087,6 +1087,7 @@ pub(crate) async fn launch(
             project_dir: Some(&cwd),
             od_bin: od_bin.as_deref(),
             run_id: Some(&run_id),
+            hyperframes_bin: None,
         },
     );
     let handle = engine.launch(LaunchSpec {

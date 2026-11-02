@@ -8,6 +8,15 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `OD_HYPERFRAMES_BIN` points Contour at a HyperFrames CLI in place of the
+  `hyperframes` found in Homebrew's folder, the system folders or on
+  `PATH`. Agent runs get the CLI found as `OD_HYPERFRAMES_BIN`, so the
+  HyperFrames template's `"$OD_NODE_BIN" "$OD_HYPERFRAMES_BIN" lint` runs
+  it (`od` hands that command line to the CLI). Without one the variable
+  is not set; MP4 rendering never needed it.
+
 ### Fixed
 
 - "Files from this turn" no longer lists files another run of the same

@@ -18,11 +18,6 @@ use std::path::{Path, PathBuf};
 /// a variable (`OD_X`) or a command (`group sub`).
 const ALLOWED: &[(&str, &[&str], &str)] = &[
     (
-        "OD_HYPERFRAMES_BIN",
-        &["design-templates/hyperframes/"],
-        "HyperFrames CLI (lint, tts, transcribe, inspect, validate) for the HyperFrames chip: waiting on the owner's decision, beta.11",
-    ),
-    (
         "media stock-search",
         &["skills/od-next-media-inputs/"],
         "OD Next only; not part of Contour (N/A)",
@@ -75,6 +70,7 @@ fn agent_vars() -> BTreeSet<String> {
             project_dir: Some(dir),
             od_bin: Some(dir),
             run_id: Some("r"),
+            hyperframes_bin: Some(dir),
         },
     );
     env.into_iter()
@@ -247,7 +243,6 @@ fn a_missing_host_command_or_variable_fails() {
             r#"`"$OD_BIN" tools live-artifacts publish`"#,
             "tools live-artifacts publish",
         ),
-        ("`$OD_HYPERFRAMES_BIN lint`", "OD_HYPERFRAMES_BIN"),
     ];
     for (text, want) in cases {
         let bad = violations(&file(text));

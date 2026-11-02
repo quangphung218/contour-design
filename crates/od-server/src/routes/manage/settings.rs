@@ -304,6 +304,7 @@ async fn test_agent(
             project_dir: Some(&cwd),
             od_bin: None,
             run_id: Some(&run_id),
+            hyperframes_bin: None,
         },
     );
     env.extend(env_for(state.store.data_dir().root(), def.id));
