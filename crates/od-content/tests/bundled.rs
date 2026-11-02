@@ -254,6 +254,8 @@ fn motion_templates_ship_complete() {
         r#"(?i)https?://(?:[^\s"'<>]*)|//cdn|@import|<link\b[^>]*stylesheet|<img\b|url\(|Math\.random|Date\.now|setTimeout|setInterval"#,
     )
     .unwrap();
+    let comment = regex::Regex::new(r"(?s)/\*.*?\*/").unwrap();
+    let fixed_px = regex::Regex::new(r"\b\d+(?:\.\d+)?px\b").unwrap();
     let motion: Vec<_> = idx
         .design_templates
         .iter()
@@ -286,6 +288,10 @@ fn motion_templates_ship_complete() {
         let license = std::fs::read_to_string(dir.join("LICENSE"))
             .unwrap_or_else(|e| panic!("{id}: LICENSE: {e}"));
         assert!(license.contains("Apache License"), "{id}: not Apache-2.0");
+        assert!(
+            !license.contains("Open Design"),
+            "{id}: written for Contour, so its LICENSE credits no one else"
+        );
         let html = std::fs::read_to_string(
             t.example_html()
                 .unwrap_or_else(|| panic!("{id}: no example.html")),
@@ -305,6 +311,11 @@ fn motion_templates_ship_complete() {
             html.contains(r#"name="od-motion-output" content="video""#),
             "{id}"
         );
+        // Fixed px would not scale with the preview: the stage is sized in
+        // vw/vh and everything inside it in cqw. Comments may quote px.
+        let code = comment.replace_all(&html, "");
+        let px: Vec<&str> = fixed_px.find_iter(&code).map(|m| m.as_str()).collect();
+        assert!(px.is_empty(), "{id}: fixed sizes {px:?}");
         // The Apache licence text names its own URL; the film names none.
         let hits: Vec<&str> = banned.find_iter(&html).map(|m| m.as_str()).collect();
         assert!(hits.is_empty(), "{id}: {hits:?}");
