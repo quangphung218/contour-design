@@ -64,7 +64,8 @@ pub struct ReferenceArgs {
     /// machine.
     video: String,
     /// The reference folder; default `reference/<video name>`, inside the
-    /// project with --project, else under the current folder.
+    /// project with --project, else under the current folder. It must be
+    /// new, empty, or one this command wrote (it holds `.od-reference`).
     #[arg(long)]
     out: Option<String>,
     /// Read and write in this project's folder, through the daemon.
@@ -84,7 +85,8 @@ pub struct CompareArgs {
     #[arg(long, default_value_t = reference::DEFAULT_POINTS)]
     points: usize,
     /// Also write each pair of frames side by side (a left, b right) as
-    /// `<dir>/NNN.png`.
+    /// `<dir>/NNN.png`. The folder must be new, empty, or one this command
+    /// wrote (it holds `.od-compare`); other files are never touched.
     #[arg(long)]
     out: Option<PathBuf>,
 }

@@ -183,10 +183,15 @@ fn reference_writes_the_folder_next_to_the_video() {
     assert!(all.contains("10.00 s, 320×240, 25 fps, audio"), "{all}");
     assert_reference(&tmp.path().join("reference/my-ref"));
 
-    // Again into a chosen folder, with --json: a stale frame is gone.
+    // Again: a frame left from an earlier run of the folder is gone.
+    let stale = tmp.path().join("reference/my-ref/grid/099.png");
+    std::fs::write(&stale, b"old").unwrap();
+    let out = od(tmp.path(), &["media", "reference", "my ref.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(!stale.exists());
+
+    // Into a chosen new folder, with --json.
     let dir = tmp.path().join("look");
-    std::fs::create_dir_all(dir.join("grid")).unwrap();
-    std::fs::write(dir.join("grid/099.png"), b"old").unwrap();
     let out = od(
         tmp.path(),
         &[
@@ -203,7 +208,6 @@ fn reference_writes_the_folder_next_to_the_video() {
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["dir"], "look");
     assert_eq!(v["facts"]["source"], "my ref.mp4");
-    assert!(!dir.join("grid/099.png").exists());
     assert_reference(&dir);
 }
 
@@ -369,6 +373,57 @@ fn sound_that_outlasts_the_picture_does_not_stretch_the_film() {
         &[],
     );
     assert!(out.status.success(), "{}", text(&out));
+}
+
+#[test]
+fn out_never_removes_or_replaces_files_it_did_not_write() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    other_film(&ffmpeg, &tmp.path().join("a.mp4"));
+    let mine = tmp.path().join("042.png");
+    std::fs::write(&mine, b"the user's").unwrap();
+    // compare --out . : the folder holds the user's files.
+    let out = od(
+        tmp.path(),
+        &[
+            "media", "compare", "a.mp4", "a.mp4", "--points", "2", "--out", ".",
+        ],
+        &[],
+    );
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("did not write"), "{}", text(&out));
+    assert_eq!(std::fs::read(&mine).unwrap(), b"the user's");
+    assert!(!tmp.path().join("001.png").exists());
+
+    // reference --out into a folder of the user's frames.
+    let frames = tmp.path().join("frames");
+    std::fs::create_dir_all(frames.join("grid")).unwrap();
+    std::fs::write(frames.join("grid/042.png"), b"the user's").unwrap();
+    let out = od(
+        tmp.path(),
+        &["media", "reference", "a.mp4", "--out", "frames"],
+        &[],
+    );
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("did not write"), "{}", text(&out));
+    assert_eq!(
+        std::fs::read(frames.join("grid/042.png")).unwrap(),
+        b"the user's"
+    );
+    assert!(!frames.join("facts.json").exists());
+
+    // Its own folder, run twice: the second run clears the first's pairs.
+    for points in ["4", "2"] {
+        let out = od(
+            tmp.path(),
+            &[
+                "media", "compare", "a.mp4", "a.mp4", "--points", points, "--out", "pairs",
+            ],
+            &[],
+        );
+        assert!(out.status.success(), "{}", text(&out));
+    }
+    assert_eq!(pngs(&tmp.path().join("pairs")), 2);
 }
 
 #[test]

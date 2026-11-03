@@ -381,7 +381,44 @@ fn scenes_of(cuts: &[f64], duration: f64) -> Vec<Scene> {
         .collect()
 }
 
+/// File that marks a folder `od media reference` made.
+pub const REFERENCE_MARK: &str = ".od-reference";
+/// File that marks a folder `od media compare --out` made.
+pub const COMPARE_MARK: &str = ".od-compare";
+
+/// Takes `dir` for a command's output: a folder with its `mark` is its
+/// own from an earlier run; a missing or empty one is made and marked. Any
+/// other folder holds someone's files, which are never removed or
+/// replaced.
+///
+/// # Errors
+/// The folder holds files without the mark; I/O.
+fn claim(dir: &FsPath, mark: &str) -> Result<(), String> {
+    let io = |e: std::io::Error| format!("cannot write {}: {e}", dir.display());
+    if dir.join(mark).is_file() {
+        return Ok(());
+    }
+    let used = match std::fs::read_dir(dir) {
+        Ok(mut entries) => entries.next().is_some(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => return Err(io(e)),
+    };
+    if used {
+        return Err(format!(
+            "{} already holds files this command did not write; Contour never removes or replaces them. Choose a new or empty folder with --out.",
+            dir.display()
+        ));
+    }
+    std::fs::create_dir_all(dir).map_err(io)?;
+    std::fs::write(
+        dir.join(mark),
+        "Written by Contour. Its frames here are replaced on each run.\n",
+    )
+    .map_err(io)
+}
+
 /// Empties a folder of the `NNN.png` frames an earlier run wrote there.
+/// Only for a folder [`claim`] took.
 fn clear_frames(dir: &FsPath) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     for e in std::fs::read_dir(dir)?.flatten() {
@@ -406,7 +443,7 @@ pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, Strin
     refuse_link(&video.to_string_lossy())?;
     let (size, probe) = check(tools, video)?;
     let io = |e: std::io::Error| format!("cannot write {}: {e}", out.display());
-    std::fs::create_dir_all(out).map_err(io)?;
+    claim(out, REFERENCE_MARK)?;
     clear_frames(&out.join("scenes")).map_err(io)?;
     clear_frames(&out.join("grid")).map_err(io)?;
 
@@ -641,6 +678,7 @@ pub fn compare(
     let (_, pa) = check(tools, a)?;
     let (_, pb) = check(tools, b)?;
     if let Some(dir) = pairs {
+        claim(dir, COMPARE_MARK)?;
         clear_frames(dir).map_err(|e| format!("cannot write {}: {e}", dir.display()))?;
     }
     let mut scored = Vec::with_capacity(points);
