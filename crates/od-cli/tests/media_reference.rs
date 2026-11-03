@@ -427,6 +427,51 @@ fn out_never_removes_or_replaces_files_it_did_not_write() {
 }
 
 #[test]
+fn a_rerun_leaves_no_facts_or_sound_of_the_last_film() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let dir = tmp.path().join("reference/clip");
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(dir.join("audio.m4a").is_file());
+
+    // Same name, now silent: the old sound is gone.
+    other_film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(!dir.join("audio.m4a").exists());
+    let facts: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("facts.json")).unwrap()).unwrap();
+    assert_eq!(facts["hasAudio"], false);
+    assert!(facts.get("audio").is_none(), "{facts}");
+
+    // A run that fails half way (ffprobe reads it, ffmpeg breaks) leaves
+    // no facts.json describing frames that are gone.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let tools = tmp.path().join("broken-tools");
+        std::fs::create_dir_all(&tools).unwrap();
+        let fake = tools.join("ffmpeg");
+        std::fs::write(&fake, "#!/bin/sh\necho broken >&2\nexit 1\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::os::unix::fs::symlink(ffmpeg.with_file_name("ffprobe"), tools.join("ffprobe"))
+            .unwrap();
+        let out = od(
+            tmp.path(),
+            &["media", "reference", "clip.mp4"],
+            &[("OD_FFMPEG_PATH", fake.to_str().unwrap())],
+        );
+        assert!(!out.status.success(), "{}", text(&out));
+        assert!(text(&out).contains("broken"), "{}", text(&out));
+        for f in ["facts.json", "contact-sheet.png", "audio.m4a"] {
+            assert!(!dir.join(f).exists(), "{f} left behind");
+        }
+    }
+}
+
+#[test]
 fn links_are_refused_before_anything_runs() {
     let tmp = tempfile::tempdir().unwrap();
     for args in [

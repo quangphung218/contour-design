@@ -444,6 +444,16 @@ pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, Strin
     let (size, probe) = check(tools, video)?;
     let io = |e: std::io::Error| format!("cannot write {}: {e}", out.display());
     claim(out, REFERENCE_MARK)?;
+    // Nothing of the last run may outlive a run that fails half way:
+    // facts.json is written last, once every file it names is there.
+    for f in ["facts.json", "contact-sheet.png", "audio.m4a"] {
+        std::fs::remove_file(out.join(f))
+            .or_else(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => Ok(()),
+                _ => Err(e),
+            })
+            .map_err(io)?;
+    }
     clear_frames(&out.join("scenes")).map_err(io)?;
     clear_frames(&out.join("grid")).map_err(io)?;
 
@@ -473,7 +483,6 @@ pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, Strin
         run(&mut cmd, "ffmpeg audio")?;
         Some("audio.m4a".to_owned())
     } else {
-        let _ = std::fs::remove_file(out.join("audio.m4a"));
         None
     };
     let facts = Facts {
