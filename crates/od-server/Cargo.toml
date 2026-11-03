@@ -29,6 +29,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 anyhow.workspace = true
 axum = { workspace = true, features = ["ws"] }
 base64.workspace = true
+fs4.workspace = true
 futures-util.workspace = true
 hex.workspace = true
 httpdate.workspace = true

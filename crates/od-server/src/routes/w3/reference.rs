@@ -575,8 +575,8 @@ fn claim(dir: &FsPath, mark: &str, source: Option<&str>) -> Result<bool, RunErr>
             Ok(entries) => entries.flatten().any(|e| {
                 let name = e.file_name();
                 let name = name.to_string_lossy();
-                // A run's lock outlives its mark by a moment.
-                !name.starts_with(MARK_TMP) && name != RUN_LOCK
+                // A run's lock outlives its mark by a moment, and stays.
+                !name.starts_with(MARK_TMP) && !name.starts_with(RUN_LOCK)
             }),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
             Err(e) => return Err(io(e)),
@@ -628,156 +628,109 @@ fn place_mark(dir: &FsPath, mark: &str, body: &str) -> std::io::Result<()> {
     }
 }
 
-/// File in a folder a run is writing; it holds the run's process id.
+/// File a run holds an OS lock on while it writes the folder. The lock goes
+/// with the run however it ends, a killed one too; so does the file, unless
+/// the run was killed or another run had it open just then.
 pub const RUN_LOCK: &str = ".od-running";
-/// How old a [`RUN_LOCK`] without a process id in it (half written on a
-/// disk without hard links) must be before it counts as orphaned.
-const UNREAD_LOCK_AGE: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// A folder held by one run: [`RUN_LOCK`] is there while it lives and goes
-/// when it drops, however the run ends. A second run into the folder is
+/// A folder held by one run: an exclusive OS lock on [`RUN_LOCK`] while it
+/// lives. A second run into the folder, in this process or another, is
 /// refused instead of clearing the frames the first one is writing.
 #[derive(Debug)]
-struct RunLock(PathBuf);
+struct RunLock {
+    path: PathBuf,
+    /// Holds the lock; closing it, in a drop or when the run dies, frees it.
+    file: Option<std::fs::File>,
+}
 
 impl RunLock {
-    /// Takes `dir`, or the lock of a run that was killed.
+    /// Takes `dir`. A [`RUN_LOCK`] no run holds (left by a run that was
+    /// killed, or by an older Contour) is taken as it is.
     ///
     /// # Errors
-    /// [`RunErr::Busy`]: another live run holds `dir`. I/O.
+    /// [`RunErr::Busy`]: another run holds `dir`. I/O.
     fn take(dir: &FsPath) -> Result<Self, RunErr> {
+        let io = |e: std::io::Error| RunErr::Failed(format!("cannot write {}: {e}", dir.display()));
         let path = dir.join(RUN_LOCK);
         for _ in 0..3 {
-            match place_mark(dir, RUN_LOCK, &format!("{}\n", std::process::id())) {
-                Ok(()) => return Ok(Self(path)),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(e) => return Err(lock_io(dir, e)),
+            let mut options = std::fs::OpenOptions::new();
+            options.read(true).write(true).create(true).truncate(false);
+            // Never removed while another run has it open: see `drop`.
+            #[cfg(windows)]
+            std::os::windows::fs::OpenOptionsExt::share_mode(&mut options, 0x1 | 0x2);
+            let file = match options.open(&path) {
+                Ok(f) => f,
+                // A run is removing it this moment.
+                #[cfg(windows)]
+                Err(e) if e.raw_os_error() == Some(32) => continue,
+                Err(e) => return Err(io(e)),
+            };
+            match Self::hold(path.clone(), file) {
+                Ok(Some(lock)) => return Ok(lock),
+                // The run before removed this one after it was opened: lock
+                // the file there now.
+                Ok(None) => {}
+                Err(fs4::TryLockError::WouldBlock) => break,
+                Err(fs4::TryLockError::Error(e)) => return Err(io(e)),
             }
-            if !lock_orphaned(&path) {
-                return Err(busy(dir, lock_pid(&path)));
-            }
-            clear_orphan(dir)?;
         }
-        Err(busy(dir, lock_pid(&path)))
+        Err(RunErr::Busy(format!(
+            "another run is writing {}; wait for it to finish",
+            dir.display()
+        )))
+    }
+
+    /// Locks `file`, opened at `path`, and writes this process's id in it;
+    /// `None` when `path` no longer names it.
+    fn hold(path: PathBuf, mut file: std::fs::File) -> Result<Option<Self>, fs4::TryLockError> {
+        use std::io::Write as _;
+        // Through fs4: `File::try_lock` needs Rust 1.89, newer than ours.
+        fs4::FileExt::try_lock(&file)?;
+        // Not built otherwise: its drop would remove the file now there.
+        if !still_named(&file, &path) {
+            return Ok(None);
+        }
+        // A beta.17 daemon reads the pid, and takes an empty lock over once
+        // it is a minute old: with a live pid in it, it sees the folder busy.
+        file.set_len(0)
+            .and_then(|()| writeln!(file, "{}", std::process::id()))
+            .and_then(|()| file.flush())
+            .map_err(fs4::TryLockError::Error)?;
+        Ok(Some(Self {
+            path,
+            file: Some(file),
+        }))
     }
 }
 
-fn lock_io(dir: &FsPath, e: std::io::Error) -> RunErr {
-    RunErr::Failed(format!("cannot write {}: {e}", dir.display()))
-}
-
-/// Another run, `pid` if its lock names it, holds `dir`.
-fn busy(dir: &FsPath, pid: Option<u32>) -> RunErr {
-    let pid = pid.map(|p| format!(" (pid {p})")).unwrap_or_default();
-    RunErr::Busy(format!(
-        "another run is writing {d}{pid}; wait for it to finish, or if no run is going, remove {lock}",
-        d = dir.display(),
-        lock = dir.join(RUN_LOCK).display(),
-    ))
-}
-
-/// The process id the lock at `path` holds.
-fn lock_pid(path: &FsPath) -> Option<u32> {
-    std::fs::read_to_string(path).ok()?.trim().parse().ok()
-}
-
-/// Removes the lock in `dir` that was found orphaned. Another run may have
-/// found it orphaned too and already put its own live lock there, so the
-/// lock is first moved aside under a name only this run uses and read
-/// again: only a lock still orphaned is removed.
-///
-/// # Errors
-/// [`RunErr::Busy`]: what was moved aside is a live run's lock. I/O.
-fn clear_orphan(dir: &FsPath) -> Result<(), RunErr> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let aside = dir.join(format!(
-        "{RUN_LOCK}-stale-{}-{}",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    match std::fs::rename(dir.join(RUN_LOCK), &aside) {
-        Ok(()) => {}
-        // Released or cleared a moment ago: the folder is free to take.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(lock_io(dir, e)),
-    }
-    if lock_orphaned(&aside) {
-        return std::fs::remove_file(&aside).map_err(|e| lock_io(dir, e));
-    }
-    restore_or_busy(dir, &aside)
-}
-
-/// Puts the live lock moved aside to `aside` back where it was, unless
-/// another run's lock is there by now; either way the folder is busy.
-fn restore_or_busy(dir: &FsPath, aside: &FsPath) -> Result<(), RunErr> {
-    let body = std::fs::read_to_string(aside).unwrap_or_default();
-    let placed = place_mark(dir, RUN_LOCK, &body);
-    let _ = std::fs::remove_file(aside);
-    let pid = match placed {
-        Ok(()) => body.trim().parse().ok(),
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => lock_pid(&dir.join(RUN_LOCK)),
-        Err(e) => return Err(lock_io(dir, e)),
-    };
-    Err(busy(dir, pid))
-}
-
-impl Drop for RunLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
-
-/// Whether the run that wrote the lock at `path` no longer runs.
-fn lock_orphaned(path: &FsPath) -> bool {
-    match std::fs::read_to_string(path) {
-        // Released a moment ago: take it.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
-        Err(_) => false,
-        Ok(body) => match body.trim().parse::<u32>() {
-            Ok(pid) => !pid_alive(pid),
-            Err(_) => std::fs::metadata(path)
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.elapsed().ok())
-                .is_some_and(|age| age > UNREAD_LOCK_AGE),
-        },
-    }
-}
-
-/// Whether process `pid` runs.
+/// Whether `path` still names `file`.
 #[cfg(unix)]
-fn pid_alive(pid: u32) -> bool {
-    // Pid 0 (and what does not fit) would name a group, not a process.
-    match i32::try_from(pid) {
-        Ok(raw) if raw > 0 => !matches!(
-            nix::sys::signal::kill(nix::unistd::Pid::from_raw(raw), None),
-            Err(nix::errno::Errno::ESRCH)
-        ),
+fn still_named(file: &std::fs::File, path: &FsPath) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    match (file.metadata(), std::fs::metadata(path)) {
+        (Ok(a), Ok(b)) => (a.dev(), a.ino()) == (b.dev(), b.ino()),
         _ => false,
     }
 }
 
-/// Whether process `pid` runs: `tasklist` lists it. A `tasklist` that
-/// cannot run keeps the lock rather than take a live run's folder.
-#[cfg(windows)]
-fn pid_alive(pid: u32) -> bool {
-    use std::os::windows::process::CommandExt as _;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .map_or(true, |o| {
-            String::from_utf8_lossy(&o.stdout).contains(&format!("\"{pid}\""))
-        })
+/// Always: no run removes the file while another has it open.
+#[cfg(not(unix))]
+fn still_named(_file: &std::fs::File, _path: &FsPath) -> bool {
+    true
 }
 
-#[cfg(not(any(unix, windows)))]
-fn pid_alive(_pid: u32) -> bool {
-    true
+impl Drop for RunLock {
+    /// Removes [`RUN_LOCK`] only while it is still this run's: on unix
+    /// before the lock goes (a run that opened it meanwhile sees it gone and
+    /// tries again); elsewhere after, which fails while any other run has
+    /// it open, since none shares it for removal.
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        let _ = std::fs::remove_file(&self.path);
+        drop(self.file.take());
+        #[cfg(not(unix))]
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 /// Whether `name` is a frame a run writes: `NNN.png` in one of `dirs`
@@ -986,12 +939,15 @@ fn film_path(video: &FsPath, out: &FsPath) -> String {
 
 /// Whether a folder whose mark names `have` holds the reference of the
 /// film at `want` (a [`film_path`]). A mark of beta.17 or older names the
-/// film without its folders (no `/`): then the file names are compared.
+/// film without its folders (no `/`): then the file names are compared,
+/// ignoring ASCII case.
 fn same_film(have: &str, want: &str) -> bool {
     if have.contains('/') {
         have == want
     } else {
-        want.rsplit('/').next() == Some(have)
+        want.rsplit('/')
+            .next()
+            .is_some_and(|name| name.eq_ignore_ascii_case(have))
     }
 }
 
@@ -1090,9 +1046,10 @@ fn write_reference(
     probe: Probe,
 ) -> Result<Facts, RunErr> {
     let fresh = fresh_root(out);
-    let res = take_and_fill(tools, video, film, out, size, probe);
+    let mut lock = None;
+    let res = take_and_fill(tools, video, film, out, size, probe, &mut lock);
     if let (Err(RunErr::Failed(_)), Some(fresh)) = (&res, fresh) {
-        remove_empty_dirs(out, &fresh, &["scenes", "grid"]);
+        remove_empty_dirs(out, &fresh, &["scenes", "grid"], lock);
     }
     res
 }
@@ -1106,12 +1063,15 @@ fn fresh_root(dir: &FsPath) -> Option<PathBuf> {
         .map(FsPath::to_path_buf)
 }
 
-/// Removes `subs` of `dir`, then `dir` and its parents up to `fresh`,
-/// each only while it is empty.
-fn remove_empty_dirs(dir: &FsPath, fresh: &FsPath, subs: &[&str]) {
+/// Removes `subs` of `dir` while the run still holds `lock`, then lets it
+/// go (its [`RUN_LOCK`] with it) and removes `dir` and its parents up to
+/// `fresh`, each only while it is empty. A run that took the folder the
+/// moment the lock went has its mark in it by then, or fails to write it.
+fn remove_empty_dirs(dir: &FsPath, fresh: &FsPath, subs: &[&str], lock: Option<RunLock>) {
     for sub in subs {
         let _ = std::fs::remove_dir(dir.join(sub));
     }
+    drop(lock);
     for d in dir.ancestors() {
         if std::fs::remove_dir(d).is_err() || d == fresh {
             break;
@@ -1128,11 +1088,12 @@ fn take_and_fill(
     out: &FsPath,
     size: u64,
     probe: Probe,
+    lock: &mut Option<RunLock>,
 ) -> Result<Facts, RunErr> {
     let io = |e: std::io::Error| format!("cannot write {}: {e}", out.display());
     let created = claim(out, REFERENCE_MARK, Some(film))?;
-    // Held until this function returns, after any take-back below.
-    let _lock = RunLock::take(out)?;
+    // Held by the caller until it has taken back the folders it made.
+    *lock = Some(RunLock::take(out)?);
     // Only what the last run wrote goes: the frames its facts.json lists,
     // never another file of the same kind of name.
     let mut old = listed_frames(out);
@@ -1387,10 +1348,11 @@ pub fn compare(
     let scored = match pairs {
         Some(dir) => {
             let fresh = fresh_root(dir);
-            let res = take_and_pair(tools, (a, &pa), (b, &pb), points, dir);
+            let mut lock = None;
+            let res = take_and_pair(tools, (a, &pa), (b, &pb), points, dir, &mut lock);
             // A new folder left with only the mark goes too.
             if let (Err(RunErr::Failed(_)), Some(fresh)) = (&res, fresh) {
-                remove_empty_dirs(dir, &fresh, &[]);
+                remove_empty_dirs(dir, &fresh, &[], lock);
             }
             res.map_err(RunErr::message)?
         }
@@ -1416,11 +1378,12 @@ fn take_and_pair(
     b: (&FsPath, &Probe),
     points: usize,
     dir: &FsPath,
+    lock: &mut Option<RunLock>,
 ) -> Result<Vec<Point>, RunErr> {
     let io = |e: std::io::Error| format!("cannot write {}: {e}", dir.display());
     let created = claim(dir, COMPARE_MARK, None)?;
-    // Held until this function returns, after any take-back below.
-    let _lock = RunLock::take(dir)?;
+    // Held by the caller until it has taken back the folder it made.
+    *lock = Some(RunLock::take(dir)?);
     // Only the pairs the last run listed under its mark go.
     remove_listed(dir, &listed_pairs(dir)).map_err(io)?;
     std::fs::write(dir.join(COMPARE_MARK), MARK_TEXT).map_err(io)?;
@@ -1679,6 +1642,7 @@ mod tests {
         assert!(same_film("clip.mp4", "b/clip.mp4"));
         assert!(same_film("clip.mp4", "./clip.mp4"));
         assert!(!same_film("clip.mkv", "b/clip.mp4"));
+        assert!(same_film("CLIP.MP4", "a/clip.mp4"));
     }
 
     #[test]
@@ -1882,116 +1846,83 @@ mod tests {
     fn a_folder_being_written_is_held_until_its_run_ends() {
         let tmp = tempfile::tempdir().unwrap();
         let lock = RunLock::take(tmp.path()).unwrap();
-        let body = std::fs::read_to_string(tmp.path().join(RUN_LOCK)).unwrap();
-        assert_eq!(body.trim(), std::process::id().to_string());
+        // The pid, for a beta.17 daemon that reads it. Read through the
+        // holding handle: on Windows the lock keeps other handles from
+        // reading (a beta.17 daemon that cannot read it counts it live).
+        let mut body = String::new();
+        let mut held = lock.file.as_ref().unwrap();
+        std::io::Seek::rewind(&mut held).unwrap();
+        std::io::Read::read_to_string(&mut held, &mut body).unwrap();
+        assert_eq!(body, format!("{}\n", std::process::id()));
+        // A second run, in this same process too, is refused.
         let second = RunLock::take(tmp.path()).unwrap_err();
         let want = format!(
-            "another run is writing {d} (pid {pid}); wait for it to finish, or if no run is going, remove {lock}",
-            d = tmp.path().display(),
-            pid = std::process::id(),
-            lock = tmp.path().join(RUN_LOCK).display(),
+            "another run is writing {}; wait for it to finish",
+            tmp.path().display()
         );
         assert!(
             matches!(&second, RunErr::Busy(m) if *m == want),
             "{second:?}"
         );
         drop(lock);
+        let again = RunLock::take(tmp.path()).unwrap();
+        assert!(matches!(RunLock::take(tmp.path()), Err(RunErr::Busy(_))));
+        drop(again);
         assert!(!tmp.path().join(RUN_LOCK).exists());
         // A lock only, with no mark: the folder is still free to claim.
-        std::fs::write(tmp.path().join(RUN_LOCK), "x").unwrap();
+        std::fs::write(tmp.path().join(RUN_LOCK), "").unwrap();
         assert!(claim(tmp.path(), COMPARE_MARK, None).unwrap());
     }
 
+    #[cfg(unix)]
     #[test]
-    fn the_lock_of_a_run_that_was_killed_is_taken() {
-        let tmp = tempfile::tempdir().unwrap();
-        // A process that has ended: this test binary, listing its tests.
-        let mut gone = Command::new(std::env::current_exe().unwrap())
-            .arg("--list")
-            .stdout(Stdio::null())
-            .spawn()
-            .unwrap();
-        let pid = gone.id();
-        gone.wait().unwrap();
-        assert!(!pid_alive(pid));
-        assert!(pid_alive(std::process::id()));
-        std::fs::write(tmp.path().join(RUN_LOCK), format!("{pid}\n")).unwrap();
-        let lock = RunLock::take(tmp.path()).unwrap();
-        let body = std::fs::read_to_string(tmp.path().join(RUN_LOCK)).unwrap();
-        assert_eq!(body.trim(), std::process::id().to_string());
-        drop(lock);
-
-        // A lock with no process id in it is someone's half written one
-        // until it is old.
-        let path = tmp.path().join(RUN_LOCK);
-        std::fs::write(&path, "").unwrap();
-        assert!(matches!(RunLock::take(tmp.path()), Err(RunErr::Busy(_))));
-        let old = std::time::SystemTime::now() - UNREAD_LOCK_AGE * 2;
-        std::fs::File::options()
-            .write(true)
-            .open(&path)
-            .unwrap()
-            .set_modified(old)
-            .unwrap();
-        drop(RunLock::take(tmp.path()).unwrap());
-        assert!(!path.exists());
-    }
-
-    /// A process that has ended: this test binary, listing its tests.
-    fn ended_pid() -> u32 {
-        let mut gone = Command::new(std::env::current_exe().unwrap())
-            .arg("--list")
-            .stdout(Stdio::null())
-            .spawn()
-            .unwrap();
-        let pid = gone.id();
-        gone.wait().unwrap();
-        assert!(!pid_alive(pid));
-        pid
-    }
-
-    #[test]
-    fn two_runs_taking_one_orphaned_lock_never_remove_a_live_one() {
+    fn a_lock_file_removed_after_it_was_opened_is_not_the_folders() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join(RUN_LOCK);
-        std::fs::write(&path, format!("{}\n", ended_pid())).unwrap();
-        // R2 finds the lock orphaned, then R1 does too, clears it and takes
-        // the folder before R2 clears what it found.
-        assert!(lock_orphaned(&path));
-        let r1 = RunLock::take(tmp.path()).unwrap();
-        let r2 = clear_orphan(tmp.path()).unwrap_err();
-        let me = std::process::id();
-        assert!(
-            matches!(&r2, RunErr::Busy(m) if m.contains(&format!("(pid {me})"))),
-            "{r2:?}"
-        );
-        // R1's lock is still in place, and R2 left nothing behind.
-        let body = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(body.trim(), me.to_string());
-        let names: Vec<_> = std::fs::read_dir(tmp.path())
-            .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        assert_eq!(names, [RUN_LOCK]);
-        drop(r1);
-        assert!(!path.exists());
-
-        // The live lock R2 moved aside while another run took the free spot:
-        // that run keeps it, and R2 is told the folder is busy.
-        std::fs::write(&path, format!("{}\n", ended_pid())).unwrap();
-        let r1 = RunLock::take(tmp.path()).unwrap();
-        let aside = tmp.path().join(format!("{RUN_LOCK}-stale-test"));
-        std::fs::rename(&path, &aside).unwrap();
-        std::fs::write(&path, "R3\n").unwrap();
-        let r2 = restore_or_busy(tmp.path(), &aside).unwrap_err();
-        assert!(matches!(&r2, RunErr::Busy(_)), "{r2:?}");
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "R3\n");
-        assert!(!aside.exists());
-        std::mem::forget(r1);
-
-        // An orphaned lock gone before R2 moves it: R2 takes the folder.
+        // Opened by a second run just before the first removed it on release.
+        let late = std::fs::File::create(&path).unwrap();
+        assert!(still_named(&late, &path));
         std::fs::remove_file(&path).unwrap();
-        assert!(clear_orphan(tmp.path()).is_ok());
-        drop(RunLock::take(tmp.path()).unwrap());
+        assert!(!still_named(&late, &path));
+        // A third run made a new one there: the second locks that one.
+        std::fs::write(&path, "").unwrap();
+        assert!(!still_named(&late, &path));
+        assert!(RunLock::hold(path.clone(), late).unwrap().is_none());
+        assert!(path.is_file(), "the new one was removed");
+        let lock = RunLock::take(tmp.path()).unwrap();
+        assert!(matches!(RunLock::take(tmp.path()), Err(RunErr::Busy(_))));
+        drop(lock);
+    }
+
+    #[test]
+    fn the_lock_file_of_a_run_that_was_killed_is_taken() {
+        let tmp = tempfile::tempdir().unwrap();
+        // What a killed run (or an older Contour, with its pid) left: no
+        // run holds it.
+        std::fs::write(tmp.path().join(RUN_LOCK), "4242\n").unwrap();
+        let lock = RunLock::take(tmp.path()).unwrap();
+        assert!(matches!(RunLock::take(tmp.path()), Err(RunErr::Busy(_))));
+        drop(lock);
+        assert!(!tmp.path().join(RUN_LOCK).exists());
+    }
+
+    #[test]
+    fn files_an_older_lock_left_do_not_make_a_folder_taken() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(format!("{RUN_LOCK}-stale-1-0")), "1\n").unwrap();
+        std::fs::write(tmp.path().join(RUN_LOCK), "").unwrap();
+        assert!(claim(tmp.path(), REFERENCE_MARK, Some("clip.mp4")).unwrap());
+    }
+
+    #[test]
+    fn a_failed_run_takes_back_its_new_folders_with_its_lock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fresh = tmp.path().join("reference");
+        let dir = fresh.join("clip");
+        std::fs::create_dir_all(dir.join("scenes")).unwrap();
+        std::fs::create_dir_all(dir.join("grid")).unwrap();
+        let lock = RunLock::take(&dir).unwrap();
+        remove_empty_dirs(&dir, &fresh, &["scenes", "grid"], Some(lock));
+        assert!(!fresh.exists());
     }
 }

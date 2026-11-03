@@ -1069,4 +1069,18 @@ Reported by the UX review of 759581a.
   ends); a second run is refused with "another run is writing `<dir>`",
   and a lock whose process is gone is taken over. `compare --out` the
   same. Rust: `a_second_run_into_a_folder_being_written_is_refused`
-  (od-cli), `the_lock_of_a_run_that_was_killed_is_taken` (od-server).
+  (od-cli), `the_lock_file_of_a_run_that_was_killed_is_taken` (od-server).
+- **Follow-up (beta.18, review of PR #62)**: the pid lock could not tell
+  a live run from a dead one well enough: a live lock moved aside and put
+  back after its run ended kept the folder busy until the daemon (which
+  shares one pid for every run) restarted; a run's release removed
+  whatever lock was there, another run's too; and a `.od-running-stale-*`
+  left behind made the folder "already holds files". `.od-running` now
+  carries an exclusive OS file lock (`flock`, `LockFileEx`, via `fs4`) for
+  the run's life: the OS frees it however the run ends, two runs of one
+  daemon exclude each other, and the file is removed only by the run that
+  still holds it. A second run is told "another run is writing `<dir>`;
+  wait for it to finish". `claim` skips every name that starts with
+  `.od-running`. Rust: `a_folder_being_written_is_held_until_its_run_ends`,
+  `a_lock_file_removed_after_it_was_opened_is_not_the_folders`,
+  `files_an_older_lock_left_do_not_make_a_folder_taken` (od-server).
