@@ -14,9 +14,11 @@ All notable changes to Contour are recorded here. The format follows
   no longer wreck each other: the second cleared the frames the first was
   writing, which then finished with a `facts.json` that listed missing
   frames. A run now holds the folder (`.od-running`) while it writes, and
-  a second one stops with "another run is writing `<dir>`; wait for it to
-  finish". The same for `od media compare --out`. A run that was killed
-  does not keep the folder held.
+  a second one stops with "another run is writing `<dir>` (pid N); wait
+  for it to finish, or if no run is going, remove `<dir>/.od-running`".
+  The same for `od media compare --out`. A run that was killed does not
+  keep the folder held, and two runs that both find its lock at once no
+  longer remove the live lock one of them has just put there.
 - `od media compare --out` that fails in a folder it made no longer leaves
   that folder behind with only its `.od-compare` mark, like
   `od media reference`.
