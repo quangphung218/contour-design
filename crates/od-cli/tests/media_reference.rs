@@ -462,6 +462,25 @@ fn out_never_removes_or_replaces_files_it_did_not_write() {
 }
 
 #[test]
+fn two_films_with_one_name_each_get_their_own_folder() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    other_film(&ffmpeg, &tmp.path().join("clip.mkv"));
+    for v in ["clip.mp4", "clip.mkv", "clip.mp4"] {
+        let out = od(tmp.path(), &["media", "reference", v], &[]);
+        assert!(out.status.success(), "{}", text(&out));
+    }
+    let source = |dir: &str| {
+        let f = std::fs::read_to_string(tmp.path().join(dir).join("facts.json")).unwrap();
+        serde_json::from_str::<Value>(&f).unwrap()["source"].clone()
+    };
+    assert_eq!(source("reference/clip"), "clip.mp4");
+    assert_eq!(source("reference/clip-mkv"), "clip.mkv");
+    assert_reference(&tmp.path().join("reference/clip"));
+}
+
+#[test]
 fn a_rerun_keeps_frames_the_user_saved_under_a_frame_name() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let tmp = tempfile::tempdir().unwrap();

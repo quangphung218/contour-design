@@ -69,7 +69,7 @@ length is right on both. QA-037…041 each have a red test.
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
-| QA-040 | 🟠 | Two films with the same name (clip.mp4, clip.mkv) share `reference/clip/`: the second silently replaces the first's facts and frames | `reference.qa.mjs` REF-19 | Open |
+| QA-040 | 🟠 | Two films with the same name (clip.mp4, clip.mkv) share `reference/clip/`: the second silently replaces the first's facts and frames | `reference.qa.mjs` REF-19 | Fixed |
 | QA-041 | 🟠 | Running the reference again deletes the user's own `NNN.png` files in its `scenes/` and `grid/` (e.g. `scenes/010.png`) | `reference.qa.mjs` REF-21 | Fixed |
 | QA-037 | 🟡 | A file that is not a video (text renamed .mp4, PDF, PNG) is refused with ffprobe's internals ("Invalid data found when processing input / moov atom not found"), or for an image with "copy it into an MP4 first (ffmpeg -i …)" | `reference.qa.mjs` REF-14, REF-15, REF-16 | Open |
 | QA-038 | 🟡 | A YouTube link without `https://` (`youtube.com/watch?v=…`, `youtu.be/…`) is read as a project path: "cannot read …/projects/<id>/youtube.com/watch?v=…: No such file or directory (os error 2)" | `reference.qa.mjs` REF-13 | Open |
@@ -980,6 +980,12 @@ Reported by the UX review of 759581a.
   and `claim` accepts any folder with `.od-reference`. Before reusing a
   marked folder, read its `facts.json` `source`; when it names another
   file, pick `reference/<stem>-<ext>` (or `-2`) instead.
+- **Fixed**: the default folder is `reference/<stem>` unless its
+  `facts.json` names another source; then `reference/<stem>-<ext>`, then
+  `-2`, `-3`. Not covered: the same file name in two folders (`a/clip.mp4`,
+  `b/clip.mp4`) still shares one folder, since `source` keeps only the
+  name. Rust: `default_out_never_takes_the_folder_of_another_film`
+  (od-server), `two_films_with_one_name_each_get_their_own_folder` (od-cli).
 
 ## QA-041 🟠 Running the reference again deletes the user's NNN.png files
 

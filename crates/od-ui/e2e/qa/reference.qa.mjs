@@ -337,7 +337,7 @@ test('REF-19', 'Two films with the same name (clip.mp4, clip.mkv) in one brief e
   const sources = [];
   for (const dir of dirs) sources.push((await facts(d, id, dir)).source);
   assert.deepEqual(sources.sort(), ['clip.mkv', 'clip.mp4']);
-}, { knownBug: 'QA-040' });
+});
 
 test('REF-20', 'A Vietnamese file name with spaces gets a readable reference folder', async ({ d, newPage }) => {
   const { id, text } = await motion(newPage, d, ['phim mẫu 01.mp4'], 'Dựng lại phim này qa-ref');

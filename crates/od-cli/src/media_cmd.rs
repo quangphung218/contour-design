@@ -398,7 +398,9 @@ fn run_reference(client: &Client, a: ReferenceArgs, json_out: bool) -> anyhow::R
         }
         None => {
             let video = PathBuf::from(&a.video);
-            let out = a.out.unwrap_or_else(|| reference::default_out(&video));
+            let out = a
+                .out
+                .unwrap_or_else(|| reference::default_out(&video, Path::new(".")));
             let tools = local(reference::find_tools())?;
             let facts = local(reference::build(&tools, &video, Path::new(&out)))?;
             (out, serde_json::to_value(facts)?)

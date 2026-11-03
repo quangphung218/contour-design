@@ -594,25 +594,63 @@ fn contact_sheet(tools: &Tools, out: &FsPath, n: usize) -> Result<(), String> {
     run(&mut cmd, "ffmpeg contact sheet").map(|_| ())
 }
 
-/// The default reference folder of `video`: `reference/<file stem>`.
+/// The default reference folder of `video`, relative to `base` (the
+/// project, or the working directory): `reference/<file stem>`, unless
+/// that folder already holds the reference of another file (its
+/// `facts.json` names another source, e.g. `clip.mkv` beside `clip.mp4`);
+/// then `reference/<stem>-<extension>`, then `…-2`, `…-3`.
 #[must_use]
-pub fn default_out(video: &FsPath) -> String {
-    let stem = video
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
+pub fn default_out(video: &FsPath, base: &FsPath) -> String {
+    let safe = |s: Option<&std::ffi::OsStr>| {
+        let s: String = s
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default()
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        s.trim_matches(['-', '.']).to_owned()
+    };
+    let stem = safe(video.file_stem());
+    let stem = if stem.is_empty() {
+        "video".to_owned()
+    } else {
+        stem
+    };
+    let source = video
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let safe: String = stem
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || matches!(c, '-' | '_' | '.') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let safe = safe.trim_matches(['-', '.']);
-    format!("reference/{}", if safe.is_empty() { "video" } else { safe })
+    // Free for this film: no reference there yet, or one of the same file.
+    let free = |dir: &str| {
+        std::fs::read(base.join(dir).join("facts.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+            .and_then(|v| v["source"].as_str().map(str::to_owned))
+            .is_none_or(|s| s == source)
+    };
+    let first = format!("reference/{stem}");
+    if free(&first) {
+        return first;
+    }
+    let ext = safe(video.extension());
+    let named = if ext.is_empty() {
+        first
+    } else {
+        format!("{first}-{ext}")
+    };
+    if free(&named) {
+        return named;
+    }
+    (2..100)
+        .map(|n| format!("{named}-{n}"))
+        .find(|d| free(d))
+        .unwrap_or(named)
 }
 
 // ---------------------------------------------------------------------------
@@ -874,7 +912,7 @@ pub async fn reference(
         .as_deref()
         .map(str::trim)
         .filter(|o| !o.is_empty())
-        .map_or_else(|| default_out(&video), str::to_owned);
+        .map_or_else(|| default_out(&video, &root), str::to_owned);
     let out = validate_project_path(&out).map_err(|_| {
         ApiErr::bad_request(format!(
             "--out must be a folder inside the project, got {out:?}"
@@ -1011,10 +1049,39 @@ mod tests {
 
     #[test]
     fn default_out_is_a_safe_project_folder() {
+        let none = FsPath::new("/no/such/project");
         assert_eq!(
-            default_out(FsPath::new("/x/My Ref (1).mp4")),
+            default_out(FsPath::new("/x/My Ref (1).mp4"), none),
             "reference/My-Ref--1"
         );
-        assert_eq!(default_out(FsPath::new("clip.mov")), "reference/clip");
+        assert_eq!(default_out(FsPath::new("clip.mov"), none), "reference/clip");
+    }
+
+    #[test]
+    fn default_out_never_takes_the_folder_of_another_film() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path();
+        let made = |dir: &str, source: &str| {
+            std::fs::create_dir_all(base.join(dir)).unwrap();
+            std::fs::write(
+                base.join(dir).join("facts.json"),
+                json!({ "source": source }).to_string(),
+            )
+            .unwrap();
+        };
+        let out = |v: &str| default_out(FsPath::new(v), base);
+        assert_eq!(out("clip.mp4"), "reference/clip");
+        made("reference/clip", "clip.mp4");
+        // The same film again: its own folder.
+        assert_eq!(out("clip.mp4"), "reference/clip");
+        // Same name, another file: a folder of its own.
+        assert_eq!(out("clip.mkv"), "reference/clip-mkv");
+        made("reference/clip-mkv", "clip.mkv");
+        assert_eq!(out("clip.mkv"), "reference/clip-mkv");
+        made("reference/clip-mkv", "other.mkv");
+        assert_eq!(out("clip.mkv"), "reference/clip-mkv-2");
+        // A folder with no facts yet (a run that failed) is still free.
+        std::fs::create_dir_all(base.join("reference/take")).unwrap();
+        assert_eq!(out("take.mov"), "reference/take");
     }
 }
