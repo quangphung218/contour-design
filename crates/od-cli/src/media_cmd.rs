@@ -414,12 +414,7 @@ fn run_reference(client: &Client, a: ReferenceArgs, json_out: bool) -> anyhow::R
             let tools = local(reference::find_tools())?;
             let (out, facts) = match a.out {
                 Some(out) => {
-                    let facts = local(reference::build(
-                        &tools,
-                        &video,
-                        Path::new(""),
-                        Path::new(&out),
-                    ))?;
+                    let facts = local(reference::build(&tools, &video, Path::new(&out)))?;
                     (out, facts)
                 }
                 None => local(reference::build_default(&tools, &video, Path::new("")))?,

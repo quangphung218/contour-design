@@ -111,7 +111,7 @@ fn link_refusal(raw: &str) -> String {
 /// both) stay file names: a missing `clip.mov` is told as missing.
 const WEB_TLDS: &[&str] = &[
     "com", "net", "org", "io", "co", "tv", "be", "me", "ly", "gl", "app", "dev", "info", "vn",
-    "us", "uk", "de", "fr", "jp", "ru", "cn", "in", "br", "ai", "to", "so", "xyz",
+    "us", "uk", "de", "fr", "jp", "ru", "cn", "br", "to", "xyz",
 ];
 
 /// `www.<…>`, `<name>.<tld>` followed by `/` or `?` (`youtu.be/x`,
@@ -559,9 +559,14 @@ fn claim(dir: &FsPath, mark: &str, source: Option<&str>) -> Result<bool, RunErr>
                 source.and_then(|want| taken_for(dir).filter(|have| !same_film(have, want)));
             if let Some(have) = other {
                 return Err(RunErr::Taken(format!(
-                    "{} holds the reference of {}; Contour never replaces it. Choose a new folder with --out.",
+                    "{} holds the reference of {}{}; Contour never replaces it. Choose a new folder with --out.",
                     dir.display(),
-                    have.strip_prefix("./").unwrap_or(&have)
+                    have.rsplit('/').next().unwrap_or(&have),
+                    if have.contains('/') {
+                        format!(" (at {have} from that folder)")
+                    } else {
+                        String::new()
+                    }
                 )));
             }
             return Ok(false);
@@ -882,61 +887,100 @@ fn remove_listed(dir: &FsPath, names: &[String]) -> std::io::Result<()> {
 }
 
 /// Writes the reference folder of `video` into `out` and returns its facts.
-/// `base` is the project (or the working directory): the film is known in
-/// the folder's mark by its path from there.
 ///
 /// # Errors
 /// A link, a missing or too large or too long file, a folder that is not
 /// this command's, ffmpeg missing or failing, I/O.
-pub fn build(tools: &Tools, video: &FsPath, base: &FsPath, out: &FsPath) -> Result<Facts, String> {
+pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, String> {
     refuse_link(&video.to_string_lossy())?;
     let (size, probe) = check(tools, video)?;
-    let film = film_key(video, base);
+    let film = film_key(video, out);
     write_reference(tools, video, &film, out, size, probe).map_err(RunErr::message)
 }
 
-/// How a reference mark names the film at `video`, read from `base` (the
-/// project, or `""` for the working directory): [`film_path`] of both as
-/// the disk knows them, so `a/clip.mp4`, its absolute path, `a/../a/clip.mp4`
-/// and `A/Clip.MP4` on a disk that ignores case are one film.
-fn film_key(video: &FsPath, base: &FsPath) -> String {
-    let base = if base.as_os_str().is_empty() {
-        std::env::current_dir().unwrap_or_default()
-    } else {
-        base.to_path_buf()
-    };
-    let real = |p: &FsPath| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    film_path(&real(video), &real(&base))
+/// How the mark in `out` names the film at `video`: [`film_path`] of both
+/// as the disk knows them. The same however either is written (relative to
+/// any working directory, absolute, with `..`, `A/CLIP.MP4` on a disk that
+/// ignores case), from the CLI or the daemon, and after the project moves.
+fn film_key(video: &FsPath, out: &FsPath) -> String {
+    film_path(&real_path(video), &real_path(out))
 }
 
-/// `video` as a mark names it: its path from `base` with `/` between the
-/// parts, always with one `/` (`./clip.mp4` for a file at the top), so it
-/// never reads as a bare name from a mark of beta.17 or older. A film
-/// outside `base` keeps its own (absolute) path.
-fn film_path(video: &FsPath, base: &FsPath) -> String {
+/// `path` absolute, as the disk knows it: canonical up to the last part
+/// that exists (a folder a run is about to make does not yet).
+fn real_path(path: &FsPath) -> PathBuf {
     use std::path::Component;
-    let rel = video.strip_prefix(base).unwrap_or(video);
-    let mut s = String::new();
-    for c in rel.components() {
-        match c {
-            Component::CurDir => {}
-            // `\\?\C:` (from canonicalize on Windows) reads as `C:`.
-            Component::Prefix(p) => match p.kind() {
-                std::path::Prefix::VerbatimDisk(d) | std::path::Prefix::Disk(d) => {
-                    s.push(char::from(d.to_ascii_uppercase()));
-                    s.push(':');
+    let abs = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+    let mut head = abs.as_path();
+    let mut tail = Vec::new();
+    loop {
+        if let Ok(real) = std::fs::canonicalize(head) {
+            let mut real = real;
+            for c in tail.iter().rev() {
+                match c {
+                    Component::ParentDir => {
+                        real.pop();
+                    }
+                    Component::Normal(n) => real.push(n),
+                    _ => {}
                 }
-                _ => s.push_str(&p.as_os_str().to_string_lossy()),
-            },
-            Component::RootDir => s.push('/'),
-            Component::ParentDir | Component::Normal(_) => {
-                if !s.is_empty() && !s.ends_with('/') {
-                    s.push('/');
+            }
+            return real;
+        }
+        let (Some(parent), Some(last)) = (head.parent(), head.components().next_back()) else {
+            return abs;
+        };
+        tail.push(last);
+        head = parent;
+    }
+}
+
+/// The path from the folder `out` to `video` (both absolute and
+/// canonical), `..` where it climbs, `/` between the parts: in
+/// `reference/clip`, `../../a/clip.mp4`. It always holds a `/`
+/// (`./clip.mp4` beside the mark), so it never reads as a bare name from a
+/// mark of beta.17 or older. On another drive (Windows): `video` itself.
+fn film_path(video: &FsPath, out: &FsPath) -> String {
+    use std::path::Component;
+    let v: Vec<Component> = video.components().collect();
+    let o: Vec<Component> = out.components().collect();
+    let parts: Vec<String> = if v.first() == o.first() {
+        let same = v.iter().zip(&o).take_while(|(a, b)| a == b).count();
+        std::iter::repeat_n("..".to_owned(), o.len() - same)
+            .chain(
+                v[same..]
+                    .iter()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned()),
+            )
+            .collect()
+    } else {
+        let mut s = String::new();
+        for c in &v {
+            match c {
+                // `\\?\C:` (from canonicalize on Windows) reads as `C:`.
+                Component::Prefix(p) => match p.kind() {
+                    std::path::Prefix::VerbatimDisk(d) | std::path::Prefix::Disk(d) => {
+                        s.push(char::from(d.to_ascii_uppercase()));
+                        s.push(':');
+                    }
+                    _ => s.push_str(&p.as_os_str().to_string_lossy()),
+                },
+                Component::RootDir => s.push('/'),
+                _ => {
+                    if !s.ends_with('/') {
+                        s.push('/');
+                    }
+                    s.push_str(&c.as_os_str().to_string_lossy());
                 }
-                s.push_str(&c.as_os_str().to_string_lossy());
             }
         }
-    }
+        return s;
+    };
+    let s = parts.join("/");
     if s.contains('/') { s } else { format!("./{s}") }
 }
 
@@ -966,7 +1010,6 @@ pub fn build_default(
     refuse_link(&video.to_string_lossy())?;
     let (size, probe) = check(tools, video)?;
     let source = shown_name(video);
-    let film = film_key(video, base);
     // Named as the disk stores it: `A/CLIP.MP4` on a disk that ignores case
     // is `clip.mp4`, whose folder is `reference/clip`. A link keeps its name.
     let stored = std::fs::canonicalize(video)
@@ -980,6 +1023,7 @@ pub fn build_default(
         .map_or_else(|| video.to_path_buf(), |n| video.with_file_name(n));
     for dir in default_dirs(&stored) {
         let out = base.join(&dir);
+        let film = film_key(video, &out);
         if taken_for(&out).is_some_and(|have| !same_film(&have, &film)) {
             continue;
         }
@@ -1492,7 +1536,7 @@ pub async fn reference(
     let (out, facts) = tokio::task::spawn_blocking(move || {
         let tools = find_tools()?;
         match out {
-            Some(out) => build(&tools, &video, &base, &base.join(&out)).map(|f| (out, f)),
+            Some(out) => build(&tools, &video, &base.join(&out)).map(|f| (out, f)),
             None => build_default(&tools, &video, &base),
         }
     })
@@ -1568,6 +1612,9 @@ mod tests {
             "clip.webm",
             "clip.mkv",
             "notes.txt",
+            "logo.ai",
+            "config.in",
+            "libx.so",
         ] {
             assert!(refuse_bare_link(p, missing).is_ok(), "{p}");
         }
@@ -1583,31 +1630,48 @@ mod tests {
         let base = tmp.path();
         std::fs::create_dir_all(base.join("a")).unwrap();
         std::fs::write(base.join("a/clip.mp4"), b"x").unwrap();
-        let key = film_key(&base.join("a/clip.mp4"), base);
-        assert_eq!(key, "a/clip.mp4");
-        assert_eq!(film_key(&base.join("a/../a/./clip.mp4"), base), key);
+        // The folder need not exist yet: a run makes it.
+        let out = base.join("reference/clip");
+        let key = film_key(&base.join("a/clip.mp4"), &out);
+        assert_eq!(key, "../../a/clip.mp4");
+        assert_eq!(film_key(&base.join("a/../a/./clip.mp4"), &out), key);
+        assert_eq!(
+            film_key(
+                &base.join("a/clip.mp4"),
+                &base.join("a/../reference/./clip")
+            ),
+            key
+        );
         // A disk that ignores case: the name as it is stored.
         if base.join("A/CLIP.MP4").exists() {
-            assert_eq!(film_key(&base.join("A/CLIP.MP4"), base), key);
+            assert_eq!(film_key(&base.join("A/CLIP.MP4"), &out), key);
         }
-        // Another base that is the same folder (a symlink, or not canonical).
-        let other = base.join("a/..");
-        assert_eq!(film_key(&base.join("a/clip.mp4"), &other), key);
+        std::fs::create_dir_all(&out).unwrap();
+        assert_eq!(film_key(&base.join("a/clip.mp4"), &out), key);
+        // The project moved: the key stays.
+        let moved = base.join("moved");
+        std::fs::create_dir(&moved).unwrap();
+        std::fs::rename(base.join("a"), moved.join("a")).unwrap();
+        std::fs::rename(base.join("reference"), moved.join("reference")).unwrap();
+        assert_eq!(
+            film_key(&moved.join("a/clip.mp4"), &moved.join("reference/clip")),
+            key
+        );
     }
 
     #[test]
-    fn a_film_is_known_by_its_path_in_the_project() {
-        let base = FsPath::new("/p");
-        assert_eq!(film_path(FsPath::new("/p/a/clip.mp4"), base), "a/clip.mp4");
-        assert_eq!(film_path(FsPath::new("/p/clip.mp4"), base), "./clip.mp4");
-        assert_eq!(film_path(FsPath::new("/q/clip.mp4"), base), "/q/clip.mp4");
-        let cwd = FsPath::new("");
-        assert_eq!(film_path(FsPath::new("./a/./clip.mp4"), cwd), "a/clip.mp4");
-        assert_eq!(film_path(FsPath::new("clip.mp4"), cwd), "./clip.mp4");
+    fn a_film_is_known_by_its_path_from_the_folder() {
+        let out = FsPath::new("/p/reference/clip");
         assert_eq!(
-            film_path(FsPath::new("../x/clip.mp4"), cwd),
-            "../x/clip.mp4"
+            film_path(FsPath::new("/p/a/clip.mp4"), out),
+            "../../a/clip.mp4"
         );
+        assert_eq!(film_path(FsPath::new("/p/clip.mp4"), out), "../../clip.mp4");
+        assert_eq!(
+            film_path(FsPath::new("/p/reference/clip/clip.mp4"), out),
+            "./clip.mp4"
+        );
+        assert_eq!(film_path(FsPath::new("/q.mp4"), out), "../../../q.mp4");
         // Paths are told apart; a name-only mark (beta.17) by the name.
         assert!(same_film("a/clip.mp4", "a/clip.mp4"));
         assert!(!same_film("a/clip.mp4", "b/clip.mp4"));

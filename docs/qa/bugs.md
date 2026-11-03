@@ -963,8 +963,8 @@ Reported by the UX review of 759581a.
 - **Fixed**: `refuse_bare_link` refuses, with the same words as a
   `https://` link, a missing path that starts with `www.` or with
   `<name>.<tld>` followed by `/` or `?`, or a bare host with a web ending
-  (`vimeo.com`, `youtube.com`, `youtu.be`; not `clip.mov` or `clip.webm`,
-  which stay missing files); the route checks it after joining
+  (`vimeo.com`, `youtube.com`, `youtu.be`; not `clip.mov`, `clip.webm`,
+  `logo.ai` or `config.in`, which stay missing files); the route checks it after joining
   the project root, the CLI before running locally (`reference`,
   `compare`). A real folder of that name is still read. Rust:
   `links_without_a_scheme_are_refused_when_no_such_file_exists`
@@ -1016,15 +1016,20 @@ Reported by the UX review of 759581a.
   when the folder is taken (older marks: `facts.json` `source`), so of two
   runs at once only one takes a folder and the other moves on; `--out`
   into another film's folder is refused. The mark names the film by its
-  path in the project (`source: a/clip.mp4`, `./clip.mp4` at the top), so
-  the same file name in two folders (`a/clip.mp4`, `b/clip.mp4`) gets
-  `reference/clip` and `reference/clip-mp4`; a mark of beta.17 or older
-  (name only) still matches by the name. The path is read as the disk
-  knows it, so one film given as `a/clip.mp4`, by its absolute path, as
-  `a/../a/clip.mp4` or (on a disk that ignores case) `A/CLIP.MP4` keeps
-  one folder. Rust: `a_film_is_known_by_its_path_in_the_project`,
+  path from that folder, both as the disk knows them (`source:
+  ../../a/clip.mp4` in `reference/clip`; `./clip.mp4` beside the mark;
+  the absolute path on another Windows drive), so the same file name in two
+  folders (`a/clip.mp4`, `b/clip.mp4`) gets `reference/clip` and
+  `reference/clip-mp4`, and one film keeps one folder however it is given
+  (relative to any working folder, absolute, `a/../a/clip.mp4`,
+  `A/CLIP.MP4` on a disk that ignores case), from the CLI or the daemon,
+  and after the project moves. A mark of beta.17 or older names only the
+  file: its folder goes to the first film of that name to run after the
+  update, in whichever folder that film is, and is that film's from then
+  on. Rust: `a_film_is_known_by_its_path_from_the_folder`,
   `one_film_has_one_key_however_its_path_is_written` (od-server),
   `one_film_named_three_ways_keeps_one_folder`,
+  `one_film_from_another_working_folder_keeps_its_folder`,
   `two_films_with_one_name_each_get_their_own_folder`,
   `one_file_name_in_two_folders_gets_two_reference_folders`,
   `a_folder_from_before_paths_were_kept_is_still_its_films` (od-cli).
