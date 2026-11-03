@@ -17,6 +17,24 @@ pub struct Client {
     token: Option<String>,
 }
 
+/// A refusal the daemon explained: shown as `400 BAD_REQUEST: <message>`;
+/// a command whose refusals are meant for the user prints `message` alone.
+#[derive(Debug)]
+pub struct ApiError {
+    pub status: u16,
+    /// The wire form (`BAD_REQUEST`).
+    pub code: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}: {}", self.status, self.code, self.message)
+    }
+}
+
+impl std::error::Error for ApiError {}
+
 /// One SSE event of a run stream.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StreamEvent {
@@ -90,11 +108,12 @@ impl Client {
                     .ok()
                     .and_then(|v| v.as_str().map(str::to_owned))
                     .unwrap_or_default();
-                Err(anyhow!(
-                    "{} {code}: {}",
-                    status.as_u16(),
-                    body.error.message
-                ))
+                Err(ApiError {
+                    status: status.as_u16(),
+                    code,
+                    message: body.error.message,
+                }
+                .into())
             }
             Err(_) => Err(anyhow!("{}: {}", status, text.trim())),
         }

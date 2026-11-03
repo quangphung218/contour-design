@@ -106,8 +106,17 @@ fn link_refusal(raw: &str) -> String {
     )
 }
 
-/// `www.<…>`, or `<name>.<tld>` followed by `/` or `?` (`youtu.be/x`,
-/// `vimeo.com/1`): a web address, not a project path.
+/// Endings of a bare host (`vimeo.com`, `youtu.be`) read as a web address
+/// with nothing after it. Others (`.mov`, `.mkv`, `.webm` are endings of
+/// both) stay file names: a missing `clip.mov` is told as missing.
+const WEB_TLDS: &[&str] = &[
+    "com", "net", "org", "io", "co", "tv", "be", "me", "ly", "gl", "app", "dev", "info", "vn",
+    "us", "uk", "de", "fr", "jp", "ru", "cn", "in", "br", "ai", "to", "so", "xyz",
+];
+
+/// `www.<…>`, `<name>.<tld>` followed by `/` or `?` (`youtu.be/x`,
+/// `vimeo.com/1`), or a bare host with a web ending (`vimeo.com`,
+/// `youtube.com`): a web address, not a project path.
 fn looks_like_link(raw: &str) -> bool {
     let raw = raw.trim();
     let end = raw.find(['/', '?', '#']).unwrap_or(raw.len());
@@ -120,7 +129,10 @@ fn looks_like_link(raw: &str) -> bool {
         && labels.last().is_some_and(|t| {
             (2..=24).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_alphabetic())
         });
-    is_host && (host.starts_with("www.") || end < raw.len())
+    is_host
+        && (host.starts_with("www.")
+            || end < raw.len()
+            || labels.last().is_some_and(|t| WEB_TLDS.contains(t)))
 }
 
 /// What ffprobe says about a film.
@@ -513,8 +525,10 @@ fn mark_head(source: Option<&str>) -> String {
     }
 }
 
-/// The film whose reference `dir` holds: the source its mark names, else
-/// (a mark from before it named one) the source in its `facts.json`.
+/// The film whose reference `dir` holds: the source its mark names (a
+/// [`film_path`], or only the file name in a mark of beta.17 or older),
+/// else (a mark from before it named one) the name in its `facts.json`.
+/// Compare it with [`same_film`].
 fn taken_for(dir: &FsPath) -> Option<String> {
     let mark = std::fs::read_to_string(dir.join(REFERENCE_MARK)).ok()?;
     mark.lines()
@@ -541,11 +555,13 @@ fn claim(dir: &FsPath, mark: &str, source: Option<&str>) -> Result<bool, RunErr>
     let io = |e: std::io::Error| RunErr::Failed(format!("cannot write {}: {e}", dir.display()));
     for _ in 0..3 {
         if dir.join(mark).is_file() {
-            let other = source.and_then(|want| taken_for(dir).filter(|have| have != want));
+            let other =
+                source.and_then(|want| taken_for(dir).filter(|have| !same_film(have, want)));
             if let Some(have) = other {
                 return Err(RunErr::Taken(format!(
-                    "{} holds the reference of {have}; Contour never replaces it. Choose a new folder with --out.",
-                    dir.display()
+                    "{} holds the reference of {}; Contour never replaces it. Choose a new folder with --out.",
+                    dir.display(),
+                    have.strip_prefix("./").unwrap_or(&have)
                 )));
             }
             return Ok(false);
@@ -817,14 +833,52 @@ fn remove_listed(dir: &FsPath, names: &[String]) -> std::io::Result<()> {
 }
 
 /// Writes the reference folder of `video` into `out` and returns its facts.
+/// `base` is the project (or the working directory): the film is known in
+/// the folder's mark by its path from there.
 ///
 /// # Errors
 /// A link, a missing or too large or too long file, a folder that is not
 /// this command's, ffmpeg missing or failing, I/O.
-pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, String> {
+pub fn build(tools: &Tools, video: &FsPath, base: &FsPath, out: &FsPath) -> Result<Facts, String> {
     refuse_link(&video.to_string_lossy())?;
     let (size, probe) = check(tools, video)?;
-    write_reference(tools, video, out, size, probe).map_err(RunErr::message)
+    let film = film_path(video, base);
+    write_reference(tools, video, &film, out, size, probe).map_err(RunErr::message)
+}
+
+/// How a reference mark names `video`: its path from `base` with `/`
+/// between the parts, always with one `/` (`./clip.mp4` for a file at the
+/// top), so it never reads as a bare name from a mark of beta.17 or older.
+/// A film outside `base` keeps its own (absolute) path.
+fn film_path(video: &FsPath, base: &FsPath) -> String {
+    use std::path::Component;
+    let rel = video.strip_prefix(base).unwrap_or(video);
+    let mut s = String::new();
+    for c in rel.components() {
+        match c {
+            Component::CurDir => {}
+            Component::Prefix(p) => s.push_str(&p.as_os_str().to_string_lossy()),
+            Component::RootDir => s.push('/'),
+            Component::ParentDir | Component::Normal(_) => {
+                if !s.is_empty() && !s.ends_with('/') {
+                    s.push('/');
+                }
+                s.push_str(&c.as_os_str().to_string_lossy());
+            }
+        }
+    }
+    if s.contains('/') { s } else { format!("./{s}") }
+}
+
+/// Whether a folder whose mark names `have` holds the reference of the
+/// film at `want` (a [`film_path`]). A mark of beta.17 or older names the
+/// film without its folders (no `/`): then the file names are compared.
+fn same_film(have: &str, want: &str) -> bool {
+    if have.contains('/') {
+        have == want
+    } else {
+        want.rsplit('/').next() == Some(have)
+    }
 }
 
 /// [`build`] into the default folder of `video` under `base` (the project,
@@ -842,12 +896,13 @@ pub fn build_default(
     refuse_link(&video.to_string_lossy())?;
     let (size, probe) = check(tools, video)?;
     let source = shown_name(video);
+    let film = film_path(video, base);
     for dir in default_dirs(video) {
         let out = base.join(&dir);
-        if taken_for(&out).is_some_and(|s| s != source) {
+        if taken_for(&out).is_some_and(|have| !same_film(&have, &film)) {
             continue;
         }
-        match write_reference(tools, video, &out, size, probe.clone()) {
+        match write_reference(tools, video, &film, &out, size, probe.clone()) {
             Ok(facts) => return Ok((dir, facts)),
             // Someone's files, or another film's reference (maybe one
             // taken a moment ago by a run at the same time): the next.
@@ -904,12 +959,13 @@ fn default_dirs(video: &FsPath) -> Vec<String> {
 fn write_reference(
     tools: &Tools,
     video: &FsPath,
+    film: &str,
     out: &FsPath,
     size: u64,
     probe: Probe,
 ) -> Result<Facts, RunErr> {
     let fresh = fresh_root(out);
-    let res = take_and_fill(tools, video, out, size, probe);
+    let res = take_and_fill(tools, video, film, out, size, probe);
     if let (Err(RunErr::Failed(_)), Some(fresh)) = (&res, fresh) {
         remove_empty_dirs(out, &fresh, &["scenes", "grid"]);
     }
@@ -938,17 +994,18 @@ fn remove_empty_dirs(dir: &FsPath, fresh: &FsPath, subs: &[&str]) {
     }
 }
 
-/// Takes `out`, clears the last run's files and writes the new ones.
+/// Takes `out` for the film at `film` (a [`film_path`]), clears the last
+/// run's files and writes the new ones.
 fn take_and_fill(
     tools: &Tools,
     video: &FsPath,
+    film: &str,
     out: &FsPath,
     size: u64,
     probe: Probe,
 ) -> Result<Facts, RunErr> {
     let io = |e: std::io::Error| format!("cannot write {}: {e}", out.display());
-    let source = shown_name(video);
-    let created = claim(out, REFERENCE_MARK, Some(&source))?;
+    let created = claim(out, REFERENCE_MARK, Some(film))?;
     // Held until this function returns, after any take-back below.
     let _lock = RunLock::take(out)?;
     // Only what the last run wrote goes: the frames its facts.json lists,
@@ -959,7 +1016,7 @@ fn take_and_fill(
     old.extend(["facts.json", "contact-sheet.png", "audio.m4a"].map(str::to_owned));
     remove_listed(out, &old).map_err(io)?;
     if !created {
-        std::fs::write(out.join(REFERENCE_MARK), mark_head(Some(&source))).map_err(io)?;
+        std::fs::write(out.join(REFERENCE_MARK), mark_head(Some(film))).map_err(io)?;
     }
     for sub in ["scenes", "grid"] {
         std::fs::create_dir_all(out.join(sub)).map_err(io)?;
@@ -973,7 +1030,7 @@ fn take_and_fill(
         let _ = if created {
             std::fs::remove_file(out.join(REFERENCE_MARK))
         } else {
-            std::fs::write(out.join(REFERENCE_MARK), mark_head(Some(&source)))
+            std::fs::write(out.join(REFERENCE_MARK), mark_head(Some(film)))
         };
     }
     Ok(res?)
@@ -1354,7 +1411,7 @@ pub async fn reference(
     let (out, facts) = tokio::task::spawn_blocking(move || {
         let tools = find_tools()?;
         match out {
-            Some(out) => build(&tools, &video, &base.join(&out)).map(|f| (out, f)),
+            Some(out) => build(&tools, &video, &base, &base.join(&out)).map(|f| (out, f)),
             None => build_default(&tools, &video, &base),
         }
     })
@@ -1410,6 +1467,10 @@ mod tests {
             "vimeo.com/123",
             "www.example.org",
             " m.tiktok.com/@a/video/1 ",
+            "vimeo.com",
+            "youtube.com",
+            "YouTu.be",
+            " tiktok.com ",
         ] {
             let e = refuse_bare_link(l, missing).unwrap_err();
             assert!(e.contains("is a link") && e.contains("attach"), "{e}");
@@ -1420,12 +1481,41 @@ mod tests {
             "reference/clip.v2/a.mp4",
             "../a.mp4",
             "/abs/youtube.com/x",
+            // A missing film is told as missing, even with an ending that
+            // is also a web one.
+            "clip.mov",
+            "clip.webm",
+            "clip.mkv",
+            "notes.txt",
         ] {
             assert!(refuse_bare_link(p, missing).is_ok(), "{p}");
         }
         // A real folder of that name is the user's: it is read.
         let tmp = tempfile::tempdir().unwrap();
         assert!(refuse_bare_link("youtu.be/x", tmp.path()).is_ok());
+        assert!(refuse_bare_link("vimeo.com", tmp.path()).is_ok());
+    }
+
+    #[test]
+    fn a_film_is_known_by_its_path_in_the_project() {
+        let base = FsPath::new("/p");
+        assert_eq!(film_path(FsPath::new("/p/a/clip.mp4"), base), "a/clip.mp4");
+        assert_eq!(film_path(FsPath::new("/p/clip.mp4"), base), "./clip.mp4");
+        assert_eq!(film_path(FsPath::new("/q/clip.mp4"), base), "/q/clip.mp4");
+        let cwd = FsPath::new("");
+        assert_eq!(film_path(FsPath::new("./a/./clip.mp4"), cwd), "a/clip.mp4");
+        assert_eq!(film_path(FsPath::new("clip.mp4"), cwd), "./clip.mp4");
+        assert_eq!(
+            film_path(FsPath::new("../x/clip.mp4"), cwd),
+            "../x/clip.mp4"
+        );
+        // Paths are told apart; a name-only mark (beta.17) by the name.
+        assert!(same_film("a/clip.mp4", "a/clip.mp4"));
+        assert!(!same_film("a/clip.mp4", "b/clip.mp4"));
+        assert!(!same_film("./clip.mp4", "a/clip.mp4"));
+        assert!(same_film("clip.mp4", "b/clip.mp4"));
+        assert!(same_film("clip.mp4", "./clip.mp4"));
+        assert!(!same_film("clip.mkv", "b/clip.mp4"));
     }
 
     #[test]

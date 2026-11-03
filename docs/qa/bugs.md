@@ -65,7 +65,11 @@ names (`od media reference --project`, `od media compare --out`) on the
 real daemon and ffmpeg 9.0.2. The same inputs went through the installed
 `Contour.app` 0.2.0-beta.16 binary (`od-desktop media reference` /
 `compare`) by hand: QA-037…041 reproduce there too; the mkv picture
-length is right on both. QA-037…041 each have a red test.
+length is right on both. QA-037…041 each have a red test. REF-11 failed
+about one run in five on its setup, not on Contour: the daemon may close
+the connection while the test uploads the 210 MB file, and `fetch` threw
+instead of returning a refusal; the test now copies the file in either
+way.
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
@@ -927,10 +931,12 @@ Reported by the UX review of 759581a.
   Contour can read. Attach the film itself (MP4, MOV, MKV or WebM)…"; an
   image (`*_pipe`, `image2` format) is "`<name>` is a still image, not a
   video…"; a stream with no length no longer suggests an ffmpeg command.
-  These name the file by its name. Not covered: the `400 BAD_REQUEST:`
-  prefix the CLI puts on every daemon refusal. Rust:
+  These name the file by its name. Through `--project`, `od media
+  reference` prints the daemon's refusal alone (`error: <sentence>`),
+  without `400 BAD_REQUEST:`, and still exits 1. Rust:
   `an_image_or_a_file_without_length_is_told_plainly` (od-server),
-  `a_file_that_is_not_a_video_is_told_plainly` (od-cli).
+  `a_file_that_is_not_a_video_is_told_plainly` and
+  `with_a_project_the_folder_lands_in_the_project` (od-cli).
 
 ## QA-038 🟡 A YouTube link without https:// is read as a missing file
 
@@ -956,7 +962,9 @@ Reported by the UX review of 759581a.
   (`reference.rs:778`).
 - **Fixed**: `refuse_bare_link` refuses, with the same words as a
   `https://` link, a missing path that starts with `www.` or with
-  `<name>.<tld>` followed by `/` or `?`; the route checks it after joining
+  `<name>.<tld>` followed by `/` or `?`, or a bare host with a web ending
+  (`vimeo.com`, `youtube.com`, `youtu.be`; not `clip.mov` or `clip.webm`,
+  which stay missing files); the route checks it after joining
   the project root, the CLI before running locally (`reference`,
   `compare`). A real folder of that name is still read. Rust:
   `links_without_a_scheme_are_refused_when_no_such_file_exists`
@@ -1007,10 +1015,15 @@ Reported by the UX review of 759581a.
   The film is named in the `.od-reference` mark, put in place in one step
   when the folder is taken (older marks: `facts.json` `source`), so of two
   runs at once only one takes a folder and the other moves on; `--out`
-  into another film's folder is refused. Not covered: the same file name in two folders (`a/clip.mp4`,
-  `b/clip.mp4`) still shares one folder, since `source` keeps only the
-  name. Rust: `default_out_never_takes_the_folder_of_another_film`
-  (od-server), `two_films_with_one_name_each_get_their_own_folder` (od-cli).
+  into another film's folder is refused. The mark names the film by its
+  path in the project (`source: a/clip.mp4`, `./clip.mp4` at the top), so
+  the same file name in two folders (`a/clip.mp4`, `b/clip.mp4`) gets
+  `reference/clip` and `reference/clip-mp4`; a mark of beta.17 or older
+  (name only) still matches by the name. Rust:
+  `a_film_is_known_by_its_path_in_the_project` (od-server),
+  `two_films_with_one_name_each_get_their_own_folder`,
+  `one_file_name_in_two_folders_gets_two_reference_folders`,
+  `a_folder_from_before_paths_were_kept_is_still_its_films` (od-cli).
 
 ## QA-041 🟠 Running the reference again deletes the user's NNN.png files
 

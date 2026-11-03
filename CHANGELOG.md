@@ -20,6 +20,16 @@ All notable changes to Contour are recorded here. The format follows
 - `od media compare --out` that fails in a folder it made no longer leaves
   that folder behind with only its `.od-compare` mark, like
   `od media reference`.
+- Two reference films with one file name in different folders
+  (`a/clip.mp4`, `b/clip.mp4`) no longer share `reference/clip/`: the
+  folder's `.od-reference` mark names the film by its path in the project,
+  so the second goes to `reference/clip-mp4/`. Folders marked by beta.17
+  or older are still found by the file name.
+- A bare host given as the film (`vimeo.com`, `youtube.com`) is refused as
+  a link, like `vimeo.com/123` and `www.…`; a missing `clip.mov` is still
+  told as a missing file.
+- `od media reference --project` prints the daemon's refusal as a plain
+  sentence, without the `400 BAD_REQUEST:` before it; it still exits 1.
 
 ## [0.2.0-beta.17] - 2026-11-04
 
