@@ -49,7 +49,9 @@ impl Harness {
         // Reading EOF and exiting can take a mock over 500 ms on a loaded machine.
         config.exit_after_completion = Duration::from_secs(3);
         config.retry_base = Duration::from_millis(10);
-        config.idle_timeout = Some(Duration::from_secs(5));
+        // Only a guard against a hung mock: no test here waits for it. A shell
+        // given a 128 KB argument can stay silent past 5 s on a loaded machine.
+        config.idle_timeout = Some(Duration::from_secs(30));
         let runs = Runs::new(tmp.path().join("runs"));
         Self {
             engine: RunEngine::new(config),
