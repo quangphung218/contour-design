@@ -8,7 +8,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.2.0-beta.16] - 2026-11-04
+## [0.2.0-beta.16] - 2026-11-03
 
 ### Added
 
