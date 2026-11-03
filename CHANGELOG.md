@@ -32,8 +32,9 @@ All notable changes to Contour are recorded here. The format follows
   folder, absolute, `a/../a/clip.mp4`, other letter case on macOS and
   Windows), from the CLI or through `--project`, and after the project is
   moved. A folder from beta.17 or older (its mark names only the file) is
-  taken by the first film of that name to run after the update, whichever
-  folder that film is in; from then on it is that film's.
+  taken by the first film of that name, in any letter case, to run after
+  the update, whichever folder that film is in; from then on it is that
+  film's.
 - A bare host given as the film (`vimeo.com`, `youtube.com`) is refused as
   a link, like `vimeo.com/123` and `www.…`; a missing `clip.mov`,
   `logo.ai` or `config.in` is still told as a missing file.

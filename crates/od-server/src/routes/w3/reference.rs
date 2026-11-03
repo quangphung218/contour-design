@@ -939,12 +939,15 @@ fn film_path(video: &FsPath, out: &FsPath) -> String {
 
 /// Whether a folder whose mark names `have` holds the reference of the
 /// film at `want` (a [`film_path`]). A mark of beta.17 or older names the
-/// film without its folders (no `/`): then the file names are compared.
+/// film without its folders (no `/`): then the file names are compared,
+/// ignoring ASCII case.
 fn same_film(have: &str, want: &str) -> bool {
     if have.contains('/') {
         have == want
     } else {
-        want.rsplit('/').next() == Some(have)
+        want.rsplit('/')
+            .next()
+            .is_some_and(|name| name.eq_ignore_ascii_case(have))
     }
 }
 
@@ -1639,6 +1642,7 @@ mod tests {
         assert!(same_film("clip.mp4", "b/clip.mp4"));
         assert!(same_film("clip.mp4", "./clip.mp4"));
         assert!(!same_film("clip.mkv", "b/clip.mp4"));
+        assert!(same_film("CLIP.MP4", "a/clip.mp4"));
     }
 
     #[test]
