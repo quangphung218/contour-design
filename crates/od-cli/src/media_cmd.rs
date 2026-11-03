@@ -399,11 +399,14 @@ fn run_reference(client: &Client, a: ReferenceArgs, json_out: bool) -> anyhow::R
         None => {
             let video = PathBuf::from(&a.video);
             local(reference::refuse_bare_link(&a.video, &video))?;
-            let out = a
-                .out
-                .unwrap_or_else(|| reference::default_out(&video, Path::new(".")));
             let tools = local(reference::find_tools())?;
-            let facts = local(reference::build(&tools, &video, Path::new(&out)))?;
+            let (out, facts) = match a.out {
+                Some(out) => {
+                    let facts = local(reference::build(&tools, &video, Path::new(&out)))?;
+                    (out, facts)
+                }
+                None => local(reference::build_default(&tools, &video, Path::new("")))?,
+            };
             (out, serde_json::to_value(facts)?)
         }
     };

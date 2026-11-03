@@ -473,35 +473,134 @@ pub const REFERENCE_MARK: &str = ".od-reference";
 /// File that marks a folder `od media compare --out` made.
 pub const COMPARE_MARK: &str = ".od-compare";
 
-/// Takes `dir` for a command's output: a folder with its `mark` is its
-/// own from an earlier run; a missing or empty one is made and marked. Any
-/// other folder holds someone's files, which are never removed or
-/// replaced.
-///
-/// # Errors
-/// The folder holds files without the mark; I/O.
-fn claim(dir: &FsPath, mark: &str) -> Result<(), String> {
-    let io = |e: std::io::Error| format!("cannot write {}: {e}", dir.display());
-    if dir.join(mark).is_file() {
-        return Ok(());
-    }
-    let used = match std::fs::read_dir(dir) {
-        Ok(mut entries) => entries.next().is_some(),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-        Err(e) => return Err(io(e)),
-    };
-    if used {
-        return Err(format!(
-            "{} already holds files this command did not write; Contour never removes or replaces them. Choose a new or empty folder with --out.",
-            dir.display()
-        ));
-    }
-    std::fs::create_dir_all(dir).map_err(io)?;
-    std::fs::write(dir.join(mark), MARK_TEXT).map_err(io)
+/// Why a run did not get its folder, or failed in it.
+#[derive(Debug)]
+enum RunErr {
+    /// The folder is not this run's: someone's files, or the reference of
+    /// another film.
+    Taken(String),
+    Failed(String),
 }
 
-/// What a mark file says; [`compare`] lists the frames it wrote below it.
+impl From<String> for RunErr {
+    fn from(e: String) -> Self {
+        Self::Failed(e)
+    }
+}
+
+impl RunErr {
+    fn message(self) -> String {
+        match self {
+            Self::Taken(m) | Self::Failed(m) => m,
+        }
+    }
+}
+
+/// What a mark file says first; [`compare`] lists the frames it wrote
+/// below it.
 const MARK_TEXT: &str = "Written by Contour. Each run replaces the frames the last run wrote here (listed in facts.json, or below) and no other file.\n";
+/// The line of a reference mark that names the film it was taken for.
+const SOURCE_LINE: &str = "source: ";
+/// Start of the name a mark is written under before it is put in place.
+const MARK_TMP: &str = ".od-mark-";
+
+fn mark_head(source: Option<&str>) -> String {
+    match source {
+        Some(s) => format!("{MARK_TEXT}{SOURCE_LINE}{s}\n"),
+        None => MARK_TEXT.to_owned(),
+    }
+}
+
+/// The film whose reference `dir` holds: the source its mark names, else
+/// (a mark from before it named one) the source in its `facts.json`.
+fn taken_for(dir: &FsPath) -> Option<String> {
+    let mark = std::fs::read_to_string(dir.join(REFERENCE_MARK)).ok()?;
+    mark.lines()
+        .find_map(|l| l.strip_prefix(SOURCE_LINE))
+        .map(str::to_owned)
+        .or_else(|| {
+            std::fs::read(dir.join("facts.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                .and_then(|v| v["source"].as_str().map(str::to_owned))
+        })
+}
+
+/// Takes `dir` for a command's output: a folder with its `mark` is its
+/// own from an earlier run (for a reference, of the same film `source`); a
+/// missing or empty one is made and marked, in one step, so of two runs
+/// at once only one gets it. Any other folder holds someone's files, which
+/// are never removed or replaced. Returns whether this run made the mark.
+///
+/// # Errors
+/// [`RunErr::Taken`]: the folder holds files without the mark, or the
+/// reference of another film. I/O.
+fn claim(dir: &FsPath, mark: &str, source: Option<&str>) -> Result<bool, RunErr> {
+    let io = |e: std::io::Error| RunErr::Failed(format!("cannot write {}: {e}", dir.display()));
+    for _ in 0..3 {
+        if dir.join(mark).is_file() {
+            let other = source.and_then(|want| taken_for(dir).filter(|have| have != want));
+            if let Some(have) = other {
+                return Err(RunErr::Taken(format!(
+                    "{} holds the reference of {have}; Contour never replaces it. Choose a new folder with --out.",
+                    dir.display()
+                )));
+            }
+            return Ok(false);
+        }
+        let used = match std::fs::read_dir(dir) {
+            Ok(entries) => entries
+                .flatten()
+                .any(|e| !e.file_name().to_string_lossy().starts_with(MARK_TMP)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => return Err(io(e)),
+        };
+        if used {
+            return Err(RunErr::Taken(format!(
+                "{} already holds files this command did not write; Contour never removes or replaces them. Choose a new or empty folder with --out.",
+                dir.display()
+            )));
+        }
+        std::fs::create_dir_all(dir).map_err(io)?;
+        match place_mark(dir, mark, &mark_head(source)) {
+            Ok(()) => return Ok(true),
+            // Another run marked it first: look again.
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(io(e)),
+        }
+    }
+    Err(RunErr::Taken(format!(
+        "{} is being taken by another run; run the command again.",
+        dir.display()
+    )))
+}
+
+/// Puts `dir/mark` holding `body` in place in one step: another run never
+/// reads it half written. `AlreadyExists` when another run's mark is there.
+fn place_mark(dir: &FsPath, mark: &str, body: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let tmp = dir.join(format!(
+        "{MARK_TMP}{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::write(&tmp, body)?;
+    let placed = std::fs::hard_link(&tmp, dir.join(mark));
+    let _ = std::fs::remove_file(&tmp);
+    match placed {
+        Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
+            // No hard links on this disk (FAT, exFAT): make it only if absent.
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(dir.join(mark))?;
+            f.write_all(body.as_bytes())
+        }
+        r => r,
+    }
+}
 
 /// Whether `name` is a frame a run writes: `NNN.png` in one of `dirs`
 /// (`""`: the folder itself), nothing else.
@@ -557,23 +656,102 @@ fn remove_listed(dir: &FsPath, names: &[String]) -> std::io::Result<()> {
 /// Writes the reference folder of `video` into `out` and returns its facts.
 ///
 /// # Errors
-/// A link, a missing or too large or too long file, ffmpeg missing or
-/// failing, I/O.
+/// A link, a missing or too large or too long file, a folder that is not
+/// this command's, ffmpeg missing or failing, I/O.
 pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, String> {
     refuse_link(&video.to_string_lossy())?;
     let (size, probe) = check(tools, video)?;
-    // The outermost folder this run creates: a run that fails takes back
-    // the folders it made, as far as they are empty. Another run, or the
-    // user, may have written beside it in the meantime.
+    write_reference(tools, video, out, size, probe).map_err(RunErr::message)
+}
+
+/// [`build`] into the default folder of `video` under `base` (the project,
+/// or the working directory): the first of [`default_dirs`] that is free or
+/// already holds this film's reference. Returns that folder (relative to
+/// `base`) and the facts.
+///
+/// # Errors
+/// As [`build`]; no free folder.
+pub fn build_default(
+    tools: &Tools,
+    video: &FsPath,
+    base: &FsPath,
+) -> Result<(String, Facts), String> {
+    refuse_link(&video.to_string_lossy())?;
+    let (size, probe) = check(tools, video)?;
+    let source = shown_name(video);
+    for dir in default_dirs(video) {
+        let out = base.join(&dir);
+        if taken_for(&out).is_some_and(|s| s != source) {
+            continue;
+        }
+        match write_reference(tools, video, &out, size, probe.clone()) {
+            Ok(facts) => return Ok((dir, facts)),
+            // Someone's files, or another film's reference (maybe one
+            // taken a moment ago by a run at the same time): the next.
+            Err(RunErr::Taken(_)) => {}
+            Err(RunErr::Failed(e)) => return Err(e),
+        }
+    }
+    Err(format!(
+        "no free folder under reference/ for {source}; choose one with --out."
+    ))
+}
+
+/// The folders tried for `video`: `reference/<file stem>`, then
+/// `reference/<stem>-<extension>` (`clip.mkv` beside `clip.mp4`), then
+/// `…-2` to `…-99`.
+fn default_dirs(video: &FsPath) -> Vec<String> {
+    let safe = |s: Option<&std::ffi::OsStr>| {
+        let s: String = s
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default()
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        s.trim_matches(['-', '.']).to_owned()
+    };
+    let stem = safe(video.file_stem());
+    let stem = if stem.is_empty() {
+        "video".to_owned()
+    } else {
+        stem
+    };
+    let first = format!("reference/{stem}");
+    let ext = safe(video.extension());
+    let named = if ext.is_empty() {
+        format!("{first}-2")
+    } else {
+        format!("{first}-{ext}")
+    };
+    let mut dirs = vec![first, named.clone()];
+    dirs.extend((2..100).map(|n| format!("{named}-{n}")));
+    dirs.dedup();
+    dirs
+}
+
+/// [`build`] past the checks. A run that fails takes back the files it
+/// wrote and the folders it made, each only while empty: another run, or
+/// the user, may have written beside them in the meantime.
+fn write_reference(
+    tools: &Tools,
+    video: &FsPath,
+    out: &FsPath,
+    size: u64,
+    probe: Probe,
+) -> Result<Facts, RunErr> {
     let fresh = out
         .ancestors()
         .take_while(|d| !d.as_os_str().is_empty() && !d.exists())
         .last()
         .map(FsPath::to_path_buf);
     let res = take_and_fill(tools, video, out, size, probe);
-    if let (Err(_), Some(fresh)) = (&res, fresh) {
-        // take_and_fill removed the files it wrote; its mark is its own.
-        let _ = std::fs::remove_file(out.join(REFERENCE_MARK));
+    if let (Err(RunErr::Failed(_)), Some(fresh)) = (&res, fresh) {
         remove_empty_dirs(out, &fresh, &["scenes", "grid"]);
     }
     res
@@ -592,17 +770,17 @@ fn remove_empty_dirs(dir: &FsPath, fresh: &FsPath, subs: &[&str]) {
     }
 }
 
-/// [`build`] past the checks: takes `out`, clears the last run's files and
-/// writes the new ones.
+/// Takes `out`, clears the last run's files and writes the new ones.
 fn take_and_fill(
     tools: &Tools,
     video: &FsPath,
     out: &FsPath,
     size: u64,
     probe: Probe,
-) -> Result<Facts, String> {
+) -> Result<Facts, RunErr> {
     let io = |e: std::io::Error| format!("cannot write {}: {e}", out.display());
-    claim(out, REFERENCE_MARK)?;
+    let source = shown_name(video);
+    let created = claim(out, REFERENCE_MARK, Some(&source))?;
     // Only what the last run wrote goes: the frames its facts.json lists,
     // never another file of the same kind of name.
     let mut old = listed_frames(out);
@@ -610,6 +788,9 @@ fn take_and_fill(
     // facts.json is written last, once every file it names is there.
     old.extend(["facts.json", "contact-sheet.png", "audio.m4a"].map(str::to_owned));
     remove_listed(out, &old).map_err(io)?;
+    if !created {
+        std::fs::write(out.join(REFERENCE_MARK), mark_head(Some(&source))).map_err(io)?;
+    }
     for sub in ["scenes", "grid"] {
         std::fs::create_dir_all(out.join(sub)).map_err(io)?;
     }
@@ -619,8 +800,11 @@ fn take_and_fill(
         // A failed run takes back what it wrote: the next one could not
         // tell those frames from the user's.
         let _ = remove_listed(out, &written);
+        if created {
+            let _ = std::fs::remove_file(out.join(REFERENCE_MARK));
+        }
     }
-    res
+    Ok(res?)
 }
 
 /// [`build`] once `out` is ready; records each file it writes in `written`.
@@ -666,10 +850,7 @@ fn fill(
         None
     };
     let facts = Facts {
-        source: video
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
+        source: shown_name(video),
         size_bytes: size,
         probe: Probe {
             duration: round3(probe.duration),
@@ -702,65 +883,6 @@ fn contact_sheet(tools: &Tools, out: &FsPath, n: usize) -> Result<(), String> {
         ])
         .arg(out.join("contact-sheet.png"));
     run(&mut cmd, "ffmpeg contact sheet").map(|_| ())
-}
-
-/// The default reference folder of `video`, relative to `base` (the
-/// project, or the working directory): `reference/<file stem>`, unless
-/// that folder already holds the reference of another file (its
-/// `facts.json` names another source, e.g. `clip.mkv` beside `clip.mp4`);
-/// then `reference/<stem>-<extension>`, then `…-2`, `…-3`.
-#[must_use]
-pub fn default_out(video: &FsPath, base: &FsPath) -> String {
-    let safe = |s: Option<&std::ffi::OsStr>| {
-        let s: String = s
-            .map(|s| s.to_string_lossy())
-            .unwrap_or_default()
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || matches!(c, '-' | '_' | '.') {
-                    c
-                } else {
-                    '-'
-                }
-            })
-            .collect();
-        s.trim_matches(['-', '.']).to_owned()
-    };
-    let stem = safe(video.file_stem());
-    let stem = if stem.is_empty() {
-        "video".to_owned()
-    } else {
-        stem
-    };
-    let source = video
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    // Free for this film: no reference there yet, or one of the same file.
-    let free = |dir: &str| {
-        std::fs::read(base.join(dir).join("facts.json"))
-            .ok()
-            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-            .and_then(|v| v["source"].as_str().map(str::to_owned))
-            .is_none_or(|s| s == source)
-    };
-    let first = format!("reference/{stem}");
-    if free(&first) {
-        return first;
-    }
-    let ext = safe(video.extension());
-    let named = if ext.is_empty() {
-        first
-    } else {
-        format!("{first}-{ext}")
-    };
-    if free(&named) {
-        return named;
-    }
-    (2..100)
-        .map(|n| format!("{named}-{n}"))
-        .find(|d| free(d))
-        .unwrap_or(named)
 }
 
 // ---------------------------------------------------------------------------
@@ -906,7 +1028,7 @@ pub fn compare(
     let (_, pb) = check(tools, b)?;
     let io = |dir: &FsPath, e: std::io::Error| format!("cannot write {}: {e}", dir.display());
     if let Some(dir) = pairs {
-        claim(dir, COMPARE_MARK)?;
+        claim(dir, COMPARE_MARK, None).map_err(RunErr::message)?;
         // Only the pairs the last run listed under its mark go.
         remove_listed(dir, &listed_pairs(dir)).map_err(|e| io(dir, e))?;
         std::fs::write(dir.join(COMPARE_MARK), MARK_TEXT).map_err(|e| io(dir, e))?;
@@ -1018,22 +1140,21 @@ pub async fn reference(
         root.join(rel)
     };
     refuse_bare_link(&req.video, &video).map_err(ApiErr::bad_request)?;
-    let out = req
-        .out
-        .as_deref()
-        .map(str::trim)
-        .filter(|o| !o.is_empty())
-        .map_or_else(|| default_out(&video, &root), str::to_owned);
-    let out = validate_project_path(&out).map_err(|_| {
-        ApiErr::bad_request(format!(
-            "--out must be a folder inside the project, got {out:?}"
-        ))
-    })?;
-    let dest = root.join(&out);
-    let video2 = video.clone();
-    let facts = tokio::task::spawn_blocking(move || {
+    let out = match req.out.as_deref().map(str::trim).filter(|o| !o.is_empty()) {
+        Some(o) => Some(validate_project_path(o).map_err(|_| {
+            ApiErr::bad_request(format!(
+                "--out must be a folder inside the project, got {o:?}"
+            ))
+        })?),
+        None => None,
+    };
+    let base = root.clone();
+    let (out, facts) = tokio::task::spawn_blocking(move || {
         let tools = find_tools()?;
-        build(&tools, &video2, &dest)
+        match out {
+            Some(out) => build(&tools, &video, &base.join(&out)).map(|f| (out, f)),
+            None => build_default(&tools, &video, &base),
+        }
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?
@@ -1229,40 +1350,53 @@ mod tests {
     }
 
     #[test]
-    fn default_out_is_a_safe_project_folder() {
-        let none = FsPath::new("/no/such/project");
-        assert_eq!(
-            default_out(FsPath::new("/x/My Ref (1).mp4"), none),
-            "reference/My-Ref--1"
-        );
-        assert_eq!(default_out(FsPath::new("clip.mov"), none), "reference/clip");
+    fn default_dirs_are_safe_project_folders() {
+        let d = default_dirs(FsPath::new("/x/My Ref (1).mp4"));
+        assert_eq!(d[0], "reference/My-Ref--1");
+        assert_eq!(d[1], "reference/My-Ref--1-mp4");
+        assert_eq!(d[2], "reference/My-Ref--1-mp4-2");
+        assert_eq!(default_dirs(FsPath::new("clip.mov"))[0], "reference/clip");
+        let bare = default_dirs(FsPath::new("clip"));
+        assert_eq!(bare[..2], ["reference/clip", "reference/clip-2"]);
     }
 
     #[test]
-    fn default_out_never_takes_the_folder_of_another_film() {
+    fn a_folder_is_taken_for_the_film_its_mark_or_facts_name() {
         let tmp = tempfile::tempdir().unwrap();
-        let base = tmp.path();
-        let made = |dir: &str, source: &str| {
-            std::fs::create_dir_all(base.join(dir)).unwrap();
-            std::fs::write(
-                base.join(dir).join("facts.json"),
-                json!({ "source": source }).to_string(),
-            )
-            .unwrap();
-        };
-        let out = |v: &str| default_out(FsPath::new(v), base);
-        assert_eq!(out("clip.mp4"), "reference/clip");
-        made("reference/clip", "clip.mp4");
-        // The same film again: its own folder.
-        assert_eq!(out("clip.mp4"), "reference/clip");
-        // Same name, another file: a folder of its own.
-        assert_eq!(out("clip.mkv"), "reference/clip-mkv");
-        made("reference/clip-mkv", "clip.mkv");
-        assert_eq!(out("clip.mkv"), "reference/clip-mkv");
-        made("reference/clip-mkv", "other.mkv");
-        assert_eq!(out("clip.mkv"), "reference/clip-mkv-2");
-        // A folder with no facts yet (a run that failed) is still free.
-        std::fs::create_dir_all(base.join("reference/take")).unwrap();
-        assert_eq!(out("take.mov"), "reference/take");
+        let dir = tmp.path();
+        assert_eq!(taken_for(dir), None);
+        // A mark from before it named a source: its facts.json does.
+        std::fs::write(dir.join(REFERENCE_MARK), MARK_TEXT).unwrap();
+        std::fs::write(
+            dir.join("facts.json"),
+            json!({ "source": "a.mp4" }).to_string(),
+        )
+        .unwrap();
+        assert_eq!(taken_for(dir).as_deref(), Some("a.mp4"));
+        std::fs::write(dir.join(REFERENCE_MARK), mark_head(Some("clip.mkv"))).unwrap();
+        assert_eq!(taken_for(dir).as_deref(), Some("clip.mkv"));
+        // claim: the same film may have it again, another may not.
+        assert!(matches!(
+            claim(dir, REFERENCE_MARK, Some("clip.mkv")),
+            Ok(false)
+        ));
+        let e = claim(dir, REFERENCE_MARK, Some("clip.mp4")).unwrap_err();
+        assert!(
+            matches!(&e, RunErr::Taken(m) if m.contains("reference of clip.mkv")),
+            "{e:?}"
+        );
+        // A new folder is made and marked for its film; the mark is in place
+        // whole, and no temporary file stays.
+        let new = dir.join("reference/clip");
+        assert!(matches!(
+            claim(&new, REFERENCE_MARK, Some("clip.mp4")),
+            Ok(true)
+        ));
+        assert_eq!(taken_for(&new).as_deref(), Some("clip.mp4"));
+        let names: Vec<_> = std::fs::read_dir(&new)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [REFERENCE_MARK]);
     }
 }

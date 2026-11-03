@@ -182,35 +182,6 @@ fn reference_writes_the_folder_next_to_the_video() {
     assert!(all.contains("10.00 s, 320×240, 25 fps, audio"), "{all}");
     assert_reference(&tmp.path().join("reference/my-ref"));
 
-    // A 3 s film into the same folder: the 10 s run's later frames are gone.
-    ff(
-        &ffmpeg,
-        &[
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc=size=320x240:rate=25:duration=3",
-            "-c:v",
-            "mpeg4",
-        ],
-        &tmp.path().join("short.mp4"),
-    );
-    let out = od(
-        tmp.path(),
-        &[
-            "media",
-            "reference",
-            "short.mp4",
-            "--out",
-            "reference/my-ref",
-        ],
-        &[],
-    );
-    assert!(out.status.success(), "{}", text(&out));
-    let grid = tmp.path().join("reference/my-ref/grid");
-    assert_eq!(pngs(&grid), 3);
-    assert!(grid.join("003.png").is_file() && !grid.join("004.png").exists());
-
     // Into a chosen new folder, with --json.
     let dir = tmp.path().join("look");
     let out = od(
@@ -230,6 +201,46 @@ fn reference_writes_the_folder_next_to_the_video() {
     assert_eq!(v["dir"], "look");
     assert_eq!(v["facts"]["source"], "my ref.mp4");
     assert_reference(&dir);
+
+    // Another film may not take that folder, even with --out.
+    other_film(&ffmpeg, &tmp.path().join("other.mp4"));
+    let out = od(
+        tmp.path(),
+        &[
+            "media",
+            "reference",
+            "other.mp4",
+            "--out",
+            "reference/my-ref",
+        ],
+        &[],
+    );
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(
+        text(&out).contains("holds the reference of my ref.mp4"),
+        "{}",
+        text(&out)
+    );
+    assert_reference(&tmp.path().join("reference/my-ref"));
+
+    // The film cut to 3 s, run again: the 10 s run's later frames are gone.
+    ff(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x240:rate=25:duration=3",
+            "-c:v",
+            "mpeg4",
+        ],
+        &tmp.path().join("my ref.mp4"),
+    );
+    let out = od(tmp.path(), &["media", "reference", "my ref.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    let grid = tmp.path().join("reference/my-ref/grid");
+    assert_eq!(pngs(&grid), 3);
+    assert!(grid.join("003.png").is_file() && !grid.join("004.png").exists());
 }
 
 #[test]
@@ -633,6 +644,50 @@ fn two_films_with_one_name_each_get_their_own_folder() {
     assert_eq!(source("reference/clip"), "clip.mp4");
     assert_eq!(source("reference/clip-mkv"), "clip.mkv");
     assert_reference(&tmp.path().join("reference/clip"));
+}
+
+#[test]
+fn two_films_with_one_name_run_at_once_each_get_their_own_folder() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    for round in 0..3 {
+        let tmp = tempfile::tempdir().unwrap();
+        film(&ffmpeg, &tmp.path().join("clip.mp4"));
+        other_film(&ffmpeg, &tmp.path().join("clip.mkv"));
+        let runs: Vec<Child> = ["clip.mp4", "clip.mkv"]
+            .into_iter()
+            .map(|v| {
+                Command::new(OD)
+                    .args(["media", "reference", v])
+                    .current_dir(tmp.path())
+                    .env_remove("OD_PROJECT_ID")
+                    .env_remove("OD_RUN_ID")
+                    .env_remove("OD_FFMPEG_PATH")
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+        let mut printed = Vec::new();
+        for r in runs {
+            let out = r.wait_with_output().unwrap();
+            assert!(out.status.success(), "round {round}: {}", text(&out));
+            printed.push(text(&out).lines().next().unwrap_or("").to_owned());
+        }
+        let mut sources = Vec::new();
+        for e in std::fs::read_dir(tmp.path().join("reference")).unwrap() {
+            let f = std::fs::read_to_string(e.unwrap().path().join("facts.json")).unwrap();
+            sources.push(serde_json::from_str::<Value>(&f).unwrap()["source"].clone());
+        }
+        sources.sort_by_key(ToString::to_string);
+        assert_eq!(
+            sources,
+            ["clip.mkv", "clip.mp4"],
+            "round {round}: {printed:?}"
+        );
+        // Each run printed the folder that holds its own film.
+        assert_ne!(printed[0].split(':').next(), printed[1].split(':').next());
+    }
 }
 
 #[test]

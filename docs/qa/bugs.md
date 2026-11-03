@@ -1002,9 +1002,12 @@ Reported by the UX review of 759581a.
   and `claim` accepts any folder with `.od-reference`. Before reusing a
   marked folder, read its `facts.json` `source`; when it names another
   file, pick `reference/<stem>-<ext>` (or `-2`) instead.
-- **Fixed**: the default folder is `reference/<stem>` unless its
-  `facts.json` names another source; then `reference/<stem>-<ext>`, then
-  `-2`, `-3`. Not covered: the same file name in two folders (`a/clip.mp4`,
+- **Fixed**: the default folder is `reference/<stem>` unless it holds
+  another film's reference; then `reference/<stem>-<ext>`, then `-2`, `-3`.
+  The film is named in the `.od-reference` mark, put in place in one step
+  when the folder is taken (older marks: `facts.json` `source`), so of two
+  runs at once only one takes a folder and the other moves on; `--out`
+  into another film's folder is refused. Not covered: the same file name in two folders (`a/clip.mp4`,
   `b/clip.mp4`) still shares one folder, since `source` keeps only the
   name. Rust: `default_out_never_takes_the_folder_of_another_film`
   (od-server), `two_films_with_one_name_each_get_their_own_folder` (od-cli).

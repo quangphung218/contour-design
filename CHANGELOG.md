@@ -24,7 +24,8 @@ All notable changes to Contour are recorded here. The format follows
   cannot work.
 - Two reference films with the same name (`clip.mp4` and `clip.mkv`) no
   longer share `reference/clip/`, where the second silently replaced the
-  first: the second gets `reference/clip-mkv/`.
+  first: the second gets `reference/clip-mkv/`, also when both run at
+  once. `--out` into another film's reference folder is refused.
 - Running `od media reference` again no longer deletes a frame the user
   saved in its `scenes/` or `grid/` under a numbered name such as
   `010.png`: only the frames the last run listed in `facts.json` are
