@@ -462,6 +462,75 @@ fn out_never_removes_or_replaces_files_it_did_not_write() {
 }
 
 #[test]
+fn a_song_with_cover_art_is_not_a_video_and_leaves_no_folder() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    ff(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:rate=1:duration=1",
+            "-frames:v",
+            "1",
+        ],
+        &tmp.path().join("cover.png"),
+    );
+    ff(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=500:duration=5",
+            "-i",
+            tmp.path().join("cover.png").to_str().unwrap(),
+            "-map",
+            "0",
+            "-map",
+            "1",
+            "-c:a",
+            "aac",
+            "-c:v",
+            "png",
+            "-disposition:v",
+            "attached_pic",
+        ],
+        &tmp.path().join("song.m4a"),
+    );
+    let out = od(tmp.path(), &["media", "reference", "song.m4a"], &[]);
+    assert!(!out.status.success());
+    assert!(
+        text(&out).contains("song.m4a has no video stream"),
+        "{}",
+        text(&out)
+    );
+    assert!(!tmp.path().join("reference").exists());
+
+    // A run that fails after taking a new folder leaves none behind.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        film(&ffmpeg, &tmp.path().join("clip.mp4"));
+        let tools = tmp.path().join("broken-tools");
+        std::fs::create_dir_all(&tools).unwrap();
+        let fake = tools.join("ffmpeg");
+        std::fs::write(&fake, "#!/bin/sh\necho broken >&2\nexit 1\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::os::unix::fs::symlink(ffmpeg.with_file_name("ffprobe"), tools.join("ffprobe"))
+            .unwrap();
+        let out = od(
+            tmp.path(),
+            &["media", "reference", "clip.mp4"],
+            &[("OD_FFMPEG_PATH", fake.to_str().unwrap())],
+        );
+        assert!(!out.status.success(), "{}", text(&out));
+        assert!(!tmp.path().join("reference").exists());
+    }
+}
+
+#[test]
 fn a_file_that_is_not_a_video_is_told_plainly() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let tmp = tempfile::tempdir().unwrap();

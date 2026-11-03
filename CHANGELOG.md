@@ -10,6 +10,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- A song with cover art is refused as having no video stream, like any
+  sound file; before, it failed half way with "ffmpeg wrote no frame" and
+  left an empty `reference/<name>/` folder. A reference run that fails no
+  longer leaves a folder it created.
 - A link pasted without `https://` (`youtube.com/watch?v=…`,
   `youtu.be/…`, `www.…`) is refused as a link, with how to attach the file
   instead; before, the user was told a project file was missing.

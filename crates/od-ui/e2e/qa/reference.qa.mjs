@@ -325,7 +325,7 @@ test('REF-18', 'A song with cover art: the chat says it is not a video and no em
   const { id, text } = await motion(newPage, d, ['bai-hat.mp3'], 'Dựng lại phim này qa-ref');
   assert.match(text, /not a video|no video|no moving picture|cover/i, text);
   await noReference(d, id);
-}, { knownBug: 'QA-039' });
+});
 
 // ---------------------------------------------------------------- P2: names
 

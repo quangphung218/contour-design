@@ -73,7 +73,7 @@ length is right on both. QA-037…041 each have a red test.
 | QA-041 | 🟠 | Running the reference again deletes the user's own `NNN.png` files in its `scenes/` and `grid/` (e.g. `scenes/010.png`) | `reference.qa.mjs` REF-21 | Fixed |
 | QA-037 | 🟡 | A file that is not a video (text renamed .mp4, PDF, PNG) is refused with ffprobe's internals ("Invalid data found when processing input / moov atom not found"), or for an image with "copy it into an MP4 first (ffmpeg -i …)" | `reference.qa.mjs` REF-14, REF-15, REF-16 | Fixed |
 | QA-038 | 🟡 | A YouTube link without `https://` (`youtube.com/watch?v=…`, `youtu.be/…`) is read as a project path: "cannot read …/projects/<id>/youtube.com/watch?v=…: No such file or directory (os error 2)" | `reference.qa.mjs` REF-13 | Fixed |
-| QA-039 | 🟡 | A song with cover art is taken as a video: "ffmpeg wrote no frame at 2.50 s", and an empty `reference/<name>/` (only `.od-reference`, `scenes/`, `grid/`) is left in the project | `reference.qa.mjs` REF-18 | Open |
+| QA-039 | 🟡 | A song with cover art is taken as a video: "ffmpeg wrote no frame at 2.50 s", and an empty `reference/<name>/` (only `.od-reference`, `scenes/`, `grid/`) is left in the project | `reference.qa.mjs` REF-18 | Fixed |
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
@@ -979,6 +979,11 @@ Reported by the UX review of 759581a.
   pictures. Separately, `build` (`reference.rs:462`) claims the folder
   before any frame is written; when a run that created the folder fails,
   remove what it created.
+- **Fixed**: `probe` asks for `stream_disposition=attached_pic` and skips
+  cover art, so a song is "`<name>` has no video stream" before anything is
+  written. `build` removes the outermost folder it created when the run
+  fails. Rust: `a_song_with_cover_art_has_no_video_stream` (od-server),
+  `a_song_with_cover_art_is_not_a_video_and_leaves_no_folder` (od-cli).
 
 ## QA-040 🟠 Two films with the same name share one reference folder
 

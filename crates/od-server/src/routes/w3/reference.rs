@@ -173,7 +173,7 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
     cmd.args(["-v", "error", "-protocol_whitelist", "file"])
         .args([
             "-show_entries",
-            "format=format_name,duration:stream=codec_type,width,height,duration,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate,DURATION",
+            "format=format_name,duration:stream=codec_type,width,height,duration,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_disposition=attached_pic:stream_tags=rotate,DURATION",
             "-of",
             "json",
         ])
@@ -223,7 +223,8 @@ fn read_probe(name: &str, v: &Value) -> Result<Probe, String> {
     let not_video = || format!("{name} has no video stream");
     let vs = streams
         .iter()
-        .find(|s| s["codec_type"] == "video")
+        // A song's cover art is a one-picture video stream: not a film.
+        .find(|s| s["codec_type"] == "video" && s["disposition"]["attached_pic"] != 1)
         .ok_or_else(not_video)?;
     let dim = |k: &str| {
         vs[k]
@@ -561,6 +562,28 @@ fn remove_listed(dir: &FsPath, names: &[String]) -> std::io::Result<()> {
 pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, String> {
     refuse_link(&video.to_string_lossy())?;
     let (size, probe) = check(tools, video)?;
+    // The outermost folder this run creates: a run that fails leaves none.
+    let fresh = out
+        .ancestors()
+        .take_while(|d| !d.as_os_str().is_empty() && !d.exists())
+        .last()
+        .map(FsPath::to_path_buf);
+    let res = take_and_fill(tools, video, out, size, probe);
+    if let (Err(_), Some(dir)) = (&res, fresh) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    res
+}
+
+/// [`build`] past the checks: takes `out`, clears the last run's files and
+/// writes the new ones.
+fn take_and_fill(
+    tools: &Tools,
+    video: &FsPath,
+    out: &FsPath,
+    size: u64,
+    probe: Probe,
+) -> Result<Facts, String> {
     let io = |e: std::io::Error| format!("cannot write {}: {e}", out.display());
     claim(out, REFERENCE_MARK)?;
     // Only what the last run wrote goes: the frames its facts.json lists,
@@ -1141,6 +1164,20 @@ mod tests {
             "format": { "format_name": "mov,mp4,m4a,3gp,3g2,mj2", "duration": "10.0" }
         });
         assert_eq!(read_probe("ngang.mp4", &film).unwrap().duration, 10.0);
+    }
+
+    #[test]
+    fn a_song_with_cover_art_has_no_video_stream() {
+        let song = json!({
+            "streams": [
+                { "codec_type": "audio", "duration": "5.0" },
+                { "codec_type": "video", "codec_name": "png", "width": 64, "height": 64,
+                  "disposition": { "attached_pic": 1 } }
+            ],
+            "format": { "format_name": "mp3", "duration": "5.0" }
+        });
+        let e = read_probe("bai-hat.mp3", &song).unwrap_err();
+        assert_eq!(e, "bai-hat.mp3 has no video stream");
     }
 
     #[test]
