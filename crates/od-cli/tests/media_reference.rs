@@ -854,6 +854,171 @@ fn two_films_with_one_name_each_get_their_own_folder() {
 }
 
 #[test]
+fn one_file_name_in_two_folders_gets_two_reference_folders() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    for d in ["a", "b"] {
+        std::fs::create_dir_all(tmp.path().join(d)).unwrap();
+    }
+    film(&ffmpeg, &tmp.path().join("a/clip.mp4"));
+    other_film(&ffmpeg, &tmp.path().join("b/clip.mp4"));
+    let frame = |dir: &str| std::fs::read(tmp.path().join(dir).join("grid/001.png")).unwrap();
+    let mark =
+        |dir: &str| std::fs::read_to_string(tmp.path().join(dir).join(".od-reference")).unwrap();
+
+    let out = od(tmp.path(), &["media", "reference", "a/clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(text(&out).starts_with("reference/clip:"), "{}", text(&out));
+    let a_frame = frame("reference/clip");
+    assert!(mark("reference/clip").contains("source: ../../a/clip.mp4\n"));
+
+    // b/clip.mp4 is another film: its own folder, a's frames untouched.
+    let out = od(tmp.path(), &["media", "reference", "b/clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(
+        text(&out).starts_with("reference/clip-mp4:"),
+        "{}",
+        text(&out)
+    );
+    assert!(mark("reference/clip-mp4").contains("source: ../../b/clip.mp4\n"));
+    assert_eq!(frame("reference/clip"), a_frame);
+    assert_ne!(frame("reference/clip-mp4"), a_frame);
+    assert_reference(&tmp.path().join("reference/clip"));
+
+    // Each film finds its own folder again; --out into the other's is refused.
+    let out = od(tmp.path(), &["media", "reference", "./a/clip.mp4"], &[]);
+    assert!(text(&out).starts_with("reference/clip:"), "{}", text(&out));
+    let out = od(
+        tmp.path(),
+        &[
+            "media",
+            "reference",
+            "b/clip.mp4",
+            "--out",
+            "reference/clip",
+        ],
+        &[],
+    );
+    assert!(!out.status.success());
+    assert!(
+        text(&out)
+            .contains("holds the reference of clip.mp4 (at ../../a/clip.mp4 from that folder)"),
+        "{}",
+        text(&out)
+    );
+    assert_eq!(frame("reference/clip"), a_frame);
+}
+
+#[test]
+fn one_film_named_three_ways_keeps_one_folder() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("a")).unwrap();
+    film(&ffmpeg, &tmp.path().join("a/clip.mp4"));
+    let abs = tmp.path().join("a").join("clip.mp4");
+    let mut ways = vec![
+        "a/clip.mp4".to_owned(),
+        abs.to_string_lossy().into_owned(),
+        "a/../a/clip.mp4".to_owned(),
+    ];
+    // On a disk that ignores case, also the name typed otherwise.
+    if tmp.path().join("A/CLIP.MP4").exists() {
+        ways.push("A/CLIP.MP4".to_owned());
+    }
+    for v in &ways {
+        let out = od(tmp.path(), &["media", "reference", v], &[]);
+        assert!(out.status.success(), "{v}: {}", text(&out));
+        assert!(
+            text(&out).starts_with("reference/clip:"),
+            "{v}: {}",
+            text(&out)
+        );
+    }
+    assert!(!tmp.path().join("reference/clip-mp4").exists());
+    let mark = std::fs::read_to_string(tmp.path().join("reference/clip/.od-reference")).unwrap();
+    assert!(mark.contains("source: ../../a/clip.mp4\n"), "{mark}");
+}
+
+#[test]
+fn one_film_from_another_working_folder_keeps_its_folder() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("a")).unwrap();
+    film(&ffmpeg, &root.join("a/clip.mp4"));
+    let ok = |cwd: &Path, args: &[&str]| {
+        let out = od(cwd, args, &[]);
+        assert!(out.status.success(), "{args:?}: {}", text(&out));
+        text(&out)
+    };
+    ok(
+        root,
+        &[
+            "media",
+            "reference",
+            "a/clip.mp4",
+            "--out",
+            "reference/clip",
+        ],
+    );
+    // From a/, into the same folder: the same film.
+    ok(
+        &root.join("a"),
+        &[
+            "media",
+            "reference",
+            "clip.mp4",
+            "--out",
+            "../reference/clip",
+        ],
+    );
+    // The default folder from the root finds it too, and so does --out
+    // from a/ after it.
+    let printed = ok(root, &["media", "reference", "a/clip.mp4"]);
+    assert!(printed.starts_with("reference/clip:"), "{printed}");
+    ok(
+        &root.join("a"),
+        &[
+            "media",
+            "reference",
+            "./clip.mp4",
+            "--out",
+            "../reference/clip",
+        ],
+    );
+    assert!(!root.join("reference/clip-mp4").exists());
+    let mark = std::fs::read_to_string(root.join("reference/clip/.od-reference")).unwrap();
+    assert!(mark.contains("source: ../../a/clip.mp4\n"), "{mark}");
+    assert_reference(&root.join("reference/clip"));
+}
+
+#[test]
+fn a_folder_from_before_paths_were_kept_is_still_its_films() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("a")).unwrap();
+    film(&ffmpeg, &tmp.path().join("a/clip.mp4"));
+    let out = od(tmp.path(), &["media", "reference", "a/clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    // As beta.17 wrote it: the file name only.
+    let mark = tmp.path().join("reference/clip/.od-reference");
+    let body = std::fs::read_to_string(&mark).unwrap();
+    std::fs::write(
+        &mark,
+        body.replace("source: ../../a/clip.mp4", "source: clip.mp4"),
+    )
+    .unwrap();
+    let out = od(tmp.path(), &["media", "reference", "a/clip.mp4"], &[]);
+    assert!(text(&out).starts_with("reference/clip:"), "{}", text(&out));
+    assert!(
+        std::fs::read_to_string(&mark)
+            .unwrap()
+            .contains("source: ../../a/clip.mp4\n")
+    );
+    assert!(!tmp.path().join("reference/clip-mp4").exists());
+}
+
+#[test]
 fn two_films_with_one_name_run_at_once_each_get_their_own_folder() {
     let Some(ffmpeg) = ffmpeg() else { return };
     for round in 0..3 {
@@ -1079,6 +1244,7 @@ fn too_large_or_too_long_videos_are_refused() {
     let out = od(tmp.path(), &["media", "reference", "big.mp4"], &[]);
     assert!(!out.status.success());
     assert!(text(&out).contains("at most 200 MB"), "{}", text(&out));
+    assert!(!text(&out).contains("BAD_REQUEST"), "{}", text(&out));
 
     ff(
         &ffmpeg,
@@ -1256,7 +1422,12 @@ fn with_a_project_the_folder_lands_in_the_project() {
         ],
     );
     assert!(!out.status.success());
-    assert!(text(&out).contains("inside the project"), "{}", text(&out));
+    // The user's sentence alone, not the HTTP status of the daemon.
+    assert!(
+        text(&out).starts_with("error: --out must be a folder inside the project"),
+        "{}",
+        text(&out)
+    );
     let big = std::fs::File::create(dir.join("uploads/big.mp4")).unwrap();
     big.set_len(201 * 1024 * 1024).unwrap();
     let out = client(
@@ -1265,6 +1436,7 @@ fn with_a_project_the_folder_lands_in_the_project() {
     );
     assert!(!out.status.success());
     assert!(text(&out).contains("at most 200 MB"), "{}", text(&out));
+    assert!(!text(&out).contains("BAD_REQUEST"), "{}", text(&out));
 
     // A link pasted without https:// is a link, not a missing project file.
     let out = client(
@@ -1283,6 +1455,34 @@ fn with_a_project_the_folder_lands_in_the_project() {
         all.contains("is a link") && all.contains("does not download") && !all.contains("os error"),
         "{all}"
     );
+    assert!(
+        !all.contains("400") && !all.contains("BAD_REQUEST"),
+        "{all}"
+    );
+
+    // The same file name in another folder of the project is another film.
+    std::fs::create_dir_all(dir.join("other")).unwrap();
+    other_film(&ffmpeg, &dir.join("other/ref.mp4"));
+    let out = client(
+        &d,
+        &[
+            "--json",
+            "media",
+            "reference",
+            "other/ref.mp4",
+            "--project",
+            &pid,
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        v["dir"].as_str().unwrap().ends_with("reference/ref-mp4"),
+        "{v}"
+    );
+    let mark = std::fs::read_to_string(dir.join("reference/ref/.od-reference")).unwrap();
+    assert!(mark.contains("source: ../../uploads/ref.mp4\n"), "{mark}");
+    assert_reference(&dir.join("reference/ref"));
 }
 
 #[test]

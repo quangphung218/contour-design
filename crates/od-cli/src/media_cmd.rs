@@ -4,7 +4,7 @@
 //! `reference` and `compare` read a film the user attached, and score a
 //! render against it, with the ffmpeg installed here.
 
-use crate::client::Client;
+use crate::client::{ApiError, Client};
 use crate::exit::Exit;
 use clap::{Args, Subcommand};
 use od_server::routes::w3::reference;
@@ -375,6 +375,16 @@ fn local<T>(r: Result<T, String>) -> anyhow::Result<T> {
     r.map_err(|e| Exit::new(1, e).into())
 }
 
+/// A refusal of the daemon as the user should read it: its message alone,
+/// without `400 BAD_REQUEST:` before it; still a failed command.
+fn told_plainly(e: anyhow::Error) -> anyhow::Error {
+    match e.downcast::<ApiError>() {
+        Ok(api) if (400..500).contains(&api.status) => Exit::new(1, api.message).into(),
+        Ok(api) => api.into(),
+        Err(e) => e,
+    }
+}
+
 fn run_reference(client: &Client, a: ReferenceArgs, json_out: bool) -> anyhow::Result<()> {
     // Before the daemon or ffmpeg: a link never gets further.
     local(reference::refuse_link(&a.video))?;
@@ -386,11 +396,13 @@ fn run_reference(client: &Client, a: ReferenceArgs, json_out: bool) -> anyhow::R
                     body[k] = Value::from(v);
                 }
             }
-            let res: Value = client.send_json(
-                "POST",
-                &["api", "projects", project, "media", "reference"],
-                &body,
-            )?;
+            let res: Value = client
+                .send_json(
+                    "POST",
+                    &["api", "projects", project, "media", "reference"],
+                    &body,
+                )
+                .map_err(told_plainly)?;
             (
                 res["absDir"].as_str().unwrap_or_default().to_owned(),
                 res["facts"].clone(),

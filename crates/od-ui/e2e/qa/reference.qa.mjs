@@ -270,8 +270,14 @@ test('REF-11', 'A file over 200 MB already in the project: the chat gives its si
   const big = readFileSync(fx('to-210mb.mp4'));
   const form = new FormData();
   form.append('files', new Blob([big]), 'to-210mb.mp4');
-  const up = await fetch(`${d.base}/api/projects/${id}/upload`, { method: 'POST', body: form });
-  // The upload limit is the composer's; bring the file in the way a Finder copy would.
+  // The daemon may refuse it with a status or close the connection mid-body
+  // (fetch then throws): either way, bring the file in the way a Finder copy would.
+  let up;
+  try {
+    up = await fetch(`${d.base}/api/projects/${id}/upload`, { method: 'POST', body: form });
+  } catch (e) {
+    up = { ok: false, status: `closed: ${e.cause?.code ?? e.message}` };
+  }
   if (!up.ok) {
     const dir = join(d.data, 'projects', id);
     assert.ok(existsSync(dir), `cannot put a 210 MB file in the project (upload ${up.status}, no ${dir})`);
