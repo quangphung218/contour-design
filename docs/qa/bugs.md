@@ -1038,3 +1038,13 @@ Reported by the UX review of 759581a.
   lists none, still owns every `NNN.png` in its folder. Rust: `a_rerun_keeps_frames_the_user_saved_under_a_frame_name`
   (od-cli), `only_frame_names_in_their_folders_are_listed_for_removal`
   (od-server).
+- **Follow-up (beta.18, review of PR #60)**: two runs of the same film
+  into one folder at once both took it (the mark names the same film):
+  the second cleared the frames the first had just written, and its
+  take-back removed more, so the first ended rc 0 with a `facts.json`
+  listing frames that were gone. A run now holds the folder with
+  `.od-running` (its pid, made with `create_new`, removed however the run
+  ends); a second run is refused with "another run is writing `<dir>`",
+  and a lock whose process is gone is taken over. `compare --out` the
+  same. Rust: `a_second_run_into_a_folder_being_written_is_refused`
+  (od-cli), `the_lock_of_a_run_that_was_killed_is_taken` (od-server).

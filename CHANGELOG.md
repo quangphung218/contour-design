@@ -8,6 +8,19 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Two `od media reference` runs of the same film into one folder at once
+  no longer wreck each other: the second cleared the frames the first was
+  writing, which then finished with a `facts.json` that listed missing
+  frames. A run now holds the folder (`.od-running`) while it writes, and
+  a second one stops with "another run is writing `<dir>`; wait for it to
+  finish". The same for `od media compare --out`. A run that was killed
+  does not keep the folder held.
+- `od media compare --out` that fails in a folder it made no longer leaves
+  that folder behind with only its `.od-compare` mark, like
+  `od media reference`.
+
 ## [0.2.0-beta.17] - 2026-11-04
 
 ### Fixed
