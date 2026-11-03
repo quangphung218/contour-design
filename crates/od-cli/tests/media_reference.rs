@@ -303,75 +303,89 @@ fn a_portrait_film_is_read_as_it_plays() {
 fn sound_that_outlasts_the_picture_does_not_stretch_the_film() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let tmp = tempfile::tempdir().unwrap();
-    // 10 s of picture, 13 s of tone: the container says 13 s.
-    ff(
-        &ffmpeg,
-        &[
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=320x240:rate=25:duration=10",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:duration=13",
-            "-c:v",
-            "mpeg4",
-            "-q:v",
-            "3",
-            "-c:a",
-            "aac",
-        ],
-        &tmp.path().join("av.mp4"),
-    );
-    let out = od(tmp.path(), &["--json", "media", "reference", "av.mp4"], &[]);
-    assert!(out.status.success(), "{}", text(&out));
-    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
-    let f = &v["facts"];
-    assert!((f["duration"].as_f64().unwrap() - 10.0).abs() <= 0.2, "{f}");
-    assert_eq!(f["grid"].as_array().unwrap().len(), 10, "{f}");
-    assert_eq!(pngs(&tmp.path().join("reference/av/grid")), 10);
-    let out = od(
-        tmp.path(),
-        &["--json", "media", "compare", "av.mp4", "av.mp4"],
-        &[],
-    );
-    assert!(out.status.success(), "{}", text(&out));
-    let c: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert!(c["min"].as_f64().unwrap() >= 0.99, "{c}");
+    // 10 s of picture, 13 s of tone: the container says 13 s. Matroska
+    // keeps the picture's length in a tag, not in the stream's duration.
+    for (name, stem) in [("av.mp4", "av"), ("avk.mkv", "avk")] {
+        let file = tmp.path().join(name);
+        ff(
+            &ffmpeg,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x240:rate=25:duration=10",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=13",
+                "-c:v",
+                "mpeg4",
+                "-q:v",
+                "3",
+                "-c:a",
+                "aac",
+            ],
+            &file,
+        );
+        let out = od(
+            tmp.path(),
+            &[
+                "--json",
+                "media",
+                "reference",
+                file.file_name().unwrap().to_str().unwrap(),
+            ],
+            &[],
+        );
+        assert!(out.status.success(), "{}", text(&out));
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let f = &v["facts"];
+        assert!((f["duration"].as_f64().unwrap() - 10.0).abs() <= 0.2, "{f}");
+        assert_eq!(f["grid"].as_array().unwrap().len(), 10, "{f}");
+        assert_eq!(pngs(&tmp.path().join(format!("reference/{stem}/grid"))), 10);
+        let out = od(
+            tmp.path(),
+            &[
+                "--json",
+                "media",
+                "compare",
+                file.to_str().unwrap(),
+                file.to_str().unwrap(),
+            ],
+            &[],
+        );
+        assert!(out.status.success(), "{}", text(&out));
+        let c: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert!(c["min"].as_f64().unwrap() >= 0.99, "{name}: {c}");
+    }
 
     // The 180 s limit is the picture's: 170 s of film under 190 s of sound.
-    ff(
-        &ffmpeg,
-        &[
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=gray:size=32x32:rate=1:duration=170",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:duration=190",
-            "-c:v",
-            "mpeg4",
-            "-c:a",
-            "aac",
-        ],
-        &tmp.path().join("long-sound.mp4"),
-    );
-    let out = od(
-        tmp.path(),
-        &[
-            "media",
-            "compare",
-            "long-sound.mp4",
-            "long-sound.mp4",
-            "--points",
-            "5",
-        ],
-        &[],
-    );
-    assert!(out.status.success(), "{}", text(&out));
+    for name in ["long-sound.mp4", "long-sound.mkv"] {
+        ff(
+            &ffmpeg,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=gray:size=32x32:rate=1:duration=170",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=190",
+                "-c:v",
+                "mpeg4",
+                "-c:a",
+                "aac",
+            ],
+            &tmp.path().join(name),
+        );
+        let out = od(
+            tmp.path(),
+            &["media", "compare", name, name, "--points", "5"],
+            &[],
+        );
+        assert!(out.status.success(), "{name}: {}", text(&out));
+    }
 }
 
 #[test]
