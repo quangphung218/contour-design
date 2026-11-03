@@ -242,11 +242,15 @@ fn compare_scores_a_film_against_itself_and_another() {
     assert!(out.status.success(), "{}", text(&out));
     let all = text(&out);
     assert!(all.starts_with("point\ttime a\ttime b\tscore\n"), "{all}");
-    assert_eq!(
-        all.lines().filter(|l| l.contains("pairs/")).count(),
-        5,
-        "{all}"
-    );
+    // Paths as this platform writes them (`pairs\001.png` on Windows).
+    for i in 1..=5 {
+        let pair = Path::new("pairs").join(format!("{i:03}.png"));
+        let row = all.lines().find(|l| l.starts_with(&format!("{i}\t")));
+        assert!(
+            row.is_some_and(|l| l.ends_with(&format!("\t{}", pair.display()))),
+            "{all}"
+        );
+    }
     assert!(all.contains("mean\t"), "{all}");
     assert_eq!(pngs(&tmp.path().join("pairs")), 5);
 }
