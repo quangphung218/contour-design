@@ -57,6 +57,24 @@ rows, counts, two runs of one project). The installed `Contour.app`
 0.2.0-beta.14 also had all 164 template examples loaded with scripts on:
 no request left loopback, no page error. QA-034…036 each have a red test.
 
+Round 6 (branch `qa-beta16` at 7f0550b3: v0.2.0-beta.16 plus the mkv
+fix #57): reference videos for Motion. New suite `reference.qa.mjs` (21
+tests, plan §16): Home → Motion → attach a film → "Dựng lại phim này",
+with the QA mock `qa-ref` running the commands the motion-design skill
+names (`od media reference --project`, `od media compare --out`) on the
+real daemon and ffmpeg 9.0.2. The same inputs went through the installed
+`Contour.app` 0.2.0-beta.16 binary (`od-desktop media reference` /
+`compare`) by hand: QA-037…041 reproduce there too; the mkv picture
+length is right on both. QA-037…041 each have a red test.
+
+| ID | Sev | Summary | Test | Status |
+|---|---|---|---|---|
+| QA-040 | 🟠 | Two films with the same name (clip.mp4, clip.mkv) share `reference/clip/`: the second silently replaces the first's facts and frames | `reference.qa.mjs` REF-19 | Open |
+| QA-041 | 🟠 | Running the reference again deletes the user's own `NNN.png` files in its `scenes/` and `grid/` (e.g. `scenes/010.png`) | `reference.qa.mjs` REF-21 | Open |
+| QA-037 | 🟡 | A file that is not a video (text renamed .mp4, PDF, PNG) is refused with ffprobe's internals ("Invalid data found when processing input / moov atom not found"), or for an image with "copy it into an MP4 first (ffmpeg -i …)" | `reference.qa.mjs` REF-14, REF-15, REF-16 | Open |
+| QA-038 | 🟡 | A YouTube link without `https://` (`youtube.com/watch?v=…`, `youtu.be/…`) is read as a project path: "cannot read …/projects/<id>/youtube.com/watch?v=…: No such file or directory (os error 2)" | `reference.qa.mjs` REF-13 | Open |
+| QA-039 | 🟡 | A song with cover art is taken as a video: "ffmpeg wrote no frame at 2.50 s", and an empty `reference/<name>/` (only `.od-reference`, `scenes/`, `grid/`) is left in the project | `reference.qa.mjs` REF-18 | Open |
+
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
 | QA-035 | 🟡 | A run that writes its files with shell commands (ffmpeg, python, cp) ends with "The run ended without writing any file." while the turn lists them and says "Done · N files written" | `turnfiles.qa.mjs` TF-12 | Open |
@@ -879,3 +897,103 @@ Reported by the UX review of 759581a.
   `the_files_past_the_row_limit_say_how_many_were_edited` (od-runtime) and
   `counts_take_in_the_files_not_listed` (od-ui).
 
+## QA-037 🟡 A file that is not a video is refused with ffprobe's internals
+
+- **Steps**: Home → Motion → attach `ghi-chu.mp4` (a text file named
+  .mp4), or `brief.pdf`, or `anh.png` → "Dựng lại phim này". The agent
+  runs `od media reference <file> --project <id>` as the skill says.
+- **Expected** (brief: errors the user makes are told plainly): "<file>
+  is not a video" (for an image: "a still image, not a video"), and what
+  to attach instead.
+- **Actual**:
+  - text .mp4: `400 BAD_REQUEST: ffprobe failed: file:/…/projects/<id>/ghi-chu.mp4:
+    Invalid data found when processing input / [mov,mp4,m4a,3gp,3g2,mj2 @ 0x…] moov atom not found`
+  - PDF: `ffprobe failed: file:/…/brief.pdf: Invalid data found when processing input`
+  - PNG: `ffprobe gives no duration for /…/anh.png; copy it into an MP4
+    first (ffmpeg -i /…/anh.png -c copy film.mp4)`: advice that makes no
+    sense for an image (and that `-c copy` cannot do for one).
+  Every refusal through `--project` also carries the project's absolute
+  path and the HTTP status (`400 BAD_REQUEST:`).
+- **Test**: `reference.qa.mjs` REF-14, REF-15, REF-16. Same text from the
+  installed beta.16 binary (`od-desktop media reference`).
+- **Code**: `crates/od-server/src/routes/w3/reference.rs:148` (`probe`:
+  `run(&mut cmd, "ffprobe")?` passes ffprobe's stderr through) and
+  `:178` (the "copy it into an MP4" advice for any stream without a
+  duration). Map an ffprobe failure to "`<name>` is not a video Contour
+  can read"; ask ffprobe for `codec_name`/`nb_frames` and call a
+  single-frame `png`/`mjpeg`/`webp` stream a still image. Name the file
+  by its project path, not the absolute one.
+
+## QA-038 🟡 A YouTube link without https:// is read as a missing file
+
+- **Steps**: Home → Motion → brief "Dựng lại phim này
+  youtube.com/watch?v=dQw4w9WgXcQ" (or `youtu.be/…`, as a share sheet or
+  a chat app often copies it); the agent passes it to `od media
+  reference`.
+- **Expected** (skill: "If the user gives a link (YouTube, a page, any
+  `http(s)://` URL), Contour will not download it"): the same refusal as
+  for `https://…`: "… is a link. Contour does not download videos: save
+  the file on this machine, attach it …".
+- **Actual**: `400 BAD_REQUEST: cannot read
+  /…/projects/<id>/youtube.com/watch?v=dQw4w9WgXcQ: No such file or
+  directory (os error 2)`. The user is told a file is missing, not what
+  to do. Without `--project`: `cannot read youtube.com/watch?v=…: No such
+  file or directory (os error 2)`.
+- **Test**: `reference.qa.mjs` REF-13.
+- **Code**: `refuse_link` (`reference.rs:83`) looks only for `://`.
+  When the path does not exist, also refuse as a link anything whose
+  first segment looks like a host (`www.` or `<name>.<tld>/`, e.g.
+  `youtube.com`, `youtu.be`, `vimeo.com`, `tiktok.com`), before
+  `check()` and before the route joins it to the project root
+  (`reference.rs:778`).
+
+## QA-039 🟡 A song with cover art is taken as a video and leaves an empty folder
+
+- **Steps**: attach `bai-hat.mp3` (an MP3 with embedded cover art, as
+  most downloaded songs have) to a Motion brief.
+- **Expected**: "bai-hat.mp3 has no video stream" (as for an MP3 without
+  art, REF-17 passes), nothing written.
+- **Actual**: `ffmpeg wrote no frame at 2.50 s`, and the project now has
+  `reference/bai-hat/` with only `.od-reference` and empty `scenes/` and
+  `grid/`.
+- **Test**: `reference.qa.mjs` REF-18.
+- **Code**: `probe` (`reference.rs:152`) takes the first `codec_type ==
+  video` stream; cover art is a video stream with `disposition.
+  attached_pic = 1`. Ask for `stream=disposition` and skip attached
+  pictures. Separately, `build` (`reference.rs:462`) claims the folder
+  before any frame is written; when a run that created the folder fails,
+  remove what it created.
+
+## QA-040 🟠 Two films with the same name share one reference folder
+
+- **Steps**: attach `clip.mp4` (10 s, 3 scenes) and `clip.mkv` (6 s,
+  1 scene) to one Motion brief ("Ghép nhịp hai phim này"). Also: the
+  same name in two folders (`a/clip.mp4`, `b/clip.mp4`).
+- **Expected**: two reference folders, one per film, or a refusal that
+  names the clash and asks for `--out`.
+- **Actual**: both runs succeed and print `reference/clip`; the folder
+  holds only `clip.mkv`'s facts and frames. Nothing tells the agent that
+  the first film's reference is gone, so a beat map or a compare can be
+  built from the wrong film.
+- **Test**: `reference.qa.mjs` REF-19.
+- **Code**: `default_out` (`reference.rs:545`) uses the file stem only,
+  and `claim` accepts any folder with `.od-reference`. Before reusing a
+  marked folder, read its `facts.json` `source`; when it names another
+  file, pick `reference/<stem>-<ext>` (or `-2`) instead.
+
+## QA-041 🟠 Running the reference again deletes the user's NNN.png files
+
+- **Steps**: a reference of `ngang.mp4` (3 scenes); the user saves an
+  annotated frame as `reference/ngang/scenes/010.png`; the agent runs
+  `od media reference ngang.mp4` again.
+- **Expected** (brief and features.md: Contour never removes files it did
+  not write): `scenes/010.png` stays. Files with other names stay today
+  (`beats.md`, `scenes/sketch.png`: REF-07 passes).
+- **Actual**: `scenes/010.png` is deleted. Any file named
+  `<digits>.png` in `scenes/` or `grid/` of a marked folder goes, whoever
+  wrote it; the same for `od media compare --out` in its marked folder.
+- **Test**: `reference.qa.mjs` REF-21.
+- **Code**: `clear_frames` (`reference.rs:438`) removes by name pattern.
+  Remove only the frames the last run listed (the old `facts.json`'s
+  `scenes[].frame` and `grid[].frame`; for compare, the points it wrote),
+  or keep that list in the mark file.
