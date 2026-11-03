@@ -4,7 +4,6 @@
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
 use serde_json::Value;
-use std::net::TcpListener;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
@@ -23,13 +22,8 @@ impl Drop for Daemon {
     }
 }
 
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
+#[path = "support/lock_url.rs"]
+mod lock_url;
 
 /// `bare`: run `od` with no subcommand (port from `OD_PORT`).
 fn start(bare: bool) -> Daemon {
@@ -55,7 +49,7 @@ fn start_with(
             return daemon;
         }
     }
-    panic!("daemon did not start after 3 ports");
+    panic!("daemon did not start after 3 tries");
 }
 
 fn try_start(
@@ -72,10 +66,9 @@ fn try_start(
         "---\nname: demo\ndescription: Demo skill.\n---\nBody",
     )
     .unwrap();
-    let port = free_port();
     let mut cmd = Command::new(OD);
     if !bare {
-        cmd.args(["daemon", "start", "--port", &port.to_string()]);
+        cmd.args(["daemon", "start", "--port", "0"]);
         cmd.args(args);
     }
     if let Some(dir) = dir {
@@ -86,7 +79,7 @@ fn try_start(
         cmd.env("PATH", std::env::join_paths(parts).unwrap());
     }
     let child = cmd
-        .env("OD_PORT", port.to_string())
+        .env("OD_PORT", "0")
         .env("OD_DATA_DIR", tmp.path().join("data"))
         .env("OD_RESOURCE_ROOT", &resources)
         .env("RUST_LOG", "warn")
@@ -96,12 +89,13 @@ fn try_start(
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let daemon = Daemon {
+    let mut child = child;
+    let url = lock_url::wait(&tmp.path().join("data"), &mut child)?;
+    let mut daemon = Daemon {
         child,
-        url: format!("http://127.0.0.1:{port}"),
+        url,
         _tmp: tmp,
     };
-    let mut daemon = daemon;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if od(&daemon, &["daemon", "status"]).status.success() {
@@ -227,14 +221,9 @@ fn bare_od_starts_the_daemon() {
 
 #[test]
 fn unreachable_daemon_is_a_clear_error() {
-    let port = free_port();
+    // Nothing can listen on port 0, so the connection fails at once.
     let out = Command::new(OD)
-        .args([
-            "--daemon-url",
-            &format!("http://127.0.0.1:{port}"),
-            "project",
-            "list",
-        ])
+        .args(["--daemon-url", "http://127.0.0.1:0", "project", "list"])
         .output()
         .unwrap();
     assert!(!out.status.success());
@@ -245,14 +234,7 @@ fn unreachable_daemon_is_a_clear_error() {
 fn non_loopback_bind_requires_token() {
     let tmp = tempfile::tempdir().unwrap();
     let out = Command::new(OD)
-        .args([
-            "daemon",
-            "start",
-            "--host",
-            "0.0.0.0",
-            "--port",
-            &free_port().to_string(),
-        ])
+        .args(["daemon", "start", "--host", "0.0.0.0", "--port", "0"])
         .env("OD_DATA_DIR", tmp.path())
         .env_remove("OD_API_TOKEN")
         .output()

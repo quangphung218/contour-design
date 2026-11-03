@@ -98,8 +98,9 @@ fn stub_daemon(body: Value) -> String {
 
 /// A loopback URL with nothing listening: a port that was free a moment ago.
 fn dead_url() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    format!("http://{}", listener.local_addr().unwrap())
+    // Nothing can listen on port 0. A port picked free and released
+    // could be taken by a daemon of a test running beside this one.
+    "http://127.0.0.1:0".to_owned()
 }
 
 /// The running app, its URL in `data`'s `daemon.lock`.

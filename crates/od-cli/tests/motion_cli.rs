@@ -8,7 +8,6 @@
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
 use serde_json::Value;
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -29,22 +28,15 @@ impl Drop for Daemon {
     }
 }
 
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
+#[path = "support/lock_url.rs"]
+mod lock_url;
 
 fn start(env: &[(&str, &str)]) -> Daemon {
-    // The free port can be taken before the daemon binds it: retry.
     for _ in 0..3 {
         let tmp = tempfile::tempdir().unwrap();
         let data = tmp.path().join("data");
-        let port = free_port();
-        let child = Command::new(OD)
-            .args(["daemon", "start", "--port", &port.to_string()])
+        let mut child = Command::new(OD)
+            .args(["daemon", "start", "--port", "0"])
             .env("OD_DATA_DIR", &data)
             .env("OD_RESOURCE_ROOT", tmp.path().join("resources"))
             .env("RUST_LOG", "warn")
@@ -56,9 +48,12 @@ fn start(env: &[(&str, &str)]) -> Daemon {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
+        let Some(url) = lock_url::wait(&data, &mut child) else {
+            continue;
+        };
         let mut d = Daemon {
             child,
-            url: format!("http://127.0.0.1:{port}"),
+            url,
             data,
             _tmp: tmp,
         };

@@ -11,7 +11,7 @@ use rmcp::model::{CallToolRequestParams, ReadResourceRequestParams};
 use rmcp::service::RunningService;
 use rmcp::transport::TokioChildProcess;
 use serde_json::{Map, Value, json};
-use std::net::{SocketAddr, TcpListener as StdListener};
+use std::net::SocketAddr;
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::Arc;
@@ -19,13 +19,8 @@ use std::time::{Duration, Instant};
 
 const OD: &str = env!("CARGO_BIN_EXE_od");
 
-fn free_port() -> u16 {
-    StdListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
+#[path = "support/lock_url.rs"]
+mod lock_url;
 
 /// The real daemon router over a temp data dir, in this process.
 async fn real_daemon(tmp: &Path) -> String {
@@ -477,7 +472,7 @@ async fn mcp_run_tools_against_the_real_run_engine() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_lists_tools_with_the_daemon_down() {
     // Port 0: no process can listen there, so the connect fails at once.
-    // A port from `free_port` is released before use, and a daemon of a
+    // A port picked free and released before use: a daemon of a
     // test running beside this one could take it and answer ("daemon
     // request failed", not "cannot reach"); a held socket that does not
     // listen makes macOS wait for the connect timeout instead.
@@ -737,7 +732,6 @@ impl Drop for Daemon {
 fn start_daemon() -> Daemon {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(tmp.path().join("resources/skills")).unwrap();
-    let port = free_port();
     let mut cmd = Command::new(OD);
     // Inside another sandbox (the maintainer's pre-merge check runs `make check` under
     // sandbox-exec) Chrome cannot start its own and PDF export hangs; the
@@ -745,8 +739,8 @@ fn start_daemon() -> Daemon {
     if !od_render_cdp::find_chrome().is_ok_and(|c| od_render_cdp::chrome_sandbox_works(&c)) {
         cmd.env(od_render_cdp::NO_SANDBOX_ENV, "1");
     }
-    let child = cmd
-        .args(["daemon", "start", "--port", &port.to_string()])
+    let mut child = cmd
+        .args(["daemon", "start", "--port", "0"])
         .env("OD_DATA_DIR", tmp.path().join("data"))
         .env("OD_RESOURCE_ROOT", tmp.path().join("resources"))
         .env("RUST_LOG", "warn")
@@ -754,11 +748,9 @@ fn start_daemon() -> Daemon {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let d = Daemon {
-        child,
-        url: format!("http://127.0.0.1:{port}"),
-        tmp,
-    };
+    let url =
+        lock_url::wait(&tmp.path().join("data"), &mut child).expect("the daemon did not start");
+    let d = Daemon { child, url, tmp };
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if od(&d, &["daemon", "status"]).status.success() {

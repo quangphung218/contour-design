@@ -15,8 +15,9 @@ const OD: &str = env!("CARGO_BIN_EXE_od");
 
 /// A loopback URL with nothing listening.
 fn dead_url() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    format!("http://{}", listener.local_addr().unwrap())
+    // Nothing can listen on port 0. A port picked free and released
+    // could be taken by a daemon of a test running beside this one.
+    "http://127.0.0.1:0".to_owned()
 }
 
 fn media_models(data: &Path, args: &[&str], env: Option<&str>) -> Output {
@@ -36,7 +37,7 @@ fn a_given_url_is_not_replaced_by_daemon_lock() {
     let data = tempfile::tempdir().unwrap();
     // The lock names another dead daemon: reaching it would fail with its
     // URL instead of the given one.
-    let lock = dead_url();
+    let lock = "http://localhost:0".to_owned();
     std::fs::write(data.path().join("daemon.lock"), &lock).unwrap();
     let given = dead_url();
     for (args, env) in [

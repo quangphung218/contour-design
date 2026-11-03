@@ -7,7 +7,6 @@
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
 use serde_json::Value;
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -28,13 +27,8 @@ impl Drop for Daemon {
     }
 }
 
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
+#[path = "support/lock_url.rs"]
+mod lock_url;
 
 fn od(url: &str, args: &[&str]) -> Output {
     Command::new(OD)
@@ -50,13 +44,12 @@ fn start(mocks: &Path) -> Daemon {
     for _ in 0..3 {
         let tmp = tempfile::tempdir().unwrap();
         let data = tmp.path().join("data");
-        let port = free_port();
         let mut path = vec![mocks.to_path_buf()];
         path.extend(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
         ));
-        let child = Command::new(OD)
-            .args(["daemon", "start", "--port", &port.to_string()])
+        let mut child = Command::new(OD)
+            .args(["daemon", "start", "--port", "0"])
             .env("PATH", std::env::join_paths(path).unwrap())
             .env("OD_DATA_DIR", &data)
             .env("OD_RESOURCE_ROOT", tmp.path().join("resources"))
@@ -67,9 +60,12 @@ fn start(mocks: &Path) -> Daemon {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
+        let Some(url) = lock_url::wait(&data, &mut child) else {
+            continue;
+        };
         let mut d = Daemon {
             child,
-            url: format!("http://127.0.0.1:{port}"),
+            url,
             data,
             _tmp: tmp,
         };
@@ -263,7 +259,8 @@ fn without_a_token_or_a_daemon_the_wrapper_says_why() {
     let input = tmp.path().join("artifact.json");
     std::fs::write(&input, r#"{"title":"T"}"#).unwrap();
     let input = input.to_string_lossy().into_owned();
-    let url = format!("http://127.0.0.1:{}", free_port());
+    // Nothing can listen on port 0: no daemon answers there.
+    let url = "http://127.0.0.1:0".to_owned();
 
     let out = od(
         &url,
