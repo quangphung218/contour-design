@@ -628,6 +628,67 @@ fn a_run_killed_half_way_is_cleared_by_the_next() {
     assert_eq!(pngs(&tmp.path().join("pairs")), 2);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_rerun_that_fails_takes_back_its_frames_in_a_folder_it_had() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    let dir = tmp.path().join("reference/clip");
+    std::fs::write(dir.join("beats.md"), b"the user's").unwrap();
+    // Frames are written, then the contact sheet fails.
+    let fake = fake_ffmpeg(
+        &tmp.path().join("no-sheet"),
+        &ffmpeg,
+        "case \"$*\" in *contact-sheet*|*pairs/002.png*) echo broken >&2; exit 1;; esac\nexec \"$REAL\" \"$@\"",
+    );
+    let out = od(
+        tmp.path(),
+        &["media", "reference", "clip.mp4"],
+        &[("OD_FFMPEG_PATH", fake.to_str().unwrap())],
+    );
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("broken"), "{}", text(&out));
+    for sub in ["scenes", "grid"] {
+        assert_eq!(
+            pngs(&dir.join(sub)),
+            0,
+            "{sub} keeps the failed run's frames"
+        );
+    }
+    assert!(!dir.join("facts.json").exists());
+    assert!(dir.join(".od-reference").is_file());
+    assert_eq!(std::fs::read(dir.join("beats.md")).unwrap(), b"the user's");
+    // The next run takes the folder again.
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert_reference(&dir);
+
+    // compare --out, run once, then failing at its second pair.
+    let mut args = [
+        "media", "compare", "clip.mp4", "clip.mp4", "--points", "4", "--out", "pairs",
+    ];
+    let out = od(tmp.path(), &args, &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    args[5] = "3";
+    let out = od(
+        tmp.path(),
+        &args,
+        &[("OD_FFMPEG_PATH", fake.to_str().unwrap())],
+    );
+    assert!(!out.status.success(), "{}", text(&out));
+    assert_eq!(
+        pngs(&tmp.path().join("pairs")),
+        0,
+        "the failed run's pairs stay"
+    );
+    let out = od(tmp.path(), &args, &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert_eq!(pngs(&tmp.path().join("pairs")), 3);
+}
+
 #[test]
 fn a_file_that_is_not_a_video_is_told_plainly() {
     let Some(ffmpeg) = ffmpeg() else { return };
