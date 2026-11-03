@@ -256,6 +256,47 @@ fn compare_scores_a_film_against_itself_and_another() {
 }
 
 #[test]
+fn a_portrait_film_is_read_as_it_plays() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    let flat = tmp.path().join("flat.mp4");
+    other_film(&ffmpeg, &flat);
+    // Stored 320×240, shown turned a quarter: a phone's portrait clip.
+    ff(
+        &ffmpeg,
+        &[
+            "-display_rotation",
+            "90",
+            "-i",
+            flat.to_str().unwrap(),
+            "-c",
+            "copy",
+        ],
+        &tmp.path().join("rot.mp4"),
+    );
+    let out = od(
+        tmp.path(),
+        &["--json", "media", "reference", "rot.mp4"],
+        &[],
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let f = &v["facts"];
+    assert_eq!(
+        (f["width"].as_u64(), f["height"].as_u64()),
+        (Some(240), Some(320)),
+        "{f}"
+    );
+    // The frames are turned the same way.
+    let png = std::fs::read(tmp.path().join("reference/rot/grid/001.png")).unwrap();
+    let (w, h) = (
+        u32::from_be_bytes(png[16..20].try_into().unwrap()),
+        u32::from_be_bytes(png[20..24].try_into().unwrap()),
+    );
+    assert_eq!((w, h), (240, 320));
+}
+
+#[test]
 fn links_are_refused_before_anything_runs() {
     let tmp = tempfile::tempdir().unwrap();
     for args in [

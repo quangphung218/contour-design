@@ -140,7 +140,7 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
     cmd.args(["-v", "error", "-protocol_whitelist", "file"])
         .args([
             "-show_entries",
-            "format=duration:stream=codec_type,width,height,avg_frame_rate,r_frame_rate",
+            "format=duration:stream=codec_type,width,height,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate",
             "-of",
             "json",
         ])
@@ -169,12 +169,41 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
         .and_then(|d| d.parse::<f64>().ok())
         .filter(|d| d.is_finite() && *d > 0.0)
         .ok_or_else(|| format!("ffprobe gives no duration for {}", video.display()))?;
+    // A phone's portrait clip is stored landscape and turned on playback;
+    // ffmpeg turns the frames it writes, so the facts follow the picture.
+    let (width, height) = if quarter_turn(vs) {
+        (dim("height"), dim("width"))
+    } else {
+        (dim("width"), dim("height"))
+    };
     Ok(Probe {
         duration,
-        width: dim("width"),
-        height: dim("height"),
+        width,
+        height,
         fps: (fps * 1000.0).round() / 1000.0,
         has_audio: streams.iter().any(|s| s["codec_type"] == "audio"),
+    })
+}
+
+/// Whether a video stream plays turned by 90° or 270°: its display matrix
+/// (`side_data_list[].rotation`), else the older `rotate` tag.
+fn quarter_turn(stream: &Value) -> bool {
+    let side = stream["side_data_list"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find_map(|d| d["rotation"].as_f64());
+    let tag = || {
+        stream["tags"]["rotate"]
+            .as_str()?
+            .trim()
+            .parse::<f64>()
+            .ok()
+    };
+    side.or_else(tag).is_some_and(|r| {
+        #[allow(clippy::cast_possible_truncation)] // a whole number of degrees
+        let r = (r.round() as i64).rem_euclid(360);
+        r == 90 || r == 270
     })
 }
 
@@ -776,6 +805,16 @@ mod tests {
         let b: Vec<u8> = a.iter().map(|p| 255 - p).collect();
         assert!((ssim(&a, &a, w, h) - 1.0).abs() < 1e-9);
         assert!(ssim(&a, &b, w, h) < 0.2);
+    }
+
+    #[test]
+    fn quarter_turns_come_from_side_data_or_the_old_tag() {
+        let side = |r: f64| json!({ "side_data_list": [{ "rotation": r }] });
+        assert!(quarter_turn(&side(90.0)) && quarter_turn(&side(-90.0)));
+        assert!(quarter_turn(&side(270.0)) && !quarter_turn(&side(180.0)));
+        assert!(quarter_turn(&json!({ "tags": { "rotate": "90" } })));
+        assert!(!quarter_turn(&json!({ "tags": { "rotate": "0" } })));
+        assert!(!quarter_turn(&json!({})));
     }
 
     #[test]
