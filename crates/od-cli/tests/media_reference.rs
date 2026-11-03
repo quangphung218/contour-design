@@ -593,6 +593,41 @@ fn a_failed_run_removes_only_what_it_wrote() {
     assert!(!tmp.path().join("reference/clip").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn a_run_killed_half_way_is_cleared_by_the_next() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    // Kills `od` (its parent) when asked for grid/002.png or pair 003.png.
+    let fake = fake_ffmpeg(
+        &tmp.path().join("killer"),
+        &ffmpeg,
+        "case \"$*\" in *grid/002.png*|*/003.png*) kill -9 $PPID; exit 1;; esac\nexec \"$REAL\" \"$@\"",
+    );
+    let killer = [("OD_FFMPEG_PATH", fake.to_str().unwrap())];
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &killer);
+    assert!(!out.status.success(), "{}", text(&out));
+    let dir = tmp.path().join("reference/clip");
+    assert!(dir.join("scenes/001.png").is_file() && !dir.join("facts.json").exists());
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert_reference(&dir);
+
+    let pairs = [
+        "media", "compare", "clip.mp4", "clip.mp4", "--points", "4", "--out", "pairs",
+    ];
+    let out = od(tmp.path(), &pairs, &killer);
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(tmp.path().join("pairs/001.png").is_file());
+    // Run again with 2 points: the killed run's 001 and 002 are cleared.
+    let mut again = pairs;
+    again[5] = "2";
+    let out = od(tmp.path(), &again, &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert_eq!(pngs(&tmp.path().join("pairs")), 2);
+}
+
 #[test]
 fn a_file_that_is_not_a_video_is_told_plainly() {
     let Some(ffmpeg) = ffmpeg() else { return };

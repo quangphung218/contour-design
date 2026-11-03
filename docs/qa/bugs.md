@@ -1032,6 +1032,9 @@ Reported by the UX review of 759581a.
   `facts.json` lists, and `od media compare --out` only the pairs it listed
   under its `.od-compare` mark; a run that fails takes back the files it
   wrote. A new frame whose name a file of the user's already has (a rerun
-  with more scenes) is refused, never written over. Rust: `a_rerun_keeps_frames_the_user_saved_under_a_frame_name`
+  with more scenes) is refused, never written over.
+  Each frame is listed under the mark before it is written, so a run killed
+  half way (no `facts.json`) is cleared by the next; a beta.16 mark, which
+  lists none, still owns every `NNN.png` in its folder. Rust: `a_rerun_keeps_frames_the_user_saved_under_a_frame_name`
   (od-cli), `only_frame_names_in_their_folders_are_listed_for_removal`
   (od-server).

@@ -612,34 +612,76 @@ fn is_frame(name: &str, dirs: &[&str]) -> bool {
             .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// The frames the last reference run listed in `out/facts.json`. A frame
-/// the user saved there under the same kind of name is not listed, so it
-/// stays.
-fn listed_frames(out: &FsPath) -> Vec<String> {
-    let Some(v) = std::fs::read(out.join("facts.json"))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-    else {
-        return Vec::new();
-    };
-    let scenes = v["scenes"].as_array().into_iter().flatten();
-    let grid = v["grid"].as_array().into_iter().flatten();
-    scenes
-        .filter_map(|s| s["frame"]["frame"].as_str())
-        .chain(grid.filter_map(|g| g["frame"].as_str()))
-        .filter(|f| is_frame(f, &["scenes", "grid"]))
+/// The mark beta.16 wrote, with no list: every `NNN.png` there was its.
+const LEGACY_MARK: &str = "Written by Contour. Its frames here are replaced on each run.\n";
+
+/// The frames a mark lists in `subs` (one per line, added as each is
+/// written); for a beta.16 mark, which lists none, every `NNN.png` there.
+fn mark_frames(dir: &FsPath, mark: &str, subs: &[&str], legacy: bool) -> Vec<String> {
+    let body = std::fs::read_to_string(dir.join(mark)).unwrap_or_default();
+    let mut names: Vec<String> = body
+        .lines()
+        .filter(|l| is_frame(l, subs))
         .map(str::to_owned)
-        .collect()
+        .collect();
+    if legacy && body == LEGACY_MARK {
+        for sub in subs {
+            let entries = std::fs::read_dir(dir.join(sub))
+                .into_iter()
+                .flatten()
+                .flatten();
+            names.extend(entries.filter_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let name = if sub.is_empty() {
+                    name
+                } else {
+                    format!("{sub}/{name}")
+                };
+                is_frame(&name, subs).then_some(name)
+            }));
+        }
+    }
+    names
 }
 
-/// The frames the last compare run listed under its mark in `dir`.
+/// The frames the last reference run wrote in `out`: those its
+/// `facts.json` lists and those its mark lists (a run killed before
+/// `facts.json` was written). A frame the user saved there under the same
+/// kind of name is in neither, so it stays.
+fn listed_frames(out: &FsPath) -> Vec<String> {
+    let dirs = ["scenes", "grid"];
+    let facts = std::fs::read(out.join("facts.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+    let mut names = mark_frames(out, REFERENCE_MARK, &dirs, facts.is_none());
+    if let Some(v) = facts {
+        let scenes = v["scenes"].as_array().into_iter().flatten();
+        let grid = v["grid"].as_array().into_iter().flatten();
+        names.extend(
+            scenes
+                .filter_map(|s| s["frame"]["frame"].as_str())
+                .chain(grid.filter_map(|g| g["frame"].as_str()))
+                .filter(|f| is_frame(f, &dirs))
+                .map(str::to_owned),
+        );
+    }
+    names
+}
+
+/// The pairs the last compare run listed under its mark in `dir`.
 fn listed_pairs(dir: &FsPath) -> Vec<String> {
-    std::fs::read_to_string(dir.join(COMPARE_MARK))
-        .unwrap_or_default()
-        .lines()
-        .filter(|l| is_frame(l, &[""]))
-        .map(str::to_owned)
-        .collect()
+    mark_frames(dir, COMPARE_MARK, &[""], true)
+}
+
+/// Adds `name` to the list in `dir`'s `mark`, before the file is written:
+/// a run killed half way leaves the next one the list of what to clear.
+fn record(dir: &FsPath, mark: &str, name: &str) -> Result<(), String> {
+    use std::io::Write as _;
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(dir.join(mark))
+        .and_then(|mut f| writeln!(f, "{name}"))
+        .map_err(|e| format!("cannot write {}: {e}", dir.display()))
 }
 
 /// Refuses to write `name` in `dir` over a file already there: the last
@@ -813,9 +855,11 @@ fn take_and_fill(
         // A failed run takes back what it wrote: the next one could not
         // tell those frames from the user's.
         let _ = remove_listed(out, &written);
-        if created {
-            let _ = std::fs::remove_file(out.join(REFERENCE_MARK));
-        }
+        let _ = if created {
+            std::fs::remove_file(out.join(REFERENCE_MARK))
+        } else {
+            std::fs::write(out.join(REFERENCE_MARK), mark_head(Some(&source)))
+        };
     }
     Ok(res?)
 }
@@ -834,6 +878,7 @@ fn fill(
     let scenes = scenes_of(&cuts, probe.duration);
     for shot in scenes.iter().filter_map(|s| s.frame.as_ref()) {
         not_there(out, &shot.frame)?;
+        record(out, REFERENCE_MARK, &shot.frame)?;
         written.push(shot.frame.clone());
         frame(tools, video, shot.time, 1280, &out.join(&shot.frame))?;
     }
@@ -847,6 +892,7 @@ fn fill(
         .collect();
     for shot in &grid {
         not_there(out, &shot.frame)?;
+        record(out, REFERENCE_MARK, &shot.frame)?;
         written.push(shot.frame.clone());
         frame(tools, video, shot.time, 640, &out.join(&shot.frame))?;
     }
@@ -1051,12 +1097,11 @@ pub fn compare(
     let mut written = Vec::new();
     let scored = score(tools, (a, &pa), (b, &pb), points, pairs, &mut written);
     if let Some(dir) = pairs {
+        // Each pair was listed under the mark as it was written; a run
+        // that fails takes them back and empties the list.
         if scored.is_err() {
             let _ = remove_listed(dir, &written);
-        } else {
-            let list: String = written.iter().map(|w| format!("{w}\n")).collect();
-            std::fs::write(dir.join(COMPARE_MARK), format!("{MARK_TEXT}{list}"))
-                .map_err(|e| io(dir, e))?;
+            let _ = std::fs::write(dir.join(COMPARE_MARK), MARK_TEXT);
         }
     }
     let scored = scored?;
@@ -1094,6 +1139,7 @@ fn score(
             Some(dir) => {
                 let name = format!("{:03}.png", i + 1);
                 not_there(dir, &name)?;
+                record(dir, COMPARE_MARK, &name)?;
                 let png = dir.join(&name);
                 written.push(name);
                 pair(tools, a, ta, b, tb, &png)?;
@@ -1363,6 +1409,29 @@ mod tests {
             vec!["scenes/001.png", "grid/001.png"]
         );
         assert!(listed_frames(&tmp.path().join("none")).is_empty());
+    }
+
+    #[test]
+    fn marks_list_what_their_runs_wrote_and_old_marks_all_frames() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::create_dir_all(dir.join("grid")).unwrap();
+        for f in ["grid/001.png", "grid/002.png", "001.png", "notes.png"] {
+            std::fs::write(dir.join(f), b"x").unwrap();
+        }
+        std::fs::write(dir.join(REFERENCE_MARK), mark_head(Some("a.mp4"))).unwrap();
+        record(dir, REFERENCE_MARK, "grid/001.png").unwrap();
+        assert_eq!(listed_frames(dir), ["grid/001.png"]);
+        assert_eq!(taken_for(dir).as_deref(), Some("a.mp4"));
+        // beta.16 marks list nothing: every NNN.png was theirs.
+        std::fs::write(dir.join(REFERENCE_MARK), LEGACY_MARK).unwrap();
+        let mut all = listed_frames(dir);
+        all.sort();
+        assert_eq!(all, ["grid/001.png", "grid/002.png"]);
+        std::fs::write(dir.join(COMPARE_MARK), LEGACY_MARK).unwrap();
+        assert_eq!(listed_pairs(dir), ["001.png"]);
+        std::fs::write(dir.join(COMPARE_MARK), MARK_TEXT).unwrap();
+        assert!(listed_pairs(dir).is_empty());
     }
 
     #[test]
