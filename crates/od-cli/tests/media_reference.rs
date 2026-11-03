@@ -689,6 +689,115 @@ fn a_rerun_that_fails_takes_back_its_frames_in_a_folder_it_had() {
     assert_eq!(pngs(&tmp.path().join("pairs")), 3);
 }
 
+/// `od` with `args` in `cwd`, started and left running.
+fn od_spawn(cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> Child {
+    Command::new(OD)
+        .args(args)
+        .current_dir(cwd)
+        .env_remove("OD_PROJECT_ID")
+        .env_remove("OD_RUN_ID")
+        .env_remove("OD_FFMPEG_PATH")
+        .envs(env.iter().copied())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap()
+}
+
+fn wait_for(path: &Path) {
+    let start = Instant::now();
+    while !path.exists() && start.elapsed() < Duration::from_secs(20) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(path.exists(), "{} never appeared", path.display());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_second_run_into_a_folder_being_written_is_refused() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let slow = fake_ffmpeg(
+        &tmp.path().join("slow"),
+        &ffmpeg,
+        "sleep 0.4\nexec \"$REAL\" \"$@\"",
+    );
+    let slow = [("OD_FFMPEG_PATH", slow.to_str().unwrap())];
+    let dir = tmp.path().join("reference/clip");
+
+    let first = od_spawn(tmp.path(), &["media", "reference", "clip.mp4"], &slow);
+    wait_for(&dir.join("scenes/001.png"));
+    let second = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(!second.status.success(), "{}", text(&second));
+    assert!(
+        text(&second).contains("another run is writing"),
+        "{}",
+        text(&second)
+    );
+    let first = first.wait_with_output().unwrap();
+    assert!(first.status.success(), "{}", text(&first));
+    let facts: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("facts.json")).unwrap()).unwrap();
+    let scenes = facts["scenes"].as_array().unwrap().iter();
+    let grid = facts["grid"].as_array().unwrap().iter();
+    let frames = scenes
+        .filter_map(|s| s["frame"]["frame"].as_str())
+        .chain(grid.filter_map(|g| g["frame"].as_str()));
+    for f in frames {
+        assert!(dir.join(f).is_file(), "{f} is listed but gone");
+    }
+    assert_reference(&dir);
+    assert!(!dir.join(".od-running").exists());
+
+    let args = [
+        "media", "compare", "clip.mp4", "clip.mp4", "--points", "3", "--out", "pairs",
+    ];
+    let first = od_spawn(tmp.path(), &args, &slow);
+    wait_for(&tmp.path().join("pairs/001.png"));
+    let second = od(tmp.path(), &args, &[]);
+    assert!(!second.status.success(), "{}", text(&second));
+    assert!(
+        text(&second).contains("another run is writing"),
+        "{}",
+        text(&second)
+    );
+    let first = first.wait_with_output().unwrap();
+    assert!(first.status.success(), "{}", text(&first));
+    assert_eq!(pngs(&tmp.path().join("pairs")), 3);
+    assert!(!tmp.path().join("pairs/.od-running").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn compare_that_fails_in_a_new_folder_leaves_none() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let fake = fake_ffmpeg(
+        &tmp.path().join("no-pair"),
+        &ffmpeg,
+        "case \"$*\" in *002.png*) echo broken >&2; exit 1;; esac\nexec \"$REAL\" \"$@\"",
+    );
+    let out = od(
+        tmp.path(),
+        &[
+            "media",
+            "compare",
+            "clip.mp4",
+            "clip.mp4",
+            "--points",
+            "3",
+            "--out",
+            "new/pairs",
+        ],
+        &[("OD_FFMPEG_PATH", fake.to_str().unwrap())],
+    );
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("broken"), "{}", text(&out));
+    assert!(!tmp.path().join("new").exists());
+}
+
 #[test]
 fn a_file_that_is_not_a_video_is_told_plainly() {
     let Some(ffmpeg) = ffmpeg() else { return };
