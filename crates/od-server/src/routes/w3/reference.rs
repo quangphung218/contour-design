@@ -659,15 +659,22 @@ impl RunLock {
         )))
     }
 
-    /// Locks `file`, opened at `path`; `None` when `path` no longer names
-    /// it.
-    fn hold(path: PathBuf, file: std::fs::File) -> Result<Option<Self>, fs4::TryLockError> {
+    /// Locks `file`, opened at `path`, and writes this process's id in it;
+    /// `None` when `path` no longer names it.
+    fn hold(path: PathBuf, mut file: std::fs::File) -> Result<Option<Self>, fs4::TryLockError> {
+        use std::io::Write as _;
         // Through fs4: `File::try_lock` needs Rust 1.89, newer than ours.
         fs4::FileExt::try_lock(&file)?;
         // Not built otherwise: its drop would remove the file now there.
         if !still_named(&file, &path) {
             return Ok(None);
         }
+        // A beta.17 daemon reads the pid, and takes an empty lock over once
+        // it is a minute old: with a live pid in it, it sees the folder busy.
+        file.set_len(0)
+            .and_then(|()| writeln!(file, "{}", std::process::id()))
+            .and_then(|()| file.flush())
+            .map_err(fs4::TryLockError::Error)?;
         Ok(Some(Self {
             path,
             file: Some(file),
@@ -904,9 +911,10 @@ fn write_reference(
     probe: Probe,
 ) -> Result<Facts, RunErr> {
     let fresh = fresh_root(out);
-    let res = take_and_fill(tools, video, out, size, probe);
+    let mut lock = None;
+    let res = take_and_fill(tools, video, out, size, probe, &mut lock);
     if let (Err(RunErr::Failed(_)), Some(fresh)) = (&res, fresh) {
-        remove_empty_dirs(out, &fresh, &["scenes", "grid"]);
+        remove_empty_dirs(out, &fresh, &["scenes", "grid"], lock);
     }
     res
 }
@@ -920,12 +928,15 @@ fn fresh_root(dir: &FsPath) -> Option<PathBuf> {
         .map(FsPath::to_path_buf)
 }
 
-/// Removes `subs` of `dir`, then `dir` and its parents up to `fresh`,
-/// each only while it is empty.
-fn remove_empty_dirs(dir: &FsPath, fresh: &FsPath, subs: &[&str]) {
+/// Removes `subs` of `dir` while the run still holds `lock`, then lets it
+/// go (its [`RUN_LOCK`] with it) and removes `dir` and its parents up to
+/// `fresh`, each only while it is empty. A run that took the folder the
+/// moment the lock went has its mark in it by then, or fails to write it.
+fn remove_empty_dirs(dir: &FsPath, fresh: &FsPath, subs: &[&str], lock: Option<RunLock>) {
     for sub in subs {
         let _ = std::fs::remove_dir(dir.join(sub));
     }
+    drop(lock);
     for d in dir.ancestors() {
         if std::fs::remove_dir(d).is_err() || d == fresh {
             break;
@@ -940,12 +951,13 @@ fn take_and_fill(
     out: &FsPath,
     size: u64,
     probe: Probe,
+    lock: &mut Option<RunLock>,
 ) -> Result<Facts, RunErr> {
     let io = |e: std::io::Error| format!("cannot write {}: {e}", out.display());
     let source = shown_name(video);
     let created = claim(out, REFERENCE_MARK, Some(&source))?;
-    // Held until this function returns, after any take-back below.
-    let _lock = RunLock::take(out)?;
+    // Held by the caller until it has taken back the folders it made.
+    *lock = Some(RunLock::take(out)?);
     // Only what the last run wrote goes: the frames its facts.json lists,
     // never another file of the same kind of name.
     let mut old = listed_frames(out);
@@ -1200,10 +1212,11 @@ pub fn compare(
     let scored = match pairs {
         Some(dir) => {
             let fresh = fresh_root(dir);
-            let res = take_and_pair(tools, (a, &pa), (b, &pb), points, dir);
+            let mut lock = None;
+            let res = take_and_pair(tools, (a, &pa), (b, &pb), points, dir, &mut lock);
             // A new folder left with only the mark goes too.
             if let (Err(RunErr::Failed(_)), Some(fresh)) = (&res, fresh) {
-                remove_empty_dirs(dir, &fresh, &[]);
+                remove_empty_dirs(dir, &fresh, &[], lock);
             }
             res.map_err(RunErr::message)?
         }
@@ -1229,11 +1242,12 @@ fn take_and_pair(
     b: (&FsPath, &Probe),
     points: usize,
     dir: &FsPath,
+    lock: &mut Option<RunLock>,
 ) -> Result<Vec<Point>, RunErr> {
     let io = |e: std::io::Error| format!("cannot write {}: {e}", dir.display());
     let created = claim(dir, COMPARE_MARK, None)?;
-    // Held until this function returns, after any take-back below.
-    let _lock = RunLock::take(dir)?;
+    // Held by the caller until it has taken back the folder it made.
+    *lock = Some(RunLock::take(dir)?);
     // Only the pairs the last run listed under its mark go.
     remove_listed(dir, &listed_pairs(dir)).map_err(io)?;
     std::fs::write(dir.join(COMPARE_MARK), MARK_TEXT).map_err(io)?;
@@ -1624,6 +1638,9 @@ mod tests {
     fn a_folder_being_written_is_held_until_its_run_ends() {
         let tmp = tempfile::tempdir().unwrap();
         let lock = RunLock::take(tmp.path()).unwrap();
+        // The pid, for a beta.17 daemon that reads it.
+        let body = std::fs::read_to_string(tmp.path().join(RUN_LOCK)).unwrap();
+        assert_eq!(body, format!("{}\n", std::process::id()));
         // A second run, in this same process too, is refused.
         let second = RunLock::take(tmp.path()).unwrap_err();
         let want = format!(
@@ -1682,5 +1699,17 @@ mod tests {
         std::fs::write(tmp.path().join(format!("{RUN_LOCK}-stale-1-0")), "1\n").unwrap();
         std::fs::write(tmp.path().join(RUN_LOCK), "").unwrap();
         assert!(claim(tmp.path(), REFERENCE_MARK, Some("clip.mp4")).unwrap());
+    }
+
+    #[test]
+    fn a_failed_run_takes_back_its_new_folders_with_its_lock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fresh = tmp.path().join("reference");
+        let dir = fresh.join("clip");
+        std::fs::create_dir_all(dir.join("scenes")).unwrap();
+        std::fs::create_dir_all(dir.join("grid")).unwrap();
+        let lock = RunLock::take(&dir).unwrap();
+        remove_empty_dirs(&dir, &fresh, &["scenes", "grid"], Some(lock));
+        assert!(!fresh.exists());
     }
 }
