@@ -294,7 +294,7 @@ test('REF-13', 'A YouTube link pasted without https:// is refused as a link too,
   assert.match(text, /does not download videos.*attach/i, text);
   assertPlain(text);
   await noReference(d, id);
-}, { knownBug: 'QA-038' });
+});
 
 test('REF-14', 'A text file named .mp4: the chat says it is not a video, without ffprobe internals', async ({ d, newPage }) => {
   const { id, text } = await motion(newPage, d, ['ghi-chu.mp4'], 'Dựng lại phim này qa-ref');

@@ -607,6 +607,10 @@ fn links_are_refused_before_anything_runs() {
             "p1",
         ],
         vec!["media", "compare", "a.mp4", "https://example.com/b.mp4"],
+        // Pasted without the scheme, as share sheets copy them.
+        vec!["media", "reference", "youtube.com/watch?v=dQw4w9WgXcQ"],
+        vec!["media", "reference", "www.youtube.com/watch?v=x"],
+        vec!["media", "compare", "youtu.be/dQw4w9WgXcQ", "a.mp4"],
     ] {
         // No daemon at this url: the refusal comes first.
         let out = od(
@@ -821,6 +825,24 @@ fn with_a_project_the_folder_lands_in_the_project() {
     );
     assert!(!out.status.success());
     assert!(text(&out).contains("at most 200 MB"), "{}", text(&out));
+
+    // A link pasted without https:// is a link, not a missing project file.
+    let out = client(
+        &d,
+        &[
+            "media",
+            "reference",
+            "youtu.be/dQw4w9WgXcQ",
+            "--project",
+            &pid,
+        ],
+    );
+    assert!(!out.status.success());
+    let all = text(&out);
+    assert!(
+        all.contains("is a link") && all.contains("does not download") && !all.contains("os error"),
+        "{all}"
+    );
 }
 
 #[test]

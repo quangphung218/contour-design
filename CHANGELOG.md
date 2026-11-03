@@ -10,6 +10,9 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- A link pasted without `https://` (`youtube.com/watch?v=…`,
+  `youtu.be/…`, `www.…`) is refused as a link, with how to attach the file
+  instead; before, the user was told a project file was missing.
 - A reference that is not a video (a text file named `.mp4`, a PDF, an
   image) is refused with "`<file>` is not a video Contour can read" or "is
   a still image, not a video", and what to attach instead; before, the

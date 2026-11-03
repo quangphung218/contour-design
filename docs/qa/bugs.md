@@ -72,7 +72,7 @@ length is right on both. QA-037…041 each have a red test.
 | QA-040 | 🟠 | Two films with the same name (clip.mp4, clip.mkv) share `reference/clip/`: the second silently replaces the first's facts and frames | `reference.qa.mjs` REF-19 | Fixed |
 | QA-041 | 🟠 | Running the reference again deletes the user's own `NNN.png` files in its `scenes/` and `grid/` (e.g. `scenes/010.png`) | `reference.qa.mjs` REF-21 | Fixed |
 | QA-037 | 🟡 | A file that is not a video (text renamed .mp4, PDF, PNG) is refused with ffprobe's internals ("Invalid data found when processing input / moov atom not found"), or for an image with "copy it into an MP4 first (ffmpeg -i …)" | `reference.qa.mjs` REF-14, REF-15, REF-16 | Fixed |
-| QA-038 | 🟡 | A YouTube link without `https://` (`youtube.com/watch?v=…`, `youtu.be/…`) is read as a project path: "cannot read …/projects/<id>/youtube.com/watch?v=…: No such file or directory (os error 2)" | `reference.qa.mjs` REF-13 | Open |
+| QA-038 | 🟡 | A YouTube link without `https://` (`youtube.com/watch?v=…`, `youtu.be/…`) is read as a project path: "cannot read …/projects/<id>/youtube.com/watch?v=…: No such file or directory (os error 2)" | `reference.qa.mjs` REF-13 | Fixed |
 | QA-039 | 🟡 | A song with cover art is taken as a video: "ffmpeg wrote no frame at 2.50 s", and an empty `reference/<name>/` (only `.od-reference`, `scenes/`, `grid/`) is left in the project | `reference.qa.mjs` REF-18 | Open |
 
 | ID | Sev | Summary | Test | Status |
@@ -954,6 +954,14 @@ Reported by the UX review of 759581a.
   `youtube.com`, `youtu.be`, `vimeo.com`, `tiktok.com`), before
   `check()` and before the route joins it to the project root
   (`reference.rs:778`).
+- **Fixed**: `refuse_bare_link` refuses, with the same words as a
+  `https://` link, a missing path that starts with `www.` or with
+  `<name>.<tld>` followed by `/` or `?`; the route checks it after joining
+  the project root, the CLI before running locally (`reference`,
+  `compare`). A real folder of that name is still read. Rust:
+  `links_without_a_scheme_are_refused_when_no_such_file_exists`
+  (od-server), `links_are_refused_before_anything_runs` and
+  `with_a_project_the_folder_lands_in_the_project` (od-cli).
 
 ## QA-039 🟡 A song with cover art is taken as a video and leaves an empty folder
 

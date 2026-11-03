@@ -81,13 +81,46 @@ pub fn find_tools() -> Result<Tools, String> {
 /// # Errors
 /// What to do instead, for an `http(s)://` (or any `scheme://`) argument.
 pub fn refuse_link(raw: &str) -> Result<(), String> {
-    let lower = raw.trim().to_ascii_lowercase();
-    if lower.contains("://") {
-        return Err(format!(
-            "{raw} is a link. Contour does not download videos: save the file on this machine, attach it to the project (or pass its path), then run the command again."
-        ));
+    if raw.contains("://") {
+        return Err(link_refusal(raw));
     }
     Ok(())
+}
+
+/// Refuses, once `resolved` (where `raw` points on disk) turns out not to
+/// exist, a link pasted without its scheme: `youtube.com/watch?v=…`,
+/// `youtu.be/…`, `www.…`, as share sheets and chat apps copy them.
+///
+/// # Errors
+/// The same refusal as [`refuse_link`].
+pub fn refuse_bare_link(raw: &str, resolved: &FsPath) -> Result<(), String> {
+    if looks_like_link(raw) && !resolved.exists() {
+        return Err(link_refusal(raw));
+    }
+    Ok(())
+}
+
+fn link_refusal(raw: &str) -> String {
+    format!(
+        "{raw} is a link. Contour does not download videos: save the file on this machine, attach it to the project (or pass its path), then run the command again."
+    )
+}
+
+/// `www.<…>`, or `<name>.<tld>` followed by `/` or `?` (`youtu.be/x`,
+/// `vimeo.com/1`): a web address, not a project path.
+fn looks_like_link(raw: &str) -> bool {
+    let raw = raw.trim();
+    let end = raw.find(['/', '?', '#']).unwrap_or(raw.len());
+    let host = raw[..end].to_ascii_lowercase();
+    let labels: Vec<&str> = host.split('.').collect();
+    let is_host = labels.len() >= 2
+        && labels
+            .iter()
+            .all(|l| !l.is_empty() && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+        && labels.last().is_some_and(|t| {
+            (2..=24).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_alphabetic())
+        });
+    is_host && (host.starts_with("www.") || end < raw.len())
 }
 
 /// What ffprobe says about a film.
@@ -944,6 +977,7 @@ pub async fn reference(
         })?;
         root.join(rel)
     };
+    refuse_bare_link(&req.video, &video).map_err(ApiErr::bad_request)?;
     let out = req
         .out
         .as_deref()
@@ -1001,6 +1035,34 @@ mod tests {
             );
         }
         assert!(refuse_link("clips/ref.mp4").is_ok());
+    }
+
+    #[test]
+    fn links_without_a_scheme_are_refused_when_no_such_file_exists() {
+        let missing = FsPath::new("/no/such/path");
+        for l in [
+            "youtube.com/watch?v=dQw4w9WgXcQ",
+            "youtu.be/dQw4w9WgXcQ",
+            "www.youtube.com/watch?v=x",
+            "vimeo.com/123",
+            "www.example.org",
+            " m.tiktok.com/@a/video/1 ",
+        ] {
+            let e = refuse_bare_link(l, missing).unwrap_err();
+            assert!(e.contains("is a link") && e.contains("attach"), "{e}");
+        }
+        for p in [
+            "clips/ref.mp4",
+            "clip.mov",
+            "reference/clip.v2/a.mp4",
+            "../a.mp4",
+            "/abs/youtube.com/x",
+        ] {
+            assert!(refuse_bare_link(p, missing).is_ok(), "{p}");
+        }
+        // A real folder of that name is the user's: it is read.
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(refuse_bare_link("youtu.be/x", tmp.path()).is_ok());
     }
 
     #[test]
