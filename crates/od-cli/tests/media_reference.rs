@@ -182,12 +182,34 @@ fn reference_writes_the_folder_next_to_the_video() {
     assert!(all.contains("10.00 s, 320×240, 25 fps, audio"), "{all}");
     assert_reference(&tmp.path().join("reference/my-ref"));
 
-    // Again: a frame left from an earlier run of the folder is gone.
-    let stale = tmp.path().join("reference/my-ref/grid/099.png");
-    std::fs::write(&stale, b"old").unwrap();
-    let out = od(tmp.path(), &["media", "reference", "my ref.mp4"], &[]);
+    // A 3 s film into the same folder: the 10 s run's later frames are gone.
+    ff(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x240:rate=25:duration=3",
+            "-c:v",
+            "mpeg4",
+        ],
+        &tmp.path().join("short.mp4"),
+    );
+    let out = od(
+        tmp.path(),
+        &[
+            "media",
+            "reference",
+            "short.mp4",
+            "--out",
+            "reference/my-ref",
+        ],
+        &[],
+    );
     assert!(out.status.success(), "{}", text(&out));
-    assert!(!stale.exists());
+    let grid = tmp.path().join("reference/my-ref/grid");
+    assert_eq!(pngs(&grid), 3);
+    assert!(grid.join("003.png").is_file() && !grid.join("004.png").exists());
 
     // Into a chosen new folder, with --json.
     let dir = tmp.path().join("look");
@@ -437,6 +459,41 @@ fn out_never_removes_or_replaces_files_it_did_not_write() {
         assert!(out.status.success(), "{}", text(&out));
     }
     assert_eq!(pngs(&tmp.path().join("pairs")), 2);
+}
+
+#[test]
+fn a_rerun_keeps_frames_the_user_saved_under_a_frame_name() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let dir = tmp.path().join("reference/clip");
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    std::fs::write(dir.join("scenes/010.png"), b"the user's").unwrap();
+    std::fs::write(dir.join("grid/099.png"), b"the user's").unwrap();
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    for f in ["scenes/010.png", "grid/099.png"] {
+        assert_eq!(std::fs::read(dir.join(f)).unwrap(), b"the user's", "{f}");
+    }
+
+    // compare --out: a rerun clears its own pairs, not the user's 099.png.
+    let pairs = tmp.path().join("pairs");
+    for (points, mine) in [("4", false), ("2", true)] {
+        if mine {
+            std::fs::write(pairs.join("099.png"), b"the user's").unwrap();
+        }
+        let out = od(
+            tmp.path(),
+            &[
+                "media", "compare", "clip.mp4", "clip.mp4", "--points", points, "--out", "pairs",
+            ],
+            &[],
+        );
+        assert!(out.status.success(), "{}", text(&out));
+    }
+    assert_eq!(std::fs::read(pairs.join("099.png")).unwrap(), b"the user's");
+    assert!(pairs.join("002.png").is_file() && !pairs.join("003.png").exists());
 }
 
 #[test]

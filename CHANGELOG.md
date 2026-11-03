@@ -8,6 +8,14 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Running `od media reference` again no longer deletes a frame the user
+  saved in its `scenes/` or `grid/` under a numbered name such as
+  `010.png`: only the frames the last run listed in `facts.json` are
+  replaced. `od media compare --out` likewise replaces only the pairs it
+  wrote before.
+
 ## [0.2.0-beta.16] - 2026-11-03
 
 ### Added

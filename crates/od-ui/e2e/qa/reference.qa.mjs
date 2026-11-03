@@ -236,7 +236,7 @@ test('REF-21', 'Running the reference again keeps a frame the user saved as scen
   assert.match(text, /Reference ready/, text);
   const kept = await raw(d, id, 'reference/ngang/scenes/010.png');
   assert.equal(kept?.toString(), 'my annotated frame', 'the user\'s scenes/010.png was deleted');
-}, { knownBug: 'QA-041' });
+});
 
 test('REF-08', 'Compare pointed at a folder of the user\'s files is refused and the files stay', async ({ d, newPage }) => {
   const { page, id } = await motion(newPage, d, ['ngang.mp4'], 'Chỉ đính kèm, chưa làm gì');

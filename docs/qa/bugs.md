@@ -70,7 +70,7 @@ length is right on both. QA-037…041 each have a red test.
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
 | QA-040 | 🟠 | Two films with the same name (clip.mp4, clip.mkv) share `reference/clip/`: the second silently replaces the first's facts and frames | `reference.qa.mjs` REF-19 | Open |
-| QA-041 | 🟠 | Running the reference again deletes the user's own `NNN.png` files in its `scenes/` and `grid/` (e.g. `scenes/010.png`) | `reference.qa.mjs` REF-21 | Open |
+| QA-041 | 🟠 | Running the reference again deletes the user's own `NNN.png` files in its `scenes/` and `grid/` (e.g. `scenes/010.png`) | `reference.qa.mjs` REF-21 | Fixed |
 | QA-037 | 🟡 | A file that is not a video (text renamed .mp4, PDF, PNG) is refused with ffprobe's internals ("Invalid data found when processing input / moov atom not found"), or for an image with "copy it into an MP4 first (ffmpeg -i …)" | `reference.qa.mjs` REF-14, REF-15, REF-16 | Open |
 | QA-038 | 🟡 | A YouTube link without `https://` (`youtube.com/watch?v=…`, `youtu.be/…`) is read as a project path: "cannot read …/projects/<id>/youtube.com/watch?v=…: No such file or directory (os error 2)" | `reference.qa.mjs` REF-13 | Open |
 | QA-039 | 🟡 | A song with cover art is taken as a video: "ffmpeg wrote no frame at 2.50 s", and an empty `reference/<name>/` (only `.od-reference`, `scenes/`, `grid/`) is left in the project | `reference.qa.mjs` REF-18 | Open |
@@ -997,3 +997,9 @@ Reported by the UX review of 759581a.
   Remove only the frames the last run listed (the old `facts.json`'s
   `scenes[].frame` and `grid[].frame`; for compare, the points it wrote),
   or keep that list in the mark file.
+- **Fixed**: `od media reference` removes only the frames the last run's
+  `facts.json` lists, and `od media compare --out` only the pairs it listed
+  under its `.od-compare` mark; a run that fails takes back the files it
+  wrote. Rust: `a_rerun_keeps_frames_the_user_saved_under_a_frame_name`
+  (od-cli), `only_frame_names_in_their_folders_are_listed_for_removal`
+  (od-server).

@@ -426,25 +426,58 @@ fn claim(dir: &FsPath, mark: &str) -> Result<(), String> {
         ));
     }
     std::fs::create_dir_all(dir).map_err(io)?;
-    std::fs::write(
-        dir.join(mark),
-        "Written by Contour. Its frames here are replaced on each run.\n",
-    )
-    .map_err(io)
+    std::fs::write(dir.join(mark), MARK_TEXT).map_err(io)
 }
 
-/// Empties a folder of the `NNN.png` frames an earlier run wrote there.
-/// Only for a folder [`claim`] took.
-fn clear_frames(dir: &FsPath) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    for e in std::fs::read_dir(dir)?.flatten() {
-        let name = e.file_name();
-        let name = name.to_string_lossy();
-        let ours = name
+/// What a mark file says; [`compare`] lists the frames it wrote below it.
+const MARK_TEXT: &str = "Written by Contour. Each run replaces the frames the last run wrote here (listed in facts.json, or below) and no other file.\n";
+
+/// Whether `name` is a frame a run writes: `NNN.png` in one of `dirs`
+/// (`""`: the folder itself), nothing else.
+fn is_frame(name: &str, dirs: &[&str]) -> bool {
+    let (dir, file) = name.rsplit_once('/').unwrap_or(("", name));
+    dirs.contains(&dir)
+        && file
             .strip_suffix(".png")
-            .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()));
-        if ours {
-            std::fs::remove_file(e.path())?;
+            .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The frames the last reference run listed in `out/facts.json`. A frame
+/// the user saved there under the same kind of name is not listed, so it
+/// stays.
+fn listed_frames(out: &FsPath) -> Vec<String> {
+    let Some(v) = std::fs::read(out.join("facts.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+    else {
+        return Vec::new();
+    };
+    let scenes = v["scenes"].as_array().into_iter().flatten();
+    let grid = v["grid"].as_array().into_iter().flatten();
+    scenes
+        .filter_map(|s| s["frame"]["frame"].as_str())
+        .chain(grid.filter_map(|g| g["frame"].as_str()))
+        .filter(|f| is_frame(f, &["scenes", "grid"]))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The frames the last compare run listed under its mark in `dir`.
+fn listed_pairs(dir: &FsPath) -> Vec<String> {
+    std::fs::read_to_string(dir.join(COMPARE_MARK))
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| is_frame(l, &[""]))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Removes the files `names` (inside `dir`); a missing one is fine.
+fn remove_listed(dir: &FsPath, names: &[String]) -> std::io::Result<()> {
+    for n in names {
+        match std::fs::remove_file(dir.join(n)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+            _ => {}
         }
     }
     Ok(())
@@ -460,22 +493,40 @@ pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, Strin
     let (size, probe) = check(tools, video)?;
     let io = |e: std::io::Error| format!("cannot write {}: {e}", out.display());
     claim(out, REFERENCE_MARK)?;
+    // Only what the last run wrote goes: the frames its facts.json lists,
+    // never another file of the same kind of name.
+    let mut old = listed_frames(out);
     // Nothing of the last run may outlive a run that fails half way:
     // facts.json is written last, once every file it names is there.
-    for f in ["facts.json", "contact-sheet.png", "audio.m4a"] {
-        std::fs::remove_file(out.join(f))
-            .or_else(|e| match e.kind() {
-                std::io::ErrorKind::NotFound => Ok(()),
-                _ => Err(e),
-            })
-            .map_err(io)?;
+    old.extend(["facts.json", "contact-sheet.png", "audio.m4a"].map(str::to_owned));
+    remove_listed(out, &old).map_err(io)?;
+    for sub in ["scenes", "grid"] {
+        std::fs::create_dir_all(out.join(sub)).map_err(io)?;
     }
-    clear_frames(&out.join("scenes")).map_err(io)?;
-    clear_frames(&out.join("grid")).map_err(io)?;
+    let mut written = Vec::new();
+    let res = fill(tools, video, out, size, probe, &mut written);
+    if res.is_err() {
+        // A failed run takes back what it wrote: the next one could not
+        // tell those frames from the user's.
+        let _ = remove_listed(out, &written);
+    }
+    res
+}
 
+/// [`build`] once `out` is ready; records each file it writes in `written`.
+fn fill(
+    tools: &Tools,
+    video: &FsPath,
+    out: &FsPath,
+    size: u64,
+    probe: Probe,
+    written: &mut Vec<String>,
+) -> Result<Facts, String> {
+    let io = |e: std::io::Error| format!("cannot write {}: {e}", out.display());
     let cuts = scene_cuts(tools, video)?;
     let scenes = scenes_of(&cuts, probe.duration);
     for shot in scenes.iter().filter_map(|s| s.frame.as_ref()) {
+        written.push(shot.frame.clone());
         frame(tools, video, shot.time, 1280, &out.join(&shot.frame))?;
     }
     let grid: Vec<Shot> = grid_times(probe.duration)
@@ -487,10 +538,13 @@ pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, Strin
         })
         .collect();
     for shot in &grid {
+        written.push(shot.frame.clone());
         frame(tools, video, shot.time, 640, &out.join(&shot.frame))?;
     }
+    written.push("contact-sheet.png".to_owned());
     contact_sheet(tools, out, grid.len())?;
     let audio = if probe.has_audio {
+        written.push("audio.m4a".to_owned());
         let mut cmd = Command::new(&tools.ffmpeg);
         cmd.args(["-hide_banner", "-v", "error", "-nostdin", "-y"])
             .args(input(video))
@@ -702,10 +756,46 @@ pub fn compare(
     refuse_link(&b.to_string_lossy())?;
     let (_, pa) = check(tools, a)?;
     let (_, pb) = check(tools, b)?;
+    let io = |dir: &FsPath, e: std::io::Error| format!("cannot write {}: {e}", dir.display());
     if let Some(dir) = pairs {
         claim(dir, COMPARE_MARK)?;
-        clear_frames(dir).map_err(|e| format!("cannot write {}: {e}", dir.display()))?;
+        // Only the pairs the last run listed under its mark go.
+        remove_listed(dir, &listed_pairs(dir)).map_err(|e| io(dir, e))?;
+        std::fs::write(dir.join(COMPARE_MARK), MARK_TEXT).map_err(|e| io(dir, e))?;
     }
+    let mut written = Vec::new();
+    let scored = score(tools, (a, &pa), (b, &pb), points, pairs, &mut written);
+    if let Some(dir) = pairs {
+        if scored.is_err() {
+            let _ = remove_listed(dir, &written);
+        } else {
+            let list: String = written.iter().map(|w| format!("{w}\n")).collect();
+            std::fs::write(dir.join(COMPARE_MARK), format!("{MARK_TEXT}{list}"))
+                .map_err(|e| io(dir, e))?;
+        }
+    }
+    let scored = scored?;
+    #[allow(clippy::cast_precision_loss)]
+    let mean = scored.iter().map(|p| p.score).sum::<f64>() / scored.len() as f64;
+    let min = scored.iter().map(|p| p.score).fold(1.0, f64::min);
+    Ok(Comparison {
+        a: pa,
+        b: pb,
+        points: scored,
+        mean: round3(mean),
+        min,
+    })
+}
+
+/// The points of [`compare`]; records each pair it writes in `written`.
+fn score(
+    tools: &Tools,
+    (a, pa): (&FsPath, &Probe),
+    (b, pb): (&FsPath, &Probe),
+    points: usize,
+    pairs: Option<&FsPath>,
+    written: &mut Vec<String>,
+) -> Result<Vec<Point>, String> {
     let mut scored = Vec::with_capacity(points);
     for i in 0..points {
         #[allow(clippy::cast_precision_loss)]
@@ -717,7 +807,9 @@ pub fn compare(
         let score = ssim(&grey(tools, a, ta)?, &grey(tools, b, tb)?, CMP_W, CMP_H);
         let pair_png = match pairs {
             Some(dir) => {
-                let png = dir.join(format!("{:03}.png", i + 1));
+                let name = format!("{:03}.png", i + 1);
+                let png = dir.join(&name);
+                written.push(name);
                 pair(tools, a, ta, b, tb, &png)?;
                 Some(png.to_string_lossy().into_owned())
             }
@@ -732,16 +824,7 @@ pub fn compare(
             pair: pair_png,
         });
     }
-    #[allow(clippy::cast_precision_loss)]
-    let mean = scored.iter().map(|p| p.score).sum::<f64>() / scored.len() as f64;
-    let min = scored.iter().map(|p| p.score).fold(1.0, f64::min);
-    Ok(Comparison {
-        a: pa,
-        b: pb,
-        points: scored,
-        mean: round3(mean),
-        min,
-    })
+    Ok(scored)
 }
 
 // ---------------------------------------------------------------------------
@@ -893,6 +976,37 @@ mod tests {
         assert!(quarter_turn(&json!({ "tags": { "rotate": "90" } })));
         assert!(!quarter_turn(&json!({ "tags": { "rotate": "0" } })));
         assert!(!quarter_turn(&json!({})));
+    }
+
+    #[test]
+    fn only_frame_names_in_their_folders_are_listed_for_removal() {
+        let dirs = ["scenes", "grid"];
+        assert!(is_frame("scenes/001.png", &dirs) && is_frame("grid/060.png", &dirs));
+        for bad in [
+            "../001.png",
+            "scenes/../../x/001.png",
+            "facts.json",
+            "scenes/sketch.png",
+            "scenes/.png",
+            "other/001.png",
+            "001.png",
+        ] {
+            assert!(!is_frame(bad, &dirs), "{bad}");
+        }
+        assert!(is_frame("004.png", &[""]) && !is_frame("x/004.png", &[""]));
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("facts.json"),
+            r#"{"scenes":[{"frame":{"frame":"scenes/001.png"}},{}],
+                "grid":[{"frame":"grid/001.png"},{"frame":"../../etc/x.png"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            listed_frames(tmp.path()),
+            vec!["scenes/001.png", "grid/001.png"]
+        );
+        assert!(listed_frames(&tmp.path().join("none")).is_empty());
     }
 
     #[test]
