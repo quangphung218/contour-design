@@ -642,6 +642,19 @@ fn listed_pairs(dir: &FsPath) -> Vec<String> {
         .collect()
 }
 
+/// Refuses to write `name` in `dir` over a file already there: the last
+/// run's files are gone by now, so it is someone else's.
+fn not_there(dir: &FsPath, name: &str) -> Result<(), String> {
+    let path = dir.join(name);
+    if path.exists() {
+        return Err(format!(
+            "{} already exists and this command did not write it; Contour never removes or replaces it. Move it, or choose a new folder with --out.",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 /// Removes the files `names` (inside `dir`); a missing one is fine.
 fn remove_listed(dir: &FsPath, names: &[String]) -> std::io::Result<()> {
     for n in names {
@@ -820,6 +833,7 @@ fn fill(
     let cuts = scene_cuts(tools, video)?;
     let scenes = scenes_of(&cuts, probe.duration);
     for shot in scenes.iter().filter_map(|s| s.frame.as_ref()) {
+        not_there(out, &shot.frame)?;
         written.push(shot.frame.clone());
         frame(tools, video, shot.time, 1280, &out.join(&shot.frame))?;
     }
@@ -832,6 +846,7 @@ fn fill(
         })
         .collect();
     for shot in &grid {
+        not_there(out, &shot.frame)?;
         written.push(shot.frame.clone());
         frame(tools, video, shot.time, 640, &out.join(&shot.frame))?;
     }
@@ -1078,6 +1093,7 @@ fn score(
         let pair_png = match pairs {
             Some(dir) => {
                 let name = format!("{:03}.png", i + 1);
+                not_there(dir, &name)?;
                 let png = dir.join(&name);
                 written.push(name);
                 pair(tools, a, ta, b, tb, &png)?;

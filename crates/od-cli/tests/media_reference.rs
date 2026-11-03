@@ -691,6 +691,63 @@ fn two_films_with_one_name_run_at_once_each_get_their_own_folder() {
 }
 
 #[test]
+fn a_rerun_with_more_frames_never_writes_over_the_users() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    let short = |path: &Path| {
+        ff(
+            &ffmpeg,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x240:rate=25:duration=3",
+                "-c:v",
+                "mpeg4",
+            ],
+            path,
+        );
+    };
+    short(&tmp.path().join("clip.mp4"));
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    let dir = tmp.path().join("reference/clip");
+    std::fs::write(dir.join("grid/005.png"), b"the user's").unwrap();
+    // The same film, now 10 s: its grid would need 005.png.
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("did not write"), "{}", text(&out));
+    assert_eq!(
+        std::fs::read(dir.join("grid/005.png")).unwrap(),
+        b"the user's"
+    );
+    // What the failed run wrote is gone; the user's frame is all there is.
+    let count = |sub: &str| std::fs::read_dir(dir.join(sub)).unwrap().count();
+    assert_eq!((count("grid"), count("scenes")), (1, 0));
+
+    // compare --out: 2 pairs, then the user's 003.png, then 4 pairs.
+    for (points, ok) in [("2", true), ("4", false)] {
+        if !ok {
+            std::fs::write(tmp.path().join("pairs/003.png"), b"the user's").unwrap();
+        }
+        let out = od(
+            tmp.path(),
+            &[
+                "media", "compare", "clip.mp4", "clip.mp4", "--points", points, "--out", "pairs",
+            ],
+            &[],
+        );
+        assert_eq!(out.status.success(), ok, "{}", text(&out));
+    }
+    assert_eq!(
+        std::fs::read(tmp.path().join("pairs/003.png")).unwrap(),
+        b"the user's"
+    );
+    assert!(!tmp.path().join("pairs/001.png").exists());
+}
+
+#[test]
 fn a_rerun_keeps_frames_the_user_saved_under_a_frame_name() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let tmp = tempfile::tempdir().unwrap();

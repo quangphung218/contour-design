@@ -30,7 +30,8 @@ All notable changes to Contour are recorded here. The format follows
   saved in its `scenes/` or `grid/` under a numbered name such as
   `010.png`: only the frames the last run listed in `facts.json` are
   replaced. `od media compare --out` likewise replaces only the pairs it
-  wrote before.
+  wrote before. A rerun that would write a frame over such a file stops
+  and says so.
 
 ## [0.2.0-beta.16] - 2026-11-03
 
