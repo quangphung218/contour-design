@@ -368,8 +368,9 @@ Help ▸ Keyboard Shortcuts (Cmd/Ctrl+/) shows the full list.
 
 ## CLI reference
 
-Every command except `od` / `od daemon start` is a thin client of the HTTP
-API. `--json` prints JSON, `--daemon-url` (or `OD_DAEMON_URL`) picks the
+Every command except `od` / `od daemon start` (and `od media reference`
+without a project, `od media compare`, which read local files with the
+installed ffmpeg) is a thin client of the HTTP API. `--json` prints JSON, `--daemon-url` (or `OD_DAEMON_URL`) picks the
 daemon, `od <command> --help` lists the options.
 
 | Command | Does |
@@ -382,6 +383,8 @@ daemon, `od <command> --help` lists the options.
 | `od lint` | anti-slop lint, exit 1 on findings at `--fail-on` or worse |
 | `od export` | export, see [Export](#export) |
 | `od media generate\|wait\|cancel` | media tasks |
+| `od media reference <video> [--out <dir>] [--project <id>]` | break a local reference video (at most 200 MB, 180 s) into `facts.json` (length, size, fps, sound, scene cuts), `scenes/`, `grid/`, `contact-sheet.png` and `audio.m4a`; default folder `reference/<video name>`. With `--project` (or `OD_PROJECT_ID`) the daemon reads and writes in the project, else it runs here. Links are refused, never downloaded. Needs `ffmpeg` and `ffprobe` |
+| `od media compare <a> <b> [--points N] [--out <dir>]` | score two local videos 0–1 (SSIM) at N points (default 8) at the same share of their length; table, or JSON with `--json`; `--out` writes each pair side by side. Runs here, needs `ffmpeg` |
 | `od plugin list\|info\|apply\|validate` | plugins |
 | `od mcp`, `od mcp install` | MCP server and installer |
 | `od tools live-artifacts create\|list\|update\|refresh` | live artifacts of an agent run's project (needs the run's `OD_TOOL_TOKEN`) |

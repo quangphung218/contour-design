@@ -8,6 +8,23 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `od media reference <video>` breaks a reference film the user attached
+  into a folder to build from, by default `reference/<video name>/` in the
+  project: `facts.json` (length, size, fps, sound, the seconds of each
+  scene cut), a frame per scene in `scenes/`, about a frame a second in
+  `grid/`, `contact-sheet.png` and `audio.m4a`. Local files only, at most
+  200 MB and 180 s; a link is refused with how to attach the file instead,
+  and nothing is downloaded. It uses the installed ffmpeg and ffprobe, as
+  the MP4 render does.
+- `od media compare <a> <b>` scores two films 0–1 at the same points of
+  their length (default 8, `--points`), as a table or `--json`, and with
+  `--out` writes each pair of frames side by side.
+- The motion-design skill reads an attached reference video with these
+  commands before planning, and after rendering compares the film with it
+  and repairs the lowest-scoring scenes once.
+
 ## [0.2.0-beta.15] - 2026-11-02
 
 ### Fixed
