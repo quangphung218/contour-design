@@ -642,30 +642,79 @@ impl RunLock {
     /// [`RunErr::Busy`]: another live run holds `dir`. I/O.
     fn take(dir: &FsPath) -> Result<Self, RunErr> {
         let path = dir.join(RUN_LOCK);
-        let io = |e: std::io::Error| RunErr::Failed(format!("cannot write {}: {e}", dir.display()));
-        let busy = || {
-            RunErr::Busy(format!(
-                "another run is writing {}; wait for it to finish.",
-                dir.display()
-            ))
-        };
         for _ in 0..3 {
             match place_mark(dir, RUN_LOCK, &format!("{}\n", std::process::id())) {
                 Ok(()) => return Ok(Self(path)),
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(e) => return Err(io(e)),
+                Err(e) => return Err(lock_io(dir, e)),
             }
             if !lock_orphaned(&path) {
-                return Err(busy());
+                return Err(busy(dir, lock_pid(&path)));
             }
-            // Its run is gone: the lock is free to take.
-            match std::fs::remove_file(&path) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(io(e)),
-                _ => {}
-            }
+            clear_orphan(dir)?;
         }
-        Err(busy())
+        Err(busy(dir, lock_pid(&path)))
     }
+}
+
+fn lock_io(dir: &FsPath, e: std::io::Error) -> RunErr {
+    RunErr::Failed(format!("cannot write {}: {e}", dir.display()))
+}
+
+/// Another run, `pid` if its lock names it, holds `dir`.
+fn busy(dir: &FsPath, pid: Option<u32>) -> RunErr {
+    let pid = pid.map(|p| format!(" (pid {p})")).unwrap_or_default();
+    RunErr::Busy(format!(
+        "another run is writing {d}{pid}; wait for it to finish, or if no run is going, remove {lock}",
+        d = dir.display(),
+        lock = dir.join(RUN_LOCK).display(),
+    ))
+}
+
+/// The process id the lock at `path` holds.
+fn lock_pid(path: &FsPath) -> Option<u32> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+/// Removes the lock in `dir` that was found orphaned. Another run may have
+/// found it orphaned too and already put its own live lock there, so the
+/// lock is first moved aside under a name only this run uses and read
+/// again: only a lock still orphaned is removed.
+///
+/// # Errors
+/// [`RunErr::Busy`]: what was moved aside is a live run's lock. I/O.
+fn clear_orphan(dir: &FsPath) -> Result<(), RunErr> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let aside = dir.join(format!(
+        "{RUN_LOCK}-stale-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    match std::fs::rename(dir.join(RUN_LOCK), &aside) {
+        Ok(()) => {}
+        // Released or cleared a moment ago: the folder is free to take.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(lock_io(dir, e)),
+    }
+    if lock_orphaned(&aside) {
+        return std::fs::remove_file(&aside).map_err(|e| lock_io(dir, e));
+    }
+    restore_or_busy(dir, &aside)
+}
+
+/// Puts the live lock moved aside to `aside` back where it was, unless
+/// another run's lock is there by now; either way the folder is busy.
+fn restore_or_busy(dir: &FsPath, aside: &FsPath) -> Result<(), RunErr> {
+    let body = std::fs::read_to_string(aside).unwrap_or_default();
+    let placed = place_mark(dir, RUN_LOCK, &body);
+    let _ = std::fs::remove_file(aside);
+    let pid = match placed {
+        Ok(()) => body.trim().parse().ok(),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => lock_pid(&dir.join(RUN_LOCK)),
+        Err(e) => return Err(lock_io(dir, e)),
+    };
+    Err(busy(dir, pid))
 }
 
 impl Drop for RunLock {
@@ -1722,8 +1771,14 @@ mod tests {
         let body = std::fs::read_to_string(tmp.path().join(RUN_LOCK)).unwrap();
         assert_eq!(body.trim(), std::process::id().to_string());
         let second = RunLock::take(tmp.path()).unwrap_err();
+        let want = format!(
+            "another run is writing {d} (pid {pid}); wait for it to finish, or if no run is going, remove {lock}",
+            d = tmp.path().display(),
+            pid = std::process::id(),
+            lock = tmp.path().join(RUN_LOCK).display(),
+        );
         assert!(
-            matches!(&second, RunErr::Busy(m) if m.contains("another run is writing")),
+            matches!(&second, RunErr::Busy(m) if *m == want),
             "{second:?}"
         );
         drop(lock);
@@ -1766,5 +1821,63 @@ mod tests {
             .unwrap();
         drop(RunLock::take(tmp.path()).unwrap());
         assert!(!path.exists());
+    }
+
+    /// A process that has ended: this test binary, listing its tests.
+    fn ended_pid() -> u32 {
+        let mut gone = Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = gone.id();
+        gone.wait().unwrap();
+        assert!(!pid_alive(pid));
+        pid
+    }
+
+    #[test]
+    fn two_runs_taking_one_orphaned_lock_never_remove_a_live_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(RUN_LOCK);
+        std::fs::write(&path, format!("{}\n", ended_pid())).unwrap();
+        // R2 finds the lock orphaned, then R1 does too, clears it and takes
+        // the folder before R2 clears what it found.
+        assert!(lock_orphaned(&path));
+        let r1 = RunLock::take(tmp.path()).unwrap();
+        let r2 = clear_orphan(tmp.path()).unwrap_err();
+        let me = std::process::id();
+        assert!(
+            matches!(&r2, RunErr::Busy(m) if m.contains(&format!("(pid {me})"))),
+            "{r2:?}"
+        );
+        // R1's lock is still in place, and R2 left nothing behind.
+        let body = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(body.trim(), me.to_string());
+        let names: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [RUN_LOCK]);
+        drop(r1);
+        assert!(!path.exists());
+
+        // The live lock R2 moved aside while another run took the free spot:
+        // that run keeps it, and R2 is told the folder is busy.
+        std::fs::write(&path, format!("{}\n", ended_pid())).unwrap();
+        let r1 = RunLock::take(tmp.path()).unwrap();
+        let aside = tmp.path().join(format!("{RUN_LOCK}-stale-test"));
+        std::fs::rename(&path, &aside).unwrap();
+        std::fs::write(&path, "R3\n").unwrap();
+        let r2 = restore_or_busy(tmp.path(), &aside).unwrap_err();
+        assert!(matches!(&r2, RunErr::Busy(_)), "{r2:?}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "R3\n");
+        assert!(!aside.exists());
+        std::mem::forget(r1);
+
+        // An orphaned lock gone before R2 moves it: R2 takes the folder.
+        std::fs::remove_file(&path).unwrap();
+        assert!(clear_orphan(tmp.path()).is_ok());
+        drop(RunLock::take(tmp.path()).unwrap());
     }
 }

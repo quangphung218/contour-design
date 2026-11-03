@@ -731,7 +731,8 @@ fn a_second_run_into_a_folder_being_written_is_refused() {
     let second = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
     assert!(!second.status.success(), "{}", text(&second));
     assert!(
-        text(&second).contains("another run is writing"),
+        text(&second).contains("another run is writing")
+            && text(&second).contains("if no run is going, remove"),
         "{}",
         text(&second)
     );
@@ -758,7 +759,8 @@ fn a_second_run_into_a_folder_being_written_is_refused() {
     let second = od(tmp.path(), &args, &[]);
     assert!(!second.status.success(), "{}", text(&second));
     assert!(
-        text(&second).contains("another run is writing"),
+        text(&second).contains("another run is writing")
+            && text(&second).contains("if no run is going, remove"),
         "{}",
         text(&second)
     );
