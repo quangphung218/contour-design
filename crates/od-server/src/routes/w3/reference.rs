@@ -1638,8 +1638,13 @@ mod tests {
     fn a_folder_being_written_is_held_until_its_run_ends() {
         let tmp = tempfile::tempdir().unwrap();
         let lock = RunLock::take(tmp.path()).unwrap();
-        // The pid, for a beta.17 daemon that reads it.
-        let body = std::fs::read_to_string(tmp.path().join(RUN_LOCK)).unwrap();
+        // The pid, for a beta.17 daemon that reads it. Read through the
+        // holding handle: on Windows the lock keeps other handles from
+        // reading (a beta.17 daemon that cannot read it counts it live).
+        let mut body = String::new();
+        let mut held = lock.file.as_ref().unwrap();
+        std::io::Seek::rewind(&mut held).unwrap();
+        std::io::Read::read_to_string(&mut held, &mut body).unwrap();
         assert_eq!(body, format!("{}\n", std::process::id()));
         // A second run, in this same process too, is refused.
         let second = RunLock::take(tmp.path()).unwrap_err();
