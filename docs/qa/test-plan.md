@@ -334,6 +334,60 @@ picks are seeded by `QA_SEED` (printed) so a red run can be replayed.
 | NET-03 | 6 random remixes | Same | 3 new + 3 older: Remix, open the studio preview | No request off loopback | P0 | auto |
 | NET-04 | Every example on the installed app | `Contour.app` 0.2.0-beta.14 running | Load all 164 examples with scripts on | No request off loopback, no page error | P0 | manual (scratch script, round 5) |
 
+## 16. A reference video for Motion (`reference.qa.mjs`)
+
+Goal: a user picks Motion on Home, attaches a film and asks "Dựng lại phim
+này"; the agent gets the motion-design skill's reference steps, runs
+`od media reference` (and, after a render, `od media compare`), and the
+project gets `reference/<name>/` with `facts.json`, `scenes/`, `grid/`,
+`contact-sheet.png` and `audio.m4a` when the film has sound. Mistakes
+(a link, too long, too large, not a video) reach the chat with what to do
+next; `--out` never removes or replaces the user's files. Expected results
+from the skill (`content/skills/motion-design/SKILL.md`, "When the user
+attaches a reference video") and `docs/features.md` (CLI reference).
+
+The QA mock answers `qa-ref [compare] [out=<dir>] [cmp-out=<dir>]
+[file=<path>]` (`mock-agent/qa-ref.mjs`): for each attached file, link or
+`file=`, it runs `"$OD_NODE_BIN" "$OD_BIN" media reference "<path>"
+--project "$OD_PROJECT_ID"` as the skill writes it, shows it as a Bash
+call and quotes what the command printed; with `compare` it copies the
+film as `film.mp4` (a render stand-in) and runs `media compare … --points 4
+--out reference/<name>/compare`. It also says whether the skill's
+reference steps reached it. Films are made at start with ffmpeg's lavfi
+sources; without ffmpeg every test fails.
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| REF-01 | Landscape MP4 | ffmpeg | Home → Motion → attach `ngang.mp4` (10 s, 640×360, cuts at 4 and 7 s, sound) → brief | Skill steps reached the agent; `reference/ngang/` has facts (10 s, cuts 4 and 7, sound), 3 scene frames, 10 grid frames, contact sheet, `audio.m4a` | P0 | auto |
+| REF-02 | Portrait phone clip | Same | Attach `doc-xoay.mp4` (stored 640×360, turned 90°) | Facts 360×640; scene and grid frames are portrait | P0 | auto |
+| REF-03 | MKV, sound longer than picture | Same | Attach `tieng-dai.mkv` (6 s picture, 15 s sound) | 6.00 s; every grid frame before 6 s; `audio.m4a` | P0 | auto |
+| REF-04 | Score the render | Same | `qa-ref compare` | 4 side-by-side pairs in `reference/ngang/compare/`; same film scores ≥ 0.9; reference folder intact | P0 | auto |
+| REF-05 | `--out` at a folder of the user's | `mine/notes.md`, `mine/001.png` | `qa-ref out=mine` | Refused ("already holds files … never removes or replaces"); both files unchanged, nothing added | P0 | auto |
+| REF-06 | `--out` at the user's page | `index.html` | `qa-ref out=index.html` | Refused; `index.html` unchanged | P0 | auto |
+| REF-07 | Run again, user notes kept | REF-01 done; user adds `beats.md`, `scenes/sketch.png` | Run the reference again | Both kept; folder complete again | P0 | auto |
+| REF-21 | Run again, user's `scenes/010.png` kept | REF-01 done; user saves `scenes/010.png` | Run again | `010.png` kept | P1 | auto (QA-041) |
+| REF-08 | Compare `--out` at a folder of the user's | `mine/notes.md` | `qa-ref compare cmp-out=mine` | Refused; `mine/` unchanged | P0 | auto |
+| REF-09 | Over 180 s | ffmpeg | Attach `dai-185s.mp4` | "185.0 s long … at most 180 s. Cut the part to follow"; no ffprobe noise; no folder left | P1 | auto |
+| REF-10 | Over 200 MB at attach | Same | Attach `to-210mb.mp4` on Home | "to-210mb.mp4 is larger than 200 MB" on Home; nothing staged | P1 | auto |
+| REF-11 | Over 200 MB already in the project | File copied in by Finder (upload refuses it) | `qa-ref file=to-210mb.mp4` | "210 MB … at most 200 MB. Trim or compress"; no folder left | P1 | auto |
+| REF-12 | YouTube link | — | Brief with `https://www.youtube.com/watch?v=…` | "does not download videos: save the file … attach"; no folder | P1 | auto |
+| REF-13 | Link without `https://` | — | Brief with `youtube.com/watch?v=…` | Same refusal as REF-12 | P1 | auto (QA-038) |
+| REF-14 | Text file named .mp4 | — | Attach `ghi-chu.mp4` | "not a video"; no ffprobe internals, OS errors or `file:` paths | P1 | auto (QA-037) |
+| REF-15 | PDF by mistake | — | Attach `brief.pdf` | Same as REF-14 | P1 | auto (QA-037) |
+| REF-16 | An image | — | Attach `anh.png` | "not a video"/"still image"; no "ffmpeg -i" advice | P2 | auto (QA-037) |
+| REF-17 | MP3 without art | — | Attach `nhac.mp3` | "has no video stream"; no folder | P2 | auto |
+| REF-18 | Song with cover art | — | Attach `bai-hat.mp3` | Not a video; no empty folder left | P2 | auto (QA-039) |
+| REF-19 | Two films, same name | — | Attach `clip.mp4` and `clip.mkv` together | Two reference folders, one per film | P2 | auto (QA-040) |
+| REF-20 | Vietnamese name with spaces | — | Attach `phim mẫu 01.mp4` | `reference/phim-mẫu-01/` (NFC), facts name the file | P2 | auto |
+| REF-M1 | The installed app's binary | `Contour.app` 0.2.0-beta.16 | `od-desktop media reference` / `compare` on the same films, `--out` at user folders and files | Same results as the suite (manual, round 6: its daemon cannot be started apart from the GUI) | P0 | manual |
+| REF-M2 | A 170 s 1080p film, 181 MB | Same | `od-desktop media reference` | Done in 15 s, well under the CLI's 120 s wait for the daemon | P2 | manual |
+
+Not covered: a real LLM choosing to run the commands (the mock follows
+the skill to the letter; whether Claude does is a model question, see
+round 4 in bugs.md for how a real pass is done); a film between 200 MB
+minus the multipart overhead and 200 MB, where the composer admits the
+file and the upload's 200 MiB body limit may refuse it.
+
 ## Not automated, and why
 
 - **Desktop shell (Tauri)**: native menus, Cmd+O folder dialog, Finder
