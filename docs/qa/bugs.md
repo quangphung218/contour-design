@@ -981,8 +981,9 @@ Reported by the UX review of 759581a.
   remove what it created.
 - **Fixed**: `probe` asks for `stream_disposition=attached_pic` and skips
   cover art, so a song is "`<name>` has no video stream" before anything is
-  written. `build` removes the outermost folder it created when the run
-  fails. Rust: `a_song_with_cover_art_has_no_video_stream` (od-server),
+  written. When the run fails, `build` removes the files it wrote and the
+  folders it created, each only while empty (another run may have written
+  beside them). Rust: `a_song_with_cover_art_has_no_video_stream` (od-server),
   `a_song_with_cover_art_is_not_a_video_and_leaves_no_folder` (od-cli).
 
 ## QA-040 🟠 Two films with the same name share one reference folder

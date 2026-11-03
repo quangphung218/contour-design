@@ -530,6 +530,58 @@ fn a_song_with_cover_art_is_not_a_video_and_leaves_no_folder() {
     }
 }
 
+/// An `ffmpeg` in `dir` that runs `script` (sh) with the real ffprobe beside
+/// it; `$REAL` is the real ffmpeg.
+#[cfg(unix)]
+fn fake_ffmpeg(dir: &Path, real: &Path, script: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(dir).unwrap();
+    let fake = dir.join("ffmpeg");
+    let body = format!("#!/bin/sh\nREAL='{}'\n{script}\n", real.display());
+    std::fs::write(&fake, body).unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(real.with_file_name("ffprobe"), dir.join("ffprobe")).unwrap();
+    fake
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_run_removes_only_what_it_wrote() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let fake = fake_ffmpeg(
+        &tmp.path().join("slow-broken"),
+        &ffmpeg,
+        "sleep 3\necho broken >&2\nexit 1",
+    );
+    // It takes reference/clip (and reference/), then fails 3 s later;
+    // meanwhile another file lands in reference/.
+    let run = Command::new(OD)
+        .args(["media", "reference", "clip.mp4"])
+        .current_dir(tmp.path())
+        .env_remove("OD_PROJECT_ID")
+        .env_remove("OD_RUN_ID")
+        .env("OD_FFMPEG_PATH", &fake)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mark = tmp.path().join("reference/clip/.od-reference");
+    let start = Instant::now();
+    while !mark.exists() && start.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(mark.exists(), "the run never took reference/clip");
+    let keep = tmp.path().join("reference/other/keep.txt");
+    std::fs::create_dir_all(keep.parent().unwrap()).unwrap();
+    std::fs::write(&keep, b"another run's").unwrap();
+    let out = run.wait_with_output().unwrap();
+    assert!(!out.status.success(), "{}", text(&out));
+    assert_eq!(std::fs::read(&keep).unwrap(), b"another run's");
+    assert!(!tmp.path().join("reference/clip").exists());
+}
+
 #[test]
 fn a_file_that_is_not_a_video_is_told_plainly() {
     let Some(ffmpeg) = ffmpeg() else { return };

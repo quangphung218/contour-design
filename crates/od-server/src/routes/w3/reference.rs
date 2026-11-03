@@ -562,17 +562,34 @@ fn remove_listed(dir: &FsPath, names: &[String]) -> std::io::Result<()> {
 pub fn build(tools: &Tools, video: &FsPath, out: &FsPath) -> Result<Facts, String> {
     refuse_link(&video.to_string_lossy())?;
     let (size, probe) = check(tools, video)?;
-    // The outermost folder this run creates: a run that fails leaves none.
+    // The outermost folder this run creates: a run that fails takes back
+    // the folders it made, as far as they are empty. Another run, or the
+    // user, may have written beside it in the meantime.
     let fresh = out
         .ancestors()
         .take_while(|d| !d.as_os_str().is_empty() && !d.exists())
         .last()
         .map(FsPath::to_path_buf);
     let res = take_and_fill(tools, video, out, size, probe);
-    if let (Err(_), Some(dir)) = (&res, fresh) {
-        let _ = std::fs::remove_dir_all(dir);
+    if let (Err(_), Some(fresh)) = (&res, fresh) {
+        // take_and_fill removed the files it wrote; its mark is its own.
+        let _ = std::fs::remove_file(out.join(REFERENCE_MARK));
+        remove_empty_dirs(out, &fresh, &["scenes", "grid"]);
     }
     res
+}
+
+/// Removes `subs` of `dir`, then `dir` and its parents up to `fresh`,
+/// each only while it is empty.
+fn remove_empty_dirs(dir: &FsPath, fresh: &FsPath, subs: &[&str]) {
+    for sub in subs {
+        let _ = std::fs::remove_dir(dir.join(sub));
+    }
+    for d in dir.ancestors() {
+        if std::fs::remove_dir(d).is_err() || d == fresh {
+            break;
+        }
+    }
 }
 
 /// [`build`] past the checks: takes `out`, clears the last run's files and
