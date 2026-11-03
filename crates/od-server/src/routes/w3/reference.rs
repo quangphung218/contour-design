@@ -140,7 +140,7 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
     cmd.args(["-v", "error", "-protocol_whitelist", "file"])
         .args([
             "-show_entries",
-            "format=duration:stream=codec_type,width,height,duration,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate",
+            "format=duration:stream=codec_type,width,height,duration,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate,DURATION",
             "-of",
             "json",
         ])
@@ -165,16 +165,23 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
         .or_else(|| vs["r_frame_rate"].as_str().and_then(rate))
         .unwrap_or(0.0);
     // The picture's length: sound that runs on past it would put the grid,
-    // the scenes and the compare points where there is no frame. Some
-    // containers (Matroska, WebM) give only the file's.
+    // the scenes and the compare points where there is no frame. Matroska
+    // and WebM keep it in the stream's DURATION tag instead.
     let secs = |d: &Value| {
         d.as_str()
             .and_then(|d| d.parse::<f64>().ok())
             .filter(|d| d.is_finite() && *d > 0.0)
     };
     let duration = secs(&vs["duration"])
+        .or_else(|| vs["tags"]["DURATION"].as_str().and_then(clock))
         .or_else(|| secs(&v["format"]["duration"]))
-        .ok_or_else(|| format!("ffprobe gives no duration for {}", video.display()))?;
+        .ok_or_else(|| {
+            format!(
+                "ffprobe gives no duration for {0}; copy it into an MP4 first \
+                 (ffmpeg -i {0} -c copy film.mp4)",
+                video.display()
+            )
+        })?;
     // A phone's portrait clip is stored landscape and turned on playback;
     // ffmpeg turns the frames it writes, so the facts follow the picture.
     let (width, height) = if quarter_turn(vs) {
@@ -189,6 +196,15 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
         fps: (fps * 1000.0).round() / 1000.0,
         has_audio: streams.iter().any(|s| s["codec_type"] == "audio"),
     })
+}
+
+/// Seconds in a Matroska `DURATION` tag (`HH:MM:SS.fffffffff`).
+fn clock(tag: &str) -> Option<f64> {
+    let mut parts = tag.trim().splitn(3, ':');
+    let h: f64 = parts.next()?.parse().ok()?;
+    let m: f64 = parts.next()?.parse().ok()?;
+    let s: f64 = parts.next()?.parse().ok()?;
+    Some(h * 3600.0 + m * 60.0 + s).filter(|d| d.is_finite() && *d > 0.0)
 }
 
 /// Whether a video stream plays turned by 90° or 270°: its display matrix
@@ -807,6 +823,15 @@ pub async fn reference(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn matroska_duration_tags_read_as_seconds() {
+        assert_eq!(clock("00:00:10.000000000"), Some(10.0));
+        assert_eq!(clock("01:02:03.5"), Some(3723.5));
+        assert_eq!(clock("00:00:00.000000000"), None);
+        assert_eq!(clock("10.0"), None);
+        assert_eq!(clock("N/A"), None);
+    }
 
     #[test]
     fn links_are_refused_with_what_to_do() {

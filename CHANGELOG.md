@@ -8,7 +8,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.2.0-beta.16] - 2026-11-03
+## [0.2.0-beta.16] - 2026-11-04
 
 ### Added
 
@@ -20,7 +20,8 @@ All notable changes to Contour are recorded here. The format follows
   200 MB and 180 s; a link is refused with how to attach the file instead,
   and nothing is downloaded. It uses the installed ffmpeg and ffprobe, as
   the MP4 render does. A portrait phone clip is described as it plays, and
-  sound that runs past the picture does not lengthen the film. `--out`
+  sound that runs past the picture does not lengthen the film, in MKV and
+  WebM as in MP4. `--out`
   takes only a new or empty folder, or one it wrote before: other files are
   never removed or replaced.
 - `od media compare <a> <b>` scores two films 0–1 at the same points of
