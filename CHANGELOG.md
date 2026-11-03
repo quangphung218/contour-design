@@ -25,8 +25,10 @@ All notable changes to Contour are recorded here. The format follows
 - Two reference films with one file name in different folders
   (`a/clip.mp4`, `b/clip.mp4`) no longer share `reference/clip/`: the
   folder's `.od-reference` mark names the film by its path in the project,
-  so the second goes to `reference/clip-mp4/`. Folders marked by beta.17
-  or older are still found by the file name.
+  so the second goes to `reference/clip-mp4/`. One film given another way
+  (its absolute path, `a/../a/clip.mp4`, other letter case on macOS and
+  Windows) keeps its folder. Folders marked by beta.17 or older are still
+  found by the file name.
 - A bare host given as the film (`vimeo.com`, `youtube.com`) is refused as
   a link, like `vimeo.com/123` and `www.…`; a missing `clip.mov` is still
   told as a missing file.

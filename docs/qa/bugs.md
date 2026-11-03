@@ -1019,8 +1019,12 @@ Reported by the UX review of 759581a.
   path in the project (`source: a/clip.mp4`, `./clip.mp4` at the top), so
   the same file name in two folders (`a/clip.mp4`, `b/clip.mp4`) gets
   `reference/clip` and `reference/clip-mp4`; a mark of beta.17 or older
-  (name only) still matches by the name. Rust:
-  `a_film_is_known_by_its_path_in_the_project` (od-server),
+  (name only) still matches by the name. The path is read as the disk
+  knows it, so one film given as `a/clip.mp4`, by its absolute path, as
+  `a/../a/clip.mp4` or (on a disk that ignores case) `A/CLIP.MP4` keeps
+  one folder. Rust: `a_film_is_known_by_its_path_in_the_project`,
+  `one_film_has_one_key_however_its_path_is_written` (od-server),
+  `one_film_named_three_ways_keeps_one_folder`,
   `two_films_with_one_name_each_get_their_own_folder`,
   `one_file_name_in_two_folders_gets_two_reference_folders`,
   `a_folder_from_before_paths_were_kept_is_still_its_films` (od-cli).

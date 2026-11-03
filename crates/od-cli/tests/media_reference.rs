@@ -909,6 +909,36 @@ fn one_file_name_in_two_folders_gets_two_reference_folders() {
 }
 
 #[test]
+fn one_film_named_three_ways_keeps_one_folder() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("a")).unwrap();
+    film(&ffmpeg, &tmp.path().join("a/clip.mp4"));
+    let abs = tmp.path().join("a").join("clip.mp4");
+    let mut ways = vec![
+        "a/clip.mp4".to_owned(),
+        abs.to_string_lossy().into_owned(),
+        "a/../a/clip.mp4".to_owned(),
+    ];
+    // On a disk that ignores case, also the name typed otherwise.
+    if tmp.path().join("A/CLIP.MP4").exists() {
+        ways.push("A/CLIP.MP4".to_owned());
+    }
+    for v in &ways {
+        let out = od(tmp.path(), &["media", "reference", v], &[]);
+        assert!(out.status.success(), "{v}: {}", text(&out));
+        assert!(
+            text(&out).starts_with("reference/clip:"),
+            "{v}: {}",
+            text(&out)
+        );
+    }
+    assert!(!tmp.path().join("reference/clip-mp4").exists());
+    let mark = std::fs::read_to_string(tmp.path().join("reference/clip/.od-reference")).unwrap();
+    assert!(mark.contains("source: a/clip.mp4\n"), "{mark}");
+}
+
+#[test]
 fn a_folder_from_before_paths_were_kept_is_still_its_films() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let tmp = tempfile::tempdir().unwrap();
