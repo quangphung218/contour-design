@@ -398,9 +398,15 @@ fn run_reference(client: &Client, a: ReferenceArgs, json_out: bool) -> anyhow::R
         }
         None => {
             let video = PathBuf::from(&a.video);
-            let out = a.out.unwrap_or_else(|| reference::default_out(&video));
+            local(reference::refuse_bare_link(&a.video, &video))?;
             let tools = local(reference::find_tools())?;
-            let facts = local(reference::build(&tools, &video, Path::new(&out)))?;
+            let (out, facts) = match a.out {
+                Some(out) => {
+                    let facts = local(reference::build(&tools, &video, Path::new(&out)))?;
+                    (out, facts)
+                }
+                None => local(reference::build_default(&tools, &video, Path::new("")))?,
+            };
             (out, serde_json::to_value(facts)?)
         }
     };
@@ -455,6 +461,9 @@ fn run_reference(client: &Client, a: ReferenceArgs, json_out: bool) -> anyhow::R
 fn run_compare(a: &CompareArgs, json_out: bool) -> anyhow::Result<()> {
     local(reference::refuse_link(&a.a.to_string_lossy()))?;
     local(reference::refuse_link(&a.b.to_string_lossy()))?;
+    for v in [&a.a, &a.b] {
+        local(reference::refuse_bare_link(&v.to_string_lossy(), v))?;
+    }
     let tools = local(reference::find_tools())?;
     let c = local(reference::compare(
         &tools,

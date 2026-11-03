@@ -69,11 +69,11 @@ length is right on both. QA-037…041 each have a red test.
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
-| QA-040 | 🟠 | Two films with the same name (clip.mp4, clip.mkv) share `reference/clip/`: the second silently replaces the first's facts and frames | `reference.qa.mjs` REF-19 | Open |
-| QA-041 | 🟠 | Running the reference again deletes the user's own `NNN.png` files in its `scenes/` and `grid/` (e.g. `scenes/010.png`) | `reference.qa.mjs` REF-21 | Open |
-| QA-037 | 🟡 | A file that is not a video (text renamed .mp4, PDF, PNG) is refused with ffprobe's internals ("Invalid data found when processing input / moov atom not found"), or for an image with "copy it into an MP4 first (ffmpeg -i …)" | `reference.qa.mjs` REF-14, REF-15, REF-16 | Open |
-| QA-038 | 🟡 | A YouTube link without `https://` (`youtube.com/watch?v=…`, `youtu.be/…`) is read as a project path: "cannot read …/projects/<id>/youtube.com/watch?v=…: No such file or directory (os error 2)" | `reference.qa.mjs` REF-13 | Open |
-| QA-039 | 🟡 | A song with cover art is taken as a video: "ffmpeg wrote no frame at 2.50 s", and an empty `reference/<name>/` (only `.od-reference`, `scenes/`, `grid/`) is left in the project | `reference.qa.mjs` REF-18 | Open |
+| QA-040 | 🟠 | Two films with the same name (clip.mp4, clip.mkv) share `reference/clip/`: the second silently replaces the first's facts and frames | `reference.qa.mjs` REF-19 | Fixed |
+| QA-041 | 🟠 | Running the reference again deletes the user's own `NNN.png` files in its `scenes/` and `grid/` (e.g. `scenes/010.png`) | `reference.qa.mjs` REF-21 | Fixed |
+| QA-037 | 🟡 | A file that is not a video (text renamed .mp4, PDF, PNG) is refused with ffprobe's internals ("Invalid data found when processing input / moov atom not found"), or for an image with "copy it into an MP4 first (ffmpeg -i …)" | `reference.qa.mjs` REF-14, REF-15, REF-16 | Fixed |
+| QA-038 | 🟡 | A YouTube link without `https://` (`youtube.com/watch?v=…`, `youtu.be/…`) is read as a project path: "cannot read …/projects/<id>/youtube.com/watch?v=…: No such file or directory (os error 2)" | `reference.qa.mjs` REF-13 | Fixed |
+| QA-039 | 🟡 | A song with cover art is taken as a video: "ffmpeg wrote no frame at 2.50 s", and an empty `reference/<name>/` (only `.od-reference`, `scenes/`, `grid/`) is left in the project | `reference.qa.mjs` REF-18 | Fixed |
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
@@ -923,6 +923,14 @@ Reported by the UX review of 759581a.
   can read"; ask ffprobe for `codec_name`/`nb_frames` and call a
   single-frame `png`/`mjpeg`/`webp` stream a still image. Name the file
   by its project path, not the absolute one.
+- **Fixed**: a file ffprobe cannot open is "`<name>` is not a video
+  Contour can read. Attach the film itself (MP4, MOV, MKV or WebM)…"; an
+  image (`*_pipe`, `image2` format) is "`<name>` is a still image, not a
+  video…"; a stream with no length no longer suggests an ffmpeg command.
+  These name the file by its name. Not covered: the `400 BAD_REQUEST:`
+  prefix the CLI puts on every daemon refusal. Rust:
+  `an_image_or_a_file_without_length_is_told_plainly` (od-server),
+  `a_file_that_is_not_a_video_is_told_plainly` (od-cli).
 
 ## QA-038 🟡 A YouTube link without https:// is read as a missing file
 
@@ -946,6 +954,14 @@ Reported by the UX review of 759581a.
   `youtube.com`, `youtu.be`, `vimeo.com`, `tiktok.com`), before
   `check()` and before the route joins it to the project root
   (`reference.rs:778`).
+- **Fixed**: `refuse_bare_link` refuses, with the same words as a
+  `https://` link, a missing path that starts with `www.` or with
+  `<name>.<tld>` followed by `/` or `?`; the route checks it after joining
+  the project root, the CLI before running locally (`reference`,
+  `compare`). A real folder of that name is still read. Rust:
+  `links_without_a_scheme_are_refused_when_no_such_file_exists`
+  (od-server), `links_are_refused_before_anything_runs` and
+  `with_a_project_the_folder_lands_in_the_project` (od-cli).
 
 ## QA-039 🟡 A song with cover art is taken as a video and leaves an empty folder
 
@@ -963,6 +979,12 @@ Reported by the UX review of 759581a.
   pictures. Separately, `build` (`reference.rs:462`) claims the folder
   before any frame is written; when a run that created the folder fails,
   remove what it created.
+- **Fixed**: `probe` asks for `stream_disposition=attached_pic` and skips
+  cover art, so a song is "`<name>` has no video stream" before anything is
+  written. When the run fails, `build` removes the files it wrote and the
+  folders it created, each only while empty (another run may have written
+  beside them). Rust: `a_song_with_cover_art_has_no_video_stream` (od-server),
+  `a_song_with_cover_art_is_not_a_video_and_leaves_no_folder` (od-cli).
 
 ## QA-040 🟠 Two films with the same name share one reference folder
 
@@ -980,6 +1002,15 @@ Reported by the UX review of 759581a.
   and `claim` accepts any folder with `.od-reference`. Before reusing a
   marked folder, read its `facts.json` `source`; when it names another
   file, pick `reference/<stem>-<ext>` (or `-2`) instead.
+- **Fixed**: the default folder is `reference/<stem>` unless it holds
+  another film's reference; then `reference/<stem>-<ext>`, then `-2`, `-3`.
+  The film is named in the `.od-reference` mark, put in place in one step
+  when the folder is taken (older marks: `facts.json` `source`), so of two
+  runs at once only one takes a folder and the other moves on; `--out`
+  into another film's folder is refused. Not covered: the same file name in two folders (`a/clip.mp4`,
+  `b/clip.mp4`) still shares one folder, since `source` keeps only the
+  name. Rust: `default_out_never_takes_the_folder_of_another_film`
+  (od-server), `two_films_with_one_name_each_get_their_own_folder` (od-cli).
 
 ## QA-041 🟠 Running the reference again deletes the user's NNN.png files
 
@@ -997,3 +1028,13 @@ Reported by the UX review of 759581a.
   Remove only the frames the last run listed (the old `facts.json`'s
   `scenes[].frame` and `grid[].frame`; for compare, the points it wrote),
   or keep that list in the mark file.
+- **Fixed**: `od media reference` removes only the frames the last run's
+  `facts.json` lists, and `od media compare --out` only the pairs it listed
+  under its `.od-compare` mark; a run that fails takes back the files it
+  wrote. A new frame whose name a file of the user's already has (a rerun
+  with more scenes) is refused, never written over.
+  Each frame is listed under the mark before it is written, so a run killed
+  half way (no `facts.json`) is cleared by the next; a beta.16 mark, which
+  lists none, still owns every `NNN.png` in its folder. Rust: `a_rerun_keeps_frames_the_user_saved_under_a_frame_name`
+  (od-cli), `only_frame_names_in_their_folders_are_listed_for_removal`
+  (od-server).

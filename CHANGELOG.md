@@ -8,6 +8,33 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.17] - 2026-11-04
+
+### Fixed
+
+- A song with cover art is refused as having no video stream, like any
+  sound file; before, it failed half way with "ffmpeg wrote no frame" and
+  left an empty `reference/<name>/` folder. A reference run that fails no
+  longer leaves a folder it created.
+- A link pasted without `https://` (`youtube.com/watch?v=…`,
+  `youtu.be/…`, `www.…`) is refused as a link, with how to attach the file
+  instead; before, the user was told a project file was missing.
+- A reference that is not a video (a text file named `.mp4`, a PDF, an
+  image) is refused with "`<file>` is not a video Contour can read" or "is
+  a still image, not a video", and what to attach instead; before, the
+  user saw ffprobe's own errors, or for an image an ffmpeg command that
+  cannot work.
+- Two reference films with the same name (`clip.mp4` and `clip.mkv`) no
+  longer share `reference/clip/`, where the second silently replaced the
+  first: the second gets `reference/clip-mkv/`, also when both run at
+  once. `--out` into another film's reference folder is refused.
+- Running `od media reference` again no longer deletes a frame the user
+  saved in its `scenes/` or `grid/` under a numbered name such as
+  `010.png`: only the frames the last run listed in `facts.json` are
+  replaced. `od media compare --out` likewise replaces only the pairs it
+  wrote before. A rerun that would write a frame over such a file stops
+  and says so.
+
 ## [0.2.0-beta.16] - 2026-11-03
 
 ### Added
@@ -719,7 +746,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.16...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.17...HEAD
+[0.2.0-beta.17]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.16...v0.2.0-beta.17
 [0.2.0-beta.16]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.15...v0.2.0-beta.16
 [0.2.0-beta.15]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.14...v0.2.0-beta.15
 [0.2.0-beta.14]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.13...v0.2.0-beta.14

@@ -182,13 +182,6 @@ fn reference_writes_the_folder_next_to_the_video() {
     assert!(all.contains("10.00 s, 320×240, 25 fps, audio"), "{all}");
     assert_reference(&tmp.path().join("reference/my-ref"));
 
-    // Again: a frame left from an earlier run of the folder is gone.
-    let stale = tmp.path().join("reference/my-ref/grid/099.png");
-    std::fs::write(&stale, b"old").unwrap();
-    let out = od(tmp.path(), &["media", "reference", "my ref.mp4"], &[]);
-    assert!(out.status.success(), "{}", text(&out));
-    assert!(!stale.exists());
-
     // Into a chosen new folder, with --json.
     let dir = tmp.path().join("look");
     let out = od(
@@ -208,6 +201,46 @@ fn reference_writes_the_folder_next_to_the_video() {
     assert_eq!(v["dir"], "look");
     assert_eq!(v["facts"]["source"], "my ref.mp4");
     assert_reference(&dir);
+
+    // Another film may not take that folder, even with --out.
+    other_film(&ffmpeg, &tmp.path().join("other.mp4"));
+    let out = od(
+        tmp.path(),
+        &[
+            "media",
+            "reference",
+            "other.mp4",
+            "--out",
+            "reference/my-ref",
+        ],
+        &[],
+    );
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(
+        text(&out).contains("holds the reference of my ref.mp4"),
+        "{}",
+        text(&out)
+    );
+    assert_reference(&tmp.path().join("reference/my-ref"));
+
+    // The film cut to 3 s, run again: the 10 s run's later frames are gone.
+    ff(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x240:rate=25:duration=3",
+            "-c:v",
+            "mpeg4",
+        ],
+        &tmp.path().join("my ref.mp4"),
+    );
+    let out = od(tmp.path(), &["media", "reference", "my ref.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    let grid = tmp.path().join("reference/my-ref/grid");
+    assert_eq!(pngs(&grid), 3);
+    assert!(grid.join("003.png").is_file() && !grid.join("004.png").exists());
 }
 
 #[test]
@@ -440,6 +473,412 @@ fn out_never_removes_or_replaces_files_it_did_not_write() {
 }
 
 #[test]
+fn a_song_with_cover_art_is_not_a_video_and_leaves_no_folder() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    ff(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:rate=1:duration=1",
+            "-frames:v",
+            "1",
+        ],
+        &tmp.path().join("cover.png"),
+    );
+    ff(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=500:duration=5",
+            "-i",
+            tmp.path().join("cover.png").to_str().unwrap(),
+            "-map",
+            "0",
+            "-map",
+            "1",
+            "-c:a",
+            "aac",
+            "-c:v",
+            "png",
+            "-disposition:v",
+            "attached_pic",
+        ],
+        &tmp.path().join("song.m4a"),
+    );
+    let out = od(tmp.path(), &["media", "reference", "song.m4a"], &[]);
+    assert!(!out.status.success());
+    assert!(
+        text(&out).contains("song.m4a has no video stream"),
+        "{}",
+        text(&out)
+    );
+    assert!(!tmp.path().join("reference").exists());
+
+    // A run that fails after taking a new folder leaves none behind.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        film(&ffmpeg, &tmp.path().join("clip.mp4"));
+        let tools = tmp.path().join("broken-tools");
+        std::fs::create_dir_all(&tools).unwrap();
+        let fake = tools.join("ffmpeg");
+        std::fs::write(&fake, "#!/bin/sh\necho broken >&2\nexit 1\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::os::unix::fs::symlink(ffmpeg.with_file_name("ffprobe"), tools.join("ffprobe"))
+            .unwrap();
+        let out = od(
+            tmp.path(),
+            &["media", "reference", "clip.mp4"],
+            &[("OD_FFMPEG_PATH", fake.to_str().unwrap())],
+        );
+        assert!(!out.status.success(), "{}", text(&out));
+        assert!(!tmp.path().join("reference").exists());
+    }
+}
+
+/// An `ffmpeg` in `dir` that runs `script` (sh) with the real ffprobe beside
+/// it; `$REAL` is the real ffmpeg.
+#[cfg(unix)]
+fn fake_ffmpeg(dir: &Path, real: &Path, script: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(dir).unwrap();
+    let fake = dir.join("ffmpeg");
+    let body = format!("#!/bin/sh\nREAL='{}'\n{script}\n", real.display());
+    std::fs::write(&fake, body).unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(real.with_file_name("ffprobe"), dir.join("ffprobe")).unwrap();
+    fake
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_run_removes_only_what_it_wrote() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let fake = fake_ffmpeg(
+        &tmp.path().join("slow-broken"),
+        &ffmpeg,
+        "sleep 3\necho broken >&2\nexit 1",
+    );
+    // It takes reference/clip (and reference/), then fails 3 s later;
+    // meanwhile another file lands in reference/.
+    let run = Command::new(OD)
+        .args(["media", "reference", "clip.mp4"])
+        .current_dir(tmp.path())
+        .env_remove("OD_PROJECT_ID")
+        .env_remove("OD_RUN_ID")
+        .env("OD_FFMPEG_PATH", &fake)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mark = tmp.path().join("reference/clip/.od-reference");
+    let start = Instant::now();
+    while !mark.exists() && start.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(mark.exists(), "the run never took reference/clip");
+    let keep = tmp.path().join("reference/other/keep.txt");
+    std::fs::create_dir_all(keep.parent().unwrap()).unwrap();
+    std::fs::write(&keep, b"another run's").unwrap();
+    let out = run.wait_with_output().unwrap();
+    assert!(!out.status.success(), "{}", text(&out));
+    assert_eq!(std::fs::read(&keep).unwrap(), b"another run's");
+    assert!(!tmp.path().join("reference/clip").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_run_killed_half_way_is_cleared_by_the_next() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    // Kills `od` (its parent) when asked for grid/002.png or pair 003.png.
+    let fake = fake_ffmpeg(
+        &tmp.path().join("killer"),
+        &ffmpeg,
+        "case \"$*\" in *grid/002.png*|*/003.png*) kill -9 $PPID; exit 1;; esac\nexec \"$REAL\" \"$@\"",
+    );
+    let killer = [("OD_FFMPEG_PATH", fake.to_str().unwrap())];
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &killer);
+    assert!(!out.status.success(), "{}", text(&out));
+    let dir = tmp.path().join("reference/clip");
+    assert!(dir.join("scenes/001.png").is_file() && !dir.join("facts.json").exists());
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert_reference(&dir);
+
+    let pairs = [
+        "media", "compare", "clip.mp4", "clip.mp4", "--points", "4", "--out", "pairs",
+    ];
+    let out = od(tmp.path(), &pairs, &killer);
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(tmp.path().join("pairs/001.png").is_file());
+    // Run again with 2 points: the killed run's 001 and 002 are cleared.
+    let mut again = pairs;
+    again[5] = "2";
+    let out = od(tmp.path(), &again, &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert_eq!(pngs(&tmp.path().join("pairs")), 2);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_rerun_that_fails_takes_back_its_frames_in_a_folder_it_had() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    let dir = tmp.path().join("reference/clip");
+    std::fs::write(dir.join("beats.md"), b"the user's").unwrap();
+    // Frames are written, then the contact sheet fails.
+    let fake = fake_ffmpeg(
+        &tmp.path().join("no-sheet"),
+        &ffmpeg,
+        "case \"$*\" in *contact-sheet*|*pairs/002.png*) echo broken >&2; exit 1;; esac\nexec \"$REAL\" \"$@\"",
+    );
+    let out = od(
+        tmp.path(),
+        &["media", "reference", "clip.mp4"],
+        &[("OD_FFMPEG_PATH", fake.to_str().unwrap())],
+    );
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("broken"), "{}", text(&out));
+    for sub in ["scenes", "grid"] {
+        assert_eq!(
+            pngs(&dir.join(sub)),
+            0,
+            "{sub} keeps the failed run's frames"
+        );
+    }
+    assert!(!dir.join("facts.json").exists());
+    assert!(dir.join(".od-reference").is_file());
+    assert_eq!(std::fs::read(dir.join("beats.md")).unwrap(), b"the user's");
+    // The next run takes the folder again.
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert_reference(&dir);
+
+    // compare --out, run once, then failing at its second pair.
+    let mut args = [
+        "media", "compare", "clip.mp4", "clip.mp4", "--points", "4", "--out", "pairs",
+    ];
+    let out = od(tmp.path(), &args, &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    args[5] = "3";
+    let out = od(
+        tmp.path(),
+        &args,
+        &[("OD_FFMPEG_PATH", fake.to_str().unwrap())],
+    );
+    assert!(!out.status.success(), "{}", text(&out));
+    assert_eq!(
+        pngs(&tmp.path().join("pairs")),
+        0,
+        "the failed run's pairs stay"
+    );
+    let out = od(tmp.path(), &args, &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert_eq!(pngs(&tmp.path().join("pairs")), 3);
+}
+
+#[test]
+fn a_file_that_is_not_a_video_is_told_plainly() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("notes.mp4"), "just notes").unwrap();
+    std::fs::write(tmp.path().join("brief.pdf"), "%PDF-1.4\n% not really\n").unwrap();
+    ff(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:rate=1:duration=1",
+            "-frames:v",
+            "1",
+        ],
+        &tmp.path().join("still.png"),
+    );
+    for (file, says) in [
+        ("notes.mp4", "notes.mp4 is not a video"),
+        ("brief.pdf", "brief.pdf is not a video"),
+        ("still.png", "still.png is a still image, not a video"),
+    ] {
+        let out = od(tmp.path(), &["media", "reference", file], &[]);
+        assert!(!out.status.success(), "{file}");
+        let all = text(&out);
+        assert!(all.contains(says), "{all}");
+        for noise in ["ffprobe", "Invalid data", "moov atom", "file:", "ffmpeg -i"] {
+            assert!(!all.contains(noise), "{noise}: {all}");
+        }
+    }
+    assert!(!tmp.path().join("reference").exists());
+}
+
+#[test]
+fn two_films_with_one_name_each_get_their_own_folder() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    other_film(&ffmpeg, &tmp.path().join("clip.mkv"));
+    for v in ["clip.mp4", "clip.mkv", "clip.mp4"] {
+        let out = od(tmp.path(), &["media", "reference", v], &[]);
+        assert!(out.status.success(), "{}", text(&out));
+    }
+    let source = |dir: &str| {
+        let f = std::fs::read_to_string(tmp.path().join(dir).join("facts.json")).unwrap();
+        serde_json::from_str::<Value>(&f).unwrap()["source"].clone()
+    };
+    assert_eq!(source("reference/clip"), "clip.mp4");
+    assert_eq!(source("reference/clip-mkv"), "clip.mkv");
+    assert_reference(&tmp.path().join("reference/clip"));
+}
+
+#[test]
+fn two_films_with_one_name_run_at_once_each_get_their_own_folder() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    for round in 0..3 {
+        let tmp = tempfile::tempdir().unwrap();
+        film(&ffmpeg, &tmp.path().join("clip.mp4"));
+        other_film(&ffmpeg, &tmp.path().join("clip.mkv"));
+        let runs: Vec<Child> = ["clip.mp4", "clip.mkv"]
+            .into_iter()
+            .map(|v| {
+                Command::new(OD)
+                    .args(["media", "reference", v])
+                    .current_dir(tmp.path())
+                    .env_remove("OD_PROJECT_ID")
+                    .env_remove("OD_RUN_ID")
+                    .env_remove("OD_FFMPEG_PATH")
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+        let mut printed = Vec::new();
+        for r in runs {
+            let out = r.wait_with_output().unwrap();
+            assert!(out.status.success(), "round {round}: {}", text(&out));
+            printed.push(text(&out).lines().next().unwrap_or("").to_owned());
+        }
+        let mut sources = Vec::new();
+        for e in std::fs::read_dir(tmp.path().join("reference")).unwrap() {
+            let f = std::fs::read_to_string(e.unwrap().path().join("facts.json")).unwrap();
+            sources.push(serde_json::from_str::<Value>(&f).unwrap()["source"].clone());
+        }
+        sources.sort_by_key(ToString::to_string);
+        assert_eq!(
+            sources,
+            ["clip.mkv", "clip.mp4"],
+            "round {round}: {printed:?}"
+        );
+        // Each run printed the folder that holds its own film.
+        assert_ne!(printed[0].split(':').next(), printed[1].split(':').next());
+    }
+}
+
+#[test]
+fn a_rerun_with_more_frames_never_writes_over_the_users() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    let short = |path: &Path| {
+        ff(
+            &ffmpeg,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x240:rate=25:duration=3",
+                "-c:v",
+                "mpeg4",
+            ],
+            path,
+        );
+    };
+    short(&tmp.path().join("clip.mp4"));
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    let dir = tmp.path().join("reference/clip");
+    std::fs::write(dir.join("grid/005.png"), b"the user's").unwrap();
+    // The same film, now 10 s: its grid would need 005.png.
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("did not write"), "{}", text(&out));
+    assert_eq!(
+        std::fs::read(dir.join("grid/005.png")).unwrap(),
+        b"the user's"
+    );
+    // What the failed run wrote is gone; the user's frame is all there is.
+    let count = |sub: &str| std::fs::read_dir(dir.join(sub)).unwrap().count();
+    assert_eq!((count("grid"), count("scenes")), (1, 0));
+
+    // compare --out: 2 pairs, then the user's 003.png, then 4 pairs.
+    for (points, ok) in [("2", true), ("4", false)] {
+        if !ok {
+            std::fs::write(tmp.path().join("pairs/003.png"), b"the user's").unwrap();
+        }
+        let out = od(
+            tmp.path(),
+            &[
+                "media", "compare", "clip.mp4", "clip.mp4", "--points", points, "--out", "pairs",
+            ],
+            &[],
+        );
+        assert_eq!(out.status.success(), ok, "{}", text(&out));
+    }
+    assert_eq!(
+        std::fs::read(tmp.path().join("pairs/003.png")).unwrap(),
+        b"the user's"
+    );
+    assert!(!tmp.path().join("pairs/001.png").exists());
+}
+
+#[test]
+fn a_rerun_keeps_frames_the_user_saved_under_a_frame_name() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    film(&ffmpeg, &tmp.path().join("clip.mp4"));
+    let dir = tmp.path().join("reference/clip");
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    std::fs::write(dir.join("scenes/010.png"), b"the user's").unwrap();
+    std::fs::write(dir.join("grid/099.png"), b"the user's").unwrap();
+    let out = od(tmp.path(), &["media", "reference", "clip.mp4"], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    for f in ["scenes/010.png", "grid/099.png"] {
+        assert_eq!(std::fs::read(dir.join(f)).unwrap(), b"the user's", "{f}");
+    }
+
+    // compare --out: a rerun clears its own pairs, not the user's 099.png.
+    let pairs = tmp.path().join("pairs");
+    for (points, mine) in [("4", false), ("2", true)] {
+        if mine {
+            std::fs::write(pairs.join("099.png"), b"the user's").unwrap();
+        }
+        let out = od(
+            tmp.path(),
+            &[
+                "media", "compare", "clip.mp4", "clip.mp4", "--points", points, "--out", "pairs",
+            ],
+            &[],
+        );
+        assert!(out.status.success(), "{}", text(&out));
+    }
+    assert_eq!(std::fs::read(pairs.join("099.png")).unwrap(), b"the user's");
+    assert!(pairs.join("002.png").is_file() && !pairs.join("003.png").exists());
+}
+
+#[test]
 fn a_rerun_leaves_no_facts_or_sound_of_the_last_film() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let tmp = tempfile::tempdir().unwrap();
@@ -497,6 +936,10 @@ fn links_are_refused_before_anything_runs() {
             "p1",
         ],
         vec!["media", "compare", "a.mp4", "https://example.com/b.mp4"],
+        // Pasted without the scheme, as share sheets copy them.
+        vec!["media", "reference", "youtube.com/watch?v=dQw4w9WgXcQ"],
+        vec!["media", "reference", "www.youtube.com/watch?v=x"],
+        vec!["media", "compare", "youtu.be/dQw4w9WgXcQ", "a.mp4"],
     ] {
         // No daemon at this url: the refusal comes first.
         let out = od(
@@ -711,6 +1154,24 @@ fn with_a_project_the_folder_lands_in_the_project() {
     );
     assert!(!out.status.success());
     assert!(text(&out).contains("at most 200 MB"), "{}", text(&out));
+
+    // A link pasted without https:// is a link, not a missing project file.
+    let out = client(
+        &d,
+        &[
+            "media",
+            "reference",
+            "youtu.be/dQw4w9WgXcQ",
+            "--project",
+            &pid,
+        ],
+    );
+    assert!(!out.status.success());
+    let all = text(&out);
+    assert!(
+        all.contains("is a link") && all.contains("does not download") && !all.contains("os error"),
+        "{all}"
+    );
 }
 
 #[test]

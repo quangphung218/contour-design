@@ -413,7 +413,9 @@ description of it. Contour reads it for you with two host commands; the "no
 
 - Before planning, break the attachment down:
   `"$OD_NODE_BIN" "$OD_BIN" media reference "<attached path>" --project "$OD_PROJECT_ID"`.
-  It writes `reference/<video name>/` in the project and prints its paths.
+  It writes `reference/<video name>/` in the project (`reference/<name>-<extension>/`
+  when another film of that name has one) and prints that folder first, then
+  its paths: use the folder it printed.
   Read `facts.json` first: length, size, fps, whether it has sound, and
   `sceneCuts`, the seconds where each new shot starts. Then open
   `contact-sheet.png` (about one frame a second, left to right, top to
@@ -431,7 +433,7 @@ description of it. Contour reads it for you with two host commands; the "no
   fetch it with another tool. Too long or too large: ask for the part to
   follow, cut or compressed.
 - After the render, score it against the reference:
-  `"$OD_NODE_BIN" "$OD_BIN" media compare "<attached path>" "film.mp4" --points 10 --out reference/<video name>/compare`.
+  `"$OD_NODE_BIN" "$OD_BIN" media compare "<attached path>" "film.mp4" --points 10 --out <reference folder>/compare`.
   Each row is a moment at the same share of both films' length, scored 0–1
   (1 is the same picture); each `--out` PNG shows the reference on the left
   and your render on the right. Open the pairs for the lowest scores, find
