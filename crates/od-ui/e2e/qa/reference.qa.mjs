@@ -301,19 +301,19 @@ test('REF-14', 'A text file named .mp4: the chat says it is not a video, without
   assert.match(text, /not a video|no video|cannot read .* as a video|không phải video/i, text);
   assertPlain(text);
   await noReference(d, id);
-}, { knownBug: 'QA-037' });
+});
 
 test('REF-15', 'A PDF attached by mistake: the chat says it is not a video, without ffprobe internals', async ({ d, newPage }) => {
   const { text } = await motion(newPage, d, ['brief.pdf'], 'Dựng lại phim này qa-ref');
   assert.match(text, /not a video|no video|không phải video/i, text);
   assertPlain(text);
-}, { knownBug: 'QA-037' });
+});
 
 test('REF-16', 'An image attached as the reference: the chat says it is not a video, not to convert it with ffmpeg', async ({ d, newPage }) => {
   const { text } = await motion(newPage, d, ['anh.png'], 'Dựng lại phim này qa-ref');
   assert.match(text, /not a video|no video|still image|không phải video/i, text);
   assert.doesNotMatch(text, /ffmpeg -i/, 'tells the user to run ffmpeg on an image');
-}, { knownBug: 'QA-037' });
+});
 
 test('REF-17', 'An MP3 without cover art: the chat says it has no picture', async ({ d, newPage }) => {
   const { id, text } = await motion(newPage, d, ['nhac.mp3'], 'Dựng lại phim này qa-ref');

@@ -71,7 +71,7 @@ length is right on both. QA-037…041 each have a red test.
 |---|---|---|---|---|
 | QA-040 | 🟠 | Two films with the same name (clip.mp4, clip.mkv) share `reference/clip/`: the second silently replaces the first's facts and frames | `reference.qa.mjs` REF-19 | Fixed |
 | QA-041 | 🟠 | Running the reference again deletes the user's own `NNN.png` files in its `scenes/` and `grid/` (e.g. `scenes/010.png`) | `reference.qa.mjs` REF-21 | Fixed |
-| QA-037 | 🟡 | A file that is not a video (text renamed .mp4, PDF, PNG) is refused with ffprobe's internals ("Invalid data found when processing input / moov atom not found"), or for an image with "copy it into an MP4 first (ffmpeg -i …)" | `reference.qa.mjs` REF-14, REF-15, REF-16 | Open |
+| QA-037 | 🟡 | A file that is not a video (text renamed .mp4, PDF, PNG) is refused with ffprobe's internals ("Invalid data found when processing input / moov atom not found"), or for an image with "copy it into an MP4 first (ffmpeg -i …)" | `reference.qa.mjs` REF-14, REF-15, REF-16 | Fixed |
 | QA-038 | 🟡 | A YouTube link without `https://` (`youtube.com/watch?v=…`, `youtu.be/…`) is read as a project path: "cannot read …/projects/<id>/youtube.com/watch?v=…: No such file or directory (os error 2)" | `reference.qa.mjs` REF-13 | Open |
 | QA-039 | 🟡 | A song with cover art is taken as a video: "ffmpeg wrote no frame at 2.50 s", and an empty `reference/<name>/` (only `.od-reference`, `scenes/`, `grid/`) is left in the project | `reference.qa.mjs` REF-18 | Open |
 
@@ -923,6 +923,14 @@ Reported by the UX review of 759581a.
   can read"; ask ffprobe for `codec_name`/`nb_frames` and call a
   single-frame `png`/`mjpeg`/`webp` stream a still image. Name the file
   by its project path, not the absolute one.
+- **Fixed**: a file ffprobe cannot open is "`<name>` is not a video
+  Contour can read. Attach the film itself (MP4, MOV, MKV or WebM)…"; an
+  image (`*_pipe`, `image2` format) is "`<name>` is a still image, not a
+  video…"; a stream with no length no longer suggests an ffmpeg command.
+  These name the file by its name. Not covered: the `400 BAD_REQUEST:`
+  prefix the CLI puts on every daemon refusal. Rust:
+  `an_image_or_a_file_without_length_is_told_plainly` (od-server),
+  `a_file_that_is_not_a_video_is_told_plainly` (od-cli).
 
 ## QA-038 🟡 A YouTube link without https:// is read as a missing file
 

@@ -462,6 +462,40 @@ fn out_never_removes_or_replaces_files_it_did_not_write() {
 }
 
 #[test]
+fn a_file_that_is_not_a_video_is_told_plainly() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("notes.mp4"), "just notes").unwrap();
+    std::fs::write(tmp.path().join("brief.pdf"), "%PDF-1.4\n% not really\n").unwrap();
+    ff(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:rate=1:duration=1",
+            "-frames:v",
+            "1",
+        ],
+        &tmp.path().join("still.png"),
+    );
+    for (file, says) in [
+        ("notes.mp4", "notes.mp4 is not a video"),
+        ("brief.pdf", "brief.pdf is not a video"),
+        ("still.png", "still.png is a still image, not a video"),
+    ] {
+        let out = od(tmp.path(), &["media", "reference", file], &[]);
+        assert!(!out.status.success(), "{file}");
+        let all = text(&out);
+        assert!(all.contains(says), "{all}");
+        for noise in ["ffprobe", "Invalid data", "moov atom", "file:", "ffmpeg -i"] {
+            assert!(!all.contains(noise), "{noise}: {all}");
+        }
+    }
+    assert!(!tmp.path().join("reference").exists());
+}
+
+#[test]
 fn two_films_with_one_name_each_get_their_own_folder() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let tmp = tempfile::tempdir().unwrap();

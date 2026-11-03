@@ -140,15 +140,54 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
     cmd.args(["-v", "error", "-protocol_whitelist", "file"])
         .args([
             "-show_entries",
-            "format=duration:stream=codec_type,width,height,duration,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate,DURATION",
+            "format=format_name,duration:stream=codec_type,width,height,duration,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate,DURATION",
             "-of",
             "json",
         ])
-        .arg(format!("file:{}", video.display()));
-    let out = run(&mut cmd, "ffprobe")?;
-    let v: Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
+        .arg(format!("file:{}", video.display()))
+        .stdin(Stdio::null());
+    let out = cmd
+        .output()
+        .map_err(|e| ffmpeg_missing(&format!("cannot start ffprobe: {e}")))?;
+    let name = shown_name(video);
+    // ffprobe cannot open it: a text, a PDF, a broken download. What
+    // ffprobe says about it means nothing to the user.
+    let v = if out.status.success() {
+        serde_json::from_slice::<Value>(&out.stdout).ok()
+    } else {
+        None
+    };
+    let v = v.ok_or_else(|| {
+        format!(
+            "{name} is not a video Contour can read. Attach the film itself ({FORMATS}), then run the command again."
+        )
+    })?;
+    read_probe(&name, &v)
+}
+
+/// The containers to suggest instead of a file that is not a video.
+const FORMATS: &str = "MP4, MOV, MKV or WebM";
+
+/// The file's name, as the user knows it.
+fn shown_name(video: &FsPath) -> String {
+    video.file_name().map_or_else(
+        || video.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
+
+/// [`probe`] from ffprobe's JSON about the file `name`.
+fn read_probe(name: &str, v: &Value) -> Result<Probe, String> {
     let streams = v["streams"].as_array().cloned().unwrap_or_default();
-    let not_video = || format!("{} has no video stream", video.display());
+    // An image opens as one picture with no length: png_pipe, jpeg_pipe,
+    // webp_pipe, image2.
+    let format = v["format"]["format_name"].as_str().unwrap_or_default();
+    if format.ends_with("_pipe") || format == "image2" {
+        return Err(format!(
+            "{name} is a still image, not a video. Attach the film itself ({FORMATS}), then run the command again."
+        ));
+    }
+    let not_video = || format!("{name} has no video stream");
     let vs = streams
         .iter()
         .find(|s| s["codec_type"] == "video")
@@ -177,9 +216,7 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
         .or_else(|| secs(&v["format"]["duration"]))
         .ok_or_else(|| {
             format!(
-                "ffprobe gives no duration for {0}; copy it into an MP4 first \
-                 (ffmpeg -i {0} -c copy film.mp4)",
-                video.display()
+                "{name} gives no length Contour can read, so it cannot be followed as a video. Save it again as an MP4 and attach that, then run the command again."
             )
         })?;
     // A phone's portrait clip is stored landscape and turned on playback;
@@ -1014,6 +1051,34 @@ mod tests {
         assert!(quarter_turn(&json!({ "tags": { "rotate": "90" } })));
         assert!(!quarter_turn(&json!({ "tags": { "rotate": "0" } })));
         assert!(!quarter_turn(&json!({})));
+    }
+
+    #[test]
+    fn an_image_or_a_file_without_length_is_told_plainly() {
+        let image = json!({
+            "streams": [{ "codec_type": "video", "codec_name": "png", "width": 64, "height": 64 }],
+            "format": { "format_name": "png_pipe" }
+        });
+        let e = read_probe("anh.png", &image).unwrap_err();
+        assert!(
+            e.starts_with("anh.png is a still image, not a video"),
+            "{e}"
+        );
+        let no_length = json!({
+            "streams": [{ "codec_type": "video", "width": 64, "height": 64 }],
+            "format": { "format_name": "mpegts" }
+        });
+        let e = read_probe("x.ts", &no_length).unwrap_err();
+        assert!(
+            e.starts_with("x.ts gives no length") && !e.contains("ffmpeg"),
+            "{e}"
+        );
+        let film = json!({
+            "streams": [{ "codec_type": "video", "width": 640, "height": 360,
+                          "duration": "10.0", "avg_frame_rate": "25/1" }],
+            "format": { "format_name": "mov,mp4,m4a,3gp,3g2,mj2", "duration": "10.0" }
+        });
+        assert_eq!(read_probe("ngang.mp4", &film).unwrap().duration, 10.0);
     }
 
     #[test]

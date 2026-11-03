@@ -10,6 +10,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- A reference that is not a video (a text file named `.mp4`, a PDF, an
+  image) is refused with "`<file>` is not a video Contour can read" or "is
+  a still image, not a video", and what to attach instead; before, the
+  user saw ffprobe's own errors, or for an image an ffmpeg command that
+  cannot work.
 - Two reference films with the same name (`clip.mp4` and `clip.mkv`) no
   longer share `reference/clip/`, where the second silently replaced the
   first: the second gets `reference/clip-mkv/`.
