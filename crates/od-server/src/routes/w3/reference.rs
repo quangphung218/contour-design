@@ -140,7 +140,7 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
     cmd.args(["-v", "error", "-protocol_whitelist", "file"])
         .args([
             "-show_entries",
-            "format=duration:stream=codec_type,width,height,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate",
+            "format=duration:stream=codec_type,width,height,duration,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate",
             "-of",
             "json",
         ])
@@ -164,10 +164,16 @@ pub fn probe(tools: &Tools, video: &FsPath) -> Result<Probe, String> {
         .and_then(rate)
         .or_else(|| vs["r_frame_rate"].as_str().and_then(rate))
         .unwrap_or(0.0);
-    let duration = v["format"]["duration"]
-        .as_str()
-        .and_then(|d| d.parse::<f64>().ok())
-        .filter(|d| d.is_finite() && *d > 0.0)
+    // The picture's length: sound that runs on past it would put the grid,
+    // the scenes and the compare points where there is no frame. Some
+    // containers (Matroska, WebM) give only the file's.
+    let secs = |d: &Value| {
+        d.as_str()
+            .and_then(|d| d.parse::<f64>().ok())
+            .filter(|d| d.is_finite() && *d > 0.0)
+    };
+    let duration = secs(&vs["duration"])
+        .or_else(|| secs(&v["format"]["duration"]))
         .ok_or_else(|| format!("ffprobe gives no duration for {}", video.display()))?;
     // A phone's portrait clip is stored landscape and turned on playback;
     // ffmpeg turns the frames it writes, so the facts follow the picture.
