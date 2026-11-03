@@ -201,6 +201,10 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/projects/{id}/media/tasks", post(submit))
         .route("/api/projects/{id}/media/scaffold", post(motion::scaffold))
+        .route(
+            "/api/projects/{id}/media/reference",
+            post(super::reference::reference),
+        )
         .route("/api/media/tasks", get(list))
         .route("/api/media/tasks/{id}", get(get_one))
         .route("/api/media/tasks/{id}/cancel", post(cancel))

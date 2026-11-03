@@ -1,11 +1,15 @@
 //! `od media`: queued media generation, its tasks, models and prompt
 //! templates, through the daemon's `/api/media/*` routes. `scaffold` and
-//! `generate --model hyperframes-html` make and render a Motion film.
+//! `generate --model hyperframes-html` make and render a Motion film;
+//! `reference` and `compare` read a film the user attached, and score a
+//! render against it, with the ffmpeg installed here.
 
 use crate::client::Client;
 use crate::exit::Exit;
 use clap::{Args, Subcommand};
+use od_server::routes::w3::reference;
 use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Subcommand)]
@@ -44,6 +48,47 @@ pub enum MediaCommand {
         #[arg(long, value_parser = ["image", "video"])]
         surface: Option<String>,
     },
+    /// Break a local reference video (at most 200 MB, 180 s) into a folder
+    /// to read before building: facts.json (length, size, fps, sound,
+    /// scene cuts), scenes/ (a frame per scene), grid/ (about a frame a
+    /// second), contact-sheet.png and audio.m4a. Links are not fetched.
+    Reference(ReferenceArgs),
+    /// Score two local videos frame by frame at the same shares of their
+    /// length, 0–1 (1 = same picture). Exit 0 whatever the scores.
+    Compare(CompareArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ReferenceArgs {
+    /// The video: a project path (with --project) or a path on this
+    /// machine.
+    video: String,
+    /// The reference folder; default `reference/<video name>`, inside the
+    /// project with --project, else under the current folder. It must be
+    /// new, empty, or one this command wrote (it holds `.od-reference`).
+    #[arg(long)]
+    out: Option<String>,
+    /// Read and write in this project's folder, through the daemon.
+    #[arg(long, env = "OD_PROJECT_ID", hide_env_values = true)]
+    project: Option<String>,
+    #[arg(long, env = "OD_RUN_ID", hide_env_values = true)]
+    run: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct CompareArgs {
+    /// The reference video.
+    a: PathBuf,
+    /// The video to score against it (e.g. the render).
+    b: PathBuf,
+    /// How many points to score (1–60).
+    #[arg(long, default_value_t = reference::DEFAULT_POINTS)]
+    points: usize,
+    /// Also write each pair of frames side by side (a left, b right) as
+    /// `<dir>/NNN.png`. The folder must be new, empty, or one this command
+    /// wrote (it holds `.od-compare`); other files are never touched.
+    #[arg(long)]
+    out: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -294,6 +339,8 @@ pub fn run(client: &Client, cmd: MediaCommand, json_out: bool) -> anyhow::Result
             }
             Ok(())
         }
+        MediaCommand::Reference(a) => run_reference(client, a, json_out),
+        MediaCommand::Compare(a) => run_compare(&a, json_out),
         MediaCommand::Templates { surface } => {
             let query: Vec<(&str, &str)> = surface
                 .as_deref()
@@ -322,4 +369,118 @@ pub fn run(client: &Client, cmd: MediaCommand, json_out: bool) -> anyhow::Result
             Ok(())
         }
     }
+}
+
+fn local<T>(r: Result<T, String>) -> anyhow::Result<T> {
+    r.map_err(|e| Exit::new(1, e).into())
+}
+
+fn run_reference(client: &Client, a: ReferenceArgs, json_out: bool) -> anyhow::Result<()> {
+    // Before the daemon or ffmpeg: a link never gets further.
+    local(reference::refuse_link(&a.video))?;
+    let (dir, facts) = match a.project.as_deref().filter(|p| !p.is_empty()) {
+        Some(project) => {
+            let mut body = json!({ "video": a.video });
+            for (k, v) in [("out", a.out), ("runId", a.run)] {
+                if let Some(v) = v {
+                    body[k] = Value::from(v);
+                }
+            }
+            let res: Value = client.send_json(
+                "POST",
+                &["api", "projects", project, "media", "reference"],
+                &body,
+            )?;
+            (
+                res["absDir"].as_str().unwrap_or_default().to_owned(),
+                res["facts"].clone(),
+            )
+        }
+        None => {
+            let video = PathBuf::from(&a.video);
+            let out = a.out.unwrap_or_else(|| reference::default_out(&video));
+            let tools = local(reference::find_tools())?;
+            let facts = local(reference::build(&tools, &video, Path::new(&out)))?;
+            (out, serde_json::to_value(facts)?)
+        }
+    };
+    if json_out {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "dir": dir, "facts": facts }))?
+        );
+        return Ok(());
+    }
+    let cuts: Vec<String> = facts["sceneCuts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_f64)
+        .map(|c| format!("{c:.2}"))
+        .collect();
+    let count = |k: &str| facts[k].as_array().map_or(0, Vec::len);
+    println!(
+        "{dir}: {:.2} s, {}×{}, {} fps, {}, {} scenes{}",
+        facts["duration"].as_f64().unwrap_or_default(),
+        facts["width"],
+        facts["height"],
+        facts["fps"].as_f64().unwrap_or_default(),
+        if facts["hasAudio"] == true {
+            "audio"
+        } else {
+            "no audio"
+        },
+        count("scenes"),
+        if cuts.is_empty() {
+            String::new()
+        } else {
+            format!(" (cuts at {} s)", cuts.join(", "))
+        }
+    );
+    let at = |f: &str| Path::new(&dir).join(f).display().to_string();
+    println!("facts\t{}", at("facts.json"));
+    println!("contact sheet\t{}", at("contact-sheet.png"));
+    println!(
+        "scenes\t{} ({} frames)",
+        at("scenes"),
+        count("scenes").min(reference::MAX_SCENE_FRAMES)
+    );
+    println!("grid\t{} ({} frames)", at("grid"), count("grid"));
+    if let Some(audio) = facts["audio"].as_str() {
+        println!("audio\t{}", at(audio));
+    }
+    Ok(())
+}
+
+fn run_compare(a: &CompareArgs, json_out: bool) -> anyhow::Result<()> {
+    local(reference::refuse_link(&a.a.to_string_lossy()))?;
+    local(reference::refuse_link(&a.b.to_string_lossy()))?;
+    let tools = local(reference::find_tools())?;
+    let c = local(reference::compare(
+        &tools,
+        &a.a,
+        &a.b,
+        a.points,
+        a.out.as_deref(),
+    ))?;
+    if json_out {
+        println!("{}", serde_json::to_string_pretty(&c)?);
+        return Ok(());
+    }
+    println!("point\ttime a\ttime b\tscore");
+    for p in &c.points {
+        println!(
+            "{}\t{:.2}\t{:.2}\t{:.3}{}",
+            p.index,
+            p.time_a,
+            p.time_b,
+            p.score,
+            p.pair
+                .as_deref()
+                .map(|f| format!("\t{f}"))
+                .unwrap_or_default()
+        );
+    }
+    println!("mean\t{:.3}\tlowest\t{:.3}", c.mean, c.min);
+    Ok(())
 }

@@ -405,6 +405,43 @@ disagree, follow this section.
 - To revise, edit the same source and render to the same `--output`: the new
   MP4 replaces the old one.
 
+#### When the user attaches a reference video
+
+A reference film tells you its pacing, cuts and framing far better than a
+description of it. Contour reads it for you with two host commands; the "no
+`ffmpeg` of your own" rule above still holds.
+
+- Before planning, break the attachment down:
+  `"$OD_NODE_BIN" "$OD_BIN" media reference "<attached path>" --project "$OD_PROJECT_ID"`.
+  It writes `reference/<video name>/` in the project and prints its paths.
+  Read `facts.json` first: length, size, fps, whether it has sound, and
+  `sceneCuts`, the seconds where each new shot starts. Then open
+  `contact-sheet.png` (about one frame a second, left to right, top to
+  bottom) and the frames in `scenes/`, one per shot.
+- Build the beat map from what you saw: one beat per scene, with the scene's
+  start and end from `facts.json`. Match the film's length, aspect and frame
+  rate unless the user asked otherwise. Recreate structure, timing, framing
+  and motion; use the user's own copy, brand and assets, never the
+  reference's logos, faces or footage. If it has sound, `audio.m4a` is there
+  to listen for beats; do not put it in the film unless the user says it is
+  theirs to use.
+- The reference must be a local file: at most 200 MB and 180 s. If the user
+  gives a link (YouTube, a page, any `http(s)://` URL), Contour will not
+  download it: ask them to save the file and attach it, then stop. Do not
+  fetch it with another tool. Too long or too large: ask for the part to
+  follow, cut or compressed.
+- After the render, score it against the reference:
+  `"$OD_NODE_BIN" "$OD_BIN" media compare "<attached path>" "film.mp4" --points 10 --out reference/<video name>/compare`.
+  Each row is a moment at the same share of both films' length, scored 0–1
+  (1 is the same picture); each `--out` PNG shows the reference on the left
+  and your render on the right. Open the pairs for the lowest scores, find
+  which scene they fall in, and fix that scene: wrong timing, layout or
+  colour show up there. Make one such repair pass, render, compare again,
+  and report the before and after mean. Do not chase a score near 1: with
+  different copy and assets, 0.5–0.7 can be a faithful recreation. Only
+  compare when the user asked to follow the reference closely; a reference
+  given as loose inspiration needs no score.
+
 If the host reports a renderer failure, preserve the editable source and report
 that blocker truthfully. Never fabricate a download or label HTML-only output
 as a finished video. Only actual user-requested video-motion production, and

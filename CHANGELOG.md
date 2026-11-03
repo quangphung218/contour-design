@@ -8,6 +8,28 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.16] - 2026-11-03
+
+### Added
+
+- `od media reference <video>` breaks a reference film the user attached
+  into a folder to build from, by default `reference/<video name>/` in the
+  project: `facts.json` (length, size, fps, sound, the seconds of each
+  scene cut), a frame per scene in `scenes/`, about a frame a second in
+  `grid/`, `contact-sheet.png` and `audio.m4a`. Local files only, at most
+  200 MB and 180 s; a link is refused with how to attach the file instead,
+  and nothing is downloaded. It uses the installed ffmpeg and ffprobe, as
+  the MP4 render does. A portrait phone clip is described as it plays, and
+  sound that runs past the picture does not lengthen the film. `--out`
+  takes only a new or empty folder, or one it wrote before: other files are
+  never removed or replaced.
+- `od media compare <a> <b>` scores two films 0–1 at the same points of
+  their length (default 8, `--points`), as a table or `--json`, and with
+  `--out` writes each pair of frames side by side.
+- The motion-design skill reads an attached reference video with these
+  commands before planning, and after rendering compares the film with it
+  and repairs the lowest-scoring scenes once.
+
 ## [0.2.0-beta.15] - 2026-11-02
 
 ### Fixed
@@ -696,7 +718,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.15...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.16...HEAD
+[0.2.0-beta.16]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.15...v0.2.0-beta.16
 [0.2.0-beta.15]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.14...v0.2.0-beta.15
 [0.2.0-beta.14]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.13...v0.2.0-beta.14
 [0.2.0-beta.13]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.12...v0.2.0-beta.13

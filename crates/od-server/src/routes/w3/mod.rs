@@ -9,6 +9,8 @@
 //!   generation with a concurrency limit, cancel and restore ([`media_tasks`]).
 //! - `POST /api/projects/:id/media/scaffold` and the local
 //!   `hyperframes-html` model: Motion source → MP4 ([`motion`]).
+//! - `POST /api/projects/:id/media/reference`: the reference folder of a
+//!   video the user attached ([`reference`]).
 //! - `POST /api/projects/:id/export/pptx-editable` ([`pptx`]).
 
 pub mod design_systems;
@@ -16,6 +18,7 @@ pub mod media_tasks;
 pub mod motion;
 pub mod pipeline;
 pub mod pptx;
+pub mod reference;
 
 use crate::state::AppState;
 use axum::{Extension, Router};
