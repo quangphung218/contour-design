@@ -6,6 +6,13 @@
 // error, in English, Vietnamese and the other languages (German checked).
 // Focus moves to the main button of each state and goes back to Check for
 // updates on close; the Checking state has Close.
+// In the desktop app (the Tauri IPC is a stub here: the shell's download,
+// signature check and install are tested in apps/desktop `updater::tests`)
+// a newer release offers Update now; nothing is fetched until the click,
+// then the release's latest.json (a stub too), the download's percent,
+// and Restart. A latest.json whose signature does not match installs
+// nothing and says so; a release without one, Cancel, and a copy that
+// cannot update itself (a .deb) keep View release with a short hint.
 // Every request leaving loopback is blocked and fails the test.
 // Port: OD_E2E_PORT + 11 (or OD_E2E_UPDATES_PORT). Run through ./run.sh.
 
@@ -55,7 +62,24 @@ const put = (path, body) => api(path, { method: 'PUT', body: JSON.stringify(body
 const release = (tag, extra = {}) => ({ tag_name: tag, html_url: `https://github.com/quangphung218/contour-design/releases/tag/${tag}`, draft: false, prerelease: true, ...extra });
 let answer = { status: 200, body: [] };
 const releasesSeen = [];
+// `releases/download/v<version>/latest.json`: what the desktop stub fetches.
+const GOOD_SIGNATURE = 'c2lnbmVkIGJ5IHRoZSBDb250b3VyIGtleQ==';
+const latestJson = (version, signature = GOOD_SIGNATURE) => ({
+  version,
+  notes: '',
+  pub_date: '2026-11-04T00:00:00Z',
+  platforms: Object.fromEntries(['darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64'].map((p) => [p, { url: `https://github.com/quangphung218/contour-design/releases/download/v${version}/build`, signature }])),
+});
+let latest = { status: 200, body: latestJson('0.2.0-beta.99') };
+const latestSeen = [];
 const releases = createServer((req, res) => {
+  if (req.url.endsWith('/latest.json')) {
+    latestSeen.push(req.url);
+    res.statusCode = latest.status;
+    res.setHeader('content-type', 'application/json');
+    res.setHeader('access-control-allow-origin', '*');
+    return res.end(JSON.stringify(latest.body));
+  }
   releasesSeen.push(`${req.method} ${req.url}`);
   const { status, body, delay = 0 } = answer;
   setTimeout(() => {
@@ -66,6 +90,42 @@ const releases = createServer((req, res) => {
 });
 await new Promise((r) => releases.listen(0, '127.0.0.1', r));
 const RELEASES = `http://127.0.0.1:${releases.address().port}/repos/quangphung218/contour-design/releases`;
+const DOWNLOADS = `http://127.0.0.1:${releases.address().port}/quangphung218/contour-design/releases/download`;
+
+// The desktop shell's IPC (`__TAURI_INTERNALS__`) as the UI sees it. The
+// stub `install_update` fetches the release's latest.json, sends progress
+// events as the shell does, and refuses a signature other than the one the
+// app trusts (the real check: minisign in tauri-plugin-updater).
+function desktopShell({ downloads, good }) {
+  const calls = [];
+  let cancelled = false;
+  const support = sessionStorage.getItem('od-e2e-support') || 'ready';
+  const emit = (detail) => window.dispatchEvent(new CustomEvent('od:update-progress', { detail }));
+  window.__shell = { calls, installed: null, delay: Number(sessionStorage.getItem('od-e2e-delay') || 60) };
+  window.__TAURI_INTERNALS__ = {
+    invoke: async (cmd, args = {}) => {
+      calls.push(args && args.version ? `${cmd} ${args.version}` : cmd);
+      if (cmd === 'update_support') return support;
+      if (cmd === 'cancel_update') { cancelled = true; return null; }
+      if (cmd !== 'install_update') return null;
+      cancelled = false;
+      const r = await fetch(`${downloads}/v${args.version}/latest.json`).catch(() => null);
+      if (!r) throw { kind: 'network', message: 'unreachable' };
+      if (!r.ok) throw { kind: 'noBuild', message: 'Could not fetch a valid release JSON from the remote' };
+      const manifest = await r.json();
+      const total = 4_000_000;
+      for (let done = 0; done <= total; done += 1_000_000) {
+        if (cancelled) throw { kind: 'cancelled', message: 'cancelled' };
+        emit({ phase: 'downloading', downloaded: done, total });
+        await new Promise((ok) => setTimeout(ok, window.__shell.delay));
+      }
+      if (manifest.platforms['darwin-aarch64'].signature !== good) throw { kind: 'signature', message: 'Verification failed' };
+      emit({ phase: 'installing' });
+      window.__shell.installed = manifest.version;
+      return null;
+    },
+  };
+}
 
 const scratch = mkdtempSync(join(tmpdir(), 'od-e2e-updates-'));
 const data = join(scratch, 'data');
@@ -243,6 +303,142 @@ try {
   await page.getByTestId('check-updates').scrollIntoViewIfNeeded();
   await page.screenshot({ path: OUT + 'about-mobile.png' });
   results.narrow = 'ok';
+
+  // 9. The desktop app: Update now, its progress and Restart.
+  const shell = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await shell.route('**/*', (route) => {
+    const url = new URL(route.request().url());
+    if (['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || ['data:', 'blob:', 'about:'].includes(url.protocol)) {
+      return route.continue();
+    }
+    external.push(url.href);
+    return route.abort();
+  });
+  await shell.addInitScript(desktopShell, { downloads: DOWNLOADS, good: GOOD_SIGNATURE });
+  const app = await shell.newPage();
+  app.on('pageerror', (e) => pageErrors.push(e.message));
+  const appDialog = app.getByTestId('update-dialog');
+  const appFocused = () => app.evaluate(() => document.activeElement?.getAttribute('data-testid'));
+  const calls = () => app.evaluate(() => window.__shell.calls.filter((c) => c !== 'set_theme'));
+  // A fresh page each time (the same URL with a hash would not reload it):
+  // the shell stub starts over with the support sessionStorage gives it.
+  const openAbout = async () => {
+    await app.goto(BASE + '/settings#settings-about');
+    await app.reload();
+    await app.getByTestId('about-version').waitFor();
+  };
+  const checkNow = async () => {
+    await app.getByTestId('check-updates').click();
+    await appDialog.waitFor();
+  };
+  await openAbout();
+  answer = { status: 200, body: [release('v0.2.0-beta.99')] };
+  await checkNow();
+  await app.getByTestId('update-now').waitFor();
+  assert.equal(await appDialog.locator('h2').textContent(), 'Version 0.2.0-beta.99 is available');
+  assert.equal(await app.getByTestId('update-now').textContent(), 'Update now');
+  assert.equal(await app.getByTestId('update-view').getAttribute('class'), 'btn', 'View release stays, second to Update now');
+  await until(async () => (await appFocused()) === 'update-now', 'focus on Update now');
+  assert.deepEqual(latestSeen, [], 'nothing downloads before Update now');
+  assert.deepEqual(await calls(), ['update_support']);
+  await appDialog.screenshot({ path: OUT + 'desktop-update-now.png' });
+  await app.getByTestId('update-now').click();
+  await app.getByText('Downloading… 25%').waitFor();
+  assert.equal(await appDialog.locator('h2').textContent(), 'Updating to version 0.2.0-beta.99');
+  assert.equal(await app.getByTestId('update-progress').getAttribute('role'), 'status');
+  assert.equal(await app.getByTestId('update-progress-bar').getAttribute('value'), '25');
+  await appDialog.screenshot({ path: OUT + 'desktop-downloading.png' });
+  await app.getByTestId('update-restart').waitFor();
+  assert.deepEqual(latestSeen, ['/quangphung218/contour-design/releases/download/v0.2.0-beta.99/latest.json']);
+  assert.equal(await appDialog.locator('h2').textContent(), 'Version 0.2.0-beta.99 is installed');
+  assert.equal(await app.getByTestId('update-installed').textContent(), 'Restart Contour to start using it.');
+  await until(async () => (await appFocused()) === 'update-restart', 'focus on Restart');
+  await appDialog.screenshot({ path: OUT + 'desktop-installed.png' });
+  await app.getByTestId('update-restart').click();
+  await until(async () => (await calls()).includes('restart_app'), 'Restart asks the shell');
+  assert.deepEqual(await calls(), ['update_support', 'install_update 0.2.0-beta.99', 'restart_app']);
+  results.desktopUpdate = 'ok';
+
+  // 10. A signature the app does not trust: nothing installed, no Try again.
+  latest = { status: 200, body: latestJson('0.2.0-beta.99', 'c2lnbmVkIGJ5IHNvbWVvbmUgZWxzZQ==') };
+  await openAbout();
+  await checkNow();
+  await app.getByTestId('update-now').click();
+  await app.getByTestId('update-install-failed').waitFor();
+  assert.equal(await appDialog.locator('h2').textContent(), 'Update not installed');
+  assert.equal(await app.getByTestId('update-install-failed').textContent(), "The download isn't signed by Contour, so nothing was installed.");
+  assert.equal(await app.getByTestId('update-install-failed').getAttribute('role'), 'alert');
+  assert.equal(await app.evaluate(() => window.__shell.installed), null, 'nothing installed');
+  assert.equal(await app.getByTestId('update-now').count(), 0, 'Try again would fail the same way');
+  assert.equal(await app.getByTestId('update-restart').count(), 0);
+  await until(async () => (await appFocused()) === 'update-view', 'focus on View release');
+  await appDialog.screenshot({ path: OUT + 'desktop-bad-signature.png' });
+  await app.getByTestId('update-close').click();
+  await appDialog.waitFor({ state: 'detached' });
+  results.badSignature = 'ok';
+
+  // 11. A release built without the signing key has no latest.json.
+  latest = { status: 404, body: { message: 'Not Found' } };
+  await checkNow();
+  await app.getByTestId('update-now').click();
+  await app.getByTestId('update-install-failed').waitFor();
+  assert.equal(await app.getByTestId('update-install-failed').textContent(), "This release can't be installed from the app. Download it from the release page.");
+  await app.getByTestId('update-close').click();
+  await appDialog.waitFor({ state: 'detached' });
+  results.noLatestJson = 'ok';
+
+  // 12. Cancel during the download: the dialog closes, nothing installed.
+  latest = { status: 200, body: latestJson('0.2.0-beta.99') };
+  await app.evaluate(() => { window.__shell.delay = 400; });
+  await checkNow();
+  await app.getByTestId('update-now').click();
+  await app.getByTestId('update-progress').waitFor();
+  await until(async () => (await appFocused()) === 'update-cancel', 'focus on Cancel');
+  // Help ▸ Check for Updates meanwhile does not replace the running update.
+  const checksBefore = releasesSeen.length;
+  await app.evaluate(() => window.dispatchEvent(new CustomEvent('od:menu', { detail: 'check-updates' })));
+  await sleep(300);
+  assert.equal(await app.getByTestId('update-progress').count(), 1, 'the download stays on screen');
+  assert.equal(releasesSeen.length, checksBefore, 'no check while updating');
+  await app.getByTestId('update-cancel').click();
+  await appDialog.waitFor({ state: 'detached' });
+  assert.ok((await calls()).includes('cancel_update'));
+  assert.equal(await app.evaluate(() => window.__shell.installed), null, 'a cancelled update installs nothing');
+  results.cancel = 'ok';
+
+  // 13. A .deb (or a dev build) cannot replace itself: View release and a hint.
+  await app.evaluate(() => sessionStorage.setItem('od-e2e-support', 'package'));
+  await openAbout();
+  await checkNow();
+  await app.getByTestId('update-view').waitFor();
+  assert.equal(await app.getByTestId('update-now').count(), 0);
+  assert.equal(await app.getByTestId('update-hint').textContent(), "This copy can't update itself. Install the new version from the release page.");
+  assert.equal(await app.getByTestId('update-view').getAttribute('class'), 'btn primary');
+  await until(async () => (await appFocused()) === 'update-view', 'focus on View release');
+  await appDialog.screenshot({ path: OUT + 'desktop-package.png' });
+  await app.getByTestId('update-close').click();
+  await app.evaluate(() => sessionStorage.setItem('od-e2e-support', 'devBuild'));
+  await openAbout();
+  await checkNow();
+  assert.equal(await app.getByTestId('update-hint').textContent(), 'This is a development build. Update it from source.');
+  await app.getByTestId('update-close').click();
+  results.cannotUpdateItself = 'ok';
+
+  // 14. Vietnamese.
+  await app.evaluate(() => sessionStorage.setItem('od-e2e-support', 'ready'));
+  await put('/api/app-config', { locale: 'vi' });
+  await openAbout();
+  await checkNow();
+  assert.equal(await app.getByTestId('update-now').textContent(), 'Cập nhật ngay');
+  await app.evaluate(() => { window.__shell.delay = 20; });
+  await app.getByTestId('update-now').click();
+  await app.getByTestId('update-restart').waitFor();
+  assert.equal(await appDialog.locator('h2').textContent(), 'Đã cài phiên bản 0.2.0-beta.99');
+  assert.equal(await app.getByTestId('update-restart').textContent(), 'Khởi động lại');
+  await appDialog.screenshot({ path: OUT + 'desktop-installed-vi.png' });
+  await put('/api/app-config', { locale: 'en' });
+  await shell.close();
+  results.desktopVi = 'ok';
 
   assert.deepEqual(external, [], 'no request left loopback');
   assert.deepEqual(pageErrors, [], 'no page errors');
