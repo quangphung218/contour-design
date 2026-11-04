@@ -70,7 +70,8 @@ impl RunContext {
 
     /// Stops every live run the way Stop does (abort line, SIGTERM to the
     /// process group, SIGKILL after the grace) and waits until each has
-    /// ended and its turn is recorded as canceled, or the limit passes.
+    /// ended and its turn is recorded (failed as `daemon_restart`; a run
+    /// the user had stopped already stays canceled), or the limit passes.
     pub async fn stop_all(&self) {
         {
             let mut pending = self.pending_cancels();
@@ -147,7 +148,8 @@ pub struct AppState {
 
 impl AppState {
     /// Ends what the daemon started that would outlive it: running agents
-    /// (stopped as by Stop, their turns recorded as canceled) and the
+    /// (stopped as by Stop, their turns recorded as failed with
+    /// `daemon_restart`, as after a crash) and the
     /// terminal tabs' shells and their jobs. Call once the server stopped
     /// serving.
     pub async fn shutdown(&self) {

@@ -355,7 +355,11 @@ impl RunEngine {
     pub fn cancel_all(&self) -> usize {
         let active: Vec<Arc<Active>> = self.active().values().cloned().collect();
         for run in &active {
-            run.closing.store(true, Ordering::SeqCst);
+            // A run the user already stopped stays theirs: it ends
+            // `canceled`, not cut off by the shutdown.
+            if !run.canceled.load(Ordering::SeqCst) {
+                run.closing.store(true, Ordering::SeqCst);
+            }
             run.canceled.store(true, Ordering::SeqCst);
             run.cancel.notify_one();
         }
