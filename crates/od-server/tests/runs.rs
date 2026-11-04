@@ -1139,8 +1139,13 @@ async fn stopping_the_server_stops_runs_whose_stream_is_open() {
         .await
         .expect("the server did not stop")
         .unwrap();
+    // Cut off by the stop, not by the user: failed as daemon_restart (UI-008).
     let reg = d.state.runs.registry.get(&run.run_id).unwrap();
-    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
+    assert_eq!(reg.status(), od_contracts::RunStatus::Failed);
+    assert_eq!(
+        reg.end_payload().and_then(|e| e.failure_category),
+        Some(od_contracts::FailureCategory::DaemonRestart)
+    );
     if let Some(left) = Duration::from_secs(4).checked_sub(started.elapsed()) {
         tokio::time::sleep(left).await;
     }
