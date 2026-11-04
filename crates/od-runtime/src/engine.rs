@@ -31,6 +31,8 @@ use tokio::sync::{Notify, mpsc};
 pub const MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
 /// Automatic retries per run (spec 2.3).
 pub const MAX_RETRIES: u32 = 1;
+/// `end.error` of a run the daemon stopped as it shut down.
+pub const SHUTDOWN_ERROR: &str = "the daemon stopped while this run was in progress";
 const STDERR_TAIL_BYTES: usize = 16 * 1024;
 /// After the agent exits, how long to wait for its pipes to close (a
 /// background grandchild may hold them open).
@@ -191,6 +193,9 @@ struct Active {
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     cancel: Notify,
     canceled: AtomicBool,
+    /// Stopped because the daemon is shutting down, not by the user: the
+    /// run ends failed as [`FailureCategory::DaemonRestart`] (UI-008).
+    closing: AtomicBool,
     pgid: AtomicI32,
 }
 
@@ -299,6 +304,7 @@ impl RunEngine {
             stdin: tokio::sync::Mutex::new(None),
             cancel: Notify::new(),
             canceled: AtomicBool::new(false),
+            closing: AtomicBool::new(false),
             pgid: AtomicI32::new(0),
         });
         self.active()
@@ -343,10 +349,13 @@ impl RunEngine {
     }
 
     /// [`Self::cancel`] for every run in flight (daemon shutdown). Returns
-    /// how many were asked to stop.
+    /// how many were asked to stop. They end failed as
+    /// [`FailureCategory::DaemonRestart`], as after a crash: nobody pressed
+    /// Stop, so the chat must not say "Stopped" (UI-008).
     pub fn cancel_all(&self) -> usize {
         let active: Vec<Arc<Active>> = self.active().values().cloned().collect();
         for run in &active {
+            run.closing.store(true, Ordering::SeqCst);
             run.canceled.store(true, Ordering::SeqCst);
             run.cancel.notify_one();
         }
@@ -575,7 +584,7 @@ impl RunEngine {
             drop(files);
             let session = attempt.session_id.clone().or(session_id);
             if attempt.canceled {
-                let mut f = Finish::canceled(attempt.exit_code, attempt.signal.clone());
+                let mut f = Finish::stopped(active, attempt.exit_code, attempt.signal.clone());
                 f.session_id = session;
                 f.resumed = resume.is_some();
                 return finish_turn(&spec, before.as_ref(), f, &attempt.text_parts).await;
@@ -616,7 +625,7 @@ impl RunEngine {
                     );
                     tokio::time::sleep(delay).await;
                     if active.canceled.load(Ordering::SeqCst) {
-                        let f = Finish::canceled(None, None);
+                        let f = Finish::stopped(active, None, None);
                         return finish_turn(&spec, before.as_ref(), f, &[]).await;
                     }
                     continue;
@@ -1408,6 +1417,22 @@ impl Finish {
         let mut f = Self::base(RunStatus::Canceled, code);
         f.signal = signal;
         f
+    }
+
+    /// A run that was asked to stop: canceled by the user, or failed as
+    /// [`FailureCategory::DaemonRestart`] when the daemon is shutting down.
+    fn stopped(active: &Active, code: Option<i32>, signal: Option<String>) -> Self {
+        if active.closing.load(Ordering::SeqCst) {
+            let mut f = Self::failed(
+                FailureCategory::DaemonRestart,
+                SHUTDOWN_ERROR.to_owned(),
+                code,
+            );
+            f.signal = signal;
+            f
+        } else {
+            Self::canceled(code, signal)
+        }
     }
 
     fn failed(category: FailureCategory, message: String, code: Option<i32>) -> Self {

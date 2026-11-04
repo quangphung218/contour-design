@@ -108,9 +108,14 @@ async fn shutdown_before_launch_is_not_lost() {
     tokio::time::timeout(Duration::from_secs(10), d.state.runs.stop_all())
         .await
         .expect("stop_all did not return");
+    // Told as Contour closing, not as a Stop the user never pressed.
     let reg = d.state.runs.registry.get(&run_id).unwrap();
-    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
-    // The turn is recorded as stopped before stop_all returns.
+    assert_eq!(reg.status(), od_contracts::RunStatus::Failed);
+    assert_eq!(
+        reg.end_payload().and_then(|e| e.failure_category),
+        Some(od_contracts::FailureCategory::DaemonRestart)
+    );
+    // The turn is recorded as ended before stop_all returns.
     let body = d
         .get_json(&format!(
             "/api/projects/{project}/conversations/{conversation}/messages"
@@ -123,6 +128,6 @@ async fn shutdown_before_launch_is_not_lost() {
         .find(|m| m["role"] == "assistant")
         .cloned()
         .unwrap();
-    assert_eq!(assistant["runStatus"], "canceled", "{assistant}");
+    assert_eq!(assistant["runStatus"], "failed", "{assistant}");
     let _ = fut.await;
 }

@@ -6,6 +6,7 @@ use od_runtime::{EngineConfig, RunEngine, ToolTokens};
 use od_store::{Store, StoreError};
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use tokio_util::task::TaskTracker;
@@ -42,6 +43,9 @@ pub struct RunContext {
     pub tokens: ToolTokens,
     /// Runs canceled after registering but before their agent launched.
     pending_cancels: Mutex<HashSet<String>>,
+    /// Set by [`Self::stop_all`]: a run stopped from now on ended because
+    /// the daemon is shutting down, not by the user (UI-008).
+    closing: AtomicBool,
     /// Launch and finalize tasks of chat runs: shutdown waits for them so
     /// each turn is recorded as it ended.
     pub tasks: TaskTracker,
@@ -59,6 +63,7 @@ impl RunContext {
             engine: RunEngine::new(engine),
             tokens: ToolTokens::default(),
             pending_cancels: Mutex::default(),
+            closing: AtomicBool::new(false),
             tasks: TaskTracker::new(),
         }
     }
@@ -69,6 +74,7 @@ impl RunContext {
     pub async fn stop_all(&self) {
         {
             let mut pending = self.pending_cancels();
+            self.closing.store(true, Ordering::SeqCst);
             self.engine.cancel_all();
             for run in self.registry.list() {
                 if !run.status().is_terminal() && !self.engine.cancel(run.id()) {
@@ -90,6 +96,12 @@ impl RunContext {
                 "runs still ending at shutdown"
             );
         }
+    }
+
+    /// Whether [`Self::stop_all`] began: the daemon is shutting down.
+    #[must_use]
+    pub fn closing(&self) -> bool {
+        self.closing.load(Ordering::SeqCst)
     }
 
     /// Cancel requests for runs not yet in the engine. Lock it around

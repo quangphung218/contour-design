@@ -642,15 +642,16 @@ async fn prepare_and_launch(
             let _ = std::fs::remove_file(file);
         }
         crate::routes::genui::drop_pending_for_run(state, run).await;
-        end_unlaunched(
-            state,
-            run,
-            &comment_ids(req),
-            RunStatus::Canceled,
-            None,
-            None,
-        )
-        .await;
+        // Stopped by a shutdown, not by the user: told as Contour closing.
+        let (status, category) = if state.runs.closing() {
+            (
+                RunStatus::Failed,
+                Some(od_contracts::FailureCategory::DaemonRestart),
+            )
+        } else {
+            (RunStatus::Canceled, None)
+        };
+        end_unlaunched(state, run, &comment_ids(req), status, None, category).await;
         return Ok(resumed);
     };
     state.runs.tasks.spawn(persist_run(

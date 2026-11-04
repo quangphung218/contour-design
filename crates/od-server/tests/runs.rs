@@ -1077,9 +1077,19 @@ async fn shutdown_stops_running_agents_like_stop() {
     tokio::time::timeout(Duration::from_secs(10), d.state.shutdown())
         .await
         .expect("shutdown did not return");
+    // Nobody pressed Stop: the run ends as cut off by Contour closing,
+    // as after a crash, not as "Stopped" (UI-008).
     let reg = d.state.runs.registry.get(&run.run_id).unwrap();
-    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
-    // The turn is recorded as stopped before shutdown returns.
+    assert_eq!(reg.status(), od_contracts::RunStatus::Failed);
+    let events = d.events(&run.run_id, None).await;
+    let end = events.last().unwrap();
+    assert_eq!(end.event, "end");
+    assert_eq!(
+        end.data["failureCategory"], "daemon_restart",
+        "{:?}",
+        end.data
+    );
+    // The turn is recorded as ended before shutdown returns.
     let body = d
         .get_json(&format!(
             "/api/projects/{project}/conversations/{conversation}/messages"
@@ -1092,7 +1102,7 @@ async fn shutdown_stops_running_agents_like_stop() {
         .find(|m| m["role"] == "assistant")
         .cloned()
         .unwrap();
-    assert_eq!(assistant["runStatus"], "canceled");
+    assert_eq!(assistant["runStatus"], "failed");
     if let Some(left) = Duration::from_secs(4).checked_sub(started.elapsed()) {
         tokio::time::sleep(left).await;
     }
