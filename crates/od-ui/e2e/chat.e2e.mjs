@@ -446,6 +446,16 @@ try {
     await lastTurnDone(turns + 2);
     // Turn files and next steps render a moment after the run ends.
     await until(async () => (await metrics()).gap <= 48, 'sending goes to the end');
+    // The preview's file name ends in an ellipsis when it does not fit,
+    // and goes (the tab names the file) where it would be cut to a letter.
+    const pathTitle = page.locator('.preview-head .path-title');
+    assert.deepEqual(
+      await pathTitle.evaluate((e) => [getComputedStyle(e).textOverflow, getComputedStyle(e).whiteSpace, getComputedStyle(e).overflow]),
+      ['ellipsis', 'nowrap', 'hidden'],
+    );
+    await page.setViewportSize({ width: 1100, height: 760 });
+    await until(async () => !(await pathTitle.isVisible()), 'file name hidden at 1100');
+    await page.screenshot({ path: OUT + 'chat-1100.png' });
     await page.setViewportSize(size);
     results.stickToBottom = 'ok';
   }

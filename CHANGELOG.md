@@ -26,6 +26,8 @@ All notable changes to Contour are recorded here. The format follows
 - Conversations keep their number ("Conversation 1" is the oldest) when
   another one moves up the list, and the side chat no longer shows in the
   main conversation list.
+- The preview's file name ends in an ellipsis in narrow windows instead of
+  being cut to a letter.
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock
