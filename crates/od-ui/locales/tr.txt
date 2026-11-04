@@ -651,6 +651,7 @@ QueuedHint = Geçerli tur bitince gönderilir
 QueueWaitingOne = 1 mesaj bekliyor
 QueueWaitingMany = {0} mesaj bekliyor
 QueueHeldHint = Önceki tur durdurulduğu için gönderilmedi
+QueueHeldLinkHint = Contour bağlantısı koptuğu için gönderilmedi
 Discard = At
 Steer = Yönlendir
 SteerHint = Şimdi çalışan tura gönder

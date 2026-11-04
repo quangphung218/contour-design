@@ -652,6 +652,7 @@ QueuedHint = 現在のターン終了後に送信されます
 QueueWaitingOne = 1 件のメッセージが待機中
 QueueWaitingMany = {0} 件のメッセージが待機中
 QueueHeldHint = 前のターンが停止されたため未送信です
+QueueHeldLinkHint = Contour との接続が切れたため未送信です
 Discard = 破棄
 Steer = 割り込み
 SteerHint = 実行中のターンに今すぐ送信

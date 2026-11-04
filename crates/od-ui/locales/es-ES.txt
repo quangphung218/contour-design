@@ -652,6 +652,7 @@ QueuedHint = Se envía cuando termine el turno actual
 QueueWaitingOne = 1 mensaje en espera
 QueueWaitingMany = {0} mensajes en espera
 QueueHeldHint = No enviado porque se detuvo el turno anterior
+QueueHeldLinkHint = No enviado porque se perdió la conexión con Contour
 Discard = Descartar
 Steer = Guiar
 SteerHint = Enviar ahora al turno en curso

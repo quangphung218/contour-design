@@ -652,6 +652,7 @@ QueuedHint = Отправится, когда закончится текущи�
 QueueWaitingOne = 1 сообщение ждёт
 QueueWaitingMany = Ждут сообщений: {0}
 QueueHeldHint = Не отправлено, потому что прошлый ход остановлен
+QueueHeldLinkHint = Не отправлено: потеряно соединение с Contour
 Discard = Отбросить
 Steer = Направить
 SteerHint = Отправить в текущий ход сейчас

@@ -214,6 +214,7 @@ try {
   await until(async () => (await assistant.nth(4).getAttribute('data-state')) === 'canceled', 'canceled state');
   await assistant.nth(4).getByText('Stopped').waitFor();
   await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  await page.getByTestId('queue-held-hint').getByText('the turn before was stopped').waitFor();
   await sleep(1500);
   assert.equal(await assistant.count(), 5, 'Stop must not send the queue');
   assert.equal(await page.getByTestId('queued').count(), 1);

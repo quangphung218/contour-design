@@ -652,6 +652,7 @@ QueuedHint = จะส่งเมื่อรอบปัจจุบันจ�
 QueueWaitingOne = มี 1 ข้อความรออยู่
 QueueWaitingMany = มี {0} ข้อความรออยู่
 QueueHeldHint = ยังไม่ส่ง เพราะรอบก่อนหน้าถูกหยุด
+QueueHeldLinkHint = ยังไม่ได้ส่ง เพราะการเชื่อมต่อกับ Contour ขาดหาย
 Discard = ทิ้ง
 Steer = สอดแทรก
 SteerHint = ส่งเข้าไปในรอบที่กำลังทำงานตอนนี้

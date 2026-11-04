@@ -652,6 +652,7 @@ QueuedHint = تُرسل عند انتهاء الجولة الحالية
 QueueWaitingOne = رسالة واحدة في الانتظار
 QueueWaitingMany = {0} رسائل في الانتظار
 QueueHeldHint = لم تُرسل لأن الجولة السابقة أُوقفت
+QueueHeldLinkHint = لم تُرسل بسبب فقدان الاتصال بـ Contour
 Discard = تجاهل
 Steer = توجيه
 SteerHint = أرسل إلى الجولة الجارية الآن

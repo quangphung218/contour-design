@@ -880,6 +880,7 @@ messages! {
     QueueWaitingOne => "1 message waiting", "1 tin đang chờ";
     QueueWaitingMany => "{0} messages waiting", "{0} tin đang chờ";
     QueueHeldHint => "Not sent, since the turn before was stopped", "Chưa gửi vì lượt trước đã dừng";
+    QueueHeldLinkHint => "Not sent, since the connection to Contour was lost", "Chưa gửi vì mất kết nối tới Contour";
     Discard => "Discard", "Bỏ";
     Steer => "Steer", "Chen vào";
     SteerHint => "Send into the running turn now", "Gửi ngay vào lượt đang chạy";

@@ -652,6 +652,7 @@ QueuedHint = 현재 턴이 끝나면 전송됩니다
 QueueWaitingOne = 메시지 1개 대기 중
 QueueWaitingMany = 메시지 {0}개 대기 중
 QueueHeldHint = 이전 턴이 중지되어 보내지 않았습니다
+QueueHeldLinkHint = Contour 연결이 끊어져 보내지 않았습니다
 Discard = 버리기
 Steer = 끼어들기
 SteerHint = 실행 중인 턴에 지금 바로 전송

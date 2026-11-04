@@ -18,7 +18,7 @@ use crate::mention::{self, Outgoing};
 use crate::question_form::{
     self, Answers, Question, QuestionForm, QuestionKind, Segment, format_answers, missing_required,
 };
-use crate::workspace::move_item;
+use crate::workspace::{QueueHold, move_item};
 use leptos::prelude::*;
 use od_contracts::CommentStatus;
 
@@ -454,14 +454,20 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
         let n = queue.len();
         let can_steer = ctx.can_steer(shell);
         // After a Stop (or Contour going away) the queue waits for the user
-        // instead of starting a run on its own (UI-003).
-        let held = ctx.queue_held.get() && ctx.live_run.with(Option::is_none);
-        let title = if held {
+        // instead of starting a run on its own (UI-003), even while a
+        // message sent past it runs.
+        let hold = ctx.queue_held.get();
+        let held = hold.is_some();
+        let title = if let Some(why) = hold {
+            let hint = match why {
+                QueueHold::Stopped => T::QueueHeldHint,
+                QueueHold::LinkLost => T::QueueHeldLinkHint,
+            };
             view! {
                 <span class="queue-title" data-testid="queue-held">
                     {icon(Glyph::Queue)}
                     <strong>{if n == 1 { t(T::QueueWaitingOne).to_owned() } else { tf(T::QueueWaitingMany, &[&n.to_string()]) }}</strong>
-                    <span class="subtle">{t(T::QueueHeldHint)}</span>
+                    <span class="subtle" data-testid="queue-held-hint">{t(hint)}</span>
                     <span class="queue-held-actions">
                         <button class="btn small primary" data-testid="queue-send" on:click=move |_| ctx.release_queue(shell)>
                             {icon(Glyph::Send)}{t(T::Send)}

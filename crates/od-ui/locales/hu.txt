@@ -652,6 +652,7 @@ QueuedHint = Az aktuális kör végén kerül elküldésre
 QueueWaitingOne = 1 üzenet vár
 QueueWaitingMany = {0} üzenet vár
 QueueHeldHint = Nincs elküldve, mert az előző kör leállt
+QueueHeldLinkHint = Nincs elküldve, mert megszakadt a kapcsolat a Contourral
 Discard = Elvetés
 Steer = Beavatkozás
 SteerHint = Küldés azonnal a futó körbe

@@ -652,6 +652,7 @@ QueuedHint = Буде надіслано після завершення пот�
 QueueWaitingOne = 1 повідомлення чекає
 QueueWaitingMany = Чекають повідомлень: {0}
 QueueHeldHint = Не надіслано, бо попередній хід зупинено
+QueueHeldLinkHint = Не надіслано: втрачено з’єднання з Contour
 Discard = Відкинути
 Steer = Скерувати
 SteerHint = Надіслати у поточний хід зараз

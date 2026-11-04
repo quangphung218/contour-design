@@ -652,6 +652,7 @@ QueuedHint = Envoyé à la fin du tour en cours
 QueueWaitingOne = 1 message en attente
 QueueWaitingMany = {0} messages en attente
 QueueHeldHint = Non envoyé, car le tour précédent a été arrêté
+QueueHeldLinkHint = Non envoyé, car la connexion à Contour a été perdue
 Discard = Abandonner
 Steer = Orienter
 SteerHint = Envoyer dans le tour en cours maintenant

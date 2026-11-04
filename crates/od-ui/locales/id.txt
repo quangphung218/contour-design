@@ -652,6 +652,7 @@ QueuedHint = Dikirim saat giliran saat ini selesai
 QueueWaitingOne = 1 pesan menunggu
 QueueWaitingMany = {0} pesan menunggu
 QueueHeldHint = Belum dikirim karena giliran sebelumnya dihentikan
+QueueHeldLinkHint = Belum dikirim karena koneksi ke Contour terputus
 Discard = Buang
 Steer = Arahkan
 SteerHint = Kirim ke giliran yang sedang berjalan sekarang

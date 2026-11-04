@@ -652,6 +652,7 @@ QueuedHint = 当前一轮结束后发送
 QueueWaitingOne = 1 条消息等待中
 QueueWaitingMany = {0} 条消息等待中
 QueueHeldHint = 上一轮已停止，因此未发送
+QueueHeldLinkHint = 与 Contour 的连接已断开，未发送
 Discard = 丢弃
 Steer = 插话
 SteerHint = 立即发送到正在运行的这一轮

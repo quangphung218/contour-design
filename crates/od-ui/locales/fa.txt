@@ -652,6 +652,7 @@ QueuedHint = با پایان نوبت فعلی ارسال می‌شود
 QueueWaitingOne = ۱ پیام در انتظار
 QueueWaitingMany = {0} پیام در انتظار
 QueueHeldHint = ارسال نشد چون نوبت قبلی متوقف شد
+QueueHeldLinkHint = ارسال نشد چون اتصال به Contour قطع شد
 Discard = کنار گذاشتن
 Steer = هدایت
 SteerHint = همین حالا به نوبت در حال اجرا ارسال شود

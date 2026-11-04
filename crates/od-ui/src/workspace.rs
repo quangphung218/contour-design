@@ -108,20 +108,29 @@ pub struct Queued {
     pub sent_at: i64,
 }
 
-/// Whether the queue goes out on its own once a run ends with `status`
-/// (`None`: its stream was lost) and `failure`. Only after a turn that
-/// ran to its end: a Stop, or Contour going away, holds it until the user
-/// sends or discards it (UI-003, UI-008).
+/// Why the queue waits for the user instead of going out on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueHold {
+    /// The user stopped the turn before it (UI-003).
+    Stopped,
+    /// Contour went away, or the run's stream was lost (UI-008).
+    LinkLost,
+}
+
+/// Whether the queue waits once a run ends with `status` (`None`: its
+/// stream was lost) and `failure`, and why. `None`: it goes out on its own,
+/// only after a turn that ran to its end.
 #[must_use]
-pub fn queue_goes_on(
+pub fn queue_hold(
     status: Option<od_contracts::RunStatus>,
     failure: Option<od_contracts::FailureCategory>,
-) -> bool {
+) -> Option<QueueHold> {
     use od_contracts::{FailureCategory, RunStatus};
     match status {
-        Some(RunStatus::Succeeded) => true,
-        Some(RunStatus::Failed) => failure != Some(FailureCategory::DaemonRestart),
-        Some(RunStatus::Canceled | RunStatus::Running) | None => false,
+        Some(RunStatus::Succeeded) => None,
+        Some(RunStatus::Failed) if failure != Some(FailureCategory::DaemonRestart) => None,
+        Some(RunStatus::Canceled) => Some(QueueHold::Stopped),
+        Some(RunStatus::Failed | RunStatus::Running) | None => Some(QueueHold::LinkLost),
     }
 }
 
@@ -234,19 +243,30 @@ mod tests {
     #[test]
     fn only_a_turn_that_ran_to_its_end_sends_the_queue() {
         use od_contracts::{FailureCategory, RunStatus};
-        assert!(queue_goes_on(Some(RunStatus::Succeeded), None));
-        assert!(queue_goes_on(
-            Some(RunStatus::Failed),
-            Some(FailureCategory::AgentError)
-        ));
+        assert_eq!(queue_hold(Some(RunStatus::Succeeded), None), None);
+        assert_eq!(
+            queue_hold(Some(RunStatus::Failed), Some(FailureCategory::AgentError)),
+            None
+        );
         // UI-003: Stop means stop.
-        assert!(!queue_goes_on(Some(RunStatus::Canceled), None));
-        // UI-008: Contour went away; sending now would fail too.
-        assert!(!queue_goes_on(
-            Some(RunStatus::Failed),
-            Some(FailureCategory::DaemonRestart)
-        ));
-        assert!(!queue_goes_on(None, None), "stream lost");
+        assert_eq!(
+            queue_hold(Some(RunStatus::Canceled), None),
+            Some(QueueHold::Stopped)
+        );
+        // UI-008: Contour went away; sending now would fail too, and the
+        // hint must not say the turn was stopped.
+        assert_eq!(
+            queue_hold(
+                Some(RunStatus::Failed),
+                Some(FailureCategory::DaemonRestart)
+            ),
+            Some(QueueHold::LinkLost)
+        );
+        assert_eq!(
+            queue_hold(None, None),
+            Some(QueueHold::LinkLost),
+            "stream lost"
+        );
     }
 
     #[test]

@@ -361,11 +361,16 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   await page.getByTestId('composer').fill('slow please');
   await page.getByTestId('composer').press('Enter');
   await until(async () => (await assistant.last().getAttribute('data-state')) === 'running', 'slow run going');
+  await page.getByTestId('composer').fill('queued while cut');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await page.getByTestId('queued').count()) === 1, 'one queued');
   daemon.kill('SIGTERM');
   const cutOff = assistant.last();
   await until(async () => (await cutOff.getAttribute('data-state')) === 'failed', 'cut-off turn ends failed', 15_000);
   await cutOff.getByText('Lost the connection to Contour').waitFor();
   assert.equal(await cutOff.getByText('Stopped').count(), 0, 'not told as a Stop');
+  // The queue waits, and its hint does not say the turn was stopped.
+  await page.getByTestId('queue-held-hint').getByText('connection to Contour was lost').waitFor();
   await until(async () => !(await healthy()), 'daemon down', 20_000);
   await page.getByTestId('composer').fill('hello?');
   await page.getByTestId('composer').press('Enter');
@@ -383,6 +388,23 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   await until(healthy, 'daemon back');
   await until(async () => await lost.getByTestId('next-retry').isEnabled(), 'Retry on once back', 20_000);
   results.daemonLost = 'cut-off turn failed (not Stopped), one plain line, Retry on reconnect';
+
+  // 5c. A message sent past a held queue runs, and the queue still says
+  // it waits (not "Sent when the current turn ends"), during that run and
+  // after it: it goes only on Send.
+  await page.getByTestId('composer').fill('slow past the queue');
+  await page.getByTestId('composer').press('Enter');
+  const past = assistant.last();
+  await until(async () => (await past.getAttribute('data-state')) === 'running', 'run past the queue going', 15_000);
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  await until(async () => (await past.getAttribute('data-state')) === 'succeeded', 'run past the queue ends', 30_000);
+  const turns = await assistant.count();
+  await sleep(1500);
+  assert.equal(await assistant.count(), turns, 'the held queue did not go on its own');
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  await page.getByTestId('queue-discard').click();
+  await until(async () => (await page.getByTestId('queued').count()) === 0, 'queue discarded');
+  results.heldQueue = 'still waiting during and after a run sent past it';
 
   // 6. Vietnamese strings of the new screens.
   await fetch(`${BASE}/api/app-config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: 'vi' }) });

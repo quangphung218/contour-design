@@ -651,6 +651,7 @@ QueuedHint = Zostanie wysłane po zakończeniu bieżącej tury
 QueueWaitingOne = 1 wiadomość czeka
 QueueWaitingMany = Wiadomości czekające: {0}
 QueueHeldHint = Nie wysłano, bo poprzednia tura została zatrzymana
+QueueHeldLinkHint = Nie wysłano, bo utracono połączenie z Contour
 Discard = Odrzuć
 Steer = Wtrąć
 SteerHint = Wyślij od razu do trwającej tury

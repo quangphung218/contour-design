@@ -31,7 +31,7 @@ use crate::file_tree::is_markdown;
 use crate::highlight::{Lang, highlight};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Picked, Slide};
-use crate::workspace::{Queued, Tabs, queue_goes_on, touch_recent};
+use crate::workspace::{QueueHold, Queued, Tabs, queue_hold, touch_recent};
 use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
@@ -219,9 +219,9 @@ pub struct StudioCtx {
     pub draft: RwSignal<String>,
     /// Messages typed while a run was going, sent one by one after it.
     pub queue: RwSignal<Vec<Queued>>,
-    /// The queue waits for the user (Send or Discard): the run before it
-    /// was stopped or cut off (UI-003, UI-008).
-    pub queue_held: RwSignal<bool>,
+    /// The queue waits for the user (Send or Discard), and why: the run
+    /// before it was stopped or cut off (UI-003, UI-008).
+    pub queue_held: RwSignal<Option<QueueHold>>,
     pub files: RwSignal<Vec<ProjectFile>>,
     /// Open file tabs; the active tab is the previewed file.
     pub tabs: RwSignal<Tabs>,
@@ -485,7 +485,7 @@ impl StudioCtx {
         if self.live_run.get_untracked().is_some() {
             if self.queue.with_untracked(Vec::is_empty) {
                 // A new queue: whatever held the last one is over.
-                self.queue_held.set(false);
+                self.queue_held.set(None);
             }
             self.queue.update(|q| {
                 q.push(Queued {
@@ -595,7 +595,7 @@ impl StudioCtx {
                         t.failure = Some(FailureCategory::DaemonRestart);
                     });
                     self.live_run.set(None);
-                    self.hold_queue();
+                    self.hold_queue(QueueHold::LinkLost);
                 }
                 Err(e) => {
                     fail(turn, e.to_string());
@@ -626,16 +626,16 @@ impl StudioCtx {
     }
 
     /// Keeps the queue for the user to send or discard (UI-003).
-    fn hold_queue(self) {
+    fn hold_queue(self, why: QueueHold) {
         if self.queue.with_untracked(|q| !q.is_empty()) {
-            self.queue_held.set(true);
+            self.queue_held.set(Some(why));
         }
     }
 
     /// Send on a held queue: its first message goes now (or after the
     /// run going), the rest one by one after it.
     pub fn release_queue(self, shell: Shell) {
-        self.queue_held.set(false);
+        self.queue_held.set(None);
         if self.live_run.get_untracked().is_none() {
             self.send_next(shell);
         }
@@ -650,7 +650,7 @@ impl StudioCtx {
         for id in ids {
             self.drop_queued(&id);
         }
-        self.queue_held.set(false);
+        self.queue_held.set(None);
     }
 
     /// Sends the first queued message, if any.
@@ -730,14 +730,14 @@ impl StudioCtx {
                         self.check_deliverable(run.get_value(), files);
                     }
                     let failure = turn.with_untracked(|t| t.failure);
-                    self.finish_run(shell, queue_goes_on(Some(status), failure));
+                    self.finish_run(shell, queue_hold(Some(status), failure));
                 }
             },
             move || {
                 if turn.with_untracked(|t| t.state.is_live()) {
                     fail(turn, t(T::LostRunStream).to_owned());
                 }
-                self.finish_run(shell, false);
+                self.finish_run(shell, Some(QueueHold::LinkLost));
             },
         );
         match stream {
@@ -769,9 +769,9 @@ impl StudioCtx {
     }
 
     /// Closes the run stream after the current event handler returns, then
-    /// sends the next queued message when `go_on` (see [`queue_goes_on`])
-    /// and the user is not holding the queue; otherwise the queue waits.
-    fn finish_run(self, shell: Shell, go_on: bool) {
+    /// sends the next queued message unless the run's end holds the queue
+    /// (`hold`, see [`queue_hold`]) or it is held already; then it waits.
+    fn finish_run(self, shell: Shell, hold: Option<QueueHold>) {
         self.live_run.set(None);
         self.run_stream.with_value(|s| {
             if let Some(s) = s {
@@ -780,10 +780,10 @@ impl StudioCtx {
         });
         leptos::task::spawn_local(async move {
             self.run_stream.set_value(None);
-            if go_on && !self.queue_held.get_untracked() {
-                self.send_next(shell);
-            } else {
-                self.hold_queue();
+            match (hold, self.queue_held.get_untracked()) {
+                (None, None) => self.send_next(shell),
+                (Some(why), _) => self.hold_queue(why),
+                (None, Some(_)) => {}
             }
         });
         self.refresh_files();
@@ -1278,7 +1278,7 @@ pub fn Studio() -> impl IntoView {
         live_run: RwSignal::new(None),
         draft: RwSignal::new(String::new()),
         queue: RwSignal::new(Vec::new()),
-        queue_held: RwSignal::new(false),
+        queue_held: RwSignal::new(None),
         files: RwSignal::new(Vec::new()),
         tabs: RwSignal::new(Tabs::default()),
         terms: RwSignal::new(Vec::new()),
