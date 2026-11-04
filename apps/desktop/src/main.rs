@@ -39,6 +39,24 @@ const APP_NAME: &str = "Contour";
 /// `<app> daemon …`: `od daemon start` / `status`, without the window.
 const DAEMON_COMMAND: &str = "daemon";
 
+/// `<app> mcp …`: the MCP stdio server, without the window.
+const MCP_COMMAND: &str = "mcp";
+
+/// The arguments after subcommand `name` when `od` would run `name` for
+/// `args` ([`od_cli::subcommand`]: past `od`'s global flags).
+fn subcommand_args<'a>(
+    args: &'a [std::ffi::OsString],
+    name: &str,
+) -> Option<&'a [std::ffi::OsString]> {
+    let command = od_cli::subcommand(args).filter(|c| *c == name)?;
+    // The very argument `subcommand` returned, not an earlier flag value
+    // that happens to read `name` (`--daemon-url mcp`).
+    let at = args
+        .iter()
+        .position(|a| std::ptr::eq(a.as_os_str(), command))?;
+    Some(&args[at + 1..])
+}
+
 /// The in-process daemon.
 struct Daemon {
     state: AppState,
@@ -339,8 +357,9 @@ fn main() -> anyhow::Result<()> {
     // name this binary (it is the `od` of the app's runs).
     let all = od_cli::strip_self_arg(std::env::args_os().collect());
     let args = &all[1.min(all.len())..];
-    if args.first().is_some_and(|a| a == "mcp") {
-        return mcp::run(&args[1..]);
+    // `od`'s global flags may come first (`<app> --json mcp`).
+    if let Some(rest) = subcommand_args(args, MCP_COMMAND) {
+        return mcp::run(rest);
     }
     // `<app> media generate …` and the other client commands: the CLI,
     // without the window, against the running app's daemon. `od`'s global
@@ -534,6 +553,37 @@ mod tests {
         // OD_RESOURCE_ROOT wins: the CLI's lookup reads it.
         assert_eq!(daemon_resource_root(Some("/x".into()), Some(bundle)), None);
         assert_eq!(daemon_resource_root(None, None), None);
+    }
+
+    #[test]
+    fn mcp_runs_past_the_global_flags() {
+        let args = |a: &[&str]| a.iter().map(std::ffi::OsString::from).collect::<Vec<_>>();
+        let rest = |a: &[&str]| {
+            subcommand_args(&args(a), MCP_COMMAND).map(|r| {
+                r.iter()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+            })
+        };
+        assert_eq!(rest(&["mcp"]), Some(vec![]));
+        assert_eq!(
+            rest(&["mcp", "--daemon-url", "http://x"]),
+            Some(vec!["--daemon-url".into(), "http://x".into()])
+        );
+        assert_eq!(rest(&["--json", "mcp"]), Some(vec![]));
+        assert_eq!(
+            rest(&["--daemon-url", "http://x", "mcp", "--daemon-url=http://y"]),
+            Some(vec!["--daemon-url=http://y".into()])
+        );
+        // A flag's value is not the command.
+        assert_eq!(rest(&["--daemon-url", "mcp", "project", "list"]), None);
+        assert_eq!(
+            rest(&["--daemon-url", "mcp", "mcp", "--daemon-url=http://y"]),
+            Some(vec!["--daemon-url=http://y".into()])
+        );
+        assert_eq!(rest(&["project", "mcp"]), None);
+        assert_eq!(rest(&["--json"]), None);
+        assert_eq!(rest(&[]), None);
     }
 
     #[test]
