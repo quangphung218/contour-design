@@ -71,6 +71,20 @@ the connection while the test uploads the 210 MB file, and `fetch` threw
 instead of returning a refusal; the test now copies the file in either
 way.
 
+Round 7 (branch `qa-beta18` at e854923f, the beta.18 candidate: PR #61…#65,
+the `.od-running` OS lock, a film keyed by its path from the folder, bare
+hosts and typed-wrong schemes read as links, no `400 BAD_REQUEST:` before a
+refusal). New suite `reference-runs.qa.mjs` (10 tests, REF-22…REF-31): two
+runs of one film at once (agent and agent, agent and terminal), one film
+given six ways, `a/clip.mp4` beside `b/clip.mp4`, folders written by
+beta.17 (a copy of its mark, and the installed `Contour.app` 0.2.0-beta.17
+itself), links typed wrong, kill -9 of the CLI and of the daemon half way,
+and a beta.17 run killed before the update. `assertPlain` in
+`reference.qa.mjs` now also refuses `400 BAD_REQUEST`. All 31 reference
+tests pass, the new suite three times in a row; run against the beta.16
+`od`, 9 of the 10 new ones and REF-09/REF-14 go red where the old bugs
+were, so they catch what beta.18 fixed. No new bug.
+
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
 | QA-040 | 🟠 | Two films with the same name (clip.mp4, clip.mkv) share `reference/clip/`: the second silently replaces the first's facts and frames | `reference.qa.mjs` REF-19 | Fixed |
