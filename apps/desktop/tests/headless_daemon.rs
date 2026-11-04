@@ -213,6 +213,12 @@ fn daemon_start_finds_the_agents_on_the_login_shells_path() {
         &shell,
         &format!("printf '__OD_PATH__%s__OD_PATH__' '{}'", agents.display()),
     );
+    // A new script's first exec can take seconds on a loaded Mac (it is
+    // scanned), past the daemon's 3 s login shell limit; on Linux it can
+    // fail with ETXTBSY while a fork still holds it. Run both once first,
+    // as `od-runtime`'s login_path tests do.
+    warm_up(&shell);
+    warm_up(&agents.join("claude"));
     let data = tmp.path().join("data");
     let mut daemon = Daemon(
         daemon_start(&data)
@@ -238,6 +244,23 @@ fn daemon_start_finds_the_agents_on_the_login_shells_path() {
         Some(agents.join("claude").to_str().unwrap()),
         "{claude}"
     );
+}
+
+/// Runs `script` once until it starts (see its caller).
+#[cfg(unix)]
+fn warm_up(script: &Path) {
+    for _ in 0..100 {
+        let started = Command::new(script)
+            .args(["-ilc", "true"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if started.is_ok() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// A data dir another daemon holds (the open app's, without `OD_DATA_DIR`)
