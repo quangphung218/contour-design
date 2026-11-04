@@ -396,6 +396,46 @@ try {
   results.quote = 'ok';
   await page.screenshot({ path: OUT + 'b3-studio-light.png' });
 
+  // 13d. Stick to the bottom: scrolled up while a run streams, new output
+  // keeps the reader's place and offers "Jump to latest", which goes back
+  // and follows again; sending a message always goes to the end.
+  {
+    const size = page.viewportSize();
+    await page.setViewportSize({ width: 1440, height: 600 });
+    const list = page.getByTestId('messages');
+    const metrics = () => list.evaluate((e) => ({ top: e.scrollTop, gap: e.scrollHeight - e.scrollTop - e.clientHeight, height: e.scrollHeight }));
+    const turns = await page.getByTestId('assistant-msg').count();
+    await composer.fill('a slow page');
+    await composer.press('Enter');
+    const live = page.getByTestId('assistant-msg').nth(turns);
+    await until(async () => /step2 /.test(await live.textContent()), 'slow run streaming');
+    assert.ok((await metrics()).gap <= 48, 'follows the stream at the end');
+    await list.evaluate((e) => e.scrollTo(0, 0));
+    await until(async () => (await metrics()).top === 0, 'scrolled up');
+    const before = await metrics();
+    await until(async () => /step8 /.test(await live.textContent()), 'more output');
+    const after = await metrics();
+    assert.ok(after.height > before.height, `the list grew (${before.height} → ${after.height})`);
+    assert.equal(after.top, 0, 'new output does not pull the reader down');
+    await page.getByTestId('jump-latest').waitFor();
+    await page.screenshot({ path: OUT + 'chat-jump-latest.png' });
+    await page.getByTestId('jump-latest').click();
+    await until(async () => (await metrics()).gap <= 48, 'jumped to latest');
+    assert.equal(await page.getByTestId('jump-latest').count(), 0, 'no button at the end');
+    await until(async () => /step14 /.test(await live.textContent()), 'still streaming');
+    assert.ok((await metrics()).gap <= 48, 'follows again after the jump');
+    await lastTurnDone(turns + 1);
+    await list.evaluate((e) => e.scrollTo(0, 0));
+    await until(async () => (await metrics()).top === 0, 'scrolled up again');
+    await composer.fill('back to the end');
+    await composer.press('Enter');
+    await lastTurnDone(turns + 2);
+    // Turn files and next steps render a moment after the run ends.
+    await until(async () => (await metrics()).gap <= 48, 'sending goes to the end');
+    await page.setViewportSize(size);
+    results.stickToBottom = 'ok';
+  }
+
   // 14. Reconnect after the run stream drops.
   // A non-200 answer makes the browser give up on the stream (a plain drop
   // is retried by EventSource on its own).

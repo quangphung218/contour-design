@@ -862,6 +862,7 @@ messages! {
     Queue => "Queue", "Xếp hàng";
     Stop => "Stop", "Dừng";
     Stopped => "Stopped", "Đã dừng";
+    JumpToLatest => "Jump to latest", "Xuống tin mới nhất";
     Working => "Working", "Đang làm";
     Thinking => "Thinking", "Suy nghĩ";
     Answers => "Answers", "Câu trả lời";

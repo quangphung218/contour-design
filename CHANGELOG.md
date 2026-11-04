@@ -10,6 +10,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- The chat (and the side chat) no longer pulls you back to the bottom on
+  every new token while a run streams: scrolled up to read earlier turns,
+  the list keeps its place and offers "Jump to latest"; back at the end
+  (within 48 px) it follows the output again, and sending a message always
+  goes to the end.
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock

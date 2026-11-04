@@ -63,6 +63,8 @@ web-sys = { version = "0.3", features = [
     "MediaQueryList",
     "MessageEvent",
     "MouseEvent",
+    "MutationObserver",
+    "MutationObserverInit",
     "Navigator",
     "NodeList",
     "Notification",

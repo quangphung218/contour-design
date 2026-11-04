@@ -720,6 +720,8 @@ pre.snippet { margin: var(--space-2) 0; padding: var(--space-3); border-radius: 
 .warning-text .ico { margin-top: 2px; }
 .messages { flex: 1; overflow-y: auto; padding: var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
 .chat-empty { margin: auto 0; }
+/* Inside the transcript: rides its bottom edge while the reader is up the list. */
+.jump-latest { position: sticky; bottom: var(--space-2); align-self: center; flex: none; z-index: 1; box-shadow: var(--shadow-md); animation: pop-in var(--duration-fast) var(--ease-emphasized); }
 .msg { max-width: 100%; overflow-wrap: anywhere; animation: rise-in var(--duration-base) var(--ease-emphasized); }
 .msg.user {
   align-self: flex-end; max-width: 86%;

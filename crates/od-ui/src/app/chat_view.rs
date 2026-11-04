@@ -6,6 +6,7 @@ use super::composer::{
     ContextChips, FilePicker, MentionArea, ModelPicker, PlusMenu, Sources, UploadState, UploadTray,
     admit, upload_all,
 };
+use super::follow::{JumpToLatest, StickToBottom};
 use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
 use super::preview_tools::DeliverableWarning;
@@ -66,21 +67,22 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     let shell = Shell::get();
     let draft = ctx.draft;
     let list_ref = NodeRef::<leptos::html::Div>::new();
+    let follow = StickToBottom::new(list_ref);
 
     // Keep the newest output in view while streaming, and once the run
-    // ends: the next steps under the last turn show only then, after this
-    // effect has run, so scroll again on the next frame.
-    Effect::new(move |_| {
-        ctx.items.with(|items| {
+    // ends (the next steps under the last turn show only then), unless the
+    // reader scrolled up the transcript.
+    Effect::new(move |prev: Option<Option<String>>| {
+        let last = ctx.items.with(|items| {
             if let Some(ItemKind::Assistant(turn)) = items.last().map(|i| &i.kind) {
                 turn.track();
             }
+            items.last().map(|i| i.id.clone())
         });
         ctx.live_run.track();
-        if let Some(el) = list_ref.get() {
-            el.set_scroll_top(el.scroll_height());
-            request_animation_frame(move || el.set_scroll_top(el.scroll_height()));
-        }
+        list_ref.track();
+        follow.changed(prev.is_none_or(|p| p != last));
+        last
     });
 
     let navigate = super::leave_guard::use_leave();
@@ -192,7 +194,10 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                 data-testid="messages"
                 on:mouseup=move |_| read_selection()
                 on:keyup=move |_| read_selection()
-                on:scroll=move |_| quote.set(None)
+                on:scroll=move |_| {
+                    quote.set(None);
+                    follow.on_scroll();
+                }
             >
                 {move || ctx.load_error.get().map(|e| view! {
                     <div class="msg-error load-error" role="alert" data-testid="load-error">
@@ -247,6 +252,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         </div>
                     </div>
                 </Show>
+                <JumpToLatest follow=follow/>
             </div>
             {move || quote.get().map(|(x, y, text)| view! {
                 <button
