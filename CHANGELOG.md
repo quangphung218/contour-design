@@ -10,6 +10,14 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- The installed app's binary can run its daemon alone:
+  `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
+  flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock
+  icon instead of opening a second app, and serves the app's bundled
+  content (macOS `Contents/Resources`, `/usr/lib/Contour` on Linux), so
+  QA and agents can test the real app beside the one that is open. See
+  [getting started](docs/getting-started.md#run-the-installed-apps-daemon-without-its-window).
+
 - A reference link typed with the colon or a slash of its scheme missing
   (`https//vimeo.com/1`, `http:/youtu.be/x`) is refused as a link, with
   how to attach the file instead; before, the user saw "No such file or

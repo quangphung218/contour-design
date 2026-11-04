@@ -36,6 +36,8 @@ const REPORT_MENU_ID: &str = "help-report-issue";
 const UPDATES_MENU_ID: &str = "help-check-updates";
 /// Display name (window title, dialogs); `tauri.conf.json` `productName`.
 const APP_NAME: &str = "Contour";
+/// `<app> daemon …`: `od daemon start` / `status`, without the window.
+const DAEMON_COMMAND: &str = "daemon";
 
 /// The in-process daemon.
 struct Daemon {
@@ -47,12 +49,28 @@ struct Daemon {
 /// Bundled content: `Resources/content` in a packaged app, else the usual
 /// lookup (`OD_RESOURCE_ROOT`, next to the binary, source tree).
 fn resource_root(app: &AppHandle) -> PathBuf {
-    app.path()
-        .resource_dir()
-        .ok()
+    bundled_content(app.path().resource_dir().ok()).unwrap_or_else(resolve_resource_root)
+}
+
+/// `content/` in the app's resource folder (`Contents/Resources` on macOS,
+/// next to the binary on Windows, `/usr/lib/Contour` in the Linux
+/// packages), when it holds the skills.
+fn bundled_content(resource_dir: Option<PathBuf>) -> Option<PathBuf> {
+    resource_dir
         .map(|d| d.join("content"))
         .filter(|d| d.join("skills").is_dir())
-        .unwrap_or_else(resolve_resource_root)
+}
+
+/// The content `<app> daemon start` serves: `OD_RESOURCE_ROOT` when set
+/// (left to the CLI's own lookup), else the bundle's.
+fn daemon_resource_root(
+    env: Option<std::ffi::OsString>,
+    resource_dir: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if env.is_some_and(|v| !v.is_empty()) {
+        return None;
+    }
+    bundled_content(resource_dir)
 }
 
 async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Result<Daemon> {
@@ -340,6 +358,23 @@ fn main() -> anyhow::Result<()> {
         // The CLI's own code: 2 (task still running) and 66 stay as they are.
         std::process::exit(i32::from(od_cli::main_code(all)));
     }
+    let context = tauri::generate_context!();
+    // `<app> daemon start [--port 0] …`: the `od` daemon, headless, for QA
+    // and agents testing the installed app beside the one in use (its own
+    // `OD_DATA_DIR`). No Tauri: no window, no Dock icon (no
+    // `NSApplication`). Without `OD_DATA_DIR` it is the app's data dir,
+    // whose `daemon.lock` refuses a second daemon while the app is open
+    // (on unix; Windows takes no OS lock).
+    if args.first().is_some_and(|a| a == DAEMON_COMMAND) {
+        let resource_dir =
+            tauri::utils::platform::resource_dir(context.package_info(), &tauri::Env::default())
+                .ok();
+        let root = daemon_resource_root(
+            std::env::var_os(od_content::RESOURCE_ROOT_ENV),
+            resource_dir,
+        );
+        std::process::exit(i32::from(od_cli::main_code_with(all, root)));
+    }
     // Opened from Finder the app has no stdout or stderr: the log and any
     // panic also go to `<data>/logs/` (Help ▸ Report Issue reads it).
     let data_dir = od_server::logs::with_console(DataDir::from_env);
@@ -436,7 +471,7 @@ fn main() -> anyhow::Result<()> {
             });
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .context("building the desktop app")?
         .run(|app, event| {
             // Running agents and the terminal tabs' shells would outlive
@@ -484,6 +519,25 @@ mod tests {
         assert!(!tmp.join(&name).exists());
         assert!(tmp.join("other").exists());
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_headless_daemon_serves_the_bundled_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().to_path_buf();
+        assert_eq!(daemon_resource_root(None, Some(bundle.clone())), None);
+        std::fs::create_dir_all(bundle.join("content/skills")).unwrap();
+        assert_eq!(
+            daemon_resource_root(None, Some(bundle.clone())),
+            Some(bundle.join("content"))
+        );
+        assert_eq!(
+            daemon_resource_root(Some("".into()), Some(bundle.clone())),
+            Some(bundle.join("content"))
+        );
+        // OD_RESOURCE_ROOT wins: the CLI's lookup reads it.
+        assert_eq!(daemon_resource_root(Some("/x".into()), Some(bundle)), None);
+        assert_eq!(daemon_resource_root(None, None), None);
     }
 
     #[test]

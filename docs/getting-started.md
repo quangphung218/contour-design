@@ -217,6 +217,36 @@ folder on macOS and Linux, and in `%HOME%\.local\share\open-design-rs` on
 Windows when `HOME` was set. Without `HOME` they used `.od` in the folder
 they were started from; that one is not moved, so point `OD_DATA_DIR` at it.
 
+## Run the installed app's daemon without its window
+
+For QA and agents that test the real app next to the one you have open:
+the app's binary takes `od`'s `daemon start` (and `daemon status`) with
+the same flags and environment, and then runs only the daemon. No window
+opens, no Dock icon appears, and the open app is not touched. Give it a
+data folder of its own with `OD_DATA_DIR`; without it, it uses the app's
+folder, and on macOS and Linux refuses to start while the app is open ("an
+od daemon is already running at …"). Windows has no such check: always set
+`OD_DATA_DIR` there.
+
+```sh
+# macOS
+OD_DATA_DIR=/tmp/contour-qa /Applications/Contour.app/Contents/MacOS/od-desktop daemon start --port 0
+# Linux: /usr/bin/od-desktop (.deb), or the AppImage file itself
+OD_DATA_DIR=/tmp/contour-qa od-desktop daemon start --port 0
+```
+
+```powershell
+# Windows (PowerShell), from the install folder
+$env:OD_DATA_DIR = "$env:TEMP\contour-qa"; .\od-desktop.exe daemon start --port 0 --log-file
+```
+
+`--port 0` picks a free port; the URL is in `<data>/daemon.lock` once the
+daemon listens (`od --daemon-url <url> …`, `GET <url>/api/health`). It
+serves the app's bundled skills and templates. Ctrl-C or `kill` stops it
+and the agents it runs. On Windows the app has no console: nothing is
+printed (`--log-file` writes `<data>/logs/daemon.log`), and
+`Stop-Process` ends it without stopping its agents first.
+
 ## Next
 
 - Every feature, step by step: [features.md](features.md)
