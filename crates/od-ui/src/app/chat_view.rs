@@ -10,7 +10,7 @@ use super::follow::{JumpToLatest, StickToBottom};
 use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
 use super::preview_tools::DeliverableWarning;
-use super::studio::{StudioCtx, conversation_title};
+use super::studio::{StudioCtx, conversation_title, main_conversations};
 use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, plan_progress};
 use crate::guide::{
     Activity, Followup, NextStep, RunPhase, activity, elapsed, last_file, next_steps, run_phase,
@@ -382,14 +382,14 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
                 >
                     {move || {
                         let current = ctx.conversation_id.get();
+                        let side = ctx.side.conversation_id.get();
                         let list = ctx.conversations.get();
-                        let n = list.len();
-                        list.iter()
-                            .enumerate()
-                            .map(|(i, c)| {
+                        main_conversations(&list, side.as_deref())
+                            .into_iter()
+                            .map(|(c, n)| {
                                 let selected = current.as_deref() == Some(c.id.as_str());
                                 view! {
-                                    <option value=c.id.clone() selected=selected>{conversation_title(c, n - i)}</option>
+                                    <option value=c.id.clone() selected=selected>{conversation_title(c, n)}</option>
                                 }
                             })
                             .collect_view()

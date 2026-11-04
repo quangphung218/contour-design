@@ -23,6 +23,9 @@ All notable changes to Contour are recorded here. The format follows
   run clock, instead of the agent's raw label ("requesting") that stayed
   put for minutes.
 - Empty "Thinking" blocks no longer show in the chat.
+- Conversations keep their number ("Conversation 1" is the oldest) when
+  another one moves up the list, and the side chat no longer shows in the
+  main conversation list.
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock

@@ -527,6 +527,9 @@ try {
   await page.reload();
   await page.getByTestId('composer').waitFor();
   await until(async () => (await page.getByTestId('conversation').inputValue()) === mainCid, 'main conversation reopened');
+  // The side chat's conversation stays out of the main list.
+  const conversationNames = await page.locator('[data-testid="conversation"] option').allTextContents();
+  assert.ok(!conversationNames.includes('Side chat'), `main list: ${conversationNames}`);
   await page.getByTestId('side-chat-tab').click();
   await sideMsg.first().getByText('Mode: chat.').waitFor();
   await page.getByTestId('tab').first().locator('.tab-name').click();

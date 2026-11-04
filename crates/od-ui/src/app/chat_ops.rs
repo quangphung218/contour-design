@@ -5,7 +5,7 @@
 
 use super::chat_view::focus_composer;
 use super::icons::{Glyph, icon};
-use super::studio::{StudioCtx, conversation_title, file_glyph};
+use super::studio::{StudioCtx, file_glyph, main_conversation_title};
 use super::{Shell, api, desktop};
 use crate::chat::{AssistantTurn, FileOp, TurnState};
 use crate::guide;
@@ -32,10 +32,9 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
     let confirming = RwSignal::new(false);
     let current_title = move || {
         let cid = ctx.conversation_id.get_untracked()?;
-        ctx.conversations.with_untracked(|list| {
-            let i = list.iter().position(|c| c.id == cid)?;
-            Some(conversation_title(&list[i], list.len() - i))
-        })
+        let side = ctx.side.conversation_id.get_untracked();
+        ctx.conversations
+            .with_untracked(|list| main_conversation_title(list, side.as_deref(), &cid))
     };
     // The form and the dialog go away on the next task: removing them inside
     // their own handler drops the closure that is still running.
