@@ -339,7 +339,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         let label = if live { t(T::Queue) } else { t(T::Send) };
                         view! {
                             <button
-                                class=if live { "btn small send-btn queue" } else { "btn small primary send-btn" }
+                                class=if live { "btn small send-btn is-queue" } else { "btn small primary send-btn" }
                                 data-testid="send"
                                 aria-label=label
                                 disabled=move || (draft.with(|d| d.trim().is_empty()) && !ctx.has_attached()) || uploading() || ctx.load_error.with(Option::is_some)

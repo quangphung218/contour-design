@@ -410,6 +410,14 @@ try {
     const live = page.getByTestId('assistant-msg').nth(turns);
     await until(async () => /step2 /.test(await live.textContent()), 'slow run streaming');
     assert.ok((await metrics()).gap <= 48, 'follows the stream at the end');
+    // While it runs the button queues: icon beside the label, not the
+    // queue panel's column layout.
+    await composer.fill('next');
+    const sendBtn = page.getByTestId('send');
+    assert.equal(await sendBtn.evaluate((b) => b.classList.contains('queue')), false);
+    assert.equal(await sendBtn.evaluate((b) => getComputedStyle(b).flexDirection), 'row');
+    assert.ok((await sendBtn.boundingBox()).height <= 40, 'one-row Queue button');
+    await composer.fill('');
     await list.evaluate((e) => e.scrollTo(0, 0));
     await until(async () => (await metrics()).top === 0, 'scrolled up');
     const before = await metrics();

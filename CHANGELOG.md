@@ -15,6 +15,9 @@ All notable changes to Contour are recorded here. The format follows
   the list keeps its place and offers "Jump to latest"; back at the end
   (within 48 px) it follows the output again, and sending a message always
   goes to the end.
+- While a run goes on, the Queue button sits on one row with its icon
+  beside the label; it took the queue panel's column layout and dropped
+  onto a line of its own in narrow windows.
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock
