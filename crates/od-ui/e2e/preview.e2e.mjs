@@ -354,6 +354,36 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   await until(async () => (await page.getByTestId('workspace-recovery-tip').count()) === 0, 'tip gone', 20_000);
   results.recoveryTip = 'shown while down, gone on reconnect';
 
+  // 5b. UI-008: Contour quits mid-run. Nobody pressed Stop, so the turn
+  // says the connection was lost, not "Stopped". A message sent while it
+  // is down gets one line in plain words (no "TypeError", no "daemon"),
+  // Retry only, and Retry turns on once Contour is back.
+  await page.getByTestId('composer').fill('slow please');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await assistant.last().getAttribute('data-state')) === 'running', 'slow run going');
+  daemon.kill('SIGTERM');
+  const cutOff = assistant.last();
+  await until(async () => (await cutOff.getAttribute('data-state')) === 'failed', 'cut-off turn ends failed', 15_000);
+  await cutOff.getByText('Lost the connection to Contour').waitFor();
+  assert.equal(await cutOff.getByText('Stopped').count(), 0, 'not told as a Stop');
+  await until(async () => !(await healthy()), 'daemon down', 20_000);
+  await page.getByTestId('composer').fill('hello?');
+  await page.getByTestId('composer').press('Enter');
+  const lost = assistant.last();
+  await until(async () => (await lost.getAttribute('data-state')) === 'failed', 'send while down fails');
+  const said = await lost.innerText();
+  assert.ok(!/TypeError|daemon/i.test(said), said);
+  assert.equal(await lost.locator('.msg-error').count(), 0, 'one message: the status line');
+  await lost.getByText('Lost the connection to Contour').waitFor();
+  assert.equal(await lost.getByTestId('next-settings').count(), 0, 'Settings would not help');
+  await page.getByTestId('workspace-recovery-tip').waitFor({ timeout: 15_000 });
+  assert.ok(await lost.getByTestId('next-retry').isDisabled(), 'Retry waits for Contour');
+  await shot('daemon-lost-send');
+  daemon = startDaemon();
+  await until(healthy, 'daemon back');
+  await until(async () => await lost.getByTestId('next-retry').isEnabled(), 'Retry on once back', 20_000);
+  results.daemonLost = 'cut-off turn failed (not Stopped), one plain line, Retry on reconnect';
+
   // 6. Vietnamese strings of the new screens.
   await fetch(`${BASE}/api/app-config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: 'vi' }) });
   await page.reload();

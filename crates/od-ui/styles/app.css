@@ -824,6 +824,9 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .queue { display: flex; flex-direction: column; gap: var(--space-1-5); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--color-border-subtle); background: var(--color-surface-sunken); }
 .queue-title { display: flex; align-items: center; gap: var(--space-1-5); font-size: var(--text-xs); color: var(--color-text-secondary); }
 .queue-title .ico { width: 13px; height: 13px; }
+/* UI-003: after a Stop the queue waits for Send or Discard. */
+.queue.held .queue-title { flex-wrap: wrap; color: var(--color-text); }
+.queue-held-actions { display: flex; gap: var(--space-1-5); margin-left: auto; }
 .queued { display: flex; gap: var(--space-1-5); align-items: center; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2-5); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-raised); font-size: var(--text-sm); cursor: grab; }
 .queued:active { cursor: grabbing; }
 .queued-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

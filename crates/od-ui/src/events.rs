@@ -17,6 +17,10 @@ pub enum RunFrame {
     Start(RunStartPayload),
     Agent(AgentEvent),
     Error(String),
+    /// The run was cut off because Contour closed or went away (the
+    /// daemon's `DAEMON_RESTART` error): the turn's status line says so,
+    /// with no error block of its own (UI-008).
+    AppClosed,
     End(RunEndPayload),
     /// `stdout`, `stderr`, `diagnostic`, retries and malformed frames.
     Ignored,
@@ -29,13 +33,11 @@ pub fn decode_frame(event: &str, data: &str) -> RunFrame {
         "start" => serde_json::from_str(data).map(RunFrame::Start),
         "agent" => serde_json::from_str(data).map(RunFrame::Agent),
         "error" => serde_json::from_str::<RunErrorPayload>(data).map(|e| {
-            RunFrame::Error(
-                if e.code.as_deref() == Some(od_contracts::DAEMON_RESTART_CODE) {
-                    app_closed()
-                } else {
-                    e.message
-                },
-            )
+            if e.code.as_deref() == Some(od_contracts::DAEMON_RESTART_CODE) {
+                RunFrame::AppClosed
+            } else {
+                RunFrame::Error(e.message)
+            }
         }),
         "end" => serde_json::from_str(data).map(RunFrame::End),
         _ => return RunFrame::Ignored,
@@ -43,17 +45,12 @@ pub fn decode_frame(event: &str, data: &str) -> RunFrame {
     decoded.unwrap_or(RunFrame::Ignored)
 }
 
-/// A run cut short because Contour closed or crashed (the daemon's
-/// `daemon_restart`), told in the user's words: the agent was fine.
-pub(crate) fn app_closed() -> String {
-    crate::i18n::t(crate::i18n::T::RunAppClosed).to_owned()
-}
-
-/// The error a run ended with, as the chat shows it.
+/// The error a run ended with, as the chat shows it. None for a run
+/// Contour's going away cut off: its status line tells that (UI-008).
 #[must_use]
 pub fn end_error(end: &RunEndPayload) -> Option<String> {
     if end.failure_category == Some(FailureCategory::DaemonRestart) {
-        return Some(app_closed());
+        return None;
     }
     end.error.clone().filter(|e| !e.is_empty())
 }
@@ -91,6 +88,7 @@ pub fn run_record(sse: &str) -> RunRecord {
         }
         match decode_frame(event, &data) {
             RunFrame::Error(message) => record.error = Some(message),
+            RunFrame::AppClosed => record.failure = Some(FailureCategory::DaemonRestart),
             RunFrame::End(end) => {
                 if let Some(error) = end_error(&end) {
                     record.error = Some(error);
@@ -125,9 +123,8 @@ mod tests {
             record.failure,
             Some(od_contracts::FailureCategory::DaemonRestart)
         );
-        let error = record.error.unwrap();
-        assert!(error.contains("Contour closed"), "{error}");
-        assert!(!error.to_lowercase().contains("daemon"), "{error}");
+        // UI-008: no raw "daemon restarted" error; the status line tells it.
+        assert_eq!(record.error, None);
     }
 
     #[test]

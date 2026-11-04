@@ -453,9 +453,35 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
         }
         let n = queue.len();
         let can_steer = ctx.can_steer(shell);
-        Some(view! {
-            <div class="queue" data-testid="queue" aria-label=t(T::Queued)>
+        // After a Stop (or Contour going away) the queue waits for the user
+        // instead of starting a run on its own (UI-003).
+        let held = ctx.queue_held.get() && ctx.live_run.with(Option::is_none);
+        let title = if held {
+            view! {
+                <span class="queue-title" data-testid="queue-held">
+                    {icon(Glyph::Queue)}
+                    <strong>{if n == 1 { t(T::QueueWaitingOne).to_owned() } else { tf(T::QueueWaitingMany, &[&n.to_string()]) }}</strong>
+                    <span class="subtle">{t(T::QueueHeldHint)}</span>
+                    <span class="queue-held-actions">
+                        <button class="btn small primary" data-testid="queue-send" on:click=move |_| ctx.release_queue(shell)>
+                            {icon(Glyph::Send)}{t(T::Send)}
+                        </button>
+                        <button class="btn small" data-testid="queue-discard" on:click=move |_| ctx.discard_queue()>
+                            {t(T::Discard)}
+                        </button>
+                    </span>
+                </span>
+            }
+            .into_any()
+        } else {
+            view! {
                 <span class="queue-title">{icon(Glyph::Queue)}<strong>{t(T::Queued)}</strong><span class="subtle">{t(T::QueuedHint)}</span></span>
+            }
+            .into_any()
+        };
+        Some(view! {
+            <div class="queue" class:held=held data-testid="queue" aria-label=t(T::Queued)>
+                {title}
                 {queue
                     .into_iter()
                     .enumerate()
@@ -767,6 +793,9 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                         .into_iter()
                         .map(|step| {
                             let navigate = navigate.clone();
+                            // Retry waits for Contour to be back, then turns on
+                            // by itself (UI-008).
+                            let offline = matches!(step, NextStep::Retry);
                             let (glyph, label, testid) = match &step {
                                 NextStep::Open(path) => (Glyph::Eye, tf(T::NextOpen, &[path.rsplit('/').next().unwrap_or(path)]), "next-open"),
                                 NextStep::Comment => (Glyph::Comment, t(T::NextComment).to_owned(), "next-comment"),
@@ -798,7 +827,8 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                 NextStep::Settings => navigate("/settings"),
                             };
                             view! {
-                                <button class="chip next-step" data-testid=testid on:click=run>
+                                <button class="chip next-step" data-testid=testid on:click=run
+                                    disabled=move || offline && ctx.link_down.get()>
                                     {icon(glyph)}{label}
                                 </button>
                             }

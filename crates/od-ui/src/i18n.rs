@@ -230,7 +230,7 @@ messages! {
     Delete => "Delete", "Xoá";
     Close => "Close", "Đóng";
     Refresh => "Refresh", "Làm mới";
-    DaemonUnreachable => "Cannot reach the daemon. Check that the app is still running, then try again. ({0})", "Mất kết nối tới daemon. Kiểm tra app còn chạy rồi thử lại. ({0})";
+    DaemonUnreachable => "Lost the connection to Contour. Check that the app is still running, then try again.", "Mất kết nối với Contour. Kiểm tra app còn chạy rồi thử lại.";
     UnexpectedResponse => "Unexpected response: {0}", "Phản hồi không hợp lệ: {0}";
     ErrBadRequest => "The request was not accepted", "Yêu cầu chưa hợp lệ";
     ErrForbidden => "Not allowed", "Không có quyền";
@@ -877,6 +877,10 @@ messages! {
     ToolLoopStopped => "Stopped: {0} failed {1} times in a row", "Đã dừng: {0} lỗi {1} lần liên tiếp";
     Queued => "Queued", "Đang chờ";
     QueuedHint => "Sent when the current turn ends", "Sẽ gửi khi lượt hiện tại xong";
+    QueueWaitingOne => "1 message waiting", "1 tin đang chờ";
+    QueueWaitingMany => "{0} messages waiting", "{0} tin đang chờ";
+    QueueHeldHint => "Not sent, since the turn before was stopped", "Chưa gửi vì lượt trước đã dừng";
+    Discard => "Discard", "Bỏ";
     Steer => "Steer", "Chen vào";
     SteerHint => "Send into the running turn now", "Gửi ngay vào lượt đang chạy";
     Steered => "Steered: {0}", "Đã chen vào: {0}";
@@ -1456,8 +1460,7 @@ messages! {
     RunFilesWritten => "{0} files written", "Đã ghi {0} file";
     RunFailed => "Failed", "Lỗi";
     RunFailedHint => "See the message above, then retry or check the agent in Settings.", "Xem thông báo ở trên, rồi thử lại hoặc kiểm tra agent trong Cài đặt.";
-    RunAppClosed => "Contour closed while this turn was running, so it stopped partway.", "Contour đã đóng khi lượt này đang chạy nên lượt dừng giữa chừng.";
-    RunAppClosedHint => "Retry to run it again.", "Bấm Thử lại để chạy lại lượt này.";
+    RunAppClosedHint => "Lost the connection to Contour, so this turn was cut off. Retry once it is back.", "Mất kết nối với Contour nên lượt này bị ngắt. Bấm Thử lại khi đã kết nối lại.";
     NextSteps => "Next", "Tiếp theo";
     NextOpen => "View {0}", "Xem {0}";
     NextComment => "Comment on the page", "Bình luận lên trang";

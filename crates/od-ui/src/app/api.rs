@@ -61,7 +61,12 @@ fn network(e: gloo_net::Error) -> HttpError {
     HttpError {
         status: 0,
         code: None,
-        message: tf(Msg::DaemonUnreachable, &[&e.to_string()]),
+        // The browser's own words ("TypeError: Failed to fetch") help
+        // nobody in the chat: they go to the console (UI-008).
+        message: {
+            leptos::logging::warn!("request failed: {e}");
+            t(Msg::DaemonUnreachable).to_owned()
+        },
     }
 }
 

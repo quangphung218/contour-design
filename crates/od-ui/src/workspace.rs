@@ -108,6 +108,23 @@ pub struct Queued {
     pub sent_at: i64,
 }
 
+/// Whether the queue goes out on its own once a run ends with `status`
+/// (`None`: its stream was lost) and `failure`. Only after a turn that
+/// ran to its end: a Stop, or Contour going away, holds it until the user
+/// sends or discards it (UI-003, UI-008).
+#[must_use]
+pub fn queue_goes_on(
+    status: Option<od_contracts::RunStatus>,
+    failure: Option<od_contracts::FailureCategory>,
+) -> bool {
+    use od_contracts::{FailureCategory, RunStatus};
+    match status {
+        Some(RunStatus::Succeeded) => true,
+        Some(RunStatus::Failed) => failure != Some(FailureCategory::DaemonRestart),
+        Some(RunStatus::Canceled | RunStatus::Running) | None => false,
+    }
+}
+
 /// Moves the item at `from` to `to` (both clamped), for drag and drop and
 /// the up/down buttons.
 pub fn move_item<T>(items: &mut Vec<T>, from: usize, to: usize) {
@@ -212,6 +229,24 @@ mod tests {
         assert_eq!(q, [1, 2, 3]);
         move_item(&mut q, 5, 0);
         assert_eq!(q, [1, 2, 3]);
+    }
+
+    #[test]
+    fn only_a_turn_that_ran_to_its_end_sends_the_queue() {
+        use od_contracts::{FailureCategory, RunStatus};
+        assert!(queue_goes_on(Some(RunStatus::Succeeded), None));
+        assert!(queue_goes_on(
+            Some(RunStatus::Failed),
+            Some(FailureCategory::AgentError)
+        ));
+        // UI-003: Stop means stop.
+        assert!(!queue_goes_on(Some(RunStatus::Canceled), None));
+        // UI-008: Contour went away; sending now would fail too.
+        assert!(!queue_goes_on(
+            Some(RunStatus::Failed),
+            Some(FailureCategory::DaemonRestart)
+        ));
+        assert!(!queue_goes_on(None, None), "stream lost");
     }
 
     #[test]

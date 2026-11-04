@@ -31,15 +31,15 @@ use crate::file_tree::is_markdown;
 use crate::highlight::{Lang, highlight};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Picked, Slide};
-use crate::workspace::{Queued, Tabs, touch_recent};
+use crate::workspace::{Queued, Tabs, queue_goes_on, touch_recent};
 use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use od_contracts::{
     CommentAttachment, CommentRect, CommentStatus, CommentsResponse, Conversation,
-    ConversationResponse, CreateVersionRequest, FileKind, FilesResponse, MemoryEntry,
-    PreviewComment, Project, ProjectFile, ProjectResponse, SessionMode, UpdateCommentRequest,
-    VersionSource,
+    ConversationResponse, CreateVersionRequest, FailureCategory, FileKind, FilesResponse,
+    MemoryEntry, PreviewComment, Project, ProjectFile, ProjectResponse, SessionMode,
+    UpdateCommentRequest, VersionSource,
 };
 use send_wrapper::SendWrapper;
 use serde_json::json;
@@ -219,6 +219,9 @@ pub struct StudioCtx {
     pub draft: RwSignal<String>,
     /// Messages typed while a run was going, sent one by one after it.
     pub queue: RwSignal<Vec<Queued>>,
+    /// The queue waits for the user (Send or Discard): the run before it
+    /// was stopped or cut off (UI-003, UI-008).
+    pub queue_held: RwSignal<bool>,
     pub files: RwSignal<Vec<ProjectFile>>,
     /// Open file tabs; the active tab is the previewed file.
     pub tabs: RwSignal<Tabs>,
@@ -480,6 +483,10 @@ impl StudioCtx {
         // a queued one is not (the queue lives only in memory, so a reload
         // brings it back to the composer).
         if self.live_run.get_untracked().is_some() {
+            if self.queue.with_untracked(Vec::is_empty) {
+                // A new queue: whatever held the last one is over.
+                self.queue_held.set(false);
+            }
             self.queue.update(|q| {
                 q.push(Queued {
                     id: api::random_id(),
@@ -580,6 +587,16 @@ impl StudioCtx {
                         }
                     });
                 }
+                Err(e) if e.status == 0 => {
+                    // Contour is unreachable: one line in the user's words,
+                    // Retry only, and the queue waits (UI-008).
+                    turn.update(|t| {
+                        t.state = TurnState::Failed;
+                        t.failure = Some(FailureCategory::DaemonRestart);
+                    });
+                    self.live_run.set(None);
+                    self.hold_queue();
+                }
                 Err(e) => {
                     fail(turn, e.to_string());
                     self.live_run.set(None);
@@ -606,6 +623,34 @@ impl StudioCtx {
         if let (Some(Some(text)), Some(key)) = (text, self.draft_key()) {
             super::composer::clear_draft_if(&key, &text);
         }
+    }
+
+    /// Keeps the queue for the user to send or discard (UI-003).
+    fn hold_queue(self) {
+        if self.queue.with_untracked(|q| !q.is_empty()) {
+            self.queue_held.set(true);
+        }
+    }
+
+    /// Send on a held queue: its first message goes now (or after the
+    /// run going), the rest one by one after it.
+    pub fn release_queue(self, shell: Shell) {
+        self.queue_held.set(false);
+        if self.live_run.get_untracked().is_none() {
+            self.send_next(shell);
+        }
+    }
+
+    /// Discard on a held queue: every waiting message goes, with its
+    /// stored draft.
+    pub fn discard_queue(self) {
+        let ids: Vec<String> = self
+            .queue
+            .with_untracked(|q| q.iter().map(|x| x.id.clone()).collect());
+        for id in ids {
+            self.drop_queued(&id);
+        }
+        self.queue_held.set(false);
     }
 
     /// Sends the first queued message, if any.
@@ -684,14 +729,15 @@ impl StudioCtx {
                         self.record_versions(files.clone(), prompt.get_value());
                         self.check_deliverable(run.get_value(), files);
                     }
-                    self.finish_run(shell);
+                    let failure = turn.with_untracked(|t| t.failure);
+                    self.finish_run(shell, queue_goes_on(Some(status), failure));
                 }
             },
             move || {
                 if turn.with_untracked(|t| t.state.is_live()) {
                     fail(turn, t(T::LostRunStream).to_owned());
                 }
-                self.finish_run(shell);
+                self.finish_run(shell, false);
             },
         );
         match stream {
@@ -723,8 +769,9 @@ impl StudioCtx {
     }
 
     /// Closes the run stream after the current event handler returns, then
-    /// sends the next queued message.
-    fn finish_run(self, shell: Shell) {
+    /// sends the next queued message when `go_on` (see [`queue_goes_on`])
+    /// and the user is not holding the queue; otherwise the queue waits.
+    fn finish_run(self, shell: Shell, go_on: bool) {
         self.live_run.set(None);
         self.run_stream.with_value(|s| {
             if let Some(s) = s {
@@ -733,7 +780,11 @@ impl StudioCtx {
         });
         leptos::task::spawn_local(async move {
             self.run_stream.set_value(None);
-            self.send_next(shell);
+            if go_on && !self.queue_held.get_untracked() {
+                self.send_next(shell);
+            } else {
+                self.hold_queue();
+            }
         });
         self.refresh_files();
         self.reload_preview();
@@ -1227,6 +1278,7 @@ pub fn Studio() -> impl IntoView {
         live_run: RwSignal::new(None),
         draft: RwSignal::new(String::new()),
         queue: RwSignal::new(Vec::new()),
+        queue_held: RwSignal::new(false),
         files: RwSignal::new(Vec::new()),
         tabs: RwSignal::new(Tabs::default()),
         terms: RwSignal::new(Vec::new()),
