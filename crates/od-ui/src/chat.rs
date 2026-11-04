@@ -163,7 +163,9 @@ pub struct AssistantTurn {
     pub state: TurnState,
     pub run_id: Option<String>,
     pub model: Option<String>,
-    /// Latest `status` label while running ("thinking", "writing"…).
+    /// Latest `status` label while running ("requesting", "thinking"…),
+    /// until the agent puts out something newer (text, thinking, a tool
+    /// call or its result): a stale label says nothing about now.
     pub status: Option<String>,
     /// The latest plan the agent wrote with `TodoWrite`.
     pub todos: Vec<Todo>,
@@ -255,6 +257,16 @@ impl AssistantTurn {
     fn apply_agent(&mut self, ev: AgentEvent) {
         if self.state == TurnState::Pending {
             self.state = TurnState::Running;
+        }
+        if matches!(
+            ev,
+            AgentEvent::TextDelta { .. }
+                | AgentEvent::ThinkingStart
+                | AgentEvent::ThinkingDelta { .. }
+                | AgentEvent::ToolUse { .. }
+                | AgentEvent::ToolResult { .. }
+        ) {
+            self.status = None;
         }
         match ev {
             AgentEvent::Status { label, model, .. } => {
@@ -770,6 +782,20 @@ mod tests {
         t.apply(plan("completed", "completed", "completed"));
         assert_eq!(plan_progress(&t.todos).map(|p| (p.0, p.1)), Some((3, 3)));
         assert!(parse_todos(&json!({"todos": "x"})).is_none());
+    }
+
+    #[test]
+    fn a_status_label_lasts_until_newer_output() {
+        let mut t = AssistantTurn::new();
+        t.apply(agent(json!({"type": "status", "label": "requesting"})));
+        assert_eq!(t.status.as_deref(), Some("requesting"));
+        t.apply(agent(json!({"type": "text_delta", "delta": "Hi"})));
+        assert_eq!(t.status, None, "text came after the label");
+        t.apply(agent(json!({"type": "status", "label": "thinking"})));
+        t.apply(agent(
+            json!({"type": "tool_use", "id": "t", "name": "Bash", "input": {"command": "ls"}}),
+        ));
+        assert_eq!(t.status, None, "a tool call came after the label");
     }
 
     #[test]

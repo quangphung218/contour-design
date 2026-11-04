@@ -418,6 +418,12 @@ try {
     assert.equal(await sendBtn.evaluate((b) => getComputedStyle(b).flexDirection), 'row');
     assert.ok((await sendBtn.boundingBox()).height <= 40, 'one-row Queue button');
     await composer.fill('');
+    // The status line says what the run does in words, with a clock.
+    const detail = live.locator('[data-testid="run-state"][data-phase="working"] .muted');
+    const first = await detail.textContent();
+    assert.match(first, /^(Waiting for the agent|Writing the reply)(?: · last: \S+)? · \d+:\d\d$/);
+    const clock = (s) => s.split(' · ').pop();
+    await until(async () => clock(await detail.textContent()) !== clock(first), 'the run clock ticks', 3000);
     await list.evaluate((e) => e.scrollTo(0, 0));
     await until(async () => (await metrics()).top === 0, 'scrolled up');
     const before = await metrics();

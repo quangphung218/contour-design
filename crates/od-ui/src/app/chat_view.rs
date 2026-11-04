@@ -12,7 +12,9 @@ use super::preview_comments::comment_label;
 use super::preview_tools::DeliverableWarning;
 use super::studio::{StudioCtx, conversation_title};
 use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, plan_progress};
-use crate::guide::{Followup, NextStep, RunPhase, next_steps, run_phase};
+use crate::guide::{
+    Activity, Followup, NextStep, RunPhase, activity, elapsed, last_file, next_steps, run_phase,
+};
 use crate::i18n::{T, t, tf};
 use crate::markdown;
 use crate::mention::{self, Outgoing};
@@ -642,6 +644,32 @@ fn AssistantView(
 /// change of its live region.
 #[component]
 fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
+    // Run time while live, from when this window saw the run (a run
+    // resumed after a reload counts from the reload).
+    let since = StoredValue::new(None::<f64>);
+    let now = RwSignal::new(js_sys::Date::now());
+    let ticker = StoredValue::new(None::<IntervalHandle>);
+    Effect::new(move |_| {
+        if turn.with(|t| t.state.is_live()) {
+            if since.get_value().is_none() {
+                since.set_value(Some(js_sys::Date::now()));
+            }
+            if ticker.get_value().is_none() {
+                let tick = move || now.set(js_sys::Date::now());
+                ticker.set_value(
+                    set_interval_with_handle(tick, std::time::Duration::from_secs(1)).ok(),
+                );
+            }
+        } else if let Some(h) = ticker.get_value() {
+            h.clear();
+            ticker.set_value(None);
+        }
+    });
+    on_cleanup(move || {
+        if let Some(h) = ticker.get_value() {
+            h.clear();
+        }
+    });
     let line = Memo::new(move |_| {
         turn.with(|tn| match run_phase(tn) {
             RunPhase::Starting => ("starting", None, t(T::RunStarting).to_owned(), None),
@@ -652,7 +680,7 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                     Some((n, m)) => tf(T::RunStep, &[&n.to_string(), &m.to_string()]),
                     None => t(T::RunWorking).to_owned(),
                 },
-                tn.status.clone(),
+                Some(working_detail(tn, since.get_value().map(|s| now.get() - s))),
             ),
             RunPhase::Done { files } => (
                 "done",
@@ -693,6 +721,34 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             {move || line.with(|l| l.3.clone()).map(|d| view! { <span class="muted">{d}</span> })}
         </div>
     }
+}
+
+/// "Writing index.html · last: hero.css · 1:23": what the run does now, the
+/// last file it wrote, and how long it has run.
+fn working_detail(turn: &AssistantTurn, run_ms: Option<f64>) -> String {
+    let act = activity(turn);
+    let mut parts = vec![match &act {
+        Activity::Waiting => t(T::ActWaiting).to_owned(),
+        Activity::Thinking => t(T::ActThinking).to_owned(),
+        Activity::Replying => t(T::ActReplying).to_owned(),
+        Activity::Compacting => t(T::ActCompacting).to_owned(),
+        Activity::Writing(f) => tf(T::ActWriting, &[f]),
+        Activity::Editing(f) => tf(T::ActEditing, &[f]),
+        Activity::Reading(f) => tf(T::ActReading, &[f]),
+        Activity::Command => t(T::ActCommand).to_owned(),
+        Activity::Tool(name) => tf(T::ActTool, &[name]),
+    }];
+    if let Some(file) = last_file(turn)
+        .filter(|f| !matches!(&act, Activity::Writing(w) | Activity::Editing(w) if w == f))
+    {
+        parts.push(tf(T::ActLastFile, &[&file]));
+    }
+    if let Some(ms) = run_ms {
+        // Whole seconds of a wall-clock span: never negative, far below u64::MAX.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        parts.push(elapsed((ms.max(0.0) / 1000.0) as u64));
+    }
+    parts.join(" · ")
 }
 
 /// A failed turn's agent output (what it wrote to stderr), read from the
