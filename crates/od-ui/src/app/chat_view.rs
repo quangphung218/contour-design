@@ -275,6 +275,8 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             })}
             <super::genui_view::GenuiSurfaces ctx=ctx/>
             <PlanPill ctx=ctx/>
+            // Above the composer, in the flow: it never covers a control (UI-009).
+            <super::recovery_tip::WorkspaceRecoveryTip ctx=ctx/>
             <QueueStack ctx=ctx/>
             <CommentChips ctx=ctx/>
             <ContextChips context=ctx.chat.context draft=draft/>

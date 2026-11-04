@@ -1,6 +1,7 @@
 //! Project workspace recovery tip (upstream `ProjectWorkspaceRecoveryTip`):
 //! while the project's event stream to the daemon is down, a small status
-//! card in the bottom-left corner says the link is being restored, and the
+//! card above the chat composer says the link is being restored (in the
+//! pane's flow, so it covers no control: UI-009), and the
 //! Studio keeps showing what it has. Once the stream is back, files and
 //! conversations are read again (events missed meanwhile are gone).
 

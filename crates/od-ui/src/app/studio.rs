@@ -1365,7 +1365,6 @@ pub fn Studio() -> impl IntoView {
                 <QuickSwitcher ctx=ctx/>
             </Show>
             <NoticeToast ctx=ctx/>
-            <super::recovery_tip::WorkspaceRecoveryTip ctx=ctx/>
             <FilesToast/>
             <super::project_actions::BrandReady ctx=ctx/>
         </div>
