@@ -271,3 +271,96 @@ fn daemon_start_refuses_a_data_dir_in_use() {
     assert!(stderr.contains("already running"), "{stderr}");
     assert!(stderr.contains(&url), "{stderr}");
 }
+
+/// Waits for `child` to exit on its own: the window's path would not.
+fn exits_within(child: &mut Daemon) -> std::process::ExitStatus {
+    let deadline = Instant::now() + WITHIN;
+    loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            return status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "still running: the window opened"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// `<exe> <args>` on `data` with piped stdout and stderr.
+fn client(data: &Path, args: &[&str]) -> Command {
+    let mut cmd = Command::new(APP);
+    cmd.args(args)
+        .env("OD_DATA_DIR", data)
+        .env("RUST_LOG", "warn")
+        .env_remove("OD_DAEMON_URL")
+        .env_remove("OD_API_TOKEN")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    cmd
+}
+
+fn read_all(pipe: Option<impl Read>) -> String {
+    let mut text = String::new();
+    pipe.unwrap().read_to_string(&mut text).unwrap();
+    text
+}
+
+/// A client command after `od`'s global flags runs the CLI and exits
+/// (it opened the window).
+#[test]
+fn a_client_command_after_the_global_flags_runs_the_cli() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    let mut daemon = Daemon(daemon_start(&data).stderr(Stdio::null()).spawn().unwrap());
+    let url = lock_url(&data, &mut daemon.0);
+
+    let mut cli = Daemon(
+        client(&data, &["--daemon-url", &url, "--json", "project", "list"])
+            .spawn()
+            .unwrap(),
+    );
+    let status = exits_within(&mut cli);
+    let stdout = read_all(cli.0.stdout.take());
+    let stderr = read_all(cli.0.stderr.take());
+    assert!(status.success(), "{status}: {stderr}");
+    let list: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {stdout}"));
+    assert!(list.is_array() || list.is_object(), "{list}");
+    assert!(!data.join("logs").exists(), "the app's window path ran");
+}
+
+/// `<app> --json mcp` is the MCP server too: it answers `initialize` and
+/// exits when stdin closes (it opened the window).
+#[test]
+fn mcp_after_the_global_flags_runs_the_server() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    let mut daemon = Daemon(daemon_start(&data).stderr(Stdio::null()).spawn().unwrap());
+    lock_url(&data, &mut daemon.0);
+
+    let mut mcp = Daemon(
+        client(&data, &["--json", "mcp"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let mut stdin = mcp.0.stdin.take().unwrap();
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"2025-06-18","capabilities":{{}},"clientInfo":{{"name":"test","version":"1"}}}}}}"#
+    )
+    .unwrap();
+    drop(stdin);
+    let status = exits_within(&mut mcp);
+    let stdout = read_all(mcp.0.stdout.take());
+    let stderr = read_all(mcp.0.stderr.take());
+    assert!(status.success(), "{status}: {stderr}");
+    let line = stdout.lines().next().unwrap_or_default();
+    let reply: serde_json::Value = serde_json::from_str(line)
+        .unwrap_or_else(|e| panic!("stdout is not JSON-RPC ({e}): {stdout}"));
+    assert_eq!(reply["id"], 1, "{reply}");
+    assert!(reply["result"]["serverInfo"].is_object(), "{reply}");
+    assert!(!data.join("logs").exists(), "the app's window path ran");
+}

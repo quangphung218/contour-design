@@ -20,6 +20,8 @@ All notable changes to Contour are recorded here. The format follows
 - `od-desktop --json daemon status` and `od-desktop --daemon-url <url>
   media …` (`od`'s global flags before the command) opened a second app;
   they now run the command like `od` does.
+- `od-desktop --json mcp` (`od`'s global flags before `mcp`) opened a
+  second app instead of the MCP stdio server.
 - `od-desktop daemon start` finds the agents the open app finds: it asks
   the login shell for its `PATH` (the registry on Windows) like the app,
   instead of using the terminal's, which an agent running QA often has
