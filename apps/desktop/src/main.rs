@@ -57,6 +57,28 @@ fn subcommand_args<'a>(
     Some(&args[at + 1..])
 }
 
+/// The arguments for [`mcp::run`] when `args` runs `mcp`: `od`'s
+/// `--daemon-url` given before `mcp`, then the arguments after it, so
+/// `<app> --daemon-url URL mcp` reaches that daemon as `od` would, and a
+/// `--daemon-url` after `mcp` still wins (`mcp::run` keeps the last).
+/// The other global flag, `--json`, means nothing to the MCP server.
+fn mcp_args(args: &[std::ffi::OsString]) -> Option<Vec<std::ffi::OsString>> {
+    let rest = subcommand_args(args, MCP_COMMAND)?;
+    // Before `mcp` there are only `od`'s global flags and their values.
+    let mut before = args[..args.len() - rest.len() - 1].iter();
+    let mut out = Vec::new();
+    while let Some(arg) = before.next() {
+        if arg == "--daemon-url" {
+            out.push(arg.clone());
+            out.extend(before.next().cloned());
+        } else if arg.to_str().is_some_and(|a| a.starts_with("--daemon-url=")) {
+            out.push(arg.clone());
+        }
+    }
+    out.extend(rest.iter().cloned());
+    Some(out)
+}
+
 /// The in-process daemon.
 struct Daemon {
     state: AppState,
@@ -358,8 +380,8 @@ fn main() -> anyhow::Result<()> {
     let all = od_cli::strip_self_arg(std::env::args_os().collect());
     let args = &all[1.min(all.len())..];
     // `od`'s global flags may come first (`<app> --json mcp`).
-    if let Some(rest) = subcommand_args(args, MCP_COMMAND) {
-        return mcp::run(rest);
+    if let Some(rest) = mcp_args(args) {
+        return mcp::run(&rest);
     }
     // `<app> media generate …` and the other client commands: the CLI,
     // without the window, against the running app's daemon. `od`'s global
@@ -559,7 +581,7 @@ mod tests {
     fn mcp_runs_past_the_global_flags() {
         let args = |a: &[&str]| a.iter().map(std::ffi::OsString::from).collect::<Vec<_>>();
         let rest = |a: &[&str]| {
-            subcommand_args(&args(a), MCP_COMMAND).map(|r| {
+            mcp_args(&args(a)).map(|r| {
                 r.iter()
                     .map(|s| s.to_string_lossy().into_owned())
                     .collect::<Vec<_>>()
@@ -573,15 +595,37 @@ mod tests {
         assert_eq!(rest(&["--json", "mcp"]), Some(vec![]));
         assert_eq!(
             rest(&["--daemon-url", "http://x", "mcp", "--daemon-url=http://y"]),
-            Some(vec!["--daemon-url=http://y".into()])
+            Some(vec![
+                "--daemon-url".into(),
+                "http://x".into(),
+                "--daemon-url=http://y".into()
+            ])
         );
         // A flag's value is not the command.
         assert_eq!(rest(&["--daemon-url", "mcp", "project", "list"]), None);
         assert_eq!(
             rest(&["--daemon-url", "mcp", "mcp", "--daemon-url=http://y"]),
-            Some(vec!["--daemon-url=http://y".into()])
+            Some(vec![
+                "--daemon-url".into(),
+                "mcp".into(),
+                "--daemon-url=http://y".into()
+            ])
         );
         assert_eq!(rest(&["project", "mcp"]), None);
+        // `od`'s `--daemon-url` before `mcp` goes along; one after it wins
+        // (`mcp::run` keeps the last).
+        assert_eq!(
+            rest(&["--daemon-url", "http://q", "--json", "mcp"]),
+            Some(vec!["--daemon-url".into(), "http://q".into()])
+        );
+        assert_eq!(
+            rest(&["--daemon-url=http://q", "mcp", "--daemon-url", "http://y"]),
+            Some(vec![
+                "--daemon-url=http://q".into(),
+                "--daemon-url".into(),
+                "http://y".into()
+            ])
+        );
         assert_eq!(rest(&["--json"]), None);
         assert_eq!(rest(&[]), None);
     }
