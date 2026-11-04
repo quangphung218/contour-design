@@ -185,7 +185,9 @@ fn daemon_start_serves_the_content_of_the_installed_app() {
 }
 
 /// A data dir another daemon holds (the open app's, without `OD_DATA_DIR`)
-/// is refused with the holder's URL; nothing opens instead.
+/// is refused with the holder's URL; nothing opens instead. Unix only:
+/// `DaemonLock` takes no OS lock on Windows (`od_server::lock`).
+#[cfg(unix)]
 #[test]
 fn daemon_start_refuses_a_data_dir_in_use() {
     let tmp = tempfile::tempdir().unwrap();

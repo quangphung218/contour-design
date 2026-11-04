@@ -224,8 +224,9 @@ the app's binary takes `od`'s `daemon start` (and `daemon status`) with
 the same flags and environment, and then runs only the daemon. No window
 opens, no Dock icon appears, and the open app is not touched. Give it a
 data folder of its own with `OD_DATA_DIR`; without it, it uses the app's
-folder and refuses to start while the app is open ("an od daemon is
-already running at …").
+folder, and on macOS and Linux refuses to start while the app is open ("an
+od daemon is already running at …"). Windows has no such check: always set
+`OD_DATA_DIR` there.
 
 ```sh
 # macOS

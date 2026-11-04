@@ -363,7 +363,8 @@ fn main() -> anyhow::Result<()> {
     // and agents testing the installed app beside the one in use (its own
     // `OD_DATA_DIR`). No Tauri: no window, no Dock icon (no
     // `NSApplication`). Without `OD_DATA_DIR` it is the app's data dir,
-    // whose `daemon.lock` refuses a second daemon while the app is open.
+    // whose `daemon.lock` refuses a second daemon while the app is open
+    // (on unix; Windows takes no OS lock).
     if args.first().is_some_and(|a| a == DAEMON_COMMAND) {
         let resource_dir =
             tauri::utils::platform::resource_dir(context.package_info(), &tauri::Env::default())
