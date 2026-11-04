@@ -152,7 +152,7 @@ fn scaffold_html(width: u32, height: u32, fps: u32, duration: f64) -> String {
 <style>
   html, body {{ margin: 0; background: #0b0b0c; }}
   #stage {{ position: relative; overflow: hidden; width: {width}px; height: {height}px;
-    color: #f4f1ea; font: 700 120px/1 system-ui, sans-serif; }}
+    transform-origin: 0 0; color: #f4f1ea; font: 700 120px/1 system-ui, sans-serif; }}
   #title {{ position: absolute; inset: 0; display: grid; place-items: center; }}
 </style>
 </head>
@@ -189,6 +189,17 @@ fn scaffold_html(width: u32, height: u32, fps: u32, duration: f64) -> String {
     last = now;
     requestAnimationFrame(tick);
   }}
+  // The whole stage fits the window, scaled uniformly: a preview narrower
+  // than the stage otherwise shows only its dark top-left corner. At the
+  // render size the scale is 1.
+  const stage = document.getElementById('stage');
+  function fit() {{
+    if (window.__odMotionRender) return;
+    const s = Math.min(innerWidth / {width}, innerHeight / {height});
+    stage.style.transform = s > 0 && s < 1 ? `scale(${{s}})` : '';
+  }}
+  addEventListener('resize', fit);
+  fit();
   window.__timelines = window.__timelines || {{}};
   window.__timelines.main = timeline;
   timeline.seek(0);
@@ -933,6 +944,12 @@ mod tests {
         assert_eq!(comp.duration_ms, Some(3000));
         assert!((poster - 1.5).abs() < 1e-9);
         assert!(declares_video(&html));
+        // The preview fits the stage to the window (UI-011).
+        assert!(
+            html.contains("Math.min(innerWidth / 1280, innerHeight / 720)"),
+            "{html}"
+        );
+        assert!(html.contains("transform-origin: 0 0"), "{html}");
     }
 
     #[test]
