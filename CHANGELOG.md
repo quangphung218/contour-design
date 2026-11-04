@@ -17,6 +17,19 @@ All notable changes to Contour are recorded here. The format follows
   content (macOS `Contents/Resources`, `/usr/lib/Contour` on Linux), so
   QA and agents can test the real app beside the one that is open. See
   [getting started](docs/getting-started.md#run-the-installed-apps-daemon-without-its-window).
+- `od-desktop --json daemon status` and `od-desktop --daemon-url <url>
+  media …` (`od`'s global flags before the command) opened a second app;
+  they now run the command like `od` does.
+- `od-desktop daemon start` finds the agents the open app finds: it asks
+  the login shell for its `PATH` (the registry on Windows) like the app,
+  instead of using the terminal's, which an agent running QA often has
+  cut down.
+- On Windows, a second daemon on a data folder already in use (the open
+  app's, or another `od daemon start`) is refused with the first one's
+  URL, as on macOS and Linux; before, both ran on one store and the
+  second overwrote `daemon.lock`. The lock is held on
+  `daemon.lock.held`, so `daemon.lock` stays readable for `od mcp` and
+  the client commands.
 
 - A reference link typed with the colon or a slash of its scheme missing
   (`https//vimeo.com/1`, `http:/youtu.be/x`) is refused as a link, with

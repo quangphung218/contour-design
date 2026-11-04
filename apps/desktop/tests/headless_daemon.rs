@@ -25,13 +25,15 @@ impl Drop for Daemon {
 }
 
 fn daemon_start(data: &Path) -> Command {
-    daemon_start_from(Path::new(APP), data)
+    daemon_start_from(Path::new(APP), data, &[])
 }
 
-/// `<exe> daemon start --port 0` on `data`, with none of the `od` env.
-fn daemon_start_from(exe: &Path, data: &Path) -> Command {
+/// `<exe> <global flags> daemon start --port 0` on `data`, with none of
+/// the `od` env.
+fn daemon_start_from(exe: &Path, data: &Path, global: &[&str]) -> Command {
     let mut cmd = Command::new(exe);
-    cmd.args(["daemon", "start", "--port", "0"])
+    cmd.args(global)
+        .args(["daemon", "start", "--port", "0"])
         .env("OD_DATA_DIR", data)
         .env("RUST_LOG", "warn")
         .env_remove("OD_PORT")
@@ -105,7 +107,13 @@ fn stop(daemon: &mut Daemon) -> std::process::ExitStatus {
 fn daemon_start_runs_headless_on_its_own_data_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
-    let mut daemon = Daemon(daemon_start(&data).stderr(Stdio::null()).spawn().unwrap());
+    // `od`'s global flags may come before `daemon` (it was the window).
+    let mut daemon = Daemon(
+        daemon_start_from(Path::new(APP), &data, &["--json"])
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let url = lock_url(&data, &mut daemon.0);
     assert_ne!(
         url, "http://127.0.0.1:7456",
@@ -168,7 +176,7 @@ fn daemon_start_serves_the_content_of_the_installed_app() {
     let data = tmp.path().join("data");
     // Not the source tree's `content/` through the working directory.
     let mut daemon = Daemon(
-        daemon_start_from(&exe, &data)
+        daemon_start_from(&exe, &data, &[])
             .current_dir(tmp.path())
             .env_remove("APPDIR")
             .stderr(Stdio::null())
@@ -184,10 +192,56 @@ fn daemon_start_serves_the_content_of_the_installed_app() {
     );
 }
 
-/// A data dir another daemon holds (the open app's, without `OD_DATA_DIR`)
-/// is refused with the holder's URL; nothing opens instead. Unix only:
-/// `DaemonLock` takes no OS lock on Windows (`od_server::lock`).
+/// The agents are found as the app's window finds them: on the login
+/// shell's `PATH`, not only the terminal's (a QA agent's `PATH` is often
+/// cut down). Unix: Windows reads the registry instead of a shell.
 #[cfg(unix)]
+#[test]
+fn daemon_start_finds_the_agents_on_the_login_shells_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let agents = tmp.path().join("login-bin");
+    std::fs::create_dir_all(&agents).unwrap();
+    let script = |path: &Path, body: &str| {
+        std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    script(&agents.join("claude"), "echo 9.9.9");
+    // `<shell> -ilc 'printf …'`: answers with a PATH holding `claude`.
+    let shell = tmp.path().join("login-shell");
+    script(
+        &shell,
+        &format!("printf '__OD_PATH__%s__OD_PATH__' '{}'", agents.display()),
+    );
+    let data = tmp.path().join("data");
+    let mut daemon = Daemon(
+        daemon_start(&data)
+            .env("SHELL", &shell)
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", tmp.path())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let url = lock_url(&data, &mut daemon.0);
+    let (status, body) = get(&url, "/api/agents");
+    assert!(status.contains(" 200 "), "{status}");
+    let res: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let claude = res["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "claude")
+        .unwrap();
+    assert_eq!(
+        claude["path"].as_str(),
+        Some(agents.join("claude").to_str().unwrap()),
+        "{claude}"
+    );
+}
+
+/// A data dir another daemon holds (the open app's, without `OD_DATA_DIR`)
+/// is refused with the holder's URL; nothing opens instead.
 #[test]
 fn daemon_start_refuses_a_data_dir_in_use() {
     let tmp = tempfile::tempdir().unwrap();

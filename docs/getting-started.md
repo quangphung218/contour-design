@@ -221,12 +221,14 @@ they were started from; that one is not moved, so point `OD_DATA_DIR` at it.
 
 For QA and agents that test the real app next to the one you have open:
 the app's binary takes `od`'s `daemon start` (and `daemon status`) with
-the same flags and environment, and then runs only the daemon. No window
-opens, no Dock icon appears, and the open app is not touched. Give it a
-data folder of its own with `OD_DATA_DIR`; without it, it uses the app's
-folder, and on macOS and Linux refuses to start while the app is open ("an
-od daemon is already running at …"). Windows has no such check: always set
-`OD_DATA_DIR` there.
+the same flags and environment (`od`'s `--json` and `--daemon-url` may
+come before `daemon`), and then runs only the daemon. No window opens, no
+Dock icon appears, and the open app is not touched. Give it a data folder
+of its own with `OD_DATA_DIR`; without it, it uses the app's folder, and
+refuses to start while the app is open ("an od daemon is already running
+at …"). It finds the agents as the app does, on your login shell's `PATH`
+(on Windows, the `Path` in the registry) and in the usual install folders,
+not only on the `PATH` of the terminal that started it.
 
 ```sh
 # macOS
