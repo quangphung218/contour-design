@@ -20,6 +20,12 @@ All notable changes to Contour are recorded here. The format follows
 - `od-desktop --json daemon status` and `od-desktop --daemon-url <url>
   media …` (`od`'s global flags before the command) opened a second app;
   they now run the command like `od` does.
+- On Windows, a second daemon on a data folder already in use (the open
+  app's, or another `od daemon start`) is refused with the first one's
+  URL, as on macOS and Linux; before, both ran on one store and the
+  second overwrote `daemon.lock`. The lock is held on
+  `daemon.lock.held`, so `daemon.lock` stays readable for `od mcp` and
+  the client commands.
 
 - A reference link typed with the colon or a slash of its scheme missing
   (`https//vimeo.com/1`, `http:/youtu.be/x`) is refused as a link, with
