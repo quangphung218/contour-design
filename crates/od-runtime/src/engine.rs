@@ -362,6 +362,13 @@ impl RunEngine {
         active.len()
     }
 
+    /// Notes a file the app put in `project` (an upload), so a turn open
+    /// now does not list it as the agent's (UI-012). See
+    /// [`turn_files::Windows::note_placed`].
+    pub fn note_placed(&self, project: &str, path: &str, len: u64, mtime_ms: f64) {
+        self.turn_windows.note_placed(project, path, len, mtime_ms);
+    }
+
     /// Runs whose agent is still being driven.
     #[must_use]
     pub fn in_flight(&self) -> usize {

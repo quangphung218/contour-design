@@ -217,14 +217,19 @@ pub async fn upload(
     if parts.is_empty() {
         return Err(ApiErr::bad_request("no files in upload"));
     }
-    let files = state
+    let project = id.clone();
+    let files: Vec<od_contracts::UploadedFile> = state
         .blocking(move |s| {
             parts
                 .iter()
-                .map(|(original, bytes)| s.upload_file(&id, dir.as_deref(), original, bytes))
+                .map(|(original, bytes)| s.upload_file(&project, dir.as_deref(), original, bytes))
                 .collect()
         })
         .await?;
+    // A run going now must not list the user's upload as its own (UI-012).
+    for f in &files {
+        state.runs.engine.note_placed(&id, &f.path, f.size, f.mtime);
+    }
     Ok(ApiJson(UploadResponse { files }))
 }
 

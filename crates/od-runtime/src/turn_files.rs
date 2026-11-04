@@ -167,10 +167,20 @@ fn walk(
     true
 }
 
+/// Files the app put in each project, by project then path, as
+/// `(len, mtime ms)` (see [`Windows::note_placed`]).
+type Placed = HashMap<String, HashMap<String, (u64, f64)>>;
+
 /// When each project run ran, by project id, so overlapping runs of one
 /// project do not claim each other's files. Cheap to clone.
 #[derive(Debug, Clone, Default)]
-pub struct Windows(Arc<Mutex<HashMap<String, Vec<Window>>>>);
+pub struct Windows {
+    runs: Arc<Mutex<HashMap<String, Vec<Window>>>>,
+    /// Files the app itself put in a project while a run of it was open
+    /// (uploads), by project then path, as `(len, mtime ms)`: never a
+    /// turn's file while they stay as put (UI-012).
+    placed: Arc<Mutex<Placed>>,
+}
 
 #[derive(Debug, Clone)]
 struct Window {
@@ -181,9 +191,45 @@ struct Window {
 
 impl Windows {
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<Window>>> {
-        self.0
+        self.runs
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn placed(&self) -> std::sync::MutexGuard<'_, Placed> {
+        self.placed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Notes that the app put `path` (relative to the project folder) in
+    /// `project`, `len` bytes stamped `mtime_ms` (an upload): a turn open
+    /// now does not list it as written, unless its agent changes it. Kept
+    /// only while a run of the project is open.
+    pub fn note_placed(&self, project: &str, path: &str, len: u64, mtime_ms: f64) {
+        // Lock order: runs, then placed (as in `close`).
+        let runs = self.lock();
+        if runs.contains_key(project) {
+            self.placed()
+                .entry(project.to_owned())
+                .or_default()
+                .insert(path.to_owned(), (len, mtime_ms));
+        }
+    }
+
+    /// Whether the app put `path` in `project` and it is still as put.
+    fn was_placed(&self, project: &str, path: &str, stamp: Option<&Stamp>) -> bool {
+        let Some(stamp) = stamp else {
+            return false;
+        };
+        let ms = stamp
+            .mtime
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0.0, |d| d.as_secs_f64() * 1000.0);
+        self.placed()
+            .get(project)
+            .and_then(|files| files.get(path))
+            .is_some_and(|&(len, at)| len == stamp.len && (at - ms).abs() < 0.5)
     }
 
     /// Opens `run_id`'s window at `start`. Call before the snapshot, then
@@ -247,6 +293,8 @@ impl Windows {
         list.retain(|w| matches!((oldest, w.end), (Some(o), Some(e)) if e >= o) || w.end.is_none());
         if list.is_empty() {
             map.remove(project);
+            // No run of the project is open: no turn can list an upload.
+            self.placed().remove(project);
         }
     }
 }
@@ -581,6 +629,11 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> Vec<String> {
     let changes: Vec<(String, Change)> = changes
         .into_iter()
         .filter(|(p, _)| !known.contains(p))
+        .filter(|(p, _)| {
+            !turn
+                .windows
+                .was_placed(&turn.project, p, after.files.get(p))
+        })
         .filter(|(p, _)| {
             is_ours(
                 after.files.get(p).and_then(|s| s.mtime),
@@ -984,6 +1037,49 @@ mod overlap_tests {
         assert_eq!(paths, [root.join("b_alone.txt").to_string_lossy()]);
         drop(turn_b);
         assert!(windows.lock().is_empty(), "closed windows are dropped");
+    }
+
+    #[tokio::test]
+    async fn a_file_uploaded_during_the_run_is_not_the_turns() {
+        // UI-012: the user's upload is not "Wrote sample.txt".
+        let tmp = tempfile::tempdir().unwrap();
+        let (root, runs) = (tmp.path().join("p"), Runs::new(tmp.path().join("runs")));
+        fs::create_dir_all(&root).unwrap();
+        let windows = Windows::default();
+        let a = run(&runs, "a");
+        let turn = windows
+            .open("p1", "a", ago(10))
+            .with_before(Snapshot::take(&root));
+        let note = |rel: &str| {
+            let meta = fs::metadata(root.join(rel)).unwrap();
+            let ms = meta
+                .modified()
+                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64()
+                * 1000.0;
+            windows.note_placed("p1", rel, meta.len(), ms);
+        };
+        write_at(&root, "sample.txt", ago(5));
+        note("sample.txt");
+        // An upload the agent then rewrites is the turn's again.
+        write_at(&root, "brief.md", ago(5));
+        note("brief.md");
+        write_at(&root, "brief.md", ago(2));
+        write_at(&root, "page.html", ago(3));
+        // Another project's upload changes nothing here.
+        windows.note_placed("p2", "page.html", 9, 0.0);
+        report(&a, &root, &turn).await;
+        assert_eq!(listed(&a).await, ["brief.md", "page.html"]);
+        drop(turn);
+        assert!(
+            windows.placed().is_empty(),
+            "uploads go with the last window"
+        );
+        // With no run open, nothing is kept.
+        windows.note_placed("p1", "late.txt", 1, 0.0);
+        assert!(windows.placed().is_empty());
     }
 
     #[tokio::test]
