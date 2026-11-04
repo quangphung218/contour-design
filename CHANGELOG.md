@@ -28,6 +28,7 @@ All notable changes to Contour are recorded here. The format follows
   main conversation list.
 - The preview's file name ends in an ellipsis in narrow windows instead of
   being cut to a letter.
+- Audio a turn produced shows its length before it plays (it read 0:00).
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock

@@ -350,7 +350,7 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                                         </a>
                                     })}
                                     {audio.filter(|_| exists).map(|src| view! {
-                                        <audio class="turn-audio" controls=true preload="none" src=src data-testid="turn-audio"></audio>
+                                        <audio class="turn-audio" controls=true preload="metadata" src=src data-testid="turn-audio"></audio>
                                     })}
                                 </li>
                             }
