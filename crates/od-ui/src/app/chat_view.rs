@@ -933,6 +933,9 @@ pub(super) fn render_block(
     turn: RwSignal<AssistantTurn>,
     is_last: Signal<bool>,
 ) -> AnyView {
+    if !block.shows() {
+        return ().into_any();
+    }
     match block {
         Block::Text(text) => question_form::split(&crate::chat::without_jury_protocol(&text))
             .into_iter()

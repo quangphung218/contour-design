@@ -65,6 +65,15 @@ pub enum Block {
     Steered(String),
 }
 
+impl Block {
+    /// Whether the block has anything to show: Claude often streams a
+    /// thinking block with no text, which would be a heading over nothing.
+    #[must_use]
+    pub fn shows(&self) -> bool {
+        !matches!(self, Self::Thinking(text) if text.trim().is_empty())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TodoStatus {
     Pending,
@@ -782,6 +791,14 @@ mod tests {
         t.apply(plan("completed", "completed", "completed"));
         assert_eq!(plan_progress(&t.todos).map(|p| (p.0, p.1)), Some((3, 3)));
         assert!(parse_todos(&json!({"todos": "x"})).is_none());
+    }
+
+    #[test]
+    fn empty_thinking_blocks_do_not_show() {
+        assert!(!Block::Thinking(String::new()).shows());
+        assert!(!Block::Thinking(" \n ".into()).shows());
+        assert!(Block::Thinking("why".into()).shows());
+        assert!(Block::Text(String::new()).shows());
     }
 
     #[test]

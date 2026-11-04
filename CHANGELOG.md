@@ -22,6 +22,7 @@ All notable changes to Contour are recorded here. The format follows
   index.html", "Waiting for the agent") with the last file it wrote and a
   run clock, instead of the agent's raw label ("requesting") that stayed
   put for minutes.
+- Empty "Thinking" blocks no longer show in the chat.
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock
