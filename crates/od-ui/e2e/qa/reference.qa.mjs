@@ -143,7 +143,8 @@ async function assertFolder(d, id, dir, { grid, scenes, audio }) {
 
 /** The chat says no technical noise a user cannot act on. */
 function assertPlain(text) {
-  for (const noise of [/ffprobe/i, /moov atom/i, /Invalid data found/i, /os error \d+/i, /\bfile:\//]) {
+  // `400 BAD_REQUEST:` is how the CLI showed the daemon's refusals before beta.18.
+  for (const noise of [/ffprobe/i, /moov atom/i, /Invalid data found/i, /os error \d+/i, /\bfile:\//, /\b400 BAD_REQUEST\b/]) {
     assert.doesNotMatch(text, noise, `the chat shows "${(text.match(noise) || [])[0]}" to the user: ${text.slice(0, 400)}`);
   }
 }
