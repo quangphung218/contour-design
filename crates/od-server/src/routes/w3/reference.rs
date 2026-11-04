@@ -118,7 +118,7 @@ const WEB_TLDS: &[&str] = &[
 /// `vimeo.com/1`), or a bare host with a web ending (`vimeo.com`,
 /// `youtube.com`): a web address, not a project path.
 fn looks_like_link(raw: &str) -> bool {
-    let raw = raw.trim();
+    let raw = without_typed_scheme(raw.trim());
     let end = raw.find(['/', '?', '#']).unwrap_or(raw.len());
     let host = raw[..end].to_ascii_lowercase();
     let labels: Vec<&str> = host.split('.').collect();
@@ -133,6 +133,29 @@ fn looks_like_link(raw: &str) -> bool {
         && (host.starts_with("www.")
             || end < raw.len()
             || labels.last().is_some_and(|t| WEB_TLDS.contains(t)))
+}
+
+/// `raw` without a web scheme typed with its colon or a slash missing
+/// (`https//…`, `http:/…`, `https:…`); `scheme://` itself is refused
+/// before this by [`refuse_link`].
+fn without_typed_scheme(raw: &str) -> &str {
+    for scheme in ["https", "http"] {
+        let Some(head) = raw.get(..scheme.len()) else {
+            continue;
+        };
+        if !head.eq_ignore_ascii_case(scheme) {
+            continue;
+        }
+        let rest = &raw[scheme.len()..];
+        let rest = rest.strip_prefix(':').map_or_else(
+            || rest.strip_prefix("//"),
+            |r| Some(r.trim_start_matches('/')),
+        );
+        if let Some(rest) = rest.filter(|r| !r.is_empty()) {
+            return rest;
+        }
+    }
+    raw
 }
 
 /// What ffprobe says about a film.
@@ -1559,6 +1582,11 @@ mod tests {
             "youtube.com",
             "YouTu.be",
             " tiktok.com ",
+            // A scheme typed with its colon or a slash missing.
+            "https//vimeo.com/1",
+            "HTTP//youtu.be/x",
+            "http:/youtu.be/x",
+            "https:vimeo.com/1",
         ] {
             let e = refuse_bare_link(l, missing).unwrap_err();
             assert!(e.contains("is a link") && e.contains("attach"), "{e}");

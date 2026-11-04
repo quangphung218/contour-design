@@ -10,6 +10,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- A reference link typed with the colon or a slash of its scheme missing
+  (`https//vimeo.com/1`, `http:/youtu.be/x`) is refused as a link, with
+  how to attach the file instead; before, the user saw "No such file or
+  directory (os error 2)".
 - Two `od media reference` runs of the same film into one folder at once
   no longer wreck each other: the second cleared the frames the first was
   writing, which then finished with a `facts.json` that listed missing
