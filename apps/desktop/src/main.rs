@@ -83,7 +83,7 @@ async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Resu
     };
     let roots = ContentRoots::bundled(&resource_root).with_user_root(data_dir.root());
     let content = tokio::task::spawn_blocking(move || ContentStore::load(roots)).await?;
-    let agent_path = od_runtime::login_path::agent_path().await;
+    let engine = od_runtime::EngineConfig::from_env().with_login_path().await;
     // Port 0: a fresh loopback port per launch, so a CLI daemon on 7456 never
     // collides on the port (the data dir lock above refuses a second daemon).
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
@@ -102,14 +102,7 @@ async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Resu
             daemon_url: Some(format!("http://{local}")),
             mcp_daemon_url: false,
         }),
-        runs: Arc::new(RunContext::new(
-            Arc::clone(&runs),
-            od_runtime::EngineConfig {
-                path: agent_path,
-                login_shell: od_runtime::login_path::default_shell(),
-                ..od_runtime::EngineConfig::from_env()
-            },
-        )),
+        runs: Arc::new(RunContext::new(Arc::clone(&runs), engine)),
         preview: Preview::default(),
         platform: Platform::from_env(),
     };
@@ -371,7 +364,12 @@ fn main() -> anyhow::Result<()> {
             std::env::var_os(od_content::RESOURCE_ROOT_ENV),
             resource_dir,
         );
-        std::process::exit(i32::from(od_cli::main_code_with(all, root)));
+        let app = od_cli::AppDaemon {
+            resource_root: root,
+            // The agents the app's window finds, not the terminal's `PATH`.
+            login_path: true,
+        };
+        std::process::exit(i32::from(od_cli::main_code_with(all, app)));
     }
     // Opened from Finder the app has no stdout or stderr: the log and any
     // panic also go to `<data>/logs/` (Help ▸ Report Issue reads it).

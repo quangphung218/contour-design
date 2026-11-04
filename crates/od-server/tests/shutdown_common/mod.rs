@@ -60,6 +60,7 @@ pub async fn signal_kills_terminal_jobs(signal: nix::sys::signal::Signal) {
         resource_root: tmp.path().join("no-content"),
         api_token: None,
         allowed_origins: Vec::new(),
+        login_path: false,
     }));
     let base = wait_for_url(&data).await;
     let http = reqwest::Client::builder().no_proxy().build().unwrap();

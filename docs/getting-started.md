@@ -226,7 +226,9 @@ come before `daemon`), and then runs only the daemon. No window opens, no
 Dock icon appears, and the open app is not touched. Give it a data folder
 of its own with `OD_DATA_DIR`; without it, it uses the app's folder, and
 refuses to start while the app is open ("an od daemon is already running
-at …").
+at …"). It finds the agents as the app does, on your login shell's `PATH`
+(on Windows, the `Path` in the registry) and in the usual install folders,
+not only on the `PATH` of the terminal that started it.
 
 ```sh
 # macOS

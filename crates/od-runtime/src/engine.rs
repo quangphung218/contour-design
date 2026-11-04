@@ -96,6 +96,17 @@ impl EngineConfig {
         }
     }
 
+    /// The desktop app's search path: [`crate::login_path::agent_path`]
+    /// (the login shell's `PATH`), asked again when the agents are
+    /// rescanned.
+    pub async fn with_login_path(self) -> Self {
+        Self {
+            path: crate::login_path::agent_path().await,
+            login_shell: crate::login_path::default_shell(),
+            ..self
+        }
+    }
+
     /// `dir` first on `PATH` (tests put mock CLIs there).
     #[must_use]
     pub fn with_path_prefix(mut self, dir: &Path) -> Self {

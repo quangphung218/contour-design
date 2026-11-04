@@ -155,6 +155,10 @@ pub struct ServeOptions {
     pub resource_root: PathBuf,
     pub api_token: Option<String>,
     pub allowed_origins: Vec<String>,
+    /// Agents are found on the login shell's `PATH`, as in the desktop
+    /// app ([`od_runtime::EngineConfig::with_login_path`]): its
+    /// `<app> daemon start`. `od` keeps the `PATH` it was started with.
+    pub login_path: bool,
 }
 
 impl ServeOptions {
@@ -174,6 +178,7 @@ impl ServeOptions {
                 .map(|o| o.trim().trim_end_matches('/').to_owned())
                 .filter(|o| !o.is_empty())
                 .collect(),
+            login_path: false,
         }
     }
 }
@@ -269,6 +274,12 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
     lock.record_url(&format!("http://{local}"))
         .context("recording the daemon url")?;
     let runs = open_runs(&store, &lock).await?;
+    let engine = od_runtime::EngineConfig::from_env();
+    let engine = if opts.login_path {
+        engine.with_login_path().await
+    } else {
+        engine
+    };
     let mut ports = vec![local.port()];
     if let Some(web) = std::env::var("OD_WEB_PORT")
         .ok()
@@ -290,10 +301,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             daemon_url: Some(format!("http://{local}")),
             mcp_daemon_url: true,
         }),
-        runs: Arc::new(RunContext::new(
-            Arc::clone(&runs),
-            od_runtime::EngineConfig::from_env(),
-        )),
+        runs: Arc::new(RunContext::new(Arc::clone(&runs), engine)),
         preview: Preview::default(),
         platform: Platform::from_env(),
     };

@@ -307,14 +307,24 @@ pub fn main_with(args: Vec<OsString>) -> ExitCode {
 /// capability), else 1. The desktop app exits with it as is.
 #[must_use]
 pub fn main_code(args: Vec<OsString>) -> u8 {
-    main_code_with(args, None)
+    main_code_with(args, AppDaemon::default())
 }
 
-/// [`main_code`], with `daemon start` serving `resource_root` instead of
-/// the content [`od_server::resolve_resource_root`] finds: the desktop
-/// app's `<app> daemon start`, whose content is in the app bundle.
+/// What the desktop app's `<app> daemon start` changes in `od`'s daemon.
+#[derive(Debug, Default)]
+pub struct AppDaemon {
+    /// Content served instead of what [`od_server::resolve_resource_root`]
+    /// finds: the app bundle's.
+    pub resource_root: Option<PathBuf>,
+    /// Agents found on the login shell's `PATH`, as by the app's window
+    /// ([`od_server::ServeOptions::login_path`]).
+    pub login_path: bool,
+}
+
+/// [`main_code`], with `daemon start` changed as `app` says: the desktop
+/// app's `<app> daemon start`.
 #[must_use]
-pub fn main_code_with(args: Vec<OsString>, resource_root: Option<PathBuf>) -> u8 {
+pub fn main_code_with(args: Vec<OsString>, app: AppDaemon) -> u8 {
     let args = strip_self_arg(args);
     if let Some(code) = run_hyperframes(&args) {
         return code;
@@ -341,9 +351,9 @@ pub fn main_code_with(args: Vec<OsString>, resource_root: Option<PathBuf>) -> u8
                     .unwrap_or(od_server::DEFAULT_PORT),
                 log_file: false,
             },
-            resource_root,
+            app,
         ),
-        Some(Command::Daemon(DaemonCommand::Start(args))) => run_daemon(args, resource_root),
+        Some(Command::Daemon(DaemonCommand::Start(args))) => run_daemon(args, app),
         Some(Command::Daemon(DaemonCommand::Status)) => {
             client().and_then(|c| daemon_status(&c, cli.json))
         }
@@ -419,12 +429,13 @@ fn exit_code(result: anyhow::Result<()>) -> u8 {
     }
 }
 
-fn run_daemon(args: StartArgs, resource_root: Option<PathBuf>) -> anyhow::Result<()> {
+fn run_daemon(args: StartArgs, app: AppDaemon) -> anyhow::Result<()> {
     let mut options =
         od_server::logs::with_console(|| od_server::ServeOptions::from_env(args.host, args.port));
-    if let Some(root) = resource_root {
+    if let Some(root) = app.resource_root {
         options.resource_root = root;
     }
+    options.login_path = app.login_path;
     let to_file = args.log_file || od_server::logs::file_from_env();
     od_server::logs::init(to_file.then(|| options.data_dir.root()));
     let runtime = tokio::runtime::Builder::new_multi_thread()

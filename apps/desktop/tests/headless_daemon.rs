@@ -192,6 +192,54 @@ fn daemon_start_serves_the_content_of_the_installed_app() {
     );
 }
 
+/// The agents are found as the app's window finds them: on the login
+/// shell's `PATH`, not only the terminal's (a QA agent's `PATH` is often
+/// cut down). Unix: Windows reads the registry instead of a shell.
+#[cfg(unix)]
+#[test]
+fn daemon_start_finds_the_agents_on_the_login_shells_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let agents = tmp.path().join("login-bin");
+    std::fs::create_dir_all(&agents).unwrap();
+    let script = |path: &Path, body: &str| {
+        std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    script(&agents.join("claude"), "echo 9.9.9");
+    // `<shell> -ilc 'printf …'`: answers with a PATH holding `claude`.
+    let shell = tmp.path().join("login-shell");
+    script(
+        &shell,
+        &format!("printf '__OD_PATH__%s__OD_PATH__' '{}'", agents.display()),
+    );
+    let data = tmp.path().join("data");
+    let mut daemon = Daemon(
+        daemon_start(&data)
+            .env("SHELL", &shell)
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", tmp.path())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let url = lock_url(&data, &mut daemon.0);
+    let (status, body) = get(&url, "/api/agents");
+    assert!(status.contains(" 200 "), "{status}");
+    let res: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let claude = res["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "claude")
+        .unwrap();
+    assert_eq!(
+        claude["path"].as_str(),
+        Some(agents.join("claude").to_str().unwrap()),
+        "{claude}"
+    );
+}
+
 /// A data dir another daemon holds (the open app's, without `OD_DATA_DIR`)
 /// is refused with the holder's URL; nothing opens instead.
 #[test]

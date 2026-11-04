@@ -18,6 +18,7 @@ fn options(data: &Path, tmp: &Path) -> ServeOptions {
         resource_root: tmp.join("no-content"),
         api_token: None,
         allowed_origins: Vec::new(),
+        login_path: false,
     }
 }
 
