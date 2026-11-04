@@ -204,7 +204,8 @@ enum FilesCommand {
 
 /// The client subcommands the desktop app answers as `<app> <command> …`.
 /// The daemon (`daemon start`, no subcommand) and `mcp` are left out: the
-/// app is the daemon, and it serves `mcp` itself.
+/// app answers `daemon …` through [`main_code_with`] (its bundled content)
+/// and serves `mcp` itself.
 pub const CLIENT_COMMANDS: &[&str] = &[
     "project", "files", "run", "export", "lint", "media", "plugin", "research", "tools",
 ];
@@ -270,6 +271,14 @@ pub fn main_with(args: Vec<OsString>) -> ExitCode {
 /// capability), else 1. The desktop app exits with it as is.
 #[must_use]
 pub fn main_code(args: Vec<OsString>) -> u8 {
+    main_code_with(args, None)
+}
+
+/// [`main_code`], with `daemon start` serving `resource_root` instead of
+/// the content [`od_server::resolve_resource_root`] finds: the desktop
+/// app's `<app> daemon start`, whose content is in the app bundle.
+#[must_use]
+pub fn main_code_with(args: Vec<OsString>, resource_root: Option<PathBuf>) -> u8 {
     let args = strip_self_arg(args);
     if let Some(code) = run_hyperframes(&args) {
         return code;
@@ -286,15 +295,19 @@ pub fn main_code(args: Vec<OsString>) -> u8 {
     // through `daemon.lock` when the default URL has no daemon, as `mcp`.
     let client = || Client::new(&client_daemon_url(&cli.daemon_url, daemon_url_given));
     let result = match cli.command {
-        None => run_daemon(StartArgs {
-            host: std::env::var("OD_HOST").unwrap_or_else(|_| od_server::DEFAULT_HOST.to_owned()),
-            port: std::env::var("OD_PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(od_server::DEFAULT_PORT),
-            log_file: false,
-        }),
-        Some(Command::Daemon(DaemonCommand::Start(args))) => run_daemon(args),
+        None => run_daemon(
+            StartArgs {
+                host: std::env::var("OD_HOST")
+                    .unwrap_or_else(|_| od_server::DEFAULT_HOST.to_owned()),
+                port: std::env::var("OD_PORT")
+                    .ok()
+                    .and_then(|p| p.parse().ok())
+                    .unwrap_or(od_server::DEFAULT_PORT),
+                log_file: false,
+            },
+            resource_root,
+        ),
+        Some(Command::Daemon(DaemonCommand::Start(args))) => run_daemon(args, resource_root),
         Some(Command::Daemon(DaemonCommand::Status)) => {
             client().and_then(|c| daemon_status(&c, cli.json))
         }
@@ -370,9 +383,12 @@ fn exit_code(result: anyhow::Result<()>) -> u8 {
     }
 }
 
-fn run_daemon(args: StartArgs) -> anyhow::Result<()> {
-    let options =
+fn run_daemon(args: StartArgs, resource_root: Option<PathBuf>) -> anyhow::Result<()> {
+    let mut options =
         od_server::logs::with_console(|| od_server::ServeOptions::from_env(args.host, args.port));
+    if let Some(root) = resource_root {
+        options.resource_root = root;
+    }
     let to_file = args.log_file || od_server::logs::file_from_env();
     od_server::logs::init(to_file.then(|| options.data_dir.root()));
     let runtime = tokio::runtime::Builder::new_multi_thread()

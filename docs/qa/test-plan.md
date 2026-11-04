@@ -24,6 +24,10 @@ port. Requests leaving loopback are blocked.
 
 Run: `make e2e-qa` (or `crates/od-ui/e2e/qa/run.sh`).
 
+The installed app's own daemon, next to the app in use:
+`OD_DATA_DIR=<tmp> od-desktop daemon start --port 0`, URL in
+`<tmp>/daemon.lock` ([getting started](../getting-started.md#run-the-installed-apps-daemon-without-its-window)).
+
 ## 1. Onboarding and agent connection (`onboarding.qa.mjs`)
 
 Goal: a first-time user reaches Home with a working agent or API key.
