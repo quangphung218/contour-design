@@ -824,8 +824,11 @@ async fn a_thousand_shell_frames_are_one_row() {
         "qwen",
         r#"cat > /dev/null
 mkdir -p frames
-i=1
-while [ $i -le 1000 ]; do : > "frames/$(printf %04d $i).png"; i=$((i+1)); done
+# Shell builtins only: a `$(printf …)` per frame forks 1000 times, which on
+# a loaded machine outlasts the 5 s idle timeout with nothing printed.
+for a in 0 1 2 3 4 5 6 7 8 9; do for b in 0 1 2 3 4 5 6 7 8 9; do for c in 0 1 2 3 4 5 6 7 8 9; do
+  : > "frames/0$a$b$c.png"
+done; done; done
 printf 'mp4' > frames/film.mp4
 echo done
 "#,
