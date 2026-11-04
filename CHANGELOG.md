@@ -17,6 +17,9 @@ All notable changes to Contour are recorded here. The format follows
   content (macOS `Contents/Resources`, `/usr/lib/Contour` on Linux), so
   QA and agents can test the real app beside the one that is open. See
   [getting started](docs/getting-started.md#run-the-installed-apps-daemon-without-its-window).
+- `od-desktop --json daemon status` and `od-desktop --daemon-url <url>
+  media …` (`od`'s global flags before the command) opened a second app;
+  they now run the command like `od` does.
 
 - A reference link typed with the colon or a slash of its scheme missing
   (`https//vimeo.com/1`, `http:/youtu.be/x`) is refused as a link, with

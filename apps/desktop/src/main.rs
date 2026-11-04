@@ -350,11 +350,10 @@ fn main() -> anyhow::Result<()> {
         return mcp::run(&args[1..]);
     }
     // `<app> media generate …` and the other client commands: the CLI,
-    // without the window, against the running app's daemon.
-    if args
-        .first()
-        .is_some_and(|a| od_cli::CLIENT_COMMANDS.iter().any(|c| a == *c))
-    {
+    // without the window, against the running app's daemon. `od`'s global
+    // flags may come first (`<app> --json daemon status`).
+    let command = od_cli::subcommand(args);
+    if command.is_some_and(|a| od_cli::CLIENT_COMMANDS.iter().any(|c| a == *c)) {
         // The CLI's own code: 2 (task still running) and 66 stay as they are.
         std::process::exit(i32::from(od_cli::main_code(all)));
     }
@@ -365,7 +364,7 @@ fn main() -> anyhow::Result<()> {
     // `NSApplication`). Without `OD_DATA_DIR` it is the app's data dir,
     // whose `daemon.lock` refuses a second daemon while the app is open
     // (on unix; Windows takes no OS lock).
-    if args.first().is_some_and(|a| a == DAEMON_COMMAND) {
+    if command.is_some_and(|a| a == DAEMON_COMMAND) {
         let resource_dir =
             tauri::utils::platform::resource_dir(context.package_info(), &tauri::Env::default())
                 .ok();

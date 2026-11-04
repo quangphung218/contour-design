@@ -210,6 +210,42 @@ pub const CLIENT_COMMANDS: &[&str] = &[
     "project", "files", "run", "export", "lint", "media", "plugin", "research", "tools",
 ];
 
+/// The subcommand `od` would run for `args` (program name left out): the
+/// first argument past `od`'s global flags (`--json`, `--daemon-url <url>`,
+/// `--daemon-url=<url>`), which `od` takes before the subcommand too. The
+/// desktop app routes `<app> --json daemon status` by it. `None` when only
+/// global flags are given or after `--`.
+#[must_use]
+pub fn subcommand(args: &[OsString]) -> Option<&std::ffi::OsStr> {
+    let cli = Cli::command();
+    let globals: Vec<&clap::Arg> = cli.get_arguments().filter(|a| a.is_global_set()).collect();
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let Some(text) = arg.to_str() else {
+            return Some(arg);
+        };
+        if text == "--" {
+            return None;
+        }
+        // Long flags only: `od` has no short global flag.
+        let Some(long) = text.strip_prefix("--") else {
+            return Some(arg);
+        };
+        let (long, inline_value) = match long.split_once('=') {
+            Some((long, _)) => (long, true),
+            None => (long, false),
+        };
+        match globals.iter().find(|a| a.get_long() == Some(long)) {
+            Some(a) if a.get_action().takes_values() && !inline_value => {
+                rest.next();
+            }
+            Some(_) => {}
+            None => return Some(arg),
+        }
+    }
+    None
+}
+
 /// `args` (with the program name first) minus a second argument naming
 /// this same executable. Agent prompts call `"$OD_NODE_BIN" "$OD_BIN" …`
 /// (the original's `node od.js …`); Contour points both variables at its
@@ -673,6 +709,48 @@ mod tests {
                 "{name} is not in CLIENT_COMMANDS"
             );
         }
+    }
+
+    /// `<app> --json daemon status` opened a second window: the desktop
+    /// looked at the first argument only. Each line also agrees with the
+    /// subcommand clap itself runs.
+    #[test]
+    fn the_subcommand_comes_after_the_global_flags() {
+        let url = "http://127.0.0.1:5001";
+        let cases: &[(&[&str], Option<&str>)] = &[
+            (&["daemon", "status"], Some("daemon")),
+            (&["--json", "daemon", "status"], Some("daemon")),
+            (&["--daemon-url", url, "daemon", "status"], Some("daemon")),
+            (
+                &["--daemon-url=http://x:1", "daemon", "start"],
+                Some("daemon"),
+            ),
+            (
+                &["--json", "--daemon-url", url, "files", "list", "p"],
+                Some("files"),
+            ),
+            (
+                &["--daemon-url", "daemon", "project", "list"],
+                Some("project"),
+            ),
+            (&["project", "--json", "list"], Some("project")),
+            (&["--json"], None),
+            (&["--daemon-url", url], None),
+            (&[], None),
+        ];
+        for (args, want) in cases {
+            let os: Vec<OsString> = args.iter().map(OsString::from).collect();
+            assert_eq!(subcommand(&os).and_then(|s| s.to_str()), *want, "{args:?}");
+            let mut argv = vec![OsString::from("od")];
+            argv.extend(os);
+            let matches = Cli::command().try_get_matches_from(argv).unwrap();
+            assert_eq!(matches.subcommand_name(), *want, "clap on {args:?}");
+        }
+        // Not a global flag: the first argument, as before (the window).
+        let os: Vec<OsString> = ["--verbose", "daemon"].iter().map(OsString::from).collect();
+        assert_eq!(subcommand(&os).and_then(|s| s.to_str()), Some("--verbose"));
+        let os: Vec<OsString> = ["--", "daemon"].iter().map(OsString::from).collect();
+        assert_eq!(subcommand(&os), None);
     }
 
     #[test]

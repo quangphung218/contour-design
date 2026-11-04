@@ -25,13 +25,15 @@ impl Drop for Daemon {
 }
 
 fn daemon_start(data: &Path) -> Command {
-    daemon_start_from(Path::new(APP), data)
+    daemon_start_from(Path::new(APP), data, &[])
 }
 
-/// `<exe> daemon start --port 0` on `data`, with none of the `od` env.
-fn daemon_start_from(exe: &Path, data: &Path) -> Command {
+/// `<exe> <global flags> daemon start --port 0` on `data`, with none of
+/// the `od` env.
+fn daemon_start_from(exe: &Path, data: &Path, global: &[&str]) -> Command {
     let mut cmd = Command::new(exe);
-    cmd.args(["daemon", "start", "--port", "0"])
+    cmd.args(global)
+        .args(["daemon", "start", "--port", "0"])
         .env("OD_DATA_DIR", data)
         .env("RUST_LOG", "warn")
         .env_remove("OD_PORT")
@@ -105,7 +107,13 @@ fn stop(daemon: &mut Daemon) -> std::process::ExitStatus {
 fn daemon_start_runs_headless_on_its_own_data_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
-    let mut daemon = Daemon(daemon_start(&data).stderr(Stdio::null()).spawn().unwrap());
+    // `od`'s global flags may come before `daemon` (it was the window).
+    let mut daemon = Daemon(
+        daemon_start_from(Path::new(APP), &data, &["--json"])
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let url = lock_url(&data, &mut daemon.0);
     assert_ne!(
         url, "http://127.0.0.1:7456",
@@ -168,7 +176,7 @@ fn daemon_start_serves_the_content_of_the_installed_app() {
     let data = tmp.path().join("data");
     // Not the source tree's `content/` through the working directory.
     let mut daemon = Daemon(
-        daemon_start_from(&exe, &data)
+        daemon_start_from(&exe, &data, &[])
             .current_dir(tmp.path())
             .env_remove("APPDIR")
             .stderr(Stdio::null())
