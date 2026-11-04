@@ -10,6 +10,31 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- A page with a carousel built from `.slide` elements (a testimonial
+  slider on a landing page) was taken for a slide deck: the preview
+  shrank to a 16:9 frame with Present, Notes and a thumbnail rail. A bare
+  `.slide` now makes a deck only when the slides fill the page, never
+  inside an ARIA carousel (`aria-roledescription="carousel"`/`"slide"`)
+  or a carousel library's box (`.swiper`, `.carousel`, `.splide`…); every
+  bundled deck is still a deck.
+- While the agent works on a project's first page, the empty preview
+  marks "Describe what you want" done and the agent's step current,
+  instead of asking for a description the user already gave.
+- A Motion composition started with `od media scaffold` fills the preview:
+  its stage scales down to the window, where before only its dark
+  top-left corner showed for the whole run. The render is unchanged.
+- Projects lists a Motion film as "Motion" (with its own filter), not
+  "Media", with the film's first frame as its cover.
+- In a narrow window the file tabs shrink and scroll by themselves, so
+  the "+" launcher and the focus toggle after them stay in reach.
+- Settings ▸ Models: no tall gap between the Local CLI / API switch and
+  the card under it, and "Advanced: proxy & custom paths" opens with the
+  same chevron as "Other agents" instead of the browser's triangle.
+- Onboarding numbers its first step ("1 Agent") like the brand step under
+  it.
+- Project covers and template thumbnails no longer log a "Blocked script
+  execution" console error for each script of the page: the scripts are
+  left out of the still cover.
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock

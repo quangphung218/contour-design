@@ -116,15 +116,17 @@ pub enum Tag {
     LiveArtifact,
     WebClone,
     Slide,
+    Motion,
     Media,
     Prototype,
     Other,
 }
 
 impl Tag {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Prototype,
         Self::Slide,
+        Self::Motion,
         Self::LiveArtifact,
         Self::WebClone,
         Self::Media,
@@ -141,6 +143,10 @@ impl Tag {
         if intent == Some("web-clone") {
             return Self::WebClone;
         }
+        // The Motion chip's films, not any media (UI-013).
+        if intent == Some("motion-design") {
+            return Self::Motion;
+        }
         match meta.and_then(|m| m.kind) {
             Some(ProjectKind::Deck) => Self::Slide,
             Some(ProjectKind::Image | ProjectKind::Video | ProjectKind::Audio) => Self::Media,
@@ -155,6 +161,7 @@ impl Tag {
             Self::LiveArtifact => "live-artifact",
             Self::WebClone => "web-clone",
             Self::Slide => "slide",
+            Self::Motion => "motion",
             Self::Media => "media",
             Self::Prototype => "prototype",
             Self::Other => "other",
@@ -172,6 +179,7 @@ impl Tag {
             Self::LiveArtifact => T::TagLiveArtifact,
             Self::WebClone => T::TagWebClone,
             Self::Slide => T::TagSlide,
+            Self::Motion => T::ChipMotion,
             Self::Media => T::TagMedia,
             Self::Prototype => T::TagPrototype,
             Self::Other => T::TagOther,
@@ -184,6 +192,7 @@ impl Tag {
             Self::LiveArtifact => Glyph::LiveArtifact,
             Self::WebClone => Glyph::Globe,
             Self::Slide => Glyph::Deck,
+            Self::Motion => Glyph::Film,
             Self::Media => Glyph::FileImage,
             Self::Prototype | Self::Other => Glyph::Prototype,
         }
@@ -308,6 +317,17 @@ mod tests {
             Tag::of(&project("a", 1, json!({"kind": "video"}))),
             Tag::Media
         );
+        // A Motion film is labelled Motion, not Media (UI-013).
+        assert_eq!(
+            Tag::of(&project(
+                "a",
+                1,
+                json!({"kind": "video", "intent": "motion-design"})
+            )),
+            Tag::Motion
+        );
+        assert_eq!(Tag::Motion.id(), "motion");
+        assert_eq!(Tag::parse("motion"), Some(Tag::Motion));
         assert_eq!(
             Tag::of(&project("a", 1, json!({"intent": "web-clone"}))),
             Tag::WebClone

@@ -1411,7 +1411,7 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                                 <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete"
                                     on:click=move |_| ctx.open_file(&open)
                                     on:keydown=move |ev| if ev.key() == "Delete" { ev.prevent_default(); ctx.tabs.update(|t| t.close(&close_key)); }
-                                >{icon(if live { Glyph::Sparkle } else { file_glyph(&name) })}{name.clone()}</button>
+                                >{icon(if live { Glyph::Sparkle } else { file_glyph(&name) })}<span class="tab-label">{name.clone()}</span></button>
                                 <button
                                     class="tab-close"
                                     tabindex="-1"
@@ -1948,9 +1948,11 @@ fn PreviewEmpty(ctx: StudioCtx) -> impl IntoView {
             // No project: no steps to follow in it.
             <Show when=move || ctx.load_error.with(Option::is_none)>
                 <p>{move || if running() { t(T::PreviewWaiting) } else { t(T::PreviewEmpty) }}</p>
+                // While the agent runs, the user has done step 1 and step 2
+                // is under way (UI-010).
                 <ol class="empty-steps">
-                    <li>{t(T::PreviewStep1)}</li>
-                    <li>{t(T::PreviewStep2)}</li>
+                    <li class:done=running>{t(T::PreviewStep1)}</li>
+                    <li class:current=running aria-current=move || running().then_some("step")>{t(T::PreviewStep2)}</li>
                     <li>{t(T::PreviewStep3)}</li>
                 </ol>
             </Show>

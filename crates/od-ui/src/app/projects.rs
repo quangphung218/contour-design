@@ -610,26 +610,49 @@ fn SearchHits(hits: RwSignal<Vec<Hit>>, query: RwSignal<String>) -> impl IntoVie
     }
 }
 
-/// A project's cover: its entry page (`entryFile` from the list) rendered
-/// small once it scrolls into view, else the kind's icon.
+/// A project's cover: its film's first frame when the project's entry is a
+/// video (a Motion render, UI-013), else its entry page (`entryFile` from
+/// the list) rendered small once it scrolls into view, else the kind's icon.
 #[component]
 fn ProjectCover(project: Project) -> impl IntoView {
     let glyph = Tag::of(&project).glyph();
-    let src = project.entry_file.as_deref().map(|path| {
+    let raw = |path: &str| {
         format!(
             "/api/projects/{}/raw/{}",
             api::seg(&project.id),
             api::file_path(path)
         )
-    });
+    };
+    let src = project.entry_file.as_deref().map(raw);
+    let film = project
+        .metadata
+        .as_ref()
+        .and_then(|m| m.entry_file.as_deref())
+        .filter(|f| is_video_path(f))
+        .map(|f| format!("{}#t=0.1", raw(f)));
+    // A film that is gone or will not decode falls back to the page.
+    let film_failed = RwSignal::new(false);
     view! {
         <span class="cover project-cover" aria-hidden="true">
-            {match src {
-                Some(src) => view! { <LazyFrame src=src/> }.into_any(),
-                None => view! { <span class="cover-glyph">{icon(glyph)}</span> }.into_any(),
+            {move || match (film.clone().filter(|_| !film_failed.get()), src.clone()) {
+                (Some(film), _) => view! {
+                    <video class="cover-video" src=film muted=true playsinline=true preload="metadata"
+                        tabindex="-1" data-testid="project-cover-video"
+                        on:error=move |_| film_failed.set(true)></video>
+                }.into_any(),
+                (None, Some(src)) => view! { <LazyFrame src=src/> }.into_any(),
+                (None, None) => view! { <span class="cover-glyph">{icon(glyph)}</span> }.into_any(),
             }}
         </span>
     }
+}
+
+/// A file the cover can show as a film.
+fn is_video_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    [".mp4", ".webm", ".mov", ".m4v"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
 }
 
 /// The run-state badge of a card.

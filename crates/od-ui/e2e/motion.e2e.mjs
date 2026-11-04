@@ -5,7 +5,8 @@
 // (Playwright's Chromium) and the installed ffmpeg. Checks: a valid MP4
 // (ffprobe: length, fps, h264 yuv420p), the MP4 in "Files from this turn"
 // as a write and the preview showing it; a second turn re-renders the same
-// file, listed as an edit. Every request leaving loopback is blocked and
+// file, listed as an edit. On Projects the card is tagged Motion with the
+// film's first frame as its cover. Every request leaving loopback is blocked and
 // fails the test.
 //
 // Run through ./run.sh (builds the bundle and `od` first). Needs ffmpeg and
@@ -154,6 +155,19 @@ try {
   await turnFile(1, 'film.mp4').waitFor();
   await page.getByTestId('doc-video').waitFor();
   results.reload = 'ok';
+
+  // 3. Projects: the card says Motion, not Media, and its cover is the
+  // film's first frame (UI-013).
+  await page.goto(`${BASE}/projects`);
+  const card = page.locator(`[data-testid="project-card"][data-project="${pid}"]`);
+  await card.waitFor();
+  assert.equal(await card.getAttribute('data-tag'), 'motion');
+  assert.equal((await card.getByTestId('project-tag').textContent()).trim(), 'Motion');
+  const cover = card.getByTestId('project-cover-video');
+  await cover.waitFor();
+  assert.match(await cover.getAttribute('src'), /film\.mp4#t=0\.1$/);
+  await until(() => cover.evaluate((v) => v.readyState >= 2 && v.videoWidth > 0), 'cover frame decoded');
+  results.projectCard = 'ok';
 
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
   assert.deepEqual(external, [], `external requests: ${external.join(', ')}`);

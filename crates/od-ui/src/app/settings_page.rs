@@ -588,7 +588,9 @@ fn AdvancedEnv(agent: RwSignal<Option<String>>) -> impl IntoView {
     view! {
         <Show when=move || !keys().is_empty()>
             <details class="advanced-env" data-testid="advanced-env">
-                <summary>{t(T::AdvancedEnv)}</summary>
+                // The chevron of "Other agents" above it, not the native
+                // triangle (UI-018).
+                <summary>{icon(Glyph::ChevronRight)}{t(T::AdvancedEnv)}</summary>
                 <p class="muted small">{t(T::AdvancedEnvHint)}</p>
                 {move || {
                     let id = agent.get().unwrap_or_default();
