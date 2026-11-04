@@ -8,6 +8,18 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Update now in the desktop app. When Check for Updates finds a newer
+  release, Update now downloads its build for this system, installs it
+  only if its signature matches Contour's updater key, and offers Restart;
+  the dialog shows the download's percent, Cancel, and a clear message
+  when the download fails or its signature does not match (nothing is
+  installed then). Nothing downloads until the click. The `.deb`, dev
+  builds and the browser keep View release, with a short hint. Releases
+  carry `latest.json` and a `.sig` for each build
+  ([docs/release.md](docs/release.md#updater-signing)).
+
 ### Fixed
 
 - The chat (and the side chat) no longer pulls you back to the bottom on

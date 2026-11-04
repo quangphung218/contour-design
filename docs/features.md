@@ -324,6 +324,14 @@ files under the data folder and the API returns them masked.
   with notes and downloads), "You're up to date", or a short error (its
   own message when GitHub rate limits the network). Only that click
   calls out: the app never checks or updates on its own.
+- **Update now** (that dialog, in the app from a `.dmg`, the AppImage or
+  the `.msi`): downloads the release's build for this system (its
+  `latest.json` on GitHub Releases), shows the percent with Cancel,
+  installs it only when its minisign signature matches the updater key in
+  `tauri.conf.json`, then offers Restart. A failed download, a release
+  without `latest.json`, or a signature that does not match installs
+  nothing and says which; View release stays. The `.deb` and dev builds
+  get View release with a one-line hint.
 - **Settings ▸ About ▸ Your usage** shows, from this machine only: how
   far first-run setup got (5 steps: app opened, agent found, agent or API
   key passed its test, first project, first preview; each recorded once,
@@ -422,4 +430,4 @@ account, a cloud service or outbound network ([decisions.md](decisions.md)):
 connectors (Composio), Orbit digests, Figma import, marketplace and registry,
 the floating pet, the built-in browser tab, Web Clipper, xAI OAuth, team
 spaces and sharing, deploy to Vercel/Cloudflare, cloud sign-in and
-auto-update (Check for Updates only looks, when asked). [parity.md](parity.md) marks them N/A.
+background auto-update (Check for Updates looks, and Update now installs, only when clicked). [parity.md](parity.md) marks them N/A.

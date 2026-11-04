@@ -65,7 +65,8 @@ sudo apt install ./Contour_<version>_amd64.deb
 
 Contour is then in the app menu (Graphics and Development) and starts
 from a terminal as `od-desktop`. To update, install the newer `.deb` the
-same way.
+same way (the `.deb` does not update itself; the AppImage does, see
+[Updating](#updating)).
 
 **The AppImage.** No install, but it needs FUSE 2, which Ubuntu does not
 ship by default:
@@ -107,8 +108,8 @@ installed, opened and uninstalled on clean Windows Server 2025 and 2022
    `C:\Program Files\Contour`). Contour is then in the Start menu.
 
 The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have;
-if it is missing the installer downloads it. To update, install the newer
-`.msi` the same way.
+if it is missing the installer downloads it. To update, use Update now
+([Updating](#updating)) or install the newer `.msi` the same way.
 
 To install without questions (a script, Intune), from an administrator
 PowerShell:
@@ -161,6 +162,27 @@ Or skip the desktop app and run the daemon with the UI in your browser:
 ```bash
 make run              # http://127.0.0.1:7456
 ```
+
+### Updating
+
+Help ▸ Check for Updates (or Settings ▸ About ▸ Check for updates) asks
+GitHub Releases for the newest release, betas included, only when you
+click it. In the app from a `.dmg`, the AppImage or the `.msi`, a newer
+release offers **Update now**:
+
+1. Contour downloads that release's build for your system and shows the
+   percent (Cancel stops it).
+2. It installs the build only if its signature matches Contour's updater
+   key. A download that fails or does not match installs nothing and says
+   why; View release still opens the release page.
+3. **Restart** opens the new version. On Windows the installer takes over,
+   closes Contour and opens it again.
+
+Nothing downloads before you click Update now. The `.deb` and builds from
+source cannot replace themselves: the dialog says so and offers View
+release (install the new `.deb`, or `git pull` and rebuild). A release
+built without the updater key has no `latest.json`; Update now then says
+to download it from the release page.
 
 ## 2. Give Contour an agent
 

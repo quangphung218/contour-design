@@ -122,9 +122,15 @@ jobs:
       - name: UI bundle present
         shell: bash
         run: test -f crates/od-ui/dist/index.html
+      # The updater key signs the AppImage and the .msi for Update now
+      # (docs/release.md, Updater signing). Without it the bundles build
+      # unsigned for the updater and the release still goes out.
       - name: Tauri bundle
         working-directory: apps/desktop
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           extra=()
           if [ "$RUNNER_OS" = Windows ]; then
@@ -132,13 +138,19 @@ jobs:
             msi="$(../../scripts/msi-version.sh "$TAG")"
             extra=(--config "{\"bundle\":{\"windows\":{\"wix\":{\"version\":\"$msi\"}}}}")
           fi
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            extra+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          else
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; no updater signatures, so Update now cannot install this release (docs/release.md, Updater signing)"
+            unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          fi
           npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build ${{ matrix.args }} ${extra[@]+"${extra[@]}"}
       - name: Collect files
         shell: bash
         run: |
           mkdir -p dist-release
           find "${{ matrix.out }}" -maxdepth 2 -type f \
-            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' \) \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' -o -name '*.AppImage.sig' -o -name '*.msi.sig' \) \
             -exec cp {} dist-release/ \;
           ls -l dist-release
           test -n "$(ls dist-release)"
@@ -270,9 +282,10 @@ jobs:
           lipo "$out/od-desktop" -verify_arch arm64 x86_64
           lipo -info "$out/od-desktop"
           test -f crates/od-ui/dist/index.html
-      # Signing and notarisation are optional. The secrets reach only this
-      # step's environment; empty ones are unset so Tauri builds an unsigned
-      # bundle, and nothing is printed.
+      # Signing and notarisation are optional, and so is the updater key
+      # (Contour.app.tar.gz and its .sig for Update now). The secrets reach
+      # only this step's environment; empty ones are unset so Tauri builds
+      # without them, and nothing is printed.
       - name: Tauri bundle
         working-directory: apps/desktop
         shell: bash
@@ -283,6 +296,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           signing=(APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY)
           notarising=(APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID)
@@ -294,12 +309,25 @@ jobs:
             echo "::warning::notarisation secrets are not set; the bundle is signed but not notarised"
             unset "${notarising[@]}"
           fi
-          npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" bundle --target universal-apple-darwin --bundles app,dmg
+          updater=()
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            updater=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          else
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; no updater signatures, so Update now cannot install this release (docs/release.md, Updater signing)"
+            unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          fi
+          npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" bundle --target universal-apple-darwin --bundles app,dmg ${updater[@]+"${updater[@]}"}
       - name: Collect files
         run: |
           mkdir -p dist-release
-          find target/universal-apple-darwin/release/bundle -maxdepth 2 -type f -name '*.dmg' \
+          bundle=target/universal-apple-darwin/release/bundle
+          find "$bundle" -maxdepth 2 -type f -name '*.dmg' \
             -exec cp {} dist-release/ \;
+          # The updater's bundle is Contour.app.tar.gz: named like the .dmg.
+          for f in "$bundle"/macos/*.app.tar.gz "$bundle"/macos/*.app.tar.gz.sig; do
+            [ -f "$f" ] || continue
+            cp "$f" "dist-release/Contour_${TAG#v}_universal${f##*/Contour}"
+          done
           ls -l dist-release
           test -n "$(ls dist-release)"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -348,13 +376,20 @@ jobs:
           pattern: bundle-*
           path: dist-release
           merge-multiple: true
+      # latest.json lists each signed build for Update now
+      # (scripts/updater-manifest.py); SHA256SUMS covers it and the .sig files.
       - name: Checksums and notes
         run: |
+          scripts/release-notes.sh "$TAG" > release-notes.md
+          if compgen -G 'dist-release/*.sig' > /dev/null; then
+            python3 scripts/updater-manifest.py --tag "$TAG" --dir dist-release \
+              --out dist-release/latest.json --notes release-notes.md
+          else
+            echo "::warning::no updater signatures in this release (TAURI_SIGNING_PRIVATE_KEY not set): no latest.json, Update now offers View release only"
+          fi
           cd dist-release
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
-          cd ..
-          scripts/release-notes.sh "$TAG" > release-notes.md
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ github.token }}
