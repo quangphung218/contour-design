@@ -107,6 +107,10 @@ All notable changes to Contour are recorded here. The format follows
   conversation. A message sent past such a queue while Contour was
   unreachable changed its hint from "the turn before was stopped" to
   "the connection to Contour was lost"; it keeps the first reason.
+- A project cover of a very large page (images inlined, tens of MB) held
+  about three copies of it in memory per cover shown. A page over 5 MiB
+  now gets a blank cover, and stripping a smaller one's scripts no
+  longer copies it once more.
 
 ## [0.2.0-beta.18] - 2026-11-05
 
