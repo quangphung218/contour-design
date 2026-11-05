@@ -134,6 +134,14 @@ pub fn queue_hold(
     }
 }
 
+/// Why the queue waits once it is held again for `why`: a queue already
+/// held keeps its reason (a message sent past a queue held by Stop that
+/// then loses the connection does not make it "connection lost").
+#[must_use]
+pub fn held_for(current: Option<QueueHold>, why: QueueHold) -> QueueHold {
+    current.unwrap_or(why)
+}
+
 /// A held queue as stored next to the conversation's draft, so a reload
 /// or closing the app does not lose what the user typed.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -267,6 +275,19 @@ mod tests {
         assert_eq!(q, [1, 2, 3]);
         move_item(&mut q, 5, 0);
         assert_eq!(q, [1, 2, 3]);
+    }
+
+    #[test]
+    fn a_held_queue_keeps_why_it_waits() {
+        assert_eq!(
+            held_for(Some(QueueHold::Stopped), QueueHold::LinkLost),
+            QueueHold::Stopped
+        );
+        assert_eq!(
+            held_for(Some(QueueHold::LinkLost), QueueHold::Stopped),
+            QueueHold::LinkLost
+        );
+        assert_eq!(held_for(None, QueueHold::LinkLost), QueueHold::LinkLost);
     }
 
     #[test]

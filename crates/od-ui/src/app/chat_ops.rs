@@ -68,6 +68,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
             let path = format!("{}/conversations/{}", ctx.base(), api::seg(&cid));
             match api::delete::<ConversationsResponse>(&path).await {
                 Ok(r) => {
+                    ctx.forget_held_queue(&cid);
                     let side = ctx.side.conversation_id.get_untracked();
                     let next = r
                         .conversations

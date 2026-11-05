@@ -458,6 +458,16 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   await sleep(1500);
   assert.equal(await assistant.count(), afterRefused, 'a refused send did not send the held queue');
   await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  // One sent past it that cannot reach Contour keeps why it waits.
+  await page.route(`${BASE}/api/runs`, (route) => route.request().method() === 'POST'
+    ? route.abort()
+    : route.continue(), { times: 1 });
+  await page.getByTestId('composer').fill('unreachable past the queue');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await assistant.count()) === afterRefused + 1
+    && (await assistant.last().getAttribute('data-state')) === 'failed', 'unreachable send fails');
+  await page.getByTestId('queue-held-hint').getByText('the turn before was stopped').waitFor();
+  assert.equal(await page.getByTestId('queue-held-hint').getByText('connection to Contour was lost').count(), 0, 'still held for the Stop');
   // Another conversation does not get it; back in A it waits again.
   const convA = await page.getByTestId('conversation').inputValue();
   await page.getByTestId('new-conversation').click();
@@ -483,6 +493,28 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   await sleep(500);
   assert.equal(await page.getByTestId('queued').count(), 0, 'nothing in B either');
   results.heldQueueOwner = 'stays in its conversation, not sent by a refused send, discard is for good';
+
+  // 5e. Deleting a conversation with a held queue deletes that queue too,
+  // stored copy included.
+  await page.getByTestId('composer').fill('slow run in B');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await assistant.last().getAttribute('data-state')) === 'running', 'run in B going', 15_000);
+  await page.getByTestId('composer').fill('held in B');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await page.getByTestId('queued').count()) === 1, 'queued in B');
+  await page.getByTestId('stop').click();
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  const heldKeys = () => page.evaluate((cid) => Object.keys(localStorage)
+    .filter((k) => k.startsWith('od:chat-composer:held-queue:') && k.endsWith(`:${cid}`)), convB);
+  await until(async () => (await heldKeys()).length === 1, 'B\'s held queue stored');
+  await page.getByTestId('conversation-menu').click();
+  await page.getByTestId('delete-conversation').click();
+  await page.getByTestId('confirm-delete-conversation').click();
+  await until(async () => (await page.getByTestId('conversation').inputValue()) !== convB, 'B deleted');
+  await sleep(500);
+  assert.deepEqual(await heldKeys(), [], 'the deleted conversation\'s held queue is not left in localStorage');
+  assert.equal(await page.getByTestId('queued').count(), 0, 'nor on screen');
+  results.heldQueueDeleted = 'goes with its conversation';
 
   // 6. Vietnamese strings of the new screens.
   await fetch(`${BASE}/api/app-config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: 'vi' }) });

@@ -102,6 +102,11 @@ All notable changes to Contour are recorded here. The format follows
 - A page there before a run, which the agent left alone, showed in that
   turn as "Wrote page.html" once the user saved it from the preview. Only
   a file the agent changed stays the turn's.
+- Deleting a conversation with a message waiting after a Stop left that
+  message in the browser's storage for good; it now goes with the
+  conversation. A message sent past such a queue while Contour was
+  unreachable changed its hint from "the turn before was stopped" to
+  "the connection to Contour was lost"; it keeps the first reason.
 
 ## [0.2.0-beta.18] - 2026-11-05
 

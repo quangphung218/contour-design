@@ -32,7 +32,7 @@ use crate::highlight::{Lang, highlight};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Picked, Slide};
 use crate::workspace::{
-    QueueHold, Queued, Tabs, decode_held, encode_held, queue_hold, touch_recent,
+    QueueHold, Queued, Tabs, decode_held, encode_held, held_for, queue_hold, touch_recent,
 };
 use leptos::ev;
 use leptos::prelude::*;
@@ -700,13 +700,27 @@ impl StudioCtx {
     /// Keeps the queue for the user to send or discard (UI-003).
     fn hold_queue(self, why: QueueHold) {
         if self.queue.with_untracked(|q| !q.is_empty()) {
-            if self.queue_held.get_untracked().is_none() {
+            let held = self.queue_held.get_untracked();
+            if held.is_none() {
                 // Typed in the open conversation (it cannot change while
                 // a run goes), so it is that conversation's.
                 self.held_owner.set_value(self.held_queue_key());
             }
-            self.queue_held.set(Some(why));
+            self.queue_held.set(Some(held_for(held, why)));
         }
+    }
+
+    /// `cid` was deleted: its held queue goes with it, from the screen if
+    /// it shows there and from `localStorage`.
+    pub fn forget_held_queue(self, cid: &str) {
+        let key = super::composer::held_queue_key(&self.project_id.get_value(), cid);
+        if self.held_owner.get_value().as_deref() == Some(key.as_str()) {
+            // Detached first, so clearing it does not store it again.
+            self.held_owner.set_value(None);
+            self.queue.set(Vec::new());
+            self.queue_held.set(None);
+        }
+        super::composer::save_draft(&key, "");
     }
 
     /// Send on a held queue: its first message goes now (or after the
