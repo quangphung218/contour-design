@@ -652,6 +652,22 @@ try {
     assert.ok((await gap()) > 48, 'output does not scroll under a finger');
     await touch('touchend', 300);
     await until(async () => (await gap()) <= 48, 'letting go at the end catches up');
+    // Let go right after the list scrolled, before its `scroll` event:
+    // that is a move up, not the end to catch up with.
+    await list.evaluate((e) => {
+      const at = (type, y) => {
+        const t = new Touch({ identifier: 1, target: e, clientX: 200, clientY: y });
+        const touches = type === 'touchend' ? [] : [t];
+        e.dispatchEvent(new TouchEvent(type, { touches, targetTouches: touches, changedTouches: [t], bubbles: true }));
+      };
+      at('touchstart', 300);
+      e.scrollBy(0, -200);
+      at('touchend', 300);
+    });
+    await streams('streams after letting go');
+    assert.ok((await gap()) > 48, 'letting go after a drag keeps the place');
+    await page.getByTestId('jump-latest').click();
+    await until(async () => (await gap()) <= 48, 'jumped to latest');
     // The finger dragging the content down is a move up (the browser's
     // scroll done here, right after the event, as a drag does).
     await touch('touchstart', 300);

@@ -144,7 +144,9 @@ impl StickToBottom {
         let before = self.state.with_untracked(Follow::follows);
         self.state.update_untracked(|f| f.hold(held));
         // Let go at the end: catch up with output that came meanwhile.
-        if !before && self.state.with_untracked(Follow::follows) {
+        // `sync` first: a drag whose `scroll` event has not come yet is a
+        // move up, not the end.
+        if !before && self.sync() {
             self.to_end();
         }
     }
