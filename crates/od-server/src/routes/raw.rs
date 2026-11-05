@@ -196,11 +196,25 @@ pub async fn raw(
 /// The page at `full` without its scripts, under the same no-network CSP
 /// as the page itself: a cover loads the page's own assets and nothing
 /// from outside.
+/// A page over [`od_preview::still::MAX_STILL_BYTES`] is a blank cover:
+/// the page is never read whole for it.
 async fn still_page(full: &std::path::Path, mime: &str) -> ApiResult<Response> {
-    let bytes = tokio::fs::read(full)
+    use od_preview::still::{BLANK, MAX_STILL_BYTES, without_scripts};
+    use tokio::io::AsyncReadExt as _;
+    let io = |e| ApiErr::from(od_store::StoreError::from(e));
+    let mut bytes = Vec::new();
+    tokio::fs::File::open(full)
         .await
-        .map_err(|e| ApiErr::from(od_store::StoreError::from(e)))?;
-    let html = od_preview::still::without_scripts(&String::from_utf8_lossy(&bytes));
+        .map_err(io)?
+        .take(MAX_STILL_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(io)?;
+    let html = if bytes.len() as u64 > MAX_STILL_BYTES {
+        BLANK.to_owned()
+    } else {
+        without_scripts(&String::from_utf8_lossy(&bytes))
+    };
     Ok((
         [
             (header::CONTENT_TYPE, mime.to_owned()),

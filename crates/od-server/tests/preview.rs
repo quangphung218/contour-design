@@ -511,6 +511,44 @@ async fn still_pages_drop_scripts_and_keep_the_no_network_csp() {
     assert!(whole.contains("alert(1)"), "{whole}");
 }
 
+/// A page over 5 MiB (images inlined as base64) is a blank cover: one is
+/// not held whole, and copied, for every cover on screen.
+#[tokio::test]
+async fn a_still_page_over_the_limit_is_a_blank_cover() {
+    let _timing = TIMING.read().await;
+    let a = app();
+    let id = a.project().await;
+    let limit = usize::try_from(od_preview::still::MAX_STILL_BYTES).unwrap();
+    assert_eq!(limit, 5 * 1024 * 1024);
+    let mut page =
+        String::from("<!doctype html><html><body><h1>Big</h1><img src=\"data:image/png;base64,");
+    page.push_str(&"A".repeat(limit));
+    page.push_str("\"><script>alert(1)</script></body></html>");
+    a.write(&id, "big.html", &page).await;
+    let r = a
+        .get(&format!("/api/projects/{id}/raw/big.html?still=1"))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(
+        r.header("content-security-policy"),
+        Some(od_preview::RAW_CSP)
+    );
+    let body = r.text();
+    assert!(body == od_preview::still::BLANK, "{body:.80}");
+    // One at the limit is still stripped.
+    let mut page = String::from("<h1>Fits</h1><script>alert(1)</script>");
+    page.push_str(&" ".repeat(limit - page.len()));
+    a.write(&id, "fits.html", &page).await;
+    let body = a
+        .get(&format!("/api/projects/{id}/raw/fits.html?still=1"))
+        .await
+        .text();
+    assert!(
+        body.starts_with("<h1>Fits</h1>") && !body.contains("alert"),
+        "{body:.80}"
+    );
+}
+
 /// The edit key of one preview load: in the first response for its id
 /// only, and handed to the host once, never to a sandboxed frame.
 #[tokio::test]

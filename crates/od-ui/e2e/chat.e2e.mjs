@@ -607,6 +607,99 @@ try {
   await page.screenshot({ path: OUT + 'chat-run-failed-reopened.png' });
   results.runFailed = 'ok';
 
+  // 14c. Moves up the wheel does not show, seen before the scroll they
+  // cause (a token landing first would undo it): a key, a finger on the
+  // list. A wheel in a box inside the list (the failed turn's open log)
+  // scrolls that box, not the list: the follow stays.
+  {
+    const size = page.viewportSize();
+    await page.setViewportSize({ width: 1440, height: 600 });
+    const list = page.getByTestId('messages');
+    const gap = () => list.evaluate((e) => e.scrollHeight - e.scrollTop - e.clientHeight);
+    const streams = async (label) => {
+      const h = await list.evaluate((e) => e.scrollHeight);
+      await until(async () => (await list.evaluate((e) => e.scrollHeight)) > h + 100, label);
+    };
+    // The failed turn's output, open again after the reloads above.
+    const failed = page.getByTestId('assistant-msg').nth(turnsBefore);
+    await failed.getByTestId('run-log').locator('summary').click();
+    const log = failed.getByTestId('run-log-text');
+    await until(async () => /Node\.js v/.test(await log.textContent()), 'agent output shown again');
+    await log.evaluate((e) => { e.style.maxHeight = '60px'; e.scrollTop = 30; });
+    assert.ok((await log.evaluate((e) => e.scrollTop)) > 0, 'the log can go up');
+    const startRapid = async () => {
+      const turns = await page.getByTestId('assistant-msg').count();
+      await composer.fill('a rapid page');
+      await composer.press('Enter');
+      const live = page.getByTestId('assistant-msg').nth(turns);
+      await until(async () => /line20\b/.test(await live.textContent()), 'rapid run streaming');
+      assert.ok((await gap()) <= 48, 'follows the rapid stream');
+      return turns;
+    };
+    let turns = await startRapid();
+    await log.evaluate((e) => e.dispatchEvent(new WheelEvent('wheel', { deltaY: -10, bubbles: true })));
+    await streams('streams after the wheel in the log');
+    assert.ok((await gap()) <= 48, 'a wheel in the log keeps the follow');
+    // A finger on the list holds it: output does not scroll under it, and
+    // letting go at the end catches up.
+    const touch = (type, y) => list.evaluate((e, [type, y]) => {
+      const t = new Touch({ identifier: 1, target: e, clientX: 200, clientY: y });
+      const touches = type === 'touchend' ? [] : [t];
+      e.dispatchEvent(new TouchEvent(type, { touches, targetTouches: touches, changedTouches: [t], bubbles: true }));
+    }, [type, y]);
+    await touch('touchstart', 300);
+    await streams('streams under the finger');
+    assert.ok((await gap()) > 48, 'output does not scroll under a finger');
+    await touch('touchend', 300);
+    await until(async () => (await gap()) <= 48, 'letting go at the end catches up');
+    // Let go right after the list scrolled, before its `scroll` event:
+    // that is a move up, not the end to catch up with.
+    await list.evaluate((e) => {
+      const at = (type, y) => {
+        const t = new Touch({ identifier: 1, target: e, clientX: 200, clientY: y });
+        const touches = type === 'touchend' ? [] : [t];
+        e.dispatchEvent(new TouchEvent(type, { touches, targetTouches: touches, changedTouches: [t], bubbles: true }));
+      };
+      at('touchstart', 300);
+      e.scrollBy(0, -200);
+      at('touchend', 300);
+    });
+    await streams('streams after letting go');
+    assert.ok((await gap()) > 48, 'letting go after a drag keeps the place');
+    await page.getByTestId('jump-latest').click();
+    await until(async () => (await gap()) <= 48, 'jumped to latest');
+    // The finger dragging the content down is a move up (the browser's
+    // scroll done here, right after the event, as a drag does).
+    await touch('touchstart', 300);
+    await touch('touchmove', 340);
+    await list.evaluate((e) => e.scrollBy(0, -200));
+    await touch('touchend', 340);
+    await streams('streams after the drag');
+    assert.ok((await gap()) > 48, 'a drag down stops the follow');
+    await page.getByTestId('jump-latest').click();
+    await until(async () => (await gap()) <= 48, 'jumped to latest');
+    await lastTurnDone(turns + 1);
+    // Page Up with focus on the page, after a press in the list, then its
+    // scroll.
+    turns = await startRapid();
+    await list.evaluate((e) => {
+      const r = e.getBoundingClientRect();
+      for (const type of ['pointerdown', 'pointerup']) {
+        e.dispatchEvent(new PointerEvent(type, { pointerType: 'mouse', clientX: r.left + 20, clientY: r.top + 20, bubbles: true }));
+      }
+    });
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.evaluate(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp', bubbles: true, cancelable: true })));
+    await list.evaluate((e) => e.scrollBy(0, -200));
+    await streams('streams after Page Up');
+    assert.ok((await gap()) > 48, 'Page Up stops the follow');
+    await page.getByTestId('jump-latest').waitFor();
+    await page.getByTestId('jump-latest').click();
+    await lastTurnDone(turns + 1);
+    await page.setViewportSize(size);
+    results.keysAndTouch = 'ok';
+  }
+
   // 15. Rename and delete conversations.
   await page.getByTestId('conversation-menu').click();
   await page.getByTestId('rename-conversation').click();

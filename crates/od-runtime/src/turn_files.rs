@@ -73,6 +73,17 @@ struct Stamp {
     len: u64,
 }
 
+impl Stamp {
+    /// As the API gives a file: `(len, mtime ms)`.
+    fn key(&self) -> (u64, f64) {
+        let ms = self
+            .mtime
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0.0, |d| d.as_secs_f64() * 1000.0);
+        (self.len, ms)
+    }
+}
+
 /// The project's files by relative path (`a/b.mp4`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Snapshot {
@@ -167,9 +178,22 @@ fn walk(
     true
 }
 
-/// Files the app put in each project, by project then path, as
-/// `(len, mtime ms)` (see [`Windows::note_placed`]).
-type Placed = HashMap<String, HashMap<String, (u64, f64)>>;
+/// Whether two `(len, mtime ms)` stamps are one.
+fn same(a: (u64, f64), b: (u64, f64)) -> bool {
+    a.0 == b.0 && (a.1 - b.1).abs() < 0.5
+}
+
+/// Files the app put in each project, by project then path (see
+/// [`Windows::note_placed`]).
+type Placed = HashMap<String, HashMap<String, Put>>;
+
+/// A file as the app put it, `(len, mtime ms)`, and as it was before the
+/// app's first write (`None`: the app made it).
+#[derive(Debug, Clone, Copy)]
+struct Put {
+    now: (u64, f64),
+    prior: Option<(u64, f64)>,
+}
 
 /// When each project run ran, by project id, so overlapping runs of one
 /// project do not claim each other's files. Cheap to clone.
@@ -207,29 +231,70 @@ impl Windows {
     /// now does not list it as written, unless its agent changes it. Kept
     /// only while a run of the project is open.
     pub fn note_placed(&self, project: &str, path: &str, len: u64, mtime_ms: f64) {
-        // Lock order: runs, then placed (as in `close`).
-        let runs = self.lock();
-        if runs.contains_key(project) {
-            self.placed()
-                .entry(project.to_owned())
-                .or_default()
-                .insert(path.to_owned(), (len, mtime_ms));
-        }
+        self.note_saved(project, path, None, len, mtime_ms);
     }
 
-    /// Whether the app put `path` in `project` and it is still as put.
-    fn was_placed(&self, project: &str, path: &str, stamp: Option<&Stamp>) -> bool {
+    /// Notes that the app saved over `path` in `project`, which was
+    /// `prior` (`(len, mtime ms)`) just before: as [`Self::note_placed`],
+    /// and a turn open now lists it only if its agent changed it, before
+    /// the save (a file the agent wrote, then the user edited) or after.
+    /// A file that was there before the turn and that the agent left alone
+    /// is the user's edit, not "Wrote X".
+    pub fn note_saved(
+        &self,
+        project: &str,
+        path: &str,
+        prior: Option<(u64, f64)>,
+        len: u64,
+        mtime_ms: f64,
+    ) {
+        // Lock order: runs, then placed (as in `close`).
+        let runs = self.lock();
+        if !runs.contains_key(project) {
+            return;
+        }
+        let mut placed = self.placed();
+        let files = placed.entry(project.to_owned()).or_default();
+        // Saved again, still as the app last put it: the first write tells
+        // what the file was before the app.
+        let prior = match (files.get(path), prior) {
+            (Some(put), Some(was)) if same(put.now, was) => put.prior,
+            _ => prior,
+        };
+        files.insert(
+            path.to_owned(),
+            Put {
+                now: (len, mtime_ms),
+                prior,
+            },
+        );
+    }
+
+    /// Whether the app put `path` in `project`, it is still as put
+    /// (`stamp`), and it was not the agent's before that (`before`: its
+    /// stamp when the turn began).
+    fn was_placed(
+        &self,
+        project: &str,
+        path: &str,
+        before: Option<&Stamp>,
+        stamp: Option<&Stamp>,
+    ) -> bool {
         let Some(stamp) = stamp else {
             return false;
         };
-        let ms = stamp
-            .mtime
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map_or(0.0, |d| d.as_secs_f64() * 1000.0);
-        self.placed()
+        let Some(put) = self
+            .placed()
             .get(project)
             .and_then(|files| files.get(path))
-            .is_some_and(|&(len, at)| len == stamp.len && (at - ms).abs() < 0.5)
+            .copied()
+        else {
+            return false;
+        };
+        same(put.now, stamp.key())
+            && put
+                .prior
+                .is_none_or(|prior| before.is_some_and(|b| same(prior, b.key())))
     }
 
     /// Opens `run_id`'s window at `start`. Call before the snapshot, then
@@ -632,7 +697,7 @@ pub async fn report(run: &Arc<Run>, cwd: &Path, turn: &Turn) -> Vec<String> {
         .filter(|(p, _)| {
             !turn
                 .windows
-                .was_placed(&turn.project, p, after.files.get(p))
+                .was_placed(&turn.project, p, before.files.get(p), after.files.get(p))
         })
         .filter(|(p, _)| {
             is_ours(
@@ -1080,6 +1145,55 @@ mod overlap_tests {
         // With no run open, nothing is kept.
         windows.note_placed("p1", "late.txt", 1, 0.0);
         assert!(windows.placed().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_file_the_user_saves_over_is_the_turns_only_if_the_agent_changed_it() {
+        // A page there before the run, which the agent leaves alone, saved
+        // from the preview mid-run: the user's edit, not "Wrote page.html".
+        let tmp = tempfile::tempdir().unwrap();
+        let (root, runs) = (tmp.path().join("p"), Runs::new(tmp.path().join("runs")));
+        fs::create_dir_all(&root).unwrap();
+        let stamp = |rel: &str| {
+            let meta = fs::metadata(root.join(rel)).unwrap();
+            let ms = meta
+                .modified()
+                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64()
+                * 1000.0;
+            (meta.len(), ms)
+        };
+        for rel in ["page.html", "agent.html", "twice.html"] {
+            write_at(&root, rel, ago(600));
+        }
+        let windows = Windows::default();
+        let a = run(&runs, "a");
+        let turn = windows
+            .open("p1", "a", ago(10))
+            .with_before(Snapshot::take(&root));
+        let save = |rel: &str, at: SystemTime| {
+            let prior = stamp(rel);
+            fs::write(root.join(rel), format!("{rel} saved at {at:?}")).unwrap();
+            fs::File::options()
+                .write(true)
+                .open(root.join(rel))
+                .unwrap()
+                .set_modified(at)
+                .unwrap();
+            let (len, ms) = stamp(rel);
+            windows.note_saved("p1", rel, Some(prior), len, ms);
+        };
+        save("page.html", ago(5));
+        // Saved twice: still the user's.
+        save("twice.html", ago(6));
+        save("twice.html", ago(4));
+        // The agent rewrote it this turn, then the user saved: the turn's.
+        write_at(&root, "agent.html", ago(7));
+        save("agent.html", ago(3));
+        report(&a, &root, &turn).await;
+        assert_eq!(listed(&a).await, ["agent.html"]);
     }
 
     #[tokio::test]

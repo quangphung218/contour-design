@@ -373,6 +373,19 @@ impl RunEngine {
         self.turn_windows.note_placed(project, path, len, mtime_ms);
     }
 
+    /// See [`crate::turn_files::Windows::note_saved`].
+    pub fn note_saved(
+        &self,
+        project: &str,
+        path: &str,
+        prior: Option<(u64, f64)>,
+        len: u64,
+        mtime_ms: f64,
+    ) {
+        self.turn_windows
+            .note_saved(project, path, prior, len, mtime_ms);
+    }
+
     /// Runs whose agent is still being driven.
     #[must_use]
     pub fn in_flight(&self) -> usize {

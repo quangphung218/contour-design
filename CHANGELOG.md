@@ -93,6 +93,30 @@ All notable changes to Contour are recorded here. The format follows
   execution" console error for each script of the page: the daemon leaves
   the scripts out (`raw/<path>?still=1`, `design-templates/<id>/example?still=1`)
   and keeps the page's no-network CSP.
+- Moving up a fast-streaming chat with Page Up, Arrow Up, Home, a finger
+  or the scrollbar could be pulled back to the end before the move
+  landed. Those now stop the follow at once, and nothing scrolls under a
+  finger on the list or a grabbed scrollbar. A wheel in a box inside the
+  chat (a failed turn's agent output) scrolls that box and keeps the
+  follow.
+- A page there before a run, which the agent left alone, showed in that
+  turn as "Wrote page.html" once the user saved it from the preview. Only
+  a file the agent changed stays the turn's.
+- Deleting a conversation with a message waiting after a Stop left that
+  message in the browser's storage for good; it now goes with the
+  conversation. A message sent past such a queue while Contour was
+  unreachable changed its hint from "the turn before was stopped" to
+  "the connection to Contour was lost"; it keeps the first reason.
+- A project cover of a very large page (images inlined, tens of MB) held
+  about three copies of it in memory per cover shown. A page over 5 MiB
+  now gets a blank cover, and stripping a smaller one's scripts no
+  longer copies it once more.
+- A deck whose slides render after the page loaded (fetched content, a
+  framework's first render) never got Present, Notes or the thumbnail
+  rail; the preview now looks for slides again for 10 seconds after
+  load.
+- A Motion project's cover stayed blank for a recorded WebM film, whose
+  header gives no length; it now shows the film's middle frame too.
 
 ## [0.2.0-beta.18] - 2026-11-05
 

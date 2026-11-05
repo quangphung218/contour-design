@@ -41,6 +41,7 @@ impl Metrics {
 pub struct Follow {
     pinned: bool,
     unseen: bool,
+    held: bool,
     last_top: f64,
     last_gap: f64,
 }
@@ -50,6 +51,7 @@ impl Default for Follow {
         Self {
             pinned: true,
             unseen: false,
+            held: false,
             last_top: 0.0,
             last_gap: 0.0,
         }
@@ -94,9 +96,32 @@ impl Follow {
     /// a small move up from [`Self::scrolled`]. `can_go_up`: the list is
     /// not already at its top.
     pub fn wheeled(&mut self, delta_y: f64, can_go_up: bool) {
-        if delta_y < 0.0 && can_go_up {
+        if delta_y < 0.0 {
+            self.reader_up(can_go_up);
+        }
+    }
+
+    /// The reader moving up, seen before the scroll it causes (a wheel, a
+    /// key, a finger dragging the content down): it stops the follow now,
+    /// as [`Self::wheeled`] does. `can_go_up`: the list is not already at
+    /// its top.
+    pub fn reader_up(&mut self, can_go_up: bool) {
+        if can_go_up {
             self.pinned = false;
         }
+    }
+
+    /// A finger on the list, or the scrollbar grabbed: the reader holds
+    /// the place, so we never scroll under them until they let go (then
+    /// [`Self::follows`] says whether to catch up with the end).
+    pub fn hold(&mut self, held: bool) {
+        self.held = held;
+    }
+
+    /// Whether to scroll to the end now: following, and not held.
+    #[must_use]
+    pub fn follows(&self) -> bool {
+        self.pinned && !self.held
     }
 
     /// The transcript changed; `new_item` when a message joined it (one was
@@ -107,7 +132,7 @@ impl Follow {
             self.pinned = true;
         }
         self.unseen = !self.pinned;
-        self.pinned
+        self.follows()
     }
 
     /// "Jump to latest" was pressed.
@@ -126,6 +151,13 @@ impl Follow {
     pub fn show_jump(&self) -> bool {
         !self.pinned && self.unseen
     }
+}
+
+/// Whether a key scrolls a box up (`key` as `KeyboardEvent.key` gives
+/// it): the keys a browser scrolls with, Space only with Shift.
+#[must_use]
+pub fn key_scrolls_up(key: &str, shift: bool) -> bool {
+    matches!(key, "ArrowUp" | "PageUp" | "Home") || (key == " " && shift)
 }
 
 #[cfg(test)]
@@ -314,5 +346,55 @@ mod tests {
         f.scrolled(at(1600.0));
         f.scrolled(at(200.0));
         assert!(!f.show_jump());
+    }
+
+    #[test]
+    fn a_key_up_stops_the_follow_before_its_scroll() {
+        for (key, shift) in [
+            ("ArrowUp", false),
+            ("PageUp", false),
+            ("Home", false),
+            (" ", true),
+        ] {
+            assert!(key_scrolls_up(key, shift), "{key:?}");
+        }
+        for (key, shift) in [
+            ("ArrowDown", false),
+            ("PageDown", false),
+            ("End", false),
+            (" ", false),
+            ("a", false),
+        ] {
+            assert!(!key_scrolls_up(key, shift), "{key:?}");
+        }
+        let mut f = Follow::default();
+        f.scrolled(at(1600.0));
+        f.reader_up(true);
+        assert!(
+            !f.changed(false),
+            "a token before the key's scroll must not undo it"
+        );
+        let mut f = Follow::default();
+        f.reader_up(false);
+        assert!(f.changed(false), "nothing above: nothing to read");
+    }
+
+    #[test]
+    fn a_held_list_is_not_scrolled_under_the_reader() {
+        // A finger on the list or the scrollbar grabbed, output landing
+        // before the scroll it causes.
+        let mut f = Follow::default();
+        f.scrolled(at(1600.0));
+        f.hold(true);
+        assert!(!f.changed(false), "no scroll to the end while held");
+        assert!(!f.show_jump(), "still following: no Jump");
+        f.hold(false);
+        assert!(f.follows(), "let go at the end: catch up");
+        // Dragged up while held: the follow stays off after letting go.
+        f.hold(true);
+        f.scrolled(at(900.0));
+        f.hold(false);
+        assert!(!f.follows());
+        assert!(!f.changed(false));
     }
 }

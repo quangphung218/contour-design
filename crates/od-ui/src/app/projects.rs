@@ -639,6 +639,7 @@ fn ProjectCover(project: Project) -> impl IntoView {
                     <video class="cover-video" src=film muted=true playsinline=true preload="metadata"
                         tabindex="-1" data-testid="project-cover-video"
                         on:loadedmetadata=show_poster_frame
+                        on:durationchange=show_poster_frame
                         on:error=move |_| film_failed.set(true)></video>
                 }.into_any(),
                 (None, Some(src)) => view! { <LazyFrame src=src/> }.into_any(),
@@ -650,7 +651,8 @@ fn ProjectCover(project: Project) -> impl IntoView {
 
 /// Seeks a cover film to its middle: a Motion film fades in from a dark
 /// stage, so its first frames are blank. The middle is where `od media
-/// scaffold` puts the poster (`data-poster-time`).
+/// scaffold` puts the poster (`data-poster-time`). For `loadedmetadata`
+/// and `durationchange`: see [`poster_seek`].
 fn show_poster_frame(ev: leptos::ev::Event) {
     use wasm_bindgen::JsCast;
     let Some(video) = ev
@@ -659,9 +661,26 @@ fn show_poster_frame(ev: leptos::ev::Event) {
     else {
         return;
     };
-    let seconds = video.duration();
-    if seconds.is_finite() && seconds > 0.0 {
-        video.set_current_time(seconds / 2.0);
+    if let Some(at) = poster_seek(video.duration()) {
+        video.set_current_time(at);
+    }
+}
+
+/// Past the end of any film: seeking there makes the browser find the
+/// length of one whose header has none.
+const FAR_END_S: f64 = 1e101;
+
+/// Where to seek a cover film of `duration` seconds as the video reports
+/// it: the middle. A film with no length in its header (a recorded WebM
+/// says infinity) first goes past its end, where the browser finds the
+/// length and fires `durationchange`, which brings it back to the middle.
+fn poster_seek(duration: f64) -> Option<f64> {
+    if duration.is_finite() && duration > 0.0 {
+        Some(duration / 2.0)
+    } else if duration == f64::INFINITY {
+        Some(FAR_END_S)
+    } else {
+        None
     }
 }
 
@@ -1110,6 +1129,15 @@ fn rename_input(typed: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_film_with_no_length_still_gets_its_middle_frame() {
+        assert_eq!(poster_seek(4.0), Some(2.0));
+        // A recorded WebM: no length until the browser has looked.
+        assert_eq!(poster_seek(f64::INFINITY), Some(FAR_END_S));
+        assert_eq!(poster_seek(f64::NAN), None);
+        assert_eq!(poster_seek(0.0), None);
+    }
 
     #[test]
     fn rename_input_trims_and_refuses_blank() {

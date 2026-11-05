@@ -157,16 +157,19 @@ pub async fn write(
     // The app's own new files (New file, a sketch, a preview capture) come
     // from the browser, which sends `Origin`; an agent's `od files write`
     // does not, and stays the turn's (UI-012). A file that was there
-    // already (one the agent wrote this turn, then the user saved) stays
-    // the turn's too: only a file the user made is left out.
+    // already stays the turn's only if the agent changed it (wrote it this
+    // turn, then the user saved): a page from before the run that the user
+    // edits in the preview is not "Wrote page.html".
     let from_app = req.headers().contains_key(header::ORIGIN);
     let note =
-        move |state: &AppState, id: &str, (existed, file): &(bool, od_contracts::ProjectFile)| {
-            if from_app && !existed {
+        move |state: &AppState,
+              id: &str,
+              (prior, file): &(Option<(u64, f64)>, od_contracts::ProjectFile)| {
+            if from_app {
                 state
                     .runs
                     .engine
-                    .note_placed(id, &file.path, file.size, file.mtime);
+                    .note_saved(id, &file.path, *prior, file.size, file.mtime);
             }
         };
     if is_multipart {
@@ -193,11 +196,11 @@ pub async fn write(
         let project = id.clone();
         let written = state
             .blocking(move |s| {
-                let existed = s.stat_file(&project, &target).is_ok();
-                Ok((
-                    existed,
-                    s.write_file(&project, &target, &bytes, true, None)?,
-                ))
+                let prior = s
+                    .stat_file(&project, &target)
+                    .ok()
+                    .map(|(f, _)| (f.size, f.mtime));
+                Ok((prior, s.write_file(&project, &target, &bytes, true, None)?))
             })
             .await?;
         note(&state, &id, &written);
@@ -216,9 +219,12 @@ pub async fn write(
     let project = id.clone();
     let written = state
         .blocking(move |s| {
-            let existed = s.stat_file(&project, &name).is_ok();
+            let prior = s
+                .stat_file(&project, &name)
+                .ok()
+                .map(|(f, _)| (f.size, f.mtime));
             Ok((
-                existed,
+                prior,
                 s.write_file(&project, &name, &bytes, overwrite, manifest.as_ref())?,
             ))
         })
