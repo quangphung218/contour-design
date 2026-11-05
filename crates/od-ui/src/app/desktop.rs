@@ -51,3 +51,53 @@ pub fn set_theme(theme: &str) {
         });
     }
 }
+
+/// Whether this copy of the desktop app can update itself (the shell's
+/// `update_support`): `ready`, `devBuild` or `package`. `None` outside the
+/// desktop app.
+pub async fn update_support() -> Option<String> {
+    let promise = invoke("update_support", &JsValue::UNDEFINED)?;
+    JsFuture::from(promise).await.ok()?.as_string()
+}
+
+/// Update now: the shell downloads release `version`, checks its signature
+/// and installs it, sending `od:update-progress` window events meanwhile.
+///
+/// # Errors
+/// The failure's `kind` (`network`, `signature`, `noBuild`, `unsupported`,
+/// `busy`, `cancelled`, `failed`); `unsupported` outside the desktop app.
+pub async fn install_update(version: &str) -> Result<(), String> {
+    let args = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("version"),
+        &JsValue::from_str(version),
+    );
+    let Some(promise) = invoke("install_update", &args) else {
+        return Err("unsupported".to_owned());
+    };
+    JsFuture::from(promise).await.map(|_| ()).map_err(|e| {
+        js_sys::Reflect::get(&e, &JsValue::from_str("kind"))
+            .ok()
+            .and_then(|k| k.as_string())
+            .unwrap_or_else(|| "failed".to_owned())
+    })
+}
+
+/// Stops a running Update now.
+pub fn cancel_update() {
+    if let Some(promise) = invoke("cancel_update", &JsValue::UNDEFINED) {
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = JsFuture::from(promise).await;
+        });
+    }
+}
+
+/// Restarts the app into the update just installed.
+pub fn restart_app() {
+    if let Some(promise) = invoke("restart_app", &JsValue::UNDEFINED) {
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = JsFuture::from(promise).await;
+        });
+    }
+}

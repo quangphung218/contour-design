@@ -29,6 +29,50 @@ All notable changes to Contour are recorded here. The format follows
   written by the agent ("Wrote sample.txt"). Uploads, and files made in
   the app (New file, a sketch, a preview capture), stay out of the turn
   unless the agent changes them (UI-012).
+
+## [0.2.0-beta.18] - 2026-11-05
+
+### Added
+
+- Update now in the desktop app. When Check for Updates finds a newer
+  release, Update now downloads its build for this system, installs it
+  only if its signature matches Contour's updater key, and offers Restart;
+  the dialog shows the download's percent, Cancel, and a clear message
+  when the download fails or its signature does not match (nothing is
+  installed then). Nothing downloads until the click. The `.deb`, dev
+  builds and the browser keep View release, with a short hint. Releases
+  carry `latest.json` and a `.sig` for each build
+  ([docs/release.md](docs/release.md#updater-signing)).
+
+### Fixed
+
+- The chat (and the side chat) no longer pulls you back to the bottom on
+  every new token while a run streams: scrolled up to read earlier turns,
+  even by a trackpad's few pixels at a time, the list keeps its place and
+  offers "Jump to latest"; back at the end (within 48 px) it follows the
+  output again, and sending a message always goes to the end. A message
+  the queue sends on its own after a run leaves you where you are reading.
+  At the end, the list keeps following when a panel under it goes (a
+  queued message removed) or the window grows, and a trackpad pinch does
+  not stop it.
+  "Jump to latest" is a full touch target on touch screens, and pressed
+  from the keyboard it puts focus back in the composer.
+- While a run goes on, the Queue button sits on one row with its icon
+  beside the label; it took the queue panel's column layout and dropped
+  onto a line of its own in narrow windows. On a phone, Stop and Queue
+  show as icons so the composer's buttons keep to one row.
+- The run status line says what the agent does in words ("Writing
+  index.html", "Waiting for the agent") with the last file it wrote and a
+  run clock, instead of the agent's raw label ("requesting") that stayed
+  put for minutes. The clock counts from the run's start, also after a
+  reload.
+- Empty "Thinking" blocks no longer show in the chat.
+- Conversations keep their number ("Conversation 1" is the oldest) when
+  another one moves up the list, and the side chat no longer shows in the
+  main conversation list.
+- The preview's file name ends in an ellipsis in narrow windows instead of
+  being cut to a letter.
+- Audio a turn produced shows its length before it plays (it read 0:00).
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock
@@ -828,7 +872,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.17...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.18...HEAD
+[0.2.0-beta.18]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.17...v0.2.0-beta.18
 [0.2.0-beta.17]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.16...v0.2.0-beta.17
 [0.2.0-beta.16]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.15...v0.2.0-beta.16
 [0.2.0-beta.15]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.14...v0.2.0-beta.15

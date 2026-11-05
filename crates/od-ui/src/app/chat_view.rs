@@ -6,12 +6,16 @@ use super::composer::{
     ContextChips, FilePicker, MentionArea, ModelPicker, PlusMenu, Sources, UploadState, UploadTray,
     admit, upload_all,
 };
+use super::follow::{JumpToLatest, StickToBottom};
 use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
 use super::preview_tools::DeliverableWarning;
-use super::studio::{StudioCtx, conversation_title};
+use super::studio::{StudioCtx, conversation_title, main_conversations};
 use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, plan_progress};
-use crate::guide::{FailCause, Followup, NextStep, RunPhase, fail_cause, next_steps, run_phase};
+use crate::guide::{
+    Activity, FailCause, Followup, NextStep, RunPhase, activity, elapsed, fail_cause, last_file,
+    next_steps, run_phase,
+};
 use crate::i18n::{T, t, tf};
 use crate::markdown;
 use crate::mention::{self, Outgoing};
@@ -66,21 +70,25 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     let shell = Shell::get();
     let draft = ctx.draft;
     let list_ref = NodeRef::<leptos::html::Div>::new();
+    let follow = StickToBottom::new(list_ref);
 
     // Keep the newest output in view while streaming, and once the run
-    // ends: the next steps under the last turn show only then, after this
-    // effect has run, so scroll again on the next frame.
-    Effect::new(move |_| {
-        ctx.items.with(|items| {
+    // ends (the next steps under the last turn show only then), unless the
+    // reader scrolled up the transcript. A new last item (a message sent,
+    // a conversation opened) goes to the end, except one the queue sent on
+    // its own while the reader was up the transcript.
+    Effect::new(move |prev: Option<Option<String>>| {
+        let last = ctx.items.with(|items| {
             if let Some(ItemKind::Assistant(turn)) = items.last().map(|i| &i.kind) {
                 turn.track();
             }
+            items.last().map(|i| i.id.clone())
         });
         ctx.live_run.track();
-        if let Some(el) = list_ref.get() {
-            el.set_scroll_top(el.scroll_height());
-            request_animation_frame(move || el.set_scroll_top(el.scroll_height()));
-        }
+        list_ref.track();
+        let dequeued = last.is_some() && ctx.dequeued.with_value(|d| *d == last);
+        follow.changed(!dequeued && prev.is_none_or(|p| p != last));
+        last
     });
 
     let navigate = super::leave_guard::use_leave();
@@ -192,7 +200,11 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                 data-testid="messages"
                 on:mouseup=move |_| read_selection()
                 on:keyup=move |_| read_selection()
-                on:scroll=move |_| quote.set(None)
+                on:wheel=move |ev| follow.on_wheel(&ev)
+                on:scroll=move |_| {
+                    quote.set(None);
+                    follow.on_scroll();
+                }
             >
                 {move || ctx.load_error.get().map(|e| view! {
                     <div class="msg-error load-error" role="alert" data-testid="load-error">
@@ -247,6 +259,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         </div>
                     </div>
                 </Show>
+                <JumpToLatest follow=follow composer="[data-testid=composer]"/>
             </div>
             {move || quote.get().map(|(x, y, text)| view! {
                 <button
@@ -322,9 +335,9 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     <ModelPicker up=true/>
                     <super::chat_ops::DesignSystemSwitch ctx=ctx/>
                     <Show when=move || ctx.live_run.get().is_some()>
-                        <button class="btn small ghost danger" data-testid="stop" on:click=move |_| ctx.cancel()>
+                        <button class="btn small ghost danger" data-testid="stop" aria-label=t(T::Stop) on:click=move |_| ctx.cancel()>
                             {icon(Glyph::Stop)}
-                            {t(T::Stop)}
+                            <span class="btn-label">{t(T::Stop)}</span>
                         </button>
                     </Show>
                     <span class="spacer"></span>
@@ -333,14 +346,14 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         let label = if live { t(T::Queue) } else { t(T::Send) };
                         view! {
                             <button
-                                class=if live { "btn small send-btn queue" } else { "btn small primary send-btn" }
+                                class=if live { "btn small send-btn is-queue" } else { "btn small primary send-btn" }
                                 data-testid="send"
                                 aria-label=label
                                 disabled=move || (draft.with(|d| d.trim().is_empty()) && !ctx.has_attached()) || uploading() || ctx.load_error.with(Option::is_some)
                                 on:click=move |_| send()
                             >
                                 {icon(if live { Glyph::Queue } else { Glyph::Send })}
-                                {label}
+                                <span class="btn-label">{label}</span>
                             </button>
                         }
                     }}
@@ -374,14 +387,14 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
                 >
                     {move || {
                         let current = ctx.conversation_id.get();
+                        let side = ctx.side.conversation_id.get();
                         let list = ctx.conversations.get();
-                        let n = list.len();
-                        list.iter()
-                            .enumerate()
-                            .map(|(i, c)| {
+                        main_conversations(&list, side.as_deref())
+                            .into_iter()
+                            .map(|(c, n)| {
                                 let selected = current.as_deref() == Some(c.id.as_str());
                                 view! {
-                                    <option value=c.id.clone() selected=selected>{conversation_title(c, n - i)}</option>
+                                    <option value=c.id.clone() selected=selected>{conversation_title(c, n)}</option>
                                 }
                             })
                             .collect_view()
@@ -669,6 +682,34 @@ fn AssistantView(
 /// change of its live region.
 #[component]
 fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
+    // Run time while live: from the run's stored start, else (a run sent
+    // from this window) from when this window saw it.
+    let since = StoredValue::new(None::<f64>);
+    let now = RwSignal::new(js_sys::Date::now());
+    let ticker = StoredValue::new(None::<IntervalHandle>);
+    Effect::new(move |_| {
+        if turn.with(|t| t.state.is_live()) {
+            if since.get_value().is_none() {
+                let start = turn.with_untracked(|t| t.started_at);
+                #[allow(clippy::cast_precision_loss)] // epoch ms fit f64
+                since.set_value(Some(start.map_or_else(js_sys::Date::now, |s| s as f64)));
+            }
+            if ticker.get_value().is_none() {
+                let tick = move || now.set(js_sys::Date::now());
+                ticker.set_value(
+                    set_interval_with_handle(tick, std::time::Duration::from_secs(1)).ok(),
+                );
+            }
+        } else if let Some(h) = ticker.get_value() {
+            h.clear();
+            ticker.set_value(None);
+        }
+    });
+    on_cleanup(move || {
+        if let Some(h) = ticker.get_value() {
+            h.clear();
+        }
+    });
     let line = Memo::new(move |_| {
         turn.with(|tn| match run_phase(tn) {
             RunPhase::Starting => ("starting", None, t(T::RunStarting).to_owned(), None),
@@ -679,7 +720,10 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                     Some((n, m)) => tf(T::RunStep, &[&n.to_string(), &m.to_string()]),
                     None => t(T::RunWorking).to_owned(),
                 },
-                tn.status.clone(),
+                Some(working_detail(
+                    tn,
+                    since.get_value().map(|s| (now.get() - s).max(0.0)),
+                )),
             ),
             RunPhase::Done { files } => (
                 "done",
@@ -719,6 +763,34 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             {move || line.with(|l| l.3.clone()).map(|d| view! { <span class="muted">{d}</span> })}
         </div>
     }
+}
+
+/// "Writing index.html · last: hero.css · 1:23": what the run does now, the
+/// last file it wrote, and how long it has run.
+fn working_detail(turn: &AssistantTurn, run_ms: Option<f64>) -> String {
+    let act = activity(turn);
+    let mut parts = vec![match &act {
+        Activity::Waiting => t(T::ActWaiting).to_owned(),
+        Activity::Thinking => t(T::ActThinking).to_owned(),
+        Activity::Replying => t(T::ActReplying).to_owned(),
+        Activity::Compacting => t(T::ActCompacting).to_owned(),
+        Activity::Writing(f) => tf(T::ActWriting, &[f]),
+        Activity::Editing(f) => tf(T::ActEditing, &[f]),
+        Activity::Reading(f) => tf(T::ActReading, &[f]),
+        Activity::Command => t(T::ActCommand).to_owned(),
+        Activity::Tool(name) => tf(T::ActTool, &[name]),
+    }];
+    if let Some(file) = last_file(turn)
+        .filter(|f| !matches!(&act, Activity::Writing(w) | Activity::Editing(w) if w == f))
+    {
+        parts.push(tf(T::ActLastFile, &[&file]));
+    }
+    if let Some(ms) = run_ms {
+        // Whole seconds of a wall-clock span: never negative, far below u64::MAX.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        parts.push(elapsed((ms.max(0.0) / 1000.0) as u64));
+    }
+    parts.join(" · ")
 }
 
 /// A failed turn's agent output (what it wrote to stderr), read from the
@@ -908,6 +980,9 @@ pub(super) fn render_block(
     turn: RwSignal<AssistantTurn>,
     is_last: Signal<bool>,
 ) -> AnyView {
+    if !block.shows() {
+        return ().into_any();
+    }
     match block {
         Block::Text(text) => question_form::split(&crate::chat::without_jury_protocol(&text))
             .into_iter()

@@ -35,11 +35,12 @@ ruby -ryaml -e '
     (j["steps"] || []).each do |s|
       text = s.to_yaml
       next unless text.include?("secrets.")
-      puts "#{job}/#{s["name"]}"
+      kinds = text.scan(/secrets\.([A-Z_]+)/).flatten.map { |n| n.start_with?("APPLE_") ? "apple" : n.start_with?("TAURI_SIGNING_") ? "updater" : n }.uniq.sort
+      puts "#{job}/#{s["name"]}: #{kinds.join(",")}"
     end
   end' "$workflow" > "$work/secret-steps"
-# The Linux and Windows bundles never see them: they are not in that job.
-check "signing secrets appear only in the macOS Tauri bundle step" '[ "$(cat "$work/secret-steps")" = "macos-universal/Tauri bundle" ]'
+# The Linux and Windows bundles never see the Apple ones: they are not in that job.
+check "Apple secrets only in the macOS Tauri bundle step, the updater key in each Tauri bundle step" '[ "$(cat "$work/secret-steps")" = "$(printf "bundle/Tauri bundle: updater\nmacos-universal/Tauri bundle: apple,updater")" ]'
 check "nothing writes to GITHUB_ENV" '! grep -q GITHUB_ENV "$workflow"'
 
 # Signing env reaching the Tauri CLI (fake npx records APPLE_* it sees).
@@ -47,6 +48,7 @@ mkdir -p "$work/bin"
 cat > "$work/bin/npx" <<'SH'
 #!/bin/sh
 env | grep '^APPLE_' | sort > "$WORK/npx-env"
+env | grep '^TAURI_SIGNING_' | sort > "$WORK/npx-updater-env"
 printf '%s\n' "$@" > "$WORK/npx-args"
 SH
 chmod +x "$work/bin/npx"
@@ -58,7 +60,7 @@ bundle RUNNER_OS=macOS $empty
 check "no secrets: unsigned build, warning, no empty APPLE_* passed on" '[ ! -s "$work/npx-env" ] && grep -q "::warning::macOS signing secrets are not set" "$work/out"'
 bundle RUNNER_OS=macOS $empty APPLE_CERTIFICATE=c APPLE_CERTIFICATE_PASSWORD=p APPLE_SIGNING_IDENTITY=i
 check "signing only: certificate passed on, notarisation unset" '[ "$(cut -d= -f1 "$work/npx-env" | LC_ALL=C sort | tr "\n" " ")" = "APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY " ] && grep -q "not notarised" "$work/out" && ! grep -qE "=(c|p|i)$" "$work/out"'
-bundle RUNNER_OS=macOS $empty APPLE_CERTIFICATE=c APPLE_CERTIFICATE_PASSWORD=p APPLE_SIGNING_IDENTITY=i APPLE_ID=a APPLE_PASSWORD=w APPLE_TEAM_ID=t
+bundle RUNNER_OS=macOS $empty APPLE_CERTIFICATE=c APPLE_CERTIFICATE_PASSWORD=p APPLE_SIGNING_IDENTITY=i APPLE_ID=a APPLE_PASSWORD=w APPLE_TEAM_ID=t TAURI_SIGNING_PRIVATE_KEY=k3y
 check "signing and notarising: all six passed on" '[ "$(wc -l < "$work/npx-env" | tr -d " ")" = 6 ] && ! grep -q "::warning::" "$work/out"'
 
 # MSI version: the step runs in apps/desktop and calls ../../scripts/msi-version.sh.
@@ -75,6 +77,61 @@ for os in macOS Linux; do
   desktop RUNNER_OS=$os TAG=v9.9.9-beta.2 $empty
   check "$os gets no --config" '[ "$(wix_version)" = none ]'
 done
+
+# The updater key: with it the bundles get updater artifacts (signed by
+# the CLI); without it they build anyway, with a warning, and the empty
+# variables are not passed on. Never printed.
+updater_config() { grep -c '"createUpdaterArtifacts":true' "$work/npx-args"; }
+nokey="TAURI_SIGNING_PRIVATE_KEY= TAURI_SIGNING_PRIVATE_KEY_PASSWORD="
+withkey="TAURI_SIGNING_PRIVATE_KEY=k3y TAURI_SIGNING_PRIVATE_KEY_PASSWORD=pw"
+bundle RUNNER_OS=macOS $empty $nokey; rc=$?
+check "macOS without the updater key: bundle anyway, warning, nothing passed on" '[ $rc -eq 0 ] && [ "$(updater_config)" = 0 ] && [ ! -s "$work/npx-updater-env" ] && grep -q "::warning::TAURI_SIGNING_PRIVATE_KEY is not set" "$work/out"'
+bundle RUNNER_OS=macOS $empty $withkey; rc=$?
+check "macOS with the updater key: updater artifacts, key passed on, not printed" '[ $rc -eq 0 ] && [ "$(updater_config)" = 1 ] && [ "$(cut -d= -f1 "$work/npx-updater-env" | LC_ALL=C sort | tr "\n" " ")" = "TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD " ] && ! grep -qE "k3y|=pw" "$work/out" && ! grep -q "::warning::TAURI" "$work/out"'
+for os in Linux Windows; do
+  desktop RUNNER_OS=$os TAG=v9.9.9-beta.2 $empty $nokey; rc=$?
+  check "$os without the updater key: bundle anyway, warning" '[ $rc -eq 0 ] && [ "$(updater_config)" = 0 ] && [ ! -s "$work/npx-updater-env" ] && grep -q "::warning::TAURI_SIGNING_PRIVATE_KEY is not set" "$work/out"'
+  desktop RUNNER_OS=$os TAG=v9.9.9-beta.2 $empty $withkey; rc=$?
+  check "$os with the updater key: updater artifacts" '[ $rc -eq 0 ] && [ "$(updater_config)" = 1 ] && [ -s "$work/npx-updater-env" ]'
+done
+check "Windows with the updater key keeps its MSI version" '[ "$(wix_version)" = 9.9.9.102 ]'
+
+# The bundles' files: the updater bundles and their .sig are collected,
+# the macOS one named like the .dmg.
+step "macos-universal/Collect files" "$work/mac-collect.sh"
+rm -rf "$work/mc" && mkdir -p "$work/mc/target/universal-apple-darwin/release/bundle/macos" "$work/mc/target/universal-apple-darwin/release/bundle/dmg"
+touch "$work/mc/target/universal-apple-darwin/release/bundle/dmg/Contour_9.9.9_universal.dmg" \
+  "$work/mc/target/universal-apple-darwin/release/bundle/macos/Contour.app.tar.gz" \
+  "$work/mc/target/universal-apple-darwin/release/bundle/macos/Contour.app.tar.gz.sig"
+(cd "$work/mc" && env TAG=v9.9.9 bash "$work/mac-collect.sh") >"$work/out" 2>&1; rc=$?
+check "macOS: the .dmg, Contour_<v>_universal.app.tar.gz and its .sig" '[ $rc -eq 0 ] && [ "$(ls "$work/mc/dist-release" | tr "\n" " ")" = "Contour_9.9.9_universal.app.tar.gz Contour_9.9.9_universal.app.tar.gz.sig Contour_9.9.9_universal.dmg " ]'
+step "bundle/Collect files" "$work/collect.sh"
+rm -rf "$work/lc" && mkdir -p "$work/lc/out/appimage" "$work/lc/out/deb"
+touch "$work/lc/out/appimage/C.AppImage" "$work/lc/out/appimage/C.AppImage.sig" "$work/lc/out/deb/C.deb" "$work/lc/out/appimage/build_appimage.sh"
+sed -i.bak 's|\${{ matrix.out }}|out|' "$work/collect.sh"
+(cd "$work/lc" && bash "$work/collect.sh") >"$work/out" 2>&1; rc=$?
+check "Linux: the AppImage, its .sig and the .deb" '[ $rc -eq 0 ] && [ "$(ls "$work/lc/dist-release" | tr "\n" " ")" = "C.AppImage C.AppImage.sig C.deb " ]'
+
+# The draft's files: latest.json from the .sig files, in SHA256SUMS.
+step "Checksums and notes" "$work/sums.sh"
+printf '## [Unreleased]\n\n## [9.9.9] - 2026-11-04\n\n### Added\n\n- Update now\n' > "$work/CHANGELOG.md"
+sums() {
+  rm -rf "$work/dist-release" && mkdir -p "$work/dist-release"
+  for f in "$@"; do touch "$work/dist-release/$f"; done
+  (cd "$work" && env TAG=v9.9.9 bash "$work/sums.sh") >"$work/out" 2>&1
+}
+signature="$(printf 'untrusted comment: x\nRUQ=\ntrusted comment: timestamp:1\tfile:a\tversion:9.9.9\nAAAA\n' | base64 | tr -d '\n')"
+sums Contour_9.9.9_universal.dmg Contour_9.9.9_universal.app.tar.gz Contour_9.9.9_amd64.AppImage Contour_9.9.9_amd64.deb; rc=$?
+check "no .sig: no latest.json, a warning, checksums as before" '[ $rc -eq 0 ] && [ ! -e "$work/dist-release/latest.json" ] && grep -q "::warning::no updater signatures" "$work/out" && [ "$(wc -l < "$work/dist-release/SHA256SUMS" | tr -d " ")" = 4 ]'
+sums Contour_9.9.9_universal.dmg Contour_9.9.9_universal.app.tar.gz Contour_9.9.9_amd64.AppImage Contour_9.9.9_amd64.deb
+printf '%s' "$signature" > "$work/dist-release/Contour_9.9.9_universal.app.tar.gz.sig"
+printf '%s' "$signature" > "$work/dist-release/Contour_9.9.9_amd64.AppImage.sig"
+(cd "$work" && env TAG=v9.9.9 bash "$work/sums.sh") >"$work/out" 2>&1; rc=$?
+check "signed bundles: latest.json for them, in SHA256SUMS with the .sig files" '[ $rc -eq 0 ] && grep -q "\"darwin-aarch64\"" "$work/dist-release/latest.json" && grep -q "\"linux-x86_64\"" "$work/dist-release/latest.json" && grep -q " latest.json$" "$work/dist-release/SHA256SUMS" && grep -q " Contour_9.9.9_amd64.AppImage.sig$" "$work/dist-release/SHA256SUMS" && grep -q "Update now" "$work/dist-release/latest.json"'
+printf '%s' "$(printf 'untrusted comment: x\nRUQ=\ntrusted comment: timestamp:1\tfile:a\tversion:9.9.8\nAAAA\n' | base64 | tr -d '\n')" > "$work/dist-release/Contour_9.9.9_amd64.AppImage.sig"
+rm -f "$work/dist-release/latest.json" "$work/dist-release/SHA256SUMS"
+(cd "$work" && env TAG=v9.9.9 bash -e "$work/sums.sh") >"$work/out" 2>&1; rc=$?
+check "a .sig of another version stops the draft" '[ $rc -ne 0 ] && [ ! -e "$work/dist-release/latest.json" ]'
 
 # Draft release: a published release is never rewritten.
 cat > "$work/bin/gh" <<'SH'

@@ -534,8 +534,41 @@ try {
   await page.reload();
   await page.getByTestId('composer').waitFor();
   await until(async () => (await page.getByTestId('conversation').inputValue()) === mainCid, 'main conversation reopened');
+  // The side chat's conversation stays out of the main list.
+  const conversationNames = await page.locator('[data-testid="conversation"] option').allTextContents();
+  assert.ok(!conversationNames.includes('Side chat'), `main list: ${conversationNames}`);
   await page.getByTestId('side-chat-tab').click();
   await sideMsg.first().getByText('Mode: chat.').waitFor();
+  // The side chat follows its stream the same way: small wheel steps up
+  // while it streams keep the reader's place, Jump goes back to the end.
+  {
+    const list = page.getByTestId('side-messages');
+    const metrics = () => list.evaluate((e) => ({ top: e.scrollTop, gap: e.scrollHeight - e.scrollTop - e.clientHeight, height: e.scrollHeight }));
+    await page.getByTestId('side-composer').fill('a rapid answer');
+    await page.getByTestId('side-composer').press('Enter');
+    const live = sideMsg.last();
+    await until(async () => /line20\b/.test(await live.textContent()), 'side run streaming');
+    assert.ok((await metrics()).gap <= 48, 'the side chat follows its stream');
+    const box = await list.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 20; i += 1) {
+      await page.mouse.wheel(0, -10);
+      await page.waitForTimeout(16);
+    }
+    await page.waitForTimeout(300);
+    const held = await metrics();
+    assert.ok(held.gap > 48, `side chat: wheel steps leave the end (gap ${held.gap})`);
+    await page.waitForTimeout(500);
+    const later = await metrics();
+    assert.ok(later.height > held.height, 'side run still streaming');
+    assert.ok(Math.abs(later.top - held.top) <= 1, `side chat: output does not pull the reader down (${held.top} → ${later.top})`);
+    await page.getByTestId('jump-latest').focus();
+    await page.keyboard.press('Enter');
+    await until(async () => (await metrics()).gap <= 48, 'side chat: jumped');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.testid), 'side-composer', 'focus lands in the side composer');
+    await until(async () => (await live.getAttribute('data-state')) === 'succeeded', 'side rapid turn done', 20_000);
+    assert.ok((await metrics()).gap <= 48, 'side chat: follows again to the end of the run');
+  }
   await page.getByTestId('tab').first().locator('.tab-name').click();
   results.sideChat = 'ok';
 

@@ -65,6 +65,15 @@ pub enum Block {
     Steered(String),
 }
 
+impl Block {
+    /// Whether the block has anything to show: Claude often streams a
+    /// thinking block with no text, which would be a heading over nothing.
+    #[must_use]
+    pub fn shows(&self) -> bool {
+        !matches!(self, Self::Thinking(text) if text.trim().is_empty())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TodoStatus {
     Pending,
@@ -163,7 +172,9 @@ pub struct AssistantTurn {
     pub state: TurnState,
     pub run_id: Option<String>,
     pub model: Option<String>,
-    /// Latest `status` label while running ("thinking", "writing"…).
+    /// Latest `status` label while running ("requesting", "thinking"…),
+    /// until the agent puts out something newer (text, thinking, a tool
+    /// call or its result): a stale label says nothing about now.
     pub status: Option<String>,
     /// The latest plan the agent wrote with `TodoWrite`.
     pub todos: Vec<Todo>,
@@ -176,6 +187,9 @@ pub struct AssistantTurn {
     pub media: Vec<od_contracts::MediaTask>,
     /// Why the run failed, from its `end` (or its log, for a stored turn).
     pub failure: Option<od_contracts::FailureCategory>,
+    /// When the run started (epoch ms), from the stored message: a run
+    /// resumed after a reload keeps its clock.
+    pub started_at: Option<i64>,
 }
 
 impl Default for AssistantTurn {
@@ -198,6 +212,7 @@ impl AssistantTurn {
             critique: None,
             media: Vec::new(),
             failure: None,
+            started_at: None,
         }
     }
 
@@ -206,6 +221,7 @@ impl AssistantTurn {
     pub fn from_stored(msg: &Message) -> Self {
         let mut turn = Self::new();
         turn.run_id.clone_from(&msg.run_id);
+        turn.started_at = msg.started_at;
         for raw in &msg.events {
             if let Ok(ev) = serde_json::from_value::<AgentEvent>(raw.clone()) {
                 turn.apply(RunFrame::Agent(ev));
@@ -258,6 +274,16 @@ impl AssistantTurn {
     fn apply_agent(&mut self, ev: AgentEvent) {
         if self.state == TurnState::Pending {
             self.state = TurnState::Running;
+        }
+        if matches!(
+            ev,
+            AgentEvent::TextDelta { .. }
+                | AgentEvent::ThinkingStart
+                | AgentEvent::ThinkingDelta { .. }
+                | AgentEvent::ToolUse { .. }
+                | AgentEvent::ToolResult { .. }
+        ) {
+            self.status = None;
         }
         match ev {
             AgentEvent::Status { label, model, .. } => {
@@ -776,6 +802,28 @@ mod tests {
     }
 
     #[test]
+    fn empty_thinking_blocks_do_not_show() {
+        assert!(!Block::Thinking(String::new()).shows());
+        assert!(!Block::Thinking(" \n ".into()).shows());
+        assert!(Block::Thinking("why".into()).shows());
+        assert!(Block::Text(String::new()).shows());
+    }
+
+    #[test]
+    fn a_status_label_lasts_until_newer_output() {
+        let mut t = AssistantTurn::new();
+        t.apply(agent(json!({"type": "status", "label": "requesting"})));
+        assert_eq!(t.status.as_deref(), Some("requesting"));
+        t.apply(agent(json!({"type": "text_delta", "delta": "Hi"})));
+        assert_eq!(t.status, None, "text came after the label");
+        t.apply(agent(json!({"type": "status", "label": "thinking"})));
+        t.apply(agent(
+            json!({"type": "tool_use", "id": "t", "name": "Bash", "input": {"command": "ls"}}),
+        ));
+        assert_eq!(t.status, None, "a tool call came after the label");
+    }
+
+    #[test]
     fn thinking_blocks_collect_deltas() {
         let mut t = AssistantTurn::new();
         t.apply(agent(json!({"type": "thinking_start"})));
@@ -849,7 +897,7 @@ mod tests {
         let msg: Message = serde_json::from_value(json!({
             "id": "m2", "conversationId": "c1", "role": "assistant", "content": "",
             "position": 1, "createdAt": 1,
-            "runId": "r9", "runStatus": "canceled",
+            "runId": "r9", "runStatus": "canceled", "startedAt": 1000,
             "events": [
                 {"type": "text_delta", "delta": "partial"},
                 {"type": "not_a_type"}
@@ -860,6 +908,7 @@ mod tests {
         assert_eq!(t.blocks, vec![Block::Text("partial".into())]);
         assert_eq!(t.state, TurnState::Canceled);
         assert_eq!(t.run_id.as_deref(), Some("r9"));
+        assert_eq!(t.started_at, Some(1000), "the run clock survives a reload");
     }
 
     #[test]

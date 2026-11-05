@@ -228,6 +228,9 @@ pub struct StudioCtx {
     /// typed in, fixed when it is held, so it stays that conversation's
     /// whichever one is open.
     held_owner: StoredValue<Option<String>>,
+    /// The assistant turn the queue last sent on its own once a run ended:
+    /// the chat goes to it only if the reader is at the end already.
+    pub dequeued: StoredValue<Option<String>>,
     pub files: RwSignal<Vec<ProjectFile>>,
     /// Open file tabs; the active tab is the previewed file.
     pub tabs: RwSignal<Tabs>,
@@ -475,12 +478,13 @@ impl StudioCtx {
 
     /// Sends a user turn, or queues it while a run is going.
     pub fn send(self, text: String, shell: Shell) {
-        self.send_at(text, shell, js_sys::Date::now() as i64);
+        self.send_at(text, shell, js_sys::Date::now() as i64, false);
     }
 
     /// [`Self::send`] for a turn the user sent at `sent_at` (epoch ms):
-    /// a queued message keeps its own time for Recent projects.
-    fn send_at(self, text: String, shell: Shell, sent_at: i64) {
+    /// a queued message keeps its own time for Recent projects, and
+    /// `from_queue` marks it as not sent by the reader just now.
+    fn send_at(self, text: String, shell: Shell, sent_at: i64, from_queue: bool) {
         let text = text.trim().to_owned();
         if text.is_empty() {
             return;
@@ -511,6 +515,9 @@ impl StudioCtx {
             items.push(ChatItem::user(user_id.clone(), text.clone()).with_attachments(files));
             items.push(ChatItem::assistant(assistant_id.clone(), turn));
         });
+        if from_queue {
+            self.dequeued.set_value(Some(assistant_id.clone()));
+        }
         let Some(agent_id) = shell.agent_id() else {
             fail(turn, t(T::NoAgentSelected).to_owned());
             return;
@@ -609,7 +616,7 @@ impl StudioCtx {
                     // A held queue waits for the user's Send, whatever
                     // happened to a message sent past it (UI-003).
                     if self.queue_held.get_untracked().is_none() {
-                        self.send_next(shell);
+                        self.send_next(shell, false);
                     }
                 }
             }
@@ -707,7 +714,7 @@ impl StudioCtx {
     pub fn release_queue(self, shell: Shell) {
         self.queue_held.set(None);
         if self.live_run.get_untracked().is_none() {
-            self.send_next(shell);
+            self.send_next(shell, false);
         }
     }
 
@@ -723,13 +730,14 @@ impl StudioCtx {
         self.queue_held.set(None);
     }
 
-    /// Sends the first queued message, if any.
-    fn send_next(self, shell: Shell) {
+    /// Sends the first queued message, if any; `auto` when the queue sends
+    /// it on its own after a run (the chat then stays where the reader is).
+    fn send_next(self, shell: Shell, auto: bool) {
         let next = self
             .queue
             .try_update(|q| (!q.is_empty()).then(|| q.remove(0)));
         if let Some(Some(next)) = next {
-            self.send_at(next.text, shell, next.sent_at);
+            self.send_at(next.text, shell, next.sent_at, auto);
         }
     }
 
@@ -851,7 +859,7 @@ impl StudioCtx {
         leptos::task::spawn_local(async move {
             self.run_stream.set_value(None);
             match (hold, self.queue_held.get_untracked()) {
-                (None, None) => self.send_next(shell),
+                (None, None) => self.send_next(shell, true),
                 (Some(why), _) => self.hold_queue(why),
                 (None, Some(_)) => {}
             }
@@ -965,7 +973,12 @@ impl StudioCtx {
         self.restore_held_queue();
         if let Some((run_id, turn, _)) = resume {
             // Replay from the start: the turn is rebuilt from frames.
-            turn.update(|t| *t = AssistantTurn::new());
+            turn.update(|t| {
+                *t = AssistantTurn {
+                    started_at: t.started_at,
+                    ..AssistantTurn::new()
+                };
+            });
             self.attach(run_id, turn, None);
         }
     }
@@ -979,11 +992,9 @@ impl StudioCtx {
         let current = self.conversation_id.get_untracked();
         let mut body = json!({});
         if let (Some(after), Some(cid)) = (fork_after, current.clone()) {
+            let side = self.side.conversation_id.get_untracked();
             let title = self.conversations.with_untracked(|list| {
-                list.iter()
-                    .position(|c| c.id == cid)
-                    .map(|i| conversation_title(&list[i], list.len() - i))
-                    .unwrap_or_default()
+                main_conversation_title(list, side.as_deref(), &cid).unwrap_or_default()
             });
             body = json!({
                 "title": tf(T::ForkTitle, &[&title]),
@@ -1286,6 +1297,44 @@ impl StudioCtx {
     }
 }
 
+/// The main pane's conversations in list order, each with its number for
+/// "Conversation N": 1 is the oldest by `created_at`, so a number stays put
+/// when another conversation moves up the list (the list is newest
+/// activity first). The side chat's conversation is left out.
+pub fn main_conversations<'a>(
+    list: &'a [Conversation],
+    side: Option<&str>,
+) -> Vec<(&'a Conversation, usize)> {
+    let shown: Vec<&Conversation> = list
+        .iter()
+        .filter(|c| Some(c.id.as_str()) != side && !is_side_chat_title(c.title.as_deref()))
+        .collect();
+    let mut by_age = shown.clone();
+    by_age.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+    shown
+        .into_iter()
+        .map(|c| {
+            let n = by_age
+                .iter()
+                .position(|o| o.id == c.id)
+                .map_or(0, |i| i + 1);
+            (c, n)
+        })
+        .collect()
+}
+
+/// The main pane's name for conversation `id`.
+pub fn main_conversation_title(
+    list: &[Conversation],
+    side: Option<&str>,
+    id: &str,
+) -> Option<String> {
+    main_conversations(list, side)
+        .into_iter()
+        .find(|(c, _)| c.id == id)
+        .map(|(c, n)| conversation_title(c, n))
+}
+
 /// A conversation's name: its title, else "Conversation N" (1 = oldest).
 pub fn conversation_title(c: &Conversation, number: usize) -> String {
     c.title
@@ -1352,6 +1401,7 @@ pub fn Studio() -> impl IntoView {
         queue: RwSignal::new(Vec::new()),
         queue_held: RwSignal::new(None),
         held_owner: StoredValue::new(None),
+        dequeued: StoredValue::new(None),
         files: RwSignal::new(Vec::new()),
         tabs: RwSignal::new(Tabs::default()),
         terms: RwSignal::new(Vec::new()),
@@ -2177,6 +2227,53 @@ fn CodeView(ctx: StudioCtx, version: Option<String>) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn conv(id: &str, title: Option<&str>, created_at: i64) -> Conversation {
+        Conversation {
+            id: id.to_owned(),
+            project_id: "p".to_owned(),
+            title: title.map(str::to_owned),
+            session_mode: SessionMode::Design,
+            created_at,
+            updated_at: created_at,
+        }
+    }
+
+    #[test]
+    fn conversations_are_numbered_by_age_without_the_side_chat() {
+        // Newest activity first: "b" was used last, "a" is the oldest.
+        let list = vec![
+            conv("b", None, 3),
+            conv("side", Some(t(T::SideChat)), 2),
+            conv("a", None, 1),
+        ];
+        let names = |side| {
+            main_conversations(&list, side)
+                .into_iter()
+                .map(|(c, n)| (c.id.as_str(), conversation_title(c, n)))
+                .collect::<Vec<_>>()
+        };
+        let expected = vec![
+            ("b", "Conversation 2".to_owned()),
+            ("a", "Conversation 1".to_owned()),
+        ];
+        assert_eq!(names(None), expected, "the side chat is found by its title");
+        assert_eq!(names(Some("side")), expected);
+        assert_eq!(
+            main_conversation_title(&list, Some("side"), "a").as_deref(),
+            Some("Conversation 1"),
+            "a number stays put when the conversation moves up the list"
+        );
+        let renamed = vec![conv("x", Some("Hero"), 5), conv("y", None, 4)];
+        assert_eq!(
+            main_conversation_title(&renamed, None, "x").as_deref(),
+            Some("Hero")
+        );
+        assert_eq!(
+            main_conversation_title(&renamed, None, "y").as_deref(),
+            Some("Conversation 1")
+        );
+    }
 
     #[test]
     fn zoom_moves_one_step_and_stops_at_the_ends() {

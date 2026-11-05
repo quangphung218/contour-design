@@ -58,6 +58,75 @@ pub fn fail_cause(turn: &AssistantTurn) -> FailCause {
     }
 }
 
+/// What a working run is doing right now, in the user's words (not the
+/// agent's raw `status` label).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Activity {
+    /// The agent is between steps: asking the model, or composing a step
+    /// (a large file is written in one go, with nothing streamed meanwhile).
+    Waiting,
+    Thinking,
+    Replying,
+    Compacting,
+    Writing(String),
+    Editing(String),
+    Reading(String),
+    Command,
+    Tool(String),
+}
+
+/// The running turn's current activity.
+#[must_use]
+pub fn activity(turn: &AssistantTurn) -> Activity {
+    match turn.status.as_deref() {
+        Some("thinking") => return Activity::Thinking,
+        Some("compacting") => return Activity::Compacting,
+        Some(_) => return Activity::Waiting,
+        None => {}
+    }
+    match turn.blocks.last() {
+        Some(Block::Tool(call)) if call.result.is_none() => tool_activity(call),
+        Some(Block::Text(text)) if !text.trim().is_empty() => Activity::Replying,
+        Some(Block::Thinking(_)) => Activity::Thinking,
+        _ => Activity::Waiting,
+    }
+}
+
+fn tool_activity(call: &crate::chat::ToolCall) -> Activity {
+    let target = file_name(call.path.as_deref().unwrap_or(&call.summary));
+    match call.name.as_str() {
+        "Write" | "write_file" => Activity::Writing(target),
+        "Edit" | "MultiEdit" | "edit_file" => Activity::Editing(target),
+        "Read" | "read_file" if !target.is_empty() => Activity::Reading(target),
+        "Bash" | "shell" | "run_shell_command" => Activity::Command,
+        name => Activity::Tool(name.to_owned()),
+    }
+}
+
+/// The last file the turn wrote or edited (its name), while it runs.
+#[must_use]
+pub fn last_file(turn: &AssistantTurn) -> Option<String> {
+    turn.blocks.iter().rev().find_map(|b| match b {
+        Block::Tool(call) if call.result == Some(false) => call.path.as_deref().map(file_name),
+        _ => None,
+    })
+}
+
+fn file_name(path: &str) -> String {
+    path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned()
+}
+
+/// Run time as a clock: `0:07`, `12:30`, `1:02:03`.
+#[must_use]
+pub fn elapsed(secs: u64) -> String {
+    let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
 /// A suggested next step under the latest finished turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NextStep {
@@ -206,6 +275,80 @@ mod tests {
             files: None,
             edited: None,
         })
+    }
+
+    fn running_tool(name: &str, path: Option<&str>, summary: &str) -> Block {
+        Block::Tool(ToolCall {
+            id: "t".to_owned(),
+            name: name.to_owned(),
+            summary: summary.to_owned(),
+            path: path.map(str::to_owned),
+            result: None,
+            files: None,
+            edited: None,
+        })
+    }
+
+    #[test]
+    fn the_activity_is_in_words_not_raw_labels() {
+        let mut t = turn(TurnState::Running, vec![]);
+        assert_eq!(activity(&t), Activity::Waiting);
+        t.status = Some("requesting".into());
+        assert_eq!(activity(&t), Activity::Waiting, "not \"requesting\"");
+        t.status = Some("thinking".into());
+        assert_eq!(activity(&t), Activity::Thinking);
+        t.status = None;
+        t.blocks = vec![running_tool(
+            "Write",
+            Some("/p/site/index.html"),
+            "index.html",
+        )];
+        assert_eq!(activity(&t), Activity::Writing("index.html".into()));
+        t.blocks = vec![running_tool("Edit", Some("css\\app.css"), "app.css")];
+        assert_eq!(activity(&t), Activity::Editing("app.css".into()));
+        t.blocks = vec![running_tool("Read", None, "/p/brief.md")];
+        assert_eq!(activity(&t), Activity::Reading("brief.md".into()));
+        t.blocks = vec![running_tool("Bash", None, "npm test")];
+        assert_eq!(activity(&t), Activity::Command);
+        t.blocks = vec![running_tool("WebFetch", None, "https://x")];
+        assert_eq!(activity(&t), Activity::Tool("WebFetch".into()));
+        t.blocks = vec![write("index.html")];
+        assert_eq!(
+            activity(&t),
+            Activity::Waiting,
+            "the tool is done: next step"
+        );
+        t.blocks.push(Block::Text("Done".into()));
+        assert_eq!(activity(&t), Activity::Replying);
+        t.status = Some("requesting".into());
+        assert_eq!(
+            activity(&t),
+            Activity::Waiting,
+            "a label newer than the text: the agent asks the model again"
+        );
+    }
+
+    #[test]
+    fn the_last_file_is_the_latest_written() {
+        let mut t = turn(TurnState::Running, vec![]);
+        assert_eq!(last_file(&t), None);
+        t.blocks = vec![
+            write("/p/a.html"),
+            write("/p/css/b.css"),
+            running_tool("Write", Some("/p/c.js"), "c.js"),
+        ];
+        assert_eq!(
+            last_file(&t).as_deref(),
+            Some("b.css"),
+            "c.js is still being written"
+        );
+    }
+
+    #[test]
+    fn elapsed_reads_as_a_clock() {
+        assert_eq!(elapsed(7), "0:07");
+        assert_eq!(elapsed(750), "12:30");
+        assert_eq!(elapsed(3723), "1:02:03");
     }
 
     #[test]

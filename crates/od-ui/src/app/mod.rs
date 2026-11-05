@@ -22,6 +22,7 @@ mod export_menu;
 mod files_panel;
 mod first_hint;
 mod focus;
+mod follow;
 mod font_banner;
 mod genui_view;
 mod home;
