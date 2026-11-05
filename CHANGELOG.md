@@ -32,7 +32,8 @@ All notable changes to Contour are recorded here. The format follows
   from the keyboard it puts focus back in the composer.
 - While a run goes on, the Queue button sits on one row with its icon
   beside the label; it took the queue panel's column layout and dropped
-  onto a line of its own in narrow windows.
+  onto a line of its own in narrow windows. On a phone, Stop and Queue
+  show as icons so the composer's buttons keep to one row.
 - The run status line says what the agent does in words ("Writing
   index.html", "Waiting for the agent") with the last file it wrote and a
   run clock, instead of the agent's raw label ("requesting") that stayed

@@ -334,9 +334,9 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     <ModelPicker up=true/>
                     <super::chat_ops::DesignSystemSwitch ctx=ctx/>
                     <Show when=move || ctx.live_run.get().is_some()>
-                        <button class="btn small ghost danger" data-testid="stop" on:click=move |_| ctx.cancel()>
+                        <button class="btn small ghost danger" data-testid="stop" aria-label=t(T::Stop) on:click=move |_| ctx.cancel()>
                             {icon(Glyph::Stop)}
-                            {t(T::Stop)}
+                            <span class="btn-label">{t(T::Stop)}</span>
                         </button>
                     </Show>
                     <span class="spacer"></span>
@@ -352,7 +352,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                                 on:click=move |_| send()
                             >
                                 {icon(if live { Glyph::Queue } else { Glyph::Send })}
-                                {label}
+                                <span class="btn-label">{label}</span>
                             </button>
                         }
                     }}
