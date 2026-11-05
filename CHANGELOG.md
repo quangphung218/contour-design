@@ -36,7 +36,8 @@ All notable changes to Contour are recorded here. The format follows
 - The run status line says what the agent does in words ("Writing
   index.html", "Waiting for the agent") with the last file it wrote and a
   run clock, instead of the agent's raw label ("requesting") that stayed
-  put for minutes.
+  put for minutes. The clock counts from the run's start, also after a
+  reload.
 - Empty "Thinking" blocks no longer show in the chat.
 - Conversations keep their number ("Conversation 1" is the oldest) when
   another one moves up the list, and the side chat no longer shows in the

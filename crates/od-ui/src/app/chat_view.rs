@@ -648,15 +648,17 @@ fn AssistantView(
 /// change of its live region.
 #[component]
 fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
-    // Run time while live, from when this window saw the run (a run
-    // resumed after a reload counts from the reload).
+    // Run time while live: from the run's stored start, else (a run sent
+    // from this window) from when this window saw it.
     let since = StoredValue::new(None::<f64>);
     let now = RwSignal::new(js_sys::Date::now());
     let ticker = StoredValue::new(None::<IntervalHandle>);
     Effect::new(move |_| {
         if turn.with(|t| t.state.is_live()) {
             if since.get_value().is_none() {
-                since.set_value(Some(js_sys::Date::now()));
+                let start = turn.with_untracked(|t| t.started_at);
+                #[allow(clippy::cast_precision_loss)] // epoch ms fit f64
+                since.set_value(Some(start.map_or_else(js_sys::Date::now, |s| s as f64)));
             }
             if ticker.get_value().is_none() {
                 let tick = move || now.set(js_sys::Date::now());
@@ -684,7 +686,10 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                     Some((n, m)) => tf(T::RunStep, &[&n.to_string(), &m.to_string()]),
                     None => t(T::RunWorking).to_owned(),
                 },
-                Some(working_detail(tn, since.get_value().map(|s| now.get() - s))),
+                Some(working_detail(
+                    tn,
+                    since.get_value().map(|s| (now.get() - s).max(0.0)),
+                )),
             ),
             RunPhase::Done { files } => (
                 "done",

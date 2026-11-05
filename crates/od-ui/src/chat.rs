@@ -187,6 +187,9 @@ pub struct AssistantTurn {
     pub media: Vec<od_contracts::MediaTask>,
     /// Why the run failed, from its `end` (or its log, for a stored turn).
     pub failure: Option<od_contracts::FailureCategory>,
+    /// When the run started (epoch ms), from the stored message: a run
+    /// resumed after a reload keeps its clock.
+    pub started_at: Option<i64>,
 }
 
 impl Default for AssistantTurn {
@@ -209,6 +212,7 @@ impl AssistantTurn {
             critique: None,
             media: Vec::new(),
             failure: None,
+            started_at: None,
         }
     }
 
@@ -217,6 +221,7 @@ impl AssistantTurn {
     pub fn from_stored(msg: &Message) -> Self {
         let mut turn = Self::new();
         turn.run_id.clone_from(&msg.run_id);
+        turn.started_at = msg.started_at;
         for raw in &msg.events {
             if let Ok(ev) = serde_json::from_value::<AgentEvent>(raw.clone()) {
                 turn.apply(RunFrame::Agent(ev));
@@ -891,7 +896,7 @@ mod tests {
         let msg: Message = serde_json::from_value(json!({
             "id": "m2", "conversationId": "c1", "role": "assistant", "content": "",
             "position": 1, "createdAt": 1,
-            "runId": "r9", "runStatus": "canceled",
+            "runId": "r9", "runStatus": "canceled", "startedAt": 1000,
             "events": [
                 {"type": "text_delta", "delta": "partial"},
                 {"type": "not_a_type"}
@@ -902,6 +907,7 @@ mod tests {
         assert_eq!(t.blocks, vec![Block::Text("partial".into())]);
         assert_eq!(t.state, TurnState::Canceled);
         assert_eq!(t.run_id.as_deref(), Some("r9"));
+        assert_eq!(t.started_at, Some(1000), "the run clock survives a reload");
     }
 
     #[test]

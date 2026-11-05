@@ -849,7 +849,12 @@ impl StudioCtx {
             .set(crate::chat::merge_loaded(items, local, |i| i.id.as_str()));
         if let Some((run_id, turn, _)) = resume {
             // Replay from the start: the turn is rebuilt from frames.
-            turn.update(|t| *t = AssistantTurn::new());
+            turn.update(|t| {
+                *t = AssistantTurn {
+                    started_at: t.started_at,
+                    ..AssistantTurn::new()
+                };
+            });
             self.attach(run_id, turn, None);
         }
     }
