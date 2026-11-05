@@ -65,23 +65,19 @@ impl StickToBottom {
         });
     }
 
-    /// For the list's `on:scroll`.
-    pub fn on_scroll(self) {
-        self.sync();
-    }
-
-    /// Reads where the list is now, then says whether it follows. A move
-    /// up whose `scroll` event has not come yet (it comes on the next
-    /// frame: a scrollbar drag, Home, PageUp) counts before we scroll to
-    /// the end, or output landing in between would undo it.
-    fn sync(self) -> bool {
-        let Some(el) = self.list.get_untracked() else {
-            return self.state.with_untracked(Follow::pinned);
-        };
-        let m = Metrics {
+    fn metrics(self) -> Option<Metrics> {
+        let el = self.list.get_untracked()?;
+        Some(Metrics {
             scroll_top: f64::from(el.scroll_top()),
             client_height: f64::from(el.client_height()),
             scroll_height: f64::from(el.scroll_height()),
+        })
+    }
+
+    /// For the list's `on:scroll`.
+    pub fn on_scroll(self) {
+        let Some(m) = self.metrics() else {
+            return;
         };
         self.state.maybe_update(|f| {
             let before = *f;
@@ -90,6 +86,19 @@ impl StickToBottom {
             // (the button) needs to notify.
             before.show_jump() != f.show_jump()
         });
+    }
+
+    /// Whether the list follows, counting a move up whose `scroll` event
+    /// has not come yet ([`Follow::noticed`]): read before every scroll
+    /// to the end.
+    fn sync(self) -> bool {
+        if let Some(m) = self.metrics() {
+            self.state.maybe_update(|f| {
+                let before = f.pinned();
+                f.noticed(m);
+                before != f.pinned()
+            });
+        }
         self.state.with_untracked(Follow::pinned)
     }
 

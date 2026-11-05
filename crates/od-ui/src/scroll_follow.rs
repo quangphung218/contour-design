@@ -64,13 +64,29 @@ impl Follow {
     /// farther away is the browser clamping `scroll_top` (the content
     /// shrank, or the box grew as a panel under it went), not the reader.
     pub fn scrolled(&mut self, m: Metrics) {
-        let up = m.scroll_top < self.last_top - 0.5 && m.gap() > self.last_gap + 0.5;
+        let up = self.moved_up(m);
         self.last_top = m.scroll_top;
         self.last_gap = m.gap();
         self.pinned = !up && (self.pinned || m.near_bottom());
         if self.pinned {
             self.unseen = false;
         }
+    }
+
+    /// The list's place read between scroll events, before we scroll it
+    /// to the end: a move up whose `scroll` event has not come yet (a
+    /// scrollbar drag, Home, Page Up) stops the follow now, or output
+    /// landing first would undo it. Anything else waits for the event:
+    /// this never starts the follow (a wheel up near the end has not
+    /// scrolled yet) and keeps the last place for [`Self::scrolled`].
+    pub fn noticed(&mut self, m: Metrics) {
+        if self.moved_up(m) {
+            self.pinned = false;
+        }
+    }
+
+    fn moved_up(&self, m: Metrics) -> bool {
+        m.scroll_top < self.last_top - 0.5 && m.gap() > self.last_gap + 0.5
     }
 
     /// A wheel or trackpad move (`delta_y` < 0 is up), seen before the
@@ -122,6 +138,42 @@ mod tests {
             client_height: 400.0,
             scroll_height: 2000.0,
         }
+    }
+
+    #[test]
+    fn a_move_up_noticed_before_its_scroll_event_stops_the_follow() {
+        let mut f = Follow::default();
+        f.scrolled(at(1600.0));
+        f.noticed(at(0.0));
+        assert!(!f.pinned());
+        assert!(!f.changed(false));
+        // Its scroll event still reads as the move up it was.
+        f.scrolled(at(0.0));
+        assert!(!f.pinned());
+        assert!(f.show_jump());
+    }
+
+    #[test]
+    fn noticing_never_starts_the_follow() {
+        let mut f = Follow::default();
+        f.scrolled(at(1600.0));
+        // A small wheel up near the end, its scroll not landed yet.
+        f.wheeled(-10.0, true);
+        f.noticed(at(1600.0));
+        assert!(!f.pinned());
+        f.scrolled(at(1590.0));
+        assert!(!f.pinned());
+    }
+
+    #[test]
+    fn output_growing_the_list_is_no_move_up() {
+        let mut f = Follow::default();
+        f.scrolled(at(1600.0));
+        f.noticed(Metrics {
+            scroll_height: 2400.0,
+            ..at(1600.0)
+        });
+        assert!(f.pinned());
     }
 
     #[test]
