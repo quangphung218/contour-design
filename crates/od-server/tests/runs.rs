@@ -1179,9 +1179,10 @@ printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","se
 #[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn a_file_the_app_creates_during_a_run_is_not_listed_as_the_runs() {
-    // UI-012 for `POST /files` (New file, a sketch, a preview capture): the
-    // browser's write is the user's; `od files write` (no `Origin`), as an
-    // agent calls it, stays the turn's.
+    // UI-012 for `POST /files` (New file, a sketch, a preview capture): a
+    // file the browser makes is the user's; `od files write` (no `Origin`),
+    // as an agent calls it, and a file the agent made before the user
+    // saved it, stay the turn's.
     let d = daemon().await;
     write_mock(
         &d.mocks,
@@ -1190,6 +1191,7 @@ async fn a_file_the_app_creates_during_a_run_is_not_listed_as_the_runs() {
             r#"{PROBES}
 IFS= read -r line
 printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+printf '<p>agent</p>' > page.html
 sleep 1.5
 printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"s"}}\n'
 "#
@@ -1216,6 +1218,18 @@ printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","se
         }
         req.send()
     };
+    // The agent's page is there before the user saves over it.
+    let raw = format!("{}/api/projects/{project}/raw/page.html", d.base);
+    for _ in 0..200 {
+        if d.http.get(&raw).send().await.unwrap().status().is_success() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        write("page.html", true).await.unwrap().status().as_u16(),
+        200
+    );
     assert_eq!(
         write("notes.md", true).await.unwrap().status().as_u16(),
         200
@@ -1234,6 +1248,10 @@ printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","se
     assert!(
         paths.iter().any(|p| p.ends_with("/cli.md")),
         "an agent's `od files write` is the turn's: {paths:?}"
+    );
+    assert!(
+        paths.iter().any(|p| p.ends_with("/page.html")),
+        "the agent made page.html this turn; the user saving it later keeps it the turn's: {paths:?}"
     );
     assert!(
         !paths.iter().any(|p| p.ends_with("/notes.md")),
