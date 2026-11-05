@@ -1504,6 +1504,7 @@ DshSetupRequired = Configuração da conexão necessária
 FirstArtifactTitle = Seu primeiro design está pronto
 FirstArtifactBody = Edite e anote direto na prévia e exporte quando estiver satisfeito.
 FirstArtifactDismiss = Entendi
+RetryWaitsForLink = Aguardando a conexão com o Contour
 WorkspaceRecovering = Conexão com o Contour interrompida. Reconectando automaticamente…
 ToolManualEdit = Editar elemento
 ManualEditHint = Clique em um elemento da prévia ou escolha uma camada e altere. Cada mudança é salva como versão.

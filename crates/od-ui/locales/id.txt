@@ -1498,6 +1498,7 @@ DshSetupRequired = Perlu penyiapan koneksi
 FirstArtifactTitle = Desain pertama Anda sudah siap
 FirstArtifactBody = Edit dan beri anotasi langsung di pratinjau, lalu ekspor saat sudah puas.
 FirstArtifactDismiss = Mengerti
+RetryWaitsForLink = Menunggu koneksi ke Contour
 WorkspaceRecovering = Koneksi ke Contour terputus. Menyambung ulang otomatis…
 ToolManualEdit = Edit elemen
 ManualEditHint = Klik elemen di pratinjau atau pilih layer, lalu ubah. Setiap perubahan disimpan sebagai versi.

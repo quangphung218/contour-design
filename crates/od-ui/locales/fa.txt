@@ -1504,6 +1504,7 @@ DshSetupRequired = اتصال نیاز به راه‌اندازی دارد
 FirstArtifactTitle = اولین طرح شما آماده است
 FirstArtifactBody = همین‌جا در پیش‌نمایش ویرایش و حاشیه‌نویسی کنید و وقتی راضی بودید خروجی بگیرید.
 FirstArtifactDismiss = متوجه شدم
+RetryWaitsForLink = در انتظار اتصال به Contour
 WorkspaceRecovering = اتصال به Contour قطع شد. در حال اتصال مجدد خودکار…
 ToolManualEdit = ویرایش عنصر
 ManualEditHint = روی یک عنصر در پیش‌نمایش کلیک کنید یا یک لایه انتخاب کنید و تغییرش دهید. هر تغییر به‌صورت یک نسخه ذخیره می‌شود.

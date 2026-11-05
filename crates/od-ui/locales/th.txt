@@ -1498,6 +1498,7 @@ DshSetupRequired = ต้องตั้งค่าการเชื่อม�
 FirstArtifactTitle = ดีไซน์แรกของคุณพร้อมแล้ว
 FirstArtifactBody = แก้ไขและทำหมายเหตุในพรีวิวได้เลย พอใจแล้วค่อยส่งออก
 FirstArtifactDismiss = รับทราบ
+RetryWaitsForLink = กำลังรอการเชื่อมต่อกับ Contour
 WorkspaceRecovering = การเชื่อมต่อกับ Contour ขัดข้อง กำลังเชื่อมต่อใหม่อัตโนมัติ…
 ToolManualEdit = แก้ไของค์ประกอบ
 ManualEditHint = คลิกองค์ประกอบในพรีวิวหรือเลือกเลเยอร์ แล้วแก้ไข ทุกการแก้ไขจะบันทึกเป็นเวอร์ชัน

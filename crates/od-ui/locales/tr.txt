@@ -1503,6 +1503,7 @@ DshSetupRequired = Bağlantı kurulumu gerekli
 FirstArtifactTitle = İlk tasarımınız hazır
 FirstArtifactBody = Önizlemede doğrudan düzenleyin ve not ekleyin, memnun kalınca dışa aktarın.
 FirstArtifactDismiss = Anladım
+RetryWaitsForLink = Contour bağlantısı bekleniyor
 WorkspaceRecovering = Contour bağlantısı kesildi. Otomatik olarak yeniden bağlanılıyor…
 ToolManualEdit = Öğeyi düzenle
 ManualEditHint = Önizlemede bir öğeye tıklayın veya katman seçip değiştirin. Her değişiklik bir sürüm olarak kaydedilir.

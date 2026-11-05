@@ -1498,6 +1498,7 @@ DshSetupRequired = Kapcsolat beállítása szükséges
 FirstArtifactTitle = Az első terved kész
 FirstArtifactBody = Szerkeszd és jegyzeteld közvetlenül az előnézetben, majd exportáld, ha elégedett vagy.
 FirstArtifactDismiss = Értem
+RetryWaitsForLink = Várakozás a Contour-kapcsolatra
 WorkspaceRecovering = Megszakadt a kapcsolat a Contour-tel. Automatikus újracsatlakozás…
 ToolManualEdit = Elem szerkesztése
 ManualEditHint = Kattints egy elemre az előnézetben, vagy válassz réteget, majd módosítsd. Minden módosítás új verzióként mentődik.

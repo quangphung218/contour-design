@@ -109,6 +109,13 @@ pub fn draft_key(project: &str, conversation: &str) -> String {
     format!("od:chat-composer:draft:{project}:{conversation}")
 }
 
+/// `localStorage` key of a conversation's held queue, next to its draft
+/// (see [`crate::workspace::encode_held`]); stored with [`save_draft`].
+#[must_use]
+pub fn held_queue_key(project: &str, conversation: &str) -> String {
+    format!("od:chat-composer:held-queue:{project}:{conversation}")
+}
+
 fn storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok()?
 }

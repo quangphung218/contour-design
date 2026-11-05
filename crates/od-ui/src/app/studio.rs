@@ -31,7 +31,9 @@ use crate::file_tree::is_markdown;
 use crate::highlight::{Lang, highlight};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Picked, Slide};
-use crate::workspace::{QueueHold, Queued, Tabs, queue_hold, touch_recent};
+use crate::workspace::{
+    QueueHold, Queued, Tabs, decode_held, encode_held, queue_hold, touch_recent,
+};
 use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
@@ -625,6 +627,41 @@ impl StudioCtx {
         }
     }
 
+    /// `localStorage` key of the open conversation's held queue.
+    fn held_queue_key(self) -> Option<String> {
+        self.conversation_id
+            .get_untracked()
+            .map(|c| super::composer::held_queue_key(&self.project_id.get_value(), &c))
+    }
+
+    /// Stores the held queue whenever it or its hold changes, so a reload
+    /// or quitting does not lose what the user typed; gone once it is sent
+    /// or discarded.
+    fn keep_held_queue(self) {
+        Effect::new(move |_| {
+            let why = self.queue_held.get();
+            let stored = self.queue.with(|q| encode_held(why, q));
+            if let Some(key) = self.held_queue_key() {
+                super::composer::save_draft(&key, &stored);
+            }
+        });
+    }
+
+    /// Brings back the held queue of the conversation just opened.
+    fn restore_held_queue(self) {
+        if self.queue.with_untracked(|q| !q.is_empty()) {
+            return;
+        }
+        let held = self
+            .held_queue_key()
+            .and_then(|k| super::composer::load_draft(&k))
+            .and_then(|s| decode_held(&s));
+        if let Some((why, items)) = held {
+            self.queue.set(items);
+            self.queue_held.set(Some(why));
+        }
+    }
+
     /// Keeps the queue for the user to send or discard (UI-003).
     fn hold_queue(self, why: QueueHold) {
         if self.queue.with_untracked(|q| !q.is_empty()) {
@@ -891,6 +928,7 @@ impl StudioCtx {
         let resume = resume.filter(|(_, _, id)| !local.iter().any(|l| &l.id == id));
         self.items
             .set(crate::chat::merge_loaded(items, local, |i| i.id.as_str()));
+        self.restore_held_queue();
         if let Some((run_id, turn, _)) = resume {
             // Replay from the start: the turn is rebuilt from frames.
             turn.update(|t| *t = AssistantTurn::new());
@@ -1329,6 +1367,7 @@ pub fn Studio() -> impl IntoView {
     preview_tools::watch_lint(ctx);
     super::deck::sync_deck(ctx);
     super::composer::keep_draft(ctx.draft, ctx.chat, ctx.project_id, ctx.conversation_id);
+    ctx.keep_held_queue();
     // The command palette offers this Studio's commands while it is open.
     shell.studio.set(Some(ctx));
 
@@ -1393,9 +1432,14 @@ pub fn Studio() -> impl IntoView {
             class:chat-collapsed=move || ctx.chat.collapsed.get()
             class:load-failed=move || ctx.load_error.with(Option::is_some)
             class:focus=move || files_ui.focus.get()
+            class:link-down=move || ctx.link_down.get()
             data-pane=move || pane.get().key()
             style=move || ctx.chat.width.get().map(|w| format!("--chat-w:{w:.0}px"))
         >
+            // One banner for the whole Studio, in the flow above both panes:
+            // seen with the chat folded, in focus or on a phone's Preview
+            // tab, and it covers no control (UI-009).
+            <super::recovery_tip::WorkspaceRecoveryTip ctx=ctx/>
             <div class="segmented small studio-switch" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ViewMode) data-testid="studio-switch">
                 {pane_seg(NarrowPane::Chat, T::Chat)}
                 {pane_seg(NarrowPane::Preview, T::Preview)}

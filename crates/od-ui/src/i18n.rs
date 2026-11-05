@@ -1682,6 +1682,7 @@ messages! {
     FirstArtifactTitle => "Your first design is ready", "Bản thiết kế đầu tiên đã xong";
     FirstArtifactBody => "Edit and annotate it right in the preview, then export when you are happy.", "Sửa và chú thích ngay trên preview, ưng rồi thì export.";
     FirstArtifactDismiss => "Got it", "Đã hiểu";
+    RetryWaitsForLink => "Waiting for the connection to Contour", "Đang chờ kết nối lại với Contour";
     WorkspaceRecovering => "Connection to Contour interrupted. Reconnecting automatically…", "Mất kết nối tới Contour. Đang tự kết nối lại…";
     ToolManualEdit => "Edit element", "Sửa phần tử";
     ManualEditHint => "Click an element in the preview or pick a layer, then change it. Each change is saved as a version.", "Bấm một phần tử trên preview hoặc chọn một layer rồi sửa. Mỗi lần sửa được lưu thành một version.";

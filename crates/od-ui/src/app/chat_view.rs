@@ -11,7 +11,7 @@ use super::preview_comments::comment_label;
 use super::preview_tools::DeliverableWarning;
 use super::studio::{StudioCtx, conversation_title};
 use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, plan_progress};
-use crate::guide::{Followup, NextStep, RunPhase, next_steps, run_phase};
+use crate::guide::{FailCause, Followup, NextStep, RunPhase, fail_cause, next_steps, run_phase};
 use crate::i18n::{T, t, tf};
 use crate::markdown;
 use crate::mention::{self, Outgoing};
@@ -275,8 +275,6 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             })}
             <super::genui_view::GenuiSurfaces ctx=ctx/>
             <PlanPill ctx=ctx/>
-            // Above the composer, in the flow: it never covers a control (UI-009).
-            <super::recovery_tip::WorkspaceRecoveryTip ctx=ctx/>
             <QueueStack ctx=ctx/>
             <CommentChips ctx=ctx/>
             <ContextChips context=ctx.chat.context draft=draft/>
@@ -639,7 +637,8 @@ fn AssistantView(
             }}
             <super::chat_ops::TurnFiles turn=turn/>
             <RunLine turn=turn/>
-            <Show when=move || turn.with(|tn| matches!(run_phase(tn), RunPhase::Failed))>
+            // A turn that never ran (no run) has no agent output to show.
+            <Show when=move || turn.with(|tn| matches!(run_phase(tn), RunPhase::Failed) && tn.run_id.is_some())>
                 <RunLog turn=turn/>
             </Show>
             <Show when=move || is_last.get() && ctx.live_run.get().is_none()>
@@ -697,13 +696,12 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                 Some(Glyph::Warning),
                 t(T::RunFailed).to_owned(),
                 Some(
-                    t(
-                        if tn.failure == Some(od_contracts::FailureCategory::DaemonRestart) {
-                            T::RunAppClosedHint
-                        } else {
-                            T::RunFailedHint
-                        },
-                    )
+                    t(match fail_cause(tn) {
+                        FailCause::Agent => T::RunFailedHint,
+                        FailCause::CutOff => T::RunAppClosedHint,
+                        // Sent while Contour was unreachable: it never ran.
+                        FailCause::Unreachable => T::DaemonUnreachable,
+                    })
                     .to_owned(),
                 ),
             ),
@@ -834,7 +832,8 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                             };
                             view! {
                                 <button class="chip next-step" data-testid=testid on:click=run
-                                    disabled=move || offline && ctx.link_down.get()>
+                                    disabled=move || offline && ctx.link_down.get()
+                                    title=move || (offline && ctx.link_down.get()).then(|| t(T::RetryWaitsForLink))>
                                     {icon(glyph)}{label}
                                 </button>
                             }

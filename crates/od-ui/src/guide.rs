@@ -38,6 +38,26 @@ pub fn run_phase(turn: &AssistantTurn) -> RunPhase {
     }
 }
 
+/// Why a failed turn failed, as its status line tells it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailCause {
+    /// The agent or the run went wrong: check the agent output.
+    Agent,
+    /// Contour went away while the run was going: it was cut off.
+    CutOff,
+    /// Contour could not be reached at all: the run never started.
+    Unreachable,
+}
+
+#[must_use]
+pub fn fail_cause(turn: &AssistantTurn) -> FailCause {
+    match (turn.failure, &turn.run_id) {
+        (Some(FailureCategory::DaemonRestart), None) => FailCause::Unreachable,
+        (Some(FailureCategory::DaemonRestart), Some(_)) => FailCause::CutOff,
+        _ => FailCause::Agent,
+    }
+}
+
 /// A suggested next step under the latest finished turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NextStep {
@@ -258,6 +278,22 @@ mod tests {
             ..turn(TurnState::Failed, vec![])
         };
         assert_eq!(next_steps(&t), [NextStep::Retry]);
+    }
+
+    #[test]
+    fn a_turn_sent_while_contour_was_unreachable_never_ran() {
+        let failed = |run_id: Option<&str>, failure| AssistantTurn {
+            run_id: run_id.map(str::to_owned),
+            failure,
+            ..turn(TurnState::Failed, vec![])
+        };
+        let gone = Some(FailureCategory::DaemonRestart);
+        assert_eq!(fail_cause(&failed(None, gone)), FailCause::Unreachable);
+        assert_eq!(fail_cause(&failed(Some("r"), gone)), FailCause::CutOff);
+        assert_eq!(
+            fail_cause(&failed(Some("r"), Some(FailureCategory::AgentError))),
+            FailCause::Agent
+        );
     }
 
     #[test]

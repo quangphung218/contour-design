@@ -346,9 +346,27 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   // A crash, not a shutdown: a graceful stop waits on the open streams.
   daemon.kill('SIGKILL');
   await until(async () => !(await healthy()), 'daemon down');
-  await page.getByTestId('workspace-recovery-tip').waitFor({ timeout: 15_000 });
+  const tip = page.getByTestId('workspace-recovery-tip');
+  await tip.waitFor({ timeout: 15_000 });
   assert.equal(await assistant.count(), 2, 'the Studio keeps its content');
   await shot('workspace-recovery-tip');
+  // UI-009: one banner over the whole Studio, seen whichever pane shows.
+  const oneTip = async (where) => {
+    assert.equal(await tip.count(), 1, `one banner (${where})`);
+    assert.ok(await tip.isVisible(), `banner seen (${where})`);
+  };
+  await oneTip('chat and preview');
+  await page.getByTestId('collapse-chat').click();
+  await page.getByTestId('show-chat').waitFor();
+  await oneTip('chat folded');
+  await shot('recovery-tip-chat-folded');
+  await page.getByTestId('show-chat').click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId('pane-preview').click();
+  await oneTip('phone, Preview tab');
+  await shot('recovery-tip-phone-preview');
+  await page.getByTestId('pane-chat').click();
+  await page.setViewportSize({ width: 1440, height: 900 });
   daemon = startDaemon();
   await until(healthy, 'daemon back');
   await until(async () => (await page.getByTestId('workspace-recovery-tip').count()) === 0, 'tip gone', 20_000);
@@ -379,10 +397,15 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   const said = await lost.innerText();
   assert.ok(!/TypeError|daemon/i.test(said), said);
   assert.equal(await lost.locator('.msg-error').count(), 0, 'one message: the status line');
-  await lost.getByText('Lost the connection to Contour').waitFor();
+  await lost.getByText('Check that the app is still running').waitFor();
+  assert.equal(await lost.getByText('this turn was cut off').count(), 0, 'it never ran');
+  assert.equal(await lost.getByTestId('run-log').count(), 0, 'no agent output for a turn that never ran');
   assert.equal(await lost.getByTestId('next-settings').count(), 0, 'Settings would not help');
   await page.getByTestId('workspace-recovery-tip').waitFor({ timeout: 15_000 });
-  assert.ok(await lost.getByTestId('next-retry').isDisabled(), 'Retry waits for Contour');
+  const retry = lost.getByTestId('next-retry');
+  assert.ok(await retry.isDisabled(), 'Retry waits for Contour');
+  assert.equal(await retry.getAttribute('title'), 'Waiting for the connection to Contour');
+  assert.ok(Number(await retry.evaluate((b) => getComputedStyle(b).opacity)) < 1, 'Retry looks off');
   await shot('daemon-lost-send');
   daemon = startDaemon();
   await until(healthy, 'daemon back');
@@ -402,9 +425,18 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   await sleep(1500);
   assert.equal(await assistant.count(), turns, 'the held queue did not go on its own');
   await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  // A reload keeps the held queue and why it waits.
+  await page.reload();
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  await page.getByTestId('queue-held-hint').getByText('connection to Contour was lost').waitFor();
+  assert.equal(await page.getByTestId('queued').getByText('queued while cut').count(), 1);
   await page.getByTestId('queue-discard').click();
   await until(async () => (await page.getByTestId('queued').count()) === 0, 'queue discarded');
-  results.heldQueue = 'still waiting during and after a run sent past it';
+  await page.reload();
+  await assistant.first().waitFor();
+  await sleep(500);
+  assert.equal(await page.getByTestId('queued').count(), 0, 'a discarded queue stays gone');
+  results.heldQueue = 'still waiting during and after a run sent past it, kept across a reload';
 
   // 6. Vietnamese strings of the new screens.
   await fetch(`${BASE}/api/app-config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: 'vi' }) });

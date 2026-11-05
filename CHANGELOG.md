@@ -22,10 +22,13 @@ All notable changes to Contour are recorded here. The format follows
   "daemon" or an Open Settings button, and Retry turns on once the
   connection is back (UI-008).
 - The "Connection to Contour interrupted" card covered the composer's
-  buttons; it now sits above the composer and covers nothing (UI-009).
+  buttons; it is now one banner across the top of the Studio, covering
+  nothing and seen with the chat folded or on a phone's Preview tab
+  (UI-009).
 - A file uploaded while a run was going showed in that turn's files as
-  written by the agent ("Wrote sample.txt"). Uploads stay out of the
-  turn unless the agent changes them (UI-012).
+  written by the agent ("Wrote sample.txt"). Uploads, and files made in
+  the app (New file, a sketch, a preview capture), stay out of the turn
+  unless the agent changes them (UI-012).
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock

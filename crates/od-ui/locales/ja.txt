@@ -1504,6 +1504,7 @@ DshSetupRequired = 接続の設定が必要です
 FirstArtifactTitle = 最初のデザインができました
 FirstArtifactBody = プレビュー上で直接編集・注釈でき、満足したら書き出せます。
 FirstArtifactDismiss = OK
+RetryWaitsForLink = Contour への再接続を待っています
 WorkspaceRecovering = Contour との接続が切れました。自動で再接続しています…
 ToolManualEdit = 要素を編集
 ManualEditHint = プレビューの要素かレイヤーを選んで変更します。変更はバージョンとして保存されます。

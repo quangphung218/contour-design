@@ -1507,8 +1507,15 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 /* Rises from the bottom edge, then nudges up twice. */
 @keyframes hint-rise { 0% { transform: translateY(28px); } 19%, 32% { transform: translateY(0); } 44% { transform: translateY(-4px); } 56%, 64% { transform: translateY(0); } 76% { transform: translateY(-4px); } 88%, 100% { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .first-artifact-hint { animation: none; } }
-/* UI-009: in the chat pane's flow, above the composer, so it never covers its buttons. */
-.workspace-recovery-tip { display: flex; align-items: center; gap: var(--space-2); margin: 0 var(--space-3) var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-raised); font-size: var(--text-xs); color: var(--color-text-secondary); animation: toast-in var(--duration-base) var(--ease-out); }
+/* UI-009: one banner in the Studio's flow, a row above both panes: seen
+   whichever pane shows, and it covers no control. */
+.studio.link-down { grid-template-rows: auto minmax(0, 1fr); }
+.studio > .workspace-recovery-tip { grid-column: 1 / -1; }
+@media (max-width: 480px) {
+  .studio.link-down, .studio.link-down.chat-collapsed { grid-template-rows: auto auto minmax(0, 1fr); }
+  .studio.link-down > .chat, .studio.link-down > .workspace { grid-area: 3 / 1; }
+}
+.workspace-recovery-tip { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-raised); font-size: var(--text-xs); color: var(--color-text-secondary); animation: toast-in var(--duration-base) var(--ease-out); }
 .comments-board .segmented { align-self: flex-start; }
 .comment-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .comment-item { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2-5); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-raised); transition: border-color var(--duration-fast) var(--ease-out); }

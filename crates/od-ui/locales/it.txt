@@ -1505,6 +1505,7 @@ DshSetupRequired = Configurazione della connessione richiesta
 FirstArtifactTitle = Il tuo primo design è pronto
 FirstArtifactBody = Modificalo e annotalo direttamente nell'anteprima, poi esportalo quando sei soddisfatto.
 FirstArtifactDismiss = Ho capito
+RetryWaitsForLink = In attesa della connessione a Contour
 WorkspaceRecovering = Connessione a Contour interrotta. Riconnessione automatica…
 ToolManualEdit = Modifica elemento
 ManualEditHint = Clicca un elemento nell'anteprima o scegli un livello, poi modificalo. Ogni modifica è salvata come versione.

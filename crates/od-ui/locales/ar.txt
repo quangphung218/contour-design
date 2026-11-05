@@ -1498,6 +1498,7 @@ DshSetupRequired = الاتصال يحتاج إلى إعداد
 FirstArtifactTitle = تصميمك الأول جاهز
 FirstArtifactBody = عدّله وعلّق عليه مباشرة في المعاينة، ثم صدّره عندما يعجبك.
 FirstArtifactDismiss = حسنًا
+RetryWaitsForLink = بانتظار الاتصال بـ Contour
 WorkspaceRecovering = انقطع الاتصال بـ Contour. جارٍ إعادة الاتصال تلقائيًا…
 ToolManualEdit = تعديل العنصر
 ManualEditHint = انقر عنصرًا في المعاينة أو اختر طبقة ثم غيّره. يُحفظ كل تغيير كإصدار.

@@ -1498,6 +1498,7 @@ DshSetupRequired = 需要設定連線
 FirstArtifactTitle = 你的第一個設計完成了
 FirstArtifactBody = 直接在預覽中編輯與標註，滿意後再匯出。
 FirstArtifactDismiss = 知道了
+RetryWaitsForLink = 正在等待與 Contour 的連線
 WorkspaceRecovering = 與 Contour 的連線中斷，正在自動重新連線…
 ToolManualEdit = 編輯元素
 ManualEditHint = 點選預覽中的元素或選擇圖層，然後修改。每次修改都會儲存為一個版本。

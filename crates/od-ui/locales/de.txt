@@ -1499,6 +1499,7 @@ DshSetupRequired = Verbindung muss eingerichtet werden
 FirstArtifactTitle = Dein erster Entwurf ist fertig
 FirstArtifactBody = Bearbeite und kommentiere ihn direkt in der Vorschau und exportiere ihn, wenn er dir gefällt.
 FirstArtifactDismiss = Verstanden
+RetryWaitsForLink = Warte auf die Verbindung zu Contour
 WorkspaceRecovering = Verbindung zu Contour unterbrochen. Verbindet sich automatisch neu…
 ToolManualEdit = Element bearbeiten
 ManualEditHint = Klicke in der Vorschau auf ein Element oder wähle eine Ebene und ändere es. Jede Änderung wird als Version gespeichert.

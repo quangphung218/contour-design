@@ -100,7 +100,7 @@ pub fn add_missing(list: &mut Vec<String>, files: Vec<String>) {
 }
 
 /// A message waiting for the running turn to end.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Queued {
     pub id: String,
     pub text: String,
@@ -109,7 +109,7 @@ pub struct Queued {
 }
 
 /// Why the queue waits for the user instead of going out on its own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum QueueHold {
     /// The user stopped the turn before it (UI-003).
     Stopped,
@@ -132,6 +132,35 @@ pub fn queue_hold(
         Some(RunStatus::Canceled) => Some(QueueHold::Stopped),
         Some(RunStatus::Failed | RunStatus::Running) | None => Some(QueueHold::LinkLost),
     }
+}
+
+/// A held queue as stored next to the conversation's draft, so a reload
+/// or closing the app does not lose what the user typed.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredHold {
+    why: QueueHold,
+    items: Vec<Queued>,
+}
+
+/// What to store for a queue held for `why` (`None`: not held): empty
+/// when there is nothing to keep.
+#[must_use]
+pub fn encode_held(why: Option<QueueHold>, items: &[Queued]) -> String {
+    match why {
+        Some(why) if !items.is_empty() => serde_json::to_string(&StoredHold {
+            why,
+            items: items.to_vec(),
+        })
+        .unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+/// The held queue [`encode_held`] stored, if any.
+#[must_use]
+pub fn decode_held(stored: &str) -> Option<(QueueHold, Vec<Queued>)> {
+    let StoredHold { why, items } = serde_json::from_str(stored).ok()?;
+    (!items.is_empty()).then_some((why, items))
 }
 
 /// Moves the item at `from` to `to` (both clamped), for drag and drop and
@@ -267,6 +296,25 @@ mod tests {
             Some(QueueHold::LinkLost),
             "stream lost"
         );
+    }
+
+    #[test]
+    fn a_held_queue_is_kept_across_a_reload() {
+        let items = vec![Queued {
+            id: "q1".into(),
+            text: "queued while cut".into(),
+            sent_at: 7,
+        }];
+        let stored = encode_held(Some(QueueHold::LinkLost), &items);
+        assert_eq!(
+            decode_held(&stored),
+            Some((QueueHold::LinkLost, items.clone()))
+        );
+        // Not held, or nothing left: nothing is kept.
+        assert_eq!(encode_held(None, &items), "");
+        assert_eq!(encode_held(Some(QueueHold::Stopped), &[]), "");
+        assert_eq!(decode_held(""), None);
+        assert_eq!(decode_held("not json"), None);
     }
 
     #[test]

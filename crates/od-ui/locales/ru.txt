@@ -1504,6 +1504,7 @@ DshSetupRequired = Нужна настройка подключения
 FirstArtifactTitle = Ваш первый дизайн готов
 FirstArtifactBody = Правьте и комментируйте прямо в превью, а когда всё устроит, экспортируйте.
 FirstArtifactDismiss = Понятно
+RetryWaitsForLink = Ожидание соединения с Contour
 WorkspaceRecovering = Соединение с Contour прервано. Переподключаемся автоматически…
 ToolManualEdit = Изменить элемент
 ManualEditHint = Нажмите элемент в превью или выберите слой и измените его. Каждое изменение сохраняется как версия.
