@@ -9,6 +9,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod mcp;
+mod updater;
 
 use anyhow::Context;
 use od_content::{ContentRoots, ContentStore};
@@ -20,10 +21,10 @@ use od_server::{
 use od_store::{DataDir, Store};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::ipc::CapabilityBuilder;
 use tauri::menu::{Menu, MenuItem, Submenu};
-use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
 const OPEN_FOLDER_MENU_ID: &str = "open-folder";
@@ -83,7 +84,9 @@ fn mcp_args(args: &[std::ffi::OsString]) -> Option<Vec<std::ffi::OsString>> {
 struct Daemon {
     state: AppState,
     url: Url,
-    _lock: DaemonLock,
+    /// Released on exit ([`before_exit`]), before a restart opens the next
+    /// copy, which takes it again.
+    lock: Mutex<Option<DaemonLock>>,
 }
 
 /// Bundled content: `Resources/content` in a packaged app, else the usual
@@ -158,7 +161,7 @@ async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Resu
     Ok(Daemon {
         state,
         url,
-        _lock: lock,
+        lock: Mutex::new(Some(lock)),
     })
 }
 
@@ -419,7 +422,18 @@ fn main() -> anyhow::Result<()> {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![pick_folder, set_theme])
+        // Its key: `plugins.updater` in tauri.conf.json. Its own commands
+        // stay ungranted; Update now goes through `updater::install_update`.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::UpdateSlot::default())
+        .invoke_handler(tauri::generate_handler![
+            pick_folder,
+            set_theme,
+            updater::update_support,
+            updater::install_update,
+            updater::cancel_update,
+            updater::restart_app
+        ])
         .menu(build_menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             OPEN_FOLDER_MENU_ID => open_folder_from_menu(app),
@@ -514,13 +528,23 @@ fn main() -> anyhow::Result<()> {
             // Running agents and the terminal tabs' shells would outlive
             // the app: stop them (agents as by Stop) before it exits.
             if let RunEvent::Exit = event {
-                if let Some(daemon) = app.try_state::<Daemon>() {
-                    tauri::async_runtime::block_on(daemon.state.shutdown());
-                }
-                remove_webview_temp(&std::env::temp_dir());
+                before_exit(app);
             }
         });
     Ok(())
+}
+
+/// Quitting, restarting after an update, or the Windows installer taking
+/// over: stops running agents (as Stop does) and the terminal tabs' shells,
+/// which would outlive the app, and releases the data folder's lock.
+pub(crate) fn before_exit<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(daemon) = app.try_state::<Daemon>() {
+        tauri::async_runtime::block_on(daemon.state.shutdown());
+        if let Ok(mut lock) = daemon.lock.lock() {
+            lock.take();
+        }
+    }
+    remove_webview_temp(&std::env::temp_dir());
 }
 
 /// The webview (WebKit on macOS) keeps caches in `<tmp>/<executable

@@ -30,7 +30,7 @@ ts-interface-checker 0.1.13 -- Apache-2.0
 Lucide icons (34, in the guizang-ppt deck template) 1.58.0 -- ISC
 
 
-2. Rust crates (631)
+2. Rust crates (648)
 --------------------
 
 adler2 2.0.1 -- 0BSD OR MIT OR Apache-2.0, used under MIT -- https://github.com/oyvindln/adler2
@@ -106,6 +106,7 @@ convert_case 0.6.0 -- MIT -- https://github.com/rutrum/convert-case
 convert_case 0.8.0 -- MIT -- https://github.com/rutrum/convert-case
 convert_case 0.11.0 -- MIT -- https://github.com/rutrum/convert-case
 cookie 0.18.2 -- MIT OR Apache-2.0, used under MIT -- https://github.com/SergioBenitez/cookie-rs
+core-foundation 0.9.4 -- MIT OR Apache-2.0, used under MIT -- https://github.com/servo/core-foundation-rs
 core-foundation 0.10.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/servo/core-foundation-rs
 core-foundation-sys 0.8.7 -- MIT OR Apache-2.0, used under MIT -- https://github.com/servo/core-foundation-rs
 core-graphics 0.25.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/servo/core-foundation-rs
@@ -166,6 +167,7 @@ fdeflate 0.3.7 -- MIT OR Apache-2.0, used under MIT -- https://github.com/image-
 field-offset 0.3.6 -- MIT OR Apache-2.0, used under MIT -- https://github.com/Diggsey/rust-field-offset
 file-id 0.2.3 -- MIT OR Apache-2.0, used under MIT -- https://github.com/notify-rs/notify.git
 filedescriptor 0.8.3 -- MIT -- https://github.com/wezterm/wezterm
+filetime 0.2.29 -- MIT/Apache-2.0, used under MIT -- https://github.com/alexcrichton/filetime
 flate2 1.1.10 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-lang/flate2-rs
 fnv 1.0.7 -- Apache-2.0 / MIT, used under MIT -- https://github.com/servo/rust-fnv
 foldhash 0.2.0 -- Zlib -- https://github.com/orlp/foldhash
@@ -255,6 +257,8 @@ itoa 1.0.18 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dtolnay/i
 javascriptcore-rs 1.1.2 -- MIT -- https://github.com/tauri-apps/javascriptcore-rs
 javascriptcore-rs-sys 1.1.1 -- MIT -- https://github.com/tauri-apps/javascriptcore-rs
 jni 0.21.1 -- MIT/Apache-2.0, used under MIT -- https://github.com/jni-rs/jni-rs
+jni 0.22.4 -- MIT OR Apache-2.0, used under MIT -- https://github.com/jni-rs/jni-rs
+jni-macros 0.22.4 -- MIT OR Apache-2.0, used under MIT -- https://github.com/jni-rs/jni-rs
 jni-sys 0.3.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/jni-rs/jni-sys
 jni-sys 0.4.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/jni-rs/jni-sys
 jni-sys-macros 0.4.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/jni-rs/jni-sys
@@ -297,6 +301,7 @@ matchit 0.8.4 -- MIT AND BSD-3-Clause -- https://github.com/ibraheemdev/matchit
 memchr 2.8.3 -- Unlicense OR MIT, used under MIT -- https://github.com/BurntSushi/memchr
 memoffset 0.9.1 -- MIT -- https://github.com/Gilnaa/memoffset
 mime 0.3.17 -- MIT OR Apache-2.0, used under MIT -- https://github.com/hyperium/mime
+minisign-verify 0.2.5 -- MIT -- https://github.com/jedisct1/rust-minisign-verify
 miniz_oxide 0.8.9 -- MIT OR Zlib OR Apache-2.0, used under MIT -- https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide
 miniz_oxide 0.9.1 -- MIT OR Zlib OR Apache-2.0, used under MIT -- https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide
 mio 1.2.4 -- MIT -- https://github.com/tokio-rs/mio
@@ -330,6 +335,7 @@ objc2-encode 4.1.0 -- MIT -- https://github.com/madsmtm/objc2
 objc2-exception-helper 0.1.1 -- Zlib OR Apache-2.0 OR MIT, used under MIT -- https://github.com/madsmtm/objc2
 objc2-foundation 0.3.2 -- MIT -- https://github.com/madsmtm/objc2
 objc2-io-surface 0.3.2 -- Zlib OR Apache-2.0 OR MIT, used under MIT -- https://github.com/madsmtm/objc2
+objc2-osa-kit 0.3.2 -- Zlib OR Apache-2.0 OR MIT, used under MIT -- https://github.com/madsmtm/objc2
 objc2-quartz-core 0.3.2 -- Zlib OR Apache-2.0 OR MIT, used under MIT -- https://github.com/madsmtm/objc2
 objc2-ui-kit 0.3.2 -- Zlib OR Apache-2.0 OR MIT, used under MIT -- https://github.com/madsmtm/objc2
 objc2-user-notifications 0.3.2 -- Zlib OR Apache-2.0 OR MIT, used under MIT -- https://github.com/madsmtm/objc2
@@ -340,6 +346,7 @@ once_cell_polyfill 1.70.2 -- MIT OR Apache-2.0, used under MIT -- https://github
 openssl-probe 0.2.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rustls/openssl-probe
 option-ext 0.2.0 -- MPL-2.0 -- https://github.com/soc/option-ext.git
 or_poisoned 0.1.0 -- MIT -- https://github.com/leptos-rs/leptos
+osakit 0.3.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/mdevils/rust-osakit
 pango 0.18.3 -- MIT -- https://github.com/gtk-rs/gtk-rs-core
 pango-sys 0.18.0 -- MIT -- https://github.com/gtk-rs/gtk-rs-core
 parking 2.2.1 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/parking
@@ -421,6 +428,8 @@ rustix 1.1.5 -- Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT, used under 
 rustls 0.23.46 -- Apache-2.0 OR ISC OR MIT, used under MIT -- https://github.com/rustls/rustls
 rustls-native-certs 0.8.4 -- Apache-2.0 OR ISC OR MIT, used under MIT -- https://github.com/rustls/rustls-native-certs
 rustls-pki-types 1.15.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rustls/pki-types
+rustls-platform-verifier 0.7.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rustls/rustls-platform-verifier
+rustls-platform-verifier-android 0.2.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rustls/rustls-platform-verifier
 rustls-webpki 0.103.16 -- ISC -- https://github.com/rustls/webpki
 rustversion 1.0.23 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dtolnay/rustversion
 ryu 1.0.23 -- Apache-2.0 OR BSL-1.0, used under Apache-2.0 -- https://github.com/dtolnay/ryu
@@ -467,6 +476,8 @@ shared_library 0.1.9 -- Apache-2.0/MIT, used under MIT -- https://github.com/tom
 shell-words 1.1.1 -- MIT/Apache-2.0, used under MIT -- https://github.com/tmiasko/shell-words
 signal-hook-registry 1.4.8 -- MIT OR Apache-2.0, used under MIT -- https://github.com/vorner/signal-hook
 simd-adler32 0.3.10 -- MIT -- https://github.com/mcountryman/simd-adler32
+simd_cesu8 1.2.0 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/seancroach/simd_cesu8
+simdutf8 0.1.5 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rusticstuff/simdutf8
 siphasher 1.0.4 -- MIT OR Apache-2.0, used under MIT -- https://github.com/jedisct1/rust-siphash
 slab 0.4.12 -- MIT -- https://github.com/tokio-rs/slab
 slotmap 1.1.1 -- Zlib -- https://github.com/orlp/slotmap
@@ -488,14 +499,18 @@ syn 3.0.9 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dtolnay/syn
 syn_derive 0.2.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/Kyuuhachi/syn_derive
 sync_wrapper 1.0.2 -- Apache-2.0 -- https://github.com/Actyx/sync_wrapper
 synstructure 0.14.0 -- MIT -- https://github.com/mystor/synstructure
+system-configuration 0.7.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/mullvad/system-configuration-rs
+system-configuration-sys 0.6.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/mullvad/system-configuration-rs
 tachys 0.2.4 -- MIT -- https://github.com/leptos-rs/leptos
 tao 0.35.3 -- Apache-2.0 -- https://github.com/tauri-apps/tao
 tao-macros 0.1.4 -- MIT OR Apache-2.0, used under MIT -- https://github.com/tauri-apps/tao
+tar 0.4.46 -- MIT OR Apache-2.0, used under MIT -- https://github.com/composefs/tar-rs
 tauri 2.11.6 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/tauri
 tauri-codegen 2.6.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/tauri
 tauri-macros 2.6.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/tauri
 tauri-plugin-dialog 2.7.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/plugins-workspace
 tauri-plugin-fs 2.5.2 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/plugins-workspace
+tauri-plugin-updater 2.12.0 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/plugins-workspace
 tauri-runtime 2.11.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/tauri
 tauri-runtime-wry 2.11.4 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/tauri
 tauri-utils 2.9.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/tauri
@@ -577,6 +592,7 @@ web-time 1.1.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/daxped
 web_atoms 0.2.6 -- MIT OR Apache-2.0, used under MIT -- https://github.com/servo/html5ever
 webkit2gtk 2.0.2 -- MIT -- https://github.com/tauri-apps/webkit2gtk-rs
 webkit2gtk-sys 2.0.2 -- MIT -- https://github.com/tauri-apps/webkit2gtk-rs
+webpki-root-certs 1.0.11 -- CDLA-Permissive-2.0 -- https://github.com/rustls/webpki-roots
 webpki-roots 1.0.11 -- CDLA-Permissive-2.0 -- https://github.com/rustls/webpki-roots
 webview2-com 0.38.2 -- MIT -- https://github.com/wravery/webview2-rs
 webview2-com-macros 0.8.1 -- MIT -- https://github.com/wravery/webview2-rs
@@ -649,6 +665,7 @@ writeable 0.6.4 -- Unicode-3.0 -- https://github.com/unicode-org/icu4x
 wry 0.55.1 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/wry
 x11 2.21.0 -- MIT -- https://github.com/AltF02/x11-rs.git
 x11-dl 2.21.0 -- MIT -- https://github.com/AltF02/x11-rs.git
+xattr 1.6.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/Stebalien/xattr
 xxhash-rust 0.8.19 -- BSL-1.0 -- https://github.com/DoumanAsh/xxhash-rust
 yansi 1.0.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/SergioBenitez/yansi
 yoke 0.8.4 -- Unicode-3.0 -- https://github.com/unicode-org/icu4x
@@ -1502,6 +1519,7 @@ Used by: serde_json 1.0.154 (LICENSE-MIT)
 Used by: serde_path_to_error 0.1.20 (LICENSE-MIT)
 Used by: serde_repr 0.1.21 (LICENSE-MIT)
 Used by: servo_arc 0.4.3 (LICENSE-MIT)
+Used by: simd_cesu8 1.2.0 (LICENSE-MIT)
 Used by: siphasher 1.0.4 (LICENSE-MIT)
 Used by: syn 1.0.109 (LICENSE-MIT)
 Used by: syn 2.0.119 (LICENSE-MIT)
@@ -1719,6 +1737,8 @@ Used by: gloo-net 0.6.0, Copyright (c) Rust and WebAssembly Working Group, Elina
 Used by: gloo-timers 0.3.0, Copyright (c) Rust and WebAssembly Working Group (standard MIT text)
 Used by: gloo-utils 0.2.0, Copyright (c) Rust and WebAssembly Working Group (standard MIT text)
 Used by: hydration_context 0.3.0, Copyright (c) Greg Johnston (standard MIT text)
+Used by: jni 0.22.4, Copyright (c) jni team (standard MIT text)
+Used by: jni-macros 0.22.4, Copyright (c) the authors (standard MIT text)
 Used by: jni-sys-macros 0.4.1, Copyright (c) Robert Bragg <robert@sixbynine.org> (standard MIT text)
 Used by: leptos 0.8.3, Copyright (c) Greg Johnston (standard MIT text)
 Used by: leptos_config 0.8.3, Copyright (c) Greg Johnston (standard MIT text)
@@ -1745,6 +1765,7 @@ Used by: objc2-encode 4.1.0, Copyright (c) Mads Marquart <mads@marquart.dk> (sta
 Used by: objc2-exception-helper 0.1.1, Copyright (c) Mads Marquart <mads@marquart.dk> (standard MIT text)
 Used by: objc2-foundation 0.3.2, Copyright (c) the authors (standard MIT text)
 Used by: objc2-io-surface 0.3.2, Copyright (c) the authors (standard MIT text)
+Used by: objc2-osa-kit 0.3.2, Copyright (c) the authors (standard MIT text)
 Used by: objc2-quartz-core 0.3.2, Copyright (c) the authors (standard MIT text)
 Used by: objc2-ui-kit 0.3.2, Copyright (c) the authors (standard MIT text)
 Used by: objc2-user-notifications 0.3.2, Copyright (c) the authors (standard MIT text)
@@ -1760,6 +1781,7 @@ Used by: reactive_stores 0.2.3, Copyright (c) Greg Johnston (standard MIT text)
 Used by: reactive_stores_macro 0.2.3, Copyright (c) Greg Johnston (standard MIT text)
 Used by: rsqlite-vfs 0.1.1, Copyright (c) the authors (standard MIT text)
 Used by: rstml 0.12.1, Copyright (c) vldm <me@vldm.cc>, stoically <stoically@protonmail.com> (standard MIT text)
+Used by: rustls-platform-verifier-android 0.2.0, Copyright (c) the authors (standard MIT text)
 Used by: server_fn 0.8.3, Copyright (c) Greg Johnston, Ben Wishovich (standard MIT text)
 Used by: server_fn_macro 0.8.11, Copyright (c) Greg Johnston (standard MIT text)
 Used by: server_fn_macro_default 0.8.5, Copyright (c) Greg Johnston (standard MIT text)
@@ -2262,6 +2284,7 @@ SOFTWARE.
 
 ================================================================================
 Used by: cfg-if 1.0.5 (LICENSE-MIT)
+Used by: filetime 0.2.29 (LICENSE-MIT)
 Used by: futures-timer 3.0.4 (LICENSE-MIT)
 Used by: js-sys 0.3.106 (LICENSE-MIT)
 Used by: openssl-probe 0.2.1 (LICENSE-MIT)
@@ -3083,6 +3106,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ================================================================================
+Used by: core-foundation 0.9.4 (LICENSE-MIT)
 Used by: core-foundation 0.10.1 (LICENSE-MIT)
 Used by: core-foundation-sys 0.8.7 (LICENSE-MIT)
 Used by: core-graphics 0.25.0 (LICENSE-MIT)
@@ -4363,6 +4387,7 @@ SOFTWARE.
 ================================================================================
 Used by: fdeflate 0.3.7 (LICENSE-MIT)
 Used by: ident_case 1.0.1 (LICENSE)
+Used by: simdutf8 0.1.5 (LICENSE-MIT)
 ================================================================================
 
 MIT License
@@ -6067,6 +6092,70 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ================================================================================
+Used by: minisign-verify 0.2.5 (LICENSE)
+================================================================================
+
+Copyright (c) 2019-2025 Frank Denis
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+--
+
+Code in the src/crypto folder is derived from the rust-crypto project:
+https://github.com/DaGenix/rust-crypto
+
+Original ISC license follows:
+
+Copyright (c) 2006-2009 Graydon Hoare
+Copyright (c) 2009-2013 Mozilla Foundation
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+================================================================================
 Used by: miniz_oxide 0.8.9 (LICENSE-MIT.md)
 Used by: miniz_oxide 0.9.1 (LICENSE-MIT.md)
 ================================================================================
@@ -6705,6 +6794,36 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
   This Source Code Form is "Incompatible With Secondary Licenses", as
   defined by the Mozilla Public License, v. 2.0.
+
+================================================================================
+Used by: osakit 0.3.1 (LICENSE-MIT)
+================================================================================
+
+Copyright (c) 2024 Marat Dulin
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 
 ================================================================================
 Used by: phf 0.12.1 (LICENSE)
@@ -7832,6 +7951,32 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ================================================================================
+Used by: rustls-platform-verifier 0.7.1 (LICENSE-MIT)
+================================================================================
+
+MIT License
+
+Copyright (c) 2022 1Password
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
 Used by: rustls-webpki 0.103.16 (LICENSE)
 ================================================================================
 
@@ -8709,6 +8854,37 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
+Used by: system-configuration 0.7.0 (LICENSE-MIT)
+Used by: system-configuration-sys 0.6.0 (LICENSE-MIT)
+================================================================================
+
+Copyright (c) 2024 Mullvad VPN AB
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+================================================================================
 Used by: tao 0.35.3 (LICENSE.spdx)
 ================================================================================
 
@@ -8758,11 +8934,42 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
+Used by: tar 0.4.46 (LICENSE-MIT)
+================================================================================
+
+Copyright (c) The tar-rs Project Contributors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+================================================================================
 Used by: tauri 2.11.6 (LICENSE_MIT)
 Used by: tauri-codegen 2.6.3 (LICENSE_MIT)
 Used by: tauri-macros 2.6.3 (LICENSE_MIT)
 Used by: tauri-plugin-dialog 2.7.3 (LICENSE_MIT)
 Used by: tauri-plugin-fs 2.5.2 (LICENSE_MIT)
+Used by: tauri-plugin-updater 2.12.0 (LICENSE_MIT)
 Used by: tauri-runtime 2.11.3 (LICENSE_MIT)
 Used by: tauri-runtime-wry 2.11.4 (LICENSE_MIT)
 Used by: tauri-utils 2.9.3 (LICENSE_MIT)
@@ -8792,6 +8999,7 @@ SOFTWARE.
 
 ================================================================================
 Used by: tempfile 3.27.0 (LICENSE-MIT)
+Used by: xattr 1.6.1 (LICENSE-MIT)
 ================================================================================
 
 Copyright (c) 2015 Steven Allen
@@ -9407,6 +9615,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
+Used by: webpki-root-certs 1.0.11 (LICENSE)
 Used by: webpki-roots 1.0.11 (LICENSE)
 ================================================================================
 

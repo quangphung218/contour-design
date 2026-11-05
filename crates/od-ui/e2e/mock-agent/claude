@@ -6,7 +6,8 @@
 #
 # Turn N is the N-th page version: "Mock page v<N>", where N-1 is read back
 # from the current index.html. A request containing `form` ends with a
-# <question-form>; `slow` streams slowly so Stop can be tested; `plan` adds a
+# <question-form>; `slow` streams slowly so Stop can be tested; `rapid`
+# streams 250 lines 30 ms apart, as fast as a real agent; `plan` adds a
 # TodoWrite plan; `deck` writes a 3-slide deck.html (with speaker notes)
 # instead of index.html; `tweak` writes a page that declares tweaks and
 # carries an anti-slop finding (emoji icon). A lint report (`artifact-lint`)
@@ -97,8 +98,12 @@ case "$req" in *crash*)
   cat "$(dirname "$0")/../../../od-runtime/tests/fixtures/node-crash.stderr" >&2
   exit 1
 ;; esac
-# Chat and plan modes answer without touching files.
-case "$line" in *"# Ask mode"*) say "Mode: chat."; end_turn;; esac
+rapid() {
+  i=0
+  while [ $i -lt 250 ]; do say "line$i\\n\\n"; i=$((i + 1)); sleep 0.03; done
+}
+# Chat and plan modes answer without touching files (`rapid` streams first).
+case "$line" in *"# Ask mode"*) case "$req" in *rapid*) rapid;; esac; say "Mode: chat."; end_turn;; esac
 case "$line" in *"# Plan mode"*) say "Mode: plan."; end_turn;; esac
 # Design Jury: two rounds, then ship (the daemon writes the file).
 case "$line" in *"# Critique Theater (active skill:"*)
@@ -124,6 +129,7 @@ case "$req" in *slow*)
   i=0
   while [ $i -lt 40 ]; do say "step$i "; i=$((i + 1)); sleep 0.25; done
 ;; esac
+case "$req" in *rapid*) rapid;; esac
 
 # `motion film`: the motion-design route through the host, as the skill
 # says: `media scaffold`, write the composition, `media generate`. The MP4
