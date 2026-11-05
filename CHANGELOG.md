@@ -93,6 +93,15 @@ All notable changes to Contour are recorded here. The format follows
   execution" console error for each script of the page: the daemon leaves
   the scripts out (`raw/<path>?still=1`, `design-templates/<id>/example?still=1`)
   and keeps the page's no-network CSP.
+- Moving up a fast-streaming chat with Page Up, Arrow Up, Home, a finger
+  or the scrollbar could be pulled back to the end before the move
+  landed. Those now stop the follow at once, and nothing scrolls under a
+  finger on the list or a grabbed scrollbar. A wheel in a box inside the
+  chat (a failed turn's agent output) scrolls that box and keeps the
+  follow.
+- A page there before a run, which the agent left alone, showed in that
+  turn as "Wrote page.html" once the user saved it from the preview. Only
+  a file the agent changed stays the turn's.
 
 ## [0.2.0-beta.18] - 2026-11-05
 
