@@ -131,3 +131,24 @@ async fn shutdown_before_launch_is_not_lost() {
     assert_eq!(assistant["runStatus"], "failed", "{assistant}");
     let _ = fut.await;
 }
+
+#[tokio::test]
+async fn a_stop_before_launch_stays_a_stop_when_contour_quits() {
+    // The user pressed Stop while the run was being prepared, then quit:
+    // the turn is theirs, "Stopped", not cut off by Contour closing.
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &format!("{PROBES}{SLOW}"));
+    let (project, _) = d.project().await;
+    let (fut, run_id) = create_until_registered(&d, &project).await;
+    let res = d
+        .post(&format!("/api/runs/{run_id}/cancel"), &json!({}))
+        .await;
+    assert_eq!(res.status().as_u16(), 200);
+    tokio::time::timeout(Duration::from_secs(10), d.state.runs.stop_all())
+        .await
+        .expect("stop_all did not return");
+    let _ = fut.await;
+    assert_eq!(end_status(&d, &run_id).await, "canceled");
+    let reg = d.state.runs.registry.get(&run_id).unwrap();
+    assert_eq!(reg.end_payload().and_then(|e| e.failure_category), None);
+}

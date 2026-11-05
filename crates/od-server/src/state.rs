@@ -6,7 +6,6 @@ use od_runtime::{EngineConfig, RunEngine, ToolTokens};
 use od_store::{Store, StoreError};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use tokio_util::task::TaskTracker;
@@ -43,9 +42,10 @@ pub struct RunContext {
     pub tokens: ToolTokens,
     /// Runs canceled after registering but before their agent launched.
     pending_cancels: Mutex<HashSet<String>>,
-    /// Set by [`Self::stop_all`]: a run stopped from now on ended because
-    /// the daemon is shutting down, not by the user (UI-008).
-    closing: AtomicBool,
+    /// Unlaunched runs [`Self::stop_all`] stopped itself: they ended because
+    /// the daemon is shutting down, not by the user (UI-008). A run the
+    /// user stopped first is not in it and stays canceled.
+    shutdown_cut: Mutex<HashSet<String>>,
     /// Launch and finalize tasks of chat runs: shutdown waits for them so
     /// each turn is recorded as it ended.
     pub tasks: TaskTracker,
@@ -63,7 +63,7 @@ impl RunContext {
             engine: RunEngine::new(engine),
             tokens: ToolTokens::default(),
             pending_cancels: Mutex::default(),
-            closing: AtomicBool::new(false),
+            shutdown_cut: Mutex::default(),
             tasks: TaskTracker::new(),
         }
     }
@@ -75,12 +75,15 @@ impl RunContext {
     pub async fn stop_all(&self) {
         {
             let mut pending = self.pending_cancels();
-            self.closing.store(true, Ordering::SeqCst);
             self.engine.cancel_all();
             for run in self.registry.list() {
-                if !run.status().is_terminal() && !self.engine.cancel(run.id()) {
-                    // Registered but not launched yet: the launch step ends it.
-                    pending.insert(run.id().to_owned());
+                if !run.status().is_terminal()
+                    && !self.engine.cancel(run.id())
+                    // Registered but not launched yet: the launch step ends
+                    // it. Already in `pending`: the user pressed Stop first.
+                    && pending.insert(run.id().to_owned())
+                {
+                    self.shutdown_cut().insert(run.id().to_owned());
                 }
             }
         }
@@ -99,10 +102,16 @@ impl RunContext {
         }
     }
 
-    /// Whether [`Self::stop_all`] began: the daemon is shutting down.
-    #[must_use]
-    pub fn closing(&self) -> bool {
-        self.closing.load(Ordering::SeqCst)
+    /// Whether the shutdown, not the user, stopped the unlaunched `run`
+    /// (asked once, by its launch step).
+    pub fn cut_by_shutdown(&self, run: &str) -> bool {
+        self.shutdown_cut().remove(run)
+    }
+
+    fn shutdown_cut(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.shutdown_cut
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Cancel requests for runs not yet in the engine. Lock it around

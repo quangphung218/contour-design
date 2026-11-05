@@ -643,7 +643,7 @@ async fn prepare_and_launch(
         }
         crate::routes::genui::drop_pending_for_run(state, run).await;
         // Stopped by a shutdown, not by the user: told as Contour closing.
-        let (status, category) = if state.runs.closing() {
+        let (status, category) = if state.runs.cut_by_shutdown(run.id()) {
             (
                 RunStatus::Failed,
                 Some(od_contracts::FailureCategory::DaemonRestart),
