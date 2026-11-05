@@ -720,6 +720,10 @@ pre.snippet { margin: var(--space-2) 0; padding: var(--space-3); border-radius: 
 .warning-text .ico { margin-top: 2px; }
 .messages { flex: 1; overflow-y: auto; padding: var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
 .chat-empty { margin: auto 0; }
+/* Inside the transcript: rides its bottom edge while the reader is up the list. */
+.jump-latest { position: sticky; bottom: var(--space-2); align-self: center; flex: none; z-index: 1; box-shadow: var(--shadow-md); animation: pop-in var(--duration-fast) var(--ease-emphasized); }
+/* The one floating way back to the end on a phone: a full touch target. */
+@media (pointer: coarse) { .jump-latest { min-height: 44px; padding-inline: var(--space-4); } }
 .msg { max-width: 100%; overflow-wrap: anywhere; animation: rise-in var(--duration-base) var(--ease-emphasized); }
 .msg.user {
   align-self: flex-end; max-width: 86%;
@@ -845,7 +849,7 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .composer-input { display: block; width: 100%; min-height: 60px; padding: var(--space-2-5) var(--space-3) var(--space-1); border: 0; outline: none; resize: none; background: transparent; line-height: var(--leading-normal); }
 .composer-input::placeholder { color: var(--color-text-tertiary); }
 .composer-actions { display: flex; align-items: center; gap: var(--space-1-5); padding: var(--space-1) var(--space-1-5) var(--space-1-5); }
-.send-btn.queue { --btn-bg: var(--color-fill); --btn-border: transparent; box-shadow: none; }
+.send-btn.is-queue { --btn-bg: var(--color-fill); --btn-border: transparent; box-shadow: none; }
 .qform { padding: var(--space-3-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-raised); box-shadow: var(--shadow-xs); }
 .qform h3 { margin-bottom: var(--space-3); }
 .qfield { border: 0; padding: 0; margin: 0 0 var(--space-3-5); }
@@ -929,7 +933,7 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .tab-add { margin-left: var(--space-1); }
 .side-tab .tab-name .ico { color: var(--color-accent); }
 .preview-head { gap: var(--space-1); padding-left: var(--space-1-5); }
-.preview-head .path-title { flex: 1; min-width: 0; }
+.preview-head .path-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview-head .segmented .seg .ico + .btn-label { margin-left: var(--space-1); }
 .zoom { display: inline-flex; align-items: center; gap: 1px; flex: none; }
 .zoom-value {
@@ -960,6 +964,9 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
    it is the reset button and the only readout of the level. */
 @container preview (max-width: 680px) {
   .preview-head .head-divider { display: none; }
+  /* Too narrow to read a file name (it was cut to one letter); the tab
+     above names the file. */
+  .preview-head > .path-title { display: none; }
   .preview-head .zoom-value { min-width: 38px; padding: 0; }
 }
 @container preview (max-width: 560px) {
@@ -1292,6 +1299,8 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .model-pop { min-width: 260px; padding: var(--space-3); gap: var(--space-2-5); }
 .ds-switch select { max-width: 150px; }
 .composer-actions { flex-wrap: wrap; }
+/* On a phone, Stop and Queue keep to the one row as icons (aria-label names them). */
+@media (max-width: 480px) { .composer-actions:has([data-testid=stop]) .btn-label { display: none; } }
 .upload-tray { display: flex; gap: var(--space-1-5); overflow-x: auto; padding: var(--space-2) var(--space-3) 0; }
 .composer-card .upload-tray, .composer-card .comment-chips { padding: var(--space-1-5) var(--space-2) 0; }
 .attachment { flex: none; }

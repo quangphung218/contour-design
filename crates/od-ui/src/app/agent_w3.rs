@@ -4,6 +4,7 @@
 
 use super::chat_view::{ChatItem, ItemKind, render_block};
 use super::export_menu::download;
+use super::follow::{JumpToLatest, StickToBottom};
 use super::icons::{Glyph, icon};
 use super::sse::Sse;
 use super::studio::StudioCtx;
@@ -859,15 +860,17 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
     let side = ctx.side;
     let draft = RwSignal::new(String::new());
     let list_ref = NodeRef::<leptos::html::Div>::new();
-    Effect::new(move |_| {
-        side.items.with(|items| {
+    let follow = StickToBottom::new(list_ref);
+    Effect::new(move |prev: Option<Option<String>>| {
+        let last = side.items.with(|items| {
             if let Some(ItemKind::Assistant(turn)) = items.last().map(|i| &i.kind) {
                 turn.track();
             }
+            items.last().map(|i| i.id.clone())
         });
-        if let Some(el) = list_ref.get() {
-            el.set_scroll_top(el.scroll_height());
-        }
+        list_ref.track();
+        follow.changed(prev.is_none_or(|p| p != last));
+        last
     });
     let send = move || {
         let text = draft.get_untracked();
@@ -882,7 +885,7 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
     view! {
         <section class="side-chat" data-testid="side-chat" aria-label=t(T::SideChat)>
             <p class="mode-hint">{icon(Glyph::SideChat)}{t(T::SideChatHint)}</p>
-            <div class="messages" node_ref=list_ref data-testid="side-messages">
+            <div class="messages" node_ref=list_ref data-testid="side-messages" on:wheel=move |ev| follow.on_wheel(&ev) on:scroll=move |_| follow.on_scroll()>
                 <For
                     each=move || side.items.get()
                     key=|item| item.id.clone()
@@ -899,6 +902,7 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
                         }.into_any(),
                     }
                 />
+                <JumpToLatest follow=follow composer="[data-testid=side-composer]"/>
             </div>
             <div class="composer">
                 <textarea

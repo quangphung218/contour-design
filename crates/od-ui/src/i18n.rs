@@ -878,6 +878,7 @@ messages! {
     Queue => "Queue", "Xếp hàng";
     Stop => "Stop", "Dừng";
     Stopped => "Stopped", "Đã dừng";
+    JumpToLatest => "Jump to latest", "Xuống tin mới nhất";
     Working => "Working", "Đang làm";
     Thinking => "Thinking", "Suy nghĩ";
     Answers => "Answers", "Câu trả lời";
@@ -1467,6 +1468,16 @@ messages! {
     RunStarting => "Starting the agent…", "Đang khởi động agent…";
     RunWorking => "Working", "Đang chạy";
     RunStep => "Step {0} of {1}", "Bước {0}/{1}";
+    ActWaiting => "Waiting for the agent", "Đang chờ agent";
+    ActThinking => "Thinking", "Đang suy nghĩ";
+    ActReplying => "Writing the reply", "Đang viết câu trả lời";
+    ActCompacting => "Compacting the conversation", "Đang thu gọn hội thoại";
+    ActWriting => "Writing {0}", "Đang viết {0}";
+    ActEditing => "Editing {0}", "Đang sửa {0}";
+    ActReading => "Reading {0}", "Đang đọc {0}";
+    ActCommand => "Running a command", "Đang chạy lệnh";
+    ActTool => "Using {0}", "Đang dùng {0}";
+    ActLastFile => "last: {0}", "gần nhất: {0}";
     RunDone => "Done", "Xong";
     RunFileWritten => "1 file written", "Đã ghi 1 file";
     RunFilesWritten => "{0} files written", "Đã ghi {0} file";

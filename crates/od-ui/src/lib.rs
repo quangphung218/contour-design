@@ -28,6 +28,7 @@ pub mod preview_bridge;
 pub mod project_panel;
 pub mod question_form;
 pub mod schedule;
+pub mod scroll_follow;
 pub mod settings;
 pub mod sketch_model;
 pub mod speaker_notes;

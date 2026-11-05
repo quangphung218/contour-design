@@ -396,6 +396,144 @@ try {
   results.quote = 'ok';
   await page.screenshot({ path: OUT + 'b3-studio-light.png' });
 
+  // 13d. Stick to the bottom: scrolled up while a run streams, new output
+  // keeps the reader's place and offers "Jump to latest", which goes back
+  // and follows again; sending a message always goes to the end.
+  {
+    const size = page.viewportSize();
+    await page.setViewportSize({ width: 1440, height: 600 });
+    const list = page.getByTestId('messages');
+    const metrics = () => list.evaluate((e) => ({ top: e.scrollTop, gap: e.scrollHeight - e.scrollTop - e.clientHeight, height: e.scrollHeight }));
+    const turns = await page.getByTestId('assistant-msg').count();
+    await composer.fill('a slow page');
+    await composer.press('Enter');
+    const live = page.getByTestId('assistant-msg').nth(turns);
+    await until(async () => /step2 /.test(await live.textContent()), 'slow run streaming');
+    assert.ok((await metrics()).gap <= 48, 'follows the stream at the end');
+    // While it runs the button queues: icon beside the label, not the
+    // queue panel's column layout.
+    await composer.fill('next');
+    const sendBtn = page.getByTestId('send');
+    assert.equal(await sendBtn.evaluate((b) => b.classList.contains('queue')), false);
+    assert.equal(await sendBtn.evaluate((b) => getComputedStyle(b).flexDirection), 'row');
+    assert.ok((await sendBtn.boundingBox()).height <= 40, 'one-row Queue button');
+    await composer.fill('');
+    // The status line says what the run does in words, with a clock.
+    const detail = live.locator('[data-testid="run-state"][data-phase="working"] .muted');
+    const first = await detail.textContent();
+    assert.match(first, /^(Waiting for the agent|Writing the reply)(?: · last: \S+)? · \d+:\d\d$/);
+    const clock = (s) => s.split(' · ').pop();
+    await until(async () => clock(await detail.textContent()) !== clock(first), 'the run clock ticks', 3000);
+    await list.evaluate((e) => e.scrollTo(0, 0));
+    await until(async () => (await metrics()).top === 0, 'scrolled up');
+    const before = await metrics();
+    await until(async () => /step8 /.test(await live.textContent()), 'more output');
+    const after = await metrics();
+    assert.ok(after.height > before.height, `the list grew (${before.height} → ${after.height})`);
+    assert.equal(after.top, 0, 'new output does not pull the reader down');
+    await page.getByTestId('jump-latest').waitFor();
+    await page.screenshot({ path: OUT + 'chat-jump-latest.png' });
+    await page.getByTestId('jump-latest').click();
+    await until(async () => (await metrics()).gap <= 48, 'jumped to latest');
+    assert.equal(await page.getByTestId('jump-latest').count(), 0, 'no button at the end');
+    await until(async () => /step14 /.test(await live.textContent()), 'still streaming');
+    assert.ok((await metrics()).gap <= 48, 'follows again after the jump');
+    await lastTurnDone(turns + 1);
+    await list.evaluate((e) => e.scrollTo(0, 0));
+    await until(async () => (await metrics()).top === 0, 'scrolled up again');
+    await composer.fill('back to the end');
+    await composer.press('Enter');
+    await lastTurnDone(turns + 2);
+    // Turn files and next steps render a moment after the run ends.
+    await until(async () => (await metrics()).gap <= 48, 'sending goes to the end');
+    // The preview's file name ends in an ellipsis when it does not fit,
+    // and goes (the tab names the file) where it would be cut to a letter.
+    const pathTitle = page.locator('.preview-head .path-title');
+    assert.deepEqual(
+      await pathTitle.evaluate((e) => [getComputedStyle(e).textOverflow, getComputedStyle(e).whiteSpace, getComputedStyle(e).overflow]),
+      ['ellipsis', 'nowrap', 'hidden'],
+    );
+    await page.setViewportSize({ width: 1100, height: 760 });
+    await until(async () => !(await pathTitle.isVisible()), 'file name hidden at 1100');
+    await page.screenshot({ path: OUT + 'chat-1100.png' });
+    await page.setViewportSize(size);
+    results.stickToBottom = 'ok';
+  }
+
+  // 13e. A trackpad moves a few px per event while tokens land every
+  // 30 ms: small steps up still leave the end and stay put; a panel under
+  // the list going, or a pinch, does not. A message the
+  // queue sends on its own once the run ends does not pull the reader
+  // down either; Jump pressed from the keyboard leaves focus in the
+  // composer.
+  {
+    const size = page.viewportSize();
+    await page.setViewportSize({ width: 1440, height: 600 });
+    const list = page.getByTestId('messages');
+    const metrics = () => list.evaluate((e) => ({ top: e.scrollTop, gap: e.scrollHeight - e.scrollTop - e.clientHeight, height: e.scrollHeight, client: e.clientHeight }));
+    const turns = await page.getByTestId('assistant-msg').count();
+    await composer.fill('a rapid page');
+    await composer.press('Enter');
+    const live = page.getByTestId('assistant-msg').nth(turns);
+    await until(async () => /line20\b/.test(await live.textContent()), 'rapid run streaming');
+    assert.ok((await metrics()).gap <= 48, 'follows the rapid stream');
+    // At the end, the queue panel under the list going (its message
+    // removed) makes the list taller; the browser clamps scrollTop, which
+    // is not the reader scrolling up.
+    await composer.fill('a dropped note');
+    await composer.press('Enter');
+    const queuedItem = page.getByTestId('queued');
+    await queuedItem.waitFor();
+    await page.waitForTimeout(300);
+    await queuedItem.getByRole('button', { name: 'Delete' }).click();
+    await queuedItem.waitFor({ state: 'detached' });
+    await page.waitForTimeout(500);
+    const dropped = await metrics();
+    assert.ok(dropped.gap <= 48, `a panel under the list going keeps the follow (gap ${dropped.gap})`);
+    assert.equal(await page.getByTestId('jump-latest').count(), 0, 'no Jump after the panel went');
+    // A trackpad pinch is a wheel with ctrlKey: it scrolls nothing. Many
+    // of them over 400 ms, so one lands between our scroll to the end and
+    // the next token (a single one is undone by that scroll's event).
+    await list.evaluate((e) => new Promise((done) => {
+      const t = setInterval(() => e.dispatchEvent(new WheelEvent('wheel', { deltaY: -10, ctrlKey: true, bubbles: true })), 4);
+      setTimeout(() => { clearInterval(t); done(); }, 400);
+    }));
+    await page.waitForTimeout(300);
+    assert.ok((await metrics()).gap <= 48, 'a pinch keeps the follow');
+    assert.equal(await page.getByTestId('jump-latest').count(), 0, 'no Jump after a pinch');
+    const box = await list.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 20; i += 1) {
+      await page.mouse.wheel(0, -10);
+      await page.waitForTimeout(16);
+    }
+    await page.waitForTimeout(300);
+    const held = await metrics();
+    assert.ok(held.gap > 48, `10 px wheel steps leave the end (gap ${held.gap})`);
+    await page.waitForTimeout(500);
+    const later = await metrics();
+    assert.ok(later.height > held.height, `still streaming (${held.height} → ${later.height})`);
+    assert.ok(Math.abs(later.top - held.top) <= 1, `new output does not pull the reader down (${held.top} → ${later.top})`);
+    await page.getByTestId('jump-latest').waitFor();
+    // Queued now, sent by the queue once this run ends.
+    await composer.fill('a queued note');
+    await composer.press('Enter');
+    await lastTurnDone(turns + 2);
+    await page.waitForTimeout(300);
+    // The browser's scroll anchoring may shift `scrollTop` as the ended
+    // turn re-renders; what counts is that the list stays away from the end.
+    const queued = await metrics();
+    console.log('[chat-e2e] queue sent', JSON.stringify({ held, queued }));
+    assert.ok(queued.gap > 48, `the queue sending does not pull the reader down (gap ${queued.gap})`);
+    assert.equal(await page.getByTestId('jump-latest').count(), 1, 'Jump still offered');
+    await page.getByTestId('jump-latest').focus();
+    await page.keyboard.press('Enter');
+    await until(async () => (await metrics()).gap <= 48, 'jumped from the keyboard');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.testid), 'composer', 'focus lands in the composer');
+    await page.setViewportSize(size);
+    results.trackpadFollow = 'ok';
+  }
+
   // 14. Reconnect after the run stream drops.
   // A non-200 answer makes the browser give up on the stream (a plain drop
   // is retried by EventSource on its own).
