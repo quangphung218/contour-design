@@ -73,7 +73,9 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
 
     // Keep the newest output in view while streaming, and once the run
     // ends (the next steps under the last turn show only then), unless the
-    // reader scrolled up the transcript.
+    // reader scrolled up the transcript. A new last item (a message sent,
+    // a conversation opened) goes to the end, except one the queue sent on
+    // its own while the reader was up the transcript.
     Effect::new(move |prev: Option<Option<String>>| {
         let last = ctx.items.with(|items| {
             if let Some(ItemKind::Assistant(turn)) = items.last().map(|i| &i.kind) {
@@ -83,7 +85,8 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
         });
         ctx.live_run.track();
         list_ref.track();
-        follow.changed(prev.is_none_or(|p| p != last));
+        let dequeued = last.is_some() && ctx.dequeued.with_value(|d| *d == last);
+        follow.changed(!dequeued && prev.is_none_or(|p| p != last));
         last
     });
 
@@ -196,6 +199,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                 data-testid="messages"
                 on:mouseup=move |_| read_selection()
                 on:keyup=move |_| read_selection()
+                on:wheel=move |ev| follow.on_wheel(&ev)
                 on:scroll=move |_| {
                     quote.set(None);
                     follow.on_scroll();
@@ -254,7 +258,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         </div>
                     </div>
                 </Show>
-                <JumpToLatest follow=follow/>
+                <JumpToLatest follow=follow composer="[data-testid=composer]"/>
             </div>
             {move || quote.get().map(|(x, y, text)| view! {
                 <button

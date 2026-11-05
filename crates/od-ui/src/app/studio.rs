@@ -219,6 +219,9 @@ pub struct StudioCtx {
     pub draft: RwSignal<String>,
     /// Messages typed while a run was going, sent one by one after it.
     pub queue: RwSignal<Vec<Queued>>,
+    /// The assistant turn the queue last sent on its own once a run ended:
+    /// the chat goes to it only if the reader is at the end already.
+    pub dequeued: StoredValue<Option<String>>,
     pub files: RwSignal<Vec<ProjectFile>>,
     /// Open file tabs; the active tab is the previewed file.
     pub tabs: RwSignal<Tabs>,
@@ -466,12 +469,13 @@ impl StudioCtx {
 
     /// Sends a user turn, or queues it while a run is going.
     pub fn send(self, text: String, shell: Shell) {
-        self.send_at(text, shell, js_sys::Date::now() as i64);
+        self.send_at(text, shell, js_sys::Date::now() as i64, false);
     }
 
     /// [`Self::send`] for a turn the user sent at `sent_at` (epoch ms):
-    /// a queued message keeps its own time for Recent projects.
-    fn send_at(self, text: String, shell: Shell, sent_at: i64) {
+    /// a queued message keeps its own time for Recent projects, and
+    /// `from_queue` marks it as not sent by the reader just now.
+    fn send_at(self, text: String, shell: Shell, sent_at: i64, from_queue: bool) {
         let text = text.trim().to_owned();
         if text.is_empty() {
             return;
@@ -498,6 +502,9 @@ impl StudioCtx {
             items.push(ChatItem::user(user_id.clone(), text.clone()).with_attachments(files));
             items.push(ChatItem::assistant(assistant_id.clone(), turn));
         });
+        if from_queue {
+            self.dequeued.set_value(Some(assistant_id.clone()));
+        }
         let Some(agent_id) = shell.agent_id() else {
             fail(turn, t(T::NoAgentSelected).to_owned());
             return;
@@ -614,7 +621,7 @@ impl StudioCtx {
             .queue
             .try_update(|q| (!q.is_empty()).then(|| q.remove(0)));
         if let Some(Some(next)) = next {
-            self.send_at(next.text, shell, next.sent_at);
+            self.send_at(next.text, shell, next.sent_at, true);
         }
     }
 
@@ -1263,6 +1270,7 @@ pub fn Studio() -> impl IntoView {
         live_run: RwSignal::new(None),
         draft: RwSignal::new(String::new()),
         queue: RwSignal::new(Vec::new()),
+        dequeued: StoredValue::new(None),
         files: RwSignal::new(Vec::new()),
         tabs: RwSignal::new(Tabs::default()),
         terms: RwSignal::new(Vec::new()),

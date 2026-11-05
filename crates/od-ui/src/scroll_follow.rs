@@ -1,7 +1,9 @@
 //! Stick-to-bottom scrolling for a chat transcript, the way chat apps do
 //! it: new output keeps the list at its end only while the reader is
-//! there. Scrolling up to read earlier turns stops the follow; scrolling
-//! back down (or a new message being sent) starts it again. While the
+//! there. Any move up, however small (a trackpad scrolls a few px per
+//! event, while tokens land many times a second), stops the follow;
+//! scrolling back down near the end (or a message being sent) starts it
+//! again. While the
 //! follow is off, new output raises "Jump to latest".
 //!
 //! Pure state, so the decision is tested natively; the browser wiring is
@@ -34,6 +36,7 @@ pub struct Follow {
     pinned: bool,
     unseen: bool,
     last_top: f64,
+    last_height: f64,
 }
 
 impl Default for Follow {
@@ -42,25 +45,34 @@ impl Default for Follow {
             pinned: true,
             unseen: false,
             last_top: 0.0,
+            last_height: 0.0,
         }
     }
 }
 
 impl Follow {
-    /// A scroll event. Moving up hands the decision to where the reader
-    /// stopped; moving down (or the browser clamping after our own scroll
-    /// to the end, while more output already grew the list) never turns the
-    /// follow off, only on once the end is near.
+    /// A scroll event. The reader moving up, by any amount, turns the
+    /// follow off. Moving down turns it on once the end is near, and never
+    /// off: that also covers our own scroll to the end landing while more
+    /// output already grew the list. A move up while the content shrank is
+    /// the browser clamping `scroll_top`, not the reader.
     pub fn scrolled(&mut self, m: Metrics) {
-        let up = m.scroll_top < self.last_top - 0.5;
+        let up = m.scroll_top < self.last_top - 0.5 && m.scroll_height >= self.last_height - 0.5;
         self.last_top = m.scroll_top;
-        self.pinned = if up {
-            m.near_bottom()
-        } else {
-            self.pinned || m.near_bottom()
-        };
+        self.last_height = m.scroll_height;
+        self.pinned = !up && (self.pinned || m.near_bottom());
         if self.pinned {
             self.unseen = false;
+        }
+    }
+
+    /// A wheel or trackpad move (`delta_y` < 0 is up), seen before the
+    /// scroll it causes: our own scroll to the end can land first and hide
+    /// a small move up from [`Self::scrolled`]. `can_go_up`: the list is
+    /// not already at its top.
+    pub fn wheeled(&mut self, delta_y: f64, can_go_up: bool) {
+        if delta_y < 0.0 && can_go_up {
+            self.pinned = false;
         }
     }
 
@@ -135,10 +147,40 @@ mod tests {
     }
 
     #[test]
-    fn a_small_nudge_up_near_the_end_keeps_following() {
+    fn a_small_move_up_near_the_end_stops_the_follow() {
+        // A trackpad moves a few px per event; tokens land in between.
         let mut f = Follow::default();
         f.scrolled(at(1600.0));
+        f.scrolled(at(1590.0));
+        assert!(!f.changed(false), "10 px up must not be pulled back");
         f.scrolled(at(1580.0));
+        assert!(!f.changed(false));
+        assert!(f.show_jump());
+    }
+
+    #[test]
+    fn a_wheel_up_stops_the_follow_before_its_scroll() {
+        let mut f = Follow::default();
+        f.scrolled(at(1600.0));
+        f.wheeled(-4.0, true);
+        assert!(!f.changed(false));
+        let mut f = Follow::default();
+        f.wheeled(4.0, true);
+        assert!(f.changed(false), "down keeps following");
+        f.wheeled(-4.0, false);
+        assert!(f.changed(false), "nothing above: nothing to read");
+    }
+
+    #[test]
+    fn content_shrinking_under_the_reader_keeps_following() {
+        // An empty block hidden: the browser clamps scroll_top down.
+        let mut f = Follow::default();
+        f.scrolled(at(1600.0));
+        f.scrolled(Metrics {
+            scroll_top: 1500.0,
+            client_height: 400.0,
+            scroll_height: 1900.0,
+        });
         assert!(f.changed(false));
     }
 

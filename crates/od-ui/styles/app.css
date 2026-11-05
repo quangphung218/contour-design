@@ -722,6 +722,8 @@ pre.snippet { margin: var(--space-2) 0; padding: var(--space-3); border-radius: 
 .chat-empty { margin: auto 0; }
 /* Inside the transcript: rides its bottom edge while the reader is up the list. */
 .jump-latest { position: sticky; bottom: var(--space-2); align-self: center; flex: none; z-index: 1; box-shadow: var(--shadow-md); animation: pop-in var(--duration-fast) var(--ease-emphasized); }
+/* The one floating way back to the end on a phone: a full touch target. */
+@media (pointer: coarse) { .jump-latest { min-height: 44px; padding-inline: var(--space-4); } }
 .msg { max-width: 100%; overflow-wrap: anywhere; animation: rise-in var(--duration-base) var(--ease-emphasized); }
 .msg.user {
   align-self: flex-end; max-width: 86%;

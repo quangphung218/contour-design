@@ -24,9 +24,12 @@ All notable changes to Contour are recorded here. The format follows
 
 - The chat (and the side chat) no longer pulls you back to the bottom on
   every new token while a run streams: scrolled up to read earlier turns,
-  the list keeps its place and offers "Jump to latest"; back at the end
-  (within 48 px) it follows the output again, and sending a message always
-  goes to the end.
+  even by a trackpad's few pixels at a time, the list keeps its place and
+  offers "Jump to latest"; back at the end (within 48 px) it follows the
+  output again, and sending a message always goes to the end. A message
+  the queue sends on its own after a run leaves you where you are reading.
+  "Jump to latest" is a full touch target on touch screens, and pressed
+  from the keyboard it puts focus back in the composer.
 - While a run goes on, the Queue button sits on one row with its icon
   beside the label; it took the queue panel's column layout and dropped
   onto a line of its own in narrow windows.

@@ -885,7 +885,7 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
     view! {
         <section class="side-chat" data-testid="side-chat" aria-label=t(T::SideChat)>
             <p class="mode-hint">{icon(Glyph::SideChat)}{t(T::SideChatHint)}</p>
-            <div class="messages" node_ref=list_ref data-testid="side-messages" on:scroll=move |_| follow.on_scroll()>
+            <div class="messages" node_ref=list_ref data-testid="side-messages" on:wheel=move |ev| follow.on_wheel(&ev) on:scroll=move |_| follow.on_scroll()>
                 <For
                     each=move || side.items.get()
                     key=|item| item.id.clone()
@@ -902,7 +902,7 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
                         }.into_any(),
                     }
                 />
-                <JumpToLatest follow=follow/>
+                <JumpToLatest follow=follow composer="[data-testid=side-composer]"/>
             </div>
             <div class="composer">
                 <textarea

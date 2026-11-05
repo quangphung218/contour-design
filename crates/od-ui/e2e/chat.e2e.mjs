@@ -460,6 +460,55 @@ try {
     results.stickToBottom = 'ok';
   }
 
+  // 13e. A trackpad moves a few px per event while tokens land every
+  // 30 ms: small steps up still leave the end and stay put. A message the
+  // queue sends on its own once the run ends does not pull the reader
+  // down either; Jump pressed from the keyboard leaves focus in the
+  // composer.
+  {
+    const size = page.viewportSize();
+    await page.setViewportSize({ width: 1440, height: 600 });
+    const list = page.getByTestId('messages');
+    const metrics = () => list.evaluate((e) => ({ top: e.scrollTop, gap: e.scrollHeight - e.scrollTop - e.clientHeight, height: e.scrollHeight, client: e.clientHeight }));
+    const turns = await page.getByTestId('assistant-msg').count();
+    await composer.fill('a rapid page');
+    await composer.press('Enter');
+    const live = page.getByTestId('assistant-msg').nth(turns);
+    await until(async () => /line20\b/.test(await live.textContent()), 'rapid run streaming');
+    assert.ok((await metrics()).gap <= 48, 'follows the rapid stream');
+    const box = await list.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 20; i += 1) {
+      await page.mouse.wheel(0, -10);
+      await page.waitForTimeout(16);
+    }
+    await page.waitForTimeout(300);
+    const held = await metrics();
+    assert.ok(held.gap > 48, `10 px wheel steps leave the end (gap ${held.gap})`);
+    await page.waitForTimeout(500);
+    const later = await metrics();
+    assert.ok(later.height > held.height, `still streaming (${held.height} → ${later.height})`);
+    assert.ok(Math.abs(later.top - held.top) <= 1, `new output does not pull the reader down (${held.top} → ${later.top})`);
+    await page.getByTestId('jump-latest').waitFor();
+    // Queued now, sent by the queue once this run ends.
+    await composer.fill('a queued note');
+    await composer.press('Enter');
+    await lastTurnDone(turns + 2);
+    await page.waitForTimeout(300);
+    // The browser's scroll anchoring may shift `scrollTop` as the ended
+    // turn re-renders; what counts is that the list stays away from the end.
+    const queued = await metrics();
+    console.log('[chat-e2e] queue sent', JSON.stringify({ held, queued }));
+    assert.ok(queued.gap > 48, `the queue sending does not pull the reader down (gap ${queued.gap})`);
+    assert.equal(await page.getByTestId('jump-latest').count(), 1, 'Jump still offered');
+    await page.getByTestId('jump-latest').focus();
+    await page.keyboard.press('Enter');
+    await until(async () => (await metrics()).gap <= 48, 'jumped from the keyboard');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.testid), 'composer', 'focus lands in the composer');
+    await page.setViewportSize(size);
+    results.trackpadFollow = 'ok';
+  }
+
   // 14. Reconnect after the run stream drops.
   // A non-200 answer makes the browser give up on the stream (a plain drop
   // is retried by EventSource on its own).

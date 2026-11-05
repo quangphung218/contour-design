@@ -85,6 +85,19 @@ impl StickToBottom {
         });
     }
 
+    /// For the list's `on:wheel` (mouse wheel and trackpad).
+    pub fn on_wheel(self, ev: &web_sys::WheelEvent) {
+        let Some(el) = self.list.get_untracked() else {
+            return;
+        };
+        let can_go_up = el.scroll_top() > 0;
+        self.state.maybe_update(|f| {
+            let before = f.show_jump();
+            f.wheeled(ev.delta_y(), can_go_up);
+            before != f.show_jump()
+        });
+    }
+
     /// After the transcript changed (`new_item`: a message was sent or a
     /// conversation opened): scroll to the end if following, and again on
     /// the next frame for content that renders after this (next steps).
@@ -120,16 +133,24 @@ impl StickToBottom {
 }
 
 /// "Jump to latest", inside the list (sticks to its bottom edge), shown
-/// while the reader is up the transcript and new output came in.
+/// while the reader is up the transcript and new output came in. Pressed
+/// from the keyboard, it hides itself, so focus moves to `composer` (a
+/// CSS selector) instead of falling back to the page.
 #[component]
-pub fn JumpToLatest(follow: StickToBottom) -> impl IntoView {
+pub fn JumpToLatest(follow: StickToBottom, composer: &'static str) -> impl IntoView {
     let show = Memo::new(move |_| follow.state.with(Follow::show_jump));
     view! {
         <Show when=move || show.get()>
             <button
                 class="btn small jump-latest"
                 data-testid="jump-latest"
-                on:click=move |_| follow.jump()
+                on:click=move |ev: web_sys::MouseEvent| {
+                    follow.jump();
+                    // `detail` 0: Enter or Space, not a pointer.
+                    if ev.detail() == 0 {
+                        super::chat_view::focus_selector(composer);
+                    }
+                }
             >
                 {icon(Glyph::ChevronDown)}
                 {t(T::JumpToLatest)}
