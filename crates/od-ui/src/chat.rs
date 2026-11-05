@@ -245,6 +245,9 @@ impl AssistantTurn {
             }
             RunFrame::Agent(ev) => self.apply_agent(ev),
             RunFrame::Error(message) => self.blocks.push(Block::Error(message)),
+            RunFrame::AppClosed => {
+                self.failure = Some(od_contracts::FailureCategory::DaemonRestart);
+            }
             RunFrame::End(end) => {
                 self.state = end.status.into();
                 self.status = None;
@@ -343,8 +346,8 @@ impl AssistantTurn {
             AgentEvent::Error { code, .. }
                 if code.as_deref() == Some(od_contracts::DAEMON_RESTART_CODE) =>
             {
+                // The status line says it (UI-008): no error block.
                 self.failure = Some(od_contracts::FailureCategory::DaemonRestart);
-                self.push_error(crate::events::app_closed());
             }
             AgentEvent::Error { message, .. } => self.blocks.push(Block::Error(message)),
             AgentEvent::ToolLoop {
@@ -851,11 +854,12 @@ mod tests {
             t.failure,
             Some(od_contracts::FailureCategory::DaemonRestart)
         );
-        let [Block::Error(message)] = t.blocks.as_slice() else {
-            panic!("one error block: {:?}", t.blocks);
-        };
-        assert!(message.contains("Contour closed"), "{message}");
-        assert!(!message.to_lowercase().contains("daemon"), "{message}");
+        // UI-008: one message, the status line's; no error block beside it.
+        assert!(
+            !t.blocks.iter().any(|b| matches!(b, Block::Error(_))),
+            "{:?}",
+            t.blocks
+        );
     }
 
     #[test]
@@ -872,10 +876,7 @@ mod tests {
             t.failure,
             Some(od_contracts::FailureCategory::DaemonRestart)
         );
-        let [Block::Error(message)] = t.blocks.as_slice() else {
-            panic!("one error block: {:?}", t.blocks);
-        };
-        assert!(message.contains("Contour closed"), "{message}");
+        assert!(t.blocks.is_empty(), "{:?}", t.blocks);
     }
 
     #[test]

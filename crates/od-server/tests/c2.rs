@@ -544,6 +544,75 @@ async fn interrupting_the_jury_stops_the_run_and_ships_the_best_round() {
     );
 }
 
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn closing_contour_mid_jury_ships_the_best_round() {
+    // Contour quitting cuts the run off (failed, `daemon_restart`), and the
+    // jury's best closed round is kept as after an interrupt (track C2).
+    let d = daemon_with(Options {
+        kill_grace: Duration::from_millis(500),
+        ..Options::default()
+    })
+    .await;
+    write_mock(&d.mocks, "claude", &slow_jury(&d.mocks));
+    let (project, conversation) = d.project().await;
+    d.http
+        .put(format!("{}/api/projects/{project}/critique", d.base))
+        .json(&json!({"enabled": true}))
+        .send()
+        .await
+        .unwrap();
+    let run = d
+        .start(
+            json!({"agentId": "claude", "projectId": project, "conversationId": conversation,
+                      "message": "poster"}),
+        )
+        .await;
+    let mut reader = d.stream(&run.run_id, None).await;
+    let wait = async {
+        while let Some(ev) = reader.next().await {
+            if ev.event == "agent"
+                && ev.data["type"] == "critique"
+                && ev.data["report"]["rounds"][0]["closed"] == true
+            {
+                return;
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(20), wait)
+        .await
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(10), d.state.shutdown())
+        .await
+        .expect("shutdown did not return");
+    let messages = d.settled_messages(&project, &conversation).await;
+    assert_eq!(messages[1]["runStatus"], "failed");
+    let report = messages[1]["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .rev()
+        .find(|e| e["type"] == "critique")
+        .unwrap()["report"]
+        .clone();
+    assert_eq!(
+        (report["status"].clone(), report["shipRound"].clone()),
+        (json!("interrupted"), json!(1))
+    );
+    let artifact = report["artifactPath"].as_str().unwrap();
+    let html = d
+        .http
+        .get(format!("{}/api/projects/{project}/raw/{artifact}", d.base))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(html.contains("Round one"), "the best round shipped: {html}");
+}
+
 /// A fake OpenAI Images endpoint; a prompt containing "fail" gets a 500.
 async fn fake_images() -> String {
     use axum::routing::post;

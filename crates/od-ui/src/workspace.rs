@@ -100,12 +100,67 @@ pub fn add_missing(list: &mut Vec<String>, files: Vec<String>) {
 }
 
 /// A message waiting for the running turn to end.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Queued {
     pub id: String,
     pub text: String,
     /// When the user queued it (epoch ms): the time it counts as sent.
     pub sent_at: i64,
+}
+
+/// Why the queue waits for the user instead of going out on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum QueueHold {
+    /// The user stopped the turn before it (UI-003).
+    Stopped,
+    /// Contour went away, or the run's stream was lost (UI-008).
+    LinkLost,
+}
+
+/// Whether the queue waits once a run ends with `status` (`None`: its
+/// stream was lost) and `failure`, and why. `None`: it goes out on its own,
+/// only after a turn that ran to its end.
+#[must_use]
+pub fn queue_hold(
+    status: Option<od_contracts::RunStatus>,
+    failure: Option<od_contracts::FailureCategory>,
+) -> Option<QueueHold> {
+    use od_contracts::{FailureCategory, RunStatus};
+    match status {
+        Some(RunStatus::Succeeded) => None,
+        Some(RunStatus::Failed) if failure != Some(FailureCategory::DaemonRestart) => None,
+        Some(RunStatus::Canceled) => Some(QueueHold::Stopped),
+        Some(RunStatus::Failed | RunStatus::Running) | None => Some(QueueHold::LinkLost),
+    }
+}
+
+/// A held queue as stored next to the conversation's draft, so a reload
+/// or closing the app does not lose what the user typed.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredHold {
+    why: QueueHold,
+    items: Vec<Queued>,
+}
+
+/// What to store for a queue held for `why` (`None`: not held): empty
+/// when there is nothing to keep.
+#[must_use]
+pub fn encode_held(why: Option<QueueHold>, items: &[Queued]) -> String {
+    match why {
+        Some(why) if !items.is_empty() => serde_json::to_string(&StoredHold {
+            why,
+            items: items.to_vec(),
+        })
+        .unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+/// The held queue [`encode_held`] stored, if any.
+#[must_use]
+pub fn decode_held(stored: &str) -> Option<(QueueHold, Vec<Queued>)> {
+    let StoredHold { why, items } = serde_json::from_str(stored).ok()?;
+    (!items.is_empty()).then_some((why, items))
 }
 
 /// Moves the item at `from` to `to` (both clamped), for drag and drop and
@@ -212,6 +267,54 @@ mod tests {
         assert_eq!(q, [1, 2, 3]);
         move_item(&mut q, 5, 0);
         assert_eq!(q, [1, 2, 3]);
+    }
+
+    #[test]
+    fn only_a_turn_that_ran_to_its_end_sends_the_queue() {
+        use od_contracts::{FailureCategory, RunStatus};
+        assert_eq!(queue_hold(Some(RunStatus::Succeeded), None), None);
+        assert_eq!(
+            queue_hold(Some(RunStatus::Failed), Some(FailureCategory::AgentError)),
+            None
+        );
+        // UI-003: Stop means stop.
+        assert_eq!(
+            queue_hold(Some(RunStatus::Canceled), None),
+            Some(QueueHold::Stopped)
+        );
+        // UI-008: Contour went away; sending now would fail too, and the
+        // hint must not say the turn was stopped.
+        assert_eq!(
+            queue_hold(
+                Some(RunStatus::Failed),
+                Some(FailureCategory::DaemonRestart)
+            ),
+            Some(QueueHold::LinkLost)
+        );
+        assert_eq!(
+            queue_hold(None, None),
+            Some(QueueHold::LinkLost),
+            "stream lost"
+        );
+    }
+
+    #[test]
+    fn a_held_queue_is_kept_across_a_reload() {
+        let items = vec![Queued {
+            id: "q1".into(),
+            text: "queued while cut".into(),
+            sent_at: 7,
+        }];
+        let stored = encode_held(Some(QueueHold::LinkLost), &items);
+        assert_eq!(
+            decode_held(&stored),
+            Some((QueueHold::LinkLost, items.clone()))
+        );
+        // Not held, or nothing left: nothing is kept.
+        assert_eq!(encode_held(None, &items), "");
+        assert_eq!(encode_held(Some(QueueHold::Stopped), &[]), "");
+        assert_eq!(decode_held(""), None);
+        assert_eq!(decode_held("not json"), None);
     }
 
     #[test]

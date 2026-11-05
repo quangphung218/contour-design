@@ -346,13 +346,143 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   // A crash, not a shutdown: a graceful stop waits on the open streams.
   daemon.kill('SIGKILL');
   await until(async () => !(await healthy()), 'daemon down');
-  await page.getByTestId('workspace-recovery-tip').waitFor({ timeout: 15_000 });
+  const tip = page.getByTestId('workspace-recovery-tip');
+  await tip.waitFor({ timeout: 15_000 });
   assert.equal(await assistant.count(), 2, 'the Studio keeps its content');
   await shot('workspace-recovery-tip');
+  // UI-009: one banner over the whole Studio, seen whichever pane shows.
+  const oneTip = async (where) => {
+    assert.equal(await tip.count(), 1, `one banner (${where})`);
+    assert.ok(await tip.isVisible(), `banner seen (${where})`);
+  };
+  await oneTip('chat and preview');
+  await page.getByTestId('collapse-chat').click();
+  await page.getByTestId('show-chat').waitFor();
+  await oneTip('chat folded');
+  await shot('recovery-tip-chat-folded');
+  await page.getByTestId('show-chat').click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId('pane-preview').click();
+  await oneTip('phone, Preview tab');
+  await shot('recovery-tip-phone-preview');
+  await page.getByTestId('pane-chat').click();
+  await page.setViewportSize({ width: 1440, height: 900 });
   daemon = startDaemon();
   await until(healthy, 'daemon back');
   await until(async () => (await page.getByTestId('workspace-recovery-tip').count()) === 0, 'tip gone', 20_000);
   results.recoveryTip = 'shown while down, gone on reconnect';
+
+  // 5b. UI-008: Contour quits mid-run. Nobody pressed Stop, so the turn
+  // says the connection was lost, not "Stopped". A message sent while it
+  // is down gets one line in plain words (no "TypeError", no "daemon"),
+  // Retry only, and Retry turns on once Contour is back.
+  await page.getByTestId('composer').fill('slow please');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await assistant.last().getAttribute('data-state')) === 'running', 'slow run going');
+  await page.getByTestId('composer').fill('queued while cut');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await page.getByTestId('queued').count()) === 1, 'one queued');
+  daemon.kill('SIGTERM');
+  const cutOff = assistant.last();
+  await until(async () => (await cutOff.getAttribute('data-state')) === 'failed', 'cut-off turn ends failed', 15_000);
+  await cutOff.getByText('Lost the connection to Contour').waitFor();
+  assert.equal(await cutOff.getByText('Stopped').count(), 0, 'not told as a Stop');
+  // The queue waits, and its hint does not say the turn was stopped.
+  await page.getByTestId('queue-held-hint').getByText('connection to Contour was lost').waitFor();
+  await until(async () => !(await healthy()), 'daemon down', 20_000);
+  await page.getByTestId('composer').fill('hello?');
+  await page.getByTestId('composer').press('Enter');
+  const lost = assistant.last();
+  await until(async () => (await lost.getAttribute('data-state')) === 'failed', 'send while down fails');
+  const said = await lost.innerText();
+  assert.ok(!/TypeError|daemon/i.test(said), said);
+  assert.equal(await lost.locator('.msg-error').count(), 0, 'one message: the status line');
+  await lost.getByText('Check that the app is still running').waitFor();
+  assert.equal(await lost.getByText('this turn was cut off').count(), 0, 'it never ran');
+  assert.equal(await lost.getByTestId('run-log').count(), 0, 'no agent output for a turn that never ran');
+  assert.equal(await lost.getByTestId('next-settings').count(), 0, 'Settings would not help');
+  await page.getByTestId('workspace-recovery-tip').waitFor({ timeout: 15_000 });
+  const retry = lost.getByTestId('next-retry');
+  assert.ok(await retry.isDisabled(), 'Retry waits for Contour');
+  assert.equal(await retry.getAttribute('title'), 'Waiting for the connection to Contour');
+  assert.ok(Number(await retry.evaluate((b) => getComputedStyle(b).opacity)) < 1, 'Retry looks off');
+  await shot('daemon-lost-send');
+  daemon = startDaemon();
+  await until(healthy, 'daemon back');
+  await until(async () => await lost.getByTestId('next-retry').isEnabled(), 'Retry on once back', 20_000);
+  results.daemonLost = 'cut-off turn failed (not Stopped), one plain line, Retry on reconnect';
+
+  // 5c. A message sent past a held queue runs, and the queue still says
+  // it waits (not "Sent when the current turn ends"), during that run and
+  // after it: it goes only on Send.
+  await page.getByTestId('composer').fill('slow past the queue');
+  await page.getByTestId('composer').press('Enter');
+  const past = assistant.last();
+  await until(async () => (await past.getAttribute('data-state')) === 'running', 'run past the queue going', 15_000);
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  await until(async () => (await past.getAttribute('data-state')) === 'succeeded', 'run past the queue ends', 30_000);
+  const turns = await assistant.count();
+  await sleep(1500);
+  assert.equal(await assistant.count(), turns, 'the held queue did not go on its own');
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  // A reload keeps the held queue and why it waits.
+  await page.reload();
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  await page.getByTestId('queue-held-hint').getByText('connection to Contour was lost').waitFor();
+  assert.equal(await page.getByTestId('queued').getByText('queued while cut').count(), 1);
+  await page.getByTestId('queue-discard').click();
+  await until(async () => (await page.getByTestId('queued').count()) === 0, 'queue discarded');
+  await page.reload();
+  await assistant.first().waitFor();
+  await sleep(500);
+  assert.equal(await page.getByTestId('queued').count(), 0, 'a discarded queue stays gone');
+  results.heldQueue = 'still waiting during and after a run sent past it, kept across a reload';
+
+  // 5d. A held queue belongs to its conversation, and only Send sends it.
+  await page.getByTestId('composer').fill('slow owner run');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await assistant.last().getAttribute('data-state')) === 'running', 'owner run going', 15_000);
+  await page.getByTestId('composer').fill('stay in A');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await page.getByTestId('queued').count()) === 1, 'queued in A');
+  await page.getByTestId('stop').click();
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  // A message sent past it that the server refuses does not send it.
+  await page.route(`${BASE}/api/runs`, (route) => route.request().method() === 'POST'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: 'boom' } }) })
+    : route.continue(), { times: 1 });
+  await page.getByTestId('composer').fill('refused past the queue');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await assistant.last().getAttribute('data-state')) === 'failed', 'refused send fails');
+  const afterRefused = await assistant.count();
+  await sleep(1500);
+  assert.equal(await assistant.count(), afterRefused, 'a refused send did not send the held queue');
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  // Another conversation does not get it; back in A it waits again.
+  const convA = await page.getByTestId('conversation').inputValue();
+  await page.getByTestId('new-conversation').click();
+  await until(async () => (await page.getByTestId('conversation').inputValue()) !== convA, 'conversation B open');
+  const convB = await page.getByTestId('conversation').inputValue();
+  await sleep(500);
+  assert.equal(await page.getByTestId('queued').count(), 0, 'the held queue stays in A');
+  await page.getByTestId('conversation').selectOption(convA);
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  assert.equal(await page.getByTestId('queued').getByText('stay in A').count(), 1);
+  // Discard is for good: not back after a reload, nor in B.
+  await page.getByTestId('queue-discard').click();
+  await until(async () => (await page.getByTestId('queued').count()) === 0, 'A queue discarded');
+  await page.reload();
+  await page.getByTestId('conversation').waitFor();
+  if ((await page.getByTestId('conversation').inputValue()) !== convA) {
+    await page.getByTestId('conversation').selectOption(convA);
+  }
+  await assistant.first().waitFor();
+  await sleep(500);
+  assert.equal(await page.getByTestId('queued').count(), 0, 'a discarded queue stays gone in A');
+  await page.getByTestId('conversation').selectOption(convB);
+  await sleep(500);
+  assert.equal(await page.getByTestId('queued').count(), 0, 'nothing in B either');
+  results.heldQueueOwner = 'stays in its conversation, not sent by a refused send, discard is for good';
 
   // 6. Vietnamese strings of the new screens.
   await fetch(`${BASE}/api/app-config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: 'vi' }) });

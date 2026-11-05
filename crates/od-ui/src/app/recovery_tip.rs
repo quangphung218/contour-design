@@ -1,7 +1,8 @@
 //! Project workspace recovery tip (upstream `ProjectWorkspaceRecoveryTip`):
-//! while the project's event stream to the daemon is down, a small status
-//! card in the bottom-left corner says the link is being restored, and the
-//! Studio keeps showing what it has. Once the stream is back, files and
+//! while the project's event stream to the daemon is down, a banner across
+//! the top of the Studio says the link is being restored (in the flow, so
+//! it covers no control, and above both panes, so it shows whichever pane
+//! is visible: UI-009), and the Studio keeps showing what it has. Once the stream is back, files and
 //! conversations are read again (events missed meanwhile are gone).
 
 use super::studio::StudioCtx;

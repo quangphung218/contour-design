@@ -10,6 +10,28 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Stop sent the queued message right away and started a new run. Now
+  the queue waits after a Stop, showing "1 message waiting" with Send
+  and Discard (UI-003).
+- When Contour quit or crashed mid-run, the turn said "Stopped" though
+  nobody pressed Stop, and after a restart it read failed or canceled
+  depending on the screen. A run cut off by the app going away now ends
+  failed as "Lost the connection to Contour" everywhere, with Retry
+  only. A message sent while Contour is unreachable gets that one line,
+  without the browser's "TypeError: Failed to fetch", the word
+  "daemon" or an Open Settings button, and Retry turns on once the
+  connection is back (UI-008).
+- The "Connection to Contour interrupted" card covered the composer's
+  buttons; it is now one banner across the top of the Studio, covering
+  nothing and seen with the chat folded or on a phone's Preview tab
+  (UI-009).
+- A file uploaded while a run was going showed in that turn's files as
+  written by the agent ("Wrote sample.txt"). Uploads, and files made in
+  the app (New file, a sketch, a preview capture), stay out of the turn
+  unless the agent changes them (UI-012).
+- Dragging the chat's scrollbar up, or pressing Home or Page Up, while a
+  run streamed could snap back to the end when output landed in the same
+  moment. The move up now counts, and the list keeps its place.
 - The chat (and the side chat) no longer pulls you back to the bottom on
   every new token while a run streams: scrolled up to read earlier turns,
   even by a trackpad's few pixels at a time, the list keeps its place and

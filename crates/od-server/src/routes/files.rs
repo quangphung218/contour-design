@@ -154,6 +154,21 @@ pub async fn write(
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|ct| ct.starts_with("multipart/form-data"));
+    // The app's own new files (New file, a sketch, a preview capture) come
+    // from the browser, which sends `Origin`; an agent's `od files write`
+    // does not, and stays the turn's (UI-012). A file that was there
+    // already (one the agent wrote this turn, then the user saved) stays
+    // the turn's too: only a file the user made is left out.
+    let from_app = req.headers().contains_key(header::ORIGIN);
+    let note =
+        move |state: &AppState, id: &str, (existed, file): &(bool, od_contracts::ProjectFile)| {
+            if from_app && !existed {
+                state
+                    .runs
+                    .engine
+                    .note_placed(id, &file.path, file.size, file.mtime);
+            }
+        };
     if is_multipart {
         let mut multipart = Multipart::from_request(req, &state)
             .await
@@ -175,10 +190,18 @@ pub async fn write(
             Some(n) => sanitize_path(&n)?,
             None => sanitize_name(&original),
         };
-        let file = state
-            .blocking(move |s| s.write_file(&id, &target, &bytes, true, None))
+        let project = id.clone();
+        let written = state
+            .blocking(move |s| {
+                let existed = s.stat_file(&project, &target).is_ok();
+                Ok((
+                    existed,
+                    s.write_file(&project, &target, &bytes, true, None)?,
+                ))
+            })
             .await?;
-        return Ok(ApiJson(FileResponse { file }));
+        note(&state, &id, &written);
+        return Ok(ApiJson(FileResponse { file: written.1 }));
     }
     let ApiJson(body) = ApiJson::<WriteFileRequest>::from_request(req, &state).await?;
     let bytes = match body.encoding {
@@ -190,10 +213,18 @@ pub async fn write(
     let overwrite = body.overwrite.unwrap_or(true);
     let manifest = body.artifact_manifest;
     let name = body.name;
-    let file = state
-        .blocking(move |s| s.write_file(&id, &name, &bytes, overwrite, manifest.as_ref()))
+    let project = id.clone();
+    let written = state
+        .blocking(move |s| {
+            let existed = s.stat_file(&project, &name).is_ok();
+            Ok((
+                existed,
+                s.write_file(&project, &name, &bytes, overwrite, manifest.as_ref())?,
+            ))
+        })
         .await?;
-    Ok(ApiJson(FileResponse { file }))
+    note(&state, &id, &written);
+    Ok(ApiJson(FileResponse { file: written.1 }))
 }
 
 /// `POST upload`: multipart with an optional `dir` field and file parts.
@@ -217,14 +248,19 @@ pub async fn upload(
     if parts.is_empty() {
         return Err(ApiErr::bad_request("no files in upload"));
     }
-    let files = state
+    let project = id.clone();
+    let files: Vec<od_contracts::UploadedFile> = state
         .blocking(move |s| {
             parts
                 .iter()
-                .map(|(original, bytes)| s.upload_file(&id, dir.as_deref(), original, bytes))
+                .map(|(original, bytes)| s.upload_file(&project, dir.as_deref(), original, bytes))
                 .collect()
         })
         .await?;
+    // A run going now must not list the user's upload as its own (UI-012).
+    for f in &files {
+        state.runs.engine.note_placed(&id, &f.path, f.size, f.mtime);
+    }
     Ok(ApiJson(UploadResponse { files }))
 }
 

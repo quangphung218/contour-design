@@ -36,10 +36,9 @@ impl StickToBottom {
             let Some(el) = self.list.get() else {
                 return;
             };
-            let state = self.state;
             let target = el.clone();
             let on_change = Callback::new(move |_: js_sys::Array| {
-                if state.with_untracked(Follow::pinned) {
+                if self.sync() {
                     target.set_scroll_top(target.scroll_height());
                 }
             });
@@ -66,15 +65,19 @@ impl StickToBottom {
         });
     }
 
-    /// For the list's `on:scroll`.
-    pub fn on_scroll(self) {
-        let Some(el) = self.list.get_untracked() else {
-            return;
-        };
-        let m = Metrics {
+    fn metrics(self) -> Option<Metrics> {
+        let el = self.list.get_untracked()?;
+        Some(Metrics {
             scroll_top: f64::from(el.scroll_top()),
             client_height: f64::from(el.client_height()),
             scroll_height: f64::from(el.scroll_height()),
+        })
+    }
+
+    /// For the list's `on:scroll`.
+    pub fn on_scroll(self) {
+        let Some(m) = self.metrics() else {
+            return;
         };
         self.state.maybe_update(|f| {
             let before = *f;
@@ -83,6 +86,20 @@ impl StickToBottom {
             // (the button) needs to notify.
             before.show_jump() != f.show_jump()
         });
+    }
+
+    /// Whether the list follows, counting a move up whose `scroll` event
+    /// has not come yet ([`Follow::noticed`]): read before every scroll
+    /// to the end.
+    fn sync(self) -> bool {
+        if let Some(m) = self.metrics() {
+            self.state.maybe_update(|f| {
+                let before = f.pinned();
+                f.noticed(m);
+                before != f.pinned()
+            });
+        }
+        self.state.with_untracked(Follow::pinned)
     }
 
     /// For the list's `on:wheel` (mouse wheel and trackpad). A pinch on a
@@ -106,6 +123,7 @@ impl StickToBottom {
     /// conversation opened): scroll to the end if following, and again on
     /// the next frame for content that renders after this (next steps).
     pub fn changed(self, new_item: bool) {
+        self.sync();
         let mut follow = false;
         self.state.maybe_update(|f| {
             let before = f.show_jump();
@@ -122,9 +140,8 @@ impl StickToBottom {
             return;
         };
         el.set_scroll_top(el.scroll_height());
-        let state = self.state;
         request_animation_frame(move || {
-            if state.with_untracked(Follow::pinned) {
+            if self.sync() {
                 el.set_scroll_top(el.scroll_height());
             }
         });

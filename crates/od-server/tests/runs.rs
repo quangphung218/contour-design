@@ -1077,9 +1077,19 @@ async fn shutdown_stops_running_agents_like_stop() {
     tokio::time::timeout(Duration::from_secs(10), d.state.shutdown())
         .await
         .expect("shutdown did not return");
+    // Nobody pressed Stop: the run ends as cut off by Contour closing,
+    // as after a crash, not as "Stopped" (UI-008).
     let reg = d.state.runs.registry.get(&run.run_id).unwrap();
-    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
-    // The turn is recorded as stopped before shutdown returns.
+    assert_eq!(reg.status(), od_contracts::RunStatus::Failed);
+    let events = d.events(&run.run_id, None).await;
+    let end = events.last().unwrap();
+    assert_eq!(end.event, "end");
+    assert_eq!(
+        end.data["failureCategory"], "daemon_restart",
+        "{:?}",
+        end.data
+    );
+    // The turn is recorded as ended before shutdown returns.
     let body = d
         .get_json(&format!(
             "/api/projects/{project}/conversations/{conversation}/messages"
@@ -1092,11 +1102,213 @@ async fn shutdown_stops_running_agents_like_stop() {
         .find(|m| m["role"] == "assistant")
         .cloned()
         .unwrap();
-    assert_eq!(assistant["runStatus"], "canceled");
+    assert_eq!(assistant["runStatus"], "failed");
     if let Some(left) = Duration::from_secs(4).checked_sub(started.elapsed()) {
         tokio::time::sleep(left).await;
     }
     assert!(!late.exists(), "the agent kept working after shutdown");
+}
+
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn a_file_uploaded_during_a_run_is_not_listed_as_the_runs() {
+    // UI-012: the user's upload, not the agent's write.
+    let d = daemon().await;
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!(
+            r#"{PROBES}
+IFS= read -r line
+printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+sleep 1.5
+printf 'mine' > mine.html
+printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"s"}}\n'
+"#
+        ),
+    );
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project,
+                      "conversationId": conversation, "message": "go"}))
+        .await;
+    let mut reader = d.stream(&run.run_id, None).await;
+    while let Some(ev) = reader.next().await {
+        if ev.event == "agent" && ev.data["type"] == "status" {
+            break;
+        }
+    }
+    let boundary = "XyZ";
+    let body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"sample.txt\"\r\nContent-Type: text/plain\r\n\r\nhello\r\n--{boundary}--\r\n"
+    );
+    let res = d
+        .http
+        .post(format!("{}/api/projects/{project}/upload", d.base))
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 200);
+    let up: Value = res.json().await.unwrap();
+    let uploaded = up["files"][0]["path"].as_str().unwrap().to_owned();
+
+    let events = d.events(&run.run_id, None).await;
+    let end = end_of(&events);
+    assert_eq!(end["status"], "succeeded", "{end}");
+    let paths: Vec<&str> = end["artifactPaths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert!(
+        paths.iter().any(|p| p.ends_with("/mine.html")),
+        "the agent's file: {paths:?}"
+    );
+    assert!(
+        !paths.iter().any(|p| p.ends_with(&format!("/{uploaded}"))),
+        "the upload {uploaded} is not the run's: {paths:?}"
+    );
+}
+
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn a_file_the_app_creates_during_a_run_is_not_listed_as_the_runs() {
+    // UI-012 for `POST /files` (New file, a sketch, a preview capture): a
+    // file the browser makes is the user's; `od files write` (no `Origin`),
+    // as an agent calls it, and a file the agent made before the user
+    // saved it, stay the turn's.
+    let d = daemon().await;
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!(
+            r#"{PROBES}
+IFS= read -r line
+printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+printf '<p>agent</p>' > page.html
+sleep 1.5
+printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"s"}}\n'
+"#
+        ),
+    );
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project,
+                      "conversationId": conversation, "message": "go"}))
+        .await;
+    let mut reader = d.stream(&run.run_id, None).await;
+    while let Some(ev) = reader.next().await {
+        if ev.event == "agent" && ev.data["type"] == "status" {
+            break;
+        }
+    }
+    let write = |name: &str, origin: bool| {
+        let mut req = d
+            .http
+            .post(format!("{}/api/projects/{project}/files", d.base))
+            .json(&json!({"name": name, "content": "# notes"}));
+        if origin {
+            req = req.header("origin", d.base.clone());
+        }
+        req.send()
+    };
+    // The agent's page is there before the user saves over it.
+    let raw = format!("{}/api/projects/{project}/raw/page.html", d.base);
+    for _ in 0..200 {
+        if d.http.get(&raw).send().await.unwrap().status().is_success() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        write("page.html", true).await.unwrap().status().as_u16(),
+        200
+    );
+    assert_eq!(
+        write("notes.md", true).await.unwrap().status().as_u16(),
+        200
+    );
+    assert_eq!(write("cli.md", false).await.unwrap().status().as_u16(), 200);
+
+    let events = d.events(&run.run_id, None).await;
+    let end = end_of(&events);
+    assert_eq!(end["status"], "succeeded", "{end}");
+    let paths: Vec<&str> = end["artifactPaths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert!(
+        paths.iter().any(|p| p.ends_with("/cli.md")),
+        "an agent's `od files write` is the turn's: {paths:?}"
+    );
+    assert!(
+        paths.iter().any(|p| p.ends_with("/page.html")),
+        "the agent made page.html this turn; the user saving it later keeps it the turn's: {paths:?}"
+    );
+    assert!(
+        !paths.iter().any(|p| p.ends_with("/notes.md")),
+        "the app's file is not the run's: {paths:?}"
+    );
+}
+
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn a_run_stopped_before_quitting_stays_stopped() {
+    // The user pressed Stop and quit while the agent was still in its
+    // grace period: the turn is theirs, "Stopped", not cut off.
+    let d = daemon_with(Options {
+        kill_grace: Duration::from_secs(2),
+        ..Options::default()
+    })
+    .await;
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!(
+            r#"{PROBES}
+trap '' TERM PIPE
+IFS= read -r line
+printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+i=0
+while [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+"#
+        ),
+    );
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project,
+                      "conversationId": conversation, "message": "go"}))
+        .await;
+    let mut reader = d.stream(&run.run_id, None).await;
+    while let Some(ev) = reader.next().await {
+        if ev.event == "agent" && ev.data["type"] == "status" {
+            break;
+        }
+    }
+    let res = d
+        .post(&format!("/api/runs/{}/cancel", run.run_id), &json!({}))
+        .await;
+    assert_eq!(res.status().as_u16(), 200);
+    // The agent ignores SIGTERM: it is still running when Contour quits.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(d.state.runs.engine.in_flight(), 1);
+
+    tokio::time::timeout(Duration::from_secs(10), d.state.shutdown())
+        .await
+        .expect("shutdown did not return");
+    let events = d.events(&run.run_id, None).await;
+    let end = events.last().unwrap();
+    assert_eq!(end.event, "end");
+    assert_eq!(end.data["status"], "canceled", "{:?}", end.data);
+    assert!(end.data["failureCategory"].is_null(), "{:?}", end.data);
 }
 
 #[cfg(unix)] // the mock agent is a `sh` script
@@ -1129,8 +1341,13 @@ async fn stopping_the_server_stops_runs_whose_stream_is_open() {
         .await
         .expect("the server did not stop")
         .unwrap();
+    // Cut off by the stop, not by the user: failed as daemon_restart (UI-008).
     let reg = d.state.runs.registry.get(&run.run_id).unwrap();
-    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
+    assert_eq!(reg.status(), od_contracts::RunStatus::Failed);
+    assert_eq!(
+        reg.end_payload().and_then(|e| e.failure_category),
+        Some(od_contracts::FailureCategory::DaemonRestart)
+    );
     if let Some(left) = Duration::from_secs(4).checked_sub(started.elapsed()) {
         tokio::time::sleep(left).await;
     }

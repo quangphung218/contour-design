@@ -424,7 +424,13 @@ try {
     assert.match(first, /^(Waiting for the agent|Writing the reply)(?: · last: \S+)? · \d+:\d\d$/);
     const clock = (s) => s.split(' · ').pop();
     await until(async () => clock(await detail.textContent()) !== clock(first), 'the run clock ticks', 3000);
-    await list.evaluate((e) => e.scrollTo(0, 0));
+    // Output lands before the scroll's event, as a scrollbar drag or Home
+    // mid-stream can see: the move up still counts.
+    await list.evaluate((e) => {
+      e.scrollTo(0, 0);
+      e.append(document.createComment('output'));
+      e.lastChild.remove();
+    });
     await until(async () => (await metrics()).top === 0, 'scrolled up');
     const before = await metrics();
     // The streamed words wrap about every eight steps at this width, so a

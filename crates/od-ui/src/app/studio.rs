@@ -31,15 +31,17 @@ use crate::file_tree::is_markdown;
 use crate::highlight::{Lang, highlight};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Picked, Slide};
-use crate::workspace::{Queued, Tabs, touch_recent};
+use crate::workspace::{
+    QueueHold, Queued, Tabs, decode_held, encode_held, queue_hold, touch_recent,
+};
 use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use od_contracts::{
     CommentAttachment, CommentRect, CommentStatus, CommentsResponse, Conversation,
-    ConversationResponse, CreateVersionRequest, FileKind, FilesResponse, MemoryEntry,
-    PreviewComment, Project, ProjectFile, ProjectResponse, SessionMode, UpdateCommentRequest,
-    VersionSource,
+    ConversationResponse, CreateVersionRequest, FailureCategory, FileKind, FilesResponse,
+    MemoryEntry, PreviewComment, Project, ProjectFile, ProjectResponse, SessionMode,
+    UpdateCommentRequest, VersionSource,
 };
 use send_wrapper::SendWrapper;
 use serde_json::json;
@@ -219,6 +221,13 @@ pub struct StudioCtx {
     pub draft: RwSignal<String>,
     /// Messages typed while a run was going, sent one by one after it.
     pub queue: RwSignal<Vec<Queued>>,
+    /// The queue waits for the user (Send or Discard), and why: the run
+    /// before it was stopped or cut off (UI-003, UI-008).
+    pub queue_held: RwSignal<Option<QueueHold>>,
+    /// Where the held queue is stored: the key of the conversation it was
+    /// typed in, fixed when it is held, so it stays that conversation's
+    /// whichever one is open.
+    held_owner: StoredValue<Option<String>>,
     /// The assistant turn the queue last sent on its own once a run ended:
     /// the chat goes to it only if the reader is at the end already.
     pub dequeued: StoredValue<Option<String>>,
@@ -484,6 +493,10 @@ impl StudioCtx {
         // a queued one is not (the queue lives only in memory, so a reload
         // brings it back to the composer).
         if self.live_run.get_untracked().is_some() {
+            if self.queue.with_untracked(Vec::is_empty) {
+                // A new queue: whatever held the last one is over.
+                self.queue_held.set(None);
+            }
             self.queue.update(|q| {
                 q.push(Queued {
                     id: api::random_id(),
@@ -587,10 +600,24 @@ impl StudioCtx {
                         }
                     });
                 }
+                Err(e) if e.status == 0 => {
+                    // Contour is unreachable: one line in the user's words,
+                    // Retry only, and the queue waits (UI-008).
+                    turn.update(|t| {
+                        t.state = TurnState::Failed;
+                        t.failure = Some(FailureCategory::DaemonRestart);
+                    });
+                    self.live_run.set(None);
+                    self.hold_queue(QueueHold::LinkLost);
+                }
                 Err(e) => {
                     fail(turn, e.to_string());
                     self.live_run.set(None);
-                    self.send_next(shell);
+                    // A held queue waits for the user's Send, whatever
+                    // happened to a message sent past it (UI-003).
+                    if self.queue_held.get_untracked().is_none() {
+                        self.send_next(shell, false);
+                    }
                 }
             }
         });
@@ -615,13 +642,102 @@ impl StudioCtx {
         }
     }
 
-    /// Sends the first queued message, if any.
-    fn send_next(self, shell: Shell) {
+    /// `localStorage` key of the open conversation's held queue.
+    fn held_queue_key(self) -> Option<String> {
+        self.conversation_id
+            .get_untracked()
+            .map(|c| super::composer::held_queue_key(&self.project_id.get_value(), &c))
+    }
+
+    /// Stores the held queue whenever it or its hold changes, so a reload
+    /// or quitting does not lose what the user typed; gone once it is sent
+    /// or discarded.
+    fn keep_held_queue(self) {
+        Effect::new(move |_| {
+            let why = self.queue_held.get();
+            let stored = self.queue.with(|q| encode_held(why, q));
+            if let Some(key) = self.held_owner.get_value() {
+                super::composer::save_draft(&key, &stored);
+                if stored.is_empty() {
+                    // Sent or discarded: gone for good.
+                    self.held_owner.set_value(None);
+                }
+            }
+        });
+    }
+
+    /// Opening another conversation leaves the held queue where it was
+    /// typed: stored under its own conversation, out of this one's view.
+    fn leave_held_queue(self, opening: &str) {
+        let key = super::composer::held_queue_key(&self.project_id.get_value(), opening);
+        if self.queue_held.get_untracked().is_none()
+            || self.held_owner.get_value().as_deref() == Some(key.as_str())
+        {
+            return;
+        }
+        // Detached first, so clearing it here does not clear what is stored.
+        self.held_owner.set_value(None);
+        self.queue.set(Vec::new());
+        self.queue_held.set(None);
+    }
+
+    /// Brings back the held queue of the conversation just opened.
+    fn restore_held_queue(self) {
+        if self.queue.with_untracked(|q| !q.is_empty()) {
+            return;
+        }
+        let held = self
+            .held_queue_key()
+            .and_then(|k| super::composer::load_draft(&k))
+            .and_then(|s| decode_held(&s));
+        if let Some((why, items)) = held {
+            self.held_owner.set_value(self.held_queue_key());
+            self.queue.set(items);
+            self.queue_held.set(Some(why));
+        }
+    }
+
+    /// Keeps the queue for the user to send or discard (UI-003).
+    fn hold_queue(self, why: QueueHold) {
+        if self.queue.with_untracked(|q| !q.is_empty()) {
+            if self.queue_held.get_untracked().is_none() {
+                // Typed in the open conversation (it cannot change while
+                // a run goes), so it is that conversation's.
+                self.held_owner.set_value(self.held_queue_key());
+            }
+            self.queue_held.set(Some(why));
+        }
+    }
+
+    /// Send on a held queue: its first message goes now (or after the
+    /// run going), the rest one by one after it.
+    pub fn release_queue(self, shell: Shell) {
+        self.queue_held.set(None);
+        if self.live_run.get_untracked().is_none() {
+            self.send_next(shell, false);
+        }
+    }
+
+    /// Discard on a held queue: every waiting message goes, with its
+    /// stored draft.
+    pub fn discard_queue(self) {
+        let ids: Vec<String> = self
+            .queue
+            .with_untracked(|q| q.iter().map(|x| x.id.clone()).collect());
+        for id in ids {
+            self.drop_queued(&id);
+        }
+        self.queue_held.set(None);
+    }
+
+    /// Sends the first queued message, if any; `auto` when the queue sends
+    /// it on its own after a run (the chat then stays where the reader is).
+    fn send_next(self, shell: Shell, auto: bool) {
         let next = self
             .queue
             .try_update(|q| (!q.is_empty()).then(|| q.remove(0)));
         if let Some(Some(next)) = next {
-            self.send_at(next.text, shell, next.sent_at, true);
+            self.send_at(next.text, shell, next.sent_at, auto);
         }
     }
 
@@ -691,14 +807,15 @@ impl StudioCtx {
                         self.record_versions(files.clone(), prompt.get_value());
                         self.check_deliverable(run.get_value(), files);
                     }
-                    self.finish_run(shell);
+                    let failure = turn.with_untracked(|t| t.failure);
+                    self.finish_run(shell, queue_hold(Some(status), failure));
                 }
             },
             move || {
                 if turn.with_untracked(|t| t.state.is_live()) {
                     fail(turn, t(T::LostRunStream).to_owned());
                 }
-                self.finish_run(shell);
+                self.finish_run(shell, Some(QueueHold::LinkLost));
             },
         );
         match stream {
@@ -730,8 +847,9 @@ impl StudioCtx {
     }
 
     /// Closes the run stream after the current event handler returns, then
-    /// sends the next queued message.
-    fn finish_run(self, shell: Shell) {
+    /// sends the next queued message unless the run's end holds the queue
+    /// (`hold`, see [`queue_hold`]) or it is held already; then it waits.
+    fn finish_run(self, shell: Shell, hold: Option<QueueHold>) {
         self.live_run.set(None);
         self.run_stream.with_value(|s| {
             if let Some(s) = s {
@@ -740,7 +858,11 @@ impl StudioCtx {
         });
         leptos::task::spawn_local(async move {
             self.run_stream.set_value(None);
-            self.send_next(shell);
+            match (hold, self.queue_held.get_untracked()) {
+                (None, None) => self.send_next(shell, true),
+                (Some(why), _) => self.hold_queue(why),
+                (None, Some(_)) => {}
+            }
         });
         self.refresh_files();
         self.reload_preview();
@@ -808,6 +930,7 @@ impl StudioCtx {
 
     /// Shows `cid`: its messages, its comments, and its live run if any.
     pub async fn open_conversation(self, cid: String) {
+        self.leave_held_queue(&cid);
         self.conversation_id.set(Some(cid.clone()));
         let mode = self
             .conversations
@@ -847,6 +970,7 @@ impl StudioCtx {
         let resume = resume.filter(|(_, _, id)| !local.iter().any(|l| &l.id == id));
         self.items
             .set(crate::chat::merge_loaded(items, local, |i| i.id.as_str()));
+        self.restore_held_queue();
         if let Some((run_id, turn, _)) = resume {
             // Replay from the start: the turn is rebuilt from frames.
             turn.update(|t| {
@@ -1275,6 +1399,8 @@ pub fn Studio() -> impl IntoView {
         live_run: RwSignal::new(None),
         draft: RwSignal::new(String::new()),
         queue: RwSignal::new(Vec::new()),
+        queue_held: RwSignal::new(None),
+        held_owner: StoredValue::new(None),
         dequeued: StoredValue::new(None),
         files: RwSignal::new(Vec::new()),
         tabs: RwSignal::new(Tabs::default()),
@@ -1326,6 +1452,7 @@ pub fn Studio() -> impl IntoView {
     preview_tools::watch_lint(ctx);
     super::deck::sync_deck(ctx);
     super::composer::keep_draft(ctx.draft, ctx.chat, ctx.project_id, ctx.conversation_id);
+    ctx.keep_held_queue();
     // The command palette offers this Studio's commands while it is open.
     shell.studio.set(Some(ctx));
 
@@ -1390,9 +1517,14 @@ pub fn Studio() -> impl IntoView {
             class:chat-collapsed=move || ctx.chat.collapsed.get()
             class:load-failed=move || ctx.load_error.with(Option::is_some)
             class:focus=move || files_ui.focus.get()
+            class:link-down=move || ctx.link_down.get()
             data-pane=move || pane.get().key()
             style=move || ctx.chat.width.get().map(|w| format!("--chat-w:{w:.0}px"))
         >
+            // One banner for the whole Studio, in the flow above both panes:
+            // seen with the chat folded, in focus or on a phone's Preview
+            // tab, and it covers no control (UI-009).
+            <super::recovery_tip::WorkspaceRecoveryTip ctx=ctx/>
             <div class="segmented small studio-switch" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ViewMode) data-testid="studio-switch">
                 {pane_seg(NarrowPane::Chat, T::Chat)}
                 {pane_seg(NarrowPane::Preview, T::Preview)}
@@ -1414,7 +1546,6 @@ pub fn Studio() -> impl IntoView {
                 <QuickSwitcher ctx=ctx/>
             </Show>
             <NoticeToast ctx=ctx/>
-            <super::recovery_tip::WorkspaceRecoveryTip ctx=ctx/>
             <FilesToast/>
             <super::project_actions::BrandReady ctx=ctx/>
         </div>

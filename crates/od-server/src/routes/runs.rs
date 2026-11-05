@@ -642,15 +642,16 @@ async fn prepare_and_launch(
             let _ = std::fs::remove_file(file);
         }
         crate::routes::genui::drop_pending_for_run(state, run).await;
-        end_unlaunched(
-            state,
-            run,
-            &comment_ids(req),
-            RunStatus::Canceled,
-            None,
-            None,
-        )
-        .await;
+        // Stopped by a shutdown, not by the user: told as Contour closing.
+        let (status, category) = if state.runs.cut_by_shutdown(run.id()) {
+            (
+                RunStatus::Failed,
+                Some(od_contracts::FailureCategory::DaemonRestart),
+            )
+        } else {
+            (RunStatus::Canceled, None)
+        };
+        end_unlaunched(state, run, &comment_ids(req), status, None, category).await;
         return Ok(resumed);
     };
     state.runs.tasks.spawn(persist_run(
@@ -768,6 +769,10 @@ async fn persist_run(
         let _ = std::fs::remove_file(file);
     }
     let status = run.status();
+    // Contour closing cut the run off: like a Stop, not like the agent failing.
+    let cut_off = status == RunStatus::Canceled
+        || (status == RunStatus::Failed
+            && outcome.failure_category == Some(od_contracts::FailureCategory::DaemonRestart));
     let verdict = jury
         .as_mut()
         .and_then(od_runtime::critique::CritiqueReader::finish);
@@ -777,10 +782,10 @@ async fn persist_run(
             // The jury's file and report are extras: failing them must not
             // leave the message running.
             if let Some((mut report, artifact)) = verdict {
-                // An interrupted jury ships its best closed round (track C2).
+                // An interrupted jury ships its best closed round (track C2),
+                // also when Contour closing interrupted it.
                 let ships = status == RunStatus::Succeeded
-                    || (status == RunStatus::Canceled
-                        && report.status == od_contracts::CritiqueStatus::Interrupted);
+                    || (cut_off && report.status == od_contracts::CritiqueStatus::Interrupted);
                 if let Some(html) = artifact.filter(|_| ships) {
                     let path = format!(
                         "critique/{}.html",

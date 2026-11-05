@@ -193,7 +193,8 @@ try {
   await assistant.nth(3).getByText('Turn 4. Working on: [form answers — discovery]').waitFor();
   results.questionForm = 'ok';
 
-  // 7. Plan pill, queue, steer, stop; the queued message goes out after.
+  // 7. Plan pill, queue, steer, stop; after a Stop the queue waits for
+  // Send or Discard instead of starting a run (UI-003).
   await until(async () => (await assistant.nth(3).getAttribute('data-state')) === 'succeeded', 'turn 4 end');
   await page.getByTestId('composer').fill('slow plan please');
   await page.getByTestId('composer').press('Enter');
@@ -212,6 +213,12 @@ try {
   await page.getByTestId('stop').click();
   await until(async () => (await assistant.nth(4).getAttribute('data-state')) === 'canceled', 'canceled state');
   await assistant.nth(4).getByText('Stopped').waitFor();
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  await page.getByTestId('queue-held-hint').getByText('the turn before was stopped').waitFor();
+  await sleep(1500);
+  assert.equal(await assistant.count(), 5, 'Stop must not send the queue');
+  assert.equal(await page.getByTestId('queued').count(), 1);
+  await page.getByTestId('queue-send').click();
   await assistant.nth(5).getByText('Turn 5. Working on: after stop').waitFor();
   await until(async () => (await assistant.nth(5).getAttribute('data-state')) === 'succeeded', 'queued turn end');
   assert.equal(await page.getByTestId('queued').count(), 0);

@@ -13,7 +13,8 @@ use super::preview_tools::DeliverableWarning;
 use super::studio::{StudioCtx, conversation_title, main_conversations};
 use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, plan_progress};
 use crate::guide::{
-    Activity, Followup, NextStep, RunPhase, activity, elapsed, last_file, next_steps, run_phase,
+    Activity, FailCause, Followup, NextStep, RunPhase, activity, elapsed, fail_cause, last_file,
+    next_steps, run_phase,
 };
 use crate::i18n::{T, t, tf};
 use crate::markdown;
@@ -21,7 +22,7 @@ use crate::mention::{self, Outgoing};
 use crate::question_form::{
     self, Answers, Question, QuestionForm, QuestionKind, Segment, format_answers, missing_required,
 };
-use crate::workspace::move_item;
+use crate::workspace::{QueueHold, move_item};
 use leptos::prelude::*;
 use od_contracts::CommentStatus;
 
@@ -463,9 +464,41 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
         }
         let n = queue.len();
         let can_steer = ctx.can_steer(shell);
-        Some(view! {
-            <div class="queue" data-testid="queue" aria-label=t(T::Queued)>
+        // After a Stop (or Contour going away) the queue waits for the user
+        // instead of starting a run on its own (UI-003), even while a
+        // message sent past it runs.
+        let hold = ctx.queue_held.get();
+        let held = hold.is_some();
+        let title = if let Some(why) = hold {
+            let hint = match why {
+                QueueHold::Stopped => T::QueueHeldHint,
+                QueueHold::LinkLost => T::QueueHeldLinkHint,
+            };
+            view! {
+                <span class="queue-title" data-testid="queue-held">
+                    {icon(Glyph::Queue)}
+                    <strong>{if n == 1 { t(T::QueueWaitingOne).to_owned() } else { tf(T::QueueWaitingMany, &[&n.to_string()]) }}</strong>
+                    <span class="subtle" data-testid="queue-held-hint">{t(hint)}</span>
+                    <span class="queue-held-actions">
+                        <button class="btn small primary" data-testid="queue-send" on:click=move |_| ctx.release_queue(shell)>
+                            {icon(Glyph::Send)}{t(T::Send)}
+                        </button>
+                        <button class="btn small" data-testid="queue-discard" on:click=move |_| ctx.discard_queue()>
+                            {t(T::Discard)}
+                        </button>
+                    </span>
+                </span>
+            }
+            .into_any()
+        } else {
+            view! {
                 <span class="queue-title">{icon(Glyph::Queue)}<strong>{t(T::Queued)}</strong><span class="subtle">{t(T::QueuedHint)}</span></span>
+            }
+            .into_any()
+        };
+        Some(view! {
+            <div class="queue" class:held=held data-testid="queue" aria-label=t(T::Queued)>
+                {title}
                 {queue
                     .into_iter()
                     .enumerate()
@@ -617,7 +650,8 @@ fn AssistantView(
             }}
             <super::chat_ops::TurnFiles turn=turn/>
             <RunLine turn=turn/>
-            <Show when=move || turn.with(|tn| matches!(run_phase(tn), RunPhase::Failed))>
+            // A turn that never ran (no run) has no agent output to show.
+            <Show when=move || turn.with(|tn| matches!(run_phase(tn), RunPhase::Failed) && tn.run_id.is_some())>
                 <RunLog turn=turn/>
             </Show>
             <Show when=move || is_last.get() && ctx.live_run.get().is_none()>
@@ -706,13 +740,12 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                 Some(Glyph::Warning),
                 t(T::RunFailed).to_owned(),
                 Some(
-                    t(
-                        if tn.failure == Some(od_contracts::FailureCategory::DaemonRestart) {
-                            T::RunAppClosedHint
-                        } else {
-                            T::RunFailedHint
-                        },
-                    )
+                    t(match fail_cause(tn) {
+                        FailCause::Agent => T::RunFailedHint,
+                        FailCause::CutOff => T::RunAppClosedHint,
+                        // Sent while Contour was unreachable: it never ran.
+                        FailCause::Unreachable => T::DaemonUnreachable,
+                    })
                     .to_owned(),
                 ),
             ),
@@ -836,6 +869,9 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                         .into_iter()
                         .map(|step| {
                             let navigate = navigate.clone();
+                            // Retry waits for Contour to be back, then turns on
+                            // by itself (UI-008).
+                            let offline = matches!(step, NextStep::Retry);
                             let (glyph, label, testid) = match &step {
                                 NextStep::Open(path) => (Glyph::Eye, tf(T::NextOpen, &[path.rsplit('/').next().unwrap_or(path)]), "next-open"),
                                 NextStep::Comment => (Glyph::Comment, t(T::NextComment).to_owned(), "next-comment"),
@@ -867,7 +903,9 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                 NextStep::Settings => navigate("/settings"),
                             };
                             view! {
-                                <button class="chip next-step" data-testid=testid on:click=run>
+                                <button class="chip next-step" data-testid=testid on:click=run
+                                    disabled=move || offline && ctx.link_down.get()
+                                    title=move || (offline && ctx.link_down.get()).then(|| t(T::RetryWaitsForLink))>
                                     {icon(glyph)}{label}
                                 </button>
                             }

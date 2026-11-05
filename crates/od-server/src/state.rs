@@ -42,6 +42,10 @@ pub struct RunContext {
     pub tokens: ToolTokens,
     /// Runs canceled after registering but before their agent launched.
     pending_cancels: Mutex<HashSet<String>>,
+    /// Unlaunched runs [`Self::stop_all`] stopped itself: they ended because
+    /// the daemon is shutting down, not by the user (UI-008). A run the
+    /// user stopped first is not in it and stays canceled.
+    shutdown_cut: Mutex<HashSet<String>>,
     /// Launch and finalize tasks of chat runs: shutdown waits for them so
     /// each turn is recorded as it ended.
     pub tasks: TaskTracker,
@@ -59,21 +63,27 @@ impl RunContext {
             engine: RunEngine::new(engine),
             tokens: ToolTokens::default(),
             pending_cancels: Mutex::default(),
+            shutdown_cut: Mutex::default(),
             tasks: TaskTracker::new(),
         }
     }
 
     /// Stops every live run the way Stop does (abort line, SIGTERM to the
     /// process group, SIGKILL after the grace) and waits until each has
-    /// ended and its turn is recorded as canceled, or the limit passes.
+    /// ended and its turn is recorded (failed as `daemon_restart`; a run
+    /// the user had stopped already stays canceled), or the limit passes.
     pub async fn stop_all(&self) {
         {
             let mut pending = self.pending_cancels();
             self.engine.cancel_all();
             for run in self.registry.list() {
-                if !run.status().is_terminal() && !self.engine.cancel(run.id()) {
-                    // Registered but not launched yet: the launch step ends it.
-                    pending.insert(run.id().to_owned());
+                if !run.status().is_terminal()
+                    && !self.engine.cancel(run.id())
+                    // Registered but not launched yet: the launch step ends
+                    // it. Already in `pending`: the user pressed Stop first.
+                    && pending.insert(run.id().to_owned())
+                {
+                    self.shutdown_cut().insert(run.id().to_owned());
                 }
             }
         }
@@ -90,6 +100,18 @@ impl RunContext {
                 "runs still ending at shutdown"
             );
         }
+    }
+
+    /// Whether the shutdown, not the user, stopped the unlaunched `run`
+    /// (asked once, by its launch step).
+    pub fn cut_by_shutdown(&self, run: &str) -> bool {
+        self.shutdown_cut().remove(run)
+    }
+
+    fn shutdown_cut(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.shutdown_cut
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Cancel requests for runs not yet in the engine. Lock it around
@@ -135,7 +157,8 @@ pub struct AppState {
 
 impl AppState {
     /// Ends what the daemon started that would outlive it: running agents
-    /// (stopped as by Stop, their turns recorded as canceled) and the
+    /// (stopped as by Stop, their turns recorded as failed with
+    /// `daemon_restart`, as after a crash) and the
     /// terminal tabs' shells and their jobs. Call once the server stopped
     /// serving.
     pub async fn shutdown(&self) {
