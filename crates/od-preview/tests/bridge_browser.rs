@@ -230,6 +230,7 @@ async fn bridge_pass() {
     };
     deck_navigation(&h).await;
     keyless_deck_and_foreign_messages(&h).await;
+    late_decks_are_announced(&h).await;
     carousels_are_not_decks(&h).await;
     selection_snapshot_and_size(&h).await;
     pins_follow_their_elements(&h).await;
@@ -341,6 +342,21 @@ async fn keyless_deck_and_foreign_messages(h: &Harness) {
     );
     h.eval("document.body.style.height = ''; window.scrollTo(0, 0); true")
         .await;
+}
+
+/// A deck whose slides render after `load` is still announced.
+async fn late_decks_are_announced(h: &Harness) {
+    let html = r"<!doctype html><html><head><style>
+      body{margin:0} .slide{height:100vh;box-sizing:border-box}
+    </style></head><body><main id='deck'></main><script>
+      addEventListener('load', () => setTimeout(() => {
+        document.getElementById('deck').innerHTML =
+          ['one', 'two', 'three'].map((t) => `<section class='slide'>${t}</section>`).join('');
+      }, 400));
+    </script></body></html>";
+    h.load_keyed(html, Some("late-deck")).await;
+    let ready = h.wait("od:deck-ready", "null", 5_000).await;
+    assert_eq!(ready["count"], 3, "{ready}");
 }
 
 /// A page's own carousel built from `.slide` is not a deck (UI-001): no

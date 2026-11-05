@@ -111,6 +111,12 @@ All notable changes to Contour are recorded here. The format follows
   about three copies of it in memory per cover shown. A page over 5 MiB
   now gets a blank cover, and stripping a smaller one's scripts no
   longer copies it once more.
+- A deck whose slides render after the page loaded (fetched content, a
+  framework's first render) never got Present, Notes or the thumbnail
+  rail; the preview now looks for slides again for 10 seconds after
+  load.
+- A Motion project's cover stayed blank for a recorded WebM film, whose
+  header gives no length; it now shows the film's middle frame too.
 
 ## [0.2.0-beta.18] - 2026-11-05
 

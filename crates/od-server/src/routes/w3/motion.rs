@@ -194,7 +194,6 @@ fn scaffold_html(width: u32, height: u32, fps: u32, duration: f64) -> String {
   // render size the scale is 1.
   const stage = document.getElementById('stage');
   function fit() {{
-    if (window.__odMotionRender) return;
     const s = Math.min(innerWidth / {width}, innerHeight / {height});
     stage.style.transform = s > 0 && s < 1 ? `scale(${{s}})` : '';
   }}

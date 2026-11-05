@@ -1342,5 +1342,29 @@
   window.addEventListener('load', function () {
     announceDeck();
     announceExportFit();
+    watchForDeck();
   });
+
+  // Slides that render after `load` (fetched content, a framework's first
+  // render): look again as the page changes, for a while.
+  var DECK_WATCH_MS = 10000;
+  function watchForDeck() {
+    if (deckAnnounced || typeof MutationObserver !== 'function') return;
+    var timer = 0;
+    var watcher = new MutationObserver(function () {
+      if (timer) return;
+      timer = later(function () {
+        timer = 0;
+        announceDeck();
+        if (deckAnnounced) watcher.disconnect();
+      }, 100);
+    });
+    watcher.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'data-od-slide']
+    });
+    later(function () { watcher.disconnect(); }, DECK_WATCH_MS);
+  }
 })();
