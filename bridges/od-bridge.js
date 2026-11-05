@@ -372,15 +372,22 @@
   // Brings `el` to the top-left of its document by scrolling only that
   // document's own boxes. scrollIntoView would also scroll the host page
   // around the frame, e.g. the thumbnail rail to whichever thumb moved last.
+  // Every box up to the viewport counts, `body` too: with `html` not
+  // overflow-visible, `body` is a scroll box of its own. Jumps are instant
+  // even under `scroll-behavior: smooth`, so the next read sees the slide.
   function scrollWithin(el) {
-    for (var box = el.parentElement; box && box !== document.body && box !== document.documentElement; box = box.parentElement) {
+    var viewport = document.scrollingElement || document.documentElement;
+    for (var box = el.parentElement; box && box !== viewport && box !== document.documentElement; box = box.parentElement) {
       if (box.scrollHeight <= box.clientHeight && box.scrollWidth <= box.clientWidth) continue;
       var overflow = getComputedStyle(box);
       if (!/auto|scroll|hidden/.test(overflow.overflowX + overflow.overflowY)) continue;
       var r = el.getBoundingClientRect();
       var b = box.getBoundingClientRect();
-      box.scrollTop += r.top - b.top - box.clientTop;
-      box.scrollLeft += r.left - b.left - box.clientLeft;
+      box.scrollTo({
+        left: box.scrollLeft + r.left - b.left - box.clientLeft,
+        top: box.scrollTop + r.top - b.top - box.clientTop,
+        behavior: 'instant'
+      });
     }
     var rect = el.getBoundingClientRect();
     window.scrollBy({ left: rect.left, top: rect.top, behavior: 'instant' });

@@ -3,7 +3,9 @@
 // 2. UI-010: while the agent runs, the empty preview marks step 1 done and
 //    step 2 current, instead of asking the user to describe what they want.
 // 3. UI-020: a project cover whose page has scripts logs no "Blocked script
-//    execution" console error; the cover frame carries no script.
+//    execution" console error; the cover frame carries no script. It loads
+//    from the daemon (`raw/...?still=1`, not `srcdoc`) under the no-network
+//    CSP: the page's https:// image, stylesheet and font make no request.
 // 4. UI-015: at 1100 px with three file tabs and Side chat, the "+"
 //    launcher and the focus toggle stay inside the tab row, the active tab
 //    and Side chat are fully shown, and a vertical wheel scrolls the tabs.
@@ -95,9 +97,12 @@ try {
   await until(async () => (await fetch(`${BASE}/api/health`)).ok, 'daemon healthy');
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  // Every request that leaves loopback is recorded, then blocked.
+  const external = [];
   await context.route('**/*', (route) => {
     const url = new URL(route.request().url());
     const local = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || ['data:', 'blob:', 'about:'].includes(url.protocol);
+    if (!local) external.push(url.href);
     return local ? route.continue() : route.abort();
   });
   const page = await context.newPage();
@@ -152,19 +157,30 @@ try {
     const coverPid = await newProject('Scripted cover');
     writeFileSync(
       join(data, 'projects', coverPid, 'index.html'),
-      '<!doctype html><html><head><script>document.title = "x"</script></head>' +
-        '<body><h1>Cover</h1><script src="app.js"></script></body></html>',
+      '<!doctype html><html><head><script>document.title = "x"</script>' +
+        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">' +
+        '<style>@font-face{font-family:F;src:url(https://fonts.gstatic.com/f.woff2)} h1{font-family:F}</style></head>' +
+        '<body><h1>Cover</h1><img src="https://images.unsplash.com/photo-1.jpg" alt="">' +
+        '<script src="app.js"></script></body></html>',
     );
     consoleErrors.length = 0;
+    external.length = 0;
     await page.goto(BASE + '/projects');
     const frame = page.locator(`[data-testid="project-card"][data-project="${coverPid}"] iframe.cover-frame`);
     await frame.waitFor();
-    const srcdoc = await frame.getAttribute('srcdoc');
-    assert.ok(srcdoc.includes('<h1>Cover</h1>'), srcdoc);
-    assert.ok(!/<script/i.test(srcdoc), `cover keeps a script: ${srcdoc}`);
+    await sleep(1500);
+    assert.deepEqual(external, [], 'the cover fetched from outside');
+    assert.equal(await frame.getAttribute('srcdoc'), null, 'cover uses srcdoc');
+    const src = await frame.getAttribute('src');
+    assert.match(src, /\/raw\/index\.html\?still=1$/);
+    const inner = () => page.frames().find((f) => f.url().endsWith('?still=1') && f.url().includes(coverPid));
+    await until(async () => (await inner()?.content())?.includes('<h1>Cover</h1>'), 'cover page loaded');
+    const html = await inner().content();
+    assert.ok(!/<script/i.test(html), `cover keeps a script: ${html}`);
     await sleep(1000);
     const blocked = consoleErrors.filter((e) => e.includes('Blocked script execution'));
     assert.deepEqual(blocked, [], 'covers log blocked scripts');
+    assert.deepEqual(external, [], 'the cover fetched from outside (late)');
   });
 
   await check('4. tab row at 1100 px', async () => {

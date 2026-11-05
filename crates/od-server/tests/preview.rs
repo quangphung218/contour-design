@@ -471,6 +471,46 @@ async fn raw_documents_carry_the_no_network_csp() {
     }
 }
 
+/// A cover (`?still=1`) is the page without its scripts under the same
+/// no-network CSP: the frame fetches nothing from outside (spec: no
+/// outbound network) and has no script to block (UI-020).
+#[tokio::test]
+async fn still_pages_drop_scripts_and_keep_the_no_network_csp() {
+    let _timing = TIMING.read().await;
+    let a = app();
+    let id = a.project().await;
+    let page = "<!doctype html><html><head><script>alert(1)</script>\
+                <link rel=stylesheet href=\"https://fonts.googleapis.com/css2?family=X\"></head>\
+                <body><h1>Cover</h1><img src=\"https://images.example.com/a.png\">\
+                <script src=\"app.js\"></script></body></html>";
+    a.write(&id, "index.html", page).await;
+    let r = a
+        .get(&format!("/api/projects/{id}/raw/index.html?still=1"))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(
+        r.header("content-security-policy"),
+        Some(od_preview::RAW_CSP)
+    );
+    assert_eq!(r.header("x-content-type-options"), Some("nosniff"));
+    let body = r.text();
+    assert!(body.contains("<h1>Cover</h1>"), "{body}");
+    assert!(!body.to_ascii_lowercase().contains("<script"), "{body}");
+    for directive in [
+        "img-src 'self' data: blob:",
+        "font-src 'self'",
+        "connect-src 'none'",
+    ] {
+        assert!(od_preview::RAW_CSP.contains(directive), "{directive}");
+    }
+    // Without `still` the page is served as it is.
+    let whole = a
+        .get(&format!("/api/projects/{id}/raw/index.html"))
+        .await
+        .text();
+    assert!(whole.contains("alert(1)"), "{whole}");
+}
+
 /// The edit key of one preview load: in the first response for its id
 /// only, and handed to the host once, never to a sandboxed frame.
 #[tokio::test]

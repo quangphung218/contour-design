@@ -318,6 +318,27 @@ async fn keyless_deck_and_foreign_messages(h: &Harness) {
         json!(1500),
         "navigating the deck scrolled the host page"
     );
+
+    // `body` as the deck's own scroll box (`html` not overflow-visible),
+    // with smooth scrolling: the jump still lands on the slide at once.
+    let body_box = r"<!doctype html><html><head><style>
+      html{height:100%;overflow:hidden} body{margin:0;height:100%;overflow-y:auto;scroll-behavior:smooth}
+      .slide{height:100vh;box-sizing:border-box;border:1px solid #ccc}
+    </style></head><body>
+      <section class='slide'>one</section><section class='slide'>two</section>
+      <section class='slide'>three</section><section class='slide'>four</section>
+    </body></html>";
+    h.load_keyed(body_box, Some("body-box")).await;
+    let ready = h.wait("od:deck-ready", "null", 5_000).await;
+    assert_eq!(ready["count"], 4);
+    assert_eq!(h.nav(json!({ "action": "go", "index": 2 })).await, 2);
+    assert_eq!(h.nav(json!({ "action": "next" })).await, 3);
+    assert_eq!(h.nav(json!({ "action": "first" })).await, 0);
+    assert_eq!(
+        h.eval("window.scrollY").await,
+        json!(1500),
+        "navigating a body-scrolled deck scrolled the host page"
+    );
     h.eval("document.body.style.height = ''; window.scrollTo(0, 0); true")
         .await;
 }

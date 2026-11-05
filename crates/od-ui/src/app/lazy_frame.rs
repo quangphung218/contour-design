@@ -1,8 +1,9 @@
 //! A small, scaled-down page that only loads once it scrolls into view:
 //! project covers and template thumbnails. The frame runs no script
-//! (`sandbox=""`) and cannot be focused or clicked. Its scripts are taken
-//! out before it loads ([`still_doc`]): a sandbox that blocks them still
-//! logs a console error for each one (UI-020).
+//! (`sandbox=""`) and cannot be focused or clicked. It loads the page with
+//! `still=1`: the daemon leaves its scripts out, which the sandbox would
+//! block with a console error each (UI-020), and keeps the page's own URL
+//! and no-network CSP.
 
 use leptos::prelude::*;
 use send_wrapper::SendWrapper;
@@ -54,26 +55,13 @@ pub fn LazyFrame(src: String) -> impl IntoView {
             }
         });
     });
-    let doc = LocalResource::new(move || {
-        let src = src.clone();
-        async move {
-            if !visible.get() {
-                return None;
-            }
-            let html = super::api::get_text(&src).await.ok()?;
-            let base = web_sys::window()
-                .and_then(|w| w.location().origin().ok())
-                .unwrap_or_default();
-            Some(still_doc(&html, &format!("{base}{src}")))
-        }
-    });
     view! {
         <span class="lazy-frame" node_ref=host>
-            {move || doc.get().flatten().map(|doc| view! {
+            {move || visible.get().then(|| view! {
                 <iframe
                     class="cover-frame"
                     sandbox=""
-                    srcdoc=doc
+                    src=still_url(&src)
                     tabindex="-1"
                     title=""
                 ></iframe>
@@ -82,87 +70,30 @@ pub fn LazyFrame(src: String) -> impl IntoView {
     }
 }
 
-/// `html` without its `<script>` elements, with relative URLs resolved
-/// against `base` (the page's own URL) unless it names a base itself.
+/// `src` asking for the page without its scripts.
 #[must_use]
-pub fn still_doc(html: &str, base: &str) -> String {
-    let lower = html.to_ascii_lowercase();
-    let mut out = String::with_capacity(html.len());
-    let mut at = 0;
-    while let Some(found) = lower[at..].find("<script") {
-        let open = at + found;
-        // `<scripts>` or `<script-x>` is another element.
-        let next = lower.as_bytes().get(open + 7).copied();
-        if !matches!(
-            next,
-            Some(b'>' | b'/' | b' ' | b'\t' | b'\n' | b'\r' | b'\x0c')
-        ) {
-            out.push_str(&html[at..open + 7]);
-            at = open + 7;
-            continue;
-        }
-        out.push_str(&html[at..open]);
-        at = match lower[open..].find("</script") {
-            Some(close) => {
-                let end = open + close;
-                lower[end..].find('>').map_or(html.len(), |gt| end + gt + 1)
-            }
-            None => html.len(),
-        };
-    }
-    out.push_str(&html[at..]);
-    if out.to_ascii_lowercase().contains("<base") {
-        return out;
-    }
-    let tag = format!(
-        "<base href=\"{}\">",
-        base.replace('&', "&amp;").replace('"', "&quot;")
-    );
-    let lower = out.to_ascii_lowercase();
-    match lower
-        .find("<head")
-        .and_then(|h| lower[h..].find('>').map(|gt| h + gt + 1))
-    {
-        Some(at) => out.insert_str(at, &tag),
-        None => out.insert_str(0, &tag),
-    }
-    out
+pub fn still_url(src: &str) -> String {
+    let (path, hash) = match src.split_once('#') {
+        Some((path, hash)) => (path, format!("#{hash}")),
+        None => (src, String::new()),
+    };
+    let sep = if path.contains('?') { '&' } else { '?' };
+    format!("{path}{sep}still=1{hash}")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::still_doc;
-
-    const BASE: &str = "http://127.0.0.1:1/api/projects/p/raw/index.html";
+    use super::still_url;
 
     #[test]
-    fn scripts_go_and_the_rest_stays() {
-        let html = "<!doctype html><html><head><title>t</title><SCRIPT src=\"a.js\"></SCRIPT>\
-                    <link rel=stylesheet href=s.css></head><body><h1>Hi</h1>\
-                    <script type=module>if (a < b) go('</div>')</script><p>end</p></body></html>";
-        let out = still_doc(html, BASE);
-        assert!(!out.to_ascii_lowercase().contains("<script"), "{out}");
-        assert!(!out.contains("go("), "{out}");
-        assert!(
-            out.contains("<h1>Hi</h1>") && out.contains("<p>end</p>"),
-            "{out}"
+    fn still_is_added_to_the_query() {
+        assert_eq!(
+            still_url("/api/projects/p/raw/index.html"),
+            "/api/projects/p/raw/index.html?still=1"
         );
-        assert!(
-            out.contains(&format!("<head><base href=\"{BASE}\"><title>")),
-            "{out}"
+        assert_eq!(
+            still_url("/api/design-templates/a/example?v=2#top"),
+            "/api/design-templates/a/example?v=2&still=1#top"
         );
-    }
-
-    #[test]
-    fn look_alikes_and_unclosed_scripts() {
-        let out = still_doc("<scripts>x</scripts><p>a</p><script>never closed", BASE);
-        assert!(out.ends_with("<scripts>x</scripts><p>a</p>"), "{out}");
-        assert!(out.starts_with("<base href="), "{out}");
-    }
-
-    #[test]
-    fn an_own_base_is_kept() {
-        let out = still_doc("<head><base href=\"/x/\"></head>", BASE);
-        assert_eq!(out, "<head><base href=\"/x/\"></head>");
     }
 }

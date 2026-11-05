@@ -41,8 +41,9 @@ All notable changes to Contour are recorded here. The format follows
   a deck with no keyboard handling to its slide no longer scrolls the rail
   (or any page around the preview).
 - Project covers and template thumbnails no longer log a "Blocked script
-  execution" console error for each script of the page: the scripts are
-  left out of the still cover.
+  execution" console error for each script of the page: the daemon leaves
+  the scripts out (`raw/<path>?still=1`, `design-templates/<id>/example?still=1`)
+  and keeps the page's no-network CSP.
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock
