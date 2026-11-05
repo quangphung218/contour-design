@@ -652,17 +652,19 @@ try {
     assert.ok((await gap()) > 48, 'output does not scroll under a finger');
     await touch('touchend', 300);
     await until(async () => (await gap()) <= 48, 'letting go at the end catches up');
-    // The finger dragging the content down is a move up.
+    // The finger dragging the content down is a move up (the browser's
+    // scroll done here, right after the event, as a drag does).
     await touch('touchstart', 300);
     await touch('touchmove', 340);
+    await list.evaluate((e) => e.scrollBy(0, -200));
     await touch('touchend', 340);
     await streams('streams after the drag');
     assert.ok((await gap()) > 48, 'a drag down stops the follow');
     await page.getByTestId('jump-latest').click();
     await until(async () => (await gap()) <= 48, 'jumped to latest');
     await lastTurnDone(turns + 1);
-    // Page Up with focus on the page, after a press in the list: its
-    // scroll (left out here, as if not landed yet) is the browser's.
+    // Page Up with focus on the page, after a press in the list, then its
+    // scroll.
     turns = await startRapid();
     await list.evaluate((e) => {
       const r = e.getBoundingClientRect();
@@ -672,6 +674,7 @@ try {
     });
     await page.evaluate(() => document.activeElement?.blur());
     await page.evaluate(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp', bubbles: true, cancelable: true })));
+    await list.evaluate((e) => e.scrollBy(0, -200));
     await streams('streams after Page Up');
     assert.ok((await gap()) > 48, 'Page Up stops the follow');
     await page.getByTestId('jump-latest').waitFor();
