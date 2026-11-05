@@ -472,6 +472,10 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   await page.getByTestId('queue-discard').click();
   await until(async () => (await page.getByTestId('queued').count()) === 0, 'A queue discarded');
   await page.reload();
+  await page.getByTestId('conversation').waitFor();
+  if ((await page.getByTestId('conversation').inputValue()) !== convA) {
+    await page.getByTestId('conversation').selectOption(convA);
+  }
   await assistant.first().waitFor();
   await sleep(500);
   assert.equal(await page.getByTestId('queued').count(), 0, 'a discarded queue stays gone in A');
