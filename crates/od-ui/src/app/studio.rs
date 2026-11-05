@@ -1558,12 +1558,34 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
     // Left/Right move between tabs, as in the WAI-ARIA tabs pattern; a
     // tab opens on Enter or a click, not on focus (it loads a file).
     let tab_keys = move |ev: ev::KeyboardEvent| super::focus::group_keys(&ev, false);
+    let list = NodeRef::<leptos::html::Div>::new();
+    // The list scrolls sideways in a narrow window: keep the active tab in
+    // view when it changes (UI-015).
+    Effect::new(move |_| {
+        ctx.tabs.with(|t| t.active.clone());
+        ctx.side.open.track();
+        ctx.active_term.track();
+        if let Some(el) = list.get() {
+            request_animation_frame(move || reveal_active_tab(&el));
+        }
+    });
+    // A mouse wheel without a horizontal axis scrolls the list sideways.
+    let wheel = move |ev: ev::WheelEvent| {
+        let Some(el) = list.get_untracked() else {
+            return;
+        };
+        if ev.delta_x() == 0.0 && ev.delta_y() != 0.0 && el.scroll_width() > el.client_width() {
+            ev.prevent_default();
+            #[allow(clippy::cast_possible_truncation)] // wheel deltas are small
+            el.set_scroll_left(el.scroll_left() + ev.delta_y() as i32);
+        }
+    };
     view! {
         <div class="tabs" data-testid="tabs">
             // Only the tabs sit in the tablist: the "+" launcher and the focus
             // toggle are siblings, and each close "×" is a mouse shortcut
             // hidden from assistive tech (Delete on a focused tab closes it).
-            <div class="tab-list" role="tablist" on:keydown=tab_keys>
+            <div class="tab-list" role="tablist" node_ref=list on:keydown=tab_keys on:wheel=wheel>
             {move || {
                 let tabs = ctx.tabs.get();
                 let side_open = ctx.side.open.get();
@@ -1591,7 +1613,7 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                                 <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete"
                                     on:click=move |_| ctx.open_file(&open)
                                     on:keydown=move |ev| if ev.key() == "Delete" { ev.prevent_default(); ctx.tabs.update(|t| t.close(&close_key)); }
-                                >{icon(if live { Glyph::Sparkle } else { file_glyph(&name) })}{name.clone()}</button>
+                                >{icon(if live { Glyph::Sparkle } else { file_glyph(&name) })}<span class="tab-label">{name.clone()}</span></button>
                                 <button
                                     class="tab-close"
                                     tabindex="-1"
@@ -1644,6 +1666,43 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
             <super::files_panel::FocusToggle/>
         </div>
     }
+}
+
+/// Scrolls `list` so its active tab is in view, clear of the Side chat tab
+/// when that is pinned at its right edge (not in a phone-width preview).
+/// A tab wider than the room left shows from its start.
+fn reveal_active_tab(list: &web_sys::HtmlDivElement) {
+    let Ok(Some(tab)) = list.query_selector(".tab.active:not(.side-tab)") else {
+        return;
+    };
+    let pinned = list
+        .query_selector(".side-tab")
+        .ok()
+        .flatten()
+        .filter(|s| {
+            web_sys::window()
+                .and_then(|w| w.get_computed_style(s).ok().flatten())
+                .and_then(|st| st.get_property_value("position").ok())
+                .is_some_and(|p| p == "sticky")
+        })
+        .map_or(0.0, |s| s.get_bounding_client_rect().width());
+    let (box_, rect) = (
+        list.get_bounding_client_rect(),
+        tab.get_bounding_client_rect(),
+    );
+    let room_right = box_.right() - pinned;
+    let shift = if rect.left() < box_.left() || rect.width() > room_right - box_.left() {
+        rect.left() - box_.left()
+    } else if rect.right() > room_right {
+        rect.right() - room_right
+    } else {
+        return;
+    };
+    if shift.abs() < 0.5 {
+        return;
+    }
+    #[allow(clippy::cast_possible_truncation)] // pixel offsets
+    list.set_scroll_left(list.scroll_left() + shift.ceil() as i32);
 }
 
 #[component]
@@ -2128,9 +2187,11 @@ fn PreviewEmpty(ctx: StudioCtx) -> impl IntoView {
             // No project: no steps to follow in it.
             <Show when=move || ctx.load_error.with(Option::is_none)>
                 <p>{move || if running() { t(T::PreviewWaiting) } else { t(T::PreviewEmpty) }}</p>
+                // While the agent runs, the user has done step 1 and step 2
+                // is under way (UI-010).
                 <ol class="empty-steps">
-                    <li>{t(T::PreviewStep1)}</li>
-                    <li>{t(T::PreviewStep2)}</li>
+                    <li class:done=running>{t(T::PreviewStep1)}</li>
+                    <li class:current=running aria-current=move || running().then_some("step")>{t(T::PreviewStep2)}</li>
                     <li>{t(T::PreviewStep3)}</li>
                 </ol>
             </Show>

@@ -169,6 +169,11 @@ pub fn Onboarding() -> impl IntoView {
                     <h1>{t(T::OnboardingTitle)}</h1>
                     <p class="muted">{t(T::OnboardingIntro)}</p>
                 </header>
+                // Numbered like the brand step under it (UI-019).
+                <div class="onboarding-step-head agent-step-head" data-testid="onboarding-agent-step">
+                    <span class="step-num" aria-hidden="true">"1"</span>
+                    <strong>{t(T::Agent)}</strong>
+                </div>
                 <div class="segmented" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::ExecutionMode)>
                     <button class="seg" role="tab" data-testid="onboarding-local"
                         aria-selected=move || (!use_key.get()).to_string() tabindex=move || super::focus::roving(!use_key.get()) class:active=move || !use_key.get()

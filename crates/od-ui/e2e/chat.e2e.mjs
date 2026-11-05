@@ -433,8 +433,10 @@ try {
     });
     await until(async () => (await metrics()).top === 0, 'scrolled up');
     const before = await metrics();
-    // The steps stream on one line: wait for one that grows the list.
-    await until(async () => (await metrics()).height > before.height, 'more output grows the list');
+    // The streamed words wrap about every eight steps at this width, so a
+    // fixed step may still sit on the line `before` already had (when the
+    // run clock ticked late): wait for the list to grow instead.
+    await until(async () => (await metrics()).height > before.height, `the list grew (from ${before.height})`);
     const after = await metrics();
     assert.equal(after.top, 0, 'new output does not pull the reader down');
     await page.getByTestId('jump-latest').waitFor();

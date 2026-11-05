@@ -264,6 +264,7 @@ a.project-card:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-
 }
 .cover-fill { position: absolute; inset: 0; border-radius: 0; }
 .lazy-frame { position: absolute; inset: 0; display: block; overflow: hidden; }
+.cover-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--color-stage); pointer-events: none; }
 .cover.thumb-cover { background-color: var(--color-paper); background-image: none; }
 .template-card .cover.thumb-cover::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
@@ -367,16 +368,16 @@ a.project-name:hover { color: var(--color-accent-text); }
 .agents-still-none { margin: var(--space-2) 0 0; color: var(--color-warning); }
 .agents-still-none code { font-size: var(--text-xs); }
 .install-signin code { font-size: var(--text-xs); }
-details.agent-missing > summary {
+details.agent-missing > summary, details.advanced-env > summary {
   display: inline-flex; align-items: center; gap: var(--space-1);
   min-height: 32px;
   list-style: none; cursor: pointer;
   font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text-secondary);
 }
-details.agent-missing > summary::-webkit-details-marker { display: none; }
-details.agent-missing > summary .ico { width: var(--icon-sm); height: var(--icon-sm); transition: transform var(--duration-fast) var(--ease-out); }
+details.agent-missing > summary::-webkit-details-marker, details.advanced-env > summary::-webkit-details-marker { display: none; }
+details.agent-missing > summary .ico, details.advanced-env > summary .ico { width: var(--icon-sm); height: var(--icon-sm); transition: transform var(--duration-fast) var(--ease-out); }
 /* :last-child outranks the generic open-details rule (180°). */
-details.agent-missing[open] > summary .ico:last-child { transform: rotate(90deg); }
+details.agent-missing[open] > summary .ico:last-child, details.advanced-env[open] > summary .ico:last-child { transform: rotate(90deg); }
 .check-again-row, .agent-rescan { margin-top: var(--space-2); }
 .byok-alt { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin: var(--space-3) 0 0; }
 .byok-alt button { padding: 0; border: 0; background: none; font: inherit; font-weight: var(--weight-medium); color: var(--color-accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
@@ -548,6 +549,9 @@ details.agent-missing[open] > summary .ico:last-child { transform: rotate(90deg)
 .settings-main .settings-section { grid-template-columns: 200px minmax(0, 1fr); scroll-margin-top: var(--space-6); }
 .settings-main > .settings-section:first-child { border-top: 0; padding-top: 0; }
 .settings-section > .segmented { justify-self: start; align-self: start; margin-bottom: var(--space-3); }
+/* The intro spans the mode switch and the card under it, so a tall intro
+   leaves no gap between them (UI-018). */
+.settings-section > .section-intro:has(+ .segmented) { grid-row: span 2; }
 .settings-section .card > .row:not(.end) { margin-top: var(--space-3); }
 .panel-tabs, .dialog-body .segmented, .form-card .segmented, .integration-tabs { width: fit-content; max-width: 100%; }
 .byok-form, .notification-settings { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -559,7 +563,7 @@ details.agent-missing[open] > summary .ico:last-child { transform: rotate(90deg)
 .test-result .spinner { margin-right: var(--space-1); }
 .warning-text { color: var(--color-warning); }
 .advanced-env { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--color-border-subtle); }
-.advanced-env summary { cursor: pointer; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text-secondary); border-radius: var(--radius-sm); }
+.advanced-env summary { border-radius: var(--radius-sm); }
 .advanced-env summary:hover { color: var(--color-text); }
 .advanced-env summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus-ring); }
 .memory-list, .location-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-1-5); }
@@ -652,6 +656,7 @@ pre.snippet { margin: var(--space-2) 0; padding: var(--space-3); border-radius: 
   .settings-nav { position: static; flex-direction: row; flex-wrap: wrap; }
   .settings-main .settings-section { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
   .settings-main .settings-section > :not(.section-intro) { grid-column: 1; }
+  .settings-section > .section-intro:has(+ .segmented) { grid-row: auto; }
   .project-row { grid-template-columns: minmax(0, 1fr) auto; }
   .project-row .cover-link { display: none; }
 }
@@ -931,6 +936,27 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .preview { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--color-stage); container: preview / inline-size; }
 .preview-top { flex: none; display: flex; align-items: center; min-height: 44px; background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
 .preview-top > .tabs { flex: 1; align-items: center; padding: var(--space-1-5) var(--space-2); }
+/* The tab list scrolls by itself and its tabs shrink to an ellipsis, so the
+   "+" launcher and the focus toggle after it stay in reach in a narrow
+   window (UI-015). */
+.preview-top .tab-list { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.preview-top .tab-list::-webkit-scrollbar { display: none; }
+.preview-top .tab-list > .tab { flex: 0 1 auto; min-width: 112px; }
+.preview-top .tab-name { min-width: 0; flex: 1; }
+.preview-top .tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.preview-top > .tabs > :not(.tab-list):not(.spacer) { flex: none; }
+/* Side chat stays pinned at the right edge of the scrolling list, with a
+   fade over the tabs that slide under it. */
+.preview-top .tab-list > .side-tab { position: sticky; right: 0; z-index: 1; flex: none; min-width: 0; background: var(--color-surface); }
+.preview-top .tab-list > .side-tab.active { background: var(--color-surface-raised); }
+.preview-top .tab-list > .side-tab::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: var(--space-4); background: linear-gradient(to right, transparent, var(--color-surface)); pointer-events: none; }
+/* A phone-width preview leaves the list less room than one tab and Side
+   chat (about 210 px): pinned, Side chat would cover the open tab. There
+   it scrolls with the other tabs. */
+@container preview (max-width: 440px) {
+  .preview-top .tab-list > .side-tab { position: static; }
+  .preview-top .tab-list > .side-tab::before { content: none; }
+}
 .preview-actions { flex: none; display: flex; align-items: center; gap: var(--space-1); padding-right: var(--space-2); }
 .preview-actions:empty { display: none; }
 .tab-add { margin-left: var(--space-1); }
@@ -1036,6 +1062,9 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .empty-steps { display: flex; flex-direction: column; gap: var(--space-1-5); margin: var(--space-2) 0 0; padding: 0; list-style: none; counter-reset: step; text-align: left; }
 .empty-steps li { display: flex; gap: var(--space-2-5); align-items: baseline; color: var(--color-text-secondary); font-size: var(--text-sm); counter-increment: step; }
 .empty-steps li::before { content: counter(step); flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: var(--radius-full); background: var(--color-accent-soft); color: var(--color-accent-text); font-size: var(--text-2xs); font-weight: var(--weight-semibold); }
+.empty-steps li.done::before { content: "\2713"; background: var(--color-success-soft); color: var(--color-success); }
+.empty-steps li.current { color: var(--color-text); font-weight: var(--weight-medium); }
+.empty-steps li.current::before { background: var(--color-accent); color: var(--color-on-accent); }
 
 /* code view */
 .code-view { flex: 1; min-width: 0; align-self: stretch; overflow: auto; border-radius: var(--radius-md); background: var(--color-surface-raised); box-shadow: 0 0 0 1px var(--color-border), var(--shadow-sm); }
@@ -1177,7 +1206,10 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 @media (max-width: 1180px) {
   .studio { grid-template-columns: minmax(300px, 34%) minmax(0, 1fr); }
   .workspace { grid-template-columns: minmax(0, 1fr) 196px; }
-  .settings-section { grid-template-columns: 1fr; gap: var(--space-3); }
+  /* .settings-main outranks the bare selector: one column there too, or
+     the card lands in the 200px intro column. */
+  .settings-section, .settings-main .settings-section { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+  .settings-section > .section-intro:has(+ .segmented) { grid-row: auto; }
   .settings-section > :not(.section-intro) { grid-column: 1; }
 }
 @media (max-width: 960px) {

@@ -184,7 +184,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
   | Content | `GET /api/skills`, `/api/design-templates`, `/api/design-systems[/:id]`, `/api/craft` |
   | Project | `GET/POST /api/projects`, `GET/PATCH/DELETE /api/projects/:id`, `POST .../duplicate` |
   | File | `GET/POST .../files`, `GET .../files/<path>`, `POST .../files/rename`, `DELETE .../files/<path>`, `POST .../upload` |
-  | Preview | `GET .../raw/<path>` (Range, ETag), `GET .../preview-url`, `GET .../preview/<scope>/<path>` |
+  | Preview | `GET .../raw/<path>` (Range, ETag; `?still=1`: HTML without scripts, for covers), `GET .../preview-url`, `GET .../preview/<scope>/<path>` |
   | Version | `GET/POST .../files/<path>/versions`, `POST .../versions/:vid/restore` |
   | Conversation | `GET/POST .../conversations`, `GET .../conversations/:cid/messages`, `PUT .../messages/:mid` |
   | Run | `POST /api/runs` → 202 `{runId…}` (idempotent on `clientRequestId`); `POST /api/chat` (creates a run and streams in the response); `GET /api/runs/:id/events` (SSE); `POST /api/runs/:id/cancel`; `POST /api/runs/:id/steer` |

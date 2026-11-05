@@ -293,7 +293,13 @@ pub async fn scoped(
     if bridge {
         strip_validators(&mut headers);
     }
-    let mut res = raw::raw(State(state), Path((id, path)), headers).await?;
+    let mut res = raw::raw(
+        State(state),
+        Path((id, path)),
+        axum::extract::Query(raw::RawQuery::default()),
+        headers,
+    )
+    .await?;
     if bridge {
         res = with_bridge(res, None, || None).await;
     }

@@ -230,6 +230,7 @@ async fn bridge_pass() {
     };
     deck_navigation(&h).await;
     keyless_deck_and_foreign_messages(&h).await;
+    carousels_are_not_decks(&h).await;
     selection_snapshot_and_size(&h).await;
     pins_follow_their_elements(&h).await;
     storage_shim(&h).await;
@@ -305,9 +306,103 @@ async fn keyless_deck_and_foreign_messages(h: &Harness) {
         .await;
     assert_eq!(state, json!(0), "self-posted od:slide must not navigate");
 
+    // The host page scrolled away from the frame stays where it is: the
+    // deck scrolls itself, not the page around it (the thumbnail rail).
+    h.eval("document.body.style.height = '4000px'; window.scrollTo(0, 1500); true")
+        .await;
     assert_eq!(h.nav(json!({ "action": "go", "index": 2 })).await, 2);
     assert_eq!(h.nav(json!({ "action": "prev" })).await, 1);
     assert_eq!(h.nav(json!({ "action": "last" })).await, 3);
+    assert_eq!(
+        h.eval("window.scrollY").await,
+        json!(1500),
+        "navigating the deck scrolled the host page"
+    );
+
+    // `body` as the deck's own scroll box (`html` not overflow-visible),
+    // with smooth scrolling: the jump still lands on the slide at once.
+    let body_box = r"<!doctype html><html><head><style>
+      html{height:100%;overflow:hidden} body{margin:0;height:100%;overflow-y:auto;scroll-behavior:smooth}
+      .slide{height:100vh;box-sizing:border-box;border:1px solid #ccc}
+    </style></head><body>
+      <section class='slide'>one</section><section class='slide'>two</section>
+      <section class='slide'>three</section><section class='slide'>four</section>
+    </body></html>";
+    h.load_keyed(body_box, Some("body-box")).await;
+    let ready = h.wait("od:deck-ready", "null", 5_000).await;
+    assert_eq!(ready["count"], 4);
+    assert_eq!(h.nav(json!({ "action": "go", "index": 2 })).await, 2);
+    assert_eq!(h.nav(json!({ "action": "next" })).await, 3);
+    assert_eq!(h.nav(json!({ "action": "first" })).await, 0);
+    assert_eq!(
+        h.eval("window.scrollY").await,
+        json!(1500),
+        "navigating a body-scrolled deck scrolled the host page"
+    );
+    h.eval("document.body.style.height = ''; window.scrollTo(0, 0); true")
+        .await;
+}
+
+/// A page's own carousel built from `.slide` is not a deck (UI-001): no
+/// `od:deck-ready`, no `od:slide-state`, and `od:slide` presses no keys.
+async fn carousels_are_not_decks(h: &Harness) {
+    let cards: String = (1..=4)
+        .map(|i| format!("<li class='slide'><blockquote>Quote {i}</blockquote></li>"))
+        .collect();
+    let hero: String = (1..=3)
+        .map(|i| format!("<div class='slide' aria-roledescription='slide'>Offer {i}</div>"))
+        .collect();
+    let pages = [
+        // Testimonial cards in a long landing page: too small to be slides.
+        (
+            "landing",
+            "section{min-height:600px;padding:40px} .slide{flex:0 0 100%;height:260px}",
+            format!(
+                "<header><h1>Hearth Coffee</h1></header><section>Hero</section>\
+                 <section>Menu</section><section><ul class='track'>{cards}</ul></section>\
+                 <footer>Open daily</footer>"
+            ),
+        ),
+        // A full-screen hero carousel: page-sized, but marked as a carousel.
+        (
+            "aria",
+            ".slide{flex:0 0 100vw;height:100vh}",
+            format!("<div class='track' aria-roledescription='carousel'>{hero}</div>"),
+        ),
+        (
+            "class",
+            ".slide{flex:0 0 100vw;height:100vh}",
+            format!("<div class='swiper'><div class='track'>{hero}</div></div>"),
+        ),
+    ];
+    for (name, css, body) in pages {
+        let html = format!(
+            r"<!doctype html><html><head><style>
+              body{{margin:0;font:16px sans-serif}}
+              .track{{display:flex;overflow:hidden;list-style:none;margin:0;padding:0}}
+              {css}
+            </style></head><body>{body}
+              <script>
+                window.addEventListener('keydown', () => parent.postMessage({{ type: 'test:key' }}, '*'));
+                window.addEventListener('load', () =>
+                  setTimeout(() => parent.postMessage({{ type: 'test:loaded' }}, '*'), 300));
+              </script>
+            </body></html>"
+        );
+        h.load(&html).await;
+        h.wait("test:loaded", "null", 5_000).await;
+        h.eval("window.__send({ type: 'od:slide', protocolVersion: 1, action: 'next' })")
+            .await;
+        h.eval("window.__send({ type: 'od:slide-state-request' })")
+            .await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let seen = h
+            .eval(
+                "window.__msgs.filter(m => m && ['od:deck-ready', 'od:slide-state', 'test:key'].includes(m.type)).map(m => m.type)",
+            )
+            .await;
+        assert_eq!(seen, json!([]), "{name} carousel taken for a deck");
+    }
 }
 
 async fn selection_snapshot_and_size(h: &Harness) {
@@ -749,4 +844,74 @@ async fn edit_key_stays_with_the_bridge(h: &Harness) {
     assert!(!loot.contains(KEY), "the page learned the key");
     h.eval("window.__send({ type: 'od:edit-mode', enabled: false })")
         .await;
+}
+
+/// Every bundled example with slide markup (`.slide`, `data-od-slide`) is
+/// still announced as a deck once the bridge tells decks from carousels
+/// (UI-001).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bundled_decks_stay_decks() {
+    let Some(h) = Harness::start().await else {
+        return;
+    };
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
+    let mut decks = Vec::new();
+    for group in ["design-templates", "skills"] {
+        for entry in std::fs::read_dir(root.join(group)).unwrap() {
+            let path = entry.unwrap().path().join("example.html");
+            let Ok(html) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if has_slide_markup(&html) {
+                let dir = path.parent().unwrap().to_path_buf();
+                decks.push((path, inline_local_scripts(&html, &dir)));
+            }
+        }
+    }
+    decks.sort();
+    assert!(decks.len() > 40, "only {} decks found", decks.len());
+    let mut missed = Vec::new();
+    for (i, (path, html)) in decks.iter().enumerate() {
+        // A fresh key per load, like the app: quick loads are not a loop.
+        h.load_keyed(html, Some(&format!("deck{i}"))).await;
+        let ready = h
+            .page
+            .evaluate("window.__after('od:deck-ready', 0, null, 8000).then(m => m.count)")
+            .await;
+        if ready.is_err() {
+            missed.push(path.display().to_string());
+        }
+    }
+    h.close().await;
+    assert!(missed.is_empty(), "not announced as decks: {missed:#?}");
+}
+
+/// The frame is a srcdoc with no base URL: a deck runtime the example loads
+/// from its own folder (`<script src="assets/deck-stage.js">`) goes inline,
+/// as the daemon would have served it.
+fn inline_local_scripts(html: &str, dir: &Path) -> String {
+    let mut out = html.to_owned();
+    while let Some(at) = out.find("<script src=\"") {
+        let rest = &out[at + 13..];
+        let src = &rest[..rest.find('"').unwrap()];
+        let tag_end = at + out[at..].find("</script>").unwrap() + 9;
+        let body = std::fs::read_to_string(dir.join(src)).unwrap_or_default();
+        out.replace_range(at..tag_end, &format!("<script>{body}</script>"));
+    }
+    out
+}
+
+/// An element whose class list has `slide`, or a `data-od-slide` attribute.
+fn has_slide_markup(html: &str) -> bool {
+    html.contains("data-od-slide")
+        || html.match_indices("class=").any(|(at, _)| {
+            let rest = &html[at + 6..];
+            let Some(quote) = rest.chars().next().filter(|c| *c == '"' || *c == '\'') else {
+                return false;
+            };
+            let value = &rest[1..];
+            value[..value.find(quote).unwrap_or(0)]
+                .split_whitespace()
+                .any(|c| c == "slide")
+        })
 }
