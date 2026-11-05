@@ -947,6 +947,13 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .preview-top .tab-list > .side-tab { position: sticky; right: 0; z-index: 1; flex: none; min-width: 0; background: var(--color-surface); }
 .preview-top .tab-list > .side-tab.active { background: var(--color-surface-raised); }
 .preview-top .tab-list > .side-tab::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: var(--space-4); background: linear-gradient(to right, transparent, var(--color-surface)); pointer-events: none; }
+/* A phone-width preview leaves the list less room than one tab and Side
+   chat (about 210 px): pinned, Side chat would cover the open tab. There
+   it scrolls with the other tabs. */
+@container preview (max-width: 440px) {
+  .preview-top .tab-list > .side-tab { position: static; }
+  .preview-top .tab-list > .side-tab::before { content: none; }
+}
 .preview-actions { flex: none; display: flex; align-items: center; gap: var(--space-1); padding-right: var(--space-2); }
 .preview-actions:empty { display: none; }
 .tab-add { margin-left: var(--space-1); }

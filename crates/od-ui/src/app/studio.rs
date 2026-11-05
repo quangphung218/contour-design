@@ -1537,8 +1537,9 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-/// Scrolls `list` so its active tab is fully in view, clear of the pinned
-/// Side chat tab at its right edge.
+/// Scrolls `list` so its active tab is in view, clear of the Side chat tab
+/// when that is pinned at its right edge (not in a phone-width preview).
+/// A tab wider than the room left shows from its start.
 fn reveal_active_tab(list: &web_sys::HtmlDivElement) {
     let Ok(Some(tab)) = list.query_selector(".tab.active:not(.side-tab)") else {
         return;
@@ -1547,18 +1548,28 @@ fn reveal_active_tab(list: &web_sys::HtmlDivElement) {
         .query_selector(".side-tab")
         .ok()
         .flatten()
+        .filter(|s| {
+            web_sys::window()
+                .and_then(|w| w.get_computed_style(s).ok().flatten())
+                .and_then(|st| st.get_property_value("position").ok())
+                .is_some_and(|p| p == "sticky")
+        })
         .map_or(0.0, |s| s.get_bounding_client_rect().width());
     let (box_, rect) = (
         list.get_bounding_client_rect(),
         tab.get_bounding_client_rect(),
     );
-    let shift = if rect.left() < box_.left() {
+    let room_right = box_.right() - pinned;
+    let shift = if rect.left() < box_.left() || rect.width() > room_right - box_.left() {
         rect.left() - box_.left()
-    } else if rect.right() > box_.right() - pinned {
-        rect.right() - (box_.right() - pinned)
+    } else if rect.right() > room_right {
+        rect.right() - room_right
     } else {
         return;
     };
+    if shift.abs() < 0.5 {
+        return;
+    }
     #[allow(clippy::cast_possible_truncation)] // pixel offsets
     list.set_scroll_left(list.scroll_left() + shift.ceil() as i32);
 }

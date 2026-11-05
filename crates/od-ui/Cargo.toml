@@ -34,6 +34,7 @@ web-sys = { version = "0.3", features = [
     "Clipboard",
     "ClipboardEvent",
     "Crypto",
+    "CssStyleDeclaration",
     "DataTransfer",
     "DataTransferItem",
     "DataTransferItemList",
