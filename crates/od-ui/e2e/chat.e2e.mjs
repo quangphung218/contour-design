@@ -424,12 +424,18 @@ try {
     assert.match(first, /^(Waiting for the agent|Writing the reply)(?: · last: \S+)? · \d+:\d\d$/);
     const clock = (s) => s.split(' · ').pop();
     await until(async () => clock(await detail.textContent()) !== clock(first), 'the run clock ticks', 3000);
-    await list.evaluate((e) => e.scrollTo(0, 0));
+    // Output lands before the scroll's event, as a scrollbar drag or Home
+    // mid-stream can see: the move up still counts.
+    await list.evaluate((e) => {
+      e.scrollTo(0, 0);
+      e.append(document.createComment('output'));
+      e.lastChild.remove();
+    });
     await until(async () => (await metrics()).top === 0, 'scrolled up');
     const before = await metrics();
-    await until(async () => /step8 /.test(await live.textContent()), 'more output');
+    // The steps stream on one line: wait for one that grows the list.
+    await until(async () => (await metrics()).height > before.height, 'more output grows the list');
     const after = await metrics();
-    assert.ok(after.height > before.height, `the list grew (${before.height} → ${after.height})`);
     assert.equal(after.top, 0, 'new output does not pull the reader down');
     await page.getByTestId('jump-latest').waitFor();
     await page.screenshot({ path: OUT + 'chat-jump-latest.png' });

@@ -36,10 +36,9 @@ impl StickToBottom {
             let Some(el) = self.list.get() else {
                 return;
             };
-            let state = self.state;
             let target = el.clone();
             let on_change = Callback::new(move |_: js_sys::Array| {
-                if state.with_untracked(Follow::pinned) {
+                if self.sync() {
                     target.set_scroll_top(target.scroll_height());
                 }
             });
@@ -68,8 +67,16 @@ impl StickToBottom {
 
     /// For the list's `on:scroll`.
     pub fn on_scroll(self) {
+        self.sync();
+    }
+
+    /// Reads where the list is now, then says whether it follows. A move
+    /// up whose `scroll` event has not come yet (it comes on the next
+    /// frame: a scrollbar drag, Home, PageUp) counts before we scroll to
+    /// the end, or output landing in between would undo it.
+    fn sync(self) -> bool {
         let Some(el) = self.list.get_untracked() else {
-            return;
+            return self.state.with_untracked(Follow::pinned);
         };
         let m = Metrics {
             scroll_top: f64::from(el.scroll_top()),
@@ -83,6 +90,7 @@ impl StickToBottom {
             // (the button) needs to notify.
             before.show_jump() != f.show_jump()
         });
+        self.state.with_untracked(Follow::pinned)
     }
 
     /// For the list's `on:wheel` (mouse wheel and trackpad). A pinch on a
@@ -106,6 +114,7 @@ impl StickToBottom {
     /// conversation opened): scroll to the end if following, and again on
     /// the next frame for content that renders after this (next steps).
     pub fn changed(self, new_item: bool) {
+        self.sync();
         let mut follow = false;
         self.state.maybe_update(|f| {
             let before = f.show_jump();
@@ -122,9 +131,8 @@ impl StickToBottom {
             return;
         };
         el.set_scroll_top(el.scroll_height());
-        let state = self.state;
         request_animation_frame(move || {
-            if state.with_untracked(Follow::pinned) {
+            if self.sync() {
                 el.set_scroll_top(el.scroll_height());
             }
         });

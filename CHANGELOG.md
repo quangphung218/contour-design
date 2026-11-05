@@ -29,6 +29,9 @@ All notable changes to Contour are recorded here. The format follows
   written by the agent ("Wrote sample.txt"). Uploads, and files made in
   the app (New file, a sketch, a preview capture), stay out of the turn
   unless the agent changes them (UI-012).
+- Dragging the chat's scrollbar up, or pressing Home or Page Up, while a
+  run streamed could snap back to the end when output landed in the same
+  moment. The move up now counts, and the list keeps its place.
 
 ## [0.2.0-beta.18] - 2026-11-05
 
