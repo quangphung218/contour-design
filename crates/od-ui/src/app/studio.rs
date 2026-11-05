@@ -224,6 +224,10 @@ pub struct StudioCtx {
     /// The queue waits for the user (Send or Discard), and why: the run
     /// before it was stopped or cut off (UI-003, UI-008).
     pub queue_held: RwSignal<Option<QueueHold>>,
+    /// Where the held queue is stored: the key of the conversation it was
+    /// typed in, fixed when it is held, so it stays that conversation's
+    /// whichever one is open.
+    held_owner: StoredValue<Option<String>>,
     pub files: RwSignal<Vec<ProjectFile>>,
     /// Open file tabs; the active tab is the previewed file.
     pub tabs: RwSignal<Tabs>,
@@ -602,7 +606,11 @@ impl StudioCtx {
                 Err(e) => {
                     fail(turn, e.to_string());
                     self.live_run.set(None);
-                    self.send_next(shell);
+                    // A held queue waits for the user's Send, whatever
+                    // happened to a message sent past it (UI-003).
+                    if self.queue_held.get_untracked().is_none() {
+                        self.send_next(shell);
+                    }
                 }
             }
         });
@@ -641,10 +649,29 @@ impl StudioCtx {
         Effect::new(move |_| {
             let why = self.queue_held.get();
             let stored = self.queue.with(|q| encode_held(why, q));
-            if let Some(key) = self.held_queue_key() {
+            if let Some(key) = self.held_owner.get_value() {
                 super::composer::save_draft(&key, &stored);
+                if stored.is_empty() {
+                    // Sent or discarded: gone for good.
+                    self.held_owner.set_value(None);
+                }
             }
         });
+    }
+
+    /// Opening another conversation leaves the held queue where it was
+    /// typed: stored under its own conversation, out of this one's view.
+    fn leave_held_queue(self, opening: &str) {
+        let key = super::composer::held_queue_key(&self.project_id.get_value(), opening);
+        if self.queue_held.get_untracked().is_none()
+            || self.held_owner.get_value().as_deref() == Some(key.as_str())
+        {
+            return;
+        }
+        // Detached first, so clearing it here does not clear what is stored.
+        self.held_owner.set_value(None);
+        self.queue.set(Vec::new());
+        self.queue_held.set(None);
     }
 
     /// Brings back the held queue of the conversation just opened.
@@ -657,6 +684,7 @@ impl StudioCtx {
             .and_then(|k| super::composer::load_draft(&k))
             .and_then(|s| decode_held(&s));
         if let Some((why, items)) = held {
+            self.held_owner.set_value(self.held_queue_key());
             self.queue.set(items);
             self.queue_held.set(Some(why));
         }
@@ -665,6 +693,11 @@ impl StudioCtx {
     /// Keeps the queue for the user to send or discard (UI-003).
     fn hold_queue(self, why: QueueHold) {
         if self.queue.with_untracked(|q| !q.is_empty()) {
+            if self.queue_held.get_untracked().is_none() {
+                // Typed in the open conversation (it cannot change while
+                // a run goes), so it is that conversation's.
+                self.held_owner.set_value(self.held_queue_key());
+            }
             self.queue_held.set(Some(why));
         }
     }
@@ -889,6 +922,7 @@ impl StudioCtx {
 
     /// Shows `cid`: its messages, its comments, and its live run if any.
     pub async fn open_conversation(self, cid: String) {
+        self.leave_held_queue(&cid);
         self.conversation_id.set(Some(cid.clone()));
         let mode = self
             .conversations
@@ -1317,6 +1351,7 @@ pub fn Studio() -> impl IntoView {
         draft: RwSignal::new(String::new()),
         queue: RwSignal::new(Vec::new()),
         queue_held: RwSignal::new(None),
+        held_owner: StoredValue::new(None),
         files: RwSignal::new(Vec::new()),
         tabs: RwSignal::new(Tabs::default()),
         terms: RwSignal::new(Vec::new()),

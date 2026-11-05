@@ -438,6 +438,48 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   assert.equal(await page.getByTestId('queued').count(), 0, 'a discarded queue stays gone');
   results.heldQueue = 'still waiting during and after a run sent past it, kept across a reload';
 
+  // 5d. A held queue belongs to its conversation, and only Send sends it.
+  await page.getByTestId('composer').fill('slow owner run');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await assistant.last().getAttribute('data-state')) === 'running', 'owner run going', 15_000);
+  await page.getByTestId('composer').fill('stay in A');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await page.getByTestId('queued').count()) === 1, 'queued in A');
+  await page.getByTestId('stop').click();
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  // A message sent past it that the server refuses does not send it.
+  await page.route(`${BASE}/api/runs`, (route) => route.request().method() === 'POST'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: 'boom' } }) })
+    : route.continue(), { times: 1 });
+  await page.getByTestId('composer').fill('refused past the queue');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await assistant.last().getAttribute('data-state')) === 'failed', 'refused send fails');
+  const afterRefused = await assistant.count();
+  await sleep(1500);
+  assert.equal(await assistant.count(), afterRefused, 'a refused send did not send the held queue');
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  // Another conversation does not get it; back in A it waits again.
+  const convA = await page.getByTestId('conversation').inputValue();
+  await page.getByTestId('new-conversation').click();
+  await until(async () => (await page.getByTestId('conversation').inputValue()) !== convA, 'conversation B open');
+  const convB = await page.getByTestId('conversation').inputValue();
+  await sleep(500);
+  assert.equal(await page.getByTestId('queued').count(), 0, 'the held queue stays in A');
+  await page.getByTestId('conversation').selectOption(convA);
+  await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
+  assert.equal(await page.getByTestId('queued').getByText('stay in A').count(), 1);
+  // Discard is for good: not back after a reload, nor in B.
+  await page.getByTestId('queue-discard').click();
+  await until(async () => (await page.getByTestId('queued').count()) === 0, 'A queue discarded');
+  await page.reload();
+  await assistant.first().waitFor();
+  await sleep(500);
+  assert.equal(await page.getByTestId('queued').count(), 0, 'a discarded queue stays gone in A');
+  await page.getByTestId('conversation').selectOption(convB);
+  await sleep(500);
+  assert.equal(await page.getByTestId('queued').count(), 0, 'nothing in B either');
+  results.heldQueueOwner = 'stays in its conversation, not sent by a refused send, discard is for good';
+
   // 6. Vietnamese strings of the new screens.
   await fetch(`${BASE}/api/app-config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: 'vi' }) });
   await page.reload();
