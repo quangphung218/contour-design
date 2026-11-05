@@ -85,8 +85,12 @@ impl StickToBottom {
         });
     }
 
-    /// For the list's `on:wheel` (mouse wheel and trackpad).
+    /// For the list's `on:wheel` (mouse wheel and trackpad). A pinch on a
+    /// trackpad comes as a wheel with `ctrlKey` and scrolls nothing.
     pub fn on_wheel(self, ev: &web_sys::WheelEvent) {
+        if ev.ctrl_key() {
+            return;
+        }
         let Some(el) = self.list.get_untracked() else {
             return;
         };

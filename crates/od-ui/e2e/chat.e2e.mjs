@@ -461,7 +461,8 @@ try {
   }
 
   // 13e. A trackpad moves a few px per event while tokens land every
-  // 30 ms: small steps up still leave the end and stay put. A message the
+  // 30 ms: small steps up still leave the end and stay put; a panel under
+  // the list going, or a pinch, does not. A message the
   // queue sends on its own once the run ends does not pull the reader
   // down either; Jump pressed from the keyboard leaves focus in the
   // composer.
@@ -476,6 +477,30 @@ try {
     const live = page.getByTestId('assistant-msg').nth(turns);
     await until(async () => /line20\b/.test(await live.textContent()), 'rapid run streaming');
     assert.ok((await metrics()).gap <= 48, 'follows the rapid stream');
+    // At the end, the queue panel under the list going (its message
+    // removed) makes the list taller; the browser clamps scrollTop, which
+    // is not the reader scrolling up.
+    await composer.fill('a dropped note');
+    await composer.press('Enter');
+    const queuedItem = page.getByTestId('queued');
+    await queuedItem.waitFor();
+    await page.waitForTimeout(300);
+    await queuedItem.getByRole('button', { name: 'Delete' }).click();
+    await queuedItem.waitFor({ state: 'detached' });
+    await page.waitForTimeout(500);
+    const dropped = await metrics();
+    assert.ok(dropped.gap <= 48, `a panel under the list going keeps the follow (gap ${dropped.gap})`);
+    assert.equal(await page.getByTestId('jump-latest').count(), 0, 'no Jump after the panel went');
+    // A trackpad pinch is a wheel with ctrlKey: it scrolls nothing. Many
+    // of them over 400 ms, so one lands between our scroll to the end and
+    // the next token (a single one is undone by that scroll's event).
+    await list.evaluate((e) => new Promise((done) => {
+      const t = setInterval(() => e.dispatchEvent(new WheelEvent('wheel', { deltaY: -10, ctrlKey: true, bubbles: true })), 4);
+      setTimeout(() => { clearInterval(t); done(); }, 400);
+    }));
+    await page.waitForTimeout(300);
+    assert.ok((await metrics()).gap <= 48, 'a pinch keeps the follow');
+    assert.equal(await page.getByTestId('jump-latest').count(), 0, 'no Jump after a pinch');
     const box = await list.boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     for (let i = 0; i < 20; i += 1) {

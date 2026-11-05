@@ -21,11 +21,17 @@ pub struct Metrics {
 }
 
 impl Metrics {
+    /// How far (px) the end of the content is below the visible part.
+    #[must_use]
+    pub fn gap(self) -> f64 {
+        self.scroll_height - (self.scroll_top + self.client_height)
+    }
+
     /// Whether the end of the content is at most [`NEAR_BOTTOM_PX`] below
     /// the visible part.
     #[must_use]
     pub fn near_bottom(self) -> bool {
-        self.scroll_height - (self.scroll_top + self.client_height) <= NEAR_BOTTOM_PX
+        self.gap() <= NEAR_BOTTOM_PX
     }
 }
 
@@ -36,7 +42,7 @@ pub struct Follow {
     pinned: bool,
     unseen: bool,
     last_top: f64,
-    last_height: f64,
+    last_gap: f64,
 }
 
 impl Default for Follow {
@@ -45,7 +51,7 @@ impl Default for Follow {
             pinned: true,
             unseen: false,
             last_top: 0.0,
-            last_height: 0.0,
+            last_gap: 0.0,
         }
     }
 }
@@ -54,12 +60,13 @@ impl Follow {
     /// A scroll event. The reader moving up, by any amount, turns the
     /// follow off. Moving down turns it on once the end is near, and never
     /// off: that also covers our own scroll to the end landing while more
-    /// output already grew the list. A move up while the content shrank is
-    /// the browser clamping `scroll_top`, not the reader.
+    /// output already grew the list. A move up that leaves the end no
+    /// farther away is the browser clamping `scroll_top` (the content
+    /// shrank, or the box grew as a panel under it went), not the reader.
     pub fn scrolled(&mut self, m: Metrics) {
-        let up = m.scroll_top < self.last_top - 0.5 && m.scroll_height >= self.last_height - 0.5;
+        let up = m.scroll_top < self.last_top - 0.5 && m.gap() > self.last_gap + 0.5;
         self.last_top = m.scroll_top;
-        self.last_height = m.scroll_height;
+        self.last_gap = m.gap();
         self.pinned = !up && (self.pinned || m.near_bottom());
         if self.pinned {
             self.unseen = false;
@@ -169,6 +176,21 @@ mod tests {
         assert!(f.changed(false), "down keeps following");
         f.wheeled(-4.0, false);
         assert!(f.changed(false), "nothing above: nothing to read");
+    }
+
+    #[test]
+    fn the_box_growing_under_the_reader_keeps_following() {
+        // A panel under the list (queued messages) went: the list is 80 px
+        // taller and the browser clamps scroll_top, the end still in view.
+        let mut f = Follow::default();
+        f.scrolled(at(1600.0));
+        f.scrolled(Metrics {
+            scroll_top: 1520.0,
+            client_height: 480.0,
+            scroll_height: 2000.0,
+        });
+        assert!(f.pinned());
+        assert!(f.changed(false));
     }
 
     #[test]
