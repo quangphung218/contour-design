@@ -195,6 +195,12 @@
   // fallback) and report the slide that is actually showing.
   // ---------------------------------------------------------------------
   var SLIDE_SELECTOR = '[data-od-slide], .slide, .reveal .slides > section';
+  // Slides named outright; a bare `.slide` must also look like a deck.
+  var EXPLICIT_SLIDE_SELECTOR = '[data-od-slide], .reveal .slides > section';
+  // A page's own carousel uses `.slide` too (UI-001): its slides are not
+  // deck slides.
+  var CAROUSEL_SELECTOR =
+    '[aria-roledescription="carousel"], [aria-roledescription="slide"], .carousel, .swiper, .slider, .splide, .glide, .slick-slider, .embla, .flickity-slider';
   var ACTIVE_CLASSES = ['active', 'is-active', 'current', 'is-current', 'present'];
   var KEY_CODES = { ArrowRight: 39, ArrowLeft: 37, Home: 36, End: 35 };
   var STEP_TIMEOUT_MS = 700;
@@ -202,10 +208,56 @@
   var lastReported = -1;
   var deckAnnounced = false;
 
+  function inCarousel(el) {
+    if (el.matches(EXPLICIT_SLIDE_SELECTOR)) return false;
+    return el.closest(CAROUSEL_SELECTOR) !== null;
+  }
+
+  // Layout size, before transforms: a deck scaled to fit keeps its 1920px.
+  function boxOf(el) {
+    if (typeof el.offsetWidth === 'number') return { w: el.offsetWidth, h: el.offsetHeight };
+    var r = el.getBoundingClientRect();
+    return { w: r.width, h: r.height };
+  }
+
+  // A deck fills the page: its slides (or the box holding them) are at least
+  // half the page tall and half the viewport wide. A carousel strip inside a
+  // long landing page is neither.
+  function looksLikeDeck(list) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].matches(EXPLICIT_SLIDE_SELECTOR)) return true;
+    }
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var d = document.documentElement;
+    var page = Math.max(vh, d ? d.scrollHeight : 0);
+    var wide = 0;
+    var tall = 0;
+    var top = Infinity;
+    var bottom = -Infinity;
+    for (var j = 0; j < list.length; j++) {
+      var s = boxOf(list[j]);
+      wide = Math.max(wide, s.w);
+      tall = Math.max(tall, s.h);
+      var parent = list[j].parentElement;
+      if (parent && parent !== document.documentElement) tall = Math.max(tall, boxOf(parent).h);
+      var r = list[j].getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        top = Math.min(top, r.top);
+        bottom = Math.max(bottom, r.bottom);
+      }
+    }
+    // Slides stacked down the page cover it together; a carousel's sit side
+    // by side in one strip.
+    tall = Math.max(tall, bottom - top);
+    return wide >= vw * 0.5 && tall >= page * 0.5;
+  }
+
   function slides() {
     var all = document.querySelectorAll(SLIDE_SELECTOR);
     var out = [];
     for (var i = 0; i < all.length; i++) {
+      if (inCarousel(all[i])) continue;
       var nested = false;
       for (var p = all[i].parentElement; p; p = p.parentElement) {
         if (p.matches(SLIDE_SELECTOR)) {
@@ -273,6 +325,7 @@
   }
 
   function reportState(force) {
+    if (!deckAnnounced) return;
     var list = slides();
     if (!list.length) return;
     var active = activeIndex(list);
@@ -316,6 +369,30 @@
     }, 1500, then);
   }
 
+  // Brings `el` to the top-left of its document by scrolling only that
+  // document's own boxes. scrollIntoView would also scroll the host page
+  // around the frame, e.g. the thumbnail rail to whichever thumb moved last.
+  // Every box up to the viewport counts, `body` too: with `html` not
+  // overflow-visible, `body` is a scroll box of its own. Jumps are instant
+  // even under `scroll-behavior: smooth`, so the next read sees the slide.
+  function scrollWithin(el) {
+    var viewport = document.scrollingElement || document.documentElement;
+    for (var box = el.parentElement; box && box !== viewport && box !== document.documentElement; box = box.parentElement) {
+      if (box.scrollHeight <= box.clientHeight && box.scrollWidth <= box.clientWidth) continue;
+      var overflow = getComputedStyle(box);
+      if (!/auto|scroll|hidden/.test(overflow.overflowX + overflow.overflowY)) continue;
+      var r = el.getBoundingClientRect();
+      var b = box.getBoundingClientRect();
+      box.scrollTo({
+        left: box.scrollLeft + r.left - b.left - box.clientLeft,
+        top: box.scrollTop + r.top - b.top - box.clientTop,
+        behavior: 'instant'
+      });
+    }
+    var rect = el.getBoundingClientRect();
+    window.scrollBy({ left: rect.left, top: rect.top, behavior: 'instant' });
+  }
+
   function step(target, count, then) {
     var cur = activeIndex();
     if (cur === target) {
@@ -334,7 +411,7 @@
         // The deck ignores keys: show the slide ourselves.
         var list = slides();
         try {
-          list[target].scrollIntoView({ block: 'start', inline: 'start', behavior: 'instant' });
+          scrollWithin(list[target]);
         } catch (_) {}
         then();
         return;
@@ -344,6 +421,7 @@
   }
 
   function navigate(action, index) {
+    if (!deckAnnounced) return;
     var list = slides();
     if (!list.length) return;
     var last = list.length - 1;
@@ -383,7 +461,7 @@
   function announceDeck() {
     if (deckAnnounced) return;
     var list = slides();
-    if (!list.length) return;
+    if (!list.length || !looksLikeDeck(list)) return;
     deckAnnounced = true;
     post('od:deck-ready', {
       protocolVersion: PROTOCOL_VERSION,

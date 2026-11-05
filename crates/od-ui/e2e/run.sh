@@ -78,3 +78,6 @@ run OD_E2E_MOTION_PORT motion.e2e.mjs
 # One of Contour's own gallery decks, remixed and driven by keys and dots
 # (with OD_E2E_PORT: + 16).
 run OD_E2E_GALLERY_PORT gallery.e2e.mjs
+# Fixes from the 2026-11-04 design review of a live run (with OD_E2E_PORT:
+# + 17).
+run OD_E2E_REVIEW_PORT review.e2e.mjs

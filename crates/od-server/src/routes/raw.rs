@@ -1,12 +1,14 @@
 //! `GET /api/projects/:id/raw/<path>`: streams a project file with
 //! `ETag`/`Last-Modified` revalidation (304) and single byte ranges (206).
+//! `?still=1` serves an HTML page without its scripts, for covers.
 
 use crate::error::{ApiErr, ApiResult};
 use crate::state::AppState;
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use serde::Deserialize;
 use std::io::SeekFrom;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
@@ -96,12 +98,35 @@ fn is_document(mime: &str) -> bool {
     )
 }
 
+/// Query of [`raw`].
+#[derive(Debug, Default, Deserialize)]
+pub struct RawQuery {
+    /// `1`: an HTML page without its `<script>` elements (a project cover).
+    still: Option<String>,
+}
+
+impl RawQuery {
+    fn still(&self) -> bool {
+        matches!(self.still.as_deref(), Some("1" | "true"))
+    }
+}
+
+/// HTML a cover can show still.
+fn is_html(mime: &str) -> bool {
+    let essence = mime.split(';').next().unwrap_or_default().trim();
+    matches!(essence, "text/html" | "application/xhtml+xml")
+}
+
 pub async fn raw(
     State(state): State<AppState>,
     Path((id, rest)): Path<(String, String)>,
+    Query(query): Query<RawQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
     let (file, full) = state.blocking(move |s| s.stat_file(&id, &rest)).await?;
+    if query.still() && is_html(&file.mime) {
+        return still_page(&full, &file.mime).await;
+    }
     let size = file.size;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let mtime = UNIX_EPOCH + Duration::from_millis(file.mtime.max(0.0) as u64);
@@ -166,6 +191,29 @@ pub async fn raw(
         .header(header::CONTENT_LENGTH, len)
         .body(body)
         .map_err(|e| ApiErr::internal(e.to_string()))
+}
+
+/// The page at `full` without its scripts, under the same no-network CSP
+/// as the page itself: a cover loads the page's own assets and nothing
+/// from outside.
+async fn still_page(full: &std::path::Path, mime: &str) -> ApiResult<Response> {
+    let bytes = tokio::fs::read(full)
+        .await
+        .map_err(|e| ApiErr::from(od_store::StoreError::from(e)))?;
+    let html = od_preview::still::without_scripts(&String::from_utf8_lossy(&bytes));
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime.to_owned()),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                od_preview::RAW_CSP.to_owned(),
+            ),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_owned()),
+            (header::CACHE_CONTROL, "no-cache".to_owned()),
+        ],
+        html,
+    )
+        .into_response())
 }
 
 /// `GET /api/projects/:id/react/<path>`: a `.jsx`/`.tsx` file as a page

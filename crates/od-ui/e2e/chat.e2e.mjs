@@ -427,9 +427,11 @@ try {
     await list.evaluate((e) => e.scrollTo(0, 0));
     await until(async () => (await metrics()).top === 0, 'scrolled up');
     const before = await metrics();
-    await until(async () => /step8 /.test(await live.textContent()), 'more output');
+    // The streamed words wrap about every eight steps at this width, so a
+    // fixed step may still sit on the line `before` already had (when the
+    // run clock ticked late): wait for the list to grow instead.
+    await until(async () => (await metrics()).height > before.height, `the list grew (from ${before.height})`);
     const after = await metrics();
-    assert.ok(after.height > before.height, `the list grew (${before.height} → ${after.height})`);
     assert.equal(after.top, 0, 'new output does not pull the reader down');
     await page.getByTestId('jump-latest').waitFor();
     await page.screenshot({ path: OUT + 'chat-jump-latest.png' });

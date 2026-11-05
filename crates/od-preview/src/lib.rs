@@ -11,6 +11,7 @@ pub mod lint;
 pub mod react_component;
 pub mod scope;
 pub mod source_patch;
+pub mod still;
 
 pub use edit_key::{EDIT_KEY_TTL, EditKeys, is_edit_key_id};
 pub use events::{ChangeKind, ProjectEvent, ProjectEvents, Subscription, WatchOptions};

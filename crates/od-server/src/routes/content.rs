@@ -1,6 +1,6 @@
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use od_content::SkillEntry;
@@ -118,11 +118,20 @@ pub(crate) fn without_google_fonts(html: Vec<u8>) -> Vec<u8> {
     }
 }
 
+/// Query of [`get_design_template_example`].
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct ExampleQuery {
+    /// `1`: without its `<script>` elements (a thumbnail).
+    still: Option<String>,
+}
+
 /// `GET /api/design-templates/:id/example`: the template's rendered
-/// example page, for the Home gallery thumbnails.
+/// example page, for the Home gallery thumbnails (`?still=1`: without its
+/// scripts, so the sandboxed thumbnail has none to block).
 pub async fn get_design_template_example(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<ExampleQuery>,
 ) -> ApiResult<Response> {
     let path = state
         .content
@@ -133,7 +142,10 @@ pub async fn get_design_template_example(
     let html = tokio::fs::read(&path)
         .await
         .map_err(|_| ApiErr::not_found("design template example not found"))?;
-    let html = without_google_fonts(rebrand_example(html));
+    let mut html = without_google_fonts(rebrand_example(html));
+    if matches!(query.still.as_deref(), Some("1" | "true")) {
+        html = od_preview::still::without_scripts(&String::from_utf8_lossy(&html)).into_bytes();
+    }
     Ok((
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),

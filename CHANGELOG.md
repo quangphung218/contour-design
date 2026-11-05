@@ -8,20 +8,6 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.2.0-beta.18] - 2026-11-05
-
-### Added
-
-- Update now in the desktop app. When Check for Updates finds a newer
-  release, Update now downloads its build for this system, installs it
-  only if its signature matches Contour's updater key, and offers Restart;
-  the dialog shows the download's percent, Cancel, and a clear message
-  when the download fails or its signature does not match (nothing is
-  installed then). Nothing downloads until the click. The `.deb`, dev
-  builds and the browser keep View release, with a short hint. Releases
-  carry `latest.json` and a `.sig` for each build
-  ([docs/release.md](docs/release.md#updater-signing)).
-
 ### Fixed
 
 - The chat (and the side chat) no longer pulls you back to the bottom on
@@ -51,6 +37,57 @@ All notable changes to Contour are recorded here. The format follows
 - The preview's file name ends in an ellipsis in narrow windows instead of
   being cut to a letter.
 - Audio a turn produced shows its length before it plays (it read 0:00).
+- A page with a carousel built from `.slide` elements (a testimonial
+  slider on a landing page) was taken for a slide deck: the preview
+  shrank to a 16:9 frame with Present, Notes and a thumbnail rail. A bare
+  `.slide` now makes a deck only when the slides fill the page, never
+  inside an ARIA carousel (`aria-roledescription="carousel"`/`"slide"`)
+  or a carousel library's box (`.swiper`, `.carousel`, `.splide`…); every
+  bundled deck is still a deck.
+- While the agent works on a project's first page, the empty preview
+  marks "Describe what you want" done and the agent's step current,
+  instead of asking for a description the user already gave.
+- A Motion composition started with `od media scaffold` fills the preview:
+  its stage scales down to the window, where before only its dark
+  top-left corner showed for the whole run. The render is unchanged.
+- Projects lists a Motion film as "Motion" (with its own filter), not
+  "Media", with a frame from the middle of the film as its cover.
+- In a narrow window the file tabs shrink and scroll by themselves (a
+  mouse wheel scrolls them too), so the "+" launcher and the focus toggle
+  after them stay in reach; the active tab scrolls into view and Side chat
+  stays pinned at the end of the row.
+- Settings ▸ Models: no tall gap between the Local CLI / API switch and
+  the card under it, and "Advanced: proxy & custom paths" opens with the
+  same chevron as "Other agents" instead of the browser's triangle.
+- Onboarding numbers its first step ("1 Agent") like the brand step under
+  it.
+- Settings in a window under 1180 px wide puts each section in one
+  column; the Models card no longer shrinks to a 200 px column
+  ("Installe…").
+- A deck's thumbnail rail opens at slide 1: a thumbnail moving its copy of
+  a deck with no keyboard handling to its slide no longer scrolls the rail
+  (or any page around the preview).
+- Project covers and template thumbnails no longer log a "Blocked script
+  execution" console error for each script of the page: the daemon leaves
+  the scripts out (`raw/<path>?still=1`, `design-templates/<id>/example?still=1`)
+  and keeps the page's no-network CSP.
+
+## [0.2.0-beta.18] - 2026-11-05
+
+### Added
+
+- Update now in the desktop app. When Check for Updates finds a newer
+  release, Update now downloads its build for this system, installs it
+  only if its signature matches Contour's updater key, and offers Restart;
+  the dialog shows the download's percent, Cancel, and a clear message
+  when the download fails or its signature does not match (nothing is
+  installed then). Nothing downloads until the click. The `.deb`, dev
+  builds and the browser keep View release, with a short hint. Releases
+  carry `latest.json` and a `.sig` for each build
+  ([docs/release.md](docs/release.md#updater-signing)).
+
+### Fixed
+
 - The installed app's binary can run its daemon alone:
   `od-desktop daemon start --port 0` (and `daemon status`), with `od`'s
   flags and `OD_DATA_DIR`, starts the daemon without a window or a Dock

@@ -1,6 +1,9 @@
 //! A small, scaled-down page that only loads once it scrolls into view:
 //! project covers and template thumbnails. The frame runs no script
-//! (`sandbox=""`) and cannot be focused or clicked.
+//! (`sandbox=""`) and cannot be focused or clicked. It loads the page with
+//! `still=1`: the daemon leaves its scripts out, which the sandbox would
+//! block with a console error each (UI-020), and keeps the page's own URL
+//! and no-network CSP.
 
 use leptos::prelude::*;
 use send_wrapper::SendWrapper;
@@ -58,11 +61,39 @@ pub fn LazyFrame(src: String) -> impl IntoView {
                 <iframe
                     class="cover-frame"
                     sandbox=""
-                    src=src.clone()
+                    src=still_url(&src)
                     tabindex="-1"
                     title=""
                 ></iframe>
             })}
         </span>
+    }
+}
+
+/// `src` asking for the page without its scripts.
+#[must_use]
+pub fn still_url(src: &str) -> String {
+    let (path, hash) = match src.split_once('#') {
+        Some((path, hash)) => (path, format!("#{hash}")),
+        None => (src, String::new()),
+    };
+    let sep = if path.contains('?') { '&' } else { '?' };
+    format!("{path}{sep}still=1{hash}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::still_url;
+
+    #[test]
+    fn still_is_added_to_the_query() {
+        assert_eq!(
+            still_url("/api/projects/p/raw/index.html"),
+            "/api/projects/p/raw/index.html?still=1"
+        );
+        assert_eq!(
+            still_url("/api/design-templates/a/example?v=2#top"),
+            "/api/design-templates/a/example?v=2&still=1#top"
+        );
     }
 }
