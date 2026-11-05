@@ -187,12 +187,15 @@ fn same(a: (u64, f64), b: (u64, f64)) -> bool {
 /// [`Windows::note_placed`]).
 type Placed = HashMap<String, HashMap<String, Put>>;
 
-/// A file as the app put it, `(len, mtime ms)`, and as it was before the
-/// app's first write (`None`: the app made it).
-#[derive(Debug, Clone, Copy)]
+/// A file as the app put it, `(len, mtime ms)`, as it was before the
+/// app's first write (`None`: the app made it), and every stamp the app
+/// gave it since: a turn that began on one of them began on the user's
+/// file, though an earlier run's save set `prior` (runs that overlap).
+#[derive(Debug, Clone)]
 struct Put {
     now: (u64, f64),
     prior: Option<(u64, f64)>,
+    made: Vec<(u64, f64)>,
 }
 
 /// When each project run ran, by project id, so overlapping runs of one
@@ -257,15 +260,17 @@ impl Windows {
         let files = placed.entry(project.to_owned()).or_default();
         // Saved again, still as the app last put it: the first write tells
         // what the file was before the app.
-        let prior = match (files.get(path), prior) {
-            (Some(put), Some(was)) if same(put.now, was) => put.prior,
-            _ => prior,
+        let (prior, mut made) = match (files.remove(path), prior) {
+            (Some(put), Some(was)) if same(put.now, was) => (put.prior, put.made),
+            _ => (prior, Vec::new()),
         };
+        made.push((len, mtime_ms));
         files.insert(
             path.to_owned(),
             Put {
                 now: (len, mtime_ms),
                 prior,
+                made,
             },
         );
     }
@@ -287,14 +292,17 @@ impl Windows {
             .placed()
             .get(project)
             .and_then(|files| files.get(path))
-            .copied()
+            .cloned()
         else {
             return false;
         };
         same(put.now, stamp.key())
-            && put
-                .prior
-                .is_none_or(|prior| before.is_some_and(|b| same(prior, b.key())))
+            && put.prior.is_none_or(|prior| {
+                before.is_some_and(|b| {
+                    let b = b.key();
+                    same(prior, b) || put.made.iter().any(|&m| same(m, b))
+                })
+            })
     }
 
     /// Opens `run_id`'s window at `start`. Call before the snapshot, then
@@ -1194,6 +1202,53 @@ mod overlap_tests {
         save("agent.html", ago(3));
         report(&a, &root, &turn).await;
         assert_eq!(listed(&a).await, ["agent.html"]);
+    }
+
+    #[tokio::test]
+    async fn a_file_saved_across_overlapping_runs_stays_the_users() {
+        // Saved while run A ran, run B opens on that save, A closes, saved
+        // again: B's agent never touched it, so not "Edit page.html".
+        let tmp = tempfile::tempdir().unwrap();
+        let (root, runs) = (tmp.path().join("p"), Runs::new(tmp.path().join("runs")));
+        fs::create_dir_all(&root).unwrap();
+        let stamp = |rel: &str| {
+            let meta = fs::metadata(root.join(rel)).unwrap();
+            let ms = meta
+                .modified()
+                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64()
+                * 1000.0;
+            (meta.len(), ms)
+        };
+        write_at(&root, "page.html", ago(600));
+        let windows = Windows::default();
+        let save = |at: SystemTime| {
+            let prior = stamp("page.html");
+            fs::write(root.join("page.html"), format!("saved at {at:?}")).unwrap();
+            fs::File::options()
+                .write(true)
+                .open(root.join("page.html"))
+                .unwrap()
+                .set_modified(at)
+                .unwrap();
+            let (len, ms) = stamp("page.html");
+            windows.note_saved("p1", "page.html", Some(prior), len, ms);
+        };
+        let turn_a = windows
+            .open("p1", "a", ago(20))
+            .with_before(Snapshot::take(&root));
+        save(ago(15));
+        let b = run(&runs, "b");
+        let turn_b = windows
+            .open("p1", "b", ago(10))
+            .with_before(Snapshot::take(&root));
+        drop(turn_a);
+        // After A's window, which closed just now.
+        save(SystemTime::now() + std::time::Duration::from_secs(2));
+        report(&b, &root, &turn_b).await;
+        assert!(listed(&b).await.is_empty());
     }
 
     #[tokio::test]

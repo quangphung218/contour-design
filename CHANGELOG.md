@@ -10,6 +10,9 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- A file saved from the preview while one run ended and another
+  began showed up as "Edit" in the second run's turn, though its agent
+  never touched it.
 - Stop sent the queued message right away and started a new run. Now
   the queue waits after a Stop, showing "1 message waiting" with Send
   and Discard (UI-003).
