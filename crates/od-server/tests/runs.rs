@@ -1198,6 +1198,15 @@ printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","se
         ),
     );
     let (project, conversation) = d.project().await;
+    // A page from before the run, which the agent leaves alone.
+    let before = d
+        .http
+        .post(format!("{}/api/projects/{project}/files", d.base))
+        .json(&json!({"name": "old.html", "content": "<p>old</p>"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(before.status().as_u16(), 200);
     let run = d
         .start(json!({"agentId": "claude", "projectId": project,
                       "conversationId": conversation, "message": "go"}))
@@ -1235,6 +1244,10 @@ printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","se
         200
     );
     assert_eq!(write("cli.md", false).await.unwrap().status().as_u16(), 200);
+    assert_eq!(
+        write("old.html", true).await.unwrap().status().as_u16(),
+        200
+    );
 
     let events = d.events(&run.run_id, None).await;
     let end = end_of(&events);
@@ -1256,6 +1269,10 @@ printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","se
     assert!(
         !paths.iter().any(|p| p.ends_with("/notes.md")),
         "the app's file is not the run's: {paths:?}"
+    );
+    assert!(
+        !paths.iter().any(|p| p.ends_with("/old.html")),
+        "a page from before the run the user saved over is not the run's: {paths:?}"
     );
 }
 
