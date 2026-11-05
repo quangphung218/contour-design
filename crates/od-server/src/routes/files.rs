@@ -154,6 +154,18 @@ pub async fn write(
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|ct| ct.starts_with("multipart/form-data"));
+    // The app's own writes (New file, a sketch, a preview capture) come
+    // from the browser, which sends `Origin`; an agent's `od files write`
+    // does not, and stays the turn's (UI-012).
+    let from_app = req.headers().contains_key(header::ORIGIN);
+    let note = move |state: &AppState, id: &str, file: &od_contracts::ProjectFile| {
+        if from_app {
+            state
+                .runs
+                .engine
+                .note_placed(id, &file.path, file.size, file.mtime);
+        }
+    };
     if is_multipart {
         let mut multipart = Multipart::from_request(req, &state)
             .await
@@ -175,9 +187,11 @@ pub async fn write(
             Some(n) => sanitize_path(&n)?,
             None => sanitize_name(&original),
         };
+        let project = id.clone();
         let file = state
-            .blocking(move |s| s.write_file(&id, &target, &bytes, true, None))
+            .blocking(move |s| s.write_file(&project, &target, &bytes, true, None))
             .await?;
+        note(&state, &id, &file);
         return Ok(ApiJson(FileResponse { file }));
     }
     let ApiJson(body) = ApiJson::<WriteFileRequest>::from_request(req, &state).await?;
@@ -190,9 +204,11 @@ pub async fn write(
     let overwrite = body.overwrite.unwrap_or(true);
     let manifest = body.artifact_manifest;
     let name = body.name;
+    let project = id.clone();
     let file = state
-        .blocking(move |s| s.write_file(&id, &name, &bytes, overwrite, manifest.as_ref()))
+        .blocking(move |s| s.write_file(&project, &name, &bytes, overwrite, manifest.as_ref()))
         .await?;
+    note(&state, &id, &file);
     Ok(ApiJson(FileResponse { file }))
 }
 

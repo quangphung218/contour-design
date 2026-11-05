@@ -1178,6 +1178,71 @@ printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","se
 
 #[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
+async fn a_file_the_app_creates_during_a_run_is_not_listed_as_the_runs() {
+    // UI-012 for `POST /files` (New file, a sketch, a preview capture): the
+    // browser's write is the user's; `od files write` (no `Origin`), as an
+    // agent calls it, stays the turn's.
+    let d = daemon().await;
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!(
+            r#"{PROBES}
+IFS= read -r line
+printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+sleep 1.5
+printf '{{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"s"}}\n'
+"#
+        ),
+    );
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project,
+                      "conversationId": conversation, "message": "go"}))
+        .await;
+    let mut reader = d.stream(&run.run_id, None).await;
+    while let Some(ev) = reader.next().await {
+        if ev.event == "agent" && ev.data["type"] == "status" {
+            break;
+        }
+    }
+    let write = |name: &str, origin: bool| {
+        let mut req = d
+            .http
+            .post(format!("{}/api/projects/{project}/files", d.base))
+            .json(&json!({"name": name, "content": "# notes"}));
+        if origin {
+            req = req.header("origin", d.base.clone());
+        }
+        req.send()
+    };
+    assert_eq!(
+        write("notes.md", true).await.unwrap().status().as_u16(),
+        200
+    );
+    assert_eq!(write("cli.md", false).await.unwrap().status().as_u16(), 200);
+
+    let events = d.events(&run.run_id, None).await;
+    let end = end_of(&events);
+    assert_eq!(end["status"], "succeeded", "{end}");
+    let paths: Vec<&str> = end["artifactPaths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert!(
+        paths.iter().any(|p| p.ends_with("/cli.md")),
+        "an agent's `od files write` is the turn's: {paths:?}"
+    );
+    assert!(
+        !paths.iter().any(|p| p.ends_with("/notes.md")),
+        "the app's file is not the run's: {paths:?}"
+    );
+}
+
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
 async fn a_run_stopped_before_quitting_stays_stopped() {
     // The user pressed Stop and quit while the agent was still in its
     // grace period: the turn is theirs, "Stopped", not cut off.
