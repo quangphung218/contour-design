@@ -165,8 +165,13 @@ try {
   assert.equal((await card.getByTestId('project-tag').textContent()).trim(), 'Motion');
   const cover = card.getByTestId('project-cover-video');
   await cover.waitFor();
-  assert.match(await cover.getAttribute('src'), /film\.mp4#t=0\.1$/);
-  await until(() => cover.evaluate((v) => v.readyState >= 2 && v.videoWidth > 0), 'cover frame decoded');
+  assert.match(await cover.getAttribute('src'), /film\.mp4$/);
+  // The cover shows the film's middle, not its dark first frames.
+  await until(
+    () => cover.evaluate((v) => v.readyState >= 2 && v.videoWidth > 0 && !v.seeking
+      && v.duration > 0 && Math.abs(v.currentTime - v.duration / 2) < 0.05),
+    'cover frame decoded at the middle',
+  );
   results.projectCard = 'ok';
 
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);

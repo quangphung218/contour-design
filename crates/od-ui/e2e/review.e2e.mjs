@@ -4,16 +4,20 @@
 //    step 2 current, instead of asking the user to describe what they want.
 // 3. UI-020: a project cover whose page has scripts logs no "Blocked script
 //    execution" console error; the cover frame carries no script.
-// 4. UI-015: at 1100 px with two file tabs and Side chat, the "+" launcher
-//    and the focus toggle stay inside the tab row.
+// 4. UI-015: at 1100 px with three file tabs and Side chat, the "+"
+//    launcher and the focus toggle stay inside the tab row, the active tab
+//    and Side chat are fully shown, and a vertical wheel scrolls the tabs.
 // 5. UI-018: Settings ▸ Models has no tall gap between the mode switch and
 //    the card under it, and "Advanced" opens with the same chevron as
-//    "Other agents" (no native triangle).
+//    "Other agents" (no native triangle). At 1100 px the card is full width.
+// 6. A deck's thumbnail rail opens at slide 1 (the thumbs moving to their
+//    slides do not scroll it), and the deck shows in the Phone frame.
+// Check 2 also measures the done step's text contrast (AA, light and dark).
 // Port: OD_E2E_PORT + 17 (or OD_E2E_REVIEW_PORT). Run through ./run.sh.
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -37,6 +41,20 @@ async function until(fn, label, timeout = 20_000) {
   }
   throw new Error(`timed out waiting for ${label}`);
 }
+
+// WCAG contrast of an element's text against the first opaque background
+// behind it.
+const contrastOf = (el) => {
+  const rgb = (c) => c.match(/[\d.]+/g).map(Number);
+  const lum = ([r, g, b]) => {
+    const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  let bg = el;
+  while (bg && rgb(getComputedStyle(bg).backgroundColor)[3] === 0) bg = bg.parentElement;
+  const [a, b] = [lum(rgb(getComputedStyle(el).color)), lum(rgb(getComputedStyle(bg || document.body).backgroundColor))];
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+};
 
 const api = async (path, opts = {}) => {
   const r = await fetch(BASE + path, {
@@ -115,6 +133,18 @@ try {
     await until(async () => (await steps.nth(0).getAttribute('class'))?.includes('done'), 'step 1 done');
     assert.equal(await steps.nth(1).getAttribute('aria-current'), 'step');
     assert.equal(await steps.nth(2).getAttribute('aria-current'), null);
+    // The done step's text keeps AA contrast in both themes.
+    const ratios = [];
+    for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      await sleep(100);
+      const ratio = await steps.nth(0).evaluate(contrastOf);
+      if (colorScheme === 'dark') await page.screenshot({ path: join(OUT, 'review-preview-running-dark.png') });
+      ratios.push(`${colorScheme} ${ratio.toFixed(2)}`);
+      assert.ok(ratio >= 4.5, `done step contrast in ${colorScheme}: ${ratio.toFixed(2)}`);
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+    results['2. preview steps while the agent runs'] = `ok (contrast ${ratios.join(', ')})`;
     await until(async () => (await page.getByTestId('assistant-msg').first().getAttribute('data-state')) === 'succeeded', 'run end', 60_000);
   });
 
@@ -139,24 +169,54 @@ try {
 
   await check('4. tab row at 1100 px', async () => {
     await page.setViewportSize({ width: 1100, height: 760 });
-    const tabsPid = await newProject('Two tabs');
+    const tabsPid = await newProject('Three tabs');
     const dir = join(data, 'projects', tabsPid);
-    writeFileSync(join(dir, 'index.html'), '<h1>Home</h1>');
-    writeFileSync(join(dir, 'a-rather-long-page-name-for-pricing.html'), '<h1>Pricing</h1>');
+    const files = ['index.html', 'a-rather-long-page-name-for-pricing.html', 'another-long-page-name-for-about.html'];
+    for (const f of files) writeFileSync(join(dir, f), `<h1>${f}</h1>`);
     await page.goto(`${BASE}/projects/${tabsPid}`);
     const row = (path) => page.locator(`[data-testid="file-row"][data-path="${path}"]`);
-    for (const path of ['index.html', 'a-rather-long-page-name-for-pricing.html']) {
+    for (const path of files) {
       await row(path).click();
       await page.locator('[data-testid="tab"]', { hasText: path.slice(0, 8) }).waitFor();
     }
+    await sleep(300);
     await page.screenshot({ path: join(OUT, 'review-tabs-1100.png') });
-    assert.ok((await page.getByTestId('tab').count()) >= 2, 'two file tabs');
+    assert.ok((await page.getByTestId('tab').count()) >= 3, 'three file tabs');
     const tabs = await page.getByTestId('tabs').boundingBox();
     for (const id of ['tab-launcher', 'focus-workspace']) {
       const box = await page.getByTestId(id).boundingBox();
       assert.ok(box && box.width > 0, `${id} shown`);
       assert.ok(box.x >= tabs.x - 1 && box.x + box.width <= tabs.x + tabs.width + 1, `${id} inside the tab row: ${JSON.stringify({ box, tabs })}`);
     }
+    // Share of an element shown inside the scrolling list, not under the
+    // pinned Side chat tab.
+    const list = page.locator('.preview-top .tab-list');
+    const shown = (sel) =>
+      list.evaluate((l, sel) => {
+        const el = l.querySelector(sel);
+        const box = l.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        const side = l.querySelector('.side-tab');
+        const right = el === side ? box.right : Math.min(box.right, side.getBoundingClientRect().left);
+        return Math.max(0, Math.min(r.right, right) - Math.max(r.left, box.left)) / r.width;
+      }, sel);
+    const active = await shown('.tab.active');
+    const side = await shown('.side-tab');
+    assert.ok(active > 0.99, `active tab shown ${(active * 100).toFixed(0)}%`);
+    assert.ok(side > 0.99, `Side chat shown ${(side * 100).toFixed(0)}%`);
+    // A vertical wheel over the row scrolls it sideways, back to the first tab.
+    const before = await list.evaluate((l) => l.scrollLeft);
+    assert.ok(before > 0, 'the row scrolled to the active tab');
+    const lb = await list.boundingBox();
+    await page.mouse.move(lb.x + lb.width / 2, lb.y + lb.height / 2);
+    await page.mouse.wheel(0, -400);
+    await until(async () => (await list.evaluate((l) => l.scrollLeft)) < before, 'wheel scrolls the tab row');
+    // Switching tabs brings the newly active one into view.
+    await row(files[1]).click();
+    await row(files[2]).click();
+    await sleep(300);
+    assert.ok((await shown('.tab.active')) > 0.99, 'active tab back in view');
+    results['4. tab row at 1100 px'] = `ok (active ${(active * 100).toFixed(0)}%, side chat ${(side * 100).toFixed(0)}%)`;
   });
 
   await check('5. settings models section', async () => {
@@ -174,7 +234,45 @@ try {
     await summary.waitFor();
     assert.equal(await summary.locator('.ico').count(), 1, 'Advanced has a chevron');
     assert.notEqual(await summary.evaluate((s) => getComputedStyle(s).display), 'list-item', 'no native triangle');
-    results['5. settings models section'] = `ok (gap ${Math.round(gap)}px)`;
+    // At 1100 px the section is one column: the card is not squeezed into
+    // the intro's 200 px column.
+    await page.setViewportSize({ width: 1100, height: 760 });
+    await sleep(200);
+    await page.screenshot({ path: join(OUT, 'review-settings-1100.png'), fullPage: false });
+    const narrow = await card.boundingBox();
+    const main = await page.locator('.settings-main').boundingBox();
+    assert.ok(narrow.width > main.width * 0.9, `card ${narrow.width}px of ${main.width}px`);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await sleep(500);
+    await page.screenshot({ path: join(OUT, 'review-settings-1100-dark.png') });
+    await page.emulateMedia({ colorScheme: 'light' });
+    results['5. settings models section'] = `ok (gap ${Math.round(gap)}px, card ${Math.round(narrow.width)}px at 1100)`;
+  });
+
+  await check('6. deck rail and phone frame', async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const deckPid = await newProject('Pitch deck');
+    const tpl = new URL('../../../content/design-templates/html-ppt-pitch-deck/example.html', import.meta.url).pathname;
+    writeFileSync(join(data, 'projects', deckPid, 'index.html'), readFileSync(tpl));
+    await page.goto(`${BASE}/projects/${deckPid}`);
+    await page.locator('[data-testid="file-row"][data-path="index.html"]').click();
+    const rail = page.getByTestId('thumb-rail');
+    await rail.waitFor();
+    const thumbs = await page.getByTestId('deck-thumb').count();
+    assert.ok(thumbs >= 8, `${thumbs} thumbs`);
+    // Every thumb moves its copy of the deck to its slide; give them time.
+    await sleep(4000);
+    await page.screenshot({ path: join(OUT, 'review-deck-rail.png') });
+    const top = await rail.evaluate((r) => r.scrollTop);
+    assert.equal(top, 0, 'rail scrolled by the thumbs');
+    assert.ok(await page.getByTestId('deck-thumb').first().evaluate((b) => b.classList.contains('active')), 'slide 1 active');
+    await page.getByRole('radio', { name: 'Phone' }).click();
+    await sleep(500);
+    await page.screenshot({ path: join(OUT, 'review-deck-phone.png') });
+    const frame = await page.locator('iframe.preview-frame, [data-testid="preview-frame"]').first().boundingBox();
+    assert.ok(frame && frame.width > 0 && frame.width < 500, `phone frame ${JSON.stringify(frame)}`);
+    await page.getByRole('radio', { name: 'Desktop' }).click();
+    results['6. deck rail and phone frame'] = `ok (${thumbs} thumbs, phone ${Math.round(frame.width)}px)`;
   });
 
   assert.deepEqual(failures, [], `failed checks:\n${failures.join('\n')}`);

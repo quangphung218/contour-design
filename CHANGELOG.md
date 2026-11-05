@@ -24,14 +24,22 @@ All notable changes to Contour are recorded here. The format follows
   its stage scales down to the window, where before only its dark
   top-left corner showed for the whole run. The render is unchanged.
 - Projects lists a Motion film as "Motion" (with its own filter), not
-  "Media", with the film's first frame as its cover.
-- In a narrow window the file tabs shrink and scroll by themselves, so
-  the "+" launcher and the focus toggle after them stay in reach.
+  "Media", with a frame from the middle of the film as its cover.
+- In a narrow window the file tabs shrink and scroll by themselves (a
+  mouse wheel scrolls them too), so the "+" launcher and the focus toggle
+  after them stay in reach; the active tab scrolls into view and Side chat
+  stays pinned at the end of the row.
 - Settings ▸ Models: no tall gap between the Local CLI / API switch and
   the card under it, and "Advanced: proxy & custom paths" opens with the
   same chevron as "Other agents" instead of the browser's triangle.
 - Onboarding numbers its first step ("1 Agent") like the brand step under
   it.
+- Settings in a window under 1180 px wide puts each section in one
+  column; the Models card no longer shrinks to a 200 px column
+  ("Installe…").
+- A deck's thumbnail rail opens at slide 1: a thumbnail moving its copy of
+  a deck with no keyboard handling to its slide no longer scrolls the rail
+  (or any page around the preview).
 - Project covers and template thumbnails no longer log a "Blocked script
   execution" console error for each script of the page: the scripts are
   left out of the still cover.

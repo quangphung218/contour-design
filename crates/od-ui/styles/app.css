@@ -938,6 +938,11 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .preview-top .tab-name { min-width: 0; flex: 1; }
 .preview-top .tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .preview-top > .tabs > :not(.tab-list):not(.spacer) { flex: none; }
+/* Side chat stays pinned at the right edge of the scrolling list, with a
+   fade over the tabs that slide under it. */
+.preview-top .tab-list > .side-tab { position: sticky; right: 0; z-index: 1; flex: none; min-width: 0; background: var(--color-surface); }
+.preview-top .tab-list > .side-tab.active { background: var(--color-surface-raised); }
+.preview-top .tab-list > .side-tab::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: var(--space-4); background: linear-gradient(to right, transparent, var(--color-surface)); pointer-events: none; }
 .preview-actions { flex: none; display: flex; align-items: center; gap: var(--space-1); padding-right: var(--space-2); }
 .preview-actions:empty { display: none; }
 .tab-add { margin-left: var(--space-1); }
@@ -1040,7 +1045,6 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .empty-steps { display: flex; flex-direction: column; gap: var(--space-1-5); margin: var(--space-2) 0 0; padding: 0; list-style: none; counter-reset: step; text-align: left; }
 .empty-steps li { display: flex; gap: var(--space-2-5); align-items: baseline; color: var(--color-text-secondary); font-size: var(--text-sm); counter-increment: step; }
 .empty-steps li::before { content: counter(step); flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: var(--radius-full); background: var(--color-accent-soft); color: var(--color-accent-text); font-size: var(--text-2xs); font-weight: var(--weight-semibold); }
-.empty-steps li.done { color: var(--color-text-tertiary); }
 .empty-steps li.done::before { content: "\2713"; background: var(--color-success-soft); color: var(--color-success); }
 .empty-steps li.current { color: var(--color-text); font-weight: var(--weight-medium); }
 .empty-steps li.current::before { background: var(--color-accent); color: var(--color-on-accent); }
@@ -1185,7 +1189,9 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 @media (max-width: 1180px) {
   .studio { grid-template-columns: minmax(300px, 34%) minmax(0, 1fr); }
   .workspace { grid-template-columns: minmax(0, 1fr) 196px; }
-  .settings-section { grid-template-columns: 1fr; gap: var(--space-3); }
+  /* .settings-main outranks the bare selector: one column there too, or
+     the card lands in the 200px intro column. */
+  .settings-section, .settings-main .settings-section { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
   .settings-section > .section-intro:has(+ .segmented) { grid-row: auto; }
   .settings-section > :not(.section-intro) { grid-column: 1; }
 }

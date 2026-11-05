@@ -1378,12 +1378,34 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
     // Left/Right move between tabs, as in the WAI-ARIA tabs pattern; a
     // tab opens on Enter or a click, not on focus (it loads a file).
     let tab_keys = move |ev: ev::KeyboardEvent| super::focus::group_keys(&ev, false);
+    let list = NodeRef::<leptos::html::Div>::new();
+    // The list scrolls sideways in a narrow window: keep the active tab in
+    // view when it changes (UI-015).
+    Effect::new(move |_| {
+        ctx.tabs.with(|t| t.active.clone());
+        ctx.side.open.track();
+        ctx.active_term.track();
+        if let Some(el) = list.get() {
+            request_animation_frame(move || reveal_active_tab(&el));
+        }
+    });
+    // A mouse wheel without a horizontal axis scrolls the list sideways.
+    let wheel = move |ev: ev::WheelEvent| {
+        let Some(el) = list.get_untracked() else {
+            return;
+        };
+        if ev.delta_x() == 0.0 && ev.delta_y() != 0.0 && el.scroll_width() > el.client_width() {
+            ev.prevent_default();
+            #[allow(clippy::cast_possible_truncation)] // wheel deltas are small
+            el.set_scroll_left(el.scroll_left() + ev.delta_y() as i32);
+        }
+    };
     view! {
         <div class="tabs" data-testid="tabs">
             // Only the tabs sit in the tablist: the "+" launcher and the focus
             // toggle are siblings, and each close "×" is a mouse shortcut
             // hidden from assistive tech (Delete on a focused tab closes it).
-            <div class="tab-list" role="tablist" on:keydown=tab_keys>
+            <div class="tab-list" role="tablist" node_ref=list on:keydown=tab_keys on:wheel=wheel>
             {move || {
                 let tabs = ctx.tabs.get();
                 let side_open = ctx.side.open.get();
@@ -1464,6 +1486,32 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
             <super::files_panel::FocusToggle/>
         </div>
     }
+}
+
+/// Scrolls `list` so its active tab is fully in view, clear of the pinned
+/// Side chat tab at its right edge.
+fn reveal_active_tab(list: &web_sys::HtmlDivElement) {
+    let Ok(Some(tab)) = list.query_selector(".tab.active:not(.side-tab)") else {
+        return;
+    };
+    let pinned = list
+        .query_selector(".side-tab")
+        .ok()
+        .flatten()
+        .map_or(0.0, |s| s.get_bounding_client_rect().width());
+    let (box_, rect) = (
+        list.get_bounding_client_rect(),
+        tab.get_bounding_client_rect(),
+    );
+    let shift = if rect.left() < box_.left() {
+        rect.left() - box_.left()
+    } else if rect.right() > box_.right() - pinned {
+        rect.right() - (box_.right() - pinned)
+    } else {
+        return;
+    };
+    #[allow(clippy::cast_possible_truncation)] // pixel offsets
+    list.set_scroll_left(list.scroll_left() + shift.ceil() as i32);
 }
 
 #[component]

@@ -369,6 +369,23 @@
     }, 1500, then);
   }
 
+  // Brings `el` to the top-left of its document by scrolling only that
+  // document's own boxes. scrollIntoView would also scroll the host page
+  // around the frame, e.g. the thumbnail rail to whichever thumb moved last.
+  function scrollWithin(el) {
+    for (var box = el.parentElement; box && box !== document.body && box !== document.documentElement; box = box.parentElement) {
+      if (box.scrollHeight <= box.clientHeight && box.scrollWidth <= box.clientWidth) continue;
+      var overflow = getComputedStyle(box);
+      if (!/auto|scroll|hidden/.test(overflow.overflowX + overflow.overflowY)) continue;
+      var r = el.getBoundingClientRect();
+      var b = box.getBoundingClientRect();
+      box.scrollTop += r.top - b.top - box.clientTop;
+      box.scrollLeft += r.left - b.left - box.clientLeft;
+    }
+    var rect = el.getBoundingClientRect();
+    window.scrollBy({ left: rect.left, top: rect.top, behavior: 'instant' });
+  }
+
   function step(target, count, then) {
     var cur = activeIndex();
     if (cur === target) {
@@ -387,7 +404,7 @@
         // The deck ignores keys: show the slide ourselves.
         var list = slides();
         try {
-          list[target].scrollIntoView({ block: 'start', inline: 'start', behavior: 'instant' });
+          scrollWithin(list[target]);
         } catch (_) {}
         then();
         return;

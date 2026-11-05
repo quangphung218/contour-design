@@ -306,9 +306,20 @@ async fn keyless_deck_and_foreign_messages(h: &Harness) {
         .await;
     assert_eq!(state, json!(0), "self-posted od:slide must not navigate");
 
+    // The host page scrolled away from the frame stays where it is: the
+    // deck scrolls itself, not the page around it (the thumbnail rail).
+    h.eval("document.body.style.height = '4000px'; window.scrollTo(0, 1500); true")
+        .await;
     assert_eq!(h.nav(json!({ "action": "go", "index": 2 })).await, 2);
     assert_eq!(h.nav(json!({ "action": "prev" })).await, 1);
     assert_eq!(h.nav(json!({ "action": "last" })).await, 3);
+    assert_eq!(
+        h.eval("window.scrollY").await,
+        json!(1500),
+        "navigating the deck scrolled the host page"
+    );
+    h.eval("document.body.style.height = ''; window.scrollTo(0, 0); true")
+        .await;
 }
 
 /// A page's own carousel built from `.slide` is not a deck (UI-001): no

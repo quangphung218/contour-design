@@ -610,7 +610,7 @@ fn SearchHits(hits: RwSignal<Vec<Hit>>, query: RwSignal<String>) -> impl IntoVie
     }
 }
 
-/// A project's cover: its film's first frame when the project's entry is a
+/// A project's cover: its film's middle frame when the project's entry is a
 /// video (a Motion render, UI-013), else its entry page (`entryFile` from
 /// the list) rendered small once it scrolls into view, else the kind's icon.
 #[component]
@@ -629,7 +629,7 @@ fn ProjectCover(project: Project) -> impl IntoView {
         .as_ref()
         .and_then(|m| m.entry_file.as_deref())
         .filter(|f| is_video_path(f))
-        .map(|f| format!("{}#t=0.1", raw(f)));
+        .map(raw);
     // A film that is gone or will not decode falls back to the page.
     let film_failed = RwSignal::new(false);
     view! {
@@ -638,12 +638,30 @@ fn ProjectCover(project: Project) -> impl IntoView {
                 (Some(film), _) => view! {
                     <video class="cover-video" src=film muted=true playsinline=true preload="metadata"
                         tabindex="-1" data-testid="project-cover-video"
+                        on:loadedmetadata=show_poster_frame
                         on:error=move |_| film_failed.set(true)></video>
                 }.into_any(),
                 (None, Some(src)) => view! { <LazyFrame src=src/> }.into_any(),
                 (None, None) => view! { <span class="cover-glyph">{icon(glyph)}</span> }.into_any(),
             }}
         </span>
+    }
+}
+
+/// Seeks a cover film to its middle: a Motion film fades in from a dark
+/// stage, so its first frames are blank. The middle is where `od media
+/// scaffold` puts the poster (`data-poster-time`).
+fn show_poster_frame(ev: leptos::ev::Event) {
+    use wasm_bindgen::JsCast;
+    let Some(video) = ev
+        .target()
+        .and_then(|t| t.dyn_into::<web_sys::HtmlMediaElement>().ok())
+    else {
+        return;
+    };
+    let seconds = video.duration();
+    if seconds.is_finite() && seconds > 0.0 {
+        video.set_current_time(seconds / 2.0);
     }
 }
 
