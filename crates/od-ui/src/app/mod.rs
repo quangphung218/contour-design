@@ -42,6 +42,7 @@ mod media_page;
 mod media_rows;
 mod memory_settings;
 mod menu_scrim;
+mod native_shell;
 mod new_project;
 mod notify;
 mod onboarding;
@@ -270,6 +271,9 @@ pub fn App() -> impl IntoView {
         };
         painted.set_value(true);
         i18n::set_locale(locale);
+        if desktop::is_desktop() {
+            desktop::set_menu_labels(&native_shell::menu_labels(locale));
+        }
         if let Some(root) = web_sys::window()
             .and_then(|w| w.document())
             .and_then(|d| d.document_element())
@@ -292,10 +296,12 @@ fn Shelled() -> impl IntoView {
             ev.prevent_default();
             shell.shortcuts.set(false);
             shell.palette.update(|p| *p = !*p);
-        } else if ev.key() == "?"
+        } else if (ev.key() == "?"
             && !modifier
             && !studio::is_editing(&ev)
-            && !shell.palette.get_untracked()
+            && !shell.palette.get_untracked())
+            // Help ▸ Keyboard Shortcuts' key in the app, here too (QA-050).
+            || (modifier && !ev.alt_key() && ev.key() == "/")
         {
             ev.prevent_default();
             shell.shortcuts.update(|s| *s = !*s);
@@ -330,9 +336,19 @@ fn Shelled() -> impl IntoView {
             _ => {}
         },
     );
+    // In the app, `<a target="_blank">` web links open in the system
+    // browser (QA-044).
+    let links = desktop::is_desktop().then(|| {
+        window_event_listener(leptos::ev::click, |ev| {
+            native_shell::route_new_window_links(&ev);
+        })
+    });
     on_cleanup(move || {
         keys.remove();
         menu.remove();
+        if let Some(links) = links {
+            links.remove();
+        }
     });
     view! {
         <Router>

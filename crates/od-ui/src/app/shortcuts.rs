@@ -21,7 +21,8 @@ const GROUPS: [(T, &[(&str, T)]); 4] = [
             ("{m}K", T::CommandPalette),
             ("{m},", T::NavSettings),
             ("{m}B", T::ShortcutToggleSidebar),
-            ("?", T::KeyboardShortcuts),
+            // `?` in the page; {m}/ is Help ▸ Keyboard Shortcuts in the app.
+            ("? / {m}/", T::KeyboardShortcuts),
             ("Esc", T::ShortcutEsc),
         ],
     ),

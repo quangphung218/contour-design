@@ -29,6 +29,25 @@ which `make e2e-qa` (browser) does not reach. Each bug lists its manual
 steps; the Rust side of QA-042/043/044 can be pinned with the mock-runtime
 tests in `apps/desktop/src/main.rs`.
 
+## Status
+
+Unit tests in `apps/desktop/src/main.rs` (desktop) and `crates/od-ui`
+(UI); QA-042/043/044 also checked by hand on the release `.app`.
+
+| ID | Sev | Summary | Test | Status |
+|---|---|---|---|---|
+| QA-042 | 🔴 | ⌘W in the Studio quits the app | `cmd_w_reaches_the_page_on_macos`, by hand | Fixed |
+| QA-043 | 🟠 | Closing the window quits the app; the Dock cannot bring it back | `closing_the_window_hides_it_on_macos`, by hand | Fixed |
+| QA-044 | 🟠 | Links with `target="_blank"` do nothing | `web_links_for_a_new_window_go_through_window_open`, by hand | Fixed |
+| QA-045 | 🟡 | Network volume prompt on the folder picker | | Fixed in #83 |
+| QA-046 | 🟡 | Use everywhere tells app users to run `od` | `the_app_shows_its_own_binary_not_od` | Fixed |
+| QA-047 | 🟡 | "Lost the connection" after quitting during a run | | Settled in #72 |
+| QA-048 | 🟡 | Export toast names a file that was not written | native Save dialog (no unit test: needs the window) | Fixed |
+| QA-049 | 🔵 | Native menus stay in English | `the_menu_speaks_the_ui_language`, `the_menu_goes_to_the_shell_in_the_ui_language` | Fixed |
+| QA-050 | 🔵 | Shortcut labels disagree | | Fixed |
+| QA-051 | 🔵 | ⌘, before onboarding ends runs the agent test again | `coming_back_keeps_the_agent_test_answer` | Fixed |
+| QA-052 | 🔵 | Notifications: "Failure" cut off from its select | | Fixed |
+
 ## Results
 
 | Area | Item | Result |

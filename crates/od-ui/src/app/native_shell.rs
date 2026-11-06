@@ -1,0 +1,139 @@
+//! What the page tells the desktop app's native shell: the menu bar's
+//! words (QA-049), and web links meant for a new window (QA-044).
+
+use super::APP_NAME;
+use crate::i18n::{Locale, T, t, tf};
+use serde_json::{Value, json};
+use wasm_bindgen::JsCast;
+
+/// The native menu's labels in the current language, as the shell's
+/// `MenuLabels` takes them; English sends none (the shell's own, in macOS
+/// title case).
+#[must_use]
+pub fn menu_labels(locale: Locale) -> Value {
+    if locale == Locale::En {
+        return json!({});
+    }
+    let more = |key| format!("{}…", t(key));
+    json!({
+        "about": tf(T::MenuAbout, &[APP_NAME]),
+        "services": t(T::MenuServices),
+        "hide": tf(T::MenuHide, &[APP_NAME]),
+        "hideOthers": t(T::MenuHideOthers),
+        "showAll": t(T::MenuShowAll),
+        "quit": tf(T::MenuQuit, &[APP_NAME]),
+        "settings": more(T::NavSettings),
+        "file": t(T::MenuFile),
+        "closeWindow": t(T::MenuCloseWindow),
+        "edit": t(T::Edit),
+        "undo": t(T::Undo),
+        "redo": t(T::Redo),
+        "cut": t(T::MenuCut),
+        "copy": t(T::Copy),
+        "paste": t(T::MenuPaste),
+        "selectAll": t(T::MenuSelectAll),
+        "view": t(T::View),
+        "fullscreen": t(T::Fullscreen),
+        "project": t(T::MenuProject),
+        "openFolder": t(T::OpenFolder),
+        "window": t(T::MenuWindow),
+        "minimize": t(T::MenuMinimize),
+        "maximize": t(T::MenuZoom),
+        "help": t(T::Help),
+        "documentation": t(T::Documentation),
+        "checkUpdates": more(T::CheckForUpdates),
+        "reportIssue": t(T::ReportIssue),
+        "dataFolder": t(T::MenuShowDataFolder),
+        "shortcuts": t(T::KeyboardShortcuts),
+        "palette": more(T::CommandPalette),
+    })
+}
+
+/// Whether a click on a link to `href` with `target` goes through
+/// `window.open`: a web address for a new window. In the app the webview
+/// refused such a link as a navigation away from the app and nothing
+/// happened ("Install guide ↗"); `window.open` reaches the shell, which
+/// hands web addresses to the system browser.
+#[must_use]
+pub fn opens_in_new_window(href: &str, target: &str) -> bool {
+    let href = href.trim_start();
+    let web = ["http://", "https://"].iter().any(|s| {
+        href.get(..s.len())
+            .is_some_and(|p| p.eq_ignore_ascii_case(s))
+    });
+    web && target.eq_ignore_ascii_case("_blank")
+}
+
+/// The app's links with `target="_blank"` open in the system browser, as
+/// Export ▸ Open in new tab does. Plain clicks only: a modified click or a
+/// handler that already took the click is left alone.
+pub fn route_new_window_links(ev: &web_sys::MouseEvent) {
+    if ev.default_prevented()
+        || ev.button() != 0
+        || ev.meta_key()
+        || ev.ctrl_key()
+        || ev.shift_key()
+        || ev.alt_key()
+    {
+        return;
+    }
+    let Some(link) = ev
+        .target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        .and_then(|e| e.closest("a[href][target]").ok().flatten())
+        .and_then(|e| e.dyn_into::<web_sys::HtmlAnchorElement>().ok())
+    else {
+        return;
+    };
+    if link.has_attribute("download") || !opens_in_new_window(&link.href(), &link.target()) {
+        return;
+    }
+    ev.prevent_default();
+    if let Some(w) = web_sys::window() {
+        let _ = w.open_with_url_and_target(&link.href(), "_blank");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn web_links_for_a_new_window_go_through_window_open() {
+        assert!(opens_in_new_window(
+            "https://developers.openai.com/codex/cli",
+            "_blank"
+        ));
+        assert!(opens_in_new_window("HTTP://example.com/", "_BLANK"));
+        // Same window, or not a web address: the page handles it.
+        assert!(!opens_in_new_window("https://example.com/", ""));
+        assert!(!opens_in_new_window("https://example.com/", "_self"));
+        for href in [
+            "javascript:alert(1)",
+            "mailto:a@b.c",
+            "file:///etc/passwd",
+            "blob:http://127.0.0.1:1/x",
+            "/projects/p1",
+        ] {
+            assert!(!opens_in_new_window(href, "_blank"), "{href}");
+        }
+    }
+
+    #[test]
+    fn the_menu_goes_to_the_shell_in_the_ui_language() {
+        crate::i18n::set_locale(Locale::Vi);
+        let labels = menu_labels(Locale::Vi);
+        assert_eq!(labels["reportIssue"], "Báo lỗi");
+        assert_eq!(labels["quit"], "Thoát Contour");
+        assert_eq!(labels["closeWindow"], "Đóng cửa sổ");
+        assert_eq!(labels["openFolder"], "Mở thư mục…");
+        // Every field the shell's `MenuLabels` reads, none empty.
+        assert_eq!(labels.as_object().map(serde_json::Map::len), Some(30));
+        assert!(labels.as_object().is_some_and(|m| {
+            m.values()
+                .all(|v| v.as_str().is_some_and(|s| !s.is_empty()))
+        }));
+        crate::i18n::set_locale(Locale::En);
+        assert_eq!(menu_labels(Locale::En), json!({}));
+    }
+}

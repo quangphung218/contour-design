@@ -1844,6 +1844,23 @@ messages! {
     LocalModeHint => "No account. Everything stays on this computer.", "Không cần tài khoản. Mọi thứ nằm trên máy này.";
     Help => "Help", "Trợ giúp";
     Documentation => "Documentation", "Tài liệu hướng dẫn";
+    // The desktop app's native menu bar (QA-049).
+    MenuAbout => "About {0}", "Giới thiệu {0}";
+    MenuServices => "Services", "Dịch vụ";
+    MenuHide => "Hide {0}", "Ẩn {0}";
+    MenuHideOthers => "Hide Others", "Ẩn ứng dụng khác";
+    MenuShowAll => "Show All", "Hiện tất cả";
+    MenuQuit => "Quit {0}", "Thoát {0}";
+    MenuFile => "File", "File";
+    MenuCloseWindow => "Close Window", "Đóng cửa sổ";
+    MenuCut => "Cut", "Cắt";
+    MenuPaste => "Paste", "Dán";
+    MenuSelectAll => "Select All", "Chọn tất cả";
+    MenuProject => "Project", "Project";
+    MenuWindow => "Window", "Cửa sổ";
+    MenuMinimize => "Minimize", "Thu nhỏ";
+    MenuZoom => "Zoom", "Phóng to";
+    MenuShowDataFolder => "Show Data Folder", "Mở thư mục dữ liệu";
     ReportIssue => "Report issue", "Báo lỗi";
     ReportCopied => "Diagnostics copied to the clipboard.", "Đã chép thông tin chẩn đoán vào clipboard.";
     ReportCopiedDir => "Diagnostics copied to the clipboard. Logs: {0}", "Đã chép thông tin chẩn đoán vào clipboard. Log: {0}";
