@@ -11,17 +11,28 @@ All notable changes to Contour are recorded here. The format follows
 ### Added
 
 - A chat turn shows its total run time on the line over its work:
-  "Working · 0:12 · 3 steps" counts up while the agent runs, and
-  "Worked for 1:23 · 4 steps" stays put once it is done, also after a
-  reload.
+  "Step 2 of 3 · Writing the page · 0:12" counts up while the agent
+  runs, and "Worked for 1:23 · 4 steps" stays put once it is done, also
+  after a reload.
 
 ### Changed
 
 - A chat turn's plan, thinking and tool calls now read as one task you
   can fold, in the order the agent did them: the plan sits where the
   agent wrote it instead of at the top of the reply. The task is open
-  while the agent works and folds once it succeeds; the reply, errors
-  and the files from the turn stay outside it, in view.
+  while the agent works and folds once it succeeds with its plan done;
+  the reply, errors and the files from the turn stay outside it, in
+  view. While the agent works, that line is the one place that shows
+  its progress and clock: the "Step N/M" pill over the composer is gone.
+
+### Fixed
+
+- On a Mac with Amp installed, every launch asked "Contour would like to
+  access files on a network volume", and Allow did not stick across
+  updates. Checking which agents are installed ran `amp --version`, and
+  Amp looks for two optional add-ons under `/home`, a network mount on
+  macOS. Amp now runs, for the check and for chats, with those add-ons
+  turned off, so it no longer touches `/home`.
 
 ## [0.2.0-beta.20] - 2026-11-06
 
