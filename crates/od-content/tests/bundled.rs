@@ -241,7 +241,7 @@ fn design_templates_match_original_loader() {
     );
 }
 
-/// The Motion set: at least 5 finished examples and 13 templates, each a
+/// The Motion set: at least 5 finished examples and 26 templates, each a
 /// video-mode HyperFrames composition of 5–15 s that ships its own
 /// Apache-2.0 LICENSE and needs nothing from the network.
 #[test]
@@ -273,7 +273,7 @@ fn motion_templates_ship_complete() {
         kind("motion-example")
     );
     assert!(
-        kind("motion-template") >= 13,
+        kind("motion-template") >= 26,
         "templates: {}",
         kind("motion-template")
     );

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flip clock countdown</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Flip clock countdown: a 10 s, 1920x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 10 s film
+   (1 s = 10%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 19.2px
+   on the 1920px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+@property --n { syntax: '<integer>'; inherits: false; initial-value: 0; }
+html, body { margin: 0; height: 100%; background: #0b1d2a; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 10s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1920 / 1080)); aspect-ratio: 1920 / 1080;
+  background: #0b1d2a; color: #fdfaf3; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.head { position: absolute; left: 0; right: 0; top: 7.8125cqw; text-align: center; font: 700 1.5625cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.7292cqw; color: #8fb3c9; }
+.cells { position: absolute; left: 0; right: 0; top: 14.0625cqw; display: flex; justify-content: center; gap: 2.5cqw; }
+.cell { position: relative; width: 19.7917cqw; height: 22.9167cqw; perspective: 83.3333cqw; }
+.card { position: absolute; inset: 0; border-radius: 1.7708cqw; background: #17324a; display: grid; place-items: center; font-size: 15.625cqw; font-weight: 800; letter-spacing: -0.3125cqw; font-variant-numeric: tabular-nums; box-shadow: 0 1.5625cqw 3.125cqw rgba(0,0,0,.35); }
+.card::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 0.2083cqw; margin-top: -0.1042cqw; background: #0b1d2a; }
+.flap { position: absolute; left: 0; right: 0; top: 0; height: 50%; border-radius: 1.7708cqw 1.7708cqw 0 0; background: linear-gradient(#21456a, #1b3a58); transform-origin: 50% 100%; }
+.sec { counter-reset: n var(--n); }
+.sec::before { content: counter(n, decimal-leading-zero); }
+.sec.hot { color: #ffb703; }
+.unit { position: absolute; left: 0; right: 0; bottom: -3.3333cqw; text-align: center; font: 700 1.25cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.4167cqw; color: #8fb3c9; }
+.colon { align-self: center; font-size: 8.3333cqw; font-weight: 800; color: #2c5576; margin: 0 -0.9375cqw; }
+.bar { position: absolute; left: 20.8333cqw; right: 20.8333cqw; top: 43.2292cqw; height: 0.5208cqw; border-radius: 0.2604cqw; background: #17324a; overflow: hidden; }
+.bar i { position: absolute; inset: 0; background: #ffb703; transform-origin: 0 50%; }
+.event { position: absolute; left: 0; right: 0; top: 46.875cqw; text-align: center; font-size: 1.9792cqw; font-weight: 600; color: #fdfaf3; }
+.event em { font-style: normal; color: #ffb703; }
+.open { position: absolute; left: 0; right: 0; top: 19.7917cqw; text-align: center; font-size: 10.4167cqw; font-weight: 900; letter-spacing: -0.3125cqw; }
+.open em { font-style: normal; color: #ffb703; }
+
+@keyframes k1 {
+  0% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: linear; }
+  2% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  7% { opacity: 1; transform: none; animation-timing-function: linear; }
+  75% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  79% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { opacity: 0; transform: translateY(2.0833cqw); animation-timing-function: linear; }
+  1% { opacity: 0; transform: translateY(2.0833cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  7% { opacity: 1; transform: none; animation-timing-function: linear; }
+  76% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  80% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.7); animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { --n: 8; animation-timing-function: linear; }
+  13.5% { --n: 7; animation-timing-function: steps(1,end); }
+  22% { --n: 6; animation-timing-function: steps(1,end); }
+  30.5% { --n: 5; animation-timing-function: steps(1,end); }
+  39% { --n: 4; animation-timing-function: steps(1,end); }
+  47.5% { --n: 3; animation-timing-function: steps(1,end); }
+  56% { --n: 2; animation-timing-function: steps(1,end); }
+  64.5% { --n: 1; animation-timing-function: steps(1,end); }
+  73% { --n: 0; animation-timing-function: steps(1,end); }
+  100% { --n: 0; animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+  11.5% { opacity: 1; transform: rotateX(0deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  13.5% { opacity: 1; transform: rotateX(-90deg); animation-timing-function: steps(1,end); }
+  13.6% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+  20% { opacity: 1; transform: rotateX(0deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  22% { opacity: 1; transform: rotateX(-90deg); animation-timing-function: steps(1,end); }
+  22.1% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+  28.5% { opacity: 1; transform: rotateX(0deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  30.5% { opacity: 1; transform: rotateX(-90deg); animation-timing-function: steps(1,end); }
+  30.6% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+  37% { opacity: 1; transform: rotateX(0deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  39% { opacity: 1; transform: rotateX(-90deg); animation-timing-function: steps(1,end); }
+  39.1% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+  45.5% { opacity: 1; transform: rotateX(0deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  47.5% { opacity: 1; transform: rotateX(-90deg); animation-timing-function: steps(1,end); }
+  47.6% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+  54% { opacity: 1; transform: rotateX(0deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  56% { opacity: 1; transform: rotateX(-90deg); animation-timing-function: steps(1,end); }
+  56.1% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+  62.5% { opacity: 1; transform: rotateX(0deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  64.5% { opacity: 1; transform: rotateX(-90deg); animation-timing-function: steps(1,end); }
+  64.6% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+  71% { opacity: 1; transform: rotateX(0deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  73% { opacity: 1; transform: rotateX(-90deg); animation-timing-function: steps(1,end); }
+  73.1% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+  100% { opacity: 0; transform: rotateX(0deg); animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { transform: scaleX(1); animation-timing-function: linear; }
+  5% { transform: scaleX(1); animation-timing-function: linear; }
+  73% { transform: scaleX(0); animation-timing-function: linear; }
+  100% { transform: scaleX(0); animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { opacity: 0; transform: none; animation-timing-function: linear; }
+  4% { opacity: 0; transform: none; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  8% { opacity: 1; transform: none; animation-timing-function: linear; }
+  76% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  80% { opacity: 0; transform: none; animation-timing-function: linear; }
+  100% { opacity: 0; transform: none; animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+  6% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  13% { opacity: 1; transform: none; animation-timing-function: linear; }
+  93% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  97% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { opacity: 0; transform: scale(.3); animation-timing-function: linear; }
+  79% { opacity: 0; transform: scale(.3); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  84% { opacity: 1; transform: none; animation-timing-function: linear; }
+  92% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  97% { opacity: 0; transform: scale(1.15); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(1.15); animation-timing-function: linear; }
+}
+#head { animation: k1 var(--film) linear infinite both; }
+#cells { animation: k2 var(--film) linear infinite both; }
+#sec { animation: k3 var(--film) linear infinite both; }
+#flap { animation: k4 var(--film) linear infinite both; }
+#bar { animation: k5 var(--film) linear infinite both; }
+#barbox { animation: k6 var(--film) linear infinite both; }
+#event { animation: k7 var(--film) linear infinite both; }
+#open { animation: k8 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="10"
+  data-width="1920" data-height="1080" data-fps="30" data-poster-time="3.2">
+<div class="head" id="head">DOORS OPEN IN</div>
+<div class="cells" id="cells">
+  <div class="cell"><div class="card">00</div><div class="unit">HOURS</div></div>
+  <div class="colon">:</div>
+  <div class="cell"><div class="card">00</div><div class="unit">MINUTES</div></div>
+  <div class="colon">:</div>
+  <div class="cell"><div class="card sec" id="sec"></div><div class="flap" id="flap"></div><div class="unit">SECONDS</div></div>
+</div>
+<div class="bar" id="barbox"><i id="bar"></i></div>
+<div class="event" id="event">Harbourlight Live · <em>Pier 9 stage</em></div>
+<div class="open" id="open">We're <em>open.</em></div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 10;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>

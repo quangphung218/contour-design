@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>We're hiring</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* We're hiring: a 10 s, 1920x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 10 s film
+   (1 s = 10%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 19.2px
+   on the 1920px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+html, body { margin: 0; height: 100%; background: #1446ff; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 10s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1920 / 1080)); aspect-ratio: 1920 / 1080;
+  background: #1446ff; color: #ffffff; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.big { position: absolute; left: 6.25cqw; top: 10.4167cqw; }
+.big div { overflow: hidden; padding-bottom: 2.0833cqw; margin-bottom: -2.0833cqw; }
+.big span { display: block; font-size: 10.9375cqw; font-weight: 900; letter-spacing: -0.4167cqw; line-height: .92; }
+.big .f { color: #b8f5a0; }
+.lead { position: absolute; left: 6.5625cqw; top: 33.3333cqw; width: 33.3333cqw; font-size: 1.9792cqw; line-height: 1.35; color: #c9d4ff; }
+.studio { position: absolute; left: 6.5625cqw; bottom: 4.6875cqw; font: 700 1.3542cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.3125cqw; color: #c9d4ff; }
+.roles { position: absolute; left: 50cqw; top: 9.8958cqw; width: 43.75cqw; display: flex; flex-direction: column; gap: 1.4583cqw; }
+.role { padding: 1.875cqw 2.2917cqw; border-radius: 1.4583cqw; background: #ffffff; color: #0d1440; display: flex; align-items: center; justify-content: space-between; }
+.role strong { display: block; font-size: 2.2917cqw; font-weight: 800; letter-spacing: -0.0521cqw; margin-bottom: 0.625cqw; }
+.tags span { display: inline-block; margin-right: 0.5208cqw; padding: 0.4167cqw 0.8333cqw; border-radius: 1.0417cqw; background: #eef1ff; font: 600 1.1458cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #1446ff; }
+.arrow { width: 3.9583cqw; height: 3.9583cqw; border-radius: 50%; background: #1446ff; flex: none; display: grid; place-items: center; }
+.arrow svg { width: 1.875cqw; height: 1.875cqw; }
+.cta { position: absolute; left: 50cqw; top: 42.7083cqw; display: flex; align-items: center; gap: 1.25cqw; font-size: 2.0833cqw; font-weight: 700; }
+.cta i { display: block; width: 0.9375cqw; height: 0.9375cqw; border-radius: 50%; background: #b8f5a0; }
+.leaf { position: absolute; right: -4.1667cqw; bottom: -6.25cqw; width: 27.0833cqw; height: 27.0833cqw; opacity: .22; }
+
+@keyframes k1 {
+  0% { transform: rotate(-12deg); animation-timing-function: linear; }
+  100% { transform: rotate(8deg); animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { transform: translateY(105%); animation-timing-function: linear; }
+  3% { transform: translateY(105%); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  9% { transform: none; animation-timing-function: linear; }
+  92% { transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  96% { transform: translateY(-105%); animation-timing-function: linear; }
+  100% { transform: translateY(-105%); animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { transform: translateY(105%); animation-timing-function: linear; }
+  5.5% { transform: translateY(105%); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  11.5% { transform: none; animation-timing-function: linear; }
+  92% { transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  96% { transform: translateY(-105%); animation-timing-function: linear; }
+  100% { transform: translateY(-105%); animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+  13% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  20% { opacity: 1; transform: none; animation-timing-function: linear; }
+  92% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  96% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+  16% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  23% { opacity: 1; transform: none; animation-timing-function: linear; }
+  93% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  97% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { opacity: 0; transform: translateX(10.4167cqw); animation-timing-function: linear; }
+  24% { opacity: 0; transform: translateX(10.4167cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  30% { opacity: 1; transform: none; animation-timing-function: linear; }
+  46% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  48.5% { opacity: 1; transform: translateX(-1.25cqw) scale(1.03); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  52% { opacity: 1; transform: none; animation-timing-function: linear; }
+  91% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  95% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { opacity: 0; transform: translateX(10.4167cqw); animation-timing-function: linear; }
+  27.5% { opacity: 0; transform: translateX(10.4167cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  33.5% { opacity: 1; transform: none; animation-timing-function: linear; }
+  53% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  55.5% { opacity: 1; transform: translateX(-1.25cqw) scale(1.03); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  59% { opacity: 1; transform: none; animation-timing-function: linear; }
+  91% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  95% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { opacity: 0; transform: translateX(10.4167cqw); animation-timing-function: linear; }
+  31% { opacity: 0; transform: translateX(10.4167cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  37% { opacity: 1; transform: none; animation-timing-function: linear; }
+  60% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  62.5% { opacity: 1; transform: translateX(-1.25cqw) scale(1.03); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  66% { opacity: 1; transform: none; animation-timing-function: linear; }
+  91% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  95% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+  70% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  77% { opacity: 1; transform: none; animation-timing-function: linear; }
+  92% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  96% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+}
+#leaf { animation: k1 var(--film) linear infinite both; }
+#h1 { animation: k2 var(--film) linear infinite both; }
+#h2 { animation: k3 var(--film) linear infinite both; }
+#lead { animation: k4 var(--film) linear infinite both; }
+#studio { animation: k5 var(--film) linear infinite both; }
+#c1 { animation: k6 var(--film) linear infinite both; }
+#c2 { animation: k7 var(--film) linear infinite both; }
+#c3 { animation: k8 var(--film) linear infinite both; }
+#cta { animation: k9 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="10"
+  data-width="1920" data-height="1080" data-fps="30" data-poster-time="6.4">
+<svg class="leaf" id="leaf" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 98 V10 M50 30 L30 18 M50 30 L70 18 M50 46 L26 32 M50 46 L74 32 M50 62 L22 48 M50 62 L78 48 M50 78 L26 66 M50 78 L74 66" fill="none" stroke="#b8f5a0" stroke-width="4" stroke-linecap="round"/></svg>
+<div class="big"><div><span id="h1">We're</span></div><div><span id="h2" class="f">hiring.</span></div></div>
+<div class="lead" id="lead">Three roles on a twelve-person team that builds design tools for small studios.</div>
+<div class="studio" id="studio">COBALT &amp; FERN</div>
+<div class="roles">
+  <div class="role" id="c1"><div><strong>Senior Product Designer</strong><div class="tags"><span>LISBON</span><span>REMOTE OK</span></div></div><div class="arrow"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M8 18 H28 M20 10 L28 18 L20 26" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+  <div class="role" id="c2"><div><strong>Rust Engineer, Rendering</strong><div class="tags"><span>REMOTE</span><span>EU / ASIA</span></div></div><div class="arrow"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M8 18 H28 M20 10 L28 18 L20 26" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+  <div class="role" id="c3"><div><strong>Customer Success Lead</strong><div class="tags"><span>HANOI</span><span>FULL-TIME</span></div></div><div class="arrow"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M8 18 H28 M20 10 L28 18 L20 26" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+</div>
+<div class="cta" id="cta"><i></i>Apply by 30 November · link in bio</div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 10;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>
