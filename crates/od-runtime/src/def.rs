@@ -131,7 +131,7 @@ pub struct RuntimeDef {
     pub help_args: &'static [&'static str],
     /// Optional flags detected from `--help`, reported as capabilities.
     pub help_flags: &'static [&'static str],
-    /// Extra environment for this agent only.
+    /// Extra environment for this agent only: its runs and its probes.
     pub extra_env: &'static [(&'static str, &'static str)],
     /// Stop the run when neither stdout nor stderr produced a line for this
     /// long (spec 2.3: 10 minutes).
@@ -475,12 +475,16 @@ pub const QODER: RuntimeDef = RuntimeDef {
 };
 
 /// Amp's headless mode prints Claude Code's stream-json; the prompt is
-/// plain text on stdin.
+/// plain text on stdin. Its bundle looks for `ws`'s native add-ons at the
+/// CI path they were built at (`/home/runner/…`); on macOS `/home` is an
+/// autofs mount, so each start asked for network-volume access. `ws`'s own
+/// switches skip the add-ons (it falls back to its JS code).
 pub const AMP: RuntimeDef = RuntimeDef {
     id: "amp",
     name: "Amp",
     bin: "amp",
     stream_format: StreamFormat::ClaudeStreamJson,
+    extra_env: &[("WS_NO_BUFFER_UTIL", "1"), ("WS_NO_UTF_8_VALIDATE", "1")],
     ..PLAIN_BASE
 };
 
