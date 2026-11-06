@@ -32,7 +32,8 @@ tests in `apps/desktop/src/main.rs`.
 ## Status
 
 Unit tests in `apps/desktop/src/main.rs` (desktop) and `crates/od-ui`
-(UI); QA-042/043/044/051 also checked by hand on the release `.app`.
+(UI); QA-042/043 (also in full screen)/044/048/051 also checked by hand
+on the release `.app`.
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
@@ -42,7 +43,7 @@ Unit tests in `apps/desktop/src/main.rs` (desktop) and `crates/od-ui`
 | QA-045 | 🟡 | Network volume prompt on the folder picker | | Fixed in #83 |
 | QA-046 | 🟡 | Use everywhere tells app users to run `od` | `the_app_shows_its_own_binary_not_od` | Fixed |
 | QA-047 | 🟡 | "Lost the connection" after quitting during a run | | Settled in #72 |
-| QA-048 | 🟡 | Export toast names a file that was not written | native Save dialog (no unit test: needs the window) | Fixed |
+| QA-048 | 🟡 | Export toast names a file that was not written | by hand (native Save dialog, needs the window) | Fixed |
 | QA-049 | 🔵 | Native menus stay in English | `the_menu_speaks_the_ui_language`, `the_menu_goes_to_the_shell_in_the_ui_language` | Fixed |
 | QA-050 | 🔵 | Shortcut labels disagree | | Fixed |
 | QA-051 | 🔵 | ⌘, before onboarding ends runs the agent test again | `coming_back_keeps_the_agent_test_answer`, by hand | Fixed |

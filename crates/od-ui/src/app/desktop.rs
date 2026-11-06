@@ -115,17 +115,20 @@ pub fn set_menu_labels(labels: &serde_json::Value) {
     }
 }
 
+/// [`save_file`]'s error outside the app: no native shell to call.
+pub const UNSUPPORTED: &str = "unsupported";
+
 /// Saves `bytes` through the native Save dialog, `name` suggested: the
 /// path written, `None` when cancelled.
 ///
 /// # Errors
 /// Not in the app (`unsupported`), or the file could not be written.
 pub async fn save_file(bytes: &[u8], name: &str) -> Result<Option<String>, String> {
-    let tauri = internals().ok_or_else(|| "unsupported".to_owned())?;
+    let tauri = internals().ok_or_else(|| UNSUPPORTED.to_owned())?;
     let invoke = js_sys::Reflect::get(&tauri, &JsValue::from_str("invoke"))
         .ok()
         .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
-        .ok_or_else(|| "unsupported".to_owned())?;
+        .ok_or_else(|| UNSUPPORTED.to_owned())?;
     // The body goes raw (an MP4 can be large); the name, URI-encoded, in a
     // header.
     let headers = js_sys::Object::new();
@@ -142,7 +145,7 @@ pub async fn save_file(bytes: &[u8], name: &str) -> Result<Option<String>, Strin
         .call3(&tauri, &JsValue::from_str("save_file"), &body, &options)
         .ok()
         .and_then(|p| p.dyn_into::<js_sys::Promise>().ok())
-        .ok_or_else(|| "unsupported".to_owned())?;
+        .ok_or_else(|| UNSUPPORTED.to_owned())?;
     match JsFuture::from(promise).await {
         Ok(v) => Ok(v.as_string()),
         Err(e) => Err(e.as_string().unwrap_or_else(|| format!("{e:?}"))),
