@@ -1730,6 +1730,10 @@ messages! {
     CommentReopen => "Reopen", "Mở lại";
     AnchorStale => "Anchor may have moved", "Vị trí có thể đã đổi";
     AnchorLost => "Anchor lost", "Mất vị trí";
+    CommentsRefreshFailed => "Could not refresh the comments. The list below may be out of date.", "Không tải lại được comment. Danh sách bên dưới có thể đã cũ.";
+    CommentsLoadFailed => "Could not load the comments.", "Không tải được comment.";
+    CommentsNew => "New comments", "Có comment mới";
+    CommentTargetMissing => "The element of this comment is no longer on the page. The note is kept here.", "Phần tử của comment này không còn trên trang. Ghi chú vẫn được giữ ở đây.";
     CommentAttachImage => "Attach image", "Đính ảnh";
     CommentImageFailed => "Could not attach the image: {0}", "Không đính được ảnh: {0}";
     ManualLayers => "Layers", "Layer";

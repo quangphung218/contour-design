@@ -14,6 +14,13 @@ All notable changes to Contour are recorded here. The format follows
   "Step 2 of 3 · Writing the page · 0:12" counts up while the agent
   runs, and "Worked for 1:23 · 4 steps" stays put once it is done, also
   after a reload.
+- Comments: when reloading the comment list fails (Contour away, a
+  request error), the Comments tab keeps the comments it shows and adds
+  a line saying the list may be out of date, with a Retry button.
+- Comments: a dot on the Comments button marks comments that came in
+  since the conversation was opened and were not shown yet. Only the
+  comments the tab actually lists are marked read, not those on another
+  file or those that arrive later.
 
 ### Changed
 
@@ -23,7 +30,14 @@ All notable changes to Contour are recorded here. The format follows
   while the agent works and folds once it succeeds with its plan done;
   the reply, errors and the files from the turn stay outside it, in
   view. While the agent works, that line is the one place that shows
-  its progress and clock: the "Step N/M" pill over the composer is gone.
+  its progress and clock; the "Step N/M" pill over the composer shows
+  only while that line is scrolled out of view.
+- Comments: a late answer for another project, another conversation or
+  an older reload no longer replaces the comments of the one open.
+- Comments: the outline in the preview follows the comment picked in
+  the tab, again after the page reloads, and goes away when that comment
+  is no longer listed. When its element was removed from the page, the
+  comment says so instead of outlining nothing.
 
 ### Fixed
 
