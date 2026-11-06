@@ -346,18 +346,85 @@ fn InstallIntoAgents() -> impl IntoView {
     }
 }
 
+/// Quotes `bin` for a POSIX shell when it needs it (`Contour.app` paths
+/// have no spaces, a renamed copy might).
+fn shell_word(bin: &str) -> String {
+    if bin
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/._-+:@".contains(c))
+    {
+        bin.to_owned()
+    } else {
+        format!("'{}'", bin.replace('\'', r"'\''"))
+    }
+}
+
+/// The Use everywhere snippets. `app_bin`: the desktop app's own binary
+/// (`install-info`'s command), which takes `od`'s commands; `od` on a Mac
+/// without the CLI is octal dump (QA-046). The app is the daemon (no
+/// `daemon start`), and its `mcp` takes no subcommand: Connect an agent
+/// installs it.
+fn everywhere_sections(origin: &str, app_bin: Option<&str>) -> Vec<(T, T, String)> {
+    let http = (
+        T::EverywhereHttp,
+        T::EverywhereHttpBody,
+        format!(
+            "curl -s {origin}/api/projects\ncurl -s -X POST {origin}/api/runs -H 'content-type: application/json' \\\n  -d '{{\"agentId\":\"claude\",\"projectId\":\"<id>\",\"message\":\"Add a pricing section\"}}'"
+        ),
+    );
+    let Some(bin) = app_bin else {
+        return vec![
+            (T::EverywhereCli, T::EverywhereCliBody, "od daemon start\nod project list\nod run start --project <id> --message \"Make the hero bolder\"\nod export <id> --format pdf".to_owned()),
+            (T::EverywhereMcp, T::EverywhereMcpBody, "od mcp install claude   # or codex, cursor\nod mcp                  # stdio server for any client".to_owned()),
+            http,
+            (T::EverywhereSkills, T::EverywhereSkillsBody, "od plugin list\nod plugin apply <plugin> -i name=value\nod mcp live-artifacts --project <id>".to_owned()),
+        ];
+    };
+    let od = shell_word(bin);
+    vec![
+        (
+            T::EverywhereCli,
+            T::EverywhereCliBody,
+            format!(
+                "{od} project list\n{od} run start --project <id> --message \"Make the hero bolder\"\n{od} export <id> --format pdf"
+            ),
+        ),
+        (
+            T::EverywhereMcp,
+            T::EverywhereMcpBody,
+            format!("{od} mcp   # stdio server for any client"),
+        ),
+        http,
+        (
+            T::EverywhereSkills,
+            T::EverywhereSkillsBody,
+            format!("{od} plugin list\n{od} plugin apply <plugin> -i name=value"),
+        ),
+    ]
+}
+
 /// The original's Use everywhere guide: CLI, MCP server, HTTP API, skills.
 #[component]
 fn UseEverywhere() -> impl IntoView {
     let origin = web_sys::window()
         .and_then(|w| w.location().origin().ok())
         .unwrap_or_else(|| "http://127.0.0.1:7456".to_owned());
-    let sections: Vec<(T, T, String)> = vec![
-        (T::EverywhereCli, T::EverywhereCliBody, "od daemon start\nod project list\nod run start --project <id> --message \"Make the hero bolder\"\nod export <id> --format pdf".to_owned()),
-        (T::EverywhereMcp, T::EverywhereMcpBody, "od mcp install claude   # or codex, cursor\nod mcp                  # stdio server for any client".to_owned()),
-        (T::EverywhereHttp, T::EverywhereHttpBody, format!("curl -s {origin}/api/projects\ncurl -s -X POST {origin}/api/runs -H 'content-type: application/json' \\\n  -d '{{\"agentId\":\"claude\",\"projectId\":\"<id>\",\"message\":\"Add a pricing section\"}}'")),
-        (T::EverywhereSkills, T::EverywhereSkillsBody, "od plugin list\nod plugin apply <plugin> -i name=value\nod mcp live-artifacts --project <id>".to_owned()),
-    ];
+    // In the app, its own binary stands for `od`.
+    let info = LocalResource::new(|| async {
+        if !super::desktop::is_desktop() {
+            return Some(None);
+        }
+        let v = api::get::<Value>("/api/mcp/install-info").await.ok()?;
+        Some(v["command"].as_str().map(str::to_owned))
+    });
+    move || {
+        let app_bin = info.get()?.flatten();
+        Some(everywhere_view(&origin, app_bin.as_deref()))
+    }
+}
+
+fn everywhere_view(origin: &str, app_bin: Option<&str>) -> impl IntoView + use<> {
+    let sections = everywhere_sections(origin, app_bin);
     let guide: String = std::iter::once(format!(
         "# Contour: use it everywhere\n\nDaemon: {origin}\n"
     ))
@@ -388,5 +455,45 @@ fn UseEverywhere() -> impl IntoView {
                 {move || copied.get().then(|| view! { <span class="ok-text small">{t(T::Copied)}</span> })}
             </div>
         </section>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_app_shows_its_own_binary_not_od() {
+        // QA-046: `od` on a Mac without the CLI is octal dump.
+        let bin = "/Applications/Contour.app/Contents/MacOS/od-desktop";
+        let code: String = everywhere_sections("http://127.0.0.1:5", Some(bin))
+            .into_iter()
+            .map(|(_, _, c)| c + "\n")
+            .collect();
+        for line in code
+            .lines()
+            .filter(|l| !l.starts_with("curl") && !l.starts_with("  -d"))
+        {
+            assert!(line.starts_with(bin), "{line}");
+        }
+        // The app is the daemon; its `mcp` takes no subcommand.
+        assert!(!code.contains("daemon start"));
+        assert!(!code.contains("mcp install") && !code.contains("live-artifacts"));
+        // The CLI keeps `od`.
+        let cli: String = everywhere_sections("http://127.0.0.1:7456", None)
+            .into_iter()
+            .map(|(_, _, c)| c)
+            .collect();
+        assert!(cli.contains("od daemon start\nod project list"));
+    }
+
+    #[test]
+    fn a_path_with_spaces_is_quoted() {
+        assert_eq!(
+            shell_word("/Applications/Contour.app/x"),
+            "/Applications/Contour.app/x"
+        );
+        assert_eq!(shell_word("/Volumes/My Apps/od"), "'/Volumes/My Apps/od'");
+        assert_eq!(shell_word("/a/it's"), r"'/a/it'\''s'");
     }
 }

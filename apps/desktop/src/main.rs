@@ -24,7 +24,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::ipc::CapabilityBuilder;
 use tauri::menu::{Menu, MenuItem, Submenu};
-use tauri::{AppHandle, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_dialog::DialogExt;
 
 const OPEN_FOLDER_MENU_ID: &str = "open-folder";
@@ -35,6 +37,12 @@ const DATA_FOLDER_MENU_ID: &str = "help-data-folder";
 const DOCS_MENU_ID: &str = "help-docs";
 const REPORT_MENU_ID: &str = "help-report-issue";
 const UPDATES_MENU_ID: &str = "help-check-updates";
+/// File ▸ Close Window on macOS: ours, so it has no ⌘W ([`menu_spec`]).
+const CLOSE_WINDOW_MENU_ID: &str = "close-window";
+/// Whether closing the main window only hides it: macOS, where the app
+/// stays in the Dock with its runs going and the Dock icon shows it again
+/// (QA-043). Elsewhere closing the window quits, as before.
+const HIDE_ON_CLOSE: bool = cfg!(target_os = "macos");
 /// Display name (window title, dialogs); `tauri.conf.json` `productName`.
 const APP_NAME: &str = "Contour";
 /// `<app> daemon …`: `od daemon start` / `status`, without the window.
@@ -191,8 +199,130 @@ fn native_theme(theme: &str) -> Option<tauri::Theme> {
     }
 }
 
+/// The UI sends the menu's words in its language (QA-049).
+#[tauri::command]
+fn set_menu_labels(app: AppHandle, labels: MenuLabels) {
+    match build_menu(&app, &labels.or_english()) {
+        Ok(menu) => {
+            if let Err(e) = app.set_menu(menu) {
+                tracing::warn!(error = %e, "cannot set the menu");
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "cannot build the menu"),
+    }
+}
+
+/// Export in the app: the native Save dialog for the file the page made
+/// (request body, name in header `x-file-name`, URI-encoded), so the user
+/// picks the place and the toast names the file really written (QA-048).
+/// `None` when cancelled. The path comes from the dialog, never the page.
+#[tauri::command]
+async fn save_file(
+    app: AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> Result<Option<String>, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the file's bytes".to_owned());
+    };
+    let name = request
+        .headers()
+        .get("x-file-name")
+        .and_then(|v| v.to_str().ok())
+        .map(percent_decode)
+        .map(|n| file_name_only(&n))
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "export".to_owned());
+    let mut dialog = app.dialog().file().set_file_name(&name);
+    if let Ok(downloads) = app.path().download_dir() {
+        dialog = dialog.set_directory(downloads);
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    dialog.save_file(move |picked| {
+        let _ = tx.send(picked);
+    });
+    let Some(path) = rx.await.ok().flatten().and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    tokio::fs::write(&path, bytes)
+        .await
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// `encodeURIComponent`'s inverse; a bad escape stays as it is.
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let hex = b
+            .get(i + 1..i + 3)
+            .and_then(|h| std::str::from_utf8(h).ok())
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (b[i], hex) {
+            (b'%', Some(v)) => {
+                out.push(v);
+                i += 3;
+            }
+            (c, _) => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// The last path component: a suggested name, not a place.
+fn file_name_only(name: &str) -> String {
+    name.rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_owned()
+}
+
+/// Shows the main window again (Dock icon, a menu action while hidden).
+fn show_main<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// The app's event loop:
+/// - the main window's close button (and File ▸ Close Window) on macOS
+///   hides the window; the app and its runs keep going ([`HIDE_ON_CLOSE`]).
+///   Quit (⌘Q) does not come through here.
+/// - the Dock icon shows it again.
+/// - on exit, running agents and the terminal tabs' shells, which would
+///   outlive the app, stop ([`before_exit`]).
+fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
+    match event {
+        RunEvent::Exit => before_exit(app),
+        RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::CloseRequested { api, .. },
+            ..
+        } if HIDE_ON_CLOSE && label == "main" => {
+            api.prevent_close();
+            if let Some(window) = app.get_webview_window(label) {
+                let _ = window.hide();
+            }
+        }
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen {
+            has_visible_windows: false,
+            ..
+        } => show_main(app),
+        _ => {}
+    }
+}
+
 /// Menu actions the UI performs: `window` event `od:menu` with `detail`.
 fn ui_action(app: &AppHandle, action: &str) {
+    show_main(app);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.eval(format!(
             "window.dispatchEvent(new CustomEvent('od:menu', {{ detail: {action:?} }}))"
@@ -222,6 +352,7 @@ fn open_folder_from_menu(app: &AppHandle) {
             }
         };
         if let (Ok(url), Some(window)) = (target, handle.get_webview_window("main")) {
+            show_main(&handle);
             let _ = window.navigate(url);
         }
     });
@@ -254,9 +385,11 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
 /// `allow-<command>` for each app command (`build.rs` generates them): the
 /// daemon's page is a remote origin to Tauri, which refuses it any app
 /// command without one.
-const APP_COMMAND_PERMISSIONS: [&str; 6] = [
+const APP_COMMAND_PERMISSIONS: [&str; 8] = [
     "allow-pick-folder",
     "allow-set-theme",
+    "allow-set-menu-labels",
+    "allow-save-file",
     "allow-update-support",
     "allow-install-update",
     "allow-cancel-update",
@@ -297,83 +430,353 @@ fn open_in_browser(url: &Url) {
     }
 }
 
-fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let menu = Menu::default(app)?;
-    let open = MenuItem::with_id(
-        app,
-        OPEN_FOLDER_MENU_ID,
-        "Open Folder…",
-        true,
-        Some("CmdOrCtrl+O"),
-    )?;
-    let project = Submenu::with_items(app, "Project", true, &[&open])?;
-    // Project goes before Window and Help, which stay last.
-    let window_at = menu
-        .items()?
-        .iter()
-        .position(|i| i.id() == tauri::menu::WINDOW_SUBMENU_ID);
-    match window_at {
-        Some(at) => menu.insert(&project, at)?,
-        None => menu.append(&project)?,
-    }
-    let settings = MenuItem::with_id(
-        app,
-        SETTINGS_MENU_ID,
-        "Settings…",
-        true,
-        Some("CmdOrCtrl+,"),
-    )?;
-    let shortcuts = MenuItem::with_id(
-        app,
-        SHORTCUTS_MENU_ID,
-        "Keyboard Shortcuts",
-        true,
-        Some("CmdOrCtrl+/"),
-    )?;
-    let palette = MenuItem::with_id(app, PALETTE_MENU_ID, "Command Palette…", true, None::<&str>)?;
-    let data = MenuItem::with_id(
-        app,
-        DATA_FOLDER_MENU_ID,
-        "Show Data Folder",
-        true,
-        None::<&str>,
-    )?;
-    // Help ▸ Documentation opens the guide bundled in the UI; Report Issue
-    // copies a diagnostics summary and opens the log folder (no network);
-    // Check for Updates asks GitHub Releases, only when chosen.
-    let docs = MenuItem::with_id(app, DOCS_MENU_ID, "Documentation", true, None::<&str>)?;
-    let report = MenuItem::with_id(app, REPORT_MENU_ID, "Report Issue", true, None::<&str>)?;
-    let updates = MenuItem::with_id(
-        app,
-        UPDATES_MENU_ID,
-        "Check for Updates…",
-        true,
-        None::<&str>,
-    )?;
-    let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
-    // macOS: Settings goes in the app menu, after About.
-    #[cfg(target_os = "macos")]
-    if let Some(app_menu) = menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
-        app_menu.insert(&settings, 2)?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    project.append(&settings)?;
-    let items: [&dyn tauri::menu::IsMenuItem<tauri::Wry>; 7] = [
-        &docs, &separator, &updates, &report, &data, &shortcuts, &palette,
-    ];
-    // The default menu already has a Help menu (About, on Linux and
-    // Windows): the items go there rather than into a second "Help".
-    let default_help = menu
-        .get(tauri::menu::HELP_SUBMENU_ID)
-        .and_then(|i| i.as_submenu().cloned());
-    match default_help {
-        Some(help) => {
-            if !help.items()?.is_empty() {
-                help.append(&tauri::menu::PredefinedMenuItem::separator(app)?)?;
-            }
-            help.append_items(&items)?;
+/// The native menu's words. English unless the UI sends its language's
+/// (`set_menu_labels`, after Settings ▸ Language); a label it leaves out
+/// stays English.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct MenuLabels {
+    about: String,
+    services: String,
+    hide: String,
+    hide_others: String,
+    show_all: String,
+    quit: String,
+    settings: String,
+    file: String,
+    close_window: String,
+    edit: String,
+    undo: String,
+    redo: String,
+    cut: String,
+    copy: String,
+    paste: String,
+    select_all: String,
+    view: String,
+    fullscreen: String,
+    project: String,
+    open_folder: String,
+    window: String,
+    minimize: String,
+    maximize: String,
+    help: String,
+    documentation: String,
+    check_updates: String,
+    report_issue: String,
+    data_folder: String,
+    shortcuts: String,
+    palette: String,
+}
+
+impl Default for MenuLabels {
+    fn default() -> Self {
+        let s = str::to_owned;
+        Self {
+            about: format!("About {APP_NAME}"),
+            services: s("Services"),
+            hide: format!("Hide {APP_NAME}"),
+            hide_others: s("Hide Others"),
+            show_all: s("Show All"),
+            quit: format!("Quit {APP_NAME}"),
+            settings: s("Settings…"),
+            file: s("File"),
+            close_window: s("Close Window"),
+            edit: s("Edit"),
+            undo: s("Undo"),
+            redo: s("Redo"),
+            cut: s("Cut"),
+            copy: s("Copy"),
+            paste: s("Paste"),
+            select_all: s("Select All"),
+            view: s("View"),
+            fullscreen: s("Toggle Full Screen"),
+            project: s("Project"),
+            open_folder: s("Open Folder…"),
+            window: s("Window"),
+            minimize: s("Minimize"),
+            maximize: s("Zoom"),
+            help: s("Help"),
+            documentation: s("Documentation"),
+            check_updates: s("Check for Updates…"),
+            report_issue: s("Report Issue"),
+            data_folder: s("Show Data Folder"),
+            shortcuts: s("Keyboard Shortcuts"),
+            palette: s("Command Palette…"),
         }
-        None => menu.append(&Submenu::with_items(app, "Help", true, &items)?)?,
+    }
+}
+
+impl MenuLabels {
+    /// Each label the UI left empty takes the English one.
+    fn or_english(mut self) -> Self {
+        let en = Self::default();
+        for (mine, english) in self.fields_mut().into_iter().zip(en.into_fields()) {
+            if mine.trim().is_empty() {
+                *mine = english;
+            }
+        }
+        self
+    }
+
+    fn fields_mut(&mut self) -> [&mut String; 30] {
+        [
+            &mut self.about,
+            &mut self.services,
+            &mut self.hide,
+            &mut self.hide_others,
+            &mut self.show_all,
+            &mut self.quit,
+            &mut self.settings,
+            &mut self.file,
+            &mut self.close_window,
+            &mut self.edit,
+            &mut self.undo,
+            &mut self.redo,
+            &mut self.cut,
+            &mut self.copy,
+            &mut self.paste,
+            &mut self.select_all,
+            &mut self.view,
+            &mut self.fullscreen,
+            &mut self.project,
+            &mut self.open_folder,
+            &mut self.window,
+            &mut self.minimize,
+            &mut self.maximize,
+            &mut self.help,
+            &mut self.documentation,
+            &mut self.check_updates,
+            &mut self.report_issue,
+            &mut self.data_folder,
+            &mut self.shortcuts,
+            &mut self.palette,
+        ]
+    }
+
+    fn into_fields(mut self) -> [String; 30] {
+        self.fields_mut().map(std::mem::take)
+    }
+}
+
+/// A native item the OS carries out (Copy, Hide, Minimize…).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Native {
+    About,
+    Services,
+    Hide,
+    HideOthers,
+    ShowAll,
+    Quit,
+    CloseWindow,
+    Undo,
+    Redo,
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+    Fullscreen,
+    Minimize,
+    Maximize,
+}
+
+/// One row of a menu: ours (an id for `on_menu_event`), the OS's, or a line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Entry {
+    Item {
+        id: &'static str,
+        text: String,
+        accelerator: Option<&'static str>,
+    },
+    Native(Native, String),
+    Separator,
+}
+
+/// A top-level menu: its title and rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Section {
+    /// Tauri's id for Window and Help, which macOS treats as such.
+    id: Option<&'static str>,
+    title: String,
+    entries: Vec<Entry>,
+}
+
+/// The menu bar for `os` (`std::env::consts::OS`), in `l`'s words: the
+/// layout of Tauri's default menu plus Project, Settings and Help's items.
+///
+/// On macOS, Close Window has no ⌘W: the Studio closes a tab on ⌘W (the
+/// shortcuts dialog), and the menu's key took it first and closed the last
+/// window, which quit the app with its runs (QA-042). The original's
+/// Electron menu has no ⌘W either. The red button still hides the window.
+fn menu_spec(l: &MenuLabels, os: &str) -> Vec<Section> {
+    let mac = os == "macos";
+    let item = |id, text: &String, accelerator| Entry::Item {
+        id,
+        text: text.clone(),
+        accelerator,
+    };
+    let native = |n, text: &String| Entry::Native(n, text.clone());
+    let close_window = if mac {
+        item(CLOSE_WINDOW_MENU_ID, &l.close_window, None)
+    } else {
+        // Alt+F4 elsewhere, which no page shortcut uses.
+        native(Native::CloseWindow, &l.close_window)
+    };
+    let mut bar = Vec::new();
+    if mac {
+        bar.push(Section {
+            id: None,
+            title: APP_NAME.to_owned(),
+            entries: vec![
+                native(Native::About, &l.about),
+                Entry::Separator,
+                item(SETTINGS_MENU_ID, &l.settings, Some("CmdOrCtrl+,")),
+                Entry::Separator,
+                native(Native::Services, &l.services),
+                Entry::Separator,
+                native(Native::Hide, &l.hide),
+                native(Native::HideOthers, &l.hide_others),
+                native(Native::ShowAll, &l.show_all),
+                Entry::Separator,
+                native(Native::Quit, &l.quit),
+            ],
+        });
+    }
+    // Linux has no File menu in Tauri's default either.
+    if os != "linux" {
+        let mut entries = vec![close_window.clone()];
+        if !mac {
+            entries.push(native(Native::Quit, &l.quit));
+        }
+        bar.push(Section {
+            id: None,
+            title: l.file.clone(),
+            entries,
+        });
+    }
+    bar.push(Section {
+        id: None,
+        title: l.edit.clone(),
+        entries: vec![
+            native(Native::Undo, &l.undo),
+            native(Native::Redo, &l.redo),
+            Entry::Separator,
+            native(Native::Cut, &l.cut),
+            native(Native::Copy, &l.copy),
+            native(Native::Paste, &l.paste),
+            native(Native::SelectAll, &l.select_all),
+        ],
+    });
+    if mac {
+        bar.push(Section {
+            id: None,
+            title: l.view.clone(),
+            entries: vec![native(Native::Fullscreen, &l.fullscreen)],
+        });
+    }
+    let mut project = vec![item(
+        OPEN_FOLDER_MENU_ID,
+        &l.open_folder,
+        Some("CmdOrCtrl+O"),
+    )];
+    if !mac {
+        project.push(item(SETTINGS_MENU_ID, &l.settings, Some("CmdOrCtrl+,")));
+    }
+    bar.push(Section {
+        id: None,
+        title: l.project.clone(),
+        entries: project,
+    });
+    let mut window = vec![
+        native(Native::Minimize, &l.minimize),
+        native(Native::Maximize, &l.maximize),
+    ];
+    if mac {
+        window.push(Entry::Separator);
+    }
+    window.push(close_window);
+    bar.push(Section {
+        id: Some(tauri::menu::WINDOW_SUBMENU_ID),
+        title: l.window.clone(),
+        entries: window,
+    });
+    // Documentation opens the guide bundled in the UI; Report Issue copies
+    // a diagnostics summary and opens the log folder (no network); Check
+    // for Updates asks GitHub Releases, only when chosen.
+    let mut help = Vec::new();
+    if !mac {
+        help.extend([native(Native::About, &l.about), Entry::Separator]);
+    }
+    help.extend([
+        item(DOCS_MENU_ID, &l.documentation, None),
+        Entry::Separator,
+        item(UPDATES_MENU_ID, &l.check_updates, None),
+        item(REPORT_MENU_ID, &l.report_issue, None),
+        item(DATA_FOLDER_MENU_ID, &l.data_folder, None),
+        item(SHORTCUTS_MENU_ID, &l.shortcuts, Some("CmdOrCtrl+/")),
+        item(PALETTE_MENU_ID, &l.palette, None),
+    ]);
+    bar.push(Section {
+        id: Some(tauri::menu::HELP_SUBMENU_ID),
+        title: l.help.clone(),
+        entries: help,
+    });
+    bar
+}
+
+/// The menu bar of [`menu_spec`] for this OS.
+fn build_menu<R: Runtime>(app: &AppHandle<R>, labels: &MenuLabels) -> tauri::Result<Menu<R>> {
+    use tauri::menu::{AboutMetadata, IsMenuItem, MenuItemKind, PredefinedMenuItem as P};
+    let pkg = app.package_info();
+    let about = AboutMetadata {
+        name: Some(APP_NAME.to_owned()),
+        version: Some(pkg.version.to_string()),
+        copyright: app.config().bundle.copyright.clone(),
+        authors: app.config().bundle.publisher.clone().map(|p| vec![p]),
+        ..Default::default()
+    };
+    let menu = Menu::new(app)?;
+    for section in menu_spec(labels, std::env::consts::OS) {
+        let mut items: Vec<MenuItemKind<R>> = Vec::new();
+        for entry in section.entries {
+            let item = match entry {
+                Entry::Separator => MenuItemKind::Predefined(P::separator(app)?),
+                Entry::Item {
+                    id,
+                    text,
+                    accelerator,
+                } => MenuItemKind::MenuItem(MenuItem::with_id(app, id, text, true, accelerator)?),
+                Entry::Native(native, text) => {
+                    let t = Some(text.as_str());
+                    MenuItemKind::Predefined(match native {
+                        Native::About => P::about(app, t, Some(about.clone()))?,
+                        Native::Services => P::services(app, t)?,
+                        Native::Hide => P::hide(app, t)?,
+                        Native::HideOthers => P::hide_others(app, t)?,
+                        Native::ShowAll => P::show_all(app, t)?,
+                        Native::Quit => P::quit(app, t)?,
+                        Native::CloseWindow => P::close_window(app, t)?,
+                        Native::Undo => P::undo(app, t)?,
+                        Native::Redo => P::redo(app, t)?,
+                        Native::Cut => P::cut(app, t)?,
+                        Native::Copy => P::copy(app, t)?,
+                        Native::Paste => P::paste(app, t)?,
+                        Native::SelectAll => P::select_all(app, t)?,
+                        Native::Fullscreen => P::fullscreen(app, t)?,
+                        Native::Minimize => P::minimize(app, t)?,
+                        Native::Maximize => P::maximize(app, t)?,
+                    })
+                }
+            };
+            items.push(item);
+        }
+        let refs: Vec<&dyn IsMenuItem<R>> = items.iter().map(|i| i as &dyn IsMenuItem<R>).collect();
+        // macOS lists the open windows in the menu with Window's id, and
+        // puts its search field in Help's.
+        let submenu = match section.id {
+            Some(id) => Submenu::with_id_and_items(app, id, &section.title, true, &refs)?,
+            None => Submenu::with_items(app, &section.title, true, &refs)?,
+        };
+        menu.append(&submenu)?;
     }
     Ok(menu)
 }
@@ -450,13 +853,20 @@ fn main() -> anyhow::Result<()> {
         .invoke_handler(tauri::generate_handler![
             pick_folder,
             set_theme,
+            set_menu_labels,
+            save_file,
             updater::update_support,
             updater::install_update,
             updater::cancel_update,
             updater::restart_app
         ])
-        .menu(build_menu)
+        .menu(|app| build_menu(app, &MenuLabels::default()))
         .on_menu_event(|app, event| match event.id().as_ref() {
+            CLOSE_WINDOW_MENU_ID => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.close();
+                }
+            }
             OPEN_FOLDER_MENU_ID => open_folder_from_menu(app),
             SHORTCUTS_MENU_ID => ui_action(app, "shortcuts"),
             PALETTE_MENU_ID => ui_action(app, "palette"),
@@ -545,13 +955,7 @@ fn main() -> anyhow::Result<()> {
         })
         .build(context)
         .context("building the desktop app")?
-        .run(|app, event| {
-            // Running agents and the terminal tabs' shells would outlive
-            // the app: stop them (agents as by Stop) before it exits.
-            if let RunEvent::Exit = event {
-                before_exit(app);
-            }
-        });
+        .run(|app, event| on_run_event(app, &event));
     Ok(())
 }
 
@@ -634,6 +1038,8 @@ mod tests {
         for cmd in [
             "pick_folder",
             "set_theme",
+            "set_menu_labels",
+            "save_file",
             "update_support",
             "install_update",
             "cancel_update",
@@ -794,6 +1200,160 @@ mod tests {
             let text = std::fs::read_to_string(dir.join(&source)).unwrap();
             assert!(!text.trim().is_empty(), "{name} is empty");
         }
+    }
+
+    /// Every row of the menu bar, with its section's title.
+    fn rows(bar: &[Section]) -> Vec<(&str, &Entry)> {
+        bar.iter()
+            .flat_map(|s| s.entries.iter().map(move |e| (s.title.as_str(), e)))
+            .collect()
+    }
+
+    #[test]
+    fn cmd_w_reaches_the_page_on_macos() {
+        // QA-042: the native Close Window took ⌘W before the Studio could
+        // close a tab, closed the last window and quit with the runs.
+        let bar = menu_spec(&MenuLabels::default(), "macos");
+        for (menu, entry) in rows(&bar) {
+            assert_ne!(
+                entry,
+                &Entry::Native(Native::CloseWindow, "Close Window".into()),
+                "{menu}: the OS item carries ⌘W"
+            );
+            if let Entry::Item { accelerator, .. } = entry {
+                assert_ne!(*accelerator, Some("CmdOrCtrl+W"), "{menu}");
+            }
+        }
+        // Close Window is still there, ours, without a key: File and Window.
+        let ours = Entry::Item {
+            id: CLOSE_WINDOW_MENU_ID,
+            text: "Close Window".into(),
+            accelerator: None,
+        };
+        let closes: Vec<_> = rows(&bar)
+            .into_iter()
+            .filter(|(_, e)| **e == ours)
+            .map(|(m, _)| m)
+            .collect();
+        assert_eq!(closes, ["File", "Window"]);
+        // Quit stays: ⌘Q quits.
+        assert!(
+            rows(&bar)
+                .iter()
+                .any(|(_, e)| matches!(e, Entry::Native(Native::Quit, _)))
+        );
+    }
+
+    #[test]
+    fn close_window_stays_native_off_macos() {
+        // Alt+F4 there; no page shortcut uses it.
+        for os in ["windows", "linux"] {
+            let bar = menu_spec(&MenuLabels::default(), os);
+            assert!(
+                rows(&bar)
+                    .iter()
+                    .any(|(_, e)| matches!(e, Entry::Native(Native::CloseWindow, _))),
+                "{os}"
+            );
+            assert!(
+                !rows(&bar).iter().any(
+                    |(_, e)| matches!(e, Entry::Item { id, .. } if *id == CLOSE_WINDOW_MENU_ID)
+                ),
+                "{os}"
+            );
+        }
+        let titles = |os| {
+            menu_spec(&MenuLabels::default(), os)
+                .into_iter()
+                .map(|s| s.title)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            titles("macos"),
+            [
+                "Contour", "File", "Edit", "View", "Project", "Window", "Help"
+            ]
+        );
+        assert_eq!(
+            titles("windows"),
+            ["File", "Edit", "Project", "Window", "Help"]
+        );
+        assert_eq!(titles("linux"), ["Edit", "Project", "Window", "Help"]);
+    }
+
+    #[test]
+    fn the_menu_speaks_the_ui_language() {
+        // QA-049: the UI sends its words; a missing one stays English.
+        let labels: MenuLabels = serde_json::from_value(serde_json::json!({
+            "file": "Tệp",
+            "openFolder": "Mở thư mục…",
+            "reportIssue": "Báo lỗi",
+            "closeWindow": "",
+        }))
+        .unwrap();
+        let bar = menu_spec(&labels.or_english(), "macos");
+        let titles: Vec<_> = bar.iter().map(|s| s.title.as_str()).collect();
+        assert!(titles.contains(&"Tệp"));
+        let texts: Vec<String> = rows(&bar)
+            .into_iter()
+            .filter_map(|(_, e)| match e {
+                Entry::Item { text, .. } | Entry::Native(_, text) => Some(text.clone()),
+                Entry::Separator => None,
+            })
+            .collect();
+        for want in ["Mở thư mục…", "Báo lỗi", "Close Window", "Paste"] {
+            assert!(texts.iter().any(|t| t == want), "{want}");
+        }
+        // Window and Help keep Tauri's ids, which macOS needs.
+        let ids: Vec<_> = bar.iter().filter_map(|s| s.id).collect();
+        assert_eq!(
+            ids,
+            [tauri::menu::WINDOW_SUBMENU_ID, tauri::menu::HELP_SUBMENU_ID]
+        );
+    }
+
+    #[test]
+    fn closing_the_window_hides_it_on_macos() {
+        // QA-043: the red button quit the app and stopped its runs.
+        let context: tauri::Context<tauri::test::MockRuntime> = app_context();
+        let app = tauri::test::mock_builder().build(context).unwrap();
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::App("index.html".into()))
+            .build()
+            .unwrap();
+        let kept = Arc::new(Mutex::new(None::<bool>));
+        let seen = Arc::clone(&kept);
+        app.run(move |handle, event| match event {
+            RunEvent::Ready => window.close().unwrap(),
+            RunEvent::WindowEvent { .. } => on_run_event(handle, &event),
+            RunEvent::MainEventsCleared => {
+                let mut seen = seen.lock().unwrap();
+                if seen.is_none() {
+                    *seen = Some(handle.get_webview_window("main").is_some());
+                    // Ends the mock event loop.
+                    window.destroy().unwrap();
+                }
+            }
+            _ => {}
+        });
+        // Without the hide the window is gone and the loop ends before it
+        // ever goes idle.
+        let kept = *kept.lock().unwrap();
+        if HIDE_ON_CLOSE {
+            assert_eq!(kept, Some(true));
+        } else {
+            assert_eq!(kept, None);
+        }
+    }
+
+    #[test]
+    fn the_save_dialog_suggests_only_a_name() {
+        assert_eq!(percent_decode("index%20(1).pdf"), "index (1).pdf");
+        assert_eq!(percent_decode("ghi-ch%C3%BA.md"), "ghi-chú.md");
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%zz"), "%zz");
+        assert_eq!(file_name_only("../../etc/passwd"), "passwd");
+        assert_eq!(file_name_only(r"..\x.png"), "x.png");
+        assert_eq!(file_name_only("deck.pptx"), "deck.pptx");
     }
 
     #[test]

@@ -7,6 +7,8 @@
 const APP_COMMANDS: &[&str] = &[
     "pick_folder",
     "set_theme",
+    "set_menu_labels",
+    "save_file",
     "update_support",
     "install_update",
     "cancel_update",

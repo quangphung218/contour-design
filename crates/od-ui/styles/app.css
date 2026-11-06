@@ -1626,6 +1626,7 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 /* Long labels (German, Russian…) keep their line; the selects wrap below. */
 .notification-settings .switch.grow { flex: 1 0 auto; }
 .notification-settings .switch > span { display: inline-flex; align-items: center; gap: var(--space-1-5); white-space: nowrap; }
+.notification-settings .sound-pick { display: inline-flex; align-items: center; gap: var(--space-1-5); white-space: nowrap; }
 
 /* Phone: every control in the rail, menus, the Settings nav, the studio
    switch, the Next chips, the Settings and empty-state buttons and Home's
