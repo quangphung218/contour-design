@@ -370,10 +370,27 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             busy.set(false);
             match res {
                 Ok((bytes, tracks)) => {
-                    download(&bytes, &name, format.mime());
-                    let note = audio_note(tracks.and_then(|n| n.trim().parse().ok()));
-                    status.set(Some(Ok(format!("{}{note}", tf(T::Exported, &[&name])))));
-                    mark_exported(&base).await;
+                    // In the app, the Save dialog: the toast then names the
+                    // file really written and where (QA-048); a download
+                    // could be renamed (`index (1).pdf`) behind its back.
+                    let saved = match super::desktop::save_file(&bytes, &name).await {
+                        // Outside the app (or a shell without the
+                        // command): the browser's download, as before.
+                        Err(e) if e == super::desktop::UNSUPPORTED => {
+                            download(&bytes, &name, format.mime());
+                            Ok(Some(name.clone()))
+                        }
+                        other => other,
+                    };
+                    match saved {
+                        Ok(Some(saved)) => {
+                            let note = audio_note(tracks.and_then(|n| n.trim().parse().ok()));
+                            status.set(Some(Ok(format!("{}{note}", tf(T::Exported, &[&saved])))));
+                            mark_exported(&base).await;
+                        }
+                        Ok(None) => status.set(None),
+                        Err(e) => status.set(Some(Err(tf(T::ExportFailed, &[&e])))),
+                    }
                 }
                 Err(e) => status.set(Some(Err(tf(T::ExportFailed, &[&e.to_string()])))),
             }

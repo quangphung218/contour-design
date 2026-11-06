@@ -61,6 +61,9 @@ The left pane of a project talks to the agent.
 
 - Streaming text, thinking, tool rows and Markdown; **Stop** cancels the run
   and every process it started.
+- A turn's plan, thinking and tool calls read as one foldable task, in the
+  order the agent did them, with its run time (counting up while it runs,
+  frozen once done); the reply and the files it wrote stay outside it.
 - Several **conversations** per project; **fork** from any message.
 - **Session modes** Ask, Plan and Design; a todo list with a *step N/M* pill.
 - **Composer**: attach or paste files, reference another project or local
