@@ -602,10 +602,13 @@ mod tests {
             .unwrap();
         app.add_capability(ui_capability(origin)).unwrap();
         let url: tauri::Url = page.parse().unwrap();
-        let webview =
-            tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::External(url.clone()))
-                .build()
-                .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(
+            &app,
+            "main",
+            tauri::WebviewUrl::External(url.clone()),
+        )
+        .build()
+        .unwrap();
         tauri::test::get_ipc_response(
             &webview,
             tauri::webview::InvokeRequest {
@@ -636,7 +639,11 @@ mod tests {
             "cancel_update",
             "restart_app",
         ] {
-            assert_eq!(invoke_from(origin, &format!("{origin}/studio"), cmd), Ok(()), "{cmd}");
+            assert_eq!(
+                invoke_from(origin, &format!("{origin}/studio"), cmd),
+                Ok(()),
+                "{cmd}"
+            );
         }
         // Only the app's commands.
         assert!(invoke_from(origin, &format!("{origin}/"), "no_such_command").is_err());
