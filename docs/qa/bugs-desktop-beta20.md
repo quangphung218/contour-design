@@ -32,7 +32,7 @@ tests in `apps/desktop/src/main.rs`.
 ## Status
 
 Unit tests in `apps/desktop/src/main.rs` (desktop) and `crates/od-ui`
-(UI); QA-042/043/044 also checked by hand on the release `.app`.
+(UI); QA-042/043/044/051 also checked by hand on the release `.app`.
 
 | ID | Sev | Summary | Test | Status |
 |---|---|---|---|---|
@@ -45,7 +45,7 @@ Unit tests in `apps/desktop/src/main.rs` (desktop) and `crates/od-ui`
 | QA-048 | 🟡 | Export toast names a file that was not written | native Save dialog (no unit test: needs the window) | Fixed |
 | QA-049 | 🔵 | Native menus stay in English | `the_menu_speaks_the_ui_language`, `the_menu_goes_to_the_shell_in_the_ui_language` | Fixed |
 | QA-050 | 🔵 | Shortcut labels disagree | | Fixed |
-| QA-051 | 🔵 | ⌘, before onboarding ends runs the agent test again | `coming_back_keeps_the_agent_test_answer` | Fixed |
+| QA-051 | 🔵 | ⌘, before onboarding ends runs the agent test again | `coming_back_keeps_the_agent_test_answer`, by hand | Fixed |
 | QA-052 | 🔵 | Notifications: "Failure" cut off from its select | | Fixed |
 
 ## Results
