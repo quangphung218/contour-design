@@ -9,13 +9,50 @@ use super::bridge;
 use super::icons::{Glyph, icon};
 use super::preview_tools::{Tool, panel_head};
 use super::studio::StudioCtx;
-use crate::comment_board::{self as cb, AnchorState};
+use crate::comment_board::{self as cb, AnchorState, LoadTicket, Marker};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, Located};
 use leptos::prelude::*;
-use od_contracts::{CommentStatus, PreviewComment};
+use od_contracts::{CommentStatus, CommentsResponse, PreviewComment};
 
 impl StudioCtx {
+    /// The list a comment load would be for now (`None`: no conversation,
+    /// or the Studio is gone).
+    fn comment_ticket(self) -> Option<LoadTicket> {
+        Some(LoadTicket {
+            project: self.project_id.try_get_value()?,
+            conversation: self.conversation_id.try_get_untracked()??,
+            seq: self.comments_seq.try_get_value()?,
+        })
+    }
+
+    /// Loads the open conversation's comments. The answer applies only if
+    /// it is still for the project and conversation shown and no newer load
+    /// started since; a failure keeps the comments shown and the Comments
+    /// tab offers a retry.
+    pub(super) async fn load_comments(self) {
+        let Some(seq) = self.comments_seq.try_get_value() else {
+            return;
+        };
+        self.comments_seq.set_value(seq.wrapping_add(1));
+        let Some(asked) = self.comment_ticket() else {
+            return;
+        };
+        let path = format!("{}/comments", self.conversation_base(&asked.conversation));
+        let outcome = api::get::<CommentsResponse>(&path)
+            .await
+            .map(|r| r.comments)
+            .map_err(|e| e.to_string());
+        if !cb::is_current(&asked, self.comment_ticket().as_ref()) {
+            return;
+        }
+        let mut list = self.comments.get_untracked();
+        let mut feed = self.comment_feed.get_untracked();
+        feed.apply(&mut list, &asked.conversation, outcome);
+        self.comments.set(list);
+        self.comment_feed.set(feed);
+    }
+
     /// The frame located the pinned comments: record their anchor state.
     pub(super) fn on_located(self, items: &[Located]) {
         let found = self.comments.with_untracked(|list| {
@@ -48,6 +85,11 @@ pub fn CommentsToggle(ctx: StudioCtx) -> impl IntoView {
         let file = ctx.active().unwrap_or_default();
         ctx.comments.with(|l| cb::board(l, &file, false).len())
     };
+    let unread = move || {
+        let file = ctx.active().unwrap_or_default();
+        ctx.comments
+            .with(|l| ctx.comment_feed.with(|f| f.has_unread(l, &file)))
+    };
     view! {
         <button
             class="icon-btn comments-toggle"
@@ -63,6 +105,11 @@ pub fn CommentsToggle(ctx: StudioCtx) -> impl IntoView {
                 0 => None,
                 n => Some(view! { <span class="count-badge" data-testid="comments-count">{n}</span> }),
             }}
+            {move || unread().then(|| view! {
+                <span class="unread-dot" data-testid="comments-unread">
+                    <span class="visually-hidden">{t(T::CommentsNew)}</span>
+                </span>
+            })}
         </button>
     }
 }
@@ -73,7 +120,7 @@ pub fn CommentsPanel(ctx: StudioCtx) -> impl IntoView {
     let selected = RwSignal::new(None::<String>);
     // Leaving the tab takes the outline off the page.
     on_cleanup(|| bridge::post_main(&pb::mark(None, false)));
-    let items = move || {
+    let items = Memo::new(move |_| {
         let file = ctx.active().unwrap_or_default();
         let show_resolved = resolved.get();
         ctx.comments.with(|list| {
@@ -82,7 +129,47 @@ pub fn CommentsPanel(ctx: StudioCtx) -> impl IntoView {
                 .map(|c| (cb::number(list, c), c.clone()))
                 .collect::<Vec<_>>()
         })
-    };
+    });
+    // What the tab lists now has been seen; nothing else (another file's
+    // comments, or ones that come in later) is marked read.
+    Effect::new(move |_| {
+        items.with(|list| {
+            let shown = || list.iter().map(|(_, c)| c.id.as_str());
+            if ctx
+                .comment_feed
+                .with_untracked(|f| shown().any(|id| f.unread.contains(id)))
+            {
+                ctx.comment_feed.update(|f| {
+                    f.mark_read(shown());
+                });
+            }
+        });
+    });
+    // The outline follows the picked comment: its current selector, again
+    // on a new document, off when it is no longer listed, and none when its
+    // element is gone (the item says so instead). Scrolls on a new pick.
+    let posted = StoredValue::new(None::<(Option<String>, Marker, u32)>);
+    Effect::new(move |_| {
+        let rev = ctx.frame_ready.get();
+        let pick = selected.get();
+        let mark = items.with(|list| {
+            let shown: Vec<_> = list.iter().map(|(_, c)| c).collect();
+            ctx.anchors.with(|a| cb::marker(&shown, pick.as_deref(), a))
+        });
+        if pick.is_some() && mark == Marker::Off {
+            selected.set(None);
+            return;
+        }
+        let key = (pick.clone(), mark.clone(), rev);
+        let before = posted.get_value();
+        if before.as_ref() == Some(&key) {
+            return;
+        }
+        let scroll = before.is_none_or(|(was, _, _)| was != pick);
+        bridge::post_main(&pb::mark(mark.selector(), scroll));
+        posted.set_value(Some(key));
+    });
+    let load_error = move || ctx.comment_feed.with(|f| f.error.clone());
     let filter = move |value: bool, label: T, testid: &'static str| {
         view! {
             <button
@@ -104,9 +191,23 @@ pub fn CommentsPanel(ctx: StudioCtx) -> impl IntoView {
                 {filter(false, T::CommentsFilterOpen, "comments-filter-open")}
                 {filter(true, T::CommentsFilterResolved, "comments-filter-resolved")}
             </div>
+            {move || load_error().map(|e| {
+                let text = if ctx.comments.with(Vec::is_empty) { t(T::CommentsLoadFailed) } else { t(T::CommentsRefreshFailed) };
+                view! {
+                    <div class="comments-error row tight" role="alert" data-testid="comments-refresh-error">
+                        <span class="error-text small" title=e>{icon(Glyph::Warning)}{text}</span>
+                        <button class="btn small" data-testid="comments-retry" on:click=move |_| ctx.reload_comments()>
+                            {icon(Glyph::Restore)}{t(T::NextRetry)}
+                        </button>
+                    </div>
+                }
+            })}
             {move || {
-                let list = items();
+                let list = items.get();
                 if list.is_empty() {
+                    if load_error().is_some() {
+                        return ().into_any();
+                    }
                     let text = if resolved.get() { t(T::CommentsNoneResolved) } else { t(T::CommentsNone) };
                     return view! {
                         <div class="empty-state compact" data-testid="comments-empty">
@@ -148,11 +249,12 @@ fn CommentItem(
         move || selected.with(|s| s.as_deref() == Some(id.as_str()))
     };
     let pick = {
-        let (id, selector) = (id.clone(), comment.selector.clone());
-        move |_| {
-            selected.set(Some(id.clone()));
-            bridge::post_main(&pb::mark(Some(&selector), true));
-        }
+        let id = id.clone();
+        move |_| selected.set(Some(id.clone()))
+    };
+    let missing = {
+        let is_selected = is_selected.clone();
+        move || is_selected() && anchor() == Some(AnchorState::Lost)
     };
     let status = comment.status;
     let (id_send, id_resolve, id_remove) = (id.clone(), id.clone(), id.clone());
@@ -185,6 +287,11 @@ fn CommentItem(
                 </span>
                 <span class="comment-item-note">{comment.note.clone()}</span>
             </button>
+            {move || missing().then(|| view! {
+                <p class="error-text small" role="status" data-testid="comment-target-missing">
+                    {icon(Glyph::Warning)}{t(T::CommentTargetMissing)}
+                </p>
+            })}
             {(!images.is_empty()).then(|| view! {
                 <div class="comment-images">
                     {images
