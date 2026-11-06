@@ -57,19 +57,25 @@ The full tour is in [docs/features.md](docs/features.md).
 ### Download
 
 Get the latest build from
-[Releases](https://github.com/quangphung218/contour-design/releases): a
-universal `.dmg` for macOS 13.3 or later, a `.deb` or `.AppImage` for
-Ubuntu 22.04 LTS and later (x64), and an `.msi` for Windows 10 and 11
-(x64). Each release has a `SHA256SUMS` file. On Ubuntu: `sudo apt install
-./Contour_<version>_amd64.deb`
-([details](docs/getting-started.md#install-on-ubuntu)). On Windows,
-double-click the `.msi`; it is unsigned, so SmartScreen asks once: **More
-info ▸ Run anyway** ([details](docs/getting-started.md#install-on-windows)).
+[Releases](https://github.com/quangphung218/contour-design/releases). Each
+release has a `SHA256SUMS` file.
 
-Builds without a signing certificate are unsigned, and macOS stops them the
-first time. On **macOS 15 and later**, open Contour once, then go to
-**System Settings ▸ Privacy & Security ▸ Open Anyway** and open it again.
-On macOS 13.3 to 14, Control-click the app ▸ **Open**. Step by step:
+| System | File | First launch |
+|---|---|---|
+| macOS 13.3 or later (Apple silicon and Intel) | `Contour_<version>_universal.dmg` | Unsigned: see below |
+| Ubuntu 22.04 LTS or later (x64) | `Contour_<version>_amd64.deb` or `.AppImage` | `sudo apt install ./Contour_<version>_amd64.deb` ([details](docs/getting-started.md#install-on-ubuntu)) |
+| Windows 10 and 11 (x64) | `Contour_<version>_x64_en-US.msi` | SmartScreen asks once: **More info ▸ Run anyway** ([details](docs/getting-started.md#install-on-windows)) |
+
+**macOS: open an unsigned build.** Drag Contour to Applications, then run
+this once in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Contour.app
+```
+
+Or without Terminal: on **macOS 15 and later**, open Contour once, then go
+to **System Settings ▸ Privacy & Security ▸ Open Anyway** and open it
+again; on macOS 13.3 to 14, Control-click the app ▸ **Open**. Step by step:
 [getting started](docs/getting-started.md#open-an-unsigned-build-on-macos).
 
 ### Build from source
