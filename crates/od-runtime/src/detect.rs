@@ -84,11 +84,20 @@ pub fn is_executable(path: &Path) -> bool {
     true
 }
 
-/// Runs `bin args…` with `PATH = path`; `None` when it could not run or
-/// timed out. Exit status is ignored: a CLI that rejects the flag still ran.
-async fn probe(bin: &Path, args: &[&str], path: &OsStr, timeout: Duration) -> Option<String> {
+/// Runs `bin args…` with `PATH = path` and `def`'s extra environment, as a
+/// run would; `None` when it could not run or timed out. Exit status is
+/// ignored: a CLI that rejects the flag still ran.
+async fn probe(
+    def: &RuntimeDef,
+    bin: &Path,
+    args: &[&str],
+    path: &OsStr,
+    timeout: Duration,
+) -> Option<String> {
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.args(args).env("PATH", path);
+    cmd.args(args)
+        .envs(def.extra_env.iter().copied())
+        .env("PATH", path);
     let out = crate::process::probe_output(cmd, timeout).await.ok()?;
     let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&out.stderr));
@@ -107,7 +116,7 @@ pub async fn probe_capabilities(
     if def.help_flags.is_empty() {
         return Some(Vec::new());
     }
-    let help = probe(bin, def.help_args, path, timeout).await?;
+    let help = probe(def, bin, def.help_args, path, timeout).await?;
     Some(
         def.help_flags
             .iter()
@@ -128,7 +137,7 @@ pub async fn capabilities_from_version(
     if !def.infers_flags_from_version() {
         return Vec::new();
     }
-    probe(bin, def.version_args, path, timeout)
+    probe(def, bin, def.version_args, path, timeout)
         .await
         .map(|version| def.flags_from_version(&version))
         .unwrap_or_default()
@@ -183,8 +192,8 @@ pub async fn detect_in(
     // can pass the limit on a loaded machine (macOS scans it).
     let (version, capabilities) = tokio::join!(
         async {
-            match probe(&bin, def.version_args, path, PROBE_TIMEOUT).await {
-                None => probe(&bin, def.version_args, path, PROBE_TIMEOUT).await,
+            match probe(def, &bin, def.version_args, path, PROBE_TIMEOUT).await {
+                None => probe(def, &bin, def.version_args, path, PROBE_TIMEOUT).await,
                 some => some,
             }
         },
@@ -285,5 +294,36 @@ mod tests {
             Some(dir.path().join("claude"))
         );
         assert_eq!(find_in("codex", path, true), None);
+    }
+
+    /// Amp's bundle names its native `ws` add-ons by the CI path they were
+    /// built at (`/home/runner/…`) and stats them at startup. On macOS
+    /// `/home` is an autofs mount, so the `--version` probe at every launch
+    /// asked for network-volume access. The probe runs with Amp's env,
+    /// which turns those add-ons off, as a run does.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_version_probe_gets_the_agents_env() {
+        use crate::def::AMP;
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("amp");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\necho \"ws:${WS_NO_BUFFER_UTIL:-}:${WS_NO_UTF_8_VALIDATE:-}\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let info = detect(&AMP, dir.path().as_os_str(), false).await;
+        assert_eq!(info.version.as_deref(), Some("ws:1:1"), "{info:?}");
+        let env = crate::env::agent_env(
+            &AMP,
+            &[],
+            &OsString::from("/usr/bin"),
+            &crate::env::RunEnv::default(),
+        );
+        for key in ["WS_NO_BUFFER_UTIL", "WS_NO_UTF_8_VALIDATE"] {
+            assert!(env.iter().any(|(k, v)| k == key && v == "1"), "{key}");
+        }
     }
 }

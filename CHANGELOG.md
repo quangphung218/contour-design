@@ -35,6 +35,12 @@ All notable changes to Contour are recorded here. The format follows
   kept while the agent stays the same (QA-051).
 - Settings ▸ Notifications: the "Failure" label no longer wraps away
   from its sound picker (QA-052).
+- On a Mac with Amp installed, every launch asked "Contour would like to
+  access files on a network volume", and Allow did not stick across
+  updates. Checking which agents are installed ran `amp --version`, and
+  Amp looks for two optional add-ons under `/home`, a network mount on
+  macOS. Amp now runs, for the check and for chats, with those add-ons
+  turned off, so it no longer touches `/home`.
 
 ## [0.2.0-beta.20] - 2026-11-06
 
