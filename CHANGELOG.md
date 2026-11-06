@@ -14,8 +14,8 @@ All notable changes to Contour are recorded here. The format follows
   agent. It now closes the tab, as the shortcuts dialog says; File ▸
   Close Window no longer takes ⌘W (QA-042).
 - On macOS the window's close button quit the app and stopped its runs.
-  It now hides the window; the app and its runs keep going, and the Dock
-  icon brings the window back. ⌘Q still quits. Windows and Linux still
+  It now hides the window, leaving full screen first; the app and its
+  runs keep going, and the Dock icon brings the window back. ⌘Q still quits. Windows and Linux still
   quit when the window closes (QA-043).
 - Links that open in a new tab, such as "Install guide ↗" during setup,
   "Get Chrome" and an update's "View", did nothing in the app. They now

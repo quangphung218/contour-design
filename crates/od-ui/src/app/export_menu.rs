@@ -373,11 +373,14 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                     // In the app, the Save dialog: the toast then names the
                     // file really written and where (QA-048); a download
                     // could be renamed (`index (1).pdf`) behind its back.
-                    let saved = if super::desktop::is_desktop() {
-                        super::desktop::save_file(&bytes, &name).await
-                    } else {
-                        download(&bytes, &name, format.mime());
-                        Ok(Some(name.clone()))
+                    let saved = match super::desktop::save_file(&bytes, &name).await {
+                        // Outside the app (or a shell without the
+                        // command): the browser's download, as before.
+                        Err(e) if e == super::desktop::UNSUPPORTED => {
+                            download(&bytes, &name, format.mime());
+                            Ok(Some(name.clone()))
+                        }
+                        other => other,
                     };
                     match saved {
                         Ok(Some(saved)) => {

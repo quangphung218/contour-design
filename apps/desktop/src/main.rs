@@ -308,7 +308,7 @@ fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
         } if HIDE_ON_CLOSE && label == "main" => {
             api.prevent_close();
             if let Some(window) = app.get_webview_window(label) {
-                let _ = window.hide();
+                hide_leaving_fullscreen(window);
             }
         }
         #[cfg(target_os = "macos")]
@@ -319,6 +319,34 @@ fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
         _ => {}
     }
 }
+
+/// Hides `window`, out of full screen first: a full-screen window hidden
+/// as it is leaves its Space behind, black, and the Dock brings it back
+/// into that Space (the original's `hideWindowExitingFullscreen`). Tauri
+/// has no "left full screen" event: wait for the flag to drop, then for
+/// the animation to end, off the event loop.
+fn hide_leaving_fullscreen<R: Runtime>(window: tauri::WebviewWindow<R>) {
+    if !window.is_fullscreen().unwrap_or(false) {
+        let _ = window.hide();
+        return;
+    }
+    let _ = window.set_fullscreen(false);
+    std::thread::spawn(move || {
+        let step = std::time::Duration::from_millis(100);
+        for _ in 0..30 {
+            if !window.is_fullscreen().unwrap_or(false) {
+                break;
+            }
+            std::thread::sleep(step);
+        }
+        // macOS's leave-full-screen animation outlasts the flag.
+        std::thread::sleep(std::time::Duration::from_millis(FULLSCREEN_SETTLE_MS));
+        let _ = window.hide();
+    });
+}
+
+/// How long the window gets after leaving full screen before it hides.
+const FULLSCREEN_SETTLE_MS: u64 = 800;
 
 /// Menu actions the UI performs: `window` event `od:menu` with `detail`.
 fn ui_action(app: &AppHandle, action: &str) {
