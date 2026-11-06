@@ -20,6 +20,31 @@ All notable changes to Contour are recorded here. The format follows
   template", and renders to MP4 with `media generate`. Brands in them
   are made up; they use system fonts and inline SVG, download nothing
   and are silent.
+- Comments: when reloading the comment list fails (Contour away, a
+  request error), the Comments tab keeps the comments it shows and adds
+  a line saying the list may be out of date, with a Retry button.
+- Comments: a dot on the Comments button marks comments that came in
+  since the conversation was opened and were not shown yet. Only the
+  comments the tab actually lists are marked read, not those on another
+  file or those that arrive later.
+
+### Changed
+
+- Comments: a late answer for another project, another conversation or
+  an older reload no longer replaces the comments of the one open.
+- Comments: the outline in the preview follows the comment picked in
+  the tab, again after the page reloads, and goes away when that comment
+  is no longer listed. When its element was removed from the page, the
+  comment says so instead of outlining nothing.
+
+### Fixed
+
+- On a Mac with Amp installed, every launch asked "Contour would like to
+  access files on a network volume", and Allow did not stick across
+  updates. Checking which agents are installed ran `amp --version`, and
+  Amp looks for two optional add-ons under `/home`, a network mount on
+  macOS. Amp now runs, for the check and for chats, with those add-ons
+  turned off, so it no longer touches `/home`.
 
 ## [0.2.0-beta.20] - 2026-11-06
 

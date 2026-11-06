@@ -22,7 +22,7 @@ use super::terminal::{self, TermTab, TerminalView};
 use super::versions::VersionsPanel;
 use super::{Shell, api};
 use crate::chat::{AssistantTurn, Block, TurnState};
-use crate::comment_board::{AnchorState, attached_images};
+use crate::comment_board::{AnchorState, Feed, attached_images};
 use crate::events::{
     ChatRequest, ConversationsResponse, CreateRunResponse, FileChanged, MessageRole,
     MessagesResponse, RunFrame, RunStatus, decode_frame,
@@ -38,10 +38,9 @@ use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use od_contracts::{
-    CommentAttachment, CommentRect, CommentStatus, CommentsResponse, Conversation,
-    ConversationResponse, CreateVersionRequest, FailureCategory, FileKind, FilesResponse,
-    MemoryEntry, PreviewComment, Project, ProjectFile, ProjectResponse, SessionMode,
-    UpdateCommentRequest, VersionSource,
+    CommentAttachment, CommentRect, CommentStatus, Conversation, ConversationResponse,
+    CreateVersionRequest, FailureCategory, FileKind, FilesResponse, MemoryEntry, PreviewComment,
+    Project, ProjectFile, ProjectResponse, SessionMode, UpdateCommentRequest, VersionSource,
 };
 use send_wrapper::SendWrapper;
 use serde_json::json;
@@ -250,6 +249,10 @@ pub struct StudioCtx {
     /// The load failed because the project does not exist (404).
     pub load_gone: RwSignal<bool>,
     pub comments: RwSignal<Vec<PreviewComment>>,
+    /// Load failure and unread comments of the Comments tab.
+    pub comment_feed: RwSignal<Feed>,
+    /// Number of the latest comment load; older answers are dropped.
+    pub(super) comments_seq: StoredValue<u32>,
     pub comment_mode: RwSignal<bool>,
     /// The element picked in comment mode, waiting for its note.
     pub comment_draft: RwSignal<Option<Picked>>,
@@ -352,7 +355,7 @@ impl StudioCtx {
         format!("/api/projects/{}", api::seg(&self.project_id.get_value()))
     }
 
-    fn conversation_base(self, cid: &str) -> String {
+    pub(super) fn conversation_base(self, cid: &str) -> String {
         format!("{}/conversations/{}", self.base(), api::seg(cid))
     }
 
@@ -918,19 +921,9 @@ impl StudioCtx {
     }
 
     /// Re-reads the open conversation's comments (statuses change when a
-    /// run that applies them ends).
-    fn reload_comments(self) {
-        let Some(cid) = self.conversation_id.get_untracked() else {
-            return;
-        };
-        leptos::task::spawn_local(async move {
-            let path = format!("{}/comments", self.conversation_base(&cid));
-            if let Ok(res) = api::get::<CommentsResponse>(&path).await {
-                if self.conversation_id.get_untracked().as_deref() == Some(cid.as_str()) {
-                    self.comments.set(res.comments);
-                }
-            }
-        });
+    /// run that applies them ends); see [`Self::load_comments`].
+    pub fn reload_comments(self) {
+        leptos::task::spawn_local(self.load_comments());
     }
 
     pub fn reload_conversations(self) {
@@ -952,10 +945,9 @@ impl StudioCtx {
         self.session_mode.set(mode.unwrap_or_default());
         self.items.set(Vec::new());
         self.comments.set(Vec::new());
+        self.comment_feed.update(Feed::reset);
+        self.load_comments().await;
         let base = self.conversation_base(&cid);
-        if let Ok(res) = api::get::<CommentsResponse>(&format!("{base}/comments")).await {
-            self.comments.set(res.comments);
-        }
         let Ok(res) = api::get::<MessagesResponse>(&format!("{base}/messages")).await else {
             return;
         };
@@ -1427,6 +1419,8 @@ pub fn Studio() -> impl IntoView {
         load_error: RwSignal::new(None),
         load_gone: RwSignal::new(false),
         comments: RwSignal::new(Vec::new()),
+        comment_feed: RwSignal::new(Feed::default()),
+        comments_seq: StoredValue::new(0),
         comment_mode: RwSignal::new(false),
         comment_draft: RwSignal::new(None),
         pin_rects: RwSignal::new(HashMap::new()),
