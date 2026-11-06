@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product launch</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Product launch: a 12 s, 1920x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 12 s film
+   (1 s = 8.3333%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 19.2px
+   on the 1920px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 12s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1920 / 1080)); aspect-ratio: 1920 / 1080;
+  background: #0d0f14; color: #f4f1ea; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.center { position: absolute; inset: 0; display: grid; place-items: center; }
+.glow { position: absolute; width: 62.5cqw; height: 62.5cqw; border-radius: 50%; background: radial-gradient(circle, rgba(124,242,201,.22) 0%, rgba(124,242,201,0) 62%); }
+.intro { position: absolute; font: 600 1.5625cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.625cqw; color: #8b93a3; }
+.product { position: absolute; width: 29.1667cqw; height: 21.875cqw; }
+.product svg { width: 100%; height: 100%; overflow: visible; }
+#bud1, #bud2 { transform-box: fill-box; transform-origin: 50% 50%; }
+.chips { position: absolute; left: 52.6042cqw; top: 15.625cqw; display: flex; flex-direction: column; gap: 1.4583cqw; }
+.chip { display: flex; align-items: baseline; gap: 1.4583cqw; padding: 1.3542cqw 1.875cqw; width: 34.375cqw; border-radius: 1.1458cqw; background: #1a1e27; border: 0.1042cqw solid rgba(124,242,201,.18); }
+.chip b { font-size: 3.3333cqw; font-weight: 800; letter-spacing: -0.0781cqw; color: #7cf2c9; min-width: 10.9375cqw; }
+.chip span { font-size: 1.5625cqw; color: #c9ccd4; }
+.name { position: absolute; left: 0; right: 0; top: 33.8542cqw; text-align: center; font-size: 6.875cqw; font-weight: 800; letter-spacing: -0.2083cqw; }
+.date { position: absolute; left: 0; right: 0; top: 42.7083cqw; text-align: center; font-size: 1.875cqw; color: #c9ccd4; }
+.date em { font-style: normal; color: #7cf2c9; font-weight: 700; }
+.rule { position: absolute; left: 39.5833cqw; top: 41.6667cqw; width: 20.8333cqw; height: 0.2083cqw; }
+.rule line { stroke: #7cf2c9; stroke-width: 4; stroke-dasharray: 100; }
+
+@keyframes k1 {
+  0% { opacity: 0; transform: scale(.2); animation-timing-function: linear; }
+  2.5% { opacity: 0; transform: scale(.2); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  16.6667% { opacity: 1; transform: none; animation-timing-function: linear; }
+  93.3333% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  98.3333% { opacity: 0; transform: scale(1.2); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(1.2); animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+  4.1667% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  9.1667% { opacity: 1; transform: none; animation-timing-function: linear; }
+  16.6667% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  20% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { opacity: 0; transform: scale(.6) rotate(-8deg); animation-timing-function: linear; }
+  18.3333% { opacity: 0; transform: scale(.6) rotate(-8deg); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  28.3333% { opacity: 1; transform: none; animation-timing-function: linear; }
+  41.6667% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  48.3333% { opacity: 1; transform: translateX(-21.875cqw) scale(.9); animation-timing-function: linear; }
+  70% { opacity: 1; transform: translateX(-21.875cqw) scale(.9); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  76.6667% { opacity: 1; transform: translateY(-9.8958cqw) scale(.62); animation-timing-function: linear; }
+  93.3333% { opacity: 1; transform: translateY(-9.8958cqw) scale(.62); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  97.5% { opacity: 0; transform: translateY(-9.8958cqw) scale(.5); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(-9.8958cqw) scale(.5); animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { transform: translateY(38%); animation-timing-function: linear; }
+  27.5% { transform: translateY(38%); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  35.8333% { transform: translateY(-22%) rotate(-6deg); animation-timing-function: linear; }
+  100% { transform: translateY(-22%) rotate(-6deg); animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { transform: translateY(38%); animation-timing-function: linear; }
+  28.75% { transform: translateY(38%); animation-timing-function: cubic-bezier(.34,1.56,.64,1); }
+  37.0833% { transform: translateY(-22%) rotate(6deg); animation-timing-function: linear; }
+  100% { transform: translateY(-22%) rotate(6deg); animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: linear; }
+  50% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  55.8333% { opacity: 1; transform: none; animation-timing-function: linear; }
+  69.1667% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  72.5% { opacity: 0; transform: translateX(-3.125cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateX(-3.125cqw); animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: linear; }
+  52.9167% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  58.75% { opacity: 1; transform: none; animation-timing-function: linear; }
+  70% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  73.3333% { opacity: 0; transform: translateX(-3.125cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateX(-3.125cqw); animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: linear; }
+  55.8333% { opacity: 0; transform: translateX(6.25cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  61.6667% { opacity: 1; transform: none; animation-timing-function: linear; }
+  70.8333% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  74.1667% { opacity: 0; transform: translateX(-3.125cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateX(-3.125cqw); animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { opacity: 0; transform: translateY(3.125cqw); animation-timing-function: linear; }
+  75% { opacity: 0; transform: translateY(3.125cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  81.6667% { opacity: 1; transform: none; animation-timing-function: linear; }
+  94.1667% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  97.5% { opacity: 0; transform: translateY(3.125cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(3.125cqw); animation-timing-function: linear; }
+}
+@keyframes k10 {
+  0% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: linear; }
+  79.1667% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  85% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: linear; }
+  94.1667% { stroke-dashoffset: 0; opacity: 1; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  97.5% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+  100% { stroke-dashoffset: 0; opacity: 0; animation-timing-function: linear; }
+}
+@keyframes k11 {
+  0% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+  81.6667% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  87.5% { opacity: 1; transform: none; animation-timing-function: linear; }
+  95% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  98.3333% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+}
+#glow { animation: k1 var(--film) linear infinite both; }
+#intro { animation: k2 var(--film) linear infinite both; }
+#product { animation: k3 var(--film) linear infinite both; }
+#bud1 { animation: k4 var(--film) linear infinite both; }
+#bud2 { animation: k5 var(--film) linear infinite both; }
+#s1 { animation: k6 var(--film) linear infinite both; }
+#s2 { animation: k7 var(--film) linear infinite both; }
+#s3 { animation: k8 var(--film) linear infinite both; }
+#name { animation: k9 var(--film) linear infinite both; }
+#rule { animation: k10 var(--film) linear infinite both; }
+#date { animation: k11 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="12"
+  data-width="1920" data-height="1080" data-fps="30" data-poster-time="7">
+<div class="center">
+  <div class="glow" id="glow"></div>
+  <div class="intro" id="intro">INTRODUCING</div>
+  <div class="product" id="product">
+    <svg viewBox="0 0 560 420" aria-hidden="true">
+      <g id="bud1"><ellipse cx="210" cy="150" rx="62" ry="54" fill="#f4f1ea"/><rect x="190" y="160" width="40" height="120" rx="20" fill="#f4f1ea"/><ellipse cx="196" cy="162" rx="16" ry="12" fill="#2a2f3a"/></g>
+      <g id="bud2"><ellipse cx="350" cy="150" rx="62" ry="54" fill="#f4f1ea"/><rect x="330" y="160" width="40" height="120" rx="20" fill="#f4f1ea"/><ellipse cx="364" cy="162" rx="16" ry="12" fill="#2a2f3a"/></g>
+      <rect x="90" y="200" width="380" height="200" rx="90" fill="#262b36"/>
+      <rect x="90" y="200" width="380" height="200" rx="90" fill="none" stroke="#7cf2c9" stroke-opacity=".35" stroke-width="3"/>
+      <line x1="120" y1="250" x2="440" y2="250" stroke="#0d0f14" stroke-width="4"/>
+      <circle cx="280" cy="330" r="7" fill="#7cf2c9"/>
+    </svg>
+  </div>
+</div>
+<div class="chips">
+  <div class="chip" id="s1"><b>32 h</b><span>of battery with the case</span></div>
+  <div class="chip" id="s2"><b>6 mics</b><span>clear calls, even in wind</span></div>
+  <div class="chip" id="s3"><b>IPX5</b><span>shrugs off rain and sweat</span></div>
+</div>
+<div class="name" id="name">Kestrel One</div>
+<svg class="rule" viewBox="0 0 400 4" preserveAspectRatio="none" aria-hidden="true"><line id="rule" x1="0" y1="2" x2="400" y2="2" pathLength="100"/></svg>
+<div class="date" id="date">In stores 14 March · <em>$129</em></div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 12;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>
