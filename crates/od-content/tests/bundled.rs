@@ -256,6 +256,7 @@ fn motion_templates_ship_complete() {
     .unwrap();
     let comment = regex::Regex::new(r"(?s)/\*.*?\*/").unwrap();
     let fixed_px = regex::Regex::new(r"\b\d+(?:\.\d+)?px\b").unwrap();
+    let clip_text = regex::Regex::new(r"(?i)background-clip\s*:\s*text").unwrap();
     let motion: Vec<_> = idx
         .design_templates
         .iter()
@@ -319,6 +320,12 @@ fn motion_templates_ship_complete() {
         // The Apache licence text names its own URL; the film names none.
         let hits: Vec<&str> = banned.find_iter(&html).map(|m| m.as_str()).collect();
         assert!(hits.is_empty(), "{id}: {hits:?}");
+        // Gradient text shows in a browser but the MP4 renderer paints it
+        // transparent, so the film would export without its words.
+        assert!(
+            !clip_text.is_match(&code),
+            "{id}: background-clip: text renders transparent in the MP4"
+        );
     }
 }
 

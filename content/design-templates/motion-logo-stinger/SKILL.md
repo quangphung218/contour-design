@@ -1,14 +1,14 @@
 ---
 name: motion-logo-stinger
 en_name: "Logo stinger"
-en_description: "A five-second logo sting: four coloured tiles fly in from the corners and snap into a mark, it turns and slides aside, the wordmark wipes on and a light sweeps across."
+en_description: "A five-second logo sting: four coloured tiles fly in from the corners and snap into a mark, it turns and slides aside, and the wordmark wipes on with its tagline."
 zh_name: "Logo 快闪"
-zh_description: "5 秒 Logo 快闪：四块彩色方块从四角飞入拼成标志，标志转动并侧移，字标擦出，一道光扫过。"
+zh_description: "5 秒 Logo 快闪：四块彩色方块从四角飞入拼成标志，标志转动并侧移，字标擦出，标语浮现。"
 description: |
   A 5 s, 16:9 logo sting for video intros, outros and social bumpers: four
   coloured tiles fly in from the corners and snap together with a soft
   flash, the mark turns a quarter and slides aside, the wordmark wipes on
-  with a tagline and a light sweeps across before it fades.
+  with a tagline before it fades.
 triggers:
   - "logo sting"
   - "logo stinger"
@@ -30,7 +30,7 @@ od:
   example_prompt: |
     5-second logo sting on near-black: four tiles (red, yellow, blue, violet)
     fly in from the corners and snap into a mark, it turns and slides left,
-    the wordmark "quarrytone" wipes on with a tagline and a light sweep.
+    the wordmark "quarrytone" wipes on with a tagline.
 ---
 
 # Logo stinger
@@ -46,7 +46,7 @@ original Contour work under the Apache-2.0 licence in `LICENSE`. Quarrytone is a
 | 0.15–1.0 s | Four tiles fly in from the corners, turning as they land. |
 | 1.0–1.6 s | They snap together with a soft flash. |
 | 1.3–2.6 s | The mark turns a quarter and slides left. |
-| 2.3–3.8 s | The wordmark wipes on, the tagline rises, a light sweeps across. |
+| 2.3–3.8 s | The wordmark wipes on, the tagline rises. |
 | 4.3–4.8 s | The lockup fades for the loop. |
 
 ## How it is built
@@ -81,8 +81,11 @@ original Contour work under the Apache-2.0 licence in `LICENSE`. Quarrytone is a
 
 ## What to change for a new brief
 
-- Wordmark `#word` and tagline `#tag`; a longer name needs a smaller `font-size` on `.word`.
+- Wordmark text in `#wi` and tagline `#tag`; a longer name needs a smaller `font-size` on `.word`.
 - The four tiles `.q1`–`.q4`: colour and corner radius make the mark.
+- Keep the wordmark a solid colour. Gradient text (`background-clip: text`)
+  shows in the browser but renders transparent in the MP4. The wipe moves
+  `#word` and `#wi` in opposite directions; keep their keyframes in step.
 - How far the mark slides: `translateX(-17.7083cqw)` in the `#mark` keyframes.
 
 ## Workflow
