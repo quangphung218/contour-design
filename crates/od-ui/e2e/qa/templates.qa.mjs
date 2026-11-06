@@ -72,15 +72,16 @@ async function previewFrame(page) {
 
 // ------------------------------------------------------------ filters
 
-test('TPL-01', 'The Motion industry lists the 18 new films, each filed as a Video', async ({ d, api, newPage }) => {
+test('TPL-01', 'The Motion industry lists all 31 films, each filed as a Video', async ({ d, api, newPage }) => {
   const films = await byPrefix(api, 'motion-');
-  assert.equal(films.length, 18, 'the catalogue has 18 new Motion templates');
+  // 18 films came on 2 Nov and 13 more on 6 Nov.
+  assert.equal(films.length, 31, 'the catalogue has 31 Motion templates');
   const { page } = await newPage();
   await gallery(page, d);
   const label = await page.locator('[data-testid="tpl-scenario"] option[value="motion"]').innerText();
   assert.equal(label.trim(), 'Motion');
   await page.getByTestId('tpl-scenario').selectOption('motion');
-  await until(async () => (await page.getByTestId('tpl-card').count()) === 18, '18 cards under Motion');
+  await until(async () => (await page.getByTestId('tpl-card').count()) === 31, '31 cards under Motion');
   assert.deepEqual((await cardNames(page)).sort(), films.map(nameOf).sort());
   const metas = await page.locator('[data-testid="tpl-card"] .template-meta').allInnerTexts();
   assert.ok(metas.every((m) => m.trim() === 'Video'), `types shown: ${[...new Set(metas)]}`);
