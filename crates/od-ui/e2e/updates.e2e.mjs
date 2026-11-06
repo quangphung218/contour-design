@@ -319,7 +319,7 @@ try {
   app.on('pageerror', (e) => pageErrors.push(e.message));
   const appDialog = app.getByTestId('update-dialog');
   const appFocused = () => app.evaluate(() => document.activeElement?.getAttribute('data-testid'));
-  const calls = () => app.evaluate(() => window.__shell.calls.filter((c) => c !== 'set_theme'));
+  const calls = () => app.evaluate(() => window.__shell.calls.filter((c) => c !== 'set_theme' && c !== 'set_menu_labels'));
   // A fresh page each time (the same URL with a hash would not reload it):
   // the shell stub starts over with the support sessionStorage gives it.
   const openAbout = async () => {
