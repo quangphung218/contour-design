@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kinetic manifesto</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Kinetic manifesto: a 10 s, 1080x1920 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 10 s film
+   (1 s = 10%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 10.8px
+   on the 1080px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+html, body { margin: 0; height: 100%; background: #111111; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 10s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1080 / 1920)); aspect-ratio: 1080 / 1920;
+  background: #111111; color: #f5f5f0; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.stack { position: absolute; left: 7.4074cqw; top: 38.8889cqw; }
+.w { display: block; font-size: 20.3704cqw; font-weight: 900; letter-spacing: -0.7407cqw; line-height: .9; text-transform: uppercase; }
+.w.o { color: transparent; -webkit-text-stroke: 0.3704cqw #f5f5f0; }
+.w.a { color: #d4ff3a; }
+.big { position: absolute; left: 0; right: 0; top: 70.3704cqw; text-align: center; font-size: 27.7778cqw; font-weight: 900; letter-spacing: -1.1111cqw; line-height: 1; text-transform: uppercase; }
+.flash { position: absolute; inset: 0; background: #d4ff3a; transform-origin: 50% 100%; }
+.end { position: absolute; left: 7.4074cqw; right: 7.4074cqw; top: 59.2593cqw; color: #111111; }
+.end p { margin: 0; font-size: 16.6667cqw; font-weight: 900; letter-spacing: -0.5556cqw; line-height: .95; }
+.sign { position: absolute; left: 7.4074cqw; top: 101.8519cqw; font: 700 3.7037cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.5556cqw; color: #111111; }
+.bar { position: absolute; left: 7.4074cqw; top: 108.3333cqw; width: 27.7778cqw; height: 1.2963cqw; background: #111111; transform-origin: 0 50%; }
+
+@keyframes k1 {
+  0% { opacity: 0; transform: translateY(11.1111cqw) skewY(6deg); animation-timing-function: linear; }
+  4% { opacity: 0; transform: translateY(11.1111cqw) skewY(6deg); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  7.5% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { opacity: 0; transform: translateY(11.1111cqw) skewY(6deg); animation-timing-function: linear; }
+  8.5% { opacity: 0; transform: translateY(11.1111cqw) skewY(6deg); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  12% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { opacity: 0; transform: translateY(11.1111cqw) skewY(6deg); animation-timing-function: linear; }
+  13% { opacity: 0; transform: translateY(11.1111cqw) skewY(6deg); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  16.5% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { opacity: 0; transform: translateY(11.1111cqw) skewY(6deg); animation-timing-function: linear; }
+  17.5% { opacity: 0; transform: translateY(11.1111cqw) skewY(6deg); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  21% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { opacity: 1; transform: none; animation-timing-function: linear; }
+  30% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  34% { opacity: 0; transform: translateY(-46.2963cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(-46.2963cqw); animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { opacity: 0; transform: scale(1.7); animation-timing-function: linear; }
+  35% { opacity: 0; transform: scale(1.7); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  37.2% { opacity: 1; transform: none; animation-timing-function: linear; }
+  41% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  42.2% { opacity: 0; transform: scale(.85); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.85); animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { opacity: 0; transform: scale(1.7); animation-timing-function: linear; }
+  42% { opacity: 0; transform: scale(1.7); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  44.2% { opacity: 1; transform: none; animation-timing-function: linear; }
+  48% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  49.2% { opacity: 0; transform: scale(.85); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.85); animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { opacity: 0; transform: scale(1.7); animation-timing-function: linear; }
+  49% { opacity: 0; transform: scale(1.7); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  51.2% { opacity: 1; transform: none; animation-timing-function: linear; }
+  55% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  56.2% { opacity: 0; transform: scale(.85); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.85); animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { opacity: 0; transform: scale(1.7); animation-timing-function: linear; }
+  56% { opacity: 0; transform: scale(1.7); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  58.2% { opacity: 1; transform: none; animation-timing-function: linear; }
+  62% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  63.2% { opacity: 0; transform: scale(.85); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scale(.85); animation-timing-function: linear; }
+}
+@keyframes k10 {
+  0% { transform: scaleY(0); animation-timing-function: linear; }
+  62% { transform: scaleY(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  66% { transform: scaleY(1); animation-timing-function: linear; }
+  93% { transform: scaleY(1); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  99% { transform: scaleY(0); animation-timing-function: linear; }
+  100% { transform: scaleY(0); animation-timing-function: linear; }
+}
+@keyframes k11 {
+  0% { opacity: 0; transform: translateX(-18.5185cqw); animation-timing-function: linear; }
+  67% { opacity: 0; transform: translateX(-18.5185cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  71.5% { opacity: 1; transform: none; animation-timing-function: linear; }
+  92% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  95% { opacity: 0; transform: translateX(-18.5185cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateX(-18.5185cqw); animation-timing-function: linear; }
+}
+@keyframes k12 {
+  0% { opacity: 0; transform: translateX(-18.5185cqw); animation-timing-function: linear; }
+  70% { opacity: 0; transform: translateX(-18.5185cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  74.5% { opacity: 1; transform: none; animation-timing-function: linear; }
+  92% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  95% { opacity: 0; transform: translateX(-18.5185cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateX(-18.5185cqw); animation-timing-function: linear; }
+}
+@keyframes k13 {
+  0% { opacity: 0; transform: translateY(1.8519cqw); animation-timing-function: linear; }
+  76% { opacity: 0; transform: translateY(1.8519cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  81% { opacity: 1; transform: none; animation-timing-function: linear; }
+  92% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  95% { opacity: 0; transform: translateY(1.8519cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(1.8519cqw); animation-timing-function: linear; }
+}
+@keyframes k14 {
+  0% { opacity: 0; transform: scaleX(0); animation-timing-function: linear; }
+  78% { opacity: 0; transform: scaleX(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  84% { opacity: 1; transform: none; animation-timing-function: linear; }
+  92% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  95% { opacity: 0; transform: scaleX(0); animation-timing-function: linear; }
+  100% { opacity: 0; transform: scaleX(0); animation-timing-function: linear; }
+}
+#w1 { animation: k1 var(--film) linear infinite both; }
+#w2 { animation: k2 var(--film) linear infinite both; }
+#w3 { animation: k3 var(--film) linear infinite both; }
+#w4 { animation: k4 var(--film) linear infinite both; }
+#stack { animation: k5 var(--film) linear infinite both; }
+#b1 { animation: k6 var(--film) linear infinite both; }
+#b2 { animation: k7 var(--film) linear infinite both; }
+#b3 { animation: k8 var(--film) linear infinite both; }
+#b4 { animation: k9 var(--film) linear infinite both; }
+#flash { animation: k10 var(--film) linear infinite both; }
+#e1 { animation: k11 var(--film) linear infinite both; }
+#e2 { animation: k12 var(--film) linear infinite both; }
+#sign { animation: k13 var(--film) linear infinite both; }
+#bar { animation: k14 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="10"
+  data-width="1080" data-height="1920" data-fps="30" data-poster-time="7.6">
+<div class="stack" id="stack">
+  <span class="w" id="w1">Make</span>
+  <span class="w o" id="w2">things</span>
+  <span class="w" id="w3">people</span>
+  <span class="w a" id="w4">keep.</span>
+</div>
+<div class="big" id="b1">Small</div>
+<div class="big" id="b2">teams</div>
+<div class="big" id="b3" style="color: #d4ff3a">ship</div>
+<div class="big" id="b4">fast</div>
+<div class="flash" id="flash"></div>
+<div class="end"><p id="e1">Ship small.</p><p id="e2">Ship often.</p></div>
+<div class="sign" id="sign">TALLOWMARK</div>
+<div class="bar" id="bar"></div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 10;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>

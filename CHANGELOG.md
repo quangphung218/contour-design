@@ -10,6 +10,17 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Added
 
+- 13 more Motion templates in Templates, under the Industry "Motion":
+  product launch, event ticket promo, a three-step explainer, a 9:16
+  kinetic type manifesto, a flip-clock countdown, before and after,
+  a 9:16 app feature tour, a square customer testimonial, an animated
+  line chart, a logo stinger, a 9:16 year in review, a hiring post and
+  a café menu board. Each is a 5–14 s HyperFrames film with English and
+  Chinese names that previews on its card, opens with Remix or "Use
+  template", and renders to MP4 with `media generate`. Brands in them
+  are made up; they use system fonts and inline SVG, download nothing
+  and are silent.
+
 - A chat turn shows its total run time on the line over its work:
   "Step 2 of 3 · Writing the page · 0:12" counts up while the agent
   runs, and "Worked for 1:23 · 4 steps" stays put once it is done, also

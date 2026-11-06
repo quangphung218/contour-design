@@ -536,7 +536,7 @@ async fn motion_templates_preview_and_remix() {
         .iter()
         .filter(|t| t["scenario"] == "motion")
         .collect();
-    assert!(motion.len() >= 18, "only {} Motion templates", motion.len());
+    assert!(motion.len() >= 31, "only {} Motion templates", motion.len());
     for t in motion {
         let id = t["id"].as_str().unwrap();
         assert_eq!(t["mode"], "video", "{id}");

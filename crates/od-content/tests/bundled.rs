@@ -241,7 +241,7 @@ fn design_templates_match_original_loader() {
     );
 }
 
-/// The Motion set: at least 5 finished examples and 13 templates, each a
+/// The Motion set: at least 5 finished examples and 26 templates, each a
 /// video-mode HyperFrames composition of 5–15 s that ships its own
 /// Apache-2.0 LICENSE and needs nothing from the network.
 #[test]
@@ -256,6 +256,7 @@ fn motion_templates_ship_complete() {
     .unwrap();
     let comment = regex::Regex::new(r"(?s)/\*.*?\*/").unwrap();
     let fixed_px = regex::Regex::new(r"\b\d+(?:\.\d+)?px\b").unwrap();
+    let clip_text = regex::Regex::new(r"(?i)background-clip\s*:\s*text").unwrap();
     let motion: Vec<_> = idx
         .design_templates
         .iter()
@@ -273,7 +274,7 @@ fn motion_templates_ship_complete() {
         kind("motion-example")
     );
     assert!(
-        kind("motion-template") >= 13,
+        kind("motion-template") >= 26,
         "templates: {}",
         kind("motion-template")
     );
@@ -319,6 +320,12 @@ fn motion_templates_ship_complete() {
         // The Apache licence text names its own URL; the film names none.
         let hits: Vec<&str> = banned.find_iter(&html).map(|m| m.as_str()).collect();
         assert!(hits.is_empty(), "{id}: {hits:?}");
+        // Gradient text shows in a browser but the MP4 renderer paints it
+        // transparent, so the film would export without its words.
+        assert!(
+            !clip_text.is_match(&code),
+            "{id}: background-clip: text renders transparent in the MP4"
+        );
     }
 }
 

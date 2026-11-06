@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Event ticket promo</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* Event ticket promo: a 10 s, 1920x1080 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 10 s film
+   (1 s = 10%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 19.2px
+   on the 1920px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+@property --n { syntax: '<integer>'; inherits: false; initial-value: 0; }
+html, body { margin: 0; height: 100%; background: #f6efe3; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 10s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1920 / 1080)); aspect-ratio: 1920 / 1080;
+  background: #f6efe3; color: #1e1b2e; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.rays { position: absolute; left: 50%; top: 50%; width: 135.4167cqw; height: 135.4167cqw; margin: -67.7083cqw 0 0 -67.7083cqw; }
+.rays path { fill: #ffe2c8; }
+.kicker { position: absolute; left: 6.25cqw; top: 4.6875cqw; font: 700 1.3542cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.4167cqw; color: #6d6577; }
+.ticket { position: absolute; left: 15.625cqw; top: 13.5417cqw; width: 68.75cqw; height: 25cqw; }
+.main, .stub { position: absolute; top: 0; height: 25cqw; background: #fffaf2; box-shadow: 0 1.5625cqw 3.125cqw rgba(30,27,46,.18); }
+.main { left: 0; width: 50cqw; border-radius: 1.4583cqw 0 0 1.4583cqw; padding: 2.8125cqw 3.3333cqw; border-right: 0.2083cqw dashed #d8cfc0; }
+.stub { left: 50cqw; width: 18.75cqw; border-radius: 0 1.4583cqw 1.4583cqw 0; padding: 2.8125cqw 2.0833cqw; display: flex; flex-direction: column; justify-content: space-between; background: #ff4d2e; color: #fffaf2; }
+.main::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 1.1458cqw; background: #2f6bff; border-radius: 1.4583cqw 0 0 1.4583cqw; }
+.title { font-size: 6.0417cqw; font-weight: 900; letter-spacing: -0.1562cqw; line-height: .95; color: #1e1b2e; }
+.year { font-size: 2.3958cqw; font-weight: 300; letter-spacing: 0.1042cqw; color: #2f6bff; margin-top: 0.4167cqw; }
+.rows { margin-top: 2.2917cqw; display: flex; gap: 3.6458cqw; }
+.row b { display: block; font: 700 1.0417cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.2083cqw; color: #6d6577; margin-bottom: 0.7292cqw; }
+.row span { font-size: 1.9792cqw; font-weight: 700; color: #1e1b2e; }
+.lineup { margin-top: 1.875cqw; font-size: 1.4583cqw; color: #6d6577; }
+.admit { font: 800 1.25cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.4167cqw; }
+.tier { font-size: 1.5625cqw; font-weight: 700; opacity: .9; }
+.price { font-size: 7.2917cqw; font-weight: 900; letter-spacing: -0.2083cqw; line-height: 1; counter-reset: n var(--n); font-variant-numeric: tabular-nums; }
+.price::after { content: counter(n); }
+.price small { font-size: 3.3333cqw; vertical-align: top; }
+.stamp { position: absolute; left: 38.2812cqw; top: 11.7188cqw; width: 10.9375cqw; height: 10.9375cqw; border-radius: 50%; border: 0.4167cqw solid #2f6bff; color: #2f6bff; display: grid; place-items: center; text-align: center; font-weight: 900; font-size: 1.7708cqw; line-height: 1; letter-spacing: 0.0521cqw; }
+.cta { position: absolute; left: 0; right: 0; top: 44.7917cqw; text-align: center; font-size: 2.0833cqw; font-weight: 700; color: #1e1b2e; }
+.cta em { font-style: normal; color: #ff4d2e; }
+
+@keyframes k1 {
+  0% { opacity: 0; transform: rotate(0deg); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  10% { opacity: 1; transform: rotate(6deg); animation-timing-function: linear; }
+  92% { opacity: 1; transform: rotate(40deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  99% { opacity: 0; transform: rotate(44deg); animation-timing-function: linear; }
+  100% { opacity: 0; transform: rotate(44deg); animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: linear; }
+  3% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  8% { opacity: 1; transform: none; animation-timing-function: linear; }
+  93% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  97% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(-1.0417cqw); animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { opacity: 0; transform: translateX(-78.125cqw) rotate(-8deg); animation-timing-function: linear; }
+  6% { opacity: 0; transform: translateX(-78.125cqw) rotate(-8deg); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  16% { opacity: 1; transform: rotate(-2deg); animation-timing-function: linear; }
+  92% { opacity: 1; transform: rotate(-2deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  98% { opacity: 0; transform: translateY(4.1667cqw) rotate(-2deg); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(4.1667cqw) rotate(-2deg); animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+  15% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  21% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+  18% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  24% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+  22% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  28% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: linear; }
+  26% { opacity: 0; transform: translateY(1.0417cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  32% { opacity: 1; transform: none; animation-timing-function: linear; }
+  100% { opacity: 1; transform: none; animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { --n: 0; animation-timing-function: linear; }
+  30% { --n: 0; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  43% { --n: 89; animation-timing-function: linear; }
+  100% { --n: 89; animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { opacity: 0; transform: scale(2.4) rotate(-30deg); animation-timing-function: linear; }
+  46% { opacity: 0; transform: scale(2.4) rotate(-30deg); animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  49% { opacity: 1; transform: rotate(-14deg); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  53% { opacity: 1; transform: scale(.96) rotate(-14deg); animation-timing-function: linear; }
+  100% { opacity: 1; transform: scale(.96) rotate(-14deg); animation-timing-function: linear; }
+}
+@keyframes k10 {
+  0% { transform: none; animation-timing-function: linear; }
+  66% { transform: none; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  74% { transform: translate(7.8125cqw, 2.0833cqw) rotate(9deg); animation-timing-function: linear; }
+  100% { transform: translate(7.8125cqw, 2.0833cqw) rotate(9deg); animation-timing-function: linear; }
+}
+@keyframes k11 {
+  0% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+  73% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  80% { opacity: 1; transform: none; animation-timing-function: linear; }
+  92% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  96% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(1.5625cqw); animation-timing-function: linear; }
+}
+#rays { animation: k1 var(--film) linear infinite both; }
+#kicker { animation: k2 var(--film) linear infinite both; }
+#ticket { animation: k3 var(--film) linear infinite both; }
+#t1 { animation: k4 var(--film) linear infinite both; }
+#t2 { animation: k5 var(--film) linear infinite both; }
+#t3 { animation: k6 var(--film) linear infinite both; }
+#t4 { animation: k7 var(--film) linear infinite both; }
+#price { animation: k8 var(--film) linear infinite both; }
+#stamp { animation: k9 var(--film) linear infinite both; }
+#stub { animation: k10 var(--film) linear infinite both; }
+#cta { animation: k11 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="10"
+  data-width="1920" data-height="1080" data-fps="30" data-poster-time="6">
+<svg class="rays" id="rays" viewBox="-1300 -1300 2600 2600" aria-hidden="true"><path d="M0 0 L1300 0 L1289 169 Z"/><path d="M0 0 L1236 402 L1174 559 Z"/><path d="M0 0 L1052 764 L944 894 Z"/><path d="M0 0 L764 1052 L621 1142 Z"/><path d="M0 0 L402 1236 L238 1278 Z"/><path d="M0 0 L-0 1300 L-169 1289 Z"/><path d="M0 0 L-402 1236 L-559 1174 Z"/><path d="M0 0 L-764 1052 L-894 944 Z"/><path d="M0 0 L-1052 764 L-1142 621 Z"/><path d="M0 0 L-1236 402 L-1278 238 Z"/><path d="M0 0 L-1300 -0 L-1289 -169 Z"/><path d="M0 0 L-1236 -402 L-1174 -559 Z"/><path d="M0 0 L-1052 -764 L-944 -894 Z"/><path d="M0 0 L-764 -1052 L-621 -1142 Z"/><path d="M0 0 L-402 -1236 L-238 -1278 Z"/><path d="M0 0 L0 -1300 L169 -1289 Z"/><path d="M0 0 L402 -1236 L559 -1174 Z"/><path d="M0 0 L764 -1052 L894 -944 Z"/><path d="M0 0 L1052 -764 L1142 -621 Z"/><path d="M0 0 L1236 -402 L1278 -238 Z"/></svg>
+<div class="kicker" id="kicker">SUMMER 2027 · TICKETS</div>
+<div class="ticket" id="ticket">
+  <div class="main">
+    <div class="title" id="t1">LANTERNFIELD</div>
+    <div class="year" id="t2">Festival · three nights by the river</div>
+    <div class="rows" id="t3">
+      <div class="row"><b>DATES</b><span>12–14 June</span></div>
+      <div class="row"><b>WHERE</b><span>Hollin Bay Meadows</span></div>
+    </div>
+    <div class="lineup" id="t4">40 acts · 2 stages · camping on site</div>
+  </div>
+  <div class="stub" id="stub">
+    <div class="admit">ADMIT ONE</div>
+    <div><div class="tier">Early bird</div><div class="price" id="price"><small>€</small></div></div>
+  </div>
+  <div class="stamp" id="stamp">ON<br>SALE<br>NOW</div>
+</div>
+<div class="cta" id="cta">Tickets open Friday 10:00 · <em>link in bio</em></div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 10;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>

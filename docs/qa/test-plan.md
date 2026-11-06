@@ -281,7 +281,7 @@ CHANGELOG 0.2.0-beta.13/14 and features.md (Templates).
 
 | ID | Scenario | Precondition | Steps | Expected | P | Status |
 |---|---|---|---|---|---|---|
-| TPL-01 | The Motion industry lists the 18 films | Bundled content | Templates ▸ Industry Motion | Option reads "Motion"; exactly the 18 films, each typed Video | P0 | auto |
+| TPL-01 | The Motion industry lists all 31 films | Bundled content | Templates ▸ Industry Motion | Option reads "Motion"; exactly the 31 films (18 from 2 Nov, 13 from 6 Nov), each typed Video | P0 | auto |
 | TPL-02 | Type chips find the new pages and decks | Same | Prototype; then Deck | All 10 WebGL and 6 landing pages under Prototype, no deck; all 14 decks under Deck | P0 | auto |
 | TPL-03 | Filters that match nothing | Same | Industry Motion + type Deck; Clear filters | Empty state; Clear filters brings every template back | P1 | auto |
 | TPL-04 | Search ignores case | Same | Motion, search "LOGO" | Logo reveal found | P2 | auto |

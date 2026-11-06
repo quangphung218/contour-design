@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App feature tour</title>
+<meta name="od-motion-output" content="video">
+<meta name="od-motion-audio" content="silent">
+<style>
+/* App feature tour: a 12 s, 1080x1920 HyperFrames composition.
+   Every movement is a CSS animation that spans the whole film (--film) and
+   loops; keyframe percentages are fractions of the 12 s film
+   (1 s = 8.3333%). The master timeline below pins every
+   animation to the renderer's time. Sizes are in cqw (1cqw = 10.8px
+   on the 1080px grid), so the stage scales to any preview. System fonts
+   and inline SVG only: nothing is downloaded. */
+html, body { margin: 0; height: 100%; background: #e9f1e7; overflow: hidden; }
+body { display: grid; place-items: center; }
+#stage {
+  --film: 12s;
+  position: relative; overflow: hidden; container-type: size;
+  width: min(100vw, calc(100vh * 1080 / 1920)); aspect-ratio: 1080 / 1920;
+  background: #e9f1e7; color: #17301f; font-family: ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#stage * { box-sizing: border-box; }
+
+.titles { position: absolute; left: 7.4074cqw; right: 7.4074cqw; top: 13.8889cqw; height: 27.7778cqw; }
+.t { position: absolute; left: 0; right: 0; top: 0; }
+.t b { display: block; font: 700 2.4074cqw/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.5556cqw; color: #2f8f5b; margin-bottom: 2.037cqw; }
+.t strong { display: block; font-size: 8.5185cqw; font-weight: 800; letter-spacing: -0.2778cqw; line-height: 1; }
+.phone { position: absolute; left: 24.0741cqw; top: 48.1481cqw; width: 51.8519cqw; height: 105.5556cqw; border-radius: 7.4074cqw; background: #17301f; padding: 2.037cqw; box-shadow: 0 3.7037cqw 7.4074cqw rgba(23,48,31,.25); }
+.screen { position: relative; width: 100%; height: 100%; border-radius: 5.5556cqw; overflow: hidden; background: #fbfdf9; }
+.strip { position: absolute; left: 0; top: 0; width: 300%; height: 100%; display: flex; }
+.s { width: 33.3333%; height: 100%; padding: 8.3333cqw 3.7037cqw 3.7037cqw; }
+.s h4 { margin: 0 0 2.7778cqw; font-size: 3.7037cqw; font-weight: 800; letter-spacing: -0.0926cqw; }
+.plant { display: flex; align-items: center; gap: 2.037cqw; padding: 2.037cqw; border-radius: 2.4074cqw; background: #e9f1e7; margin-bottom: 1.8519cqw; }
+.plant i { width: 6.8519cqw; height: 6.8519cqw; border-radius: 2.037cqw; background: #2f8f5b; flex: none; }
+.plant i.y { background: #f2b33d; }
+.plant span { font-size: 2.4074cqw; line-height: 1.3; color: #5e7465; }
+.plant span b { display: block; color: #17301f; font-size: 2.7778cqw; }
+.drop { margin-left: auto; width: 3.3333cqw; height: 4.2593cqw; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; background: #4aa3df; flex: none; }
+.bars { display: flex; align-items: flex-end; gap: 1.6667cqw; height: 38.8889cqw; padding: 0 0.9259cqw; border-bottom: 0.2778cqw solid #d7e3d4; }
+.bars i { flex: 1; border-radius: 1.1111cqw 1.1111cqw 0 0; background: #b9d9c3; }
+.bars i.hi { background: #2f8f5b; }
+.big { font-size: 11.1111cqw; font-weight: 900; letter-spacing: -0.3704cqw; color: #2f8f5b; margin-top: 2.7778cqw; }
+.cap { font-size: 2.5926cqw; color: #5e7465; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.8519cqw; }
+.grid i { position: relative; height: 19.4444cqw; border-radius: 2.5926cqw; background: #cfe3d2; }
+.grid i:nth-child(2n) { background: #a8d1b3; }
+.grid i:nth-child(3) { background: #f6dca4; }
+.heart { position: absolute; right: 1.4815cqw; bottom: 1.4815cqw; width: 5cqw; height: 5cqw; border-radius: 50%; background: #fff; display: grid; place-items: center; color: #e2574c; font-size: 2.7778cqw; }
+.dots { position: absolute; left: 0; right: 0; top: 158.3333cqw; display: flex; justify-content: center; gap: 1.4815cqw; }
+.dots i { width: 1.6667cqw; height: 1.6667cqw; border-radius: 0.8333cqw; background: #b9d9c3; }
+.end { position: absolute; inset: 0; background: #2f8f5b; color: #fbfdf9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.7778cqw; transform-origin: 50% 100%; }
+.end svg { width: 16.6667cqw; height: 16.6667cqw; }
+.end strong { font-size: 12.963cqw; font-weight: 900; letter-spacing: -0.463cqw; }
+.end span { font-size: 3.5185cqw; opacity: .9; }
+
+@keyframes k1 {
+  0% { opacity: 0; transform: translateY(46.2963cqw); animation-timing-function: linear; }
+  1.6667% { opacity: 0; transform: translateY(46.2963cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  10% { opacity: 1; transform: none; animation-timing-function: linear; }
+  78.3333% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  82.5% { opacity: 1; transform: translateY(11.1111cqw) scale(.92); animation-timing-function: linear; }
+  100% { opacity: 1; transform: translateY(11.1111cqw) scale(.92); animation-timing-function: linear; }
+}
+@keyframes k2 {
+  0% { opacity: 0; transform: translateY(3.7037cqw); animation-timing-function: linear; }
+  5% { opacity: 0; transform: translateY(3.7037cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  10.8333% { opacity: 1; transform: none; animation-timing-function: linear; }
+  29.1667% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  32.5% { opacity: 0; transform: translateY(-3.7037cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(-3.7037cqw); animation-timing-function: linear; }
+}
+@keyframes k3 {
+  0% { opacity: 0; transform: translateY(3.7037cqw); animation-timing-function: linear; }
+  32.5% { opacity: 0; transform: translateY(3.7037cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  38.3333% { opacity: 1; transform: none; animation-timing-function: linear; }
+  57.5% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  60.8333% { opacity: 0; transform: translateY(-3.7037cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(-3.7037cqw); animation-timing-function: linear; }
+}
+@keyframes k4 {
+  0% { opacity: 0; transform: translateY(3.7037cqw); animation-timing-function: linear; }
+  60.8333% { opacity: 0; transform: translateY(3.7037cqw); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  66.6667% { opacity: 1; transform: none; animation-timing-function: linear; }
+  78.3333% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.55,0,1,.45); }
+  81.6667% { opacity: 0; transform: translateY(-3.7037cqw); animation-timing-function: linear; }
+  100% { opacity: 0; transform: translateY(-3.7037cqw); animation-timing-function: linear; }
+}
+@keyframes k5 {
+  0% { transform: translateX(0%); animation-timing-function: linear; }
+  29.1667% { transform: translateX(0%); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  34.1667% { transform: translateX(-33.3333%); animation-timing-function: linear; }
+  57.5% { transform: translateX(-33.3333%); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  62.5% { transform: translateX(-66.6667%); animation-timing-function: linear; }
+  100% { transform: translateX(-66.6667%); animation-timing-function: linear; }
+}
+@keyframes k6 {
+  0% { transform: scaleY(0); transform-origin: 50% 100%; animation-timing-function: linear; }
+  33.3333% { transform: scaleY(0); transform-origin: 50% 100%; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  41.6667% { transform: scaleY(1); transform-origin: 50% 100%; animation-timing-function: linear; }
+  100% { transform: scaleY(1); transform-origin: 50% 100%; animation-timing-function: linear; }
+}
+@keyframes k7 {
+  0% { width: 4.4444cqw; background: #2f8f5b; animation-timing-function: linear; }
+  29.1667% { width: 4.4444cqw; background: #2f8f5b; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  34.1667% { width: 1.6667cqw; background: #b9d9c3; animation-timing-function: linear; }
+  100% { width: 1.6667cqw; background: #b9d9c3; animation-timing-function: linear; }
+}
+@keyframes k8 {
+  0% { width: 1.6667cqw; background: #b9d9c3; animation-timing-function: linear; }
+  29.1667% { width: 1.6667cqw; background: #b9d9c3; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  34.1667% { width: 4.4444cqw; background: #2f8f5b; animation-timing-function: linear; }
+  57.5% { width: 4.4444cqw; background: #2f8f5b; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  62.5% { width: 1.6667cqw; background: #b9d9c3; animation-timing-function: linear; }
+  100% { width: 1.6667cqw; background: #b9d9c3; animation-timing-function: linear; }
+}
+@keyframes k9 {
+  0% { width: 1.6667cqw; background: #b9d9c3; animation-timing-function: linear; }
+  57.5% { width: 1.6667cqw; background: #b9d9c3; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  62.5% { width: 4.4444cqw; background: #2f8f5b; animation-timing-function: linear; }
+  100% { width: 4.4444cqw; background: #2f8f5b; animation-timing-function: linear; }
+}
+@keyframes k10 {
+  0% { transform: scaleY(0); animation-timing-function: linear; }
+  80% { transform: scaleY(0); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  85% { transform: scaleY(1); animation-timing-function: linear; }
+  95% { transform: scaleY(1); animation-timing-function: cubic-bezier(.4,0,.2,1); }
+  99.1667% { transform: scaleY(0); animation-timing-function: linear; }
+  100% { transform: scaleY(0); animation-timing-function: linear; }
+}
+#phone { animation: k1 var(--film) linear infinite both; }
+#t1 { animation: k2 var(--film) linear infinite both; }
+#t2 { animation: k3 var(--film) linear infinite both; }
+#t3 { animation: k4 var(--film) linear infinite both; }
+#strip { animation: k5 var(--film) linear infinite both; }
+#bars { animation: k6 var(--film) linear infinite both; }
+#d1 { animation: k7 var(--film) linear infinite both; }
+#d2 { animation: k8 var(--film) linear infinite both; }
+#d3 { animation: k9 var(--film) linear infinite both; }
+#end { animation: k10 var(--film) linear infinite both; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="12"
+  data-width="1080" data-height="1920" data-fps="30" data-poster-time="4.8">
+<div class="titles">
+  <div class="t" id="t1"><b>01 · REMINDERS</b><strong>Know when to water.</strong></div>
+  <div class="t" id="t2"><b>02 · GROWTH</b><strong>See every new leaf.</strong></div>
+  <div class="t" id="t3"><b>03 · SHELF</b><strong>Share your jungle.</strong></div>
+</div>
+<div class="phone" id="phone"><div class="screen"><div class="strip" id="strip">
+  <div class="s"><h4>Today</h4>
+    <div class="plant"><i></i><span><b>Monstera</b>Water today</span><div class="drop"></div></div>
+    <div class="plant"><i class="y"></i><span><b>Snake plant</b>In 6 days</span></div>
+    <div class="plant"><i></i><span><b>Pothos</b>Water today</span><div class="drop"></div></div>
+    <div class="plant"><i class="y"></i><span><b>Fiddle leaf</b>In 3 days</span></div>
+  </div>
+  <div class="s"><h4>Monstera</h4>
+    <div class="bars" id="bars"><i style="height: 30%"></i><i style="height: 45%"></i><i style="height: 40%"></i><i style="height: 62%"></i><i style="height: 70%"></i><i class="hi" style="height: 96%"></i></div>
+    <div class="big">+6</div><div class="cap">new leaves this month</div>
+  </div>
+  <div class="s"><h4>My shelf</h4>
+    <div class="grid"><i></i><i><span class="heart">♥</span></i><i></i><i></i><i><span class="heart">♥</span></i><i></i></div>
+  </div>
+</div></div></div>
+<div class="dots"><i id="d1"></i><i id="d2"></i><i id="d3"></i></div>
+<div class="end" id="end">
+  <svg viewBox="0 0 100 100" aria-hidden="true"><path d="M50 90 C50 60 50 40 50 30 M50 58 C30 58 18 44 16 22 C38 22 50 36 50 58 M50 46 C66 46 80 36 84 14 C62 14 50 26 50 46" fill="none" stroke="#fbfdf9" stroke-width="6" stroke-linecap="round"/></svg>
+  <strong>Mossday</strong><span>Free to download today</span>
+</div>
+</div>
+<script>
+// Master timeline. The renderer pauses it and calls seek(t) for every frame;
+// seek pins each CSS animation of the film to t, so the film is the same on
+// every render. Without scripts (the gallery preview) the CSS loops alone.
+(() => {
+  const DURATION = 12;
+  const all = () => (document.getAnimations ? document.getAnimations() : []);
+  const timeline = {
+    duration: () => DURATION,
+    pause() { all().forEach((a) => a.pause()); return timeline; },
+    play() { all().forEach((a) => a.play()); return timeline; },
+    seek(t) {
+      const ms = Math.min(Math.max(Number(t) || 0, 0), DURATION) * 1000;
+      all().forEach((a) => { a.pause(); a.currentTime = ms; });
+      return timeline;
+    },
+  };
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = timeline;
+})();
+</script>
+</body>
+</html>
