@@ -8,6 +8,15 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- On a Mac with Amp installed, every launch asked "Contour would like to
+  access files on a network volume", and Allow did not stick across
+  updates. Checking which agents are installed ran `amp --version`, and
+  Amp looks for two optional add-ons under `/home`, a network mount on
+  macOS. Amp now runs, for the check and for chats, with those add-ons
+  turned off, so it no longer touches `/home`.
+
 ## [0.2.0-beta.20] - 2026-11-06
 
 ### Fixed
