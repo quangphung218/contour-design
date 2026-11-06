@@ -1473,6 +1473,10 @@ messages! {
     RunStarting => "Starting the agent…", "Đang khởi động agent…";
     RunWorking => "Working", "Đang chạy";
     RunStep => "Step {0} of {1}", "Bước {0}/{1}";
+    ProcessWorkedFor => "Worked for {0}", "Đã chạy {0}";
+    ProcessWorked => "Worked", "Đã chạy xong";
+    ProcessSteps => "{0} steps", "{0} bước";
+    ProcessOneStep => "1 step", "1 bước";
     ActWaiting => "Waiting for the agent", "Đang chờ agent";
     ActThinking => "Thinking", "Đang suy nghĩ";
     ActReplying => "Writing the reply", "Đang viết câu trả lời";

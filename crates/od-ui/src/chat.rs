@@ -190,6 +190,9 @@ pub struct AssistantTurn {
     /// When the run started (epoch ms), from the stored message: a run
     /// resumed after a reload keeps its clock.
     pub started_at: Option<i64>,
+    /// When the run ended (epoch ms), from its `end` or the stored message:
+    /// a finished turn's run time stays as it was.
+    pub ended_at: Option<i64>,
 }
 
 impl Default for AssistantTurn {
@@ -213,6 +216,7 @@ impl AssistantTurn {
             media: Vec::new(),
             failure: None,
             started_at: None,
+            ended_at: None,
         }
     }
 
@@ -222,6 +226,7 @@ impl AssistantTurn {
         let mut turn = Self::new();
         turn.run_id.clone_from(&msg.run_id);
         turn.started_at = msg.started_at;
+        turn.ended_at = msg.ended_at;
         for raw in &msg.events {
             if let Ok(ev) = serde_json::from_value::<AgentEvent>(raw.clone()) {
                 turn.apply(RunFrame::Agent(ev));
@@ -252,6 +257,7 @@ impl AssistantTurn {
                 self.state = end.status.into();
                 self.status = None;
                 self.failure = end.failure_category;
+                self.ended_at = Some(end.terminal_at);
                 if let Some(error) = crate::events::end_error(&end) {
                     self.push_error(error);
                 }
@@ -304,7 +310,7 @@ impl AssistantTurn {
                 _ => self.blocks.push(Block::Thinking(delta)),
             },
             AgentEvent::ToolUse { id, name, input } => {
-                if name == "TodoWrite" {
+                if name == PLAN_TOOL {
                     if let Some(todos) = parse_todos(&input) {
                         self.todos = todos;
                     }
@@ -493,6 +499,113 @@ impl AssistantTurn {
             .sum()
     }
 }
+
+/// One entry of a turn's process, in the order the agent did it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Step {
+    /// The agent's plan, where it first wrote it. It shows the plan as it
+    /// stands now; later plan updates add no entry of their own.
+    Plan,
+    /// Thinking, a tool call, the words between them, or a steer.
+    Block(Block),
+}
+
+impl Step {
+    /// Whether the entry is work the agent did (plan, thinking, a tool
+    /// call), not words between the steps or a message pushed in.
+    #[must_use]
+    pub fn is_work(&self) -> bool {
+        matches!(
+            self,
+            Self::Plan | Self::Block(Block::Thinking(_) | Block::Tool(_))
+        )
+    }
+}
+
+/// An assistant turn as the transcript lays it out: the agent's opening
+/// words, its process (planning and execution as one task, from the first
+/// step to the last), then the reply. Errors always go with the reply,
+/// where they are seen even with the process folded.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TurnLayout {
+    pub intro: Vec<Block>,
+    pub process: Vec<Step>,
+    pub reply: Vec<Block>,
+}
+
+impl TurnLayout {
+    /// Work steps in the process (see [`Step::is_work`]).
+    #[must_use]
+    pub fn steps(&self) -> usize {
+        self.process.iter().filter(|s| s.is_work()).count()
+    }
+}
+
+impl AssistantTurn {
+    /// Splits the turn into opening words, process and reply. The process
+    /// keeps the order the agent worked in; the plan sits where the agent
+    /// first wrote it (`TodoWrite`).
+    #[must_use]
+    pub fn layout(&self) -> TurnLayout {
+        let is_step = |b: &Block| match b {
+            Block::Thinking(_) => b.shows(),
+            Block::Tool(_) => true,
+            _ => false,
+        };
+        let (Some(first), Some(last)) = (
+            self.blocks.iter().position(is_step),
+            self.blocks.iter().rposition(is_step),
+        ) else {
+            return TurnLayout {
+                reply: self.blocks.clone(),
+                ..TurnLayout::default()
+            };
+        };
+        let has_plan = !self.todos.is_empty();
+        let mut layout = TurnLayout {
+            intro: self.blocks[..first].to_vec(),
+            ..TurnLayout::default()
+        };
+        let mut planned = false;
+        for b in &self.blocks[first..=last] {
+            match b {
+                Block::Error(_) => layout.reply.push(b.clone()),
+                Block::Tool(c) if has_plan && c.name == PLAN_TOOL => {
+                    if !planned {
+                        planned = true;
+                        layout.process.push(Step::Plan);
+                    }
+                }
+                _ if !b.shows() => {}
+                _ => layout.process.push(Step::Block(b.clone())),
+            }
+        }
+        layout.reply.extend(self.blocks[last + 1..].iter().cloned());
+        layout
+    }
+}
+
+/// How long a turn's run took, in ms: up to `now` while it runs, frozen at
+/// its end once over. The run's stored clock (`started_at`, `ended_at`)
+/// wins; `seen` is when this window saw the run start and stop, for a run
+/// sent from here (no stored start yet). `None` when the start is unknown,
+/// or the end of a finished run is.
+#[must_use]
+pub fn run_time_ms(
+    turn: &AssistantTurn,
+    seen: (Option<i64>, Option<i64>),
+    now: i64,
+) -> Option<i64> {
+    let (start, end) = match turn.started_at {
+        Some(start) => (start, turn.ended_at.or(seen.1)),
+        None => (seen.0?, seen.1),
+    };
+    let end = if turn.state.is_live() { now } else { end? };
+    Some((end - start).max(0))
+}
+
+/// Tool name of Claude's plan updates, shown as the turn's Plan list.
+pub const PLAN_TOOL: &str = "TodoWrite";
 
 /// Tool name of the engine's `+N more` row (`od_runtime::turn_files::MORE_TOOL`).
 pub const MORE_FILES_TOOL: &str = "TurnFilesMore";
@@ -799,6 +912,154 @@ mod tests {
         t.apply(plan("completed", "completed", "completed"));
         assert_eq!(plan_progress(&t.todos).map(|p| (p.0, p.1)), Some((3, 3)));
         assert!(parse_todos(&json!({"todos": "x"})).is_none());
+    }
+
+    fn tool(id: &str, name: &str, input: Value) -> RunFrame {
+        agent(json!({"type": "tool_use", "id": id, "name": name, "input": input}))
+    }
+
+    fn text(delta: &str) -> RunFrame {
+        agent(json!({"type": "text_delta", "delta": delta}))
+    }
+
+    fn plan_input(status: &str) -> Value {
+        json!({"todos": [{"content": "Write the page", "status": status}]})
+    }
+
+    fn names(steps: &[Step]) -> Vec<String> {
+        steps
+            .iter()
+            .map(|s| match s {
+                Step::Plan => "plan".to_owned(),
+                Step::Block(Block::Tool(c)) => format!("tool:{}", c.id),
+                Step::Block(Block::Thinking(t)) => format!("thinking:{t}"),
+                Step::Block(Block::Text(t)) => format!("text:{t}"),
+                Step::Block(other) => format!("{other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_process_keeps_the_order_the_agent_worked_in() {
+        let mut t = AssistantTurn::new();
+        t.apply(text("Let me look."));
+        t.apply(agent(json!({"type": "thinking_start"})));
+        t.apply(agent(
+            json!({"type": "thinking_delta", "delta": "hero first"}),
+        ));
+        t.apply(tool("p1", PLAN_TOOL, plan_input("in_progress")));
+        t.apply(tool("read", "Read", json!({"file_path": "/p/brief.md"})));
+        t.apply(text("Now the page."));
+        t.apply(tool(
+            "write",
+            "Write",
+            json!({"file_path": "/p/index.html"}),
+        ));
+        t.apply(RunFrame::Error("disk is slow".into()));
+        t.apply(tool("p2", PLAN_TOOL, plan_input("completed")));
+        t.apply(tool("bash", "Bash", json!({"command": "ls"})));
+        t.apply(text("Done: index.html."));
+        let l = t.layout();
+        assert_eq!(l.intro, [Block::Text("Let me look.".into())]);
+        assert_eq!(
+            names(&l.process),
+            [
+                "thinking:hero first",
+                "plan",
+                "tool:read",
+                "text:Now the page.",
+                "tool:write",
+                "tool:bash"
+            ],
+            "the plan sits where it was first written, later updates add nothing"
+        );
+        assert_eq!(
+            l.reply,
+            [
+                Block::Error("disk is slow".into()),
+                Block::Text("Done: index.html.".into())
+            ],
+            "errors and the reply stay outside the process"
+        );
+        assert_eq!(l.steps(), 5, "thinking, plan, three tools; not the words");
+        assert_eq!(t.todos[0].status, TodoStatus::Completed, "the latest plan");
+    }
+
+    #[test]
+    fn a_turn_without_steps_is_all_reply() {
+        let mut t = AssistantTurn::new();
+        t.apply(text("Just an answer."));
+        t.apply(agent(json!({"type": "thinking_start"})));
+        let l = t.layout();
+        assert!(l.process.is_empty() && l.intro.is_empty(), "{l:?}");
+        assert_eq!(l.reply.len(), 2);
+        assert_eq!(l.steps(), 0);
+        assert_eq!(AssistantTurn::new().layout(), TurnLayout::default());
+    }
+
+    #[test]
+    fn a_plan_update_that_reads_as_no_plan_stays_a_tool_row() {
+        let mut t = AssistantTurn::new();
+        t.apply(tool("p", PLAN_TOOL, json!({"todos": "x"})));
+        assert_eq!(names(&t.layout().process), ["tool:p"]);
+        let mut t = AssistantTurn::new();
+        t.apply(tool("p", PLAN_TOOL, plan_input("pending")));
+        assert_eq!(names(&t.layout().process), ["plan"]);
+    }
+
+    #[test]
+    fn run_time_ticks_while_live_and_freezes_at_the_end() {
+        let turn = |state, started_at, ended_at| AssistantTurn {
+            state,
+            started_at,
+            ended_at,
+            ..AssistantTurn::new()
+        };
+        let none = (None, None);
+        // Stored clock: live counts up to now, finished stays put.
+        let live = turn(TurnState::Running, Some(1_000), None);
+        assert_eq!(run_time_ms(&live, none, 4_000), Some(3_000));
+        assert_eq!(run_time_ms(&live, none, 9_000), Some(8_000));
+        let done = turn(TurnState::Succeeded, Some(1_000), Some(61_000));
+        assert_eq!(run_time_ms(&done, none, 4_000), Some(60_000));
+        assert_eq!(run_time_ms(&done, none, 999_999), Some(60_000), "frozen");
+        // Sent from this window: what the window saw.
+        let here = turn(TurnState::Running, None, None);
+        assert_eq!(run_time_ms(&here, (Some(500), None), 2_500), Some(2_000));
+        let here_done = turn(TurnState::Failed, None, Some(99_000));
+        assert_eq!(
+            run_time_ms(&here_done, (Some(500), Some(7_500)), 50_000),
+            Some(7_000),
+            "the window's own clock, not the daemon's end against it"
+        );
+        // Unknown start, or a finished run with no known end: no time.
+        assert_eq!(run_time_ms(&here, none, 2_500), None);
+        let no_end = turn(TurnState::Succeeded, Some(1_000), None);
+        assert_eq!(run_time_ms(&no_end, none, 2_500), None);
+        // A stored end before its start (clock skew) is no negative time.
+        let skew = turn(TurnState::Canceled, Some(5_000), Some(4_000));
+        assert_eq!(run_time_ms(&skew, none, 0), Some(0));
+    }
+
+    #[test]
+    fn the_run_end_and_a_stored_message_carry_the_end_time() {
+        let mut t = AssistantTurn::new();
+        t.apply(decode_frame(
+            "end",
+            r#"{"status":"succeeded","code":0,"terminalAt":4242}"#,
+        ));
+        assert_eq!(t.ended_at, Some(4242));
+        let msg: Message = serde_json::from_value(json!({
+            "id": "m", "conversationId": "c", "role": "assistant", "content": "x",
+            "position": 1, "createdAt": 1, "startedAt": 1000, "endedAt": 5000
+        }))
+        .unwrap_or_else(|e| panic!("{e}"));
+        let t = AssistantTurn::from_stored(&msg);
+        assert_eq!(
+            run_time_ms(&t, (None, None), 0),
+            Some(4000),
+            "a reloaded turn keeps its run time"
+        );
     }
 
     #[test]

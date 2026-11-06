@@ -8,6 +8,21 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A chat turn shows its total run time on the line over its work:
+  "Working · 0:12 · 3 steps" counts up while the agent runs, and
+  "Worked for 1:23 · 4 steps" stays put once it is done, also after a
+  reload.
+
+### Changed
+
+- A chat turn's plan, thinking and tool calls now read as one task you
+  can fold, in the order the agent did them: the plan sits where the
+  agent wrote it instead of at the top of the reply. The task is open
+  while the agent works and folds once it succeeds; the reply, errors
+  and the files from the turn stay outside it, in view.
+
 ## [0.2.0-beta.20] - 2026-11-06
 
 ### Fixed
