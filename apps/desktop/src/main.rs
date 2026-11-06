@@ -232,15 +232,36 @@ fn open_folder_from_menu(app: &AppHandle) {
 /// `Origin`, so sandboxed preview iframes (`Origin: null`) and pages of
 /// other loopback ports never match. Replaces a static
 /// `http://127.0.0.1:*` capability, which every local server shared.
+/// The app's config, assets and ACL (`build.rs`), for any runtime: one
+/// expansion, as it embeds `Info.plist` on macOS (tests use the mock runtime).
+fn app_context<R: tauri::Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
+}
+
 fn ui_capability(origin: &str) -> CapabilityBuilder {
-    CapabilityBuilder::new("daemon-ui")
+    let capability = CapabilityBuilder::new("daemon-ui")
         .window("main")
         .local(false)
         .remote(format!("{origin}/*"))
         .permission("core:default")
         .permission("core:window:allow-start-dragging")
-        .permission("dialog:default")
+        .permission("dialog:default");
+    APP_COMMAND_PERMISSIONS
+        .iter()
+        .fold(capability, |c, p| c.permission(*p))
 }
+
+/// `allow-<command>` for each app command (`build.rs` generates them): the
+/// daemon's page is a remote origin to Tauri, which refuses it any app
+/// command without one.
+const APP_COMMAND_PERMISSIONS: [&str; 6] = [
+    "allow-pick-folder",
+    "allow-set-theme",
+    "allow-update-support",
+    "allow-install-update",
+    "allow-cancel-update",
+    "allow-restart-app",
+];
 
 /// The main window stays on the daemon's origin (and the bundled splash
 /// shown before it); anything else (a link in a design, a redirect) is
@@ -394,7 +415,7 @@ fn main() -> anyhow::Result<()> {
         // The CLI's own code: 2 (task still running) and 66 stay as they are.
         std::process::exit(i32::from(od_cli::main_code(all)));
     }
-    let context = tauri::generate_context!();
+    let context = app_context();
     // `<app> daemon start [--port 0] …`: the `od` daemon, headless, for QA
     // and agents testing the installed app beside the one in use (its own
     // `OD_DATA_DIR`). No Tauri: no window, no Dock icon (no
@@ -565,6 +586,70 @@ fn remove_webview_temp(tmp: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Invokes `cmd` from a page at `page` in the app built with this
+    /// crate's ACL (`build.rs`), the UI capability granted to `origin`.
+    fn invoke_from(origin: &str, page: &str, cmd: &str) -> Result<(), String> {
+        let context: tauri::Context<tauri::test::MockRuntime> = app_context();
+        let app = tauri::test::mock_builder()
+            // The ACL goes by command name, before any handler: this one
+            // stands in for the shell's, which need the real runtime.
+            .invoke_handler(|invoke| {
+                invoke.resolver.resolve("ready");
+                true
+            })
+            .build(context)
+            .unwrap();
+        app.add_capability(ui_capability(origin)).unwrap();
+        let url: tauri::Url = page.parse().unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(
+            &app,
+            "main",
+            tauri::WebviewUrl::External(url.clone()),
+        )
+        .build()
+        .unwrap();
+        tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: cmd.into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url,
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn the_daemon_ui_may_call_the_app_commands() {
+        // The UI comes from the daemon's loopback origin, a remote origin to
+        // Tauri: without the app's ACL every app command was refused, so
+        // Check for Updates never offered Update now.
+        let origin = "http://127.0.0.1:43210";
+        for cmd in [
+            "pick_folder",
+            "set_theme",
+            "update_support",
+            "install_update",
+            "cancel_update",
+            "restart_app",
+        ] {
+            assert_eq!(
+                invoke_from(origin, &format!("{origin}/studio"), cmd),
+                Ok(()),
+                "{cmd}"
+            );
+        }
+        // Only the app's commands.
+        assert!(invoke_from(origin, &format!("{origin}/"), "no_such_command").is_err());
+        // Another loopback port gets nothing.
+        assert!(invoke_from(origin, "http://127.0.0.1:5000/", "update_support").is_err());
+    }
 
     #[test]
     fn the_webview_temp_folder_goes_on_exit() {

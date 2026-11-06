@@ -8,6 +8,15 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Check for Updates never offered Update now in the installed app, and
+  Settings ▸ Project storage ▸ Add folder opened no folder picker: the
+  app refused every call from its own window, which it loads from the
+  daemon's address. Those calls now work for that address only. Update
+  now works from this release on; 0.2.0-beta.18 and 0.2.0-beta.19 are
+  updated by hand.
+
 ## [0.2.0-beta.19] - 2026-11-06
 
 ### Fixed
