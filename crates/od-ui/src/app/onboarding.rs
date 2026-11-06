@@ -56,11 +56,14 @@ pub fn Onboarding() -> impl IntoView {
         let mine = seq.get_value();
         test.set(Some(TestState::Running));
         leptos::task::spawn_local(async move {
-            let body = json!({ "mode": "agent", "agentId": agent });
+            let body = json!({ "mode": "agent", "agentId": &agent });
             let res = match api::post::<_, Value>("/api/test/connection", &body).await {
                 Ok(v) => TestState::Done(v),
                 Err(e) => TestState::Failed(e.to_string()),
             };
+            if let TestState::Done(v) = &res {
+                remember_test(&agent, v);
+            }
             if is_latest(seq, mine) {
                 test.set(Some(res));
             }
@@ -71,7 +74,14 @@ pub fn Onboarding() -> impl IntoView {
             test.set(None);
             return;
         };
-        run_test(agent);
+        // Back on this page with the same agent (⌘, before Continue): its
+        // answer, not a second paid test prompt (QA-051).
+        if let Some(v) = remembered_test(&agent) {
+            seq.update_value(|n| *n += 1);
+            test.set(Some(TestState::Done(v)));
+        } else {
+            run_test(agent);
+        }
     });
     // Rescan, then test the picked agent again: after signing in, the same
     // agent now answers. With none picked, the preselect above picks and
@@ -259,6 +269,26 @@ pub fn Onboarding() -> impl IntoView {
 
 /// Where to get Chrome when export has no browser to drive.
 const CHROME_URL: &str = "https://www.google.com/chrome/";
+
+thread_local! {
+    /// The last test answer and its agent, for the page's life. Check
+    /// again tests anew.
+    static LAST_TEST: std::cell::RefCell<Option<(String, Value)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn remember_test(agent: &str, answer: &Value) {
+    LAST_TEST.with(|l| *l.borrow_mut() = Some((agent.to_owned(), answer.clone())));
+}
+
+fn remembered_test(agent: &str) -> Option<Value> {
+    LAST_TEST.with(|l| {
+        l.borrow()
+            .as_ref()
+            .filter(|(a, _)| a == agent)
+            .map(|(_, v)| v.clone())
+    })
+}
 
 /// On this machine: ready, or installed and waiting for setup (DeepSeek
 /// Harness without its profile). BYOK is not an agent here.
@@ -589,6 +619,19 @@ pub fn AgentCard(agent: AgentInfo, picked: RwSignal<Option<String>>) -> impl Int
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coming_back_keeps_the_agent_test_answer() {
+        // QA-051: ⌘, before Continue brought the page back and paid for
+        // the same agent's test again.
+        assert_eq!(remembered_test("claude"), None);
+        remember_test("claude", &json!({ "ok": true }));
+        assert_eq!(remembered_test("claude"), Some(json!({ "ok": true })));
+        // Another agent is tested on its own.
+        assert_eq!(remembered_test("codex"), None);
+        remember_test("codex", &json!({ "ok": false }));
+        assert_eq!(remembered_test("claude"), None);
+    }
 
     fn agent(id: &str, available: bool, needs_setup: bool) -> AgentInfo {
         AgentInfo {

@@ -41,6 +41,31 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- ⌘W in the Studio quit the app on macOS and stopped the running
+  agent. It now closes the tab, as the shortcuts dialog says; File ▸
+  Close Window no longer takes ⌘W (QA-042).
+- On macOS the window's close button quit the app and stopped its runs.
+  It now hides the window, leaving full screen first; the app and its
+  runs keep going, and the Dock icon brings the window back. ⌘Q still quits. Windows and Linux still
+  quit when the window closes (QA-043).
+- Links that open in a new tab, such as "Install guide ↗" during setup,
+  "Get Chrome" and an update's "View", did nothing in the app. They now
+  open in the system browser (QA-044).
+- Integrations ▸ Use everywhere told app users to run `od`, which on a
+  Mac without the CLI is the system's octal dump. In the app it now
+  shows the app's own command (QA-046).
+- Export in the app said "Exported index.pdf" even when the file was
+  saved as `index (1).pdf`, and never said where. It now asks where to
+  save and names the file it wrote (QA-048).
+- The menu bar stayed in English after switching the language in
+  Settings. It now follows the app's language (QA-049).
+- The shortcuts dialog listed only `?` for itself; it now lists ⌘/ too,
+  which also works in the browser (QA-050).
+- Opening Settings with ⌘, before finishing setup ran the agent's
+  connection test again, a second paid prompt. The earlier answer is
+  kept while the agent stays the same (QA-051).
+- Settings ▸ Notifications: the "Failure" label no longer wraps away
+  from its sound picker (QA-052).
 - On a Mac with Amp installed, every launch asked "Contour would like to
   access files on a network volume", and Allow did not stick across
   updates. Checking which agents are installed ran `amp --version`, and

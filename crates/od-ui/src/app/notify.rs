@@ -245,10 +245,15 @@ pub fn NotificationSettings() -> impl IntoView {
                         on:change=move |ev| { let mut n = current.get_untracked(); n.sound = event_target_checked(&ev); save(n); }/>
                     <span>{icon(Glyph::Sound)}{t(T::CompletionSound)}</span>
                 </label>
-                <span class="muted small">{t(T::SuccessSound)}</span>
-                {sound_select("notify-success-sound", t(T::SuccessSound), &SUCCESS_SOUNDS, |p| p.success_sound.clone(), |p, v| p.success_sound = v)}
-                <span class="muted small">{t(T::FailureSound)}</span>
-                {sound_select("notify-failure-sound", t(T::FailureSound), &FAILURE_SOUNDS, |p| p.failure_sound.clone(), |p, v| p.failure_sound = v)}
+                // Each label wraps with its select, never apart (QA-052).
+                <span class="sound-pick">
+                    <span class="muted small">{t(T::SuccessSound)}</span>
+                    {sound_select("notify-success-sound", t(T::SuccessSound), &SUCCESS_SOUNDS, |p| p.success_sound.clone(), |p, v| p.success_sound = v)}
+                </span>
+                <span class="sound-pick">
+                    <span class="muted small">{t(T::FailureSound)}</span>
+                    {sound_select("notify-failure-sound", t(T::FailureSound), &FAILURE_SOUNDS, |p| p.failure_sound.clone(), |p, v| p.failure_sound = v)}
+                </span>
             </div>
             <label class="switch">
                 <input type="checkbox" data-testid="notify-desktop" prop:checked=move || current.with(|c| c.desktop)
