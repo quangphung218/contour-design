@@ -198,8 +198,14 @@ try {
   await until(async () => (await assistant.nth(3).getAttribute('data-state')) === 'succeeded', 'turn 4 end');
   await page.getByTestId('composer').fill('slow plan please');
   await page.getByTestId('composer').press('Enter');
-  await page.getByTestId('plan-pill').getByText('Step 2/3').waitFor();
-  await page.getByTestId('plan-pill').getByText('Writing the page').waitFor();
+  // One place shows the run's progress and clock: the process line. The
+  // status line is only read out, and the plan pill waits for that line
+  // to scroll out of view.
+  const planLine = assistant.nth(4).getByTestId('process-summary');
+  await planLine.getByText(/^Step 2 of 3 · Writing the page · \d+:\d\d$/).waitFor();
+  const drawn = (el) => el.evaluate((e) => e.getBoundingClientRect().width > 1);
+  assert.equal(await drawn(assistant.nth(4).getByTestId('run-state')), false, 'status line not shown twice');
+  assert.equal(await page.getByTestId('plan-pill').count(), 0, 'no pill beside the line in view');
   results.planPill = 'ok';
   await page.getByTestId('composer').fill('steer me');
   await page.getByTestId('composer').press('Enter');

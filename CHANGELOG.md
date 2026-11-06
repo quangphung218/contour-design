@@ -10,6 +10,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Added
 
+- A chat turn shows its total run time on the line over its work:
+  "Step 2 of 3 · Writing the page · 0:12" counts up while the agent
+  runs, and "Worked for 1:23 · 4 steps" stays put once it is done, also
+  after a reload.
 - Comments: when reloading the comment list fails (Contour away, a
   request error), the Comments tab keeps the comments it shows and adds
   a line saying the list may be out of date, with a Retry button.
@@ -20,6 +24,14 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Changed
 
+- A chat turn's plan, thinking and tool calls now read as one task you
+  can fold, in the order the agent did them: the plan sits where the
+  agent wrote it instead of at the top of the reply. The task is open
+  while the agent works and folds once it succeeds with its plan done;
+  the reply, errors and the files from the turn stay outside it, in
+  view. While the agent works, that line is the one place that shows
+  its progress and clock; the "Step N/M" pill over the composer shows
+  only while that line is scrolled out of view.
 - Comments: a late answer for another project, another conversation or
   an older reload no longer replaces the comments of the one open.
 - Comments: the outline in the preview follows the comment picked in

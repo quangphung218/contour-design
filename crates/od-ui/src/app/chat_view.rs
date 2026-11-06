@@ -11,7 +11,9 @@ use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
 use super::preview_tools::DeliverableWarning;
 use super::studio::{StudioCtx, conversation_title, main_conversations};
-use crate::chat::{AssistantTurn, Block, TodoStatus, ToolCall, plan_progress};
+use crate::chat::{
+    AssistantTurn, Block, Step, TodoStatus, ToolCall, TurnLayout, plan_progress, run_time_ms,
+};
 use crate::guide::{
     Activity, FailCause, Followup, NextStep, RunPhase, activity, elapsed, fail_cause, last_file,
     next_steps, run_phase,
@@ -25,6 +27,9 @@ use crate::question_form::{
 use crate::workspace::{QueueHold, move_item};
 use leptos::prelude::*;
 use od_contracts::CommentStatus;
+use send_wrapper::SendWrapper;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::Closure;
 
 /// One row of the transcript.
 #[derive(Clone)]
@@ -68,6 +73,7 @@ impl ChatItem {
 #[component]
 pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     let shell = Shell::get();
+    provide_context(LiveLineInView(RwSignal::new(false)));
     let draft = ctx.draft;
     let list_ref = NodeRef::<leptos::html::Div>::new();
     let follow = StickToBottom::new(list_ref);
@@ -428,11 +434,22 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-/// "Step N/M" over the composer while the agent works through a plan.
+/// Whether the live turn's process line is on screen. The process line is
+/// where a run shows its progress; the plan pill stands in for it only
+/// while it is scrolled out of view, so the run's progress shows once.
+#[derive(Clone, Copy)]
+struct LiveLineInView(RwSignal<bool>);
+
+/// "Step N/M" over the composer while the agent works through a plan and
+/// the turn's own process line is out of view.
 #[component]
 fn PlanPill(ctx: StudioCtx) -> impl IntoView {
+    let in_view = expect_context::<LiveLineInView>().0;
     move || {
         ctx.live_run.get()?;
+        if in_view.get() {
+            return None;
+        }
         let turn = ctx.items.with(|items| {
             items.iter().rev().find_map(|i| match &i.kind {
                 ItemKind::Assistant(t) => Some(*t),
@@ -631,25 +648,31 @@ fn AssistantView(
     let ctx = expect_context::<StudioCtx>();
     let state = move || turn.with(|t| t.state);
     let item_id = StoredValue::new(item_id);
+    let clock = RunClock::new(turn);
+    // Opening words, the process (plan, thinking, tool calls), the reply.
+    let layout = Memo::new(move |_| turn.with(AssistantTurn::layout));
+    let blocks = move |part: fn(&TurnLayout) -> &Vec<Block>| {
+        layout.with(|l| {
+            part(l)
+                .iter()
+                .cloned()
+                .map(|b| render_block(b, turn, is_last))
+                .collect_view()
+        })
+    };
     view! {
         <div class="msg assistant" data-testid="assistant-msg" data-state=move || format!("{:?}", state()).to_lowercase()>
-            {move || turn.with(|tn| (!tn.todos.is_empty()).then(|| view! { <PlanList todos=tn.todos.clone()/> }))}
             <super::agent_w3::JuryTheater turn=turn/>
             <super::media_rows::MediaRows turn=turn/>
-            {move || {
-                turn.with(|t| {
-                    // The Plan list at the top already shows each plan update.
-                    let has_plan = !t.todos.is_empty();
-                    t.blocks
-                        .iter()
-                        .filter(|b| !matches!(b, Block::Tool(call) if folded_into_plan(&call.name, has_plan)))
-                        .cloned()
-                        .map(|b| render_block(b, turn, is_last))
-                        .collect_view()
-                })
-            }}
+            {move || blocks(|l| &l.intro)}
+            <Show when=move || layout.with(|l| !l.process.is_empty())>
+                <Process turn=turn layout=layout clock=clock is_last=is_last/>
+            </Show>
+            {move || blocks(|l| &l.reply)}
             <super::chat_ops::TurnFiles turn=turn/>
-            <RunLine turn=turn/>
+            // With a process, its line shows the run's progress and clock;
+            // the status line then speaks only to screen readers.
+            <RunLine turn=turn clock=clock quiet=Signal::derive(move || layout.with(|l| !l.process.is_empty()))/>
             // A turn that never ran (no run) has no agent output to show.
             <Show when=move || turn.with(|tn| matches!(run_phase(tn), RunPhase::Failed) && tn.run_id.is_some())>
                 <RunLog turn=turn/>
@@ -679,37 +702,10 @@ fn AssistantView(
 /// One status line per turn: starting, working (step N of M), done (files
 /// written), failed or stopped. `data-phase` mirrors it for tests. The line
 /// stays one element while the run goes on, so screen readers announce each
-/// change of its live region.
+/// change of its live region. `quiet`: while working, the line is read out
+/// but not shown, as the process line above shows the same progress.
 #[component]
-fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
-    // Run time while live: from the run's stored start, else (a run sent
-    // from this window) from when this window saw it.
-    let since = StoredValue::new(None::<f64>);
-    let now = RwSignal::new(js_sys::Date::now());
-    let ticker = StoredValue::new(None::<IntervalHandle>);
-    Effect::new(move |_| {
-        if turn.with(|t| t.state.is_live()) {
-            if since.get_value().is_none() {
-                let start = turn.with_untracked(|t| t.started_at);
-                #[allow(clippy::cast_precision_loss)] // epoch ms fit f64
-                since.set_value(Some(start.map_or_else(js_sys::Date::now, |s| s as f64)));
-            }
-            if ticker.get_value().is_none() {
-                let tick = move || now.set(js_sys::Date::now());
-                ticker.set_value(
-                    set_interval_with_handle(tick, std::time::Duration::from_secs(1)).ok(),
-                );
-            }
-        } else if let Some(h) = ticker.get_value() {
-            h.clear();
-            ticker.set_value(None);
-        }
-    });
-    on_cleanup(move || {
-        if let Some(h) = ticker.get_value() {
-            h.clear();
-        }
-    });
+fn RunLine(turn: RwSignal<AssistantTurn>, clock: RunClock, quiet: Signal<bool>) -> impl IntoView {
     let line = Memo::new(move |_| {
         turn.with(|tn| match run_phase(tn) {
             RunPhase::Starting => ("starting", None, t(T::RunStarting).to_owned(), None),
@@ -720,10 +716,7 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                     Some((n, m)) => tf(T::RunStep, &[&n.to_string(), &m.to_string()]),
                     None => t(T::RunWorking).to_owned(),
                 },
-                Some(working_detail(
-                    tn,
-                    since.get_value().map(|s| (now.get() - s).max(0.0)),
-                )),
+                Some(working_detail(tn, clock.run_ms(tn))),
             ),
             RunPhase::Done { files } => (
                 "done",
@@ -754,7 +747,10 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     });
     let phase = move || line.with(|l| l.0);
     view! {
-        <div class=move || format!("run-status {}", phase()) role="status" aria-live="polite" data-testid="run-state" data-phase=phase>
+        <div class=move || {
+            let quiet = phase() == "working" && quiet.get();
+            format!("run-status {}{}", phase(), if quiet { " quiet" } else { "" })
+        } role="status" aria-live="polite" data-testid="run-state" data-phase=phase>
             {move || match line.with(|l| l.1) {
                 Some(g) => icon(g).into_any(),
                 None => view! { <span class="spinner"></span> }.into_any(),
@@ -767,9 +763,23 @@ fn RunLine(turn: RwSignal<AssistantTurn>) -> impl IntoView {
 
 /// "Writing index.html · last: hero.css · 1:23": what the run does now, the
 /// last file it wrote, and how long it has run.
-fn working_detail(turn: &AssistantTurn, run_ms: Option<f64>) -> String {
+fn working_detail(turn: &AssistantTurn, run_ms: Option<i64>) -> String {
     let act = activity(turn);
-    let mut parts = vec![match &act {
+    let mut parts = vec![activity_text(&act)];
+    if let Some(file) = last_file(turn)
+        .filter(|f| !matches!(&act, Activity::Writing(w) | Activity::Editing(w) if w == f))
+    {
+        parts.push(tf(T::ActLastFile, &[&file]));
+    }
+    if let Some(ms) = run_ms {
+        parts.push(clock_text(ms));
+    }
+    parts.join(" · ")
+}
+
+/// What the run does now, in words.
+fn activity_text(act: &Activity) -> String {
+    match act {
         Activity::Waiting => t(T::ActWaiting).to_owned(),
         Activity::Thinking => t(T::ActThinking).to_owned(),
         Activity::Replying => t(T::ActReplying).to_owned(),
@@ -779,18 +789,211 @@ fn working_detail(turn: &AssistantTurn, run_ms: Option<f64>) -> String {
         Activity::Reading(f) => tf(T::ActReading, &[f]),
         Activity::Command => t(T::ActCommand).to_owned(),
         Activity::Tool(name) => tf(T::ActTool, &[name]),
-    }];
-    if let Some(file) = last_file(turn)
-        .filter(|f| !matches!(&act, Activity::Writing(w) | Activity::Editing(w) if w == f))
-    {
-        parts.push(tf(T::ActLastFile, &[&file]));
     }
-    if let Some(ms) = run_ms {
-        // Whole seconds of a wall-clock span: never negative, far below u64::MAX.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        parts.push(elapsed((ms.max(0.0) / 1000.0) as u64));
+}
+
+/// A run time in ms as a clock (`1:23`); negative spans read as `0:00`.
+fn clock_text(ms: i64) -> String {
+    elapsed(u64::try_from(ms / 1000).unwrap_or(0))
+}
+
+/// Now, in epoch ms.
+fn now_ms() -> i64 {
+    // Epoch ms are whole and far inside i64.
+    #[allow(clippy::cast_possible_truncation)]
+    let now = js_sys::Date::now() as i64;
+    now
+}
+
+/// A turn's run clock as this window sees it, shared by the process line
+/// and the status line: when the window saw the run start and stop (a run
+/// sent from here has no stored start yet), and a wall clock that ticks
+/// each second while the run is live.
+#[derive(Clone, Copy)]
+struct RunClock {
+    seen: RwSignal<(Option<i64>, Option<i64>)>,
+    now: RwSignal<i64>,
+}
+
+impl RunClock {
+    fn new(turn: RwSignal<AssistantTurn>) -> Self {
+        let clock = Self {
+            seen: RwSignal::new((None, None)),
+            now: RwSignal::new(now_ms()),
+        };
+        let live = Memo::new(move |_| turn.with(|t| t.state.is_live()));
+        let ticker = StoredValue::new(None::<IntervalHandle>);
+        Effect::new(move |_| {
+            let at = now_ms();
+            if live.get() {
+                if clock.seen.with_untracked(|s| s.0.is_none()) {
+                    clock.seen.set((Some(at), None));
+                }
+                clock.now.set(at);
+                if ticker.get_value().is_none() {
+                    let tick = move || clock.now.set(now_ms());
+                    ticker.set_value(
+                        set_interval_with_handle(tick, std::time::Duration::from_secs(1)).ok(),
+                    );
+                }
+            } else {
+                if clock
+                    .seen
+                    .with_untracked(|s| s.0.is_some() && s.1.is_none())
+                {
+                    clock.seen.update(|s| s.1 = Some(at));
+                }
+                if let Some(h) = ticker.get_value() {
+                    h.clear();
+                    ticker.set_value(None);
+                }
+            }
+        });
+        on_cleanup(move || {
+            if let Some(h) = ticker.get_value() {
+                h.clear();
+            }
+        });
+        clock
+    }
+
+    /// The run time of `turn` (see [`run_time_ms`]), tracked.
+    fn run_ms(self, turn: &AssistantTurn) -> Option<i64> {
+        run_time_ms(turn, self.seen.get(), self.now.get())
+    }
+}
+
+/// The process line. While the run goes on (`live`: where it is and what
+/// it does): "Step 2 of 3 · Writing the page · 0:12", the one place that
+/// shows the run's progress. Once over: "Worked for 1:23 · 4 steps"
+/// ("Worked" when its time is not known).
+fn process_summary(live: Option<(String, String)>, run_ms: Option<i64>, steps: usize) -> String {
+    let mut parts = Vec::new();
+    if let Some((at, doing)) = live {
+        parts.push(at);
+        parts.push(doing);
+        parts.extend(run_ms.map(clock_text));
+        return parts.join(" · ");
+    }
+    match run_ms {
+        Some(ms) => parts.push(tf(T::ProcessWorkedFor, &[&clock_text(ms)])),
+        None => parts.push(t(T::ProcessWorked).to_owned()),
+    }
+    match steps {
+        0 => {}
+        1 => parts.push(t(T::ProcessOneStep).to_owned()),
+        n => parts.push(tf(T::ProcessSteps, &[&n.to_string()])),
     }
     parts.join(" · ")
+}
+
+/// A turn's planning and execution as one task: the plan, thinking and
+/// tool calls in the order the agent worked, under one line with the run
+/// time (counting while the run goes on, frozen once over) and the number
+/// of steps. Open while it runs, when it did not succeed and while its plan
+/// has steps left ([`AssistantTurn::process_open`]); folded otherwise, so
+/// the reply and the files below it stand out. Opening or folding it by
+/// hand lasts until that changes.
+#[component]
+fn Process(
+    turn: RwSignal<AssistantTurn>,
+    layout: Memo<TurnLayout>,
+    clock: RunClock,
+    is_last: Signal<bool>,
+) -> impl IntoView {
+    let live = Memo::new(move |_| turn.with(|t| t.state.is_live()));
+    let open = Memo::new(move |_| turn.with(AssistantTurn::process_open));
+    let summary = move || {
+        let steps = layout.with(TurnLayout::steps);
+        turn.with(|tn| {
+            let now = tn.state.is_live().then(|| match plan_progress(&tn.todos) {
+                Some((n, m, step)) => (
+                    tf(T::RunStep, &[&n.to_string(), &m.to_string()]),
+                    step.active_form.clone(),
+                ),
+                None => (t(T::RunWorking).to_owned(), activity_text(&activity(tn))),
+            });
+            process_summary(now, clock.run_ms(tn), steps)
+        })
+    };
+    let line = NodeRef::<leptos::html::Summary>::new();
+    watch_in_view(line, live);
+    view! {
+        <details class="process" class:live=live data-testid="process" prop:open=open>
+            <summary data-testid="process-summary" node_ref=line>
+                {move || if live.get() {
+                    view! { <span class="spinner"></span> }.into_any()
+                } else {
+                    icon(Glyph::History).into_any()
+                }}
+                <span class="process-title">{summary}</span>
+                {icon(Glyph::ChevronDown)}
+            </summary>
+            <div class="process-steps">
+                {move || layout.with(|l| {
+                    l.process
+                        .iter()
+                        .cloned()
+                        .map(|step| match step {
+                            Step::Plan => turn.with(|tn| view! { <PlanList todos=tn.todos.clone()/> }).into_any(),
+                            Step::Block(b) => render_block(b, turn, is_last),
+                        })
+                        .collect_view()
+                })}
+            </div>
+        </details>
+    }
+}
+
+type ViewCallback = Closure<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>;
+
+/// Keeps [`LiveLineInView`] up to date while the `line` of a live turn is
+/// mounted: on screen or not. Turns that are over leave it alone.
+fn watch_in_view(line: NodeRef<leptos::html::Summary>, live: Memo<bool>) {
+    use web_sys::{IntersectionObserver, IntersectionObserverEntry};
+    let Some(LiveLineInView(in_view)) = use_context::<LiveLineInView>() else {
+        return;
+    };
+    let observer = StoredValue::new(None::<SendWrapper<(IntersectionObserver, ViewCallback)>>);
+    let stop = move || {
+        observer.update_value(|o| {
+            if let Some(o) = o.take() {
+                o.0.disconnect();
+            }
+        });
+    };
+    Effect::new(move |_| {
+        let Some(el) = line.get() else { return };
+        if !live.get() {
+            if observer.with_value(Option::is_some) {
+                stop();
+                in_view.set(false);
+            }
+            return;
+        }
+        if observer.with_value(Option::is_some) {
+            return;
+        }
+        let on_view = ViewCallback::new(move |entries: js_sys::Array, _| {
+            if let Some(e) = entries
+                .iter()
+                .filter_map(|e| e.dyn_into::<IntersectionObserverEntry>().ok())
+                .next_back()
+            {
+                in_view.set(e.is_intersecting());
+            }
+        });
+        if let Ok(obs) = IntersectionObserver::new(on_view.as_ref().unchecked_ref()) {
+            obs.observe(&el);
+            observer.set_value(Some(SendWrapper::new((obs, on_view))));
+        }
+    });
+    on_cleanup(move || {
+        if observer.with_value(Option::is_some) {
+            stop();
+            in_view.set(false);
+        }
+    });
 }
 
 /// A failed turn's agent output (what it wrote to stderr), read from the
@@ -1019,12 +1222,6 @@ pub(super) fn render_block(
     }
 }
 
-/// Whether a tool call shows as the reply's Plan list instead of a row of
-/// its own: `TodoWrite` once a plan was read from it (only it fills the list).
-fn folded_into_plan(name: &str, has_plan: bool) -> bool {
-    has_plan && name == "TodoWrite"
-}
-
 /// What a tool call did, in words: the agents' own tool names
 /// (`TodoWrite`, `Bash`) mean nothing to most people. Unknown tools keep
 /// their name.
@@ -1230,20 +1427,29 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
 
 #[cfg(test)]
 mod tests {
-    use super::{ToolCall, folded_into_plan, tool_label, tool_texts};
+    use super::{ToolCall, process_summary, tool_label, tool_texts};
 
     #[test]
-    fn plan_updates_fold_into_the_plan_list() {
-        assert!(folded_into_plan("TodoWrite", true));
-        assert!(
-            !folded_into_plan("TodoWrite", false),
-            "no plan read: the row stays"
+    fn the_process_line_says_how_long_and_how_many_steps() {
+        let now = |a: &str, b: &str| Some((a.to_owned(), b.to_owned()));
+        assert_eq!(
+            process_summary(now("Step 2 of 3", "Writing the page"), Some(12_400), 3),
+            "Step 2 of 3 · Writing the page · 0:12",
+            "while live: where, what, the clock; no step count"
         );
-        assert!(
-            !folded_into_plan("update_plan", true),
-            "only TodoWrite fills the list"
+        assert_eq!(
+            process_summary(now("Working", "Running a command"), None, 1),
+            "Working · Running a command"
         );
-        assert!(!folded_into_plan("Write", true));
+        assert_eq!(
+            process_summary(None, Some(83_000), 4),
+            "Worked for 1:23 · 4 steps"
+        );
+        assert_eq!(process_summary(None, None, 2), "Worked · 2 steps");
+        assert_eq!(
+            process_summary(None, Some(-5), 1),
+            "Worked for 0:00 · 1 step"
+        );
     }
 
     #[test]
