@@ -336,6 +336,10 @@ try {
   // The turn says Done, so only the button stays (no "not finished" line).
   await until(async () => (await page.getByTestId('continue-tasks').getAttribute('data-left')) === '2', 'continue tasks');
   assert.equal(await page.getByTestId('continue-tasks').getByText('left', { exact: false }).count(), 0);
+  // The plan has steps left, so its process stays open beside the button.
+  const planned = page.getByTestId('assistant-msg').nth(3);
+  assert.equal(await planned.getByTestId('process').evaluate((d) => d.open), true, 'plan with work left stays open');
+  await planned.locator('.plan li.todo').first().waitFor();
   results.modelAndDs = 'ok';
   await page.getByTestId('continue-remaining').click();
   await lastTurnDone(5);
@@ -447,6 +451,15 @@ try {
     await until(async () => /step14 /.test(await live.textContent()), 'still streaming');
     assert.ok((await metrics()).gap <= 48, 'follows again after the jump');
     await lastTurnDone(turns + 1);
+    // Done with no plan left: the process folds, its clock stays put and
+    // the reply stays outside it, in view.
+    const proc = live.getByTestId('process');
+    await until(async () => (await proc.evaluate((d) => d.open)) === false, 'process folds once done');
+    const worked = await live.getByTestId('process-summary').textContent();
+    assert.match(worked, /^Worked for \d+:\d\d · 1 step$/);
+    await sleep(1200);
+    assert.equal(await live.getByTestId('process-summary').textContent(), worked, 'the clock is frozen');
+    await live.getByText(/Wrote index\.html \(v\d+\)/).waitFor();
     await list.evaluate((e) => e.scrollTo(0, 0));
     await until(async () => (await metrics()).top === 0, 'scrolled up again');
     await composer.fill('back to the end');

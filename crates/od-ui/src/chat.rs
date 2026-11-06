@@ -55,6 +55,20 @@ pub struct ToolCall {
     pub edited: Option<u64>,
 }
 
+impl ToolCall {
+    /// Whether the row is one the engine adds when the turn ends, to list
+    /// files changed outside the file tools (`od_runtime::turn_files`):
+    /// it comes after the agent's last words and is no step of its work.
+    #[must_use]
+    pub fn is_turn_file_row(&self) -> bool {
+        self.id.starts_with(TURN_FILE_ID) || self.name == MORE_FILES_TOOL
+    }
+}
+
+/// Id prefix of the engine's end-of-turn file rows (`turn-file-1`…,
+/// `turn-file-more`; `od_runtime::turn_files::report`).
+const TURN_FILE_ID: &str = "turn-file";
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Block {
     Text(String),
@@ -549,7 +563,7 @@ impl AssistantTurn {
     pub fn layout(&self) -> TurnLayout {
         let is_step = |b: &Block| match b {
             Block::Thinking(_) => b.shows(),
-            Block::Tool(_) => true,
+            Block::Tool(c) => !c.is_turn_file_row(),
             _ => false,
         };
         let (Some(first), Some(last)) = (
@@ -570,6 +584,7 @@ impl AssistantTurn {
         for b in &self.blocks[first..=last] {
             match b {
                 Block::Error(_) => layout.reply.push(b.clone()),
+                Block::Tool(c) if c.is_turn_file_row() => layout.reply.push(b.clone()),
                 Block::Tool(c) if has_plan && c.name == PLAN_TOOL => {
                     if !planned {
                         planned = true;
@@ -582,6 +597,15 @@ impl AssistantTurn {
         }
         layout.reply.extend(self.blocks[last + 1..].iter().cloned());
         layout
+    }
+
+    /// Whether the turn's process shows open: while the run goes on, when
+    /// it did not succeed, and while its plan has steps left (so the reader
+    /// sees what "Continue remaining tasks" would send).
+    #[must_use]
+    pub fn process_open(&self) -> bool {
+        self.state != TurnState::Succeeded
+            || self.todos.iter().any(|t| t.status != TodoStatus::Completed)
     }
 }
 
@@ -983,6 +1007,78 @@ mod tests {
         );
         assert_eq!(l.steps(), 5, "thinking, plan, three tools; not the words");
         assert_eq!(t.todos[0].status, TodoStatus::Completed, "the latest plan");
+    }
+
+    #[test]
+    fn the_reply_stays_outside_when_the_engine_lists_files_after_it() {
+        // A file made by a command (no file tool): when the turn ends, the
+        // engine adds its own rows after the agent's last words.
+        let mut t = AssistantTurn::new();
+        t.apply(tool("bash", "Bash", json!({"command": "python gen.py"})));
+        t.apply(text("Done: the image is out.png."));
+        t.apply(tool(
+            "turn-file-1",
+            "Write",
+            json!({"file_path": "/p/out.png"}),
+        ));
+        t.apply(tool(
+            "turn-file-more",
+            MORE_FILES_TOOL,
+            json!({"files": 3, "description": "+3 more"}),
+        ));
+        let l = t.layout();
+        assert_eq!(names(&l.process), ["tool:bash"]);
+        assert_eq!(l.steps(), 1, "the engine's rows are no steps");
+        assert_eq!(
+            l.reply.first(),
+            Some(&Block::Text("Done: the image is out.png.".into())),
+            "{:?}",
+            l.reply
+        );
+        assert_eq!(l.reply.len(), 3, "the engine's rows follow the reply");
+        // Should one land between steps, it still goes with the reply.
+        let mut t = AssistantTurn::new();
+        t.apply(tool("bash", "Bash", json!({"command": "make"})));
+        t.apply(tool(
+            "turn-file-1",
+            "Write",
+            json!({"file_path": "/p/a.png"}),
+        ));
+        t.apply(tool("read", "Read", json!({"file_path": "/p/a.png"})));
+        let l = t.layout();
+        assert_eq!(names(&l.process), ["tool:bash", "tool:read"]);
+        assert!(
+            matches!(l.reply.as_slice(), [Block::Tool(c)] if c.id == "turn-file-1"),
+            "{:?}",
+            l.reply
+        );
+        // A turn with only the engine's rows has no process at all.
+        let mut t = AssistantTurn::new();
+        t.apply(text("Rendered."));
+        t.apply(tool(
+            "turn-file-1",
+            "Write",
+            json!({"file_path": "/p/a.mp4"}),
+        ));
+        assert!(t.layout().process.is_empty());
+    }
+
+    #[test]
+    fn the_process_stays_open_while_the_plan_has_work_left() {
+        let mut t = AssistantTurn::new();
+        t.apply(tool("p", PLAN_TOOL, plan_input("in_progress")));
+        assert!(t.process_open(), "running");
+        t.state = TurnState::Succeeded;
+        assert!(t.process_open(), "succeeded, but a step is left");
+        t.apply(tool("p2", PLAN_TOOL, plan_input("completed")));
+        assert!(!t.process_open(), "succeeded with the plan done");
+        t.state = TurnState::Canceled;
+        assert!(t.process_open(), "stopped");
+        let done = AssistantTurn {
+            state: TurnState::Succeeded,
+            ..AssistantTurn::new()
+        };
+        assert!(!done.process_open(), "succeeded without a plan");
     }
 
     #[test]
