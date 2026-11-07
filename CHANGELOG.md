@@ -11,6 +11,11 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Comments: clicking the comment that is already picked scrolls the preview back to its element.
+- Desktop app: a `target="_blank"` web link in a design opens in the system browser instead of doing nothing (QA-054).
+- Use template on a Motion film sets Motion's ratio and length (16:9, 10 s), as the Motion chip does, instead of showing 1:1 and 3 s that were never sent (QA-055).
+- Remix names the project as its template's card reads ("Before and after"), not by the template id (QA-056).
+- Comments on an element taller than the preview: the note box stays inside the preview (QA-057), picking the comment shows the element's top (QA-058), and its pin hides once the element is scrolled away instead of sitting on the top edge (QA-059).
+- The comment note box names its element with spaces between blocks, cut at a word (QA-060).
 
 ## [0.2.0-beta.21] - 2026-11-06
 

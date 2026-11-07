@@ -127,6 +127,11 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
 - **Fix**: in `on_navigation`, hand http(s) URLs off the daemon origin to
   `open_in_browser` and return false (QA-044's first suggestion), or have
   the preview bridge post `_blank` clicks to the host.
+- **Status**: fixed on `main` (the preview bridge posts a keyed
+  `od:open-link` for a real click, the Studio calls the new `open_link`
+  shell command; `on_navigation` still refuses, since handing off there
+  would also open the browser for embedded iframes and script redirects);
+  ships with the next release. Recheck on beta.22.
 
 ## QA-055 🟡 Use template on a Motion film shows ratio 1:1 and 3 s
 
@@ -144,6 +149,10 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   `media.set(MediaOptions::defaults(..))`, which the chip buttons do
   (`home.rs:245`, `home.rs:264`).
 - **Screenshot**: [01-use-template-1x1-3s.png](desktop-beta21/01-use-template-1x1-3s.png).
+- **Status**: fixed on `main` (Use template sets `MediaOptions::defaults`
+  for the chip: 16:9, 10 s, not the film's own 9:16, 12 s, which the
+  template list does not carry); ships with the next release. Recheck on
+  beta.22.
 
 ## QA-056 🔵 Remix names the project after the template id
 
@@ -153,6 +162,9 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   from the gallery (`motion-cafe-menu`, `motion-year-recap` …).
 - **Cause**: the gallery posts `{}`; `templates.rs:317` falls back to
   `entry.info.name` (the id) instead of the display name.
+- **Status**: fixed on `main` (the gallery sends the card's name; the daemon
+  falls back to the English display name); ships with the next release.
+  Recheck on beta.22.
 
 ## QA-057 🔵 The comment box opens below the preview for a tall element
 
@@ -163,6 +175,9 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   edge; the user has to scroll inside the preview to find them.
 - **Expected**: keep the box inside the preview (above the element, or
   pinned to the visible bottom).
+- **Status**: fixed on `main` (the box is pinned to the preview's visible
+  bottom when it would not fit under the element); ships with the next
+  release. Recheck on beta.22.
 
 ## QA-058 🔵 Picking a comment on a tall element hides its top
 
@@ -172,6 +187,8 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   and only "Đoạn văn 1." shows.
 - **Expected**: an element taller than the preview is aligned to its top.
 - **Screenshot**: [10-comment-pick.png](desktop-beta21/10-comment-pick.png).
+- **Status**: fixed on `main` (`od:mark` aligns an element taller than the
+  frame to its top); ships with the next release. Recheck on beta.22.
 
 ## QA-059 🔵 The pin of a comment scrolled out of view parks at the top edge
 
@@ -181,6 +198,8 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
 - **Cause**: `preview_comments.rs:102` clamps the pin's top with
   `(at.y - 10.0).max(0.0)`.
 - **Expected**: hide it, or show it as an "above" marker.
+- **Status**: fixed on `main` (the pin hides); ships with the next release.
+  Recheck on beta.22.
 
 ## QA-060 🔵 The comment target label runs the element's texts together
 
@@ -191,6 +210,8 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   mid-word.
 - **Expected**: spaces between blocks (e.g. `innerText` rather than
   `textContent`), cut at a word.
+- **Status**: fixed on `main` (`od:select` sends `label` (innerText); cut at
+  a word); ships with the next release. Recheck on beta.22.
 
 ## Not bugs (checked)
 
