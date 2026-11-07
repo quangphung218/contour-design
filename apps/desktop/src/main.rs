@@ -479,10 +479,13 @@ const APP_COMMAND_PERMISSIONS: [&str; 9] = [
 
 /// The main window stays on the daemon's origin (and the bundled splash
 /// shown before it); anything else (a link in a design, a redirect) is
-/// refused rather than loaded with the app's IPC.
+/// refused rather than loaded with the app's IPC. A frame's own document
+/// (`about:srcdoc`, `about:blank`) never leaves the app and keeps the
+/// preview's CSP, so a design's `<iframe srcdoc>` loads (QA-062).
 fn allowed_navigation(url: &Url, origin: Option<&str>) -> bool {
     let splash = url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost");
-    splash || origin.is_some_and(|o| url.origin().ascii_serialization() == o)
+    let frame_document = url.scheme() == "about" && matches!(url.path(), "srcdoc" | "blank");
+    splash || frame_document || origin.is_some_and(|o| url.origin().ascii_serialization() == o)
 }
 
 /// A page link meant for a new window (`target="_blank"`, `window.open`):
@@ -1254,7 +1257,17 @@ mod tests {
             None
         ));
         assert!(ok("http://127.0.0.1:50123/api/projects/p1/raw/index.html"));
+        // QA-062: an `<iframe srcdoc>` in a design loads `about:srcdoc`, an
+        // empty frame `about:blank`; neither leaves the app.
+        assert!(ok("about:srcdoc"));
+        assert!(ok("about:blank"));
+        assert!(allowed_navigation(
+            &Url::parse("about:srcdoc").unwrap(),
+            None
+        ));
         for bad in [
+            "about:config",
+            "about:srcdoc/x",
             "http://127.0.0.1:7456/",
             "http://localhost:50123/",
             "https://127.0.0.1:50123/",
