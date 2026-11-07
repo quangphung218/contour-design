@@ -23,6 +23,9 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 
 QA-053 is already fixed on `main` (#91, after the beta.21 tag).
 
+**Recheck on beta.22 (2026-11-07): all 8 verified** (QA-054 on macOS only). How it
+was run and the new bugs found on the way: [bugs-desktop-beta22.md](bugs-desktop-beta22.md).
+
 ## How it was run
 
 Never on the owner's app or data. The installed bundle was copied and the
@@ -108,6 +111,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   next release. Recheck on beta.22.
 - **Screenshots**: [10-comment-pick.png](desktop-beta21/10-comment-pick.png),
   [11-comment-repick-no-scroll.png](desktop-beta21/11-comment-repick-no-scroll.png).
+- **Recheck (beta.22, 2026-11-07)**: verified on beta.22. In the window: comment on section 1 and 10 of a ten-section page, All comments, pick 1, wheel the preview to section 7, pick 1 again: the preview scrolls back to section 1 ([04](desktop-beta22/04-qa053-repick-window.png)); `recheck.mjs` the same (top 0 → −4000 → 0).
 
 ## QA-054 🟠 A `target="_blank"` link inside the design preview does nothing
 
@@ -134,6 +138,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   opening of the same page within 1 s, as Windows and Linux also route the
   click to `on_new_window`); ships with the release after it merges. Recheck
   on beta.22 on macOS, Windows and Linux: one click, one tab.
+- **Recheck (beta.22, 2026-11-07)**: verified on beta.22 (macOS only; Windows and Linux not run). One real click on a `_blank` web link: one hand-off to the browser (opener log) and, with the real opener, one request in Chrome per click (3 spaced clicks, 3 requests). Two clicks 0.7 s apart open once (same-page guard). Page cancels on the link or on window, `mailto:`, same-frame link, script redirect on click or on load, comment mode: nothing opens. Enter on the focused link opens once; Unicode href opens once, encoded. Found while checking: a page's `window.open` with no click opens the browser (QA-061), a `srcdoc` iframe in a design is blank (QA-062), ⌘-click does nothing (QA-063); see [bugs-desktop-beta22.md](bugs-desktop-beta22.md).
 
 ## QA-055 🟡 Use template on a Motion film shows ratio 1:1 and 3 s
 
@@ -155,6 +160,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   the chip: 16:9, 10 s, not the film's own 9:16, 12 s, which the template
   list does not carry); ships with the release after it merges. Recheck on
   beta.22.
+- **Recheck (beta.22, 2026-11-07)**: verified on beta.22: Use template on App feature tour (9:16) shows 16:9 and 10s, Motion's defaults, not 1:1 and 3s ([13](desktop-beta22/13-qa055-use-template.png)). The film's own 9:16, 12 s is still not shown (as the fix says, the template list does not carry it).
 
 ## QA-056 🔵 Remix names the project after the template id
 
@@ -167,6 +173,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
 - **Status**: fixed in #94 (the gallery sends the card's name; the daemon
   falls back to the English display name); ships with the release after it
   merges. Recheck on beta.22.
+- **Recheck (beta.22, 2026-11-07)**: verified on beta.22: Remix of Before and after makes a project named "Before and after" (in the API and on Projects).
 
 ## QA-057 🔵 The comment box opens below the preview for a tall element
 
@@ -180,6 +187,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
 - **Status**: fixed in #94 (the box is pinned to the preview's visible
   bottom when it would not fit under the element); ships with the release
   after it merges. Recheck on beta.22.
+- **Recheck (beta.22, 2026-11-07)**: verified on beta.22: on a 2000 px section the box's Add comment ends at 760, inside the preview (bottom 785); in the window, the box for `<html>` sits at the preview's visible bottom ([03](desktop-beta22/03-comment-mode-link-picks.png) shows the `<a>` case).
 
 ## QA-058 🔵 Picking a comment on a tall element hides its top
 
@@ -192,6 +200,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
 - **Status**: fixed in #94 (`od:mark` aligns an element taller than the
   frame to its top); ships with the release after it merges. Recheck on
   beta.22.
+- **Recheck (beta.22, 2026-11-07)**: verified on beta.22: picking the comment on a 2000 px section aligns its top to the preview's top (0), heading visible ([12](desktop-beta22/12-qa058-tall-pick.png)).
 
 ## QA-059 🔵 The pin of a comment scrolled out of view parks at the top edge
 
@@ -203,6 +212,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
 - **Expected**: hide it, or show it as an "above" marker.
 - **Status**: fixed in #94 (the pin hides); ships with the release after it
   merges. Recheck on beta.22.
+- **Recheck (beta.22, 2026-11-07)**: verified on beta.22: section 1 scrolled out of view, no pin shows, in Chromium and in the window ([05](desktop-beta22/05-qa059-pin-hidden-window.png)).
 
 ## QA-060 🔵 The comment target label runs the element's texts together
 
@@ -215,6 +225,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   `textContent`), cut at a word.
 - **Status**: fixed in #94 (`od:select` sends `label` (innerText); cut at a
   word); ships with the release after it merges. Recheck on beta.22.
+- **Recheck (beta.22, 2026-11-07)**: verified on beta.22: the label reads "<section> Mục 1 — Tiêu đề có dấu Đoạn văn 1. Link…" (spaced, cut at a word); in the window "<html> A plain blank link B page cancels on the…".
 
 ## Not bugs (checked)
 
