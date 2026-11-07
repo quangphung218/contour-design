@@ -227,9 +227,7 @@ pub fn raw_url(ctx: StudioCtx, path: &str) -> String {
 
 /// Opens a project file in a new browser tab (or window).
 pub fn open_in_new_tab(ctx: StudioCtx, path: &str) {
-    if let Some(w) = web_sys::window() {
-        let _ = w.open_with_url_and_target(&raw_url(ctx, path), "_blank");
-    }
+    super::desktop::open_new_window(&raw_url(ctx, path), "_blank", "");
 }
 
 /// Saves a project file through the browser's download.

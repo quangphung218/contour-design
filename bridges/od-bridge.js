@@ -492,22 +492,75 @@
 
   // ---------------------------------------------------------------------
   // New-window links: the desktop app refuses any navigation off the app,
-  // this frame's included, so a `target="_blank"` web link did nothing
-  // there (QA-054). The bridge names the link to the host, which hands it
-  // to the system browser on desktop (a browser opens its own tab). Only a
-  // real plain click the page left alone, keyed: a page script can neither
-  // fake the click nor post the message.
+  // this frame's included, and opens no new window itself (QA-061), so a
+  // `target="_blank"` web link did nothing there (QA-054). The bridge names
+  // the link to the host, which hands it to the system browser on desktop
+  // (a browser opens its own tab). Only a real click the page left alone,
+  // keyed: a page script can neither fake the click nor post the message.
+  // A ⌘ / Ctrl-click opens any web link, as in a browser (QA-063); the
+  // page's `window.open` counts only in its handler of a real click or key
+  // (QA-061).
   // ---------------------------------------------------------------------
+  function webAddress(href) {
+    return /^https?:\/\//i.test(href) ? href : null;
+  }
+
   function newWindowLink(e) {
     if (!e.isTrusted || e.defaultPrevented || e.button !== 0) return null;
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return null;
+    if (e.shiftKey || e.altKey) return null;
     var el = e.target;
     while (el && el.nodeType !== 1) el = el.parentNode;
-    var a = el && el.closest ? el.closest('a[href][target]') : null;
+    var a = el && el.closest ? el.closest('a[href]') : null;
     if (!a || a.hasAttribute('download')) return null;
-    if (String(a.getAttribute('target')).toLowerCase() !== '_blank') return null;
-    var href = a.href;
-    return /^https?:\/\//i.test(href) ? href : null;
+    var newTab = e.metaKey || e.ctrlKey;
+    if (!newTab && String(a.getAttribute('target')).toLowerCase() !== '_blank') return null;
+    return webAddress(a.href);
+  }
+
+  // Whether the page runs `window.open` inside its handler of the user's
+  // own click or key in this frame, and that event has not opened a tab
+  // yet: one real event opens at most one tab, as a browser's popup
+  // blocker allows, and a held key's repeats open none. Not
+  // `navigator.userActivation`: a click on the host (the reload button, a
+  // file) can activate the frame too, and a page's timer then opened the
+  // browser on load. `window.event` is replaceable and prototypes are the
+  // page's to change, so what the check reads is taken now, before any
+  // page script runs; `isTrusted` is unforgeable.
+  var userEvent = (function () {
+    try {
+      var bind = Function.prototype.bind;
+      var callOf = function (fn) {
+        return bind.call(Function.prototype.call, fn);
+      };
+      var currentEvent = bind.call(Object.getOwnPropertyDescriptor(window, 'event').get, window);
+      var typeOf = callOf(Object.getOwnPropertyDescriptor(Event.prototype, 'type').get);
+      var repeatOf = callOf(Object.getOwnPropertyDescriptor(KeyboardEvent.prototype, 'repeat').get);
+      var spentHas = callOf(WeakSet.prototype.has);
+      var spentAdd = callOf(WeakSet.prototype.add);
+      var spent = new WeakSet();
+      var kinds = Object.create(null);
+      kinds.click = kinds.auxclick = kinds.mouseup = kinds.pointerup = 1;
+      kinds.touchend = kinds.keydown = kinds.keyup = 1;
+      return function () {
+        var ev = currentEvent();
+        if (!ev || ev.isTrusted !== true) return false;
+        var type = typeOf(ev);
+        if (kinds[type] !== 1) return false;
+        if ((type === 'keydown' || type === 'keyup') && repeatOf(ev)) return false;
+        if (spentHas(spent, ev)) return false;
+        spentAdd(spent, ev);
+        return true;
+      };
+    } catch (_) {
+      // No such getters: the page's window.open opens nothing.
+      return function () {
+        return false;
+      };
+    }
+  })();
+
+  function openLink(href) {
+    postKeyed({ type: 'od:open-link', key: EDIT_KEY, href: href });
   }
 
   // A window listener the page adds after this one runs after it, so
@@ -517,9 +570,24 @@
     var href = newWindowLink(e);
     if (!href) return;
     later(function () {
-      if (!e.defaultPrevented) postKeyed({ type: 'od:open-link', key: EDIT_KEY, href: href });
+      if (!e.defaultPrevented) openLink(href);
     });
   });
+
+  var nativeOpen = window.open;
+  if (typeof nativeOpen === 'function') {
+    window.open = function (url) {
+      var opened = nativeOpen.apply(this, arguments);
+      if (EDIT_KEY && url != null && String(url) !== '' && userEvent()) {
+        var href = null;
+        try {
+          href = webAddress(new URL(String(url), document.baseURI).href);
+        } catch (_) {}
+        if (href) openLink(href);
+      }
+      return opened;
+    };
+  }
 
   // ---------------------------------------------------------------------
   // Selection: hover and click elements for comments and inspect. Elements

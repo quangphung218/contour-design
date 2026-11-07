@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:18px system-ui;background:#fff}
+a.b{display:block;margin:6px 10px;padding:14px;border:2px solid #333;height:22px;color:#036;text-decoration:none}
+iframe{border:2px dashed #999;margin:4px 10px;display:block}
+</style></head><body>
+<a class="b" id="out" href="http://127.0.0.1:58990/plain" target="_blank" rel="noopener">A plain blank link</a>
+<a class="b" id="kept" href="http://127.0.0.1:58990/kept" target="_blank">B page cancels on the link</a>
+<a class="b" id="late" href="http://127.0.0.1:58990/late" target="_blank">C page cancels on window</a>
+<a class="b" id="mail" href="mailto:a@example.com" target="_blank">D mailto blank</a>
+<a class="b" id="self" href="http://127.0.0.1:58990/self">E same-frame link</a>
+<a class="b" id="vn" href="http://127.0.0.1:58990/tiếng-việt?q=đà nẵng&e=🎉" target="_blank">F unicode href</a>
+<iframe id="child" width="600" height="70" srcdoc='<a id="inner" style="font:18px system-ui" href="http://127.0.0.1:58990/inner" target="_blank">G link in a nested iframe</a>'></iframe>
+<iframe id="emb" width="600" height="40" src="http://127.0.0.1:58990/embedded"></iframe>
+<a class="b" id="btnredir" href="#" onclick="setTimeout(function(){location.href='http://127.0.0.1:58990/redirect-click'},0);return false;">H script redirect on click</a>
+<a class="b" id="wo" href="#" onclick="window.open('http://127.0.0.1:58990/winopen-click');return false;">I window.open on click</a>
+<script>
+document.getElementById('kept').addEventListener('click',function(e){e.preventDefault()});
+setTimeout(function(){window.addEventListener('click',function(e){if(e.target.id==='late')e.preventDefault()})},500);
+setTimeout(function(){try{window.open('http://127.0.0.1:58990/winopen-load')}catch(e){}},1500);
+setTimeout(function(){location.href='http://127.0.0.1:58990/redirect-load'},3000);
+</script>
+</body></html>

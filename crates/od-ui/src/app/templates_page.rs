@@ -344,11 +344,7 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
     };
     let open_tab = {
         let src = src.clone();
-        move |_| {
-            if let Some(w) = web_sys::window() {
-                let _ = w.open_with_url_and_target(&src, "_blank");
-            }
-        }
+        move |_| super::desktop::open_new_window(&src, "_blank", "")
     };
     let save_html = {
         let src = src.clone();
