@@ -92,7 +92,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn web_links_for_a_new_window_go_through_window_open() {
+    fn web_links_for_a_new_window_go_to_the_shell() {
         assert!(opens_in_new_window(
             "https://developers.openai.com/codex/cli",
             "_blank"
