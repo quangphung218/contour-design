@@ -104,6 +104,9 @@ noted; "opens" is the count in the opener log.
 - **Evidence**: opener log, one line per load:
   `http://127.0.0.1:58990/winopen-load`; ten lines
   `loop-1` … `loop-10` within 1.9 s for the loop page.
+- **Status**: fixed in #98 (the window opens no new window itself; the
+  app's links go through `open_link`, a design's `window.open` only from its
+  handler of a real click or key, via the bridge).
 
 ## QA-062 🟠 A `srcdoc` iframe in a design is blank in the desktop app
 
@@ -121,6 +124,9 @@ noted; "opens" is the count in the opener log.
   frame's first load is refused.
 - **Fix**: let `about:srcdoc` and `about:blank` through `on_navigation`
   (they never leave the app; the preview's CSP still applies to them).
+- **Status**: fixed in #98. A `_blank` link inside the srcdoc frame (case
+  G) shows but does not open: the sandboxed nested frame has its own
+  origin, out of the bridge's reach.
 
 ## QA-063 🔵 ⌘-click on a `_blank` link in the preview does nothing
 
@@ -134,6 +140,7 @@ noted; "opens" is the count in the opener log.
   posted, and the native side refuses the navigation.
 - **Fix**: accept ⌘ (and Ctrl on Windows/Linux) clicks on web links,
   `_blank` or not, in `newWindowLink`.
+- **Status**: fixed in #98.
 
 ## Not bugs (checked)
 
