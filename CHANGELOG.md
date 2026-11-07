@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.23] - 2026-11-08
+
 ### Fixed
 
 - Desktop app: a design's `window.open` no longer opens the system browser on its own, on every load of the preview; only one the user's click or key runs does. The window opens no new window itself; the app's own links go through the shell (QA-061).
@@ -1048,7 +1050,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.22...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.23...HEAD
+[0.2.0-beta.23]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.22...v0.2.0-beta.23
 [0.2.0-beta.22]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.21...v0.2.0-beta.22
 [0.2.0-beta.21]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.20...v0.2.0-beta.21
 [0.2.0-beta.20]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.19...v0.2.0-beta.20
