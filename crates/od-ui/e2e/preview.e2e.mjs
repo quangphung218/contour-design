@@ -402,8 +402,10 @@ document.getElementById('mail').addEventListener('click', (e) => e.preventDefaul
   await deskFrame.locator('#same').click();
   await deskFrame.locator('#mail').click();
   // A click a page script makes is not the user's.
+  const realClicks = (await opened()).length;
   await deskFrame.locator('#out').evaluate((a) => a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
   await sleep(400);
+  assert.equal((await opened()).length, realClicks, 'a synthetic click asks nothing');
   assert.ok((await opened()).every((c) => c === 'open_link https://example.com/p1'), `opened: ${await opened()}`);
   await deskContext.close();
   results.blankLinks = 'a real click on a _blank web link asks the shell; page-cancelled, same-frame, mailto and synthetic clicks do not';
