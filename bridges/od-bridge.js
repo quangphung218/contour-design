@@ -571,12 +571,16 @@
       var armed = null;
       // `blurs` when it armed.
       var armedAt = 0;
+      // Presses armed so far, and which of them the last spend took.
+      var arms = 0;
+      var spentArms = -1;
       var arm = function (e) {
         if (e.isTrusted !== true) return;
         var type = typeOf(e);
         if (type === 'keydown' && repeatOf(e)) return;
         armed = type === 'keydown' ? 'key' : 'pointer';
         armedAt = blurs;
+        arms++;
       };
       window.addEventListener('pointerdown', arm, true);
       window.addEventListener('touchstart', arm, { capture: true, passive: true });
@@ -613,9 +617,10 @@
         });
       };
       // Not once focus has left the frame since the key went down (a
-      // dialog in the link's own handler, before this listener spent it).
+      // dialog in the link's own handler, before this listener spent it),
+      // nor over a newer press.
       restoreGesture = function (by) {
-        if (by === 'key' && armedAt === blurs) armed = by;
+        if (by === 'key' && armedAt === blurs && arms === spentArms) armed = by;
       };
       // What it spent: 'key' or 'pointer' (the press), 'link' (the press a
       // link held); false when none.
@@ -632,6 +637,7 @@
         if (armed) {
           var by = armed;
           armed = null;
+          spentArms = arms;
           return by;
         }
         if (pendingLink === ev) {
