@@ -16,8 +16,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // A native dialog of the app (NSAlert, WebView2's) can take focus from
 // the window; headless browsers' do not, so the frame's dialogs move focus
-// to the host before they return, as the bridge sees them (D1, D2).
-const dialogShim = `['alert', 'confirm'].forEach((name) => {
+// to the host before they return, as the bridge sees them (D1-D3, X1, X2).
+const dialogShim = `['alert', 'confirm', 'prompt'].forEach((name) => {
   const real = window[name];
   window[name] = function () { const r = real.apply(window, arguments); parent.document.getElementById('away').focus(); return r; };
 });`;
@@ -35,7 +35,10 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <p><span id="dr" draggable="true" style="display:inline-block;padding:8px;background:#ccc">S3: drag me</span>
 <span id="dz" style="display:inline-block;padding:8px;margin-left:200px;background:#eee">drop here</span></p>
 <p><button id="gone">P1: goes away on pointerdown</button></p>
-<p><button id="dlgc">D1: click confirms, then opens</button> <button id="dlga">D2: click alerts, then opens</button></p>
+<p><button id="dlgc">D1: click confirms, then opens</button> <button id="dlga">D2: click alerts, then opens</button>
+<button id="dlgp">D3: click prompts, then opens</button></p>
+<p><input id="dk" value="X1: Enter alerts on keydown"> <a id="cc" href="https://example.com/x2-link" target="_blank">X2: the page confirms, then cancels the link</a>
+<a id="ce2" href="https://example.com/x3-link" target="_blank">X3: the link confirms, the page cancels it</a></p>
 <p><input id="stray" value="any keyup opens"></p>
 <p id="idle">idle</p>
 <script>
@@ -49,12 +52,17 @@ on('dz', 'dragover', (e) => e.preventDefault());
 on('gone', 'pointerdown', (e) => e.target.remove());
 on('dlgc', 'click', () => { if (confirm('open?')) window.open('https://example.com/d1-open'); });
 on('dlga', 'click', () => { alert('opening'); window.open('https://example.com/d2-open'); });
+on('dlgp', 'click', () => { if (prompt('name?') !== null) window.open('https://example.com/d3-open'); });
+on('ce2', 'click', () => confirm('sure?'));
+on('dk', 'keydown', (e) => { if (e.key === 'Enter') alert('saved'); });
 on('stray', 'keyup', () => window.open('https://example.com/stray'));
 on('kb2', 'keyup', (e) => { if (e.key === 'Enter') { window.open('about:blank'); window.open('https://example.com/kb2-open'); } });
 // Window listeners run after the bridge's own.
 window.addEventListener('click', (e) => {
   if (e.target.id === 'openfirst') { window.open('https://example.com/of-open'); e.preventDefault(); }
   if (e.target.id === 'wincancel') e.preventDefault();
+  if (e.target.id === 'ce2') e.preventDefault();
+  if (e.target.id === 'cc') { confirm('leave?'); e.preventDefault(); }
   if (e.target.id === 'blankfirst') { e.preventDefault(); window.open('about:blank'); window.open('https://example.com/bf-open'); }
 });
 </script></body></html>`;
@@ -89,6 +97,14 @@ const cases = [
   // The dialog's blur does not take the press from the open after it.
   ['D1', ['d1-open'], (f) => f.locator('#dlgc').click()],
   ['D2', ['d2-open'], (f) => f.locator('#dlga').click()],
+  ['D3', ['d3-open'], (f) => f.locator('#dlgp').click()],
+  // A dialog that took focus ends the press once it returns: the key's
+  // keyup fell on the dialog, so a stray keyup after it opens nothing,
+  // whether the dialog ran in keydown (X1) or in a cancelled link's click
+  // (X2, X3: no press given back).
+  ['X1', [], async (f, page) => { await enter(f, page, '#dk'); await sleep(100); await strayKeyup(f, page); }],
+  ['X2', [], async (f, page) => { await enter(f, page, '#cc'); await sleep(100); await strayKeyup(f, page); }],
+  ['X3', [], async (f, page) => { await enter(f, page, '#ce2'); await sleep(100); await strayKeyup(f, page); }],
 ];
 
 // A trusted keyup with no keydown before it, in the frame.
