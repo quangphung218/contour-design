@@ -262,27 +262,48 @@ mod tests {
 
     #[test]
     fn a_pin_scrolled_above_the_frame_hides() {
-        assert_eq!(pin_style(&rect(100.0, 50.0)).as_deref(), Some("left:310px;top:90px"));
+        assert_eq!(
+            pin_style(&rect(100.0, 50.0)).as_deref(),
+            Some("left:310px;top:90px")
+        );
         // Partly shown: the pin stays on the frame's top edge.
-        assert_eq!(pin_style(&rect(-40.0, 100.0)).as_deref(), Some("left:310px;top:0px"));
+        assert_eq!(
+            pin_style(&rect(-40.0, 100.0)).as_deref(),
+            Some("left:310px;top:0px")
+        );
         assert_eq!(pin_style(&rect(-500.0, 100.0)), None);
     }
 
     #[test]
     fn the_note_box_stays_inside_the_frame() {
-        assert_eq!(draft_style(&rect(100.0, 50.0), Some(800.0)), "left:20px;top:156px");
+        assert_eq!(
+            draft_style(&rect(100.0, 50.0), Some(800.0)),
+            "left:20px;top:156px"
+        );
         // Taller than the frame: pinned to its visible bottom.
-        assert_eq!(draft_style(&rect(0.0, 2000.0), Some(800.0)), "left:20px;bottom:6px");
-        assert_eq!(draft_style(&rect(700.0, 50.0), Some(800.0)), "left:20px;bottom:6px");
+        assert_eq!(
+            draft_style(&rect(0.0, 2000.0), Some(800.0)),
+            "left:20px;bottom:6px"
+        );
+        assert_eq!(
+            draft_style(&rect(700.0, 50.0), Some(800.0)),
+            "left:20px;bottom:6px"
+        );
         // Frame height unknown: under the element, as before.
-        assert_eq!(draft_style(&rect(0.0, 2000.0), None), "left:20px;top:2006px");
+        assert_eq!(
+            draft_style(&rect(0.0, 2000.0), None),
+            "left:20px;top:2006px"
+        );
     }
 
     #[test]
     fn the_note_box_label_cuts_at_a_word() {
         assert_eq!(draft_label("h1", "Hello tea"), "<h1> Hello tea");
         assert_eq!(
-            draft_label("section", "Mục 1 — Tiêu đề có dấu Đoạn văn 1. Link ngắn gọn"),
+            draft_label(
+                "section",
+                "Mục 1 — Tiêu đề có dấu Đoạn văn 1. Link ngắn gọn"
+            ),
             "<section> Mục 1 — Tiêu đề có dấu Đoạn văn 1. Link…"
         );
         // One long word: cut where it must.
