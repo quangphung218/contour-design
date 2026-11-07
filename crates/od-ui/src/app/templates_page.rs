@@ -313,15 +313,17 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
     };
     let remix = {
         let id = id.clone();
+        let name = name.clone();
         let navigate = navigate.clone();
         move |_| {
             let id = id.clone();
+            let name = name.clone();
             let navigate = navigate.clone();
             busy.set(true);
             leptos::task::spawn_local(async move {
                 match api::post::<_, Value>(
                     &format!("/api/design-templates/{}/remix", api::seg(&id)),
-                    &json!({}),
+                    &json!({ "name": name }),
                 )
                 .await
                 {

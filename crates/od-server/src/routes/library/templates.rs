@@ -314,7 +314,18 @@ pub async fn remix(
     let html = tokio::fs::read(&example)
         .await
         .map_err(|e| ApiErr::internal(e.to_string()))?;
-    let name = non_empty(body.name).unwrap_or_else(|| entry.info.name.clone());
+    // Named as the card reads (QA-056): the UI sends it in its language;
+    // without one, the English display name, then the id.
+    let name = non_empty(body.name)
+        .or_else(|| {
+            entry
+                .info
+                .display_name
+                .as_ref()
+                .and_then(|m| m.get("en"))
+                .cloned()
+        })
+        .unwrap_or_else(|| entry.info.name.clone());
     let kind = kind_of(&entry);
     let skill_id = entry.info.id.clone();
     let (project, conversation_id) = state

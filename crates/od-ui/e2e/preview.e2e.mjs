@@ -354,6 +354,115 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   await frame.getByText('Preview stopped: the page kept reloading itself.').waitFor({ timeout: 15_000 });
   results.mintedKeyLoop = 'stopped';
 
+  // 4c. QA-054: in the desktop app a `target="_blank"` web link in the
+  // design opens in the system browser. The shell refuses the frame's own
+  // navigation, so the bridge tells the host, which asks the shell
+  // (`open_link`). Only a real click the page left alone, and only web
+  // links. The shell's IPC is a stub here; a context of its own blocks the
+  // popups Chromium opens without counting them as the design's requests.
+  await write('links.html', `<!doctype html><html><body style="font:18px system-ui">
+<p><a id="out" href="https://example.com/p1" target="_blank" rel="noopener">Out</a></p>
+<p><a id="kept" href="https://example.com/kept" target="_blank">Kept by the page</a></p>
+<p><a id="same" href="https://example.com/same">Same frame</a></p>
+<p><a id="mail" href="mailto:a@example.com" target="_blank">Mail</a></p>
+<p><a id="late" href="https://example.com/late" target="_blank">Cancelled on window</a></p>
+<script>
+// Added after the bridge's own window listener: runs after it.
+window.addEventListener('click', (e) => { if (e.target.id === 'late') e.preventDefault(); });
+document.getElementById('kept').addEventListener('click', (e) => e.preventDefault());
+document.getElementById('same').addEventListener('click', (e) => e.preventDefault());
+document.getElementById('mail').addEventListener('click', (e) => e.preventDefault());
+</script></body></html>`);
+  const deskContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await deskContext.route('**/*', (route) => {
+    const url = new URL(route.request().url());
+    return url.hostname === '127.0.0.1' || ['data:', 'blob:', 'about:'].includes(url.protocol) ? route.continue() : route.abort();
+  });
+  const desk = await deskContext.newPage();
+  desk.on('popup', (p) => p.close().catch(() => {}));
+  await desk.addInitScript(() => {
+    if (window.top !== window) return;
+    window.__shellCalls = [];
+    window.__TAURI_INTERNALS__ = {
+      invoke: async (cmd, args = {}) => {
+        window.__shellCalls.push(args && args.url ? `${cmd} ${args.url}` : cmd);
+        return null;
+      },
+    };
+  });
+  await desk.goto(`${BASE}/projects/${pid}`);
+  await desk.locator('[data-testid="file-row"][data-path="links.html"]').click();
+  const deskFrame = desk.frameLocator('iframe[data-testid="preview"]');
+  await deskFrame.locator('#out').waitFor();
+  const opened = () => desk.evaluate(() => window.__shellCalls.filter((c) => c.startsWith('open_link')));
+  // The host takes the frame's edit key right after the load; a click
+  // before that is not trusted, so click until one is.
+  await until(async () => {
+    await deskFrame.locator('#out').click();
+    return (await opened()).length > 0;
+  }, 'a _blank web link goes to the shell', 15_000);
+  await deskFrame.locator('#kept').click();
+  await deskFrame.locator('#same').click();
+  await deskFrame.locator('#mail').click();
+  await deskFrame.locator('#late').click();
+  await sleep(400);
+  // A click a page script makes is not the user's.
+  const realClicks = (await opened()).length;
+  await deskFrame.locator('#out').evaluate((a) => a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+  await sleep(400);
+  assert.equal((await opened()).length, realClicks, 'a synthetic click asks nothing');
+  // Nor does a message the page posts itself, without the frame's key or
+  // with a made-up one.
+  await deskFrame.locator('body').evaluate(() => {
+    parent.postMessage({ type: 'od:open-link', href: 'https://example.com/forged' }, '*');
+    parent.postMessage({ type: 'od:open-link', key: 'made-up', href: 'https://example.com/forged' }, '*');
+  });
+  await sleep(400);
+  assert.equal((await opened()).length, realClicks, 'a page-made od:open-link asks nothing');
+  assert.ok((await opened()).every((c) => c === 'open_link https://example.com/p1'), `opened: ${await opened()}`);
+  await deskContext.close();
+  results.blankLinks = 'a real click on a _blank web link asks the shell; page-cancelled (also on window, after the bridge), same-frame, mailto, synthetic clicks and unkeyed messages do not';
+
+  // 4d. Comments on a page taller than the preview (QA-057 … QA-060).
+  await write('tall.html', `<!doctype html><html><body style="margin:0;font:18px system-ui">
+<section id="s1" style="height:2000px;padding:16px"><h2>Mục 1 — Tiêu đề có dấu</h2><p>Đoạn văn 1.</p><a href="#">Link ngắn gọn</a></section>
+<section id="s2" style="height:2000px;padding:16px"><h2>Mục 2</h2><p>Đoạn văn 2.</p></section>
+</body></html>`);
+  await row('tall.html').click();
+  await frame.locator('#s2').waitFor();
+  await page.getByTestId('comment-mode').click();
+  await sleep(150);
+  await frame.locator('#s1').click({ position: { x: 300, y: 300 } });
+  const draft = page.getByTestId('comment-draft');
+  await draft.waitFor();
+  // QA-060: the label keeps the blocks apart and cuts at a word.
+  const label = await draft.locator('span.muted').first().textContent();
+  assert.match(label, /^<section> Mục 1 — Tiêu đề có dấu Đoạn văn 1\./, `label: ${label}`);
+  assert.doesNotMatch(label, /Link ng$/, `label cut mid-word: ${label}`);
+  // QA-057: the box stays inside the preview for an element taller than it.
+  const tallFrame = await page.getByTestId('preview').boundingBox();
+  const addBox = await page.getByTestId('comment-add').boundingBox();
+  assert.ok(addBox.y + addBox.height <= tallFrame.y + tallFrame.height, `Add comment below the preview: ${addBox.y + addBox.height} > ${tallFrame.y + tallFrame.height}`);
+  await page.getByTestId('comment-note').fill('Tall one');
+  await page.getByTestId('comment-add').click();
+  await page.getByTestId('comment-pin').first().waitFor();
+  // QA-059: the pin of a comment scrolled out of view does not sit on top
+  // of what is shown there.
+  await frame.locator('#s2').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await until(async () => !(await page.getByTestId('comment-pin').first().isVisible()), 'the pin of a comment scrolled away hides');
+  // QA-058: picking a comment on an element taller than the preview shows
+  // its top, not its middle.
+  await page.getByTestId('comment-mode').click();
+  const tallItem = page.getByTestId('comment-item').filter({ hasText: 'Tall one' });
+  await tallItem.locator('.comment-item-main').click();
+  await until(async () => {
+    const top = await frame.locator('#s1').evaluate((el) => el.getBoundingClientRect().top);
+    return Math.abs(top) < 2;
+  }, 'the pick aligns a tall element to its top');
+  await page.getByTestId('comment-pin').first().waitFor();
+  await tallItem.getByTestId('comment-resolve').click();
+  results.tallComments = 'label spaced and cut at a word, box inside the preview, off-screen pin hidden, tall pick shows the top';
+
   // 5. Recovery tip: the daemon goes away, the Studio says it is
   // reconnecting and keeps what it shows; back up, the tip goes.
   // A crash, not a shutdown: a graceful stop waits on the open streams.

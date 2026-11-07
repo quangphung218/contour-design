@@ -491,6 +491,37 @@
   });
 
   // ---------------------------------------------------------------------
+  // New-window links: the desktop app refuses any navigation off the app,
+  // this frame's included, so a `target="_blank"` web link did nothing
+  // there (QA-054). The bridge names the link to the host, which hands it
+  // to the system browser on desktop (a browser opens its own tab). Only a
+  // real plain click the page left alone, keyed: a page script can neither
+  // fake the click nor post the message.
+  // ---------------------------------------------------------------------
+  function newWindowLink(e) {
+    if (!e.isTrusted || e.defaultPrevented || e.button !== 0) return null;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return null;
+    var el = e.target;
+    while (el && el.nodeType !== 1) el = el.parentNode;
+    var a = el && el.closest ? el.closest('a[href][target]') : null;
+    if (!a || a.hasAttribute('download')) return null;
+    if (String(a.getAttribute('target')).toLowerCase() !== '_blank') return null;
+    var href = a.href;
+    return /^https?:\/\//i.test(href) ? href : null;
+  }
+
+  // A window listener the page adds after this one runs after it, so
+  // whether the page cancelled the click is read once dispatch is over.
+  window.addEventListener('click', function (e) {
+    if (!EDIT_KEY) return;
+    var href = newWindowLink(e);
+    if (!href) return;
+    later(function () {
+      if (!e.defaultPrevented) postKeyed({ type: 'od:open-link', key: EDIT_KEY, href: href });
+    });
+  });
+
+  // ---------------------------------------------------------------------
   // Selection: hover and click elements for comments and inspect. Elements
   // are named by the nearest `data-od-id`, else by a structural selector.
   // ---------------------------------------------------------------------
@@ -557,6 +588,16 @@
     return out.replace(/\s+/g, ' ').trim().slice(0, 160);
   }
 
+  // The text as laid out, for a label: blocks apart (QA-060), where
+  // `plainText` runs them together as the source check reads them.
+  function labelText(el) {
+    var text = '';
+    try {
+      text = el.innerText || '';
+    } catch (_) {}
+    return String(text).replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+
   function describe(el) {
     var r = el.getBoundingClientRect();
     return {
@@ -621,7 +662,9 @@
     if (!el) return;
     e.preventDefault();
     e.stopPropagation();
-    post('od:select', describe(el));
+    var picked = describe(el);
+    picked.label = labelText(el);
+    post('od:select', picked);
   }, true);
 
   // ---------------------------------------------------------------------
@@ -696,7 +739,9 @@
     }
     if (marked && scroll) {
       try {
-        marked.scrollIntoView({ block: 'center', inline: 'nearest' });
+        // Taller than the frame: its top, not its middle (QA-058).
+        var tall = marked.getBoundingClientRect().height > window.innerHeight;
+        marked.scrollIntoView({ block: tall ? 'start' : 'center', inline: 'nearest' });
       } catch (_) {}
     }
     drawMark();

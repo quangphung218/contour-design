@@ -13,6 +13,7 @@ const APP_COMMANDS: &[&str] = &[
     "install_update",
     "cancel_update",
     "restart_app",
+    "open_link",
 ];
 
 fn main() {

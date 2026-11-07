@@ -6,7 +6,9 @@
 
 use super::api;
 use super::bridge;
+use super::desktop;
 use super::icons::{Glyph, icon};
+use super::native_shell;
 use super::studio::{StudioCtx, is_html_path};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{
@@ -544,6 +546,13 @@ impl StudioCtx {
                 }
             }
             BridgeMsg::SnapshotResult(s) => tools.snapshot.set(Some(s.clone())),
+            BridgeMsg::OpenLink { key, href } => {
+                if keyed(key.as_deref(), tools.edit_key.get_value().as_deref())
+                    && native_shell::opens_in_new_window(href, "_blank")
+                {
+                    desktop::open_link(href);
+                }
+            }
             _ => return false,
         }
         true

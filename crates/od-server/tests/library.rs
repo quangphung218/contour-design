@@ -506,6 +506,10 @@ async fn contour_examples_preview_and_remix() {
         .await;
         assert_eq!(s, 200, "{id}: {v}");
         assert_eq!(v["project"]["skillId"], id.as_str());
+        // Named as its card reads, not by its id (QA-056).
+        if let Some(en) = data["en_name"].as_str() {
+            assert_eq!(v["project"]["name"], en, "{id}");
+        }
         let kind = if mode == "deck" { "deck" } else { "prototype" };
         assert_eq!(v["project"]["metadata"]["kind"], kind, "{id}");
         let pid = v["project"]["id"].as_str().unwrap();

@@ -402,6 +402,19 @@ round 4 in bugs.md for how a real pass is done); a film between 200 MB
 minus the multipart overhead and 200 MB, where the composer admits the
 file and the upload's 200 MiB body limit may refuse it.
 
+## 17. Desktop app beta.21 (manual, [bugs-desktop-beta21.md](bugs-desktop-beta21.md))
+
+The beta.21 features on the packaged app: the 13 new Motion templates
+(Use template, Remix, Studio preview, Export ▸ MP4 size and length), a chat
+turn as one timed task (clock while running, frozen after, across a
+reload; reply and files outside), comments (add, pick, pick again scrolls
+back, Retry after a failed reload), ⌘W and the red button hiding the window
+and the Dock bringing it back (also from full screen and during a run),
+`target="_blank"` links in the app and in the preview, Help ▸ Check for
+Updates. Each row there has its priority (P0 main flow, P1 common error
+path, P2 edge) and result; the parts that need no native window have
+Playwright scripts in `desktop-beta21/` run against the app's own daemon.
+
 ## Not automated, and why
 
 - **Desktop shell (Tauri)**: native menus, Cmd+O folder dialog, Finder

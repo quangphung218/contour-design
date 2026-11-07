@@ -36,6 +36,12 @@ pub fn post(frame: &HtmlIFrameElement, msg: &serde_json::Value) {
     }
 }
 
+/// The live preview frame's height in CSS pixels, the frame's own (the
+/// zoom scales it as a whole), as the bridge's rects measure.
+pub fn main_frame_height() -> Option<f64> {
+    frame(MAIN_FRAME).map(|f| f64::from(f.client_height()))
+}
+
 pub fn post_main(msg: &serde_json::Value) {
     if let Some(f) = frame(MAIN_FRAME) {
         post(&f, msg);

@@ -418,12 +418,18 @@ try {
   await until(async () => (await tpl.count()) < all && (await tpl.count()) > 0, 'type filter');
   await page.getByTestId('tpl-platform-mobile').click();
   await page.getByTestId('tpl-platform-all').click();
+  const cardName = await tpl.first().getAttribute('aria-label');
   await tpl.first().click();
   await page.getByTestId('tpl-preview').waitFor();
   await page.getByTestId('tpl-frame').waitFor();
   const remixed = page.waitForResponse((r) => r.url().includes('/remix'));
   await page.getByTestId('tpl-remix').click();
-  assert.equal((await remixed).status(), 200);
+  const remixRes = await remixed;
+  assert.equal(remixRes.status(), 200);
+  // QA-056: the project is named as the card reads, sent by the gallery in
+  // the UI language (the daemon's fallback is English only).
+  assert.equal(remixRes.request().postDataJSON().name, cardName, 'Remix sends the name on the card');
+  assert.equal((await remixRes.json()).project.name, cardName);
   await page.waitForURL(/\/projects\//);
   await settleStudio(false);
   results.remix = 'ok';
@@ -434,6 +440,17 @@ try {
   await until(async () => (await page.getByTestId('brief').inputValue()).length > 0, 'Use fills the brief');
   await until(async () => (await page.getByTestId('template').inputValue()) !== '', 'Use picks the template');
   results.use = 'ok';
+  // QA-055: Use template on a Motion film sets Motion's options, as the
+  // Motion chip does, not the selects' first options (1:1, 3 s) that were
+  // never sent.
+  await page.goto(BASE + '/templates');
+  await tpl.filter({ hasText: 'App feature tour' }).first().click();
+  await page.getByTestId('tpl-use').click();
+  await page.waitForURL((u) => u.pathname === '/');
+  await until(async () => (await page.getByTestId('template').inputValue()) !== '', 'Use picks the film');
+  assert.equal(await page.getByTestId('media-aspect').inputValue(), '16:9');
+  assert.equal(await page.getByTestId('media-duration').inputValue(), '10');
+  results.useMotion = 'Motion defaults (16:9, 10 s)';
   await page.goto(BASE + '/templates?tab=image');
   await page.getByTestId('prompt-card').first().waitFor();
   await page.getByTestId('prompt-copy').first().click();

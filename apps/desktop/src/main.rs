@@ -212,6 +212,58 @@ fn set_menu_labels(app: AppHandle, labels: MenuLabels) {
     }
 }
 
+/// A `target="_blank"` web link clicked in a design (the preview bridge's
+/// `od:open-link`): the window refuses the frame's own navigation off the
+/// app, so the UI asks for the system browser here (QA-054). Web addresses
+/// only.
+#[tauri::command]
+fn open_link(opened: tauri::State<'_, Arc<LastOpened>>, url: String) -> Result<(), String> {
+    let url = link_to_open(&url).ok_or_else(|| "not a web address".to_owned())?;
+    opened.open(&url);
+    Ok(())
+}
+
+/// The last page handed to the system browser and when. On Windows and
+/// Linux a `_blank` click in the preview reaches `on_new_window` and the
+/// bridge's `open_link` both; the second opening of the same page within
+/// [`SAME_OPEN_WINDOW`] is dropped, so one click opens one tab.
+#[derive(Default)]
+struct LastOpened(Mutex<Option<(Url, std::time::Instant)>>);
+
+const SAME_OPEN_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
+
+impl LastOpened {
+    /// Opens `url` in the browser unless it was just opened.
+    fn open(&self, url: &Url) {
+        let fresh = match self.0.lock() {
+            Ok(mut last) => first_opening(&mut last, url, std::time::Instant::now()),
+            Err(_) => true,
+        };
+        if fresh {
+            open_in_browser(url);
+        }
+    }
+}
+
+/// Whether opening `url` at `now` is not a repeat of `last`; records it.
+fn first_opening(
+    last: &mut Option<(Url, std::time::Instant)>,
+    url: &Url,
+    now: std::time::Instant,
+) -> bool {
+    let repeat = last
+        .as_ref()
+        .is_some_and(|(u, at)| u == url && now.saturating_duration_since(*at) < SAME_OPEN_WINDOW);
+    if !repeat {
+        *last = Some((url.clone(), now));
+    }
+    !repeat
+}
+
+fn link_to_open(url: &str) -> Option<Url> {
+    Url::parse(url).ok().filter(opens_in_browser)
+}
+
 /// Export in the app: the native Save dialog for the file the page made
 /// (request body, name in header `x-file-name`, URI-encoded), so the user
 /// picks the place and the toast names the file really written (QA-048).
@@ -413,7 +465,7 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
 /// `allow-<command>` for each app command (`build.rs` generates them): the
 /// daemon's page is a remote origin to Tauri, which refuses it any app
 /// command without one.
-const APP_COMMAND_PERMISSIONS: [&str; 8] = [
+const APP_COMMAND_PERMISSIONS: [&str; 9] = [
     "allow-pick-folder",
     "allow-set-theme",
     "allow-set-menu-labels",
@@ -422,6 +474,7 @@ const APP_COMMAND_PERMISSIONS: [&str; 8] = [
     "allow-install-update",
     "allow-cancel-update",
     "allow-restart-app",
+    "allow-open-link",
 ];
 
 /// The main window stays on the daemon's origin (and the bundled splash
@@ -872,12 +925,15 @@ fn main() -> anyhow::Result<()> {
     let data_dir = od_server::logs::with_console(DataDir::from_env);
     od_server::logs::init(Some(data_dir.root()));
 
+    let opened = Arc::new(LastOpened::default());
+    let new_window_opened = Arc::clone(&opened);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // Its key: `plugins.updater` in tauri.conf.json. Its own commands
         // stay ungranted; Update now goes through `updater::install_update`.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::UpdateSlot::default())
+        .manage(opened)
         .invoke_handler(tauri::generate_handler![
             pick_folder,
             set_theme,
@@ -886,7 +942,8 @@ fn main() -> anyhow::Result<()> {
             updater::update_support,
             updater::install_update,
             updater::cancel_update,
-            updater::restart_app
+            updater::restart_app,
+            open_link
         ])
         .menu(|app| build_menu(app, &MenuLabels::default()))
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -922,9 +979,9 @@ fn main() -> anyhow::Result<()> {
                     })
                     // The app never opens a second webview: web links go to
                     // the system browser, anything else is dropped.
-                    .on_new_window(|url, _| {
+                    .on_new_window(move |url, _| {
                         if opens_in_browser(&url) {
-                            open_in_browser(&url);
+                            new_window_opened.open(&url);
                         } else {
                             tracing::warn!(%url, "blocked a new window");
                         }
@@ -1072,6 +1129,7 @@ mod tests {
             "install_update",
             "cancel_update",
             "restart_app",
+            "open_link",
         ] {
             assert_eq!(
                 invoke_from(origin, &format!("{origin}/studio"), cmd),
@@ -1382,6 +1440,34 @@ mod tests {
         assert_eq!(file_name_only("../../etc/passwd"), "passwd");
         assert_eq!(file_name_only(r"..\x.png"), "x.png");
         assert_eq!(file_name_only("deck.pptx"), "deck.pptx");
+    }
+
+    #[test]
+    fn one_click_opens_one_tab() {
+        let a = Url::parse("https://example.com/p1").unwrap();
+        let b = Url::parse("https://example.com/p2").unwrap();
+        let t0 = std::time::Instant::now();
+        let ms = std::time::Duration::from_millis;
+        let mut last = None;
+        assert!(first_opening(&mut last, &a, t0));
+        // The same page again right away: the other path of the same click.
+        assert!(!first_opening(&mut last, &a, t0 + ms(300)));
+        // Another page is opened.
+        assert!(first_opening(&mut last, &b, t0 + ms(400)));
+        assert!(first_opening(&mut last, &a, t0 + ms(500)));
+        // The same page clicked again later opens again.
+        assert!(first_opening(&mut last, &a, t0 + ms(1600)));
+    }
+
+    #[test]
+    fn open_link_takes_web_addresses_only() {
+        assert_eq!(
+            link_to_open("https://example.com/p1").map(String::from),
+            Some("https://example.com/p1".to_owned())
+        );
+        for bad in ["file:///etc/passwd", "javascript:alert(1)", "not a url", ""] {
+            assert!(link_to_open(bad).is_none(), "{bad}");
+        }
     }
 
     #[test]

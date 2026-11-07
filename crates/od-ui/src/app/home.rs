@@ -155,7 +155,11 @@ pub fn Home() -> impl IntoView {
         };
         wanted_template.set_value(None);
         if let Some(s) = list.iter().find(|s| s.info.id == id) {
-            chip.set(chip_for_template(s.info.mode));
+            let c = chip_for_template(s.info.mode);
+            chip.set(c);
+            // As the chip buttons do: a Motion film showed the selects'
+            // first options (1:1, 3 s), never sent (QA-055).
+            media.set(MediaOptions::defaults(c));
             template.set(Some(id));
             if brief.with_untracked(|b| b.trim().is_empty()) {
                 brief.set(s.info.example_prompt.clone());
