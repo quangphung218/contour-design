@@ -541,6 +541,13 @@ async fn motion_templates_preview_and_remix() {
         .filter(|t| t["scenario"] == "motion")
         .collect();
     assert!(motion.len() >= 31, "only {} Motion templates", motion.len());
+    let page = list["designTemplates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["mode"] != "video" && t["hasExample"] == true)
+        .unwrap();
+    assert!(page.get("film").is_none(), "{page}");
     for t in motion {
         let id = t["id"].as_str().unwrap();
         assert_eq!(t["mode"], "video", "{id}");
@@ -557,6 +564,16 @@ async fn motion_templates_preview_and_remix() {
             check_composition(&example, &[]).unwrap_or_else(|e| panic!("{id}: {e}"));
         let seconds = comp.duration_ms.unwrap() / 1000;
         assert!((5..=15).contains(&seconds), "{id}: {seconds} s");
+        // The listing carries the film's own size and length (QA-055).
+        assert_eq!(
+            t["film"],
+            json!({
+                "width": comp.width,
+                "height": comp.height,
+                "duration": comp.duration_ms.unwrap() as f64 / 1000.0,
+            }),
+            "{id}"
+        );
         assert!(poster > 0.0, "{id}: poster at {poster}");
         let (s, v) = call(
             &d,

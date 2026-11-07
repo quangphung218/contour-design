@@ -15,6 +15,7 @@ All notable changes to Contour are recorded here. The format follows
 - Desktop app: ⌘-click (Ctrl-click on Windows and Linux) on a web link in a design opens it in the system browser, as a plain click on a `_blank` link does (QA-063).
 - Desktop app: one click or key press in a design opens at most one browser tab, as a browser's popup blocker allows, though the page calls `window.open` in each of its events (`pointerup`, `mouseup`, `click`; `keydown`, `keyup`) or the click is on a `target="_blank"` link. A `window.open` of a non-web address (`about:blank`, `mailto:`) does not use up the press. A key pressed outside the design and let go inside it opens none, nor does picking an element in comment mode.
 - Desktop app: Enter on a `target="_blank"` link that the design cancels still lets the design open one tab on that key's `keyup`; a `window.open` after a `confirm()`, `alert()` or `prompt()` in the same click opens its tab, and a key let go after the dialog closes opens none; a drag-and-drop, or a click whose element the design removes, no longer leaves the press open for a later key.
+- Use template on a Motion film shows the film's own ratio and length (App feature tour: 9:16, 12 s) instead of Motion's defaults (16:9, 10 s); the length is offered in the length list when it is none of the usual ones. The template list carries each film's size and length (`film`) (QA-055).
 
 ## [0.2.0-beta.22] - 2026-11-07
 

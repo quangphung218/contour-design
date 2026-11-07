@@ -142,6 +142,21 @@ pub struct SkillSummary {
     /// `GET /api/design-templates/:id/example`.
     #[serde(default)]
     pub has_example: bool,
+    /// Contour only: the size and length a film's example declares on its
+    /// composition root (`data-width`, `data-height`, `data-duration`), so
+    /// Use template can show them (QA-055). `None` for anything else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub film: Option<FilmFormat>,
+}
+
+/// A film's frame size in pixels and length in seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct FilmFormat {
+    pub width: u32,
+    pub height: u32,
+    /// `None` when the root leaves the length to its timelines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<f64>,
 }
 
 /// Single-entry response: metadata plus the full prompt body.

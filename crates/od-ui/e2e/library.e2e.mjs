@@ -440,17 +440,17 @@ try {
   await until(async () => (await page.getByTestId('brief').inputValue()).length > 0, 'Use fills the brief');
   await until(async () => (await page.getByTestId('template').inputValue()) !== '', 'Use picks the template');
   results.use = 'ok';
-  // QA-055: Use template on a Motion film sets Motion's options, as the
-  // Motion chip does, not the selects' first options (1:1, 3 s) that were
-  // never sent.
+  // QA-055: Use template on a Motion film shows the film's own ratio and
+  // length (App feature tour: 1080×1920, 12 s), not Motion's defaults
+  // (16:9, 10 s) nor the selects' first options (1:1, 3 s).
   await page.goto(BASE + '/templates');
   await tpl.filter({ hasText: 'App feature tour' }).first().click();
   await page.getByTestId('tpl-use').click();
   await page.waitForURL((u) => u.pathname === '/');
   await until(async () => (await page.getByTestId('template').inputValue()) !== '', 'Use picks the film');
-  assert.equal(await page.getByTestId('media-aspect').inputValue(), '16:9');
-  assert.equal(await page.getByTestId('media-duration').inputValue(), '10');
-  results.useMotion = 'Motion defaults (16:9, 10 s)';
+  assert.equal(await page.getByTestId('media-aspect').inputValue(), '9:16');
+  assert.equal(await page.getByTestId('media-duration').inputValue(), '12');
+  results.useMotion = "the film's own 9:16, 12 s";
   await page.goto(BASE + '/templates?tab=image');
   await page.getByTestId('prompt-card').first().waitFor();
   await page.getByTestId('prompt-copy').first().click();

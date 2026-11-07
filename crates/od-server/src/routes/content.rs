@@ -6,21 +6,41 @@ use axum::response::{IntoResponse, Response};
 use od_content::SkillEntry;
 use od_contracts::{
     CraftDetail, CraftResponse, DesignSystemDetail, DesignSystemsResponse, DesignTemplatesResponse,
-    SkillDetail, SkillSummary, SkillsResponse,
+    FilmFormat, SkillDetail, SkillMode, SkillSummary, SkillsResponse,
 };
 use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-fn summaries(entries: &[SkillEntry]) -> Vec<SkillSummary> {
+/// Listing entries; `films` also reads each film's example for its size
+/// and length (design templates only: blocking reads).
+fn summaries(entries: &[SkillEntry], films: bool) -> Vec<SkillSummary> {
     entries
         .iter()
-        .map(|e| SkillSummary {
-            info: e.info.clone(),
-            has_body: !e.body.is_empty(),
-            has_example: e.example_html().is_some(),
+        .map(|e| {
+            let example = e.example_html();
+            SkillSummary {
+                info: e.info.clone(),
+                has_body: !e.body.is_empty(),
+                has_example: example.is_some(),
+                film: example
+                    .filter(|_| films && e.info.mode == SkillMode::Video)
+                    .and_then(|p| film_format(&p)),
+            }
         })
         .collect()
+}
+
+/// What a film's example declares on its composition root (QA-055).
+#[allow(clippy::cast_precision_loss)] // milliseconds of a short film
+fn film_format(example: &std::path::Path) -> Option<FilmFormat> {
+    let html = std::fs::read_to_string(example).ok()?;
+    let c = od_export::hyperframes::composition(&html).ok()?;
+    Some(FilmFormat {
+        width: c.width,
+        height: c.height,
+        duration: c.duration_ms.map(|ms| ms as f64 / 1000.0),
+    })
 }
 
 fn detail(entry: &SkillEntry) -> SkillDetail {
@@ -32,7 +52,7 @@ fn detail(entry: &SkillEntry) -> SkillDetail {
 
 pub async fn list_skills(State(state): State<AppState>) -> ApiJson<SkillsResponse> {
     ApiJson(SkillsResponse {
-        skills: summaries(&state.content.snapshot().skills),
+        skills: summaries(&state.content.snapshot().skills, false),
     })
 }
 
@@ -49,10 +69,14 @@ pub async fn get_skill(
 
 pub async fn list_design_templates(
     State(state): State<AppState>,
-) -> ApiJson<DesignTemplatesResponse> {
-    ApiJson(DesignTemplatesResponse {
-        design_templates: summaries(&state.content.snapshot().design_templates),
-    })
+) -> ApiResult<ApiJson<DesignTemplatesResponse>> {
+    // Films' examples are read for their size and length.
+    let index = state.content.snapshot();
+    let design_templates =
+        tokio::task::spawn_blocking(move || summaries(&index.design_templates, true))
+            .await
+            .map_err(|e| ApiErr::internal(e.to_string()))?;
+    Ok(ApiJson(DesignTemplatesResponse { design_templates }))
 }
 
 pub async fn get_design_template(
