@@ -36,6 +36,11 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <p><a id="wincancel" href="https://example.com/g-link" target="_blank">G: Enter, the page cancels the link, keyup opens</a></p>
 <p><span id="dr" draggable="true" style="display:inline-block;padding:8px;background:#ccc">S3: drag me</span>
 <span id="dz" style="display:inline-block;padding:8px;margin-left:200px;background:#eee">drop here</span></p>
+<p><button id="tc">TP: the page cancels touchend (no click)</button>
+<button id="ts">TS: the page cancels touchstart (no click)</button>
+<button id="fk">FK: the page cancels touchstart, then sends its own</button>
+<button id="tf">TF: the page cancels touchend, then says it did not</button></p>
+<p><span id="sw" style="display:inline-block;width:400px;padding:16px 0;background:#ddd">SW: swipe, the page cancels touchmove</span></p>
 <p><button id="gone">P1: goes away on pointerdown</button></p>
 <p><button id="dlgc">D1: click confirms, then opens</button> <button id="dlga">D2: click alerts, then opens</button>
 <button id="dlgp">D3: click prompts, then opens</button></p>
@@ -51,6 +56,11 @@ on('cb', 'click', () => { window.open('about:blank'); window.open('https://examp
 on('ce', 'click', () => { window.open(''); window.open('https://example.com/ce-open'); });
 on('wincancel', 'keyup', (e) => { if (e.key === 'Enter') window.open('https://example.com/g-keyup'); });
 on('dz', 'dragover', (e) => e.preventDefault());
+on('tc', 'touchend', (e) => e.preventDefault());
+on('tf', 'touchend', (e) => { e.preventDefault(); Object.defineProperty(e, 'defaultPrevented', { value: false }); });
+on('fk', 'touchstart', (e) => { e.preventDefault(); window.dispatchEvent(new Event('touchstart')); }, { passive: false });
+on('ts', 'touchstart', (e) => e.preventDefault(), { passive: false });
+on('sw', 'touchmove', (e) => e.preventDefault(), { passive: false });
 on('gone', 'pointerdown', (e) => e.target.remove());
 on('dlgc', 'click', () => { if (confirm('open?')) window.open('https://example.com/d1-open'); });
 on('dlga', 'click', () => { alert('opening'); window.open('https://example.com/d2-open'); });
@@ -98,6 +108,14 @@ const cases = [
   // A press that ends with no click (WebKit's drag, an element gone on
   // pointerdown) does not leave the frame armed for a stray keyup.
   ['S3', [], async (f, page) => { await f.locator('#dr').dragTo(f.locator('#dz')); await sleep(100); await strayKeyup(f, page); }],
+  // A touch whose touchstart, touchmove or touchend the page cancels gets
+  // no click either (nor a pointercancel). Playwright has no swipe: SW
+  // sends CDP touch events, so it runs in Chromium only.
+  ['TP', [], async (f, page) => { await f.locator('#tc').tap(); await sleep(500); await strayKeyup(f, page); }],
+  ['FK', [], async (f, page) => { await f.locator('#fk').tap(); await sleep(500); await strayKeyup(f, page); }],
+  ['TF', [], async (f, page) => { await f.locator('#tf').tap(); await sleep(500); await strayKeyup(f, page); }],
+  ['TS', [], async (f, page) => { await f.locator('#ts').tap(); await sleep(500); await strayKeyup(f, page); }],
+  ['SW', [], async (f, page, cdp) => { await f.locator('#sw').scrollIntoViewIfNeeded(); await swipe(cdp, await f.locator('#sw').boundingBox()); await sleep(500); await strayKeyup(f, page); }, ['chromium']],
   ['P1', [], async (f, page) => { await f.locator('#gone').click(); await sleep(100); await strayKeyup(f, page); }],
   // The dialog's blur does not take the press from the open after it.
   ['D1', ['d1-open'], (f) => f.locator('#dlgc').click()],
@@ -134,6 +152,17 @@ async function strayKeyup(frame, page) {
   await page.keyboard.up('x');
 }
 
+// A horizontal touch swipe across box, through CDP (Chromium).
+async function swipe(cdp, box) {
+  const y = box.y + box.height / 2;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + 20, y }] });
+  for (let i = 1; i <= 10; i++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x + 20 + i * 30, y }] });
+    await sleep(16);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
 async function enter(frame, page, sel) {
   await frame.locator(sel).focus();
   await page.keyboard.down('Enter');
@@ -156,10 +185,12 @@ async function runEngine(name) {
     await page.goto('http://bridge.test/host.html');
     const frame = page.frameLocator('#f');
     await frame.locator('#idle').waitFor();
+    const cdp = name === 'chromium' ? await context.newCDPSession(page) : null;
     const got = {};
-    for (const [id, , act] of cases) {
+    for (const [id, , act, only] of cases) {
+      if (only && !only.includes(name)) continue;
       await page.evaluate(() => { window.opened.length = 0; });
-      await act(frame, page);
+      await act(frame, page, cdp);
       await sleep(300);
       got[id] = await page.evaluate(() => window.opened.slice());
       await page.bringToFront();
@@ -178,7 +209,9 @@ try {
     results[name] = await runEngine(name);
   }
   for (const name of engines) {
-    for (const [id, want] of cases) assert.deepEqual(results[name][id], want, `${name} ${id}`);
+    for (const [id, want, , only] of cases) {
+      if (!only || only.includes(name)) assert.deepEqual(results[name][id], want, `${name} ${id}`);
+    }
   }
   console.log(`[e2e:bridge] PASS ${JSON.stringify(results)}`);
 } catch (e) {

@@ -564,6 +564,7 @@
       var currentEvent = bind.call(Object.getOwnPropertyDescriptor(window, 'event').get, window);
       var typeOf = callOf(Object.getOwnPropertyDescriptor(Event.prototype, 'type').get);
       var repeatOf = callOf(Object.getOwnPropertyDescriptor(KeyboardEvent.prototype, 'repeat').get);
+      var preventedOf = callOf(Object.getOwnPropertyDescriptor(Event.prototype, 'defaultPrevented').get);
       var kinds = Object.create(null);
       kinds.click = kinds.auxclick = kinds.mouseup = kinds.pointerup = 1;
       kinds.touchend = kinds.keydown = kinds.keyup = 1;
@@ -610,6 +611,39 @@
       window.addEventListener('pointerup', function (e) {
         if (e.pointerType !== 'touch') disarmPointer();
       }, true);
+      // A touch whose `touchstart`, `touchmove` or `touchend` the page
+      // cancelled gets no `click` (nor `pointercancel`): its press ends with
+      // its `touchend`. Each is read once its dispatch is over, through the
+      // prototype's getter (the page can shadow it on the event); a late
+      // cancel only disarms sooner. Timers run in order, so the touch's
+      // last event is read before its `touchend` decides.
+      var touchOpts = { capture: true, passive: true };
+      var touchSeq = 0;
+      var touchCancelled = -1;
+      var noteCancel = function (e) {
+        var seq = touchSeq;
+        timer(function run() {
+          if (inNative) return timer(run);
+          if (preventedOf(e)) touchCancelled = seq;
+        });
+      };
+      // A trusted one only: the page's own `touchstart` would move the
+      // count on and leave the cancelled touch armed. (A page's cancelled
+      // event only disarms sooner.)
+      window.addEventListener('touchstart', function (e) {
+        if (e.isTrusted !== true) return;
+        touchSeq++;
+        noteCancel(e);
+      }, touchOpts);
+      window.addEventListener('touchmove', noteCancel, touchOpts);
+      window.addEventListener('touchend', function (e) {
+        noteCancel(e);
+        var seq = touchSeq;
+        timer(function run() {
+          if (inNative) return timer(run);
+          if (touchCancelled === seq && armed === 'pointer') armed = null;
+        });
+      }, touchOpts);
       endPress = function () {
         timer(function run() {
           if (inNative) return timer(run);
