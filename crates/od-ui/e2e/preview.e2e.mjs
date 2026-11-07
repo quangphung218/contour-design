@@ -373,6 +373,16 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
 <p><button id="gesture" type="button">window.open on pointerup, mouseup and click</button></p>
 <p><button id="enter" type="button">window.open on keydown and keyup</button></p>
 <p><button id="pick" type="button">window.open on pointerup and mouseup</button></p>
+<p><a id="both" href="https://example.com/both-link" target="_blank">_blank link with window.open on pointerup</a></p>
+<p><button id="nonweb" type="button">about:blank and mailto on pointerup, a web address on click</button></p>
+<p id="idle">Opens nothing</p>
+<p><input id="quiet" aria-label="opens nothing"></p>
+<p><input id="letgo" aria-label="window.open on keyup"></p>
+<p><button id="kup" type="button">window.open on keyup</button></p>
+<p><a id="track" href="https://example.com/track-link" target="_blank">_blank link the page opens itself</a></p>
+<p><a id="openfirst" href="https://example.com/of-link" target="_blank">_blank link the page opens itself, then cancels</a></p>
+<p><button id="blankthen" type="button">window.open of about:blank, then a web address, on click</button></p>
+<p><input id="tabback" aria-label="window.open on keyup, last in the page"></p>
 <script>
 document.getElementById('wo').addEventListener('click', () => window.open('https://example.com/w-click'));
 // A held key opens one tab, not one per repeat.
@@ -383,6 +393,17 @@ document.getElementById('keys').addEventListener('keydown', () => window.open('h
 for (const t of ['pointerup', 'mouseup', 'click']) document.getElementById('gesture').addEventListener(t, () => window.open('https://example.com/g-' + t));
 for (const t of ['keydown', 'keyup']) document.getElementById('enter').addEventListener(t, () => window.open('https://example.com/e-' + t));
 for (const t of ['pointerup', 'mouseup']) document.getElementById('pick').addEventListener(t, () => window.open('https://example.com/pick-' + t));
+document.getElementById('both').addEventListener('pointerup', () => window.open('https://example.com/both-open'));
+document.getElementById('nonweb').addEventListener('pointerup', () => { window.open('about:blank'); window.open('mailto:a@example.com'); });
+document.getElementById('nonweb').addEventListener('click', () => window.open('https://example.com/nonweb-click'));
+document.getElementById('letgo').addEventListener('keyup', () => window.open('https://example.com/letgo'));
+document.getElementById('kup').addEventListener('keyup', () => window.open('https://example.com/kup'));
+// Added after the bridge's own window listener: cancels the link and opens
+// it itself, as an outbound-link tracker does.
+window.addEventListener('click', (e) => { if (e.target.id === 'track') { e.preventDefault(); window.open('https://example.com/track-redirect'); } });
+window.addEventListener('click', (e) => { if (e.target.id === 'openfirst') { window.open('https://example.com/of-open'); e.preventDefault(); } });
+document.getElementById('blankthen').addEventListener('click', () => { window.open('about:blank'); window.open('https://example.com/blankthen'); });
+document.getElementById('tabback').addEventListener('keyup', () => window.open('https://example.com/tabback'));
 document.getElementById('wo20').addEventListener('click', () => { for (let i = 0; i < 20; i++) window.open('https://example.com/many-' + i); });
 // Added after the bridge's own window listener: runs after it.
 window.addEventListener('click', (e) => { if (e.target.id === 'late') e.preventDefault(); });
@@ -482,6 +503,68 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await sleep(300);
   const gestures = (await opened()).filter((c) => /^open_link https:\/\/example\.com\/[ge]-/.test(c));
   assert.deepEqual(gestures, ['open_link https://example.com/g-pointerup', 'open_link https://example.com/e-keydown'], 'one press asks for one tab');
+  // A `_blank` link spends the same press: the page's window.open in its
+  // pointerup and the link's own click ask for one tab, not two.
+  await deskFrame.locator('#both').click();
+  await until(() => asked('https://example.com/both-open'), 'window.open in a _blank link\'s pointerup asks the shell');
+  await sleep(300);
+  const both = (await opened()).filter((c) => c.startsWith('open_link https://example.com/both-'));
+  assert.deepEqual(both, ['open_link https://example.com/both-open'], 'a _blank link and a window.open in one press ask for one tab');
+  // Only a web address spends the press: about:blank and mailto in its
+  // pointerup leave it to the window.open of its click.
+  await deskFrame.locator('#nonweb').click();
+  await until(() => asked('https://example.com/nonweb-click'), 'a window.open of a non-web address leaves the press to the next one');
+  // A press ends with its click or key-up: a key pressed on the host and
+  // let go in the frame opens nothing, after a click or a key press in the
+  // frame that opened nothing.
+  const letGo = async (after) => {
+    await sleep(150);
+    await desk.locator('[data-testid="file-row"][data-path="links.html"]').focus();
+    assert.ok(await desk.evaluate(() => document.activeElement && document.activeElement.tagName !== 'IFRAME'), 'the host has the focus');
+    await desk.keyboard.down('Shift');
+    await deskFrame.locator('#letgo').evaluate((el) => el.focus());
+    await desk.keyboard.up('Shift');
+    await sleep(300);
+    assert.equal(await asked('https://example.com/letgo'), false, `a key let go in the frame after ${after} opens nothing`);
+  };
+  await deskFrame.locator('#idle').click();
+  await letGo('a click');
+  await deskFrame.locator('#quiet').focus();
+  await desk.keyboard.press('Shift');
+  await letGo('a key');
+  // Enter's own click comes before its keyup, and does not end the press:
+  // a window.open in keyup asks the shell.
+  await deskFrame.locator('#kup').focus();
+  await desk.keyboard.down('Enter');
+  await sleep(80);
+  await desk.keyboard.up('Enter');
+  await until(() => asked('https://example.com/kup'), 'window.open in the keyup of Enter asks the shell');
+  // A page that cancels a _blank link and opens it itself, in a window
+  // listener after the bridge's, asks for its own tab, not the link's.
+  await deskFrame.locator('#track').click();
+  await until(() => asked('https://example.com/track-redirect'), 'window.open of a page that cancels a _blank link asks the shell');
+  await sleep(300);
+  const track = (await opened()).filter((c) => c.startsWith('open_link https://example.com/track-'));
+  assert.deepEqual(track, ['open_link https://example.com/track-redirect'], 'a cancelled _blank link and the page\'s window.open ask for one tab');
+  // The same when the page opens first and cancels after.
+  await deskFrame.locator('#openfirst').click();
+  await until(() => asked('https://example.com/of-open'), 'window.open of a page that opens, then cancels a _blank link asks the shell');
+  await sleep(300);
+  const openFirst = (await opened()).filter((c) => c.startsWith('open_link https://example.com/of-'));
+  assert.deepEqual(openFirst, ['open_link https://example.com/of-open'], 'a _blank link the page opens, then cancels asks for one tab');
+  // about:blank first leaves the press to the web address after it.
+  await deskFrame.locator('#blankthen').click();
+  await until(() => asked('https://example.com/blankthen'), 'a window.open after one of about:blank in the same click asks the shell');
+  // Tab out of the frame (its keyup falls on the host), then Shift+Tab
+  // back: the keyup in the frame opens nothing.
+  await deskFrame.locator('#tabback').focus();
+  await desk.keyboard.press('Tab');
+  await sleep(150);
+  assert.ok(await desk.evaluate(() => document.activeElement && document.activeElement.tagName !== 'IFRAME'), 'Tab leaves the frame');
+  await desk.keyboard.press('Shift+Tab');
+  await sleep(300);
+  assert.ok(await deskFrame.locator('#tabback').evaluate((el) => document.activeElement === el), 'Shift+Tab comes back to the frame');
+  assert.equal(await asked('https://example.com/tabback'), false, 'a keyup after Tab out and back opens nothing');
   // QA-063: ⌘ / Ctrl-click on a web link, `_blank` or not, opens it.
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
   const outs = (await opened()).filter((c) => c === 'open_link https://example.com/p1').length;
@@ -503,7 +586,7 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await sleep(300);
   assert.deepEqual((await opened()).filter((c) => c.includes('/pick-')), [], 'a click in comment mode asks nothing');
   await deskContext.close();
-  results.blankLinks = 'a real click on a _blank web link (also with ⌘/Ctrl) or a window.open in a click asks the shell; page-cancelled (also on window, after the bridge), same-frame, mailto, synthetic clicks, a window.open with no click (also with a made-up window.event), a second window.open in the same click, in another event of the same press (pointerup/mouseup/click, keydown/keyup) or in a comment-mode pick, and unkeyed messages do not; "Open in new tab" asks the shell';
+  results.blankLinks = 'a real click on a _blank web link (also with ⌘/Ctrl) or a window.open in a click asks the shell; page-cancelled (also on window, after the bridge), same-frame, mailto, synthetic clicks, a window.open with no click (also with a made-up window.event), a second window.open in the same click, in another event of the same press (pointerup/mouseup/click, keydown/keyup, the click of a _blank link) or in a comment-mode pick, a key let go in the frame after its press began on the host, and unkeyed messages do not; a window.open of a non-web address leaves the press to the next one; a window.open in the keyup of Enter, of a page that cancels a _blank link in a window listener (before or after it opens), or after one of about:blank in the same click, asks once; a keyup after Tab out of the frame and back opens nothing; "Open in new tab" asks the shell';
 
   // 4d. Comments on a page taller than the preview (QA-057 … QA-060).
   await write('tall.html', `<!doctype html><html><body style="margin:0;font:18px system-ui">

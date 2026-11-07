@@ -419,7 +419,10 @@ Playwright scripts in `desktop-beta21/` run against the app's own daemon.
 
 The shell's `on_new_window` (`apps/desktop/src/main.rs`) has no test: a
 Tauri window cannot run headless. `preview.e2e.mjs` covers the bridge
-with a stub shell in Chromium only. On a built app, on each of macOS
+with a stub shell in Chromium; `bridge.e2e.mjs` runs the bridge alone in
+Chromium and WebKit (`node crates/od-ui/e2e/bridge.e2e.mjs`, about 10 s,
+after `npx playwright install chromium webkit` in `crates/od-ui/e2e`).
+On a built app, on each of macOS
 (WKWebView), Windows (WebView2) and Linux (WebKitGTK):
 
 - [ ] **on_new_window always Deny**: a design's `window.open`, a
@@ -431,6 +434,8 @@ with a stub shell in Chromium only. On a built app, on each of macOS
   button with `window.open` on `keydown` and `keyup` opens one; a held key
   opens one.
 - [ ] A `window.open` on load or on a timer opens nothing.
+- [ ] Tab out of the design to the app, then Shift+Tab back into a field
+  whose page opens a URL on `keyup`: nothing opens.
 - [ ] In comment mode, clicking that button picks it and opens nothing.
 
 ## Not automated, and why
