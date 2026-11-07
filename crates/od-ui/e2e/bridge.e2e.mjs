@@ -24,6 +24,8 @@ const dialogShim = `['alert', 'confirm', 'prompt'].forEach((name) => {
 
 const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><script data-od-key="K">${bridge}</script></head>
 <body style="margin:0;font:16px sans-serif">
+<p><a id="q2" href="https://example.com/q2-link" target="_blank">Q2: the page floods timers, then cancels the link</a>
+<button id="other">Q2: another press</button></p>
 <p><button id="plain">C0: click opens</button></p>
 <p><button id="kb">K1: Enter, keyup opens</button></p>
 <p><button id="cb">N1: click opens about:blank, then a web address</button></p>
@@ -53,6 +55,9 @@ on('gone', 'pointerdown', (e) => e.target.remove());
 on('dlgc', 'click', () => { if (confirm('open?')) window.open('https://example.com/d1-open'); });
 on('dlga', 'click', () => { alert('opening'); window.open('https://example.com/d2-open'); });
 on('dlgp', 'click', () => { if (prompt('name?') !== null) window.open('https://example.com/d3-open'); });
+// About 1.6 s of short tasks queued before the bridge's settle (element
+// handlers run first): input runs between them.
+on('q2', 'click', () => { for (let i = 0; i < 800; i++) setTimeout(() => { const t = performance.now(); while (performance.now() - t < 2); }); });
 on('ce2', 'click', () => confirm('sure?'));
 on('dk', 'keydown', (e) => { if (e.key === 'Enter') alert('saved'); });
 on('stray', 'keyup', () => window.open('https://example.com/stray'));
@@ -61,7 +66,7 @@ on('kb2', 'keyup', (e) => { if (e.key === 'Enter') { window.open('about:blank');
 window.addEventListener('click', (e) => {
   if (e.target.id === 'openfirst') { window.open('https://example.com/of-open'); e.preventDefault(); }
   if (e.target.id === 'wincancel') e.preventDefault();
-  if (e.target.id === 'ce2') e.preventDefault();
+  if (e.target.id === 'ce2' || e.target.id === 'q2') e.preventDefault();
   if (e.target.id === 'cc') { confirm('leave?'); e.preventDefault(); }
   if (e.target.id === 'blankfirst') { e.preventDefault(); window.open('about:blank'); window.open('https://example.com/bf-open'); }
 });
@@ -105,6 +110,22 @@ const cases = [
   ['X1', [], async (f, page) => { await enter(f, page, '#dk'); await sleep(100); await strayKeyup(f, page); }],
   ['X2', [], async (f, page) => { await enter(f, page, '#cc'); await sleep(100); await strayKeyup(f, page); }],
   ['X3', [], async (f, page) => { await enter(f, page, '#ce2'); await sleep(100); await strayKeyup(f, page); }],
+  // Enter held on a cancelled link, a click on the host, Enter let go
+  // there, then a new press in the frame, all before the link settles: the
+  // link gives no press back over the newer one. Low-level mouse clicks,
+  // as a locator's waits for the page and so comes after settle.
+  ['Q2', [], async (f, page) => {
+    // Focus first: it scrolls the frame, which moves #other.
+    await f.locator('#q2').focus();
+    const away = await page.locator('#away').boundingBox();
+    const other = await f.locator('#other').boundingBox();
+    await page.keyboard.down('Enter');
+    await page.mouse.click(away.x + 5, away.y + 5);
+    await page.keyboard.up('Enter');
+    await page.mouse.click(other.x + 5, other.y + 5);
+    await sleep(2500);
+    await strayKeyup(f, page);
+  }],
 ];
 
 // A trusted keyup with no keydown before it, in the frame.
