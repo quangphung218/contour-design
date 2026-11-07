@@ -212,9 +212,10 @@ fn set_menu_labels(app: AppHandle, labels: MenuLabels) {
     }
 }
 
-/// A `target="_blank"` web link clicked in a design (the preview bridge's
-/// `od:open-link`): the window refuses the frame's own navigation off the
-/// app, so the UI asks for the system browser here (QA-054). Web addresses
+/// A web page for a new tab: the app's own `_blank` links and "Open in new
+/// tab", or a link a design's user clicked (the preview bridge's
+/// `od:open-link`, QA-054). The window opens no new window itself
+/// (QA-061), so the UI asks for the system browser here. Web addresses
 /// only.
 #[tauri::command]
 fn open_link(opened: tauri::State<'_, Arc<LastOpened>>, url: String) -> Result<(), String> {
@@ -223,10 +224,11 @@ fn open_link(opened: tauri::State<'_, Arc<LastOpened>>, url: String) -> Result<(
     Ok(())
 }
 
-/// The last page handed to the system browser and when. On Windows and
-/// Linux a `_blank` click in the preview reaches `on_new_window` and the
-/// bridge's `open_link` both; the second opening of the same page within
-/// [`SAME_OPEN_WINDOW`] is dropped, so one click opens one tab.
+/// The last page handed to the system browser and when. One click can ask
+/// twice for the same page (a `_blank` link whose click handler also calls
+/// `window.open`, which the preview bridge passes on too); the second
+/// opening of the same page within [`SAME_OPEN_WINDOW`] is dropped, so one
+/// click opens one tab.
 #[derive(Default)]
 struct LastOpened(Mutex<Option<(Url, std::time::Instant)>>);
 
@@ -929,7 +931,6 @@ fn main() -> anyhow::Result<()> {
     od_server::logs::init(Some(data_dir.root()));
 
     let opened = Arc::new(LastOpened::default());
-    let new_window_opened = Arc::clone(&opened);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // Its key: `plugins.updater` in tauri.conf.json. Its own commands
@@ -980,14 +981,14 @@ fn main() -> anyhow::Result<()> {
                         }
                         ok
                     })
-                    // The app never opens a second webview: web links go to
-                    // the system browser, anything else is dropped.
+                    // The app never opens a second webview, nor the browser
+                    // from here: the request does not say which frame asked,
+                    // and a design's `window.open` with no click opened the
+                    // browser on every load (QA-061). The app's own links go
+                    // through `open_link`, a design's through the preview
+                    // bridge's keyed `od:open-link`, which needs a real click.
                     .on_new_window(move |url, _| {
-                        if opens_in_browser(&url) {
-                            new_window_opened.open(&url);
-                        } else {
-                            tracing::warn!(%url, "blocked a new window");
-                        }
+                        tracing::warn!(%url, "blocked a new window");
                         tauri::webview::NewWindowResponse::Deny
                     })
                     .title(APP_NAME)

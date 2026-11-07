@@ -68,13 +68,11 @@ pub fn open_window(project: &str, file: &str, slide: u32) {
         api::seg(project),
         api::seg(file)
     );
-    if let Some(w) = web_sys::window() {
-        let _ = w.open_with_url_and_target_and_features(
-            &url,
-            &format!("od-presenter-{project}"),
-            "popup,width=1180,height=760",
-        );
-    }
+    super::desktop::open_new_window(
+        &url,
+        &format!("od-presenter-{project}"),
+        "popup,width=1180,height=760",
+    );
 }
 
 /// `m:ss` of `secs`.

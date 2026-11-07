@@ -366,7 +366,10 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
 <p><a id="same" href="https://example.com/same">Same frame</a></p>
 <p><a id="mail" href="mailto:a@example.com" target="_blank">Mail</a></p>
 <p><a id="late" href="https://example.com/late" target="_blank">Cancelled on window</a></p>
+<p><a id="plain" href="https://example.com/plain">Plain web link</a></p>
+<p><button id="wo" type="button">window.open on click</button></p>
 <script>
+document.getElementById('wo').addEventListener('click', () => window.open('https://example.com/w-click'));
 // Added after the bridge's own window listener: runs after it.
 window.addEventListener('click', (e) => { if (e.target.id === 'late') e.preventDefault(); });
 document.getElementById('kept').addEventListener('click', (e) => e.preventDefault());
@@ -380,6 +383,7 @@ document.getElementById('mail').addEventListener('click', (e) => e.preventDefaul
   });
   const desk = await deskContext.newPage();
   desk.on('popup', (p) => p.close().catch(() => {}));
+  deskContext.on('page', (p) => { if (p !== desk) p.close().catch(() => {}); });
   await desk.addInitScript(() => {
     if (window.top !== window) return;
     window.__shellCalls = [];
@@ -390,7 +394,18 @@ document.getElementById('mail').addEventListener('click', (e) => e.preventDefaul
       },
     };
   });
+  // QA-061: popups no one asked for, on load and every 200 ms after.
+  await write('popups.html', `<!doctype html><html><body><p id="ready">Popups</p><script>
+let n = 0;
+window.open('https://example.com/w-load');
+const loop = setInterval(() => { window.open('https://example.com/loop-' + ++n); if (n >= 8) clearInterval(loop); }, 200);
+</script></body></html>`);
   await desk.goto(`${BASE}/projects/${pid}`);
+  await desk.locator('[data-testid="file-row"][data-path="popups.html"]').click();
+  await desk.frameLocator('iframe[data-testid="preview"]').locator('#ready').waitFor();
+  await sleep(2000);
+  const unasked = await desk.evaluate(() => window.__shellCalls.filter((c) => c.startsWith('open_link')));
+  assert.deepEqual(unasked, [], 'a window.open with no click asks nothing');
   await desk.locator('[data-testid="file-row"][data-path="links.html"]').click();
   const deskFrame = desk.frameLocator('iframe[data-testid="preview"]');
   await deskFrame.locator('#out').waitFor();
@@ -420,8 +435,27 @@ document.getElementById('mail').addEventListener('click', (e) => e.preventDefaul
   await sleep(400);
   assert.equal((await opened()).length, realClicks, 'a page-made od:open-link asks nothing');
   assert.ok((await opened()).every((c) => c === 'open_link https://example.com/p1'), `opened: ${await opened()}`);
+  // QA-061: the window opens nothing itself, so a design's `window.open`
+  // reaches the shell only through the bridge, and only in a real click.
+  const asked = async (url) => (await opened()).includes(`open_link ${url}`);
+  await deskFrame.locator('#wo').click();
+  await until(() => asked('https://example.com/w-click'), 'window.open in a click handler asks the shell');
+  await deskFrame.locator('#wo').evaluate((b) => b.click());
+  // QA-063: ⌘ / Ctrl-click on a web link, `_blank` or not, opens it.
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  const outs = (await opened()).filter((c) => c === 'open_link https://example.com/p1').length;
+  await deskFrame.locator('#out').click({ modifiers: [mod] });
+  await deskFrame.locator('#plain').click({ modifiers: [mod] });
+  await until(() => asked('https://example.com/plain'), 'a modified click on a web link asks the shell');
+  assert.equal((await opened()).filter((c) => c === 'open_link https://example.com/p1').length, outs + 1, 'a modified click on a _blank link asks once');
+  assert.equal((await opened()).filter((c) => c === 'open_link https://example.com/w-click').length, 1, 'a script click on the button asks nothing');
+  // The app's own "Open in new tab" asks the shell too, not window.open.
+  await desk.locator('[data-testid="file-row"][data-path="links.html"]').hover();
+  await desk.locator('.file-row', { has: desk.locator('[data-testid="file-row"][data-path="links.html"]') }).getByTestId('row-menu').click();
+  await desk.getByTestId('row-new-tab').click();
+  await until(() => asked(`${BASE}/api/projects/${pid}/raw/links.html`), `"Open in new tab" asks the shell: ${await opened()}`);
   await deskContext.close();
-  results.blankLinks = 'a real click on a _blank web link asks the shell; page-cancelled (also on window, after the bridge), same-frame, mailto, synthetic clicks and unkeyed messages do not';
+  results.blankLinks = 'a real click on a _blank web link (also with ⌘/Ctrl) or a window.open in a click asks the shell; page-cancelled (also on window, after the bridge), same-frame, mailto, synthetic clicks, a window.open with no click and unkeyed messages do not; "Open in new tab" asks the shell';
 
   // 4d. Comments on a page taller than the preview (QA-057 … QA-060).
   await write('tall.html', `<!doctype html><html><body style="margin:0;font:18px system-ui">

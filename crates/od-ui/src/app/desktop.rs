@@ -54,7 +54,8 @@ pub fn set_theme(theme: &str) {
 
 /// Opens a web page in the system browser: a `_blank` link clicked in a
 /// design, which the shell's navigation guard refuses in the window
-/// (QA-054). Does nothing outside the desktop app.
+/// (QA-054), or one of the app's own (see [`open_new_window`]). Does
+/// nothing outside the desktop app.
 pub fn open_link(url: &str) {
     let args = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&args, &JsValue::from_str("url"), &JsValue::from_str(url));
@@ -62,6 +63,27 @@ pub fn open_link(url: &str) {
         wasm_bindgen_futures::spawn_local(async move {
             let _ = JsFuture::from(promise).await;
         });
+    }
+}
+
+/// Opens `url` (absolute, or relative to the page) in a new tab or window.
+/// In the desktop app the system browser opens it (`open_link`): the
+/// window opens no new window itself, since it cannot tell the app's
+/// `window.open` from a design's (QA-061). Elsewhere
+/// `window.open(url, target, features)`.
+pub fn open_new_window(url: &str, target: &str, features: &str) {
+    let Some(w) = web_sys::window() else {
+        return;
+    };
+    if is_desktop() {
+        let base = w.location().href().unwrap_or_default();
+        if let Ok(u) = web_sys::Url::new_with_base(url, &base) {
+            open_link(&u.href());
+        }
+    } else if features.is_empty() {
+        let _ = w.open_with_url_and_target(url, target);
+    } else {
+        let _ = w.open_with_url_and_target_and_features(url, target, features);
     }
 }
 

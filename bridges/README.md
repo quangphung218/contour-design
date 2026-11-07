@@ -50,7 +50,7 @@ window, so a page cannot drive itself through the protocol.
 | `od:palette-state` | `id` (or `null`) | After `od:palette` |
 | `od:tweaks` | `tweaks`: the valid declared tweaks (may be empty) | Each document load, and after `od:tweaks-request` |
 | `od:layers` | `key`, `items`: `[{selector, odId, tag, kind, label, depth, hidden}]` (≤ 400, depth ≤ 12; `kind` is `link`, `image`, `text` or `container`) | After `od:layers-request` |
-| `od:open-link` | `key`, `href` (http or https) | A real plain click on a `target="_blank"` web link that the page did not cancel; the desktop app opens `href` in the system browser |
+| `od:open-link` | `key`, `href` (http or https) | A real plain click on a `target="_blank"` web link, or a real ⌘ / Ctrl-click on any web link, that the page did not cancel; or the page's `window.open` of a web address in its handler of a real click or key (`window.event`). The desktop app opens `href` in the system browser |
 
 ## How each part works
 

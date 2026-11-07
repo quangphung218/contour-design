@@ -49,11 +49,11 @@ pub fn menu_labels(locale: Locale) -> Value {
     })
 }
 
-/// Whether a click on a link to `href` with `target` goes through
-/// `window.open`: a web address for a new window. In the app the webview
-/// refused such a link as a navigation away from the app and nothing
-/// happened ("Install guide ↗"); `window.open` reaches the shell, which
-/// hands web addresses to the system browser.
+/// Whether a click on a link to `href` with `target` goes to the shell: a
+/// web address for a new window. In the app the webview refused such a
+/// link as a navigation away from the app and nothing happened ("Install
+/// guide ↗"); the shell's `open_link` hands web addresses to the system
+/// browser.
 #[must_use]
 pub fn opens_in_new_window(href: &str, target: &str) -> bool {
     let href = href.trim_start();
@@ -65,16 +65,11 @@ pub fn opens_in_new_window(href: &str, target: &str) -> bool {
 }
 
 /// The app's links with `target="_blank"` open in the system browser, as
-/// Export ▸ Open in new tab does. Plain clicks only: a modified click or a
-/// handler that already took the click is left alone.
+/// Export ▸ Open in new tab does: the window opens no new window itself
+/// (QA-061). A plain or ⌘ / Ctrl-click; a handler that already took the
+/// click is left alone.
 pub fn route_new_window_links(ev: &web_sys::MouseEvent) {
-    if ev.default_prevented()
-        || ev.button() != 0
-        || ev.meta_key()
-        || ev.ctrl_key()
-        || ev.shift_key()
-        || ev.alt_key()
-    {
+    if ev.default_prevented() || ev.button() != 0 || ev.shift_key() || ev.alt_key() {
         return;
     }
     let Some(link) = ev
@@ -89,9 +84,7 @@ pub fn route_new_window_links(ev: &web_sys::MouseEvent) {
         return;
     }
     ev.prevent_default();
-    if let Some(w) = web_sys::window() {
-        let _ = w.open_with_url_and_target(&link.href(), "_blank");
-    }
+    super::desktop::open_link(&link.href());
 }
 
 #[cfg(test)]
