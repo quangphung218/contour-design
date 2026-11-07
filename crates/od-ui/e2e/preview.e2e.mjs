@@ -304,6 +304,10 @@ try {
       if (e.data && e.data.type === 'od:mark') window.__odMarks.push(e.data.scroll);
     });
   });
+  await sleep(1000);
+  const settled = await frame.locator('body').evaluate(() => window.__odMarks.slice());
+  console.log('[e2e:preview] marks before reselect', JSON.stringify(settled));
+  assert.ok(!settled.includes(true), `no scroll before the click: ${settled}`);
   await item.locator('.comment-item-main').click();
   await until(async () => (await frame.locator('body').evaluate(() => window.__odMarks.includes(true))), 'reselect scrolls back to the element');
   await shot('comments-tab');
