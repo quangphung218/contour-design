@@ -175,17 +175,28 @@ try {
   await until(async () => (await current(page)).join() === 'settings-nav-about', 'about marked at the bottom');
 
   log('2b. MCP Save only with a change');
+  // The list loads after the page shows: an Add before it lands is undone.
+  const listed = page.waitForResponse((r) => r.url().endsWith('/api/mcp/servers') && r.request().method() === 'GET');
   await page.goto(BASE + '/integrations');
   const save = page.getByTestId('mcp-save');
   await save.waitFor();
-  await sleep(500);
+  await listed;
   assert.equal(await save.isDisabled(), true, 'Save disabled with nothing to save');
   assert.equal(await save.evaluate((b) => b.classList.contains('primary')), false, 'Save not primary');
   await page.getByTestId('mcp-add').click();
   await until(async () => !(await save.isDisabled()), 'Save enabled after Add');
   assert.equal(await save.evaluate((b) => b.classList.contains('primary')), true, 'Save primary after Add');
+  // A stdio server needs a command: the daemon refuses an empty one (400)
+  // and Save stays on. Save is also off while the request is in flight, so
+  // "off" alone does not prove the save landed: wait for "Saved".
+  await page.getByTestId('mcp-command').fill('mcp-echo');
+  await page.getByTestId('mcp-command').press('Tab');
   await save.click();
-  await until(async () => await save.isDisabled(), 'Save disabled again once saved');
+  await page.locator('.row.end > .ok-text').waitFor();
+  assert.equal(await page.getByTestId('mcp-error').count(), 0, 'no save error');
+  assert.equal(await save.isDisabled(), true, 'Save disabled again once saved');
+  assert.equal(await save.evaluate((b) => b.classList.contains('primary')), false, 'Save not primary once saved');
+  assert.equal((await api('/api/mcp/servers')).body.servers.length, 1, 'the server saved');
 
   log('3. the chat shows the Next chips when a run ends');
   for (const [width, height] of [[1440, 640], [390, 844]]) {
