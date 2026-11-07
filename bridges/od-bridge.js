@@ -523,14 +523,17 @@
   // allows, however many of its events (`pointerup`, `mouseup`, `click`;
   // `keydown`, `keyup`) the page handles, and a held key's repeats open
   // none. A press arms the check (the first listener of the window, so
-  // the page cannot stop it); the first open disarms it. Picking an
-  // element for a comment opens nothing. Not `navigator.userActivation`:
-  // a click on the host (the reload button, a file) can activate the
-  // frame too, and a page's timer then opened the browser on load.
-  // `window.event` is replaceable and prototypes are the page's to
-  // change, so what the check reads is taken now, before any page script
-  // runs; `isTrusted` is unforgeable.
-  var userEvent = (function () {
+  // the page cannot stop it); the first open disarms it, and so does the
+  // end of the press (`click`, `keyup`, `pointercancel`), once its events
+  // have run: a key pressed on the host and let go in the frame opens
+  // nothing. A `_blank` link spends the same press, and only a web address
+  // spends it. Picking an element for a comment opens nothing. Not
+  // `navigator.userActivation`: a click on the host (the reload button, a
+  // file) can activate the frame too, and a page's timer then opened the
+  // browser on load. `window.event`, `setTimeout` and prototypes are the
+  // page's to replace, so what the check uses is taken now, before any
+  // page script runs; `isTrusted` is unforgeable.
+  var spendGesture = (function () {
     try {
       var bind = Function.prototype.bind;
       var callOf = function (fn) {
@@ -551,8 +554,20 @@
       window.addEventListener('pointerdown', arm, true);
       window.addEventListener('touchstart', arm, { capture: true, passive: true });
       window.addEventListener('keydown', arm, true);
+      var timer = bind.call(setTimeout, window);
+      var disarm = function () {
+        timer(function () {
+          armed = false;
+        });
+      };
+      ['click', 'auxclick', 'keyup', 'pointercancel'].forEach(function (type) {
+        window.addEventListener(type, disarm, true);
+      });
       return function () {
-        if (selectMode) return false;
+        if (selectMode) {
+          armed = false;
+          return false;
+        }
         var ev = currentEvent();
         if (!ev || ev.isTrusted !== true) return false;
         var type = typeOf(ev);
@@ -579,7 +594,7 @@
   window.addEventListener('click', function (e) {
     if (!EDIT_KEY) return;
     var href = newWindowLink(e);
-    if (!href) return;
+    if (!href || !spendGesture()) return;
     later(function () {
       if (!e.defaultPrevented) openLink(href);
     });
@@ -589,12 +604,12 @@
   if (typeof nativeOpen === 'function') {
     window.open = function (url) {
       var opened = nativeOpen.apply(this, arguments);
-      if (EDIT_KEY && url != null && String(url) !== '' && userEvent()) {
+      if (EDIT_KEY && url != null && String(url) !== '') {
         var href = null;
         try {
           href = webAddress(new URL(String(url), document.baseURI).href);
         } catch (_) {}
-        if (href) openLink(href);
+        if (href && spendGesture()) openLink(href);
       }
       return opened;
     };
