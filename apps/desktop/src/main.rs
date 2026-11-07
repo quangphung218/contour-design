@@ -212,6 +212,21 @@ fn set_menu_labels(app: AppHandle, labels: MenuLabels) {
     }
 }
 
+/// A `target="_blank"` web link clicked in a design (the preview bridge's
+/// `od:open-link`): the window refuses the frame's own navigation off the
+/// app, so the UI asks for the system browser here (QA-054). Web addresses
+/// only.
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    let url = link_to_open(&url).ok_or_else(|| "not a web address".to_owned())?;
+    open_in_browser(&url);
+    Ok(())
+}
+
+fn link_to_open(url: &str) -> Option<Url> {
+    Url::parse(url).ok().filter(opens_in_browser)
+}
+
 /// Export in the app: the native Save dialog for the file the page made
 /// (request body, name in header `x-file-name`, URI-encoded), so the user
 /// picks the place and the toast names the file really written (QA-048).
@@ -413,7 +428,7 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
 /// `allow-<command>` for each app command (`build.rs` generates them): the
 /// daemon's page is a remote origin to Tauri, which refuses it any app
 /// command without one.
-const APP_COMMAND_PERMISSIONS: [&str; 8] = [
+const APP_COMMAND_PERMISSIONS: [&str; 9] = [
     "allow-pick-folder",
     "allow-set-theme",
     "allow-set-menu-labels",
@@ -422,6 +437,7 @@ const APP_COMMAND_PERMISSIONS: [&str; 8] = [
     "allow-install-update",
     "allow-cancel-update",
     "allow-restart-app",
+    "allow-open-link",
 ];
 
 /// The main window stays on the daemon's origin (and the bundled splash
@@ -886,7 +902,8 @@ fn main() -> anyhow::Result<()> {
             updater::update_support,
             updater::install_update,
             updater::cancel_update,
-            updater::restart_app
+            updater::restart_app,
+            open_link
         ])
         .menu(|app| build_menu(app, &MenuLabels::default()))
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -1072,6 +1089,7 @@ mod tests {
             "install_update",
             "cancel_update",
             "restart_app",
+            "open_link",
         ] {
             assert_eq!(
                 invoke_from(origin, &format!("{origin}/studio"), cmd),
@@ -1382,6 +1400,17 @@ mod tests {
         assert_eq!(file_name_only("../../etc/passwd"), "passwd");
         assert_eq!(file_name_only(r"..\x.png"), "x.png");
         assert_eq!(file_name_only("deck.pptx"), "deck.pptx");
+    }
+
+    #[test]
+    fn open_link_takes_web_addresses_only() {
+        assert_eq!(
+            link_to_open("https://example.com/p1").map(String::from),
+            Some("https://example.com/p1".to_owned())
+        );
+        for bad in ["file:///etc/passwd", "javascript:alert(1)", "not a url", ""] {
+            assert!(link_to_open(bad).is_none(), "{bad}");
+        }
     }
 
     #[test]

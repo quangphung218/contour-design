@@ -354,6 +354,60 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
   await frame.getByText('Preview stopped: the page kept reloading itself.').waitFor({ timeout: 15_000 });
   results.mintedKeyLoop = 'stopped';
 
+  // 4c. QA-054: in the desktop app a `target="_blank"` web link in the
+  // design opens in the system browser. The shell refuses the frame's own
+  // navigation, so the bridge tells the host, which asks the shell
+  // (`open_link`). Only a real click the page left alone, and only web
+  // links. The shell's IPC is a stub here; a context of its own blocks the
+  // popups Chromium opens without counting them as the design's requests.
+  await write('links.html', `<!doctype html><html><body style="font:18px system-ui">
+<p><a id="out" href="https://example.com/p1" target="_blank" rel="noopener">Out</a></p>
+<p><a id="kept" href="https://example.com/kept" target="_blank">Kept by the page</a></p>
+<p><a id="same" href="https://example.com/same">Same frame</a></p>
+<p><a id="mail" href="mailto:a@example.com" target="_blank">Mail</a></p>
+<script>
+document.getElementById('kept').addEventListener('click', (e) => e.preventDefault());
+document.getElementById('same').addEventListener('click', (e) => e.preventDefault());
+document.getElementById('mail').addEventListener('click', (e) => e.preventDefault());
+</script></body></html>`);
+  const deskContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await deskContext.route('**/*', (route) => {
+    const url = new URL(route.request().url());
+    return url.hostname === '127.0.0.1' || ['data:', 'blob:', 'about:'].includes(url.protocol) ? route.continue() : route.abort();
+  });
+  const desk = await deskContext.newPage();
+  desk.on('popup', (p) => p.close().catch(() => {}));
+  await desk.addInitScript(() => {
+    if (window.top !== window) return;
+    window.__shellCalls = [];
+    window.__TAURI_INTERNALS__ = {
+      invoke: async (cmd, args = {}) => {
+        window.__shellCalls.push(args && args.url ? `${cmd} ${args.url}` : cmd);
+        return null;
+      },
+    };
+  });
+  await desk.goto(`${BASE}/projects/${pid}`);
+  await desk.locator('[data-testid="file-row"][data-path="links.html"]').click();
+  const deskFrame = desk.frameLocator('iframe[data-testid="preview"]');
+  await deskFrame.locator('#out').waitFor();
+  const opened = () => desk.evaluate(() => window.__shellCalls.filter((c) => c.startsWith('open_link')));
+  // The host takes the frame's edit key right after the load; a click
+  // before that is not trusted, so click until one is.
+  await until(async () => {
+    await deskFrame.locator('#out').click();
+    return (await opened()).length > 0;
+  }, 'a _blank web link goes to the shell', 15_000);
+  await deskFrame.locator('#kept').click();
+  await deskFrame.locator('#same').click();
+  await deskFrame.locator('#mail').click();
+  // A click a page script makes is not the user's.
+  await deskFrame.locator('#out').evaluate((a) => a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+  await sleep(400);
+  assert.ok((await opened()).every((c) => c === 'open_link https://example.com/p1'), `opened: ${await opened()}`);
+  await deskContext.close();
+  results.blankLinks = 'a real click on a _blank web link asks the shell; page-cancelled, same-frame, mailto and synthetic clicks do not';
+
   // 5. Recovery tip: the daemon goes away, the Studio says it is
   // reconnecting and keeps what it shows; back up, the tip goes.
   // A crash, not a shutdown: a graceful stop waits on the open streams.

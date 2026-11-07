@@ -491,6 +491,33 @@
   });
 
   // ---------------------------------------------------------------------
+  // New-window links: the desktop app refuses any navigation off the app,
+  // this frame's included, so a `target="_blank"` web link did nothing
+  // there (QA-054). The bridge names the link to the host, which hands it
+  // to the system browser on desktop (a browser opens its own tab). Only a
+  // real plain click the page left alone, keyed: a page script can neither
+  // fake the click nor post the message.
+  // ---------------------------------------------------------------------
+  function newWindowLink(e) {
+    if (!e.isTrusted || e.defaultPrevented || e.button !== 0) return null;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return null;
+    var el = e.target;
+    while (el && el.nodeType !== 1) el = el.parentNode;
+    var a = el && el.closest ? el.closest('a[href][target]') : null;
+    if (!a || a.hasAttribute('download')) return null;
+    if (String(a.getAttribute('target')).toLowerCase() !== '_blank') return null;
+    var href = a.href;
+    return /^https?:\/\//i.test(href) ? href : null;
+  }
+
+  // Bubble phase on window: runs after the page's own handlers.
+  window.addEventListener('click', function (e) {
+    if (!EDIT_KEY) return;
+    var href = newWindowLink(e);
+    if (href) postKeyed({ type: 'od:open-link', key: EDIT_KEY, href: href });
+  });
+
+  // ---------------------------------------------------------------------
   // Selection: hover and click elements for comments and inspect. Elements
   // are named by the nearest `data-od-id`, else by a structural selector.
   // ---------------------------------------------------------------------

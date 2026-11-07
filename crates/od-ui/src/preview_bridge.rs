@@ -271,6 +271,13 @@ pub enum BridgeMsg {
         #[serde(default)]
         items: Vec<Layer>,
     },
+    /// A real click on a `target="_blank"` web link (QA-054).
+    #[serde(rename = "od:open-link")]
+    OpenLink {
+        #[serde(default)]
+        key: Option<String>,
+        href: String,
+    },
     #[serde(other)]
     Other,
 }
@@ -501,6 +508,13 @@ mod tests {
             json!({"type": "od:locate", "items": [{"id": "c1", "selector": "h1"}]})
         );
         assert_eq!(BridgeMsg::decode(r#"{"type":"webpack"}"#), None);
+        assert_eq!(
+            BridgeMsg::decode(r#"{"type":"od:open-link","key":"k1","href":"https://a.example/"}"#),
+            Some(BridgeMsg::OpenLink {
+                key: Some("k1".into()),
+                href: "https://a.example/".into()
+            })
+        );
         let Some(BridgeMsg::InspectResult(i)) = BridgeMsg::decode(
             r#"{"type":"od:inspect-result","selector":"h1","tag":"h1","styles":{"color":"rgb(0, 0, 0)"},"overrides":{"color":"red"},"textOnly":true,"rect":{}}"#,
         ) else {

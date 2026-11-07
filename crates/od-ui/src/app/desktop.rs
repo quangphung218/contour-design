@@ -52,6 +52,19 @@ pub fn set_theme(theme: &str) {
     }
 }
 
+/// Opens a web page in the system browser: a `_blank` link clicked in a
+/// design, which the shell's navigation guard refuses in the window
+/// (QA-054). Does nothing outside the desktop app.
+pub fn open_link(url: &str) {
+    let args = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&args, &JsValue::from_str("url"), &JsValue::from_str(url));
+    if let Some(promise) = invoke("open_link", &args) {
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = JsFuture::from(promise).await;
+        });
+    }
+}
+
 /// Whether this copy of the desktop app can update itself (the shell's
 /// `update_support`): `ready`, `devBuild` or `package`. `None` outside the
 /// desktop app.
