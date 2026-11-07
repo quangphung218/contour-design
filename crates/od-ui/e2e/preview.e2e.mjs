@@ -297,6 +297,14 @@ try {
   assert.equal(await page.getByTestId('comments-count').textContent(), '1');
   await item.locator('.comment-item-main').click();
   await item.and(page.locator('.selected')).waitFor();
+  // Picking the same comment again brings its element back into view.
+  await frame.locator('body').evaluate(() => { document.body.style.minHeight = '6000px'; window.scrollTo(0, 5000); });
+  await until(async () => (await frame.locator('h1').evaluate((h) => h.getBoundingClientRect().bottom)) < 0, 'page scrolled away');
+  await item.locator('.comment-item-main').click();
+  await until(async () => {
+    const top = await frame.locator('h1').evaluate((h) => h.getBoundingClientRect().top);
+    return top >= 0 && top < 600;
+  }, 'reselect scrolls back to the element');
   await shot('comments-tab');
   // The text of the element changes: the anchor may have moved.
   await write('page.html', (await fileText('page.html')).replace('Changed by the agent', 'Rewritten title'));
@@ -329,7 +337,7 @@ try {
   // Resolve from the open list.
   await item.getByTestId('comment-resolve').click();
   await page.getByTestId('comments-empty').waitFor();
-  results.commentsTab = 'list, image, anchored, stale, lost, resolve and reopen, image sent with the message';
+  results.commentsTab = 'list, image, anchored, reselect scrolls, stale, lost, resolve and reopen, image sent with the message';
 
   // 4b. Reload guard: a page that loads itself under a fresh edit-key id
   // each time gets no key for it (only the host's loads do), so its loads
