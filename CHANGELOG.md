@@ -13,7 +13,7 @@ All notable changes to Contour are recorded here. The format follows
 - Desktop app: a design's `window.open` no longer opens the system browser on its own, on every load of the preview; only one the user's click or key runs does. The window opens no new window itself; the app's own links go through the shell (QA-061).
 - Desktop app: an `<iframe srcdoc>` in a design shows its content instead of staying blank (QA-062).
 - Desktop app: ⌘-click (Ctrl-click on Windows and Linux) on a web link in a design opens it in the system browser, as a plain click on a `_blank` link does (QA-063).
-- Desktop app: one click or key press in a design opens at most one browser tab, as a browser's popup blocker allows, though the page calls `window.open` in each of its events (`pointerup`, `mouseup`, `click`; `keydown`, `keyup`). Picking an element in comment mode opens none.
+- Desktop app: one click or key press in a design opens at most one browser tab, as a browser's popup blocker allows, though the page calls `window.open` in each of its events (`pointerup`, `mouseup`, `click`; `keydown`, `keyup`) or the click is on a `target="_blank"` link. A `window.open` of a non-web address (`about:blank`, `mailto:`) does not use up the press. A key pressed outside the design and let go inside it opens none, nor does picking an element in comment mode.
 
 ## [0.2.0-beta.22] - 2026-11-07
 

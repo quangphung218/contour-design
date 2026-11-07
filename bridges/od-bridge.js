@@ -523,14 +523,27 @@
   // allows, however many of its events (`pointerup`, `mouseup`, `click`;
   // `keydown`, `keyup`) the page handles, and a held key's repeats open
   // none. A press arms the check (the first listener of the window, so
-  // the page cannot stop it); the first open disarms it. Picking an
-  // element for a comment opens nothing. Not `navigator.userActivation`:
-  // a click on the host (the reload button, a file) can activate the
-  // frame too, and a page's timer then opened the browser on load.
-  // `window.event` is replaceable and prototypes are the page's to
-  // change, so what the check reads is taken now, before any page script
-  // runs; `isTrusted` is unforgeable.
-  var userEvent = (function () {
+  // the page cannot stop it); the first open disarms it, and so does the
+  // end of the press, once its events have run: `keyup` for a key,
+  // `click`, `auxclick` or `pointercancel` for a pointer (Enter's own
+  // `click` comes before its `keyup`). So a key pressed on the host and let
+  // go in the frame opens nothing. A `_blank` link spends the same press,
+  // and only a web address spends it. Picking an element for a comment
+  // opens nothing. Not
+  // `navigator.userActivation`: a click on the host (the reload button, a
+  // file) can activate the frame too, and a page's timer then opened the
+  // browser on load. `window.event`, `setTimeout` and prototypes are the
+  // page's to replace, so what the check uses is taken now, before any
+  // page script runs; `isTrusted` is unforgeable.
+  // The `_blank` click whose press the bridge holds for its link until
+  // dispatch is over: a page listener may open a tab of its own instead,
+  // in the same event, and the link then opens none.
+  var pendingLink = null;
+  // Inside the native `window.open`, where WebKit runs timers: the disarm
+  // and the link's own open wait till it returns.
+  var inNative = 0;
+  var timer = Function.prototype.bind.call(setTimeout, window);
+  var spendGesture = (function () {
     try {
       var bind = Function.prototype.bind;
       var callOf = function (fn) {
@@ -542,25 +555,53 @@
       var kinds = Object.create(null);
       kinds.click = kinds.auxclick = kinds.mouseup = kinds.pointerup = 1;
       kinds.touchend = kinds.keydown = kinds.keyup = 1;
-      var armed = false;
+      // What armed the check: 'key' or 'pointer'; null when disarmed.
+      var armed = null;
       var arm = function (e) {
         if (e.isTrusted !== true) return;
-        if (typeOf(e) === 'keydown' && repeatOf(e)) return;
-        armed = true;
+        var type = typeOf(e);
+        if (type === 'keydown' && repeatOf(e)) return;
+        armed = type === 'keydown' ? 'key' : 'pointer';
       };
       window.addEventListener('pointerdown', arm, true);
       window.addEventListener('touchstart', arm, { capture: true, passive: true });
       window.addEventListener('keydown', arm, true);
+      var disarmOn = function (by) {
+        return function () {
+          timer(function run() {
+            if (inNative) return timer(run);
+            if (armed === by) armed = null;
+          });
+        };
+      };
+      window.addEventListener('keyup', disarmOn('key'), true);
+      // Focus leaving the frame takes the end of the press with it (Tab out:
+      // its keyup falls on the host).
+      window.addEventListener('blur', function (e) {
+        if (e.target === window && !inNative) armed = null;
+      }, true);
+      ['click', 'auxclick', 'pointercancel'].forEach(function (type) {
+        window.addEventListener(type, disarmOn('pointer'), true);
+      });
       return function () {
-        if (selectMode) return false;
+        if (selectMode) {
+          armed = null;
+          return false;
+        }
         var ev = currentEvent();
         if (!ev || ev.isTrusted !== true) return false;
         var type = typeOf(ev);
         if (kinds[type] !== 1) return false;
         if ((type === 'keydown' || type === 'keyup') && repeatOf(ev)) return false;
-        if (!armed) return false;
-        armed = false;
-        return true;
+        if (armed) {
+          armed = null;
+          return true;
+        }
+        if (pendingLink === ev) {
+          pendingLink = null;
+          return true;
+        }
+        return false;
       };
     } catch (_) {
       // No such getters: the page's window.open opens nothing.
@@ -575,27 +616,41 @@
   }
 
   // A window listener the page adds after this one runs after it, so
-  // whether the page cancelled the click is read once dispatch is over.
+  // whether the page cancelled the click is read once dispatch is over;
+  // till then the link holds the press (`pendingLink`).
   window.addEventListener('click', function (e) {
     if (!EDIT_KEY) return;
     var href = newWindowLink(e);
-    if (!href) return;
-    later(function () {
+    if (!href || !spendGesture()) return;
+    pendingLink = e;
+    timer(function settle() {
+      if (inNative) return timer(settle);
+      if (pendingLink !== e) return;
+      pendingLink = null;
       if (!e.defaultPrevented) openLink(href);
     });
   });
 
   var nativeOpen = window.open;
   if (typeof nativeOpen === 'function') {
+    // The press is spent before the native call: WebKit runs timers (the
+    // disarm) inside it.
     window.open = function (url) {
-      var opened = nativeOpen.apply(this, arguments);
-      if (EDIT_KEY && url != null && String(url) !== '' && userEvent()) {
-        var href = null;
+      var href = null;
+      if (EDIT_KEY && url != null && String(url) !== '') {
         try {
           href = webAddress(new URL(String(url), document.baseURI).href);
         } catch (_) {}
-        if (href) openLink(href);
       }
+      var spent = href !== null && spendGesture();
+      var opened;
+      inNative++;
+      try {
+        opened = nativeOpen.apply(this, arguments);
+      } finally {
+        inNative--;
+      }
+      if (spent) openLink(href);
       return opened;
     };
   }
