@@ -161,6 +161,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   list does not carry); ships with the release after it merges. Recheck on
   beta.22.
 - **Recheck (beta.22, 2026-11-07)**: verified on beta.22: Use template on App feature tour (9:16) shows 16:9 and 10s, Motion's defaults, not 1:1 and 3s ([13](desktop-beta22/13-qa055-use-template.png)). The film's own 9:16, 12 s is still not shown (as the fix says, the template list does not carry it).
+- **Status (full fix)**: fixed on branch `film-meta`: `/api/design-templates` carries each film's `film` (`width`, `height`, `duration` from its example's composition root), and Use template sets the nearest offered ratio and the film's length in whole seconds (App feature tour: 9:16, 12 s; 12 s joins the length list). A film that declares none keeps Motion's defaults. Ships with the release after it merges.
 
 ## QA-056 🔵 Remix names the project after the template id
 
