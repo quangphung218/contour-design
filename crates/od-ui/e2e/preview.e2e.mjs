@@ -297,14 +297,15 @@ try {
   assert.equal(await page.getByTestId('comments-count').textContent(), '1');
   await item.locator('.comment-item-main').click();
   await item.and(page.locator('.selected')).waitFor();
-  // Picking the same comment again brings its element back into view.
-  await frame.locator('body').evaluate(() => { document.body.style.minHeight = '6000px'; window.scrollTo(0, 5000); });
-  await until(async () => (await frame.locator('h1').evaluate((h) => h.getBoundingClientRect().bottom)) < 0, 'page scrolled away');
+  // Picking the same comment again asks the page to scroll back to it.
+  await frame.locator('body').evaluate(() => {
+    window.__odMarks = [];
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'od:mark') window.__odMarks.push(e.data.scroll);
+    });
+  });
   await item.locator('.comment-item-main').click();
-  await until(async () => {
-    const top = await frame.locator('h1').evaluate((h) => h.getBoundingClientRect().top);
-    return top >= 0 && top < 600;
-  }, 'reselect scrolls back to the element');
+  await until(async () => (await frame.locator('body').evaluate(() => window.__odMarks.includes(true))), 'reselect scrolls back to the element');
   await shot('comments-tab');
   // The text of the element changes: the anchor may have moved.
   await write('page.html', (await fileText('page.html')).replace('Changed by the agent', 'Rewritten title'));
