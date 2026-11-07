@@ -175,17 +175,28 @@ try {
   await until(async () => (await current(page)).join() === 'settings-nav-about', 'about marked at the bottom');
 
   log('2b. MCP Save only with a change');
+  // The list loads after the page shows: an Add before it lands is undone.
+  const listed = page.waitForResponse((r) => r.url().endsWith('/api/mcp/servers') && r.request().method() === 'GET');
   await page.goto(BASE + '/integrations');
   const save = page.getByTestId('mcp-save');
   await save.waitFor();
-  await sleep(500);
+  await listed;
   assert.equal(await save.isDisabled(), true, 'Save disabled with nothing to save');
   assert.equal(await save.evaluate((b) => b.classList.contains('primary')), false, 'Save not primary');
   await page.getByTestId('mcp-add').click();
   await until(async () => !(await save.isDisabled()), 'Save enabled after Add');
   assert.equal(await save.evaluate((b) => b.classList.contains('primary')), true, 'Save primary after Add');
+  // A stdio server needs a command: the daemon refuses an empty one (400)
+  // and Save stays on. Save is also off while the request is in flight, so
+  // "off" alone does not prove the save landed: wait for "Saved".
+  await page.getByTestId('mcp-command').fill('mcp-echo');
+  await page.getByTestId('mcp-command').press('Tab');
   await save.click();
-  await until(async () => await save.isDisabled(), 'Save disabled again once saved');
+  await page.locator('.row.end > .ok-text').waitFor();
+  assert.equal(await page.getByTestId('mcp-error').count(), 0, 'no save error');
+  assert.equal(await save.isDisabled(), true, 'Save disabled again once saved');
+  assert.equal(await save.evaluate((b) => b.classList.contains('primary')), false, 'Save not primary once saved');
+  assert.equal((await api('/api/mcp/servers')).body.servers.length, 1, 'the server saved');
 
   log('3. the chat shows the Next chips when a run ends');
   for (const [width, height] of [[1440, 640], [390, 844]]) {
@@ -195,6 +206,20 @@ try {
     await page.goto(`${BASE}/projects/${r.body.project.id}`);
     const composer = page.getByTestId('composer');
     await composer.waitFor();
+    // The list's scroll events and size changes, for the failure message:
+    // a flake on CI (chips out of view at 390 px) did not show locally.
+    await page.evaluate(() => {
+      const list = document.querySelector('[data-testid=messages]');
+      const t0 = performance.now();
+      window.__scrollLog = [];
+      const rec = (what) => {
+        window.__scrollLog.push(`${Math.round(performance.now() - t0)}ms ${what} top=${list.scrollTop} ch=${list.clientHeight} sh=${list.scrollHeight}`);
+        if (window.__scrollLog.length > 40) window.__scrollLog.shift();
+      };
+      list.addEventListener('scroll', () => rec('scroll'), { passive: true });
+      new ResizeObserver(() => rec('resize')).observe(list);
+      new MutationObserver(() => rec('mutation')).observe(list, { childList: true, subtree: true });
+    });
     const assistant = page.getByTestId('assistant-msg');
     // Two turns with a plan: the conversation is taller than the chat.
     for (let turn = 1; turn <= 2; turn++) {
@@ -217,10 +242,26 @@ try {
       const list = document.querySelector('[data-testid=messages]');
       const chips = document.querySelector('[data-testid=next-steps]').getBoundingClientRect();
       const box = list.getBoundingClientRect();
-      return { overflow: list.scrollHeight > list.clientHeight, chipsBottom: chips.bottom, listBottom: box.bottom };
+      return {
+        overflow: list.scrollHeight > list.clientHeight,
+        chipsBottom: chips.bottom,
+        listBottom: box.bottom,
+        // "Jump to latest" shows when the list stopped following.
+        state: {
+          top: list.scrollTop,
+          ch: list.clientHeight,
+          sh: list.scrollHeight,
+          jump: !!document.querySelector('[data-testid=jump-latest]'),
+          chips: document.querySelectorAll('[data-testid=next-steps]').length,
+        },
+        events: window.__scrollLog,
+      };
     });
     assert.ok(fit.overflow, `the chat scrolls at ${width}px`);
-    assert.ok(fit.chipsBottom <= fit.listBottom + 1, `Next chips in view at ${width}px (${fit.chipsBottom} > ${fit.listBottom})`);
+    assert.ok(
+      fit.chipsBottom <= fit.listBottom + 1,
+      `Next chips in view at ${width}px (${fit.chipsBottom} > ${fit.listBottom}) ${JSON.stringify(fit.state)}\n${fit.events.join('\n')}`,
+    );
     if (width === 390) {
       log('4. 390 px: Export from the chat, a one-row preview head');
       await steps.getByTestId('next-export').click();
