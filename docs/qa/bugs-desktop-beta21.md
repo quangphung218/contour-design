@@ -127,7 +127,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
 - **Fix**: in `on_navigation`, hand http(s) URLs off the daemon origin to
   `open_in_browser` and return false (QA-044's first suggestion), or have
   the preview bridge post `_blank` clicks to the host.
-- **Status**: fixed in #93 (the preview bridge posts a keyed `od:open-link`
+- **Status**: fixed in #94 (the preview bridge posts a keyed `od:open-link`
   for a real click, the Studio calls the new `open_link` shell command;
   `on_navigation` still refuses, since handing off there would also open the
   browser for embedded iframes and script redirects; the shell drops a second
@@ -151,7 +151,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   `media.set(MediaOptions::defaults(..))`, which the chip buttons do
   (`home.rs:245`, `home.rs:264`).
 - **Screenshot**: [01-use-template-1x1-3s.png](desktop-beta21/01-use-template-1x1-3s.png).
-- **Status**: fixed in #93 (Use template sets `MediaOptions::defaults` for
+- **Status**: fixed in #94 (Use template sets `MediaOptions::defaults` for
   the chip: 16:9, 10 s, not the film's own 9:16, 12 s, which the template
   list does not carry); ships with the release after it merges. Recheck on
   beta.22.
@@ -164,7 +164,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   from the gallery (`motion-cafe-menu`, `motion-year-recap` …).
 - **Cause**: the gallery posts `{}`; `templates.rs:317` falls back to
   `entry.info.name` (the id) instead of the display name.
-- **Status**: fixed in #93 (the gallery sends the card's name; the daemon
+- **Status**: fixed in #94 (the gallery sends the card's name; the daemon
   falls back to the English display name); ships with the release after it
   merges. Recheck on beta.22.
 
@@ -177,7 +177,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   edge; the user has to scroll inside the preview to find them.
 - **Expected**: keep the box inside the preview (above the element, or
   pinned to the visible bottom).
-- **Status**: fixed in #93 (the box is pinned to the preview's visible
+- **Status**: fixed in #94 (the box is pinned to the preview's visible
   bottom when it would not fit under the element); ships with the release
   after it merges. Recheck on beta.22.
 
@@ -189,7 +189,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   and only "Đoạn văn 1." shows.
 - **Expected**: an element taller than the preview is aligned to its top.
 - **Screenshot**: [10-comment-pick.png](desktop-beta21/10-comment-pick.png).
-- **Status**: fixed in #93 (`od:mark` aligns an element taller than the
+- **Status**: fixed in #94 (`od:mark` aligns an element taller than the
   frame to its top); ships with the release after it merges. Recheck on
   beta.22.
 
@@ -201,7 +201,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
 - **Cause**: `preview_comments.rs:102` clamps the pin's top with
   `(at.y - 10.0).max(0.0)`.
 - **Expected**: hide it, or show it as an "above" marker.
-- **Status**: fixed in #93 (the pin hides); ships with the release after it
+- **Status**: fixed in #94 (the pin hides); ships with the release after it
   merges. Recheck on beta.22.
 
 ## QA-060 🔵 The comment target label runs the element's texts together
@@ -213,7 +213,7 @@ Screenshots in [desktop-beta21/](desktop-beta21/).
   mid-word.
 - **Expected**: spaces between blocks (e.g. `innerText` rather than
   `textContent`), cut at a word.
-- **Status**: fixed in #93 (`od:select` sends `label` (innerText); cut at a
+- **Status**: fixed in #94 (`od:select` sends `label` (innerText); cut at a
   word); ships with the release after it merges. Recheck on beta.22.
 
 ## Not bugs (checked)
