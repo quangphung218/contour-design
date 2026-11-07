@@ -206,6 +206,20 @@ try {
     await page.goto(`${BASE}/projects/${r.body.project.id}`);
     const composer = page.getByTestId('composer');
     await composer.waitFor();
+    // The list's scroll events and size changes, for the failure message:
+    // a flake on CI (chips out of view at 390 px) did not show locally.
+    await page.evaluate(() => {
+      const list = document.querySelector('[data-testid=messages]');
+      const t0 = performance.now();
+      window.__scrollLog = [];
+      const rec = (what) => {
+        window.__scrollLog.push(`${Math.round(performance.now() - t0)}ms ${what} top=${list.scrollTop} ch=${list.clientHeight} sh=${list.scrollHeight}`);
+        if (window.__scrollLog.length > 40) window.__scrollLog.shift();
+      };
+      list.addEventListener('scroll', () => rec('scroll'), { passive: true });
+      new ResizeObserver(() => rec('resize')).observe(list);
+      new MutationObserver(() => rec('mutation')).observe(list, { childList: true, subtree: true });
+    });
     const assistant = page.getByTestId('assistant-msg');
     // Two turns with a plan: the conversation is taller than the chat.
     for (let turn = 1; turn <= 2; turn++) {
@@ -228,10 +242,26 @@ try {
       const list = document.querySelector('[data-testid=messages]');
       const chips = document.querySelector('[data-testid=next-steps]').getBoundingClientRect();
       const box = list.getBoundingClientRect();
-      return { overflow: list.scrollHeight > list.clientHeight, chipsBottom: chips.bottom, listBottom: box.bottom };
+      return {
+        overflow: list.scrollHeight > list.clientHeight,
+        chipsBottom: chips.bottom,
+        listBottom: box.bottom,
+        // "Jump to latest" shows when the list stopped following.
+        state: {
+          top: list.scrollTop,
+          ch: list.clientHeight,
+          sh: list.scrollHeight,
+          jump: !!document.querySelector('[data-testid=jump-latest]'),
+          chips: document.querySelectorAll('[data-testid=next-steps]').length,
+        },
+        events: window.__scrollLog,
+      };
     });
     assert.ok(fit.overflow, `the chat scrolls at ${width}px`);
-    assert.ok(fit.chipsBottom <= fit.listBottom + 1, `Next chips in view at ${width}px (${fit.chipsBottom} > ${fit.listBottom})`);
+    assert.ok(
+      fit.chipsBottom <= fit.listBottom + 1,
+      `Next chips in view at ${width}px (${fit.chipsBottom} > ${fit.listBottom}) ${JSON.stringify(fit.state)}\n${fit.events.join('\n')}`,
+    );
     if (width === 390) {
       log('4. 390 px: Export from the chat, a one-row preview head');
       await steps.getByTestId('next-export').click();
