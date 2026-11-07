@@ -1,0 +1,25 @@
+// Chat task clock: reload mid-run keeps counting from the run's start; frozen at the end.
+import { createRequire } from 'node:module';
+const require = createRequire(new URL('../../../crates/od-ui/e2e/package.json', import.meta.url));
+const { chromium } = require('playwright');
+const BASE = process.env.BASE;
+const r = await (await fetch(BASE + '/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Đồng hồ task' }) })).json();
+const browser = await chromium.launch();
+const page = await (await browser.newContext({ viewport: { width: 1360, height: 860 } })).newPage();
+await page.goto(`${BASE}/projects/${r.project.id}`);
+await page.getByTestId('composer').waitFor();
+await page.getByTestId('composer').fill('slow plan clock check');
+await page.keyboard.press('Enter');
+const line = () => page.locator('text=/(Step \\d+ of \\d+|Worked for) .*\\d+:\\d\\d/').first().innerText().catch(() => null);
+await page.waitForTimeout(4500);
+const before = await line();
+await page.reload();
+await page.getByTestId('composer').waitFor();
+await page.waitForTimeout(800);
+const afterReload = await line();
+await page.waitForTimeout(9000);
+const done = await line();
+await page.waitForTimeout(3000);
+const later = await line();
+console.log(JSON.stringify({ before, afterReload, done, later }));
+await browser.close();
