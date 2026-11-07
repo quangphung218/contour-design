@@ -27,7 +27,7 @@ window, so a page cannot drive itself through the protocol.
 | `od:palette` | `id`: `coral` `electric` `acid-forest` `risograph` `mono-noir`, or `null` | Recolors the page, or restores it; replies `od:palette-state` |
 | `od:tweaks-request` | | Replies `od:tweaks` |
 | `od:tweak-set` | `id`, `value` | Sets a declared tweak |
-| `od:mark` | `selector` (or `null`), `scroll?` | Outlines one element (scrolled into view with `scroll`) until the next mark |
+| `od:mark` | `selector` (or `null`), `scroll?` | Outlines one element (scrolled into view with `scroll`: centred, or its top when taller than the frame) until the next mark |
 | `od:layers-request` | | Replies `od:layers` |
 
 ## Bridge → host
@@ -38,7 +38,7 @@ window, so a page cannot drive itself through the protocol.
 | `od:deck-ready` | `protocolVersion`, `capabilities`, `count` | Slides found |
 | `od:slide-state` | `protocolVersion`, `active` (0-based), `count` | After a command, and whenever the visible slide changes |
 | `od:esc` | | Escape pressed inside the preview |
-| `od:hover`, `od:select` | `odId`, `selector`, `tag`, `text`, `rect` | Selection mode |
+| `od:hover`, `od:select` | `odId`, `selector`, `tag`, `text`, `rect`; `od:select` also `label` (the text as laid out, blocks apart) | Selection mode |
 | `od:snapshot-result` | `requestId`, `width`, `height`, `format`, `dataUrl` (or `error`, `rasterError`) | After `od:snapshot` |
 | `od:size` | `width`, `height` | Content size changed |
 | `od:located` | `items`: `[{id, rect, text}]` (`rect` null when the selector matches nothing; `text` as `od:select` prints it) | After `od:locate`, scroll, resize |

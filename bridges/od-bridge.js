@@ -584,6 +584,16 @@
     return out.replace(/\s+/g, ' ').trim().slice(0, 160);
   }
 
+  // The text as laid out, for a label: blocks apart (QA-060), where
+  // `plainText` runs them together as the source check reads them.
+  function labelText(el) {
+    var text = '';
+    try {
+      text = el.innerText || '';
+    } catch (_) {}
+    return String(text).replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+
   function describe(el) {
     var r = el.getBoundingClientRect();
     return {
@@ -648,7 +658,9 @@
     if (!el) return;
     e.preventDefault();
     e.stopPropagation();
-    post('od:select', describe(el));
+    var picked = describe(el);
+    picked.label = labelText(el);
+    post('od:select', picked);
   }, true);
 
   // ---------------------------------------------------------------------
@@ -723,7 +735,9 @@
     }
     if (marked && scroll) {
       try {
-        marked.scrollIntoView({ block: 'center', inline: 'nearest' });
+        // Taller than the frame: its top, not its middle (QA-058).
+        var tall = marked.getBoundingClientRect().height > window.innerHeight;
+        marked.scrollIntoView({ block: tall ? 'start' : 'center', inline: 'nearest' });
       } catch (_) {}
     }
     drawMark();

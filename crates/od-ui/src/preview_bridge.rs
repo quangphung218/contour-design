@@ -17,6 +17,10 @@ pub struct Picked {
     pub tag: String,
     #[serde(default)]
     pub text: String,
+    /// The text as laid out (`innerText`): blocks apart, for the note
+    /// box's label (QA-060). `text` stays the anchor's.
+    #[serde(default)]
+    pub label: Option<String>,
     #[serde(default)]
     pub rect: CommentRect,
 }

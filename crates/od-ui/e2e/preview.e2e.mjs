@@ -408,6 +408,46 @@ document.getElementById('mail').addEventListener('click', (e) => e.preventDefaul
   await deskContext.close();
   results.blankLinks = 'a real click on a _blank web link asks the shell; page-cancelled, same-frame, mailto and synthetic clicks do not';
 
+  // 4d. Comments on a page taller than the preview (QA-057 … QA-060).
+  await write('tall.html', `<!doctype html><html><body style="margin:0;font:18px system-ui">
+<section id="s1" style="height:2000px;padding:16px"><h2>Mục 1 — Tiêu đề có dấu</h2><p>Đoạn văn 1.</p><a href="#">Link ngắn gọn</a></section>
+<section id="s2" style="height:2000px;padding:16px"><h2>Mục 2</h2><p>Đoạn văn 2.</p></section>
+</body></html>`);
+  await row('tall.html').click();
+  await frame.locator('#s2').waitFor();
+  await page.getByTestId('comment-mode').click();
+  await sleep(150);
+  await frame.locator('#s1').click({ position: { x: 300, y: 300 } });
+  const draft = page.getByTestId('comment-draft');
+  await draft.waitFor();
+  // QA-060: the label keeps the blocks apart and cuts at a word.
+  const label = await draft.locator('span.muted').first().textContent();
+  assert.match(label, /^<section> Mục 1 — Tiêu đề có dấu Đoạn văn 1\./, `label: ${label}`);
+  assert.doesNotMatch(label, /Link ng$/, `label cut mid-word: ${label}`);
+  // QA-057: the box stays inside the preview for an element taller than it.
+  const tallFrame = await page.getByTestId('preview').boundingBox();
+  const addBox = await page.getByTestId('comment-add').boundingBox();
+  assert.ok(addBox.y + addBox.height <= tallFrame.y + tallFrame.height, `Add comment below the preview: ${addBox.y + addBox.height} > ${tallFrame.y + tallFrame.height}`);
+  await page.getByTestId('comment-note').fill('Tall one');
+  await page.getByTestId('comment-add').click();
+  await page.getByTestId('comment-pin').first().waitFor();
+  // QA-059: the pin of a comment scrolled out of view does not sit on top
+  // of what is shown there.
+  await frame.locator('#s2').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await until(async () => !(await page.getByTestId('comment-pin').first().isVisible()), 'the pin of a comment scrolled away hides');
+  // QA-058: picking a comment on an element taller than the preview shows
+  // its top, not its middle.
+  await page.getByTestId('comment-mode').click();
+  const tallItem = page.getByTestId('comment-item').filter({ hasText: 'Tall one' });
+  await tallItem.locator('.comment-item-main').click();
+  await until(async () => {
+    const top = await frame.locator('#s1').evaluate((el) => el.getBoundingClientRect().top);
+    return Math.abs(top) < 2;
+  }, 'the pick aligns a tall element to its top');
+  await page.getByTestId('comment-pin').first().waitFor();
+  await tallItem.getByTestId('comment-resolve').click();
+  results.tallComments = 'label spaced and cut at a word, box inside the preview, off-screen pin hidden, tall pick shows the top';
+
   // 5. Recovery tip: the daemon goes away, the Studio says it is
   // reconnecting and keeps what it shows; back up, the tip goes.
   // A crash, not a shutdown: a graceful stop waits on the open streams.
