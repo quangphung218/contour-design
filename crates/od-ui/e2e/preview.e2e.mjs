@@ -404,10 +404,11 @@ document.getElementById('mail').addEventListener('click', (e) => e.preventDefaul
   // QA-061: popups no one asked for, on load and every 200 ms after, with
   // a made-up "user's click" in window.event (it is replaceable).
   await write('popups.html', `<!doctype html><html><body><p id="ready">Popups</p><script>
-window.event = { isTrusted: true, type: 'click' };
+const fake = () => { window.event = { isTrusted: true, type: 'click' }; };
 let n = 0;
+fake();
 window.open('https://example.com/w-load');
-const loop = setInterval(() => { window.open('https://example.com/loop-' + ++n); if (n >= 8) clearInterval(loop); }, 200);
+const loop = setInterval(() => { fake(); window.open('https://example.com/loop-' + ++n); if (n >= 8) clearInterval(loop); }, 200);
 </script></body></html>`);
   await desk.goto(`${BASE}/projects/${pid}`);
   await desk.locator('[data-testid="file-row"][data-path="popups.html"]').click();
