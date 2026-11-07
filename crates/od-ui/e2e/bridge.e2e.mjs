@@ -36,6 +36,7 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <p><a id="wincancel" href="https://example.com/g-link" target="_blank">G: Enter, the page cancels the link, keyup opens</a></p>
 <p><span id="dr" draggable="true" style="display:inline-block;padding:8px;background:#ccc">S3: drag me</span>
 <span id="dz" style="display:inline-block;padding:8px;margin-left:200px;background:#eee">drop here</span></p>
+<p><button id="tc">TP: the page cancels touchend (no click)</button></p>
 <p><button id="gone">P1: goes away on pointerdown</button></p>
 <p><button id="dlgc">D1: click confirms, then opens</button> <button id="dlga">D2: click alerts, then opens</button>
 <button id="dlgp">D3: click prompts, then opens</button></p>
@@ -51,6 +52,7 @@ on('cb', 'click', () => { window.open('about:blank'); window.open('https://examp
 on('ce', 'click', () => { window.open(''); window.open('https://example.com/ce-open'); });
 on('wincancel', 'keyup', (e) => { if (e.key === 'Enter') window.open('https://example.com/g-keyup'); });
 on('dz', 'dragover', (e) => e.preventDefault());
+on('tc', 'touchend', (e) => e.preventDefault());
 on('gone', 'pointerdown', (e) => e.target.remove());
 on('dlgc', 'click', () => { if (confirm('open?')) window.open('https://example.com/d1-open'); });
 on('dlga', 'click', () => { alert('opening'); window.open('https://example.com/d2-open'); });
@@ -98,6 +100,8 @@ const cases = [
   // A press that ends with no click (WebKit's drag, an element gone on
   // pointerdown) does not leave the frame armed for a stray keyup.
   ['S3', [], async (f, page) => { await f.locator('#dr').dragTo(f.locator('#dz')); await sleep(100); await strayKeyup(f, page); }],
+  // A touch whose touchend the page cancels gets no click either.
+  ['TP', [], async (f, page) => { await f.locator('#tc').tap(); await sleep(500); await strayKeyup(f, page); }],
   ['P1', [], async (f, page) => { await f.locator('#gone').click(); await sleep(100); await strayKeyup(f, page); }],
   // The dialog's blur does not take the press from the open after it.
   ['D1', ['d1-open'], (f) => f.locator('#dlgc').click()],
