@@ -64,12 +64,46 @@ pub fn opens_in_new_window(href: &str, target: &str) -> bool {
     web && target.eq_ignore_ascii_case("_blank")
 }
 
+/// A click on a link, as far as [`route_new_window_links`] reads it.
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(clippy::struct_excessive_bools)] // the event's own flags
+struct LinkClick {
+    prevented: bool,
+    button: i16,
+    shift: bool,
+    alt: bool,
+    // Not read: kept so a test pins that ⌘ / Ctrl changes nothing.
+    #[allow(dead_code)]
+    meta: bool,
+    #[allow(dead_code)]
+    ctrl: bool,
+}
+
+impl LinkClick {
+    fn of(ev: &web_sys::MouseEvent) -> Self {
+        Self {
+            prevented: ev.default_prevented(),
+            button: ev.button(),
+            shift: ev.shift_key(),
+            alt: ev.alt_key(),
+            meta: ev.meta_key(),
+            ctrl: ev.ctrl_key(),
+        }
+    }
+
+    /// A plain or ⌘ / Ctrl primary click no handler took (QA-063): the
+    /// ⌘ / Ctrl the browser reads as "new tab" opens it all the same.
+    fn routed(self) -> bool {
+        !self.prevented && self.button == 0 && !self.shift && !self.alt
+    }
+}
+
 /// The app's links with `target="_blank"` open in the system browser, as
 /// Export ▸ Open in new tab does: the window opens no new window itself
 /// (QA-061). A plain or ⌘ / Ctrl-click; a handler that already took the
 /// click is left alone.
 pub fn route_new_window_links(ev: &web_sys::MouseEvent) {
-    if ev.default_prevented() || ev.button() != 0 || ev.shift_key() || ev.alt_key() {
+    if !LinkClick::of(ev).routed() {
         return;
     }
     let Some(link) = ev
@@ -110,6 +144,44 @@ mod tests {
         ] {
             assert!(!opens_in_new_window(href, "_blank"), "{href}");
         }
+    }
+
+    #[test]
+    fn a_plain_or_command_click_goes_to_the_shell() {
+        let plain = LinkClick::default();
+        assert!(plain.routed());
+        // QA-063: ⌘ / Ctrl-click opens the link too.
+        assert!(
+            LinkClick {
+                meta: true,
+                ..plain
+            }
+            .routed()
+        );
+        assert!(
+            LinkClick {
+                ctrl: true,
+                ..plain
+            }
+            .routed()
+        );
+        // Taken by a handler, another button, or Shift / Alt: left alone.
+        assert!(
+            !LinkClick {
+                prevented: true,
+                ..plain
+            }
+            .routed()
+        );
+        assert!(!LinkClick { button: 1, ..plain }.routed());
+        assert!(
+            !LinkClick {
+                shift: true,
+                ..plain
+            }
+            .routed()
+        );
+        assert!(!LinkClick { alt: true, ..plain }.routed());
     }
 
     #[test]

@@ -415,6 +415,24 @@ Updates. Each row there has its priority (P0 main flow, P1 common error
 path, P2 edge) and result; the parts that need no native window have
 Playwright scripts in `desktop-beta21/` run against the app's own daemon.
 
+## 18. Desktop app: links and popups from a design (manual)
+
+The shell's `on_new_window` (`apps/desktop/src/main.rs`) has no test: a
+Tauri window cannot run headless. `preview.e2e.mjs` covers the bridge
+with a stub shell in Chromium only. On a built app, on each of macOS
+(WKWebView), Windows (WebView2) and Linux (WebKitGTK):
+
+- [ ] **on_new_window always Deny**: a design's `window.open`, a
+  `target="_blank"` link and a ⌘ / Ctrl-click never open a second app
+  window; a web address goes to the system browser, anything else does
+  nothing.
+- [ ] **1 click = 1 tab**: a button whose page opens a different URL on
+  `pointerup`, `mouseup` and `click` opens one browser tab; Enter on a
+  button with `window.open` on `keydown` and `keyup` opens one; a held key
+  opens one.
+- [ ] A `window.open` on load or on a timer opens nothing.
+- [ ] In comment mode, clicking that button picks it and opens nothing.
+
 ## Not automated, and why
 
 - **Desktop shell (Tauri)**: native menus, Cmd+O folder dialog, Finder
