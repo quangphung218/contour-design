@@ -365,7 +365,10 @@ location.search = '?bridge=1&key=minted-' + Date.now() + '-' + Math.random().toS
 <p><a id="kept" href="https://example.com/kept" target="_blank">Kept by the page</a></p>
 <p><a id="same" href="https://example.com/same">Same frame</a></p>
 <p><a id="mail" href="mailto:a@example.com" target="_blank">Mail</a></p>
+<p><a id="late" href="https://example.com/late" target="_blank">Cancelled on window</a></p>
 <script>
+// Added after the bridge's own window listener: runs after it.
+window.addEventListener('click', (e) => { if (e.target.id === 'late') e.preventDefault(); });
 document.getElementById('kept').addEventListener('click', (e) => e.preventDefault());
 document.getElementById('same').addEventListener('click', (e) => e.preventDefault());
 document.getElementById('mail').addEventListener('click', (e) => e.preventDefault());
@@ -401,14 +404,24 @@ document.getElementById('mail').addEventListener('click', (e) => e.preventDefaul
   await deskFrame.locator('#kept').click();
   await deskFrame.locator('#same').click();
   await deskFrame.locator('#mail').click();
+  await deskFrame.locator('#late').click();
+  await sleep(400);
   // A click a page script makes is not the user's.
   const realClicks = (await opened()).length;
   await deskFrame.locator('#out').evaluate((a) => a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
   await sleep(400);
   assert.equal((await opened()).length, realClicks, 'a synthetic click asks nothing');
+  // Nor does a message the page posts itself, without the frame's key or
+  // with a made-up one.
+  await deskFrame.locator('body').evaluate(() => {
+    parent.postMessage({ type: 'od:open-link', href: 'https://example.com/forged' }, '*');
+    parent.postMessage({ type: 'od:open-link', key: 'made-up', href: 'https://example.com/forged' }, '*');
+  });
+  await sleep(400);
+  assert.equal((await opened()).length, realClicks, 'a page-made od:open-link asks nothing');
   assert.ok((await opened()).every((c) => c === 'open_link https://example.com/p1'), `opened: ${await opened()}`);
   await deskContext.close();
-  results.blankLinks = 'a real click on a _blank web link asks the shell; page-cancelled, same-frame, mailto and synthetic clicks do not';
+  results.blankLinks = 'a real click on a _blank web link asks the shell; page-cancelled (also on window, after the bridge), same-frame, mailto, synthetic clicks and unkeyed messages do not';
 
   // 4d. Comments on a page taller than the preview (QA-057 … QA-060).
   await write('tall.html', `<!doctype html><html><body style="margin:0;font:18px system-ui">

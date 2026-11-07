@@ -510,11 +510,15 @@
     return /^https?:\/\//i.test(href) ? href : null;
   }
 
-  // Bubble phase on window: runs after the page's own handlers.
+  // A window listener the page adds after this one runs after it, so
+  // whether the page cancelled the click is read once dispatch is over.
   window.addEventListener('click', function (e) {
     if (!EDIT_KEY) return;
     var href = newWindowLink(e);
-    if (href) postKeyed({ type: 'od:open-link', key: EDIT_KEY, href: href });
+    if (!href) return;
+    later(function () {
+      if (!e.defaultPrevented) postKeyed({ type: 'od:open-link', key: EDIT_KEY, href: href });
+    });
   });
 
   // ---------------------------------------------------------------------
