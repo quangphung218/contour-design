@@ -2,7 +2,9 @@
 //! naming, and the create request (spec 1.1).
 
 use crate::i18n::T;
-use od_contracts::{CreateProjectRequest, ProjectKind, ProjectMetadata, SkillMode, SkillSummary};
+use od_contracts::{
+    CreateProjectRequest, FilmFormat, ProjectKind, ProjectMetadata, SkillMode, SkillSummary,
+};
 use serde_json::{Map, Value, json};
 
 /// Longest generated project name, in characters.
@@ -48,6 +50,26 @@ const VIDEO_SECONDS: &[u32] = &[3, 5, 8, 10, 15, 30];
 const AUDIO_SECONDS: &[u32] = &[5, 10, 15, 30, 60, 120];
 /// Sound effects stay short (the original caps them at 30 s).
 const SFX_MAX_SECONDS: u32 = 30;
+
+/// The offered aspect closest to a `width`×`height` frame (by ratio, on a
+/// log scale so 2:1 and 1:2 are as far from 1:1); `None` for an empty
+/// frame.
+#[must_use]
+pub fn nearest_aspect(width: u32, height: u32) -> Option<&'static str> {
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let ratio = (f64::from(width) / f64::from(height)).ln();
+    ASPECTS
+        .iter()
+        .filter_map(|a| {
+            let (w, h) = a.split_once(':')?;
+            let r = (w.parse::<f64>().ok()? / h.parse::<f64>().ok()?).ln();
+            Some((*a, (r - ratio).abs()))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(a, _)| a)
+}
 
 impl Chip {
     pub const ALL: [Self; 13] = [
@@ -237,16 +259,45 @@ impl MediaOptions {
         }
     }
 
+    /// `chip`'s defaults with a film template's own ratio and length
+    /// (QA-055): the nearest offered aspect and the length in whole
+    /// seconds. What the film does not declare keeps the default.
+    #[must_use]
+    pub fn for_film(chip: Chip, film: Option<FilmFormat>) -> Self {
+        let mut opts = Self::defaults(chip);
+        let Some(film) = film else {
+            return opts;
+        };
+        if let (Some(_), Some(a)) = (&opts.aspect, nearest_aspect(film.width, film.height)) {
+            opts.aspect = Some(a.to_owned());
+        }
+        if let (Some(_), Some(seconds)) = (
+            opts.duration,
+            film.duration.filter(|s| s.is_finite() && *s > 0.0),
+        ) {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // clamped
+            let whole = seconds.round().clamp(1.0, f64::from(u32::MAX)) as u32;
+            opts.duration = Some(whole);
+        }
+        opts
+    }
+
     /// Durations offered for `chip` with these options (sound effects are
-    /// capped at 30 s).
+    /// capped at 30 s), plus a film template's own length when it is none
+    /// of them.
     #[must_use]
     pub fn durations(&self, chip: Chip) -> Vec<u32> {
         let all = chip.media().map_or(&[][..], |m| m.durations);
         let sfx = self.audio_kind.as_deref() == Some("sfx");
-        all.iter()
+        let mut out: Vec<u32> = all
+            .iter()
             .copied()
+            .chain(self.duration.filter(|_| !all.is_empty()))
             .filter(|&d| !sfx || d <= SFX_MAX_SECONDS)
-            .collect()
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
     }
 
     /// Switches the audio kind, pulling the duration under the sound
@@ -762,6 +813,55 @@ mod tests {
         let meta = doc.create_request(&skills).metadata.unwrap_or_default();
         assert_eq!(meta.kind, Some(ProjectKind::Other));
         assert!(meta.extra.is_empty());
+    }
+
+    #[test]
+    fn film_template_sets_its_own_ratio_and_length() {
+        let film = |width, height, duration| {
+            Some(FilmFormat {
+                width,
+                height,
+                duration,
+            })
+        };
+        // App feature tour: 1080×1920, 12 s; 12 s is offered for it.
+        let tour = MediaOptions::for_film(Chip::Motion, film(1080, 1920, Some(12.0)));
+        assert_eq!(tour.aspect.as_deref(), Some("9:16"));
+        assert_eq!(tour.duration, Some(12));
+        assert_eq!(tour.durations(Chip::Motion), [3, 5, 8, 10, 12, 15, 30]);
+        let mut extra = Map::new();
+        tour.write(Chip::Motion, &mut extra);
+        assert_eq!(extra["videoAspect"], "9:16");
+        assert_eq!(extra["videoLength"], 12);
+        // Nearest ratio and whole seconds.
+        let wide = MediaOptions::for_film(Chip::Motion, film(1920, 1080, Some(7.6)));
+        assert_eq!(
+            (wide.aspect.as_deref(), wide.duration),
+            (Some("16:9"), Some(8))
+        );
+        assert_eq!(nearest_aspect(1080, 1080), Some("1:1"));
+        assert_eq!(nearest_aspect(1000, 1300), Some("3:4"));
+        assert_eq!(nearest_aspect(2560, 1080), Some("16:9"));
+        assert_eq!(nearest_aspect(0, 1080), None);
+        // Nothing declared: Motion's defaults.
+        let defaults = MediaOptions::defaults(Chip::Motion);
+        assert_eq!(MediaOptions::for_film(Chip::Motion, None), defaults);
+        let timed = MediaOptions::for_film(Chip::Motion, film(1080, 1920, None));
+        assert_eq!(
+            (timed.aspect.as_deref(), timed.duration),
+            (Some("9:16"), Some(10))
+        );
+        assert_eq!(
+            MediaOptions::for_film(Chip::Motion, film(0, 0, Some(-1.0))),
+            defaults
+        );
+        // A non-media chip takes nothing from a film.
+        assert_eq!(
+            MediaOptions::for_film(Chip::Prototype, film(1080, 1920, Some(12.0))),
+            MediaOptions::default()
+        );
+        // Offered lengths do not change for other films.
+        assert_eq!(defaults.durations(Chip::Motion), [3, 5, 8, 10, 15, 30]);
     }
 
     #[test]
