@@ -627,7 +627,11 @@
           if (preventedOf(e)) touchCancelled = seq;
         });
       };
+      // A trusted one only: the page's own `touchstart` would move the
+      // count on and leave the cancelled touch armed. (A page's cancelled
+      // event only disarms sooner.)
       window.addEventListener('touchstart', function (e) {
+        if (e.isTrusted !== true) return;
         touchSeq++;
         noteCancel(e);
       }, touchOpts);

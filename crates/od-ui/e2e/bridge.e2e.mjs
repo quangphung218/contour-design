@@ -38,6 +38,7 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <span id="dz" style="display:inline-block;padding:8px;margin-left:200px;background:#eee">drop here</span></p>
 <p><button id="tc">TP: the page cancels touchend (no click)</button>
 <button id="ts">TS: the page cancels touchstart (no click)</button>
+<button id="fk">FK: the page cancels touchstart, then sends its own</button>
 <button id="tf">TF: the page cancels touchend, then says it did not</button></p>
 <p><span id="sw" style="display:inline-block;width:400px;padding:16px 0;background:#ddd">SW: swipe, the page cancels touchmove</span></p>
 <p><button id="gone">P1: goes away on pointerdown</button></p>
@@ -57,6 +58,7 @@ on('wincancel', 'keyup', (e) => { if (e.key === 'Enter') window.open('https://ex
 on('dz', 'dragover', (e) => e.preventDefault());
 on('tc', 'touchend', (e) => e.preventDefault());
 on('tf', 'touchend', (e) => { e.preventDefault(); Object.defineProperty(e, 'defaultPrevented', { value: false }); });
+on('fk', 'touchstart', (e) => { e.preventDefault(); window.dispatchEvent(new Event('touchstart')); }, { passive: false });
 on('ts', 'touchstart', (e) => e.preventDefault(), { passive: false });
 on('sw', 'touchmove', (e) => e.preventDefault(), { passive: false });
 on('gone', 'pointerdown', (e) => e.target.remove());
@@ -110,6 +112,7 @@ const cases = [
   // no click either (nor a pointercancel). Playwright has no swipe: SW
   // sends CDP touch events, so it runs in Chromium only.
   ['TP', [], async (f, page) => { await f.locator('#tc').tap(); await sleep(500); await strayKeyup(f, page); }],
+  ['FK', [], async (f, page) => { await f.locator('#fk').tap(); await sleep(500); await strayKeyup(f, page); }],
   ['TF', [], async (f, page) => { await f.locator('#tf').tap(); await sleep(500); await strayKeyup(f, page); }],
   ['TS', [], async (f, page) => { await f.locator('#ts').tap(); await sleep(500); await strayKeyup(f, page); }],
   ['SW', [], async (f, page, cdp) => { await f.locator('#sw').scrollIntoViewIfNeeded(); await swipe(cdp, await f.locator('#sw').boundingBox()); await sleep(500); await strayKeyup(f, page); }, ['chromium']],
