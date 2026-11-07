@@ -50,6 +50,8 @@ if [ $# -gt 0 ]; then
   for script in "$@"; do node "$script"; done
   exit 0
 fi
+# The preview bridge alone in Chromium and WebKit (no daemon, no port).
+node bridge.e2e.mjs
 run OD_E2E_PORT studio.e2e.mjs
 run OD_E2E_DS_PORT design-system.e2e.mjs
 run OD_E2E_LIB_PORT library.e2e.mjs
