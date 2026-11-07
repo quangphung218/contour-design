@@ -418,12 +418,18 @@ try {
   await until(async () => (await tpl.count()) < all && (await tpl.count()) > 0, 'type filter');
   await page.getByTestId('tpl-platform-mobile').click();
   await page.getByTestId('tpl-platform-all').click();
+  const cardName = await tpl.first().getAttribute('aria-label');
   await tpl.first().click();
   await page.getByTestId('tpl-preview').waitFor();
   await page.getByTestId('tpl-frame').waitFor();
   const remixed = page.waitForResponse((r) => r.url().includes('/remix'));
   await page.getByTestId('tpl-remix').click();
-  assert.equal((await remixed).status(), 200);
+  const remixRes = await remixed;
+  assert.equal(remixRes.status(), 200);
+  // QA-056: the project is named as the card reads, sent by the gallery in
+  // the UI language (the daemon's fallback is English only).
+  assert.equal(remixRes.request().postDataJSON().name, cardName, 'Remix sends the name on the card');
+  assert.equal((await remixRes.json()).project.name, cardName);
   await page.waitForURL(/\/projects\//);
   await settleStudio(false);
   results.remix = 'ok';
