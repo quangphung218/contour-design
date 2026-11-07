@@ -437,6 +437,16 @@ On a built app, on each of macOS
 - [ ] Tab out of the design to the app, then Shift+Tab back into a field
   whose page opens a URL on `keyup`: nothing opens.
 - [ ] In comment mode, clicking that button picks it and opens nothing.
+- [ ] A button whose `click` runs `if (confirm('Open?')) window.open(url)`:
+  OK opens one tab; the same with `alert('…')` or `prompt('…')` before
+  the `window.open`. Then let go of a key in a field whose page opens a
+  URL on `keyup`: nothing opens. Also after Enter in a field whose page
+  runs `alert('…')` on `keydown` (close it with Enter). The app's own
+  dialog may take focus from the window, which headless browsers' do not
+  (`bridge.e2e.mjs` D1–D3 and X1–X3 move the focus by hand).
+- [ ] Drag an element of the design (`draggable="true"`) and drop it, then
+  let go of a key in a field whose page opens a URL on `keyup`: nothing
+  opens.
 
 ## Not automated, and why
 

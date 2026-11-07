@@ -525,11 +525,14 @@
   // none. A press arms the check (the first listener of the window, so
   // the page cannot stop it); the first open disarms it, and so does the
   // end of the press, once its events have run: `keyup` for a key,
-  // `click`, `auxclick` or `pointercancel` for a pointer (Enter's own
-  // `click` comes before its `keyup`). So a key pressed on the host and let
-  // go in the frame opens nothing. A `_blank` link spends the same press,
-  // and only a web address spends it. Picking an element for a comment
-  // opens nothing. Not
+  // `click`, `auxclick`, `pointercancel` or `dragend` for a pointer
+  // (Enter's own `click` comes before its `keyup`; WebKit ends a drag with
+  // no `click` and no `pointercancel`), and a mouse's `pointerup` too, whose
+  // `click` (if any) comes in the same task. So a key pressed on the host
+  // and let go in the frame opens nothing. A `_blank` link spends the same
+  // press, and only a web address spends it; a key's press comes back if
+  // the page cancels the link, for its `keyup`. Picking an element for a
+  // comment opens nothing. Not
   // `navigator.userActivation`: a click on the host (the reload button, a
   // file) can activate the frame too, and a page's timer then opened the
   // browser on load. `window.event`, `setTimeout` and prototypes are the
@@ -539,10 +542,19 @@
   // dispatch is over: a page listener may open a tab of its own instead,
   // in the same event, and the link then opens none.
   var pendingLink = null;
-  // Inside the native `window.open`, where WebKit runs timers: the disarm
-  // and the link's own open wait till it returns.
+  // Inside the native `window.open`, where WebKit runs timers, or a native
+  // dialog (`alert`, `confirm`, `prompt`), which can take focus from the
+  // app's window: the disarm and the link's own open wait till it returns,
+  // and its `blur` keeps the press for the rest of the handler; a dialog
+  // that took focus ends the press once it returns (its key's `keyup` fell
+  // on the dialog).
   var inNative = 0;
+  // How many times the frame's window lost focus, inside a dialog or not.
+  var blurs = 0;
+  var endPress = function () {};
   var timer = Function.prototype.bind.call(setTimeout, window);
+  // Gives a press the link spent back (`spendGesture` says what it spent).
+  var restoreGesture = function () {};
   var spendGesture = (function () {
     try {
       var bind = Function.prototype.bind;
@@ -557,11 +569,18 @@
       kinds.touchend = kinds.keydown = kinds.keyup = 1;
       // What armed the check: 'key' or 'pointer'; null when disarmed.
       var armed = null;
+      // `blurs` when it armed.
+      var armedAt = 0;
+      // Presses armed so far, and which of them the last spend took.
+      var arms = 0;
+      var spentArms = -1;
       var arm = function (e) {
         if (e.isTrusted !== true) return;
         var type = typeOf(e);
         if (type === 'keydown' && repeatOf(e)) return;
         armed = type === 'keydown' ? 'key' : 'pointer';
+        armedAt = blurs;
+        arms++;
       };
       window.addEventListener('pointerdown', arm, true);
       window.addEventListener('touchstart', arm, { capture: true, passive: true });
@@ -578,11 +597,33 @@
       // Focus leaving the frame takes the end of the press with it (Tab out:
       // its keyup falls on the host).
       window.addEventListener('blur', function (e) {
-        if (e.target === window && !inNative) armed = null;
+        if (e.target !== window) return;
+        blurs++;
+        if (!inNative) armed = null;
       }, true);
-      ['click', 'auxclick', 'pointercancel'].forEach(function (type) {
+      ['click', 'auxclick', 'pointercancel', 'dragend'].forEach(function (type) {
         window.addEventListener(type, disarmOn('pointer'), true);
       });
+      // A mouse's press can end with no `click` (the page took away the
+      // element it went down on). A touch's `click` can come tasks later.
+      var disarmPointer = disarmOn('pointer');
+      window.addEventListener('pointerup', function (e) {
+        if (e.pointerType !== 'touch') disarmPointer();
+      }, true);
+      endPress = function () {
+        timer(function run() {
+          if (inNative) return timer(run);
+          armed = null;
+        });
+      };
+      // Not once focus has left the frame since the key went down (a
+      // dialog in the link's own handler, before this listener spent it),
+      // nor over a newer press.
+      restoreGesture = function (by) {
+        if (by === 'key' && armedAt === blurs && arms === spentArms) armed = by;
+      };
+      // What it spent: 'key' or 'pointer' (the press), 'link' (the press a
+      // link held); false when none.
       return function () {
         if (selectMode) {
           armed = null;
@@ -594,12 +635,14 @@
         if (kinds[type] !== 1) return false;
         if ((type === 'keydown' || type === 'keyup') && repeatOf(ev)) return false;
         if (armed) {
+          var by = armed;
           armed = null;
-          return true;
+          spentArms = arms;
+          return by;
         }
         if (pendingLink === ev) {
           pendingLink = null;
-          return true;
+          return 'link';
         }
         return false;
       };
@@ -617,17 +660,21 @@
 
   // A window listener the page adds after this one runs after it, so
   // whether the page cancelled the click is read once dispatch is over;
-  // till then the link holds the press (`pendingLink`).
+  // till then the link holds the press (`pendingLink`). A cancelled link
+  // gives a key's press back: Enter's `keyup` is still to come.
   window.addEventListener('click', function (e) {
     if (!EDIT_KEY) return;
     var href = newWindowLink(e);
-    if (!href || !spendGesture()) return;
+    if (!href) return;
+    var by = spendGesture();
+    if (!by) return;
     pendingLink = e;
     timer(function settle() {
       if (inNative) return timer(settle);
       if (pendingLink !== e) return;
       pendingLink = null;
       if (!e.defaultPrevented) openLink(href);
+      else restoreGesture(by);
     });
   });
 
@@ -654,6 +701,20 @@
       return opened;
     };
   }
+  ['alert', 'confirm', 'prompt'].forEach(function (name) {
+    var nativeDialog = window[name];
+    if (typeof nativeDialog !== 'function') return;
+    window[name] = function () {
+      var before = blurs;
+      inNative++;
+      try {
+        return nativeDialog.apply(this, arguments);
+      } finally {
+        inNative--;
+        if (blurs !== before) endPress();
+      }
+    };
+  });
 
   // ---------------------------------------------------------------------
   // Selection: hover and click elements for comments and inspect. Elements
