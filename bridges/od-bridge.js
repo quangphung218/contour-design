@@ -536,9 +536,13 @@
   // page's to replace, so what the check uses is taken now, before any
   // page script runs; `isTrusted` is unforgeable.
   // The `_blank` click whose press the bridge holds for its link until
-  // dispatch is over: a page listener that cancels that click may open a
-  // tab of its own instead, in the same event.
+  // dispatch is over: a page listener may open a tab of its own instead,
+  // in the same event, and the link then opens none.
   var pendingLink = null;
+  // Inside the native `window.open`, where WebKit runs timers: the disarm
+  // and the link's own open wait till it returns.
+  var inNative = 0;
+  var timer = Function.prototype.bind.call(setTimeout, window);
   var spendGesture = (function () {
     try {
       var bind = Function.prototype.bind;
@@ -562,15 +566,20 @@
       window.addEventListener('pointerdown', arm, true);
       window.addEventListener('touchstart', arm, { capture: true, passive: true });
       window.addEventListener('keydown', arm, true);
-      var timer = bind.call(setTimeout, window);
       var disarmOn = function (by) {
         return function () {
-          timer(function () {
+          timer(function run() {
+            if (inNative) return timer(run);
             if (armed === by) armed = null;
           });
         };
       };
       window.addEventListener('keyup', disarmOn('key'), true);
+      // Focus leaving the frame takes the end of the press with it (Tab out:
+      // its keyup falls on the host).
+      window.addEventListener('blur', function (e) {
+        if (e.target === window && !inNative) armed = null;
+      }, true);
       ['click', 'auxclick', 'pointercancel'].forEach(function (type) {
         window.addEventListener(type, disarmOn('pointer'), true);
       });
@@ -588,7 +597,7 @@
           armed = null;
           return true;
         }
-        if (pendingLink === ev && ev.defaultPrevented) {
+        if (pendingLink === ev) {
           pendingLink = null;
           return true;
         }
@@ -614,7 +623,8 @@
     var href = newWindowLink(e);
     if (!href || !spendGesture()) return;
     pendingLink = e;
-    later(function () {
+    timer(function settle() {
+      if (inNative) return timer(settle);
       if (pendingLink !== e) return;
       pendingLink = null;
       if (!e.defaultPrevented) openLink(href);
@@ -633,7 +643,13 @@
         } catch (_) {}
       }
       var spent = href !== null && spendGesture();
-      var opened = nativeOpen.apply(this, arguments);
+      var opened;
+      inNative++;
+      try {
+        opened = nativeOpen.apply(this, arguments);
+      } finally {
+        inNative--;
+      }
       if (spent) openLink(href);
       return opened;
     };
