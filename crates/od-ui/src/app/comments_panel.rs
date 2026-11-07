@@ -118,6 +118,9 @@ pub fn CommentsToggle(ctx: StudioCtx) -> impl IntoView {
 pub fn CommentsPanel(ctx: StudioCtx) -> impl IntoView {
     let resolved = RwSignal::new(false);
     let selected = RwSignal::new(None::<String>);
+    // Every click on an item, so picking the same comment again scrolls
+    // back to it after the page moved.
+    let clicks = RwSignal::new(0u32);
     // Leaving the tab takes the outline off the page.
     on_cleanup(|| bridge::post_main(&pb::mark(None, false)));
     let items = Memo::new(move |_| {
@@ -147,11 +150,12 @@ pub fn CommentsPanel(ctx: StudioCtx) -> impl IntoView {
     });
     // The outline follows the picked comment: its current selector, again
     // on a new document, off when it is no longer listed, and none when its
-    // element is gone (the item says so instead). Scrolls on a new pick.
-    let posted = StoredValue::new(None::<(Option<String>, Marker, u32)>);
+    // element is gone (the item says so instead). Scrolls on every click.
+    let posted = StoredValue::new(None::<(Option<String>, Marker, u32, u32)>);
     Effect::new(move |_| {
         let rev = ctx.frame_ready.get();
         let pick = selected.get();
+        let click = clicks.get();
         let mark = items.with(|list| {
             let shown: Vec<_> = list.iter().map(|(_, c)| c).collect();
             ctx.anchors.with(|a| cb::marker(&shown, pick.as_deref(), a))
@@ -160,12 +164,12 @@ pub fn CommentsPanel(ctx: StudioCtx) -> impl IntoView {
             selected.set(None);
             return;
         }
-        let key = (pick.clone(), mark.clone(), rev);
+        let key = (pick.clone(), mark.clone(), rev, click);
         let before = posted.get_value();
         if before.as_ref() == Some(&key) {
             return;
         }
-        let scroll = before.is_none_or(|(was, _, _)| was != pick);
+        let scroll = before.is_none_or(|(was, _, _, by)| was != pick || by != click);
         bridge::post_main(&pb::mark(mark.selector(), scroll));
         posted.set_value(Some(key));
     });
@@ -221,7 +225,7 @@ pub fn CommentsPanel(ctx: StudioCtx) -> impl IntoView {
                     <ul class="comment-list">
                         {list
                             .into_iter()
-                            .map(|(n, c)| view! { <CommentItem ctx=ctx number=n comment=c selected=selected/> })
+                            .map(|(n, c)| view! { <CommentItem ctx=ctx number=n comment=c selected=selected clicks=clicks/> })
                             .collect_view()}
                     </ul>
                 }
@@ -237,6 +241,7 @@ fn CommentItem(
     number: usize,
     comment: PreviewComment,
     selected: RwSignal<Option<String>>,
+    clicks: RwSignal<u32>,
 ) -> impl IntoView {
     let id = comment.id.clone();
     let anchor_id = StoredValue::new(id.clone());
@@ -250,7 +255,10 @@ fn CommentItem(
     };
     let pick = {
         let id = id.clone();
-        move |_| selected.set(Some(id.clone()))
+        move |_| {
+            clicks.update(|n| *n = n.wrapping_add(1));
+            selected.set(Some(id.clone()));
+        }
     };
     let missing = {
         let is_selected = is_selected.clone();

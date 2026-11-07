@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Comments: clicking the comment that is already picked scrolls the preview back to its element.
+
 ## [0.2.0-beta.21] - 2026-11-06
 
 ### Added
