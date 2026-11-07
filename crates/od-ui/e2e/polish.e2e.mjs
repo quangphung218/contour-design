@@ -199,6 +199,12 @@ try {
   assert.equal((await api('/api/mcp/servers')).body.servers.length, 1, 'the server saved');
 
   log('3. the chat shows the Next chips when a run ends');
+  // OD_E2E_CPU_THROTTLE=4 slows the page's CPU 4× (Chromium), as a loaded
+  // CI runner does: frames come late, so output can land between the box
+  // growing at a run's end and its clamp's scroll event (the CI flake).
+  const throttle = Number(process.env.OD_E2E_CPU_THROTTLE || 1);
+  const cdp = throttle > 1 ? await context.newCDPSession(page) : null;
+  await cdp?.send('Emulation.setCPUThrottlingRate', { rate: throttle });
   for (const [width, height] of [[1440, 640], [390, 844]]) {
     await page.setViewportSize({ width, height });
     const r = await api('/api/projects', { method: 'POST', body: JSON.stringify({ name: `Scroll ${width}` }) });
@@ -262,6 +268,29 @@ try {
       fit.chipsBottom <= fit.listBottom + 1,
       `Next chips in view at ${width}px (${fit.chipsBottom} > ${fit.listBottom}) ${JSON.stringify(fit.state)}\n${fit.events.join('\n')}`,
     );
+    // The CI flake, made certain: at a run's end the panel under the list
+    // goes (the box grows 37 px, the browser lowers scroll_top to fit)
+    // and the chips land before that clamp's scroll event. That is no
+    // move up by the reader: the list still follows to the end.
+    const list = page.getByTestId('messages');
+    await list.evaluate(async (el) => {
+      const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      el.style.maxHeight = `${el.clientHeight - 37}px`;
+      el.scrollTop = el.scrollHeight;
+      await frame();
+    });
+    const after = await list.evaluate(async (el) => {
+      el.style.maxHeight = '';
+      void el.scrollTop; // layout now: the clamp, its scroll event to come
+      const late = document.createElement('div');
+      late.style.height = '260px';
+      el.querySelector('[data-testid=next-steps]').after(late);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      late.remove();
+      return { gap, jump: !!document.querySelector('[data-testid=jump-latest]') };
+    });
+    assert.ok(after.gap <= 1, `the list follows output after it grew at ${width}px ${JSON.stringify(after)}`);
     if (width === 390) {
       log('4. 390 px: Export from the chat, a one-row preview head');
       await steps.getByTestId('next-export').click();

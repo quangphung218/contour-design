@@ -27,6 +27,12 @@ impl Metrics {
         self.scroll_height - (self.scroll_top + self.client_height)
     }
 
+    /// Where the visible part ends, from the top of the content.
+    #[must_use]
+    pub fn view_end(self) -> f64 {
+        self.scroll_top + self.client_height
+    }
+
     /// Whether the end of the content is at most [`NEAR_BOTTOM_PX`] below
     /// the visible part.
     #[must_use]
@@ -43,6 +49,7 @@ pub struct Follow {
     unseen: bool,
     held: bool,
     last_top: f64,
+    last_end: f64,
     last_gap: f64,
 }
 
@@ -53,6 +60,7 @@ impl Default for Follow {
             unseen: false,
             held: false,
             last_top: 0.0,
+            last_end: 0.0,
             last_gap: 0.0,
         }
     }
@@ -68,6 +76,7 @@ impl Follow {
     pub fn scrolled(&mut self, m: Metrics) {
         let up = self.moved_up(m);
         self.last_top = m.scroll_top;
+        self.last_end = m.view_end();
         self.last_gap = m.gap();
         self.pinned = !up && (self.pinned || m.near_bottom());
         if self.pinned {
@@ -87,8 +96,15 @@ impl Follow {
         }
     }
 
+    /// The top, the end of the view and the gap below it all moved up.
+    /// The end of the view staying put rules out the box growing (the
+    /// browser lowers scroll_top as much as the box grew): output landing
+    /// before that clamp's `scroll` event widens the gap, but no reader
+    /// moved.
     fn moved_up(&self, m: Metrics) -> bool {
-        m.scroll_top < self.last_top - 0.5 && m.gap() > self.last_gap + 0.5
+        m.scroll_top < self.last_top - 0.5
+            && m.view_end() < self.last_end - 0.5
+            && m.gap() > self.last_gap + 0.5
     }
 
     /// A wheel or trackpad move (`delta_y` < 0 is up), seen before the
@@ -275,6 +291,31 @@ mod tests {
         });
         assert!(f.pinned());
         assert!(f.changed(false));
+    }
+
+    #[test]
+    fn the_box_growing_then_output_before_the_clamp_event_keeps_following() {
+        // CI, a run ending: at the end (468 + 327 = 795), the panel under
+        // the list goes (box 327 → 364, the browser clamps scroll_top to
+        // 431), and the Next chips land (795 → 1054) before the clamp's
+        // scroll event. The end of the view never moved up: no reader.
+        let mut f = Follow::default();
+        f.scrolled(Metrics {
+            scroll_top: 468.0,
+            client_height: 327.0,
+            scroll_height: 795.0,
+        });
+        let grown = Metrics {
+            scroll_top: 431.0,
+            client_height: 364.0,
+            scroll_height: 1054.0,
+        };
+        f.noticed(grown);
+        assert!(f.pinned(), "the clamp read as a move up");
+        assert!(f.changed(false));
+        f.scrolled(grown);
+        assert!(f.pinned());
+        assert!(!f.show_jump());
     }
 
     #[test]
