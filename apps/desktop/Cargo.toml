@@ -35,7 +35,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
-minisign = "0.7"
+minisign = "0.10"
 tauri = { version = "2", features = ["test"] }
 tempfile.workspace = true
 
