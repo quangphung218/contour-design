@@ -610,6 +610,14 @@
       window.addEventListener('pointerup', function (e) {
         if (e.pointerType !== 'touch') disarmPointer();
       }, true);
+      // A touch whose `touchend` the page cancelled gets no `click`. Read
+      // once dispatch is over; a late cancel only disarms sooner.
+      window.addEventListener('touchend', function (e) {
+        timer(function run() {
+          if (inNative) return timer(run);
+          if (e.defaultPrevented && armed === 'pointer') armed = null;
+        });
+      }, { capture: true, passive: true });
       endPress = function () {
         timer(function run() {
           if (inNative) return timer(run);
