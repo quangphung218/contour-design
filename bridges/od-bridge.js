@@ -545,8 +545,13 @@
   // Inside the native `window.open`, where WebKit runs timers, or a native
   // dialog (`alert`, `confirm`, `prompt`), which can take focus from the
   // app's window: the disarm and the link's own open wait till it returns,
-  // and its `blur` keeps the press.
+  // and its `blur` keeps the press for the rest of the handler; a dialog
+  // that took focus ends the press once it returns (its key's `keyup` fell
+  // on the dialog).
   var inNative = 0;
+  // How many times the frame's window lost focus, inside a dialog or not.
+  var blurs = 0;
+  var endPress = function () {};
   var timer = Function.prototype.bind.call(setTimeout, window);
   // Gives a press the link spent back (`spendGesture` says what it spent).
   var restoreGesture = function () {};
@@ -564,11 +569,14 @@
       kinds.touchend = kinds.keydown = kinds.keyup = 1;
       // What armed the check: 'key' or 'pointer'; null when disarmed.
       var armed = null;
+      // `blurs` when it armed.
+      var armedAt = 0;
       var arm = function (e) {
         if (e.isTrusted !== true) return;
         var type = typeOf(e);
         if (type === 'keydown' && repeatOf(e)) return;
         armed = type === 'keydown' ? 'key' : 'pointer';
+        armedAt = blurs;
       };
       window.addEventListener('pointerdown', arm, true);
       window.addEventListener('touchstart', arm, { capture: true, passive: true });
@@ -585,7 +593,9 @@
       // Focus leaving the frame takes the end of the press with it (Tab out:
       // its keyup falls on the host).
       window.addEventListener('blur', function (e) {
-        if (e.target === window && !inNative) armed = null;
+        if (e.target !== window) return;
+        blurs++;
+        if (!inNative) armed = null;
       }, true);
       ['click', 'auxclick', 'pointercancel', 'dragend'].forEach(function (type) {
         window.addEventListener(type, disarmOn('pointer'), true);
@@ -596,8 +606,16 @@
       window.addEventListener('pointerup', function (e) {
         if (e.pointerType !== 'touch') disarmPointer();
       }, true);
+      endPress = function () {
+        timer(function run() {
+          if (inNative) return timer(run);
+          armed = null;
+        });
+      };
+      // Not once focus has left the frame since the key went down (a
+      // dialog in the link's own handler, before this listener spent it).
       restoreGesture = function (by) {
-        if (by === 'key') armed = by;
+        if (by === 'key' && armedAt === blurs) armed = by;
       };
       // What it spent: 'key' or 'pointer' (the press), 'link' (the press a
       // link held); false when none.
@@ -681,11 +699,13 @@
     var nativeDialog = window[name];
     if (typeof nativeDialog !== 'function') return;
     window[name] = function () {
+      var before = blurs;
       inNative++;
       try {
         return nativeDialog.apply(this, arguments);
       } finally {
         inNative--;
+        if (blurs !== before) endPress();
       }
     };
   });
