@@ -295,21 +295,21 @@ try {
   assert.equal(await item.getAttribute('data-status'), 'attached');
   await until(async () => (await item.getAttribute('data-anchor')) === 'anchored', 'anchored');
   assert.equal(await page.getByTestId('comments-count').textContent(), '1');
-  await item.locator('.comment-item-main').click();
-  await item.and(page.locator('.selected')).waitFor();
-  // Picking the same comment again asks the page to scroll back to it.
+  // The page hears every outline request from here on.
   await frame.locator('body').evaluate(() => {
     window.__odMarks = [];
     window.addEventListener('message', (e) => {
       if (e.data && e.data.type === 'od:mark') window.__odMarks.push(e.data.scroll);
     });
   });
-  await sleep(1000);
-  const settled = await frame.locator('body').evaluate(() => window.__odMarks.slice());
-  console.log('[e2e:preview] marks before reselect', JSON.stringify(settled));
-  assert.ok(!settled.includes(true), `no scroll before the click: ${settled}`);
+  const scrolls = () => frame.locator('body').evaluate(() => window.__odMarks.filter(Boolean).length);
   await item.locator('.comment-item-main').click();
-  await until(async () => (await frame.locator('body').evaluate(() => window.__odMarks.includes(true))), 'reselect scrolls back to the element');
+  await item.and(page.locator('.selected')).waitFor();
+  await until(async () => (await scrolls()) === 1, 'the pick scrolls to the element');
+  await sleep(500);
+  // Picking the same comment again scrolls back to it (the page may have moved).
+  await item.locator('.comment-item-main').click();
+  await until(async () => (await scrolls()) === 2, 'reselect scrolls back to the element');
   await shot('comments-tab');
   // The text of the element changes: the anchor may have moved.
   await write('page.html', (await fileText('page.html')).replace('Changed by the agent', 'Rewritten title'));
