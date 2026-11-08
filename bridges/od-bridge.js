@@ -11,13 +11,25 @@
   // taken and removed before any author script can read the DOM. Only
   // messages that carry it (text edits, inspect results) are trusted.
   var EDIT_KEY = null;
+  // A copy of the bridge that the bridge put into a design's own `srcdoc`
+  // frame (see "Nested srcdoc frames"), and this script's source, for the
+  // copies it puts there.
+  var NESTED = false;
+  var SOURCE = '';
   try {
     var own = document.currentScript;
     if (own && own.hasAttribute('data-od-key')) {
       EDIT_KEY = own.getAttribute('data-od-key');
       own.removeAttribute('data-od-key');
     }
+    if (own) {
+      NESTED = own.hasAttribute('data-od-nested');
+      SOURCE = own.textContent || '';
+    }
   } catch (_) {}
+  // Whether this frame may name a link to open: the host's keyed frame, or
+  // a nested copy, which names it to the bridge above it.
+  var CAN_OPEN = !!EDIT_KEY || NESTED;
   if (window.__odBridge) return;
   try {
     Object.defineProperty(window, '__odBridge', { value: { version: 1 } });
@@ -28,8 +40,9 @@
   var PROTOCOL_VERSION = 1;
   var host = window.parent && window.parent !== window ? window.parent : null;
 
+  // A nested copy tells its parent page nothing.
   function post(type, payload) {
-    if (!host) return;
+    if (!host || NESTED) return;
     var msg = payload || {};
     msg.type = type;
     try {
@@ -689,7 +702,8 @@
   })();
 
   function openLink(href) {
-    postKeyed({ type: 'od:open-link', key: EDIT_KEY, href: href });
+    if (NESTED) sendUp(href);
+    else postKeyed({ type: 'od:open-link', key: EDIT_KEY, href: href });
   }
 
   // A window listener the page adds after this one runs after it, so
@@ -697,7 +711,7 @@
   // till then the link holds the press (`pendingLink`). A cancelled link
   // gives a key's press back: Enter's `keyup` is still to come.
   window.addEventListener('click', function (e) {
-    if (!EDIT_KEY) return;
+    if (!CAN_OPEN) return;
     var href = newWindowLink(e);
     if (!href) return;
     var by = spendGesture();
@@ -718,7 +732,7 @@
     // disarm) inside it.
     window.open = function (url) {
       var href = null;
-      if (EDIT_KEY && url != null && String(url) !== '') {
+      if (CAN_OPEN && url != null && String(url) !== '') {
         try {
           href = webAddress(new URL(String(url), document.baseURI).href);
         } catch (_) {}
@@ -749,6 +763,167 @@
       }
     };
   });
+
+  // ---------------------------------------------------------------------
+  // Nested srcdoc frames (QA-065): a design's own `<iframe srcdoc>` has a
+  // window of its own and, in the app, a fresh opaque origin (it inherits
+  // the design frame's sandbox), so the bridge cannot reach its document
+  // and a `_blank` link there did nothing. The bridge puts a copy of
+  // itself first in each such `srcdoc` (after its doctype), marked
+  // `data-od-nested`. The copy keeps the same rules in that window (a real
+  // press, the page left the click alone, one press one tab) and names the
+  // link over a MessageChannel port the bridge above hands it on each
+  // load. The copy takes the first port, in its window's first message
+  // listener, so the frame's own scripts never hold it; nothing else the
+  // frame posts counts. The bridge above opens what comes over the port
+  // only while focus is in that frame (the press was there), not while
+  // picking an element for a comment. One press lands in one window, and
+  // each window's lock spends only its own press, so one press opens at
+  // most one tab across the frames.
+  // Only a `srcdoc` that starts with the copy gets a port: a frame the
+  // bridge missed (in a shadow root) opens nothing, as before. Everything
+  // the port decision reads is taken now, before any page script.
+  // ---------------------------------------------------------------------
+  var upPort = null;
+  var sendUp = function () {};
+  (function () {
+    if (!CAN_OPEN || !SOURCE) return;
+    try {
+      var bind = Function.prototype.bind;
+      var callOf = function (fn) {
+        return bind.call(Function.prototype.call, fn);
+      };
+      var getterOf = function (proto, name) {
+        return callOf(Object.getOwnPropertyDescriptor(proto, name).get);
+      };
+      var dataOf = getterOf(MessageEvent.prototype, 'data');
+      var sourceOf = getterOf(MessageEvent.prototype, 'source');
+      var portsOf = getterOf(MessageEvent.prototype, 'ports');
+      var targetOf = getterOf(Event.prototype, 'target');
+      var stopNow = callOf(Event.prototype.stopImmediatePropagation);
+      var portPost = callOf(MessagePort.prototype.postMessage);
+      var portClose = callOf(MessagePort.prototype.close);
+      var setOnMessage = callOf(Object.getOwnPropertyDescriptor(MessagePort.prototype, 'onmessage').set);
+      var Channel = MessageChannel;
+      var port1Of = getterOf(MessageChannel.prototype, 'port1');
+      var port2Of = getterOf(MessageChannel.prototype, 'port2');
+      var winPost = callOf(window.postMessage);
+      var localNameOf = getterOf(Element.prototype, 'localName');
+      var getAttr = callOf(Element.prototype.getAttribute);
+      var setAttr = callOf(Element.prototype.setAttribute);
+      var contentWindowOf = getterOf(HTMLIFrameElement.prototype, 'contentWindow');
+      var activeOf = bind.call(Object.getOwnPropertyDescriptor(Document.prototype, 'activeElement').get, document);
+      var sliceOf = callOf(String.prototype.slice);
+      var execOf = callOf(RegExp.prototype.exec);
+      var portOf = new WeakMap();
+      var mapGet = callOf(WeakMap.prototype.get);
+      var mapSet = callOf(WeakMap.prototype.set);
+      var Observer = MutationObserver;
+      var observe = callOf(MutationObserver.prototype.observe);
+    } catch (_) {
+      return;
+    }
+
+    // Split so this source never holds a script tag of its own.
+    var TAG = '<scr' + 'ipt data-od-nested>' + SOURCE + '</scr' + 'ipt>';
+    // Whitespace, comments and a doctype: the copy goes after them, so a
+    // standards-mode frame stays one. (No comment opener spelled out.)
+    var PROLOG = /^(?:\s|<!\-\-[\s\S]*?\-\->)*<!doctype[^>]*>/i;
+
+    function copyAt(doc) {
+      var m = execOf(PROLOG, doc);
+      return m ? m[0].length : 0;
+    }
+
+    function hasCopy(doc) {
+      if (typeof doc !== 'string') return false;
+      var at = copyAt(doc);
+      return sliceOf(doc, at, at + TAG.length) === TAG;
+    }
+
+    function isFrame(el) {
+      try {
+        return localNameOf(el) === 'iframe';
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function addCopy(el) {
+      if (!isFrame(el)) return;
+      var doc = getAttr(el, 'srcdoc');
+      if (doc === null || hasCopy(doc)) return;
+      var at = copyAt(doc);
+      setAttr(el, 'srcdoc', sliceOf(doc, 0, at) + TAG + sliceOf(doc, at));
+    }
+
+    function addCopies(node) {
+      if (!node || node.nodeType !== 1) return;
+      addCopy(node);
+      if (typeof node.querySelectorAll !== 'function') return;
+      var all = node.querySelectorAll('iframe[srcdoc]');
+      for (var i = 0; i < all.length; i++) addCopy(all[i]);
+    }
+
+    observe(new Observer(function (records) {
+      for (var i = 0; i < records.length; i++) {
+        var r = records[i];
+        if (r.type === 'attributes') addCopy(r.target);
+        else for (var j = 0; j < r.addedNodes.length; j++) addCopies(r.addedNodes[j]);
+      }
+    }), document, { subtree: true, childList: true, attributes: true, attributeFilter: ['srcdoc'] });
+
+    function fromNested(frame, data) {
+      if (selectMode || activeOf() !== frame) return;
+      var href = data && typeof data.href === 'string' ? webAddress(data.href) : null;
+      if (!href) return;
+      openLink(href);
+    }
+
+    // A frame's load: a fresh port for the document it now shows, if that
+    // document starts with the copy. `load` reaches the document, not the
+    // window, and this listener is its first.
+    document.addEventListener('load', function (e) {
+      if (e.isTrusted !== true) return;
+      var frame = targetOf(e);
+      if (!isFrame(frame)) return;
+      var old = mapGet(portOf, frame);
+      if (old) {
+        mapSet(portOf, frame, null);
+        try {
+          portClose(old);
+        } catch (_) {}
+      }
+      if (!hasCopy(getAttr(frame, 'srcdoc'))) return;
+      var win = contentWindowOf(frame);
+      if (!win) return;
+      var channel = new Channel();
+      var mine = port1Of(channel);
+      setOnMessage(mine, function (m) {
+        fromNested(frame, dataOf(m));
+      });
+      mapSet(portOf, frame, mine);
+      try {
+        winPost(win, { type: 'od:nested-port' }, '*', [port2Of(channel)]);
+      } catch (_) {}
+    }, true);
+
+    if (!NESTED) return;
+    // The copy: the first port from the parent is the bridge's.
+    window.addEventListener('message', function (e) {
+      var data = dataOf(e);
+      if (!data || data.type !== 'od:nested-port') return;
+      stopNow(e);
+      if (upPort || sourceOf(e) !== host) return;
+      var ports = portsOf(e);
+      if (ports && ports.length) upPort = ports[0];
+    }, true);
+    sendUp = function (href) {
+      if (upPort) portPost(upPort, { href: href });
+    };
+  })();
+  // A nested copy does nothing more.
+  if (NESTED) return;
 
   // ---------------------------------------------------------------------
   // Selection: hover and click elements for comments and inspect. Elements

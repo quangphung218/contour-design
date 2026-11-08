@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Desktop app: a `target="_blank"` web link, or a `window.open` the user's click or key runs, inside an `<iframe srcdoc>` in a design opens in the system browser instead of doing nothing, with the same rules as the design's own links: one press opens at most one tab across the frames, a link the page cancels opens none, nor does a `window.open` with no press of its own (QA-065).
+
 ## [0.2.0-beta.23] - 2026-11-08
 
 ### Fixed
