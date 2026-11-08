@@ -227,6 +227,20 @@ fn open_link(opened: tauri::State<'_, Arc<LastOpened>>, url: String) -> Result<(
     Ok(())
 }
 
+/// The UI opened another design (QA-064): the Studio changes its route,
+/// not the page, so the dialogs the user blocked for the last design would
+/// stay blocked for this one. Dialogs show again. Nothing to do off macOS,
+/// where the webview draws its own dialogs.
+#[tauri::command]
+fn reset_dialog_gate(window: tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    if let Err(e) = window.run_on_main_thread(js_dialogs::reset_all) {
+        tracing::warn!(error = %e, "cannot reset the dialog gate");
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+}
+
 /// The last page handed to the system browser and when. One click can ask
 /// twice for the same page (a `_blank` link whose click handler also calls
 /// `window.open`, which the preview bridge passes on too); the second
@@ -470,7 +484,7 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
 /// `allow-<command>` for each app command (`build.rs` generates them): the
 /// daemon's page is a remote origin to Tauri, which refuses it any app
 /// command without one.
-const APP_COMMAND_PERMISSIONS: [&str; 9] = [
+const APP_COMMAND_PERMISSIONS: [&str; 10] = [
     "allow-pick-folder",
     "allow-set-theme",
     "allow-set-menu-labels",
@@ -480,6 +494,7 @@ const APP_COMMAND_PERMISSIONS: [&str; 9] = [
     "allow-cancel-update",
     "allow-restart-app",
     "allow-open-link",
+    "allow-reset-dialog-gate",
 ];
 
 /// The main window stays on the daemon's origin (and the bundled splash
@@ -950,7 +965,8 @@ fn main() -> anyhow::Result<()> {
             updater::install_update,
             updater::cancel_update,
             updater::restart_app,
-            open_link
+            open_link,
+            reset_dialog_gate
         ])
         .menu(|app| build_menu(app, &MenuLabels::default()))
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -1156,6 +1172,7 @@ mod tests {
             "cancel_update",
             "restart_app",
             "open_link",
+            "reset_dialog_gate",
         ] {
             assert_eq!(
                 invoke_from(origin, &format!("{origin}/studio"), cmd),
