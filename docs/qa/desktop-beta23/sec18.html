@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:16px system-ui;background:#fff}
+.b{display:block;margin:5px 10px;padding:10px;border:2px solid #333;background:#f4f4f4;font:16px system-ui;width:560px;text-align:left}
+input{display:block;margin:5px 10px;padding:8px;font:16px system-ui;width:540px}
+#drag{display:inline-block;margin:5px 10px;padding:10px;background:#cde;border:2px solid #036}
+#drop{display:inline-block;margin:5px 10px;padding:10px 40px;border:2px dashed #999}
+#log{margin:5px 10px;font:12px monospace;color:#555}
+</style></head><body>
+<button class="b" id="multi">J pointerup + mouseup + click (3 URLs)</button>
+<button class="b" id="keys" tabindex="0">K window.open on keydown and keyup</button>
+<button class="b" id="conf">M confirm then open</button>
+<button class="b" id="alrt">N alert then open</button>
+<button class="b" id="prmt">O prompt then open</button>
+<input id="kdal" placeholder="P field: alert on keydown">
+<span id="drag" draggable="true">Q drag me</span><span id="drop">drop here</span>
+<input id="kup" placeholder="L field: opens on keyup (last focusable)">
+<div id="log"></div>
+<script>
+var U='http://127.0.0.1:58990/';
+function lg(s){document.getElementById('log').textContent+=s+' '}
+var m=document.getElementById('multi');
+m.addEventListener('pointerup',function(){window.open(U+'J-pointerup')});
+m.addEventListener('mouseup',function(){window.open(U+'J-mouseup')});
+m.addEventListener('click',function(){window.open(U+'J-click')});
+var k=document.getElementById('keys');
+k.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();window.open(U+'K-keydown-'+(e.repeat?'rep':'1'))}});
+k.addEventListener('keyup',function(e){if(e.key==='Enter'||e.key===' '){window.open(U+'K-keyup')}});
+document.getElementById('kup').addEventListener('keyup',function(e){lg('Lku:'+e.key);window.open(U+'L-keyup-'+e.key)});
+document.getElementById('conf').addEventListener('click',function(){if(confirm('Open?'))window.open(U+'M-confirm');else lg('M-cancel')});
+document.getElementById('alrt').addEventListener('click',function(){alert('About to open');window.open(U+'N-alert')});
+document.getElementById('prmt').addEventListener('click',function(){var v=prompt('Name?','x');window.open(U+'O-prompt-'+v)});
+document.getElementById('kdal').addEventListener('keydown',function(e){if(e.key==='Enter')alert('keydown alert')});
+var d=document.getElementById('drop');
+document.getElementById('drag').addEventListener('dragstart',function(e){e.dataTransfer.setData('text/plain','Q');lg('dragstart')});
+d.addEventListener('dragover',function(e){e.preventDefault()});
+d.addEventListener('drop',function(e){e.preventDefault();d.textContent='dropped '+e.dataTransfer.getData('text/plain');lg('drop')});
+</script>
+</body></html>
