@@ -8,10 +8,18 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.24] - 2026-11-09
+
 ### Fixed
 
+- Leaving a screen while one of its requests is still out no longer stops the app with a panic (Studio, Media, Automations, chat). The work already sent to the server still finishes: a message sent just before leaving Studio is cleared from the composer, a media item queued for the Library is still created, every asset picked for deletion is deleted, an MP4 export is still recorded, and a message steered from the queue, or from a held queue, does not come back.
+- Home: the template cards' accessible name now matches the name shown on the card (WCAG 2.5.3, axe `label-content-name-mismatch`).
 - Desktop app: a `target="_blank"` web link, or a `window.open` the user's click or key runs, inside an `<iframe srcdoc>` in a design opens in the system browser instead of doing nothing, with the same rules as the design's own links: a link the page cancels opens none, nor does a `window.open` with no press of its own. One user activation opens at most one tab across the design and its frames, so a second link in a nested frame opens once the activation has run out (a few seconds) or after a press in the design itself. The design reads such a frame's `srcdoc` back as it wrote it (QA-065).
 - Desktop app on macOS: a design's `alert()`, `confirm()` and `prompt()` show a dialog, titled with the page's origin, and wait for it, instead of returning at once with nothing shown (`confirm` gave `false`, `prompt` `null`). From the second dialog within 3 s, a checkbox stops the page's dialogs until it reloads, so an `alert` loop cannot hold the app. Windows and Linux already showed them (QA-064).
+
+### Changed
+
+- Updated 15 Rust dependencies and axe-core 4.14 for the accessibility tests.
 
 ## [0.2.0-beta.23] - 2026-11-08
 
@@ -1055,7 +1063,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.23...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.24...HEAD
+[0.2.0-beta.24]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.23...v0.2.0-beta.24
 [0.2.0-beta.23]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.22...v0.2.0-beta.23
 [0.2.0-beta.22]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.21...v0.2.0-beta.22
 [0.2.0-beta.21]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.20...v0.2.0-beta.21
