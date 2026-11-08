@@ -49,7 +49,9 @@ tauri = { version = "2", features = ["test"] }
 tempfile.workspace = true
 
 # The workspace's lints, but `unsafe_code` denied rather than forbidden:
-# `src/js_dialogs.rs` allows it to add Objective-C methods (QA-064).
+# `src/js_dialogs.rs` allows it to add Objective-C methods (QA-064,
+# decision 7). A copy of `[workspace.lints]` in the root Cargo.toml: keep
+# the two in step.
 [lints.rust]
 unsafe_code = "deny"
 
