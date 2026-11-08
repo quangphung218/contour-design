@@ -519,6 +519,8 @@ fn Sidebar() -> impl IntoView {
             >
                 {icon(Glyph::Search)}
                 <span class="nav-label">{t(T::PaletteTrigger)}</span>
+                // Keeps "command Ctrl+K" apart in the read text.
+                {" "}
                 <kbd class="nav-label">{format!("{}K", shortcuts::modifier())}</kbd>
             </button>
             <nav class="sidenav" aria-label=t(T::MainNavigation)>
