@@ -14,7 +14,7 @@ use crate::i18n::{T, t, tf};
 use leptos::html::Div;
 use leptos::prelude::*;
 use od_contracts::{
-    ConversationsResponse, DesignSystemsResponse, HandoffResponse, ProjectMetadata,
+    ConversationsResponse, DesignSystemsResponse, HandoffResponse, Project, ProjectMetadata,
     ProjectResponse, ProjectsResponse,
 };
 use serde_json::{Value, json};
@@ -503,7 +503,11 @@ pub fn ReconnectTurn(turn: RwSignal<AssistantTurn>) -> impl IntoView {
 }
 
 /// Adds `dir` to the project's linked folders once the daemon accepts it.
-async fn link_dir(ctx: StudioCtx, dir: String) -> Result<String, String> {
+async fn link_dir(
+    base: String,
+    mut meta: ProjectMetadata,
+    dir: String,
+) -> Result<(String, Project), String> {
     let checked: Value = api::post("/api/linked-dirs/check", &json!({ "paths": [dir] }))
         .await
         .map_err(|e| e.to_string())?;
@@ -511,23 +515,29 @@ async fn link_dir(ctx: StudioCtx, dir: String) -> Result<String, String> {
     let Some(path) = entry["path"].as_str().map(str::to_owned) else {
         return Err(entry["error"].as_str().unwrap_or("refused").to_owned());
     };
-    let mut meta: ProjectMetadata = ctx
-        .project
-        .with_untracked(|p| p.as_ref().and_then(|p| p.metadata.clone()))
-        .unwrap_or_default();
     if !meta.linked_dirs.contains(&path) {
         meta.linked_dirs.push(path.clone());
     }
-    save_metadata(ctx, meta).await?;
-    Ok(path)
+    let project = save_metadata(&base, meta).await?;
+    Ok((path, project))
 }
 
-async fn save_metadata(ctx: StudioCtx, meta: ProjectMetadata) -> Result<(), String> {
-    let res: ProjectResponse = api::patch(&ctx.base(), &json!({ "metadata": meta }))
+/// What a folder link needs from the studio, taken before any request so
+/// that [`link_dir`] reads no studio state and finishes even if the studio
+/// is left meanwhile: the project's API base and its metadata.
+fn link_input(ctx: StudioCtx) -> (String, ProjectMetadata) {
+    let meta = ctx
+        .project
+        .with_untracked(|p| p.as_ref().and_then(|p| p.metadata.clone()))
+        .unwrap_or_default();
+    (ctx.base(), meta)
+}
+
+async fn save_metadata(base: &str, meta: ProjectMetadata) -> Result<Project, String> {
+    let res: ProjectResponse = api::patch(base, &json!({ "metadata": meta }))
         .await
         .map_err(|e| e.to_string())?;
-    ctx.project.set(Some(res.project));
-    Ok(())
+    Ok(res.project)
 }
 
 /// "+" menu items of the Studio: link a local folder, reference another
@@ -547,7 +557,7 @@ pub fn ContextFolders(ctx: StudioCtx) -> impl IntoView {
         if desktop::is_desktop() {
             ctx.tasks.spawn(async move {
                 if let Some(dir) = desktop::pick_folder().await {
-                    finish_link(ctx, dir).await;
+                    finish_link(ctx, dir);
                 }
             });
         } else {
@@ -576,10 +586,10 @@ pub fn ContextFolders(ctx: StudioCtx) -> impl IntoView {
                                 on:click=move |_| {
                                     let mut meta = ctx.project.with_untracked(|p| p.as_ref().and_then(|p| p.metadata.clone())).unwrap_or_default();
                                     meta.linked_dirs.retain(|x| x != &gone);
-                                    ctx.tasks.spawn(async move {
-                                        if let Err(e) = save_metadata(ctx, meta).await {
-                                            ctx.notice.set(Some(e));
-                                        }
+                                    let base = ctx.base();
+                                    ctx.tasks.spawn_then(async move { save_metadata(&base, meta).await }, move |res| match res {
+                                        Ok(p) => ctx.project.set(Some(p)),
+                                        Err(e) => ctx.notice.set(Some(e)),
                                     });
                                 }>
                                 {icon(Glyph::Close)}
@@ -594,10 +604,13 @@ pub fn ContextFolders(ctx: StudioCtx) -> impl IntoView {
 }
 
 /// Links a picked folder; it then shows under "Linked folders" in "+".
-async fn finish_link(ctx: StudioCtx, dir: String) {
-    if let Err(e) = link_dir(ctx, dir).await {
-        ctx.notice.set(Some(e));
-    }
+fn finish_link(ctx: StudioCtx, dir: String) {
+    let (base, meta) = link_input(ctx);
+    ctx.tasks
+        .spawn_then(link_dir(base, meta, dir), move |res| match res {
+            Ok((_, p)) => ctx.project.set(Some(p)),
+            Err(e) => ctx.notice.set(Some(e)),
+        });
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -621,33 +634,40 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
         if dir.is_empty() {
             return;
         }
-        ctx.tasks.spawn(async move {
-            match link_dir(ctx, dir).await {
-                Ok(_) => close.run(()),
-                Err(e) => error.set(Some(e)),
-            }
-        });
-    };
-    let reference = move |id: String, name: String| {
-        ctx.tasks.spawn(async move {
-            let path = format!("/api/projects/{}/handoff", api::seg(&id));
-            let res = match api::get::<HandoffResponse>(&path).await {
-                Ok(h) => link_dir(ctx, h.dir).await,
-                Err(e) => Err(e.to_string()),
-            };
-            match res {
-                Ok(dir) => {
-                    ctx.draft.update(|d| {
-                        if !d.trim().is_empty() {
-                            d.push_str("\n\n");
-                        }
-                        d.push_str(&tf(T::ReferenceProjectText, &[&name, &dir]));
-                    });
+        let (base, meta) = link_input(ctx);
+        ctx.tasks
+            .spawn_then(link_dir(base, meta, dir), move |res| match res {
+                Ok((_, p)) => {
+                    ctx.project.set(Some(p));
                     close.run(());
-                    focus_composer();
                 }
                 Err(e) => error.set(Some(e)),
+            });
+    };
+    let reference = move |id: String, name: String| {
+        // The handoff and the link go through even if the studio is left
+        // meanwhile; the draft and the dialog wait for it.
+        let (base, meta) = link_input(ctx);
+        let work = async move {
+            let path = format!("/api/projects/{}/handoff", api::seg(&id));
+            match api::get::<HandoffResponse>(&path).await {
+                Ok(h) => link_dir(base, meta, h.dir).await,
+                Err(e) => Err(e.to_string()),
             }
+        };
+        ctx.tasks.spawn_then(work, move |res| match res {
+            Ok((dir, p)) => {
+                ctx.project.set(Some(p));
+                ctx.draft.update(|d| {
+                    if !d.trim().is_empty() {
+                        d.push_str("\n\n");
+                    }
+                    d.push_str(&tf(T::ReferenceProjectText, &[&name, &dir]));
+                });
+                close.run(());
+                focus_composer();
+            }
+            Err(e) => error.set(Some(e)),
         });
     };
     let title = match kind {

@@ -4,9 +4,17 @@
 //! goes: a fetch that answers after the reader left the Studio (or Media,
 //! Automations) would resume and read the screen's signals, already
 //! disposed, which panics. A [`ScreenTasks`] is made in the screen's body,
-//! so it is disposed with the screen's signals; a task spawned through it
-//! is dropped at its next wake-up once that happened, before any of its
-//! code runs again.
+//! so it is disposed with the screen's signals.
+//!
+//! Two ways to spawn through it:
+//! - [`ScreenTasks::spawn`]: the whole task belongs to the screen (loads,
+//!   polls, reads for the view). It is dropped at its first wake-up after
+//!   the screen went, so nothing after its first `await` runs, a request
+//!   included.
+//! - [`ScreenTasks::spawn_then`]: work the user asked of the server (a
+//!   send, a delete, a save) runs to its end whatever the screen does; only
+//!   the screen's update with its result is skipped once the screen went.
+//!   The work must not read the screen's signals: take what it needs before.
 
 use leptos::prelude::*;
 use std::future::Future;
@@ -44,11 +52,34 @@ impl ScreenTasks {
     }
 
     /// Spawns `fut`; it stops at the first wake-up after the screen went.
-    /// Its first step always runs, so a request sent as the screen closes
-    /// (a save on leave) still goes out; what follows its first `await`
-    /// does not.
+    /// Its first step (up to its first `await`) always runs; nothing after
+    /// it does, so a task that sends more than one request to the server
+    /// goes through [`Self::spawn_then`] instead.
     pub fn spawn(self, fut: impl Future<Output = ()> + 'static) {
         leptos::task::spawn_local(Guarded::new(fut, move || self.alive()));
+    }
+
+    /// Spawns `work`, which runs to its end even after the screen went (it
+    /// must not read the screen's signals), then `ui` with its output while
+    /// the screen is still there.
+    pub fn spawn_then<T: 'static>(
+        self,
+        work: impl Future<Output = T> + 'static,
+        ui: impl FnOnce(T) + 'static,
+    ) {
+        leptos::task::spawn_local(then_if(work, move || self.alive(), ui));
+    }
+}
+
+/// `work` to its end, then `ui` with its output if `alive` holds.
+async fn then_if<T>(
+    work: impl Future<Output = T>,
+    alive: impl FnOnce() -> bool,
+    ui: impl FnOnce(T),
+) {
+    let out = work.await;
+    if alive() {
+        ui(out);
     }
 }
 
@@ -140,6 +171,54 @@ mod tests {
         assert!(poll(&mut f).is_ready());
         assert_eq!(steps.get(), 2);
         assert!(tasks.alive());
+    }
+
+    #[test]
+    fn work_runs_to_its_end_after_the_screen_went_and_ui_does_not() {
+        let owner = Owner::new();
+        let tasks = owner.with(ScreenTasks::new);
+        let steps = Rc::new(Cell::new(0));
+        let ui_ran = Rc::new(Cell::new(false));
+        let work = {
+            let steps = steps.clone();
+            async move {
+                TwoSteps(steps.clone()).await;
+                steps.get()
+            }
+        };
+        let ui = {
+            let ui_ran = ui_ran.clone();
+            move |_: u32| ui_ran.set(true)
+        };
+        let mut f = Box::pin(then_if(work, move || tasks.alive(), ui));
+        assert!(poll(&mut f).is_pending());
+        drop(owner);
+        assert!(poll(&mut f).is_ready());
+        assert_eq!(steps.get(), 2, "the work went past its first await");
+        assert!(!ui_ran.get(), "no screen update once the screen went");
+    }
+
+    #[test]
+    fn ui_gets_the_work_output_while_the_screen_stays() {
+        let owner = Owner::new();
+        let tasks = owner.with(ScreenTasks::new);
+        let got = Rc::new(Cell::new(0));
+        let ui = {
+            let got = got.clone();
+            move |n: u32| got.set(n)
+        };
+        let steps = Rc::new(Cell::new(0));
+        let work = {
+            let steps = steps.clone();
+            async move {
+                TwoSteps(steps.clone()).await;
+                7
+            }
+        };
+        let mut f = Box::pin(then_if(work, move || tasks.alive(), ui));
+        assert!(poll(&mut f).is_pending());
+        assert!(poll(&mut f).is_ready());
+        assert_eq!(got.get(), 7);
     }
 
     #[test]

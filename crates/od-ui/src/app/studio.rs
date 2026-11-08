@@ -580,12 +580,20 @@ impl StudioCtx {
         self.tools.deliverable.set(None);
         self.live_run.set(Some(String::new()));
         let req_attachments = req.attachments.clone();
-        self.tasks.spawn(async move {
-            match api::post::<_, CreateRunResponse>("/api/runs", &req).await {
+        // The run and its stored draft's clearing go through even if the
+        // studio is left meanwhile: back on it, the composer must not offer
+        // the sent message again.
+        let sent = text.clone();
+        let work = async move {
+            let res = api::post::<_, CreateRunResponse>("/api/runs", &req).await;
+            if let (Ok(_), Some(k)) = (&res, &draft_key) {
+                super::composer::clear_draft_if(k, &sent);
+            }
+            res
+        };
+        self.tasks.spawn_then(work, move |res| {
+            match res {
                 Ok(res) => {
-                    if let Some(k) = &draft_key {
-                        super::composer::clear_draft_if(k, &text);
-                    }
                     self.tools.attachments.update(|a| {
                         a.retain(|p| !req_attachments.contains(p));
                     });
@@ -853,9 +861,12 @@ impl StudioCtx {
         if files.is_empty() {
             return;
         }
-        self.tasks.spawn(async move {
+        // Every file's version is saved, the studio left or not; nothing on
+        // screen waits for it.
+        let base = self.base();
+        leptos::task::spawn_local(async move {
             for f in files {
-                let path = format!("{}/files/{}/versions", self.base(), api::file_path(&f));
+                let path = format!("{base}/files/{}/versions", api::file_path(&f));
                 let req = CreateVersionRequest {
                     prompt: prompt.clone(),
                     source: Some(VersionSource::Ai),

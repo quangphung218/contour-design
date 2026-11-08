@@ -315,7 +315,10 @@ fn LibraryView(
                 .cloned()
                 .collect()
         });
-        screen.spawn(async move {
+        // Every picked asset is deleted, Media left or not; the list and
+        // the last error show only while it is there.
+        let work = async move {
+            let mut failed = None;
             for a in &picks {
                 let path = format!(
                     "/api/projects/{}/files/{}",
@@ -323,8 +326,14 @@ fn LibraryView(
                     api::file_path(&a.path)
                 );
                 if let Err(e) = api::delete::<Value>(&path).await {
-                    notice.set(Some(Err(e.to_string())));
+                    failed = Some(e.to_string());
                 }
+            }
+            failed
+        };
+        screen.spawn_then(work, move |failed| {
+            if let Some(e) = failed {
+                notice.set(Some(Err(e)));
             }
             selected.set(Vec::new());
             on_change.run(());
@@ -592,7 +601,9 @@ fn GenerateView(
         }
         let pid = target.get_untracked();
         busy.set(true);
-        screen.spawn(async move {
+        // The request goes through even if Media is left meanwhile; only
+        // the form's state waits for the screen.
+        let work = async move {
             // The library project may not exist yet: uploading nothing would
             // fail, so ensure it through a tiny create-if-missing call.
             if pid == LIBRARY_PROJECT
@@ -606,12 +617,14 @@ fn GenerateView(
                 )
                 .await;
             }
-            match api::post::<_, Value>(
+            api::post::<_, Value>(
                 &format!("/api/projects/{}/media/tasks", api::seg(&pid)),
                 &body,
             )
             .await
-            {
+        };
+        screen.spawn_then(work, move |res| {
+            match res {
                 Ok(_) => on_queued.run(()),
                 Err(e) => error.set(Some(e.to_string())),
             }
@@ -908,11 +921,18 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
         busy.set(true);
         status.set(None);
         let body = json!({ "fileName": "index.html", "fps": fps.get_untracked(), "output": "media/hyperframes.mp4" });
-        screen.spawn(async move {
+        // The export is counted even if Media is left during the render.
+        let work = async move {
             let base = format!("/api/projects/{}", api::seg(&pid));
-            match api::post::<_, Value>(&format!("{base}/export/mp4"), &body).await {
+            let res = api::post::<_, Value>(&format!("{base}/export/mp4"), &body).await;
+            if res.is_ok() {
+                super::export_menu::mark_exported(&base).await;
+            }
+            res
+        };
+        screen.spawn_then(work, move |res| {
+            match res {
                 Ok(v) => {
-                    super::export_menu::mark_exported(&base).await;
                     let saved = tf(
                         T::Mp4Saved,
                         &[v["file"]["name"]

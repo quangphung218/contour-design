@@ -1,7 +1,8 @@
 // UI e2e, leaving screens through the router: the app loads once, then
 // moves Studio ▸ Media ▸ Automations ▸ Studio ▸ Home ▸ … by link clicks
 // (no page load in between), twice over, and ends on Home: once with
-// time on each screen, once leaving each with its requests in flight. A screen's
+// time on each screen, once leaving each with its requests in flight. Then
+// a message sent as the Studio is left is not back in its composer. A screen's
 // tasks and effects must stop when it is left: no page error and no
 // `panicked at` in the console (a task reading a disposed signal panics
 // in the debug bundle). Every request leaving loopback is blocked and
@@ -118,6 +119,30 @@ try {
   await sleep(2_500);
   slow = 0;
   await page.locator(ready['/']).waitFor();
+
+  // A message sent just before the Studio is left, its run's answer held:
+  // the run is made, and back on the Studio the composer is empty (its
+  // stored draft was cleared although the Studio had gone), so the message
+  // is not offered to send twice.
+  let runsMade = 0;
+  await page.route(`${BASE}/api/runs`, async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    const res = await route.fetch();
+    runsMade++;
+    await sleep(800);
+    await route.fulfill({ response: res }).catch(() => {});
+  });
+  await go(studio);
+  const composer = page.getByTestId('composer');
+  await composer.fill('Ship the hero section');
+  await composer.press('Enter');
+  await until(async () => runsMade === 1, 'the run reached the daemon');
+  await go('/');
+  await sleep(1_500);
+  await go(studio);
+  await sleep(500);
+  assert.equal(await composer.inputValue(), '', 'the sent message is not back in the composer');
+  assert.equal(runsMade, 1);
 
   assert.deepEqual(pageErrors, [], 'no page error or panic after leaving screens');
   assert.deepEqual(external, [], 'no request left loopback');
