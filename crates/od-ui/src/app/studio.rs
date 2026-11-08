@@ -782,14 +782,21 @@ impl StudioCtx {
         };
         // The steer and its stored draft's clearing go through even if the
         // studio is left meanwhile: back on it, the composer must not offer
-        // the steered message again.
+        // the steered message again, nor its stored held queue.
         let draft_key = self.draft_key();
+        let held_key = self.held_owner.get_value();
         let text = item.text.clone();
+        let steered_id = id.clone();
         let work = async move {
             let path = format!("/api/runs/{}/steer", api::seg(&run_id));
             let res = api::post::<_, serde_json::Value>(&path, &json!({ "message": text })).await;
-            if let (Ok(_), Some(k)) = (&res, &draft_key) {
-                super::composer::clear_draft_if(k, &text);
+            if res.is_ok() {
+                if let Some(k) = &draft_key {
+                    super::composer::clear_draft_if(k, &text);
+                }
+                if let Some(k) = &held_key {
+                    drop_held(k, &steered_id);
+                }
             }
             res
         };
@@ -1405,6 +1412,17 @@ pub(super) fn is_editing_target(target: Option<web_sys::EventTarget>) -> bool {
     matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT")
         || el.get_attribute("contenteditable").is_some()
         || el.get_attribute("data-terminal").is_some()
+}
+
+/// Takes the message `id` off the held queue stored under `key`, for a
+/// steer that lands once the studio is gone (no queue left to store it).
+fn drop_held(key: &str, id: &str) {
+    let Some((why, mut items)) = super::composer::load_draft(key).and_then(|s| decode_held(&s))
+    else {
+        return;
+    };
+    items.retain(|x| x.id != id);
+    super::composer::save_draft(key, &encode_held(Some(why), &items));
 }
 
 fn fail(turn: RwSignal<AssistantTurn>, message: String) {
