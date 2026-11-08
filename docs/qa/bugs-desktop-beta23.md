@@ -25,7 +25,7 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 | Severity | Count | IDs |
 |---|---|---|
 | 🔴 | 0 | |
-| 🟠 | 1 | QA-064 (fixed on `js-dialogs`) |
+| 🟠 | 1 | QA-064 (fixed in #111) |
 | 🟡 | 0 | |
 | 🔵 | 1 | QA-065 |
 | **Total** | **2** | |
@@ -179,7 +179,7 @@ every action; the rerun above has E plain at 0.
   this bug blocks.
 - **Test**: §18 dialog rows above (opener log + page log); reference in
   [dialogs.mjs](desktop-beta23/dialogs.mjs).
-- **Status**: fixed on branch `js-dialogs`: at startup the shell adds the
+- **Status**: fixed in #111: at startup the shell adds the
   three methods to the webview's UI delegate class (`class_addMethod`,
   `apps/desktop/src/js_dialogs.rs`) and sets the delegate again, since
   WebKit reads a delegate's methods when it is set. Each shows an app-modal
@@ -190,8 +190,9 @@ every action; the rerun above has E plain at 0.
   Windows (WebView2) and Linux (WebKitGTK) draw these dialogs themselves,
   as neither wry nor Tauri handles `ScriptDialogOpening` / `script-dialog`.
   From the second dialog within 3 s of the last, the alert offers "Don't
-  allow this page to show more dialogs"; ticked, the webview's dialogs
-  return at once (as cancelled) until its next page load, so a page's
+  allow this design to show more dialogs"; ticked, the webview's dialogs
+  return at once (as cancelled) until its next page load or until the user
+  opens another design (the UI calls `reset_dialog_gate`), so a page's
   `alert` loop cannot hold the app.
   Not yet rerun on a built app: §18's dialog rows.
 

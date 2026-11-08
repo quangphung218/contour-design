@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reset-dialog-gate"
+description = "Enables the reset_dialog_gate command without any pre-configured scope."
+commands.allow = ["reset_dialog_gate"]
+
+[[permission]]
+identifier = "deny-reset-dialog-gate"
+description = "Denies the reset_dialog_gate command without any pre-configured scope."
+commands.deny = ["reset_dialog_gate"]

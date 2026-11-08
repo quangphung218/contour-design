@@ -458,11 +458,16 @@ On a built app, on each of macOS
   page gets exactly that string (log it or put it in the page).
 - [ ] **alert loop**: a button running `for (;;) alert('x')`. The first
   alert has no checkbox; the next ones (within 3 s of the last) show
-  "Don't allow this page to show more dialogs". Tick it and press OK: no
-  more dialogs, the app answers (menus, ⌘Q). After that page's later
+  "Don't allow this design to show more dialogs". Tick it and press OK: no
+  more dialogs, the app answers (menus, ⌘Q). After that the design's later
   `confirm` gives `false` and `prompt` `null`, nothing shown. Reload the
-  page (or open the design again after the app reloads): dialogs show
-  again.
+  app: dialogs show again.
+- [ ] **blocked in design A, not in B**: block dialogs in design A as in
+  the line above, then open design B (Projects or the switcher, no
+  reload) and press a button running `confirm('Delete?')`: the dialog
+  shows, OK returns `true`. Back to A, nothing reloaded: A's dialogs show
+  again too (opening another design resets the block,
+  `reset_dialog_gate`).
 - [ ] Drag an element of the design (`draggable="true"`) and drop it, then
   let go of a key in a field whose page opens a URL on `keyup`: nothing
   opens.

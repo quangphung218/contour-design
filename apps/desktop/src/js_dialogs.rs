@@ -10,6 +10,7 @@
 //! unless the app handles `ScriptDialogOpening` / `script-dialog`, which
 //! neither wry nor Tauri does: nothing to add there.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// The dialog's title: who is asking, as browsers put it
@@ -57,7 +58,7 @@ const LOOP_WINDOW: Duration = Duration::from_secs(3);
 
 /// The checkbox under a dialog shown within [`LOOP_WINDOW`] of the last.
 #[cfg(target_os = "macos")]
-const BLOCK_LABEL: &str = "Don't allow this page to show more dialogs";
+const BLOCK_LABEL: &str = "Don't allow this design to show more dialogs";
 
 /// What to do with a page's next dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,7 +70,8 @@ pub(crate) enum Gate {
     Block,
 }
 
-/// One webview's dialogs since its page loaded (a new page starts afresh).
+/// One webview's dialogs since its page loaded or the user opened another
+/// design (either starts afresh, see [`Gates`]).
 #[derive(Debug, Default)]
 pub(crate) struct DialogGate {
     last_closed: Option<Instant>,
@@ -95,13 +97,44 @@ impl DialogGate {
     }
 }
 
+/// Every webview's [`DialogGate`], by a key naming the webview (its
+/// `WKWebView *`). No entry is a fresh gate.
+#[derive(Debug, Default)]
+pub(crate) struct Gates(HashMap<usize, DialogGate>);
+
+impl Gates {
+    /// The next dialog of webview `key`, asked for at `now`.
+    pub(crate) fn open(&self, key: usize, now: Instant) -> Gate {
+        self.0
+            .get(&key)
+            .map_or(Gate::Show { offer_block: false }, |gate| gate.open(now))
+    }
+
+    /// A dialog of webview `key` closed at `now`; `block` when its
+    /// checkbox was ticked.
+    pub(crate) fn closed(&mut self, key: usize, now: Instant, block: bool) {
+        self.0.entry(key).or_default().closed(now, block);
+    }
+
+    /// Webview `key` started loading a page: its dialogs show again.
+    pub(crate) fn page_loaded(&mut self, key: usize) {
+        self.0.remove(&key);
+    }
+
+    /// The user opened another design in the Studio, which changes the
+    /// route, not the page: every webview's dialogs show again.
+    pub(crate) fn reset_all(&mut self) {
+        self.0.clear();
+    }
+}
+
 #[cfg(target_os = "macos")]
-pub(crate) use mac::{install, page_loaded};
+pub(crate) use mac::{install, page_loaded, reset_all};
 
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod mac {
-    use super::{BLOCK_LABEL, DialogGate, Gate, dialog_message, dialog_title};
+    use super::{BLOCK_LABEL, Gate, Gates, dialog_message, dialog_title};
     use block2::Block;
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
@@ -110,7 +143,6 @@ mod mac {
     use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
     use objc2_web_kit::{WKFrameInfo, WKUIDelegate, WKWebView};
     use std::cell::RefCell;
-    use std::collections::HashMap;
     use std::ffi::{CStr, c_void};
     use std::time::Instant;
 
@@ -210,15 +242,21 @@ mod mac {
     }
 
     thread_local! {
-        /// Each webview's [`DialogGate`], by its `WKWebView *`. The panel
-        /// methods and [`page_loaded`] all run on the main thread.
-        static GATES: RefCell<HashMap<usize, DialogGate>> = RefCell::new(HashMap::new());
+        /// Each webview's gate, by its `WKWebView *`. The panel methods,
+        /// [`page_loaded`] and [`reset_all`] all run on the main thread.
+        static GATES: RefCell<Gates> = RefCell::new(Gates::default());
     }
 
     /// `webview` (a `WKWebView *`) started loading a page: dialogs it had
     /// blocked may show again.
     pub(crate) fn page_loaded(webview: *mut c_void) {
-        GATES.with(|gates| gates.borrow_mut().remove(&(webview as usize)));
+        GATES.with(|gates| gates.borrow_mut().page_loaded(webview as usize));
+    }
+
+    /// The user opened another design: dialogs blocked for the last one
+    /// may show again. Call it on the main thread.
+    pub(crate) fn reset_all() {
+        GATES.with(|gates| gates.borrow_mut().reset_all());
     }
 
     /// Runs a panel from `frame` of `webview`: its origin as title,
@@ -236,12 +274,10 @@ mod mac {
     ) -> bool {
         let key = std::ptr::from_ref(webview) as usize;
         let now = Instant::now();
-        let offer_block =
-            match GATES.with(|gates| gates.borrow().get(&key).map(|gate| gate.open(now))) {
-                Some(Gate::Block) => return false,
-                Some(Gate::Show { offer_block }) => offer_block,
-                None => false,
-            };
+        let offer_block = match GATES.with(|gates| gates.borrow().open(key, now)) {
+            Gate::Block => return false,
+            Gate::Show { offer_block } => offer_block,
+        };
         // SAFETY: getters of a live `WKFrameInfo`, on the main thread.
         let title = unsafe {
             let origin = frame.securityOrigin();
@@ -274,13 +310,7 @@ mod mac {
             && alert
                 .suppressionButton()
                 .is_some_and(|button| button.state() == NSControlStateValueOn);
-        GATES.with(|gates| {
-            gates
-                .borrow_mut()
-                .entry(key)
-                .or_default()
-                .closed(Instant::now(), block);
-        });
+        GATES.with(|gates| gates.borrow_mut().closed(key, Instant::now(), block));
         ok
     }
 
@@ -428,12 +458,52 @@ mod tests {
         assert_eq!(gate.open(t0), Gate::Block);
     }
 
+    const A: usize = 0xA0;
+    const B: usize = 0xB0;
+
+    /// Webviews `A` and `B` with `A`'s dialogs blocked, `B` mid-loop.
+    fn a_blocked_b_looping(t0: Instant) -> Gates {
+        let mut gates = Gates::default();
+        gates.closed(A, t0, true);
+        gates.closed(B, t0, false);
+        assert_eq!(gates.open(A, t0), Gate::Block);
+        gates
+    }
+
     #[test]
-    fn a_new_page_starts_with_a_fresh_gate() {
-        // `page_loaded` drops the webview's gate; the next one is default.
-        let mut gate = DialogGate::default();
-        gate.closed(Instant::now(), true);
-        gate = DialogGate::default();
-        assert_eq!(gate.open(Instant::now()), Gate::Show { offer_block: false });
+    fn an_unknown_webview_shows_without_the_checkbox() {
+        let gates = Gates::default();
+        assert_eq!(
+            gates.open(A, Instant::now()),
+            Gate::Show { offer_block: false }
+        );
+    }
+
+    #[test]
+    fn a_new_page_shows_dialogs_again() {
+        let t0 = Instant::now();
+        let mut gates = a_blocked_b_looping(t0);
+        gates.page_loaded(A);
+        assert_eq!(gates.open(A, t0), Gate::Show { offer_block: false });
+        // The other webview's state stays.
+        assert_eq!(gates.open(B, t0), Gate::Show { offer_block: true });
+    }
+
+    #[test]
+    fn a_new_page_leaves_other_webviews_blocked() {
+        let t0 = Instant::now();
+        let mut gates = a_blocked_b_looping(t0);
+        gates.page_loaded(B);
+        assert_eq!(gates.open(A, t0), Gate::Block);
+        assert_eq!(gates.open(B, t0), Gate::Show { offer_block: false });
+    }
+
+    #[test]
+    fn another_design_shows_dialogs_again_everywhere() {
+        let t0 = Instant::now();
+        let mut gates = a_blocked_b_looping(t0);
+        gates.reset_all();
+        assert_eq!(gates.open(A, t0), Gate::Show { offer_block: false });
+        assert_eq!(gates.open(B, t0), Gate::Show { offer_block: false });
     }
 }
