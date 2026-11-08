@@ -247,7 +247,19 @@ try {
           loading++;
           try {
             await p.goto(`${BASE}${path}`);
-            await until(async () => (await p.locator('html').getAttribute('lang')) === tag, `lang=${tag} on ${path}`, 30_000);
+            const langIs = async () => (await p.locator('html').getAttribute('lang')) === tag;
+            try {
+              await until(langIs, `lang=${tag} on ${path}`, 30_000);
+            } catch (e) {
+              // Once in ~20 local runs, short of memory, the browser cut the
+              // WASM download ("Response body loading was aborted") and the
+              // page stayed blank: load it once more.
+              log(`${tag} ${path}: ${e.message}; loading it again`);
+              const cut = pageErrors.findIndex((m) => m.startsWith('WebAssembly compilation aborted: Network error'));
+              if (cut >= 0) pageErrors.splice(cut, 1);
+              await p.reload();
+              await until(langIs, `lang=${tag} on ${path}`, 30_000);
+            }
           } finally {
             loading--;
           }
