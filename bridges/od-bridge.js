@@ -571,11 +571,21 @@
   var timer = Function.prototype.bind.call(setTimeout, window);
   // Gives a press the link spent back (`spendGesture` says what it spent).
   var restoreGesture = function () {};
-  // Spends the activation for a link a nested frame names (see "Nested
-  // srcdoc frames"); true when it may open.
+  // A nested copy's press, named to the bridge above over its port (see
+  // "Nested srcdoc frames").
+  var notePress = function () {};
+  // In the bridge above: takes a press from a nested frame (true when
+  // taken, null while this window has not seen its activation yet), and
+  // spends it for a link that frame names (true when it may open).
+  var pressNested = function () {
+    return false;
+  };
   var spendNested = function () {
     return false;
   };
+  // Before this window's native `window.open`, which can spend the
+  // activation a nested frame's press is still on its way with.
+  var noteOpen = function () {};
   var spendGesture = (function () {
     try {
       var bind = Function.prototype.bind;
@@ -611,6 +621,21 @@
       }
       var activationSpent = false;
       var watching = false;
+      // The nested frame whose press holds the next tab, till when: taken
+      // as the press comes, while the activation is fresh, since the
+      // frame's own window.open can spend the activation (the app denies
+      // the window it asks for) before its link reaches this window. As
+      // long as an activation lasts in Chromium.
+      var now = bind.call(performance.now, performance);
+      var pressFrom = null;
+      var pressUntil = 0;
+      // When this window's own native window.open last ran on a live
+      // activation (WebKit spends it there, the app denying the window):
+      // a nested press that comes within a second was on it.
+      var openedActiveAt = -Infinity;
+      noteOpen = function () {
+        if (activeNow && activeNow()) openedActiveAt = now();
+      };
       var spendActivation = function () {
         activationSpent = true;
         if (!activeNow || watching) return;
@@ -629,6 +654,7 @@
         armedAt = blurs;
         arms++;
         activationSpent = false;
+        notePress();
       };
       window.addEventListener('pointerdown', arm, true);
       window.addEventListener('touchstart', arm, { capture: true, passive: true });
@@ -706,9 +732,19 @@
           activationSpent = false;
         }
       };
-      spendNested = function () {
+      // A press in the frame while focus is there, on an activation no tab
+      // has opened on yet (without the API, while a press here holds).
+      pressNested = function (frame) {
         if (selectMode) return false;
-        if (activeNow ? activationSpent || !activeNow() : !armed) return false;
+        if (activeNow ? activationSpent : !armed) return false;
+        if (activeNow && !activeNow() && now() - openedActiveAt > 1000) return null;
+        pressFrom = frame;
+        pressUntil = now() + 5000;
+        return true;
+      };
+      spendNested = function (frame) {
+        if (selectMode || pressFrom !== frame || now() > pressUntil) return false;
+        pressFrom = null;
         armed = null;
         spentArms = arms;
         spendActivation();
@@ -785,6 +821,7 @@
       }
       var spent = href !== null && spendGesture();
       var opened;
+      noteOpen();
       inNative++;
       try {
         opened = nativeOpen.apply(this, arguments);
@@ -823,13 +860,17 @@
   // frame sent elsewhere) gets none. The copy takes the first port, in its
   // window's first message listener, so the frame's own scripts never hold
   // it; nothing else the frame posts counts. The bridge above still checks
-  // for itself: it opens what comes over the port only while focus is in
-  // that frame, not while picking an element for a comment, and only on a
-  // user activation no tab has opened on yet, which it then spends with
-  // its own press (`spendNested`): one activation, one tab, across the
-  // frames. A frame the bridge missed (in a shadow root) gets no port and
-  // opens nothing, as before. Everything the port decision reads is taken
-  // now, before any page script.
+  // for itself, as the press starts: the copy names each press over the
+  // port before the page's listeners run, and the bridge above takes it
+  // only while focus is in that frame, not while picking an element for a
+  // comment, and on a user activation no tab has opened on yet
+  // (`pressNested`). A link that frame names then spends that press, and
+  // the activation with it, shared with the bridge's own press
+  // (`spendNested`): one activation, one tab, across the frames; no press,
+  // no tab. The page reads its srcdoc back without the copy. A frame the
+  // bridge missed (in a shadow root) gets no port and opens nothing, as
+  // before. Everything the port decision reads is taken now, before any
+  // page script.
   // ---------------------------------------------------------------------
   var upPort = null;
   var sendUp = function () {};
@@ -881,8 +922,30 @@
     var TAG = '<!doctype html><scr' + 'ipt data-od-nested>' + SOURCE + '</scr' + 'ipt>';
 
     function hasCopy(doc) {
-      return typeof doc === 'string' && sliceOf(doc, 0, TAG.length) === TAG;
+      return typeof doc === 'string' && doc.length >= TAG.length && sliceOf(doc, 0, TAG.length) === TAG;
     }
+
+    // The page reads back the srcdoc it wrote, not the copy: a page that
+    // keeps the attribute in step with its own (if it differs, set it)
+    // would load the frame again and again.
+    function bare(doc) {
+      return hasCopy(doc) ? sliceOf(doc, TAG.length) : doc;
+    }
+    try {
+      var srcdocProp = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc');
+      var srcdocOf = callOf(srcdocProp.get);
+      Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', {
+        get: function () {
+          return bare(srcdocOf(this));
+        },
+        set: srcdocProp.set,
+        enumerable: srcdocProp.enumerable,
+        configurable: true
+      });
+      Element.prototype.getAttribute = function getAttribute(name) {
+        return bare(getAttr(this, name));
+      };
+    } catch (_) {}
 
     function isFrame(el) {
       try {
@@ -917,11 +980,42 @@
       }
     }), document, { subtree: true, childList: true, attributes: true, attributeFilter: ['srcdoc'] });
 
+    // A press, taken while focus is in its frame. Its activation can reach
+    // this window after the message does (Chromium runs a sandboxed frame
+    // in a process of its own): looked for again for up to 200 ms, and the
+    // frame's link waits for it meanwhile.
+    var pressWait = null;
+    var heldHref = null;
+    function takePress(frame, tries) {
+      var got = activeOf() === frame ? pressNested(frame) : false;
+      if (got === null && tries < 8) {
+        pressWait = frame;
+        return timer(function () {
+          takePress(frame, tries + 1);
+        }, 25);
+      }
+      if (pressWait !== frame) return;
+      pressWait = null;
+      var href = heldHref;
+      heldHref = null;
+      if (href) openNested(frame, href);
+    }
+
+    function openNested(frame, href) {
+      if (activeOf() === frame && spendNested(frame)) openLink(href);
+    }
+
+    // A press, or a link to open on it.
     function fromNested(frame, data) {
-      if (activeOf() !== frame) return;
-      var href = data && typeof data.href === 'string' ? webAddress(data.href) : null;
-      if (!href || !spendNested()) return;
-      openLink(href);
+      if (activeOf() !== frame || !data) return;
+      if (data.press === true) {
+        if (pressWait !== frame) heldHref = null;
+        return takePress(frame, 0);
+      }
+      var href = typeof data.href === 'string' ? webAddress(data.href) : null;
+      if (!href) return;
+      if (pressWait === frame) heldHref = href;
+      else openNested(frame, href);
     }
 
     // A frame's load: a fresh port for the document it now shows, if that
@@ -969,6 +1063,14 @@
     sendUp = function (href) {
       if (upPort) portPost(upPort, { href: href });
     };
+    // Each press, as it starts (before the page's own listeners run). A
+    // touch's activation comes with its end.
+    notePress = function () {
+      if (upPort) portPost(upPort, { press: true });
+    };
+    window.addEventListener('touchend', function (e) {
+      if (e.isTrusted === true) notePress();
+    }, { capture: true, passive: true });
   })();
   // A nested copy does nothing more.
   if (NESTED) return;
