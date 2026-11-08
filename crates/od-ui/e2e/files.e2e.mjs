@@ -608,7 +608,8 @@ try {
   await page.getByTestId('comment-chip').waitFor();
   await page.getByTestId('comment-mode').click();
   await page.getByTestId('draw-mode').click();
-  b = await page.getByTestId('draw-canvas').boundingBox();
+  // The canvas mounts after the click: wait for its box (null until laid out).
+  await until(async () => (b = await page.getByTestId('draw-canvas').boundingBox()) && b.width > 0, 'draw canvas laid out');
   await page.mouse.move(b.x + 30, b.y + 30);
   await page.mouse.down();
   await page.mouse.move(b.x + 120, b.y + 80, { steps: 4 });
