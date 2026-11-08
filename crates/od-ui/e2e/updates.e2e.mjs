@@ -101,7 +101,9 @@ function desktopShell({ downloads, good }) {
   let cancelled = false;
   const support = sessionStorage.getItem('od-e2e-support') || 'ready';
   const emit = (detail) => window.dispatchEvent(new CustomEvent('od:update-progress', { detail }));
-  window.__shell = { calls, installed: null, delay: Number(sessionStorage.getItem('od-e2e-delay') || 60) };
+  // Each step of the download stays 300 ms on screen: at 60 ms the test
+  // missed "Downloading… 25%" with other scenarios running alongside.
+  window.__shell = { calls, installed: null, delay: Number(sessionStorage.getItem('od-e2e-delay') || 300) };
   window.__TAURI_INTERNALS__ = {
     invoke: async (cmd, args = {}) => {
       calls.push(args && args.version ? `${cmd} ${args.version}` : cmd);
