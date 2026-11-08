@@ -239,7 +239,7 @@ node manage.e2e.mjs
 ```
 
 Scenarios: `studio`, `design-system`, `library`, `manage`, `chat`, `files`,
-`preview`, `c2`, `c3-runtimes`, `c4-depth` (`<name>.e2e.mjs`). Screenshots
+`preview`, `c2`, `c3-runtimes`, `c4-depth`, `routes` (`<name>.e2e.mjs`). Screenshots
 of failures go to `crates/od-ui/e2e/test-results/`. `screens.mjs` captures
 every main screen in light and dark for design review.
 `demo.mjs` (`make demo-gif`, or `run.sh demo.mjs`) records the README demo with
