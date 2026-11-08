@@ -510,7 +510,9 @@ fn Sidebar() -> impl IntoView {
             <button
                 class="palette-trigger"
                 data-testid="open-palette"
-                aria-label=t(T::CommandPalette)
+                // The name holds the shown text and shortcut (WCAG 2.5.3);
+                // the rail and a narrow window hide them, so it stays set.
+                aria-label=format!("{} {}K", t(T::PaletteTrigger), shortcuts::modifier())
                 data-tip=tip(t(T::CommandPalette))
                 data-tip-pos="right"
                 on:click=move |_| shell.palette.set(true)

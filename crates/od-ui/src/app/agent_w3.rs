@@ -247,7 +247,8 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
                 class="btn small ghost"
                 class:active=move || open.get()
                 data-testid="memory-toggle"
-                aria-label=t(T::Memory)
+                // The name holds the shown label and count (WCAG 2.5.3).
+                aria-label=move || format!("{} {}", t(T::Memory), ctx.memory.with(Vec::len))
                 data-tip=t(T::Memory)
                 aria-expanded=move || open.get().to_string()
                 on:click=move |_| {
@@ -259,6 +260,7 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
             >
                 {icon(Glyph::Memory)}
                 <span class="btn-label">{t(T::Memory)}</span>
+                {" "}
                 <span class="count">{move || ctx.memory.with(Vec::len)}</span>
             </button>
             <Show when=move || open.get()>

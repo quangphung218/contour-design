@@ -1126,16 +1126,15 @@ fn TemplateCard(
         )
     });
     let thumb = example.is_some();
-    let label = name.clone();
     view! {
         // A div, not a button: the thumbnail frame may not sit in a button.
+        // No aria-label: the name comes from the visible text (WCAG 2.5.3).
         <div
             class="template-card"
             class:selected=is_selected.clone()
             role="button"
             tabindex="0"
             aria-pressed=move || is_selected().to_string()
-            aria-label=label
             data-testid="template-card"
             on:click=move |_| pick.run(picked.clone())
             on:keydown=move |ev: web_sys::KeyboardEvent| {
