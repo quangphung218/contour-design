@@ -324,7 +324,12 @@ try {
 
   // 11. Design system switch in the composer.
   const dsValue = await page.locator('[data-testid="composer-design-system"] option').nth(1).getAttribute('value');
+  // The composer sends the project the PATCH answer brings back, so wait
+  // for the page to have it, not only for the daemon to have saved it (the
+  // run went out with no design system on a busy CI runner).
+  const patched = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().endsWith(`/api/projects/${projectId}`));
   await page.getByTestId('composer-design-system').selectOption(dsValue);
+  await (await patched).finished();
   await until(async () => (await api(`/api/projects/${projectId}`)).project.designSystemId === dsValue, 'design system saved');
 
   // 12. A plan left open: "Continue remaining tasks" sends the open items.
