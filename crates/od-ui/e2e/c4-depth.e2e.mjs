@@ -238,7 +238,10 @@ try {
     try {
       const found = {};
       for (const [i, path] of screens.entries()) {
-        if (i === 0 || newTabAfter.has(screens[i - 1])) {
+        // A load compiles the WASM, four tabs at once next to other
+        // scenarios: 10 s was too short once in three local runs.
+        const loaded = i === 0 || newTabAfter.has(screens[i - 1]);
+        if (loaded) {
           await open();
           await p.goto(`${BASE}${path}`);
         } else {
@@ -252,7 +255,8 @@ try {
           }, path);
           await until(async () => (await p.evaluate(() => location.pathname)) === path, `${tag} route ${path}`);
         }
-        await until(async () => (await p.locator('html').getAttribute('lang')) === tag, `lang=${tag} on ${path}`);
+        await until(async () => (await p.locator('html').getAttribute('lang')) === tag, `lang=${tag} on ${path}`,
+          loaded ? 30_000 : 10_000);
         await until(async () => (await homeLink(p).textContent()).includes(homeLabel(tag)), `${tag} Home link on ${path}`);
         const dir = await p.locator('html').getAttribute('dir');
         assert.equal(dir, ['ar', 'fa'].includes(tag) ? 'rtl' : 'ltr', `${tag} dir`);
