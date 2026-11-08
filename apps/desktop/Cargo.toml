@@ -44,7 +44,7 @@ objc2-web-kit = { version = "0.3", default-features = false, features = ["std", 
 
 [dev-dependencies]
 base64.workspace = true
-minisign = "0.7"
+minisign = "0.10"
 tauri = { version = "2", features = ["test"] }
 tempfile.workspace = true
 
