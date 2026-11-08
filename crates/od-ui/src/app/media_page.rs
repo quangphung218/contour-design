@@ -7,6 +7,7 @@
 use super::export_menu::download;
 use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, query_param, size_label, upload};
+use super::tasks::ScreenTasks;
 use super::{ago, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -115,6 +116,7 @@ const AUDIO_DURATIONS: [u32; 6] = [5, 10, 15, 30, 60, 120];
 
 #[component]
 pub fn MediaPage() -> impl IntoView {
+    let screen = ScreenTasks::provide();
     let template = query_param("template");
     let tab = RwSignal::new(if template.is_some() {
         Tab::Generate
@@ -127,7 +129,7 @@ pub fn MediaPage() -> impl IntoView {
     let error = RwSignal::new(None::<String>);
 
     let reload_assets = move || {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             match api::get::<Value>("/api/library/assets").await {
                 Ok(v) => assets.set(serde_json::from_value(v["assets"].clone()).ok()),
                 Err(e) => error.set(Some(e.to_string())),
@@ -135,7 +137,7 @@ pub fn MediaPage() -> impl IntoView {
         });
     };
     let reload_tasks = move || {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             if let Ok(v) = api::get::<Value>("/api/media/tasks").await {
                 let mut list: Vec<Task> =
                     serde_json::from_value(v["tasks"].clone()).unwrap_or_default();
@@ -153,7 +155,7 @@ pub fn MediaPage() -> impl IntoView {
         });
     };
     let reload_projects = move || {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             if let Ok(r) = api::get::<ProjectsResponse>("/api/projects").await {
                 projects.set(r.projects);
             }
@@ -234,6 +236,7 @@ fn LibraryView(
     projects: RwSignal<Vec<Project>>,
     on_change: Callback<()>,
 ) -> impl IntoView {
+    let screen = ScreenTasks::current();
     let navigate = use_navigate();
     let kind = RwSignal::new(String::new());
     let query = RwSignal::new(String::new());
@@ -268,7 +271,7 @@ fn LibraryView(
         if files.is_empty() {
             return;
         }
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             match upload::<Value>("/api/library/upload", &files).await {
                 Ok(_) => {
                     notice.set(Some(Ok(t(T::AssetsUploaded).to_owned())));
@@ -290,7 +293,7 @@ fn LibraryView(
         }
         let body = json!({ "assets": picks, "prompt": chat_prompt.get_untracked() });
         let navigate = navigate.clone();
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             match api::post::<_, Value>("/api/library/chat", &body).await {
                 Ok(v) => navigate(
                     &format!(
@@ -312,7 +315,10 @@ fn LibraryView(
                 .cloned()
                 .collect()
         });
-        leptos::task::spawn_local(async move {
+        // Every picked asset is deleted, Media left or not; the list and
+        // the last error show only while it is there.
+        let work = async move {
+            let mut failed = None;
             for a in &picks {
                 let path = format!(
                     "/api/projects/{}/files/{}",
@@ -320,8 +326,14 @@ fn LibraryView(
                     api::file_path(&a.path)
                 );
                 if let Err(e) = api::delete::<Value>(&path).await {
-                    notice.set(Some(Err(e.to_string())));
+                    failed = Some(e.to_string());
                 }
+            }
+            failed
+        };
+        screen.spawn_then(work, move |failed| {
+            if let Some(e) = failed {
+                notice.set(Some(Err(e)));
             }
             selected.set(Vec::new());
             on_change.run(());
@@ -432,6 +444,7 @@ fn AssetPreview(
     preview: RwSignal<Option<usize>>,
     on_change: Callback<()>,
 ) -> impl IntoView {
+    let screen = ScreenTasks::current();
     let navigate = use_navigate();
     let src = asset.src();
     let stage = match asset.kind.as_str() {
@@ -450,7 +463,7 @@ fn AssetPreview(
             let src = src.clone();
             let name = name.clone();
             let mime = mime.clone();
-            leptos::task::spawn_local(async move {
+            screen.spawn(async move {
                 if let Ok(bytes) = api::get_bytes(&src).await {
                     let _ = download(&bytes, &name, &mime);
                 }
@@ -465,7 +478,7 @@ fn AssetPreview(
                 api::seg(&a.project_id),
                 api::file_path(&a.path)
             );
-            leptos::task::spawn_local(async move {
+            screen.spawn(async move {
                 if api::delete::<Value>(&path).await.is_ok() {
                     preview.set(None);
                     on_change.run(());
@@ -505,6 +518,7 @@ fn GenerateView(
     on_queued: Callback<()>,
     on_providers: Callback<()>,
 ) -> impl IntoView {
+    let screen = ScreenTasks::current();
     let models = RwSignal::new(Vec::<Model>::new());
     let configured = RwSignal::new(Vec::<String>::new());
     let surface = RwSignal::new("image".to_owned());
@@ -518,7 +532,7 @@ fn GenerateView(
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
 
-    leptos::task::spawn_local(async move {
+    screen.spawn(async move {
         if let Ok(v) = api::get::<Value>("/api/media/models").await {
             models.set(serde_json::from_value(v["models"].clone()).unwrap_or_default());
             configured.set(
@@ -587,7 +601,9 @@ fn GenerateView(
         }
         let pid = target.get_untracked();
         busy.set(true);
-        leptos::task::spawn_local(async move {
+        // The request goes through even if Media is left meanwhile; only
+        // the form's state waits for the screen.
+        let work = async move {
             // The library project may not exist yet: uploading nothing would
             // fail, so ensure it through a tiny create-if-missing call.
             if pid == LIBRARY_PROJECT
@@ -601,12 +617,14 @@ fn GenerateView(
                 )
                 .await;
             }
-            match api::post::<_, Value>(
+            api::post::<_, Value>(
                 &format!("/api/projects/{}/media/tasks", api::seg(&pid)),
                 &body,
             )
             .await
-            {
+        };
+        screen.spawn_then(work, move |res| {
+            match res {
                 Ok(_) => on_queued.run(()),
                 Err(e) => error.set(Some(e.to_string())),
             }
@@ -697,6 +715,7 @@ fn QueueView(
     projects: RwSignal<Vec<Project>>,
     on_change: Callback<()>,
 ) -> impl IntoView {
+    let screen = ScreenTasks::current();
     let project_name = move |id: &str| {
         projects.with(|l| {
             l.iter()
@@ -736,7 +755,7 @@ fn QueueView(
                             {open.then(|| view! {
                                 <button class="btn small ghost" data-testid="media-task-cancel" on:click=move |_| {
                                     let id = id.clone();
-                                    leptos::task::spawn_local(async move {
+                                    screen.spawn(async move {
                                         let _ = api::post::<_, Value>(&format!("/api/media/tasks/{}/cancel", api::seg(&id)), &json!({})).await;
                                         on_change.run(());
                                     });
@@ -794,12 +813,13 @@ pub const PROVIDERS: [(&str, &str, &str); 15] = [
 
 #[component]
 fn ProvidersView() -> impl IntoView {
+    let screen = ScreenTasks::current();
     let config = RwSignal::new(None::<Value>);
     let keys = RwSignal::new(std::collections::HashMap::<String, String>::new());
     let urls = RwSignal::new(std::collections::HashMap::<String, String>::new());
     let status = RwSignal::new(None::<Result<(), String>>);
     let load = move || {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             if let Ok(v) = api::get::<Value>("/api/media/config").await {
                 // Keep what was typed before the config arrived.
                 urls.update(|u| {
@@ -829,7 +849,7 @@ fn ProvidersView() -> impl IntoView {
             providers.insert(id.to_owned(), json!({ "apiKey": key, "preserveApiKey": key.is_empty(), "baseUrl": url, "model": model }));
         }
         let body = json!({ "providers": providers });
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             match api::put::<_, Value>("/api/media/config", &body).await {
                 Ok(v) => {
                     keys.set(Default::default());
@@ -888,6 +908,7 @@ fn ProvidersView() -> impl IntoView {
 
 #[component]
 fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl IntoView {
+    let screen = ScreenTasks::current();
     let project = RwSignal::new(String::new());
     let fps = RwSignal::new(30u32);
     let busy = RwSignal::new(false);
@@ -900,11 +921,18 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
         busy.set(true);
         status.set(None);
         let body = json!({ "fileName": "index.html", "fps": fps.get_untracked(), "output": "media/hyperframes.mp4" });
-        leptos::task::spawn_local(async move {
+        // The export is counted even if Media is left during the render.
+        let work = async move {
             let base = format!("/api/projects/{}", api::seg(&pid));
-            match api::post::<_, Value>(&format!("{base}/export/mp4"), &body).await {
+            let res = api::post::<_, Value>(&format!("{base}/export/mp4"), &body).await;
+            if res.is_ok() {
+                super::export_menu::mark_exported(&base).await;
+            }
+            res
+        };
+        screen.spawn_then(work, move |res| {
+            match res {
                 Ok(v) => {
-                    super::export_menu::mark_exported(&base).await;
                     let saved = tf(
                         T::Mp4Saved,
                         &[v["file"]["name"]

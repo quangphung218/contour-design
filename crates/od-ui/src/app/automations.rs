@@ -7,6 +7,7 @@
 
 use super::icons::{Glyph, icon};
 use super::manage::local_time;
+use super::tasks::ScreenTasks;
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use crate::schedule::{Kind, Preset, city, format_time, parse_time};
@@ -377,6 +378,7 @@ impl Form {
 
 #[component]
 pub fn Automations() -> impl IntoView {
+    let screen = ScreenTasks::provide();
     let shell = Shell::get();
     let routines = RwSignal::new(None::<Vec<Routine>>);
     let projects = RwSignal::new(Vec::<Project>::new());
@@ -385,7 +387,7 @@ pub fn Automations() -> impl IntoView {
     let editing = RwSignal::new(None::<String>);
     let proposals = RwSignal::new(Vec::<Proposal>::new());
     let load_proposals = Callback::new(move |()| {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             if let Ok(r) =
                 api::get::<ProposalsResponse>("/api/automation-proposals?status=pending-review")
                     .await
@@ -397,7 +399,7 @@ pub fn Automations() -> impl IntoView {
     load_proposals.run(());
 
     let reload = move || {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             match api::get::<RoutinesResponse>("/api/routines").await {
                 Ok(r) => routines.set(Some(r.routines)),
                 Err(e) => error.set(Some(e.to_string())),
@@ -405,7 +407,7 @@ pub fn Automations() -> impl IntoView {
         });
     };
     reload();
-    leptos::task::spawn_local(async move {
+    screen.spawn(async move {
         if let Ok(r) = api::get::<ProjectsResponse>("/api/projects").await {
             if let Some(first) = r.projects.first() {
                 if form.project.get_untracked().is_empty() {
@@ -440,7 +442,7 @@ pub fn Automations() -> impl IntoView {
             return;
         }
         let body = form.body(agent);
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             let res = match &edit {
                 Some(id) => {
                     api::patch::<_, Value>(&format!("/api/routines/{}", api::seg(id)), &body).await
@@ -598,12 +600,13 @@ pub fn Automations() -> impl IntoView {
 /// Pending evolution proposals with Apply / Reject; hidden when none.
 #[component]
 fn ProposalsSection(proposals: RwSignal<Vec<Proposal>>, reload: Callback<()>) -> impl IntoView {
+    let screen = ScreenTasks::current();
     let busy = RwSignal::new(None::<String>);
     let note = RwSignal::new(None::<Result<String, String>>);
     let review = move |id: String, apply: bool| {
         busy.set(Some(id.clone()));
         note.set(None);
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             let base = format!("/api/automation-proposals/{}", api::seg(&id));
             let res = if apply {
                 api::post::<_, ApplyResponse>(&format!("{base}/apply"), &json!({}))
@@ -845,6 +848,7 @@ fn RoutineRow(
     on_edit: Callback<Routine>,
     on_crystallized: Callback<()>,
 ) -> impl IntoView {
+    let screen = ScreenTasks::current();
     let id = StoredValue::new(routine.id.clone());
     let crystallizing = RwSignal::new(None::<String>);
     let history = RwSignal::new(None::<Vec<RoutineRun>>);
@@ -853,7 +857,7 @@ fn RoutineRow(
     let failure = RwSignal::new(None::<String>);
     let base = move || format!("/api/routines/{}", api::seg(&id.get_value()));
     let load_history = move || {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             if let Ok(r) =
                 api::get::<RunsResponse>(&format!("{}/runs?limit={HISTORY}", base())).await
             {
@@ -866,7 +870,7 @@ fn RoutineRow(
         load_history();
     }
     let toggle = move |on: bool| {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             match api::patch::<_, Value>(&base(), &json!({"enabled": on})).await {
                 Ok(_) => reload(),
                 Err(e) => failure.set(Some(e.to_string())),
@@ -874,7 +878,7 @@ fn RoutineRow(
         });
     };
     let run_now = move |_| {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             match api::post::<_, Value>(&format!("{}/run", base()), &json!({})).await {
                 Ok(_) => {
                     failure.set(None);
@@ -886,7 +890,7 @@ fn RoutineRow(
     };
     let crystallize = move |run_id: String| {
         crystallizing.set(Some(run_id.clone()));
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             let path = format!("{}/runs/{}/crystallize", base(), api::seg(&run_id));
             match api::post::<_, CrystallizeResponse>(&path, &json!({})).await {
                 Ok(r) if r.proposals.is_empty() => {
@@ -900,7 +904,7 @@ fn RoutineRow(
         });
     };
     let remove = move |_| {
-        leptos::task::spawn_local(async move {
+        screen.spawn(async move {
             let _ = api::delete::<Value>(&base()).await;
             reload();
         });

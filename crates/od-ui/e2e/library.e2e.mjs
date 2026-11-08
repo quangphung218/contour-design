@@ -339,6 +339,20 @@ try {
   await page.getByTestId('skill-save').click();
   await page.getByTestId('skill-delete').waitFor();
   assert.ok(existsSync(join(data, 'skills', skillId, 'SKILL.md')), 'override saved');
+  // The delete's reply is held until the next skill is saved and open, as
+  // on a busy machine (CI): the late reply must not close that skill.
+  let releaseDelete;
+  const deleteHeld = new Promise((r) => { releaseDelete = r; });
+  const deleteRoute = `${BASE}/api/skills/${skillId}`;
+  let deleteReplied;
+  const deleteDone = new Promise((r) => { deleteReplied = r; });
+  await page.route(deleteRoute, async (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    const res = await route.fetch();
+    await deleteHeld;
+    await route.fulfill({ response: res });
+    deleteReplied();
+  });
   await page.getByTestId('skill-delete').click();
   await until(async () => !existsSync(join(data, 'skills', skillId)), 'override deleted');
   await page.getByTestId('plugins-create').click();
@@ -348,6 +362,11 @@ try {
   await page.getByTestId('skill-body-input').fill('Write like a friendly barista.');
   await page.getByTestId('skill-save').click();
   await page.getByTestId('skill-detail').locator('h2', { hasText: 'brand-voice' }).waitFor();
+  releaseDelete();
+  await deleteDone;
+  await page.unroute(deleteRoute);
+  await sleep(300);
+  await page.getByTestId('skill-detail').locator('h2', { hasText: 'brand-voice' }).waitFor({ timeout: 1_000 });
   await page.getByTestId('skill-use').click();
   await page.getByTestId('home-skill').waitFor();
   results.skills = 'ok';

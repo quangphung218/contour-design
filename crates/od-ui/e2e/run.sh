@@ -21,7 +21,7 @@ export OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$
   OD_RESOURCE_ROOT="$root/content"
 # A fixed port collides when two worktrees run the e2e at once, so each
 # script gets a free port of its own, taken right before it starts, unless
-# OD_E2E_PORT is given (then the scripts use it and the next seventeen
+# OD_E2E_PORT is given (then the scripts use it and the next eighteen
 # ports). The ports come from 20000-32767, below the ephemeral range on
 # Linux (32768-60999) and macOS (49152-65535): a port from listen(0) lies in
 # that range, and the browser's client sockets, open or in TIME_WAIT for a
@@ -70,6 +70,7 @@ specs=(
   "OD_E2E_USAGE_PORT usage.e2e.mjs"          # + 12; Settings ▸ About ▸ usage
   "OD_E2E_SETUP_PORT setup.e2e.mjs"          # + 13; first-run setup
   "OD_E2E_GALLERY_PORT gallery.e2e.mjs"      # + 16; a remixed gallery deck
+  "OD_E2E_ROUTES_PORT routes.e2e.mjs"        # + 18; screens left through the router
 )
 
 jobs_max="${OD_E2E_JOBS:-$([ -n "${CI:-}" ] && echo 3 || echo 2)}"

@@ -219,25 +219,16 @@ try {
   //    is closed after its language: one tab's renderer does not give the
   //    memory of its loads back (on CI one tab grew from 0.6 GB to 7 GB
   //    over ~110 loads, and stalled).
-  //    Leaving the Studio, Media or Automations through the router panics
-  //    today (a task reads a signal of the screen after it is gone:
-  //    studio.rs:1400, media_page.rs:125, automations.rs:326), and a
-  //    `goto` away from the Studio hung with four tabs on it, so those end
-  //    the screens a tab sees and the next screen opens in a new tab.
   const screens = SCREENS(pid);
   const tabs = Math.max(1, Number(process.env.OD_E2E_C4_TABS) || 4);
-  const newTabAfter = new Set([`/projects/${pid}`, '/media', '/automations']);
-  const order = [...screens.filter((s) => !newTabAfter.has(s)), ...newTabAfter];
   let loading = 0;
   // Every screen in `tag`: its overflow findings by path.
   const visit = async (tag) => {
     let p;
     try {
       const found = {};
-      for (const [i, path] of order.entries()) {
-        const loaded = i === 0 || newTabAfter.has(order[i - 1]);
-        if (loaded) {
-          await p?.close();
+      for (const [i, path] of screens.entries()) {
+        if (i === 0) {
           p = watch(await context.newPage());
           await p.addInitScript((lang) => {
             Object.defineProperty(Navigator.prototype, 'language', { get: () => lang });

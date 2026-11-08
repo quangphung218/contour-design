@@ -48,6 +48,9 @@ jobs:
     if: ${{ !inputs.only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      # Into ./target, which rust-cache saves (as in the e2e job).
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,6 +83,9 @@ jobs:
         os: ${{ fromJSON(inputs.only == 'macos' && '["macos-15"]' || (github.event_name == 'workflow_dispatch' && '["macos-15", "ubuntu-24.04"]' || '["ubuntu-24.04"]')) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    env:
+      # Into ./target, which rust-cache saves (as in the e2e job).
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

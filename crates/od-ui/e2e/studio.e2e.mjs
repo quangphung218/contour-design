@@ -320,7 +320,10 @@ try {
     await frame.getByRole('heading', { name: 'Not a deck any more' }).waitFor();
     await until(async () => (await frame.locator('body').evaluate(() => innerWidth)) !== 1920, 'a page that was a deck reflows');
     await write(deckHtml);
-    await until(async () => (await counter.textContent()) === '1 / 3', 'deck again 1/3');
+    // Back as a deck, on the slide the user was on (3, End above): live
+    // reload keeps it. "1 / 3" shows only for the ~80 ms before the
+    // bridge restores that slide, which a poll may or may not catch.
+    await until(async () => (await counter.textContent()) === '3 / 3', 'deck again on 3/3');
     await until(async () => (await frame.locator('body').evaluate(() => `${innerWidth}×${innerHeight}`)) === '1920×1080', 'a deck again lays out as a slide');
   }
   results.deck = 'ok';

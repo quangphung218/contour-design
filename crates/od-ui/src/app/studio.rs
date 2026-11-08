@@ -18,6 +18,7 @@ use super::preview_tools::{self, DrawLayer, Tool, ToolBar, ToolHints, ToolPanel,
 use super::sketch::{SketchView, is_sketch};
 use super::sse::Sse;
 use super::switcher::QuickSwitcher;
+use super::tasks::ScreenTasks;
 use super::terminal::{self, TermTab, TerminalView};
 use super::versions::VersionsPanel;
 use super::{Shell, api};
@@ -209,6 +210,8 @@ pub struct ViewedVersion {
 pub struct StudioCtx {
     /// App context, kept here because async tasks run without an owner.
     pub shell: Shell,
+    /// The studio's async work: it stops once the studio is left.
+    pub tasks: ScreenTasks,
     pub project_id: StoredValue<String>,
     pub project: RwSignal<Option<Project>>,
     pub conversation_id: RwSignal<Option<String>>,
@@ -390,7 +393,7 @@ impl StudioCtx {
     pub fn refresh_files(self) {
         let seq = self.files_seq.get_value().wrapping_add(1);
         self.files_seq.set_value(seq);
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let Ok(res) = api::get::<FilesResponse>(&format!("{}/files", self.base())).await else {
                 return;
             };
@@ -577,12 +580,20 @@ impl StudioCtx {
         self.tools.deliverable.set(None);
         self.live_run.set(Some(String::new()));
         let req_attachments = req.attachments.clone();
-        leptos::task::spawn_local(async move {
-            match api::post::<_, CreateRunResponse>("/api/runs", &req).await {
+        // The run and its stored draft's clearing go through even if the
+        // studio is left meanwhile: back on it, the composer must not offer
+        // the sent message again.
+        let sent = text.clone();
+        let work = async move {
+            let res = api::post::<_, CreateRunResponse>("/api/runs", &req).await;
+            if let (Ok(_), Some(k)) = (&res, &draft_key) {
+                super::composer::clear_draft_if(k, &sent);
+            }
+            res
+        };
+        self.tasks.spawn_then(work, move |res| {
+            match res {
                 Ok(res) => {
-                    if let Some(k) = &draft_key {
-                        super::composer::clear_draft_if(k, &text);
-                    }
                     self.tools.attachments.update(|a| {
                         a.retain(|p| !req_attachments.contains(p));
                     });
@@ -769,7 +780,7 @@ impl StudioCtx {
         else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let path = format!("/api/runs/{}/steer", api::seg(&run_id));
             match api::post::<_, serde_json::Value>(&path, &json!({ "message": item.text })).await {
                 Ok(_) => {
@@ -850,9 +861,12 @@ impl StudioCtx {
         if files.is_empty() {
             return;
         }
+        // Every file's version is saved, the studio left or not; nothing on
+        // screen waits for it.
+        let base = self.base();
         leptos::task::spawn_local(async move {
             for f in files {
-                let path = format!("{}/files/{}/versions", self.base(), api::file_path(&f));
+                let path = format!("{base}/files/{}/versions", api::file_path(&f));
                 let req = CreateVersionRequest {
                     prompt: prompt.clone(),
                     source: Some(VersionSource::Ai),
@@ -873,7 +887,7 @@ impl StudioCtx {
                 s.close();
             }
         });
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             self.run_stream.set_value(None);
             match (hold, self.queue_held.get_untracked()) {
                 (None, None) => self.send_next(shell, true),
@@ -890,7 +904,7 @@ impl StudioCtx {
         let Some(run_id) = self.live_run.get_untracked().filter(|r| !r.is_empty()) else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let path = format!("/api/runs/{}/cancel", api::seg(&run_id));
             if let Err(e) = api::post::<_, serde_json::Value>(&path, &json!({})).await {
                 self.notice.set(Some(tf(T::StopFailed, &[&e.to_string()])));
@@ -923,11 +937,11 @@ impl StudioCtx {
     /// Re-reads the open conversation's comments (statuses change when a
     /// run that applies them ends); see [`Self::load_comments`].
     pub fn reload_comments(self) {
-        leptos::task::spawn_local(self.load_comments());
+        self.tasks.spawn(self.load_comments());
     }
 
     pub fn reload_conversations(self) {
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let path = format!("{}/conversations", self.base());
             if let Ok(r) = api::get::<ConversationsResponse>(&path).await {
                 self.conversations.set(r.conversations);
@@ -1008,7 +1022,7 @@ impl StudioCtx {
                 "forkAfterMessageId": after,
             });
         }
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let path = format!("{}/conversations", self.base());
             match api::post::<_, ConversationResponse>(&path, &body).await {
                 Ok(r) => {
@@ -1035,7 +1049,7 @@ impl StudioCtx {
                 c.status = status;
             }
         });
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let path = format!(
                 "{}/comments/{}",
                 self.conversation_base(&cid),
@@ -1055,7 +1069,7 @@ impl StudioCtx {
         };
         let id = id.to_owned();
         self.comments.update(|list| list.retain(|c| c.id != id));
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let path = format!(
                 "{}/comments/{}",
                 self.conversation_base(&cid),
@@ -1397,6 +1411,7 @@ pub fn Studio() -> impl IntoView {
     let project_id = params.with_untracked(|p| p.get("id").unwrap_or_default());
     let ctx = StudioCtx {
         shell,
+        tasks: ScreenTasks::provide(),
         project_id: StoredValue::new(project_id),
         project: RwSignal::new(None),
         conversation_id: RwSignal::new(None),
@@ -1469,7 +1484,7 @@ pub fn Studio() -> impl IntoView {
     Effect::new(move |_| {
         if shell.config.with(Option::is_some) && !started.get_value() {
             started.set_value(true);
-            leptos::task::spawn_local(ctx.load(shell));
+            ctx.tasks.spawn(ctx.load(shell));
         }
     });
     let keys = window_event_listener(ev::keydown, move |ev| ctx.on_key(&ev));
@@ -1787,7 +1802,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     // can land just after the frame's `load` event: give it a moment.
     let forget_deck = move |_| {
         let loaded = src.get_untracked();
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(DECK_READY_WITHIN_MS).await;
             // `try_`: the studio may be gone by then.
             if src.try_get_untracked() == Some(loaded)
@@ -2219,7 +2234,7 @@ fn NoticeToast(ctx: StudioCtx) -> impl IntoView {
         if ctx.notice.with(Option::is_some) {
             let n = shown.get_value().wrapping_add(1);
             shown.set_value(n);
-            leptos::task::spawn_local(async move {
+            ctx.tasks.spawn(async move {
                 gloo_timers::future::TimeoutFuture::new(NOTICE_MS).await;
                 if shown.try_get_value() == Some(n) {
                     ctx.notice.set(None);

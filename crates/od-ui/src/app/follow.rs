@@ -271,8 +271,10 @@ impl StickToBottom {
             return;
         };
         el.set_scroll_top(el.scroll_height());
+        // The frame can come after the chat pane went (the studio left
+        // through the router): its list and state are disposed then.
         request_animation_frame(move || {
-            if self.sync() {
+            if self.state.try_with_untracked(|_| ()).is_some() && self.sync() {
                 el.set_scroll_top(el.scroll_height());
             }
         });
