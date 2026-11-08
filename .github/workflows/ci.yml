@@ -176,6 +176,14 @@ jobs:
     if: ${{ !inputs.only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      # The Makefile builds into ~/.cache/odrs-target-<dir>, which
+      # rust-cache does not save (it saves ./target): every run compiled
+      # the ~450 crates of the UI and `od` again (5 minutes).
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      # Scenarios at once (crates/od-ui/e2e/run.sh); the runner has 4 CPUs
+      # and 16 GB.
+      OD_E2E_JOBS: "3"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
