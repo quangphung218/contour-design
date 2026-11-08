@@ -62,6 +62,7 @@ mod sketch;
 mod sse;
 mod studio;
 mod switcher;
+mod tasks;
 mod templates_page;
 mod terminal;
 mod updates;

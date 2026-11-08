@@ -6,6 +6,7 @@
 use super::chat_view::focus_composer;
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, file_glyph, main_conversation_title};
+use super::tasks::ScreenTasks;
 use super::{Shell, api, desktop};
 use crate::chat::{AssistantTurn, FileOp, TurnState};
 use crate::guide;
@@ -50,7 +51,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
                 c.title = Some(title.clone()).filter(|t| !t.is_empty());
             }
         });
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             let path = format!("{}/conversations/{}", ctx.base(), api::seg(&cid));
             if let Err(e) = api::patch::<_, Value>(&path, &json!({ "title": title })).await {
                 ctx.notice.set(Some(e.to_string()));
@@ -64,7 +65,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
         let Some(cid) = ctx.conversation_id.get_untracked() else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             let path = format!("{}/conversations/{}", ctx.base(), api::seg(&cid));
             match api::delete::<ConversationsResponse>(&path).await {
                 Ok(r) => {
@@ -426,6 +427,7 @@ fn more_line(hidden: u64, unlisted: u64, expanded: bool) -> MoreLine {
 /// Copy under a finished turn: its prose, "Copied" for two seconds.
 #[component]
 pub fn CopyTurn(turn: RwSignal<AssistantTurn>) -> impl IntoView {
+    let screen = ScreenTasks::current();
     let copied = RwSignal::new(false);
     view! {
         <button
@@ -433,7 +435,7 @@ pub fn CopyTurn(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             data-testid="copy-message"
             on:click=move |_| {
                 let text = turn.with_untracked(guide::copy_text);
-                leptos::task::spawn_local(async move {
+                screen.spawn(async move {
                     if super::export_menu::copy_text(&text).await.is_ok() {
                         copied.set(true);
                         gloo_timers::future::TimeoutFuture::new(2000).await;
@@ -490,7 +492,7 @@ pub fn ReconnectTurn(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             view! {
                 <button class="btn small" data-testid="reconnect" on:click=move |_| {
                     if let Some(cid) = ctx.conversation_id.get_untracked() {
-                        leptos::task::spawn_local(ctx.open_conversation(cid));
+                        ctx.tasks.spawn(ctx.open_conversation(cid));
                     }
                 }>
                     {icon(Glyph::Refresh)}{t(T::Reconnect)}
@@ -543,7 +545,7 @@ pub fn ContextFolders(ctx: StudioCtx) -> impl IntoView {
     };
     let open_link = move |_| {
         if desktop::is_desktop() {
-            leptos::task::spawn_local(async move {
+            ctx.tasks.spawn(async move {
                 if let Some(dir) = desktop::pick_folder().await {
                     finish_link(ctx, dir).await;
                 }
@@ -574,7 +576,7 @@ pub fn ContextFolders(ctx: StudioCtx) -> impl IntoView {
                                 on:click=move |_| {
                                     let mut meta = ctx.project.with_untracked(|p| p.as_ref().and_then(|p| p.metadata.clone())).unwrap_or_default();
                                     meta.linked_dirs.retain(|x| x != &gone);
-                                    leptos::task::spawn_local(async move {
+                                    ctx.tasks.spawn(async move {
                                         if let Err(e) = save_metadata(ctx, meta).await {
                                             ctx.notice.set(Some(e));
                                         }
@@ -619,7 +621,7 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
         if dir.is_empty() {
             return;
         }
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             match link_dir(ctx, dir).await {
                 Ok(_) => close.run(()),
                 Err(e) => error.set(Some(e)),
@@ -627,7 +629,7 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
         });
     };
     let reference = move |id: String, name: String| {
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             let path = format!("/api/projects/{}/handoff", api::seg(&id));
             let res = match api::get::<HandoffResponse>(&path).await {
                 Ok(h) => link_dir(ctx, h.dir).await,
@@ -730,7 +732,7 @@ pub fn DesignSystemSwitch(ctx: StudioCtx) -> impl IntoView {
                 on:change=move |ev| {
                     let v = event_target_value(&ev);
                     let id = Some(v).filter(|v| !v.is_empty());
-                    leptos::task::spawn_local(async move {
+                    ctx.tasks.spawn(async move {
                         match api::patch::<_, ProjectResponse>(&ctx.base(), &json!({ "designSystemId": id })).await {
                             Ok(r) => ctx.project.set(Some(r.project)),
                             Err(e) => ctx.notice.set(Some(e.to_string())),

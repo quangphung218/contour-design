@@ -139,14 +139,14 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             return;
         }
         ctx.chat.uploads.update(|u| u.extend(items));
-        leptos::task::spawn_local(upload_all(
+        ctx.tasks.spawn(upload_all(
             ctx.base(),
             ctx.chat.uploads,
             ctx.tools.attachments,
         ));
     });
     let retry_upload = Callback::new(move |_id: String| {
-        leptos::task::spawn_local(upload_all(
+        ctx.tasks.spawn(upload_all(
             ctx.base(),
             ctx.chat.uploads,
             ctx.tools.attachments,
@@ -186,7 +186,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     // Track C2: library assets are copied into the project and attached.
     let import_library = Callback::new(move |assets: Vec<super::library_picker::LibraryAsset>| {
         let project = ctx.project_id.get_value();
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             match super::library_picker::apply_to_project(&project, &assets).await {
                 Ok(paths) => ctx
                     .tools
@@ -223,7 +223,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                                 // A project that does not exist will not load on a retry.
                                 {(!ctx.load_gone.get()).then(|| view! {
                                     <button class="btn small" data-testid="load-retry" on:click=move |_| {
-                                        leptos::task::spawn_local(ctx.load(shell));
+                                        ctx.tasks.spawn(ctx.load(shell));
                                     }>{icon(Glyph::Refresh)}{t(T::NextRetry)}</button>
                                 })}
                                 <a class="btn small ghost" href="/projects">{icon(Glyph::Projects)}{t(T::AllProjects)}</a>
@@ -388,7 +388,7 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
                     disabled=move || ctx.live_run.get().is_some()
                     on:change=move |ev| {
                         let id = event_target_value(&ev);
-                        leptos::task::spawn_local(ctx.open_conversation(id));
+                        ctx.tasks.spawn(ctx.open_conversation(id));
                     }
                 >
                     {move || {
