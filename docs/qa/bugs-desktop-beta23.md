@@ -25,7 +25,7 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 | Severity | Count | IDs |
 |---|---|---|
 | 🔴 | 0 | |
-| 🟠 | 1 | QA-064 |
+| 🟠 | 1 | QA-064 (fixed on `js-dialogs`) |
 | 🟡 | 0 | |
 | 🔵 | 1 | QA-065 |
 | **Total** | **2** | |
@@ -179,6 +179,17 @@ every action; the rerun above has E plain at 0.
   this bug blocks.
 - **Test**: §18 dialog rows above (opener log + page log); reference in
   [dialogs.mjs](desktop-beta23/dialogs.mjs).
+- **Status**: fixed on branch `js-dialogs`: at startup the shell adds the
+  three methods to the webview's UI delegate class (`class_addMethod`,
+  `apps/desktop/src/js_dialogs.rs`) and sets the delegate again, since
+  WebKit reads a delegate's methods when it is set. Each shows an app-modal
+  `NSAlert` (not a sheet: the completion handler is then called once, before
+  the method returns) titled with the asking frame's origin (`127.0.0.1:5173
+  says`; a design's sandboxed frame has an opaque origin: "This page says"),
+  OK and Cancel, a text field holding the default text for `prompt`.
+  Windows (WebView2) and Linux (WebKitGTK) draw these dialogs themselves,
+  as neither wry nor Tauri handles `ScriptDialogOpening` / `script-dialog`.
+  Not yet rerun on a built app: §18's dialog row.
 
 ## QA-065 🔵 A `_blank` link inside a design's `srcdoc` iframe does nothing in the app
 

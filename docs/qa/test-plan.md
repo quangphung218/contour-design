@@ -444,6 +444,15 @@ On a built app, on each of macOS
   runs `alert('…')` on `keydown` (close it with Enter). The app's own
   dialog may take focus from the window, which headless browsers' do not
   (`bridge.e2e.mjs` D1–D3 and X1–X3 move the focus by hand).
+- [ ] **JS dialogs** (QA-064; macOS: `apps/desktop/src/js_dialogs.rs`):
+  `alert('About to open')`, `confirm('Open?')` and `prompt('Name?', 'x')`
+  in a design each show a dialog titled "This page says" (the design's
+  sandboxed frame; a page of the app's origin shows `127.0.0.1:<port>
+  says`) with the message. `confirm`: OK returns `true`, Cancel and Escape
+  `false`. `prompt`: the field holds `x` and has the focus; OK returns what
+  it holds, Cancel `null`. The page waits until the dialog closes. A
+  message of 5000 characters shows its first 2000 and `…`, the buttons on
+  screen.
 - [ ] Drag an element of the design (`draggable="true"`) and drop it, then
   let go of a key in a field whose page opens a URL on `keyup`: nothing
   opens.

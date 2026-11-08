@@ -8,6 +8,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod js_dialogs;
 mod mcp;
 mod updater;
 
@@ -1003,7 +1004,14 @@ fn main() -> anyhow::Result<()> {
             let window = window
                 .title_bar_style(tauri::TitleBarStyle::Overlay)
                 .hidden_title(true);
-            window.build()?;
+            let window = window.build()?;
+            // A page's `alert`, `confirm` and `prompt` (QA-064).
+            #[cfg(target_os = "macos")]
+            if let Err(e) = window.with_webview(|webview| js_dialogs::install(webview.inner())) {
+                tracing::warn!(error = %e, "no JavaScript dialogs");
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = window;
             let root = resource_root(&handle);
             tauri::async_runtime::spawn(async move {
                 let daemon = match start_daemon(data_dir, root).await {
