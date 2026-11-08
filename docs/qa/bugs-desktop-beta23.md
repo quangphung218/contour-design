@@ -189,7 +189,11 @@ every action; the rerun above has E plain at 0.
   OK and Cancel, a text field holding the default text for `prompt`.
   Windows (WebView2) and Linux (WebKitGTK) draw these dialogs themselves,
   as neither wry nor Tauri handles `ScriptDialogOpening` / `script-dialog`.
-  Not yet rerun on a built app: §18's dialog row.
+  From the second dialog within 3 s of the last, the alert offers "Don't
+  allow this page to show more dialogs"; ticked, the webview's dialogs
+  return at once (as cancelled) until its next page load, so a page's
+  `alert` loop cannot hold the app.
+  Not yet rerun on a built app: §18's dialog rows.
 
 ## QA-065 🔵 A `_blank` link inside a design's `srcdoc` iframe does nothing in the app
 

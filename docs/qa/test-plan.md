@@ -453,6 +453,16 @@ On a built app, on each of macOS
   it holds, Cancel `null`. The page waits until the dialog closes. A
   message of 5000 characters shows its first 2000 and `…`, the buttons on
   screen.
+- [ ] **prompt, long text**: in `prompt('Tên?')` type a Vietnamese string
+  longer than 15 characters (`Nguyễn Văn An ở Hà Nội`) and press OK: the
+  page gets exactly that string (log it or put it in the page).
+- [ ] **alert loop**: a button running `for (;;) alert('x')`. The first
+  alert has no checkbox; the next ones (within 3 s of the last) show
+  "Don't allow this page to show more dialogs". Tick it and press OK: no
+  more dialogs, the app answers (menus, ⌘Q). After that page's later
+  `confirm` gives `false` and `prompt` `null`, nothing shown. Reload the
+  page (or open the design again after the app reloads): dialogs show
+  again.
 - [ ] Drag an element of the design (`draggable="true"`) and drop it, then
   let go of a key in a field whose page opens a URL on `keyup`: nothing
   opens.

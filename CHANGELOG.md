@@ -10,7 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
-- Desktop app on macOS: a design's `alert()`, `confirm()` and `prompt()` show a dialog, titled with the page's origin, and wait for it, instead of returning at once with nothing shown (`confirm` gave `false`, `prompt` `null`). Windows and Linux already showed them (QA-064).
+- Desktop app on macOS: a design's `alert()`, `confirm()` and `prompt()` show a dialog, titled with the page's origin, and wait for it, instead of returning at once with nothing shown (`confirm` gave `false`, `prompt` `null`). From the second dialog within 3 s, a checkbox stops the page's dialogs until it reloads, so an `alert` loop cannot hold the app. Windows and Linux already showed them (QA-064).
 
 ## [0.2.0-beta.23] - 2026-11-08
 

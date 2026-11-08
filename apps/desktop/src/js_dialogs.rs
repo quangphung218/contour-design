@@ -10,6 +10,8 @@
 //! unless the app handles `ScriptDialogOpening` / `script-dialog`, which
 //! neither wry nor Tauri does: nothing to add there.
 
+use std::time::{Duration, Instant};
+
 /// The dialog's title: who is asking, as browsers put it
 /// (`127.0.0.1:5173 says`). `port` 0 or the scheme's default is left out.
 /// A sandboxed frame (a design in the Studio) has an opaque origin, no
@@ -47,21 +49,70 @@ pub(crate) fn dialog_message(message: &str) -> String {
     }
 }
 
+/// How soon after a dialog closes the next one of the same webview
+/// offers to block the page's dialogs: a page calling `alert` in a loop
+/// would otherwise hold the app (an app-modal alert blocks every window
+/// and ⌘Q) until it is force-quit.
+const LOOP_WINDOW: Duration = Duration::from_secs(3);
+
+/// The checkbox under a dialog shown within [`LOOP_WINDOW`] of the last.
 #[cfg(target_os = "macos")]
-pub(crate) use mac::install;
+const BLOCK_LABEL: &str = "Don't allow this page to show more dialogs";
+
+/// What to do with a page's next dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Gate {
+    /// Show it; with the [`BLOCK_LABEL`] checkbox when `offer_block`.
+    Show { offer_block: bool },
+    /// Do not show it: `alert` returns, `confirm` gives `false`, `prompt`
+    /// `null`, as if cancelled.
+    Block,
+}
+
+/// One webview's dialogs since its page loaded (a new page starts afresh).
+#[derive(Debug, Default)]
+pub(crate) struct DialogGate {
+    last_closed: Option<Instant>,
+    blocked: bool,
+}
+
+impl DialogGate {
+    /// The next dialog, asked for at `now`.
+    pub(crate) fn open(&self, now: Instant) -> Gate {
+        if self.blocked {
+            return Gate::Block;
+        }
+        let offer_block = self
+            .last_closed
+            .is_some_and(|closed| now.saturating_duration_since(closed) < LOOP_WINDOW);
+        Gate::Show { offer_block }
+    }
+
+    /// A dialog closed at `now`; `block` when its checkbox was ticked.
+    pub(crate) fn closed(&mut self, now: Instant, block: bool) {
+        self.last_closed = Some(now);
+        self.blocked |= block;
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) use mac::{install, page_loaded};
 
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod mac {
-    use super::{dialog_message, dialog_title};
+    use super::{BLOCK_LABEL, DialogGate, Gate, dialog_message, dialog_title};
     use block2::Block;
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
     use objc2::{MainThreadMarker, sel};
-    use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSTextField};
+    use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSControlStateValueOn, NSTextField};
     use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
     use objc2_web_kit::{WKFrameInfo, WKUIDelegate, WKWebView};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::ffi::{CStr, c_void};
+    use std::time::Instant;
 
     /// `webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:`
     type AlertImp = extern "C-unwind" fn(
@@ -158,14 +209,39 @@ mod mac {
         }
     }
 
-    /// The alert for a panel from `frame`: its origin as title, `message`
-    /// below, OK first (Return); Cancel too when `cancel` (Escape).
-    fn alert(
+    thread_local! {
+        /// Each webview's [`DialogGate`], by its `WKWebView *`. The panel
+        /// methods and [`page_loaded`] all run on the main thread.
+        static GATES: RefCell<HashMap<usize, DialogGate>> = RefCell::new(HashMap::new());
+    }
+
+    /// `webview` (a `WKWebView *`) started loading a page: dialogs it had
+    /// blocked may show again.
+    pub(crate) fn page_loaded(webview: *mut c_void) {
+        GATES.with(|gates| gates.borrow_mut().remove(&(webview as usize)));
+    }
+
+    /// Runs a panel from `frame` of `webview`: its origin as title,
+    /// `message` below, OK first (Return), Cancel too when `cancel`
+    /// (Escape), `field` under the message. `true` when OK closed it;
+    /// `false` at once, nothing shown, when the user blocked this page's
+    /// dialogs ([`DialogGate`]).
+    fn run_panel(
         mtm: MainThreadMarker,
+        webview: &WKWebView,
         frame: &WKFrameInfo,
         message: &NSString,
         cancel: bool,
-    ) -> Retained<NSAlert> {
+        field: Option<&NSTextField>,
+    ) -> bool {
+        let key = std::ptr::from_ref(webview) as usize;
+        let now = Instant::now();
+        let offer_block =
+            match GATES.with(|gates| gates.borrow().get(&key).map(|gate| gate.open(now))) {
+                Some(Gate::Block) => return false,
+                Some(Gate::Show { offer_block }) => offer_block,
+                None => false,
+            };
         // SAFETY: getters of a live `WKFrameInfo`, on the main thread.
         let title = unsafe {
             let origin = frame.securityOrigin();
@@ -182,19 +258,42 @@ mod mac {
         if cancel {
             alert.addButtonWithTitle(&NSString::from_str("Cancel"));
         }
-        alert
+        if let Some(field) = field {
+            alert.setAccessoryView(Some(field));
+            alert.window().setInitialFirstResponder(Some(field));
+        }
+        if offer_block {
+            alert.setShowsSuppressionButton(true);
+            if let Some(button) = alert.suppressionButton() {
+                button.setTitle(&NSString::from_str(BLOCK_LABEL));
+            }
+        }
+        // Not borrowing `GATES` here: `runModal` spins the run loop.
+        let ok = alert.runModal() == NSAlertFirstButtonReturn;
+        let block = offer_block
+            && alert
+                .suppressionButton()
+                .is_some_and(|button| button.state() == NSControlStateValueOn);
+        GATES.with(|gates| {
+            gates
+                .borrow_mut()
+                .entry(key)
+                .or_default()
+                .closed(Instant::now(), block);
+        });
+        ok
     }
 
     extern "C-unwind" fn run_alert(
         _this: &AnyObject,
         _cmd: Sel,
-        _webview: &WKWebView,
+        webview: &WKWebView,
         message: &NSString,
         frame: &WKFrameInfo,
         done: &Block<dyn Fn()>,
     ) {
         if let Some(mtm) = MainThreadMarker::new() {
-            alert(mtm, frame, message, false).runModal();
+            run_panel(mtm, webview, frame, message, false, None);
         }
         done.call(());
     }
@@ -202,42 +301,40 @@ mod mac {
     extern "C-unwind" fn run_confirm(
         _this: &AnyObject,
         _cmd: Sel,
-        _webview: &WKWebView,
+        webview: &WKWebView,
         message: &NSString,
         frame: &WKFrameInfo,
         done: &Block<dyn Fn(Bool)>,
     ) {
-        let ok = MainThreadMarker::new().is_some_and(|mtm| {
-            alert(mtm, frame, message, true).runModal() == NSAlertFirstButtonReturn
-        });
+        let ok = MainThreadMarker::new()
+            .is_some_and(|mtm| run_panel(mtm, webview, frame, message, true, None));
         done.call((Bool::new(ok),));
     }
 
     extern "C-unwind" fn run_prompt(
         _this: &AnyObject,
         _cmd: Sel,
-        _webview: &WKWebView,
+        webview: &WKWebView,
         prompt: &NSString,
         default_text: Option<&NSString>,
         frame: &WKFrameInfo,
         done: &Block<dyn Fn(*mut NSString)>,
     ) {
-        let answer = MainThreadMarker::new().and_then(|mtm| {
-            let alert = alert(mtm, frame, prompt, true);
+        let answer: Option<Retained<NSString>> = MainThreadMarker::new().and_then(|mtm| {
             let empty = NSString::new();
             let field = NSTextField::textFieldWithString(default_text.unwrap_or(&empty), mtm);
             field.setFrame(NSRect::new(
                 NSPoint::new(0.0, 0.0),
                 NSSize::new(300.0, 24.0),
             ));
-            alert.setAccessoryView(Some(&field));
-            alert.window().setInitialFirstResponder(Some(&field));
-            (alert.runModal() == NSAlertFirstButtonReturn).then(|| field.stringValue())
+            run_panel(mtm, webview, frame, prompt, true, Some(&field)).then(|| field.stringValue())
         });
-        // `prompt` returns `null` on Cancel; WebKit copies the string
-        // before `answer` drops.
-        let answer = answer.map_or(std::ptr::null_mut(), |s| Retained::as_ptr(&s).cast_mut());
-        done.call((answer,));
+        // `null` on Cancel. `answer` owns the string and lives until after
+        // the call, which copies it.
+        let ptr = answer
+            .as_deref()
+            .map_or(std::ptr::null_mut(), |s| std::ptr::from_ref(s).cast_mut());
+        done.call((ptr,));
     }
 }
 
@@ -290,5 +387,53 @@ mod tests {
         let shown = dialog_message(&long);
         assert_eq!(shown.chars().count(), MAX_MESSAGE_CHARS + 1);
         assert!(shown.ends_with('…'));
+    }
+
+    #[test]
+    fn the_first_dialog_shows_without_the_checkbox() {
+        let gate = DialogGate::default();
+        assert_eq!(gate.open(Instant::now()), Gate::Show { offer_block: false });
+    }
+
+    #[test]
+    fn a_dialog_soon_after_the_last_offers_to_block() {
+        let t0 = Instant::now();
+        let mut gate = DialogGate::default();
+        gate.closed(t0, false);
+        assert_eq!(gate.open(t0), Gate::Show { offer_block: true });
+        let almost = t0 + LOOP_WINDOW - Duration::from_millis(1);
+        assert_eq!(gate.open(almost), Gate::Show { offer_block: true });
+    }
+
+    #[test]
+    fn a_dialog_long_after_the_last_does_not_offer_to_block() {
+        let t0 = Instant::now();
+        let mut gate = DialogGate::default();
+        gate.closed(t0, false);
+        assert_eq!(
+            gate.open(t0 + LOOP_WINDOW),
+            Gate::Show { offer_block: false }
+        );
+    }
+
+    #[test]
+    fn ticking_the_checkbox_blocks_every_later_dialog() {
+        let t0 = Instant::now();
+        let mut gate = DialogGate::default();
+        gate.closed(t0, true);
+        assert_eq!(gate.open(t0), Gate::Block);
+        assert_eq!(gate.open(t0 + Duration::from_secs(3600)), Gate::Block);
+        // A later close without the box (none is shown) keeps the block.
+        gate.closed(t0, false);
+        assert_eq!(gate.open(t0), Gate::Block);
+    }
+
+    #[test]
+    fn a_new_page_starts_with_a_fresh_gate() {
+        // `page_loaded` drops the webview's gate; the next one is default.
+        let mut gate = DialogGate::default();
+        gate.closed(Instant::now(), true);
+        gate = DialogGate::default();
+        assert_eq!(gate.open(Instant::now()), Gate::Show { offer_block: false });
     }
 }

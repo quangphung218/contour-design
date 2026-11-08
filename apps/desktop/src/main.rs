@@ -8,6 +8,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// macOS only; the pure parts also build for tests everywhere.
+#[cfg(any(target_os = "macos", test))]
 mod js_dialogs;
 mod mcp;
 mod updater;
@@ -991,6 +993,18 @@ fn main() -> anyhow::Result<()> {
                     .on_new_window(move |url, _| {
                         tracing::warn!(%url, "blocked a new window");
                         tauri::webview::NewWindowResponse::Deny
+                    })
+                    // A new page may show dialogs again though the user
+                    // blocked the last page's (QA-064).
+                    .on_page_load(|window, payload| {
+                        #[cfg(target_os = "macos")]
+                        if payload.event() == tauri::webview::PageLoadEvent::Started {
+                            let _ = window.with_webview(|webview| {
+                                js_dialogs::page_loaded(webview.inner());
+                            });
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        let _ = (window, payload);
                     })
                     .title(APP_NAME)
                     .inner_size(1360.0, 860.0)
