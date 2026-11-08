@@ -3,13 +3,15 @@
 // edit key, counting the od:open-link messages the frame posts. WebKit
 // (WKWebView, the macOS app) runs timers inside a native window.open,
 // which the app e2e in Chromium does not see. No daemon, about 10 s.
-// Usage: node bridge.e2e.mjs [bridge.js]   (OD_BRIDGE_ENGINES=chromium,webkit)
+// Usage: node bridge.e2e.mjs [bridge.js]   (OD_BRIDGE_ENGINES=chromium,webkit, OD_BRIDGE_CASES=NL,NB)
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
 
 const bridgePath = process.argv[2] || fileURLToPath(new URL('../../../bridges/od-bridge.js', import.meta.url));
+// OD_BRIDGE_CASES=NL,NB runs those cases only.
+const picked = (process.env.OD_BRIDGE_CASES || '').split(',').map((c) => c.trim()).filter(Boolean);
 const engines = (process.env.OD_BRIDGE_ENGINES || 'chromium,webkit').split(',').map((e) => e.trim()).filter(Boolean);
 const bridge = readFileSync(bridgePath, 'utf8');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -17,9 +19,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // A native dialog of the app (NSAlert, WebView2's) can take focus from
 // the window; headless browsers' do not, so the frame's dialogs move focus
 // to the host before they return, as the bridge sees them (D1-D3, X1, X2).
+// The host is cross-origin to the design frame, as in the app: its window
+// is focused, not an element in it.
 const dialogShim = `['alert', 'confirm', 'prompt'].forEach((name) => {
   const real = window[name];
-  window[name] = function () { const r = real.apply(window, arguments); parent.document.getElementById('away').focus(); return r; };
+  window[name] = function () { const r = real.apply(window, arguments); parent.focus(); return r; };
 });`;
 
 // A design's own srcdoc frame (QA-065). In the app it inherits the design
@@ -57,22 +61,24 @@ postMessage({ type: 'od:nested-port' }, '*', [own.port2]);
 </script></body></html>`;
 const attr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
-// A page that takes any port it is handed and names a link over it every
-// 100 ms: what no document but the bridge's copy may get. The ways in:
-// a srcdoc that starts with a comment the parser ends early (A: `<!-->`,
+// A page that takes any port it is handed and names a press and a link
+// over it every 100 ms: what no document but the bridge's copy may get.
+// The ways in: a srcdoc that starts with a comment the parser ends early (A: `<!-->`,
 // A2: `--!>`), the design page sending its srcdoc frame elsewhere once
 // loaded (B by the frame's window, PV by its name), the frame going
 // elsewhere itself (NV), its srcdoc taken away for a `src` before it
 // loads (RM). PR, sent elsewhere before its srcdoc loads, is
 // the one way left: nothing tells the bridge which document loaded, so the
-// gesture check holds it to one tab per press in that frame, as a page's
-// click handler may open, and none on focus alone.
-const thiefJs = (tag) => `let got = null; addEventListener('message', (e) => { if (!got && e.ports && e.ports[0]) { got = e.ports[0]; setInterval(() => got.postMessage({ href: 'https://example.com/stolen-${tag}' }), 100); } }, true);`;
+// activation check holds it to one tab per press in that frame, as a
+// page's click handler may open, and none on focus alone.
+const thiefJs = (tag) => `let got = null; addEventListener('message', (e) => { if (!got && e.ports && e.ports[0]) { got = e.ports[0]; setInterval(() => { got.postMessage({ press: true }); got.postMessage({ href: 'https://example.com/stolen-${tag}' }); }, 100); } }, true);`;
 const thiefPage = (tag, before = '', after = '') => `${before}<script>${thiefJs(tag)}</script>${after}<p id="t" style="margin:0;height:30px">${tag}</p>`;
 const dataUrl = (html) => 'data:text/html,' + encodeURIComponent(html);
-// The design frame's sandbox, which the app's nested frames inherit (no
-// popups: a native window.open there opens nothing).
-const sandbox = 'allow-scripts allow-forms allow-modals';
+// The design frame's sandbox in the app (od-ui studio.rs, od-preview
+// RAW_CSP), which its nested frames inherit: popups allowed, an opaque
+// origin. The app's desktop denies every new window; Chromium runs with
+// --block-new-web-contents for that, WebKit's popups are closed at once.
+const sandbox = 'allow-scripts allow-forms allow-popups allow-modals';
 const small = 'width:300px;height:34px;border:0';
 
 const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><script data-od-key="K">${bridge}</script></head>
@@ -101,14 +107,15 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <a id="ce2" href="https://example.com/x3-link" target="_blank">X3: the link confirms, the page cancels it</a></p>
 <p><input id="stray" value="any keyup opens"></p>
 <p><button id="pn">PN: click opens, and asks the nested frame to open</button></p>
-<p><iframe id="nest" sandbox="allow-scripts allow-forms allow-modals" style="width:700px;height:60px;border:0" srcdoc="${attr(nestedHtml)}"></iframe></p>
-<p><iframe id="nest2" sandbox="allow-scripts allow-forms allow-modals" style="width:700px;height:60px;border:0" src="http://bridge.test/nested.html"></iframe></p>
+<p><iframe id="nest" sandbox="${sandbox}" style="width:700px;height:60px;border:0" srcdoc="${attr(nestedHtml)}"></iframe></p>
+<p><iframe id="nest2" sandbox="${sandbox}" style="width:700px;height:60px;border:0" src="http://bridge.test/nested.html"></iframe></p>
 <p id="thieves"><iframe id="na" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('a', '<!-->', '<!-- --><!doctype html>'))}"></iframe>
 <iframe id="na2" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('a2', '<!-- x --!>', '<!-- --><!doctype html>'))}"></iframe>
 <iframe id="nbv" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('b-first'))}"></iframe>
 <iframe id="nv" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('v-first', `<script>setTimeout(() => { location.href = ${JSON.stringify(dataUrl(thiefPage('v')))}; }, 50);</script>`))}"></iframe>
 <iframe id="npv" name="pvn" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('pv-first'))}"></iframe>
-<iframe id="nout" name="out" sandbox="${sandbox}" style="${small}" srcdoc="&lt;p&gt;out&lt;/p&gt;"></iframe></p>
+<iframe id="nout" name="out" sandbox="${sandbox}" style="${small}" srcdoc="&lt;p&gt;out&lt;/p&gt;"></iframe>
+<iframe id="sync" sandbox="${sandbox}" style="${small}" srcdoc="&lt;p&gt;sync&lt;/p&gt;"></iframe></p>
 <p id="idle">idle</p>
 <script>
 const on = (id, type, fn) => document.getElementById(id).addEventListener(type, fn);
@@ -133,6 +140,14 @@ rm.setAttribute('style', '${small}');
 rm.srcdoc = 'rm-first';
 document.getElementById('thieves').append(rm);
 setTimeout(() => { rm.removeAttribute('srcdoc'); rm.src = ${JSON.stringify(dataUrl(thiefPage('rm')))}; }, 0);
+// A page that keeps its frame's srcdoc in step with its own copy, as a
+// playground does: it reads back what it wrote, so it loads once.
+const sync = document.getElementById('sync');
+const syncCode = '<p>sync</p>';
+window.syncLoads = 0;
+sync.addEventListener('load', () => { syncLoads++; });
+setInterval(() => { if (sync.srcdoc !== syncCode) sync.srcdoc = syncCode; }, 100);
+window.syncRead = () => sync.srcdoc === syncCode && sync.getAttribute('srcdoc') === syncCode;
 function focusThieves() {
   ['na', 'na2', 'nbv', 'nv', 'npv', 'rm', 'pr'].forEach((id, i) => setTimeout(() => document.getElementById(id).focus(), i * 300));
 }
@@ -177,7 +192,7 @@ window.addEventListener('click', (e) => {
 </script></body></html>`;
 
 const hostHtml = `<!doctype html><html><body style="margin:0">
-<iframe id="f" sandbox="allow-scripts allow-forms allow-modals allow-same-origin" src="http://bridge.test/frame.html" style="width:800px;height:500px;border:0"></iframe>
+<iframe id="f" sandbox="${sandbox}" src="http://bridge.test/frame.html" style="width:800px;height:500px;border:0"></iframe>
 <button id="away">host</button>
 <script>
 window.opened = [];
@@ -185,7 +200,7 @@ addEventListener('message', (e) => { if (e.data && e.data.type === 'od:open-link
 </script></body></html>`;
 
 // Each case and the one tab it asks for.
-const cases = [
+const allCases = [
   ['C0', ['plain-click'], (f) => f.locator('#plain').click()],
   ['T1', ['plain-click'], (f) => f.locator('#plain').tap()],
   ['K1', ['kb-keyup'], (f, page) => enter(f, page, '#kb')],
@@ -246,6 +261,8 @@ const cases = [
   ['NL2', [], (f) => f.frameLocator('#nest').locator('#nl').click()],
   ['NC', [], async (f) => { await fresh(f); await f.frameLocator('#nest').locator('#nc').click(); }],
   ['NK', ['nk-keyup'], async (f, page) => { await fresh(f); await enter(f.frameLocator('#nest'), page, '#nk'); }],
+  // Enter held past the press's 5 s: the activation it was on is gone.
+  ['NE', [], async (f, page) => { await fresh(f); await enter(f.frameLocator('#nest'), page, '#nk', 5500); }],
   // One press, two frames: the nested link's click has the design frame
   // open too (NB), the design frame's click has the nested one open (PN).
   ['NB', ['nb-link'], async (f) => { await fresh(f); await f.frameLocator('#nest').locator('#nb').click(); }],
@@ -292,6 +309,8 @@ const cases = [
   }],
 ];
 
+const cases = picked.length ? allCases.filter(([id]) => picked.includes(id)) : allCases;
+
 // A press in the design frame: a new user activation.
 async function fresh(f) {
   await f.locator('#idle').click();
@@ -318,15 +337,15 @@ async function swipe(cdp, box) {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
-async function enter(frame, page, sel) {
+async function enter(frame, page, sel, hold = 80) {
   await frame.locator(sel).focus();
   await page.keyboard.down('Enter');
-  await sleep(80);
+  await sleep(hold);
   await page.keyboard.up('Enter');
 }
 
 async function runEngine(name) {
-  const browser = await { chromium, webkit }[name].launch();
+  const browser = await { chromium, webkit }[name].launch(name === 'chromium' ? { args: ['--block-new-web-contents'] } : {});
   try {
     const context = await browser.newContext({ hasTouch: true });
     await context.route('**/*', (route) => {
@@ -350,14 +369,20 @@ async function runEngine(name) {
     const got = {};
     for (const [id, , act, only] of cases) {
       if (only && !only.includes(name)) continue;
-      await page.evaluate(() => { window.opened.length = 0; });
-      await act(frame, page, cdp);
-      await sleep(300);
-      got[id] = await page.evaluate(() => window.opened.slice());
-      await page.bringToFront();
+      try {
+        await page.evaluate(() => { window.opened.length = 0; });
+        await act(frame, page, cdp);
+        await sleep(300);
+        got[id] = await page.evaluate(() => window.opened.slice());
+        await page.bringToFront();
+      } catch (e) {
+        e.message = `${name} ${id}: ${e.message}`;
+        throw e;
+      }
     }
     got.atLoad = atLoad;
     got.frameName = await page.frame({ url: /frame\.html$/ }).evaluate(() => window.frames.out === document.getElementById('nout').contentWindow && document.getElementById('nout').name === 'out');
+    got.syncLoads = await page.frame({ url: /frame\.html$/ }).evaluate(() => [syncLoads, syncRead()]);
     got.nestedMode = await frame.frameLocator('#nest').locator('#nmode').textContent();
     return got;
   } finally {
@@ -373,12 +398,15 @@ try {
     results[name] = await runEngine(name);
   }
   for (const name of engines) {
+    const wrong = cases.filter(([id, want, , only]) => (!only || only.includes(name)) && JSON.stringify(results[name][id]) !== JSON.stringify(want));
+    if (wrong.length) console.error(`[e2e:bridge] ${name} wrong: ${wrong.map(([id]) => `${id} ${JSON.stringify(results[name][id])}`).join(', ')}`);
     for (const [id, want, , only] of cases) {
       if (!only || only.includes(name)) assert.deepEqual(results[name][id], want, `${name} ${id}`);
     }
     assert.equal(results[name].nestedMode, 'doctype', `${name} nested frame lost its doctype`);
     assert.deepEqual(results[name].atLoad, [], `${name} opened while loading`);
     assert.equal(results[name].frameName, true, `${name} nested frame lost its name`);
+    assert.deepEqual(results[name].syncLoads, [1, true], `${name} the page read the bridge's copy back from srcdoc`);
   }
   console.log(`[e2e:bridge] PASS ${JSON.stringify(results)}`);
 } catch (e) {
