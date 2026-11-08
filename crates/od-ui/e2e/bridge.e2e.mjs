@@ -22,6 +22,41 @@ const dialogShim = `['alert', 'confirm', 'prompt'].forEach((name) => {
   window[name] = function () { const r = real.apply(window, arguments); parent.document.getElementById('away').focus(); return r; };
 });`;
 
+// A design's own srcdoc frame (QA-065). In the app it inherits the design
+// frame's sandbox, so its origin is a fresh opaque one: the sandbox here
+// makes it cross-origin to the design frame as there. Its doctype must
+// survive the bridge's copy. Its script tries to take
+// the bridge's port (and posts itself one first); the same page loaded by
+// `src` (no copy of the bridge) must not get a port either.
+const nestedHtml = `<!doctype html><html><body style="margin:0;font:16px sans-serif">
+<a id="nl" href="https://example.com/nl-link" target="_blank">NL</a>
+<a id="nc" href="https://example.com/nc-link" target="_blank">NC: cancelled</a>
+<a id="nb" href="https://example.com/nb-link" target="_blank">NB: the parent opens too</a>
+<button id="nk">NK: Enter, keyup opens</button> <button id="nf">NF: forges</button>
+<span id="nmode"></span> <span id="nidle">nested</span>
+<script>
+document.getElementById('nmode').textContent = document.doctype ? 'doctype' : 'no doctype';
+const on = (id, type, fn) => document.getElementById(id).addEventListener(type, fn);
+on('nc', 'click', (e) => e.preventDefault());
+on('nb', 'click', () => parent.postMessage('nested-go', '*'));
+on('nk', 'keyup', (e) => { if (e.key === 'Enter') window.open('https://example.com/nk-keyup'); });
+on('nf', 'click', () => {
+  top.postMessage({ type: 'od:open-link', href: 'https://example.com/nf-top' }, '*');
+  parent.postMessage({ type: 'od:open-link', href: 'https://example.com/nf-parent' }, '*');
+});
+let stolen = null;
+const steal = (port) => { stolen = port; port.postMessage({ href: 'https://example.com/stolen-at-load' }); };
+addEventListener('message', (e) => {
+  if (!stolen && e.source === parent && e.ports && e.ports[0]) steal(e.ports[0]);
+  if (e.data !== 'nested-open') return;
+  window.open('https://example.com/ng-open');
+  if (stolen) stolen.postMessage({ href: 'https://example.com/stolen' });
+});
+const own = new MessageChannel();
+postMessage({ type: 'od:nested-port' }, '*', [own.port2]);
+</script></body></html>`;
+const attr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
 const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><script data-od-key="K">${bridge}</script></head>
 <body style="margin:0;font:16px sans-serif">
 <p><a id="q2" href="https://example.com/q2-link" target="_blank">Q2: the page floods timers, then cancels the link</a>
@@ -47,9 +82,21 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <p><input id="dk" value="X1: Enter alerts on keydown"> <a id="cc" href="https://example.com/x2-link" target="_blank">X2: the page confirms, then cancels the link</a>
 <a id="ce2" href="https://example.com/x3-link" target="_blank">X3: the link confirms, the page cancels it</a></p>
 <p><input id="stray" value="any keyup opens"></p>
+<p><button id="pn">PN: click opens, and asks the nested frame to open</button></p>
+<p><iframe id="nest" sandbox="allow-scripts allow-popups allow-modals" style="width:700px;height:60px;border:0" srcdoc="${attr(nestedHtml)}"></iframe></p>
+<p><iframe id="nest2" sandbox="allow-scripts allow-popups allow-modals" style="width:700px;height:60px;border:0" src="http://bridge.test/nested.html"></iframe></p>
 <p id="idle">idle</p>
 <script>
 const on = (id, type, fn) => document.getElementById(id).addEventListener(type, fn);
+const nest = document.getElementById('nest');
+on('pn', 'click', () => { window.open('https://example.com/pn-open'); nest.contentWindow.postMessage('nested-open', '*'); });
+addEventListener('message', (e) => { if (e.data === 'nested-go') window.open('https://example.com/parent-go'); });
+// Once the nested frame has loaded, the page fakes its load event and
+// posts it a port of its own: the bridge's port stays.
+addEventListener('load', () => setTimeout(() => {
+  nest.dispatchEvent(new Event('load'));
+  nest.contentWindow.postMessage({ type: 'od:nested-port' }, '*', [new MessageChannel().port2]);
+}, 50));
 on('plain', 'click', () => window.open('https://example.com/plain-click'));
 on('kb', 'keyup', (e) => { if (e.key === 'Enter') window.open('https://example.com/kb-keyup'); });
 on('cb', 'click', () => { window.open('about:blank'); window.open('https://example.com/cb-open'); });
@@ -87,7 +134,7 @@ const hostHtml = `<!doctype html><html><body style="margin:0">
 <button id="away">host</button>
 <script>
 window.opened = [];
-addEventListener('message', (e) => { if (e.data && e.data.type === 'od:open-link') opened.push(e.data.href.replace('https://example.com/', '')); });
+addEventListener('message', (e) => { if (e.data && e.data.type === 'od:open-link' && e.data.key === 'K') opened.push(e.data.href.replace('https://example.com/', '')); });
 </script></body></html>`;
 
 // Each case and the one tab it asks for.
@@ -144,7 +191,40 @@ const cases = [
     await sleep(2500);
     await strayKeyup(f, page);
   }],
+  // A link in the design's own srcdoc frame (QA-065): the same rules.
+  ['NL', ['nl-link'], (f) => f.frameLocator('#nest').locator('#nl').click()],
+  ['NC', [], (f) => f.frameLocator('#nest').locator('#nc').click()],
+  ['NK', ['nk-keyup'], (f, page) => enter(f.frameLocator('#nest'), page, '#nk')],
+  // One press, two frames: the nested link's click has the design frame
+  // open too (NB), the design frame's click has the nested one open (PN).
+  ['NB', ['nb-link'], (f) => f.frameLocator('#nest').locator('#nb').click()],
+  ['PN', ['pn-open'], (f) => f.locator('#pn').click()],
+  // No press of its own: the nested frame has focus, then opens on a
+  // message. Forged messages from it count for nothing.
+  ['NG', [], async (f, page) => {
+    await f.frameLocator('#nest').locator('#nidle').click();
+    await sleep(100);
+    await page.frame({ url: /frame\.html$/ }).evaluate(() => document.getElementById('nest').contentWindow.postMessage('nested-open', '*'));
+  }],
+  ['NF', [], (f) => f.frameLocator('#nest').locator('#nf').click()],
+  // The same, in a frame the bridge has no copy in.
+  ['NT', [], async (f, page) => {
+    await f.frameLocator('#nest2').locator('#nidle').click();
+    await sleep(100);
+    await page.frame({ url: /frame\.html$/ }).evaluate(() => document.getElementById('nest2').contentWindow.postMessage('nested-open', '*'));
+  }],
+  // Picking an element for a comment opens nothing, nested or not.
+  ['NS', [], async (f, page) => {
+    await selectMode(page, true);
+    await f.frameLocator('#nest').locator('#nl').click();
+    await sleep(300);
+    await selectMode(page, false);
+  }],
 ];
+
+async function selectMode(page, enabled) {
+  await page.evaluate((on) => document.getElementById('f').contentWindow.postMessage({ type: 'od:select-mode', enabled: on }, '*'), enabled);
+}
 
 // A trusted keyup with no keydown before it, in the frame.
 async function strayKeyup(frame, page) {
@@ -177,7 +257,8 @@ async function runEngine(name) {
     await context.route('**/*', (route) => {
       const url = new URL(route.request().url());
       if (url.hostname !== 'bridge.test') return route.abort();
-      return route.fulfill({ contentType: 'text/html', body: url.pathname === '/frame.html' ? frameHtml : hostHtml });
+      const body = { '/frame.html': frameHtml, '/nested.html': nestedHtml }[url.pathname] || hostHtml;
+      return route.fulfill({ contentType: 'text/html', body });
     });
     const page = await context.newPage();
     page.on('dialog', (d) => d.accept());
@@ -185,6 +266,11 @@ async function runEngine(name) {
     await page.goto('http://bridge.test/host.html');
     const frame = page.frameLocator('#f');
     await frame.locator('#idle').waitFor();
+    await frame.frameLocator('#nest').locator('#nidle').waitFor();
+    await frame.frameLocator('#nest2').locator('#nidle').waitFor();
+    await sleep(300);
+    // Nothing opened while the frames loaded (a stolen port's first use).
+    const atLoad = await page.evaluate(() => window.opened.slice());
     const cdp = name === 'chromium' ? await context.newCDPSession(page) : null;
     const got = {};
     for (const [id, , act, only] of cases) {
@@ -195,6 +281,8 @@ async function runEngine(name) {
       got[id] = await page.evaluate(() => window.opened.slice());
       await page.bringToFront();
     }
+    got.atLoad = atLoad;
+    got.nestedMode = await frame.frameLocator('#nest').locator('#nmode').textContent();
     return got;
   } finally {
     await browser.close();
@@ -212,6 +300,8 @@ try {
     for (const [id, want, , only] of cases) {
       if (!only || only.includes(name)) assert.deepEqual(results[name][id], want, `${name} ${id}`);
     }
+    assert.equal(results[name].nestedMode, 'doctype', `${name} nested frame lost its doctype`);
+    assert.deepEqual(results[name].atLoad, [], `${name} opened while loading`);
   }
   console.log(`[e2e:bridge] PASS ${JSON.stringify(results)}`);
 } catch (e) {
