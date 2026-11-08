@@ -1,7 +1,8 @@
 // Accessibility and narrow-window e2e against the real daemon and the mock
 // `claude` CLI. axe-core (WCAG 2.2 AA) must find no critical or serious
 // violation on Home, Projects, Studio and the library pages (design systems,
-// plugins, media, templates) at 1440 light, 1440 dark and 390 px. Then the
+// plugins, media, templates) at 1440 light, 1440 dark and 390 px, and on
+// Studio in German too (the file comes before the verb there). Then the
 // layout and focus fixes from the design review: the tool panel is a sheet
 // under the page at 1024, Studio switches Chat · Preview · Files at 390,
 // onboarding and Projects stay inside 390, a transparent color shows a
@@ -109,6 +110,15 @@ async function newPage(width, height, scheme) {
   return page;
 }
 
+async function setLocale(locale) {
+  const r = await fetch(`${BASE}/api/app-config`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ locale }),
+  });
+  assert.equal(r.status, 200, `set locale ${locale}`);
+}
+
 const preview = (page) => page.frameLocator('[data-testid="preview"]');
 // The element under the middle of `locator`, as the user would click it.
 const onTop = (locator) =>
@@ -173,6 +183,23 @@ try {
     }
     await page.context().close();
   }
+
+  // German puts the file before the verb (`{0} öffnen`), as ja, ko, tr and
+  // hu do: a name built from "Open {0}" splits the shown "file badge" words
+  // apart (label-content-name-mismatch, WCAG 2.5.3), which English hides.
+  await setLocale('de');
+  page = await newPage(1440, 900, 'light');
+  await check('axe studio-1440-light-de', async () => {
+    await openStudio(page);
+    await until(async () => (await page.locator('html').getAttribute('lang')) === 'de', 'German UI');
+    await page.getByTestId('turn-file-open').first().waitFor();
+    await shot(page, 'studio-1440-light-de');
+    const found = await axe(page);
+    report.axe['studio-1440-light-de'] = found;
+    assert.deepEqual(found, [], `${found.length} critical/serious`);
+  });
+  await page.context().close();
+  await setLocale('en');
 
   // 1440: tooltip, focus, tab keys, live region, transparent swatch.
   page = await newPage(1440, 900, 'light');
