@@ -780,23 +780,33 @@ impl StudioCtx {
         else {
             return;
         };
-        self.tasks.spawn(async move {
+        // The steer and its stored draft's clearing go through even if the
+        // studio is left meanwhile: back on it, the composer must not offer
+        // the steered message again.
+        let draft_key = self.draft_key();
+        let text = item.text.clone();
+        let work = async move {
             let path = format!("/api/runs/{}/steer", api::seg(&run_id));
-            match api::post::<_, serde_json::Value>(&path, &json!({ "message": item.text })).await {
-                Ok(_) => {
-                    self.drop_queued(&id);
-                    let turn = self.items.with_untracked(|items| {
-                        items.iter().rev().find_map(|i| match &i.kind {
-                            super::chat_view::ItemKind::Assistant(turn) => Some(*turn),
-                            super::chat_view::ItemKind::User(_) => None,
-                        })
-                    });
-                    if let Some(turn) = turn {
-                        turn.update(|t| t.blocks.push(Block::Steered(item.text)));
-                    }
-                }
-                Err(e) => self.notice.set(Some(tf(T::SteerFailed, &[&e.to_string()]))),
+            let res = api::post::<_, serde_json::Value>(&path, &json!({ "message": text })).await;
+            if let (Ok(_), Some(k)) = (&res, &draft_key) {
+                super::composer::clear_draft_if(k, &text);
             }
+            res
+        };
+        self.tasks.spawn_then(work, move |res| match res {
+            Ok(_) => {
+                self.drop_queued(&id);
+                let turn = self.items.with_untracked(|items| {
+                    items.iter().rev().find_map(|i| match &i.kind {
+                        super::chat_view::ItemKind::Assistant(turn) => Some(*turn),
+                        super::chat_view::ItemKind::User(_) => None,
+                    })
+                });
+                if let Some(turn) = turn {
+                    turn.update(|t| t.blocks.push(Block::Steered(item.text)));
+                }
+            }
+            Err(e) => self.notice.set(Some(tf(T::SteerFailed, &[&e.to_string()]))),
         });
     }
 

@@ -144,6 +144,34 @@ try {
   assert.equal(await composer.inputValue(), '', 'the sent message is not back in the composer');
   assert.equal(runsMade, 1);
 
+  // Same for a queued message steered into the running turn just before
+  // the Studio is left: the daemon has it, so back on the Studio its
+  // stored draft is gone and the composer does not offer it again.
+  const assistant = page.getByTestId('assistant-msg');
+  await until(async () => (await assistant.last().getAttribute('data-state')) === 'succeeded', 'first run end');
+  let steered = 0;
+  await page.route(`${BASE}/api/runs/*/steer`, async (route) => {
+    const res = await route.fetch();
+    steered++;
+    await sleep(800);
+    await route.fulfill({ response: res }).catch(() => {});
+  });
+  await composer.fill('slow page please');
+  await composer.press('Enter');
+  await assistant.last().getByText('step1', { exact: false }).waitFor();
+  await composer.fill('make it blue');
+  await composer.press('Enter');
+  const queued = page.getByTestId('queued').filter({ hasText: 'make it blue' });
+  await queued.waitFor();
+  await sleep(600); // a debounced draft save lands by now
+  await queued.getByTestId('steer').click();
+  await until(async () => steered === 1, 'the steer reached the daemon');
+  await go('/');
+  await sleep(1_500);
+  await go(studio);
+  await sleep(500); // a stored draft is put back right after the mount
+  assert.equal(await composer.inputValue(), '', 'the steered message is not back in the composer');
+
   assert.deepEqual(pageErrors, [], 'no page error or panic after leaving screens');
   assert.deepEqual(external, [], 'no request left loopback');
   log('PASS');
