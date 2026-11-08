@@ -121,17 +121,7 @@ try {
     });
     return p;
   };
-  let page = watch(await context.newPage());
-  // A fresh tab, the old one closed. Every `goto` loads the whole app (the
-  // debug WASM is 78 MB), and one tab's renderer does not give that memory
-  // back between loads: on CI it grew from 0.6 GB to 7 GB over the ~110
-  // loads before Arabic, and on a busy runner the browser stalled there
-  // ("timed out waiting for lang=ar", and no failure screenshot).
-  const freshTab = async () => {
-    const old = page;
-    page = watch(await context.newPage());
-    await old.close();
-  };
+  const page = watch(await context.newPage());
   const shot = async (name) => {
     for (const scheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: scheme });
@@ -143,7 +133,7 @@ try {
   // Nothing wider than the window, and no button whose label spills out.
   // Findings are keyed by element position, so the ones English has too
   // (icon-only buttons, the collapsed rail) can be told apart.
-  const overflow = () => page.evaluate(() => {
+  const overflow = (p = page) => p.evaluate(() => {
     const out = [];
     const all = [...document.querySelectorAll('*')];
     const key = (el) => `${el.tagName}.${el.className}@${all.indexOf(el)}`;
@@ -200,7 +190,7 @@ try {
     }
     return out;
   });
-  const homeLink = () => page.locator('.nav-link[href="/"]');
+  const homeLink = (p = page) => p.locator('.nav-link[href="/"]');
 
   // 1. Settings ▸ Language lists all 20; picking German loads its strings.
   await page.goto(`${BASE}/settings`);
@@ -217,29 +207,107 @@ try {
   results.picker = 'ok';
 
   // 2. Every language: strings arrive, direction follows, nothing overflows
-  //    on any main screen.
-  const problems = [];
-  const baseline = {};
-  for (const tag of ['en', ...LOCALES]) {
-    await freshTab();
-    await config({ locale: tag });
-    for (const path of SCREENS(pid)) {
-      await page.goto(`${BASE}${path}`);
-      await until(async () => (await page.locator('html').getAttribute('lang')) === tag, `lang=${tag}`);
-      await until(async () => (await homeLink().textContent()).includes(homeLabel(tag)), `${tag} Home link`);
-      const dir = await page.locator('html').getAttribute('dir');
-      assert.equal(dir, ['ar', 'fa'].includes(tag) ? 'rtl' : 'ltr', `${tag} dir`);
-      await sleep(150);
-      const found = await overflow();
-      if (tag === 'en') {
-        baseline[path] = new Map(found.map(([k, , px]) => [k, px]));
-        continue;
+  //    on any main screen. The saved choice is cleared, so the app takes
+  //    the browser's language (as for pt-BR below): each language gets a
+  //    tab of its own whose navigator.language is its tag, and
+  //    OD_E2E_C4_TABS (default 4) of them run at once after English, the
+  //    baseline. A tab loads the app once and reaches the next screens
+  //    through the router: a load compiles the whole debug WASM (400 MB;
+  //    the route above turns the HTTP cache off), which was the bulk of
+  //    this loop's time when every screen was a load, and with four loads
+  //    at once one tab stayed blank for 30 s, so two load at a time. A tab
+  //    is closed after its language: one tab's renderer does not give the
+  //    memory of its loads back (on CI one tab grew from 0.6 GB to 7 GB
+  //    over ~110 loads, and stalled).
+  //    Leaving the Studio, Media or Automations through the router panics
+  //    today (a task reads a signal of the screen after it is gone:
+  //    studio.rs:1400, media_page.rs:125, automations.rs:326), and a
+  //    `goto` away from the Studio hung with four tabs on it, so those end
+  //    the screens a tab sees and the next screen opens in a new tab.
+  const screens = SCREENS(pid);
+  const tabs = Math.max(1, Number(process.env.OD_E2E_C4_TABS) || 4);
+  const newTabAfter = new Set([`/projects/${pid}`, '/media', '/automations']);
+  const order = [...screens.filter((s) => !newTabAfter.has(s)), ...newTabAfter];
+  let loading = 0;
+  // Every screen in `tag`: its overflow findings by path.
+  const visit = async (tag) => {
+    let p;
+    try {
+      const found = {};
+      for (const [i, path] of order.entries()) {
+        const loaded = i === 0 || newTabAfter.has(order[i - 1]);
+        if (loaded) {
+          await p?.close();
+          p = watch(await context.newPage());
+          await p.addInitScript((lang) => {
+            Object.defineProperty(Navigator.prototype, 'language', { get: () => lang });
+            Object.defineProperty(Navigator.prototype, 'languages', { get: () => [lang] });
+          }, tag);
+          while (loading >= 2) await sleep(50);
+          loading++;
+          try {
+            await p.goto(`${BASE}${path}`);
+            const langIs = async () => (await p.locator('html').getAttribute('lang')) === tag;
+            try {
+              await until(langIs, `lang=${tag} on ${path}`, 30_000);
+            } catch (e) {
+              // Once in ~20 local runs, short of memory, the browser cut the
+              // WASM download ("Response body loading was aborted") and the
+              // page stayed blank: load it once more.
+              log(`${tag} ${path}: ${e.message}; loading it again`);
+              const cut = pageErrors.findIndex((m) => m.startsWith('WebAssembly compilation aborted: Network error'));
+              if (cut >= 0) pageErrors.splice(cut, 1);
+              await p.reload();
+              await until(langIs, `lang=${tag} on ${path}`, 30_000);
+            }
+          } finally {
+            loading--;
+          }
+        } else {
+          await p.evaluate((to) => {
+            const a = Object.assign(document.createElement('a'), { href: to });
+            document.body.append(a);
+            a.click();
+            a.remove();
+          }, path);
+          await until(async () => (await p.evaluate(() => location.pathname)) === path, `${tag} route ${path}`);
+          await until(async () => (await p.locator('html').getAttribute('lang')) === tag, `lang=${tag} on ${path}`);
+        }
+        await until(async () => (await homeLink(p).textContent()).includes(homeLabel(tag)), `${tag} Home link on ${path}`);
+        const dir = await p.locator('html').getAttribute('dir');
+        assert.equal(dir, ['ar', 'fa'].includes(tag) ? 'rtl' : 'ltr', `${tag} dir`);
+        await sleep(150);
+        found[path] = await overflow(p);
       }
-      for (const [k, what, px] of found) {
-        if (px > (baseline[path].get(k) ?? 0) + 4) problems.push(`${tag} ${path}: ${what} (${Math.round(px)}px)`);
+      return found;
+    } catch (e) {
+      await p?.screenshot({ path: join(OUT, `c4-failure-${tag}.png`) }).catch(() => {});
+      throw e;
+    } finally {
+      await p?.close();
+    }
+  };
+  await config({ locale: null });
+  const loopStart = Date.now();
+  const baseline = {};
+  for (const [path, found] of Object.entries(await visit('en'))) {
+    baseline[path] = new Map(found.map(([k, , px]) => [k, px]));
+  }
+  const byTag = {};
+  const queue = [...LOCALES];
+  const worker = async () => {
+    for (let tag = queue.shift(); tag !== undefined; tag = queue.shift()) {
+      byTag[tag] = [];
+      for (const [path, found] of Object.entries(await visit(tag))) {
+        for (const [k, what, px] of found) {
+          if (px > (baseline[path].get(k) ?? 0) + 4) byTag[tag].push(`${tag} ${path}: ${what} (${Math.round(px)}px)`);
+        }
       }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(tabs, LOCALES.length) }, worker));
+  log(`${LOCALES.length + 1} languages × ${screens.length} screens, ${tabs} tabs: ${Math.round((Date.now() - loopStart) / 1000)}s`);
+  const problems = LOCALES.flatMap((tag) => byTag[tag]);
   assert.deepEqual(problems, [], `layout overflow:\n${problems.join('\n')}`);
   await config({ locale: 'ar' });
   await page.goto(`${BASE}/`);

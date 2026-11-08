@@ -117,6 +117,8 @@ function desktopShell({ downloads, good }) {
       for (let done = 0; done <= total; done += 1_000_000) {
         if (cancelled) throw { kind: 'cancelled', message: 'cancelled' };
         emit({ phase: 'downloading', downloaded: done, total });
+        // The test can hold the download at a step while it looks at it.
+        while (window.__shell.holdAt === done) await new Promise((ok) => setTimeout(ok, 20));
         await new Promise((ok) => setTimeout(ok, window.__shell.delay));
       }
       if (manifest.platforms['darwin-aarch64'].signature !== good) throw { kind: 'signature', message: 'Verification failed' };
@@ -342,12 +344,16 @@ try {
   assert.deepEqual(latestSeen, [], 'nothing downloads before Update now');
   assert.deepEqual(await calls(), ['update_support']);
   await appDialog.screenshot({ path: OUT + 'desktop-update-now.png' });
+  // Held at 25% until checked: a step lasts 60 ms, and with other
+  // scenarios running alongside the wait missed it.
+  await app.evaluate(() => { window.__shell.holdAt = 1_000_000; });
   await app.getByTestId('update-now').click();
   await app.getByText('Downloading… 25%').waitFor();
   assert.equal(await appDialog.locator('h2').textContent(), 'Updating to version 0.2.0-beta.99');
   assert.equal(await app.getByTestId('update-progress').getAttribute('role'), 'status');
   assert.equal(await app.getByTestId('update-progress-bar').getAttribute('value'), '25');
   await appDialog.screenshot({ path: OUT + 'desktop-downloading.png' });
+  await app.evaluate(() => { window.__shell.holdAt = null; });
   await app.getByTestId('update-restart').waitFor();
   assert.deepEqual(latestSeen, ['/quangphung218/contour-design/releases/download/v0.2.0-beta.99/latest.json']);
   assert.equal(await appDialog.locator('h2').textContent(), 'Version 0.2.0-beta.99 is installed');
