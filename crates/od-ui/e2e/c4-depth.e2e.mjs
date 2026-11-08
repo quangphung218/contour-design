@@ -211,42 +211,47 @@ try {
   //    the browser's language (as for pt-BR below): each language gets a
   //    tab of its own whose navigator.language is its tag, and
   //    OD_E2E_C4_TABS (default 4) of them run at once after English, the
-  //    baseline. The tabs share one context, so the debug WASM comes from
-  //    its cache; a context per language starts cold and timed out. A tab
-  //    loads the app once and is closed after its language: one tab's
-  //    renderer does not give the memory of its loads back (on CI one tab
-  //    grew from 0.6 GB to 7 GB over the ~110 loads before Arabic, when
-  //    every screen was a load of its own, and stalled there).
+  //    baseline. A tab loads the app once and reaches the next screens
+  //    through the router: a load compiles the whole debug WASM (400 MB;
+  //    the route above turns the HTTP cache off), which was the bulk of
+  //    this loop's time when every screen was a load, and with four loads
+  //    at once one tab stayed blank for 30 s, so two load at a time. A tab
+  //    is closed after its language: one tab's renderer does not give the
+  //    memory of its loads back (on CI one tab grew from 0.6 GB to 7 GB
+  //    over ~110 loads, and stalled).
+  //    Leaving the Studio, Media or Automations through the router panics
+  //    today (a task reads a signal of the screen after it is gone:
+  //    studio.rs:1400, media_page.rs:125, automations.rs:326), and a
+  //    `goto` away from the Studio hung with four tabs on it, so those end
+  //    the screens a tab sees and the next screen opens in a new tab.
   const screens = SCREENS(pid);
   const tabs = Math.max(1, Number(process.env.OD_E2E_C4_TABS) || 4);
-  // Leaving these through the router panics today (a task reads a signal
-  // of the screen after it is gone: studio.rs:1400, media_page.rs:125,
-  // automations.rs:326), and a `goto` away from the Studio hung with four
-  // tabs on it, so the screen after each opens in a new tab.
   const newTabAfter = new Set([`/projects/${pid}`, '/media', '/automations']);
+  const order = [...screens.filter((s) => !newTabAfter.has(s)), ...newTabAfter];
+  let loading = 0;
   // Every screen in `tag`: its overflow findings by path.
   const visit = async (tag) => {
     let p;
-    const open = async () => {
-      await p?.close();
-      p = watch(await context.newPage());
-      await p.addInitScript((lang) => {
-        Object.defineProperty(Navigator.prototype, 'language', { get: () => lang });
-        Object.defineProperty(Navigator.prototype, 'languages', { get: () => [lang] });
-      }, tag);
-    };
     try {
       const found = {};
-      for (const [i, path] of screens.entries()) {
-        // A load compiles the WASM, four tabs at once next to other
-        // scenarios: 10 s was too short once in three local runs.
-        const loaded = i === 0 || newTabAfter.has(screens[i - 1]);
+      for (const [i, path] of order.entries()) {
+        const loaded = i === 0 || newTabAfter.has(order[i - 1]);
         if (loaded) {
-          await open();
-          await p.goto(`${BASE}${path}`);
+          await p?.close();
+          p = watch(await context.newPage());
+          await p.addInitScript((lang) => {
+            Object.defineProperty(Navigator.prototype, 'language', { get: () => lang });
+            Object.defineProperty(Navigator.prototype, 'languages', { get: () => [lang] });
+          }, tag);
+          while (loading >= 2) await sleep(50);
+          loading++;
+          try {
+            await p.goto(`${BASE}${path}`);
+            await until(async () => (await p.locator('html').getAttribute('lang')) === tag, `lang=${tag} on ${path}`, 30_000);
+          } finally {
+            loading--;
+          }
         } else {
-          // Through the router: a load compiles the whole debug WASM
-          // (400 MB) again, the bulk of this loop's time.
           await p.evaluate((to) => {
             const a = Object.assign(document.createElement('a'), { href: to });
             document.body.append(a);
@@ -254,9 +259,8 @@ try {
             a.remove();
           }, path);
           await until(async () => (await p.evaluate(() => location.pathname)) === path, `${tag} route ${path}`);
+          await until(async () => (await p.locator('html').getAttribute('lang')) === tag, `lang=${tag} on ${path}`);
         }
-        await until(async () => (await p.locator('html').getAttribute('lang')) === tag, `lang=${tag} on ${path}`,
-          loaded ? 30_000 : 10_000);
         await until(async () => (await homeLink(p).textContent()).includes(homeLabel(tag)), `${tag} Home link on ${path}`);
         const dir = await p.locator('html').getAttribute('dir');
         assert.equal(dir, ['ar', 'fa'].includes(tag) ? 'rtl' : 'ltr', `${tag} dir`);
