@@ -332,9 +332,11 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                                 <li class="turn-file" data-testid="turn-file" data-op=if op == FileOp::Write { "write" } else { "edit" }>
                                     <button
                                         class="turn-file-open"
-                                        title=path.clone()
-                                        // The name holds the shown file and badge (WCAG 2.5.3).
-                                        aria-label=format!("{} {}", tf(T::OpenNamed, &[&name]), op_label)
+                                        // No aria-label: the name is the shown "file badge"
+                                        // text, so it matches in every word order (WCAG
+                                        // 2.5.3; `{0} öffnen` split it in de, ja, ko, tr,
+                                        // hu). The verb and full path go to the description.
+                                        title=tf(T::OpenNamed, &[&path])
                                         data-testid="turn-file-open"
                                         disabled=!exists || live
                                         on:click=move |_| {
