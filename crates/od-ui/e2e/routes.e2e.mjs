@@ -172,6 +172,31 @@ try {
   await sleep(500); // a stored draft is put back right after the mount
   assert.equal(await composer.inputValue(), '', 'the steered message is not back in the composer');
 
+  // Same for a message of a held queue (kept in localStorage), steered
+  // into a run sent past it just before the Studio is left: back on the
+  // Studio the held queue no longer has it, so Send does not send it twice.
+  await until(async () => (await assistant.last().getAttribute('data-state')) === 'succeeded', 'steered run end');
+  await composer.fill('slow page please');
+  await composer.press('Enter');
+  await assistant.last().getByText('step1', { exact: false }).waitFor();
+  await composer.fill('held for later');
+  await composer.press('Enter');
+  const held = page.getByTestId('queued').filter({ hasText: 'held for later' });
+  await held.waitFor();
+  await page.getByTestId('stop').click();
+  await page.getByTestId('queue-held').waitFor();
+  await until(async () => (await assistant.last().getAttribute('data-state')) !== 'running', 'stopped');
+  await composer.fill('slow past the held queue');
+  await composer.press('Enter');
+  await assistant.last().getByText('step1', { exact: false }).waitFor();
+  await held.getByTestId('steer').click();
+  await until(async () => steered === 2, 'the held steer reached the daemon');
+  await go('/');
+  await sleep(1_500);
+  await go(studio);
+  await sleep(500); // the held queue is put back right after the mount
+  assert.equal(await page.getByTestId('queued').count(), 0, 'the steered message is not back in the held queue');
+
   assert.deepEqual(pageErrors, [], 'no page error or panic after leaving screens');
   assert.deepEqual(external, [], 'no request left loopback');
   log('PASS');
