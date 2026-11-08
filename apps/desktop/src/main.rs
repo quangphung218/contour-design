@@ -8,6 +8,9 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// macOS only; the pure parts also build for tests everywhere.
+#[cfg(any(target_os = "macos", test))]
+mod js_dialogs;
 mod mcp;
 mod updater;
 
@@ -991,6 +994,18 @@ fn main() -> anyhow::Result<()> {
                         tracing::warn!(%url, "blocked a new window");
                         tauri::webview::NewWindowResponse::Deny
                     })
+                    // A new page may show dialogs again though the user
+                    // blocked the last page's (QA-064).
+                    .on_page_load(|window, payload| {
+                        #[cfg(target_os = "macos")]
+                        if payload.event() == tauri::webview::PageLoadEvent::Started {
+                            let _ = window.with_webview(|webview| {
+                                js_dialogs::page_loaded(webview.inner());
+                            });
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        let _ = (window, payload);
+                    })
                     .title(APP_NAME)
                     .inner_size(1360.0, 860.0)
                     .min_inner_size(900.0, 600.0)
@@ -1003,7 +1018,14 @@ fn main() -> anyhow::Result<()> {
             let window = window
                 .title_bar_style(tauri::TitleBarStyle::Overlay)
                 .hidden_title(true);
-            window.build()?;
+            let window = window.build()?;
+            // A page's `alert`, `confirm` and `prompt` (QA-064).
+            #[cfg(target_os = "macos")]
+            if let Err(e) = window.with_webview(|webview| js_dialogs::install(webview.inner())) {
+                tracing::warn!(error = %e, "no JavaScript dialogs");
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = window;
             let root = resource_root(&handle);
             tauri::async_runtime::spawn(async move {
                 let daemon = match start_daemon(data_dir, root).await {

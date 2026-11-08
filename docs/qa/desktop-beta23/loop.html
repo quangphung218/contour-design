@@ -1,0 +1,7 @@
+<!doctype html><html><body style="font:18px system-ui;margin:16px">
+<p>QA-061 loop: window.open with a new URL every 200 ms, 10 times; one more after 4 s.</p>
+<button id="b" style="font:18px system-ui;padding:12px">R click me (opens nothing itself)</button>
+<script>
+var n=0,t=setInterval(function(){n++;try{window.open('http://127.0.0.1:58990/loop-'+n)}catch(e){};if(n>=10)clearInterval(t)},200);
+setTimeout(function(){window.open('http://127.0.0.1:58990/late-4s')},4000);
+</script></body></html>
