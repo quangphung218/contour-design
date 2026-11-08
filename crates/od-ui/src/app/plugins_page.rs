@@ -229,6 +229,18 @@ pub fn PluginsPage() -> impl IntoView {
         open.set(next);
         reload();
     });
+    // A plugin or skill removed from its page: back to the list, unless
+    // something else opened meanwhile. The reply can come late on a busy
+    // machine, after a skill just made was opened; closing that one would
+    // hide it.
+    let on_removed = Callback::new(move |gone: Open| {
+        open.update(|o| {
+            if o.as_ref() == Some(&gone) {
+                *o = None;
+            }
+        });
+        reload();
+    });
 
     let count = move |sc: Scope| -> usize {
         let personal = sc == Scope::Personal;
@@ -340,9 +352,9 @@ pub fn PluginsPage() -> impl IntoView {
             {move || match open.get() {
                 Some(Open::Plugin(id)) => {
                     let mono = monos.with_untracked(|m| m.get(&id).cloned());
-                    view! { <PluginDetail id=id mono=mono on_back=Callback::new(move |()| open.set(None)) on_change=on_change/> }.into_any()
+                    view! { <PluginDetail id=id mono=mono on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed/> }.into_any()
                 }
-                Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_change=on_change/> }.into_any(),
+                Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed/> }.into_any(),
                 None => view! {
                     <div class="lib-toolbar">
                         <div class="segmented" role="group" aria-label=t(T::NavPlugins)>
@@ -636,7 +648,7 @@ fn PluginDetail(
     /// The tile's letters in the list, so both agree; `None`: initials.
     mono: Option<String>,
     on_back: Callback<()>,
-    on_change: Callback<Option<Open>>,
+    on_removed: Callback<Open>,
 ) -> impl IntoView {
     let navigate = use_navigate();
     let plugin = RwSignal::new(None::<Result<Value, String>>);
@@ -691,7 +703,7 @@ fn PluginDetail(
                 )
                 .await
                 {
-                    Ok(_) => on_change.run(None),
+                    Ok(_) => on_removed.run(Open::Plugin(id)),
                     Err(e) => notice.set(Some(Err(e.to_string()))),
                 }
             });
@@ -819,11 +831,7 @@ fn meta_list(label: T, items: Vec<String>) -> Option<impl IntoView> {
 }
 
 #[component]
-fn SkillDetailView(
-    id: String,
-    on_back: Callback<()>,
-    on_change: Callback<Option<Open>>,
-) -> impl IntoView {
+fn SkillDetailView(id: String, on_back: Callback<()>, on_removed: Callback<Open>) -> impl IntoView {
     let navigate = use_navigate();
     let detail = RwSignal::new(None::<Result<SkillDetail, String>>);
     let editing = RwSignal::new(false);
@@ -849,7 +857,7 @@ fn SkillDetailView(
             let id = id.clone();
             leptos::task::spawn_local(async move {
                 match api::delete::<Value>(&format!("/api/skills/{}", api::seg(&id))).await {
-                    Ok(_) => on_change.run(None),
+                    Ok(_) => on_removed.run(Open::Skill(id)),
                     Err(e) => notice.set(Some(e.to_string())),
                 }
             });
