@@ -216,11 +216,18 @@ cargo test -p od-ui --lib i18n                 # UI unit tests run natively
 
 ### End-to-end
 
-`make e2e` (`crates/od-ui/e2e/run.sh`) builds the UI and `od`, then runs ten
+`make e2e` (`crates/od-ui/e2e/run.sh`) builds the UI and `od`, then runs the
 Playwright scenarios against a real daemon with a temporary data folder and
 mock agents (`e2e/mock-agent`). Every request that leaves loopback is
 aborted. The first run installs the npm packages; Chromium comes from
 `npx playwright install chromium`.
+
+The scenarios run `OD_E2E_JOBS` at a time (default 2, 3 on CI; `1` runs them
+one after another), each with its own port, data folder and browser. Each
+one's output goes to `e2e/test-results/logs/<name>.log` and is printed whole
+when it ends; a failing scenario fails the run and its log is printed again
+at the end. `c4-depth` checks its 18 languages `OD_E2E_C4_TABS` at a time
+(default 4). `run.sh <script>…` runs only those scripts, one after another.
 
 Run one scenario after `make e2e` has built everything once:
 
