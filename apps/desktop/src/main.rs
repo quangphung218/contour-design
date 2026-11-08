@@ -8,6 +8,9 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// macOS only; the pure parts also build for tests everywhere.
+#[cfg(any(target_os = "macos", test))]
+mod js_dialogs;
 mod mcp;
 mod updater;
 
@@ -222,6 +225,20 @@ fn open_link(opened: tauri::State<'_, Arc<LastOpened>>, url: String) -> Result<(
     let url = link_to_open(&url).ok_or_else(|| "not a web address".to_owned())?;
     opened.open(&url);
     Ok(())
+}
+
+/// The UI opened another design (QA-064): the Studio changes its route,
+/// not the page, so the dialogs the user blocked for the last design would
+/// stay blocked for this one. Dialogs show again. Nothing to do off macOS,
+/// where the webview draws its own dialogs.
+#[tauri::command]
+fn reset_dialog_gate(window: tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    if let Err(e) = window.run_on_main_thread(js_dialogs::reset_all) {
+        tracing::warn!(error = %e, "cannot reset the dialog gate");
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
 }
 
 /// The last page handed to the system browser and when. One click can ask
@@ -467,7 +484,7 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
 /// `allow-<command>` for each app command (`build.rs` generates them): the
 /// daemon's page is a remote origin to Tauri, which refuses it any app
 /// command without one.
-const APP_COMMAND_PERMISSIONS: [&str; 9] = [
+const APP_COMMAND_PERMISSIONS: [&str; 10] = [
     "allow-pick-folder",
     "allow-set-theme",
     "allow-set-menu-labels",
@@ -477,6 +494,7 @@ const APP_COMMAND_PERMISSIONS: [&str; 9] = [
     "allow-cancel-update",
     "allow-restart-app",
     "allow-open-link",
+    "allow-reset-dialog-gate",
 ];
 
 /// The main window stays on the daemon's origin (and the bundled splash
@@ -947,7 +965,8 @@ fn main() -> anyhow::Result<()> {
             updater::install_update,
             updater::cancel_update,
             updater::restart_app,
-            open_link
+            open_link,
+            reset_dialog_gate
         ])
         .menu(|app| build_menu(app, &MenuLabels::default()))
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -991,6 +1010,18 @@ fn main() -> anyhow::Result<()> {
                         tracing::warn!(%url, "blocked a new window");
                         tauri::webview::NewWindowResponse::Deny
                     })
+                    // A new page may show dialogs again though the user
+                    // blocked the last page's (QA-064).
+                    .on_page_load(|window, payload| {
+                        #[cfg(target_os = "macos")]
+                        if payload.event() == tauri::webview::PageLoadEvent::Started {
+                            let _ = window.with_webview(|webview| {
+                                js_dialogs::page_loaded(webview.inner());
+                            });
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        let _ = (window, payload);
+                    })
                     .title(APP_NAME)
                     .inner_size(1360.0, 860.0)
                     .min_inner_size(900.0, 600.0)
@@ -1003,7 +1034,14 @@ fn main() -> anyhow::Result<()> {
             let window = window
                 .title_bar_style(tauri::TitleBarStyle::Overlay)
                 .hidden_title(true);
-            window.build()?;
+            let window = window.build()?;
+            // A page's `alert`, `confirm` and `prompt` (QA-064).
+            #[cfg(target_os = "macos")]
+            if let Err(e) = window.with_webview(|webview| js_dialogs::install(webview.inner())) {
+                tracing::warn!(error = %e, "no JavaScript dialogs");
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = window;
             let root = resource_root(&handle);
             tauri::async_runtime::spawn(async move {
                 let daemon = match start_daemon(data_dir, root).await {
@@ -1134,6 +1172,7 @@ mod tests {
             "cancel_update",
             "restart_app",
             "open_link",
+            "reset_dialog_gate",
         ] {
             assert_eq!(
                 invoke_from(origin, &format!("{origin}/studio"), cmd),

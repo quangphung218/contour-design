@@ -362,6 +362,7 @@ fn Shelled() -> impl IntoView {
             </Show>
             <updates::UpdateDialog/>
             <ViewTracker/>
+            {desktop::is_desktop().then(|| view! { <DialogGateReset/> })}
             <ScrollReset/>
             <notify::RunWatcher/>
             <memory_settings::MemoryToast/>
@@ -570,6 +571,24 @@ fn is_mac_desktop() -> bool {
         }
     }
     on
+}
+
+/// In the desktop app, dialogs the user blocked for one design show again
+/// for the next (QA-064): opening another design changes the route, not
+/// the page, so the shell's per-page reset never runs. The web app does
+/// nothing.
+#[component]
+fn DialogGateReset() -> impl IntoView {
+    let location = use_location();
+    Effect::new(move |last: Option<Option<String>>| {
+        let path = location.pathname.get();
+        let last = last.flatten();
+        if !desktop::opens_another_design(last.as_deref(), &path) {
+            return last;
+        }
+        desktop::reset_dialog_gate();
+        desktop::design_in_path(&path).map(str::to_owned)
+    });
 }
 
 /// Records each Studio visit for "Recently viewed".

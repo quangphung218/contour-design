@@ -186,3 +186,61 @@ pub async fn save_file(bytes: &[u8], name: &str) -> Result<Option<String>, Strin
         Err(e) => Err(e.as_string().unwrap_or_else(|| format!("{e:?}"))),
     }
 }
+
+/// The user opened another design: the shell shows the page's `alert`,
+/// `confirm` and `prompt` again though the last design's were blocked
+/// (QA-064). Does nothing outside the desktop app.
+pub fn reset_dialog_gate() {
+    if let Some(promise) = invoke("reset_dialog_gate", &JsValue::UNDEFINED) {
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = JsFuture::from(promise).await;
+        });
+    }
+}
+
+/// The design a route shows (`/projects/:id`, `/present/:id`), if any.
+#[must_use]
+pub fn design_in_path(path: &str) -> Option<&str> {
+    path.strip_prefix("/projects/")
+        .or_else(|| path.strip_prefix("/present/"))
+        .and_then(|rest| rest.split('/').next())
+        .filter(|id| !id.is_empty())
+}
+
+/// Whether the route at `path` opens another design than `last`, the one
+/// opened before (leaving it for Home and back is the same design).
+#[must_use]
+pub fn opens_another_design(last: Option<&str>, path: &str) -> bool {
+    design_in_path(path).is_some_and(|id| last != Some(id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_design_route_names_its_design() {
+        assert_eq!(design_in_path("/projects/p1"), Some("p1"));
+        assert_eq!(design_in_path("/projects/p1/files"), Some("p1"));
+        assert_eq!(design_in_path("/present/p1"), Some("p1"));
+        assert_eq!(design_in_path("/projects"), None);
+        assert_eq!(design_in_path("/projects/"), None);
+        assert_eq!(design_in_path("/"), None);
+        assert_eq!(design_in_path("/settings"), None);
+    }
+
+    #[test]
+    fn opening_design_b_after_a_resets_the_gate() {
+        assert!(opens_another_design(Some("a"), "/projects/b"));
+        assert!(opens_another_design(None, "/projects/a"));
+        assert!(opens_another_design(Some("a"), "/present/b"));
+    }
+
+    #[test]
+    fn the_same_design_or_no_design_keeps_the_gate() {
+        assert!(!opens_another_design(Some("a"), "/projects/a"));
+        assert!(!opens_another_design(Some("a"), "/present/a"));
+        assert!(!opens_another_design(Some("a"), "/"));
+        assert!(!opens_another_design(None, "/settings"));
+    }
+}

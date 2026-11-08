@@ -35,7 +35,10 @@ Also:
 - Update the README or `docs/` when a command, flag or behaviour changes.
 - Rust code follows the `rust-skills` guidelines in
   `.claude/skills/rust-skills` and the workspace lints in `Cargo.toml`
-  (`unsafe_code = "forbid"`, no `unwrap()` outside tests).
+  (`unsafe_code = "forbid"`, no `unwrap()` outside tests). `od-desktop`
+  alone denies `unsafe_code` instead and allows it in
+  `apps/desktop/src/js_dialogs.rs` (decision 7); it copies the other
+  workspace lints by hand, so change both together.
 - Behaviour is specified in [docs/spec.md](docs/spec.md); settled questions
   are in [docs/decisions.md](docs/decisions.md). Propose a change to a
   decision in the pull request description rather than working around it.

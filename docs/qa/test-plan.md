@@ -444,6 +444,30 @@ On a built app, on each of macOS
   runs `alert('…')` on `keydown` (close it with Enter). The app's own
   dialog may take focus from the window, which headless browsers' do not
   (`bridge.e2e.mjs` D1–D3 and X1–X3 move the focus by hand).
+- [ ] **JS dialogs** (QA-064; macOS: `apps/desktop/src/js_dialogs.rs`):
+  `alert('About to open')`, `confirm('Open?')` and `prompt('Name?', 'x')`
+  in a design each show a dialog titled "This page says" (the design's
+  sandboxed frame; a page of the app's origin shows `127.0.0.1:<port>
+  says`) with the message. `confirm`: OK returns `true`, Cancel and Escape
+  `false`. `prompt`: the field holds `x` and has the focus; OK returns what
+  it holds, Cancel `null`. The page waits until the dialog closes. A
+  message of 5000 characters shows its first 2000 and `…`, the buttons on
+  screen.
+- [ ] **prompt, long text**: in `prompt('Tên?')` type a Vietnamese string
+  longer than 15 characters (`Nguyễn Văn An ở Hà Nội`) and press OK: the
+  page gets exactly that string (log it or put it in the page).
+- [ ] **alert loop**: a button running `for (;;) alert('x')`. The first
+  alert has no checkbox; the next ones (within 3 s of the last) show
+  "Don't allow this design to show more dialogs". Tick it and press OK: no
+  more dialogs, the app answers (menus, ⌘Q). After that the design's later
+  `confirm` gives `false` and `prompt` `null`, nothing shown. Reload the
+  app: dialogs show again.
+- [ ] **blocked in design A, not in B**: block dialogs in design A as in
+  the line above, then open design B (Projects or the switcher, no
+  reload) and press a button running `confirm('Delete?')`: the dialog
+  shows, OK returns `true`. Back to A, nothing reloaded: A's dialogs show
+  again too (opening another design resets the block,
+  `reset_dialog_gate`).
 - [ ] Drag an element of the design (`draggable="true"`) and drop it, then
   let go of a key in a field whose page opens a URL on `keyup`: nothing
   opens.

@@ -14,6 +14,7 @@ const APP_COMMANDS: &[&str] = &[
     "cancel_update",
     "restart_app",
     "open_link",
+    "reset_dialog_gate",
 ];
 
 fn main() {

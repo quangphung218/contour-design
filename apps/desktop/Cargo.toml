@@ -33,11 +33,29 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 
+# The JavaScript panels wry's macOS UI delegate lacks (`src/js_dialogs.rs`);
+# the versions wry 0.55 itself uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSCell", "NSControl", "NSResponder", "NSTextField", "NSView", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry", "NSString"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKFrameInfo", "WKSecurityOrigin", "WKUIDelegate", "WKWebView"] }
+
 [dev-dependencies]
 base64.workspace = true
 minisign = "0.7"
 tauri = { version = "2", features = ["test"] }
 tempfile.workspace = true
 
-[lints]
-workspace = true
+# The workspace's lints, but `unsafe_code` denied rather than forbidden:
+# `src/js_dialogs.rs` allows it to add Objective-C methods (QA-064,
+# decision 7). A copy of `[workspace.lints]` in the root Cargo.toml: keep
+# the two in step.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+dbg_macro = "warn"
+

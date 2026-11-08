@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Desktop app: a `target="_blank"` web link, or a `window.open` the user's click or key runs, inside an `<iframe srcdoc>` in a design opens in the system browser instead of doing nothing, with the same rules as the design's own links: a link the page cancels opens none, nor does a `window.open` with no press of its own. One user activation opens at most one tab across the design and its frames, so a second link in a nested frame opens once the activation has run out (a few seconds) or after a press in the design itself. The design reads such a frame's `srcdoc` back as it wrote it (QA-065).
+- Desktop app on macOS: a design's `alert()`, `confirm()` and `prompt()` show a dialog, titled with the page's origin, and wait for it, instead of returning at once with nothing shown (`confirm` gave `false`, `prompt` `null`). From the second dialog within 3 s, a checkbox stops the page's dialogs until it reloads, so an `alert` loop cannot hold the app. Windows and Linux already showed them (QA-064).
 
 ## [0.2.0-beta.23] - 2026-11-08
 
