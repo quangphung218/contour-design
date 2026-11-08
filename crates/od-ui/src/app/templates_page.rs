@@ -261,12 +261,11 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
                     let open = s.clone();
                     let open_key = s.clone();
                     let name = name_of(&s);
-                    let label = name.clone();
                     let thumb = s.has_example.then(|| example_url(&s.info.id));
                     let tint = format!("cover tint-{}", super::lib_ui::tint(&s.info.id));
                     let has_thumb = thumb.is_some();
                     view! {
-                        <div class="template-card" role="button" tabindex="0" data-testid="tpl-card" aria-label=label
+                        <div class="template-card" role="button" tabindex="0" data-testid="tpl-card"
                             on:click=move |_| preview.set(Some(open.clone()))
                             on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" || ev.key() == " " { ev.prevent_default(); preview.set(Some(open_key.clone())); }>
                             <span class=tint class:thumb-cover=has_thumb aria-hidden="true">

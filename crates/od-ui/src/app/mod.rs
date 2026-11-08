@@ -510,13 +510,17 @@ fn Sidebar() -> impl IntoView {
             <button
                 class="palette-trigger"
                 data-testid="open-palette"
-                aria-label=t(T::CommandPalette)
+                // The name holds the shown text and shortcut (WCAG 2.5.3);
+                // the rail and a narrow window hide them, so it stays set.
+                aria-label=format!("{} {}K", t(T::PaletteTrigger), shortcuts::modifier())
                 data-tip=tip(t(T::CommandPalette))
                 data-tip-pos="right"
                 on:click=move |_| shell.palette.set(true)
             >
                 {icon(Glyph::Search)}
                 <span class="nav-label">{t(T::PaletteTrigger)}</span>
+                // Keeps "command Ctrl+K" apart in the read text.
+                {" "}
                 <kbd class="nav-label">{format!("{}K", shortcuts::modifier())}</kbd>
             </button>
             <nav class="sidenav" aria-label=t(T::MainNavigation)>

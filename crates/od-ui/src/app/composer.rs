@@ -1280,12 +1280,22 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
             let _ = shell.save_config(next).await;
         });
     };
+    // "Agent · model · reasoning", shown on the button and held in its name.
+    let summary = move || {
+        let sel = current();
+        let model = sel.model.unwrap_or_else(|| t(T::DefaultChoice).to_owned());
+        match sel.reasoning {
+            Some(r) => format!("{} · {model} · {r}", agent_name()),
+            None => format!("{} · {model}", agent_name()),
+        }
+    };
     view! {
         <div class="menu-wrap" node_ref=wrap>
             <button
                 type="button"
                 class="btn ghost small model-btn"
-                aria-label=t(T::SwitchModel)
+                // The name holds the shown model line (WCAG 2.5.3).
+                aria-label=move || format!("{}: {}", t(T::SwitchModel), summary())
                 data-tip=t(T::SwitchModel)
                 data-tip-pos="top"
                 aria-expanded=move || open.get().to_string()
@@ -1293,16 +1303,7 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
                 on:click=move |_| open.update(|o| *o = !*o)
             >
                 {icon(Glyph::Agent)}
-                <span class="model-label">
-                    {move || {
-                        let sel = current();
-                        let model = sel.model.unwrap_or_else(|| t(T::DefaultChoice).to_owned());
-                        match sel.reasoning {
-                            Some(r) => format!("{} · {model} · {r}", agent_name()),
-                            None => format!("{} · {model}", agent_name()),
-                        }
-                    }}
-                </span>
+                <span class="model-label">{summary}</span>
                 {icon(Glyph::ChevronDown)}
             </button>
             <Show when=move || open.get()>

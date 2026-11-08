@@ -327,12 +327,14 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                             let raw = format!("{}/raw/{}", ctx.base(), api::file_path(&path));
                             let open_path = path.clone();
                             let audio = is_audio(&path).then(|| raw.clone());
+                            let op_label = if op == FileOp::Write { t(T::OpWrite) } else { t(T::OpEdit) };
                             view! {
                                 <li class="turn-file" data-testid="turn-file" data-op=if op == FileOp::Write { "write" } else { "edit" }>
                                     <button
                                         class="turn-file-open"
                                         title=path.clone()
-                                        aria-label=tf(T::OpenNamed, &[&name])
+                                        // The name holds the shown file and badge (WCAG 2.5.3).
+                                        aria-label=format!("{} {}", tf(T::OpenNamed, &[&name]), op_label)
                                         data-testid="turn-file-open"
                                         disabled=!exists || live
                                         on:click=move |_| {
@@ -342,7 +344,9 @@ pub fn TurnFiles(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                                     >
                                         <span class="file-ico">{icon(file_glyph(&path))}</span>
                                         <span class="file-name">{name.clone()}</span>
-                                        <span class="badge outline">{if op == FileOp::Write { t(T::OpWrite) } else { t(T::OpEdit) }}</span>
+                                        // Keeps "name badge" two words in the read text.
+                                        {" "}
+                                        <span class="badge outline">{op_label}</span>
                                     </button>
                                     {exists.then(|| view! {
                                         <a class="icon-btn small" href=raw.clone() download=name.clone()

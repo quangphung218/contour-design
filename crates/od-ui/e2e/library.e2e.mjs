@@ -437,7 +437,7 @@ try {
   await until(async () => (await tpl.count()) < all && (await tpl.count()) > 0, 'type filter');
   await page.getByTestId('tpl-platform-mobile').click();
   await page.getByTestId('tpl-platform-all').click();
-  const cardName = await tpl.first().getAttribute('aria-label');
+  const cardName = await tpl.first().locator('.template-name').textContent();
   await tpl.first().click();
   await page.getByTestId('tpl-preview').waitFor();
   await page.getByTestId('tpl-frame').waitFor();
