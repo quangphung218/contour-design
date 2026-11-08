@@ -23,8 +23,8 @@ const dialogShim = `['alert', 'confirm', 'prompt'].forEach((name) => {
 });`;
 
 // A design's own srcdoc frame (QA-065). In the app it inherits the design
-// frame's sandbox, so its origin is a fresh opaque one: the sandbox here
-// makes it cross-origin to the design frame as there. Its doctype must
+// frame's sandbox, so its origin is a fresh opaque one: the same sandbox
+// here makes it cross-origin to the design frame as there. Its doctype must
 // survive the bridge's copy. Its script tries to take
 // the bridge's port (and posts itself one first); the same page loaded by
 // `src` (no copy of the bridge) must not get a port either.
@@ -57,6 +57,24 @@ postMessage({ type: 'od:nested-port' }, '*', [own.port2]);
 </script></body></html>`;
 const attr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
+// A page that takes any port it is handed and names a link over it every
+// 100 ms: what no document but the bridge's copy may get. The ways in:
+// a srcdoc that starts with a comment the parser ends early (A: `<!-->`,
+// A2: `--!>`), the design page sending its srcdoc frame elsewhere once
+// loaded (B by the frame's window, PV by its name), the frame going
+// elsewhere itself (NV), its srcdoc taken away for a `src` before it
+// loads (RM). PR, sent elsewhere before its srcdoc loads, is
+// the one way left: nothing tells the bridge which document loaded, so the
+// gesture check holds it to one tab per press in that frame, as a page's
+// click handler may open, and none on focus alone.
+const thiefJs = (tag) => `let got = null; addEventListener('message', (e) => { if (!got && e.ports && e.ports[0]) { got = e.ports[0]; setInterval(() => got.postMessage({ href: 'https://example.com/stolen-${tag}' }), 100); } }, true);`;
+const thiefPage = (tag, before = '', after = '') => `${before}<script>${thiefJs(tag)}</script>${after}<p id="t" style="margin:0;height:30px">${tag}</p>`;
+const dataUrl = (html) => 'data:text/html,' + encodeURIComponent(html);
+// The design frame's sandbox, which the app's nested frames inherit (no
+// popups: a native window.open there opens nothing).
+const sandbox = 'allow-scripts allow-forms allow-modals';
+const small = 'width:300px;height:34px;border:0';
+
 const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><script data-od-key="K">${bridge}</script></head>
 <body style="margin:0;font:16px sans-serif">
 <p><a id="q2" href="https://example.com/q2-link" target="_blank">Q2: the page floods timers, then cancels the link</a>
@@ -83,12 +101,41 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <a id="ce2" href="https://example.com/x3-link" target="_blank">X3: the link confirms, the page cancels it</a></p>
 <p><input id="stray" value="any keyup opens"></p>
 <p><button id="pn">PN: click opens, and asks the nested frame to open</button></p>
-<p><iframe id="nest" sandbox="allow-scripts allow-popups allow-modals" style="width:700px;height:60px;border:0" srcdoc="${attr(nestedHtml)}"></iframe></p>
-<p><iframe id="nest2" sandbox="allow-scripts allow-popups allow-modals" style="width:700px;height:60px;border:0" src="http://bridge.test/nested.html"></iframe></p>
+<p><iframe id="nest" sandbox="allow-scripts allow-forms allow-modals" style="width:700px;height:60px;border:0" srcdoc="${attr(nestedHtml)}"></iframe></p>
+<p><iframe id="nest2" sandbox="allow-scripts allow-forms allow-modals" style="width:700px;height:60px;border:0" src="http://bridge.test/nested.html"></iframe></p>
+<p id="thieves"><iframe id="na" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('a', '<!-->', '<!-- --><!doctype html>'))}"></iframe>
+<iframe id="na2" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('a2', '<!-- x --!>', '<!-- --><!doctype html>'))}"></iframe>
+<iframe id="nbv" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('b-first'))}"></iframe>
+<iframe id="nv" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('v-first', `<script>setTimeout(() => { location.href = ${JSON.stringify(dataUrl(thiefPage('v')))}; }, 50);</script>`))}"></iframe>
+<iframe id="npv" name="pvn" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('pv-first'))}"></iframe>
+<iframe id="nout" name="out" sandbox="${sandbox}" style="${small}" srcdoc="&lt;p&gt;out&lt;/p&gt;"></iframe></p>
 <p id="idle">idle</p>
 <script>
 const on = (id, type, fn) => document.getElementById(id).addEventListener(type, fn);
 const nest = document.getElementById('nest');
+// B and PV: sent elsewhere once their srcdoc has loaded. PR: made by
+// script and sent elsewhere before its srcdoc loads.
+const once = (el, fn) => el.addEventListener('load', function first() { el.removeEventListener('load', first); setTimeout(fn, 50); });
+const nbv = document.getElementById('nbv');
+once(nbv, () => { nbv.contentWindow.location = ${JSON.stringify(dataUrl(thiefPage('b')))}; });
+once(document.getElementById('npv'), () => { window.frames.pvn.location = ${JSON.stringify(dataUrl(thiefPage('pv')))}; });
+const pr = document.createElement('iframe');
+pr.id = 'pr';
+pr.setAttribute('sandbox', '${sandbox}');
+pr.setAttribute('style', '${small}');
+pr.srcdoc = 'pr-first';
+document.getElementById('thieves').append(pr);
+setTimeout(() => { pr.contentWindow.location = ${JSON.stringify(dataUrl(thiefPage('pr')))}; }, 0);
+const rm = document.createElement('iframe');
+rm.id = 'rm';
+rm.setAttribute('sandbox', '${sandbox}');
+rm.setAttribute('style', '${small}');
+rm.srcdoc = 'rm-first';
+document.getElementById('thieves').append(rm);
+setTimeout(() => { rm.removeAttribute('srcdoc'); rm.src = ${JSON.stringify(dataUrl(thiefPage('rm')))}; }, 0);
+function focusThieves() {
+  ['na', 'na2', 'nbv', 'nv', 'npv', 'rm', 'pr'].forEach((id, i) => setTimeout(() => document.getElementById(id).focus(), i * 300));
+}
 on('pn', 'click', () => { window.open('https://example.com/pn-open'); nest.contentWindow.postMessage('nested-open', '*'); });
 addEventListener('message', (e) => { if (e.data === 'nested-go') window.open('https://example.com/parent-go'); });
 // Once the nested frame has loaded, the page fakes its load event and
@@ -130,7 +177,7 @@ window.addEventListener('click', (e) => {
 </script></body></html>`;
 
 const hostHtml = `<!doctype html><html><body style="margin:0">
-<iframe id="f" src="http://bridge.test/frame.html" style="width:800px;height:500px;border:0"></iframe>
+<iframe id="f" sandbox="allow-scripts allow-forms allow-modals allow-same-origin" src="http://bridge.test/frame.html" style="width:800px;height:500px;border:0"></iframe>
 <button id="away">host</button>
 <script>
 window.opened = [];
@@ -191,22 +238,30 @@ const cases = [
     await sleep(2500);
     await strayKeyup(f, page);
   }],
-  // A link in the design's own srcdoc frame (QA-065): the same rules.
-  ['NL', ['nl-link'], (f) => f.frameLocator('#nest').locator('#nl').click()],
-  ['NC', [], (f) => f.frameLocator('#nest').locator('#nc').click()],
-  ['NK', ['nk-keyup'], (f, page) => enter(f.frameLocator('#nest'), page, '#nk')],
+  // A link in the design's own srcdoc frame (QA-065): the same rules. One
+  // activation opens one tab across the frames, so each nested case starts
+  // with a press in the design frame, as a user's new activation.
+  ['NL', ['nl-link'], async (f) => { await fresh(f); await f.frameLocator('#nest').locator('#nl').click(); }],
+  // A second click within that activation: the tab is spent.
+  ['NL2', [], (f) => f.frameLocator('#nest').locator('#nl').click()],
+  ['NC', [], async (f) => { await fresh(f); await f.frameLocator('#nest').locator('#nc').click(); }],
+  ['NK', ['nk-keyup'], async (f, page) => { await fresh(f); await enter(f.frameLocator('#nest'), page, '#nk'); }],
   // One press, two frames: the nested link's click has the design frame
   // open too (NB), the design frame's click has the nested one open (PN).
-  ['NB', ['nb-link'], (f) => f.frameLocator('#nest').locator('#nb').click()],
+  ['NB', ['nb-link'], async (f) => { await fresh(f); await f.frameLocator('#nest').locator('#nb').click(); }],
   ['PN', ['pn-open'], (f) => f.locator('#pn').click()],
+  // The design frame's own press opened a tab: a nested link clicked on
+  // the same activation opens none.
+  ['PS', ['plain-click'], async (f) => { await f.locator('#plain').click(); await f.frameLocator('#nest').locator('#nl').click(); }],
   // No press of its own: the nested frame has focus, then opens on a
   // message. Forged messages from it count for nothing.
   ['NG', [], async (f, page) => {
+    await fresh(f);
     await f.frameLocator('#nest').locator('#nidle').click();
     await sleep(100);
     await page.frame({ url: /frame\.html$/ }).evaluate(() => document.getElementById('nest').contentWindow.postMessage('nested-open', '*'));
   }],
-  ['NF', [], (f) => f.frameLocator('#nest').locator('#nf').click()],
+  ['NF', [], async (f) => { await fresh(f); await f.frameLocator('#nest').locator('#nf').click(); }],
   // The same, in a frame the bridge has no copy in.
   ['NT', [], async (f, page) => {
     await f.frameLocator('#nest2').locator('#nidle').click();
@@ -215,12 +270,32 @@ const cases = [
   }],
   // Picking an element for a comment opens nothing, nested or not.
   ['NS', [], async (f, page) => {
+    await fresh(f);
     await selectMode(page, true);
     await f.frameLocator('#nest').locator('#nl').click();
     await sleep(300);
     await selectMode(page, false);
   }],
+  // A click on plain text in each thief's frame: a fresh activation and
+  // focus there, so only a port that never reached it keeps it at 0.
+  ...[['na', []], ['na2', []], ['nbv', []], ['nv', []], ['npv', []], ['rm', []], ['pr', ['stolen-pr']]].map(([id, want]) => [`T-${id}`, want, async (f) => {
+    await fresh(f);
+    await f.frameLocator(`#${id}`).locator('#t').click();
+    await sleep(600);
+  }]),
+  // Focus alone, no press: the design page focuses each thief's frame on
+  // a timer, once the activation has run out (Playwright's evaluate is a
+  // user gesture itself).
+  ['FO', [], async (f, page) => {
+    await page.frame({ url: /frame\.html$/ }).evaluate(() => setTimeout(focusThieves, 6500));
+    await sleep(6500 + 7 * 300 + 300);
+  }],
 ];
+
+// A press in the design frame: a new user activation.
+async function fresh(f) {
+  await f.locator('#idle').click();
+}
 
 async function selectMode(page, enabled) {
   await page.evaluate((on) => document.getElementById('f').contentWindow.postMessage({ type: 'od:select-mode', enabled: on }, '*'), enabled);
@@ -282,6 +357,7 @@ async function runEngine(name) {
       await page.bringToFront();
     }
     got.atLoad = atLoad;
+    got.frameName = await page.frame({ url: /frame\.html$/ }).evaluate(() => window.frames.out === document.getElementById('nout').contentWindow && document.getElementById('nout').name === 'out');
     got.nestedMode = await frame.frameLocator('#nest').locator('#nmode').textContent();
     return got;
   } finally {
@@ -302,6 +378,7 @@ try {
     }
     assert.equal(results[name].nestedMode, 'doctype', `${name} nested frame lost its doctype`);
     assert.deepEqual(results[name].atLoad, [], `${name} opened while loading`);
+    assert.equal(results[name].frameName, true, `${name} nested frame lost its name`);
   }
   console.log(`[e2e:bridge] PASS ${JSON.stringify(results)}`);
 } catch (e) {
