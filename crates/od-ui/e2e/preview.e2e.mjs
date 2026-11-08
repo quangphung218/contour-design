@@ -735,9 +735,20 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await page.getByTestId('stop').click();
   await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
   // A message sent past it that the server refuses does not send it.
-  await page.route(`${BASE}/api/runs`, (route) => route.request().method() === 'POST'
-    ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: 'boom' } }) })
-    : route.continue(), { times: 1 });
+  // Only the next POST is failed: `{ times: 1 }` would also count the app's
+  // `GET /api/runs` poll (every 3 s), which then used it up and let the
+  // send through for real (a CI flake under OD_E2E_JOBS=3).
+  const failNextRunPost = async (fail) => {
+    let used = false;
+    const handler = async (route) => {
+      if (used || route.request().method() !== 'POST') return route.fallback();
+      used = true;
+      await fail(route);
+      await page.unroute(`${BASE}/api/runs`, handler);
+    };
+    await page.route(`${BASE}/api/runs`, handler);
+  };
+  await failNextRunPost((route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: 'boom' } }) }));
   await page.getByTestId('composer').fill('refused past the queue');
   await page.getByTestId('composer').press('Enter');
   await until(async () => (await assistant.last().getAttribute('data-state')) === 'failed', 'refused send fails');
@@ -746,9 +757,7 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   assert.equal(await assistant.count(), afterRefused, 'a refused send did not send the held queue');
   await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
   // One sent past it that cannot reach Contour keeps why it waits.
-  await page.route(`${BASE}/api/runs`, (route) => route.request().method() === 'POST'
-    ? route.abort()
-    : route.continue(), { times: 1 });
+  await failNextRunPost((route) => route.abort());
   await page.getByTestId('composer').fill('unreachable past the queue');
   await page.getByTestId('composer').press('Enter');
   await until(async () => (await assistant.count()) === afterRefused + 1

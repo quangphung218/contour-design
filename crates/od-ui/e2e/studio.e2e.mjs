@@ -54,6 +54,14 @@ async function until(fn, label, timeout = 10_000) {
   throw new Error(`timed out waiting for ${label}`);
 }
 
+/** The box of `locator` once it is laid out: `boundingBox()` is null until
+ * the element is attached and visible, which lags a click under load. */
+async function boxOf(locator, label) {
+  let box = null;
+  await until(async () => (box = await locator.boundingBox()) && box.width > 0 && box.height > 0, label);
+  return box;
+}
+
 const data = mkdtempSync(join(tmpdir(), 'od-e2e-'));
 mkdirSync(OUT, { recursive: true });
 // Only the mock agent and system tools on PATH, so a real claude/codex on
@@ -854,7 +862,7 @@ try {
 
   // Draw over the preview; the image rides along with the next message.
   await page.getByTestId('draw-mode').click();
-  const box = await page.getByTestId('draw-canvas').boundingBox();
+  const box = await boxOf(page.getByTestId('draw-canvas'), 'draw canvas laid out');
   await page.mouse.move(box.x + 40, box.y + 40);
   await page.mouse.down();
   await page.mouse.move(box.x + 180, box.y + 90, { steps: 8 });
