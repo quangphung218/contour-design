@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:16px system-ui;background:#fff}
+.b{display:inline-block;margin:6px 10px;padding:10px;border:2px solid #333;background:#f4f4f4;font:16px system-ui}
+iframe{display:block;margin:6px 10px;width:900px;height:150px;border:2px solid #36c}
+#log{margin:6px 10px;font:14px monospace;background:#ffd;white-space:pre-wrap;min-height:40px}
+</style></head><body>
+<p><span class="b" id="idle">IDLE: a press in the design (opens nothing)</span>
+<button class="b" id="pn">PN: click opens, asks nested to open</button>
+<a class="b" id="top" href="http://127.0.0.1:58990/top-link" target="_blank">TOP _blank link</a></p>
+<iframe id="nest" srcdoc="<!doctype html><html><body style=&quot;margin:0;font:16px system-ui&quot;>
+<p><a id=&quot;nl&quot; href=&quot;http://127.0.0.1:58990/nl-link&quot; target=&quot;_blank&quot; style=&quot;display:inline-block;padding:10px;border:2px solid #090&quot;>NL nested _blank</a>
+<a id=&quot;nc&quot; href=&quot;http://127.0.0.1:58990/nc-link&quot; target=&quot;_blank&quot; style=&quot;display:inline-block;padding:10px;border:2px solid #900&quot;>NC cancelled</a>
+<a id=&quot;nb&quot; href=&quot;http://127.0.0.1:58990/nb-link&quot; target=&quot;_blank&quot; style=&quot;display:inline-block;padding:10px;border:2px solid #009&quot;>NB parent opens too</a></p>
+<p><button id=&quot;nk&quot; style=&quot;padding:10px;font:16px system-ui&quot;>NK Enter: keyup opens</button>
+<span id=&quot;nidle&quot; style=&quot;padding:10px&quot;>nested idle</span> <span id=&quot;nm&quot;></span></p>
+<script>
+var on=function(i,t,f){document.getElementById(i).addEventListener(t,f)};
+document.getElementById('nm').textContent=document.doctype?'doctype':'no doctype';
+on('nc','click',function(e){e.preventDefault()});
+on('nb','click',function(){parent.postMessage('nested-go','*')});
+on('nk','keyup',function(e){if(e.key==='Enter')window.open('http://127.0.0.1:58990/nk-keyup')});
+addEventListener('message',function(e){if(e.data==='nested-open')window.open('http://127.0.0.1:58990/ng-open')});
+</script></body></html>"></iframe>
+<div id="log"></div>
+<script>
+var nest=document.getElementById('nest');
+document.getElementById('pn').addEventListener('click',function(){window.open('http://127.0.0.1:58990/pn-open');nest.contentWindow.postMessage('nested-open','*')});
+addEventListener('message',function(e){if(e.data==='nested-go'){window.open('http://127.0.0.1:58990/parent-go');document.getElementById('log').textContent+='parent-go asked\n'}});
+</script>
+</body></html>
