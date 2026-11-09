@@ -371,7 +371,8 @@ async fn detection_tries_a_timed_out_probe_again() {
         &mocks,
         "claude",
         &format!(
-            r#"marker="{dir}/probed-$1-$2"
+            r#"[ "$1" = warm ] && exit 0
+marker="{dir}/probed-$1-$2"
 if [ ! -f "$marker" ]; then /usr/bin/touch "$marker"; exec /bin/sleep 6; fi
 case "$1" in --version) echo "mock 1.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "--include-partial-messages"; exit 0; fi
@@ -379,6 +380,14 @@ if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "--include-partial-messages
             dir = tmp.path().display()
         ),
     );
+    // The mock's first exec, which macOS may scan for longer than the
+    // probe's limit on a loaded machine, happens here: the first probe
+    // must reach its marker, or the retry would be the one that sleeps.
+    let warm = std::process::Command::new(mocks.join("claude"))
+        .arg("warm")
+        .status()
+        .unwrap();
+    assert!(warm.success());
     let info = od_runtime::detect::detect(&CLAUDE, mocks.as_os_str(), false).await;
     assert!(info.available);
     assert_eq!(info.version.as_deref(), Some("mock 1.0"));
