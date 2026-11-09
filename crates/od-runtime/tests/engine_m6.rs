@@ -43,8 +43,12 @@ impl Harness {
         let mut config = EngineConfig::from_env().with_path_prefix(&mocks);
         config.kill_grace = Duration::from_millis(500);
         config.retry_base = Duration::from_millis(10);
-        // A hang shows up as a failed run within seconds, not a stuck test.
-        config.idle_timeout = Some(Duration::from_secs(5));
+        // A hang shows up as a failed run, not a stuck test. No test here
+        // waits for it: 30 s, as 5 s failed up to 7 of these tests at once
+        // in `make check` on a loaded Mac, where a dozen mocks written at
+        // the same moment are scanned on their first exec before they
+        // print anything.
+        config.idle_timeout = Some(Duration::from_secs(30));
         // A mock shell reading EOF can take over the 500 ms default on a
         // loaded machine; the lingering-agent test still sees SIGTERM.
         config.exit_after_completion = Duration::from_secs(3);

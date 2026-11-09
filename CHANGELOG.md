@@ -8,6 +8,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Desktop app on macOS: stopping a design that hangs the window (a dialog loop, or Reload in "This page isn't responding") no longer leaves the window white with ⌘Q and the menu dead until Force Quit; the app opens the project again with the preview stopped, as beta.25 meant to (QA-070).
+- Desktop app: the Studio's "Preview stopped" notice now says why: the design kept opening dialogs, stopped responding, or crashed the page twice in a row, in every language (QA-071).
+
 ## [0.2.0-beta.25] - 2026-11-09
 
 ### Fixed

@@ -2278,11 +2278,17 @@ fn PreviewStopped(ctx: StudioCtx) -> impl IntoView {
         );
         ctx.run_preview_again();
     };
+    // Why the shell stopped it (QA-071): the reason in the address.
+    let why = match super::desktop::stop_reason(&location.search.get_untracked()) {
+        super::desktop::StopReason::Dialogs => t(T::PreviewStopped),
+        super::desktop::StopReason::Hung => t(T::PreviewStoppedHung),
+        super::desktop::StopReason::Crashed => t(T::PreviewStoppedCrashed),
+    };
     view! {
         <div class="empty-state preview-empty" data-testid="preview-stopped" role="status">
             <span class="empty-icon">{icon(Glyph::Desktop)}</span>
             <strong>{t(T::PreviewStoppedTitle)}</strong>
-            <p>{t(T::PreviewStopped)}</p>
+            <p>{why}</p>
             <button class="btn" data-testid="preview-run-again" on:click=run_again>
                 {t(T::RunPreviewAgain)}
             </button>
