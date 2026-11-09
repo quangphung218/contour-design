@@ -137,7 +137,7 @@ has, or Chrome.
 
 ### Build from source
 
-You need Rust 1.85+, Node.js 20+ and `trunk`. `make setup` checks them and
+You need Rust 1.89+, Node.js 20+ and `trunk`. `make setup` checks them and
 prints the command for anything missing.
 
 ```bash

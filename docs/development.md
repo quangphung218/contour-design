@@ -8,7 +8,7 @@ How to build, run, test and debug Contour from source. Start with
 
 | Tool | Used for | Install |
 |---|---|---|
-| Rust 1.85+ (edition 2024) with `rustfmt`, `clippy` | everything | [rustup.rs](https://rustup.rs) |
+| Rust 1.89+ (edition 2024) with `rustfmt`, `clippy` | everything | [rustup.rs](https://rustup.rs) |
 | target `wasm32-unknown-unknown` | the UI | `rustup target add wasm32-unknown-unknown` |
 | `trunk` | bundles the UI (Leptos → WASM) | `cargo install trunk --locked` or `brew install trunk` |
 | Node.js 20+ | e2e tests, Tauri CLI (`npx`), commitlint | `brew install node` |

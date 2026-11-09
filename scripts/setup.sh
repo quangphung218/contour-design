@@ -17,7 +17,7 @@ version_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ];
 echo "Required"
 if command -v rustup >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
   rustc_v="$(rustc --version | awk '{print $2}')"
-  if version_ge "$rustc_v" 1.85; then ok rust "$rustc_v"; else miss "rust >= 1.85 ($rustc_v)" "rustup update stable"; fi
+  if version_ge "$rustc_v" 1.89; then ok rust "$rustc_v"; else miss "rust >= 1.89 ($rustc_v)" "rustup update stable"; fi
   if rustup target list --installed | grep -qx wasm32-unknown-unknown; then
     ok wasm32-unknown-unknown "installed"
   else
