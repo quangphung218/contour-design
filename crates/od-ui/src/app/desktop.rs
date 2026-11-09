@@ -211,9 +211,8 @@ pub fn reload_ack() {
 }
 
 /// Whether the page's query (`location.search`) says the shell stopped
-/// the design's preview: it kept opening dialogs after the user blocked
-/// them and hung the window, so the shell loaded the app again with
-/// `preview=stopped` (QA-067).
+/// the design's preview: it hung or crashed the window, so the shell
+/// loaded the app again with `preview=stopped` (QA-067).
 #[must_use]
 pub fn preview_was_stopped(search: &str) -> bool {
     search
@@ -222,14 +221,48 @@ pub fn preview_was_stopped(search: &str) -> bool {
         .any(|pair| pair == "preview=stopped")
 }
 
-/// The page's query without `preview=stopped`, for the address once the
-/// preview runs again.
+/// Why the shell stopped the design's preview (QA-071): the `why` it adds
+/// next to `preview=stopped`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopReason {
+    /// The design kept opening dialogs (`why=dialogs`).
+    Dialogs,
+    /// The page did not answer View ▸ Reload and the user chose Reload
+    /// (`why=hung`).
+    Hung,
+    /// The page crashed twice in a row (`why=crashed`).
+    Crashed,
+}
+
+/// The reason in the page's query ([`StopReason`]). No `why` (or one this
+/// version does not know) reads as dialogs, the first reason the shell
+/// had.
+#[must_use]
+pub fn stop_reason(search: &str) -> StopReason {
+    let why = search
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("why="));
+    match why {
+        Some("hung") => StopReason::Hung,
+        Some("crashed") => StopReason::Crashed,
+        _ => StopReason::Dialogs,
+    }
+}
+
+/// Whether `pair` of the query is the shell's mark or its reason.
+fn is_stop_mark(pair: &str) -> bool {
+    pair == "preview=stopped" || pair.starts_with("why=")
+}
+
+/// The page's query without `preview=stopped` and its `why`, for the
+/// address once the preview runs again.
 #[must_use]
 pub fn without_preview_stopped(search: &str) -> String {
     let kept: Vec<&str> = search
         .trim_start_matches('?')
         .split('&')
-        .filter(|pair| !pair.is_empty() && *pair != "preview=stopped")
+        .filter(|pair| !pair.is_empty() && !is_stop_mark(pair))
         .collect();
     if kept.is_empty() {
         String::new()
@@ -294,10 +327,32 @@ mod tests {
     }
 
     #[test]
+    fn the_shell_says_why_it_stopped_the_preview() {
+        // QA-071: a busy loop with no dialog is not "kept opening dialogs".
+        assert_eq!(
+            stop_reason("?preview=stopped&why=dialogs"),
+            StopReason::Dialogs
+        );
+        assert_eq!(stop_reason("?preview=stopped&why=hung"), StopReason::Hung);
+        assert_eq!(
+            stop_reason("?a=1&preview=stopped&why=crashed"),
+            StopReason::Crashed
+        );
+        assert_eq!(stop_reason("?preview=stopped"), StopReason::Dialogs);
+        assert_eq!(stop_reason("?preview=stopped&why=x"), StopReason::Dialogs);
+        assert_eq!(stop_reason("?nowhy=hung"), StopReason::Dialogs);
+    }
+
+    #[test]
     fn running_again_drops_only_the_mark() {
         assert_eq!(without_preview_stopped("?preview=stopped"), "");
+        assert_eq!(without_preview_stopped("?preview=stopped&why=hung"), "");
         assert_eq!(
             without_preview_stopped("?a=1&preview=stopped&b=2"),
+            "?a=1&b=2"
+        );
+        assert_eq!(
+            without_preview_stopped("?a=1&preview=stopped&why=crashed&b=2"),
             "?a=1&b=2"
         );
         assert_eq!(without_preview_stopped(""), "");

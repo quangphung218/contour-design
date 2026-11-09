@@ -594,17 +594,20 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await until(async () => (await gateResets()) > resetsBefore, 'the preview reload resets the dialog gate');
   // QA-067: the shell opened the app again after a design hung it: the
   // Studio says so and shows no frame until Run again.
-  await desk.goto(`${BASE}/projects/${pid}?preview=stopped`);
+  // QA-071: it says why, from the shell's `why`.
+  await desk.goto(`${BASE}/projects/${pid}?preview=stopped&why=hung`);
   await desk.getByTestId('preview-stopped').waitFor();
+  assert.match(await desk.getByTestId('preview-stopped').innerText(), /stopped responding/, 'a busy page is not said to open dialogs');
   await desk.locator('[data-testid="file-row"][data-path="links.html"]').click();
   await sleep(500);
   assert.equal(await desk.locator('iframe[data-testid="preview"]').count(), 0, 'a stopped preview loads no frame');
   const resetsStopped = await gateResets();
   await desk.getByTestId('preview-run-again').click();
   await desk.frameLocator('iframe[data-testid="preview"]').locator('#out').waitFor();
-  assert.ok(!(await desk.evaluate(() => location.search)).includes('preview=stopped'), 'Run again drops the mark from the address');
+  const searchAfter = await desk.evaluate(() => location.search);
+  assert.ok(!searchAfter.includes('preview=stopped') && !searchAfter.includes('why='), 'Run again drops the mark and its reason from the address');
   assert.ok((await gateResets()) > resetsStopped, 'Run again resets the dialog gate');
-  results.dialogGate = 'the preview reload resets the dialog gate; ?preview=stopped shows the notice and no frame until Run again, which drops the mark and resets the gate';
+  results.dialogGate = 'the preview reload resets the dialog gate; ?preview=stopped&why=hung shows the notice with its reason and no frame until Run again, which drops the mark and resets the gate';
   // View ▸ Reload (⌘R) goes through the page: it answers the shell, and
   // asks first when a manual edit is not applied.
   const menuReload = () => desk.evaluate(() => window.dispatchEvent(new CustomEvent('od:menu', { detail: 'reload' })));

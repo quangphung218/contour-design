@@ -751,6 +751,8 @@ messages! {
     ReloadPreview => "Reload preview", "Tải lại preview";
     PreviewStoppedTitle => "Preview stopped", "Đã dừng preview";
     PreviewStopped => "This design kept opening dialogs, so its preview was stopped.", "Design này cứ mở hộp thoại liên tục nên preview đã bị dừng.";
+    PreviewStoppedHung => "This design stopped responding, so its preview was stopped.", "Design này không phản hồi nên preview đã bị dừng.";
+    PreviewStoppedCrashed => "This design crashed the page twice in a row, so its preview was stopped.", "Design này làm trang bị crash hai lần liên tiếp nên preview đã bị dừng.";
     RunPreviewAgain => "Run again", "Chạy lại";
     PreviewEmpty => "The preview appears when the agent writes an HTML file.", "Preview sẽ hiện khi agent ghi một file HTML.";
     DeviceDesktop => "Desktop", "Desktop";
