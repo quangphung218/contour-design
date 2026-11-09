@@ -325,7 +325,7 @@ notify 8.2.1 -- CC0-1.0 -- https://github.com/notify-rs/notify.git
 notify-debouncer-full 0.7.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/notify-rs/notify.git
 notify-types 2.1.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/notify-rs/notify.git
 nu-ansi-term 0.50.3 -- MIT -- https://github.com/nushell/nu-ansi-term
-num-conv 0.1.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/jhpratt/num-conv
+num-conv 0.2.2 -- MIT OR Apache-2.0, used under MIT -- https://github.com/jhpratt/num-conv
 num-traits 0.2.19 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-num/num-traits
 num_enum 0.7.6 -- BSD-3-Clause OR MIT OR Apache-2.0, used under MIT -- https://github.com/illicitonion/num_enum
 num_enum_derive 0.7.6 -- BSD-3-Clause OR MIT OR Apache-2.0, used under MIT -- https://github.com/illicitonion/num_enum
@@ -531,9 +531,9 @@ thiserror-impl 1.0.69 -- MIT OR Apache-2.0, used under MIT -- https://github.com
 thiserror-impl 2.0.21 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dtolnay/thiserror
 thread_local 1.1.10 -- MIT OR Apache-2.0, used under MIT -- https://github.com/Amanieu/thread_local-rs
 throw_error 0.3.0 -- MIT -- https://github.com/leptos-rs/leptos
-time 0.3.45 -- MIT OR Apache-2.0, used under MIT -- https://github.com/time-rs/time
-time-core 0.1.7 -- MIT OR Apache-2.0, used under MIT -- https://github.com/time-rs/time
-time-macros 0.2.25 -- MIT OR Apache-2.0, used under MIT -- https://github.com/time-rs/time
+time 0.3.55 -- MIT OR Apache-2.0, used under MIT -- https://github.com/time-rs/time
+time-core 0.1.9 -- MIT OR Apache-2.0, used under MIT -- https://github.com/time-rs/time
+time-macros 0.2.32 -- MIT OR Apache-2.0, used under MIT -- https://github.com/time-rs/time
 tinystr 0.8.5 -- Unicode-3.0 -- https://github.com/unicode-org/icu4x
 tinyvec 1.13.3 -- Zlib OR Apache-2.0 OR MIT, used under MIT -- https://github.com/Lokathor/tinyvec
 tokio 1.54.1 -- MIT -- https://github.com/tokio-rs/tokio
@@ -6688,10 +6688,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-Used by: num-conv 0.1.0 (LICENSE-MIT)
+Used by: num-conv 0.2.2 (LICENSE-MIT)
 ================================================================================
 
-Copyright (c) 2023 Jacob Pratt
+Copyright (c) Jacob Pratt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9203,9 +9203,9 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-Used by: time 0.3.45 (LICENSE-MIT)
-Used by: time-core 0.1.7 (LICENSE-MIT)
-Used by: time-macros 0.2.25 (LICENSE-MIT)
+Used by: time 0.3.55 (LICENSE-MIT)
+Used by: time-core 0.1.9 (LICENSE-MIT)
+Used by: time-macros 0.2.32 (LICENSE-MIT)
 ================================================================================
 
 Copyright (c) Jacob Pratt et al.

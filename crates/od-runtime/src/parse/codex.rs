@@ -160,16 +160,17 @@ impl CodexParser {
             }
             return true;
         }
-        if item_type == "todo_list" && !item_id.is_empty() {
-            if let Some(items) = item.get("items").and_then(Value::as_array) {
-                self.not_agent_message();
-                out.push(AgentEvent::ToolUse {
-                    id: item_id.to_owned(),
-                    name: "TodoWrite".to_owned(),
-                    input: todo_input(items),
-                });
-                return true;
-            }
+        if item_type == "todo_list"
+            && !item_id.is_empty()
+            && let Some(items) = item.get("items").and_then(Value::as_array)
+        {
+            self.not_agent_message();
+            out.push(AgentEvent::ToolUse {
+                id: item_id.to_owned(),
+                name: "TodoWrite".to_owned(),
+                input: todo_input(items),
+            });
+            return true;
         }
         if kind == "item.updated" {
             return false;

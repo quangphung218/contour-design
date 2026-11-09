@@ -95,12 +95,12 @@ pub(crate) fn tool_caller(
             "invalid or expired tool token",
         )
     })?;
-    if let (Some(s), Some(g)) = (supplied, grant.project_id.as_deref()) {
-        if s != g {
-            return Err(ApiErr::forbidden(
-                "projectId is derived from the tool token",
-            ));
-        }
+    if let (Some(s), Some(g)) = (supplied, grant.project_id.as_deref())
+        && s != g
+    {
+        return Err(ApiErr::forbidden(
+            "projectId is derived from the tool token",
+        ));
     }
     Ok(ToolCaller {
         project_id: grant.project_id.or_else(|| supplied.map(str::to_owned)),

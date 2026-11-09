@@ -148,10 +148,9 @@ pub fn DesignSystemsPage() -> impl IntoView {
         if current
             .as_ref()
             .is_none_or(|id| !list.iter().any(|s| &s.id == id))
+            && let Some(first) = list.first()
         {
-            if let Some(first) = list.first() {
-                selected.set(Some(first.id.clone()));
-            }
+            selected.set(Some(first.id.clone()));
         }
     });
     let count = move |sc: Scope| {
@@ -641,10 +640,8 @@ fn DsDetail(
         }
     };
     let pick_upload = move || {
-        if mine {
-            if let Some(input) = upload_ref.get_untracked() {
-                input.click();
-            }
+        if mine && let Some(input) = upload_ref.get_untracked() {
+            input.click();
         }
     };
     let on_upload = {

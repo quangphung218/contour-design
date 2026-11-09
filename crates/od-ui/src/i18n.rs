@@ -2173,10 +2173,10 @@ mod tests {
                 .lines()
                 .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
             {
-                if let Some((k, _)) = line.split_once(" = ") {
-                    if !seen.insert(k.trim()) {
-                        failures.push(format!("{tag}: {k} twice"));
-                    }
+                if let Some((k, _)) = line.split_once(" = ")
+                    && !seen.insert(k.trim())
+                {
+                    failures.push(format!("{tag}: {k} twice"));
                 }
             }
             for (key, slot) in T::ALL.iter().zip(&slots) {

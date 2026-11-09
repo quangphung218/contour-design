@@ -300,10 +300,10 @@ impl Store {
                 let chunks = events_of
                     .query_map([message_id.as_str()], |r| r.get::<_, Option<String>>(0))?;
                 for chunk in chunks {
-                    if let Some(raw) = chunk? {
-                        if let Ok(serde_json::Value::Array(list)) = serde_json::from_str(&raw) {
-                            events.extend(list);
-                        }
+                    if let Some(raw) = chunk?
+                        && let Ok(serde_json::Value::Array(list)) = serde_json::from_str(&raw)
+                    {
+                        events.extend(list);
                     }
                 }
                 status.incomplete = unfinished(&events);

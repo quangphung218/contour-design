@@ -174,11 +174,11 @@ pub async fn discover(
     let mut metadata = None;
     for name in ["oauth-authorization-server", "openid-configuration"] {
         for u in well_known(&issuer_url, name) {
-            if let Some(v) = get_json(http, &u).await? {
-                if let Ok(m) = serde_json::from_value::<AuthServerMetadata>(v) {
-                    metadata = Some(m);
-                    break;
-                }
+            if let Some(v) = get_json(http, &u).await?
+                && let Ok(m) = serde_json::from_value::<AuthServerMetadata>(v)
+            {
+                metadata = Some(m);
+                break;
             }
         }
         if metadata.is_some() {

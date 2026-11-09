@@ -320,10 +320,10 @@ fn Shelled() -> impl IntoView {
         {
             // In the Studio, Cmd/Ctrl+B shows or hides the files instead.
             ev.prevent_default();
-            if let Some(w) = web_sys::window() {
-                if let Ok(e) = web_sys::Event::new(TOGGLE_SIDEBAR_EVENT) {
-                    let _ = w.dispatch_event(&e);
-                }
+            if let Some(w) = web_sys::window()
+                && let Ok(e) = web_sys::Event::new(TOGGLE_SIDEBAR_EVENT)
+            {
+                let _ = w.dispatch_event(&e);
             }
         }
     });
@@ -578,13 +578,12 @@ fn is_mac_desktop() -> bool {
         .and_then(|w| w.navigator().user_agent().ok())
         .is_some_and(|ua| ua.contains("Mac OS"));
     let on = mac && desktop::is_desktop();
-    if on {
-        if let Some(root) = web_sys::window()
+    if on
+        && let Some(root) = web_sys::window()
             .and_then(|w| w.document())
             .and_then(|d| d.document_element())
-        {
-            let _ = root.set_attribute("data-shell", "mac");
-        }
+    {
+        let _ = root.set_attribute("data-shell", "mac");
     }
     on
 }
@@ -652,10 +651,11 @@ fn ScrollReset() -> impl IntoView {
         // the browser found no section to scroll to, the page renders later.
         if (moved || first) && !back_or_forward && !anchor.is_empty() {
             leptos::task::spawn_local(scroll_to_anchor(anchor));
-        } else if moved && !back_or_forward {
-            if let Some(main) = element_by_id("main") {
-                main.set_scroll_top(0);
-            }
+        } else if moved
+            && !back_or_forward
+            && let Some(main) = element_by_id("main")
+        {
+            main.set_scroll_top(0);
         }
         (path, hash)
     });

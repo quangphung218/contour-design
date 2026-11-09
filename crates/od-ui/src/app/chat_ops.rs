@@ -246,11 +246,10 @@ pub fn ChatResizer(ctx: StudioCtx) -> impl IntoView {
                 }
             }
             on:pointermove=move |ev: web_sys::PointerEvent| {
-                if dragging.get_untracked() {
-                    if let Some(el) = target(&ev) {
+                if dragging.get_untracked()
+                    && let Some(el) = target(&ev) {
                         resize_to(&el, f64::from(ev.client_x()));
                     }
-                }
             }
             on:pointerup=move |_| dragging.set(false)
             on:pointercancel=move |_| dragging.set(false)

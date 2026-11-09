@@ -184,10 +184,10 @@ pub fn Projects() -> impl IntoView {
                 return;
             }
             let path = format!("/api/search?q={}", api::seg(q.trim()));
-            if let Ok(r) = api::get::<HitsResponse>(&path).await {
-                if search_seq.get_value() == seq {
-                    hits.set(r.hits);
-                }
+            if let Ok(r) = api::get::<HitsResponse>(&path).await
+                && search_seq.get_value() == seq
+            {
+                hits.set(r.hits);
             }
         });
     });

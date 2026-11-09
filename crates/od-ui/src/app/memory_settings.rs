@@ -176,11 +176,11 @@ fn ImportPanel(rev: MemoryRev) -> impl IntoView {
     let on_file = move |ev: web_sys::Event| {
         let picked = super::lib_ui::picked_files(&ev);
         leptos::task::spawn_local(async move {
-            if let Some(f) = picked.into_iter().next() {
-                if let Ok(bytes) = super::lib_ui::file_bytes(&f).await {
-                    text.set(String::from_utf8_lossy(&bytes).into_owned());
-                    scan();
-                }
+            if let Some(f) = picked.into_iter().next()
+                && let Ok(bytes) = super::lib_ui::file_bytes(&f).await
+            {
+                text.set(String::from_utf8_lossy(&bytes).into_owned());
+                scan();
             }
         });
     };

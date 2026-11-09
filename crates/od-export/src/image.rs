@@ -52,7 +52,9 @@ pub fn decode_rgb(bytes: &[u8]) -> Result<Rgb, ImageError> {
     let pixels = match info.color_type {
         png::ColorType::Rgb => buf,
         png::ColorType::Rgba => buf
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| {
                 let a = u16::from(p[3]);
                 let over = |c: u8| -> u8 {
@@ -65,7 +67,9 @@ pub fn decode_rgb(bytes: &[u8]) -> Result<Rgb, ImageError> {
             .collect(),
         png::ColorType::Grayscale => buf.iter().flat_map(|&g| [g, g, g]).collect(),
         png::ColorType::GrayscaleAlpha => buf
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .flat_map(|p| {
                 let a = u16::from(p[1]);
                 let v = (u16::from(p[0]) * a + 255 * (255 - a) + 127) / 255;

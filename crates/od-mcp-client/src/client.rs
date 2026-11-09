@@ -210,10 +210,11 @@ async fn read_reply<R: tokio::io::AsyncRead + Unpin>(
         if buf.len() > MAX_MESSAGE {
             return Err(McpError::Protocol("message too large".into()));
         }
-        if let Ok(msg) = serde_json::from_slice::<Value>(&buf) {
-            if msg.get("id").and_then(Value::as_u64) == Some(id) && msg.get("method").is_none() {
-                return Ok(msg);
-            }
+        if let Ok(msg) = serde_json::from_slice::<Value>(&buf)
+            && msg.get("id").and_then(Value::as_u64) == Some(id)
+            && msg.get("method").is_none()
+        {
+            return Ok(msg);
         }
     }
 }
@@ -259,10 +260,10 @@ fn from_sse(body: &str, id: u64) -> Option<Value> {
             data.push_str(d.trim_start());
             data.push('\n');
         } else if line.is_empty() && !data.is_empty() {
-            if let Ok(msg) = serde_json::from_str::<Value>(&data) {
-                if msg.get("id").and_then(Value::as_u64) == Some(id) {
-                    return Some(msg);
-                }
+            if let Ok(msg) = serde_json::from_str::<Value>(&data)
+                && msg.get("id").and_then(Value::as_u64) == Some(id)
+            {
+                return Some(msg);
             }
             data.clear();
         }

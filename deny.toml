@@ -17,9 +17,6 @@ ignore = [
     # bundle metadata, never user input. Fixed in quick-xml 0.41.
     { id = "RUSTSEC-2026-0194", reason = "quick-xml via plist/Tauri, trusted build-time input only" },
     { id = "RUSTSEC-2026-0195", reason = "quick-xml via plist/Tauri, trusted build-time input only" },
-    # time 0.3.45 via cookie and plist (Tauri). The fix (0.3.47) needs a newer
-    # Rust than the workspace MSRV 1.85; no RFC 2822 parsing of user input.
-    { id = "RUSTSEC-2026-0009", reason = "time via Tauri cookie/plist, no RFC 2822 parsing of user input; fix needs MSRV > 1.85" },
 ]
 
 [licenses]

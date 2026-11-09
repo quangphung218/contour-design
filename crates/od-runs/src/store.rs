@@ -99,17 +99,16 @@ impl Runs {
             return Err(RunsError::InvalidId);
         }
         let mut index = self.write();
-        if let Some(key) = meta.client_request_id.as_deref() {
-            if let Some(existing) = index
+        if let Some(key) = meta.client_request_id.as_deref()
+            && let Some(existing) = index
                 .by_client_request
                 .get(key)
                 .and_then(|id| index.runs.get(id))
-            {
-                if existing.meta().request_hash != meta.request_hash {
-                    return Err(RunsError::IdempotencyConflict);
-                }
-                return Ok((Arc::clone(existing), true));
+        {
+            if existing.meta().request_hash != meta.request_hash {
+                return Err(RunsError::IdempotencyConflict);
             }
+            return Ok((Arc::clone(existing), true));
         }
         let run = Arc::new(Run::create(self.dir.join(&meta.run_id), meta)?);
         if let Some(key) = run.meta().client_request_id.clone() {

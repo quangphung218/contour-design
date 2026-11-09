@@ -202,16 +202,19 @@ pub fn lint_artifact(raw_html: &str) -> Vec<LintFinding> {
             break;
         }
     }
-    if !has(&out, "purple-gradient") {
-        if let Some(c) = PURPLE_KEYWORD_GRADIENT.captures(html) {
-            out.push(finding(
-                P0,
-                "purple-gradient",
-                format!("Found a \"{}\" keyword inside a gradient: anti-slop.", &c[1]),
-                "Remove the gradient or swap to a single solid color from the active design tokens.",
-                Some(clip(&c[0])),
-            ));
-        }
+    if !has(&out, "purple-gradient")
+        && let Some(c) = PURPLE_KEYWORD_GRADIENT.captures(html)
+    {
+        out.push(finding(
+            P0,
+            "purple-gradient",
+            format!(
+                "Found a \"{}\" keyword inside a gradient: anti-slop.",
+                &c[1]
+            ),
+            "Remove the gradient or swap to a single solid color from the active design tokens.",
+            Some(clip(&c[0])),
+        ));
     }
     if !has(&out, "purple-gradient") {
         if let Some(gradient) = blue_cyan_gradient(html) {

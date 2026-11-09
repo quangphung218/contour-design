@@ -366,11 +366,10 @@ pub fn CreateFlow(
                             <span>{t(T::CopyFrom)}</span>
                             <select class="input" data-testid="dsc-copy-from" prop:value=move || copy_from.get() on:change=move |ev| {
                                 let v = event_target_value(&ev);
-                                if name.with_untracked(|n| n.trim().is_empty()) {
-                                    if let Some(s) = systems.get_untracked().into_iter().find(|s| s.id == v) {
+                                if name.with_untracked(|n| n.trim().is_empty())
+                                    && let Some(s) = systems.get_untracked().into_iter().find(|s| s.id == v) {
                                         name.set(tf(T::CopyOfName, &[&s.title]));
                                     }
-                                }
                                 copy_from.set(v);
                             }>
                                 <option value="">{t(T::ChooseDesignSystem)}</option>

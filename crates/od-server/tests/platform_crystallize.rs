@@ -37,10 +37,10 @@ async fn run_once(d: &common::Daemon, rid: &str) -> Value {
     let id = res.json::<Value>().await.unwrap()["run"]["id"].clone();
     for _ in 0..300 {
         let runs = d.get_json(&format!("/api/routines/{rid}/runs")).await["runs"].clone();
-        if let Some(r) = runs.as_array().unwrap().iter().find(|r| r["id"] == id) {
-            if r["status"] != "running" {
-                return r.clone();
-            }
+        if let Some(r) = runs.as_array().unwrap().iter().find(|r| r["id"] == id)
+            && r["status"] != "running"
+        {
+            return r.clone();
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }

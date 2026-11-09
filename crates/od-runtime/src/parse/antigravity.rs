@@ -101,13 +101,13 @@ impl AntigravityParser {
                     });
                     return true;
                 }
-                if !self.text_emitted {
-                    if let Some(text) = str_field(result, "response").filter(|r| !r.is_empty()) {
-                        self.text_emitted = true;
-                        out.push(AgentEvent::TextDelta {
-                            delta: text.to_owned(),
-                        });
-                    }
+                if !self.text_emitted
+                    && let Some(text) = str_field(result, "response").filter(|r| !r.is_empty())
+                {
+                    self.text_emitted = true;
+                    out.push(AgentEvent::TextDelta {
+                        delta: text.to_owned(),
+                    });
                 }
                 let usage = result.get("usage").and_then(|u| {
                     map_usage(

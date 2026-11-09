@@ -70,10 +70,10 @@ pub async fn login_shell_path(shell: &OsStr) -> Option<String> {
             }
             out.extend_from_slice(&buf[..n]);
             let text = String::from_utf8_lossy(&out);
-            if let Some((_, rest)) = text.split_once(MARK) {
-                if let Some((path, _)) = rest.split_once(MARK) {
-                    return Some(path.to_owned());
-                }
+            if let Some((_, rest)) = text.split_once(MARK)
+                && let Some((path, _)) = rest.split_once(MARK)
+            {
+                return Some(path.to_owned());
             }
         }
     };

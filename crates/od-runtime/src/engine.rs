@@ -661,11 +661,10 @@ impl RunEngine {
             let mut attempt = attempt;
             if attempt.failure.is_none()
                 && matches!(def.stream_format, StreamFormat::Plain | StreamFormat::Byok)
+                && let Err(message) = write_artifacts(run, &spec.cwd, &mut attempt)
             {
-                if let Err(message) = write_artifacts(run, &spec.cwd, &mut attempt) {
-                    run.emit_error(&message, None);
-                    attempt.failure = Some((FailureCategory::AgentError, message));
-                }
+                run.emit_error(&message, None);
+                attempt.failure = Some((FailureCategory::AgentError, message));
             }
             let mut f = match attempt.failure {
                 Some((category, message)) => Finish::failed(category, message, attempt.exit_code),
@@ -800,13 +799,12 @@ impl RunEngine {
                             let verdicts = self
                                 .apply_events(run, active, &mut att, &mut guard, &mut events)
                                 .await;
-                            if let Some(message) = verdicts {
-                                if stop.is_none() {
+                            if let Some(message) = verdicts
+                                && stop.is_none() {
                                     stop = Some((FailureCategory::ToolLoop, message));
                                     let abort = parser.abort_line();
                                     escalation = Some(self.escalate(active, pgid, abort).await);
                                 }
-                            }
                             if parser.completed() && !att.protocol_completed {
                                 att.protocol_completed = true;
                                 *active.stdin.lock().await = None;
@@ -994,12 +992,11 @@ impl RunEngine {
                 }
                 AgentEvent::TextDelta { delta } => att.text_parts.push(delta.clone()),
                 AgentEvent::ToolUse { name, input, .. } => {
-                    if matches!(name.as_str(), "Write" | "Edit" | "MultiEdit") {
-                        if let Some(path) = input.get("file_path").and_then(Value::as_str) {
-                            if !att.written_files.iter().any(|p| p == path) {
-                                att.written_files.push(path.to_owned());
-                            }
-                        }
+                    if matches!(name.as_str(), "Write" | "Edit" | "MultiEdit")
+                        && let Some(path) = input.get("file_path").and_then(Value::as_str)
+                        && !att.written_files.iter().any(|p| p == path)
+                    {
+                        att.written_files.push(path.to_owned());
                     }
                 }
                 AgentEvent::TurnEnd { stop_reason }
@@ -1488,19 +1485,17 @@ async fn finish_turn(
 }
 
 fn finish(run: &Run, f: Finish, text_parts: &[String]) -> RunOutcome {
-    if f.status == RunStatus::Failed {
-        if let Some(message) = &f.error {
-            // Spawn and guard failures have no agent error of their own.
-            if matches!(
-                f.category,
-                Some(
-                    FailureCategory::SpawnFailed
-                        | FailureCategory::Timeout
-                        | FailureCategory::ToolLoop
-                )
-            ) {
-                run.emit_error(message, None);
-            }
+    if f.status == RunStatus::Failed
+        && let Some(message) = &f.error
+    {
+        // Spawn and guard failures have no agent error of their own.
+        if matches!(
+            f.category,
+            Some(
+                FailureCategory::SpawnFailed | FailureCategory::Timeout | FailureCategory::ToolLoop
+            )
+        ) {
+            run.emit_error(message, None);
         }
     }
     run.finish(RunEndPayload {

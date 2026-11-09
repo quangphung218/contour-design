@@ -197,18 +197,16 @@ pub fn set_note(html: &str, index: usize, note: &str, count: usize) -> String {
     let lower = html.to_ascii_lowercase();
     let sections = slide_sections(&lower);
     let inline = !inline_notes(html).is_empty();
-    if inline {
-        if let Some(&(start, end)) = sections.get(index) {
-            let escaped = escape_note(note);
-            return match notes_range(&lower, start, end) {
-                Some((a, b)) => format!("{}{escaped}{}", &html[..a], &html[b..]),
-                None => format!(
-                    "{}<aside class=\"notes\">{escaped}</aside>{}",
-                    &html[..end],
-                    &html[end..]
-                ),
-            };
-        }
+    if inline && let Some(&(start, end)) = sections.get(index) {
+        let escaped = escape_note(note);
+        return match notes_range(&lower, start, end) {
+            Some((a, b)) => format!("{}{escaped}{}", &html[..a], &html[b..]),
+            None => format!(
+                "{}<aside class=\"notes\">{escaped}</aside>{}",
+                &html[..end],
+                &html[end..]
+            ),
+        };
     }
     let mut notes = vec![String::new(); count.max(index + 1)];
     notes[index] = note.to_owned();

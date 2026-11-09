@@ -259,10 +259,11 @@ fn write_mapped(root: &mut Map<String, Value>, segments: &[&str], value: Value) 
                 items.resize(i + 1, Value::Null);
             }
             let item = &mut items[i];
-            if let Some(n) = next {
-                if !item.is_object() && !item.is_array() {
-                    *item = container(n);
-                }
+            if let Some(n) = next
+                && !item.is_object()
+                && !item.is_array()
+            {
+                *item = container(n);
             }
             return Ok(item);
         }
@@ -271,10 +272,11 @@ fn write_mapped(root: &mut Map<String, Value>, segments: &[&str], value: Value) 
         }
         let map = slot.as_object_mut().expect("object");
         let item = map.entry(segment.to_owned()).or_insert(Value::Null);
-        if let Some(n) = next {
-            if !item.is_object() && !item.is_array() {
-                *item = container(n);
-            }
+        if let Some(n) = next
+            && !item.is_object()
+            && !item.is_array()
+        {
+            *item = container(n);
         }
         Ok(item)
     }

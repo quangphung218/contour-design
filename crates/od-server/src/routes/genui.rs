@@ -369,15 +369,14 @@ fn decision_file(value: &Value, files: &[String], reviewer: &str) -> Result<Valu
             list("rejected_files").unwrap_or_default(),
         ),
     };
-    if decision == "partial" {
-        if let Some(missing) = files
+    if decision == "partial"
+        && let Some(missing) = files
             .iter()
             .find(|f| !accepted.contains(f) && !rejected.contains(f))
-        {
-            return Err(format!(
-                "diff-review: 'partial' decision must cover every touched file; missing {missing}"
-            ));
-        }
+    {
+        return Err(format!(
+            "diff-review: 'partial' decision must cover every touched file; missing {missing}"
+        ));
     }
     for l in [&mut accepted, &mut rejected] {
         l.sort();

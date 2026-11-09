@@ -220,10 +220,10 @@ async fn end_unlaunched(
     let comments = comments.to_vec();
     let _ = state
         .blocking(move |s| {
-            if let Some(msg) = &meta.assistant_message_id {
-                if s.get_message(msg)?.is_some() {
-                    s.finish_assistant_message(msg, "", status, 0)?;
-                }
+            if let Some(msg) = &meta.assistant_message_id
+                && s.get_message(msg)?.is_some()
+            {
+                s.finish_assistant_message(msg, "", status, 0)?;
             }
             if let (Some(project), Some(conversation)) = (&meta.project_id, &meta.conversation_id) {
                 set_comments(
@@ -718,12 +718,11 @@ async fn persist_run(
                     if ev.event == sse::AGENT && persisted(&ev.data) {
                         pending.push(ev.data.clone());
                     }
-                    if let (Some(reader), Some(delta)) = (jury.as_mut(), text_delta(&ev)) {
-                        if let Some(report) = reader.push(delta) {
+                    if let (Some(reader), Some(delta)) = (jury.as_mut(), text_delta(&ev))
+                        && let Some(report) = reader.push(delta) {
                             // Comes back through `sub` and is persisted then.
                             run.emit(sse::AGENT, critique_event(&report));
                         }
-                    }
                     pending.len() >= BATCH_MAX
                 }
                 None => break,

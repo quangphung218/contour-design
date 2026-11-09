@@ -145,7 +145,7 @@ fn next_created_at() -> i64 {
     static LAST: AtomicI64 = AtomicI64::new(0);
     let now = now_ms();
     // A compare-exchange loop, not `fetch_update`: newer toolchains deprecate
-    // it for `try_update`, which the MSRV (1.85) does not have.
+    // it for `try_update`, which the MSRV (1.89) does not have.
     let mut last = LAST.load(Ordering::SeqCst);
     loop {
         let next = now.max(last + 1);
@@ -539,11 +539,11 @@ mod tests {
 
     impl TaskPersist for SlowCancel {
         fn save(&self, record: &TaskRecord) {
-            if record.status == TaskStatus::Canceled {
-                if let Some(token) = self.free_slot.get() {
-                    token.cancel();
-                    std::thread::sleep(Duration::from_millis(150));
-                }
+            if record.status == TaskStatus::Canceled
+                && let Some(token) = self.free_slot.get()
+            {
+                token.cancel();
+                std::thread::sleep(Duration::from_millis(150));
             }
             self.inner.save(record);
         }

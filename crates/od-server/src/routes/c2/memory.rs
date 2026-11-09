@@ -83,20 +83,19 @@ pub fn prepare_turn(s: &Store, project_id: &str, message: &str) -> Result<TurnMe
             ),
         );
     }
-    if config.enabled && config.chat_extraction_enabled {
-        if let Some(Suggestion { kind, text }) = memory_index::learned_from_message(message) {
-            let known = s.list_global_memory()?.iter().any(|m| m.text == text);
-            // A full list is not this turn's failure.
-            if !known {
-                if let Ok(entry) = s.add_global_memory(&kind, &text) {
-                    // The fact is saved; an index that could not take its
-                    // line is not this run's failure.
-                    if let Err(e) = files.link(&entry) {
-                        tracing::warn!(error = %e, id = %entry.id, "linking a learned memory in MEMORY.md");
-                    }
-                    learned += 1;
-                }
+    if config.enabled
+        && config.chat_extraction_enabled
+        && let Some(Suggestion { kind, text }) = memory_index::learned_from_message(message)
+    {
+        let known = s.list_global_memory()?.iter().any(|m| m.text == text);
+        // A full list is not this turn's failure.
+        if !known && let Ok(entry) = s.add_global_memory(&kind, &text) {
+            // The fact is saved; an index that could not take its
+            // line is not this run's failure.
+            if let Err(e) = files.link(&entry) {
+                tracing::warn!(error = %e, id = %entry.id, "linking a learned memory in MEMORY.md");
             }
+            learned += 1;
         }
     }
     if learned > 0 {

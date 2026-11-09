@@ -72,12 +72,13 @@ impl CursorParser {
     /// Reconciles a whole-turn replay with the current turn's text.
     fn replay(&mut self, text: &str, out: &mut Vec<AgentEvent>) {
         let shown = &self.text_so_far[self.turn_start..];
-        if !text.is_empty() && text != shown {
-            if let Some(suffix) = text.strip_prefix(shown) {
-                let suffix = suffix.to_owned();
-                self.text_so_far.push_str(&suffix);
-                out.push(AgentEvent::TextDelta { delta: suffix });
-            }
+        if !text.is_empty()
+            && text != shown
+            && let Some(suffix) = text.strip_prefix(shown)
+        {
+            let suffix = suffix.to_owned();
+            self.text_so_far.push_str(&suffix);
+            out.push(AgentEvent::TextDelta { delta: suffix });
         }
         self.turn_start = self.text_so_far.len();
     }

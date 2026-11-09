@@ -20,10 +20,10 @@ pub fn load_notes(ctx: StudioCtx, count: u32) {
     };
     leptos::task::spawn_local(async move {
         let url = format!("{}/raw/{}", ctx.base(), api::file_path(&path));
-        if let Ok(html) = api::get_text(&url).await {
-            if ctx.active_untracked().as_deref() == Some(path.as_str()) {
-                ctx.notes.set(speaker_notes::extract(&html, count as usize));
-            }
+        if let Ok(html) = api::get_text(&url).await
+            && ctx.active_untracked().as_deref() == Some(path.as_str())
+        {
+            ctx.notes.set(speaker_notes::extract(&html, count as usize));
         }
     });
 }
@@ -99,10 +99,10 @@ pub(super) fn should_announce(remote: Option<u32>, active: u32, count: u32) -> (
 
 /// Leaves present mode, and the browser's fullscreen with it.
 fn exit_present(ctx: StudioCtx) {
-    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-        if doc.fullscreen_element().is_some() {
-            doc.exit_fullscreen();
-        }
+    if let Some(doc) = web_sys::window().and_then(|w| w.document())
+        && doc.fullscreen_element().is_some()
+    {
+        doc.exit_fullscreen();
     }
     ctx.presenting.set(false);
 }
@@ -115,10 +115,9 @@ fn present_in_tab(ctx: StudioCtx) {
     if let Some(el) = web_sys::window()
         .and_then(|w| w.document())
         .and_then(|d| d.active_element())
+        && let Ok(el) = el.dyn_into::<web_sys::HtmlElement>()
     {
-        if let Ok(el) = el.dyn_into::<web_sys::HtmlElement>() {
-            let _ = el.blur();
-        }
+        let _ = el.blur();
     }
 }
 

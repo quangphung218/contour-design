@@ -194,10 +194,10 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
 
 async fn wait_file(path: &Path) -> String {
     for _ in 0..400 {
-        if let Ok(t) = std::fs::read_to_string(path) {
-            if !t.is_empty() {
-                return t;
-            }
+        if let Ok(t) = std::fs::read_to_string(path)
+            && !t.is_empty()
+        {
+            return t;
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }

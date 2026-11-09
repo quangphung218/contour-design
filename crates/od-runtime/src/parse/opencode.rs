@@ -53,12 +53,12 @@ fn tool_input(state: Option<&Value>) -> Value {
         Value::String(s) => serde_json::from_str(&s).unwrap_or(Value::String(s)),
         other => other,
     };
-    if let Some(obj) = input.as_object_mut() {
-        if !obj.contains_key("file_path") {
-            // OpenCode 2 calls it `path`.
-            if let Some(path) = obj.get("filePath").or_else(|| obj.get("path")).cloned() {
-                obj.insert("file_path".to_owned(), path);
-            }
+    if let Some(obj) = input.as_object_mut()
+        && !obj.contains_key("file_path")
+    {
+        // OpenCode 2 calls it `path`.
+        if let Some(path) = obj.get("filePath").or_else(|| obj.get("path")).cloned() {
+            obj.insert("file_path".to_owned(), path);
         }
     }
     input
@@ -137,14 +137,14 @@ impl OpenCodeParser {
                         input: tool_input(state),
                     });
                 }
-                if let Some((content, is_error)) = state.and_then(tool_result) {
-                    if self.tool_results.insert(key) {
-                        out.push(AgentEvent::ToolResult {
-                            tool_use_id: call.to_owned(),
-                            content,
-                            is_error,
-                        });
-                    }
+                if let Some((content, is_error)) = state.and_then(tool_result)
+                    && self.tool_results.insert(key)
+                {
+                    out.push(AgentEvent::ToolResult {
+                        tool_use_id: call.to_owned(),
+                        content,
+                        is_error,
+                    });
                 }
                 true
             }

@@ -206,10 +206,10 @@ pub async fn open_runs(store: &Store, _lock: &DaemonLock) -> anyhow::Result<Arc<
         .await?
         .context("loading runs")?;
     for (run_id, orphan) in &report.interrupted {
-        if let Some(orphan) = orphan {
-            if od_runtime::process::reap_orphan(orphan.pgid, orphan.bin.as_deref()) {
-                tracing::warn!(run = %run_id, pgid = orphan.pgid, "killed an orphaned agent");
-            }
+        if let Some(orphan) = orphan
+            && od_runtime::process::reap_orphan(orphan.pgid, orphan.bin.as_deref())
+        {
+            tracing::warn!(run = %run_id, pgid = orphan.pgid, "killed an orphaned agent");
         }
     }
     let failed = store.fail_interrupted_messages()?;
@@ -284,10 +284,9 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
     if let Some(web) = std::env::var("OD_WEB_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
+        && web != local.port()
     {
-        if web != local.port() {
-            ports.push(web);
-        }
+        ports.push(web);
     }
     let state = AppState {
         store: Arc::new(store),

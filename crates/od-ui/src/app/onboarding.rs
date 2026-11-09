@@ -38,14 +38,14 @@ pub fn Onboarding() -> impl IntoView {
     let windows = on_windows();
     // Preselect the first available agent once detection answers.
     Effect::new(move |_| {
-        if picked.get_untracked().is_none() {
-            if let Some(Ok(list)) = shell.agents.get() {
-                picked.set(
-                    list.iter()
-                        .find(|a| a.available && a.id != "byok")
-                        .map(|a| a.id.clone()),
-                );
-            }
+        if picked.get_untracked().is_none()
+            && let Some(Ok(list)) = shell.agents.get()
+        {
+            picked.set(
+                list.iter()
+                    .find(|a| a.available && a.id != "byok")
+                    .map(|a| a.id.clone()),
+            );
         }
     });
     // Test the picked agent once per pick (the original auto-tests); only

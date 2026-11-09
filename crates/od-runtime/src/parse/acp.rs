@@ -406,14 +406,14 @@ impl AcpSession {
     /// Emits every call that never reached a terminal status.
     fn flush_tools(&mut self, out: &mut Vec<AgentEvent>) {
         for id in std::mem::take(&mut self.tool_order) {
-            if let Some(st) = self.tools.get_mut(&id) {
-                if !st.emitted {
-                    if st.result.is_empty() {
-                        st.result = "tool call did not finish".to_owned();
-                    }
-                    st.failed = true;
-                    emit_tool(&id, st, out);
+            if let Some(st) = self.tools.get_mut(&id)
+                && !st.emitted
+            {
+                if st.result.is_empty() {
+                    st.result = "tool call did not finish".to_owned();
                 }
+                st.failed = true;
+                emit_tool(&id, st, out);
             }
         }
     }
@@ -447,10 +447,10 @@ impl StreamParser for AcpSession {
         let method = str_field(&obj, "method");
         match (method, id) {
             (Some("session/update"), _) => {
-                if let Some(update) = obj.pointer("/params/update") {
-                    if !self.done {
-                        self.on_update(update, out);
-                    }
+                if let Some(update) = obj.pointer("/params/update")
+                    && !self.done
+                {
+                    self.on_update(update, out);
                 }
             }
             (Some(method), Some(id)) => {
@@ -756,10 +756,10 @@ fn tool_input(update: &Value, cwd: &Path) -> Map<String, Value> {
             Value::String(path.to_string_lossy().into_owned()),
         );
     }
-    if input.is_empty() {
-        if let Some(title) = str_field(update, "title").filter(|t| !t.trim().is_empty()) {
-            input.insert("title".to_owned(), Value::String(title.trim().to_owned()));
-        }
+    if input.is_empty()
+        && let Some(title) = str_field(update, "title").filter(|t| !t.trim().is_empty())
+    {
+        input.insert("title".to_owned(), Value::String(title.trim().to_owned()));
     }
     input
 }

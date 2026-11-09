@@ -263,11 +263,11 @@ pub fn Home() -> impl IntoView {
                 return;
             }
             text = scenario_text();
-            if let Some((_, c)) = crate::intent::SCENARIOS.iter().find(|(k, _)| t(*k) == text) {
-                if !chip_picked.get_untracked() {
-                    chip.set(*c);
-                    media.set(MediaOptions::defaults(*c));
-                }
+            if let Some((_, c)) = crate::intent::SCENARIOS.iter().find(|(k, _)| t(*k) == text)
+                && !chip_picked.get_untracked()
+            {
+                chip.set(*c);
+                media.set(MediaOptions::defaults(*c));
             }
         }
         if text.trim().is_empty() {
@@ -615,10 +615,10 @@ fn HomeActions(
         if desktop::is_desktop() {
             let navigate = navigate.clone();
             leptos::task::spawn_local(async move {
-                if let Some(d) = desktop::pick_folder().await {
-                    if let Err(e) = import_folder(&navigate, d).await {
-                        error.set(Some(e));
-                    }
+                if let Some(d) = desktop::pick_folder().await
+                    && let Err(e) = import_folder(&navigate, d).await
+                {
+                    error.set(Some(e));
                 }
             });
         } else {

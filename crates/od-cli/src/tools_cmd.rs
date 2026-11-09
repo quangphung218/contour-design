@@ -213,10 +213,8 @@ fn compact(body: &Value, refresh: bool) -> Value {
     if let Some(a) = body.get("artifact") {
         out.insert("artifact".to_owned(), compact_artifact(a));
     }
-    if refresh {
-        if let Some(r) = body.get("refresh") {
-            out.insert("refresh".to_owned(), r.clone());
-        }
+    if refresh && let Some(r) = body.get("refresh") {
+        out.insert("refresh".to_owned(), r.clone());
     }
     Value::Object(out)
 }
@@ -233,10 +231,10 @@ pub fn read_input(input: &Path) -> anyhow::Result<Map<String, Value>> {
     let mut artifact = read_json(input)?;
     let dir = input.parent().unwrap_or(Path::new("."));
     let mut body = Map::new();
-    if let Some(data) = read_optional_object(&dir.join("data.json"))? {
-        if let Some(doc) = artifact.get_mut("document").and_then(Value::as_object_mut) {
-            doc.insert("dataJson".to_owned(), Value::Object(data));
-        }
+    if let Some(data) = read_optional_object(&dir.join("data.json"))?
+        && let Some(doc) = artifact.get_mut("document").and_then(Value::as_object_mut)
+    {
+        doc.insert("dataJson".to_owned(), Value::Object(data));
     }
     let template = dir.join("template.html");
     match std::fs::read_to_string(&template) {

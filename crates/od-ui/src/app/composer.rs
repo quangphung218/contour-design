@@ -986,10 +986,10 @@ pub fn FilePicker(trigger: RwSignal<u32>, on_files: Callback<Vec<web_sys::File>>
     let input = NodeRef::<Input>::new();
     Effect::new(move |prev: Option<u32>| {
         let n = trigger.get();
-        if prev.is_some_and(|p| p != n) {
-            if let Some(el) = input.get_untracked() {
-                el.click();
-            }
+        if prev.is_some_and(|p| p != n)
+            && let Some(el) = input.get_untracked()
+        {
+            el.click();
         }
         n
     });

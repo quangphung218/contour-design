@@ -82,10 +82,10 @@ pub fn parse(text: &str, done: bool) -> Option<(CritiqueReport, Option<String>)>
         return Some((report, None));
     }
     let (plain, artifacts) = strip_cdata(body);
-    if let Some(head) = tag_at(&plain, 0) {
-        if let Some(n) = attr(head, "maxRounds").and_then(|v| v.parse().ok()) {
-            report.max_rounds = n;
-        }
+    if let Some(head) = tag_at(&plain, 0)
+        && let Some(n) = attr(head, "maxRounds").and_then(|v| v.parse().ok())
+    {
+        report.max_rounds = n;
     }
 
     let mut round: Option<u32> = None;
@@ -276,13 +276,11 @@ fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
             .next_back()
             .is_some_and(char::is_whitespace);
         let after = rest[i + name.len()..].trim_start();
-        if before_ok {
-            if let Some(v) = after.strip_prefix('=') {
-                let v = v.trim_start();
-                let quote = v.chars().next().filter(|q| *q == '"' || *q == '\'')?;
-                let v = &v[1..];
-                return v.find(quote).map(|end| &v[..end]);
-            }
+        if before_ok && let Some(v) = after.strip_prefix('=') {
+            let v = v.trim_start();
+            let quote = v.chars().next().filter(|q| *q == '"' || *q == '\'')?;
+            let v = &v[1..];
+            return v.find(quote).map(|end| &v[..end]);
         }
         rest = &rest[i + name.len()..];
     }
