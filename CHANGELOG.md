@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.26] - 2026-11-10
+
 ### Fixed
 
 - Desktop app on macOS: stopping a design that hangs the window (a dialog loop, or Reload in "This page isn't responding") no longer leaves the window white with ⌘Q and the menu dead until Force Quit; the app opens the project again with the preview stopped, as beta.25 meant to (QA-070).
@@ -1082,7 +1084,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.25...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.26...HEAD
+[0.2.0-beta.26]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.25...v0.2.0-beta.26
 [0.2.0-beta.25]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.24...v0.2.0-beta.25
 [0.2.0-beta.24]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.23...v0.2.0-beta.24
 [0.2.0-beta.23]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.22...v0.2.0-beta.23
