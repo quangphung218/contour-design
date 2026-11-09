@@ -15,6 +15,7 @@ const APP_COMMANDS: &[&str] = &[
     "restart_app",
     "open_link",
     "reset_dialog_gate",
+    "reload_ack",
 ];
 
 fn main() {

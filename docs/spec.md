@@ -565,6 +565,14 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
 - When the watcher drops events (FSEvents `MustScanSubDirs`, an inotify queue overflow; notify's `Flag::Rescan`) it names no path, so a `reload-all` goes out after the same 200 ms settle: the client refreshes the file list and reloads the preview, whichever file it shows. Contour addition; the original stays silent.
 - **Criterion for the Rust version**: file write → preview updates in ≤ 500 ms (excluding webview render time).
 
+**A design's `alert`, `confirm`, `prompt` in the desktop app (macOS)** (Contour addition; QA-064, QA-066 … QA-068; `apps/desktop/src/js_dialogs.rs`, `web_process.rs`):
+- WKWebView shows none by itself; the shell shows an `NSAlert` titled with the frame's origin ("This page says" for a sandboxed design). The message is cut at 2000 characters; over 400 characters or 8 lines it scrolls in a box 240 points tall, so the buttons stay on screen.
+- A dialog within 3 s of the last offers "Don't allow this design to show more dialogs". Ticked, later dialogs return at once (`confirm` `false`, `prompt` `null`) until the page loads again, another design opens, or the preview reloads (button, file change).
+- **Hang threshold**: once blocked, **50 refused dialogs within 1 s** from one webview mean the page is looping. The count is per webview, not per design: a design that asks 50 times in a finite loop after the user blocked it is stopped too. The shell ends the web content process and opens the same page again with `?preview=stopped`; the Studio shows no frame, says why, and offers Run again. Present mode goes back to the design's Studio.
+- **Crashes**: a web content process that ends by itself reloads the page; a second crash within 10 s opens it with the preview stopped; a third leaves the window as it is.
+- **View ▸ Reload (⌘R)** goes to the page first (`od:menu` `reload`): it answers the shell and reloads through its leave guard, which asks when work is not saved. A page that has not answered after 1 s may be busy, not hung: the shell asks with a native alert, "This page isn't responding", **Wait** (the default) or **Reload**. Wait asks again 5 s later if the page is still silent; Reload ends the web content process and opens the page with the design's preview stopped (`?preview=stopped`). A page that answers while the alert is up keeps the reload to itself, whichever button. ⌘Q and ⌘R reach the menu before the webview, so both work while a page hangs the window.
+- **Limit**: the dialog-loop threshold misses a design that hangs without dialogs (`while (true) {}`) or slows its loop under 50 refusals a second. ⌘R then stops the preview (Reload in the alert above), and ⌘Q quits.
+
 ### 4.2 Export: what needs a browser engine
 
 | Capability | Needs browser engine? | Why | Original app uses |

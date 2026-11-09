@@ -526,6 +526,9 @@ RecentBadge = ostatnie
 # Studio: preview
 Preview = Podgląd
 ReloadPreview = Przeładuj podgląd
+PreviewStoppedTitle = Podgląd zatrzymany
+PreviewStopped = Ten projekt ciągle otwierał okna dialogowe, więc jego podgląd zatrzymano.
+RunPreviewAgain = Uruchom ponownie
 PreviewEmpty = Podgląd pojawi się, gdy agent zapisze plik HTML.
 DeviceDesktop = Komputer
 DeviceTablet = Tablet
@@ -1706,3 +1709,4 @@ MenuWindow = Okno
 MenuMinimize = Minimalizuj
 MenuZoom = Zoom
 MenuShowDataFolder = Pokaż folder danych
+MenuReload = Odśwież

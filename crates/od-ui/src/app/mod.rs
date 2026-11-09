@@ -334,6 +334,17 @@ fn Shelled() -> impl IntoView {
             Some("shortcuts") => shell.shortcuts.set(true),
             Some("palette") => shell.palette.set(true),
             Some("settings") => click_link("/settings"),
+            // View ▸ Reload (⌘R): the shell restarts the page unless it
+            // answers; the leave guard asks first if work would be lost.
+            Some("reload") => {
+                desktop::reload_ack();
+                leave_guard::leave_then(shell, |release| {
+                    release.now();
+                    if let Some(w) = web_sys::window() {
+                        let _ = w.location().reload();
+                    }
+                });
+            }
             _ => {}
         },
     );

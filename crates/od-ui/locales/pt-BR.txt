@@ -526,6 +526,9 @@ RecentBadge = recente
 # Studio: preview
 Preview = Prévia
 ReloadPreview = Recarregar prévia
+PreviewStoppedTitle = Pré-visualização parada
+PreviewStopped = Este design continuava abrindo diálogos, então a pré-visualização foi parada.
+RunPreviewAgain = Executar de novo
 PreviewEmpty = A prévia aparece quando o agente escreve um arquivo HTML.
 DeviceDesktop = Desktop
 DeviceTablet = Tablet
@@ -1706,3 +1709,4 @@ MenuWindow = Janela
 MenuMinimize = Minimizar
 MenuZoom = Zoom
 MenuShowDataFolder = Mostrar Pasta de Dados
+MenuReload = Recarregar

@@ -527,6 +527,9 @@ RecentBadge = недавний
 # Studio: preview
 Preview = Предпросмотр
 ReloadPreview = Обновить предпросмотр
+PreviewStoppedTitle = Предпросмотр остановлен
+PreviewStopped = Этот дизайн постоянно открывал диалоги, поэтому его предпросмотр остановлен.
+RunPreviewAgain = Запустить снова
 PreviewEmpty = Предпросмотр появится, когда агент запишет HTML-файл.
 DeviceDesktop = Десктоп
 DeviceTablet = Планшет
@@ -1706,3 +1709,4 @@ MenuWindow = Окно
 MenuMinimize = Свернуть
 MenuZoom = Изменить масштаб
 MenuShowDataFolder = Показать папку данных
+MenuReload = Перезагрузить
