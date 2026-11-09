@@ -811,6 +811,32 @@ pub const PROVIDERS: [(&str, &str, &str); 15] = [
     ("tavily", "Tavily Search", "https://api.tavily.com"),
 ];
 
+/// `keyDropped` of a `PUT /api/media/config` response: providers whose
+/// saved key the daemon dropped because their base URL changed (QA-069).
+#[must_use]
+pub fn key_dropped(v: &Value) -> Vec<String> {
+    v["keyDropped"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Display names of provider ids, in [`PROVIDERS`] order.
+#[must_use]
+pub fn provider_names(ids: &[String]) -> String {
+    PROVIDERS
+        .iter()
+        .filter(|(id, _, _)| ids.iter().any(|i| i == id))
+        .map(|(_, name, _)| *name)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[component]
 fn ProvidersView() -> impl IntoView {
     let screen = ScreenTasks::current();
@@ -818,6 +844,8 @@ fn ProvidersView() -> impl IntoView {
     let keys = RwSignal::new(std::collections::HashMap::<String, String>::new());
     let urls = RwSignal::new(std::collections::HashMap::<String, String>::new());
     let status = RwSignal::new(None::<Result<(), String>>);
+    // Providers whose saved key the daemon dropped on the last save.
+    let dropped = RwSignal::new(Vec::<String>::new());
     let load = move || {
         screen.spawn(async move {
             if let Ok(v) = api::get::<Value>("/api/media/config").await {
@@ -853,6 +881,7 @@ fn ProvidersView() -> impl IntoView {
             match api::put::<_, Value>("/api/media/config", &body).await {
                 Ok(v) => {
                     keys.set(Default::default());
+                    dropped.set(key_dropped(&v));
                     config.set(Some(v));
                     status.set(Some(Ok(())));
                 }
@@ -883,6 +912,9 @@ fn ProvidersView() -> impl IntoView {
                                 <input class="input mono" type="password" autocomplete="off" data-testid=format!("provider-key-{id}") placeholder=t(T::ApiKeyPlaceholder)
                                     prop:value=move || keys.with(|k| k.get(id).cloned().unwrap_or_default())
                                     on:input=move |ev| { let v = event_target_value(&ev); keys.update(|k| { k.insert(id.to_owned(), v); }); }/>
+                                {move || dropped.with(|d| d.iter().any(|d| d == id)).then(|| view! {
+                                    <span class="error-text small" role="alert" data-testid=format!("provider-key-dropped-{id}")>{t(T::KeyDroppedNewUrl)}</span>
+                                })}
                             </label>
                             <label class="field">
                                 <span>{t(T::BaseUrl)}</span>
@@ -896,6 +928,9 @@ fn ProvidersView() -> impl IntoView {
             }).collect_view()}
             <div class="save-bar">
                 {move || match status.get() {
+                    Some(Ok(())) if dropped.with(|d| !d.is_empty()) => view! {
+                        <span class="error-text save-status" role="alert" data-testid="providers-key-dropped">{icon(Glyph::Warning)}{tf(T::SavedKeyDropped, &[&dropped.with(|d| provider_names(d))])}</span>
+                    }.into_any(),
                     Some(Ok(())) => view! { <span class="ok-text save-status" data-testid="providers-saved">{icon(Glyph::Check)}{t(T::Saved)}</span> }.into_any(),
                     Some(Err(e)) => view! { <span class="error-text">{e}</span> }.into_any(),
                     None => ().into_any(),

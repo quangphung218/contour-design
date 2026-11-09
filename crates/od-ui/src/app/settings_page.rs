@@ -899,6 +899,8 @@ fn MediaProviders() -> impl IntoView {
     let stored = RwSignal::new(Value::Null);
     let edits = RwSignal::new(Map::<String, Value>::new());
     let state = RwSignal::new(None::<Result<(), String>>);
+    // Providers whose saved key the daemon dropped on the last save.
+    let dropped = RwSignal::new(Vec::<String>::new());
     leptos::task::spawn_local(async move {
         if let Ok(v) = api::get::<Value>("/api/media/config").await {
             stored.set(v);
@@ -955,6 +957,7 @@ fn MediaProviders() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match api::put::<_, Value>("/api/media/config", &body).await {
                 Ok(v) => {
+                    dropped.set(super::media_page::key_dropped(&v));
                     stored.set(v);
                     edits.set(Map::new());
                     state.set(Some(Ok(())));
@@ -985,6 +988,9 @@ fn MediaProviders() -> impl IntoView {
                                     if tail.is_empty() { t(T::PasteApiKey).to_owned() } else { tf(T::ApiKeyStored, &[&format!("…{tail}")]) }
                                 }
                                 on:input=move |ev| set(id, "apiKey", event_target_value(&ev))/>
+                            {move || dropped.with(|d| d.iter().any(|d| d == id)).then(|| view! {
+                                <span class="error-text small" role="alert" data-testid="media-key-dropped">{t(T::KeyDroppedNewUrl)}</span>
+                            })}
                         </label>
                         <label class="field grow">
                             <span>{t(T::BaseUrl)}</span>
@@ -1003,6 +1009,9 @@ fn MediaProviders() -> impl IntoView {
             }).collect_view()}
             <div class="row end">
                 {move || match state.get() {
+                    Some(Ok(())) if dropped.with(|d| !d.is_empty()) => view! {
+                        <span class="error-text" role="alert" data-testid="media-saved-key-dropped">{tf(T::SavedKeyDropped, &[&dropped.with(|d| super::media_page::provider_names(d))])}</span>
+                    }.into_any(),
                     Some(Ok(())) => view! { <span class="ok-text">{t(T::Saved)}</span> }.into_any(),
                     Some(Err(e)) => view! { <span class="error-text">{e}</span> }.into_any(),
                     None => view! { <span class="muted small">{t(T::MediaSaveHint)}</span> }.into_any(),

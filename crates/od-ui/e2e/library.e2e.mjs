@@ -421,6 +421,20 @@ try {
   await page.getByTestId('mp4-render').click();
   await page.getByTestId('mp4-status').waitFor({ timeout: 20_000 });
   results.mp4 = (await page.getByTestId('mp4-status').textContent()).slice(0, 60);
+  // QA-069: a new base URL host with the key left empty drops the saved
+  // key (it must not reach the new host); the save says so instead of a
+  // plain "Saved", and a save after that has nothing more to report.
+  await page.getByTestId('media-tab-providers').click();
+  await page.getByTestId('provider-url-openai').fill('http://127.0.0.1:9/v1');
+  await page.getByTestId('providers-save').click();
+  await page.getByTestId('provider-key-dropped-openai').waitFor();
+  assert.match(await page.getByTestId('providers-key-dropped').textContent(), /OpenAI needs its API key again/);
+  assert.equal(await page.getByTestId('providers-saved').count(), 0, 'no plain Saved');
+  assert.equal((await api('/api/media/config')).providers.openai.configured, false, 'the daemon dropped the key');
+  await page.getByTestId('providers-save').click();
+  await page.getByTestId('providers-saved').waitFor();
+  assert.equal(await page.getByTestId('provider-key-dropped-openai').count(), 0, 'notice gone once nothing was dropped');
+  results.keyDropped = 'ok';
 
   // --------------------------------------------------------- templates
   await page.locator('nav a[href="/templates"]').click();
