@@ -19,7 +19,7 @@ pub(crate) fn menu_first(command_only: bool, key: &str) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) use mac::{kill, menu_keys_first};
+pub(crate) use mac::{ask_not_responding, kill, menu_keys_first};
 
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
@@ -28,7 +28,11 @@ mod mac {
     use block2::RcBlock;
     use objc2::runtime::NSObjectProtocol;
     use objc2::{MainThreadMarker, msg_send, sel};
-    use objc2_app_kit::{NSApplication, NSEvent, NSEventMask, NSEventModifierFlags};
+    use objc2_app_kit::{
+        NSAlert, NSAlertFirstButtonReturn, NSApplication, NSEvent, NSEventMask,
+        NSEventModifierFlags,
+    };
+    use objc2_foundation::NSString;
     use objc2_web_kit::WKWebView;
     use std::ffi::c_void;
     use std::ptr::NonNull;
@@ -59,6 +63,28 @@ mod mac {
             return false;
         }
         true
+    }
+
+    /// Asks the user about a page that did not answer View ▸ Reload:
+    /// `Some(true)` to reload it (its web content process ended),
+    /// `Some(false)` to wait. `None`, nothing shown, while a modal panel
+    /// (a page's dialog) is up. Wait is the default (Return): a page only
+    /// busy keeps its unsaved work. On the main thread.
+    pub(crate) fn ask_not_responding() -> Option<bool> {
+        let mtm = MainThreadMarker::new()?;
+        let app = NSApplication::sharedApplication(mtm);
+        if app.modalWindow().is_some() {
+            return None;
+        }
+        let alert = NSAlert::new(mtm);
+        alert.setMessageText(&NSString::from_str("This page isn't responding"));
+        alert.setInformativeText(&NSString::from_str(
+            "Wait for it, or reload it with the design's preview stopped. \
+             Changes not applied are lost.",
+        ));
+        alert.addButtonWithTitle(&NSString::from_str("Wait"));
+        alert.addButtonWithTitle(&NSString::from_str("Reload"));
+        Some(alert.runModal() != NSAlertFirstButtonReturn)
     }
 
     /// From now on ⌘Q and ⌘R ([`menu_first`]) go to the main menu before

@@ -308,9 +308,14 @@ fn stop_hung_page(app: &AppHandle) {
 }
 
 /// How long the page gets to answer View ▸ Reload ([`reload_ack`])
-/// before the shell takes it for hung and restarts it.
+/// before the shell asks the user whether to restart it.
 #[cfg(target_os = "macos")]
 const RELOAD_ACK_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// After Wait, how long until the shell asks again about a page that
+/// still has not answered.
+#[cfg(target_os = "macos")]
+const RELOAD_ASK_AGAIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// View ▸ Reload asks the page first, so its leave guard can ask about
 /// work not saved yet (a manual edit not applied); only a page that does
@@ -334,6 +339,13 @@ impl ReloadAsk {
         self.open = None;
     }
 
+    /// Whether question `token` is still open: the page has not answered
+    /// it, and no newer question replaced it.
+    #[cfg(any(target_os = "macos", test))]
+    fn is_open(&self, token: u64) -> bool {
+        self.open == Some(token)
+    }
+
     /// Whether question `token` is still open (then closed now): the
     /// page did not answer it. Only macOS restarts a page that does not.
     #[cfg(any(target_os = "macos", test))]
@@ -355,10 +367,44 @@ fn reload_ack(asks: tauri::State<'_, Mutex<ReloadAsk>>) {
     }
 }
 
+/// The user's answer to "This page isn't responding".
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NotRespondingChoice {
+    Wait,
+    Reload,
+}
+
+/// What the shell does about a View ▸ Reload the page has not answered.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NotAnswered {
+    /// End the web content process; open the page with the design's
+    /// preview stopped (the design is what hangs it).
+    Restart,
+    /// Ask again after [`RELOAD_ASK_AGAIN`].
+    AskAgainLater,
+    /// The page answered after all, or a newer Reload took over.
+    Nothing,
+}
+
+/// The step after asking the user (`choice`; `None` when no question
+/// could show, a dialog being up), the question still `open` or not. A
+/// page that is only busy may answer while the user decides: then nothing
+/// happens, whatever the choice; Reload restarts only a page still silent.
+#[cfg(any(target_os = "macos", test))]
+fn after_not_answering(open: bool, choice: Option<NotRespondingChoice>) -> NotAnswered {
+    match (open, choice) {
+        (false, _) => NotAnswered::Nothing,
+        (true, Some(NotRespondingChoice::Reload)) => NotAnswered::Restart,
+        (true, Some(NotRespondingChoice::Wait) | None) => NotAnswered::AskAgainLater,
+    }
+}
+
 /// View ▸ Reload (⌘R): the page reloads itself through its leave guard
 /// (`od:menu` `reload`). A page that does not answer within
-/// [`RELOAD_ACK_WAIT`] is hung: the shell ends its web content process and
-/// loads it again, which a plain reload would wait on (QA-067).
+/// [`RELOAD_ACK_WAIT`] may be busy or hung: the shell asks the user, from
+/// the native side, whether to wait or restart it ([`check_reload`]).
 fn reload_from_menu(app: &AppHandle) {
     let Some(token) = app
         .try_state::<Mutex<ReloadAsk>>()
@@ -368,31 +414,56 @@ fn reload_from_menu(app: &AppHandle) {
     };
     ui_action(app, "reload");
     #[cfg(target_os = "macos")]
-    {
-        let handle = app.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(RELOAD_ACK_WAIT);
-            let app = handle.clone();
-            let _ = handle.run_on_main_thread(move || {
-                let hung = app
-                    .try_state::<Mutex<ReloadAsk>>()
-                    .and_then(|asks| asks.lock().ok().map(|mut asks| asks.unanswered(token)))
-                    .unwrap_or(false);
-                if !hung {
-                    return;
-                }
-                tracing::warn!("the page did not answer Reload: restarting it");
-                if let Some(window) = app.get_webview_window("main") {
-                    match window.url() {
-                        Ok(url) => restart_page(&app, url),
-                        Err(e) => tracing::warn!(error = %e, "cannot read the page's address"),
-                    }
-                }
-            });
-        });
-    }
+    check_reload(app.clone(), token, RELOAD_ACK_WAIT);
     #[cfg(not(target_os = "macos"))]
     let _ = token;
+}
+
+/// After `wait`, if the page has still not answered Reload question
+/// `token`, asks the user "This page isn't responding": Wait asks again
+/// later, Reload ends its web content process and opens the page with the
+/// preview stopped, so a design that hangs it does not run again.
+#[cfg(target_os = "macos")]
+fn check_reload(app: AppHandle, token: u64, wait: std::time::Duration) {
+    std::thread::spawn(move || {
+        std::thread::sleep(wait);
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let open = |app: &AppHandle| {
+                app.try_state::<Mutex<ReloadAsk>>()
+                    .and_then(|asks| asks.lock().ok().map(|asks| asks.is_open(token)))
+                    .unwrap_or(false)
+            };
+            if !open(&handle) {
+                return;
+            }
+            let choice = web_process::ask_not_responding().map(|reload| {
+                if reload {
+                    NotRespondingChoice::Reload
+                } else {
+                    NotRespondingChoice::Wait
+                }
+            });
+            match after_not_answering(open(&handle), choice) {
+                NotAnswered::Nothing => {}
+                NotAnswered::AskAgainLater => check_reload(handle, token, RELOAD_ASK_AGAIN),
+                NotAnswered::Restart => {
+                    if let Some(asks) = handle.try_state::<Mutex<ReloadAsk>>() {
+                        if let Ok(mut asks) = asks.lock() {
+                            asks.unanswered(token);
+                        }
+                    }
+                    tracing::warn!("the page did not answer Reload: restarting it");
+                    if let Some(window) = handle.get_webview_window("main") {
+                        match window.url() {
+                            Ok(url) => restart_page(&handle, stopped_preview_url(&url)),
+                            Err(e) => tracing::warn!(error = %e, "cannot read the page's address"),
+                        }
+                    }
+                }
+            }
+        });
+    });
 }
 
 /// Web content crashes within this long of each other make a loop: a
@@ -1808,6 +1879,35 @@ mod tests {
         let second = asks.ask();
         assert!(!asks.unanswered(first));
         assert!(asks.unanswered(second));
+    }
+
+    #[test]
+    fn a_page_silent_after_reload_is_restarted_only_on_the_users_word() {
+        use NotAnswered::{AskAgainLater, Nothing, Restart};
+        use NotRespondingChoice::{Reload, Wait};
+        // A busy page is not killed behind the user's back: Wait, or no
+        // question shown (a dialog is up), asks again later.
+        assert_eq!(after_not_answering(true, Some(Wait)), AskAgainLater);
+        assert_eq!(after_not_answering(true, None), AskAgainLater);
+        assert_eq!(after_not_answering(true, Some(Reload)), Restart);
+        // The page answered while the user decided: its leave guard has
+        // the reload now, whatever the choice.
+        assert_eq!(after_not_answering(false, Some(Reload)), Nothing);
+        assert_eq!(after_not_answering(false, Some(Wait)), Nothing);
+        assert_eq!(after_not_answering(false, None), Nothing);
+    }
+
+    #[test]
+    fn a_reload_question_stays_open_until_answered_or_replaced() {
+        let mut asks = ReloadAsk::default();
+        let first = asks.ask();
+        assert!(asks.is_open(first));
+        assert!(asks.is_open(first), "looking does not close it");
+        let second = asks.ask();
+        assert!(!asks.is_open(first), "a newer Reload takes over");
+        assert!(asks.is_open(second));
+        asks.answered();
+        assert!(!asks.is_open(second));
     }
 
     #[test]
