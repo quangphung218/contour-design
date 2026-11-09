@@ -244,6 +244,9 @@ pub struct StudioCtx {
     pub recent: RwSignal<Vec<String>>,
     /// Bumped to reload the preview iframe.
     pub preview_rev: RwSignal<u32>,
+    /// The desktop shell stopped the design's preview: it kept opening
+    /// dialogs and hung the window (QA-067). No frame until Run again.
+    pub preview_stopped: RwSignal<bool>,
     pub notice: RwSignal<Option<String>>,
     /// The project's event stream dropped and is reconnecting.
     pub link_down: RwSignal<bool>,
@@ -453,8 +456,18 @@ impl StudioCtx {
         self.past_fit.set(None);
     }
 
+    /// Reloads the preview frame. In the desktop app the page's dialogs
+    /// show again, though the user blocked them before (QA-068).
     pub fn reload_preview(self) {
         self.preview_rev.update(|r| *r = r.wrapping_add(1));
+        super::desktop::reset_dialog_gate();
+    }
+
+    /// Runs the preview the shell stopped (QA-067). The caller drops the
+    /// mark from the address ([`PreviewStopped`]), so a reload runs it too.
+    pub fn run_preview_again(self) {
+        self.preview_stopped.set(false);
+        self.reload_preview();
     }
 
     fn on_file_changed(self, changed: FileChanged) {
@@ -1457,6 +1470,11 @@ pub fn Studio() -> impl IntoView {
         active_term: RwSignal::new(None),
         recent: RwSignal::new(Vec::new()),
         preview_rev: RwSignal::new(0),
+        preview_stopped: RwSignal::new(
+            web_sys::window()
+                .and_then(|w| w.location().search().ok())
+                .is_some_and(|search| super::desktop::preview_was_stopped(&search)),
+        ),
         notice: RwSignal::new(None),
         link_down: RwSignal::new(false),
         load_error: RwSignal::new(None),
@@ -1888,7 +1906,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
         doc.then_some(Special::Doc(path))
     });
     // Rendered pages, images and versions; reloads with the preview.
-    let page = move || match (src.get(), ctx.viewing.get()) {
+    let live_page = move || match (src.get(), ctx.viewing.get()) {
         (None, _) => view! { <PreviewEmpty ctx=ctx/> }.into_any(),
         // A version on view shows its own source, not the live file's.
         (Some(_), Some(v)) if ctx.show_code.get() => {
@@ -1947,6 +1965,14 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 </div>
                 </div>
             }.into_any()
+        }
+    };
+    // A design the shell stopped (QA-067) shows no frame until Run again.
+    let page = move || {
+        if ctx.preview_stopped.get() {
+            view! { <PreviewStopped ctx=ctx/> }.into_any()
+        } else {
+            live_page()
         }
     };
     view! {
@@ -2225,6 +2251,43 @@ fn slide_frame(scale: f64) -> String {
         "width:{}px;height:{}px;max-width:none;transform:scale({scale:.4});transform-origin:0 0",
         SLIDE_SIZE.0, SLIDE_SIZE.1
     )
+}
+
+/// The shell stopped the design's preview (QA-067): why, and the way to
+/// run it again.
+#[component]
+fn PreviewStopped(ctx: StudioCtx) -> impl IntoView {
+    let location = leptos_router::hooks::use_location();
+    let navigate = leptos_router::hooks::use_navigate();
+    // Through the router, so its own idea of the address loses the mark
+    // too (the leave guard pushes that address back).
+    let run_again = move |_| {
+        let search = location.search.get_untracked();
+        let url = format!(
+            "{}{}{}",
+            location.pathname.get_untracked(),
+            super::desktop::without_preview_stopped(&search),
+            location.hash.get_untracked()
+        );
+        navigate(
+            &url,
+            leptos_router::NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        );
+        ctx.run_preview_again();
+    };
+    view! {
+        <div class="empty-state preview-empty" data-testid="preview-stopped" role="status">
+            <span class="empty-icon">{icon(Glyph::Desktop)}</span>
+            <strong>{t(T::PreviewStoppedTitle)}</strong>
+            <p>{t(T::PreviewStopped)}</p>
+            <button class="btn" data-testid="preview-run-again" on:click=run_again>
+                {t(T::RunPreviewAgain)}
+            </button>
+        </div>
+    }
 }
 
 /// No file to show yet: what happens next and how to get there.

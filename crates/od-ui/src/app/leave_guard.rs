@@ -131,11 +131,14 @@ pub fn LeaveGuard() -> impl IntoView {
     // this document. The guard then keeps the router from following, puts
     // the entry back and asks (QA-022). Capture phase: runs before the
     // router's own listener on the window.
+    // The router's `search` has no `?` (its `hash` keeps the `#`): a page
+    // with a query pushed `/projects/p1preview=stopped`.
     let here = move || {
+        let search = location.search.get();
+        let mark = if search.is_empty() { "" } else { "?" };
         format!(
-            "{}{}{}",
+            "{}{mark}{search}{}",
             location.pathname.get(),
-            location.search.get(),
             location.hash.get()
         )
     };

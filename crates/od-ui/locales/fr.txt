@@ -527,6 +527,9 @@ RecentBadge = récent
 # Studio: preview
 Preview = Aperçu
 ReloadPreview = Recharger l'aperçu
+PreviewStoppedTitle = Aperçu arrêté
+PreviewStopped = Ce design ouvrait sans cesse des boîtes de dialogue, son aperçu a donc été arrêté.
+RunPreviewAgain = Relancer
 PreviewEmpty = L'aperçu apparaît quand l'agent écrit un fichier HTML.
 DeviceDesktop = Bureau
 DeviceTablet = Tablette
@@ -1707,3 +1710,4 @@ MenuWindow = Fenêtre
 MenuMinimize = Placer dans le Dock
 MenuZoom = Réduire/agrandir
 MenuShowDataFolder = Afficher le dossier de données
+MenuReload = Recharger

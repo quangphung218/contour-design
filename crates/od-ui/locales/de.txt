@@ -527,6 +527,9 @@ RecentBadge = zuletzt
 # Studio: preview
 Preview = Vorschau
 ReloadPreview = Vorschau neu laden
+PreviewStoppedTitle = Vorschau gestoppt
+PreviewStopped = Dieses Design hat ständig Dialoge geöffnet, daher wurde seine Vorschau gestoppt.
+RunPreviewAgain = Erneut ausführen
 PreviewEmpty = Die Vorschau erscheint, sobald der Agent eine HTML-Datei schreibt.
 DeviceDesktop = Desktop
 DeviceTablet = Tablet
@@ -1701,3 +1704,4 @@ MenuWindow = Fenster
 MenuMinimize = Im Dock ablegen
 MenuZoom = Zoomen
 MenuShowDataFolder = Datenordner zeigen
+MenuReload = Neu laden
