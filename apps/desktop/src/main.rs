@@ -335,7 +335,8 @@ impl ReloadAsk {
     }
 
     /// Whether question `token` is still open (then closed now): the
-    /// page did not answer it.
+    /// page did not answer it. Only macOS restarts a page that does not.
+    #[cfg(any(target_os = "macos", test))]
     fn unanswered(&mut self, token: u64) -> bool {
         let open = self.open == Some(token);
         if open {
