@@ -585,6 +585,60 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await desk.getByTestId('comment-draft').waitFor();
   await sleep(300);
   assert.deepEqual((await opened()).filter((c) => c.includes('/pick-')), [], 'a click in comment mode asks nothing');
+  await desk.getByTestId('comment-mode').click();
+  // QA-068: the preview's reload lifts the dialogs the user blocked, as
+  // opening another design does.
+  const gateResets = () => desk.evaluate(() => window.__shellCalls.filter((c) => c === 'reset_dialog_gate').length);
+  const resetsBefore = await gateResets();
+  await desk.locator('.reload-preview').click();
+  await until(async () => (await gateResets()) > resetsBefore, 'the preview reload resets the dialog gate');
+  // QA-067: the shell opened the app again after a design hung it: the
+  // Studio says so and shows no frame until Run again.
+  await desk.goto(`${BASE}/projects/${pid}?preview=stopped`);
+  await desk.getByTestId('preview-stopped').waitFor();
+  await desk.locator('[data-testid="file-row"][data-path="links.html"]').click();
+  await sleep(500);
+  assert.equal(await desk.locator('iframe[data-testid="preview"]').count(), 0, 'a stopped preview loads no frame');
+  const resetsStopped = await gateResets();
+  await desk.getByTestId('preview-run-again').click();
+  await desk.frameLocator('iframe[data-testid="preview"]').locator('#out').waitFor();
+  assert.ok(!(await desk.evaluate(() => location.search)).includes('preview=stopped'), 'Run again drops the mark from the address');
+  assert.ok((await gateResets()) > resetsStopped, 'Run again resets the dialog gate');
+  results.dialogGate = 'the preview reload resets the dialog gate; ?preview=stopped shows the notice and no frame until Run again, which drops the mark and resets the gate';
+  // View ▸ Reload (⌘R) goes through the page: it answers the shell, and
+  // asks first when a manual edit is not applied.
+  const menuReload = () => desk.evaluate(() => window.dispatchEvent(new CustomEvent('od:menu', { detail: 'reload' })));
+  await write('reload.html', '<!doctype html><html><body><h1>Reload me</h1><p>Text.</p></body></html>');
+  await desk.locator('[data-testid="file-row"][data-path="reload.html"]').click();
+  const deskPage = desk.frameLocator('iframe[data-testid="preview"]');
+  await deskPage.locator('h1').waitFor();
+  await desk.getByTestId('manual-edit-mode').click();
+  await until(async () => {
+    await deskPage.locator('h1').click();
+    return (await desk.getByTestId('manual-text').count()) > 0;
+  }, 'the manual edit picks the heading', 15_000);
+  // The panel settles after the pick; type once the field keeps it.
+  await until(async () => {
+    await desk.getByTestId('manual-text').fill('Not applied yet');
+    await sleep(500);
+    return (await desk.getByTestId('manual-text').inputValue()) === 'Not applied yet';
+  }, 'the manual edit keeps the typed text', 15_000);
+  await desk.evaluate(() => { window.__beforeReload = true; });
+  await menuReload();
+  await desk.getByTestId('leave-stay').waitFor();
+  assert.ok((await desk.evaluate(() => window.__shellCalls)).includes('reload_ack'), 'the page answers Reload');
+  await desk.getByTestId('leave-stay').click();
+  await sleep(500);
+  assert.equal(await desk.evaluate(() => window.__beforeReload), true, 'Cancel keeps the page');
+  assert.equal(await desk.getByTestId('manual-text').inputValue(), 'Not applied yet', 'Cancel keeps the edit');
+  await menuReload();
+  await desk.getByTestId('leave-go').click();
+  await until(() => desk.evaluate(() => window.__beforeReload !== true).catch(() => false), 'Leave reloads the page');
+  await desk.getByTestId('preview-pane').waitFor();
+  await desk.evaluate(() => { window.__beforeReload = true; });
+  await menuReload();
+  await until(() => desk.evaluate(() => window.__beforeReload !== true).catch(() => false), 'with nothing unsaved, Reload reloads at once');
+  results.menuReload = 'View ▸ Reload answers the shell (reload_ack); with a manual edit not applied it asks (Cancel keeps the edit, Leave reloads); with nothing unsaved it reloads';
   await deskContext.close();
   results.blankLinks = 'a real click on a _blank web link (also with ⌘/Ctrl) or a window.open in a click asks the shell; page-cancelled (also on window, after the bridge), same-frame, mailto, synthetic clicks, a window.open with no click (also with a made-up window.event), a second window.open in the same click, in another event of the same press (pointerup/mouseup/click, keydown/keyup, the click of a _blank link) or in a comment-mode pick, a key let go in the frame after its press began on the host, and unkeyed messages do not; a window.open of a non-web address leaves the press to the next one; a window.open in the keyup of Enter, of a page that cancels a _blank link in a window listener (before or after it opens), or after one of about:blank in the same click, asks once; a keyup after Tab out of the frame and back opens nothing; "Open in new tab" asks the shell';
 

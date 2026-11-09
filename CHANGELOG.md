@@ -8,6 +8,12 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Desktop app on macOS: a design that keeps calling `alert()` after its dialogs were blocked no longer freezes the window. After 50 refused dialogs within a second the app ends the page's web process, opens the same project again with that design's preview stopped, and says so in the Studio with a Run again button. View ▸ Reload (⌘R) reloads the page, asking first when a manual edit is not applied; for a page that does not answer within a second, a native "This page isn't responding" alert offers Wait or Reload, which stops the design's preview. ⌘Q quits even while a page hangs the window. A web process that crashes twice within 10 s opens the page with the preview stopped instead of reloading for ever (QA-067).
+- Desktop app on macOS: the preview's reload, or a file change that reloads it, lifts the dialogs blocked for the design, as opening another design does (QA-068).
+- Desktop app on macOS: a long `alert`, `confirm` or `prompt` message shows in a scrolling box of fixed height, so the dialog's buttons stay on screen (QA-066).
+
 ## [0.2.0-beta.24] - 2026-11-09
 
 ### Fixed

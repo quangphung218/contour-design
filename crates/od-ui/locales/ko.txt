@@ -527,6 +527,9 @@ RecentBadge = 최근
 # Studio: preview
 Preview = 미리보기
 ReloadPreview = 미리보기 다시 불러오기
+PreviewStoppedTitle = 미리보기 중지됨
+PreviewStopped = 이 디자인이 대화상자를 계속 열어 미리보기를 중지했습니다.
+RunPreviewAgain = 다시 실행
 PreviewEmpty = 에이전트가 HTML 파일을 작성하면 미리보기가 표시됩니다.
 DeviceDesktop = 데스크톱
 DeviceTablet = 태블릿
@@ -1706,3 +1709,4 @@ MenuWindow = 윈도우
 MenuMinimize = 최소화
 MenuZoom = 확대/축소
 MenuShowDataFolder = 데이터 폴더 보기
+MenuReload = 새로고침

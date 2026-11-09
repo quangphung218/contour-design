@@ -527,6 +527,9 @@ RecentBadge = 最近
 # Studio: preview
 Preview = プレビュー
 ReloadPreview = プレビューを再読み込み
+PreviewStoppedTitle = プレビューを停止しました
+PreviewStopped = このデザインがダイアログを開き続けたため、プレビューを停止しました。
+RunPreviewAgain = もう一度実行
 PreviewEmpty = エージェントが HTML ファイルを書き込むとプレビューが表示されます。
 DeviceDesktop = デスクトップ
 DeviceTablet = タブレット
@@ -1706,3 +1709,4 @@ MenuWindow = ウインドウ
 MenuMinimize = しまう
 MenuZoom = 拡大/縮小
 MenuShowDataFolder = データフォルダを表示
+MenuReload = 再読み込み

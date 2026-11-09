@@ -527,6 +527,9 @@ RecentBadge = friss
 # Studio: preview
 Preview = Előnézet
 ReloadPreview = Előnézet újratöltése
+PreviewStoppedTitle = Előnézet leállítva
+PreviewStopped = Ez a dizájn folyamatosan párbeszédablakokat nyitott, ezért az előnézetét leállítottuk.
+RunPreviewAgain = Futtatás újra
 PreviewEmpty = Az előnézet akkor jelenik meg, amikor az agent HTML-fájlt ír.
 DeviceDesktop = Asztali
 DeviceTablet = Táblagép
@@ -1700,3 +1703,4 @@ MenuWindow = Ablak
 MenuMinimize = Kis méret
 MenuZoom = Nagyítás
 MenuShowDataFolder = Adatmappa megjelenítése
+MenuReload = Újratöltés

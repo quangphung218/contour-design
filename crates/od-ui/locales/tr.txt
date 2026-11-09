@@ -526,6 +526,9 @@ RecentBadge = son
 # Studio: preview
 Preview = Önizleme
 ReloadPreview = Önizlemeyi yenile
+PreviewStoppedTitle = Önizleme durduruldu
+PreviewStopped = Bu tasarım sürekli iletişim kutusu açtığı için önizlemesi durduruldu.
+RunPreviewAgain = Yeniden çalıştır
 PreviewEmpty = Agent bir HTML dosyası yazınca önizleme görünür.
 DeviceDesktop = Masaüstü
 DeviceTablet = Tablet
@@ -1705,3 +1708,4 @@ MenuWindow = Pencere
 MenuMinimize = Küçült
 MenuZoom = Büyüt/Küçült
 MenuShowDataFolder = Veri Klasörünü Göster
+MenuReload = Yeniden yükle

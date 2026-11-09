@@ -527,6 +527,9 @@ RecentBadge = reciente
 # Studio: preview
 Preview = Vista previa
 ReloadPreview = Recargar vista previa
+PreviewStoppedTitle = Vista previa detenida
+PreviewStopped = Este diseño no dejaba de abrir diálogos, así que se detuvo su vista previa.
+RunPreviewAgain = Ejecutar de nuevo
 PreviewEmpty = La vista previa aparece cuando el agente escribe un archivo HTML.
 DeviceDesktop = Escritorio
 DeviceTablet = Tablet
@@ -1707,3 +1710,4 @@ MenuWindow = Ventana
 MenuMinimize = Minimizar
 MenuZoom = Zoom
 MenuShowDataFolder = Mostrar carpeta de datos
+MenuReload = Recargar
