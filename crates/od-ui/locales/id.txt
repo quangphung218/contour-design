@@ -527,6 +527,9 @@ RecentBadge = terbaru
 # Studio: preview
 Preview = Pratinjau
 ReloadPreview = Muat ulang pratinjau
+PreviewStoppedTitle = Pratinjau dihentikan
+PreviewStopped = Desain ini terus membuka dialog, jadi pratinjaunya dihentikan.
+RunPreviewAgain = Jalankan lagi
 PreviewEmpty = Pratinjau muncul saat agen menulis file HTML.
 DeviceDesktop = Desktop
 DeviceTablet = Tablet
@@ -1698,3 +1701,4 @@ MenuWindow = Jendela
 MenuMinimize = Minimalkan
 MenuZoom = Perbesar
 MenuShowDataFolder = Tampilkan Folder Data
+MenuReload = Muat ulang

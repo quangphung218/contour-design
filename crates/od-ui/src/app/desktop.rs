@@ -187,7 +187,8 @@ pub async fn save_file(bytes: &[u8], name: &str) -> Result<Option<String>, Strin
     }
 }
 
-/// The user opened another design: the shell shows the page's `alert`,
+/// The user opened another design or the preview reloaded (QA-068): the
+/// shell shows the page's `alert`,
 /// `confirm` and `prompt` again though the last design's were blocked
 /// (QA-064). Does nothing outside the desktop app.
 pub fn reset_dialog_gate() {
@@ -195,6 +196,34 @@ pub fn reset_dialog_gate() {
         wasm_bindgen_futures::spawn_local(async move {
             let _ = JsFuture::from(promise).await;
         });
+    }
+}
+
+/// Whether the page's query (`location.search`) says the shell stopped
+/// the design's preview: it kept opening dialogs after the user blocked
+/// them and hung the window, so the shell loaded the app again with
+/// `preview=stopped` (QA-067).
+#[must_use]
+pub fn preview_was_stopped(search: &str) -> bool {
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .any(|pair| pair == "preview=stopped")
+}
+
+/// The page's query without `preview=stopped`, for the address once the
+/// preview runs again.
+#[must_use]
+pub fn without_preview_stopped(search: &str) -> String {
+    let kept: Vec<&str> = search
+        .trim_start_matches('?')
+        .split('&')
+        .filter(|pair| !pair.is_empty() && *pair != "preview=stopped")
+        .collect();
+    if kept.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", kept.join("&"))
     }
 }
 
@@ -242,5 +271,24 @@ mod tests {
         assert!(!opens_another_design(Some("a"), "/present/a"));
         assert!(!opens_another_design(Some("a"), "/"));
         assert!(!opens_another_design(None, "/settings"));
+    }
+
+    #[test]
+    fn the_shell_marks_a_stopped_preview_in_the_query() {
+        assert!(preview_was_stopped("?preview=stopped"));
+        assert!(preview_was_stopped("?a=1&preview=stopped"));
+        assert!(!preview_was_stopped(""));
+        assert!(!preview_was_stopped("?preview=running"));
+        assert!(!preview_was_stopped("?xpreview=stopped"));
+    }
+
+    #[test]
+    fn running_again_drops_only_the_mark() {
+        assert_eq!(without_preview_stopped("?preview=stopped"), "");
+        assert_eq!(
+            without_preview_stopped("?a=1&preview=stopped&b=2"),
+            "?a=1&b=2"
+        );
+        assert_eq!(without_preview_stopped(""), "");
     }
 }

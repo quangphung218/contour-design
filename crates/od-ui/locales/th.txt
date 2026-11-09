@@ -527,6 +527,9 @@ RecentBadge = ล่าสุด
 # Studio: preview
 Preview = ตัวอย่าง
 ReloadPreview = โหลดตัวอย่างใหม่
+PreviewStoppedTitle = หยุดการแสดงตัวอย่างแล้ว
+PreviewStopped = ดีไซน์นี้เปิดกล่องโต้ตอบไม่หยุด จึงหยุดการแสดงตัวอย่าง
+RunPreviewAgain = เรียกใช้อีกครั้ง
 PreviewEmpty = ตัวอย่างจะปรากฏเมื่อเอเจนต์เขียนไฟล์ HTML
 DeviceDesktop = เดสก์ท็อป
 DeviceTablet = แท็บเล็ต
@@ -1698,3 +1701,4 @@ MenuWindow = หน้าต่าง
 MenuMinimize = ย่อ
 MenuZoom = ซูม
 MenuShowDataFolder = แสดงโฟลเดอร์ข้อมูล
+MenuReload = โหลดใหม่

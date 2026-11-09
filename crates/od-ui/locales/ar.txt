@@ -527,6 +527,9 @@ RecentBadge = حديث
 # Studio: preview
 Preview = معاينة
 ReloadPreview = إعادة تحميل المعاينة
+PreviewStoppedTitle = توقفت المعاينة
+PreviewStopped = ظل هذا التصميم يفتح مربعات حوار، لذا أُوقفت معاينته.
+RunPreviewAgain = شغّل مجددًا
 PreviewEmpty = تظهر المعاينة عندما يكتب الوكيل ملف HTML.
 DeviceDesktop = سطح المكتب
 DeviceTablet = جهاز لوحي
@@ -1698,3 +1701,4 @@ MenuWindow = نافذة
 MenuMinimize = تصغير
 MenuZoom = تكبير/تصغير
 MenuShowDataFolder = إظهار مجلد البيانات
+MenuReload = إعادة التحميل

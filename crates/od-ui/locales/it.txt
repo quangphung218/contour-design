@@ -527,6 +527,9 @@ RecentBadge = recente
 # Studio: preview
 Preview = Anteprima
 ReloadPreview = Ricarica anteprima
+PreviewStoppedTitle = Anteprima interrotta
+PreviewStopped = Questo design continuava ad aprire finestre di dialogo, quindi la sua anteprima è stata interrotta.
+RunPreviewAgain = Esegui di nuovo
 PreviewEmpty = L'anteprima compare quando l'agente scrive un file HTML.
 DeviceDesktop = Desktop
 DeviceTablet = Tablet
@@ -1705,3 +1708,4 @@ MenuWindow = Finestra
 MenuMinimize = Contrai
 MenuZoom = Zoom
 MenuShowDataFolder = Mostra cartella dati
+MenuReload = Ricarica

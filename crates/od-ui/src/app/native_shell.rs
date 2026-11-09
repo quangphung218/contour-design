@@ -33,6 +33,7 @@ pub fn menu_labels(locale: Locale) -> Value {
         "paste": t(T::MenuPaste),
         "selectAll": t(T::MenuSelectAll),
         "view": t(T::View),
+        "reload": t(T::MenuReload),
         "fullscreen": t(T::Fullscreen),
         "project": t(T::MenuProject),
         "openFolder": t(T::OpenFolder),
@@ -193,7 +194,7 @@ mod tests {
         assert_eq!(labels["closeWindow"], "Đóng cửa sổ");
         assert_eq!(labels["openFolder"], "Mở thư mục…");
         // Every field the shell's `MenuLabels` reads, none empty.
-        assert_eq!(labels.as_object().map(serde_json::Map::len), Some(30));
+        assert_eq!(labels.as_object().map(serde_json::Map::len), Some(31));
         assert!(labels.as_object().is_some_and(|m| {
             m.values()
                 .all(|v| v.as_str().is_some_and(|s| !s.is_empty()))

@@ -527,6 +527,9 @@ RecentBadge = اخیر
 # Studio: preview
 Preview = پیش‌نمایش
 ReloadPreview = بارگذاری مجدد
+PreviewStoppedTitle = پیش‌نمایش متوقف شد
+PreviewStopped = این طرح مدام پنجره‌های گفتگو باز می‌کرد، پس پیش‌نمایش آن متوقف شد.
+RunPreviewAgain = اجرای دوباره
 PreviewEmpty = وقتی agent یک فایل HTML بنویسد، پیش‌نمایش نمایان می‌شود.
 DeviceDesktop = دسکتاپ
 DeviceTablet = تبلت
@@ -1704,3 +1707,4 @@ MenuWindow = پنجره
 MenuMinimize = کوچک کردن
 MenuZoom = بزرگ‌نمایی
 MenuShowDataFolder = نمایش پوشه داده‌ها
+MenuReload = بارگذاری مجدد

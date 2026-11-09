@@ -749,6 +749,9 @@ messages! {
     // Studio: preview
     Preview => "Preview", "Preview";
     ReloadPreview => "Reload preview", "Tải lại preview";
+    PreviewStoppedTitle => "Preview stopped", "Đã dừng preview";
+    PreviewStopped => "This design kept opening dialogs, so its preview was stopped.", "Design này cứ mở hộp thoại liên tục nên preview đã bị dừng.";
+    RunPreviewAgain => "Run again", "Chạy lại";
     PreviewEmpty => "The preview appears when the agent writes an HTML file.", "Preview sẽ hiện khi agent ghi một file HTML.";
     DeviceDesktop => "Desktop", "Desktop";
     DeviceTablet => "Tablet", "Tablet";
@@ -1869,6 +1872,7 @@ messages! {
     MenuMinimize => "Minimize", "Thu nhỏ";
     MenuZoom => "Zoom", "Phóng to";
     MenuShowDataFolder => "Show Data Folder", "Mở thư mục dữ liệu";
+    MenuReload => "Reload", "Tải lại";
     ReportIssue => "Report issue", "Báo lỗi";
     ReportCopied => "Diagnostics copied to the clipboard.", "Đã chép thông tin chẩn đoán vào clipboard.";
     ReportCopiedDir => "Diagnostics copied to the clipboard. Logs: {0}", "Đã chép thông tin chẩn đoán vào clipboard. Log: {0}";

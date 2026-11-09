@@ -527,6 +527,9 @@ RecentBadge = 最近
 # Studio: preview
 Preview = 预览
 ReloadPreview = 重新加载预览
+PreviewStoppedTitle = 预览已停止
+PreviewStopped = 此设计不断打开对话框，因此已停止其预览。
+RunPreviewAgain = 再次运行
 PreviewEmpty = agent 写出 HTML 文件后会在这里预览。
 DeviceDesktop = 桌面端
 DeviceTablet = 平板
@@ -1703,3 +1706,4 @@ MenuWindow = 窗口
 MenuMinimize = 最小化
 MenuZoom = 缩放
 MenuShowDataFolder = 显示数据文件夹
+MenuReload = 重新加载
