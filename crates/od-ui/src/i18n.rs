@@ -1192,7 +1192,9 @@ messages! {
     TaskQueued => "queued", "đang chờ";
     TaskDone => "done", "xong";
     TaskInterrupted => "interrupted", "bị ngắt";
-    ProvidersHint => "Keys stay on this machine (media-config.json, mode 0600). Leave a key empty to keep the saved one; an empty base URL uses the provider's own.", "Key chỉ lưu trên máy này (media-config.json, quyền 0600). Để trống key thì giữ key cũ; để trống base URL thì dùng địa chỉ mặc định của provider.";
+    ProvidersHint => "Keys stay on this machine (media-config.json, mode 0600). Leave a key empty to keep the saved one; a new base URL drops it, so enter the key again. An empty base URL uses the provider's own.", "Key chỉ lưu trên máy này (media-config.json, quyền 0600). Để trống key thì giữ key cũ; đổi base URL thì key cũ bị bỏ, cần nhập lại key. Để trống base URL thì dùng địa chỉ mặc định của provider.";
+    KeyDroppedNewUrl => "New base URL: the saved key was removed. Enter the API key again.", "Base URL mới nên key đã lưu bị bỏ. Hãy nhập lại API key.";
+    SavedKeyDropped => "Saved, but {0} needs its API key again.", "Đã lưu, nhưng {0} cần nhập lại API key.";
     KeySaved => "Key saved ···{0}", "Đã lưu key ···{0}";
     KeyFromEnv => "Key from environment", "Key từ biến môi trường";
     Mp4Hint => "Renders a motion project to an MP4 saved in the project. Needs Chrome and ffmpeg.", "Render project chuyển động ra MP4 lưu trong project. Cần Chrome và ffmpeg.";
@@ -2203,6 +2205,52 @@ mod tests {
             failures.len(),
             failures.join("\n")
         );
+    }
+
+    /// Media ▸ Providers: a new base URL drops the saved key (QA-069), so
+    /// the hint must not promise an empty field always keeps it; in every
+    /// language it says the key has to be entered again.
+    #[test]
+    fn the_providers_hint_says_a_new_base_url_needs_the_key_again() {
+        const AGAIN: &[(&str, &str)] = &[
+            ("ar", "مجددًا"),
+            ("de", "erneut"),
+            ("es-ES", "de nuevo"),
+            ("fa", "دوباره"),
+            ("fr", "à nouveau"),
+            ("hu", "újra"),
+            ("id", "lagi"),
+            ("it", "di nuovo"),
+            ("ja", "もう一度"),
+            ("ko", "다시"),
+            ("pl", "ponownie"),
+            ("pt-BR", "de novo"),
+            ("ru", "заново"),
+            ("th", "อีกครั้ง"),
+            ("tr", "yeniden"),
+            ("uk", "знову"),
+            ("zh-CN", "重新"),
+            ("zh-TW", "重新"),
+        ];
+        assert!(T::ProvidersHint.text(Locale::En).contains("again"));
+        assert!(T::ProvidersHint.text(Locale::Vi).contains("nhập lại"));
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let on_demand = Locale::ALL.iter().filter(|l| l.is_loaded_on_demand());
+        assert_eq!(
+            on_demand.count(),
+            AGAIN.len(),
+            "a language without a word here"
+        );
+        for (tag, word) in AGAIN {
+            let text = std::fs::read_to_string(dir.join(format!("{tag}.txt"))).unwrap();
+            for key in ["ProvidersHint", "KeyDroppedNewUrl", "SavedKeyDropped"] {
+                let line = text
+                    .lines()
+                    .find_map(|l| l.strip_prefix(key)?.strip_prefix(" = "))
+                    .unwrap_or_default();
+                assert!(line.contains(word), "{tag} {key}: {line}");
+            }
+        }
     }
 
     /// Settings ▸ About checks for updates, and its subtitle says so in

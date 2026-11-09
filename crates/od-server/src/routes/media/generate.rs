@@ -17,7 +17,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use od_contracts::ErrorCode;
-use od_media::config::ConfigError;
+use od_media::config::{ConfigError, StoredConfig};
 use od_media::{ConfigFile, GenerateRequest, MediaError};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -70,10 +70,39 @@ pub async fn put_config(
 ) -> ApiResult<Json<Value>> {
     let file = config_file(&state);
     let file2 = file.clone();
-    tokio::task::spawn_blocking(move || file2.write(&body))
-        .await
-        .map_err(|e| ApiErr::internal(e.to_string()))??;
-    Ok(Json(file.masked(deps.env.as_ref())))
+    let dropped = tokio::task::spawn_blocking(move || {
+        let prior = file2.read();
+        file2.write(&body)?;
+        Ok::<_, ConfigError>(dropped_keys(&body, &prior, &file2.read()))
+    })
+    .await
+    .map_err(|e| ApiErr::internal(e.to_string()))??;
+    let mut v = file.masked(deps.env.as_ref());
+    v["keyDropped"] = json!(dropped);
+    Ok(Json(v))
+}
+
+/// Providers whose saved key the PUT asked to keep but the daemon dropped,
+/// because the base URL changed (QA-069): Settings asks for them again.
+fn dropped_keys(body: &Value, prior: &StoredConfig, next: &StoredConfig) -> Vec<String> {
+    let has_key =
+        |c: &StoredConfig, id: &str| c.providers.get(id).is_some_and(|p| !p.api_key.is_empty());
+    let Some(asked) = body.get("providers").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    asked
+        .iter()
+        .filter(|(_, e)| e.get("preserveApiKey") == Some(&Value::Bool(true)))
+        .filter(|(_, e)| {
+            e.get("apiKey")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+        })
+        .filter(|(id, _)| has_key(prior, id) && !has_key(next, id))
+        .map(|(id, _)| id.clone())
+        .collect()
 }
 
 pub async fn models(

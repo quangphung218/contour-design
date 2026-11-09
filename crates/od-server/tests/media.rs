@@ -858,6 +858,44 @@ async fn media_config_and_generation_write_into_the_project() {
     );
 }
 
+/// QA-069: a saved key is dropped when its base URL changes (it must not
+/// reach a new host), and the PUT says which keys went, so Settings can
+/// ask for them again instead of reporting a plain "Saved".
+#[tokio::test]
+async fn a_new_base_url_drops_the_saved_key_and_says_so() {
+    let h = harness();
+    let put = |openai: Value| {
+        let h = &h;
+        async move {
+            let res = h
+                .put("/api/media/config", json!({ "providers": { "openai": openai, "fal": { "apiKey": "", "preserveApiKey": true } } }))
+                .await;
+            assert_eq!(res.status, StatusCode::OK);
+            res.json()
+        }
+    };
+    let v = put(json!({ "apiKey": "sk-1234", "baseUrl": "http://127.0.0.1:9/v1" })).await;
+    assert_eq!(v["keyDropped"], json!([]));
+    let v =
+        put(json!({ "apiKey": "", "preserveApiKey": true, "baseUrl": "http://127.0.0.1:9/v1/" }))
+            .await;
+    assert_eq!(v["keyDropped"], json!([]), "a trailing / keeps the key");
+    assert_eq!(v["providers"]["openai"]["configured"], true);
+    let v =
+        put(json!({ "apiKey": "", "preserveApiKey": true, "baseUrl": "http://127.0.0.1:10/v1" }))
+            .await;
+    assert_eq!(v["keyDropped"], json!(["openai"]), "{v}");
+    assert_eq!(v["providers"]["openai"]["configured"], false);
+    let v =
+        put(json!({ "apiKey": "", "preserveApiKey": true, "baseUrl": "http://127.0.0.1:11/v1" }))
+            .await;
+    assert_eq!(v["keyDropped"], json!([]), "no key left to drop");
+    let v = put(json!({ "apiKey": "sk-5678", "baseUrl": "http://127.0.0.1:9/v1" })).await;
+    let v2 = put(json!({ "apiKey": "sk-9999", "baseUrl": "http://127.0.0.1:12/v1" })).await;
+    assert_eq!(v["keyDropped"], json!([]));
+    assert_eq!(v2["keyDropped"], json!([]), "a new key with the new URL");
+}
+
 #[tokio::test]
 async fn prompt_templates_carry_attribution() {
     let h = harness();
