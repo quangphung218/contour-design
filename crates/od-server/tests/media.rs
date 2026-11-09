@@ -99,6 +99,11 @@ fn content_root() -> PathBuf {
 }
 
 fn harness() -> Harness {
+    // Never pick up a real key from the machine running the tests.
+    harness_env(Arc::new(|_: &str| None))
+}
+
+fn harness_env(env: Arc<od_media::config::EnvLookup>) -> Harness {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
     let content = content_root();
@@ -124,8 +129,7 @@ fn harness() -> Harness {
     let frames = Arc::new(Frames::default());
     let deps = Deps {
         renderer: Arc::clone(&frames) as Arc<dyn Renderer>,
-        // Never pick up a real key from the machine running the tests.
-        env: Arc::new(|_: &str| None),
+        env,
         limits: od_media::Limits {
             fal_poll_interval: std::time::Duration::from_millis(10),
             fal_max_poll: std::time::Duration::from_secs(5),
@@ -894,6 +898,28 @@ async fn a_new_base_url_drops_the_saved_key_and_says_so() {
     let v2 = put(json!({ "apiKey": "sk-9999", "baseUrl": "http://127.0.0.1:12/v1" })).await;
     assert_eq!(v["keyDropped"], json!([]));
     assert_eq!(v2["keyDropped"], json!([]), "a new key with the new URL");
+}
+
+#[tokio::test]
+async fn a_dropped_key_the_environment_covers_needs_nothing() {
+    let h = harness_env(Arc::new(|k: &str| {
+        (k == "OPENAI_API_KEY").then(|| "sk-env-key".to_owned())
+    }));
+    let put = |openai: Value| {
+        h.put(
+            "/api/media/config",
+            json!({ "providers": { "openai": openai } }),
+        )
+    };
+    put(json!({ "apiKey": "sk-1234", "baseUrl": "http://127.0.0.1:9/v1" })).await;
+    let res =
+        put(json!({ "apiKey": "", "preserveApiKey": true, "baseUrl": "http://127.0.0.1:10/v1" }))
+            .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let v = res.json();
+    assert_eq!(v["keyDropped"], json!([]), "{v}");
+    assert_eq!(v["providers"]["openai"]["source"], "env");
+    assert_eq!(v["providers"]["openai"]["configured"], true);
 }
 
 #[tokio::test]

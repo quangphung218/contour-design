@@ -70,16 +70,38 @@ pub async fn put_config(
 ) -> ApiResult<Json<Value>> {
     let file = config_file(&state);
     let file2 = file.clone();
-    let dropped = tokio::task::spawn_blocking(move || {
-        let prior = file2.read();
-        file2.write(&body)?;
-        Ok::<_, ConfigError>(dropped_keys(&body, &prior, &file2.read()))
-    })
-    .await
-    .map_err(|e| ApiErr::internal(e.to_string()))??;
+    let dropped = tokio::task::spawn_blocking(move || write_config(&file2, &body, || {}))
+        .await
+        .map_err(|e| ApiErr::internal(e.to_string()))??;
     let mut v = file.masked(deps.env.as_ref());
+    // A key from the environment still configures the provider, so its
+    // dropped stored key needs nothing from the user.
+    let dropped: Vec<String> = dropped
+        .into_iter()
+        .filter(|id| v["providers"][id.as_str()]["source"] != "env")
+        .collect();
     v["keyDropped"] = json!(dropped);
     Ok(Json(v))
+}
+
+/// Writes `body` and returns [`dropped_keys`]. This route is the only
+/// writer of the file, and its lock holds the reads before and after the
+/// write, so another PUT cannot land between them and show up as a
+/// dropped key here. `after_read` runs after the first read (tests race
+/// another PUT there).
+fn write_config(
+    file: &ConfigFile,
+    body: &Value,
+    after_read: impl FnOnce(),
+) -> Result<Vec<String>, ConfigError> {
+    static PUT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = PUT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let prior = file.read();
+    after_read();
+    file.write(body)?;
+    Ok(dropped_keys(body, &prior, &file.read()))
 }
 
 /// Providers whose saved key the PUT asked to keep but the daemon dropped,
@@ -225,4 +247,38 @@ pub async fn tool_generate(
         .ok_or_else(|| ApiErr::bad_request("projectId is required"))?;
     let req = parse(body.rest)?;
     run(&state, &deps, project, req, caller.run_id.as_deref()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Tab A saves OpenAI unchanged with the key left empty while tab B
+    /// clears the configuration (spec 3.1, QA-069 follow-up). Whichever
+    /// goes first, A's URL did not change, so A reports no dropped key.
+    #[test]
+    fn a_racing_clear_is_not_reported_as_a_dropped_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = ConfigFile::in_dir(tmp.path());
+        let url = "http://127.0.0.1:9/v1";
+        file.write(&json!({ "providers": { "openai": { "apiKey": "sk-1234", "baseUrl": url } } }))
+            .unwrap();
+        let keep = json!({ "providers": { "openai": { "apiKey": "", "preserveApiKey": true, "baseUrl": url } } });
+        let (done, finished) = mpsc::channel();
+        std::thread::scope(|s| {
+            let dropped = write_config(&file, &keep, || {
+                let file = file.clone();
+                s.spawn(move || {
+                    write_config(&file, &json!({ "providers": {} }), || {}).unwrap();
+                    done.send(()).unwrap();
+                });
+                // Without the lock the clear lands here; with it, it waits.
+                let _ = finished.recv_timeout(Duration::from_millis(300));
+            })
+            .unwrap();
+            assert!(dropped.is_empty(), "{dropped:?}");
+        });
+    }
 }
