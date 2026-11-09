@@ -298,15 +298,15 @@ fn coerce(raw: &str) -> Value {
         "null" | "~" => return Value::Null,
         _ => {}
     }
-    if INT_RE.is_match(v) {
-        if let Ok(n) = v.parse::<i64>() {
-            return Value::Number(n.into());
-        }
+    if INT_RE.is_match(v)
+        && let Ok(n) = v.parse::<i64>()
+    {
+        return Value::Number(n.into());
     }
-    if INT_RE.is_match(v) || FLOAT_RE.is_match(v) {
-        if let Some(n) = v.parse::<f64>().ok().and_then(Number::from_f64) {
-            return Value::Number(n);
-        }
+    if (INT_RE.is_match(v) || FLOAT_RE.is_match(v))
+        && let Some(n) = v.parse::<f64>().ok().and_then(Number::from_f64)
+    {
+        return Value::Number(n);
     }
     Value::String(v.to_owned())
 }

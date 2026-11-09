@@ -135,10 +135,10 @@ impl ClaudeParser {
         if parent.is_some() {
             return;
         }
-        if let Some(id) = message_id {
-            if !self.turn_end_emitted.insert(id) {
-                return;
-            }
+        if let Some(id) = message_id
+            && !self.turn_end_emitted.insert(id)
+        {
+            return;
         }
         out.push(AgentEvent::TurnEnd {
             stop_reason: stop_reason.to_owned(),
@@ -337,10 +337,10 @@ impl ClaudeParser {
         for block in content {
             match str_field(block, "type").unwrap_or_default() {
                 "tool_use" => {
-                    if let Some(id) = str_field(block, "id") {
-                        if !self.emitted_tool_ids.insert(id.to_owned()) {
-                            continue;
-                        }
+                    if let Some(id) = str_field(block, "id")
+                        && !self.emitted_tool_ids.insert(id.to_owned())
+                    {
+                        continue;
                     }
                     let input = self.wrapper_tool_input(block);
                     let id = str_field(block, "id").unwrap_or_default().to_owned();
@@ -369,19 +369,19 @@ impl ClaudeParser {
             self.turn_end_once(id, &stop, parent, out);
         }
         // A sub-agent's in-stream error must not fail the main turn.
-        if let Some(code) = str_field(obj, "error").filter(|e| !e.trim().is_empty()) {
-            if parent.is_none() {
-                let text = assistant_text(content);
-                out.push(AgentEvent::Error {
-                    message: if text.is_empty() {
-                        code.to_owned()
-                    } else {
-                        text
-                    },
-                    code: Some(code.to_owned()),
-                    terminal: false,
-                });
-            }
+        if let Some(code) = str_field(obj, "error").filter(|e| !e.trim().is_empty())
+            && parent.is_none()
+        {
+            let text = assistant_text(content);
+            out.push(AgentEvent::Error {
+                message: if text.is_empty() {
+                    code.to_owned()
+                } else {
+                    text
+                },
+                code: Some(code.to_owned()),
+                terminal: false,
+            });
         }
         self.current_streamed_text = false;
         self.current_streamed_thinking = false;

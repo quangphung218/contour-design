@@ -232,10 +232,10 @@ pub fn rebuild_tokens(css: &str, a2: &[Token]) -> Option<String> {
     let has = |n: &str| have.iter().any(|t| t.name == n);
     let mut lines: Vec<String> = Vec::new();
     for name in A1_IDENTITY.iter().chain(&A1_STRUCTURE) {
-        if !has(name) {
-            if let Some(v) = structure_fallback(name) {
-                lines.push(format!("  {name}: {v};"));
-            }
+        if !has(name)
+            && let Some(v) = structure_fallback(name)
+        {
+            lines.push(format!("  {name}: {v};"));
         }
     }
     for d in a2 {

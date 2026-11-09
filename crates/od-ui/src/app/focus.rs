@@ -48,10 +48,10 @@ pub fn return_focus_on_cleanup() {
             let lost = doc
                 .active_element()
                 .is_none_or(|a| doc.body().is_some_and(|b| *b == a));
-            if let Some(o) = opener.filter(|o| lost && o.is_connected()) {
-                if let Ok(o) = o.dyn_into::<web_sys::HtmlElement>() {
-                    let _ = o.focus();
-                }
+            if let Some(o) = opener.filter(|o| lost && o.is_connected())
+                && let Ok(o) = o.dyn_into::<web_sys::HtmlElement>()
+            {
+                let _ = o.focus();
             }
         });
     });

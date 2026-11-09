@@ -284,10 +284,8 @@ impl Run {
         if lifecycle || inner.last_flush.elapsed() >= FLUSH_INTERVAL {
             flush(&mut inner, &self.meta.run_id);
         }
-        if lifecycle {
-            if let Err(err) = self.write_state(&inner) {
-                tracing::warn!(run = %self.meta.run_id, error = %err, "state.json write failed");
-            }
+        if lifecycle && let Err(err) = self.write_state(&inner) {
+            tracing::warn!(run = %self.meta.run_id, error = %err, "state.json write failed");
         }
         if event == sse::END {
             inner.writer = None;
@@ -393,10 +391,10 @@ impl Run {
 }
 
 fn flush(inner: &mut Inner, run_id: &str) {
-    if let Some(writer) = inner.writer.as_mut() {
-        if let Err(err) = writer.flush() {
-            tracing::warn!(run = %run_id, error = %err, "events.jsonl flush failed");
-        }
+    if let Some(writer) = inner.writer.as_mut()
+        && let Err(err) = writer.flush()
+    {
+        tracing::warn!(run = %run_id, error = %err, "events.jsonl flush failed");
     }
     inner.dirty = false;
     inner.last_flush = Instant::now();

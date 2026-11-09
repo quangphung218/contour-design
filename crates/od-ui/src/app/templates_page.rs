@@ -483,11 +483,10 @@ fn PromptGallery(
                                         let path = path.clone();
                                         let id = id.clone();
                                         leptos::task::spawn_local(async move {
-                                            if let Ok(v) = api::get::<Value>(&path).await {
-                                                if copy_text(v["promptTemplate"]["prompt"].as_str().unwrap_or_default()).await.is_ok() {
+                                            if let Ok(v) = api::get::<Value>(&path).await
+                                                && copy_text(v["promptTemplate"]["prompt"].as_str().unwrap_or_default()).await.is_ok() {
                                                     copied.set(Some(id));
                                                 }
-                                            }
                                         });
                                     }>
                                         {move || if copied.get().as_deref() == Some(id_copied.as_str()) { view! { {icon(Glyph::Check)}{t(T::Copied)} }.into_any() } else { view! { {icon(Glyph::Duplicate)}{t(T::CopyPrompt)} }.into_any() }}
@@ -552,11 +551,10 @@ fn MyTemplates() -> impl IntoView {
                     <span>{t(T::ProjectLabel)}</span>
                     <select class="input" data-testid="tpl-save-project" prop:value=move || project.get() on:change=move |ev| {
                         let v = event_target_value(&ev);
-                        if name.with_untracked(String::is_empty) {
-                            if let Some(p) = projects.with_untracked(|l| l.iter().find(|p| p.id == v).cloned()) {
+                        if name.with_untracked(String::is_empty)
+                            && let Some(p) = projects.with_untracked(|l| l.iter().find(|p| p.id == v).cloned()) {
                                 name.set(p.name);
                             }
-                        }
                         project.set(v);
                     }>
                         <option value="">{t(T::ChooseProject)}</option>

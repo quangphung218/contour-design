@@ -14,10 +14,10 @@ use tokio_tungstenite::tungstenite::Message;
 async fn wait_for_url(data: &Path) -> String {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
-        if let Ok(text) = std::fs::read_to_string(data.join("daemon.lock")) {
-            if text.contains("http://") {
-                return text.trim().to_owned();
-            }
+        if let Ok(text) = std::fs::read_to_string(data.join("daemon.lock"))
+            && text.contains("http://")
+        {
+            return text.trim().to_owned();
         }
         assert!(
             tokio::time::Instant::now() < deadline,

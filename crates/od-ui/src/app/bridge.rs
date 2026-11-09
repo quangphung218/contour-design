@@ -62,10 +62,10 @@ fn same(a: &JsValue, b: &JsValue) -> bool {
 pub fn decode(ev: &MessageEvent) -> Option<(Source, BridgeMsg)> {
     let source: JsValue = ev.source()?.into();
     let msg = BridgeMsg::decode(&String::from(js_sys::JSON::stringify(&ev.data()).ok()?))?;
-    if let Some(win) = frame(MAIN_FRAME).and_then(|f| f.content_window()) {
-        if same(&source, &win) {
-            return Some((Source::Main, msg));
-        }
+    if let Some(win) = frame(MAIN_FRAME).and_then(|f| f.content_window())
+        && same(&source, &win)
+    {
+        return Some((Source::Main, msg));
     }
     let thumbs = document()?.query_selector_all(THUMB_FRAMES).ok()?;
     for i in 0..thumbs.length() {

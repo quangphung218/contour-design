@@ -157,27 +157,28 @@ fn with_legacy_stop_reason(name: &str, keep_stream_events: bool, only_parented: 
         let ev = &f["event"];
         if ev["type"] == "message_start" {
             open = ev["message"]["id"].as_str().map(str::to_owned);
-        } else if ev["type"] == "message_delta" {
-            if let (Some(id), Some(stop)) = (&open, ev["delta"]["stop_reason"].as_str()) {
-                stop_by_message.insert(id.clone(), stop.to_owned());
-            }
+        } else if ev["type"] == "message_delta"
+            && let (Some(id), Some(stop)) = (&open, ev["delta"]["stop_reason"].as_str())
+        {
+            stop_by_message.insert(id.clone(), stop.to_owned());
         }
     }
     for f in &all {
-        if f["type"] == "assistant" && !f["parent_tool_use_id"].is_null() {
-            if let Some(id) = f["message"]["id"].as_str() {
-                stop_by_message
-                    .entry(id.to_owned())
-                    .or_insert_with(|| "end_turn".to_owned());
-            }
+        if f["type"] == "assistant"
+            && !f["parent_tool_use_id"].is_null()
+            && let Some(id) = f["message"]["id"].as_str()
+        {
+            stop_by_message
+                .entry(id.to_owned())
+                .or_insert_with(|| "end_turn".to_owned());
         }
     }
     let mut last_index = std::collections::HashMap::new();
     for (i, f) in all.iter().enumerate() {
-        if f["type"] == "assistant" {
-            if let Some(id) = f["message"]["id"].as_str() {
-                last_index.insert(id.to_owned(), i);
-            }
+        if f["type"] == "assistant"
+            && let Some(id) = f["message"]["id"].as_str()
+        {
+            last_index.insert(id.to_owned(), i);
         }
     }
     let mut out = Vec::new();
@@ -189,12 +190,12 @@ fn with_legacy_stop_reason(name: &str, keep_stream_events: bool, only_parented: 
         if f["type"] == "assistant" {
             let id = f["message"]["id"].as_str().map(str::to_owned);
             let eligible = !only_parented || !f["parent_tool_use_id"].is_null();
-            if let Some(id) = id {
-                if eligible && last_index.get(&id) == Some(&i) {
-                    if let Some(stop) = stop_by_message.get(&id) {
-                        f["message"]["stop_reason"] = Value::String(stop.clone());
-                    }
-                }
+            if let Some(id) = id
+                && eligible
+                && last_index.get(&id) == Some(&i)
+                && let Some(stop) = stop_by_message.get(&id)
+            {
+                f["message"]["stop_reason"] = Value::String(stop.clone());
             }
         }
         out.push(f);

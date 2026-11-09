@@ -888,10 +888,10 @@ fn grok_build_args(input: &ArgvInput<'_>) -> Vec<String> {
     if let Some(model) = non_default(input.model) {
         args.extend(["--model".to_owned(), model.to_owned()]);
     }
-    if let Some(effort) = input.reasoning.filter(|r| !r.is_empty()) {
-        if grok_reasoning_model(input.model) {
-            args.extend(["--effort".to_owned(), effort.to_owned()]);
-        }
+    if let Some(effort) = input.reasoning.filter(|r| !r.is_empty())
+        && grok_reasoning_model(input.model)
+    {
+        args.extend(["--effort".to_owned(), effort.to_owned()]);
     }
     args
 }

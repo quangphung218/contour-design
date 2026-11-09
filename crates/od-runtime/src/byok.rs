@@ -542,12 +542,12 @@ impl SseDecoder {
                 let delta = v.get("delta").unwrap_or(&Value::Null);
                 match delta.get("type").and_then(Value::as_str) {
                     Some("text_delta") => {
-                        if let Some(t) = delta.get("text").and_then(Value::as_str) {
-                            if !t.is_empty() {
-                                out.push(AgentEvent::TextDelta {
-                                    delta: t.to_owned(),
-                                });
-                            }
+                        if let Some(t) = delta.get("text").and_then(Value::as_str)
+                            && !t.is_empty()
+                        {
+                            out.push(AgentEvent::TextDelta {
+                                delta: t.to_owned(),
+                            });
                         }
                     }
                     Some("thinking_delta") => {
@@ -604,12 +604,12 @@ impl SseDecoder {
             {
                 self.thinking(r, out);
             }
-            if let Some(t) = delta.get("content").and_then(Value::as_str) {
-                if !t.is_empty() {
-                    out.push(AgentEvent::TextDelta {
-                        delta: t.to_owned(),
-                    });
-                }
+            if let Some(t) = delta.get("content").and_then(Value::as_str)
+                && !t.is_empty()
+            {
+                out.push(AgentEvent::TextDelta {
+                    delta: t.to_owned(),
+                });
             }
             if let Some(r) = choice.get("finish_reason").and_then(Value::as_str) {
                 self.stop_reason = Some(r.to_owned());

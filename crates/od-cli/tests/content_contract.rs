@@ -175,10 +175,10 @@ fn violations(files: &[(String, String)]) -> Vec<String> {
         }
     }
     for u in cmd_uses {
-        if let Some(why) = check_command(&od, &u) {
-            if !allowed(&u) {
-                out.insert(format!("{}: {why}", u.file));
-            }
+        if let Some(why) = check_command(&od, &u)
+            && !allowed(&u)
+        {
+            out.insert(format!("{}: {why}", u.file));
         }
     }
     out.into_iter().collect()

@@ -165,13 +165,13 @@ impl BriefStore {
             return Err("brief nonce does not match".to_owned());
         }
         for q in questions(&draft.artifact_type) {
-            if let Some(v) = answers.get(q.id).and_then(Value::as_str) {
-                if !q.options.contains(&v) {
-                    return Err(format!(
-                        "{} must be one of {:?}, got {v:?}",
-                        q.id, q.options
-                    ));
-                }
+            if let Some(v) = answers.get(q.id).and_then(Value::as_str)
+                && !q.options.contains(&v)
+            {
+                return Err(format!(
+                    "{} must be one of {:?}, got {v:?}",
+                    q.id, q.options
+                ));
             }
         }
         let mut draft = drafts.remove(id).ok_or("unknown brief draft")?;

@@ -142,10 +142,10 @@ fn check(
             errors.push(format!("unknown atom {atom:?}"));
         }
     }
-    if let Some(raw) = &p.pipeline {
-        if let Err(e) = Pipeline::parse(raw) {
-            errors.push(format!("od.pipeline: {e}"));
-        }
+    if let Some(raw) = &p.pipeline
+        && let Err(e) = Pipeline::parse(raw)
+    {
+        errors.push(format!("od.pipeline: {e}"));
     }
     for (i, field) in p.inputs.iter().enumerate() {
         if field

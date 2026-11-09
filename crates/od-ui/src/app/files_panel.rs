@@ -1263,15 +1263,15 @@ pub fn TabLauncher(ctx: StudioCtx) -> impl IntoView {
     let pos = RwSignal::new(String::new());
     // Opened by click or Cmd/Ctrl+T: place the menu under the "+".
     Effect::new(move |_| {
-        if ui.launcher.get() {
-            if let Some(b) = button.get_untracked() {
-                let r = b.get_bounding_client_rect();
-                pos.set(format!(
-                    "position:fixed;top:{}px;left:{}px",
-                    r.bottom() + 6.0,
-                    r.left()
-                ));
-            }
+        if ui.launcher.get()
+            && let Some(b) = button.get_untracked()
+        {
+            let r = b.get_bounding_client_rect();
+            pos.set(format!(
+                "position:fixed;top:{}px;left:{}px",
+                r.bottom() + 6.0,
+                r.left()
+            ));
         }
     });
     view! {

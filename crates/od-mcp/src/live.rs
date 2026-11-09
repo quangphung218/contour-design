@@ -93,10 +93,10 @@ impl LiveMcp {
                 body.insert((*k).to_owned(), v.clone());
             }
         }
-        if !body.contains_key("projectId") {
-            if let Some(p) = &self.project {
-                body.insert("projectId".to_owned(), json!(p));
-            }
+        if !body.contains_key("projectId")
+            && let Some(p) = &self.project
+        {
+            body.insert("projectId".to_owned(), json!(p));
         }
         Value::Object(body)
     }

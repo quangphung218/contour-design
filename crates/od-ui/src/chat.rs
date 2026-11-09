@@ -324,10 +324,10 @@ impl AssistantTurn {
                 _ => self.blocks.push(Block::Thinking(delta)),
             },
             AgentEvent::ToolUse { id, name, input } => {
-                if name == PLAN_TOOL {
-                    if let Some(todos) = parse_todos(&input) {
-                        self.todos = todos;
-                    }
+                if name == PLAN_TOOL
+                    && let Some(todos) = parse_todos(&input)
+                {
+                    self.todos = todos;
                 }
                 let summary = summarize_input(&name, &input);
                 let path = is_write_tool(&name)

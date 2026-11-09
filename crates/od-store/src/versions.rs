@@ -112,10 +112,10 @@ fn read_manifest(dir: &Path) -> Result<Manifest> {
             manifest.entries.retain(|e| is_version_id(&e.id));
             if manifest.schema_version < SCHEMA_VERSION {
                 manifest.current_version_id = manifest.entries.last().map(|e| e.id.clone());
-            } else if let Some(id) = &manifest.current_version_id {
-                if !manifest.entries.iter().any(|e| &e.id == id) {
-                    manifest.current_version_id = None;
-                }
+            } else if let Some(id) = &manifest.current_version_id
+                && !manifest.entries.iter().any(|e| &e.id == id)
+            {
+                manifest.current_version_id = None;
             }
             Ok(manifest)
         }
@@ -302,20 +302,17 @@ pub fn ensure_current_version(
     require_html(file_name)?;
     let dir = store_dir(project_dir, file_name);
     let manifest = read_manifest(&dir)?;
-    if manifest.deleted_at.is_none() {
-        if let Some(current) = manifest
+    if manifest.deleted_at.is_none()
+        && let Some(current) = manifest
             .current_version_id
             .as_deref()
             .and_then(|id| manifest.entries.iter().find(|e| e.id == id))
-        {
-            if fs::read_to_string(dir.join(safe_content_path(current)))
-                .ok()
-                .as_deref()
-                == Some(content)
-            {
-                return Ok(current.public(Some(&current.id)));
-            }
-        }
+        && fs::read_to_string(dir.join(safe_content_path(current)))
+            .ok()
+            .as_deref()
+            == Some(content)
+    {
+        return Ok(current.public(Some(&current.id)));
     }
     create_version(project_dir, file_name, content, opts)
 }

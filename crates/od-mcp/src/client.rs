@@ -307,14 +307,13 @@ pub fn agent_text(sse: &str) -> String {
         let Ok(v) = serde_json::from_str::<Value>(&data) else {
             continue;
         };
-        if v.get("type").and_then(Value::as_str) == Some("text_delta") {
-            if let Some(t) = v
+        if v.get("type").and_then(Value::as_str) == Some("text_delta")
+            && let Some(t) = v
                 .get("delta")
                 .or_else(|| v.get("text"))
                 .and_then(Value::as_str)
-            {
-                out.push_str(t);
-            }
+        {
+            out.push_str(t);
         }
     }
     out

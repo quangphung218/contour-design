@@ -409,10 +409,10 @@ pub fn Automations() -> impl IntoView {
     reload();
     screen.spawn(async move {
         if let Ok(r) = api::get::<ProjectsResponse>("/api/projects").await {
-            if let Some(first) = r.projects.first() {
-                if form.project.get_untracked().is_empty() {
-                    form.project.set(first.id.clone());
-                }
+            if let Some(first) = r.projects.first()
+                && form.project.get_untracked().is_empty()
+            {
+                form.project.set(first.id.clone());
             }
             projects.set(r.projects);
         }

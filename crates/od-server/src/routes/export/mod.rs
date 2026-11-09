@@ -484,15 +484,16 @@ pub async fn archive(
             Some((name, root.dir.join(&f.name)))
         })
         .collect();
-    if let Some(p) = &prefix {
-        if entries.is_empty() && !root.dir.join(p).is_dir() {
-            return Err(ApiErr::new(
-                StatusCode::NOT_FOUND,
-                ErrorCode::FileNotFound,
-                format!("no folder {p} in this project"),
-            )
-            .into());
-        }
+    if let Some(p) = &prefix
+        && entries.is_empty()
+        && !root.dir.join(p).is_dir()
+    {
+        return Err(ApiErr::new(
+            StatusCode::NOT_FOUND,
+            ErrorCode::FileNotFound,
+            format!("no folder {p} in this project"),
+        )
+        .into());
     }
     let base = prefix
         .as_deref()

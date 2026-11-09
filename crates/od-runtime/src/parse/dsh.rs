@@ -137,15 +137,15 @@ impl DshSession {
                     return;
                 };
                 let resumed = frame.get("resumed") == Some(&Value::Bool(true));
-                if let Some(wanted) = &self.ctx.resume_session_id {
-                    if !resumed || &id != wanted {
-                        self.fail(
-                            "DeepSeek Harness profile resumed a different session.",
-                            "DSH_PROFILE_RESUME_MISMATCH",
-                            out,
-                        );
-                        return;
-                    }
+                if let Some(wanted) = &self.ctx.resume_session_id
+                    && (!resumed || &id != wanted)
+                {
+                    self.fail(
+                        "DeepSeek Harness profile resumed a different session.",
+                        "DSH_PROFILE_RESUME_MISMATCH",
+                        out,
+                    );
+                    return;
                 }
                 self.session_id = Some(id.clone());
                 out.push(AgentEvent::Status {

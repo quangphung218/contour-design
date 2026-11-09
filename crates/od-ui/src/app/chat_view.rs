@@ -1014,10 +1014,10 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             if let Ok(rec) = &record {
                 turn.try_update(|t| {
                     t.failure = t.failure.or(rec.failure);
-                    if let Some(error) = &rec.error {
-                        if !t.blocks.iter().any(|b| matches!(b, Block::Error(_))) {
-                            t.blocks.push(Block::Error(error.clone()));
-                        }
+                    if let Some(error) = &rec.error
+                        && !t.blocks.iter().any(|b| matches!(b, Block::Error(_)))
+                    {
+                        t.blocks.push(Block::Error(error.clone()));
                     }
                 });
             }

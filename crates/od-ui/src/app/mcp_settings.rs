@@ -174,11 +174,8 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
         leptos::task::spawn_local(async move {
             match api::post::<_, Value>(&url, &json!({"open": on_desktop})).await {
                 Ok(r) => {
-                    if !on_desktop {
-                        if let Some(w) = web_sys::window() {
-                            let _ =
-                                w.open_with_url_and_target(&field(&r, "authorizeUrl"), "_blank");
-                        }
+                    if !on_desktop && let Some(w) = web_sys::window() {
+                        let _ = w.open_with_url_and_target(&field(&r, "authorizeUrl"), "_blank");
                     }
                     probe.set(Some(Probe::Browser));
                 }

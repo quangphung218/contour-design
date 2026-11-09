@@ -411,10 +411,10 @@ fn kind_of_heading(heading: &str) -> Option<&'static str> {
 /// their stars.
 fn bullet_text(item: &str) -> String {
     let item = item.trim();
-    if let Some(rest) = item.strip_prefix('[') {
-        if let Some((label, _)) = rest.split_once("](") {
-            return label.trim().to_owned();
-        }
+    if let Some(rest) = item.strip_prefix('[')
+        && let Some((label, _)) = rest.split_once("](")
+    {
+        return label.trim().to_owned();
     }
     item.replace("**", "")
 }

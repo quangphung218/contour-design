@@ -200,10 +200,10 @@ pub fn shape(row: &SurfaceRow) -> Shape {
             Shape::OAuth { route, target }
         }
         "choice" | "form" => {
-            if row.kind == "choice" {
-                if let Some((key, options)) = primary_enum(schema) {
-                    return Shape::Choice { key, options };
-                }
+            if row.kind == "choice"
+                && let Some((key, options)) = primary_enum(schema)
+            {
+                return Shape::Choice { key, options };
             }
             fields(schema).map_or(Shape::Raw, Shape::Form)
         }

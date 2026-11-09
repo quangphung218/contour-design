@@ -205,12 +205,12 @@ pub async fn detect_in(
         }
     );
     info.available = true;
-    if def.id == DSH.id {
-        if let Err(e) = crate::dsh_companion::probe(&bin, path, env).await {
-            info.available = false;
-            info.needs_setup = true;
-            info.error = Some(e.to_string());
-        }
+    if def.id == DSH.id
+        && let Err(e) = crate::dsh_companion::probe(&bin, path, env).await
+    {
+        info.available = false;
+        info.needs_setup = true;
+        info.error = Some(e.to_string());
     }
     info.version = version
         .as_deref()

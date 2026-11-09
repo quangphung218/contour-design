@@ -1213,17 +1213,15 @@ async fn get_run(daemon: &Daemon, args: &Map<String, Value>) -> ToolResult {
     } else {
         None
     };
-    if status == "succeeded" {
-        if let Some(project) = run
+    if status == "succeeded"
+        && let Some(project) = run
             .get("projectId")
             .and_then(Value::as_str)
             .map(str::to_owned)
-        {
-            if let Some(entry) = preview_entry(daemon, &project, events.as_deref()).await {
-                run["previewUrl"] = json!(daemon.raw_url(&project, &entry));
-                run["artifactRef"] = json!({ "projectId": project, "entryFile": entry });
-            }
-        }
+        && let Some(entry) = preview_entry(daemon, &project, events.as_deref()).await
+    {
+        run["previewUrl"] = json!(daemon.raw_url(&project, &entry));
+        run["artifactRef"] = json!({ "projectId": project, "entryFile": entry });
     }
     if terminal {
         let message = events.as_deref().map(agent_text).unwrap_or_default();

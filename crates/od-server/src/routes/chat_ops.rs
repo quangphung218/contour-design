@@ -162,10 +162,10 @@ pub fn linked_dirs(store: &Store, project: &Project) -> Vec<PathBuf> {
         .map(|m| m.linked_dirs.as_slice())
         .unwrap_or_default()
     {
-        if let Ok(p) = check_dir(store, FsPath::new(d)) {
-            if !out.contains(&p) {
-                out.push(p);
-            }
+        if let Ok(p) = check_dir(store, FsPath::new(d))
+            && !out.contains(&p)
+        {
+            out.push(p);
         }
     }
     out

@@ -133,15 +133,14 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
     match patch.get(BYOK_KEY) {
         None | Some(Value::Null) => {}
         Some(Value::Object(byok)) => {
-            if let Some(p) = byok.get("protocol") {
-                if p.as_str()
+            if let Some(p) = byok.get("protocol")
+                && p.as_str()
                     .and_then(od_runtime::byok::ByokProtocol::parse)
                     .is_none()
-                {
-                    return Err(format!(
-                        "byok.protocol must be anthropic, openai or azure, got {p}"
-                    ));
-                }
+            {
+                return Err(format!(
+                    "byok.protocol must be anthropic, openai or azure, got {p}"
+                ));
             }
             for key in [API_KEY, "baseUrl", "model", "apiVersion"] {
                 if byok
@@ -179,10 +178,10 @@ fn merge_patch(config: &mut Map<String, Value>, patch: Map<String, Value>) {
         if key == BYOK_KEY {
             let stored = config.get(BYOK_KEY).filter(|b| same_route(b, &value));
             let stored = stored.and_then(|b| b.get(API_KEY)).cloned();
-            if let (Some(obj), Some(stored)) = (value.as_object_mut(), stored) {
-                if !obj.contains_key(API_KEY) {
-                    obj.insert(API_KEY.to_owned(), stored);
-                }
+            if let (Some(obj), Some(stored)) = (value.as_object_mut(), stored)
+                && !obj.contains_key(API_KEY)
+            {
+                obj.insert(API_KEY.to_owned(), stored);
             }
         }
         config.insert(key, value);

@@ -1,6 +1,2 @@
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
-# Lint as if MSRV were still 1.85. rusqlite 0.41 (RUSTSEC-2026-0459) forced
-# rust-version to 1.89, which turns on ~120 let-chain `collapsible_if`
-# rewrites; those land in their own PR, then this line goes.
-msrv = "1.85"

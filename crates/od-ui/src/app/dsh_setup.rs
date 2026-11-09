@@ -200,10 +200,10 @@ pub fn DshSetupDialog(
 /// its card.
 fn replace_agent(shell: Shell, agent: AgentInfo) {
     shell.agents.update(|list| {
-        if let Some(Ok(agents)) = list {
-            if let Some(a) = agents.iter_mut().find(|a| a.id == agent.id) {
-                *a = agent;
-            }
+        if let Some(Ok(agents)) = list
+            && let Some(a) = agents.iter_mut().find(|a| a.id == agent.id)
+        {
+            *a = agent;
         }
     });
 }

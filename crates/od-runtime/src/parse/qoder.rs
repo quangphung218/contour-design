@@ -104,34 +104,34 @@ impl QoderParser {
                 });
                 continue;
             }
-            if str_field(block, "type") == Some("thinking") {
-                if let Some(thinking) = non_empty(block, "thinking") {
-                    if !self.thinking_started {
-                        self.thinking_started = true;
-                        out.push(AgentEvent::ThinkingStart);
-                    }
-                    out.push(AgentEvent::ThinkingDelta {
-                        delta: thinking.to_owned(),
-                    });
+            if str_field(block, "type") == Some("thinking")
+                && let Some(thinking) = non_empty(block, "thinking")
+            {
+                if !self.thinking_started {
+                    self.thinking_started = true;
+                    out.push(AgentEvent::ThinkingStart);
                 }
-            }
-        }
-        if !emitted_text {
-            if let Some(text) = str_field(message, "content") {
-                emitted_text = true;
-                out.push(AgentEvent::TextDelta {
-                    delta: text.to_owned(),
+                out.push(AgentEvent::ThinkingDelta {
+                    delta: thinking.to_owned(),
                 });
             }
         }
-        if let Some(error) = obj.get("error").filter(|e| !e.is_null()) {
-            if !emitted_text && error != &Value::Bool(false) && error.as_str() != Some("") {
-                out.push(AgentEvent::Error {
-                    message: error_message(error),
-                    code: None,
-                    terminal: false,
-                });
-            }
+        if !emitted_text && let Some(text) = str_field(message, "content") {
+            emitted_text = true;
+            out.push(AgentEvent::TextDelta {
+                delta: text.to_owned(),
+            });
+        }
+        if let Some(error) = obj.get("error").filter(|e| !e.is_null())
+            && !emitted_text
+            && error != &Value::Bool(false)
+            && error.as_str() != Some("")
+        {
+            out.push(AgentEvent::Error {
+                message: error_message(error),
+                code: None,
+                terminal: false,
+            });
         }
     }
 }

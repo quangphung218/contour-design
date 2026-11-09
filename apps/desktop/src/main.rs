@@ -477,19 +477,19 @@ fn reload_ack(asks: tauri::State<'_, Mutex<ReloadAsk>>) {
 /// navigation, a restart): no Reload question is left about the page
 /// gone, and the new one takes no `od:menu` until its shell says so.
 fn page_started<R: Runtime>(app: &impl Manager<R>) {
-    if let Some(asks) = app.try_state::<Mutex<ReloadAsk>>() {
-        if let Ok(mut asks) = asks.lock() {
-            asks.page_loaded();
-        }
+    if let Some(asks) = app.try_state::<Mutex<ReloadAsk>>()
+        && let Ok(mut asks) = asks.lock()
+    {
+        asks.page_loaded();
     }
 }
 
 /// The page shown takes `od:menu` ([`set_menu_labels`]).
 fn page_listens<R: Runtime>(app: &impl Manager<R>) {
-    if let Some(asks) = app.try_state::<Mutex<ReloadAsk>>() {
-        if let Ok(mut asks) = asks.lock() {
-            asks.listens();
-        }
+    if let Some(asks) = app.try_state::<Mutex<ReloadAsk>>()
+        && let Ok(mut asks) = asks.lock()
+    {
+        asks.listens();
     }
 }
 
@@ -627,10 +627,10 @@ fn check_reload(app: AppHandle, token: u64, wait: std::time::Duration) {
                 NotAnswered::Nothing => {}
                 NotAnswered::AskAgainLater => check_reload(handle, token, RELOAD_ASK_AGAIN),
                 NotAnswered::Restart => {
-                    if let Some(asks) = handle.try_state::<Mutex<ReloadAsk>>() {
-                        if let Ok(mut asks) = asks.lock() {
-                            asks.unanswered(token);
-                        }
+                    if let Some(asks) = handle.try_state::<Mutex<ReloadAsk>>()
+                        && let Ok(mut asks) = asks.lock()
+                    {
+                        asks.unanswered(token);
                     }
                     tracing::warn!("the page did not answer Reload: restarting it");
                     if let Some(window) = handle.get_webview_window("main") {
@@ -738,10 +738,10 @@ fn load_after_grace<R: Runtime>(app: &AppHandle<R>, killed: bool) {
         return;
     };
     let now = std::time::Instant::now();
-    if let Some(url) = with_restarts(app, |r| r.grace_over(killed, now)).flatten() {
-        if let Err(e) = window.navigate(url) {
-            tracing::warn!(error = %e, "cannot load the app again");
-        }
+    if let Some(url) = with_restarts(app, |r| r.grace_over(killed, now)).flatten()
+        && let Err(e) = window.navigate(url)
+    {
+        tracing::warn!(error = %e, "cannot load the app again");
     }
 }
 

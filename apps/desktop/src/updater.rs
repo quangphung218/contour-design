@@ -169,10 +169,10 @@ impl UpdateSlot {
 
     /// Stops the running download, if any.
     pub fn cancel(&self) {
-        if let Ok(running) = self.running.lock() {
-            if let Some(token) = running.as_ref() {
-                token.cancel();
-            }
+        if let Ok(running) = self.running.lock()
+            && let Some(token) = running.as_ref()
+        {
+            token.cancel();
         }
     }
 

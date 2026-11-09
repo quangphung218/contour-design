@@ -233,10 +233,10 @@ pub fn list_plugins(bundled: &Path, user: Option<&Path>) -> Vec<PluginEntry> {
     };
     if let Some(user) = user {
         for (name, dir) in sorted_dir_entries(user) {
-            if !name.starts_with(['.', '_']) {
-                if let Some(p) = load_plugin(&dir, &name, "user") {
-                    push(p);
-                }
+            if !name.starts_with(['.', '_'])
+                && let Some(p) = load_plugin(&dir, &name, "user")
+            {
+                push(p);
             }
         }
     }
@@ -245,10 +245,10 @@ pub fn list_plugins(bundled: &Path, user: Option<&Path>) -> Vec<PluginEntry> {
             continue;
         }
         for (name, dir) in sorted_dir_entries(&group_dir) {
-            if !name.starts_with('.') {
-                if let Some(p) = load_plugin(&dir, &name, "bundled") {
-                    push(p);
-                }
+            if !name.starts_with('.')
+                && let Some(p) = load_plugin(&dir, &name, "bundled")
+            {
+                push(p);
             }
         }
     }
@@ -364,10 +364,10 @@ impl PluginEntry {
             return Err(ApplyError::MissingInputs(missing));
         }
         for (k, v) in raw {
-            if !inputs.contains_key(k) {
-                if let Some(v) = coerce(v) {
-                    inputs.insert(k.clone(), v);
-                }
+            if !inputs.contains_key(k)
+                && let Some(v) = coerce(v)
+            {
+                inputs.insert(k.clone(), v);
             }
         }
         let title = localized(self.manifest.get("title_i18n"), locale)

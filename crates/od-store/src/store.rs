@@ -413,10 +413,10 @@ impl Store {
         let _guard = self.versions_guard();
         let file = files::write_file(&root, name, bytes, overwrite, artifact_manifest)?;
         // Like the original app, every HTML save lands in the history.
-        if is_html_name(&file.name) {
-            if let Ok(text) = std::str::from_utf8(bytes) {
-                versions::ensure_current_version(&root.dir, &file.name, text, manual())?;
-            }
+        if is_html_name(&file.name)
+            && let Ok(text) = std::str::from_utf8(bytes)
+        {
+            versions::ensure_current_version(&root.dir, &file.name, text, manual())?;
         }
         Ok(file)
     }
@@ -435,10 +435,10 @@ impl Store {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         let file = files::create_file_exact(&root, name, bytes)?;
-        if is_html_name(&file.name) {
-            if let Ok(text) = std::str::from_utf8(bytes) {
-                versions::ensure_current_version(&root.dir, &file.name, text, manual())?;
-            }
+        if is_html_name(&file.name)
+            && let Ok(text) = std::str::from_utf8(bytes)
+        {
+            versions::ensure_current_version(&root.dir, &file.name, text, manual())?;
         }
         Ok(file)
     }
@@ -544,11 +544,11 @@ impl Store {
     ) -> Result<UploadedFile> {
         let root = self.root_for(project_id)?;
         let uploaded = files::upload_file(&root, dir, original_name, bytes)?;
-        if is_html_name(&uploaded.name) {
-            if let Ok(text) = std::str::from_utf8(bytes) {
-                let _guard = self.versions_guard();
-                versions::ensure_current_version(&root.dir, &uploaded.name, text, manual())?;
-            }
+        if is_html_name(&uploaded.name)
+            && let Ok(text) = std::str::from_utf8(bytes)
+        {
+            let _guard = self.versions_guard();
+            versions::ensure_current_version(&root.dir, &uploaded.name, text, manual())?;
         }
         Ok(uploaded)
     }
@@ -572,12 +572,12 @@ impl Store {
             Err(err) => return Err(err),
         };
         let mut list = versions::list_versions(&root.dir, &safe)?;
-        if list.is_empty() {
-            if let Some((_, bytes)) = &working {
-                let text = utf8(bytes)?;
-                versions::ensure_current_version(&root.dir, &safe, text, manual())?;
-                list = versions::list_versions(&root.dir, &safe)?;
-            }
+        if list.is_empty()
+            && let Some((_, bytes)) = &working
+        {
+            let text = utf8(bytes)?;
+            versions::ensure_current_version(&root.dir, &safe, text, manual())?;
+            list = versions::list_versions(&root.dir, &safe)?;
         }
         let file = match working {
             Some((file, _)) => file,
