@@ -3,7 +3,8 @@
 // `dsh`, then no profile, then selected once both are there); a chat turn
 // through one of the added CLIs (a mock `qodercli` speaking Qoder's
 // stream-json); Settings ▸ media providers listing the added providers and
-// keeping every key on save; Tavily research through the daemon. Then
+// keeping every key on save, and saying when a new base URL drops one;
+// Tavily research through the daemon. Then
 // light and dark screenshots of the new screens.
 //
 // Port: OD_E2E_PORT + 8 (OD_E2E_C3_PORT overrides). Mock CLIs live in a
@@ -261,6 +262,18 @@ try {
   assert.equal(cfg.grok.apiKeyTail, '5678', 'a second save keeps the stored key');
   assert.equal(cfg.tavily.configured, true);
   results.mediaProviders = 'ok';
+  // QA-069 in Settings: a new base URL with the key left empty drops the
+  // saved key; the card and the save message say so, not a plain "Saved",
+  // and the next save has nothing more to report.
+  await grok.getByTestId('media-base-url').fill('http://127.0.0.1:9/v1');
+  await page.getByTestId('media-save').click();
+  await grok.getByTestId('media-key-dropped').waitFor();
+  assert.match(await page.getByTestId('media-saved-key-dropped').textContent(), /Grok/);
+  assert.equal((await api('/api/media/config')).body.providers.grok.configured, false, 'the daemon dropped the key');
+  await page.getByTestId('media-save').click();
+  await until(async () => (await page.getByTestId('media-saved-key-dropped').count()) === 0, 'plain Saved');
+  assert.equal(await grok.getByTestId('media-key-dropped').count(), 0, 'notice gone once nothing was dropped');
+  results.settingsKeyDropped = 'ok';
 
   // 5. Research through the daemon with the stored Tavily key.
   const found = await post('/api/research/search', { query: 'what is matcha', maxSources: 3 });
