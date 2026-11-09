@@ -331,17 +331,47 @@ fn with_restarts<R: Runtime, T>(
         .and_then(|restarts| restarts.lock().ok().map(|mut restarts| f(&mut restarts)))
 }
 
-/// The query the Studio reads on load: the design's preview was stopped
-/// because it kept opening dialogs (od-ui `desktop::preview_was_stopped`).
+/// The query the Studio reads on load: the shell stopped the design's
+/// preview (od-ui `desktop::preview_was_stopped`).
 #[cfg(any(target_os = "macos", test))]
 const PREVIEW_STOPPED: (&str, &str) = ("preview", "stopped");
 
-/// Where the app opens again after a design hung it in a dialog loop
-/// (QA-067): the same page with the preview stopped
-/// (`?preview=stopped`). Present mode goes back to that design's Studio,
-/// which says why and can run it again; it would only loop again.
+/// The query key that says why ([`StopReason`]; od-ui
+/// `desktop::stop_reason`).
 #[cfg(any(target_os = "macos", test))]
-fn stopped_preview_url(url: &Url) -> Url {
+const STOP_REASON_KEY: &str = "why";
+
+/// Why the shell stopped the design's preview, so the Studio says the
+/// right thing (QA-071).
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StopReason {
+    /// The design hung the window in a dialog loop ([`js_dialogs`]).
+    Dialogs,
+    /// The page did not answer View ▸ Reload and the user chose Reload.
+    Hung,
+    /// The web content process crashed twice in a row ([`Crashes`]).
+    Crashed,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl StopReason {
+    /// Its value in the query.
+    fn as_query(self) -> &'static str {
+        match self {
+            Self::Dialogs => "dialogs",
+            Self::Hung => "hung",
+            Self::Crashed => "crashed",
+        }
+    }
+}
+
+/// Where the app opens again after a design hung or crashed it (QA-067):
+/// the same page with the preview stopped and why
+/// (`?preview=stopped&why=…`). Present mode goes back to that design's
+/// Studio, which says why and can run it again; it would only loop again.
+#[cfg(any(target_os = "macos", test))]
+fn stopped_preview_url(url: &Url, why: StopReason) -> Url {
     let mut url = url.clone();
     let presented = url
         .path()
@@ -355,26 +385,40 @@ fn stopped_preview_url(url: &Url) -> Url {
     let (key, value) = PREVIEW_STOPPED;
     let kept: Vec<(String, String)> = url
         .query_pairs()
-        .filter(|(k, _)| k != key)
+        .filter(|(k, _)| k != key && k != STOP_REASON_KEY)
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
     url.query_pairs_mut()
         .clear()
         .extend_pairs(kept)
-        .append_pair(key, value);
+        .append_pair(key, value)
+        .append_pair(STOP_REASON_KEY, why.as_query());
     url
 }
 
-/// [`js_dialogs`]'s gate saw a design hang the window in a dialog loop:
-/// [`stop_hung_page`], off WebKit's call (on the main thread
-/// `run_on_main_thread` would run it at once).
+/// Runs `task` on the main thread once the WebKit call running now has
+/// returned. WebKit's delegate callbacks (a JavaScript panel, the web
+/// content process ending) run on the main thread, where
+/// `run_on_main_thread` runs its task at once, inside that call; and the
+/// call may itself sit inside a Tauri dispatcher call: `restart_page`'s
+/// `with_webview` ends the process, and WebKit says so before returning,
+/// while Tauri holds the window's lock that `navigate`, `reload`, `url`
+/// and `with_webview` take again (QA-070, a deadlock). A thread of its
+/// own first, so the task waits for the main thread's next turn.
 #[cfg(any(target_os = "macos", test))]
-fn on_hung<R: Runtime>(app: &AppHandle<R>) {
+fn off_webkit_call<R: Runtime>(app: &AppHandle<R>, task: fn(&AppHandle<R>)) {
     let app = app.clone();
     std::thread::spawn(move || {
         let handle = app.clone();
-        let _ = app.run_on_main_thread(move || stop_hung_page(&handle));
+        let _ = app.run_on_main_thread(move || task(&handle));
     });
+}
+
+/// [`js_dialogs`]'s gate saw a design hang the window in a dialog loop:
+/// [`stop_hung_page`], off WebKit's call ([`off_webkit_call`]).
+#[cfg(any(target_os = "macos", test))]
+fn on_hung<R: Runtime>(app: &AppHandle<R>) {
+    off_webkit_call(app, stop_hung_page);
 }
 
 /// A design hung the window in a dialog loop ([`js_dialogs`]'s gate saw
@@ -386,7 +430,7 @@ fn stop_hung_page<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
     match window.url() {
-        Ok(url) => restart_page(app, stopped_preview_url(&url)),
+        Ok(url) => restart_page(app, stopped_preview_url(&url, StopReason::Dialogs)),
         Err(e) => tracing::warn!(error = %e, "cannot read the page's address"),
     }
 }
@@ -635,7 +679,9 @@ fn check_reload(app: AppHandle, token: u64, wait: std::time::Duration) {
                     tracing::warn!("the page did not answer Reload: restarting it");
                     if let Some(window) = handle.get_webview_window("main") {
                         match window.url() {
-                            Ok(url) => restart_page(&handle, stopped_preview_url(&url)),
+                            Ok(url) => {
+                                restart_page(&handle, stopped_preview_url(&url, StopReason::Hung))
+                            }
                             Err(e) => tracing::warn!(error = %e, "cannot read the page's address"),
                         }
                     }
@@ -746,11 +792,11 @@ fn load_after_grace<R: Runtime>(app: &AppHandle<R>, killed: bool) {
 }
 
 /// WebKit says the main window's web content process ended
-/// ([`page_terminated`]).
-#[cfg(target_os = "macos")]
+/// ([`page_terminated`]), off WebKit's call ([`off_webkit_call`]): when
+/// [`restart_page`] ended it, WebKit says so inside its `with_webview`.
+#[cfg(any(target_os = "macos", test))]
 fn on_page_terminated<R: Runtime>(app: &AppHandle<R>) {
-    let handle = app.clone();
-    let _ = app.run_on_main_thread(move || page_terminated(&handle));
+    off_webkit_call(app, page_terminated);
 }
 
 /// The main window's web content process ended: loads the page
@@ -778,7 +824,7 @@ fn page_terminated<R: Runtime>(app: &AppHandle<R>) {
             match after {
                 AfterCrash::Reload => window.reload(),
                 AfterCrash::StopPreview => match window.url() {
-                    Ok(url) => window.navigate(stopped_preview_url(&url)),
+                    Ok(url) => window.navigate(stopped_preview_url(&url, StopReason::Crashed)),
                     Err(e) => Err(e),
                 },
                 AfterCrash::GiveUp => return,
@@ -2188,7 +2234,7 @@ mod tests {
             .ask()
             .unwrap();
         on_hung(app.handle());
-        let wanted = "http://127.0.0.1:5173/projects/p1?preview=stopped";
+        let wanted = "http://127.0.0.1:5173/projects/p1?preview=stopped&why=dialogs";
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while window.url().unwrap().as_str() != wanted && std::time::Instant::now() < deadline {
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -2284,20 +2330,89 @@ mod tests {
     fn a_hung_design_reopens_its_studio_with_the_preview_stopped() {
         let url = |s: &str| Url::parse(s).unwrap();
         let base = "http://127.0.0.1:5173";
+        let dialogs = StopReason::Dialogs;
         assert_eq!(
-            stopped_preview_url(&url(&format!("{base}/projects/p1"))).as_str(),
-            format!("{base}/projects/p1?preview=stopped")
+            stopped_preview_url(&url(&format!("{base}/projects/p1")), dialogs).as_str(),
+            format!("{base}/projects/p1?preview=stopped&why=dialogs")
         );
         // Other query kept, the mark not doubled, the fragment kept.
         assert_eq!(
-            stopped_preview_url(&url(&format!("{base}/projects/p1?a=1&preview=stopped#x")))
-                .as_str(),
-            format!("{base}/projects/p1?a=1&preview=stopped#x")
+            stopped_preview_url(
+                &url(&format!(
+                    "{base}/projects/p1?a=1&preview=stopped&why=hung#x"
+                )),
+                dialogs
+            )
+            .as_str(),
+            format!("{base}/projects/p1?a=1&preview=stopped&why=dialogs#x")
         );
         // Present mode would loop again: back to the design's Studio.
         assert_eq!(
-            stopped_preview_url(&url(&format!("{base}/present/p1?slide=3"))).as_str(),
-            format!("{base}/projects/p1?slide=3&preview=stopped")
+            stopped_preview_url(&url(&format!("{base}/present/p1?slide=3")), dialogs).as_str(),
+            format!("{base}/projects/p1?slide=3&preview=stopped&why=dialogs")
+        );
+    }
+
+    #[test]
+    fn the_address_says_why_the_preview_stopped() {
+        // QA-071: a busy loop with no dialog is not "kept opening dialogs".
+        let page = Url::parse("http://127.0.0.1:5173/projects/p1").unwrap();
+        let why = |reason| {
+            stopped_preview_url(&page, reason)
+                .query_pairs()
+                .find(|(k, _)| k == STOP_REASON_KEY)
+                .map(|(_, v)| v.into_owned())
+        };
+        assert_eq!(why(StopReason::Dialogs).as_deref(), Some("dialogs"));
+        assert_eq!(why(StopReason::Hung).as_deref(), Some("hung"));
+        assert_eq!(why(StopReason::Crashed).as_deref(), Some("crashed"));
+    }
+
+    #[test]
+    fn a_crash_loop_stops_the_preview_saying_it_crashed() {
+        let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
+        page_terminated(app.handle());
+        page_terminated(app.handle());
+        assert_eq!(
+            window.url().unwrap().as_str(),
+            "http://127.0.0.1:5173/projects/p1?preview=stopped&why=crashed"
+        );
+    }
+
+    #[test]
+    fn webkit_saying_the_process_ended_inside_a_held_lock_does_not_deadlock() {
+        // QA-070: `restart_page`'s `with_webview` holds Tauri's window
+        // lock while WebKit ends the process and says so, on the main
+        // thread, where `run_on_main_thread` runs at once (as the mock
+        // runtime does). A lock the work takes, held across the callback,
+        // stands in for it: the work must wait for the call to return.
+        let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
+        let then =
+            Url::parse("http://127.0.0.1:5173/projects/p1?preview=stopped&why=hung").unwrap();
+        with_restarts(app.handle(), |r| r.begin(then.clone()));
+        let handle = app.handle().clone();
+        let (done, returned) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let restarts = handle.state::<Mutex<Restarts>>();
+            let held = restarts.lock().unwrap();
+            on_page_terminated(&handle);
+            drop(held);
+            let _ = done.send(());
+        });
+        assert!(
+            returned
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .is_ok(),
+            "WebKit's callback ran the work inside its call and deadlocked"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while window.url().unwrap() != then && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(
+            window.url().unwrap(),
+            then,
+            "the restart's page loads after"
         );
     }
 
