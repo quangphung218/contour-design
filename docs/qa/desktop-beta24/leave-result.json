@@ -1,0 +1,6 @@
+{
+ "note": "leave.mjs on the copy's daemon (WebKit), three runs; run 1 counted cards before a second generate task landed (see bugs-desktop-beta24.md, Not bugs)",
+ "run1": { "studio": { "runPosts": 1, "composerAfter": "", "pass": true }, "media": { "tasksBefore": 0, "tasksAfter": 1, "laterTasks": 2, "pass": true }, "bulkDelete": { "picked": 4, "deletesSent": 4, "filesLeft": 1, "leftFile": "the second generate task's image, written after the cards were counted" }, "errors": [] },
+ "run2": { "studio": { "pass": true }, "media": { "generatePosts": 1, "tasksBefore": 5, "tasksAfter": 6, "pass": true }, "bulkDelete": { "picked": 5, "deletesSent": 5, "filesLeft": 0, "pass": true }, "errors": [] },
+ "run3_library_missing": { "studio": { "pass": true }, "media": { "generatePosts": 1, "tasksBefore": 6, "tasksAfter": 7, "pass": true }, "bulkDelete": { "picked": 4, "deletesSent": 4, "filesLeft": 0, "pass": true }, "errors": [] }
+}

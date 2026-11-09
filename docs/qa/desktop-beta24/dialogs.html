@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:15px system-ui;background:#fff}
+.b{display:inline-block;margin:4px 8px;padding:8px 10px;border:2px solid #333;background:#f4f4f4;font:15px system-ui}
+#log{margin:6px 8px;padding:6px;font:16px monospace;color:#000;background:#ffd;white-space:pre-wrap;min-height:120px}
+</style></head><body>
+<p>
+<button class="b" id="a1">A1 alert</button>
+<button class="b" id="c1">C1 confirm</button>
+<button class="b" id="p1">P1 prompt x</button>
+<button class="b" id="long">LONG alert 5000</button>
+<button class="b" id="vn">VN prompt Tên?</button>
+</p><p>
+<button class="b" id="loop">LOOP 40 alerts</button>
+<button class="b" id="c2">C2 confirm after</button>
+<button class="b" id="p2">P2 prompt after</button>
+<button class="b" id="inf">INF for(;;) alert</button>
+<button class="b" id="clr">clear</button>
+</p>
+<div id="log"></div>
+<script>
+var L=document.getElementById('log');
+function lg(s){L.textContent+=s+'\n'}
+function on(id,f){document.getElementById(id).addEventListener('click',f)}
+on('a1',function(){var t=Date.now();alert('About to open');lg('A1 back after '+(Date.now()-t)+'ms')});
+on('c1',function(){var t=Date.now();var r=confirm('Open?');lg('C1='+r+' '+(Date.now()-t)+'ms')});
+on('p1',function(){var t=Date.now();var r=prompt('Name?','x');lg('P1='+JSON.stringify(r)+' '+(Date.now()-t)+'ms')});
+on('long',function(){var s='START '+'0123456789'.repeat(499).slice(6)+'END-OF-500';alert(s);lg('LONG len='+s.length)});
+on('vn',function(){var r=prompt('Tên?');lg('VN='+JSON.stringify(r)+' len='+(r==null?-1:r.length)+' eq='+(r==='Nguyễn Văn An ở Hà Nội'))});
+on('loop',function(){var n=0,t=Date.now();for(;n<40;n++)alert('x '+n);lg('LOOP done n='+n+' '+(Date.now()-t)+'ms')});
+on('c2',function(){var t=Date.now();var r=confirm('After block?');lg('C2='+r+' '+(Date.now()-t)+'ms')});
+on('p2',function(){var t=Date.now();var r=prompt('After block?','y');lg('P2='+JSON.stringify(r)+' '+(Date.now()-t)+'ms')});
+on('inf',function(){for(;;)alert('x')});
+on('clr',function(){L.textContent=''});
+lg('loaded '+new Date().toISOString().slice(11,19));
+</script>
+</body></html>

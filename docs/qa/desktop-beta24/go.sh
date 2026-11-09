@@ -1,0 +1,23 @@
+#!/bin/sh
+# go.sh shot NAME | wins | click X Y | cmdclick X Y | key CODE MODE [FLAG] | hold CODE N | drag X1 Y1 X2 Y2 | type TEXT | sclick X Y
+# X/Y are window-local points of $PID's main "Contour" window (sclick: screen points).
+# Refuses unless $PID is frontmost, so no event ever lands in another app.
+P=${PID:?}; D="$(cd "$(dirname "$0")" && pwd)"
+osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $P) to true" >/dev/null
+sleep 0.3
+F=$(osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true')
+[ "$F" = "$P" ] || { echo "frontmost is $F, not $P: refused"; exit 3; }
+G=$("$D/cg" win "$P" | awk '$3==1 && $NF=="Contour"{print $1, $4, $5; exit}')
+W=${G%% *}; R=${G#* }; WX=${R% *}; WY=${R#* }
+case "$1" in
+  shot) screencapture -x -o -l "$W" "$D/shots/$2.png" && sips -Z 1360 "$D/shots/$2.png" >/dev/null && echo "$D/shots/$2.png";;
+  screen) screencapture -x -R"$WX,$WY,1360,860" "$D/shots/$2.png" && echo "$D/shots/$2.png";;
+  wins) "$D/cg" win "$P" | grep -v '^flags';;
+  click|cmdclick) "$D/cg" "$1" $(echo "$WX+$2" | bc) $(echo "$WY+$3" | bc);;
+  sclick) "$D/cg" click "$2" "$3";;
+  drag) "$D/cg" drag $(echo "$WX+$2" | bc) $(echo "$WY+$3" | bc) $(echo "$WX+$4" | bc) $(echo "$WY+$5" | bc);;
+  key) "$D/cg" key "$2" "$3" "$4";;
+  type) "$D/cg" type "$2";;
+  scroll) "$D/cg" scroll $(echo "$WX+$2" | bc) $(echo "$WY+$3" | bc) "$4";;
+  hold) "$D/cg" hold "$2" "$3";;
+esac
