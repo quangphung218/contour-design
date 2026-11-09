@@ -80,7 +80,7 @@ again; on macOS 13.3 to 14, Control-click the app ▸ **Open**. Step by step:
 
 ### Build from source
 
-Needs Rust 1.85+, Node.js 20+ and `trunk`; `make setup` checks and tells you
+Needs Rust 1.89+, Node.js 20+ and `trunk`; `make setup` checks and tells you
 what is missing.
 
 ```bash
