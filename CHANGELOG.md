@@ -8,11 +8,19 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.25] - 2026-11-09
+
 ### Fixed
 
 - Desktop app on macOS: a design that keeps calling `alert()` after its dialogs were blocked no longer freezes the window. After 50 refused dialogs within a second the app ends the page's web process, opens the same project again with that design's preview stopped, and says so in the Studio with a Run again button. View ▸ Reload (⌘R) reloads the page, asking first when a manual edit is not applied; for a page that does not answer within a second, a native "This page isn't responding" alert offers Wait or Reload, which stops the design's preview. ⌘Q quits even while a page hangs the window. A web process that crashes twice within 10 s opens the page with the preview stopped instead of reloading for ever (QA-067).
 - Desktop app on macOS: the preview's reload, or a file change that reloads it, lifts the dialogs blocked for the design, as opening another design does (QA-068).
 - Desktop app on macOS: a long `alert`, `confirm` or `prompt` message shows in a scrolling box of fixed height, so the dialog's buttons stay on screen (QA-066).
+- Media ▸ Providers and Settings ▸ Media: saving a provider with a new base URL and no key now says the saved key was dropped and must be entered again, instead of "Saved"; a key that comes from the environment is not reported as dropped (QA-069).
+- Accessibility: the chat's file buttons have a name that matches their visible text in every language (WCAG 2.5.3).
+
+### Security
+
+- Bundled SQLite updated to 3.54.1 (RUSTSEC-2026-0459). Building from source now needs Rust 1.89.
 
 ## [0.2.0-beta.24] - 2026-11-09
 
@@ -1069,7 +1077,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.24...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.25...HEAD
+[0.2.0-beta.25]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.24...v0.2.0-beta.25
 [0.2.0-beta.24]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.23...v0.2.0-beta.24
 [0.2.0-beta.23]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.22...v0.2.0-beta.23
 [0.2.0-beta.22]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.21...v0.2.0-beta.22
