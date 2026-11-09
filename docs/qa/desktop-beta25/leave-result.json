@@ -1,0 +1,27 @@
+{
+ "studio": {
+  "runPosts": 1,
+  "composerAfter": "",
+  "userMessages": [
+   "Ship the hero section"
+  ],
+  "pass": true
+ },
+ "media": {
+  "generatePosts": 1,
+  "tasksBefore": 0,
+  "tasksAfter": 1,
+  "lastStatus": [
+   "done"
+  ],
+  "libraryFiles": 1,
+  "pass": true
+ },
+ "bulkDelete": {
+  "picked": 4,
+  "deletesSent": 4,
+  "filesLeft": 0,
+  "pass": true
+ },
+ "errors": []
+}
