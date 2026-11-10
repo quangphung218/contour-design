@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.29] - 2026-11-11
+
 ### Fixed
 
 - Automations: pressing Add routine twice quickly (a double-click) saves one routine, not two that each run the prompt on the schedule; the button waits while the routine is saved, and the save finishes even if the page is left (QA-074).
@@ -1106,7 +1108,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.28...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.29...HEAD
+[0.2.0-beta.29]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.28...v0.2.0-beta.29
 [0.2.0-beta.28]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.27...v0.2.0-beta.28
 [0.2.0-beta.27]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.26...v0.2.0-beta.27
 [0.2.0-beta.26]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.25...v0.2.0-beta.26
