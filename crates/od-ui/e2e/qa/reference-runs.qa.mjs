@@ -34,6 +34,18 @@ const FX = mkdtempSync(join(tmpdir(), 'od-qa-refrun-'));
 const fx = (name) => join(FX, name);
 /** The installed app of the release before this one (REF-27). */
 const APP_B17 = '/Applications/Contour.app';
+/**
+ * Why the beta.17 tests cannot run here (no app, or another version
+ * installed), else null: a skip with its reason, not a red test.
+ */
+const NO_B17 = (() => {
+  const plist = join(APP_B17, 'Contents', 'Info.plist');
+  if (!existsSync(join(APP_B17, 'Contents', 'MacOS', 'od-desktop')) || !existsSync(plist)) {
+    return `needs Contour.app 0.2.0-beta.17 at ${APP_B17}, none installed`;
+  }
+  const version = (readFileSync(plist, 'utf8').match(/CFBundleShortVersionString<\/key>\s*<string>([^<]+)/) || [])[1];
+  return version === '0.2.0-beta.17' ? null : `needs Contour.app 0.2.0-beta.17 at ${APP_B17}, installed is ${version}`;
+})();
 
 function ff(args) {
   const r = spawnSync(FFMPEG, ['-hide_banner', '-v', 'error', '-nostdin', '-y', ...args], { encoding: 'utf8' });
@@ -324,10 +336,6 @@ test('REF-26', 'A reference folder from beta.17 whose mark names CLIP.MP4 is tak
 
 test('REF-27', 'A reference folder the installed beta.17 app wrote is taken back after the update when the film moved', async ({ d }) => {
   const exe = join(APP_B17, 'Contents', 'MacOS', 'od-desktop');
-  const plist = join(APP_B17, 'Contents', 'Info.plist');
-  assert.ok(existsSync(exe) && existsSync(plist), `needs Contour.app 0.2.0-beta.17 at ${APP_B17}`);
-  const version = (readFileSync(plist, 'utf8').match(/CFBundleShortVersionString<\/key>\s*<string>([^<]+)/) || [])[1];
-  assert.equal(version, '0.2.0-beta.17', `${APP_B17} is ${version}, not beta.17`);
   const { id, dir } = await projectWith(d, { 'CLIP.MP4': 'mot.mp4' });
   const made = await od(d, ['media', 'reference', 'CLIP.MP4'], { cwd: dir, bin: exe });
   assert.equal(made.code, 0, `beta.17: ${made.out}`);
@@ -336,7 +344,7 @@ test('REF-27', 'A reference folder the installed beta.17 app wrote is taken back
   mkdirSync(join(dir, 'a'));
   renameSync(join(dir, 'CLIP.MP4'), join(dir, 'a', 'clip.mp4'));
   await takenBack(d, id, dir, 'CLIP');
-}, { timeout: SLOW_MS });
+}, { timeout: SLOW_MS, skip: NO_B17 });
 
 // ---------------------------------------------------------------- P1: links typed wrong
 
@@ -416,7 +424,6 @@ test('REF-30', 'Contour killed (kill -9) during the agent\'s reference run, star
 
 test('REF-31', 'A beta.17 run killed half way, then the updated Contour runs the film again: whole folder, no orphan frame', async ({ d }) => {
   const exe = join(APP_B17, 'Contents', 'MacOS', 'od-desktop');
-  assert.ok(existsSync(exe), `needs Contour.app 0.2.0-beta.17 at ${APP_B17}`);
   fixtures();
   const here = mkdtempSync(join(tmpdir(), 'od-qa-kill17-'));
   try {
@@ -434,7 +441,7 @@ test('REF-31', 'A beta.17 run killed half way, then the updated Contour runs the
   } finally {
     rmSync(here, { recursive: true, force: true });
   }
-}, { timeout: SLOW_MS });
+}, { timeout: SLOW_MS, skip: NO_B17 });
 
 try {
   await run('reference-runs', { daemon: {} });
