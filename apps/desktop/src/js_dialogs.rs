@@ -188,24 +188,61 @@ impl Gates {
     }
 }
 
+/// How many times each webview's web content process ended, by a key
+/// naming the webview (its `WKWebView *`). Unlike [`Gates`] a new page
+/// keeps the count: the shell loads the page again right after a crash,
+/// before an open panel has seen it.
+#[derive(Debug, Default)]
+pub(crate) struct ProcessEnds(HashMap<usize, u64>);
+
+impl ProcessEnds {
+    /// The web content process of webview `key` ended.
+    pub(crate) fn ended(&mut self, key: usize) {
+        let count = self.0.entry(key).or_default();
+        *count = count.wrapping_add(1);
+    }
+
+    /// How many times the web content process of webview `key` ended.
+    pub(crate) fn count(&self, key: usize) -> u64 {
+        self.0.get(&key).copied().unwrap_or(0)
+    }
+}
+
+/// How often, while a page's panel is up, the shell looks whether the
+/// page's web content process ended meanwhile.
 #[cfg(target_os = "macos")]
-pub(crate) use mac::{install, page_loaded, reset_all};
+const PANEL_POLL_SECS: f64 = 0.25;
+
+/// Whether the shell closes a page's panel now: the web content process
+/// that asked ended since it opened (`opened`, `now`: [`ProcessEnds::count`]
+/// then and now), so nobody waits for the answer; and the panel is the
+/// modal window on top (`ours_on_top`), so another dialog above it is
+/// left alone and the panel closes once that one has.
+pub(crate) fn closes_panel(opened: u64, now: u64, ours_on_top: bool) -> bool {
+    opened != now && ours_on_top
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) use mac::{install, page_loaded_main, process_ended_main, reset_all};
 
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod mac {
-    use super::{BLOCK_LABEL, Gate, Gates, SCROLL_HEIGHT, dialog_message, dialog_title, scrolls};
-    use block2::Block;
+    use super::{
+        BLOCK_LABEL, Gate, Gates, PANEL_POLL_SECS, ProcessEnds, SCROLL_HEIGHT, closes_panel,
+        dialog_message, dialog_title, scrolls,
+    };
+    use block2::{Block, RcBlock};
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
     use objc2::{MainThreadMarker, MainThreadOnly, sel};
     use objc2_app_kit::{
-        NSAlert, NSAlertFirstButtonReturn, NSControlStateValueOn, NSFont, NSTextField, NSTextView,
-        NSView,
+        NSAlert, NSAlertFirstButtonReturn, NSApplication, NSControlStateValueOn, NSFont,
+        NSModalPanelRunLoopMode, NSTextField, NSTextView, NSView, NSWindow,
     };
-    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+    use objc2_foundation::{NSPoint, NSRect, NSRunLoop, NSSize, NSString, NSTimer};
     use objc2_web_kit::{WKFrameInfo, WKUIDelegate, WKWebView};
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::ffi::{CStr, c_void};
     use std::time::Instant;
 
@@ -237,17 +274,32 @@ mod mac {
         &WKFrameInfo,
         &Block<dyn Fn(*mut NSString)>,
     );
+    /// `webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:`
+    /// (`<input type="file">`), wry's and [`run_open_panel`].
+    type OpenPanelImp = extern "C-unwind" fn(
+        &AnyObject,
+        Sel,
+        &WKWebView,
+        &AnyObject,
+        &WKFrameInfo,
+        &Block<dyn Fn(*const AnyObject)>,
+    );
 
     /// Gives the UI delegate of `webview` (a `WKWebView *`, from Tauri's
     /// `with_webview`) the three JavaScript panel methods, then sets it
     /// again: WebKit reads which methods a delegate has when it is set.
+    /// Wry's file panel (`<input type="file">`) is wrapped so it closes
+    /// too when the page's process ends ([`run_open_panel`]). `webview` is
+    /// kept as the window's: [`process_ended_main`] and
+    /// [`page_loaded_main`] name it without Tauri's dispatcher.
     /// `on_hung` runs when a page is hung in a dialog loop ([`Gate::Hung`]),
     /// inside WebKit's call: it should only schedule the work. Call it on
-    /// the main thread.
+    /// the main thread, outside a WebKit call.
     pub(crate) fn install(webview: *mut c_void, on_hung: impl Fn() + 'static) {
         if webview.is_null() {
             return;
         }
+        MAIN.set(webview as usize);
         ON_HUNG.with(|slot| *slot.borrow_mut() = Some(Box::new(on_hung)));
         // SAFETY: on macOS Tauri's `PlatformWebview::inner` is the window's
         // live `WKWebView`, and `with_webview` runs this on the main thread
@@ -285,6 +337,7 @@ mod mac {
                 std::mem::transmute::<PromptImp, Imp>(prompt),
                 c"v@:@@@@@?",
             );
+            wrap_open_panel(class);
         }
         let delegate: &ProtocolObject<dyn WKUIDelegate> = &delegate;
         // SAFETY: the same delegate back; wry keeps it alive with the
@@ -307,18 +360,69 @@ mod mac {
         }
     }
 
+    /// Puts [`run_open_panel`] in place of wry's file panel method on
+    /// `class`, keeping wry's to call. Once only: a second [`install`]
+    /// would wrap the wrapper.
+    ///
+    /// # Safety
+    /// `class` is wry's UI delegate class, whose method has the shape
+    /// [`OpenPanelImp`] names (wry 0.55 `run_file_upload_panel`).
+    unsafe fn wrap_open_panel(class: &AnyClass) {
+        if WRY_OPEN_PANEL.get().is_some() {
+            return;
+        }
+        let sel = sel!(webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:);
+        let Some(method) = class.instance_method(sel) else {
+            tracing::info!("the UI delegate has no file panel to watch");
+            return;
+        };
+        let ours: OpenPanelImp = run_open_panel;
+        // SAFETY: the same arguments as wry's method (see the caller's
+        // vouch); the old one is kept and called with them.
+        let wry = unsafe {
+            let wry = method.set_implementation(std::mem::transmute::<OpenPanelImp, Imp>(ours));
+            std::mem::transmute::<Imp, OpenPanelImp>(wry)
+        };
+        WRY_OPEN_PANEL.set(Some(wry));
+    }
+
     thread_local! {
         /// Each webview's gate, by its `WKWebView *`. The panel methods,
-        /// [`page_loaded`] and [`reset_all`] all run on the main thread.
+        /// [`page_loaded_main`] and [`reset_all`] all run on the main
+        /// thread.
         static GATES: RefCell<Gates> = RefCell::new(Gates::default());
         /// What [`install`] was given to run when a page is hung.
         static ON_HUNG: RefCell<Option<Box<dyn Fn()>>> = const { RefCell::new(None) };
+        /// Each webview's ended web content processes, by its
+        /// `WKWebView *`: [`process_ended_main`] counts, an open panel
+        /// looks.
+        static ENDS: RefCell<ProcessEnds> = RefCell::new(ProcessEnds::default());
+        /// The window's `WKWebView *` [`install`] was given; 0 before.
+        static MAIN: Cell<usize> = const { Cell::new(0) };
+        /// Wry's file panel method, which [`run_open_panel`] wraps.
+        static WRY_OPEN_PANEL: Cell<Option<OpenPanelImp>> = const { Cell::new(None) };
     }
 
-    /// `webview` (a `WKWebView *`) started loading a page: dialogs it had
-    /// blocked may show again.
-    pub(crate) fn page_loaded(webview: *mut c_void) {
-        GATES.with(|gates| gates.borrow_mut().page_loaded(webview as usize));
+    /// The window's web content process ended: a panel the page opened
+    /// closes, as if cancelled, nobody being left to read the answer.
+    /// Inside WebKit's call, maybe inside a Tauri dispatcher call that
+    /// ended the process (QA-070): it touches no Tauri API, only counts.
+    /// On the main thread.
+    pub(crate) fn process_ended_main() {
+        let key = MAIN.get();
+        if key != 0 {
+            ENDS.with(|ends| ends.borrow_mut().ended(key));
+        }
+    }
+
+    /// The window started loading a page: dialogs it had blocked may show
+    /// again. Inside WebKit's call: it touches no Tauri API. On the main
+    /// thread.
+    pub(crate) fn page_loaded_main() {
+        let key = MAIN.get();
+        if key != 0 {
+            GATES.with(|gates| gates.borrow_mut().page_loaded(key));
+        }
     }
 
     /// The user opened another design: dialogs blocked for the last one
@@ -332,6 +436,7 @@ mod mac {
     /// (Escape), `field` under the message. `true` when OK closed it;
     /// `false` at once, nothing shown, when the user blocked this page's
     /// dialogs ([`DialogGate`]).
+    // WebKit callback: no Tauri dispatcher call here (QA-070).
     fn run_panel(
         mtm: MainThreadMarker,
         webview: &WKWebView,
@@ -410,14 +515,57 @@ mod mac {
                 button.setTitle(&NSString::from_str(BLOCK_LABEL));
             }
         }
-        // Not borrowing `GATES` here: `runModal` spins the run loop.
+        let timer = watch_process_end(key, Some(alert.window()));
+        // Not borrowing `GATES` or `ENDS` here: `runModal` spins the run
+        // loop.
         let ok = alert.runModal() == NSAlertFirstButtonReturn;
+        timer.invalidate();
         let block = offer_block
             && alert
                 .suppressionButton()
                 .is_some_and(|button| button.state() == NSControlStateValueOn);
         GATES.with(|gates| gates.borrow_mut().closed(key, Instant::now(), block));
         ok
+    }
+
+    /// Watches, while a page's modal panel runs, for the web content
+    /// process of webview `key` ending (a crash): WebKit says so inside
+    /// `runModal`, and the panel closes (`NSModalResponseAbort`, as if
+    /// cancelled) once it is the modal window on top, so the window is not
+    /// held by a question nobody waits for. `panel` is the panel's window;
+    /// `None` takes the modal window on top at the first look (wry's file
+    /// panel, built out of sight). Invalidate the timer once `runModal`
+    /// returned. On the main thread.
+    fn watch_process_end(key: usize, panel: Option<Retained<NSWindow>>) -> Retained<NSTimer> {
+        let opened = ENDS.with(|ends| ends.borrow().count(key));
+        let panel = RefCell::new(panel);
+        let watch = RcBlock::new(move |_timer| {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            let app = NSApplication::sharedApplication(mtm);
+            let top = app.modalWindow();
+            if panel.borrow().is_none() {
+                panel.replace(top.clone());
+            }
+            let ours_on_top =
+                matches!((&*panel.borrow(), &top), (Some(ours), Some(top)) if ours == top);
+            let now = ENDS.with(|ends| ends.borrow().count(key));
+            if closes_panel(opened, now, ours_on_top) {
+                tracing::info!("the page's web content process ended: closing its panel");
+                // From a timer in the modal run loop mode: `abortModal`,
+                // not `stopModal`, which waits for the next event.
+                app.abortModal();
+            }
+        });
+        // SAFETY: the timer is added to this (the main) thread's run loop
+        // only, so the block never runs on another thread; the caller
+        // invalidates it once the panel is gone.
+        unsafe {
+            let timer = NSTimer::timerWithTimeInterval_repeats_block(PANEL_POLL_SECS, true, &watch);
+            NSRunLoop::currentRunLoop().addTimer_forMode(&timer, NSModalPanelRunLoopMode);
+            timer
+        }
     }
 
     /// Width of the scrolling message box, points.
@@ -449,6 +597,7 @@ mod mac {
         Retained::into_super(scroll)
     }
 
+    // WebKit callback: no Tauri dispatcher call here (QA-070).
     extern "C-unwind" fn run_alert(
         _this: &AnyObject,
         _cmd: Sel,
@@ -463,6 +612,7 @@ mod mac {
         done.call(());
     }
 
+    // WebKit callback: no Tauri dispatcher call here (QA-070).
     extern "C-unwind" fn run_confirm(
         _this: &AnyObject,
         _cmd: Sel,
@@ -476,6 +626,7 @@ mod mac {
         done.call((Bool::new(ok),));
     }
 
+    // WebKit callback: no Tauri dispatcher call here (QA-070).
     extern "C-unwind" fn run_prompt(
         _this: &AnyObject,
         _cmd: Sel,
@@ -500,6 +651,32 @@ mod mac {
             .as_deref()
             .map_or(std::ptr::null_mut(), |s| std::ptr::from_ref(s).cast_mut());
         done.call((ptr,));
+    }
+
+    /// `<input type="file">`: wry's file panel ([`WRY_OPEN_PANEL`]), which
+    /// closes like a page's dialog when the page's process ends
+    /// ([`watch_process_end`]); wry then answers "no file" (`runModal` gave
+    /// abort, not OK), calling `done` once.
+    // WebKit callback: no Tauri dispatcher call here (QA-070).
+    extern "C-unwind" fn run_open_panel(
+        this: &AnyObject,
+        cmd: Sel,
+        webview: &WKWebView,
+        parameters: &AnyObject,
+        frame: &WKFrameInfo,
+        done: &Block<dyn Fn(*const AnyObject)>,
+    ) {
+        let Some(wry) = WRY_OPEN_PANEL.get() else {
+            // Never: installed with it. No file, as on Cancel.
+            done.call((std::ptr::null(),));
+            return;
+        };
+        let key = std::ptr::from_ref(webview) as usize;
+        let timer = MainThreadMarker::new().map(|_| watch_process_end(key, None));
+        wry(this, cmd, webview, parameters, frame, done);
+        if let Some(timer) = timer {
+            timer.invalidate();
+        }
     }
 }
 
@@ -759,6 +936,46 @@ mod tests {
             assert_eq!(gates.open(A, t0), Gate::Block);
         }
         assert_eq!(gates.open(A, t0), Gate::Hung);
+    }
+
+    #[test]
+    fn a_panel_closes_once_its_process_ended_and_it_is_on_top() {
+        // The page's process ended since the panel opened: closes, unless
+        // another dialog is on top (then once that one has closed).
+        assert!(closes_panel(0, 1, true));
+        assert!(!closes_panel(0, 1, false));
+        // Still the process that asked: stays up for the user.
+        assert!(!closes_panel(0, 0, true));
+        assert!(!closes_panel(2, 2, true));
+        assert!(!closes_panel(2, 2, false));
+    }
+
+    #[test]
+    fn each_webview_counts_its_own_process_ends() {
+        let mut ends = ProcessEnds::default();
+        assert_eq!(ends.count(A), 0);
+        let opened_a = ends.count(A);
+        let opened_b = ends.count(B);
+        ends.ended(A);
+        // A's panel closes; B's, another webview's, stays.
+        assert!(closes_panel(opened_a, ends.count(A), true));
+        assert!(!closes_panel(opened_b, ends.count(B), true));
+        ends.ended(A);
+        assert_eq!(ends.count(A), 2);
+        assert_eq!(ends.count(B), 0);
+    }
+
+    #[test]
+    fn a_new_page_keeps_the_process_end_seen() {
+        // After a crash the shell loads the page again (`page_loaded`)
+        // before the panel's timer looks: the end still counts.
+        let mut gates = Gates::default();
+        let mut ends = ProcessEnds::default();
+        let opened = ends.count(A);
+        ends.ended(A);
+        gates.page_loaded(A);
+        gates.reset_all();
+        assert!(closes_panel(opened, ends.count(A), true));
     }
 
     #[test]
