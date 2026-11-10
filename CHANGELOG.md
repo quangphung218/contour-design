@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.28] - 2026-11-10
+
 ### Fixed
 
 - Desktop app on macOS: a design that crashes its page's web process twice within 10 s no longer makes the whole app panic and quit; the app opens the project with the preview stopped and the Studio says the design crashed the page, as beta.25 meant to. View ▸ Reload and a design hung in a dialog loop no longer read the page's address in a way that panics once its web process has ended (QA-073).
@@ -1096,7 +1098,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.27...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.28...HEAD
+[0.2.0-beta.28]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.27...v0.2.0-beta.28
 [0.2.0-beta.27]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.26...v0.2.0-beta.27
 [0.2.0-beta.26]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.25...v0.2.0-beta.26
 [0.2.0-beta.25]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.24...v0.2.0-beta.25
