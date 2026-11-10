@@ -61,7 +61,7 @@ fn closes_ask(still_open: bool, ours_on_top: bool) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) use mac::{ask_not_responding, bundle_id, kill, menu_keys_first};
+pub(crate) use mac::{ask_not_responding, bundle_id, kill, menu_keys_first, page_url};
 
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
@@ -116,6 +116,22 @@ mod mac {
             return false;
         }
         true
+    }
+
+    /// The address `webview` (a `WKWebView *`, from Tauri's
+    /// `with_webview`) shows, on the main thread. `None` once its web
+    /// content process ended, when WebKit's `URL` is nil: wry's own `url()`
+    /// unwraps that and panics the app (QA-073).
+    pub(crate) fn page_url(webview: *mut c_void) -> Option<String> {
+        if webview.is_null() {
+            return None;
+        }
+        // SAFETY: on macOS Tauri's `PlatformWebview::inner` is the window's
+        // live `WKWebView`, and `with_webview` runs this on the main thread.
+        let webview: &WKWebView = unsafe { &*webview.cast::<WKWebView>() };
+        // SAFETY: `URL` is a property of every `WKWebView`, nil allowed.
+        let url = unsafe { webview.URL() }?;
+        url.absoluteString().map(|s| s.to_string())
     }
 
     const _: () = assert!(NSAlertFirstButtonReturn == WAIT_RESPONSE);
