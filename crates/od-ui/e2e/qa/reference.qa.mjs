@@ -337,7 +337,10 @@ test('REF-18', 'A song with cover art: the chat says it is not a video and no em
 // ---------------------------------------------------------------- P2: names
 
 test('REF-19', 'Two films with the same name (clip.mp4, clip.mkv) in one brief each get their own reference', async ({ d, newPage }) => {
-  const { id, text } = await motion(newPage, d, ['clip.mp4', 'clip.mkv'], 'Ghép nhịp hai phim này qa-ref');
+  const { page, id } = await motion(newPage, d, ['clip.mp4', 'clip.mkv'], 'Ghép nhịp hai phim này qa-ref');
+  // Since 30fd2efb the text between two tool calls folds into the closed
+  // "Worked for … steps" group, out of innerText: count every line said.
+  const text = (await page.getByTestId('assistant-msg').first().textContent()).replace(/\s+/g, ' ');
   assert.equal((text.match(/Reference ready/g) || []).length, 2, text);
   const dirs = new Set((await listFiles(d, id)).filter((f) => f.endsWith('/facts.json')).map((f) => f.split('/').slice(0, -1).join('/')));
   assert.equal(dirs.size, 2, `one folder for both films: ${[...dirs]}`);
