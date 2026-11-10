@@ -999,6 +999,7 @@ messages! {
     Download => "Download", "Tải về";
     Upload => "Upload", "Tải lên";
     Uploaded => "Uploaded", "Đã tải lên";
+    GeneratedAsset => "Generated", "Do AI tạo";
     Browse => "Browse…", "Chọn…";
     Install => "Install", "Cài";
     Use => "Use", "Dùng";
@@ -1174,6 +1175,7 @@ messages! {
     Providers => "Providers", "Provider";
     HyperframesMp4 => "Video to MP4", "Video ra MP4";
     SetUpProviders => "Set up providers", "Thiết lập nhà cung cấp";
+    MediaProviderError => "{0} returned an error: {1}", "{0} báo lỗi: {1}";
     Images => "Images", "Ảnh";
     Videos => "Videos", "Video";
     Image => "Image", "Ảnh";

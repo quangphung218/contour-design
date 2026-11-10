@@ -10,6 +10,9 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Automations: pressing Add routine twice quickly (a double-click) saves one routine, not two that each run the prompt on the schedule; the button waits while the routine is saved, and the save finishes even if the page is left (QA-074).
+- Media: a failed generation says which provider failed and why in words (`OpenAI returned an error: upstream exploded`) instead of the provider's raw JSON; a refused key (401, 403) has a Set up providers button, in every language (QA-077).
+- Media library: an image generated on the Media page is labelled "Generated", not "Uploaded"; files the user uploads keep "Uploaded" (QA-078).
 - Studio: an export still running when the Studio is left (an MP4 takes half a minute) shows again on return, and pressing the same format on the same file joins it instead of rendering and downloading it a second time; its result shows when it ends (QA-075).
 - Studio: in a project deleted from another tab, sending a message or the project's event stream ending now switches the Studio to "This project was deleted or the link is wrong." with All projects, instead of "Reconnecting automatically…", "HTTP 404" and "check the agent in Settings" (QA-076).
 
