@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Studio: a run stopped while it was still being prepared, then Contour quit right away, now always ends as "Stopped"; if the quit came just as the run took the Stop, the turn was told as cut off by Contour closing.
+
 ## [0.2.0-beta.29] - 2026-11-11
 
 ### Fixed
