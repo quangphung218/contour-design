@@ -18,24 +18,77 @@ pub(crate) fn menu_first(command_only: bool, key: &str) -> bool {
     command_only && matches!(key, "q" | "r")
 }
 
+/// The user's answer to "This page isn't responding" ([`ask_not_responding`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NotRespondingChoice {
+    /// Wait (the first button, Return).
+    Wait,
+    /// Reload (the second button).
+    Reload,
+    /// Nobody answered: the page answered the Reload question first, so
+    /// the shell closed the alert itself (QA-072).
+    Closed,
+}
+
+/// `NSAlertFirstButtonReturn`: Wait.
+const WAIT_RESPONSE: isize = 1000;
+
+/// `NSAlertSecondButtonReturn`: Reload.
+const RELOAD_RESPONSE: isize = 1001;
+
+/// The choice `runModal` gave as `response`. Anything but the two buttons
+/// (`NSModalResponseAbort`, when [`closes_ask`] closed it) is no choice:
+/// a Reload the user did not press never ends the page.
+fn choice_of(response: isize) -> NotRespondingChoice {
+    match response {
+        WAIT_RESPONSE => NotRespondingChoice::Wait,
+        RELOAD_RESPONSE => NotRespondingChoice::Reload,
+        _ => NotRespondingChoice::Closed,
+    }
+}
+
+/// How often, while "This page isn't responding" is up, the shell looks
+/// whether the page answered the question meanwhile.
 #[cfg(target_os = "macos")]
-pub(crate) use mac::{ask_not_responding, kill, menu_keys_first};
+const ASK_POLL_SECS: f64 = 0.25;
+
+/// Whether the shell closes "This page isn't responding" now: the question
+/// it asks is no longer open (`still_open`; the page answered, loaded
+/// again or a newer Reload replaced it), and the alert is the modal window
+/// on top (`ours_on_top`), so a page's own dialog above it is left alone.
+fn closes_ask(still_open: bool, ours_on_top: bool) -> bool {
+    !still_open && ours_on_top
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) use mac::{ask_not_responding, bundle_id, kill, menu_keys_first};
 
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod mac {
-    use super::menu_first;
+    use super::{
+        ASK_POLL_SECS, NotRespondingChoice, RELOAD_RESPONSE, WAIT_RESPONSE, choice_of, closes_ask,
+        menu_first,
+    };
     use block2::RcBlock;
     use objc2::runtime::NSObjectProtocol;
     use objc2::{MainThreadMarker, msg_send, sel};
     use objc2_app_kit::{
-        NSAlert, NSAlertFirstButtonReturn, NSApplication, NSEvent, NSEventMask,
-        NSEventModifierFlags,
+        NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSApplication, NSEvent,
+        NSEventMask, NSEventModifierFlags, NSModalPanelRunLoopMode,
     };
-    use objc2_foundation::NSString;
+    use objc2_foundation::{NSBundle, NSRunLoop, NSString, NSTimer};
     use objc2_web_kit::WKWebView;
     use std::ffi::c_void;
     use std::ptr::NonNull;
+
+    /// The running app's bundle id (`CFBundleIdentifier`): a QA copy's own
+    /// (`….qa`), not the one built in.
+    pub(crate) fn bundle_id() -> Option<String> {
+        NSBundle::mainBundle()
+            .bundleIdentifier()
+            .map(|id| id.to_string())
+    }
 
     /// Ends the web content process of `webview` (a `WKWebView *`, from
     /// Tauri's `with_webview`), on the main thread. `false` when this
@@ -65,12 +118,19 @@ mod mac {
         true
     }
 
-    /// Asks the user about a page that did not answer View ▸ Reload:
-    /// `Some(true)` to reload it (its web content process ended),
-    /// `Some(false)` to wait. `None`, nothing shown, while a modal panel
-    /// (a page's dialog) is up. Wait is the default (Return): a page only
-    /// busy keeps its unsaved work. On the main thread.
-    pub(crate) fn ask_not_responding() -> Option<bool> {
+    const _: () = assert!(NSAlertFirstButtonReturn == WAIT_RESPONSE);
+    const _: () = assert!(NSAlertSecondButtonReturn == RELOAD_RESPONSE);
+
+    /// Asks the user about a page that did not answer View ▸ Reload: Reload
+    /// (its web content process ended) or Wait. `None`, nothing shown,
+    /// while a modal panel (a page's dialog) is up. Wait is the default
+    /// (Return): a page only busy keeps its unsaved work. While the alert
+    /// is up, once `still_open` says the question was answered, the alert
+    /// closes itself ([`NotRespondingChoice::Closed`], QA-072): a page that
+    /// answers is not left under "isn't responding". On the main thread.
+    pub(crate) fn ask_not_responding(
+        still_open: impl Fn() -> bool + 'static,
+    ) -> Option<NotRespondingChoice> {
         let mtm = MainThreadMarker::new()?;
         let app = NSApplication::sharedApplication(mtm);
         if app.modalWindow().is_some() {
@@ -84,7 +144,30 @@ mod mac {
         ));
         alert.addButtonWithTitle(&NSString::from_str("Wait"));
         alert.addButtonWithTitle(&NSString::from_str("Reload"));
-        Some(alert.runModal() != NSAlertFirstButtonReturn)
+        let window = alert.window();
+        let watch = RcBlock::new(move |_timer| {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            let app = NSApplication::sharedApplication(mtm);
+            let ours_on_top = app.modalWindow().is_some_and(|top| top == window);
+            if closes_ask(still_open(), ours_on_top) {
+                // From a timer in the modal run loop mode: `abortModal`,
+                // not `stopModal`, which waits for the next event.
+                app.abortModal();
+            }
+        });
+        // SAFETY: the timer is added to this (the main) thread's run loop
+        // only, so the block never runs on another thread; invalidated
+        // below, before the alert and what the block holds go.
+        let timer = unsafe {
+            let timer = NSTimer::timerWithTimeInterval_repeats_block(ASK_POLL_SECS, true, &watch);
+            NSRunLoop::currentRunLoop().addTimer_forMode(&timer, NSModalPanelRunLoopMode);
+            timer
+        };
+        let response = alert.runModal();
+        timer.invalidate();
+        Some(choice_of(response))
     }
 
     /// From now on ⌘Q and ⌘R ([`menu_first`]) go to the main menu before
@@ -141,6 +224,26 @@ mod tests {
     fn quit_and_reload_go_to_the_menu_first() {
         assert!(menu_first(true, "q"));
         assert!(menu_first(true, "r"));
+    }
+
+    #[test]
+    fn the_two_buttons_are_the_only_choices() {
+        assert_eq!(choice_of(WAIT_RESPONSE), NotRespondingChoice::Wait);
+        assert_eq!(choice_of(RELOAD_RESPONSE), NotRespondingChoice::Reload);
+        // `NSModalResponseAbort`, `NSModalResponseStop`: closed by the
+        // shell, never a Reload (QA-072).
+        assert_eq!(choice_of(-1001), NotRespondingChoice::Closed);
+        assert_eq!(choice_of(-1000), NotRespondingChoice::Closed);
+    }
+
+    #[test]
+    fn the_ask_closes_once_answered_and_only_itself() {
+        // The page answered: closes, unless a page's dialog is on top.
+        assert!(closes_ask(false, true));
+        assert!(!closes_ask(false, false));
+        // Still not answered: stays up for the user.
+        assert!(!closes_ask(true, true));
+        assert!(!closes_ask(true, false));
     }
 
     #[test]
