@@ -416,6 +416,7 @@ fn off_webkit_call<R: Runtime>(app: &AppHandle<R>, task: fn(&AppHandle<R>)) {
 
 /// [`js_dialogs`]'s gate saw a design hang the window in a dialog loop:
 /// [`stop_hung_page`], off WebKit's call ([`off_webkit_call`]).
+// WebKit callback: no Tauri dispatcher call here (QA-070).
 #[cfg(any(target_os = "macos", test))]
 fn on_hung<R: Runtime>(app: &AppHandle<R>) {
     off_webkit_call(app, stop_hung_page);
@@ -540,12 +541,11 @@ fn page_listens<R: Runtime>(app: &impl Manager<R>) {
 /// The main window's `on_page_load` for a page that started loading: the
 /// Reload question ([`page_started`]) and, on macOS, the dialogs the user
 /// blocked on the page gone show again (QA-064).
+// WebKit callback: no Tauri dispatcher call here (QA-070).
 fn on_page_started<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     page_started(window);
     #[cfg(target_os = "macos")]
-    let _ = window.with_webview(|webview| {
-        js_dialogs::page_loaded(webview.inner());
-    });
+    js_dialogs::page_loaded_main();
 }
 
 /// QA's test hook for the crash loop (docs/qa/test-plan.md): set to `1`,
@@ -584,6 +584,7 @@ fn qa_crashes_page(url: &Url) -> bool {
 /// The main window finished loading `url`: with the crash-loop test hook
 /// on ([`qa_crash_web_enabled`]) and a design's preview running there,
 /// its web content process ends, off WebKit's call.
+// WebKit callback: no Tauri dispatcher call here (QA-070).
 #[cfg(target_os = "macos")]
 fn qa_crash_web<R: Runtime>(window: &tauri::WebviewWindow<R>, url: &Url) {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -860,9 +861,22 @@ fn load_after_grace<R: Runtime>(app: &AppHandle<R>, killed: bool) {
     }
 }
 
+/// `on_web_content_process_terminate`: a page's dialog or file panel
+/// still up closes (nobody waits for it), then [`on_page_terminated`].
+/// WebKit calls it inside [`restart_page`]'s `with_webview`, which holds
+/// the window's lock (QA-070): only state kept aside
+/// ([`js_dialogs::process_ended_main`]), never Tauri's dispatcher.
+// WebKit callback: no Tauri dispatcher call here (QA-070).
+#[cfg(target_os = "macos")]
+fn on_web_process_ended<R: Runtime>(webview: &tauri::Webview<R>) {
+    js_dialogs::process_ended_main();
+    on_page_terminated(webview.app_handle());
+}
+
 /// WebKit says the main window's web content process ended
 /// ([`page_terminated`]), off WebKit's call ([`off_webkit_call`]): when
 /// [`restart_page`] ended it, WebKit says so inside its `with_webview`.
+// WebKit callback: no Tauri dispatcher call here (QA-070).
 #[cfg(any(target_os = "macos", test))]
 fn on_page_terminated<R: Runtime>(app: &AppHandle<R>) {
     off_webkit_call(app, page_terminated);
@@ -1635,17 +1649,7 @@ fn main() -> anyhow::Result<()> {
     let builder = builder
         .manage(Mutex::new(Restarts::default()))
         .manage(Mutex::new(Crashes::default()))
-        .on_web_content_process_terminate(|webview| {
-            // A page's `alert` still up closes (nobody waits for it). Here,
-            // in WebKit's call: it only counts, and an open panel's timer
-            // must see it while `runModal` runs.
-            if let Err(e) = webview.with_webview(|webview| {
-                js_dialogs::process_ended(webview.inner());
-            }) {
-                tracing::warn!(error = %e, "cannot reach the webview");
-            }
-            on_page_terminated(webview.app_handle());
-        });
+        .on_web_content_process_terminate(on_web_process_ended);
     builder
         .invoke_handler(tauri::generate_handler![
             pick_folder,
@@ -2663,5 +2667,223 @@ mod tests {
         ] {
             assert!(!opens(bad), "{bad}");
         }
+    }
+
+    /// The line over a function WebKit calls synchronously, maybe inside a
+    /// Tauri dispatcher call that holds the window's lock (QA-070).
+    const WEBKIT_CALLBACK: &str = "// WebKit callback:";
+
+    /// Tauri calls that go through the window's dispatcher: inside a WebKit
+    /// callback they lock the window again (QA-070). A page-load event's
+    /// own `payload.url()` is not one.
+    const DISPATCHER_CALLS: [&str; 7] = [
+        "with_webview(",
+        "navigate(",
+        "run_on_main_thread(",
+        "eval(",
+        "reload(",
+        "window.url()",
+        "webview.url()",
+    ];
+
+    /// The shell's sources with WebKit callbacks.
+    const SOURCES: [(&str, &str); 3] = [
+        ("main.rs", include_str!("main.rs")),
+        ("js_dialogs.rs", include_str!("js_dialogs.rs")),
+        ("web_process.rs", include_str!("web_process.rs")),
+    ];
+
+    /// `source` without its comments and with its string and char literals
+    /// emptied: braces and words in them count for nothing.
+    fn code_only(source: &str) -> String {
+        let chars: Vec<char> = source.chars().collect();
+        let mut out = String::with_capacity(source.len());
+        let mut i = 0;
+        while i < chars.len() {
+            match chars[i] {
+                '/' if chars.get(i + 1) == Some(&'/') => {
+                    while i < chars.len() && chars[i] != '\n' {
+                        i += 1;
+                    }
+                    continue;
+                }
+                '"' => {
+                    i += 1;
+                    while i < chars.len() && chars[i] != '"' {
+                        i += if chars[i] == '\\' { 2 } else { 1 };
+                    }
+                    out.push_str("\"\"");
+                }
+                // A char literal (`'x'`, `'\n'`), not a lifetime.
+                '\'' if chars.get(i + 2) == Some(&'\'') || chars.get(i + 1) == Some(&'\\') => {
+                    i += 1;
+                    while i < chars.len() && chars[i] != '\'' {
+                        i += if chars[i] == '\\' { 2 } else { 1 };
+                    }
+                    out.push_str("' '");
+                }
+                c => out.push(c),
+            }
+            i += 1;
+        }
+        out
+    }
+
+    /// The index of the bracket closing the one `code` opens at `open`.
+    fn closing(code: &str, open: usize) -> usize {
+        let (up, down) = match &code[open..=open] {
+            "(" => ('(', ')'),
+            _ => ('{', '}'),
+        };
+        let mut depth = 0usize;
+        for (i, c) in code[open..].char_indices() {
+            if c == up {
+                depth += 1;
+            } else if c == down {
+                depth -= 1;
+                if depth == 0 {
+                    return open + i;
+                }
+            }
+        }
+        panic!("unbalanced {up} at {open}");
+    }
+
+    /// `code` without what it hands to `off_webkit_call`, which runs after
+    /// WebKit's call has returned.
+    fn outside_off_webkit_call(code: &str) -> String {
+        let mut code = code.to_owned();
+        while let Some(at) = code.find("off_webkit_call(") {
+            let open = at + "off_webkit_call".len();
+            let close = closing(&code, open);
+            code.replace_range(at..=close, "handed_off");
+        }
+        code
+    }
+
+    /// The dispatcher calls `code` makes itself ([`DISPATCHER_CALLS`]).
+    fn dispatcher_calls(code: &str) -> Vec<&'static str> {
+        let code = outside_off_webkit_call(code);
+        DISPATCHER_CALLS
+            .into_iter()
+            .filter(|call| code.contains(call))
+            .collect()
+    }
+
+    /// Each function of `source` under a [`WEBKIT_CALLBACK`] line: its
+    /// name and its body (code only).
+    fn webkit_callbacks(source: &str) -> Vec<(String, String)> {
+        let mut found = Vec::new();
+        let mut offset = 0;
+        for line in source.split_inclusive('\n') {
+            offset += line.len();
+            if !line.trim_start().starts_with(WEBKIT_CALLBACK) {
+                continue;
+            }
+            let rest = &source[offset..];
+            let at = rest.find("fn ").expect("a function under the line");
+            let code = code_only(&rest[at..]);
+            let name: String = code[3..]
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            let open = code.find('{').expect("a body");
+            let body = code[open..=closing(&code, open)].to_owned();
+            found.push((name, body));
+        }
+        found
+    }
+
+    #[test]
+    fn webkit_callbacks_never_call_tauris_dispatcher() {
+        // QA-070, and the terminate hook again in #138: `with_webview`
+        // inside a callback WebKit makes inside `restart_page`'s
+        // `with_webview` locks the window twice and hangs the app.
+        let mut names = Vec::new();
+        for (file, source) in SOURCES {
+            for (name, body) in webkit_callbacks(source) {
+                let calls = dispatcher_calls(&body);
+                assert!(
+                    calls.is_empty(),
+                    "{file} `{name}` runs inside a WebKit call and calls {calls:?}: \
+                     hand it to `off_webkit_call` or use state kept aside"
+                );
+                names.push(name);
+            }
+        }
+        for name in [
+            "on_web_process_ended",
+            "on_page_terminated",
+            "on_page_started",
+            "qa_crash_web",
+            "on_hung",
+            "run_panel",
+            "run_alert",
+            "run_confirm",
+            "run_prompt",
+            "run_open_panel",
+        ] {
+            assert!(
+                names.iter().any(|n| n == name),
+                "`{name}` lost its `{WEBKIT_CALLBACK}` line"
+            );
+        }
+    }
+
+    #[test]
+    fn the_windows_webkit_hooks_never_call_tauris_dispatcher() {
+        let code = code_only(include_str!("main.rs"));
+        for hook in [
+            ".on_web_content_process_terminate(",
+            ".on_page_load(",
+            ".on_navigation(",
+            ".on_new_window(",
+        ] {
+            let at = code.find(hook).unwrap_or_else(|| panic!("no {hook}"));
+            let open = at + hook.len() - 1;
+            let args = &code[open..=closing(&code, open)];
+            let calls = dispatcher_calls(args);
+            assert!(
+                calls.is_empty(),
+                "{hook} calls {calls:?} inside WebKit's call"
+            );
+        }
+    }
+
+    #[test]
+    fn a_process_end_and_a_page_load_reach_the_pages_dialogs() {
+        // Not covered by any test that runs WebKit: the wiring itself.
+        let code = code_only(include_str!("main.rs"));
+        assert!(code.contains(".on_web_content_process_terminate(on_web_process_ended)"));
+        let callbacks = webkit_callbacks(include_str!("main.rs"));
+        let body = |name: &str| {
+            callbacks
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, body)| body.clone())
+                .unwrap_or_default()
+        };
+        assert!(body("on_web_process_ended").contains("js_dialogs::process_ended_main()"));
+        assert!(body("on_page_started").contains("js_dialogs::page_loaded_main()"));
+    }
+
+    #[test]
+    fn the_check_sees_dispatcher_calls_not_handed_off() {
+        let source = "
+            // WebKit callback: test
+            fn hook(w: &W) {
+                // w.with_webview(|_| {}) in a comment is fine
+                tracing::warn!(\"navigate(\");
+                off_webkit_call(app, |app| { w.navigate(u); w.with_webview(f); });
+                let c = '{';
+                if x { w.reload(); }
+            }
+            fn after() { w.with_webview(f); }
+        ";
+        let callbacks = webkit_callbacks(source);
+        assert_eq!(callbacks.len(), 1);
+        assert_eq!(callbacks[0].0, "hook");
+        assert_eq!(dispatcher_calls(&callbacks[0].1), ["reload("]);
+        assert!(dispatcher_calls("{ payload.url(); handed(); }").is_empty());
     }
 }
