@@ -178,4 +178,20 @@ test('PRJ-12', "Deleting a project opened from a folder keeps the user's folder 
   }
 });
 
+test('PRJ-13', 'Sending in a project deleted from another tab says the project is gone, not that Contour or the agent failed', async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'Deleted elsewhere');
+  const { page } = await newPage();
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.getByTestId('composer').waitFor();
+  assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
+  await page.getByTestId('composer').fill('làm cho tối hơn');
+  await page.getByTestId('composer').press('Enter');
+  const msg = page.getByTestId('assistant-msg').first();
+  await until(async () => (await msg.getAttribute('data-state', { timeout: 200 })) === 'failed', 'the turn is refused');
+  const said = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
+  // STU-12 words it as "This project was deleted or the link is wrong."
+  assert.match(said, /deleted|no longer exists/i, said.slice(0, 300));
+  assert.doesNotMatch(said, /HTTP 404|check the agent in Settings|Reconnecting/i, said.slice(0, 300));
+}, { knownBug: 'QA-076' });
+
 await run('projects');

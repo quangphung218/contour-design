@@ -6,7 +6,8 @@ Expected results come from [features.md](../features.md),
 behaviour of the original app, not from the current code. The existing
 suite in `crates/od-ui/e2e/*.e2e.mjs` mostly walks the happy paths; this
 plan adds the mistakes and accidents of real users. Bugs found are in
-[bugs.md](bugs.md).
+[bugs.md](bugs.md); the web pass after beta.28 (QA-074 to QA-078) in
+[bugs-web-beta28.md](bugs-web-beta28.md).
 
 ## Priorities and status
 
@@ -141,6 +142,7 @@ Goal: the user takes the design out of Contour.
 | EXP-11 | Esc that closes the Export menu does not stop a running Design Jury | Jury on and running, Export open | Esc | Menu closes; jury still running | P1 | auto (QA-013) |
 | EXP-12 | The Export menu lists what applies, grouped | A page open | Open Export, unfold Image and PowerPoint | No greyed formats; no Markdown or JSX for a page; "MP4 video"; Image ▸ PNG, JPEG, WebP; PowerPoint ▸ Slides as images, Editable text | P2 | auto |
 | EXP-13 | Every format offered for a plain page works | A page, not a deck, Chrome | Export ▸ PowerPoint (both), MP4 | Each offered item gives a file; one that does not apply is not offered | P1 | auto (QA-031) |
+| EXP-14 | Back in the Studio during an MP4 export, the export still shows | A Motion film, Chrome | Export ▸ MP4, Projects, Back | The running export is shown; a second press does not render again | P1 | auto (QA-075) |
 
 ## 6. Manage projects (`projects.qa.mjs`)
 
@@ -160,6 +162,7 @@ Goal: the user finds, renames, copies, removes and brings in projects.
 | PRJ-10 | Open a folder that does not exist | — | Open folder "/no/such" | Readable error, no project created | P1 | auto |
 | PRJ-11 | Open an existing folder: files are used in place | Folder with index.html | Open folder | Project lists the file; edits land in that folder | P0 | auto |
 | PRJ-12 | Delete a folder-backed project keeps the user's folder | PRJ-11 | Delete project | The folder and its files are still on disk | P0 | auto |
+| PRJ-13 | Sending in a project deleted from another tab | Project open in tab A, deleted elsewhere | Send a message in tab A | "This project was deleted…" with All projects; no "Reconnecting", no HTTP 404, no agent Settings hint | P1 | auto (QA-076) |
 
 ## 7. Library (`library.qa.mjs`)
 
@@ -182,6 +185,8 @@ and media.
 | LIB-12 | Design system search reads what the page shows | — | Search "coral", then "curated" | Airbnb found; the package note matches nothing | P2 | auto |
 | LIB-13 | Skills say what they make | — | Plugins ▸ Skills, open faq-page | No "Use when…" text for the agent | P2 | auto |
 | LIB-14 | Media and Templates labels, Generate tab | No provider key | Media, Generate tab, Templates | "Audio", no second Generate button, selects with arrows, a Set up providers button | P3 | auto |
+| LIB-15 | A failed image generation is explained in words | Provider answering 500, then 401 | Generate | No raw JSON; the 401 offers a way to Providers | P1 | auto (QA-077) |
+| LIB-16 | A generated image is not labelled Uploaded | A provider | Generate, open Library | The card does not say "Uploaded" | P3 | auto (QA-078) |
 | LIB-11 | Skills: a user skill overrides a bundled one | — | Create skill with a bundled id | Override notice shown | P2 | exist (library) |
 
 ## 8. Settings (`settings.qa.mjs`)
@@ -209,6 +214,7 @@ and media.
 | AUT-04 | Delete a routine removes it from the list and API | Routine | Delete | Gone from list and `GET /api/routines` | P1 | auto |
 | AUT-05 | Routine on a project that was deleted | Routine on project P | Delete P, Run now | The run is refused or recorded as failed with "project not found" | P2 | auto |
 | AUT-06 | The form resets after editing a routine | A routine on a project | Edit, Save; Edit, Cancel | The form is back on "New project each run" with no name | P2 | auto |
+| AUT-07 | Add pressed twice saves one routine | — | Fill the form, double-click Add | One routine | P1 | auto (QA-074) |
 
 ## 10. Work in progress is not lost (`drafts.qa.mjs`)
 
@@ -296,7 +302,7 @@ CHANGELOG 0.2.0-beta.13/14 and features.md (Templates).
 | TPL-13 | A link to a template that does not exist | — | Open `/?template=motion-does-not-exist` | Plain Home, nothing picked, no error | P1 | auto |
 | TPL-14 | Remix a film | Same | Preview ▸ Remix | Project opens on the film page; Export offers MP4 | P0 | auto |
 | TPL-15 | Remix pressed twice | Same | Double-click Remix | One project | P1 | auto |
-| TPL-16 | A remixed film is tagged like a film | Remix a film | Home recent card | "Media", as a film started with Use template | P1 | auto (QA-034) |
+| TPL-16 | A remixed film is tagged like a film | Remix a film | Home recent card | "Motion", as a film started with Use template or the Motion chip (UI-013) | P1 | auto (QA-034) |
 | TPL-17 | Export ▸ MP4 of a remixed film | TPL-14, Chrome + ffmpeg | Export ▸ MP4 video | h264 MP4 as long as `data-duration` | P0 | auto |
 | TPL-18 | `od media generate` as the film's skill says | Chrome + ffmpeg | `media scaffold`, copy example, `media generate` | `film.mp4`, h264 1920×1080, length = `data-duration` | P0 | auto |
 

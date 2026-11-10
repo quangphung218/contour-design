@@ -106,4 +106,19 @@ test('AUT-06', 'After saving or cancelling an edit of a routine on a project, th
   }
 });
 
+test('AUT-07', 'Add pressed twice quickly saves one routine, not two that each run on the schedule', async ({ d, api, newPage }) => {
+  const pid = await createProject(d, 'Double add target');
+  const before = (await routines(api)).length;
+  const { page } = await form(newPage, d, { name: 'Twice pressed', prompt: 'Refresh it', project: pid });
+  const sent = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/routines') sent.push(r.response());
+  });
+  await page.getByTestId('routine-add').dblclick();
+  await page.getByTestId('routine').filter({ hasText: 'Twice pressed' }).first().waitFor();
+  await until(async () => (await page.getByTestId('routine-name').inputValue()) === '', 'form cleared');
+  await Promise.all(sent);
+  assert.equal((await routines(api)).length, before + 1, `${sent.length} saves sent for one press`);
+}, { knownBug: 'QA-074' });
+
 await run('automations');

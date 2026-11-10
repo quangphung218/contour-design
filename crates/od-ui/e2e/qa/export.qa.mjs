@@ -234,4 +234,23 @@ test('EXP-13', 'Every format the Export menu offers for a plain page gives a fil
   assert.equal(refused.length, 0, `offered, then refused: ${refused.join(' | ')}`);
 }, { skip: CHROME ? undefined : 'no Chrome, Edge or Chromium on this machine', timeout: 200_000 });
 
+test('EXP-14', 'Back in the Studio during an MP4 export, the export still shows, so a second press does not render it again', async ({ d, api, newPage }) => {
+  const r = await api('/api/design-templates/motion-lower-third/remix', { method: 'POST', body: { name: 'Film left mid-export' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const id = r.body.project?.id || r.body.projectId || r.body.id;
+  const { page } = await newPage();
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.locator('.file.active, [data-testid="file-row"]', { hasText: 'index.html' }).first().waitFor();
+  await page.getByTestId('export').click();
+  await page.getByTestId('export-mp4').click();
+  await until(async () => /mp4/i.test(await page.getByTestId('export-status').innerText({ timeout: 200 })), 'export started');
+  await page.locator('nav a[href="/projects"]').first().click();
+  await page.waitForURL((u) => u.pathname === '/projects');
+  await page.goBack();
+  await page.getByTestId('export').waitFor();
+  // The render takes ~30 s: well within it, the Studio should say it is still exporting.
+  const shown = await until(async () => /mp4/i.test(await page.getByTestId('export-status').innerText({ timeout: 200 })), 'export still shown', 5_000).catch(() => false);
+  assert.ok(shown, 'the running MP4 export is no longer shown after coming back');
+}, { skip: CHROME ? undefined : 'no Chrome, Edge or Chromium on this machine', timeout: 60_000, knownBug: 'QA-075' });
+
 await run('export');

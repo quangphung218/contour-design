@@ -3,6 +3,7 @@
 // empty or pointing at nothing, and media without a provider key.
 
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { test, run, until, listProjects } from './lib.mjs';
 
 const projectOf = async (api, page) => (await api(`/api/projects/${page.url().split('/').pop()}`)).body.project;
@@ -191,5 +192,71 @@ test('LIB-10', 'Library pages fit a phone-sized window without sideways scroll',
   }
   assert.deepEqual(wide, [], `pages wider than 390 px: ${wide.join(', ')}`);
 });
+
+// A loopback stand-in for OpenAI Images: "fail" → 500, "badkey" → 401,
+// anything else → a 1×1 PNG.
+async function fakeImages() {
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      if (!req.url.endsWith('/images/generations')) return res.writeHead(404).end();
+      if (body.includes('fail')) return res.writeHead(500, { 'content-type': 'application/json' }).end('{"error":{"message":"upstream exploded"}}');
+      if (body.includes('badkey')) return res.writeHead(401, { 'content-type': 'application/json' }).end('{"error":{"message":"Incorrect API key provided"}}');
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [{ b64_json: PNG.toString('base64') }] }));
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { url: `http://127.0.0.1:${server.address().port}/v1`, close: () => server.close() };
+}
+
+async function generate(page, prompt) {
+  await page.getByTestId('media-tab-generate').click();
+  await page.getByTestId('gen-surface-image').click();
+  await until(async () => (await page.getByTestId('gen-model').inputValue()) !== '', 'a model is picked');
+  await page.getByTestId('gen-prompt').fill(prompt);
+  await page.getByTestId('gen-submit').click();
+  const task = page.getByTestId('media-task').filter({ hasText: prompt }).first();
+  await until(async () => ['done', 'failed'].includes(await task.getAttribute('data-status', { timeout: 200 })), `${prompt} ends`, 20_000);
+  return task;
+}
+
+async function withProvider(newPage, d) {
+  const fake = await fakeImages();
+  const { page } = await newPage();
+  await page.goto(d.base + '/media');
+  await page.getByTestId('media-tab-providers').click();
+  await page.getByTestId('provider-key-openai').fill('sk-test');
+  await page.getByTestId('provider-url-openai').fill(fake.url);
+  await page.getByTestId('providers-save').click();
+  await page.getByTestId('providers-saved').waitFor();
+  return { page, fake };
+}
+
+test('LIB-15', 'A failed image says what went wrong in words, and a refused key points to Providers', async ({ d, newPage }) => {
+  const { page, fake } = await withProvider(newPage, d);
+  try {
+    const failed = (await (await generate(page, 'fail please')).innerText()).replace(/\s+/g, ' ');
+    assert.doesNotMatch(failed, /\{"error"/, `raw provider JSON shown: ${failed}`);
+    const refused = await generate(page, 'badkey please');
+    assert.doesNotMatch((await refused.innerText()).replace(/\s+/g, ' '), /\{"error"/, 'raw provider JSON shown');
+    assert.ok(await refused.getByRole('button', { name: /provider/i }).count(), 'no way to Providers from a 401');
+  } finally {
+    fake.close();
+  }
+}, { knownBug: 'QA-077' });
+
+test('LIB-16', 'An image generated on the Media page is not labelled "Uploaded" in the Library', async ({ d, newPage }) => {
+  const { page, fake } = await withProvider(newPage, d);
+  try {
+    assert.equal(await (await generate(page, 'Bát phở bò 🍜')).getAttribute('data-status'), 'done');
+    await page.getByTestId('media-tab-library').click();
+    const card = page.getByTestId('media-card').first();
+    await card.waitFor();
+    assert.doesNotMatch(await card.innerText(), /Uploaded/, 'generated image filed as uploaded');
+  } finally {
+    fake.close();
+  }
+}, { knownBug: 'QA-078' });
 
 await run('library');
