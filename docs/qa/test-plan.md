@@ -498,7 +498,11 @@ on a QA copy (bundle id `dev.contour.desktop.qa`, its own `OD_DATA_DIR`).
   the Studio says the design crashed the page twice in a row. The hook does
   not act on that page, so the loop ends there. Run again in the Studio is a
   route change: no crash until the next page load. Only this copy's web
-  content process ends; the owner's Contour is not touched.
+  content process ends; the owner's Contour is not touched. Without the
+  hook, [crashloop.sh](desktop-beta27/crashloop.sh) crashes it for real
+  (`kill -9` of the copy's own pid, found by CPU). Known bug on beta.27:
+  the second crash panics the app (QA-073,
+  [bugs-desktop-beta27.md](bugs-desktop-beta27.md)).
 
 ## Not automated, and why
 

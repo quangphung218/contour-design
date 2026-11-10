@@ -1,0 +1,35 @@
+2026-11-10T10:16:41.872048Z  WARN od_desktop: the web content process ended by itself after=Reload
+2026-11-10T10:16:46.863792Z  WARN od_desktop: the web content process ended by itself after=StopPreview
+
+thread 'main' (52102594) panicked at /Users/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wry-0.55.1/src/wkwebview/mod.rs:1349:40:
+called `Option::unwrap()` on a `None` value
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::panic
+   3: core::option::unwrap_failed
+   4: wry::wkwebview::url_from_webview
+   5: tauri_runtime_wry::handle_user_message::<tauri::EventLoopMessage>
+   6: tauri_runtime_wry::send_user_message::<tauri::EventLoopMessage>
+   7: <tauri::webview::Webview>::url
+   8: od_desktop::page_terminated::<tauri_runtime_wry::Wry<tauri::EventLoopMessage>>
+   9: <od_desktop::off_webkit_call<tauri_runtime_wry::Wry<tauri::EventLoopMessage>>::{closure#0}::{closure#0} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  10: tauri_runtime_wry::handle_user_message::<tauri::EventLoopMessage>
+  11: tauri_runtime_wry::make_event_handler::<tauri::EventLoopMessage, <tauri::app::App>::make_run_event_loop_callback<od_desktop::main::{closure#5}>::{closure#0}>::{closure#0}
+  12: <tao::platform_impl::platform::app_state::EventLoopHandler<tauri_runtime_wry::Message<tauri::EventLoopMessage>> as tao::platform_impl::platform::app_state::EventHandler>::handle_user_events
+  13: tao::platform_impl::platform::observer::control_flow_end_handler
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: <unknown>
+  21: <unknown>
+  22: <unknown>
+  23: <unknown>
+  24: <unknown>
+  25: <unknown>
+  26: <tao::platform_impl::platform::event_loop::EventLoop<tauri_runtime_wry::Message<tauri::EventLoopMessage>>>::run::<tauri_runtime_wry::make_event_handler<tauri::EventLoopMessage, <tauri::app::App>::make_run_event_loop_callback<od_desktop::main::{closure#5}>::{closure#0}>::{closure#0}>
+  27: od_desktop::main
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
