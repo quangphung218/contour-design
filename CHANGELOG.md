@@ -8,6 +8,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Studio: an export still running when the Studio is left (an MP4 takes half a minute) shows again on return, and pressing the same format on the same file joins it instead of rendering and downloading it a second time; its result shows when it ends (QA-075).
+- Studio: in a project deleted from another tab, sending a message or the project's event stream ending now switches the Studio to "This project was deleted or the link is wrong." with All projects, instead of "Reconnecting automatically…", "HTTP 404" and "check the agent in Settings" (QA-076).
+
 ## [0.2.0-beta.28] - 2026-11-10
 
 ### Fixed

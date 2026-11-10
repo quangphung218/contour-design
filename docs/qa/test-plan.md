@@ -163,6 +163,7 @@ Goal: the user finds, renames, copies, removes and brings in projects.
 | PRJ-11 | Open an existing folder: files are used in place | Folder with index.html | Open folder | Project lists the file; edits land in that folder | P0 | auto |
 | PRJ-12 | Delete a folder-backed project keeps the user's folder | PRJ-11 | Delete project | The folder and its files are still on disk | P0 | auto |
 | PRJ-13 | Sending in a project deleted from another tab | Project open in tab A, deleted elsewhere | Send a message in tab A | "This project was deleted…" with All projects; no "Reconnecting", no HTTP 404, no agent Settings hint | P1 | auto (QA-076) |
+| PRJ-14 | A project deleted from another tab while its Studio is open | Project open in tab A, deleted elsewhere | Wait, no send | "This project was deleted…" within seconds; no "Reconnecting"; composer off | P1 | auto (QA-076) |
 
 ## 7. Library (`library.qa.mjs`)
 
