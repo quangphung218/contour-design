@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.30] - 2026-11-11
+
 ### Fixed
 
 - Studio: a run stopped while it was still being prepared, then Contour quit right away, now always ends as "Stopped"; if the quit came just as the run took the Stop, the turn was told as cut off by Contour closing.
@@ -1113,7 +1115,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.29...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.30...HEAD
+[0.2.0-beta.30]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.29...v0.2.0-beta.30
 [0.2.0-beta.29]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.28...v0.2.0-beta.29
 [0.2.0-beta.28]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.27...v0.2.0-beta.28
 [0.2.0-beta.27]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.26...v0.2.0-beta.27
