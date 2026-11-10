@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:15px system-ui;background:#fff}
+.b{display:inline-block;margin:4px 8px;padding:8px 10px;border:2px solid #333;background:#f4f4f4;font:15px system-ui}
+#log{margin:6px 8px;padding:6px;font:16px monospace;color:#000;background:#ffd;white-space:pre-wrap;min-height:120px}
+</style></head><body>
+<p>
+<button class="b" id="a1">A1 alert</button>
+<button class="b" id="c1">C1 confirm</button>
+<button class="b" id="p1">P1 prompt</button>
+<input class="b" type="file" id="f1">
+<button class="b" id="spin">SPIN 8s</button>
+<button class="b" id="s1">S1</button>
+<button class="b" id="clr">clear</button>
+</p>
+<div id="log"></div>
+<script>
+var L=document.getElementById('log');
+function lg(s){L.textContent+=s+'\n'}
+function on(id,t,f){document.getElementById(id).addEventListener(t,f)}
+on('a1','click',function(){alert('Crash me while I am open');lg('A1 back')});
+on('c1','click',function(){var r=confirm('Crash me (confirm)?');lg('C1='+r)});
+on('p1','click',function(){var r=prompt('Crash me (prompt)?','x');lg('P1='+JSON.stringify(r))});
+on('f1','change',function(e){lg('F1 files='+e.target.files.length)});
+on('f1','cancel',function(){lg('F1 cancel')});
+on('spin','click',function(){var t=Date.now();while(Date.now()-t<8000){}lg('SPIN done')});
+on('s1','click',function(){var t=Date.now();while(Date.now()-t<1200){}lg('S1 done')});
+on('clr','click',function(){L.textContent=''});
+lg('loaded '+new Date().toISOString().slice(11,19));
+</script>
+</body></html>
