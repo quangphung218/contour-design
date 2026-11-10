@@ -20,6 +20,7 @@ pub mod jsx_export;
 pub mod jury_replay;
 pub mod manual_model;
 pub mod markdown;
+pub mod media_error;
 pub mod media_row;
 pub mod memory_toast;
 pub mod mention;

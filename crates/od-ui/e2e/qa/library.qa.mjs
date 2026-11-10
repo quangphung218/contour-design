@@ -238,25 +238,54 @@ test('LIB-15', 'A failed image says what went wrong in words, and a refused key 
   try {
     const failed = (await (await generate(page, 'fail please')).innerText()).replace(/\s+/g, ' ');
     assert.doesNotMatch(failed, /\{"error"/, `raw provider JSON shown: ${failed}`);
+    assert.match(failed, /OpenAI .*upstream exploded/, `the provider and its reason: ${failed}`);
+    assert.equal(await page.getByTestId('media-task').filter({ hasText: 'fail please' }).getByRole('button', { name: /provider/i }).count(), 0, 'a 500 is not the key');
     const refused = await generate(page, 'badkey please');
-    assert.doesNotMatch((await refused.innerText()).replace(/\s+/g, ' '), /\{"error"/, 'raw provider JSON shown');
-    assert.ok(await refused.getByRole('button', { name: /provider/i }).count(), 'no way to Providers from a 401');
+    const refusedText = (await refused.innerText()).replace(/\s+/g, ' ');
+    assert.doesNotMatch(refusedText, /\{"error"/, 'raw provider JSON shown');
+    assert.match(refusedText, /Incorrect API key provided/, `the reason of the 401: ${refusedText}`);
+    await refused.getByRole('button', { name: /provider/i }).click();
+    await page.getByTestId('provider-key-openai').waitFor();
   } finally {
     fake.close();
   }
-}, { knownBug: 'QA-077' });
+});
 
 test('LIB-16', 'An image generated on the Media page is not labelled "Uploaded" in the Library', async ({ d, newPage }) => {
   const { page, fake } = await withProvider(newPage, d);
   try {
     assert.equal(await (await generate(page, 'Bát phở bò 🍜')).getAttribute('data-status'), 'done');
     await page.getByTestId('media-tab-library').click();
-    const card = page.getByTestId('media-card').first();
+    const card = page.getByTestId('media-card').filter({ hasText: /gpt-image/ }).first();
     await card.waitFor();
     assert.doesNotMatch(await card.innerText(), /Uploaded/, 'generated image filed as uploaded');
+    assert.match(await card.innerText(), /Generated/, 'says the image was generated');
+    // A file the user uploads is still "Uploaded".
+    await page.getByTestId('media-upload-input').setInputFiles({ name: 'lib16-upload.png', mimeType: 'image/png', buffer: PNG });
+    const up = page.getByTestId('media-card').filter({ hasText: 'lib16-upload.png' }).first();
+    await up.waitFor();
+    assert.match(await up.innerText(), /Uploaded/, 'an upload lost its label');
   } finally {
     fake.close();
   }
-}, { knownBug: 'QA-078' });
+});
+
+test('LIB-17', '"Chat to design" pressed twice quickly makes one project, not two', async ({ d, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/media');
+  await page.getByTestId('media-upload-input').setInputFiles({ name: 'lib17-chat.png', mimeType: 'image/png', buffer: PNG });
+  const card = page.getByTestId('media-card').filter({ hasText: 'lib17-chat.png' }).first();
+  await card.waitFor();
+  const before = (await listProjects(d)).length;
+  const sent = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/library/chat') sent.push(r.response());
+  });
+  await card.getByTestId('media-select').check();
+  await page.getByTestId('media-chat').dblclick();
+  await page.waitForURL(/\/projects\//);
+  await Promise.all(sent);
+  assert.equal((await listProjects(d)).length, before + 1, `${sent.length} chats sent for one press`);
+});
 
 await run('library');
