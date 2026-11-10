@@ -2562,6 +2562,9 @@ mod tests {
         );
     }
 
+    // macOS only: elsewhere `shown_url` reads wry's `url()`, which the
+    // mock runtime answers with the window's own address.
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_crash_loop_stops_the_page_last_loaded_not_wrys_address() {
         // QA-073: the process is gone, so WebKit has no address (wry's
@@ -2579,6 +2582,9 @@ mod tests {
         );
     }
 
+    // macOS only: elsewhere `shown_url` reads wry's `url()`, which the
+    // mock runtime answers with the window's own address.
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_crash_loop_with_no_page_known_leaves_the_window() {
         let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
@@ -2593,6 +2599,9 @@ mod tests {
         assert_eq!(crashes.lock().unwrap().in_a_row, 2);
     }
 
+    // macOS only: elsewhere `shown_url` reads wry's `url()`, which the
+    // mock runtime answers with the window's own address.
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_page_load_is_kept_as_the_page_shown() {
         let (app, window) = shell_app("http://127.0.0.1:5173/");
