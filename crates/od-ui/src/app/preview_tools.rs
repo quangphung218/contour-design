@@ -470,7 +470,11 @@ impl StudioCtx {
         tools.claimed_kid.set_value(kid.clone());
         leptos::task::spawn_local(async move {
             let url = format!("{}/edit-keys/{}", self.base(), api::seg(&kid));
-            if let Ok(r) = api::post::<_, EditKeyResponse>(&url, &serde_json::json!({})).await
+            let res = api::post::<_, EditKeyResponse>(&url, &serde_json::json!({})).await;
+            if let Err(e) = &res {
+                self.on_not_found(e.status);
+            }
+            if let Ok(r) = res
                 && tools.frame_kid.get_value() == kid
             {
                 tools.edit_key.set_value(Some(r.key));
@@ -657,6 +661,7 @@ impl StudioCtx {
                     tools.saved(&r.file.path, r.version.version);
                 }
                 Err(e) => {
+                    self.on_not_found(e.status);
                     tools.note(tf(T::SaveFailed, &[&e.message]));
                     if !styles {
                         self.reload_preview();
@@ -702,7 +707,7 @@ impl StudioCtx {
             let url = format!("{}/lint/{}", self.base(), api::file_path(&path));
             let res = api::get::<LintResponse>(&url)
                 .await
-                .map_err(|e| tf(T::LintFailed, &[&e.to_string()]));
+                .map_err(|e| tf(T::LintFailed, &[&self.failed(&e)]));
             // A reload may start a new lint before this one answers, and
             // leaving the Studio disposes the tools (`try_`: no panic).
             if tools.lint_seq.try_get_value() == Some(seq) {
@@ -1266,7 +1271,7 @@ pub(super) async fn save_png(ctx: StudioCtx, name: String, png: &str) -> Result<
     };
     let res = api::post::<_, FileResponse>(&format!("{}/files", ctx.base()), &req)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ctx.failed(&e))?;
     Ok(res.file.path)
 }
 

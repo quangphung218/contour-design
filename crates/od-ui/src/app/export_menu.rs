@@ -287,7 +287,8 @@ impl Exports {
     }
 
     /// Takes the latest result not shown yet of `project`; `None` when no
-    /// export of it ended since.
+    /// export of it ended since. A result with something to say wins over
+    /// a later closed Save dialog: that one must not hide an error.
     fn take_ended(self, project: &str) -> Option<Outcome> {
         if !self.ended.with(|e| e.iter().any(|(p, _)| p == project)) {
             return None;
@@ -295,7 +296,7 @@ impl Exports {
         let mut last = None;
         self.ended.update(|e| {
             e.retain(|(p, outcome)| {
-                if p == project {
+                if p == project && (outcome.is_some() || last.is_none()) {
                     last = Some(outcome.clone());
                 }
                 p != project
@@ -330,6 +331,18 @@ pub(super) fn download(bytes: &[u8], name: &str, mime: &str) -> Option<()> {
     a.click();
     let _ = web_sys::Url::revoke_object_url(&url);
     Some(())
+}
+
+/// What the Export menu's toast shows next, `None` to leave it as is: the
+/// result of an export that `ended`, even nothing (a closed Save dialog
+/// closes "Exporting…"); else, with nothing `shown`, the export still
+/// `running`.
+fn next_status(ended: Option<Outcome>, running: Option<Format>, shown: bool) -> Option<Outcome> {
+    match (ended, running) {
+        (Some(outcome), _) => Some(outcome),
+        (None, Some(format)) if !shown => Some(Some(Ok(tf(T::Exporting, &[format.ext()])))),
+        _ => None,
+    }
 }
 
 /// Whether the toast numbered `shown` may close when its time is up:
@@ -378,12 +391,13 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     Effect::new({
         let project_id = project_id.clone();
         move |_| {
-            if let Some(outcome) = exports.take_ended(&project_id) {
-                status.set(outcome);
-            } else if let Some(format) = exports.running_in(&project_id)
-                && status.with_untracked(Option::is_none)
-            {
-                status.set(Some(Ok(tf(T::Exporting, &[format.ext()]))));
+            let next = next_status(
+                exports.take_ended(&project_id),
+                exports.running_in(&project_id),
+                status.with_untracked(Option::is_some),
+            );
+            if let Some(next) = next {
+                status.set(next);
             }
         }
     });
@@ -450,7 +464,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         // Studio is left; the result goes through `exports`, which the
         // Export menu shown then reads.
         leptos::task::spawn_local(async move {
-            let outcome = run_export(&base, format, file, &project, &name).await;
+            let outcome = run_export(&base, format, file, &project, &name, |status| {
+                ctx.on_not_found(status);
+            })
+            .await;
             exports.finish(&job, outcome);
         });
     };
@@ -609,13 +626,15 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
 
 /// Exports `file` (the project for a ZIP) as `format`, saves it as `name`,
 /// and says how it went; `None` when the user closed the Save dialog. It
-/// reads no signal: it runs on after the Studio is left.
+/// reads no signal: it runs on after the Studio is left. `failed` gets the
+/// HTTP status of a refused export.
 async fn run_export(
     base: &str,
     format: Format,
     file: Option<String>,
     project: &str,
     name: &str,
+    failed: impl FnOnce(u16),
 ) -> Option<Result<String, String>> {
     let res = match format {
         Format::Zip => api::get_bytes(&format!("{base}/archive"))
@@ -661,7 +680,10 @@ async fn run_export(
     };
     let (bytes, tracks) = match res {
         Ok(r) => r,
-        Err(e) => return Some(Err(tf(T::ExportFailed, &[&e.to_string()]))),
+        Err(e) => {
+            failed(e.status);
+            return Some(Err(tf(T::ExportFailed, &[&e.to_string()])));
+        }
     };
     // In the app, the Save dialog: the toast then names the file really
     // written and where (QA-048); a download could be renamed
@@ -923,6 +945,57 @@ mod tests {
                 Some(Some(Ok("Exported index.mp4".to_owned())))
             );
         });
+    }
+
+    #[test]
+    fn a_closed_save_dialog_does_not_hide_another_export_s_result() {
+        use super::{ExportJob, Exports, Format};
+        use leptos::prelude::Owner;
+        Owner::new().with(|| {
+            let exports = Exports::new();
+            let job = |format| ExportJob {
+                project: "p1".to_owned(),
+                file: Some("film/index.html".to_owned()),
+                format,
+            };
+            let (mp4, pdf) = (job(Format::Mp4), job(Format::Pdf));
+            // Away from the Studio: the MP4 fails, then the PDF's Save
+            // dialog is closed.
+            assert!(exports.start(&mp4));
+            assert!(exports.start(&pdf));
+            exports.finish(&mp4, Some(Err("render failed".to_owned())));
+            exports.finish(&pdf, None);
+            assert_eq!(
+                exports.take_ended("p1"),
+                Some(Some(Err("render failed".to_owned())))
+            );
+            // The other way round, the later result shows.
+            assert!(exports.start(&mp4));
+            assert!(exports.start(&pdf));
+            exports.finish(&pdf, None);
+            exports.finish(&mp4, Some(Ok("Exported index.mp4".to_owned())));
+            assert_eq!(
+                exports.take_ended("p1"),
+                Some(Some(Ok("Exported index.mp4".to_owned())))
+            );
+        });
+    }
+
+    #[test]
+    fn the_toast_follows_what_ended_even_a_closed_save_dialog() {
+        use super::{Format, next_status};
+        // A closed Save dialog: "Exporting…" closes, whatever shows.
+        assert_eq!(next_status(Some(None), None, true), Some(None));
+        assert_eq!(next_status(Some(None), Some(Format::Pdf), true), Some(None));
+        let done = Some(Ok("Exported index.mp4".to_owned()));
+        assert_eq!(next_status(Some(done.clone()), None, true), Some(done));
+        // Still running: "Exporting…" when nothing shows, else as is.
+        assert!(matches!(
+            next_status(None, Some(Format::Mp4), false),
+            Some(Some(Ok(text))) if text.contains("mp4")
+        ));
+        assert_eq!(next_status(None, Some(Format::Mp4), true), None);
+        assert_eq!(next_status(None, None, false), None);
     }
 
     #[test]

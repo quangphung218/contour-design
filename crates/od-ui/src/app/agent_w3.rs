@@ -85,7 +85,7 @@ impl StudioCtx {
                         *c = r.conversation;
                     }
                 }),
-                Err(e) => self.notice.set(Some(e.to_string())),
+                Err(e) => self.notice.set(Some(self.failed(&e))),
             }
         });
     }
@@ -93,9 +93,9 @@ impl StudioCtx {
     /// Loads the project's Design Jury switch and memory.
     pub fn load_w3(self) {
         leptos::task::spawn_local(async move {
-            if let Ok(s) = api::get::<CritiqueSettings>(&format!("{}/critique", self.base())).await
-            {
-                self.jury.set(s.enabled);
+            match api::get::<CritiqueSettings>(&format!("{}/critique", self.base())).await {
+                Ok(s) => self.jury.set(s.enabled),
+                Err(e) => self.on_not_found(e.status),
             }
         });
         self.reload_memory();
@@ -137,8 +137,9 @@ impl StudioCtx {
 
     pub fn reload_memory(self) {
         leptos::task::spawn_local(async move {
-            if let Ok(r) = api::get::<MemoryResponse>(&format!("{}/memory", self.base())).await {
-                self.memory.set(r.memory);
+            match api::get::<MemoryResponse>(&format!("{}/memory", self.base())).await {
+                Ok(r) => self.memory.set(r.memory),
+                Err(e) => self.on_not_found(e.status),
             }
         });
     }
@@ -189,7 +190,7 @@ fn JuryToggle(ctx: StudioCtx) -> impl IntoView {
                 api::put::<_, CritiqueSettings>(&path, &CritiqueSettings { enabled: next }).await
             {
                 ctx.jury.set(!next);
-                ctx.notice.set(Some(e.to_string()));
+                ctx.notice.set(Some(ctx.failed(&e)));
             }
         });
     };
@@ -216,7 +217,7 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
     let base = move || format!("{}/memory", ctx.base());
     let apply = move |res: Result<MemoryResponse, api::HttpError>| match res {
         Ok(r) => ctx.memory.set(r.memory),
-        Err(e) => ctx.notice.set(Some(e.to_string())),
+        Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
     };
     let add = move || {
         let text = draft.get_untracked().trim().to_owned();
@@ -237,7 +238,7 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
         leptos::task::spawn_local(async move {
             match api::delete::<serde_json::Value>(&base()).await {
                 Ok(_) => ctx.memory.set(Vec::new()),
-                Err(e) => ctx.notice.set(Some(e.to_string())),
+                Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
             }
         });
     };
@@ -358,7 +359,7 @@ pub(super) fn TranscriptMenu(ctx: StudioCtx) -> impl IntoView {
                     };
                     download(&bytes, &format!("conversation-{short}.{format}"), mime);
                 }
-                Err(e) => ctx.notice.set(Some(e.to_string())),
+                Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
             }
         });
     };
@@ -468,7 +469,7 @@ pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             // Only a refusal re-enables it: the run's end settles the theater.
             if let Err(e) = api::post::<_, serde_json::Value>(&path, &serde_json::json!({})).await {
                 pending.set(false);
-                ctx.notice.set(Some(e.to_string()));
+                ctx.notice.set(Some(ctx.failed(&e)));
             }
         });
     };
@@ -713,8 +714,9 @@ impl SideChat {
         };
         leptos::task::spawn_local(async move {
             let path = format!("{}/conversations/{}/messages", ctx.base(), api::seg(&cid));
-            let Ok(res) = api::get::<MessagesResponse>(&path).await else {
-                return;
+            let res = match api::get::<MessagesResponse>(&path).await {
+                Ok(res) => res,
+                Err(e) => return ctx.on_not_found(e.status),
             };
             let items = res
                 .messages
@@ -762,7 +764,7 @@ impl SideChat {
                             id
                         }
                         Err(e) => {
-                            fail(turn, e.to_string());
+                            fail(turn, ctx.failed(&e));
                             self.live_run.set(None);
                             return;
                         }
@@ -787,7 +789,7 @@ impl SideChat {
             match api::post::<_, CreateRunResponse>("/api/runs", &side_turn(req)).await {
                 Ok(res) => self.attach(ctx, res.run_id, turn),
                 Err(e) => {
-                    fail(turn, e.to_string());
+                    fail(turn, ctx.failed(&e));
                     self.live_run.set(None);
                 }
             }
