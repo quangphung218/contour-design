@@ -548,6 +548,74 @@ fn on_page_started<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     });
 }
 
+/// QA's test hook for the crash loop (docs/qa/test-plan.md): set to `1`,
+/// each load of a design's page with its preview running ends the window's
+/// own web content process, as a design that crashes it would. Only a debug
+/// build or a QA copy (bundle id ending `.qa`) reads it
+/// ([`qa_crash_web_enabled`]).
+#[cfg(target_os = "macos")]
+const QA_CRASH_WEB_ENV: &str = "OD_QA_CRASH_WEB";
+
+/// Whether the crash-loop test hook is on: [`QA_CRASH_WEB_ENV`] is `1`
+/// (`value`), in a debug build (`debug`) or a copy whose bundle id
+/// (`bundle_id`) ends `.qa`. A release Contour never crashes itself,
+/// whatever its environment.
+#[cfg(any(target_os = "macos", test))]
+fn qa_crash_web_enabled(value: Option<&str>, debug: bool, bundle_id: Option<&str>) -> bool {
+    value == Some("1") && (debug || bundle_id.is_some_and(|id| id.ends_with(".qa")))
+}
+
+/// Whether the crash-loop test hook ends the web content process for
+/// `url`, a page that finished loading: a design's Studio or Present page
+/// whose preview runs. Not once the shell stopped the preview
+/// ([`stopped_preview_url`]), so the loop ends where a real one would.
+#[cfg(any(target_os = "macos", test))]
+fn qa_crashes_page(url: &Url) -> bool {
+    let design = ["/projects/", "/present/"].iter().any(|prefix| {
+        url.path()
+            .strip_prefix(prefix)
+            .is_some_and(|rest| !rest.is_empty())
+    });
+    let (key, value) = PREVIEW_STOPPED;
+    let stopped = url.query_pairs().any(|(k, v)| k == key && v == value);
+    design && !stopped
+}
+
+/// The main window finished loading `url`: with the crash-loop test hook
+/// on ([`qa_crash_web_enabled`]) and a design's preview running there,
+/// its web content process ends, off WebKit's call.
+#[cfg(target_os = "macos")]
+fn qa_crash_web<R: Runtime>(window: &tauri::WebviewWindow<R>, url: &Url) {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    let enabled = *ENABLED.get_or_init(|| {
+        let value = std::env::var(QA_CRASH_WEB_ENV).ok();
+        let bundle_id = web_process::bundle_id();
+        let on = qa_crash_web_enabled(
+            value.as_deref(),
+            cfg!(debug_assertions),
+            bundle_id.as_deref(),
+        );
+        if on {
+            tracing::warn!("QA test hook: a design's page crashes its web content process");
+        }
+        on
+    });
+    if !enabled || !qa_crashes_page(url) {
+        return;
+    }
+    off_webkit_call(window.app_handle(), |app| {
+        let Some(window) = app.get_webview_window("main") else {
+            return;
+        };
+        tracing::warn!("QA test hook: ending the web content process");
+        if let Err(e) = window.with_webview(|webview| {
+            web_process::kill(webview.inner());
+        }) {
+            tracing::warn!(error = %e, "cannot reach the webview");
+        }
+    });
+}
+
 /// The splash: the bundled page shown until the daemon listens.
 fn is_splash(url: &Url) -> bool {
     url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost")
@@ -565,13 +633,8 @@ fn unheard_reload_target(shown: &Url, daemon: Option<&Url>) -> Option<Url> {
     }
 }
 
-/// The user's answer to "This page isn't responding".
 #[cfg(any(target_os = "macos", test))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NotRespondingChoice {
-    Wait,
-    Reload,
-}
+use web_process::NotRespondingChoice;
 
 /// What the shell does about a View ▸ Reload the page has not answered.
 #[cfg(any(target_os = "macos", test))]
@@ -589,13 +652,17 @@ enum NotAnswered {
 /// The step after asking the user (`choice`; `None` when no question
 /// could show, a dialog being up), the question still `open` or not. A
 /// page that is only busy may answer while the user decides: then nothing
-/// happens, whatever the choice; Reload restarts only a page still silent.
+/// happens, whatever the choice (the alert closes itself then, QA-072,
+/// and a Reload pressed just before is a no-op); Reload restarts only a
+/// page still silent.
 #[cfg(any(target_os = "macos", test))]
 fn after_not_answering(open: bool, choice: Option<NotRespondingChoice>) -> NotAnswered {
     match (open, choice) {
         (false, _) => NotAnswered::Nothing,
         (true, Some(NotRespondingChoice::Reload)) => NotAnswered::Restart,
-        (true, Some(NotRespondingChoice::Wait) | None) => NotAnswered::AskAgainLater,
+        (true, Some(NotRespondingChoice::Wait | NotRespondingChoice::Closed) | None) => {
+            NotAnswered::AskAgainLater
+        }
     }
 }
 
@@ -652,7 +719,7 @@ fn check_reload(app: AppHandle, token: u64, wait: std::time::Duration) {
         std::thread::sleep(wait);
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
-            let open = |app: &AppHandle| {
+            let open = move |app: &AppHandle| {
                 app.try_state::<Mutex<ReloadAsk>>()
                     .and_then(|asks| asks.lock().ok().map(|asks| asks.is_open(token)))
                     .unwrap_or(false)
@@ -660,15 +727,14 @@ fn check_reload(app: AppHandle, token: u64, wait: std::time::Duration) {
             if !open(&handle) {
                 return;
             }
-            let choice = web_process::ask_not_responding().map(|reload| {
-                if reload {
-                    NotRespondingChoice::Reload
-                } else {
-                    NotRespondingChoice::Wait
-                }
-            });
+            let asked = handle.clone();
+            let choice = web_process::ask_not_responding(move || open(&asked));
             match after_not_answering(open(&handle), choice) {
-                NotAnswered::Nothing => {}
+                NotAnswered::Nothing => {
+                    if choice == Some(NotRespondingChoice::Reload) {
+                        tracing::info!("the page answered Reload first: not restarting it");
+                    }
+                }
                 NotAnswered::AskAgainLater => check_reload(handle, token, RELOAD_ASK_AGAIN),
                 NotAnswered::Restart => {
                     if let Some(asks) = handle.try_state::<Mutex<ReloadAsk>>()
@@ -1630,6 +1696,11 @@ fn main() -> anyhow::Result<()> {
                         if payload.event() == tauri::webview::PageLoadEvent::Started {
                             on_page_started(&window);
                         }
+                        // QA's crash-loop test hook; off unless asked.
+                        #[cfg(target_os = "macos")]
+                        if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                            qa_crash_web(&window, payload.url());
+                        }
                     })
                     .title(APP_NAME)
                     .inner_size(1360.0, 860.0)
@@ -2288,7 +2359,7 @@ mod tests {
     #[test]
     fn a_page_silent_after_reload_is_restarted_only_on_the_users_word() {
         use NotAnswered::{AskAgainLater, Nothing, Restart};
-        use NotRespondingChoice::{Reload, Wait};
+        use NotRespondingChoice::{Closed, Reload, Wait};
         // A busy page is not killed behind the user's back: Wait, or no
         // question shown (a dialog is up), asks again later.
         assert_eq!(after_not_answering(true, Some(Wait)), AskAgainLater);
@@ -2299,6 +2370,47 @@ mod tests {
         assert_eq!(after_not_answering(false, Some(Reload)), Nothing);
         assert_eq!(after_not_answering(false, Some(Wait)), Nothing);
         assert_eq!(after_not_answering(false, None), Nothing);
+        // The page answered, so the shell closed the alert (QA-072): a
+        // Reload on the stale question, or the alert closing, does nothing.
+        assert_eq!(after_not_answering(false, Some(Closed)), Nothing);
+        // Closed with the question still open (no path does it): never a
+        // restart without the user's word.
+        assert_eq!(after_not_answering(true, Some(Closed)), AskAgainLater);
+    }
+
+    #[test]
+    fn the_crash_hook_is_off_unless_qa_asks() {
+        let qa = Some("dev.contour.desktop.qa");
+        let release = Some("dev.contour.desktop");
+        assert!(qa_crash_web_enabled(Some("1"), false, qa));
+        assert!(qa_crash_web_enabled(Some("1"), true, release));
+        // A release Contour never crashes itself.
+        assert!(!qa_crash_web_enabled(Some("1"), false, release));
+        assert!(!qa_crash_web_enabled(Some("1"), false, None));
+        assert!(!qa_crash_web_enabled(
+            Some("1"),
+            false,
+            Some("dev.contour.qa.desktop")
+        ));
+        // Not asked.
+        assert!(!qa_crash_web_enabled(None, true, qa));
+        assert!(!qa_crash_web_enabled(Some("0"), true, qa));
+        assert!(!qa_crash_web_enabled(Some(""), true, qa));
+    }
+
+    #[test]
+    fn the_crash_hook_ends_only_a_running_design_preview() {
+        let url = |s: &str| Url::parse(s).unwrap();
+        assert!(qa_crashes_page(&url("http://127.0.0.1:5/projects/p1")));
+        assert!(qa_crashes_page(&url("http://127.0.0.1:5/present/p1?x=1")));
+        // The loop ends where a real one does: the preview stopped.
+        let stopped =
+            stopped_preview_url(&url("http://127.0.0.1:5/projects/p1"), StopReason::Crashed);
+        assert!(!qa_crashes_page(&stopped));
+        // No design: home, the project list, the splash.
+        assert!(!qa_crashes_page(&url("http://127.0.0.1:5/")));
+        assert!(!qa_crashes_page(&url("http://127.0.0.1:5/projects/")));
+        assert!(!qa_crashes_page(&url("tauri://localhost/index.html")));
     }
 
     #[test]

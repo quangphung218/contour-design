@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Desktop app on macOS: "This page isn't responding" closes by itself once the page answers View ▸ Reload, instead of staying up after the page has reloaded; a Reload pressed on a question the page has just answered does nothing (QA-072).
+
 ## [0.2.0-beta.26] - 2026-11-10
 
 ### Fixed

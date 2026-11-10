@@ -472,6 +472,34 @@ On a built app, on each of macOS
   let go of a key in a field whose page opens a URL on `keyup`: nothing
   opens.
 
+## 19. Desktop app: a page that hangs or crashes (manual, macOS)
+
+The shell's answers to a hung or crashed page (QA-067, QA-070 to QA-072;
+`apps/desktop/src/main.rs`, `web_process.rs`). Rows from
+[bugs-desktop-beta26.md](bugs-desktop-beta26.md#qa-070-and-qa-071-a-design-that-hangs-the-window),
+on a QA copy (bundle id `dev.contour.desktop.qa`, its own `OD_DATA_DIR`).
+
+- [ ] **Busy page, Wait** (QA-072): [dialogs25.html](desktop-beta25/dialogs25.html)
+  BUSY 20s, ⌘R, Wait in "This page isn't responding". The question may show
+  again 5 s later; once BUSY ends and the page reloads, that question
+  closes by itself within a second, nothing pressed
+  ([busywait.sh](desktop-beta26/busywait.sh): no layer-8 window after the
+  reload). A page's own dialog shown above it is never closed by this.
+- [ ] **Crash loop** (two crashes within 10 s): start the QA copy with the
+  test hook `OD_QA_CRASH_WEB=1` (read only by a debug build or a copy whose
+  bundle id ends `.qa`; a release Contour ignores it), for example
+  `OD_QA_CRASH_WEB=1 OD_DATA_DIR=<tmp> ContourQA.app/Contents/MacOS/od-desktop`
+  (the binary inside the copy). The log says `QA test hook: a design's page
+  crashes its web content process`. Open a project with a design, then ⌘R
+  (the hook acts on a page load, not on an in-app route change). Each load
+  of a `/projects/<id>` or `/present/<id>` page whose preview runs ends the
+  window's own web content process, so: the first crash reloads the page,
+  the second within 10 s opens it with `?preview=stopped&why=crashed`, and
+  the Studio says the design crashed the page twice in a row. The hook does
+  not act on that page, so the loop ends there. Run again in the Studio is a
+  route change: no crash until the next page load. Only this copy's web
+  content process ends; the owner's Contour is not touched.
+
 ## Not automated, and why
 
 - **Desktop shell (Tauri)**: native menus, Cmd+O folder dialog, Finder
