@@ -215,7 +215,6 @@ async fn end_unlaunched(
     failure_category: Option<od_contracts::FailureCategory>,
 ) {
     state.runs.tokens.revoke_run(run.id());
-    state.runs.pending_cancels().remove(run.id());
     let meta = run.meta().clone();
     let comments = comments.to_vec();
     let _ = state
@@ -251,6 +250,8 @@ async fn end_unlaunched(
         failure_category,
         error: error.map(str::to_owned),
     });
+    // Only now: until the run is terminal a shutdown must find the Stop.
+    state.runs.pending_cancels().remove(run.id());
 }
 
 fn reused_response(run: &Arc<Run>) -> Response {
@@ -580,8 +581,11 @@ async fn prepare_and_launch(
     let launched = {
         // Held across the check and `launch` so a concurrent cancel either
         // finds the run in the engine or leaves a pending cancel seen here.
-        let mut pending = state.runs.pending_cancels();
-        if pending.remove(run.id()) {
+        // The cancel stays pending until the run has ended
+        // (`end_unlaunched`): a shutdown in between must still see the
+        // user's Stop, not a run nobody stopped.
+        let pending = state.runs.pending_cancels();
+        if pending.contains(run.id()) {
             None
         } else {
             let token = state.runs.tokens.issue(
