@@ -62,7 +62,7 @@ fn start(ctx: StudioCtx, ui: FilesUi) {
         let fail = |e: String| ui.ds_job.set(Some(DsJob::Failed(e)));
         let dir = match api::get::<HandoffResponse>(&format!("{}/handoff", ctx.base())).await {
             Ok(h) => h.dir,
-            Err(e) => return fail(e.to_string()),
+            Err(e) => return fail(ctx.failed(&e)),
         };
         let body = json!({ "name": name, "brief": brief(&name, &dir, &files), "agentId": agent });
         let job = match api::post::<_, Value>("/api/design-systems/generate", &body).await {
@@ -121,7 +121,7 @@ fn duplicate_now(ctx: StudioCtx, release: super::leave_guard::Release) {
                         .set_href(&format!("/projects/{}", api::seg(&r.project.id)));
                 }
             }
-            Err(e) => ctx.notice.set(Some(e.to_string())),
+            Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
         }
     });
 }

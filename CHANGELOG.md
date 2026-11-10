@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Studio: in a project deleted from another tab, every other action on it (files panel uploads, new files and folders, rename, move, delete, ZIP and copy path; comments; Design Jury, memory and the side chat; save as template; manual edits and lint; sketches; versions; exports) now also switches the Studio to "This project was deleted or the link is wrong." instead of showing "Not found"; and an export whose Save dialog is closed no longer hides another export's error (QA-076, QA-075).
+
 ## [0.2.0-beta.29] - 2026-11-11
 
 ### Fixed

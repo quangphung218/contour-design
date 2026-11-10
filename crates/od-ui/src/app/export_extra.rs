@@ -64,7 +64,7 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
                     status.set(Some(Ok(tf(T::TemplateSaved, &[&n]))));
                     close_later(open);
                 }
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(ctx.failed(&e))),
             }
         });
     };
@@ -115,7 +115,7 @@ pub fn HandoffDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) -> im
     let info = LocalResource::new(move || async move {
         api::get::<HandoffResponse>(&format!("{}/handoff", ctx.base()))
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| ctx.failed(&e))
     });
     let prompt = move || {
         info.get()

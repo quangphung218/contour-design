@@ -40,7 +40,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                     list.sort_by_key(|a| std::cmp::Reverse(a.version));
                     list
                 })
-                .map_err(|e| e.to_string());
+                .map_err(|e| ctx.failed(&e));
             versions.set(Some(res));
         });
     };
@@ -64,7 +64,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                     version: v.version,
                     content: r.content,
                 })),
-                Err(e) => ctx.notice.set(Some(e.to_string())),
+                Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
             }
         });
     };
@@ -83,7 +83,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                 }
                 Err(e) => ctx
                     .notice
-                    .set(Some(tf(T::RestoreFailed, &[&e.to_string()]))),
+                    .set(Some(tf(T::RestoreFailed, &[&ctx.failed(&e)]))),
             }
         });
     };

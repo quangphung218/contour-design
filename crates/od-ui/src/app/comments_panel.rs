@@ -42,7 +42,7 @@ impl StudioCtx {
         let outcome = api::get::<CommentsResponse>(&path)
             .await
             .map(|r| r.comments)
-            .map_err(|e| e.to_string());
+            .map_err(|e| self.failed(&e));
         if !cb::is_current(&asked, self.comment_ticket().as_ref()) {
             return;
         }

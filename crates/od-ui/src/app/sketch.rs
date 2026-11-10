@@ -32,7 +32,7 @@ async fn create(ctx: StudioCtx, path: String, sketch: &SketchFile) -> Result<Str
     api::post::<_, FileResponse>(&format!("{}/files", ctx.base()), &req)
         .await
         .map(|r| r.file.path)
-        .map_err(|e| e.to_string())
+        .map_err(|e| ctx.failed(&e))
 }
 
 /// Creates a blank sketch in `dir` (`sketches/` at the root) and opens it.
