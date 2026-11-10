@@ -499,10 +499,13 @@ on a QA copy (bundle id `dev.contour.desktop.qa`, its own `OD_DATA_DIR`).
   not act on that page, so the loop ends there. Run again in the Studio is a
   route change: no crash until the next page load. Only this copy's web
   content process ends; the owner's Contour is not touched. Without the
-  hook, [crashloop.sh](desktop-beta27/crashloop.sh) crashes it for real
-  (`kill -9` of the copy's own pid, found by CPU). Known bug on beta.27:
-  the second crash panics the app (QA-073,
-  [bugs-desktop-beta27.md](bugs-desktop-beta27.md)).
+  hook, [crashloop.sh](desktop-beta28/crashloop.sh) crashes it for real
+  (`kill -9` of the copy's own pid, found by CPU), and
+  [crash2dlg.sh](desktop-beta28/crash2dlg.sh) does so with a dialog up at
+  the second crash. After a crash WebKit reloads the page into its
+  prewarmed process, so the newest WebContent pid is a spare, not the page.
+  QA-073 (the second crash panicked the app on beta.27) is fixed in beta.28
+  ([bugs-desktop-beta28.md](bugs-desktop-beta28.md)).
 
 ## Not automated, and why
 
