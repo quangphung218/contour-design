@@ -607,9 +607,12 @@ fn qa_crash_web<R: Runtime>(window: &tauri::WebviewWindow<R>, url: &Url) {
         let Some(window) = app.get_webview_window("main") else {
             return;
         };
-        tracing::warn!("QA test hook: ending the web content process");
         if let Err(e) = window.with_webview(|webview| {
-            web_process::kill(webview.inner());
+            if web_process::kill(webview.inner()) {
+                tracing::warn!("QA test hook: ended the web content process");
+            } else {
+                tracing::warn!("QA test hook: this WebKit cannot end the web content process");
+            }
         }) {
             tracing::warn!(error = %e, "cannot reach the webview");
         }
@@ -1632,7 +1635,17 @@ fn main() -> anyhow::Result<()> {
     let builder = builder
         .manage(Mutex::new(Restarts::default()))
         .manage(Mutex::new(Crashes::default()))
-        .on_web_content_process_terminate(|webview| on_page_terminated(webview.app_handle()));
+        .on_web_content_process_terminate(|webview| {
+            // A page's `alert` still up closes (nobody waits for it). Here,
+            // in WebKit's call: it only counts, and an open panel's timer
+            // must see it while `runModal` runs.
+            if let Err(e) = webview.with_webview(|webview| {
+                js_dialogs::process_ended(webview.inner());
+            }) {
+                tracing::warn!(error = %e, "cannot reach the webview");
+            }
+            on_page_terminated(webview.app_handle());
+        });
     builder
         .invoke_handler(tauri::generate_handler![
             pick_folder,

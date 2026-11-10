@@ -188,22 +188,59 @@ impl Gates {
     }
 }
 
+/// How many times each webview's web content process ended, by a key
+/// naming the webview (its `WKWebView *`). Unlike [`Gates`] a new page
+/// keeps the count: the shell loads the page again right after a crash,
+/// before an open panel has seen it.
+#[derive(Debug, Default)]
+pub(crate) struct ProcessEnds(HashMap<usize, u64>);
+
+impl ProcessEnds {
+    /// The web content process of webview `key` ended.
+    pub(crate) fn ended(&mut self, key: usize) {
+        let count = self.0.entry(key).or_default();
+        *count = count.wrapping_add(1);
+    }
+
+    /// How many times the web content process of webview `key` ended.
+    pub(crate) fn count(&self, key: usize) -> u64 {
+        self.0.get(&key).copied().unwrap_or(0)
+    }
+}
+
+/// How often, while a page's panel is up, the shell looks whether the
+/// page's web content process ended meanwhile.
 #[cfg(target_os = "macos")]
-pub(crate) use mac::{install, page_loaded, reset_all};
+const PANEL_POLL_SECS: f64 = 0.25;
+
+/// Whether the shell closes a page's panel now: the web content process
+/// that asked ended since it opened (`opened`, `now`: [`ProcessEnds::count`]
+/// then and now), so nobody waits for the answer; and the panel is the
+/// modal window on top (`ours_on_top`), so another dialog above it is
+/// left alone and the panel closes once that one has.
+pub(crate) fn closes_panel(opened: u64, now: u64, ours_on_top: bool) -> bool {
+    opened != now && ours_on_top
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) use mac::{install, page_loaded, process_ended, reset_all};
 
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod mac {
-    use super::{BLOCK_LABEL, Gate, Gates, SCROLL_HEIGHT, dialog_message, dialog_title, scrolls};
-    use block2::Block;
+    use super::{
+        BLOCK_LABEL, Gate, Gates, PANEL_POLL_SECS, ProcessEnds, SCROLL_HEIGHT, closes_panel,
+        dialog_message, dialog_title, scrolls,
+    };
+    use block2::{Block, RcBlock};
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
     use objc2::{MainThreadMarker, MainThreadOnly, sel};
     use objc2_app_kit::{
-        NSAlert, NSAlertFirstButtonReturn, NSControlStateValueOn, NSFont, NSTextField, NSTextView,
-        NSView,
+        NSAlert, NSAlertFirstButtonReturn, NSApplication, NSControlStateValueOn, NSFont,
+        NSModalPanelRunLoopMode, NSTextField, NSTextView, NSView,
     };
-    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+    use objc2_foundation::{NSPoint, NSRect, NSRunLoop, NSSize, NSString, NSTimer};
     use objc2_web_kit::{WKFrameInfo, WKUIDelegate, WKWebView};
     use std::cell::RefCell;
     use std::ffi::{CStr, c_void};
@@ -313,6 +350,17 @@ mod mac {
         static GATES: RefCell<Gates> = RefCell::new(Gates::default());
         /// What [`install`] was given to run when a page is hung.
         static ON_HUNG: RefCell<Option<Box<dyn Fn()>>> = const { RefCell::new(None) };
+        /// Each webview's ended web content processes, by its
+        /// `WKWebView *`: [`process_ended`] counts, an open panel looks.
+        static ENDS: RefCell<ProcessEnds> = RefCell::new(ProcessEnds::default());
+    }
+
+    /// The web content process of `webview` (a `WKWebView *`) ended: a
+    /// panel it opened closes, as if cancelled, nobody being left to read
+    /// the answer. Call it on the main thread; WebKit's own call is fine,
+    /// it only counts.
+    pub(crate) fn process_ended(webview: *mut c_void) {
+        ENDS.with(|ends| ends.borrow_mut().ended(webview as usize));
     }
 
     /// `webview` (a `WKWebView *`) started loading a page: dialogs it had
@@ -410,8 +458,38 @@ mod mac {
                 button.setTitle(&NSString::from_str(BLOCK_LABEL));
             }
         }
-        // Not borrowing `GATES` here: `runModal` spins the run loop.
+        // The page's web content process may end while the panel is up (a
+        // crash): WebKit says so inside `runModal`, and the panel closes
+        // (`NSModalResponseAbort`, not OK) so the window is not held by a
+        // question nobody waits for.
+        let opened = ENDS.with(|ends| ends.borrow().count(key));
+        let window = alert.window();
+        let watch = RcBlock::new(move |_timer| {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            let app = NSApplication::sharedApplication(mtm);
+            let ours_on_top = app.modalWindow().is_some_and(|top| top == window);
+            let now = ENDS.with(|ends| ends.borrow().count(key));
+            if closes_panel(opened, now, ours_on_top) {
+                tracing::info!("the page's web content process ended: closing its dialog");
+                // From a timer in the modal run loop mode: `abortModal`,
+                // not `stopModal`, which waits for the next event.
+                app.abortModal();
+            }
+        });
+        // SAFETY: the timer is added to this (the main) thread's run loop
+        // only, so the block never runs on another thread; invalidated
+        // below, before the alert and what the block holds go.
+        let timer = unsafe {
+            let timer = NSTimer::timerWithTimeInterval_repeats_block(PANEL_POLL_SECS, true, &watch);
+            NSRunLoop::currentRunLoop().addTimer_forMode(&timer, NSModalPanelRunLoopMode);
+            timer
+        };
+        // Not borrowing `GATES` or `ENDS` here: `runModal` spins the run
+        // loop.
         let ok = alert.runModal() == NSAlertFirstButtonReturn;
+        timer.invalidate();
         let block = offer_block
             && alert
                 .suppressionButton()
@@ -759,6 +837,46 @@ mod tests {
             assert_eq!(gates.open(A, t0), Gate::Block);
         }
         assert_eq!(gates.open(A, t0), Gate::Hung);
+    }
+
+    #[test]
+    fn a_panel_closes_once_its_process_ended_and_it_is_on_top() {
+        // The page's process ended since the panel opened: closes, unless
+        // another dialog is on top (then once that one has closed).
+        assert!(closes_panel(0, 1, true));
+        assert!(!closes_panel(0, 1, false));
+        // Still the process that asked: stays up for the user.
+        assert!(!closes_panel(0, 0, true));
+        assert!(!closes_panel(2, 2, true));
+        assert!(!closes_panel(2, 2, false));
+    }
+
+    #[test]
+    fn each_webview_counts_its_own_process_ends() {
+        let mut ends = ProcessEnds::default();
+        assert_eq!(ends.count(A), 0);
+        let opened_a = ends.count(A);
+        let opened_b = ends.count(B);
+        ends.ended(A);
+        // A's panel closes; B's, another webview's, stays.
+        assert!(closes_panel(opened_a, ends.count(A), true));
+        assert!(!closes_panel(opened_b, ends.count(B), true));
+        ends.ended(A);
+        assert_eq!(ends.count(A), 2);
+        assert_eq!(ends.count(B), 0);
+    }
+
+    #[test]
+    fn a_new_page_keeps_the_process_end_seen() {
+        // After a crash the shell loads the page again (`page_loaded`)
+        // before the panel's timer looks: the end still counts.
+        let mut gates = Gates::default();
+        let mut ends = ProcessEnds::default();
+        let opened = ends.count(A);
+        ends.ended(A);
+        gates.page_loaded(A);
+        gates.reset_all();
+        assert!(closes_panel(opened, ends.count(A), true));
     }
 
     #[test]

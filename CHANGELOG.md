@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Desktop app on macOS: "This page isn't responding" closes by itself once the page answers View ▸ Reload, instead of staying up after the page has reloaded; a Reload pressed on a question the page has just answered does nothing (QA-072).
+- Desktop app on macOS: a page's `alert`, `confirm` or `prompt` that is open when the page's web process crashes now closes by itself, as if cancelled, instead of staying up over the reloaded page.
 
 ## [0.2.0-beta.26] - 2026-11-10
 
