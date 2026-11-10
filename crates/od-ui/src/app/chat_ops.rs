@@ -55,6 +55,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
             let path = format!("{}/conversations/{}", ctx.base(), api::seg(&cid));
             if let Err(e) = api::patch::<_, Value>(&path, &json!({ "title": title })).await {
                 ctx.notice.set(Some(e.to_string()));
+                ctx.on_not_found(e.status);
                 ctx.reload_conversations();
             }
         });
@@ -87,7 +88,10 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
                         }
                     }
                 }
-                Err(e) => ctx.notice.set(Some(e.to_string())),
+                Err(e) => {
+                    ctx.notice.set(Some(e.to_string()));
+                    ctx.on_not_found(e.status);
+                }
             }
         });
     };
@@ -760,7 +764,10 @@ pub fn DesignSystemSwitch(ctx: StudioCtx) -> impl IntoView {
                     ctx.tasks.spawn(async move {
                         match api::patch::<_, ProjectResponse>(&ctx.base(), &json!({ "designSystemId": id })).await {
                             Ok(r) => ctx.project.set(Some(r.project)),
-                            Err(e) => ctx.notice.set(Some(e.to_string())),
+                            Err(e) => {
+                                ctx.notice.set(Some(e.to_string()));
+                                ctx.on_not_found(e.status);
+                            }
                         }
                     });
                 }

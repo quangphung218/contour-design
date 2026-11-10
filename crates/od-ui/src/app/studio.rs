@@ -397,8 +397,9 @@ impl StudioCtx {
         let seq = self.files_seq.get_value().wrapping_add(1);
         self.files_seq.set_value(seq);
         self.tasks.spawn(async move {
-            let Ok(res) = api::get::<FilesResponse>(&format!("{}/files", self.base())).await else {
-                return;
+            let res = match api::get::<FilesResponse>(&format!("{}/files", self.base())).await {
+                Ok(res) => res,
+                Err(e) => return self.on_not_found(e.status),
             };
             // A slower, older answer must not undo a newer one (an upload
             // and the watcher's event both refresh).
@@ -597,15 +598,26 @@ impl StudioCtx {
         // studio is left meanwhile: back on it, the composer must not offer
         // the sent message again.
         let sent = text.clone();
+        let base = self.base();
         let work = async move {
             let res = api::post::<_, CreateRunResponse>("/api/runs", &req).await;
             if let (Ok(_), Some(k)) = (&res, &draft_key) {
                 super::composer::clear_draft_if(k, &sent);
             }
-            res
+            // Refused with 404: the project may have been deleted from
+            // another tab (QA-076).
+            let gone = matches!(&res, Err(e) if e.status == 404) && project_missing(&base).await;
+            (res, gone)
         };
-        self.tasks.spawn_then(work, move |res| {
+        self.tasks.spawn_then(work, move |(res, gone)| {
             match res {
+                // Not the agent's fault, nor the link's: the Studio says
+                // the project is gone, and the turn only that it failed.
+                Err(_) if gone => {
+                    turn.update(|t| t.state = TurnState::Failed);
+                    self.live_run.set(None);
+                    self.project_gone();
+                }
                 Ok(res) => {
                     self.tools.attachments.update(|a| {
                         a.retain(|p| !req_attachments.contains(p));
@@ -958,7 +970,9 @@ impl StudioCtx {
                     self.on_file_changed(changed);
                 }
             },
-            || {},
+            // The browser gave up: the stream answered an error, a 404 once
+            // the project is deleted (QA-076).
+            move || self.probe_gone(),
         )
         .map(|s| s.on_connection(move |up| self.on_project_link(up)));
         self.project_stream.set_value(stream.map(SendWrapper::new));
@@ -973,8 +987,9 @@ impl StudioCtx {
     pub fn reload_conversations(self) {
         self.tasks.spawn(async move {
             let path = format!("{}/conversations", self.base());
-            if let Ok(r) = api::get::<ConversationsResponse>(&path).await {
-                self.conversations.set(r.conversations);
+            match api::get::<ConversationsResponse>(&path).await {
+                Ok(r) => self.conversations.set(r.conversations),
+                Err(e) => self.on_not_found(e.status),
             }
         });
     }
@@ -992,8 +1007,9 @@ impl StudioCtx {
         self.comment_feed.update(Feed::reset);
         self.load_comments().await;
         let base = self.conversation_base(&cid);
-        let Ok(res) = api::get::<MessagesResponse>(&format!("{base}/messages")).await else {
-            return;
+        let res = match api::get::<MessagesResponse>(&format!("{base}/messages")).await {
+            Ok(res) => res,
+            Err(e) => return self.on_not_found(e.status),
         };
         if self.conversation_id.get_untracked().as_deref() != Some(cid.as_str()) {
             return; // Another conversation was opened meanwhile.
@@ -1064,7 +1080,10 @@ impl StudioCtx {
                     });
                     self.open_conversation(id).await;
                 }
-                Err(e) => self.notice.set(Some(e.to_string())),
+                Err(e) => {
+                    self.notice.set(Some(e.to_string()));
+                    self.on_not_found(e.status);
+                }
             }
         });
     }
@@ -1279,6 +1298,40 @@ impl StudioCtx {
         self.slide(cmd);
     }
 
+    /// A call on this project answered `status`. A 404 may mean the
+    /// project itself is gone, deleted in another tab: see
+    /// [`Self::probe_gone`]. A 404 for something in it (a file, a
+    /// conversation) changes nothing.
+    pub fn on_not_found(self, status: u16) {
+        if status == 404 {
+            self.probe_gone();
+        }
+    }
+
+    /// Asks the daemon for the project; gone (404), the Studio shows it as
+    /// for a wrong link (STU-12): not a dropped link, not an agent failure
+    /// (QA-076).
+    pub fn probe_gone(self) {
+        if self.load_gone.get_untracked() {
+            return;
+        }
+        let base = self.base();
+        self.tasks.spawn(async move {
+            if project_missing(&base).await {
+                self.project_gone();
+            }
+        });
+    }
+
+    /// The project was deleted: the Studio switches to its not-found state.
+    fn project_gone(self) {
+        // Its event stream would only retry and say "Reconnecting".
+        self.project_stream.set_value(None);
+        self.link_down.set(false);
+        self.load_gone.set(true);
+        self.load_error.set(Some(t(T::ProjectGone).to_owned()));
+    }
+
     /// Loads history, resumes a live run, then sends a pending prompt.
     pub async fn load(self, shell: Shell) {
         let base = self.base();
@@ -1436,6 +1489,11 @@ fn drop_held(key: &str, id: &str) {
     };
     items.retain(|x| x.id != id);
     super::composer::save_draft(key, &encode_held(Some(why), &items));
+}
+
+/// Whether the project at `base` (`/api/projects/<id>`) no longer exists.
+async fn project_missing(base: &str) -> bool {
+    matches!(api::get::<ProjectResponse>(base).await, Err(e) if e.status == 404)
 }
 
 fn fail(turn: RwSignal<AssistantTurn>, message: String) {

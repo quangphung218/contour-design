@@ -181,9 +181,17 @@ test('PRJ-12', "Deleting a project opened from a folder keeps the user's folder 
 test('PRJ-13', 'Sending in a project deleted from another tab says the project is gone, not that Contour or the agent failed', async ({ d, api, newPage }) => {
   const id = await createProject(d, 'Deleted elsewhere');
   const { page } = await newPage();
+  // The Studio also finds out on its own, from its event stream or any of
+  // its calls (PRJ-14); deleted as the message goes, only the send can.
+  await page.route(/\/api\/projects\/[^/]+\/events$/, () => {});
+  await page.route(/\/api\/runs$/, async (route) => {
+    if (route.request().method() === 'POST') {
+      assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
+    }
+    await route.continue();
+  });
   await page.goto(`${d.base}/projects/${id}`);
   await page.getByTestId('composer').waitFor();
-  assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
   await page.getByTestId('composer').fill('làm cho tối hơn');
   await page.getByTestId('composer').press('Enter');
   const msg = page.getByTestId('assistant-msg').first();
@@ -192,6 +200,22 @@ test('PRJ-13', 'Sending in a project deleted from another tab says the project i
   // STU-12 words it as "This project was deleted or the link is wrong."
   assert.match(said, /deleted|no longer exists/i, said.slice(0, 300));
   assert.doesNotMatch(said, /HTTP 404|check the agent in Settings|Reconnecting/i, said.slice(0, 300));
-}, { knownBug: 'QA-076' });
+  // The Studio's not-found state, as STU-12: nothing to send or retry.
+  await page.getByTestId('load-error').getByRole('link', { name: 'All projects' }).waitFor();
+  assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on in a deleted project');
+  assert.equal(await page.getByTestId('next-retry').count(), 0, 'Retry offered in a deleted project');
+});
+
+test('PRJ-14', 'A project deleted from another tab: the open Studio says so without a send, not "Reconnecting"', async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'Deleted elsewhere, idle');
+  const { page } = await newPage();
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.getByTestId('composer').waitFor();
+  assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
+  // Its event stream ends and comes back 404.
+  await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 15_000 });
+  await until(async () => (await page.getByTestId('workspace-recovery-tip').count()) === 0, 'no "Reconnecting" banner');
+  assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on in a deleted project');
+});
 
 await run('projects');
