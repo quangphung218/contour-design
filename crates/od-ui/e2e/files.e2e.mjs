@@ -366,6 +366,10 @@ try {
   await shot('sketch');
   await page.getByTestId('sketch-to-chat').click();
   await page.getByTestId('attachment-chip').waitFor();
+  // The chip shows before the panel refetches its list; the PNG's row then
+  // lands above the rows below and pushes them down, so a click on one of
+  // them right away hits the row above it (CI: pitch.pptx for report.pdf).
+  await page.locator('[data-testid="file-row"][data-path^="sketches/sketch-"][data-path$=".png"]').waitFor();
   assert.ok((await paths()).some((p) => p.startsWith('sketches/sketch-') && p.endsWith('.png')), 'sketch PNG stored');
   results.sketch = 'draw, undo, redo, text, to chat';
 
@@ -413,6 +417,8 @@ try {
   await page.getByTestId('screenshot').click();
   await page.getByTestId('screenshot-chat').click();
   await toast.filter({ hasText: 'Screenshot goes with the next message' }).waitFor();
+  // Its folder row lands above deck.html, clicked below (see the sketch).
+  await folder('screenshots').waitFor();
   const shotFile = (await paths()).find((p) => p.startsWith('screenshots/') && p.endsWith('.png'));
   assert.ok(shotFile, 'screenshot stored');
   const shotPng = Buffer.from(await (await fetch(`${BASE}/api/projects/${pid}/raw/${shotFile}`)).arrayBuffer());
