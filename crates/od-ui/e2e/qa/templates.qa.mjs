@@ -52,7 +52,9 @@ async function gallery(page, d) {
   await page.getByTestId('tpl-card').first().waitFor({ timeout: 20_000 });
 }
 
-const cardNames = (page) => page.getByTestId('tpl-card').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+// The name a person reads on the card. Cards lost their aria-label in
+// 46a79c01 (axe 4.14: the accessible name comes from the shown text).
+const cardNames = (page) => page.getByTestId('tpl-card').evaluateAll((els) => els.map((e) => e.querySelector('.template-name')?.textContent.trim()));
 
 async function openPreview(page, name) {
   await page.getByTestId('tpl-search').fill(name);
@@ -299,7 +301,7 @@ test('TPL-15', 'Remix pressed twice quickly makes one project', async ({ d, api,
   assert.equal((await listProjects(d)).length, before + 1);
 });
 
-test('TPL-16', 'A remixed film is tagged like one started with Use template (Media), not Prototype', async ({ d, api, newPage }) => {
+test('TPL-16', 'A remixed film is tagged like one started with Use template (Motion), not Prototype', async ({ d, api, newPage }) => {
   const film = (await byPrefix(api, 'motion-')).find((t) => t.id === 'motion-end-screen');
   const r = await api(`/api/design-templates/${film.id}/remix`, { method: 'POST', body: { name: 'Remixed end screen' } });
   assert.equal(r.status, 200, JSON.stringify(r.body));
@@ -308,7 +310,9 @@ test('TPL-16', 'A remixed film is tagged like one started with Use template (Med
   const card = page.locator('.project-card', { hasText: 'Remixed end screen' });
   await card.waitFor();
   const badge = (await card.locator('.badge').first().innerText()).trim();
-  assert.equal(badge, 'Media', `the remixed film's card says "${badge}"`);
+  // Films started from the Motion chip or Use template are tagged Motion
+  // since 3e39debd (UI-013); the remix must read the same.
+  assert.equal(badge, 'Motion', `the remixed film's card says "${badge}"`);
 });
 
 const ffprobe = ['/opt/homebrew/bin/ffprobe', '/usr/local/bin/ffprobe', '/usr/bin/ffprobe'].find(existsSync);
