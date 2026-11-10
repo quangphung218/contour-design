@@ -40,8 +40,9 @@ pub fn GenuiSurfaces(ctx: StudioCtx) -> impl IntoView {
     };
     let reload = move || {
         leptos::task::spawn_local(async move {
-            if let Ok(r) = api::get::<ProjectSurfaces>(&base()).await {
-                rows.set(r.surfaces);
+            match api::get::<ProjectSurfaces>(&base()).await {
+                Ok(r) => rows.set(r.surfaces),
+                Err(e) => ctx.on_not_found(e.status),
             }
         });
     };
@@ -77,7 +78,7 @@ pub fn GenuiSurfaces(ctx: StudioCtx) -> impl IntoView {
         leptos::task::spawn_local(async move {
             let path = format!("{}/{}/revoke", base(), api::seg(&surface_id));
             if let Err(e) = api::post::<_, Value>(&path, &json!({})).await {
-                ctx.notice.set(Some(e.to_string()));
+                ctx.notice.set(Some(ctx.failed(&e)));
             }
             reload();
         });

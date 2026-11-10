@@ -1308,6 +1308,13 @@ impl StudioCtx {
         }
     }
 
+    /// A failed call on this project, as the text shown for it, after
+    /// [`Self::on_not_found`].
+    pub fn failed(self, e: &api::HttpError) -> String {
+        self.on_not_found(e.status);
+        e.to_string()
+    }
+
     /// Asks the daemon for the project; gone (404), the Studio shows it as
     /// for a wrong link (STU-12): not a dropped link, not an agent failure
     /// (QA-076).

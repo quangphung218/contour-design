@@ -56,7 +56,7 @@ fn add_comment(
                 ctx.comments.update(|c| c.push(r.comment));
                 ctx.comment_draft.set(None);
             }
-            Err(e) => error.set(Some(tf(T::CommentFailed, &[&e.to_string()]))),
+            Err(e) => error.set(Some(tf(T::CommentFailed, &[&ctx.failed(&e)]))),
         }
         busy.set(false);
     });

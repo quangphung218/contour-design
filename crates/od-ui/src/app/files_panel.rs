@@ -184,7 +184,7 @@ pub fn replace_content(
         api::put_text::<FileResponse>(&url, &body)
             .await
             .map(|r| r.file)
-            .map_err(|e| e.to_string())
+            .map_err(|e| ctx.failed(&e))
     }
 }
 
@@ -252,7 +252,7 @@ pub fn copy_path(ctx: StudioCtx, ui: FilesUi, path: &str, full: bool) {
             match api::get::<HandoffResponse>(&format!("{}/handoff", ctx.base())).await {
                 Ok(h) => format!("{}/{path}", h.dir.trim_end_matches('/')),
                 Err(e) => {
-                    ctx.notice.set(Some(e.to_string()));
+                    ctx.notice.set(Some(ctx.failed(&e)));
                     return;
                 }
             }
@@ -284,7 +284,7 @@ pub async fn upload(
     }
     let res: UploadResponse = api::post_form(&format!("{}/upload", ctx.base()), form)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ctx.failed(&e))?;
     Ok(res.files.into_iter().map(|f| f.path).collect())
 }
 
@@ -329,7 +329,7 @@ async fn create_text(ctx: StudioCtx, name: String, content: String) -> Result<St
     };
     let res = api::post::<_, FileResponse>(&format!("{}/files", ctx.base()), &req)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ctx.failed(&e))?;
     Ok(res.file.path)
 }
 
@@ -803,7 +803,7 @@ fn SelectionBar(ctx: StudioCtx, ui: FilesUi) -> impl IntoView {
                     download(&bytes, &format!("{name}.zip"), "application/zip");
                     super::export_menu::mark_exported(&ctx.base()).await;
                 }
-                Err(e) => ctx.notice.set(Some(e.to_string())),
+                Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
             }
         });
     };
@@ -889,7 +889,7 @@ fn RowMenu(ctx: StudioCtx, ui: FilesUi, key: String) -> impl IntoView {
                                     download(&bytes, &format!("{}.zip", ft::base(&dir)), "application/zip");
                                     super::export_menu::mark_exported(&ctx.base()).await;
                                 }
-                                Err(e) => ctx.notice.set(Some(e.to_string())),
+                                Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
                             }
                         });
                     }>{icon(Glyph::Download)}{t(T::DownloadZip)}</button>
@@ -955,7 +955,7 @@ async fn move_items(ctx: StudioCtx, items: Vec<String>, dest: String) -> Result<
                     },
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| ctx.failed(&e))?;
                 moved += r.files;
             }
             None => {
@@ -964,7 +964,7 @@ async fn move_items(ctx: StudioCtx, items: Vec<String>, dest: String) -> Result<
                     &json!({ "from": item, "to": ft::join(&dest, ft::base(item)) }),
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| ctx.failed(&e))?;
                 moved += 1;
             }
         }
@@ -1077,7 +1077,7 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                     ui.reveal(&format!("{}/x", r.folder));
                     Some(tf(T::FolderCreated, &[&r.folder]))
                 })
-                .map_err(|e| e.to_string()),
+                .map_err(|e| ctx.failed(&e)),
                 Dialog::NewDocument(dir) => {
                     let path = ft::free_name(&existing, &dir, &ft::stem_of_title(&n), "md");
                     create_text(ctx, path, document_template(&n))
@@ -1121,7 +1121,7 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                         }
                         None
                     })
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| ctx.failed(&e))
                 }
                 Dialog::Move(items) => {
                     let to = dest.get_untracked();
@@ -1159,7 +1159,7 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                             .map(|_| ()),
                         };
                         if let Err(e) = res {
-                            out = Err(e.to_string());
+                            out = Err(ctx.failed(&e));
                             break;
                         }
                     }
@@ -1180,7 +1180,7 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                     }
                     Some(tf(T::FolderDeleted, &[&dir]))
                 })
-                .map_err(|e| e.to_string()),
+                .map_err(|e| ctx.failed(&e)),
             };
             busy.set(false);
             match result {
@@ -1355,7 +1355,7 @@ pub fn continue_in_cli(ctx: StudioCtx, ui: FilesUi) {
     leptos::task::spawn_local(async move {
         let res = match api::get::<HandoffResponse>(&format!("{}/handoff", ctx.base())).await {
             Ok(h) => copy_text(&h.prompt).await,
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(ctx.failed(&e)),
         };
         match res {
             Ok(()) => ui.say(t(T::ContinueInCliCopied).to_owned()),

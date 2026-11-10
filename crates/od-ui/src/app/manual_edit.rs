@@ -223,7 +223,10 @@ impl StudioCtx {
                 &req,
             )
             .await
-            .map_err(|e| e.message);
+            .map_err(|e| {
+                self.on_not_found(e.status);
+                e.message
+            });
             if m.read_seq.try_get_value() != Some(seq) {
                 return;
             }
@@ -302,7 +305,10 @@ impl StudioCtx {
                     m.book.update_value(|book| book.written(part, &sent));
                     after();
                 }
-                Err(e) => m.error.set(Some(e.message)),
+                Err(e) => {
+                    self.on_not_found(e.status);
+                    m.error.set(Some(e.message));
+                }
             }
             m.busy.set(false);
         });
@@ -462,7 +468,10 @@ impl StudioCtx {
                     m.history
                         .update(|h| if undo { h.undone() } else { h.redone() });
                 }
-                Err(e) => m.error.set(Some(tf(T::ManualHistoryFailed, &[&e.message]))),
+                Err(e) => {
+                    self.on_not_found(e.status);
+                    m.error.set(Some(tf(T::ManualHistoryFailed, &[&e.message])));
+                }
             }
             m.busy.set(false);
             self.reload_preview();

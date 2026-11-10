@@ -226,4 +226,20 @@ test('PRJ-14', 'A project deleted from another tab: the open Studio says so with
   assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on in a deleted project');
 });
 
+test('PRJ-15', 'Attaching a file to a project deleted from another tab says the project is gone', async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'Deleted while attaching');
+  const { page } = await newPage();
+  // As PRJ-13: held, the event stream cannot tell; only the upload can.
+  await page.route(/\/api\/projects\/[^/]+\/events$/, () => {});
+  await page.route(/\/api\/projects\/[^/]+\/upload$/, async (route) => {
+    assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
+    await route.continue();
+  });
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.getByTestId('composer').waitFor();
+  await page.getByTestId('file-input').setInputFiles({ name: 'brief.txt', mimeType: 'text/plain', buffer: Buffer.from('brief') });
+  await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
+  assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on in a deleted project');
+});
+
 await run('projects');

@@ -64,7 +64,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                     version: v.version,
                     content: r.content,
                 })),
-                Err(e) => ctx.notice.set(Some(e.to_string())),
+                Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
             }
         });
     };
@@ -83,7 +83,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                 }
                 Err(e) => ctx
                     .notice
-                    .set(Some(tf(T::RestoreFailed, &[&e.to_string()]))),
+                    .set(Some(tf(T::RestoreFailed, &[&ctx.failed(&e)]))),
             }
         });
     };
