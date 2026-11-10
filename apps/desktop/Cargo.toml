@@ -39,7 +39,7 @@ tracing.workspace = true
 block2 = "0.6"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "NSAlert", "NSApplication", "NSButton", "NSCell", "NSControl", "NSEvent", "NSFont", "NSMenu", "NSResponder", "NSScrollView", "NSText", "NSTextField", "NSTextView", "NSView", "NSWindow"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSBundle", "NSDate", "NSGeometry", "NSObjCRuntime", "NSRunLoop", "NSString", "NSTimer"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSBundle", "NSDate", "NSGeometry", "NSObjCRuntime", "NSRunLoop", "NSString", "NSTimer", "NSURL"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKFrameInfo", "WKSecurityOrigin", "WKUIDelegate", "WKWebView"] }
 
 [dev-dependencies]

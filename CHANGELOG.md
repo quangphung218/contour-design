@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Desktop app on macOS: a design that crashes its page's web process twice within 10 s no longer makes the whole app panic and quit; the app opens the project with the preview stopped and the Studio says the design crashed the page, as beta.25 meant to. View ▸ Reload and a design hung in a dialog loop no longer read the page's address in a way that panics once its web process has ended (QA-073).
+
 ## [0.2.0-beta.27] - 2026-11-10
 
 ### Fixed
