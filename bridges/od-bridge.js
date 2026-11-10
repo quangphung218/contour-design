@@ -653,8 +653,14 @@
       // those of the events the same input brings straight after it (a
       // mouse's `mouseup` and `click` or `auxclick` after its `pointerup`, a
       // Space key's `click` after its `keyup`, a tap's `mouseup` and `click`
-      // after its `touchend`), still spend it; any other event does not. What the press was: 'key' or 'pointer', kept once it is spent
-      // (a link may give a key's press back).
+      // after its `touchend`, the control's `click` a `<label>` passes on
+      // after its own), still spend it; any other event does not. So input
+      // that comes in between closes the press: a key let go between a
+      // touch's `touchend` and its `click`, which can come tasks later, or
+      // between a mouse's `pointerup` and `click`, leaves that `click`
+      // opening nothing.
+      // What the press was: 'key' or 'pointer', kept once it is spent (a
+      // link may give a key's press back).
       var pressKind = null;
       var endedBy = null;
       // The last trusted input event, and what may come straight after an
@@ -667,6 +673,9 @@
       follows.mouseup.click = follows.mouseup.auxclick = 1;
       follows.keyup = Object.create(null);
       follows.keyup.click = 1;
+      // A click on a `<label>` clicks its control too, in the same task.
+      follows.click = Object.create(null);
+      follows.click.click = 1;
       // A page that cancels a tap's `pointerdown` gets its `click` with no
       // `mouseup` (Chromium and WebKit alike); nor does a touch bring a
       // `pointerup` or `auxclick` after its `touchend`.

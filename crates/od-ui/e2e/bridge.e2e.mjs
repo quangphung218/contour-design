@@ -103,6 +103,9 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <button id="fm">FM: the page floods timers on pointerdown</button> <input id="fx" value="FX: Enter floods timers, alerts"></p>
 <p><button id="mt" style="width:300px;height:40px">MT: touchend opens</button>
 <span id="dr2" style="display:inline-block;width:300px;padding:16px 0;background:#ddd;touch-action:none">DR: drag here, no click</span></p>
+<p><label id="l1">L1: agree <input type="checkbox" id="l1c"></label>
+<label id="l2" for="l2b">L2: label for</label> <button id="l2b">L2 button</button>
+<label id="l3">L3: both open <input type="checkbox" id="l3c"></label></p>
 <p><button id="ax">AX: auxclick opens</button> <button id="pd">PD: cancels pointerdown, click and auxclick open</button></p>
 <p><span id="sw" style="display:inline-block;width:400px;padding:16px 0;background:#ddd">SW: swipe, the page cancels touchmove</span></p>
 <p><button id="gone">P1: goes away on pointerdown</button></p>
@@ -187,6 +190,10 @@ on('fl', 'touchstart', (e) => { e.preventDefault(); flood(); }, { passive: false
 on('fm', 'pointerdown', flood);
 on('fx', 'keydown', (e) => { if (e.key === 'Enter') { flood(); alert('saved'); } });
 on('mt', 'touchend', () => window.open('https://example.com/mt-open'));
+on('l1c', 'click', () => window.open('https://example.com/l1-open'));
+on('l2b', 'click', () => window.open('https://example.com/l2-open'));
+on('l3', 'click', (e) => { if (e.target.id === 'l3') window.open('https://example.com/l3-label'); });
+on('l3c', 'click', () => window.open('https://example.com/l3-open'));
 on('ax', 'auxclick', () => window.open('https://example.com/ax-aux'));
 on('pd', 'pointerdown', (e) => e.preventDefault());
 on('pd', 'click', () => window.open('https://example.com/pd-click'));
@@ -268,6 +275,15 @@ const allCases = [
   // pointerdown the page cancelled, with no mouseup (PD, PDM), a tap's
   // click after its touchend, with no mouseup either (TD; WebKit sends
   // that tap no click at all).
+  // A click or tap on a label clicks its control after the label's own
+  // click: the control's handler opens one tab, for a label around the
+  // control (L1) or one that names it (L2). Still one press, one tab: the
+  // label's own handler opens, the control's then opens none (L3).
+  ['L1', ['l1-open'], (f) => f.locator('#l1').click({ position: { x: 5, y: 5 } })],
+  ['L1T', ['l1-open'], (f) => f.locator('#l1').tap({ position: { x: 5, y: 5 } })],
+  ['L2', ['l2-open'], (f) => f.locator('#l2').click({ position: { x: 5, y: 5 } })],
+  ['L2T', ['l2-open'], (f) => f.locator('#l2').tap({ position: { x: 5, y: 5 } })],
+  ['L3', ['l3-label'], (f) => f.locator('#l3').click({ position: { x: 5, y: 5 } })],
   ['SP', ['plain-click'], async (f, page) => { await f.locator('#plain').focus(); await page.keyboard.press(' '); }],
   ['AX', ['ax-aux'], (f) => f.locator('#ax').click({ button: 'middle' })],
   ['PD', ['pd-click'], (f) => f.locator('#pd').click()],

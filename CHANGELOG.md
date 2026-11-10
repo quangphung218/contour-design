@@ -11,7 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Desktop app on macOS: "This page isn't responding" closes by itself once the page answers View ▸ Reload, instead of staying up after the page has reloaded; a Reload pressed on a question the page has just answered does nothing (QA-072).
-- Desktop app: a design that queues thousands of short timers no longer keeps a finished click, key press or touch open for a key the user presses in the meantime. A touch in a design opens at most one browser tab however many fingers it uses, and once a finger is lifted only the tap's own click can still open one: a drag, a long press or a second finger elsewhere in the app leaves nothing open for a later key.
+- Desktop app: a design that queues thousands of short timers no longer keeps a finished click, key press or touch open for a key the user presses in the meantime. A touch in a design opens at most one browser tab however many fingers it uses, and once a finger is lifted only the tap's own click can still open one: a drag, a long press or a second finger elsewhere in the app leaves nothing open for a later key. A key let go between a tap and its click, which can come a moment later, leaves that click opening nothing.
 
 ## [0.2.0-beta.26] - 2026-11-10
 
