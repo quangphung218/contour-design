@@ -247,29 +247,32 @@ pub fn admit(files: Vec<web_sys::File>) -> (Vec<Upload>, Option<String>) {
 }
 
 /// Uploads one file to the project at `base` (`/api/projects/:id`); the
-/// project-relative path it got.
-pub async fn upload(base: &str, file: &web_sys::File) -> Result<String, String> {
-    let form = web_sys::FormData::new().map_err(|e| format!("{e:?}"))?;
+/// project-relative path it got, or the HTTP status of the failure (0
+/// when none) and its message.
+async fn upload(base: &str, file: &web_sys::File) -> Result<String, (u16, String)> {
+    let form = web_sys::FormData::new().map_err(|e| (0, format!("{e:?}")))?;
     form.append_with_blob_and_filename("files", file, &file.name())
-        .map_err(|e| format!("{e:?}"))?;
+        .map_err(|e| (0, format!("{e:?}")))?;
     let res: UploadResponse = api::post_form(&format!("{base}/upload"), form)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| (e.status, e.to_string()))?;
     res.files
         .into_iter()
         .next()
         .map(|f| f.path)
-        .ok_or_else(|| "no file in the response".to_owned())
+        .ok_or_else(|| (0, "no file in the response".to_owned()))
 }
 
 /// Uploads the queued files one by one; each uploaded path goes into
 /// `ready` and its card leaves `uploads`, a failed one stays with its error.
-/// A card removed meanwhile is not attached.
+/// A card removed meanwhile is not attached. Returns whether an upload
+/// answered 404 (the project may be gone, QA-076).
 pub async fn upload_all(
     base: String,
     uploads: RwSignal<Vec<Upload>>,
     ready: RwSignal<Vec<String>>,
-) {
+) -> bool {
+    let mut not_found = false;
     let todo: Vec<Upload> = uploads.with_untracked(|u| {
         u.iter()
             .filter(|u| u.state != UploadState::Uploading)
@@ -295,9 +298,13 @@ pub async fn upload_all(
                 }
                 ready.update(|r| crate::workspace::add_missing(r, vec![path]));
             }
-            Err(e) => set_state(uploads, &item.id, UploadState::Failed(e)),
+            Err((status, e)) => {
+                not_found |= status == 404;
+                set_state(uploads, &item.id, UploadState::Failed(e));
+            }
         }
     }
+    not_found
 }
 
 fn set_state(uploads: RwSignal<Vec<Upload>>, id: &str, state: UploadState) {

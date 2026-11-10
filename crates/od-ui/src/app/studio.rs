@@ -1312,7 +1312,9 @@ impl StudioCtx {
     /// for a wrong link (STU-12): not a dropped link, not an agent failure
     /// (QA-076).
     pub fn probe_gone(self) {
-        if self.load_gone.get_untracked() {
+        // Also called after an `await` from tasks that outlive the Studio:
+        // its signals may be gone, then there is nothing to switch.
+        if self.load_gone.try_get_untracked().is_none_or(|gone| gone) {
             return;
         }
         let base = self.base();

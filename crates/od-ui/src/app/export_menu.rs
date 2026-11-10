@@ -218,6 +218,10 @@ fn rows_for(path: Option<&str>, fit: Option<ExportFit>) -> Vec<Row> {
         .collect()
 }
 
+/// What an ended export says in its toast; `None`: nothing, the toast
+/// closes (the Save dialog was closed).
+type Outcome = Option<Result<String, String>>;
+
 /// One export: the project, the file (none for a ZIP) and the format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ExportJob {
@@ -246,7 +250,8 @@ pub struct Exports {
     /// Results not shown yet, by project: the Export menu of that project
     /// shows them, whether it is the one that started the export or the one
     /// of a Studio opened again since.
-    ended: RwSignal<Vec<(String, Result<String, String>)>>,
+    /// A closed Save dialog is one too: its "Exporting…" toast must close.
+    ended: RwSignal<Vec<(String, Outcome)>>,
 }
 
 impl Exports {
@@ -264,14 +269,11 @@ impl Exports {
             .unwrap_or(false)
     }
 
-    /// `job` is over with `outcome` (`None`: nothing to say, the Save
-    /// dialog was closed).
-    fn finish(self, job: &ExportJob, outcome: Option<Result<String, String>>) {
+    /// `job` is over with `outcome`.
+    fn finish(self, job: &ExportJob, outcome: Outcome) {
         self.running.update(|r| r.retain(|j| j != job));
-        if let Some(outcome) = outcome {
-            self.ended
-                .update(|e| e.push((job.project.clone(), outcome)));
-        }
+        self.ended
+            .update(|e| e.push((job.project.clone(), outcome)));
     }
 
     /// The format of an export running in `project`, the latest started.
@@ -284,8 +286,9 @@ impl Exports {
         })
     }
 
-    /// Takes the latest result not shown yet of `project`.
-    fn take_ended(self, project: &str) -> Option<Result<String, String>> {
+    /// Takes the latest result not shown yet of `project`; `None` when no
+    /// export of it ended since.
+    fn take_ended(self, project: &str) -> Option<Outcome> {
         if !self.ended.with(|e| e.iter().any(|(p, _)| p == project)) {
             return None;
         }
@@ -376,7 +379,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         let project_id = project_id.clone();
         move |_| {
             if let Some(outcome) = exports.take_ended(&project_id) {
-                status.set(Some(outcome));
+                status.set(outcome);
             } else if let Some(format) = exports.running_in(&project_id)
                 && status.with_untracked(Option::is_none)
             {
@@ -458,7 +461,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             let path = format!("{}/handoff/open", ctx.base());
             match api::post::<_, OkResponse>(&path, &json!({})).await {
                 Ok(_) => status.set(Some(Ok(t(T::FolderOpened).to_owned()))),
-                Err(e) => status.set(Some(Err(tf(T::HandoffFailed, &[&e.to_string()])))),
+                Err(e) => {
+                    status.set(Some(Err(tf(T::HandoffFailed, &[&e.to_string()]))));
+                    ctx.on_not_found(e.status);
+                }
             }
         });
     };
@@ -468,7 +474,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             let path = format!("{}/handoff", ctx.base());
             let res = match api::get::<HandoffResponse>(&path).await {
                 Ok(h) => copy_text(&h.prompt).await,
-                Err(e) => Err(e.to_string()),
+                Err(e) => {
+                    ctx.on_not_found(e.status);
+                    Err(e.to_string())
+                }
             };
             match res {
                 Ok(()) => status.set(Some(Ok(t(T::PromptCopied).to_owned()))),
@@ -881,6 +890,39 @@ mod tests {
             &job("p2", Some("film/index.html"), Format::Mp4)
         ));
         assert_eq!(running.len(), 4);
+    }
+
+    #[test]
+    fn an_ended_export_reaches_the_menu_even_with_nothing_to_say() {
+        use super::{ExportJob, Exports, Format};
+        use leptos::prelude::Owner;
+        Owner::new().with(|| {
+            let exports = Exports::new();
+            let job = ExportJob {
+                project: "p1".to_owned(),
+                file: Some("film/index.html".to_owned()),
+                format: Format::Mp4,
+            };
+            assert!(exports.start(&job));
+            assert_eq!(exports.running_in("p1"), Some(Format::Mp4));
+            assert_eq!(exports.take_ended("p1"), None);
+            // The Save dialog closed: the menu still hears of it, so its
+            // "Exporting mp4…" toast closes.
+            exports.finish(&job, None);
+            assert_eq!(exports.running_in("p1"), None);
+            assert_eq!(exports.take_ended("p1"), Some(None));
+            assert_eq!(exports.take_ended("p1"), None);
+            // A result goes to its own project's menu, the latest one.
+            assert!(exports.start(&job));
+            exports.finish(&job, Some(Err("first".to_owned())));
+            assert!(exports.start(&job));
+            exports.finish(&job, Some(Ok("Exported index.mp4".to_owned())));
+            assert_eq!(exports.take_ended("p2"), None);
+            assert_eq!(
+                exports.take_ended("p1"),
+                Some(Some(Ok("Exported index.mp4".to_owned())))
+            );
+        });
     }
 
     #[test]

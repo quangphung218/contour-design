@@ -70,6 +70,17 @@ impl ChatItem {
     }
 }
 
+/// Uploads the composer's staged files; a 404 may mean the project was
+/// deleted (QA-076).
+fn upload_staged(ctx: StudioCtx) {
+    ctx.tasks.spawn(async move {
+        let base = ctx.base();
+        if upload_all(base, ctx.chat.uploads, ctx.tools.attachments).await {
+            ctx.on_not_found(404);
+        }
+    });
+}
+
 #[component]
 pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     let shell = Shell::get();
@@ -139,19 +150,9 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             return;
         }
         ctx.chat.uploads.update(|u| u.extend(items));
-        ctx.tasks.spawn(upload_all(
-            ctx.base(),
-            ctx.chat.uploads,
-            ctx.tools.attachments,
-        ));
+        upload_staged(ctx);
     });
-    let retry_upload = Callback::new(move |_id: String| {
-        ctx.tasks.spawn(upload_all(
-            ctx.base(),
-            ctx.chat.uploads,
-            ctx.tools.attachments,
-        ));
-    });
+    let retry_upload = Callback::new(move |_id: String| upload_staged(ctx));
     let mention_files = Signal::derive(move || {
         ctx.files
             .with(|f| f.iter().map(|f| f.path.clone()).collect::<Vec<_>>())
