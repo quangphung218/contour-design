@@ -40,7 +40,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                     list.sort_by_key(|a| std::cmp::Reverse(a.version));
                     list
                 })
-                .map_err(|e| e.to_string());
+                .map_err(|e| ctx.failed(&e));
             versions.set(Some(res));
         });
     };
