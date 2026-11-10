@@ -101,7 +101,9 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <button id="tf">TF: the page cancels touchend, then says it did not</button></p>
 <p><button id="fl">FL: the page cancels touchstart and floods timers</button>
 <button id="fm">FM: the page floods timers on pointerdown</button> <input id="fx" value="FX: Enter floods timers, alerts"></p>
-<p><button id="mt" style="width:300px;height:40px">MT: touchend opens</button></p>
+<p><button id="mt" style="width:300px;height:40px">MT: touchend opens</button>
+<span id="dr2" style="display:inline-block;width:300px;padding:16px 0;background:#ddd;touch-action:none">DR: drag here, no click</span></p>
+<p><button id="ax">AX: auxclick opens</button> <button id="pd">PD: cancels pointerdown, click and auxclick open</button></p>
 <p><span id="sw" style="display:inline-block;width:400px;padding:16px 0;background:#ddd">SW: swipe, the page cancels touchmove</span></p>
 <p><button id="gone">P1: goes away on pointerdown</button></p>
 <p><button id="dlgc">D1: click confirms, then opens</button> <button id="dlga">D2: click alerts, then opens</button>
@@ -185,6 +187,10 @@ on('fl', 'touchstart', (e) => { e.preventDefault(); flood(); }, { passive: false
 on('fm', 'pointerdown', flood);
 on('fx', 'keydown', (e) => { if (e.key === 'Enter') { flood(); alert('saved'); } });
 on('mt', 'touchend', () => window.open('https://example.com/mt-open'));
+on('ax', 'auxclick', () => window.open('https://example.com/ax-aux'));
+on('pd', 'pointerdown', (e) => e.preventDefault());
+on('pd', 'click', () => window.open('https://example.com/pd-click'));
+on('pd', 'auxclick', () => window.open('https://example.com/pd-aux'));
 on('sw', 'touchmove', (e) => e.preventDefault(), { passive: false });
 on('gone', 'pointerdown', (e) => e.target.remove());
 on('dlgc', 'click', () => { if (confirm('open?')) window.open('https://example.com/d1-open'); });
@@ -249,12 +255,44 @@ const allCases = [
   ['FX', [], async (f, page) => { await enter(f, page, '#fx'); await strayKeyup(f, page); await drained(f, page); }],
   // Fingers, one press: a finger that comes down while another is on the
   // screen arms nothing (M2: the first touchend opened, a third finger
-  // down before the second is lifted opens no second tab), and a touch of two fingers gets no click, so it
-  // ends with its last touchend (MS); so does a touch the browser cancels
-  // (TX). Playwright has no multi-touch: CDP, Chromium only.
+  // down before the second is lifted opens no second tab), and a touch of
+  // two fingers gets no click, so nothing is left open after its touchend
+  // (MS); a touch the browser cancels ends with its pointercancel (TX).
+  // Playwright has no multi-touch: CDP, Chromium only.
   ['M2', ['mt-open'], async (f, page, cdp) => { await touches(cdp, f, '#mt', [['start', 0], ['start', 1], ['end', 0], ['start', 2], ['end', 1], ['end', 2]]); }, ['chromium']],
   ['MS', [], async (f, page, cdp) => { await touches(cdp, f, '#plain', [['start', 0], ['start', 1], ['end', 0], ['end', 1]]); await sleep(300); await strayKeyup(f, page); }, ['chromium']],
   ['TX', [], async (f, page, cdp) => { await touches(cdp, f, '#plain', [['start', 0], ['cancel']]); await sleep(300); await strayKeyup(f, page); }, ['chromium']],
+  // The events one input brings straight after the end of its press
+  // still spend it: Space's click after its keyup (SP), a middle click's
+  // auxclick after its mouseup (AX), the click or auxclick of a press whose
+  // pointerdown the page cancelled, with no mouseup (PD, PDM), a tap's
+  // click after its touchend, with no mouseup either (TD; WebKit sends
+  // that tap no click at all).
+  ['SP', ['plain-click'], async (f, page) => { await f.locator('#plain').focus(); await page.keyboard.press(' '); }],
+  ['AX', ['ax-aux'], (f) => f.locator('#ax').click({ button: 'middle' })],
+  ['PD', ['pd-click'], (f) => f.locator('#pd').click()],
+  ['PDM', ['pd-aux'], (f) => f.locator('#pd').click({ button: 'middle' })],
+  ['TD', ['pd-click'], (f) => f.locator('#pd').tap(), ['chromium']],
+  // A touch that gets no click ends with its touchend: a drag on
+  // touch-action: none (DR), a second finger on the host, outside this
+  // frame's count of fingers (PI).
+  ['DR', [], async (f, page, cdp) => { await f.locator('#dr2').scrollIntoViewIfNeeded(); await swipe(cdp, await f.locator('#dr2').boundingBox()); await sleep(300); await strayKeyup(f, page); }, ['chromium']],
+  ['PI', [], async (f, page, cdp) => {
+    await f.locator('#plain').scrollIntoViewIfNeeded();
+    const a = await f.locator('#plain').boundingBox();
+    const b = await page.locator('#away').boundingBox();
+    const inFrame = { x: a.x + 10, y: a.y + a.height / 2, id: 0 };
+    const onHost = { x: b.x + 5, y: b.y + b.height / 2, id: 1 };
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [inFrame] });
+    await sleep(30);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [inFrame, onHost] });
+    await sleep(30);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [onHost] });
+    await sleep(30);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [inFrame] });
+    await sleep(300);
+    await strayKeyup(f, page);
+  }, ['chromium']],
   ['P1', [], async (f, page) => { await f.locator('#gone').click(); await sleep(100); await strayKeyup(f, page); }],
   // The dialog's blur does not take the press from the open after it.
   ['D1', ['d1-open'], (f) => f.locator('#dlgc').click()],

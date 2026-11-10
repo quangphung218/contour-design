@@ -595,7 +595,6 @@
       var currentEvent = bind.call(Object.getOwnPropertyDescriptor(window, 'event').get, window);
       var typeOf = callOf(Object.getOwnPropertyDescriptor(Event.prototype, 'type').get);
       var repeatOf = callOf(Object.getOwnPropertyDescriptor(KeyboardEvent.prototype, 'repeat').get);
-      var preventedOf = callOf(Object.getOwnPropertyDescriptor(Event.prototype, 'defaultPrevented').get);
       var kinds = Object.create(null);
       kinds.click = kinds.auxclick = kinds.mouseup = kinds.pointerup = 1;
       kinds.touchend = kinds.keydown = kinds.keyup = 1;
@@ -652,9 +651,9 @@
       // input still runs between them (a stray `keyup` in WebKit). A press
       // ends with its last event (`endedBy`): that event's handlers, and
       // those of the events the same input brings straight after it (a
-      // mouse's `mouseup` and `click` after its `pointerup`, a Space key's
-      // `click` after its `keyup`), still spend it; any other event does
-      // not. What the press was: 'key' or 'pointer', kept once it is spent
+      // mouse's `mouseup` and `click` or `auxclick` after its `pointerup`, a
+      // Space key's `click` after its `keyup`, a tap's `mouseup` and `click`
+      // after its `touchend`), still spend it; any other event does not. What the press was: 'key' or 'pointer', kept once it is spent
       // (a link may give a key's press back).
       var pressKind = null;
       var endedBy = null;
@@ -668,6 +667,11 @@
       follows.mouseup.click = follows.mouseup.auxclick = 1;
       follows.keyup = Object.create(null);
       follows.keyup.click = 1;
+      // A page that cancels a tap's `pointerdown` gets its `click` with no
+      // `mouseup` (Chromium and WebKit alike); nor does a touch bring a
+      // `pointerup` or `auxclick` after its `touchend`.
+      follows.touchend = Object.create(null);
+      follows.touchend.mouseup = follows.touchend.click = 1;
       var pointerTypeOf = callOf(Object.getOwnPropertyDescriptor(PointerEvent.prototype, 'pointerType').get);
       var primaryOf = callOf(Object.getOwnPropertyDescriptor(PointerEvent.prototype, 'isPrimary').get);
       // Fingers on the screen after a touch event; none without touch events.
@@ -681,30 +685,17 @@
           return lengthOf(touchesOf(e));
         };
       } catch (_) {}
-      // A touch press: one touch sequence, from the first finger down to a
-      // finger up (`touchDone`, the latest `touchend`). Its click comes after
-      // that, tasks later, unless the page cancelled one of its events
-      // (`touchEvents`, read through the prototype's getter once its
-      // dispatch is over: the page can shadow it on the event) or more than
-      // one finger came down (`noClick`): then the press ends with that
-      // `touchend`. A finger that comes down while another is on the screen
-      // arms nothing: one sequence, one press, however many fingers. A touch
-      // the browser cancels ends with its `pointercancel`, which the page
-      // cannot cancel.
+      // A touch press ends with the first `touchend` in this frame: a tap's
+      // `click` (if any) comes after it, tasks later, but with nothing of
+      // the user's in between. So a touch that gets no click (the page
+      // cancelled one of its events, a drag on `touch-action: none`, a long
+      // press, a second finger here or in another frame) leaves nothing
+      // open, and a finger that comes down while another is on the screen
+      // here arms nothing: one touch, one press, however many fingers. A
+      // touch the browser cancels ends with its `pointercancel`.
       var pressTouch = false;
-      var touchEvents = [];
-      var noClick = false;
-      var touchDone = null;
-      var touchOver = function (ev) {
-        if (!pressTouch || !touchDone || ev === touchDone) return false;
-        if (noClick) return true;
-        for (var i = 0; i < touchEvents.length; i++) {
-          if (preventedOf(touchEvents[i])) return true;
-        }
-        return false;
-      };
       var over = function (ev) {
-        return (endedBy !== null && ev !== endedBy) || touchOver(ev);
+        return endedBy !== null && ev !== endedBy;
       };
       var input = function (e) {
         if (e.isTrusted !== true) return false;
@@ -718,16 +709,8 @@
         var type = typeOf(e);
         if (type === 'keydown' && repeatOf(e)) return;
         var touch = type === 'touchstart' || (type === 'pointerdown' && pointerTypeOf(e) === 'touch');
-        if (type === 'touchstart' && fingersOf(e) !== 1) {
-          noClick = true;
-          return;
-        }
+        if (type === 'touchstart' && fingersOf(e) !== 1) return;
         if (touch && type === 'pointerdown' && !primaryOf(e)) return;
-        if (touch) {
-          touchEvents = type === 'touchstart' ? [e] : [];
-          noClick = false;
-          touchDone = null;
-        }
         armed = type === 'keydown' ? 'key' : 'pointer';
         pressKind = armed;
         pressTouch = touch;
@@ -758,22 +741,17 @@
         window.addEventListener(type, endOn('pointer'), true);
       });
       // A mouse's press can end with no `click` (the page took away the
-      // element it went down on). A touch's `click` can come tasks later.
+      // element it went down on). A touch's ends with its `touchend`.
       var endPointer = endOn('pointer');
       window.addEventListener('pointerup', function (e) {
         if (pointerTypeOf(e) !== 'touch') endPointer(e);
         else input(e);
       }, true);
       window.addEventListener('mouseup', input, true);
-      var touchOpts = { capture: true, passive: true };
-      window.addEventListener('touchmove', function (e) {
-        if (e.isTrusted === true) touchEvents.push(e);
-      }, touchOpts);
       window.addEventListener('touchend', function (e) {
         if (!input(e)) return;
-        touchEvents.push(e);
-        touchDone = e;
-      }, touchOpts);
+        if (pressTouch && endedBy === null) endedBy = e;
+      }, { capture: true, passive: true });
       // A dialog that took focus ends the press: the handler that showed it
       // may still spend it, nothing after.
       var ENDED = {};
@@ -868,8 +846,8 @@
 
   var nativeOpen = window.open;
   if (typeof nativeOpen === 'function') {
-    // The press is spent before the native call: WebKit runs timers (the
-    // disarm) inside it.
+    // The press is spent before the native call: WebKit runs timers
+    // inside it.
     window.open = function (url) {
       var href = null;
       if (CAN_OPEN && url != null && String(url) !== '') {
