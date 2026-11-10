@@ -99,6 +99,8 @@ pub struct Shell {
     leaving: RwSignal<Option<leave_guard::Leave>>,
     /// The page is about to unload on purpose: `beforeunload` stays quiet.
     released: StoredValue<bool>,
+    /// Exports still running, whichever screen shows (QA-075).
+    pub(crate) exports: export_menu::Exports,
 }
 
 impl Shell {
@@ -221,6 +223,7 @@ pub fn App() -> impl IntoView {
         unsaved: RwSignal::new(None),
         leaving: RwSignal::new(None),
         released: StoredValue::new(false),
+        exports: export_menu::Exports::new(),
     };
     provide_context(shell);
     leptos::task::spawn_local(async move {

@@ -30,8 +30,8 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 | ID | Sev | Bug | Test | Status |
 |---|---|---|---|---|
 | QA-074 | 🟠 | Add routine pressed twice saves two identical routines; each runs on the schedule | `automations.qa.mjs` AUT-07 | Fixed |
-| QA-075 | 🟡 | Back in the Studio during an MP4 export, nothing says it is still exporting; a second press renders and downloads it again | `export.qa.mjs` EXP-14 | Open |
-| QA-076 | 🟡 | Sending in a project deleted from another tab says "Connection interrupted", "HTTP 404" and "check the agent in Settings" | `projects.qa.mjs` PRJ-13 | Open |
+| QA-075 | 🟡 | Back in the Studio during an MP4 export, nothing says it is still exporting; a second press renders and downloads it again | `export.qa.mjs` EXP-14 | Fixed |
+| QA-076 | 🟡 | Sending in a project deleted from another tab says "Connection interrupted", "HTTP 404" and "check the agent in Settings" | `projects.qa.mjs` PRJ-13, PRJ-14 | Fixed |
 | QA-077 | 🟡 | A failed Media generation shows the provider's raw JSON; a refused key (401) does not point to Providers | `library.qa.mjs` LIB-15 | Fixed |
 | QA-078 | 🔵 | Images generated on the Media page are labelled "Uploaded" in the Library | `library.qa.mjs` LIB-16 | Fixed |
 
@@ -156,7 +156,8 @@ the tab shows nothing at all, which is acceptable.
 classified `FailCause::Agent` (`chat_view.rs:737`, `RunFailedHint`). A 404
 for the project should switch the Studio to its not-found state.
 
-**Test**: `projects.qa.mjs` PRJ-13.
+**Test**: `projects.qa.mjs` PRJ-13 (deleted as the message goes), PRJ-14
+(deleted while the Studio is idle: its event stream ends).
 
 ## QA-077 🟡 A failed Media generation shows the provider's raw JSON
 

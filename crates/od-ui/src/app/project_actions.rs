@@ -178,7 +178,10 @@ pub fn BrandReady(ctx: StudioCtx) -> impl IntoView {
                     ui.ds_job.set(None);
                     ui.say(t(T::DsInUse).to_owned());
                 }
-                Err(e) => ctx.notice.set(Some(e.to_string())),
+                Err(e) => {
+                    ctx.notice.set(Some(e.to_string()));
+                    ctx.on_not_found(e.status);
+                }
             }
             busy.set(false);
         });

@@ -218,6 +218,99 @@ fn rows_for(path: Option<&str>, fit: Option<ExportFit>) -> Vec<Row> {
         .collect()
 }
 
+/// What an ended export says in its toast; `None`: nothing, the toast
+/// closes (the Save dialog was closed).
+type Outcome = Option<Result<String, String>>;
+
+/// One export: the project, the file (none for a ZIP) and the format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExportJob {
+    project: String,
+    file: Option<String>,
+    format: Format,
+}
+
+/// Adds `job` to `running` unless the same export is running already:
+/// whether it was added, so whether to start it.
+fn start_job(running: &mut Vec<ExportJob>, job: &ExportJob) -> bool {
+    if running.contains(job) {
+        return false;
+    }
+    running.push(job.clone());
+    true
+}
+
+/// The exports of every project, app-wide. The daemon goes on with an
+/// export when the Studio is left, and its file still arrives, so the
+/// Studio shown again must say it runs and must not render it a second
+/// time (QA-075).
+#[derive(Clone, Copy)]
+pub struct Exports {
+    running: RwSignal<Vec<ExportJob>>,
+    /// Results not shown yet, by project: the Export menu of that project
+    /// shows them, whether it is the one that started the export or the one
+    /// of a Studio opened again since.
+    /// A closed Save dialog is one too: its "Exporting…" toast must close.
+    ended: RwSignal<Vec<(String, Outcome)>>,
+}
+
+impl Exports {
+    pub fn new() -> Self {
+        Self {
+            running: RwSignal::new(Vec::new()),
+            ended: RwSignal::new(Vec::new()),
+        }
+    }
+
+    /// Starts `job`, or `false` when the same export is running.
+    fn start(self, job: &ExportJob) -> bool {
+        self.running
+            .try_update(|r| start_job(r, job))
+            .unwrap_or(false)
+    }
+
+    /// `job` is over with `outcome`.
+    fn finish(self, job: &ExportJob, outcome: Outcome) {
+        self.running.update(|r| r.retain(|j| j != job));
+        self.ended
+            .update(|e| e.push((job.project.clone(), outcome)));
+    }
+
+    /// The format of an export running in `project`, the latest started.
+    fn running_in(self, project: &str) -> Option<Format> {
+        self.running.with(|r| {
+            r.iter()
+                .rev()
+                .find(|j| j.project == project)
+                .map(|j| j.format)
+        })
+    }
+
+    /// Takes the latest result not shown yet of `project`; `None` when no
+    /// export of it ended since.
+    fn take_ended(self, project: &str) -> Option<Outcome> {
+        if !self.ended.with(|e| e.iter().any(|(p, _)| p == project)) {
+            return None;
+        }
+        let mut last = None;
+        self.ended.update(|e| {
+            e.retain(|(p, outcome)| {
+                if p == project {
+                    last = Some(outcome.clone());
+                }
+                p != project
+            });
+        });
+        last
+    }
+}
+
+impl Default for Exports {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Saves `bytes` as `name` through a temporary object URL.
 pub(super) fn download(bytes: &[u8], name: &str, mime: &str) -> Option<()> {
     let array = js_sys::Uint8Array::from(bytes);
@@ -272,7 +365,28 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     let template_open = RwSignal::new(false);
     let handoff_open = RwSignal::new(false);
     let status = RwSignal::new(None::<Result<String, String>>);
-    let busy = RwSignal::new(false);
+    let exports = ctx.shell.exports;
+    let project_id = ctx.project_id.get_value();
+    // An export of this project runs, maybe started before the Studio was
+    // left and opened again.
+    let busy = Signal::derive({
+        let project_id = project_id.clone();
+        move || exports.running_in(&project_id).is_some()
+    });
+    // Back in the Studio: the export still running shows (QA-075), and the
+    // result of one that ended meanwhile.
+    Effect::new({
+        let project_id = project_id.clone();
+        move |_| {
+            if let Some(outcome) = exports.take_ended(&project_id) {
+                status.set(outcome);
+            } else if let Some(format) = exports.running_in(&project_id)
+                && status.with_untracked(Option::is_none)
+            {
+                status.set(Some(Ok(tf(T::Exporting, &[format.ext()]))));
+            }
+        }
+    });
     // Numbers each message shown, so a timer only closes its own toast.
     let shown_seq = RwSignal::new(0u32);
     // The result shows as a toast for a few seconds, then leaves.
@@ -286,12 +400,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             gloo_timers::future::TimeoutFuture::new(TOAST_MS).await;
             // The menu may be gone (the user left the Studio): its signals
             // are disposed then, and reading them would panic.
-            let (Some(busy), Some(current)) =
-                (busy.try_get_untracked(), shown_seq.try_get_untracked())
-            else {
+            let Some(current) = shown_seq.try_get_untracked() else {
                 return;
             };
-            if toast_expired(busy, current, shown) {
+            if toast_expired(busy.get_untracked(), current, shown) {
                 status.set(None);
             }
         });
@@ -321,79 +433,25 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             }
             _ => format!("{project}{}.{}", format.name_suffix(), format.ext()),
         };
-        busy.set(true);
         status.set(Some(Ok(tf(T::Exporting, &[format.ext()]))));
+        let job = ExportJob {
+            project: ctx.project_id.get_value(),
+            file: file.clone().filter(|_| format.needs_file()),
+            format,
+        };
+        // The same file in the same format is exporting already (maybe
+        // from before the Studio was left): its toast stays, its file
+        // comes once.
+        if !exports.start(&job) {
+            return;
+        }
+        let base = ctx.base();
+        // Not a screen task: the export and its download go on when the
+        // Studio is left; the result goes through `exports`, which the
+        // Export menu shown then reads.
         leptos::task::spawn_local(async move {
-            let base = ctx.base();
-            let res = match format {
-                Format::Zip => api::get_bytes(&format!("{base}/archive"))
-                    .await
-                    .map(|b| (b, None)),
-                Format::Markdown | Format::Jsx => {
-                    let path = file.clone().unwrap_or_default();
-                    api::get_bytes(&format!("{base}/raw/{}", api::file_path(&path)))
-                        .await
-                        .map(|b| (b, None))
-                }
-                Format::JsxHtml => {
-                    let path = file.clone().unwrap_or_default();
-                    api::get_bytes(&format!("{base}/react/{}", api::file_path(&path)))
-                        .await
-                        .map(|b| (b, None))
-                }
-                _ => {
-                    let kind = match format {
-                        Format::Html => "html",
-                        Format::Pdf => "pdf",
-                        Format::Png | Format::Jpeg | Format::Webp => "image",
-                        Format::Mp4 => "mp4",
-                        Format::PptxEditable => "pptx-editable",
-                        _ => "pptx",
-                    };
-                    let mut body = json!({ "fileName": file, "title": project });
-                    if format == Format::Png {
-                        body["imageFormat"] = json!("png");
-                    } else if format == Format::Jpeg {
-                        body["imageFormat"] = json!("jpeg");
-                    } else if format == Format::Webp {
-                        body["imageFormat"] = json!("webp");
-                    }
-                    // An MP4 says how many audio tracks it mixes.
-                    api::post_bytes_with_header(
-                        &format!("{base}/export/{kind}"),
-                        &body,
-                        "x-od-audio-tracks",
-                    )
-                    .await
-                }
-            };
-            busy.set(false);
-            match res {
-                Ok((bytes, tracks)) => {
-                    // In the app, the Save dialog: the toast then names the
-                    // file really written and where (QA-048); a download
-                    // could be renamed (`index (1).pdf`) behind its back.
-                    let saved = match super::desktop::save_file(&bytes, &name).await {
-                        // Outside the app (or a shell without the
-                        // command): the browser's download, as before.
-                        Err(e) if e == super::desktop::UNSUPPORTED => {
-                            download(&bytes, &name, format.mime());
-                            Ok(Some(name.clone()))
-                        }
-                        other => other,
-                    };
-                    match saved {
-                        Ok(Some(saved)) => {
-                            let note = audio_note(tracks.and_then(|n| n.trim().parse().ok()));
-                            status.set(Some(Ok(format!("{}{note}", tf(T::Exported, &[&saved])))));
-                            mark_exported(&base).await;
-                        }
-                        Ok(None) => status.set(None),
-                        Err(e) => status.set(Some(Err(tf(T::ExportFailed, &[&e])))),
-                    }
-                }
-                Err(e) => status.set(Some(Err(tf(T::ExportFailed, &[&e.to_string()])))),
-            }
+            let outcome = run_export(&base, format, file, &project, &name).await;
+            exports.finish(&job, outcome);
         });
     };
 
@@ -403,7 +461,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             let path = format!("{}/handoff/open", ctx.base());
             match api::post::<_, OkResponse>(&path, &json!({})).await {
                 Ok(_) => status.set(Some(Ok(t(T::FolderOpened).to_owned()))),
-                Err(e) => status.set(Some(Err(tf(T::HandoffFailed, &[&e.to_string()])))),
+                Err(e) => {
+                    status.set(Some(Err(tf(T::HandoffFailed, &[&e.to_string()]))));
+                    ctx.on_not_found(e.status);
+                }
             }
         });
     };
@@ -413,7 +474,10 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             let path = format!("{}/handoff", ctx.base());
             let res = match api::get::<HandoffResponse>(&path).await {
                 Ok(h) => copy_text(&h.prompt).await,
-                Err(e) => Err(e.to_string()),
+                Err(e) => {
+                    ctx.on_not_found(e.status);
+                    Err(e.to_string())
+                }
             };
             match res {
                 Ok(()) => status.set(Some(Ok(t(T::PromptCopied).to_owned()))),
@@ -540,6 +604,85 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                 })}
             </div>
         </div>
+    }
+}
+
+/// Exports `file` (the project for a ZIP) as `format`, saves it as `name`,
+/// and says how it went; `None` when the user closed the Save dialog. It
+/// reads no signal: it runs on after the Studio is left.
+async fn run_export(
+    base: &str,
+    format: Format,
+    file: Option<String>,
+    project: &str,
+    name: &str,
+) -> Option<Result<String, String>> {
+    let res = match format {
+        Format::Zip => api::get_bytes(&format!("{base}/archive"))
+            .await
+            .map(|b| (b, None)),
+        Format::Markdown | Format::Jsx => {
+            let path = file.unwrap_or_default();
+            api::get_bytes(&format!("{base}/raw/{}", api::file_path(&path)))
+                .await
+                .map(|b| (b, None))
+        }
+        Format::JsxHtml => {
+            let path = file.unwrap_or_default();
+            api::get_bytes(&format!("{base}/react/{}", api::file_path(&path)))
+                .await
+                .map(|b| (b, None))
+        }
+        _ => {
+            let kind = match format {
+                Format::Html => "html",
+                Format::Pdf => "pdf",
+                Format::Png | Format::Jpeg | Format::Webp => "image",
+                Format::Mp4 => "mp4",
+                Format::PptxEditable => "pptx-editable",
+                _ => "pptx",
+            };
+            let mut body = json!({ "fileName": file, "title": project });
+            if format == Format::Png {
+                body["imageFormat"] = json!("png");
+            } else if format == Format::Jpeg {
+                body["imageFormat"] = json!("jpeg");
+            } else if format == Format::Webp {
+                body["imageFormat"] = json!("webp");
+            }
+            // An MP4 says how many audio tracks it mixes.
+            api::post_bytes_with_header(
+                &format!("{base}/export/{kind}"),
+                &body,
+                "x-od-audio-tracks",
+            )
+            .await
+        }
+    };
+    let (bytes, tracks) = match res {
+        Ok(r) => r,
+        Err(e) => return Some(Err(tf(T::ExportFailed, &[&e.to_string()]))),
+    };
+    // In the app, the Save dialog: the toast then names the file really
+    // written and where (QA-048); a download could be renamed
+    // (`index (1).pdf`) behind its back.
+    let saved = match super::desktop::save_file(&bytes, name).await {
+        // Outside the app (or a shell without the command): the
+        // browser's download, as before.
+        Err(e) if e == super::desktop::UNSUPPORTED => {
+            download(&bytes, name, format.mime());
+            Ok(Some(name.to_owned()))
+        }
+        other => other,
+    };
+    match saved {
+        Ok(Some(saved)) => {
+            let note = audio_note(tracks.and_then(|n| n.trim().parse().ok()));
+            mark_exported(base).await;
+            Some(Ok(format!("{}{note}", tf(T::Exported, &[&saved]))))
+        }
+        Ok(None) => None,
+        Err(e) => Some(Err(tf(T::ExportFailed, &[&e]))),
     }
 }
 
@@ -717,6 +860,69 @@ mod tests {
         let page = rows_for(Some("index.html"), Some(motion));
         assert!(page.contains(&Row::One(Format::Mp4)));
         assert!(!page.contains(&Row::Group(Group::PowerPoint)));
+    }
+
+    #[test]
+    fn a_second_press_on_a_running_export_does_not_start_it_again() {
+        // QA-075: back in the Studio mid-MP4, MP4 again joins the running one.
+        use super::{ExportJob, Format, start_job};
+        let job = |project: &str, file: Option<&str>, format| ExportJob {
+            project: project.to_owned(),
+            file: file.map(str::to_owned),
+            format,
+        };
+        let mut running = Vec::new();
+        let mp4 = job("p1", Some("film/index.html"), Format::Mp4);
+        assert!(start_job(&mut running, &mp4));
+        assert!(!start_job(&mut running, &mp4));
+        assert_eq!(running.len(), 1);
+        // Another format, file or project is another export.
+        assert!(start_job(
+            &mut running,
+            &job("p1", Some("film/index.html"), Format::Pdf)
+        ));
+        assert!(start_job(
+            &mut running,
+            &job("p1", Some("other.html"), Format::Mp4)
+        ));
+        assert!(start_job(
+            &mut running,
+            &job("p2", Some("film/index.html"), Format::Mp4)
+        ));
+        assert_eq!(running.len(), 4);
+    }
+
+    #[test]
+    fn an_ended_export_reaches_the_menu_even_with_nothing_to_say() {
+        use super::{ExportJob, Exports, Format};
+        use leptos::prelude::Owner;
+        Owner::new().with(|| {
+            let exports = Exports::new();
+            let job = ExportJob {
+                project: "p1".to_owned(),
+                file: Some("film/index.html".to_owned()),
+                format: Format::Mp4,
+            };
+            assert!(exports.start(&job));
+            assert_eq!(exports.running_in("p1"), Some(Format::Mp4));
+            assert_eq!(exports.take_ended("p1"), None);
+            // The Save dialog closed: the menu still hears of it, so its
+            // "Exporting mp4…" toast closes.
+            exports.finish(&job, None);
+            assert_eq!(exports.running_in("p1"), None);
+            assert_eq!(exports.take_ended("p1"), Some(None));
+            assert_eq!(exports.take_ended("p1"), None);
+            // A result goes to its own project's menu, the latest one.
+            assert!(exports.start(&job));
+            exports.finish(&job, Some(Err("first".to_owned())));
+            assert!(exports.start(&job));
+            exports.finish(&job, Some(Ok("Exported index.mp4".to_owned())));
+            assert_eq!(exports.take_ended("p2"), None);
+            assert_eq!(
+                exports.take_ended("p1"),
+                Some(Some(Ok("Exported index.mp4".to_owned())))
+            );
+        });
     }
 
     #[test]

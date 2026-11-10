@@ -70,6 +70,17 @@ impl ChatItem {
     }
 }
 
+/// Uploads the composer's staged files; a 404 may mean the project was
+/// deleted (QA-076).
+fn upload_staged(ctx: StudioCtx) {
+    ctx.tasks.spawn(async move {
+        let base = ctx.base();
+        if upload_all(base, ctx.chat.uploads, ctx.tools.attachments).await {
+            ctx.on_not_found(404);
+        }
+    });
+}
+
 #[component]
 pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     let shell = Shell::get();
@@ -139,19 +150,9 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             return;
         }
         ctx.chat.uploads.update(|u| u.extend(items));
-        ctx.tasks.spawn(upload_all(
-            ctx.base(),
-            ctx.chat.uploads,
-            ctx.tools.attachments,
-        ));
+        upload_staged(ctx);
     });
-    let retry_upload = Callback::new(move |_id: String| {
-        ctx.tasks.spawn(upload_all(
-            ctx.base(),
-            ctx.chat.uploads,
-            ctx.tools.attachments,
-        ));
-    });
+    let retry_upload = Callback::new(move |_id: String| upload_staged(ctx));
     let mention_files = Signal::derive(move || {
         ctx.files
             .with(|f| f.iter().map(|f| f.path.clone()).collect::<Vec<_>>())
@@ -677,7 +678,8 @@ fn AssistantView(
             <Show when=move || turn.with(|tn| matches!(run_phase(tn), RunPhase::Failed) && tn.run_id.is_some())>
                 <RunLog turn=turn/>
             </Show>
-            <Show when=move || is_last.get() && ctx.live_run.get().is_none()>
+            // Nothing to retry or set up in a deleted project (QA-076).
+            <Show when=move || is_last.get() && ctx.live_run.get().is_none() && !ctx.load_gone.get()>
                 <super::chat_ops::ContinueTasks turn=turn/>
                 <NextSteps turn=turn item_id=item_id.get_value()/>
             </Show>
@@ -706,6 +708,7 @@ fn AssistantView(
 /// but not shown, as the process line above shows the same progress.
 #[component]
 fn RunLine(turn: RwSignal<AssistantTurn>, clock: RunClock, quiet: Signal<bool>) -> impl IntoView {
+    let gone = expect_context::<StudioCtx>().load_gone;
     let line = Memo::new(move |_| {
         turn.with(|tn| match run_phase(tn) {
             RunPhase::Starting => ("starting", None, t(T::RunStarting).to_owned(), None),
@@ -734,6 +737,9 @@ fn RunLine(turn: RwSignal<AssistantTurn>, clock: RunClock, quiet: Signal<bool>) 
                 t(T::RunFailed).to_owned(),
                 Some(
                     t(match fail_cause(tn) {
+                        // The project was deleted meanwhile (QA-076): the
+                        // agent and the link are fine.
+                        _ if gone.get() => T::ProjectGone,
                         FailCause::Agent => T::RunFailedHint,
                         FailCause::CutOff => T::RunAppClosedHint,
                         // Sent while Contour was unreachable: it never ran.
