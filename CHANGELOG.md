@@ -11,7 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Automations: pressing Add routine twice quickly (a double-click) saves one routine, not two that each run the prompt on the schedule; the button waits while the routine is saved, and the save finishes even if the page is left (QA-074).
-- Media: a failed generation says which provider failed and why in words (`OpenAI returned an error: upstream exploded`) instead of the provider's raw JSON; a refused key (401, 403) has a Set up providers button, in every language (QA-077).
+- Media: a failed generation says which provider failed and why in words (`OpenAI returned an error: upstream exploded`) instead of the provider's raw JSON; a refused key (401, 403) has a Set up providers button for every provider (fal.ai, Grok, MiniMax, Leonardo…), in every language (QA-077).
 - Media library: an image generated on the Media page is labelled "Generated", not "Uploaded"; files the user uploads keep "Uploaded" (QA-078).
 
 ## [0.2.0-beta.28] - 2026-11-10

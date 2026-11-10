@@ -37,7 +37,7 @@ pub fn parse(raw: &str) -> ProviderError {
         && is_tag(tag)
     {
         return ProviderError {
-            provider: Some(tag.to_owned()),
+            provider: Some(provider_id(tag)),
             status: Some(status),
             message: body_message(body).unwrap_or_default(),
         };
@@ -57,11 +57,25 @@ pub fn parse(raw: &str) -> ProviderError {
     }
 }
 
-/// A provider id: one lower-case word (`openai`, `fal`, `elevenlabs`).
+/// The daemon's tag: a lower-case provider word, then what was asked
+/// (`openai`, `fal submit`, `leonardo.ai submit`, `aihubmix image (gemini)`).
 fn is_tag(s: &str) -> bool {
-    !s.is_empty()
+    s.starts_with(|c: char| c.is_ascii_lowercase())
         && s.chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || " -_.()".contains(c))
+}
+
+/// The Providers id behind a tag's first word.
+fn provider_id(tag: &str) -> String {
+    let word = tag.split(' ').next().unwrap_or(tag);
+    match word {
+        "xai" => "grok",
+        "nano-banana" => "nanobanana",
+        "leonardo.ai" => "leonardo",
+        "custom" => "custom-image",
+        w => w,
+    }
+    .to_owned()
 }
 
 fn looks_structured(body: &str) -> bool {
@@ -144,6 +158,50 @@ mod tests {
         assert!(e.key_refused());
         assert!(parse(r#"fal 403: {"detail":"Forbidden"}"#).key_refused());
         assert!(!parse("fal 429: slow down").key_refused());
+    }
+
+    #[test]
+    fn the_daemons_multi_word_tags_name_the_provider() {
+        // The tags od-media writes (`body_text`/`bytes_of` callers).
+        for (raw, id) in [
+            (r#"fal submit 401: {"detail":"Invalid key"}"#, "fal"),
+            (r#"fal poll 403: {"detail":"Forbidden"}"#, "fal"),
+            (r#"grok image 403: {"error":"bad key"}"#, "grok"),
+            (r#"grok video submit 401: {"error":"bad key"}"#, "grok"),
+            (r#"xai tts 401: {"error":"bad key"}"#, "grok"),
+            (
+                r#"openai speech 401: {"error":{"message":"bad key"}}"#,
+                "openai",
+            ),
+            (r#"minimax image 401: {"message":"bad key"}"#, "minimax"),
+            (
+                r#"volcengine task create 403: {"message":"bad key"}"#,
+                "volcengine",
+            ),
+            (
+                r#"openrouter image 401: {"error":{"message":"bad key"}}"#,
+                "openrouter",
+            ),
+            (
+                r#"nano-banana image 401: {"error":{"message":"bad key"}}"#,
+                "nanobanana",
+            ),
+            (r#"leonardo.ai submit 401: {"error":"bad key"}"#, "leonardo"),
+            (r#"custom image 401: {"error":"bad key"}"#, "custom-image"),
+            (
+                r#"aihubmix image (gemini) 403: {"error":{"message":"bad key"}}"#,
+                "aihubmix",
+            ),
+        ] {
+            let e = parse(raw);
+            assert_eq!(e.provider.as_deref(), Some(id), "{raw}");
+            assert!(e.key_refused(), "{raw}");
+            assert!(!e.message.contains('{'), "{raw}");
+        }
+        assert_eq!(
+            parse(r#"fal submit 401: {"detail":"Invalid key"}"#).message,
+            "Invalid key"
+        );
     }
 
     #[test]
