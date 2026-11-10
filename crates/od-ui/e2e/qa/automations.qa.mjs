@@ -119,6 +119,6 @@ test('AUT-07', 'Add pressed twice quickly saves one routine, not two that each r
   await until(async () => (await page.getByTestId('routine-name').inputValue()) === '', 'form cleared');
   await Promise.all(sent);
   assert.equal((await routines(api)).length, before + 1, `${sent.length} saves sent for one press`);
-}, { knownBug: 'QA-074' });
+});
 
 await run('automations');

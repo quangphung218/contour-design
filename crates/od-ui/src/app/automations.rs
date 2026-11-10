@@ -422,7 +422,13 @@ pub fn Automations() -> impl IntoView {
     }
 
     let first_project = move || projects.with_untracked(|l| l.first().map(|p| p.id.clone()));
+    // A POST in flight: a second press (a double-click) waits for it
+    // instead of saving the routine twice (QA-074).
+    let saving = RwSignal::new(false);
     let submit = move |_| {
+        if saving.get_untracked() {
+            return;
+        }
         if form.name.with_untracked(|n| n.trim().is_empty()) {
             error.set(Some(t(T::RoutineNeedsName).to_owned()));
             return;
@@ -442,13 +448,18 @@ pub fn Automations() -> impl IntoView {
             return;
         }
         let body = form.body(agent);
-        screen.spawn(async move {
-            let res = match &edit {
+        saving.set(true);
+        // The save goes through even if Automations is left meanwhile; only
+        // the form's update waits for the screen.
+        let work = async move {
+            match &edit {
                 Some(id) => {
                     api::patch::<_, Value>(&format!("/api/routines/{}", api::seg(id)), &body).await
                 }
                 None => api::post::<_, Value>("/api/routines", &body).await,
-            };
+            }
+        };
+        screen.spawn_then(work, move |res| {
             match res {
                 Ok(_) => {
                     error.set(None);
@@ -458,6 +469,7 @@ pub fn Automations() -> impl IntoView {
                 }
                 Err(e) => error.set(Some(e.to_string())),
             }
+            saving.set(false);
         });
     };
     let template_desc = RwSignal::new(None::<&'static str>);
@@ -563,7 +575,7 @@ pub fn Automations() -> impl IntoView {
                             form.reset(first_project());
                         }>{t(T::Cancel)}</button>
                     </Show>
-                    <button class="btn primary" data-testid="routine-add" on:click=submit>
+                    <button class="btn primary" data-testid="routine-add" disabled=move || saving.get() on:click=submit>
                         {icon(Glyph::Schedule)}
                         {move || if editing.get().is_some() { t(T::Save) } else { t(T::RoutineAdd) }}
                     </button>

@@ -48,6 +48,20 @@ impl Asset {
         format!("{}/{}", self.project_id, self.path)
     }
 
+    /// Where the file came from: "Uploaded" for an upload, "Generated"
+    /// for a file Media generated into the library project (the daemon
+    /// marks every file there `uploaded`; uploads alone are under
+    /// `uploads/`, QA-078), else its project's name.
+    fn origin(&self) -> String {
+        if self.project_id != LIBRARY_PROJECT {
+            self.project_name.clone()
+        } else if self.uploaded && self.path.starts_with("uploads/") {
+            t(T::Uploaded).to_owned()
+        } else {
+            t(T::GeneratedAsset).to_owned()
+        }
+    }
+
     fn file_name(&self) -> String {
         self.path
             .rsplit('/')
@@ -104,6 +118,35 @@ fn status_label(status: &str) -> &'static str {
         "canceled" => t(T::RunStateCanceled),
         "interrupted" => t(T::TaskInterrupted),
         _ => t(T::RunStateFailed),
+    }
+}
+
+/// A failed task's error in words: the provider's message, not its raw
+/// body, and for a refused key a way to Providers (QA-077).
+fn task_error(raw: &str, on_providers: Callback<()>) -> impl IntoView + use<> {
+    let e = crate::media_error::parse(raw);
+    let text = match (&e.provider, e.status) {
+        (Some(id), Some(status)) => {
+            let name = PROVIDERS
+                .iter()
+                .find(|(pid, ..)| pid == id)
+                .map_or(id.as_str(), |(_, name, _)| name);
+            let message = if e.message.is_empty() {
+                format!("HTTP {status}")
+            } else {
+                e.message.clone()
+            };
+            tf(T::MediaProviderError, &[name, &message])
+        }
+        _ => e.message.clone(),
+    };
+    view! {
+        <p class="error-text small" data-testid="media-task-error">{text}</p>
+        {e.key_refused().then(|| view! {
+            <button class="btn small" data-testid="media-task-providers" on:click=move |_| on_providers.run(())>
+                {icon(Glyph::Settings)}{t(T::SetUpProviders)}
+            </button>
+        })}
     }
 }
 
@@ -222,7 +265,10 @@ pub fn MediaPage() -> impl IntoView {
                         on_queued=Callback::new(move |()| { reload_tasks(); tab.set(Tab::Queue); })
                         on_providers=Callback::new(move |()| tab.set(Tab::Providers))/>
                 }.into_any(),
-                Tab::Queue => view! { <QueueView tasks=tasks projects=projects on_change=Callback::new(move |()| reload_tasks())/> }.into_any(),
+                Tab::Queue => view! {
+                    <QueueView tasks=tasks projects=projects on_change=Callback::new(move |()| reload_tasks())
+                        on_providers=Callback::new(move |()| tab.set(Tab::Providers))/>
+                }.into_any(),
                 Tab::Providers => view! { <ProvidersView/> }.into_any(),
                 Tab::Mp4 => view! { <Mp4View projects=projects on_saved=Callback::new(move |()| reload_assets())/> }.into_any(),
             }}
@@ -281,7 +327,13 @@ fn LibraryView(
             }
         });
     };
+    // "Chat to design" in flight: a second press waits for it instead of
+    // making a second project (as QA-074).
+    let chatting = RwSignal::new(false);
     let chat = move |_| {
+        if chatting.get_untracked() {
+            return;
+        }
         let picks: Vec<Value> = visible.with_untracked(|l| {
             l.iter()
                 .filter(|a| selected.with_untracked(|s| s.contains(&a.key())))
@@ -293,8 +345,11 @@ fn LibraryView(
         }
         let body = json!({ "assets": picks, "prompt": chat_prompt.get_untracked() });
         let navigate = navigate.clone();
+        chatting.set(true);
         screen.spawn(async move {
-            match api::post::<_, Value>("/api/library/chat", &body).await {
+            let res = api::post::<_, Value>("/api/library/chat", &body).await;
+            chatting.set(false);
+            match res {
                 Ok(v) => navigate(
                     &format!(
                         "/projects/{}",
@@ -378,7 +433,7 @@ fn LibraryView(
                 <strong>{move || tf(T::SelectedCount, &[&selected.with(Vec::len).to_string()])}</strong>
                 <input class="input small grow" data-testid="media-chat-prompt" placeholder=t(T::ChatToDesignPlaceholder)
                     prop:value=move || chat_prompt.get() on:input=move |ev| chat_prompt.set(event_target_value(&ev))/>
-                <button class="btn small primary" data-testid="media-chat" on:click=chat.clone()>{icon(Glyph::Chat)}{t(T::ChatToDesign)}</button>
+                <button class="btn small primary" data-testid="media-chat" disabled=move || chatting.get() on:click=chat.clone()>{icon(Glyph::Chat)}{t(T::ChatToDesign)}</button>
                 <button class="btn small ghost danger" data-testid="media-delete" on:click=move |_| confirm_delete.set(true)>{icon(Glyph::Delete)}{t(T::Delete)}</button>
                 <button class="btn small ghost" on:click=move |_| selected.set(Vec::new())>{t(T::ClearSelection)}</button>
             </div>
@@ -420,7 +475,7 @@ fn LibraryView(
                                 </label>
                                 <figcaption>
                                     <span class="media-name">{icon(kind_glyph(&a.kind))}{a.file_name()}</span>
-                                    <span class="subtle small">{if a.uploaded { t(T::Uploaded).to_owned() } else { a.project_name.clone() }}" · "{size_label(a.size)}</span>
+                                    <span class="subtle small">{a.origin()}" · "{size_label(a.size)}</span>
                                 </figcaption>
                             </figure>
                         }
@@ -714,6 +769,7 @@ fn QueueView(
     tasks: RwSignal<Vec<Task>>,
     projects: RwSignal<Vec<Project>>,
     on_change: Callback<()>,
+    on_providers: Callback<()>,
 ) -> impl IntoView {
     let screen = ScreenTasks::current();
     let project_name = move |id: &str| {
@@ -748,7 +804,7 @@ fn QueueView(
                             <div class="grow">
                                 <p class="task-prompt">{task.request["prompt"].as_str().unwrap_or_default().to_owned()}</p>
                                 <p class="subtle small">{task.request["model"].as_str().unwrap_or_default().to_owned()}" · "{project_name(&task.project_id)}" · "{ago(task.created_at)}</p>
-                                {task.error.clone().map(|e| view! { <p class="error-text small">{e}</p> })}
+                                {task.error.as_deref().map(|e| task_error(e, on_providers))}
                                 {raw.filter(|_| surface == "audio").map(|src| view! { <audio src=src controls=true class="media-audio"></audio> })}
                             </div>
                             <span class=state>{status_label(&task.status)}</span>
