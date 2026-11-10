@@ -209,11 +209,19 @@ test('PRJ-13', 'Sending in a project deleted from another tab says the project i
 test('PRJ-14', 'A project deleted from another tab: the open Studio says so without a send, not "Reconnecting"', async ({ d, api, newPage }) => {
   const id = await createProject(d, 'Deleted elsewhere, idle');
   const { page } = await newPage();
+  // The event stream drops every moment, as a flaky link would, so its
+  // reconnect after the delete gets the daemon's 404. The file list is
+  // held: the folder's removal refreshes it, which finds out too.
+  let deleted = false;
+  await page.route(/\/api\/projects\/[^/]+\/events$/, (route) => (deleted
+    ? route.continue()
+    : route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 200\n\n' })));
   await page.goto(`${d.base}/projects/${id}`);
   await page.getByTestId('composer').waitFor();
+  await page.route(/\/api\/projects\/[^/]+\/files$/, () => {});
   assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
-  // Its event stream ends and comes back 404.
-  await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 15_000 });
+  deleted = true;
+  await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
   await until(async () => (await page.getByTestId('workspace-recovery-tip').count()) === 0, 'no "Reconnecting" banner');
   assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on in a deleted project');
 });
