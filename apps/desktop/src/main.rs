@@ -430,9 +430,9 @@ fn stop_hung_page<R: Runtime>(app: &AppHandle<R>) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    match window.url() {
-        Ok(url) => restart_page(app, stopped_preview_url(&url, StopReason::Dialogs)),
-        Err(e) => tracing::warn!(error = %e, "cannot read the page's address"),
+    match shown_url(&window) {
+        Some(url) => restart_page(app, stopped_preview_url(&url, StopReason::Dialogs)),
+        None => tracing::warn!("cannot tell which page hung"),
     }
 }
 
@@ -536,6 +536,51 @@ fn page_listens<R: Runtime>(app: &impl Manager<R>) {
     {
         asks.listens();
     }
+}
+
+/// The last page the main window started or finished loading
+/// (`on_page_load`), kept aside: once its web content process ended,
+/// WebKit has no address to give ([`shown_url`], QA-073).
+#[derive(Debug, Default)]
+struct LoadedPage(Mutex<Option<Url>>);
+
+/// The main window started or finished loading `url` ([`LoadedPage`]).
+fn page_loaded_at<R: Runtime>(app: &impl Manager<R>, url: &Url) {
+    if let Some(page) = app.try_state::<LoadedPage>()
+        && let Ok(mut page) = page.0.lock()
+    {
+        *page = Some(url.clone());
+    }
+}
+
+/// The page `window` shows: WebKit's own address while its web content
+/// process lives, else the last page it loaded ([`LoadedPage`]). Never
+/// wry's `url()` on macOS: once the process ended WebKit's address is
+/// nil, and wry unwraps it and panics the app (QA-073). A dispatcher
+/// call: on the main thread, never inside a WebKit call (QA-070).
+fn shown_url<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Option<Url> {
+    #[cfg(target_os = "macos")]
+    let live = {
+        let found = Arc::new(Mutex::new(None));
+        let slot = Arc::clone(&found);
+        if let Err(e) = window.with_webview(move |webview| {
+            let url = web_process::page_url(webview.inner()).and_then(|u| Url::parse(&u).ok());
+            if let Ok(mut slot) = slot.lock() {
+                *slot = url;
+            }
+        }) {
+            tracing::warn!(error = %e, "cannot reach the webview");
+        }
+        found.lock().ok().and_then(|mut found| found.take())
+    };
+    #[cfg(not(target_os = "macos"))]
+    // url() allowed: WebView2 and WebKitGTK return an error, never panic.
+    let live = window.url().ok();
+    live.or_else(|| {
+        window
+            .try_state::<LoadedPage>()
+            .and_then(|page| page.0.lock().ok().and_then(|page| page.clone()))
+    })
 }
 
 /// The main window's `on_page_load` for a page that started loading: the
@@ -701,13 +746,12 @@ fn reload_unheard(app: &AppHandle) {
         return;
     };
     let daemon = app.try_state::<Daemon>().map(|daemon| daemon.url.clone());
-    let loaded =
-        window.url().and_then(
-            |shown| match unheard_reload_target(&shown, daemon.as_ref()) {
-                Some(url) => window.navigate(url),
-                None => window.reload(),
-            },
-        );
+    let target =
+        shown_url(&window).and_then(|shown| unheard_reload_target(&shown, daemon.as_ref()));
+    let loaded = match target {
+        Some(url) => window.navigate(url),
+        None => window.reload(),
+    };
     if let Err(e) = loaded {
         tracing::warn!(error = %e, "cannot reload the page");
     }
@@ -748,11 +792,11 @@ fn check_reload(app: AppHandle, token: u64, wait: std::time::Duration) {
                     }
                     tracing::warn!("the page did not answer Reload: restarting it");
                     if let Some(window) = handle.get_webview_window("main") {
-                        match window.url() {
-                            Ok(url) => {
+                        match shown_url(&window) {
+                            Some(url) => {
                                 restart_page(&handle, stopped_preview_url(&url, StopReason::Hung))
                             }
-                            Err(e) => tracing::warn!(error = %e, "cannot read the page's address"),
+                            None => tracing::warn!("cannot tell which page hung"),
                         }
                     }
                 }
@@ -906,9 +950,13 @@ fn page_terminated<R: Runtime>(app: &AppHandle<R>) {
             tracing::warn!(?after, "the web content process ended by itself");
             match after {
                 AfterCrash::Reload => window.reload(),
-                AfterCrash::StopPreview => match window.url() {
-                    Ok(url) => window.navigate(stopped_preview_url(&url, StopReason::Crashed)),
-                    Err(e) => Err(e),
+                // The process is gone: never wry's `url()` (QA-073).
+                AfterCrash::StopPreview => match shown_url(&window) {
+                    Some(url) => window.navigate(stopped_preview_url(&url, StopReason::Crashed)),
+                    None => {
+                        tracing::warn!("cannot tell which page crashed");
+                        return;
+                    }
                 },
                 AfterCrash::GiveUp => return,
             }
@@ -1642,7 +1690,8 @@ fn main() -> anyhow::Result<()> {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::UpdateSlot::default())
         .manage(opened)
-        .manage(Mutex::new(ReloadAsk::default()));
+        .manage(Mutex::new(ReloadAsk::default()))
+        .manage(LoadedPage::default());
     // The page loads again once its web content process ends: after a
     // design hung it (QA-067), View ▸ Reload, or a crash.
     #[cfg(target_os = "macos")]
@@ -1710,6 +1759,8 @@ fn main() -> anyhow::Result<()> {
                     // A new page may show dialogs again though the user
                     // blocked the last page's (QA-064).
                     .on_page_load(|window, payload| {
+                        // Its address once its web process ended (QA-073).
+                        page_loaded_at(&window, payload.url());
                         if payload.event() == tauri::webview::PageLoadEvent::Started {
                             on_page_started(&window);
                         }
@@ -2263,7 +2314,8 @@ mod tests {
     }
 
     /// An app on the mock runtime keeping the shell's Reload, restart and
-    /// crash state, its main window showing `page`.
+    /// crash state, its main window showing `page`, loaded through
+    /// `on_page_load` ([`LoadedPage`]).
     fn shell_app(
         page: &str,
     ) -> (
@@ -2275,6 +2327,7 @@ mod tests {
             .manage(Mutex::new(ReloadAsk::default()))
             .manage(Mutex::new(Restarts::default()))
             .manage(Mutex::new(Crashes::default()))
+            .manage(LoadedPage::default())
             .build(context)
             .unwrap();
         let window = tauri::WebviewWindowBuilder::new(
@@ -2284,6 +2337,7 @@ mod tests {
         )
         .build()
         .unwrap();
+        page_loaded_at(&window, &page.parse().unwrap());
         (app, window)
     }
 
@@ -2509,6 +2563,46 @@ mod tests {
     }
 
     #[test]
+    fn a_crash_loop_stops_the_page_last_loaded_not_wrys_address() {
+        // QA-073: the process is gone, so WebKit has no address (wry's
+        // `url()` panics); the page `on_page_load` saw last is the one.
+        let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
+        page_loaded_at(
+            &window,
+            &Url::parse("http://127.0.0.1:5173/present/p2").unwrap(),
+        );
+        page_terminated(app.handle());
+        page_terminated(app.handle());
+        assert_eq!(
+            window.url().unwrap().as_str(),
+            "http://127.0.0.1:5173/projects/p2?preview=stopped&why=crashed"
+        );
+    }
+
+    #[test]
+    fn a_crash_loop_with_no_page_known_leaves_the_window() {
+        let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
+        *app.state::<LoadedPage>().0.lock().unwrap() = None;
+        page_terminated(app.handle());
+        page_terminated(app.handle());
+        assert_eq!(
+            window.url().unwrap().as_str(),
+            "http://127.0.0.1:5173/projects/p1"
+        );
+        let crashes = app.state::<Mutex<Crashes>>();
+        assert_eq!(crashes.lock().unwrap().in_a_row, 2);
+    }
+
+    #[test]
+    fn a_page_load_is_kept_as_the_page_shown() {
+        let (app, window) = shell_app("http://127.0.0.1:5173/");
+        let next = Url::parse("http://127.0.0.1:5173/projects/p1").unwrap();
+        page_loaded_at(&window, &next);
+        assert_eq!(shown_url(&window), Some(next));
+        drop(app);
+    }
+
+    #[test]
     fn webkit_saying_the_process_ended_inside_a_held_lock_does_not_deadlock() {
         // QA-070: `restart_page`'s `with_webview` holds Tauri's window
         // lock while WebKit ends the process and says so, on the main
@@ -2675,15 +2769,20 @@ mod tests {
 
     /// Tauri calls that go through the window's dispatcher: inside a WebKit
     /// callback they lock the window again (QA-070). A page-load event's
-    /// own `payload.url()` is not one.
-    const DISPATCHER_CALLS: [&str; 7] = [
+    /// own `payload.url()` is not one. `shown_url(` wraps `with_webview`.
+    const DISPATCHER_CALLS: [&str; 12] = [
         "with_webview(",
         "navigate(",
         "run_on_main_thread(",
         "eval(",
         "reload(",
-        "window.url()",
-        "webview.url()",
+        ".url()",
+        "shown_url(",
+        ".emit",
+        ".set_",
+        ".show(",
+        ".hide(",
+        ".close(",
     ];
 
     /// The shell's sources with WebKit callbacks.
@@ -2763,7 +2862,7 @@ mod tests {
 
     /// The dispatcher calls `code` makes itself ([`DISPATCHER_CALLS`]).
     fn dispatcher_calls(code: &str) -> Vec<&'static str> {
-        let code = outside_off_webkit_call(code);
+        let code = outside_off_webkit_call(code).replace("payload.url()", "payload_url");
         DISPATCHER_CALLS
             .into_iter()
             .filter(|call| code.contains(call))
@@ -2865,6 +2964,80 @@ mod tests {
         };
         assert!(body("on_web_process_ended").contains("js_dialogs::process_ended_main()"));
         assert!(body("on_page_started").contains("js_dialogs::page_loaded_main()"));
+        // Both name the window `install` kept: without it they do nothing.
+        let dialogs = code_only(include_str!("js_dialogs.rs"));
+        let at = dialogs.find("fn install(").expect("js_dialogs::install");
+        let open = at + dialogs[at..].find('{').expect("a body");
+        assert!(dialogs[open..=closing(&dialogs, open)].contains("MAIN.set("));
+        // The page a crash loop stops is the one `on_page_load` kept (QA-073).
+        let hook = code.find(".on_page_load(").expect("on_page_load");
+        let open = hook + ".on_page_load".len();
+        assert!(
+            code[open..=closing(&code, open)].contains("page_loaded_at(&window, payload.url())")
+        );
+        let shipped = code.split("\nmod tests").next().unwrap_or_default();
+        assert!(shipped.contains(".manage(LoadedPage::default())"));
+    }
+
+    /// The line over (or the end of) a line that may read an address
+    /// through wry's `url()`, saying why it cannot panic there.
+    const URL_ALLOWED: &str = "// url() allowed:";
+
+    /// The lines of `source`, its tests left out, that read a window's or
+    /// webview's address through wry's `url()` with no [`URL_ALLOWED`]
+    /// note. A page-load event's own `payload.url()` is not one.
+    fn wry_url_reads(source: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        let mut allowed = false;
+        for line in source.lines() {
+            if line.trim_start().starts_with("mod tests") {
+                break;
+            }
+            let code = code_only(line).replace("payload.url()", "");
+            if code.contains(".url()") && !allowed && !line.contains(URL_ALLOWED) {
+                found.push(line.trim().to_owned());
+            }
+            allowed = line.trim_start().starts_with(URL_ALLOWED);
+        }
+        found
+    }
+
+    #[test]
+    fn the_shell_never_reads_an_address_through_wry() {
+        // QA-073: once the web content process ended, WKWebView's address
+        // is nil and wry's `url()` unwraps it: the app panics and quits.
+        // Read it through `shown_url`.
+        for (file, source) in [
+            ("main.rs", include_str!("main.rs")),
+            ("js_dialogs.rs", include_str!("js_dialogs.rs")),
+            ("web_process.rs", include_str!("web_process.rs")),
+            ("updater.rs", include_str!("updater.rs")),
+            ("mcp.rs", include_str!("mcp.rs")),
+        ] {
+            let reads = wry_url_reads(source);
+            assert!(
+                reads.is_empty(),
+                "{file} reads an address through wry's `url()`: {reads:?}; \
+                 use `shown_url`, or say why it cannot panic ({URL_ALLOWED})"
+            );
+        }
+    }
+
+    #[test]
+    fn the_url_check_sees_wrys_url_not_payloads() {
+        let source = "
+            fn a() { w.url(); }
+            fn b() { payload.url(); }
+            // w.url() in a comment is fine
+            fn c() { tracing::warn!(\"x.url()\"); }
+            // url() allowed: not macOS
+            fn d() { w.url(); }
+            fn e() { webview
+                .url(); }
+            #[cfg(test)]
+            mod tests { fn t() { w.url(); } }
+        ";
+        assert_eq!(wry_url_reads(source), ["fn a() { w.url(); }", ".url(); }"]);
     }
 
     #[test]
