@@ -1,0 +1,8 @@
+1794305512.944 https://example.com/lk-link
+1794305515.338 https://example.com/cm-link
+1794305518.280 https://example.com/c0-click
+1794305521.240 https://example.com/l1-open
+1794305524.163 https://example.com/l2-open
+1794305527.050 https://example.com/l3-label
+1794305533.679 https://example.com/en-link
+1794305573.468 https://example.com/stray
