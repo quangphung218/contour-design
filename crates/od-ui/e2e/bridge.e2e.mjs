@@ -99,6 +99,14 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <button id="ts">TS: the page cancels touchstart (no click)</button>
 <button id="fk">FK: the page cancels touchstart, then sends its own</button>
 <button id="tf">TF: the page cancels touchend, then says it did not</button></p>
+<p><button id="fl">FL: the page cancels touchstart and floods timers</button>
+<button id="fm">FM: the page floods timers on pointerdown</button> <input id="fx" value="FX: Enter floods timers, alerts"></p>
+<p><button id="mt" style="width:300px;height:40px">MT: touchend opens</button>
+<span id="dr2" style="display:inline-block;width:300px;padding:16px 0;background:#ddd;touch-action:none">DR: drag here, no click</span></p>
+<p><label id="l1">L1: agree <input type="checkbox" id="l1c"></label>
+<label id="l2" for="l2b">L2: label for</label> <button id="l2b">L2 button</button>
+<label id="l3">L3: both open <input type="checkbox" id="l3c"></label></p>
+<p><button id="ax">AX: auxclick opens</button> <button id="pd">PD: cancels pointerdown, click and auxclick open</button></p>
 <p><span id="sw" style="display:inline-block;width:400px;padding:16px 0;background:#ddd">SW: swipe, the page cancels touchmove</span></p>
 <p><button id="gone">P1: goes away on pointerdown</button></p>
 <p><button id="dlgc">D1: click confirms, then opens</button> <button id="dlga">D2: click alerts, then opens</button>
@@ -169,6 +177,27 @@ on('tc', 'touchend', (e) => e.preventDefault());
 on('tf', 'touchend', (e) => { e.preventDefault(); Object.defineProperty(e, 'defaultPrevented', { value: false }); });
 on('fk', 'touchstart', (e) => { e.preventDefault(); window.dispatchEvent(new Event('touchstart')); }, { passive: false });
 on('ts', 'touchstart', (e) => e.preventDefault(), { passive: false });
+// About 3 s of 2 ms tasks, queued ahead of anything the bridge sets on
+// the same event: the user's input runs between them.
+window.floodLeft = 0;
+function flood() {
+  for (let i = 0; i < 1500; i++) {
+    floodLeft++;
+    setTimeout(() => { const t = performance.now(); while (performance.now() - t < 2); floodLeft--; });
+  }
+}
+on('fl', 'touchstart', (e) => { e.preventDefault(); flood(); }, { passive: false });
+on('fm', 'pointerdown', flood);
+on('fx', 'keydown', (e) => { if (e.key === 'Enter') { flood(); alert('saved'); } });
+on('mt', 'touchend', () => window.open('https://example.com/mt-open'));
+on('l1c', 'click', () => window.open('https://example.com/l1-open'));
+on('l2b', 'click', () => window.open('https://example.com/l2-open'));
+on('l3', 'click', (e) => { if (e.target.id === 'l3') window.open('https://example.com/l3-label'); });
+on('l3c', 'click', () => window.open('https://example.com/l3-open'));
+on('ax', 'auxclick', () => window.open('https://example.com/ax-aux'));
+on('pd', 'pointerdown', (e) => e.preventDefault());
+on('pd', 'click', () => window.open('https://example.com/pd-click'));
+on('pd', 'auxclick', () => window.open('https://example.com/pd-aux'));
 on('sw', 'touchmove', (e) => e.preventDefault(), { passive: false });
 on('gone', 'pointerdown', (e) => e.target.remove());
 on('dlgc', 'click', () => { if (confirm('open?')) window.open('https://example.com/d1-open'); });
@@ -225,6 +254,61 @@ const allCases = [
   ['TF', [], async (f, page) => { await f.locator('#tf').tap(); await sleep(500); await strayKeyup(f, page); }],
   ['TS', [], async (f, page) => { await f.locator('#ts').tap(); await sleep(500); await strayKeyup(f, page); }],
   ['SW', [], async (f, page, cdp) => { await f.locator('#sw').scrollIntoViewIfNeeded(); await swipe(cdp, await f.locator('#sw').boundingBox()); await sleep(500); await strayKeyup(f, page); }, ['chromium']],
+  // A page that floods timers holds back any timer the bridge would end
+  // the press with; a stray keyup in the meantime opens nothing, after a
+  // cancelled touch (FL), a click (FM) or a dialog in keydown (FX).
+  ['FL', [], async (f, page) => { await f.locator('#fl').tap(); await strayKeyup(f, page); await drained(f, page); }],
+  ['FM', [], async (f, page) => { await f.locator('#fm').click(); await strayKeyup(f, page); await drained(f, page); }],
+  ['FX', [], async (f, page) => { await enter(f, page, '#fx'); await strayKeyup(f, page); await drained(f, page); }],
+  // Fingers, one press: a finger that comes down while another is on the
+  // screen arms nothing (M2: the first touchend opened, a third finger
+  // down before the second is lifted opens no second tab), and a touch of
+  // two fingers gets no click, so nothing is left open after its touchend
+  // (MS); a touch the browser cancels ends with its pointercancel (TX).
+  // Playwright has no multi-touch: CDP, Chromium only.
+  ['M2', ['mt-open'], async (f, page, cdp) => { await touches(cdp, f, '#mt', [['start', 0], ['start', 1], ['end', 0], ['start', 2], ['end', 1], ['end', 2]]); }, ['chromium']],
+  ['MS', [], async (f, page, cdp) => { await touches(cdp, f, '#plain', [['start', 0], ['start', 1], ['end', 0], ['end', 1]]); await sleep(300); await strayKeyup(f, page); }, ['chromium']],
+  ['TX', [], async (f, page, cdp) => { await touches(cdp, f, '#plain', [['start', 0], ['cancel']]); await sleep(300); await strayKeyup(f, page); }, ['chromium']],
+  // The events one input brings straight after the end of its press
+  // still spend it: Space's click after its keyup (SP), a middle click's
+  // auxclick after its mouseup (AX), the click or auxclick of a press whose
+  // pointerdown the page cancelled, with no mouseup (PD, PDM), a tap's
+  // click after its touchend, with no mouseup either (TD; WebKit sends
+  // that tap no click at all).
+  // A click or tap on a label clicks its control after the label's own
+  // click: the control's handler opens one tab, for a label around the
+  // control (L1) or one that names it (L2). Still one press, one tab: the
+  // label's own handler opens, the control's then opens none (L3).
+  ['L1', ['l1-open'], (f) => f.locator('#l1').click({ position: { x: 5, y: 5 } })],
+  ['L1T', ['l1-open'], (f) => f.locator('#l1').tap({ position: { x: 5, y: 5 } })],
+  ['L2', ['l2-open'], (f) => f.locator('#l2').click({ position: { x: 5, y: 5 } })],
+  ['L2T', ['l2-open'], (f) => f.locator('#l2').tap({ position: { x: 5, y: 5 } })],
+  ['L3', ['l3-label'], (f) => f.locator('#l3').click({ position: { x: 5, y: 5 } })],
+  ['SP', ['plain-click'], async (f, page) => { await f.locator('#plain').focus(); await page.keyboard.press(' '); }],
+  ['AX', ['ax-aux'], (f) => f.locator('#ax').click({ button: 'middle' })],
+  ['PD', ['pd-click'], (f) => f.locator('#pd').click()],
+  ['PDM', ['pd-aux'], (f) => f.locator('#pd').click({ button: 'middle' })],
+  ['TD', ['pd-click'], (f) => f.locator('#pd').tap(), ['chromium']],
+  // A touch that gets no click ends with its touchend: a drag on
+  // touch-action: none (DR), a second finger on the host, outside this
+  // frame's count of fingers (PI).
+  ['DR', [], async (f, page, cdp) => { await f.locator('#dr2').scrollIntoViewIfNeeded(); await swipe(cdp, await f.locator('#dr2').boundingBox()); await sleep(300); await strayKeyup(f, page); }, ['chromium']],
+  ['PI', [], async (f, page, cdp) => {
+    await f.locator('#plain').scrollIntoViewIfNeeded();
+    const a = await f.locator('#plain').boundingBox();
+    const b = await page.locator('#away').boundingBox();
+    const inFrame = { x: a.x + 10, y: a.y + a.height / 2, id: 0 };
+    const onHost = { x: b.x + 5, y: b.y + b.height / 2, id: 1 };
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [inFrame] });
+    await sleep(30);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [inFrame, onHost] });
+    await sleep(30);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [onHost] });
+    await sleep(30);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [inFrame] });
+    await sleep(300);
+    await strayKeyup(f, page);
+  }, ['chromium']],
   ['P1', [], async (f, page) => { await f.locator('#gone').click(); await sleep(100); await strayKeyup(f, page); }],
   // The dialog's blur does not take the press from the open after it.
   ['D1', ['d1-open'], (f) => f.locator('#dlgc').click()],
@@ -324,6 +408,35 @@ async function selectMode(page, enabled) {
 async function strayKeyup(frame, page) {
   await frame.locator('#stray').focus();
   await page.keyboard.up('x');
+}
+
+// The flood a case started has run out, so the next case starts clean.
+async function drained(f, page) {
+  const frame = page.frame({ url: /frame\.html$/ });
+  await frame.waitForFunction(() => window.floodLeft === 0, null, { timeout: 20000 });
+}
+
+// Touch points on sel through CDP (Chromium): each step puts finger i
+// down or lifts it; 'cancel' cancels the whole touch.
+async function touches(cdp, f, sel, steps) {
+  await f.locator(sel).scrollIntoViewIfNeeded();
+  const box = await f.locator(sel).boundingBox();
+  const at = (i) => ({ x: box.x + 20 + i * 100, y: box.y + box.height / 2, id: i });
+  const down = new Set();
+  for (const [what, i] of steps) {
+    if (what === 'cancel') {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+      down.clear();
+    } else {
+      // A touchStart puts down the points it adds; a touchEnd lifts the
+      // points it names.
+      if (what === 'start') down.add(i);
+      else down.delete(i);
+      const points = what === 'start' ? [...down].map(at) : [at(i)];
+      await cdp.send('Input.dispatchTouchEvent', { type: what === 'start' ? 'touchStart' : 'touchEnd', touchPoints: points });
+    }
+    await sleep(30);
+  }
 }
 
 // A horizontal touch swipe across box, through CDP (Chromium).
