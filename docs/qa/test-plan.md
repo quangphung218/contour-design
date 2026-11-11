@@ -114,7 +114,7 @@ time when needed.
 | STU-09 | Empty comment cannot be added | Comment mode | Pin with empty note | Add disabled or refused | P1 | auto |
 | STU-10 | Draw on the preview and undo everything | Page open | Draw, undo | Canvas empty; nothing attached | P2 | exist (studio, files) |
 | STU-11 | Device sizes lay the page out at their width | Window 1360×860 | Phone, Tablet, Desktop | The page sees 390 px, 820 px (original preset), then the pane width | P1 | auto (QA-003) |
-| STU-12 | Deep link to a project that does not exist | — | Open `/projects/nope` | A clear "not found" with All projects as the only way out; no Retry, no preview steps, composer off; no crash | P1 | auto |
+| STU-12 | Deep link to a project that does not exist | — | Open `/projects/nope` | A clear "not found" with All projects as the only way out; no Retry, no preview steps, composer off; the preview frame says the same with All projects, not "Nothing to preview yet"; no crash | P1 | auto (QA-080) |
 | STU-13 | A page with spaces and Vietnamese letters in the user's own folder previews | Folder with `trang chủ.html` | Open folder, open the file | Preview renders it | P1 | auto |
 | STU-14 | With Tablet shrunk to fit, the zoom label shows the real size, also after + | Window 1360×860, Tablet | Read the label once the frame has stopped resizing, press + | Label = drawn size of the 820 px page; + changes the page or is off | P2 | auto (QA-015) |
 | STU-15 | Tablet on a phone-width window can still be zoomed in | Window 390×844, Tablet | More, then + | + is on at the fit; the page gets bigger; the pane scrolls | P2 | auto (QA-024) |
@@ -171,7 +171,7 @@ Goal: the user finds, renames, copies, removes and brings in projects.
 | PRJ-18 | Asking in the side chat of a project deleted from another tab | Project open in tab A, Side chat tab, deleted elsewhere | Send "tiêu đề có to quá không? 🤔" | "This project was deleted…"; side chat and its composer gone; no "Not found:" or "HTTP 404" anywhere on the page | P1 | auto (QA-079) |
 | PRJ-19 | On a phone, a project deleted from another tab while its Preview is shown | 390×844, Preview tab, deleted elsewhere, no action in tab A | Wait | Chat tab picked, "This project was deleted…" with All projects visible; no preview, no bare 404 | P2 | auto (QA-079) |
 | PRJ-20 | On a phone, with the chat folded on a wide window first, a project deleted while Files is shown | Fold the chat at 1360, narrow to 390, Files tab, deleted elsewhere | Wait | Chat tab picked, "This project was deleted…" visible, not an empty screen; no files panel, no bare 404 | P2 | auto (QA-079) |
-| PRJ-21 | On a phone, the Files and Preview tabs of a project that is gone | 390×844, project deleted elsewhere, not-found shown on the Chat tab | Tap Files, then Preview | Each tab is hidden or off, or still shows "This project was deleted…"; never a blank pane or "Nothing to preview yet" | P2 | auto, red (QA-080) |
+| PRJ-21 | On a phone, the Files and Preview tabs of a project that is gone | 390×844, project deleted elsewhere, not-found shown on the Chat tab | Tap Files, then Preview | Each tab is hidden or off, or still shows "This project was deleted…"; never a blank pane or "Nothing to preview yet" | P2 | auto (QA-080) |
 
 ## 7. Library (`library.qa.mjs`)
 

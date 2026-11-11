@@ -35,7 +35,7 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 | QA-077 | 🟡 | A failed Media generation shows the provider's raw JSON; a refused key (401) does not point to Providers | `library.qa.mjs` LIB-15, LIB-18 | Closed (beta.30) |
 | QA-078 | 🔵 | Images generated on the Media page are labelled "Uploaded" in the Library | `library.qa.mjs` LIB-16 | Closed (beta.30) |
 | QA-079 | 🟡 | A project deleted from another tab: the Files panel, Versions and side chat stay open beside the not-found state and show "Not found: project not found (HTTP 404)" | `projects.qa.mjs` PRJ-16…PRJ-20 | Closed (beta.31) |
-| QA-080 | 🟡 | On a phone, in a project that is gone (deleted elsewhere or a wrong link), the Files tab is an empty screen and Preview says "Nothing to preview yet" | `projects.qa.mjs` PRJ-21 | Open |
+| QA-080 | 🟡 | On a phone, in a project that is gone (deleted elsewhere or a wrong link), the Files tab is an empty screen and Preview says "Nothing to preview yet" | `projects.qa.mjs` PRJ-21, `studio.qa.mjs` STU-12 | Fixed (unreleased) |
 
 ## Pass / fail by flow
 
@@ -180,7 +180,13 @@ a later tap. **Fix**: while `load_gone`, hide or disable the Preview and
 Files segments (or have `pick` keep Chat), or render the not-found card
 in the fallback workspace.
 
-**Test**: `projects.qa.mjs` PRJ-21 (`knownBug('QA-080')`).
+**Test**: `projects.qa.mjs` PRJ-21; `studio.qa.mjs` STU-12 checks the
+preview frame (`preview-gone`).
+
+**Fixed (unreleased)**: the fallback workspace renders `PreviewGone`, the
+chat's not-found words with All projects, instead of `PreviewEmpty`; the
+Preview and Files segments are `disabled` while `load_gone`, and `pick`
+keeps Chat. PRJ-21 passes without `knownBug`; projects 21/21.
 
 ## QA-079 🟡 A project deleted from another tab: the side panels show "Not found … (HTTP 404)"
 

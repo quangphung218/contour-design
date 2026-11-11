@@ -270,6 +270,11 @@ test('STU-12', 'A link to a project that does not exist says so and offers a way
     assert.equal(await page.getByTestId(id).first().isVisible().catch(() => false), false, `${id} still offered`);
   }
   assert.equal(await page.locator('h1:empty').count(), 0, 'an empty heading');
+  // The preview frame says the same, not "Nothing to preview yet" (QA-080).
+  const gone = page.getByTestId('preview-gone');
+  await gone.getByText('This project was deleted or the link is wrong.').waitFor();
+  await gone.getByRole('link', { name: 'All projects' }).waitFor();
+  assert.doesNotMatch(await page.locator('.studio').innerText(), /Nothing to preview yet/i);
 });
 
 test('STU-13', "A page named with spaces and Vietnamese letters in the user's own folder previews", async ({ d, api, newPage }) => {
