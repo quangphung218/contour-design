@@ -262,9 +262,17 @@ test('PRJ-16', 'Uploading in the Files panel of a project deleted from another t
   });
   await page.goto(`${d.base}/projects/${id}`);
   await page.getByTestId('composer').waitFor();
+  // On a phone, from the Files tab: the not-found state is in the chat
+  // pane, so the Studio switches to it rather than show an empty tab.
+  await page.setViewportSize({ width: 400, height: 800 });
+  await page.getByTestId('pane-files').click();
+  await page.getByTestId('file-tree').waitFor();
   await page.getByTestId('upload-input').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') });
+  // Visible, not only there: a hidden chat pane fails this wait.
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
+  assert.equal(await page.getByTestId('pane-chat').getAttribute('aria-checked'), 'true', 'the phone Studio left on an empty tab');
   assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on in a deleted project');
+  assert.equal(await page.getByTestId('file-tree').count(), 0, 'the files panel of a deleted project');
   await noRawNotFound(page);
 });
 
@@ -282,6 +290,7 @@ test('PRJ-17', 'Restoring a version in a project deleted from another tab says t
   assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
   await v1.getByTestId('version-restore').click();
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
+  assert.equal(await page.getByTestId('versions').count(), 0, 'the versions of a deleted project');
   const said = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
   assert.doesNotMatch(said, /Restore failed|HTTP 404|Not found:/i, said.slice(0, 300));
 });
@@ -299,6 +308,7 @@ test('PRJ-18', 'Asking in the side chat of a project deleted from another tab sa
   await page.getByTestId('side-composer').fill('tiêu đề có to quá không? 🤔');
   await page.getByTestId('side-composer').press('Enter');
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
+  assert.equal(await page.getByTestId('side-chat').count(), 0, 'the side chat of a deleted project');
   const said = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
   assert.doesNotMatch(said, /HTTP 404|check the agent in Settings|Reconnecting/i, said.slice(0, 300));
 });
