@@ -11,6 +11,8 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Studio: in a project that is gone (deleted from another tab, or a wrong link), the preview frame now says "This project was deleted or the link is wrong." with All projects instead of "Nothing to preview yet", and on a phone the Files and Preview tabs are off instead of opening an empty screen; opening a file from the chat, the quick switcher or the palette keeps the phone on Chat too (QA-080).
+- Studio: a call that fails inside Contour (for example "database is locked") now says what was not done and to try again, such as "Could not save the comment. Try again.", instead of "The daemon hit an error: database is locked (HTTP 500)"; no message shows an HTTP status any more (it goes to the browser console). This covers Design Jury, comments, new sketches, GenUI answers, duplicate, transcript export, the Files panel, versions, memory, session mode and the side chat (QA-081).
+- Studio: a manual edit that could not be written now says "The edit was not applied", not only the daemon's reason (QA-082).
 
 ## [0.2.0-beta.31] - 2026-11-11
 

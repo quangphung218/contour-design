@@ -142,7 +142,7 @@ fn SurfaceCard(row: SurfaceRow, on_done: Callback<()>) -> impl IntoView {
             busy.set(false);
             match res {
                 Ok(_) => on_done.run(()),
-                Err(e) => error.set(Some(tf(T::GenuiAnswerFailed, &[&e.to_string()]))),
+                Err(e) => error.set(Some(api::failure(T::GenuiAnswerFailed, &e))),
             }
         });
     });

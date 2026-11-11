@@ -81,9 +81,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                     ctx.viewing.set(None);
                     ctx.reload_preview();
                 }
-                Err(e) => ctx
-                    .notice
-                    .set(Some(tf(T::RestoreFailed, &[&ctx.failed(&e)]))),
+                Err(e) => ctx.notice.set(Some(ctx.failed_to(T::RestoreFailed, &e))),
             }
         });
     };

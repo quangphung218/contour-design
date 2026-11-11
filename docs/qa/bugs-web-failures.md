@@ -21,8 +21,8 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 | ID | Sev | Bug | Test | Status |
 |---|---|---|---|---|
 | QA-084 | 🔴 | A sketch whose read fails opens as a blank sketch; the next stroke saves over the file and the earlier strokes are gone | `failures.qa.mjs` FAIL-10 | Open |
-| QA-081 | 🟡 | A failed call reads "The daemon hit an error: database is locked (HTTP 500)" (Design Jury, comments, new sketch, GenUI, duplicate, transcript export) | `failures.qa.mjs` FAIL-01, 02, 03, 08, 11, 12, 14 | Open |
-| QA-082 | 🟡 | Manual edit: a write that failed shows only the daemon's reason ("database is locked"), not that the edit was not applied | `failures.qa.mjs` FAIL-05 | Open |
+| QA-081 | 🟡 | A failed call reads "The daemon hit an error: database is locked (HTTP 500)" (Design Jury, comments, new sketch, GenUI, duplicate, transcript export) | `failures.qa.mjs` FAIL-01, 02, 03, 08, 11, 12, 14 | Fixed |
+| QA-082 | 🟡 | Manual edit: a write that failed shows only the daemon's reason ("database is locked"), not that the edit was not applied | `failures.qa.mjs` FAIL-05 | Fixed |
 | QA-083 | 🔵 | Lint that could not run leaves no trace: the Lint button disappears and nothing says the check failed | `failures.qa.mjs` FAIL-07 | Open |
 
 ## Pass / fail by feature
@@ -107,6 +107,15 @@ Fixing the `Display` covers them all; the tests above cover seven.
 **Test**: `failures.qa.mjs` FAIL-01, FAIL-02, FAIL-03, FAIL-08, FAIL-11,
 FAIL-12, FAIL-14.
 
+**Fixed (unreleased)**: `HttpError`'s `Display` never shows the status,
+and an internal failure (code `INTERNAL_ERROR`, or a 5xx with no code)
+reads "Contour could not finish this. Try again."; the status and the
+daemon's words go to the console (`api::error_of`). `api::failure` and
+`StudioCtx::failed_to` say what was not done first ("Could not save the
+comment. Try again."), used by the seven tested places and the files
+panel, versions, memory, session mode and side chat. New sketch
+(`sketch.rs`) and annotation save keep the plain `Display` text.
+
 ## QA-082 🟡 Manual edit: a failed write shows only the daemon's reason
 
 **Steps**: Manual edit, pick the title, type a new text, Apply while
@@ -122,6 +131,10 @@ element (`manual-read-error`). `ManualHistoryFailed` (line 473) already
 wraps its message; do the same for these two.
 
 **Test**: `failures.qa.mjs` FAIL-05.
+
+**Fixed (unreleased)**: apply, the element read and undo/redo use
+`failed_to` ("The edit was not applied. Try again."); so does the
+source write of the preview tools (`SaveFailed`).
 
 ## QA-083 🔵 Lint that could not run leaves no trace
 

@@ -85,7 +85,9 @@ impl StudioCtx {
                         *c = r.conversation;
                     }
                 }),
-                Err(e) => self.notice.set(Some(self.failed(&e))),
+                Err(e) => self
+                    .notice
+                    .set(Some(self.failed_to(T::SessionModeFailed, &e))),
             }
         });
     }
@@ -190,7 +192,12 @@ fn JuryToggle(ctx: StudioCtx) -> impl IntoView {
                 api::put::<_, CritiqueSettings>(&path, &CritiqueSettings { enabled: next }).await
             {
                 ctx.jury.set(!next);
-                ctx.notice.set(Some(ctx.failed(&e)));
+                let what = if next {
+                    T::JuryOnFailed
+                } else {
+                    T::JuryOffFailed
+                };
+                ctx.notice.set(Some(ctx.failed_to(what, &e)));
             }
         });
     };
@@ -217,7 +224,7 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
     let base = move || format!("{}/memory", ctx.base());
     let apply = move |res: Result<MemoryResponse, api::HttpError>| match res {
         Ok(r) => ctx.memory.set(r.memory),
-        Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
+        Err(e) => ctx.notice.set(Some(ctx.failed_to(T::MemoryFailed, &e))),
     };
     let add = move || {
         let text = draft.get_untracked().trim().to_owned();
@@ -238,7 +245,7 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
         leptos::task::spawn_local(async move {
             match api::delete::<serde_json::Value>(&base()).await {
                 Ok(_) => ctx.memory.set(Vec::new()),
-                Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
+                Err(e) => ctx.notice.set(Some(ctx.failed_to(T::MemoryFailed, &e))),
             }
         });
     };
@@ -359,7 +366,7 @@ pub(super) fn TranscriptMenu(ctx: StudioCtx) -> impl IntoView {
                     };
                     download(&bytes, &format!("conversation-{short}.{format}"), mime);
                 }
-                Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
+                Err(e) => ctx.notice.set(Some(ctx.failed_to(T::TranscriptFailed, &e))),
             }
         });
     };
@@ -469,7 +476,7 @@ pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             // Only a refusal re-enables it: the run's end settles the theater.
             if let Err(e) = api::post::<_, serde_json::Value>(&path, &serde_json::json!({})).await {
                 pending.set(false);
-                ctx.notice.set(Some(ctx.failed(&e)));
+                ctx.notice.set(Some(ctx.failed_to(T::JuryStopFailed, &e)));
             }
         });
     };
@@ -764,7 +771,7 @@ impl SideChat {
                             id
                         }
                         Err(e) => {
-                            fail(turn, ctx.failed(&e));
+                            fail(turn, ctx.failed_to(T::MessageFailed, &e));
                             self.live_run.set(None);
                             return;
                         }
@@ -789,7 +796,7 @@ impl SideChat {
             match api::post::<_, CreateRunResponse>("/api/runs", &side_turn(req)).await {
                 Ok(res) => self.attach(ctx, res.run_id, turn),
                 Err(e) => {
-                    fail(turn, ctx.failed(&e));
+                    fail(turn, ctx.failed_to(T::MessageFailed, &e));
                     self.live_run.set(None);
                 }
             }

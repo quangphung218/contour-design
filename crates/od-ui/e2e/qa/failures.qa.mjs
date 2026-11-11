@@ -99,7 +99,7 @@ test('FAIL-01', 'Design Jury: a switch that could not be saved goes back off, sa
   await until(async () => (await api(projectPath(id, '/critique'))).body?.enabled === true, 'jury on after a retry');
   assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
   plainWords(said, 'Design Jury switch');
-}, { knownBug: 'QA-081' });
+});
 
 test('FAIL-02', 'Design Jury: a Stop that was refused can be pressed again and stops the jury', async ({ d, api, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Jury stop fails');
@@ -127,7 +127,7 @@ test('FAIL-02', 'Design Jury: a Stop that was refused can be pressed again and s
     brk.heal();
     if ((await stop.count()) && (await stop.isEnabled().catch(() => false))) await stop.click().catch(() => {});
   }
-}, { knownBug: 'QA-081', timeout: 120_000 });
+}, { timeout: 120_000 });
 
 // ------------------------------------------------------------ comments
 
@@ -149,7 +149,7 @@ test('FAIL-03', 'Comments: a comment that could not be saved keeps its text, say
   await page.getByTestId('comment-add').click();
   await page.getByTestId('comment-chip').getByText('Làm tiêu đề xanh hơn').waitFor();
   plainWords(said, 'Add comment');
-}, { knownBug: 'QA-081' });
+});
 
 test('FAIL-04', 'Comments: a list that could not load says so with Retry, and Retry brings it back', async ({ d, newPage }) => {
   const id = await createProject(d, 'Comments load fails', { 'index.html': PAGE });
@@ -197,7 +197,7 @@ test('FAIL-05', 'Manual edit: an edit that could not be written keeps the text, 
   await until(async () => String((await api(`/api/projects/${id}/raw/index.html`)).body).includes('Tiêu đề mới'), 'written on the retry');
   await frame(page).locator('#title', { hasText: 'Tiêu đề mới' }).waitFor();
   plainWords(said, 'Manual edit apply');
-}, { knownBug: 'QA-082' });
+});
 
 test('FAIL-06', 'Manual edit: applying in a project deleted from another tab lands on "deleted", not a raw "not found"', async ({ d, api, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Manual edit deleted');
@@ -266,7 +266,7 @@ test('FAIL-08', 'Sketch: a new sketch that could not be created says so, and the
   await page.getByTestId('sketch-view').waitFor();
   await row(page, SKETCH).waitFor();
   plainWords(said, 'New sketch');
-}, { knownBug: 'QA-081' });
+});
 
 test('FAIL-09', 'Sketch: a drawing that could not be saved shows "Not saved" and is saved whole on the next stroke', async ({ d, api, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Sketch save fails');
@@ -358,7 +358,7 @@ test('FAIL-11', 'GenUI: an answer that could not be sent keeps the question, say
   await surface.getByTestId('genui-confirm').click();
   await surface.waitFor({ state: 'detached' });
   plainWords(said, 'GenUI answer');
-}, { knownBug: 'QA-081', daemon: { data: GENUI_DATA }, timeout: 120_000 });
+}, { daemon: { data: GENUI_DATA }, timeout: 120_000 });
 
 // ------------------------------------------------------------ duplicate
 
@@ -383,7 +383,7 @@ test('FAIL-12', 'Duplicate: a copy that could not be made stays on the project, 
   await page.getByTestId('file-tree').waitFor();
   assert.equal((await listProjects(d)).length, before + 1);
   plainWords(said, 'Duplicate project');
-}, { knownBug: 'QA-081' });
+});
 
 test('FAIL-13', 'Duplicate: copying a project deleted from another tab lands on "deleted", not a raw "not found"', async ({ d, api, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Duplicate deleted');
@@ -421,7 +421,7 @@ test('FAIL-14', 'Transcript export: a download that failed says so, and the next
   assert.match(dl.suggestedFilename(), /^conversation-.+\.md$/);
   assert.match(readFileSync(await dl.path(), 'utf8'), /hello there/);
   plainWords(said, 'Export conversation');
-}, { knownBug: 'QA-081' });
+});
 
 try {
   await run('failures');

@@ -121,7 +121,7 @@ fn duplicate_now(ctx: StudioCtx, release: super::leave_guard::Release) {
                         .set_href(&format!("/projects/{}", api::seg(&r.project.id)));
                 }
             }
-            Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
+            Err(e) => ctx.notice.set(Some(ctx.failed_to(T::DuplicateFailed, &e))),
         }
     });
 }
