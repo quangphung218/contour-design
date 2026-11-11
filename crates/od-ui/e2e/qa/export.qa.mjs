@@ -241,6 +241,8 @@ test('EXP-14', 'Back in the Studio during an MP4 export, the export still shows,
   const { page } = await newPage();
   let renders = 0;
   page.on('request', (req) => { if (req.method() === 'POST' && /\/export\/mp4$/.test(req.url())) renders += 1; });
+  const downloads = [];
+  page.on('download', (dl) => downloads.push(dl.suggestedFilename()));
   await page.goto(`${d.base}/projects/${id}`);
   await page.locator('.file.active, [data-testid="file-row"]', { hasText: 'index.html' }).first().waitFor();
   await page.getByTestId('export').click();
@@ -258,6 +260,31 @@ test('EXP-14', 'Back in the Studio during an MP4 export, the export still shows,
   await page.getByTestId('export-mp4').click();
   await until(async () => /exported|failed/i.test(await page.getByTestId('export-status').innerText({ timeout: 200 })), 'the export ends', 60_000);
   assert.equal(renders, 1, 'MP4 pressed again while it ran rendered it again');
+  const status = await page.getByTestId('export-status').innerText();
+  assert.match(status, /exported/i, `the joined export did not succeed: ${status}`);
+  await until(() => downloads.length >= 1, 'the MP4 download', 10_000);
+  await page.waitForLoadState('networkidle').catch(() => {});
+  assert.equal(downloads.filter((n) => n.endsWith('.mp4')).length, 1, `downloads: ${downloads.join(', ')}`);
 }, { skip: CHROME ? undefined : 'no Chrome, Edge or Chromium on this machine', timeout: 90_000 });
+
+test('EXP-15', 'An MP4 export started, then the Studio left for good: the file still arrives, once', async ({ d, api, newPage }) => {
+  const r = await api('/api/design-templates/motion-lower-third/remix', { method: 'POST', body: { name: 'Film left for good' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const id = r.body.project?.id || r.body.projectId || r.body.id;
+  const { page } = await newPage();
+  const downloads = [];
+  page.on('download', (dl) => downloads.push(dl.suggestedFilename()));
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.locator('.file.active, [data-testid="file-row"]', { hasText: 'index.html' }).first().waitFor();
+  await page.getByTestId('export').click();
+  await page.getByTestId('export-mp4').click();
+  await until(async () => /mp4/i.test(await page.getByTestId('export-status').innerText({ timeout: 200 })), 'export started');
+  await page.locator('nav a[href="/projects"]').first().click();
+  await page.waitForURL((u) => u.pathname === '/projects');
+  await until(() => downloads.some((n) => n.endsWith('.mp4')), 'the MP4 download on Projects', 70_000);
+  await page.waitForLoadState('networkidle').catch(() => {});
+  assert.equal(downloads.filter((n) => n.endsWith('.mp4')).length, 1, `downloads: ${downloads.join(', ')}`);
+  assert.equal(new URL(page.url()).pathname, '/projects', 'the download pulled the user back to the Studio');
+}, { skip: CHROME ? undefined : 'no Chrome, Edge or Chromium on this machine', timeout: 100_000 });
 
 await run('export');

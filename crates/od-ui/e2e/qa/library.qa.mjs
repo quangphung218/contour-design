@@ -210,10 +210,22 @@ async function fakeImages() {
   return { url: `http://127.0.0.1:${server.address().port}/v1`, close: () => server.close() };
 }
 
-async function generate(page, prompt) {
+// A loopback stand-in for fal's queue that refuses every key, as fal does
+// for a wrong one: the submit answers 401 with `{"detail": …}`.
+async function fakeFalRefusing() {
+  const server = createServer((req, res) => {
+    req.resume();
+    req.on('end', () => res.writeHead(401, { 'content-type': 'application/json' }).end('{"detail":"Invalid key: the key was not found"}'));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { url: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
+}
+
+async function generate(page, prompt, model) {
   await page.getByTestId('media-tab-generate').click();
   await page.getByTestId('gen-surface-image').click();
   await until(async () => (await page.getByTestId('gen-model').inputValue()) !== '', 'a model is picked');
+  if (model) await page.getByTestId('gen-model').selectOption(model);
   await page.getByTestId('gen-prompt').fill(prompt);
   await page.getByTestId('gen-submit').click();
   const task = page.getByTestId('media-task').filter({ hasText: prompt }).first();
@@ -243,11 +255,33 @@ test('LIB-15', 'A failed image says what went wrong in words, and a refused key 
     const refused = await generate(page, 'badkey please');
     const refusedText = (await refused.innerText()).replace(/\s+/g, ' ');
     assert.doesNotMatch(refusedText, /\{"error"/, 'raw provider JSON shown');
-    assert.match(refusedText, /Incorrect API key provided/, `the reason of the 401: ${refusedText}`);
-    await refused.getByRole('button', { name: /provider/i }).click();
+    assert.match(refusedText, /OpenAI .*Incorrect API key provided/, `the provider and the reason of the 401: ${refusedText}`);
+    await refused.getByRole('button', { name: 'Set up providers' }).click();
     await page.getByTestId('provider-key-openai').waitFor();
   } finally {
     fake.close();
+  }
+});
+
+test('LIB-18', 'A key refused by fal.ai names fal.ai and offers Set up providers, which opens its key', async ({ d, newPage }) => {
+  const fal = await fakeFalRefusing();
+  try {
+    const { page } = await newPage();
+    await page.goto(d.base + '/media');
+    await page.getByTestId('media-tab-providers').click();
+    await page.getByTestId('provider-key-fal').fill('fal-wrong-key');
+    await page.getByTestId('provider-url-fal').fill(fal.url);
+    await page.getByTestId('providers-save').click();
+    await page.getByTestId('providers-saved').waitFor();
+    const task = await generate(page, 'Bánh mì 🥖 refused', 'flux-dev-fal');
+    assert.equal(await task.getAttribute('data-status'), 'failed');
+    const text = (await task.innerText()).replace(/\s+/g, ' ');
+    assert.doesNotMatch(text, /\{"detail"|fal submit 401/, `raw daemon error shown: ${text}`);
+    assert.match(text, /fal\.ai .*Invalid key: the key was not found/, `the provider and its reason: ${text}`);
+    await task.getByRole('button', { name: 'Set up providers' }).click();
+    await page.getByTestId('provider-key-fal').waitFor();
+  } finally {
+    fal.close();
   }
 });
 
