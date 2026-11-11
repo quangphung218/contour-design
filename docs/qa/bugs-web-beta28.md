@@ -34,7 +34,7 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 | QA-076 | 🟡 | Sending in a project deleted from another tab says "Connection interrupted", "HTTP 404" and "check the agent in Settings" | `projects.qa.mjs` PRJ-13, PRJ-14, PRJ-15 | Closed (beta.30); the panels' part is QA-079 |
 | QA-077 | 🟡 | A failed Media generation shows the provider's raw JSON; a refused key (401) does not point to Providers | `library.qa.mjs` LIB-15, LIB-18 | Closed (beta.30) |
 | QA-078 | 🔵 | Images generated on the Media page are labelled "Uploaded" in the Library | `library.qa.mjs` LIB-16 | Closed (beta.30) |
-| QA-079 | 🟡 | A project deleted from another tab: the Files panel, Versions and side chat stay open beside the not-found state and show "Not found: project not found (HTTP 404)" | `projects.qa.mjs` PRJ-16, PRJ-17, PRJ-18 | Open (beta.30) |
+| QA-079 | 🟡 | A project deleted from another tab: the Files panel, Versions and side chat stay open beside the not-found state and show "Not found: project not found (HTTP 404)" | `projects.qa.mjs` PRJ-16, PRJ-17, PRJ-18 | Fixed |
 
 ## Pass / fail by flow
 
@@ -150,7 +150,7 @@ comments, manual edits, lint, sketches, GenUI, duplicate, export toast;
 only the three above are covered by a test.
 
 **Test**: `projects.qa.mjs` PRJ-16 (now also asserts no bare 404),
-PRJ-17, PRJ-18, all `knownBug: 'QA-079'`.
+PRJ-17, PRJ-18; they pass since the fix (no `knownBug`).
 
 ## QA-074 🟠 Add routine pressed twice saves two identical routines
 

@@ -266,7 +266,7 @@ test('PRJ-16', 'Uploading in the Files panel of a project deleted from another t
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
   assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on in a deleted project');
   await noRawNotFound(page);
-}, { knownBug: 'QA-079' });
+});
 
 test('PRJ-17', 'Restoring a version in a project deleted from another tab says the project is gone, not "Restore failed"', async ({ d, api, newPage }) => {
   const id = await createProject(d, 'Deleted while restoring', { 'index.html': '<h1 id="t">One</h1>' });
@@ -284,7 +284,7 @@ test('PRJ-17', 'Restoring a version in a project deleted from another tab says t
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
   const said = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
   assert.doesNotMatch(said, /Restore failed|HTTP 404|Not found:/i, said.slice(0, 300));
-}, { knownBug: 'QA-079' });
+});
 
 test('PRJ-18', 'Asking in the side chat of a project deleted from another tab says the project is gone', async ({ d, api, newPage }) => {
   const id = await createProject(d, 'Deleted while side chatting', { 'index.html': '<h1 id="t">Side</h1>' });
@@ -301,6 +301,6 @@ test('PRJ-18', 'Asking in the side chat of a project deleted from another tab sa
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
   const said = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
   assert.doesNotMatch(said, /HTTP 404|check the agent in Settings|Reconnecting/i, said.slice(0, 300));
-}, { knownBug: 'QA-079' });
+});
 
 await run('projects');
