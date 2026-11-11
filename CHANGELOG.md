@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.32] - 2026-11-11
+
 ### Fixed
 
 - Studio: in a project that is gone (deleted from another tab, or a wrong link), the preview frame now says "This project was deleted or the link is wrong." with All projects instead of "Nothing to preview yet", and on a phone the Files and Preview tabs are off instead of opening an empty screen; opening a file from the chat, the quick switcher or the palette keeps the phone on Chat too (QA-080).
@@ -1129,7 +1131,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.31...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.32...HEAD
+[0.2.0-beta.32]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.31...v0.2.0-beta.32
 [0.2.0-beta.31]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.30...v0.2.0-beta.31
 [0.2.0-beta.30]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.29...v0.2.0-beta.30
 [0.2.0-beta.29]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.28...v0.2.0-beta.29
