@@ -152,3 +152,53 @@ async fn a_stop_before_launch_stays_a_stop_when_contour_quits() {
     let reg = d.state.runs.registry.get(&run_id).unwrap();
     assert_eq!(reg.end_payload().and_then(|e| e.failure_category), None);
 }
+
+#[tokio::test]
+async fn a_stop_stays_a_stop_when_contour_quits_while_the_launch_step_ends_it() {
+    // As above, with the quit landing while the launch step, having seen
+    // the Stop, still writes the run's end: a test DB lock holds it there.
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &format!("{PROBES}{SLOW}"));
+    let (project, _) = d.project().await;
+    let (fut, run_id) = create_until_registered(&d, &project).await;
+    // The first store write after the step's check (dropping the run's
+    // GenUI surfaces) waits on this lock, up to SQLite's busy timeout.
+    let genui =
+        rusqlite::Connection::open(d.state.store.data_dir().root().join("genui.sqlite")).unwrap();
+    genui.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    let res = d
+        .post(&format!("/api/runs/{run_id}/cancel"), &json!({}))
+        .await;
+    assert_eq!(res.status().as_u16(), 200);
+    let create = tokio::spawn(fut);
+    // Gives the step time to reach the lock. Nothing tells from outside
+    // when it has, unless it lets go of the Stop there (the bug), so the
+    // wait ends early only then.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while d.state.runs.pending_cancels().contains(&run_id) && tokio::time::Instant::now() < deadline
+    {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let stop = tokio::spawn({
+        let state = d.state.clone();
+        async move { state.runs.stop_all().await }
+    });
+    // `stop_all` has sorted the runs once it closes the task set; it then
+    // waits for the launch step, which waits for the lock.
+    for _ in 0..2000 {
+        if d.state.runs.tasks.is_closed() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    assert!(d.state.runs.tasks.is_closed(), "stop_all never ran");
+    genui.execute_batch("COMMIT").unwrap();
+    tokio::time::timeout(Duration::from_secs(10), stop)
+        .await
+        .expect("stop_all did not return")
+        .unwrap();
+    let _ = create.await;
+    let reg = d.state.runs.registry.get(&run_id).unwrap();
+    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
+    assert_eq!(reg.end_payload().and_then(|e| e.failure_category), None);
+}
