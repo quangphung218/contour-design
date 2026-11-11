@@ -20,10 +20,10 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 
 | ID | Sev | Bug | Test | Status |
 |---|---|---|---|---|
-| QA-084 | 🔴 | A sketch whose read fails opens as a blank sketch; the next stroke saves over the file and the earlier strokes are gone | `failures.qa.mjs` FAIL-10 | Open |
+| QA-084 | 🔴 | A sketch whose read fails opens as a blank sketch; the next stroke saves over the file and the earlier strokes are gone | `failures.qa.mjs` FAIL-10 | Fixed |
 | QA-081 | 🟡 | A failed call reads "The daemon hit an error: database is locked (HTTP 500)" (Design Jury, comments, new sketch, GenUI, duplicate, transcript export) | `failures.qa.mjs` FAIL-01, 02, 03, 08, 11, 12, 14 | Fixed |
 | QA-082 | 🟡 | Manual edit: a write that failed shows only the daemon's reason ("database is locked"), not that the edit was not applied | `failures.qa.mjs` FAIL-05 | Fixed |
-| QA-083 | 🔵 | Lint that could not run leaves no trace: the Lint button disappears and nothing says the check failed | `failures.qa.mjs` FAIL-07 | Open |
+| QA-083 | 🔵 | Lint that could not run leaves no trace: the Lint button disappears and nothing says the check failed | `failures.qa.mjs` FAIL-07 | Fixed |
 
 ## Pass / fail by feature
 
@@ -73,9 +73,18 @@ file now holds 1 stroke: the 2 earlier strokes are gone.
 **Where**: `crates/od-ui/src/app/sketch.rs:86-89`: `Err(_) =>
 SketchFile::blank()` treats a failed read as an empty sketch, and
 `loaded` turns on the autosave. On `Err`, show the error with a retry and
-keep `loaded` false; only a 404 for a file that never existed is blank.
+keep `loaded` false.
 
 **Test**: `failures.qa.mjs` FAIL-10.
+
+**Fixed (unreleased)**: every failed read, a 404 included, says "Could not
+read this sketch. Nothing was saved over it." with Retry and leaves the
+autosave off; a 404 does not open blank, because New sketch always writes
+the file before it opens it, so a missing file is a failure too, not a new
+sketch. An empty file opens blank; a file that is not a sketch (cut short,
+or another kind) says it could not be read. The same failure on a
+Markdown document left a skeleton for good: it now says "Could not read
+this document." with Retry (FAIL-15).
 
 ## QA-081 🟡 A failed call reads "The daemon hit an error: … (HTTP 500)"
 
@@ -150,3 +159,9 @@ built only from `Some(Ok(_))`, so `LintPanel`'s `Some(Err(e))` branch
 (line 1101) can never be opened.
 
 **Test**: `failures.qa.mjs` FAIL-07.
+
+**Fixed (unreleased)**: a lint that could not run keeps the Lint button;
+it opens the panel with why and Retry, and FAIL-07 retries through that
+button. The reason is the daemon's own words; an internal failure, or an
+answer that is not the daemon's JSON (a proxy's HTML page), reads "Lint
+failed. Try again." instead of the raw body.
