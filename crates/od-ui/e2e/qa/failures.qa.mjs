@@ -232,7 +232,7 @@ test('FAIL-07', 'Lint: a check that could not run says so, and Reload preview ru
   await until(async () => (await badge.getAttribute('data-count', { timeout: 200 })) !== null, 'lint runs again');
   assert.ok(shown, 'a failed lint leaves no trace: the Lint button is gone, nothing says the check could not run');
   plainWords(said, 'Lint panel');
-}, { knownBug: 'QA-083' });
+});
 
 // ------------------------------------------------------------ sketch
 
@@ -318,7 +318,13 @@ test('FAIL-10', 'Sketch: a sketch that could not be read is not shown blank and 
   const after = await fileJson(api, id, SKETCH);
   assert.ok(after.strokes.length >= before.strokes.length, `the sketch had ${before.strokes.length} strokes, now ${after.strokes.length}: a failed read showed a blank sketch and the save replaced it`);
   assert.deepEqual(after.strokes.slice(0, before.strokes.length), before.strokes, 'the earlier strokes were replaced');
-}, { knownBug: 'QA-084' });
+  // Retry reads the file again and shows its strokes.
+  plainWords(await view.getByRole('alert').innerText(), 'Sketch read');
+  await page.getByTestId('sketch-retry').click();
+  await canvas.waitFor();
+  await stroke(page, 120);
+  await until(async () => (await fileJson(api, id, SKETCH)).strokes?.length === before.strokes.length + 1, 'the next stroke is saved after the earlier ones');
+});
 
 // ------------------------------------------------------------ GenUI
 

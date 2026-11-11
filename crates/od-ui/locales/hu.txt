@@ -1144,6 +1144,7 @@ Undo = Visszavonás
 Redo = Mégis
 SketchToChat = Küldés a csevegésbe
 SketchAttached = A(z) {0} a következő üzenettel megy
+SketchReadFailed = Ez a vázlat nem olvasható be. Semmi sem lett felülírva.
 Screenshot = Képernyőkép
 ScreenshotCopy = Másolás a vágólapra
 ScreenshotToChat = Küldés a csevegésbe

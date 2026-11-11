@@ -1144,6 +1144,7 @@ Undo = 撤销
 Redo = 重做
 SketchToChat = 发送到对话
 SketchAttached = {0} 将随下一条消息发送
+SketchReadFailed = 无法读取此草图。未覆盖任何内容。
 Screenshot = 截图
 ScreenshotCopy = 复制到剪贴板
 ScreenshotToChat = 发送到对话

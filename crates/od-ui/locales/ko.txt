@@ -1144,6 +1144,7 @@ Undo = 실행 취소
 Redo = 다시 실행
 SketchToChat = 채팅으로 보내기
 SketchAttached = {0}이(가) 다음 메시지와 함께 전송됩니다
+SketchReadFailed = 이 스케치를 읽을 수 없습니다. 덮어쓴 내용은 없습니다.
 Screenshot = 스크린샷
 ScreenshotCopy = 클립보드에 복사
 ScreenshotToChat = 채팅으로 보내기

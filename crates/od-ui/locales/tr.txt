@@ -1143,6 +1143,7 @@ Undo = Geri al
 Redo = Yinele
 SketchToChat = Sohbete gönder
 SketchAttached = {0} sonraki mesajla gider
+SketchReadFailed = Bu çizim okunamadı. Hiçbir şeyin üzerine yazılmadı.
 Screenshot = Ekran görüntüsü
 ScreenshotCopy = Panoya kopyala
 ScreenshotToChat = Sohbete gönder

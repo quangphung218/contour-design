@@ -1143,6 +1143,7 @@ Undo = Cofnij
 Redo = Ponów
 SketchToChat = Wyślij na czat
 SketchAttached = {0} zostanie wysłany z następną wiadomością
+SketchReadFailed = Nie udało się odczytać tego szkicu. Nic nie zostało nadpisane.
 Screenshot = Zrzut ekranu
 ScreenshotCopy = Kopiuj do schowka
 ScreenshotToChat = Wyślij na czat

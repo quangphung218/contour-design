@@ -705,9 +705,19 @@ impl StudioCtx {
         let seq = tools.lint_seq.get_value();
         leptos::task::spawn_local(async move {
             let url = format!("{}/lint/{}", self.base(), api::file_path(&path));
-            let res = api::get::<LintResponse>(&url)
-                .await
-                .map_err(|e| tf(T::LintFailed, &[&self.failed(&e)]));
+            // The daemon's reason, in the user's words: no status, no
+            // "daemon" (QA-083); a project deleted elsewhere says so.
+            let res = api::get::<LintResponse>(&url).await.map_err(|e| {
+                let gone = self.failed(&e);
+                tf(
+                    T::LintFailed,
+                    &[if e.project_missing() {
+                        &gone
+                    } else {
+                        &e.message
+                    }],
+                )
+            });
             // A reload may start a new lint before this one answers, and
             // leaving the Studio disposes the tools (`try_`: no panic).
             if tools.lint_seq.try_get_value() == Some(seq) {
@@ -762,35 +772,39 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
         }
     };
     let lint_badge = move || {
-        let counts = tools.lint.with(|l| match l {
-            Some(Ok(r)) => Some((
-                r.findings.len(),
-                r.findings.iter().any(|f| f.severity == LintSeverity::P0),
-            )),
-            _ => None,
-        });
-        counts.map(|(n, p0)| {
-            let label = if n == 0 {
-                t(T::LintClean).to_owned()
-            } else {
-                tf(T::LintBadge, &[&n.to_string()])
-            };
-            view! {
-                <button
-                    class="btn small ghost lint-badge"
-                    class:p0=p0
-                    class:active=move || tools.tool.get() == Some(Tool::Lint)
-                    data-testid="lint-badge"
-                    data-count=n.to_string()
-                    aria-label=label.clone()
-                    data-tip=label
-                    data-tip-pos="left"
-                    on:click=move |_| ctx.toggle_tool(Tool::Lint)
-                >
-                    {icon(if n == 0 { Glyph::LintOk } else { Glyph::Warning })}
-                    {(n > 0).then(|| view! { <span class="lint-count">{n}</span> })}
-                </button>
+        // A lint that could not run keeps its button, which opens the
+        // panel's error and retry (QA-083); it has no count.
+        let (label, count, p0) = tools.lint.with(|l| match l {
+            Some(Ok(r)) => {
+                let n = r.findings.len();
+                let label = if n == 0 {
+                    t(T::LintClean).to_owned()
+                } else {
+                    tf(T::LintBadge, &[&n.to_string()])
+                };
+                let p0 = r.findings.iter().any(|f| f.severity == LintSeverity::P0);
+                Some((label, Some(n), p0))
             }
+            Some(Err(why)) => Some((why.clone(), None, true)),
+            None => None,
+        })?;
+        let n = count.unwrap_or(0);
+        Some(view! {
+            <button
+                class="btn small ghost lint-badge"
+                class:p0=p0
+                class:active=move || tools.tool.get() == Some(Tool::Lint)
+                data-testid="lint-badge"
+                data-count=count.map(|n| n.to_string())
+                data-failed=count.is_none().then_some("true")
+                aria-label=label.clone()
+                data-tip=label
+                data-tip-pos="left"
+                on:click=move |_| ctx.toggle_tool(Tool::Lint)
+            >
+                {icon(if count == Some(0) { Glyph::LintOk } else { Glyph::Warning })}
+                {(n > 0).then(|| view! { <span class="lint-count">{n}</span> })}
+            </button>
         })
     };
     let palette_tip = move || {
@@ -1098,7 +1112,20 @@ fn LintPanel(ctx: StudioCtx) -> impl IntoView {
     let tools = ctx.tools;
     let body = move || match tools.lint.get() {
         None => view! { <p class="empty small">{t(T::Loading)}</p> }.into_any(),
-        Some(Err(e)) => view! { <p class="error-text small">{e}</p> }.into_any(),
+        Some(Err(e)) => view! {
+            <div role="alert">
+                <p class="error-text small">{e}</p>
+                <button class="btn small" data-testid="lint-retry" on:click=move |_| {
+                    if let Some(path) = ctx.active().filter(|p| is_html_path(p)) {
+                        tools.lint.set(None);
+                        ctx.refresh_lint(path);
+                    }
+                }>
+                    {icon(Glyph::Restore)}{t(T::NextRetry)}
+                </button>
+            </div>
+        }
+        .into_any(),
         Some(Ok(r)) if r.findings.is_empty() => view! {
             <div class="empty-state compact">
                 <span class="empty-icon ok">{icon(Glyph::LintOk)}</span>

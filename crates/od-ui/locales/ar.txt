@@ -1144,6 +1144,7 @@ Undo = تراجع
 Redo = إعادة
 SketchToChat = إرسال إلى المحادثة
 SketchAttached = {0} يُرسل مع الرسالة التالية
+SketchReadFailed = تعذّرت قراءة هذا الرسم. لم يُكتب فوقه أي شيء.
 Screenshot = لقطة شاشة
 ScreenshotCopy = نسخ إلى الحافظة
 ScreenshotToChat = إرسال إلى المحادثة

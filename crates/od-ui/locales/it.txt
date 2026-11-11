@@ -1144,6 +1144,7 @@ Undo = Annulla
 Redo = Ripeti
 SketchToChat = Invia alla chat
 SketchAttached = {0} va con il prossimo messaggio
+SketchReadFailed = Impossibile leggere questo schizzo. Non è stato sovrascritto nulla.
 Screenshot = Screenshot
 ScreenshotCopy = Copia negli appunti
 ScreenshotToChat = Invia alla chat

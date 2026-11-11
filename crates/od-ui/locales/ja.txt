@@ -1144,6 +1144,7 @@ Undo = 元に戻す
 Redo = やり直す
 SketchToChat = チャットに送信
 SketchAttached = {0} は次のメッセージと一緒に送信されます
+SketchReadFailed = このスケッチを読み込めませんでした。上書きはされていません。
 Screenshot = スクリーンショット
 ScreenshotCopy = クリップボードにコピー
 ScreenshotToChat = チャットに送信

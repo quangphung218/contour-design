@@ -1144,6 +1144,7 @@ Undo = Скасувати
 Redo = Повторити
 SketchToChat = Надіслати в чат
 SketchAttached = {0} піде з наступним повідомленням
+SketchReadFailed = Не вдалося прочитати цей ескіз. Нічого не перезаписано.
 Screenshot = Знімок екрана
 ScreenshotCopy = Копіювати в буфер обміну
 ScreenshotToChat = Надіслати в чат

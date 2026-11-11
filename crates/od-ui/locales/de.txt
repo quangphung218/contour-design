@@ -1144,6 +1144,7 @@ Undo = Rückgängig
 Redo = Wiederholen
 SketchToChat = An Chat senden
 SketchAttached = {0} geht mit der nächsten Nachricht mit
+SketchReadFailed = Dieser Sketch konnte nicht gelesen werden. Nichts wurde überschrieben.
 Screenshot = Screenshot
 ScreenshotCopy = In Zwischenablage kopieren
 ScreenshotToChat = An Chat senden

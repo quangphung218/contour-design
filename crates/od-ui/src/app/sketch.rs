@@ -61,6 +61,17 @@ pub fn new_sketch(ctx: StudioCtx, ui: FilesUi, dir: String) {
     });
 }
 
+/// The drawing in a sketch file's text, or why it cannot be read: a file
+/// cut short by a write in progress, or not a sketch. Shown blank, the
+/// next stroke would save over it (QA-084). An empty file holds nothing
+/// to lose and opens blank.
+fn read_sketch(text: &str) -> Result<SketchFile, String> {
+    if text.trim().is_empty() {
+        return Ok(SketchFile::blank());
+    }
+    serde_json::from_str(text).map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SaveState {
     Clean,
@@ -77,20 +88,38 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
     let pen = RwSignal::new(Pen::Free);
     let color = RwSignal::new(DRAW_COLORS[0]);
     let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
+    // On only once the file is read: it turns the autosave on.
     let loaded = RwSignal::new(false);
+    // Why the file could not be read (the reason, for the tooltip).
+    let read_error = RwSignal::new(None::<String>);
     let saved = RwSignal::new(SaveState::Clean);
     let busy = RwSignal::new(false);
     let size = StoredValue::new((SketchFile::WIDTH, SketchFile::HEIGHT));
     let path = StoredValue::new(path);
-    leptos::task::spawn_local(async move {
-        let file = match api::get_text(&raw_url(ctx, &path.get_value())).await {
-            Ok(text) => SketchFile::parse(&text),
-            Err(_) => SketchFile::blank(),
-        };
-        size.set_value((file.width.max(1), file.height.max(1)));
-        history.set(History::from_strokes(file.strokes));
-        loaded.set(true);
-    });
+    let load = move || {
+        read_error.set(None);
+        leptos::task::spawn_local(async move {
+            let Some(url) = path.try_get_value().map(|p| raw_url(ctx, &p)) else {
+                return;
+            };
+            let file = match api::get_text(&url).await {
+                Ok(text) => read_sketch(&text),
+                Err(e) => Err(ctx.failed(&e)),
+            };
+            // Leaving the file while it loads disposes the view (`try_`).
+            match file {
+                Ok(file) => {
+                    let _ = size.try_set_value((file.width.max(1), file.height.max(1)));
+                    let _ = history.try_set(History::from_strokes(file.strokes));
+                    let _ = loaded.try_set(true);
+                }
+                Err(why) => {
+                    let _ = read_error.try_set(Some(why));
+                }
+            }
+        });
+    };
+    load();
     // Saved a moment after the last change.
     let seq = StoredValue::new(0u32);
     Effect::new(move |first: Option<()>| {
@@ -185,11 +214,44 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
             </div>
             <div class="sketch-board">
                 <div class="sketch-paper" style=format!("aspect-ratio:{w}/{h}")>
-                    <Show when=move || loaded.get() fallback=|| view! { <div class="skeleton sketch-skeleton"></div> }>
+                    {move || read_error.get().map(|why| view! {
+                        <div class="sketch-error" role="alert" data-testid="sketch-read-error">
+                            <p class="error-text" title=why>{icon(Glyph::Warning)}{t(T::SketchReadFailed)}</p>
+                            <button class="btn small" data-testid="sketch-retry" on:click=move |_| load()>
+                                {icon(Glyph::Restore)}{t(T::NextRetry)}
+                            </button>
+                        </div>
+                    })}
+                    <Show when=move || loaded.get() fallback=move || read_error.with(Option::is_none).then(|| view! { <div class="skeleton sketch-skeleton"></div> })>
                         <DrawSurface history=history pen=pen color=color canvas_ref=canvas_ref size=size.get_value() class="sketch-canvas"/>
                     </Show>
                 </div>
             </div>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_sketch_is_read_with_its_strokes() {
+        let text = r##"{"version":1,"width":800,"height":600,"strokes":[{"pen":"free","color":"#000","points":[[1.0,2.0]]}]}"##;
+        let file = read_sketch(text).expect("a sketch");
+        assert_eq!((file.width, file.height, file.strokes.len()), (800, 600, 1));
+    }
+
+    #[test]
+    fn an_empty_file_opens_blank() {
+        assert_eq!(read_sketch(" \n"), Ok(SketchFile::blank()));
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_sketch_is_not_shown_blank() {
+        // Cut short by a write in progress, or another kind of file: blank,
+        // the next stroke would save over it (QA-084).
+        assert!(read_sketch(r#"{"version":1,"width":800,"strok"#).is_err());
+        assert!(read_sketch("<html>").is_err());
     }
 }
