@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Studio: in a project deleted from another tab, the preview, Files panel, Versions and side chat now close with the chat's "This project was deleted or the link is wrong.", as for a wrong link, and no toast or turn says "Not found: project not found (HTTP 404)", "Restore failed" or "Upload failed" (QA-079).
+- Studio: on a phone-width window, a project deleted from another tab while the Files or Preview tab is shown now switches to the Chat tab and its "This project was deleted or the link is wrong.", instead of leaving an empty screen.
 
 ## [0.2.0-beta.30] - 2026-11-11
 

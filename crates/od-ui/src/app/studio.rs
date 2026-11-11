@@ -1636,6 +1636,13 @@ pub fn Studio() -> impl IntoView {
             pane.set(NarrowPane::Preview);
         }
     });
+    // No project: its not-found state is in the chat pane, and the other
+    // two have nothing left to show (QA-079).
+    Effect::new(move |_| {
+        if ctx.load_gone.get() && pane.get_untracked() != NarrowPane::Chat {
+            pane.set(NarrowPane::Chat);
+        }
+    });
     let pick = move |p: NarrowPane| {
         match p {
             NarrowPane::Chat => ctx.chat.collapsed.set(false),
