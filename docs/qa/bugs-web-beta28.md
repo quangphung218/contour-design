@@ -23,9 +23,9 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 |---|---|---|
 | 🔴 | 0 | |
 | 🟠 | 1 | QA-074 |
-| 🟡 | 4 | QA-075, QA-076, QA-077, QA-079 |
+| 🟡 | 5 | QA-075, QA-076, QA-077, QA-079, QA-080 |
 | 🔵 | 1 | QA-078 |
-| **Total** | **6** | |
+| **Total** | **7** | |
 
 | ID | Sev | Bug | Test | Status |
 |---|---|---|---|---|
@@ -34,7 +34,8 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 | QA-076 | 🟡 | Sending in a project deleted from another tab says "Connection interrupted", "HTTP 404" and "check the agent in Settings" | `projects.qa.mjs` PRJ-13, PRJ-14, PRJ-15 | Closed (beta.30); the panels' part is QA-079 |
 | QA-077 | 🟡 | A failed Media generation shows the provider's raw JSON; a refused key (401) does not point to Providers | `library.qa.mjs` LIB-15, LIB-18 | Closed (beta.30) |
 | QA-078 | 🔵 | Images generated on the Media page are labelled "Uploaded" in the Library | `library.qa.mjs` LIB-16 | Closed (beta.30) |
-| QA-079 | 🟡 | A project deleted from another tab: the Files panel, Versions and side chat stay open beside the not-found state and show "Not found: project not found (HTTP 404)" | `projects.qa.mjs` PRJ-16, PRJ-17, PRJ-18 | Fixed |
+| QA-079 | 🟡 | A project deleted from another tab: the Files panel, Versions and side chat stay open beside the not-found state and show "Not found: project not found (HTTP 404)" | `projects.qa.mjs` PRJ-16…PRJ-20 | Closed (beta.31) |
+| QA-080 | 🟡 | On a phone, in a project that is gone (deleted elsewhere or a wrong link), the Files tab is an empty screen and Preview says "Nothing to preview yet" | `projects.qa.mjs` PRJ-21 | Open |
 
 ## Pass / fail by flow
 
@@ -112,6 +113,74 @@ Suites touched, run whole: projects 15/18 (3 known: QA-079), library
 ```sh
 QA_SKIP_BUILD=1 crates/od-ui/e2e/qa/run.sh projects   # likewise library, automations, export
 ```
+
+## Recheck on v0.2.0-beta.31 (2026-11-11)
+
+Built from the tag `v0.2.0-beta.31` (46949505): `trunk build` and
+`cargo build -p od-cli`, Chromium (Playwright) at 1360×860 and 390×844,
+the real `od` daemon with the mock agents. **QA-079 is closed: in a
+project deleted from another tab the preview, Files panel, Versions and
+side chat close beside the not-found state, and no text on the page says
+"HTTP 404", "Not found:", "Restore failed" or "Upload failed". One new
+🟡: on a phone, the Files tab picked again after that is an empty screen
+(QA-080).**
+
+| ID | Result | Evidence |
+|---|---|---|
+| QA-079 | Closed | PRJ-16, PRJ-17, PRJ-18 pass; PRJ-17 and PRJ-18 now also scan the whole `body.innerText` after `networkidle` (toasts sit outside `<main>`) and assert the preview, the side composer are gone. New PRJ-19 (phone, Preview tab) and PRJ-20 (chat folded at 1360, then 390, Files tab): the Studio switches to the Chat tab with the message, not an empty screen |
+| QA-080 | New, open | PRJ-21 red, `knownBug('QA-080')` |
+
+By hand (a probe, not kept): in a project deleted from another tab,
+Files ▸ New folder "thư mục mới", Memory ▸ Add "Màu chủ đạo xanh" and
+Export ▸ HTML each show only the not-found state; no "HTTP 404",
+"Not found:" or "… failed:" on the page.
+
+Suites touched, run whole: projects 20/21 (1 known: QA-080), library
+18/18, export 14/14, automations 7/7.
+
+```sh
+QA_SKIP_BUILD=1 crates/od-ui/e2e/qa/run.sh projects   # likewise library, export, automations
+```
+
+Test fixes on the way (the test's fault, not the app's): PRJ-20 first
+folded the chat before the Studio had loaded (the click hit the loading
+view); it now waits for the composer. `noRawNotFound` waits up to 30 s
+for `networkidle` in PRJ-14/19/20/21, because those tests hold the
+`/files` request open on purpose; the page itself goes quiet (one
+request in 5 s after the not-found state).
+
+## QA-080 🟡 On a phone, a gone project's Files tab is an empty screen
+
+Found while rechecking QA-079 on beta.31.
+
+**Steps**
+1. At 390×844, open a project; delete it from another tab (or open
+   `/projects/no-such-project`).
+2. The Studio switches to the Chat tab: "This project was deleted or the
+   link is wrong." with All projects (QA-079, fine).
+3. Tap **Files**, then **Preview**, as a user looking for their work would.
+
+**Expected**: the user is never left on a blank screen: Files and Preview
+are hidden or off while the project is gone, or each shows the same
+not-found message with All projects.
+**Actual**: Files is an empty pane under the tab switch, with nothing to
+read or press; Preview says "Nothing to preview yet", as if the agent had
+not built the page. The way back is only the Chat tab. The same happens
+for a wrong link.
+
+![Files tab](web-beta31/qa080-phone-files-tab.png)
+![Preview tab](web-beta31/qa080-phone-preview-tab.png)
+
+**Cause**: when `load_gone` is set, `Studio` (`crates/od-ui/src/app/studio.rs:1693`)
+renders a workspace with only `PreviewEmpty` and no Files panel; the
+switch keeps all three tabs live, and on `data-pane="files"` the CSS
+hides `.preview` (`styles/app.css:1268`), so nothing is left. The effect
+at `studio.rs:1641` moves to Chat only when `load_gone` turns on, not on
+a later tap. **Fix**: while `load_gone`, hide or disable the Preview and
+Files segments (or have `pick` keep Chat), or render the not-found card
+in the fallback workspace.
+
+**Test**: `projects.qa.mjs` PRJ-21 (`knownBug('QA-080')`).
 
 ## QA-079 🟡 A project deleted from another tab: the side panels show "Not found … (HTTP 404)"
 
