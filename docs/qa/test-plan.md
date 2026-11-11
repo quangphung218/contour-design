@@ -143,6 +143,7 @@ Goal: the user takes the design out of Contour.
 | EXP-12 | The Export menu lists what applies, grouped | A page open | Open Export, unfold Image and PowerPoint | No greyed formats; no Markdown or JSX for a page; "MP4 video"; Image ▸ PNG, JPEG, WebP; PowerPoint ▸ Slides as images, Editable text | P2 | auto |
 | EXP-13 | Every format offered for a plain page works | A page, not a deck, Chrome | Export ▸ PowerPoint (both), MP4 | Each offered item gives a file; one that does not apply is not offered | P1 | auto (QA-031) |
 | EXP-14 | Back in the Studio during an MP4 export, the export still shows | A Motion film, Chrome | Export ▸ MP4, Projects, Back | The running export is shown; a second press does not render again | P1 | auto (QA-075) |
+| EXP-15 | An MP4 export, then the Studio left for good | A Motion film, Chrome | Export ▸ MP4, Projects, stay there | One `.mp4` download arrives on Projects; the user is not pulled back | P1 | auto (QA-075) |
 
 ## 6. Manage projects (`projects.qa.mjs`)
 
@@ -165,7 +166,9 @@ Goal: the user finds, renames, copies, removes and brings in projects.
 | PRJ-13 | Sending in a project deleted from another tab | Project open in tab A, deleted elsewhere | Send a message in tab A | "This project was deleted…" with All projects; no "Reconnecting", no HTTP 404, no agent Settings hint | P1 | auto (QA-076) |
 | PRJ-14 | A project deleted from another tab while its Studio is open | Project open in tab A, deleted elsewhere | Wait, no send | "This project was deleted…" within seconds; no "Reconnecting"; composer off | P1 | auto (QA-076) |
 | PRJ-15 | Attaching a file to a project deleted from another tab | Project open in tab A, deleted elsewhere | Attach a file in the composer | "This project was deleted…"; composer off | P1 | auto (QA-076) |
-| PRJ-16 | Uploading in the Files panel of a project deleted from another tab | Project open in tab A, deleted elsewhere | Upload a file in the Files panel | "This project was deleted…"; composer off | P1 | auto (QA-076) |
+| PRJ-16 | Uploading in the Files panel of a project deleted from another tab | Project open in tab A, deleted elsewhere | Upload a file in the Files panel | "This project was deleted…"; composer off; no bare "Not found … (HTTP 404)" anywhere | P1 | auto (QA-076, QA-079) |
+| PRJ-17 | Restoring a version in a project deleted from another tab | Project with two versions open in tab A, History open, deleted elsewhere | Restore v1 | "This project was deleted…"; no "Restore failed: Not found … (HTTP 404)" | P1 | auto (QA-079) |
+| PRJ-18 | Asking in the side chat of a project deleted from another tab | Project open in tab A, Side chat tab, deleted elsewhere | Send "tiêu đề có to quá không? 🤔" | "This project was deleted…"; no bare HTTP 404 turn | P1 | auto (QA-079) |
 
 ## 7. Library (`library.qa.mjs`)
 
@@ -188,7 +191,8 @@ and media.
 | LIB-12 | Design system search reads what the page shows | — | Search "coral", then "curated" | Airbnb found; the package note matches nothing | P2 | auto |
 | LIB-13 | Skills say what they make | — | Plugins ▸ Skills, open faq-page | No "Use when…" text for the agent | P2 | auto |
 | LIB-14 | Media and Templates labels, Generate tab | No provider key | Media, Generate tab, Templates | "Audio", no second Generate button, selects with arrows, a Set up providers button | P3 | auto |
-| LIB-15 | A failed image generation is explained in words | Provider answering 500, then 401 | Generate | No raw JSON; the 401 offers a way to Providers | P1 | auto (QA-077) |
+| LIB-15 | A failed image generation is explained in words | OpenAI answering 500, then 401 | Generate | No raw JSON; both name OpenAI and the reason; the 401 has Set up providers, which opens the OpenAI key | P1 | auto (QA-077) |
+| LIB-18 | A key refused by fal.ai | fal.ai key and a base URL answering 401 `{"detail": …}` | Generate with flux-dev (fal) | "fal.ai returned an error: <reason>", no raw JSON or `fal submit 401`; Set up providers opens the fal.ai key | P1 | auto (QA-077) |
 | LIB-16 | A generated image is not labelled Uploaded | A provider | Generate, open Library | The card does not say "Uploaded" | P3 | auto (QA-078) |
 | LIB-11 | Skills: a user skill overrides a bundled one | — | Create skill with a bundled id | Override notice shown | P2 | exist (library) |
 
