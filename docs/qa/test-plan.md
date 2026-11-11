@@ -554,7 +554,7 @@ last. Bugs: [bugs-web-failures.md](bugs-web-failures.md).
 | FAIL-12 | Duplicate not made | Studio | Duplicate while `POST …/duplicate` fails; again | Stays on the project with a plain message, no copy; the second opens the copy | P1 | auto (QA-081) |
 | FAIL-13 | Duplicate of a deleted project | Deleted in another tab as Duplicate goes | Duplicate | The not-found state, no copy made | P1 | auto |
 | FAIL-14 | Transcript export failed | One finished turn | Export ▸ Markdown while `…/transcript` fails; again | Plain message; the second downloads `conversation-….md` | P2 | auto (QA-081) |
-| FAIL-15 | Markdown could not be read | Project with `notes.md` | Open it while its read fails once; Retry | Plain message with Retry, no editor; Retry shows the text, the file unchanged | P1 | auto |
+| FAIL-15 | Markdown could not be read | Project with `notes.md` | Open it while its read fails once; Retry; Reload preview while the read fails | Plain message with Retry, no editor; Retry shows the text, the file unchanged; a failed reload keeps the text, no message | P1 | auto |
 
 Run: `QA_SKIP_BUILD=1 crates/od-ui/e2e/qa/run.sh failures` (~40 s).
 
