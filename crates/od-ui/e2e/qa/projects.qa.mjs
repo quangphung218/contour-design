@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, existsSync, readFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test, run, createProject, listProjects, listFiles, until, zip, writeFile } from './lib.mjs';
+import { test, run, createProject, listProjects, listFiles, until, zip, writeFile, sleep } from './lib.mjs';
 
 const card = (page, name) => page.getByTestId('project-card').filter({ has: page.locator('a.project-name', { hasText: name }) });
 const cardOf = (page, id) => page.locator(`[data-testid="project-card"][data-project="${id}"]`);
@@ -396,6 +396,16 @@ test('PRJ-21', 'On a phone, after a project deleted from another tab says so, th
   }
   // The fix keeps the tabs off; the pane never left Chat.
   assert.equal(await page.getByTestId('pane-chat').getAttribute('aria-checked'), 'true', 'the phone Studio left the Chat tab');
+  // Opening a file another way (quick switcher; chat file links and the
+  // palette take the same path) must not move the phone to Preview either.
+  await page.keyboard.press('ControlOrMeta+p');
+  const sw = page.locator('.switcher-path', { hasText: /^index\.html$/ }).first();
+  if (await sw.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await sw.click();
+    await sleep(300);
+    assert.equal(await page.getByTestId('pane-chat').getAttribute('aria-checked'), 'true', 'opening a file moved the phone off the Chat tab');
+    assert.ok(await message.isVisible(), 'after opening a file the not-found message is not on screen');
+  }
   await noRawNotFound(page);
 });
 
