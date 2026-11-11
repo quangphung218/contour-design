@@ -23,17 +23,18 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 |---|---|---|
 | 🔴 | 0 | |
 | 🟠 | 1 | QA-074 |
-| 🟡 | 3 | QA-075, QA-076, QA-077 |
+| 🟡 | 4 | QA-075, QA-076, QA-077, QA-079 |
 | 🔵 | 1 | QA-078 |
-| **Total** | **5** | |
+| **Total** | **6** | |
 
 | ID | Sev | Bug | Test | Status |
 |---|---|---|---|---|
-| QA-074 | 🟠 | Add routine pressed twice saves two identical routines; each runs on the schedule | `automations.qa.mjs` AUT-07 | Fixed |
-| QA-075 | 🟡 | Back in the Studio during an MP4 export, nothing says it is still exporting; a second press renders and downloads it again | `export.qa.mjs` EXP-14 | Fixed |
-| QA-076 | 🟡 | Sending in a project deleted from another tab says "Connection interrupted", "HTTP 404" and "check the agent in Settings" | `projects.qa.mjs` PRJ-13, PRJ-14 | Fixed |
-| QA-077 | 🟡 | A failed Media generation shows the provider's raw JSON; a refused key (401) does not point to Providers | `library.qa.mjs` LIB-15 | Fixed |
-| QA-078 | 🔵 | Images generated on the Media page are labelled "Uploaded" in the Library | `library.qa.mjs` LIB-16 | Fixed |
+| QA-074 | 🟠 | Add routine pressed twice saves two identical routines; each runs on the schedule | `automations.qa.mjs` AUT-07 | Closed (beta.30) |
+| QA-075 | 🟡 | Back in the Studio during an MP4 export, nothing says it is still exporting; a second press renders and downloads it again | `export.qa.mjs` EXP-14, EXP-15 | Closed (beta.30) |
+| QA-076 | 🟡 | Sending in a project deleted from another tab says "Connection interrupted", "HTTP 404" and "check the agent in Settings" | `projects.qa.mjs` PRJ-13, PRJ-14, PRJ-15 | Closed (beta.30); the panels' part is QA-079 |
+| QA-077 | 🟡 | A failed Media generation shows the provider's raw JSON; a refused key (401) does not point to Providers | `library.qa.mjs` LIB-15, LIB-18 | Closed (beta.30) |
+| QA-078 | 🔵 | Images generated on the Media page are labelled "Uploaded" in the Library | `library.qa.mjs` LIB-16 | Closed (beta.30) |
+| QA-079 | 🟡 | A project deleted from another tab: the Files panel, Versions and side chat stay open beside the not-found state and show "Not found: project not found (HTTP 404)" | `projects.qa.mjs` PRJ-16, PRJ-17, PRJ-18 | Open (beta.30) |
 
 ## Pass / fail by flow
 
@@ -87,6 +88,69 @@ Media used a loopback stand-in for OpenAI Images (the one in LIB-15:
 from `od media scaffold --duration 3`. Network loss was simulated by
 aborting `/api/` requests in the browser. The owner's Contour and its data
 were not touched.
+
+## Recheck on v0.2.0-beta.30 (2026-11-11)
+
+Built from the tag `v0.2.0-beta.30` (20a83e5b): `trunk build` and
+`cargo build -p od-cli`, Chromium (Playwright) at 1360×860, the real `od`
+daemon with the mock agents and loopback stand-ins for OpenAI Images and
+fal's queue. **Four of five closed; QA-076 is closed for the chat, the
+stream and the composer, but the side panels still show the bare 404:
+filed as QA-079.**
+
+| ID | Result | Evidence |
+|---|---|---|
+| QA-074 | Closed | AUT-07 passes: Add double-clicked, one routine |
+| QA-075 | Closed | EXP-14 now also asserts "Exported" and one `.mp4` download (one render); new EXP-15: left for good, the file arrives once on Projects |
+| QA-076 | Closed (chat) | PRJ-13, PRJ-14, PRJ-15 pass: send, idle stream and composer attachment switch to "This project was deleted or the link is wrong."; Files panel, Versions and side chat also switch, but see QA-079 |
+| QA-077 | Closed | LIB-15 now asserts the 401 names OpenAI and has **Set up providers**, which opens the OpenAI key; new LIB-18: fal.ai answering 401 `{"detail": …}` reads "fal.ai returned an error: Invalid key: …", no raw JSON or `fal submit 401`, Set up providers opens the fal.ai key |
+| QA-078 | Closed | LIB-16 passes: a generated image says "Generated", an upload "Uploaded" |
+
+Suites touched, run whole: projects 15/18 (3 known: QA-079), library
+18/18, automations 7/7, export 14/14.
+
+```sh
+QA_SKIP_BUILD=1 crates/od-ui/e2e/qa/run.sh projects   # likewise library, automations, export
+```
+
+## QA-079 🟡 A project deleted from another tab: the side panels show "Not found … (HTTP 404)"
+
+Found while rechecking QA-076 on beta.30.
+
+**Steps**
+1. Open a project in tab A; open History (or the Side chat tab).
+2. Delete the project in another tab (`DELETE /api/projects/:id`).
+3. In tab A: Restore v1 in History, or ask in the side chat, or upload in
+   the Files panel.
+
+**Expected**: the Studio's not-found state as STU-12, and nothing else that
+reads as a fault of Contour: no bare 404, no panel still offering Restore
+or a side composer for a project that no longer exists.
+**Actual**: the chat pane switches to "This project was deleted or the link
+is wrong." with All projects, but the right side stays as it was: the
+History panel with Restore buttons and a toast "Restore failed: Not found:
+project not found (HTTP 404)"; the side chat with its composer and the turn
+"Not found: project not found (HTTP 404)"; the Files panel's toast "Upload
+failed: Not found: project not found (HTTP 404)". The preview of the
+deleted page also stays.
+
+![History restore](web-beta30/qa079-versions-restore.png)
+![Side chat](web-beta30/qa079-side-chat.png)
+![Files panel upload](web-beta30/qa079-files-upload.png)
+
+**Cause**: `StudioCtx::failed` (`crates/od-ui/src/app/studio.rs:1313`)
+probes the project but still returns `e.to_string()`, which every caller
+shows; and only `chat_view.rs` reads `load_gone`, so the workspace
+(preview, Files, Versions, side chat) is never told. **Fix**: when
+`load_gone` is set, close or empty the workspace pane as for a wrong link,
+and have `failed` return the ProjectGone text (or nothing) on a 404 for the
+project. Same pattern at every `ctx.failed(&e)` site (92a9fcd1): files
+panel, versions, side chat, memory, Design Jury, transcript export,
+comments, manual edits, lint, sketches, GenUI, duplicate, export toast;
+only the three above are covered by a test.
+
+**Test**: `projects.qa.mjs` PRJ-16 (now also asserts no bare 404),
+PRJ-17, PRJ-18, all `knownBug: 'QA-079'`.
 
 ## QA-074 🟠 Add routine pressed twice saves two identical routines
 
