@@ -5,7 +5,7 @@
 use super::api;
 use super::bridge;
 use super::studio::StudioCtx;
-use crate::i18n::{T, t, tf};
+use crate::i18n::{T, t};
 use crate::preview_bridge as pb;
 use leptos::prelude::*;
 use od_contracts::{
@@ -56,7 +56,7 @@ fn add_comment(
                 ctx.comments.update(|c| c.push(r.comment));
                 ctx.comment_draft.set(None);
             }
-            Err(e) => error.set(Some(tf(T::CommentFailed, &[&ctx.failed(&e)]))),
+            Err(e) => error.set(Some(ctx.failed_to(T::CommentFailed, &e))),
         }
         busy.set(false);
     });

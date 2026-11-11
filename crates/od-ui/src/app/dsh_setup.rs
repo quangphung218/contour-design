@@ -134,7 +134,7 @@ pub fn DshSetupDialog(
                 }
                 Err(e) => state.set(Some(SetupState {
                     busy: false,
-                    error: Some(e.message),
+                    error: Some(e.to_string()),
                 })),
             }
         });

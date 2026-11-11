@@ -237,9 +237,28 @@ messages! {
     ErrNotFound => "Not found", "Không tìm thấy";
     ErrConflict => "Conflicts with a change in progress", "Đang vướng một thay đổi khác";
     ErrTooLarge => "Too large", "Dữ liệu quá lớn";
-    ErrServer => "The daemon hit an error", "Daemon bị lỗi";
+    ErrServer => "Contour could not finish this. Try again.", "Contour chưa làm được việc này. Thử lại nhé.";
     ErrNoWritePermission => "No permission to write", "Không có quyền ghi";
     ErrStorageFull => "Disk full", "Ổ đĩa đã đầy";
+    // What was not done, then why ({0}); an internal failure ends the
+    // sentence with "Try again." instead (`api::failure`, QA-081).
+    JuryOnFailed => "Could not turn on the Design Jury: {0}", "Không bật được Design Jury: {0}";
+    JuryOffFailed => "Could not turn off the Design Jury: {0}", "Không tắt được Design Jury: {0}";
+    JuryStopFailed => "Could not stop the Design Jury: {0}", "Không dừng được Design Jury: {0}";
+    DuplicateFailed => "Could not duplicate the project: {0}", "Không nhân bản được project: {0}";
+    TranscriptFailed => "Could not download the conversation: {0}", "Không tải được cuộc trò chuyện: {0}";
+    SessionModeFailed => "Could not change the mode: {0}", "Không đổi được chế độ: {0}";
+    MemoryFailed => "Could not update the memory: {0}", "Không cập nhật được bộ nhớ: {0}";
+    FileCreateFailed => "Could not create the file: {0}", "Không tạo được file: {0}";
+    FolderCreateFailed => "Could not create the folder: {0}", "Không tạo được thư mục: {0}";
+    RenameFailed => "Could not rename: {0}", "Không đổi tên được: {0}";
+    MoveFailed => "Could not move: {0}", "Không chuyển được: {0}";
+    DeleteFailed => "Could not delete: {0}", "Không xoá được: {0}";
+    DownloadFailed => "Could not download: {0}", "Không tải xuống được: {0}";
+    CopyPathFailed => "Could not copy the path: {0}", "Không chép được đường dẫn: {0}";
+    ManualApplyFailed => "The edit was not applied: {0}", "Chỉnh sửa chưa được áp dụng: {0}";
+    MessageFailed => "Could not send the message: {0}", "Không gửi được tin nhắn: {0}";
+    ManualReadFailed => "Could not read this element from the source: {0}", "Không đọc được phần tử này từ source: {0}";
 
     // Home
     HomeTitle => "What do you want to design?", "Hôm nay thiết kế gì?";
