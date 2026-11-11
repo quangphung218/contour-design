@@ -661,8 +661,7 @@ impl StudioCtx {
                     tools.saved(&r.file.path, r.version.version);
                 }
                 Err(e) => {
-                    self.on_not_found(e.status);
-                    tools.note(tf(T::SaveFailed, &[&e.message]));
+                    tools.note(self.failed_to(T::SaveFailed, &e));
                     if !styles {
                         self.reload_preview();
                     }

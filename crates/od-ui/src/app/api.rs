@@ -24,6 +24,38 @@ impl HttpError {
     pub fn project_missing(&self) -> bool {
         self.status == 404 && self.code == Some(ErrorCode::ProjectNotFound)
     }
+
+    /// The daemon failed on its own side ("database is locked", an I/O
+    /// error): its words give the user nothing to act on (QA-081/082), so
+    /// they go to the console and the user reads "try again".
+    #[must_use]
+    pub fn internal(&self) -> bool {
+        match self.code {
+            Some(code) => code == ErrorCode::InternalError,
+            None => self.status >= 500,
+        }
+    }
+}
+
+/// `template` ("Could not save the comment: {0}") filled with what went
+/// wrong. An internal failure has no cause worth showing: the sentence
+/// stops before it and says to try again ("Could not save the comment.
+/// Try again."). Never an HTTP status, never "daemon" (QA-081).
+#[must_use]
+pub fn failure_text(template: &str, e: &HttpError) -> String {
+    if e.internal() {
+        let head = template.replace("{0}", "");
+        let head = head.trim_end_matches([':', '：', ' ', '.']);
+        format!("{head}. {}.", t(Msg::TryAgain))
+    } else {
+        template.replace("{0}", &e.to_string())
+    }
+}
+
+/// [`failure_text`] for an i18n template.
+#[must_use]
+pub fn failure(key: Msg, e: &HttpError) -> String {
+    failure_text(t(key), e)
 }
 
 impl fmt::Display for HttpError {
@@ -32,10 +64,17 @@ impl fmt::Display for HttpError {
         if let Some(hint) = self.code.and_then(code_hint) {
             return write!(f, "{}: {}", t(hint), self.message);
         }
-        match (self.status, status_hint(self.status)) {
-            (0, _) => write!(f, "{}", self.message),
-            (status, Some(hint)) => write!(f, "{}: {} (HTTP {status})", t(hint), self.message),
-            (status, None) => write!(f, "{} (HTTP {status})", self.message),
+        // The status and the daemon's own words for an internal failure
+        // are in the console (`error_of`), not in front of the user.
+        if self.status == 0 {
+            return write!(f, "{}", self.message);
+        }
+        if self.internal() {
+            return write!(f, "{}", t(Msg::ErrServer));
+        }
+        match status_hint(self.status) {
+            Some(hint) => write!(f, "{}: {}", t(hint), self.message),
+            None => write!(f, "{}", self.message),
         }
     }
 }
@@ -49,7 +88,6 @@ fn status_hint(status: u16) -> Option<Msg> {
         404 => Msg::ErrNotFound,
         409 => Msg::ErrConflict,
         413 => Msg::ErrTooLarge,
-        500..=599 => Msg::ErrServer,
         _ => return None,
     })
 }
@@ -80,7 +118,7 @@ fn network(e: gloo_net::Error) -> HttpError {
     }
 }
 
-async fn error_of(res: Response) -> HttpError {
+pub(crate) async fn error_of(res: Response) -> HttpError {
     let status = res.status();
     let body = res.text().await.unwrap_or_default();
     let (code, message) = serde_json::from_str::<ApiErrorResponse>(&body)
@@ -93,6 +131,9 @@ async fn error_of(res: Response) -> HttpError {
             };
             (None, text)
         });
+    // The status and the daemon's own words, for whoever debugs it; the
+    // user reads `Display` (QA-081).
+    leptos::logging::warn!("request failed: HTTP {status} {code:?}: {message}");
     HttpError {
         status,
         code,
@@ -225,13 +266,79 @@ mod tests {
             code: None,
             message: "project p1 not found".to_owned(),
         };
-        assert_eq!(
-            e(404).to_string(),
-            "Not found: project p1 not found (HTTP 404)"
-        );
-        assert_eq!(status_hint(503), Some(Msg::ErrServer));
-        assert_eq!(e(418).to_string(), "project p1 not found (HTTP 418)");
+        assert_eq!(e(404).to_string(), "Not found: project p1 not found");
+        assert_eq!(e(418).to_string(), "project p1 not found");
         assert_eq!(e(0).to_string(), "project p1 not found");
+    }
+
+    /// The daemon's 500 as the e2e plays it (`failures.qa.mjs`).
+    fn locked() -> HttpError {
+        HttpError {
+            status: 500,
+            code: Some(ErrorCode::InternalError),
+            message: "database is locked".to_owned(),
+        }
+    }
+
+    #[test]
+    fn an_internal_failure_hides_the_status_and_the_daemons_words() {
+        let shown = locked().to_string();
+        assert_eq!(shown, t(Msg::ErrServer));
+        for raw in ["HTTP", "500", "daemon", "database is locked"] {
+            assert!(!shown.contains(raw), "{raw} in {shown}");
+        }
+        // A 5xx with no JSON body (a proxy, a crash) reads the same.
+        let bare = HttpError {
+            status: 502,
+            code: None,
+            message: "<html>Bad Gateway</html>".to_owned(),
+        };
+        assert!(bare.internal());
+        assert_eq!(bare.to_string(), shown);
+        // A 5xx whose code says what to do keeps its message, no status.
+        let chrome = HttpError {
+            status: 503,
+            code: Some(ErrorCode::UpstreamUnavailable),
+            message: "Chrome is not installed.".to_owned(),
+        };
+        assert!(!chrome.internal());
+        assert_eq!(chrome.to_string(), "Chrome is not installed.");
+    }
+
+    #[test]
+    fn a_failure_says_what_was_not_done_then_why_or_try_again() {
+        let template = "Could not save the comment: {0}";
+        assert_eq!(
+            failure_text(template, &locked()),
+            "Could not save the comment. Try again."
+        );
+        let missing = HttpError {
+            status: 404,
+            code: Some(ErrorCode::FileNotFound),
+            message: "index.html".to_owned(),
+        };
+        assert_eq!(
+            failure_text(template, &missing),
+            "Could not save the comment: Not found: index.html"
+        );
+        let offline = HttpError {
+            status: 0,
+            code: None,
+            message: t(Msg::DaemonUnreachable).to_owned(),
+        };
+        assert_eq!(
+            failure_text(template, &offline),
+            format!("Could not save the comment: {}", t(Msg::DaemonUnreachable))
+        );
+        // A template whose reason is mid-sentence or ends with a stop.
+        assert_eq!(
+            failure_text("The edit was not applied: {0}.", &locked()),
+            "The edit was not applied. Try again."
+        );
+        assert_eq!(
+            failure(Msg::CommentFailed, &locked()),
+            "Could not save the comment. Try again."
+        );
     }
 
     #[test]
@@ -258,10 +365,10 @@ mod tests {
         )
         .to_string();
         assert!(!full.contains("HTTP") && !full.contains("daemon"), "{full}");
-        // Other codes keep the status hint.
+        // Other codes keep the status hint, without the status.
         assert_eq!(
             e(404, ErrorCode::NotFound, "gone").to_string(),
-            "Not found: gone (HTTP 404)"
+            "Not found: gone"
         );
     }
 

@@ -650,7 +650,7 @@ impl StudioCtx {
                     self.hold_queue(QueueHold::LinkLost);
                 }
                 Err(e) => {
-                    fail(turn, e.to_string());
+                    fail(turn, api::failure(T::MessageFailed, &e));
                     self.live_run.set(None);
                     // A held queue waits for the user's Send, whatever
                     // happened to a message sent past it (UI-003).
@@ -1318,6 +1318,17 @@ impl StudioCtx {
             t(T::ProjectGone).to_owned()
         } else {
             e.to_string()
+        }
+    }
+
+    /// [`Self::failed`] that says what was not done: `key` is a template
+    /// such as "Could not save the comment: {0}" (see [`api::failure`]).
+    pub fn failed_to(self, key: T, e: &api::HttpError) -> String {
+        self.on_not_found(e.status);
+        if e.project_missing() {
+            t(T::ProjectGone).to_owned()
+        } else {
+            api::failure(key, e)
         }
     }
 

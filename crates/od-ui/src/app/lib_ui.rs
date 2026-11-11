@@ -174,12 +174,8 @@ pub async fn upload<T: DeserializeOwned>(path: &str, files: &[web_sys::File]) ->
         .await
         .map_err(|e| e.to_string())?;
     if !res.ok() {
-        let status = res.status();
-        let body = res.text().await.unwrap_or_default();
-        let message = serde_json::from_str::<od_contracts::ApiErrorResponse>(&body)
-            .map(|e| e.error.message)
-            .unwrap_or(body);
-        return Err(format!("{message} (HTTP {status})"));
+        // The same words as every other call: no status (QA-081).
+        return Err(super::api::error_of(res).await.to_string());
     }
     res.json::<T>().await.map_err(|e| e.to_string())
 }
