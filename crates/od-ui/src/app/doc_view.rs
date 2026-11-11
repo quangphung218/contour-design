@@ -135,6 +135,8 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
                 text.set(body);
                 loaded.set(true);
             }
+            // A later read that worked clears an earlier one's error.
+            let _ = read_error.try_set(None);
         });
     };
     // Load, and reload when the file changes on disk (the agent wrote it)

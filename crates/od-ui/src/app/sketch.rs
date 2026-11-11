@@ -112,10 +112,14 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
                     let _ = size.try_set_value((file.width.max(1), file.height.max(1)));
                     let _ = history.try_set(History::from_strokes(file.strokes));
                     let _ = loaded.try_set(true);
+                    let _ = read_error.try_set(None);
                 }
-                Err(why) => {
+                // A drawing already on screen stays; only a sketch that
+                // never loaded shows the error.
+                Err(why) if !loaded.try_get_untracked().unwrap_or(true) => {
                     let _ = read_error.try_set(Some(why));
                 }
+                Err(_) => {}
             }
         });
     };
