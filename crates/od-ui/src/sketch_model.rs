@@ -126,12 +126,6 @@ impl SketchFile {
             strokes: Vec::new(),
         }
     }
-
-    /// Reads a sketch; anything unreadable is a blank one.
-    #[must_use]
-    pub fn parse(text: &str) -> Self {
-        serde_json::from_str(text).unwrap_or_else(|_| Self::blank())
-    }
 }
 
 /// The PNG saved next to a sketch: `a/b.sketch.json` → `a/b.png`.
@@ -189,8 +183,7 @@ mod tests {
         });
         let text = serde_json::to_string(&s).unwrap();
         assert!(text.contains(r#""pen":"text""#), "{text}");
-        assert_eq!(SketchFile::parse(&text), s);
-        assert_eq!(SketchFile::parse("not json"), SketchFile::blank());
+        assert_eq!(serde_json::from_str::<SketchFile>(&text).unwrap(), s);
         assert_eq!(png_path("sketches/a.sketch.json"), "sketches/a.png");
     }
 }

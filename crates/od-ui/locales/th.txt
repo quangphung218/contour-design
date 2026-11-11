@@ -1145,6 +1145,7 @@ MdPlaceholder = บันทึก ข้อกำหนด หรือคำ�
 MdAutoSaveOn = เปิดบันทึกอัตโนมัติ
 MdAutoSaved = บันทึกอัตโนมัติเมื่อ {0}
 MdSaveFailed = บันทึกไม่สำเร็จ: {0}
+MdReadFailed = อ่านเอกสารนี้ไม่ได้ ยังไม่มีอะไรถูกเขียนทับ
 Saving = กำลังบันทึก…
 PreviewUnavailable = ไม่มีตัวอย่างสำหรับไฟล์นี้
 PreviewUnavailableHint = ดาวน์โหลดหรือเปิดในแท็บใหม่เพื่อดูข้างใน

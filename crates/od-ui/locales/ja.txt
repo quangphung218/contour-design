@@ -1145,6 +1145,7 @@ MdPlaceholder = このドキュメントのメモ、要件、指示…
 MdAutoSaveOn = 自動保存オン
 MdAutoSaved = {0} に自動保存しました
 MdSaveFailed = 保存に失敗しました: {0}
+MdReadFailed = このドキュメントを読み込めませんでした。上書きはされていません。
 Saving = 保存中…
 PreviewUnavailable = このファイルはプレビューできません
 PreviewUnavailableHint = ダウンロードするか、新しいタブで開いて中身を確認してください。

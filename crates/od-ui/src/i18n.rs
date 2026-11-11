@@ -1381,6 +1381,7 @@ messages! {
     MdAutoSaveOn => "Auto-save on", "Đang bật tự lưu";
     MdAutoSaved => "Auto-saved at {0}", "Đã tự lưu lúc {0}";
     MdSaveFailed => "Save failed: {0}", "Lưu không thành công: {0}";
+    MdReadFailed => "Could not read this document. Nothing was saved over it.", "Không đọc được tài liệu này. Chưa có gì bị ghi đè.";
     Saving => "Saving…", "Đang lưu…";
     PreviewUnavailable => "No preview for this file", "File này không xem trước được";
     PreviewUnavailableHint => "Download it or open it in a new tab to look inside.", "Tải xuống hoặc mở trong tab mới để xem.";

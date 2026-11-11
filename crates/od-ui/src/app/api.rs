@@ -44,12 +44,19 @@ impl HttpError {
 #[must_use]
 pub fn failure_text(template: &str, e: &HttpError) -> String {
     if e.internal() {
-        let head = template.replace("{0}", "");
-        let head = head.trim_end_matches([':', '：', ' ', '.']);
-        format!("{head}. {}.", t(Msg::TryAgain))
+        try_again_text(template)
     } else {
         template.replace("{0}", &e.to_string())
     }
+}
+
+/// `template` with no cause, saying to try again: "Could not save the
+/// comment: {0}" reads "Could not save the comment. Try again."
+#[must_use]
+pub fn try_again_text(template: &str) -> String {
+    let head = template.replace("{0}", "");
+    let head = head.trim_end_matches([':', '：', ' ', '.']);
+    format!("{head}. {}.", t(Msg::TryAgain))
 }
 
 /// [`failure_text`] for an i18n template.

@@ -104,21 +104,44 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
     let on_disk = StoredValue::new(String::new());
     let path = StoredValue::new(path);
     let area = NodeRef::<leptos::html::Textarea>::new();
-    // Load, and reload when the file changes on disk (the agent wrote it)
-    // unless there are unsaved edits.
-    Effect::new(move |_| {
-        ctx.preview_rev.track();
+    // Why the file could not be read (the reason, for the tooltip).
+    let read_error = RwSignal::new(None::<String>);
+    let load = move || {
+        read_error.set(None);
         leptos::task::spawn_local(async move {
-            let Ok(body) = api::get_text(&raw_url(ctx, &path.get_value())).await else {
+            let Some(url) = path.try_get_value().map(|p| raw_url(ctx, &p)) else {
                 return;
             };
-            let dirty = text.with_untracked(|t| *t != on_disk.get_value());
-            if !loaded.get_untracked() || (!dirty && body != on_disk.get_value()) {
+            let res = api::get_text(&url).await;
+            // Leaving the file while it loads disposes the view (`try_`).
+            let Some(was_loaded) = loaded.try_get_untracked() else {
+                return;
+            };
+            let body = match res {
+                Ok(body) => body,
+                // A first read that failed says so with Retry, not a
+                // skeleton for good; a later one keeps the text shown.
+                Err(e) => {
+                    if !was_loaded {
+                        let _ = read_error.try_set(Some(ctx.failed(&e)));
+                    }
+                    return;
+                }
+            };
+            let disk = on_disk.get_value();
+            let dirty = text.with_untracked(|t| *t != disk);
+            if !was_loaded || (!dirty && body != disk) {
                 on_disk.set_value(body.clone());
                 text.set(body);
                 loaded.set(true);
             }
         });
+    };
+    // Load, and reload when the file changes on disk (the agent wrote it)
+    // unless there are unsaved edits.
+    Effect::new(move |_| {
+        ctx.preview_rev.track();
+        load();
     });
     let save_seq = StoredValue::new(0u32);
     let save_now = move || {
@@ -279,7 +302,15 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
                     }}
                 </span>
             </div>
-            <Show when=move || loaded.get() fallback=|| view! { <div class="skeleton code-skeleton"></div> }>
+            {move || read_error.get().map(|why| view! {
+                <div class="empty-state" role="alert" data-testid="md-read-error">
+                    <p class="error-text" title=why>{icon(Glyph::Warning)}{t(T::MdReadFailed)}</p>
+                    <button class="btn small" data-testid="md-retry" on:click=move |_| load()>
+                        {icon(Glyph::Restore)}{t(T::NextRetry)}
+                    </button>
+                </div>
+            })}
+            <Show when=move || loaded.get() fallback=move || read_error.with(Option::is_none).then(|| view! { <div class="skeleton code-skeleton"></div> })>
                 <div class="md-panes">
                     {move || match mode.get() {
                         Mode::Editor => editor().into_any(),

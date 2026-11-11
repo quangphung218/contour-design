@@ -1145,6 +1145,7 @@ MdPlaceholder = ملاحظات أو متطلبات أو تعليمات لهذا 
 MdAutoSaveOn = الحفظ التلقائي مفعّل
 MdAutoSaved = حُفظ تلقائيًا عند {0}
 MdSaveFailed = فشل الحفظ: {0}
+MdReadFailed = تعذّرت قراءة هذا المستند. لم يُكتب أي شيء فوقه.
 Saving = جارٍ الحفظ…
 PreviewUnavailable = لا توجد معاينة لهذا الملف
 PreviewUnavailableHint = نزّله أو افتحه في علامة تبويب جديد لتطلع على محتواه.

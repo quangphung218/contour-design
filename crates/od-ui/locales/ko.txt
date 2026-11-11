@@ -1145,6 +1145,7 @@ MdPlaceholder = 이 문서의 메모, 요구 사항 또는 지침…
 MdAutoSaveOn = 자동 저장 켜짐
 MdAutoSaved = {0}에 자동 저장됨
 MdSaveFailed = 저장 실패: {0}
+MdReadFailed = 이 문서를 읽을 수 없습니다. 덮어쓴 내용은 없습니다.
 Saving = 저장 중…
 PreviewUnavailable = 이 파일은 미리볼 수 없습니다
 PreviewUnavailableHint = 다운로드하거나 새 탭에서 열어 내용을 확인하세요.

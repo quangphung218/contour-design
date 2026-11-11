@@ -546,7 +546,7 @@ last. Bugs: [bugs-web-failures.md](bugs-web-failures.md).
 | FAIL-04 | Comments list not loaded | Project opened while `GET …/comments` fails | Open All comments, Retry | "Could not load" with Retry; Retry shows the list | P1 | auto |
 | FAIL-05 | Manual edit not written | Manual edit, h1 text typed | Apply while `…/source-edits` fails; Apply again | A message that says the edit was not applied, the text kept, the second Apply writes the file | P1 | auto (QA-082) |
 | FAIL-06 | Manual edit in a deleted project | As FAIL-05, project deleted in another tab | Apply | The not-found state, no raw "not found" | P1 | auto |
-| FAIL-07 | Lint could not run | Page opened while `…/lint/` fails | Look for Lint, Reload preview | Something says the check could not run; Reload preview runs it | P2 | auto (QA-083) |
+| FAIL-07 | Lint could not run | Page opened while `…/lint/` fails | Look for Lint, open it, Retry | Something says the check could not run; Retry in the Lint panel runs it | P2 | auto (QA-083) |
 | FAIL-08 | New sketch not created | Studio | New ▸ Sketch while `POST …/files` fails; again | Plain message, no editor for a file that is not there; the second opens one | P1 | auto (QA-081) |
 | FAIL-09 | Sketch not saved | Sketch open | Draw while `PUT …/content/…` fails; draw again | "Not saved"; the next save holds both strokes, "Saved" | P1 | auto |
 | FAIL-10 | Sketch could not be read | Sketch with 2 strokes | Reopen while its read fails once; draw | No blank canvas that replaces the file: the 2 strokes stay | P0 | auto (QA-084) |
@@ -554,6 +554,7 @@ last. Bugs: [bugs-web-failures.md](bugs-web-failures.md).
 | FAIL-12 | Duplicate not made | Studio | Duplicate while `POST …/duplicate` fails; again | Stays on the project with a plain message, no copy; the second opens the copy | P1 | auto (QA-081) |
 | FAIL-13 | Duplicate of a deleted project | Deleted in another tab as Duplicate goes | Duplicate | The not-found state, no copy made | P1 | auto |
 | FAIL-14 | Transcript export failed | One finished turn | Export ▸ Markdown while `…/transcript` fails; again | Plain message; the second downloads `conversation-….md` | P2 | auto (QA-081) |
+| FAIL-15 | Markdown could not be read | Project with `notes.md` | Open it while its read fails once; Retry; Reload preview while the read fails | Plain message with Retry, no editor; Retry shows the text, the file unchanged; a failed reload keeps the text, no message | P1 | auto |
 
 Run: `QA_SKIP_BUILD=1 crates/od-ui/e2e/qa/run.sh failures` (~40 s).
 
