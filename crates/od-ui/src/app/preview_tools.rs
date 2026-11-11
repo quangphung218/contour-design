@@ -704,18 +704,14 @@ impl StudioCtx {
         let seq = tools.lint_seq.get_value();
         leptos::task::spawn_local(async move {
             let url = format!("{}/lint/{}", self.base(), api::file_path(&path));
-            // The daemon's reason, in the user's words: no status, no
-            // "daemon" (QA-083); a project deleted elsewhere says so.
+            // A project deleted elsewhere says so (QA-079).
             let res = api::get::<LintResponse>(&url).await.map_err(|e| {
                 let gone = self.failed(&e);
-                tf(
-                    T::LintFailed,
-                    &[if e.project_missing() {
-                        &gone
-                    } else {
-                        &e.message
-                    }],
-                )
+                if e.project_missing() {
+                    tf(T::LintFailed, &[&gone])
+                } else {
+                    lint_failure(&e)
+                }
             });
             // A reload may start a new lint before this one answers, and
             // leaving the Studio disposes the tools (`try_`: no panic).
@@ -746,6 +742,18 @@ impl StudioCtx {
                 let _ = tools.deliverable.try_set((!d.valid).then_some(d));
             }
         });
+    }
+}
+
+/// Why a lint could not run, for its badge and panel: the daemon's reason
+/// with no status and no "daemon" (QA-083). A body that is not the
+/// daemon's JSON (a proxy's HTML page) or an internal failure's words give
+/// the user nothing to read: it says to try again.
+fn lint_failure(e: &api::HttpError) -> String {
+    if e.internal() || (e.status != 0 && e.code.is_none()) {
+        api::try_again_text(t(T::LintFailed))
+    } else {
+        tf(T::LintFailed, &[&e.message])
     }
 }
 
@@ -1609,6 +1617,31 @@ pub fn watch_lint(ctx: StudioCtx) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use od_contracts::ErrorCode;
+
+    #[test]
+    fn a_lint_that_could_not_run_says_why_in_plain_words() {
+        let err = |status, code, message: &str| api::HttpError {
+            status,
+            code,
+            message: message.to_owned(),
+        };
+        // The daemon's own reason is shown.
+        let bad = err(400, Some(ErrorCode::BadRequest), "not an HTML file");
+        assert_eq!(lint_failure(&bad), "Lint failed: not an HTML file");
+        // A proxy's page in place of the daemon's JSON is not shown raw.
+        let page = err(404, None, "<html><body>Not Found</body></html>");
+        assert_eq!(lint_failure(&page), "Lint failed. Try again.");
+        // An internal failure's words are not shown either.
+        let locked = err(500, Some(ErrorCode::InternalError), "database is locked");
+        assert_eq!(lint_failure(&locked), "Lint failed. Try again.");
+        // No answer at all: the browser's reason is already plain words.
+        let offline = err(0, None, "Contour is not reachable");
+        assert_eq!(
+            lint_failure(&offline),
+            "Lint failed: Contour is not reachable"
+        );
+    }
 
     #[test]
     fn manual_edit_picks_the_element_clicked() {
