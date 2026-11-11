@@ -1637,9 +1637,10 @@ pub fn Studio() -> impl IntoView {
         }
     });
     // No project: its not-found state is in the chat pane, and the other
-    // two have nothing left to show (QA-079).
+    // two have nothing left to show (QA-079). Tracks `pane` too, so every
+    // way in (tabs, a chat file link, switcher, palette) lands back on Chat.
     Effect::new(move |_| {
-        if ctx.load_gone.get() && pane.get_untracked() != NarrowPane::Chat {
+        if ctx.load_gone.get() && pane.get() != NarrowPane::Chat {
             pane.set(NarrowPane::Chat);
         }
     });
