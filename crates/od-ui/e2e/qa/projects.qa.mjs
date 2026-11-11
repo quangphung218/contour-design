@@ -291,8 +291,11 @@ test('PRJ-17', 'Restoring a version in a project deleted from another tab says t
   await v1.getByTestId('version-restore').click();
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
   assert.equal(await page.getByTestId('versions').count(), 0, 'the versions of a deleted project');
+  assert.equal(await page.getByTestId('preview').count(), 0, 'the preview of a deleted project');
   const said = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
   assert.doesNotMatch(said, /Restore failed|HTTP 404|Not found:/i, said.slice(0, 300));
+  // Toasts sit outside <main>: the whole page, once it is quiet.
+  await noRawNotFound(page);
 });
 
 test('PRJ-18', 'Asking in the side chat of a project deleted from another tab says the project is gone', async ({ d, api, newPage }) => {
@@ -309,8 +312,89 @@ test('PRJ-18', 'Asking in the side chat of a project deleted from another tab sa
   await page.getByTestId('side-composer').press('Enter');
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
   assert.equal(await page.getByTestId('side-chat').count(), 0, 'the side chat of a deleted project');
+  assert.equal(await page.getByTestId('side-composer').count(), 0, 'a side composer for a deleted project');
   const said = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
   assert.doesNotMatch(said, /HTTP 404|check the agent in Settings|Reconnecting/i, said.slice(0, 300));
+  await noRawNotFound(page);
 });
+
+// On a phone (under 480 px) one pane shows at a time. The project goes
+// away with no action in tab A: the event stream's reconnect finds out,
+// as in PRJ-14. The not-found state is in the chat pane, so whatever tab
+// was shown, the user lands on it rather than on an empty screen.
+async function deleteWhileIdle(page, api, id) {
+  await page.route(/\/api\/projects\/[^/]+\/files$/, () => {});
+  assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
+}
+
+async function phoneStudio(page, d, id) {
+  let deleted = false;
+  await page.route(/\/api\/projects\/[^/]+\/events$/, (route) => (deleted
+    ? route.continue()
+    : route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 200\n\n' })));
+  await page.goto(`${d.base}/projects/${id}`);
+  // The Studio is loaded once the composer is there (it may be on a hidden
+  // pane on a phone); acting before that hits the loading view.
+  await page.getByTestId('composer').waitFor({ state: 'attached' });
+  return () => { deleted = true; };
+}
+
+test('PRJ-19', 'On a phone, a project deleted from another tab while its Preview is shown lands on the not-found message', async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'Deleted on a phone, preview', { 'index.html': '<h1 id="t">Phone</h1>' });
+  const { page } = await newPage({ viewport: { width: 390, height: 844 } });
+  const gone = await phoneStudio(page, d, id);
+  await page.getByTestId('pane-preview').click();
+  await page.getByTestId('preview').waitFor();
+  await deleteWhileIdle(page, api, id);
+  gone();
+  // Visible, not only there: a hidden chat pane fails this wait.
+  await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
+  await page.getByTestId('load-error').getByRole('link', { name: 'All projects' }).waitFor();
+  assert.equal(await page.getByTestId('pane-chat').getAttribute('aria-checked'), 'true', 'the phone Studio left on the Preview tab');
+  assert.equal(await page.getByTestId('preview').count(), 0, 'the preview of a deleted project');
+  await noRawNotFound(page);
+});
+
+test('PRJ-20', 'On a phone with the chat folded on a wide window first, a project deleted from another tab while Files is shown lands on the not-found message', async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'Deleted on a phone, chat folded', { 'index.html': '<h1 id="t">Folded</h1>' });
+  const { page } = await newPage();
+  const gone = await phoneStudio(page, d, id);
+  // Fold the chat on a laptop-wide window, then narrow it to a phone.
+  await page.getByTestId('collapse-chat').click();
+  await page.getByTestId('show-chat').waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId('pane-files').click();
+  await page.getByTestId('file-tree').waitFor();
+  await deleteWhileIdle(page, api, id);
+  gone();
+  await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
+  assert.equal(await page.getByTestId('pane-chat').getAttribute('aria-checked'), 'true', 'the phone Studio left on the Files tab');
+  assert.equal(await page.getByTestId('file-tree').count(), 0, 'the files panel of a deleted project');
+  await noRawNotFound(page);
+});
+
+test('PRJ-21', 'On a phone, after a project deleted from another tab says so, the Files and Preview tabs are not an empty screen', async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'Deleted on a phone, tabs after', { 'index.html': '<h1 id="t">Tabs</h1>' });
+  const { page } = await newPage({ viewport: { width: 390, height: 844 } });
+  const gone = await phoneStudio(page, d, id);
+  await deleteWhileIdle(page, api, id);
+  gone();
+  const message = page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.');
+  await message.waitFor({ timeout: 10_000 });
+  // The user taps Files, then Preview, as they would to look for their
+  // work. Either tab may be hidden or off for a gone project; if it can be
+  // picked, it still says the project is gone (not a blank pane, not
+  // "Nothing to preview yet" as if the agent had not built it yet).
+  for (const tab of ['pane-files', 'pane-preview']) {
+    const seg = page.getByTestId(tab);
+    if (!(await seg.isVisible()) || (await seg.isDisabled())) continue;
+    await seg.click();
+    await until(async () => (await seg.getAttribute('aria-checked')) === 'true' || (await message.isVisible()), `${tab} picked`);
+    assert.ok(await message.isVisible(), `${tab}: the not-found message is not on screen`);
+    const said = (await page.locator('.studio').innerText()).replace(/\s+/g, ' ');
+    assert.doesNotMatch(said, /Nothing to preview yet/i, `${tab}: ${said.slice(0, 200)}`);
+  }
+  await noRawNotFound(page);
+}, { knownBug: 'QA-080' });
 
 await run('projects');
