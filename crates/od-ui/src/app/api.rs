@@ -16,6 +16,16 @@ pub struct HttpError {
     pub message: String,
 }
 
+impl HttpError {
+    /// The daemon said the project the call was made on does not exist
+    /// (deleted in another tab, QA-079); a missing file or version in it
+    /// has its own code.
+    #[must_use]
+    pub fn project_missing(&self) -> bool {
+        self.status == 404 && self.code == Some(ErrorCode::ProjectNotFound)
+    }
+}
+
 impl fmt::Display for HttpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // A cause the user can act on: their words, no status, no "daemon".
@@ -253,5 +263,24 @@ mod tests {
             e(404, ErrorCode::NotFound, "gone").to_string(),
             "Not found: gone (HTTP 404)"
         );
+    }
+
+    #[test]
+    fn only_the_project_code_says_the_project_is_missing() {
+        let e = |code| HttpError {
+            status: 404,
+            code,
+            message: "x".to_owned(),
+        };
+        assert!(e(Some(ErrorCode::ProjectNotFound)).project_missing());
+        for other in [
+            Some(ErrorCode::FileNotFound),
+            Some(ErrorCode::VersionNotFound),
+            Some(ErrorCode::ConversationNotFound),
+            Some(ErrorCode::NotFound),
+            None,
+        ] {
+            assert!(!e(other).project_missing(), "{other:?}");
+        }
     }
 }

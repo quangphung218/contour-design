@@ -1309,10 +1309,16 @@ impl StudioCtx {
     }
 
     /// A failed call on this project, as the text shown for it, after
-    /// [`Self::on_not_found`].
+    /// [`Self::on_not_found`]. The project itself gone, the text says so
+    /// in the words of the not-found state, not the daemon's bare 404
+    /// (QA-079); the probe then empties the workspace.
     pub fn failed(self, e: &api::HttpError) -> String {
         self.on_not_found(e.status);
-        e.to_string()
+        if e.project_missing() {
+            t(T::ProjectGone).to_owned()
+        } else {
+            e.to_string()
+        }
     }
 
     /// Asks the daemon for the project; gone (404), the Studio shows it as
@@ -1332,11 +1338,14 @@ impl StudioCtx {
         });
     }
 
-    /// The project was deleted: the Studio switches to its not-found state.
+    /// The project was deleted: the Studio switches to its not-found state,
+    /// the workspace empty as for a wrong link (QA-079).
     fn project_gone(self) {
         // Its event stream would only retry and say "Reconnecting".
         self.project_stream.set_value(None);
         self.link_down.set(false);
+        // A toast already up said what failed in it; the state says why.
+        self.notice.set(None);
         self.load_gone.set(true);
         self.load_error.set(Some(t(T::ProjectGone).to_owned()));
     }
@@ -1672,12 +1681,22 @@ pub fn Studio() -> impl IntoView {
                     {icon(Glyph::SidebarUnfold)}{t(T::ShowChat)}
                 </button>
             </Show>
-            <section class="workspace" class:files-closed=move || !ctx.files_open.get()>
-                <PreviewPane ctx=ctx/>
-                <Show when=move || ctx.files_open.get()>
-                    <FilesPanel ctx=ctx/>
-                </Show>
-            </section>
+            // No project (a wrong link, or deleted in another tab): nothing
+            // of it to preview, list, restore or ask about (QA-079).
+            <Show when=move || !ctx.load_gone.get() fallback=move || view! {
+                <section class="workspace files-closed">
+                    <section class="preview" data-testid="preview-pane">
+                        <PreviewEmpty ctx=ctx/>
+                    </section>
+                </section>
+            }>
+                <section class="workspace" class:files-closed=move || !ctx.files_open.get()>
+                    <PreviewPane ctx=ctx/>
+                    <Show when=move || ctx.files_open.get()>
+                        <FilesPanel ctx=ctx/>
+                    </Show>
+                </section>
+            </Show>
             <Show when=move || ctx.switcher_open.get()>
                 <QuickSwitcher ctx=ctx/>
             </Show>
@@ -2408,7 +2427,9 @@ fn NoticeToast(ctx: StudioCtx) -> impl IntoView {
     });
     view! {
         <div class="toast-region notice" aria-live="assertive">
-            {move || ctx.notice.get().map(|text| view! {
+            // The project gone, a failure in it is no news: the not-found
+            // state says why (QA-079).
+            {move || ctx.notice.get().filter(|_| !ctx.load_gone.get()).map(|text| view! {
                 <div class="toast error" role="alert" data-testid="notice">
                     <span class="toast-ico">{icon(Glyph::Warning)}</span>
                     <span class="toast-text">{text}</span>
