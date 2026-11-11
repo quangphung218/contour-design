@@ -234,10 +234,17 @@ test('FAIL-07', 'Lint: a check that could not run says so, and Retry in the Lint
 test('FAIL-15', 'Markdown: a document that could not be read says so with Retry, and Retry opens it', async ({ d, api, newPage }) => {
   const DOC = 'notes.md';
   const { page, id } = await studio(newPage, d, 'Markdown read fails', { 'index.html': PAGE, [DOC]: '# Notes\n\nKeep this line.\n' });
+  // The read fails while `failing` is on; `failed` counts the failures.
+  let failing = true;
   let failed = 0;
   await page.route(
     (u) => u.pathname === projectPath(id, `/raw/${DOC}`),
-    (route) => (failed++ === 0 ? route.fulfill(DAEMON_500) : route.fallback()),
+    (route) => {
+      if (!failing) return route.fallback();
+      failing = false;
+      failed++;
+      return route.fulfill(DAEMON_500);
+    },
   );
   await row(page, DOC).click();
   const view = page.getByTestId('markdown-view');
@@ -251,6 +258,13 @@ test('FAIL-15', 'Markdown: a document that could not be read says so with Retry,
   await page.getByTestId('md-retry').click();
   await until(async () => (await page.getByTestId('md-editor').inputValue().catch(() => '')).includes('Keep this line.'), 'Retry opens the document');
   assert.equal(await alert.count(), 0, 'the message stays after the document opened');
+  // A reload that fails once the document is shown keeps the editor.
+  failing = true;
+  await page.getByRole('button', { name: 'Reload preview' }).click();
+  await until(() => failed > 1, 'the reload read failed');
+  const hidden = await alert.waitFor({ timeout: 1500 }).then(() => false, () => true);
+  assert.ok(hidden, 'a reload that failed puts "could not read" over a document already shown');
+  assert.ok((await page.getByTestId('md-editor').inputValue()).includes('Keep this line.'), 'a reload that failed emptied the editor');
   assert.equal((await api(projectPath(id, `/raw/${DOC}`))).body, '# Notes\n\nKeep this line.\n', 'the document changed');
   plainWords(message, 'Markdown read');
 });
