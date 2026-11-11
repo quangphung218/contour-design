@@ -6,7 +6,8 @@ Expected results come from [features.md](../features.md),
 behaviour of the original app, not from the current code. The existing
 suite in `crates/od-ui/e2e/*.e2e.mjs` mostly walks the happy paths; this
 plan adds the mistakes and accidents of real users. Bugs found are in
-[bugs.md](bugs.md); the web pass after beta.28 (QA-074 to QA-078) in
+[bugs.md](bugs.md); the failed-call pass (QA-081 to QA-084) in
+[bugs-web-failures.md](bugs-web-failures.md); the web pass after beta.28 (QA-074 to QA-078) in
 [bugs-web-beta28.md](bugs-web-beta28.md).
 
 ## Priorities and status
@@ -522,6 +523,39 @@ on a QA copy (bundle id `dev.contour.desktop.qa`, its own `OD_DATA_DIR`).
   prewarmed process, so the newest WebContent pid is a spare, not the page.
   QA-073 (the second crash panicked the app on beta.27) is fixed in beta.28
   ([bugs-desktop-beta28.md](bugs-desktop-beta28.md)).
+
+## 20. When a call fails (`failures.qa.mjs`)
+
+Goal: when Contour cannot do what the user asked (Design Jury, comments,
+manual edit, lint, sketch, GenUI, duplicate, transcript export), the
+screen says what did not happen in the user's words, keeps what they typed,
+and the same action works when tried again. Expected results from the
+QA-029 and QA-079 rule (no HTTP status, no "daemon", no JSON in a message)
+and from spec.md (nothing the user made is lost). The failure is a
+`page.route` that answers the call with the daemon's own 500
+(`{"error":{"code":"INTERNAL_ERROR","message":"database is locked"}}`)
+until the test lifts it; "deleted from another tab" deletes through the
+API as the call goes. Each test checks the retry first and the wording
+last. Bugs: [bugs-web-failures.md](bugs-web-failures.md).
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| FAIL-01 | Design Jury switch not saved | Project with a page | Turn the jury on while `PUT …/critique` fails; again after | The switch goes back off with a plain message; the second press turns it on | P1 | auto (QA-081) |
+| FAIL-02 | Design Jury Stop refused | Jury running (`qa-jury-slow`) | Stop while `…/interrupt` fails; Stop again | Plain message, Stop can be pressed again, the second stops the jury | P1 | auto (QA-081) |
+| FAIL-03 | Comment not saved | Comment mode, element picked | Add while `POST …/comments` fails; Add again | Plain message in the draft, the note kept, the second Add saves | P1 | auto (QA-081) |
+| FAIL-04 | Comments list not loaded | Project opened while `GET …/comments` fails | Open All comments, Retry | "Could not load" with Retry; Retry shows the list | P1 | auto |
+| FAIL-05 | Manual edit not written | Manual edit, h1 text typed | Apply while `…/source-edits` fails; Apply again | A message that says the edit was not applied, the text kept, the second Apply writes the file | P1 | auto (QA-082) |
+| FAIL-06 | Manual edit in a deleted project | As FAIL-05, project deleted in another tab | Apply | The not-found state, no raw "not found" | P1 | auto |
+| FAIL-07 | Lint could not run | Page opened while `…/lint/` fails | Look for Lint, Reload preview | Something says the check could not run; Reload preview runs it | P2 | auto (QA-083) |
+| FAIL-08 | New sketch not created | Studio | New ▸ Sketch while `POST …/files` fails; again | Plain message, no editor for a file that is not there; the second opens one | P1 | auto (QA-081) |
+| FAIL-09 | Sketch not saved | Sketch open | Draw while `PUT …/content/…` fails; draw again | "Not saved"; the next save holds both strokes, "Saved" | P1 | auto |
+| FAIL-10 | Sketch could not be read | Sketch with 2 strokes | Reopen while its read fails once; draw | No blank canvas that replaces the file: the 2 strokes stay | P0 | auto (QA-084) |
+| FAIL-11 | GenUI answer not sent | A plugin run asking a confirmation | Continue while `…/respond` fails; again | Plain message, the question stays; the second answer goes | P1 | auto (QA-081) |
+| FAIL-12 | Duplicate not made | Studio | Duplicate while `POST …/duplicate` fails; again | Stays on the project with a plain message, no copy; the second opens the copy | P1 | auto (QA-081) |
+| FAIL-13 | Duplicate of a deleted project | Deleted in another tab as Duplicate goes | Duplicate | The not-found state, no copy made | P1 | auto |
+| FAIL-14 | Transcript export failed | One finished turn | Export ▸ Markdown while `…/transcript` fails; again | Plain message; the second downloads `conversation-….md` | P2 | auto (QA-081) |
+
+Run: `QA_SKIP_BUILD=1 crates/od-ui/e2e/qa/run.sh failures` (~40 s).
 
 ## Not automated, and why
 
