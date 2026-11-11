@@ -1161,6 +1161,7 @@ Undo = เลิกทำ
 Redo = ทำซ้ำ
 SketchToChat = ส่งไปแชท
 SketchAttached = {0} จะส่งพร้อมข้อความถัดไป
+SketchReadFailed = อ่านสเกตช์นี้ไม่ได้ ยังไม่มีการบันทึกทับ
 Screenshot = ภาพหน้าจอ
 ScreenshotCopy = คัดลอกไปคลิปบอร์ด
 ScreenshotToChat = ส่งไปแชท

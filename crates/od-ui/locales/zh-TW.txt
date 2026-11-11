@@ -1161,6 +1161,7 @@ Undo = 復原
 Redo = 重做
 SketchToChat = 傳送到對話
 SketchAttached = {0} 將隨下一則訊息傳送
+SketchReadFailed = 無法讀取此草圖。未覆寫任何內容。
 Screenshot = 螢幕截圖
 ScreenshotCopy = 複製到剪貼簿
 ScreenshotToChat = 傳送到對話

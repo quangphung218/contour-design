@@ -1161,6 +1161,7 @@ Undo = Urungkan
 Redo = Ulangi
 SketchToChat = Kirim ke chat
 SketchAttached = {0} dikirim bersama pesan berikutnya
+SketchReadFailed = Sketsa ini tidak dapat dibaca. Tidak ada yang ditimpa.
 Screenshot = Screenshot
 ScreenshotCopy = Salin ke clipboard
 ScreenshotToChat = Kirim ke chat

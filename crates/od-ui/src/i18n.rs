@@ -1397,6 +1397,7 @@ messages! {
     Redo => "Redo", "Làm lại";
     SketchToChat => "Send to chat", "Gửi vào chat";
     SketchAttached => "{0} goes with the next message", "{0} sẽ gửi kèm tin nhắn sau";
+    SketchReadFailed => "Could not read this sketch. Nothing was saved over it.", "Không đọc được sketch này. Chưa có gì bị ghi đè.";
     Screenshot => "Screenshot", "Chụp màn hình";
     ScreenshotCopy => "Copy to clipboard", "Chép vào clipboard";
     ScreenshotToChat => "Send to chat", "Gửi vào chat";

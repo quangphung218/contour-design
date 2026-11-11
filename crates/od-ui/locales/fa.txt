@@ -1161,6 +1161,7 @@ Undo = واگرد
 Redo = ازنو
 SketchToChat = ارسال به چت
 SketchAttached = {0} با پیام بعدی ارسال می‌شود
+SketchReadFailed = این طرح خوانده نشد. چیزی روی آن نوشته نشد.
 Screenshot = اسکرین‌شات
 ScreenshotCopy = کپی در کلیپ‌بورد
 ScreenshotToChat = ارسال به چت

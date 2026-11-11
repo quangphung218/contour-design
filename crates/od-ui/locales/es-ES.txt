@@ -1161,6 +1161,7 @@ Undo = Deshacer
 Redo = Rehacer
 SketchToChat = Enviar al chat
 SketchAttached = {0} irá con el siguiente mensaje
+SketchReadFailed = No se pudo leer este boceto. No se ha sobrescrito nada.
 Screenshot = Captura
 ScreenshotCopy = Copiar al portapapeles
 ScreenshotToChat = Enviar al chat

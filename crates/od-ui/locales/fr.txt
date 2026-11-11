@@ -1161,6 +1161,7 @@ Undo = Annuler
 Redo = Rétablir
 SketchToChat = Envoyer au chat
 SketchAttached = {0} part avec le prochain message
+SketchReadFailed = Impossible de lire ce croquis. Rien n'a été écrasé.
 Screenshot = Capture d'écran
 ScreenshotCopy = Copier dans le presse-papiers
 ScreenshotToChat = Envoyer au chat
