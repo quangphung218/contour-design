@@ -88,6 +88,17 @@ impl fmt::Display for HttpError {
 
 /// What a failed status means, in the user's words; the daemon's own
 /// message (English, precise) follows it.
+/// A non-JSON error body worth showing: one short line of words, not a
+/// proxy's HTML page or a stack trace (those go to the console only).
+fn plain_reason(body: &str) -> bool {
+    let b = body.trim();
+    !b.is_empty()
+        && b.len() <= 200
+        && !b.contains('\n')
+        && !b.starts_with('<')
+        && !b.starts_with('{')
+}
+
 fn status_hint(status: u16) -> Option<Msg> {
     Some(match status {
         400 | 422 => Msg::ErrBadRequest,
@@ -131,16 +142,20 @@ pub(crate) async fn error_of(res: Response) -> HttpError {
     let (code, message) = serde_json::from_str::<ApiErrorResponse>(&body)
         .map(|e| (Some(e.error.code), e.error.message))
         .unwrap_or_else(|_| {
-            let text = if body.trim().is_empty() {
-                res.status_text()
+            let text = if plain_reason(&body) {
+                body.trim().to_owned()
             } else {
-                body
+                res.status_text()
             };
             (None, text)
         });
     // The status and the daemon's own words, for whoever debugs it; the
-    // user reads `Display` (QA-081).
+    // user reads `Display` (QA-081). The raw body too, when a proxy's page
+    // was kept out of `message`.
     leptos::logging::warn!("request failed: HTTP {status} {code:?}: {message}");
+    if code.is_none() && message != body.trim() && !body.trim().is_empty() {
+        leptos::logging::warn!("response body: {body}");
+    }
     HttpError {
         status,
         code,
@@ -276,6 +291,22 @@ mod tests {
         assert_eq!(e(404).to_string(), "Not found: project p1 not found");
         assert_eq!(e(418).to_string(), "project p1 not found");
         assert_eq!(e(0).to_string(), "project p1 not found");
+    }
+
+    #[test]
+    fn only_a_short_plain_body_is_shown() {
+        assert!(plain_reason("project p1 not found"));
+        assert!(plain_reason("  Bad Gateway \n"));
+        for raw in [
+            "",
+            "<html><head><title>502 Bad Gateway</title></head></html>",
+            "<!DOCTYPE html>",
+            "line one\nline two",
+            "{\"broken\": ",
+            &"x".repeat(201),
+        ] {
+            assert!(!plain_reason(raw), "{raw:?} would be shown");
+        }
     }
 
     /// The daemon's 500 as the e2e plays it (`failures.qa.mjs`).
