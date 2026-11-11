@@ -1145,6 +1145,7 @@ MdPlaceholder = Notas, requisitos o instrucciones para este documento…
 MdAutoSaveOn = Autoguardado
 MdAutoSaved = Autoguardado a las {0}
 MdSaveFailed = Error al guardar: {0}
+MdReadFailed = No se pudo leer este documento. No se ha sobrescrito nada.
 Saving = Guardando…
 PreviewUnavailable = No hay vista previa de este archivo
 PreviewUnavailableHint = Descárgalo o ábrelo en una pestaña nueva para ver su contenido.

@@ -1144,6 +1144,7 @@ MdPlaceholder = Bu belge için notlar, gereksinimler veya talimatlar…
 MdAutoSaveOn = Otomatik kayıt açık
 MdAutoSaved = {0} saatinde otomatik kaydedildi
 MdSaveFailed = Kaydetme başarısız: {0}
+MdReadFailed = Bu belge okunamadı. Üzerine hiçbir şey yazılmadı.
 Saving = Kaydediliyor…
 PreviewUnavailable = Bu dosya için önizleme yok
 PreviewUnavailableHint = İçine bakmak için indirin veya yeni sekmede açın.

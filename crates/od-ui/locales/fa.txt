@@ -1145,6 +1145,7 @@ MdPlaceholder = یادداشت، نیازمندی یا دستورالعمل بر
 MdAutoSaveOn = ذخیره خودکار
 MdAutoSaved = ذخیره خودکار در {0}
 MdSaveFailed = ذخیره ناموفق بود: {0}
+MdReadFailed = این سند خوانده نشد. چیزی روی آن نوشته نشد.
 Saving = در حال ذخیره…
 PreviewUnavailable = پیش‌نمایشی برای این فایل نیست
 PreviewUnavailableHint = برای دیدن محتوا، آن را دانلود کنید یا در تب جدید باز کنید.

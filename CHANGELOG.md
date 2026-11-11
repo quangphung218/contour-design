@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Studio: a Markdown document whose file could not be read now says "Could not read this document. Nothing was saved over it." with Retry, instead of a loading placeholder that never ends; a lint that failed inside Contour or behind a proxy reads "Lint failed. Try again." instead of the raw reply.
+
 ## [0.2.0-beta.32] - 2026-11-11
 
 ### Fixed

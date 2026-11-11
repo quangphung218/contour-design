@@ -1145,6 +1145,7 @@ MdPlaceholder = Notes, exigences ou instructions pour ce document…
 MdAutoSaveOn = Auto-enregistré
 MdAutoSaved = Enregistré automatiquement à {0}
 MdSaveFailed = Échec de l'enregistrement : {0}
+MdReadFailed = Impossible de lire ce document. Rien n'a été écrasé.
 Saving = Enregistrement…
 PreviewUnavailable = Aucun aperçu pour ce fichier
 PreviewUnavailableHint = Téléchargez-le ou ouvrez-le dans un nouvel onglet pour voir son contenu.

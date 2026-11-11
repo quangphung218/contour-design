@@ -1144,6 +1144,7 @@ MdPlaceholder = Notatki, wymagania lub instrukcje do tego dokumentu…
 MdAutoSaveOn = Autozapis włączony
 MdAutoSaved = Zapisano automatycznie o {0}
 MdSaveFailed = Błąd zapisu: {0}
+MdReadFailed = Nie udało się odczytać tego dokumentu. Nic nie zostało nadpisane.
 Saving = Zapisywanie…
 PreviewUnavailable = Brak podglądu tego pliku
 PreviewUnavailableHint = Pobierz go lub otwórz w nowej karcie, aby zajrzeć do środka.

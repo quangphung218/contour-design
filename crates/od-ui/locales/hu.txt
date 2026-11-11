@@ -1145,6 +1145,7 @@ MdPlaceholder = Jegyzetek, követelmények vagy utasítások ehhez a dokumentumh
 MdAutoSaveOn = Automentés be
 MdAutoSaved = Automatikusan mentve: {0}
 MdSaveFailed = A mentés sikertelen: {0}
+MdReadFailed = Ez a dokumentum nem olvasható be. Semmi nem lett felülírva.
 Saving = Mentés…
 PreviewUnavailable = Ehhez a fájlhoz nincs előnézet
 PreviewUnavailableHint = Töltsd le, vagy nyisd meg új lapon, hogy belenézhess.

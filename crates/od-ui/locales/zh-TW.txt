@@ -1145,6 +1145,7 @@ MdPlaceholder = 這份文件的備註、需求或指示…
 MdAutoSaveOn = 自動儲存已開啟
 MdAutoSaved = 已於 {0} 自動儲存
 MdSaveFailed = 儲存失敗：{0}
+MdReadFailed = 無法讀取此文件。沒有任何內容被覆寫。
 Saving = 儲存中…
 PreviewUnavailable = 此檔案無法預覽
 PreviewUnavailableHint = 請下載，或在新分頁開啟查看內容。
