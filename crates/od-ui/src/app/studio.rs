@@ -1644,6 +1644,11 @@ pub fn Studio() -> impl IntoView {
         }
     });
     let pick = move |p: NarrowPane| {
+        // A gone project keeps the Chat tab, where its not-found card is
+        // (QA-080); the other two are off, this covers a stale click.
+        if ctx.load_gone.get_untracked() && p != NarrowPane::Chat {
+            return;
+        }
         match p {
             NarrowPane::Chat => ctx.chat.collapsed.set(false),
             NarrowPane::Files => ctx.files_open.set(true),
@@ -1658,6 +1663,7 @@ pub fn Studio() -> impl IntoView {
             <button class="seg" role="radio" data-testid=format!("pane-{}", p.key())
                 aria-checked=move || (pane.get() == p).to_string() tabindex=move || super::focus::roving(pane.get() == p)
                 class:active=move || pane.get() == p
+                disabled=move || p != NarrowPane::Chat && ctx.load_gone.get()
                 on:click=move |_| pick(p)>
                 {t(label)}
             </button>
@@ -1689,11 +1695,12 @@ pub fn Studio() -> impl IntoView {
                 </button>
             </Show>
             // No project (a wrong link, or deleted in another tab): nothing
-            // of it to preview, list, restore or ask about (QA-079).
+            // of it to preview, list, restore or ask about (QA-079). The right
+            // frame says so too, not "Nothing to preview yet" (QA-080).
             <Show when=move || !ctx.load_gone.get() fallback=move || view! {
                 <section class="workspace files-closed">
                     <section class="preview" data-testid="preview-pane">
-                        <PreviewEmpty ctx=ctx/>
+                        <PreviewGone/>
                     </section>
                 </section>
             }>
@@ -2385,6 +2392,21 @@ fn PreviewStopped(ctx: StudioCtx) -> impl IntoView {
             <button class="btn" data-testid="preview-run-again" on:click=run_again>
                 {t(T::RunPreviewAgain)}
             </button>
+        </div>
+    }
+}
+
+/// No project (deleted, or a wrong link): the chat's not-found words and
+/// way back, in the preview frame (QA-080). Not an alert: the chat's card
+/// already announces it.
+#[component]
+fn PreviewGone() -> impl IntoView {
+    view! {
+        <div class="empty-state preview-empty" data-testid="preview-gone">
+            <span class="empty-icon">{icon(Glyph::Warning)}</span>
+            <strong>{t(T::ProjectLoadFailed)}</strong>
+            <p>{t(T::ProjectGone)}</p>
+            <a class="btn small ghost" href="/projects">{icon(Glyph::Projects)}{t(T::AllProjects)}</a>
         </div>
     }
 }

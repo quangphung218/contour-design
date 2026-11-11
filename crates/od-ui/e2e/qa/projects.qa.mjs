@@ -394,7 +394,9 @@ test('PRJ-21', 'On a phone, after a project deleted from another tab says so, th
     const said = (await page.locator('.studio').innerText()).replace(/\s+/g, ' ');
     assert.doesNotMatch(said, /Nothing to preview yet/i, `${tab}: ${said.slice(0, 200)}`);
   }
+  // The fix keeps the tabs off; the pane never left Chat.
+  assert.equal(await page.getByTestId('pane-chat').getAttribute('aria-checked'), 'true', 'the phone Studio left the Chat tab');
   await noRawNotFound(page);
-}, { knownBug: 'QA-080' });
+});
 
 await run('projects');

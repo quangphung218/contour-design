@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Studio: in a project that is gone (deleted from another tab, or a wrong link), the preview frame now says "This project was deleted or the link is wrong." with All projects instead of "Nothing to preview yet", and on a phone the Files and Preview tabs are off instead of opening an empty screen (QA-080).
+
 ## [0.2.0-beta.31] - 2026-11-11
 
 ### Fixed
