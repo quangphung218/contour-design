@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.31] - 2026-11-11
+
 ### Fixed
 
 - Studio: in a project deleted from another tab, the preview, Files panel, Versions and side chat now close with the chat's "This project was deleted or the link is wrong.", as for a wrong link, and no toast or turn says "Not found: project not found (HTTP 404)", "Restore failed" or "Upload failed" (QA-079).
@@ -1120,7 +1122,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.30...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.31...HEAD
+[0.2.0-beta.31]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.30...v0.2.0-beta.31
 [0.2.0-beta.30]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.29...v0.2.0-beta.30
 [0.2.0-beta.29]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.28...v0.2.0-beta.29
 [0.2.0-beta.28]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.27...v0.2.0-beta.28
