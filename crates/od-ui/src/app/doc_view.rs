@@ -3,6 +3,7 @@
 //! files with Download and Open in new tab (Office files have no preview).
 
 use super::api;
+use super::file_state::{Autosave, ReadState, Save, read_error_banner};
 use super::files_panel::{
     FilesUi, download_file, open_in_new_tab, raw_url, replace_content, upload,
 };
@@ -99,46 +100,29 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
     let ui = FilesUi::get();
     let mode = RwSignal::new(Mode::stored());
     let text = RwSignal::new(String::new());
-    let loaded = RwSignal::new(false);
+    let read = RwSignal::new(ReadState::<()>::default());
     let status = RwSignal::new(Status::Clean);
     // What the file holds as far as this editor knows.
     let on_disk = StoredValue::new(String::new());
     let path = StoredValue::new(path);
     let area = NodeRef::<leptos::html::Textarea>::new();
-    // Why the file could not be read (the reason, for the tooltip).
-    let read_error = RwSignal::new(None::<String>);
     let tasks = Tasks::here();
     let load = move || {
-        read_error.set(None);
+        read.update(ReadState::retry);
         tasks.spawn(async move {
-            let Some(url) = path.try_get_value().map(|p| raw_url(ctx, &p)) else {
-                return;
-            };
+            let url = raw_url(ctx, &path.get_value());
             let res = api::get_text(&url).await;
-            // Leaving the file while it loads disposes the view (`try_`).
-            let Some(was_loaded) = loaded.try_get_untracked() else {
-                return;
-            };
-            let body = match res {
-                Ok(body) => body,
-                // A first read that failed says so with Retry, not a
-                // skeleton for good; a later one keeps the text shown.
-                Err(e) => {
-                    if !was_loaded {
-                        let _ = read_error.try_set(Some(ctx.failed(&e)));
-                    }
-                    return;
+            let was_loaded = read.with_untracked(ReadState::loaded);
+            let res = res.map(|body| {
+                let disk = on_disk.get_value();
+                let dirty = text.with_untracked(|t| *t != disk);
+                // Unsaved edits win over what the agent wrote.
+                if !was_loaded || (!dirty && body != disk) {
+                    on_disk.set_value(body.clone());
+                    text.set(body);
                 }
-            };
-            let disk = on_disk.get_value();
-            let dirty = text.with_untracked(|t| *t != disk);
-            if !was_loaded || (!dirty && body != disk) {
-                on_disk.set_value(body.clone());
-                text.set(body);
-                loaded.set(true);
-            }
-            // A later read that worked clears an earlier one's error.
-            let _ = read_error.try_set(None);
+            });
+            read.update(|r| r.read(res.map_err(|e| ctx.failed(&e))));
         });
     };
     // Load, and reload when the file changes on disk (the agent wrote it)
@@ -147,25 +131,24 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
         ctx.preview_rev.track();
         load();
     });
-    let save_seq = StoredValue::new(0u32);
-    let save_now = move || {
-        let n = save_seq.get_value().wrapping_add(1);
-        save_seq.set_value(n);
+    // Saved a moment after typing stops, on blur and Cmd+S, and when the
+    // view goes (tab switch) with a change not saved yet.
+    let autosave = Autosave::new(SAVE_DELAY_MS, move |save: Save| {
         let content = text.get_untracked();
         if content == on_disk.get_value() {
             return;
         }
         status.set(Status::Saving);
         // Started here: on leaving, the save runs after the view is disposed.
-        let save = replace_content(
+        let work = replace_content(
             ctx,
             &path.get_value(),
             &content,
             "Markdown",
             T::MdSaveFailed,
         );
-        tasks.spawn_then(save, move |res| {
-            if save_seq.get_value() != n {
+        tasks.spawn_then(work, move |res| {
+            if !save.is_latest() {
                 return;
             }
             match res {
@@ -173,22 +156,13 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
                     on_disk.set_value(content);
                     status.set(Status::Saved(clock()));
                 }
-                Err(e) => status.set(Status::Failed(e)),
+                Err(e) => {
+                    save.failed();
+                    status.set(Status::Failed(e));
+                }
             }
         });
-    };
-    // Auto-save a moment after typing stops.
-    let typed = StoredValue::new(0u32);
-    let schedule = move || {
-        let n = typed.get_value().wrapping_add(1);
-        typed.set_value(n);
-        tasks.spawn(async move {
-            gloo_timers::future::TimeoutFuture::new(SAVE_DELAY_MS).await;
-            if typed.get_value() == n {
-                save_now();
-            }
-        });
-    };
+    });
     // Images pasted or dropped on the editor are uploaded next to the
     // document and linked at the cursor.
     let insert_images = move |files: Vec<web_sys::File>| {
@@ -231,7 +205,7 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
                     });
                     ctx.refresh_files();
                     ui.refresh(ctx);
-                    schedule();
+                    autosave.changed();
                 }
                 Err(e) => ctx.notice.set(Some(e)),
             }
@@ -253,15 +227,15 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
                 prop:value=move || text.get()
                 on:input=move |ev| {
                     text.set(event_target_value(&ev));
-                    schedule();
+                    autosave.changed();
                 }
                 on:keydown=move |ev: web_sys::KeyboardEvent| {
                     if (ev.meta_key() || ev.ctrl_key()) && ev.key().eq_ignore_ascii_case("s") {
                         ev.prevent_default();
-                        save_now();
+                        autosave.save_now();
                     }
                 }
-                on:blur=move |_| save_now()
+                on:blur=move |_| autosave.save_now()
                 on:paste=move |ev: web_sys::ClipboardEvent| {
                     let files = ev
                         .clipboard_data()
@@ -287,12 +261,6 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
             ></textarea>
         }
     };
-    on_cleanup(move || {
-        // Leaving the file (tab switch) keeps what was typed.
-        if loaded.try_get_untracked() == Some(true) {
-            save_now();
-        }
-    });
     view! {
         <div class="md-view" data-testid="markdown-view" data-mode=move || mode.get().key()>
             <div class="md-bar">
@@ -315,15 +283,8 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
                     }}
                 </span>
             </div>
-            {move || read_error.get().map(|why| view! {
-                <div class="empty-state" role="alert" data-testid="md-read-error">
-                    <p class="error-text" title=why>{icon(Glyph::Warning)}{t(T::MdReadFailed)}</p>
-                    <button class="btn small" data-testid="md-retry" on:click=move |_| load()>
-                        {icon(Glyph::Restore)}{t(T::NextRetry)}
-                    </button>
-                </div>
-            })}
-            <Show when=move || loaded.get() fallback=move || read_error.with(Option::is_none).then(|| view! { <div class="skeleton code-skeleton"></div> })>
+            {read_error_banner(read, "empty-state", "md", T::MdReadFailed, load)}
+            <Show when=move || read.with(ReadState::loaded) fallback=move || read.with(ReadState::waiting).then(|| view! { <div class="skeleton code-skeleton"></div> })>
                 <div class="md-panes">
                     {move || match mode.get() {
                         Mode::Editor => editor().into_any(),
@@ -421,27 +382,37 @@ pub fn DocView(ctx: StudioCtx, file: ProjectFile) -> impl IntoView {
 /// that cannot be read say so and keep Download and Open.
 #[component]
 fn OfficeText(ctx: StudioCtx, path: String) -> impl IntoView {
-    let url = format!("{}/office-text/{}", ctx.base(), api::file_path(&path));
-    let text = LocalResource::new(move || {
-        let url = url.clone();
-        async move {
-            api::get::<OfficeTextResponse>(&url)
-                .await
-                .map_err(|e| e.to_string())
-        }
-    });
-    move || match text.get() {
-        None => view! { <div class="skeleton code-skeleton"></div> }.into_any(),
-        Some(Err(e)) => view! {
+    let url = StoredValue::new(format!(
+        "{}/office-text/{}",
+        ctx.base(),
+        api::file_path(&path)
+    ));
+    let read = RwSignal::new(ReadState::<OfficeTextResponse>::default());
+    let tasks = Tasks::here();
+    let load = move || {
+        read.update(ReadState::retry);
+        let url = url.get_value();
+        tasks.spawn(async move {
+            let res = api::get::<OfficeTextResponse>(&url).await;
+            read.update(|r| r.read(res.map_err(|e| ctx.failed(&e))));
+        });
+    };
+    load();
+    move || match read.with(|r| (r.value().cloned(), r.error().map(str::to_owned))) {
+        (None, None) => view! { <div class="skeleton code-skeleton"></div> }.into_any(),
+        (None, Some(e)) => view! {
             <div class="empty-state" data-testid="doc-unavailable">
                 <span class="empty-icon">{icon(Glyph::File)}</span>
                 <strong>{t(T::PreviewUnavailable)}</strong>
                 <p>{t(T::PreviewUnavailableHint)}</p>
                 <p class="subtle">{e}</p>
+                <button class="btn small" data-testid="office-retry" on:click=move |_| load()>
+                    {icon(Glyph::Restore)}{t(T::NextRetry)}
+                </button>
             </div>
         }
         .into_any(),
-        Some(Ok(doc)) => {
+        (Some(doc), _) => {
             let label = match doc.kind.as_str() {
                 "presentation" => T::SlideN,
                 "spreadsheet" => T::SheetN,

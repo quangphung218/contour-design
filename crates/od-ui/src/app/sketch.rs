@@ -3,6 +3,7 @@
 //! and sent to the chat as a PNG for the agent to build from.
 
 use super::api;
+use super::file_state::{Autosave, ReadState, Save, read_error_banner};
 use super::files_panel::{FilesUi, raw_url, replace_content};
 use super::icons::{Glyph, icon};
 use super::preview_tools::{DRAW_COLORS, DrawSurface, compose, draw_controls, save_png};
@@ -89,50 +90,32 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
     let pen = RwSignal::new(Pen::Free);
     let color = RwSignal::new(DRAW_COLORS[0]);
     let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
-    // On only once the file is read: it turns the autosave on.
-    let loaded = RwSignal::new(false);
-    // Why the file could not be read (the reason, for the tooltip).
-    let read_error = RwSignal::new(None::<String>);
+    // Loaded only once the file is read: it turns the autosave on.
+    let read = RwSignal::new(ReadState::<()>::default());
     let saved = RwSignal::new(SaveState::Clean);
     let busy = RwSignal::new(false);
     let size = StoredValue::new((SketchFile::WIDTH, SketchFile::HEIGHT));
     let path = StoredValue::new(path);
     let tasks = Tasks::here();
     let load = move || {
-        read_error.set(None);
+        read.update(ReadState::retry);
         tasks.spawn(async move {
-            let Some(url) = path.try_get_value().map(|p| raw_url(ctx, &p)) else {
-                return;
-            };
+            let url = raw_url(ctx, &path.get_value());
             let file = match api::get_text(&url).await {
                 Ok(text) => read_sketch(&text),
                 Err(e) => Err(ctx.failed(&e)),
             };
-            // Leaving the file while it loads disposes the view (`try_`).
-            match file {
-                Ok(file) => {
-                    let _ = size.try_set_value((file.width.max(1), file.height.max(1)));
-                    let _ = history.try_set(History::from_strokes(file.strokes));
-                    let _ = loaded.try_set(true);
-                    let _ = read_error.try_set(None);
-                }
-                // A drawing already on screen stays; only a sketch that
-                // never loaded shows the error.
-                Err(why) if !loaded.try_get_untracked().unwrap_or(true) => {
-                    let _ = read_error.try_set(Some(why));
-                }
-                Err(_) => {}
-            }
+            let res = file.map(|file| {
+                size.set_value((file.width.max(1), file.height.max(1)));
+                history.set(History::from_strokes(file.strokes));
+            });
+            read.update(|r| r.read(res));
         });
     };
     load();
     // Saved a moment after the last change, and at once when the view
     // goes (tab switch, leaving the Studio) with a change not saved yet.
-    let seq = StoredValue::new(0u32);
-    let pending = StoredValue::new(false);
-    let save_now = move || {
-        pending.set_value(false);
-        let n = seq.get_value();
+    let autosave = Autosave::new(SAVE_DELAY_MS, move |save: Save| {
         saved.set(SaveState::Saving);
         let (width, height) = size.get_value();
         let file = SketchFile {
@@ -149,9 +132,12 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
             }
         };
         // Started here: on leaving, the save runs after the view is disposed.
-        let save = replace_content(ctx, &path.get_value(), &body, "Sketch", T::MdSaveFailed);
-        tasks.spawn_then(save, move |res| {
-            if seq.get_value() == n {
+        let work = replace_content(ctx, &path.get_value(), &body, "Sketch", T::MdSaveFailed);
+        tasks.spawn_then(work, move |res| {
+            if res.is_err() {
+                save.failed();
+            }
+            if save.is_latest() {
                 saved.set(if res.is_ok() {
                     SaveState::Done
                 } else {
@@ -159,26 +145,13 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
                 });
             }
         });
-    };
+    });
     Effect::new(move |first: Option<()>| {
         history.track();
-        if first.is_none() || !loaded.get_untracked() {
+        if first.is_none() || !read.with_untracked(ReadState::loaded) {
             return;
         }
-        let n = seq.get_value().wrapping_add(1);
-        seq.set_value(n);
-        pending.set_value(true);
-        tasks.spawn(async move {
-            gloo_timers::future::TimeoutFuture::new(SAVE_DELAY_MS).await;
-            if seq.get_value() == n {
-                save_now();
-            }
-        });
-    });
-    on_cleanup(move || {
-        if pending.get_value() {
-            save_now();
-        }
+        autosave.changed();
     });
     let to_chat = move |_| {
         if busy.get_untracked() {
@@ -238,15 +211,8 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
             </div>
             <div class="sketch-board">
                 <div class="sketch-paper" style=format!("aspect-ratio:{w}/{h}")>
-                    {move || read_error.get().map(|why| view! {
-                        <div class="sketch-error" role="alert" data-testid="sketch-read-error">
-                            <p class="error-text" title=why>{icon(Glyph::Warning)}{t(T::SketchReadFailed)}</p>
-                            <button class="btn small" data-testid="sketch-retry" on:click=move |_| load()>
-                                {icon(Glyph::Restore)}{t(T::NextRetry)}
-                            </button>
-                        </div>
-                    })}
-                    <Show when=move || loaded.get() fallback=move || read_error.with(Option::is_none).then(|| view! { <div class="skeleton sketch-skeleton"></div> })>
+                    {read_error_banner(read, "sketch-error", "sketch", T::SketchReadFailed, load)}
+                    <Show when=move || read.with(ReadState::loaded) fallback=move || read.with(ReadState::waiting).then(|| view! { <div class="skeleton sketch-skeleton"></div> })>
                         <DrawSurface history=history pen=pen color=color canvas_ref=canvas_ref size=size.get_value() class="sketch-canvas"/>
                     </Show>
                 </div>

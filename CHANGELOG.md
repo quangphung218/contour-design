@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Studio: an Office file whose text could not be read and a History list that could not load now have Retry; a History reload that fails keeps the versions shown instead of replacing them with the error, and switching file no longer shows the previous file's versions while the new ones load. A Markdown document or sketch whose save failed is saved again when its tab is closed.
+
 ## [0.2.0-beta.33] - 2026-11-13
 
 ### Fixed

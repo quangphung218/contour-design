@@ -109,12 +109,6 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
         1,
         "design system kit load",
     ),
-    (
-        "doc_view.rs",
-        ".map_err(|e| e.to_string())",
-        1,
-        "office document text load",
-    ),
     // Under their own heading, which says what failed.
     (
         "project_actions.rs",
