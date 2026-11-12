@@ -37,9 +37,11 @@ async fn shot(ctx: StudioCtx) -> Result<String, String> {
 }
 
 /// Copies the page as an image. The clipboard item is made inside the
-/// click with a promise of the image (WebKit needs the user gesture).
+/// click with a promise of the image (WebKit needs the user gesture). The
+/// snapshot is waited for on the Studio's tools: a Studio left meanwhile
+/// rejects the promise rather than read them.
 fn copy_to_clipboard(ctx: StudioCtx, ui: FilesUi) {
-    let blob = wasm_bindgen_futures::future_to_promise(async move {
+    let blob = ctx.tasks.promise(async move {
         let png = shot(ctx).await.map_err(|e| JsValue::from_str(&e))?;
         let bytes = data_url_bytes(&png).ok_or_else(|| JsValue::from_str("bad image data"))?;
         Ok(png_blob(&bytes)?.into())

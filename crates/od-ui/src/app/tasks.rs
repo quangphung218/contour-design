@@ -30,11 +30,15 @@
 //!   runs with its output only while the owner is still there. `work` must
 //!   not read the owner's signals: take what it needs before.
 //! - [`detached`]: work with no view to update; runs to its end.
+//!
+//! [`Tasks::promise`] is [`Tasks::spawn`] for a browser API that takes a
+//! promise at once (a clipboard item made inside the click).
 
 use leptos::prelude::*;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use wasm_bindgen::JsValue;
 
 /// The tasks of one component; `Copy`, so it goes into closures like a
 /// signal.
@@ -64,7 +68,24 @@ impl Tasks {
     /// goes through [`Self::spawn_then`] instead.
     pub fn spawn(self, fut: impl Future<Output = ()> + 'static) {
         #[allow(clippy::disallowed_methods)] // the one place that spawns
-        leptos::task::spawn_local(Guarded::new(fut, move || self.alive()));
+        leptos::task::spawn_local(async move {
+            Guarded::new(fut, move || self.alive()).await;
+        });
+    }
+
+    /// `fut` as a JS promise, for an API that needs one at once (WebKit
+    /// takes a clipboard item only inside the click). It stops as
+    /// [`Self::spawn`] does: once the owner went, the promise rejects.
+    pub fn promise(
+        self,
+        fut: impl Future<Output = Result<JsValue, JsValue>> + 'static,
+    ) -> js_sys::Promise {
+        #[allow(clippy::disallowed_methods)] // the one place that spawns
+        wasm_bindgen_futures::future_to_promise(async move {
+            Guarded::new(fut, move || self.alive())
+                .await
+                .unwrap_or_else(|| Err(JsValue::from_str("the screen was left")))
+        })
     }
 
     /// Spawns `work`, which runs to its end even after the owner went (it
@@ -101,15 +122,15 @@ async fn then_if<T>(
     }
 }
 
-/// `inner`, polled while `alive` holds after its first poll; done as soon
-/// as it does not.
+/// `inner`, polled while `alive` holds after its first poll; done, with
+/// no output, as soon as it does not.
 struct Guarded<F, A> {
     inner: Pin<Box<F>>,
     alive: A,
     started: bool,
 }
 
-impl<F: Future<Output = ()>, A: Fn() -> bool> Guarded<F, A> {
+impl<F: Future, A: Fn() -> bool> Guarded<F, A> {
     fn new(inner: F, alive: A) -> Self {
         Self {
             inner: Box::pin(inner),
@@ -119,16 +140,16 @@ impl<F: Future<Output = ()>, A: Fn() -> bool> Guarded<F, A> {
     }
 }
 
-impl<F: Future<Output = ()>, A: Fn() -> bool + Unpin> Future for Guarded<F, A> {
-    type Output = ();
+impl<F: Future, A: Fn() -> bool + Unpin> Future for Guarded<F, A> {
+    type Output = Option<F::Output>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         if this.started && !(this.alive)() {
-            return Poll::Ready(());
+            return Poll::Ready(None);
         }
         this.started = true;
-        this.inner.as_mut().poll(cx)
+        this.inner.as_mut().poll(cx).map(Some)
     }
 }
 
@@ -155,7 +176,7 @@ mod tests {
         }
     }
 
-    fn poll<F: Future<Output = ()>>(f: &mut Pin<Box<F>>) -> Poll<()> {
+    fn poll<F: Future>(f: &mut Pin<Box<F>>) -> Poll<F::Output> {
         f.as_mut().poll(&mut Context::from_waker(Waker::noop()))
     }
 
@@ -287,6 +308,34 @@ mod tests {
         drop(screen);
         assert!(!panel_tasks.alive());
         drop(panel);
+    }
+
+    /// Pending once, then ready with `7`.
+    async fn seven(steps: Rc<Cell<u32>>) -> u32 {
+        TwoSteps(steps).await;
+        7
+    }
+
+    #[test]
+    fn a_promise_gets_the_output_while_its_screen_stays() {
+        let owner = Owner::new();
+        let tasks = owner.with(Tasks::here);
+        let steps = Rc::new(Cell::new(0));
+        let mut f = Box::pin(Guarded::new(seven(steps), move || tasks.alive()));
+        assert!(poll(&mut f).is_pending());
+        assert_eq!(poll(&mut f), Poll::Ready(Some(7)));
+    }
+
+    #[test]
+    fn a_promise_has_no_output_once_its_screen_went() {
+        let owner = Owner::new();
+        let tasks = owner.with(Tasks::here);
+        let steps = Rc::new(Cell::new(0));
+        let mut f = Box::pin(Guarded::new(seven(steps.clone()), move || tasks.alive()));
+        assert!(poll(&mut f).is_pending());
+        drop(owner);
+        assert_eq!(poll(&mut f), Poll::Ready(None));
+        assert_eq!(steps.get(), 1, "nothing after the first await ran");
     }
 
     #[test]

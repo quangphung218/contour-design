@@ -2,8 +2,9 @@
 //! the template gallery for the chosen output type, and recent projects.
 
 use super::composer::{
-    ContextChips, FilePicker, MentionArea, PENDING_ATTACHMENTS, PENDING_CONTEXT, PlusMenu, Sources,
-    Upload, UploadTray, admit, close_outside, upload_all,
+    ContextChips, FilePicker, MentionArea, PENDING_ATTACHMENTS, PENDING_CONTEXT, PlusMenu,
+    SentFile, Sources, Upload, UploadState, UploadTray, admit, claim_uploads, close_outside,
+    settle_upload, upload_files,
 };
 use super::desktop;
 use super::ds_create::CreateFlow;
@@ -293,20 +294,32 @@ pub fn Home() -> impl IntoView {
         busy.set(true);
         error.set(None);
         let navigate = navigate.clone();
-        tasks.spawn(async move {
-            let res = match api::post::<_, CreateProjectResponse>("/api/projects", &req).await {
-                Ok(res) => res,
-                Err(e) => {
-                    error.set(Some(api::failure(T::ProjectCreateFailed, &e)));
-                    busy.set(false);
-                    return;
-                }
-            };
+        // The project, its files and the metadata staging them go through
+        // even if Home is left meanwhile; only the view and the way into
+        // the Studio wait for it. A file that did not make it is said
+        // wherever the user is then.
+        let todo = claim_uploads(uploads);
+        let mut files = uploaded.get_untracked();
+        let work = async move {
+            let res = api::post::<_, CreateProjectResponse>("/api/projects", &req)
+                .await
+                .map_err(|e| api::failure(T::ProjectCreateFailed, &e))?;
             let base = format!("/api/projects/{}", api::seg(&res.project.id));
-            if !uploads.with_untracked(Vec::is_empty) {
-                upload_all(base.clone(), uploads, uploaded).await;
+            let sent = upload_files(&base, todo).await;
+            let failed: Vec<String> = sent
+                .iter()
+                .filter_map(|s| {
+                    s.result
+                        .as_ref()
+                        .err()
+                        .map(|(_, e)| format!("{}: {e}", s.item.name))
+                })
+                .collect();
+            for s in &sent {
+                if let Ok(path) = &s.result {
+                    crate::workspace::add_missing(&mut files, vec![path.clone()]);
+                }
             }
-            let files = uploaded.get_untracked();
             let live: Vec<Candidate> = staged
                 .into_iter()
                 .filter(|c| extras.message.contains(&format!("@{}", c.label)))
@@ -330,8 +343,32 @@ pub fn Home() -> impl IntoView {
             // Sent: the next visit starts from a blank brief.
             store(PROMPT_KEY, None);
             store(DESIGN_SYSTEM_KEY, None);
-            navigate(&format!("/projects/{}", res.project.id), Default::default());
-        });
+            if !failed.is_empty() {
+                shell.notice.set(Some(failed.join(" · ")));
+            }
+            Ok((res.project.id, sent))
+        };
+        tasks.spawn_then(
+            work,
+            move |res: Result<(String, Vec<SentFile>), String>| match res {
+                Ok((id, sent)) => {
+                    for s in sent {
+                        settle_upload(uploads, uploaded, s);
+                    }
+                    navigate(&format!("/projects/{id}"), Default::default());
+                }
+                Err(e) => {
+                    // No project to upload to: the files wait for the next try.
+                    uploads.update(|u| {
+                        for x in u.iter_mut().filter(|x| x.state == UploadState::Uploading) {
+                            x.state = UploadState::Waiting;
+                        }
+                    });
+                    error.set(Some(e));
+                    busy.set(false);
+                }
+            },
+        );
     };
     let submit_key = submit.clone();
 
