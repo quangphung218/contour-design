@@ -272,7 +272,7 @@ pub fn Projects() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match import_zip(&file).await {
                 Ok(id) => navigate(&format!("/projects/{id}"), Default::default()),
-                Err(e) => page.error.set(Some(tf(T::ImportZipFailed, &[&e]))),
+                Err(e) => page.error.set(Some(e)),
             }
             importing.set(false);
         });
@@ -546,25 +546,21 @@ pub fn Projects() -> impl IntoView {
     }
 }
 
-/// `POST /api/import/claude-design` with `file`; the new project's id.
+/// `POST /api/import/claude-design` with `file`; the new project's id. A
+/// failure says the import failed: an internal one says to try again, not
+/// "HTTP 500" (QA-081).
 async fn import_zip(file: &web_sys::File) -> Result<String, String> {
-    let form = web_sys::FormData::new().map_err(|_| "FormData".to_owned())?;
+    let retry = || api::try_again_text(t(T::ImportZipFailed));
+    let form = web_sys::FormData::new().map_err(|_| retry())?;
     form.append_with_blob_and_filename("file", file, &file.name())
-        .map_err(|_| "FormData".to_owned())?;
-    let req = gloo_net::http::Request::post("/api/import/claude-design")
-        .body(form)
-        .map_err(|e| e.to_string())?;
-    let res = req.send().await.map_err(|e| e.to_string())?;
-    let body: Value = res.json().await.unwrap_or(Value::Null);
-    if !res.ok() {
-        return Err(body["error"]["message"]
-            .as_str()
-            .map_or_else(|| format!("HTTP {}", res.status()), str::to_owned));
-    }
+        .map_err(|_| retry())?;
+    let body: Value = api::post_form("/api/import/claude-design", form)
+        .await
+        .map_err(|e| api::failure(T::ImportZipFailed, &e))?;
     body["project"]["id"]
         .as_str()
         .map(str::to_owned)
-        .ok_or_else(|| "unexpected answer".to_owned())
+        .ok_or_else(retry)
 }
 
 /// Search results under the toolbar: projects, conversations, messages.

@@ -10,7 +10,7 @@ use super::icons::{Glyph, icon};
 use super::preview_tools::{Tool, panel_head};
 use super::studio::StudioCtx;
 use crate::comment_board::{self as cb, AnchorState, LoadTicket, Marker};
-use crate::i18n::{T, t, tf};
+use crate::i18n::{T, t};
 use crate::preview_bridge::{self as pb, Located};
 use leptos::prelude::*;
 use od_contracts::{CommentStatus, CommentsResponse, PreviewComment};
@@ -374,12 +374,14 @@ pub fn DraftImages(
         }
         busy.set(true);
         leptos::task::spawn_local(async move {
-            match super::files_panel::upload(ctx, files, COMMENT_IMAGES_DIR).await {
+            match super::files_panel::upload(ctx, T::CommentImageFailed, files, COMMENT_IMAGES_DIR)
+                .await
+            {
                 Ok(paths) => {
                     images.update(|i| i.extend(paths));
                     ctx.refresh_files();
                 }
-                Err(e) => error.set(Some(tf(T::CommentImageFailed, &[&e]))),
+                Err(e) => error.set(Some(e)),
             }
             busy.set(false);
         });

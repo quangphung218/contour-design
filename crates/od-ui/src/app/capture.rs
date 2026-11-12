@@ -82,7 +82,7 @@ fn to_chat(ctx: StudioCtx, ui: FilesUi, busy: RwSignal<bool>) {
                     "{SCREENSHOTS_DIR}/screenshot-{}.png",
                     js_sys::Date::now() as u64
                 );
-                save_png(ctx, name, &png).await
+                save_png(ctx, T::ScreenshotAttachFailed, name, &png).await
             }
             Err(e) => Err(e),
         };

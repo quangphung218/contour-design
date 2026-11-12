@@ -200,7 +200,7 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
         }
         leptos::task::spawn_local(async move {
             let doc = path.get_value();
-            match upload(ctx, images, ft::parent(&doc)).await {
+            match upload(ctx, T::UploadFailed, images, ft::parent(&doc)).await {
                 Ok(stored) => {
                     let snippet = stored
                         .iter()
@@ -228,7 +228,7 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
                     ui.refresh(ctx);
                     schedule();
                 }
-                Err(e) => ctx.notice.set(Some(tf(T::UploadFailed, &[&e]))),
+                Err(e) => ctx.notice.set(Some(e)),
             }
         });
         true
