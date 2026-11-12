@@ -8,7 +8,8 @@ suite in `crates/od-ui/e2e/*.e2e.mjs` mostly walks the happy paths; this
 plan adds the mistakes and accidents of real users. Bugs found are in
 [bugs.md](bugs.md); the failed-call pass (QA-081 to QA-084) in
 [bugs-web-failures.md](bugs-web-failures.md); the web pass after beta.28 (QA-074 to QA-078) in
-[bugs-web-beta28.md](bugs-web-beta28.md).
+[bugs-web-beta28.md](bugs-web-beta28.md); the desktop beta.32 pass (QA-085 to QA-088, §18 on
+macOS) in [bugs-desktop-beta32.md](bugs-desktop-beta32.md).
 
 ## Priorities and status
 
@@ -488,6 +489,10 @@ On a built app, on each of macOS
 - [ ] Drag an element of the design (`draggable="true"`) and drop it, then
   let go of a key in a field whose page opens a URL on `keyup`: nothing
   opens.
+
+macOS, beta.32 (2026-11-12): every row above passes
+([bugs-desktop-beta32.md](bugs-desktop-beta32.md#18-links-and-popups-macos-window)).
+The boxes stay open for Windows and Linux, not run.
 
 ## 19. Desktop app: a page that hangs or crashes (manual, macOS)
 

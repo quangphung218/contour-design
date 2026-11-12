@@ -20,10 +20,10 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 
 | ID | Sev | Bug | Test | Status |
 |---|---|---|---|---|
-| QA-084 | 🔴 | A sketch whose read fails opens as a blank sketch; the next stroke saves over the file and the earlier strokes are gone | `failures.qa.mjs` FAIL-10 | Fixed |
-| QA-081 | 🟡 | A failed call reads "The daemon hit an error: database is locked (HTTP 500)" (Design Jury, comments, new sketch, GenUI, duplicate, transcript export) | `failures.qa.mjs` FAIL-01, 02, 03, 08, 11, 12, 14 | Fixed |
-| QA-082 | 🟡 | Manual edit: a write that failed shows only the daemon's reason ("database is locked"), not that the edit was not applied | `failures.qa.mjs` FAIL-05 | Fixed |
-| QA-083 | 🔵 | Lint that could not run leaves no trace: the Lint button disappears and nothing says the check failed | `failures.qa.mjs` FAIL-07 | Fixed |
+| QA-084 | 🔴 | A sketch whose read fails opens as a blank sketch; the next stroke saves over the file and the earlier strokes are gone | `failures.qa.mjs` FAIL-10 | Fixed in beta.32 ([recheck](bugs-desktop-beta32.md)) |
+| QA-081 | 🟡 | A failed call reads "The daemon hit an error: database is locked (HTTP 500)" (Design Jury, comments, new sketch, GenUI, duplicate, transcript export) | `failures.qa.mjs` FAIL-01, 02, 03, 08, 11, 12, 14 | Fixed in beta.32 ([recheck](bugs-desktop-beta32.md)) |
+| QA-082 | 🟡 | Manual edit: a write that failed shows only the daemon's reason ("database is locked"), not that the edit was not applied | `failures.qa.mjs` FAIL-05 | Fixed in beta.32 ([recheck](bugs-desktop-beta32.md)) |
+| QA-083 | 🔵 | Lint that could not run leaves no trace: the Lint button disappears and nothing says the check failed | `failures.qa.mjs` FAIL-07 | Fixed in beta.32 ([recheck](bugs-desktop-beta32.md)) |
 
 ## Pass / fail by feature
 
