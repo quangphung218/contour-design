@@ -237,6 +237,9 @@ pub async fn events(State(state): State<AppState>) -> Response {
                 }
             }
         });
+    // Ends when the daemon stops: open on every screen, it would hold the
+    // shutdown for the whole drain (QA-092).
+    let stream = futures_util::StreamExt::take_until(stream, state.runs.stopping());
     let mut res = Sse::new(stream)
         .keep_alive(KeepAlive::new().interval(KEEPALIVE))
         .into_response();
