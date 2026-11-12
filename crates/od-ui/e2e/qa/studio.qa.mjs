@@ -313,4 +313,105 @@ test('STU-19', 'Manual edit: clicking a paragraph inside a marked section picks 
     .catch(async () => assert.fail(`picked <${await picked()}> instead of <p>: the user cannot edit the paragraph by clicking it`));
 });
 
+test('STU-20', "History: a late answer for the file just left does not show its versions in the new file's panel", async ({ d, api, newPage }) => {
+  // a.html has three versions, b.html one; each version's prompt names it.
+  const id = await createProject(d, 'History switch', {});
+  const versions = { 'a.html': ['A first', 'A second', 'A third'], 'b.html': ['B only'] };
+  for (const [file, prompts] of Object.entries(versions)) {
+    for (const [i, prompt] of prompts.entries()) {
+      await writeFile(d, id, file, `<!doctype html><h1>${prompt}</h1><p>${i}</p>`);
+      const r = await api(`/api/projects/${id}/files/${file}/versions`, { method: 'POST', body: { prompt } });
+      assert.ok(r.status < 300, `version of ${file}: ${r.status} ${JSON.stringify(r.body)}`);
+    }
+  }
+  const p = await newPage();
+  const { page } = p;
+  // Hold every answer for a.html's versions until b.html's list is shown.
+  const held = [];
+  let released = false;
+  const isA = (url) => new URL(url).pathname.endsWith('/files/a.html/versions');
+  await page.route(isA, (route) => (released ? route.continue() : held.push(route)));
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.getByTestId('file-tree').waitFor();
+  await row(page, 'a.html').click();
+  await frame(page).locator('h1', { hasText: 'A third' }).waitFor();
+  await page.getByTestId('history').click();
+  await until(() => held.length > 0, "a.html's versions asked for");
+  await row(page, 'b.html').click();
+  const panel = page.getByTestId('versions');
+  await panel.locator('.version-prompt', { hasText: 'B only' }).waitFor();
+  // Now a.html's answer comes back, late.
+  const answered = held.map(() => page.waitForEvent('requestfinished', { predicate: (r) => isA(r.url()) }));
+  released = true;
+  for (const r of held) await r.continue();
+  await Promise.all(answered);
+  // Let the app handle the answer: two frames after it finished.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const prompts = await panel.locator('.version-prompt').allTextContents();
+  assert.deepEqual(prompts, ['B only'], `b.html's History shows ${JSON.stringify(prompts)}`);
+  assert.match(await panel.locator('.pane-title').textContent(), /b\.html/);
+});
+
+test('STU-21', "History: a version of the file just left, viewed a moment before, does not show over the new file", async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'History view switch', {});
+  for (const [file, prompts] of Object.entries({ 'a.html': ['A old', 'A new'], 'b.html': ['B only'] })) {
+    for (const prompt of prompts) {
+      await writeFile(d, id, file, `<!doctype html><h1>${prompt}</h1>`);
+      const r = await api(`/api/projects/${id}/files/${file}/versions`, { method: 'POST', body: { prompt } });
+      assert.ok(r.status < 300, `version of ${file}: ${r.status}`);
+    }
+  }
+  const { page } = await newPage();
+  // Hold the content of a.html's versions (View) until b.html is shown.
+  const held = [];
+  let released = false;
+  const isAVersion = (url) => /\/files\/a\.html\/versions\/[^/]+$/.test(new URL(url).pathname);
+  await page.route(isAVersion, (route) => (released ? route.continue() : held.push(route)));
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.getByTestId('file-tree').waitFor();
+  await row(page, 'a.html').click();
+  await frame(page).locator('h1', { hasText: 'A new' }).waitFor();
+  await page.getByTestId('history').click();
+  const panel = page.getByTestId('versions');
+  await panel.locator('[data-testid="version"]', { hasText: 'A old' }).getByTestId('version-view').click();
+  await until(() => held.length > 0, "a.html's old version asked for");
+  await row(page, 'b.html').click();
+  await panel.locator('.version-prompt', { hasText: 'B only' }).waitFor();
+  await frame(page).locator('h1', { hasText: 'B only' }).waitFor();
+  const answered = held.map(() => page.waitForEvent('requestfinished', { predicate: (r) => isAVersion(r.url()) }));
+  released = true;
+  for (const r of held) await r.continue();
+  await Promise.all(answered);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  // b.html is on screen: its live page, no "Viewing version" of a.html
+  // with a Restore that would act on b.html.
+  const viewing = await page.getByTestId('version-preview').count();
+  const banner = await panel.locator('.viewing').count();
+  assert.equal(viewing + banner, 0, `b.html shows a.html's old version (frame ${viewing}, banner ${banner})`);
+}, { knownBug: 'QA-089' });
+
+test('STU-22', 'A link and a window.open button inside a web component (shadow root) in the preview each open one tab', async ({ d, newPage }) => {
+  const WC = (base) => `<!doctype html><html><body><h1 id="title">Web component</h1><x-card></x-card><script>
+customElements.define('x-card', class extends HTMLElement {
+  connectedCallback() {
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = '<a id="lnk" target="_blank" href="${base}/api/health?from=link">Docs</a> <button id="btn">Open</button>';
+    root.getElementById('btn').addEventListener('click', () => window.open('${base}/api/health?from=button', '_blank'));
+  }
+});
+</script></body></html>`;
+  const { page, context } = await studio(newPage, d, { 'index.html': WC(d.base) });
+  const f = frame(page);
+  await f.locator('#title').waitFor();
+  const opened = [];
+  context.on('page', (p) => opened.push(p));
+  await f.locator('x-card #lnk').click();
+  await until(() => opened.length >= 1, 'a tab for the link', 5000);
+  await f.locator('x-card #btn').click();
+  await until(() => opened.length >= 2, 'a tab for the button', 5000);
+  await until(async () => opened.every((p) => p.url() !== 'about:blank'), 'the tabs have their address', 5000).catch(() => {});
+  const urls = opened.map((p) => p.url()).sort();
+  assert.deepEqual(urls, [`${d.base}/api/health?from=button`, `${d.base}/api/health?from=link`], `tabs: ${urls.join(', ')}`);
+});
+
 await run('studio');
