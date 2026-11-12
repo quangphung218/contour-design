@@ -1,8 +1,8 @@
 // QA: when a call fails (docs/qa/test-plan.md §20). Design Jury, comments,
 // manual edit, lint, sketch, Markdown, GenUI, duplicate project,
-// transcript export, conversations and design systems each show what
-// failed in the user's words (no "HTTP 500", no "daemon", no JSON), keep
-// what the user typed, and work when tried again.
+// transcript export, conversations, design systems, uploads and ZIP
+// import each show what failed in the user's words (no "HTTP 500", no
+// "daemon", no JSON), keep what the user typed, and work when tried again.
 // The daemon's failure is played by `page.route` answering 500 the way the
 // daemon does; "deleted from another tab" deletes through the API.
 //
@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test, run, createProject, listProjects, until, waitTurn } from './lib.mjs';
+import { test, run, createProject, listFiles, listProjects, until, waitTurn, zip } from './lib.mjs';
 
 const PAGE = '<!doctype html><html><body><h1 id="title">Hello failures</h1><p id="lead">Lead text</p></body></html>';
 
@@ -633,6 +633,39 @@ test('FAIL-19', 'Design systems: a copy or a delete that failed says which, and 
   plainWords(deleteSaid, 'Design system delete');
   assert.match(copySaid, /design system/i, `"${copySaid}" does not say the copy failed (QA-088)`);
   assert.match(deleteSaid, /delete/i, `"${deleteSaid}" does not say the delete failed (QA-088)`);
+});
+
+test('FAIL-20', 'Studio upload and ZIP import that failed say which once, never "HTTP 500", and the next try does it', async ({ d, newPage }) => {
+  const { page, id } = await studio(newPage, d, 'Upload fails');
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
+  let brk = await breakApi(page, (u, r) => u.pathname === projectPath(id, '/upload') && r.method() === 'POST');
+  const notice = page.getByTestId('notice');
+  await page.getByTestId('upload-input').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: PNG });
+  await until(() => brk.hits === 1, 'the upload failed');
+  await notice.waitFor();
+  const uploadSaid = await notice.innerText();
+  brk.heal();
+  await page.getByTestId('upload-input').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: PNG });
+  await until(async () => (await listFiles(d, id)).includes('logo.png'), 'the next upload stores it');
+
+  await page.goto(`${d.base}/projects`);
+  brk = await breakApi(page, (u, r) => u.pathname === '/api/import/claude-design' && r.method() === 'POST');
+  const archive = { name: 'Cafe export.zip', mimeType: 'application/zip', buffer: zip({ 'Home.html': '<h1>Cafe</h1>' }) };
+  await page.getByTestId('import-zip-input').setInputFiles(archive);
+  await until(() => brk.hits === 1, 'the import failed');
+  const alert = page.locator('.error-text[role="alert"]');
+  await alert.waitFor();
+  const importSaid = await alert.innerText();
+  brk.heal();
+  await page.getByTestId('import-zip-input').setInputFiles(archive);
+  await page.waitForURL('**/projects/*');
+
+  plainWords(uploadSaid, 'Studio upload');
+  plainWords(importSaid, 'ZIP import');
+  assert.match(uploadSaid, /upload/i, `"${uploadSaid}" does not say the upload failed (QA-088)`);
+  assert.doesNotMatch(uploadSaid, /finish this/i, `"${uploadSaid}" nests the bare failure in the upload sentence (QA-088)`);
+  assert.match(importSaid, /import/i, `"${importSaid}" does not say the import failed (QA-081)`);
+  assert.doesNotMatch(importSaid, /database is locked/i, `"${importSaid}" shows the internal cause (QA-081)`);
 });
 
 try {
