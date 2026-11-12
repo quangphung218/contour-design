@@ -238,4 +238,63 @@ test('HOME-15', 'On a phone, "+" ▸ From folder gives a path field wide enough 
   assert.ok(w >= 200, `path field only ${Math.round(w)} px wide`);
 });
 
+test('HOME-16', 'A file that could not be uploaded after the user left Home is said on the page they went to', async ({ d, newPage }) => {
+  const before = await ids(d);
+  const { page } = await home(newPage, d);
+  // The upload answers 500 only once the user is elsewhere.
+  let left = false;
+  let failed = 0;
+  await page.route(/\/api\/projects\/[^/]+\/upload$/, async (route) => {
+    await until(async () => left, 'the user left Home');
+    failed++;
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'database is locked' } }),
+    });
+  });
+  await page.getByTestId('file-input').setInputFiles({ name: 'brief-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') });
+  await page.getByTestId('upload-chip').waitFor();
+  await page.getByTestId('brief').fill('A page from my notes');
+  await page.getByTestId('brief').press('Enter');
+  await until(async () => (await created(d, before)).length === 1, 'the project is created');
+  await page.getByRole('link', { name: 'Projects' }).first().click();
+  await page.waitForURL(/\/projects$/);
+  left = true;
+  const notice = page.getByTestId('shell-notice');
+  await notice.waitFor({ timeout: 10_000 });
+  assert.equal(failed, 1);
+  const said = (await notice.innerText()).replace(/\s+/g, ' ');
+  assert.match(said, /brief-notes\.txt/, said);
+  assert.doesNotMatch(said, /HTTP\s*\d{3}|daemon|INTERNAL_ERROR/i, said);
+  assert.match(page.url(), /\/projects$/, 'the Studio opened after the user went elsewhere');
+});
+
+test('HOME-17', 'A file removed from the tray while the brief uploads is not attached to the first message', async ({ d, newPage }) => {
+  const { page, runs } = await home(newPage, d);
+  // The second file's upload waits until its card is removed.
+  let removed = false;
+  await page.route(/\/api\/projects\/[^/]+\/upload$/, async (route) => {
+    if ((route.request().postData() || '').includes('drop-me.txt')) {
+      await until(async () => removed, 'the card was removed');
+    }
+    await route.continue();
+  });
+  await page.getByTestId('file-input').setInputFiles([
+    { name: 'keep-me.txt', mimeType: 'text/plain', buffer: Buffer.from('keep') },
+    { name: 'drop-me.txt', mimeType: 'text/plain', buffer: Buffer.from('drop') },
+  ]);
+  await until(async () => (await page.getByTestId('upload-chip').count()) === 2, 'two files staged');
+  await page.getByTestId('brief').fill('A page from two notes');
+  await page.getByTestId('brief').press('Enter');
+  const drop = page.getByTestId('upload-chip').filter({ hasText: 'drop-me.txt' });
+  await until(async () => (await drop.getAttribute('data-state')) === 'uploading', 'the second file uploads');
+  await drop.getByRole('button', { name: 'Remove drop-me.txt' }).click();
+  removed = true;
+  await until(() => runs.length > 0, 'the first message is sent', 20_000);
+  const sent = JSON.stringify(runs[0].attachments || []);
+  assert.match(sent, /keep-me\.txt/, sent);
+  assert.doesNotMatch(sent, /drop-me\.txt/, `a removed file went with the brief: ${sent}`);
+});
+
 await run('home');

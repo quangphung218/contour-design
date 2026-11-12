@@ -362,6 +362,25 @@ test('FAIL-10', 'Sketch: a sketch that could not be read is not shown blank and 
   await until(async () => (await fileJson(api, id, SKETCH)).strokes?.length === before.strokes.length + 1, 'the next stroke is saved after the earlier ones');
 });
 
+test('FAIL-21', 'Sketch: a stroke drawn just before switching to another file is saved', async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'Sketch flush', { 'index.html': PAGE });
+  const { page } = await newPage();
+  // A fake clock that can stop: the autosave's timer then never fires, so
+  // only the flush on leaving the view can save the stroke.
+  await page.clock.install();
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.getByTestId('file-tree').waitFor();
+  await newSketch(page);
+  await page.getByTestId('sketch-view').waitFor();
+  await until(async () => (await api(`/api/projects/${id}/raw/${SKETCH}`)).status === 200, 'sketch file created');
+  await page.clock.pauseAt(Date.now() + 60_000);
+  await stroke(page);
+  await row(page, 'index.html').click();
+  await page.getByTestId('sketch-view').waitFor({ state: 'detached' });
+  await until(async () => (await fileJson(api, id, SKETCH)).strokes?.length === 1, 'the stroke saved on leaving the sketch');
+  await page.clock.resume();
+});
+
 // ------------------------------------------------------------ GenUI
 
 // A plugin that asks one confirmation (as c4-depth.e2e.mjs).

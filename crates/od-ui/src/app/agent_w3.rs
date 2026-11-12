@@ -96,9 +96,9 @@ impl StudioCtx {
     /// Loads the project's Design Jury switch and memory.
     pub fn load_w3(self) {
         self.tasks.spawn(async move {
-            match api::get::<CritiqueSettings>(&format!("{}/critique", self.base())).await {
-                Ok(s) => self.jury.set(s.enabled),
-                Err(e) => self.on_not_found(e.status),
+            if let Ok(s) = api::get::<CritiqueSettings>(&format!("{}/critique", self.base())).await
+            {
+                self.jury.set(s.enabled);
             }
         });
         self.reload_memory();
@@ -140,9 +140,8 @@ impl StudioCtx {
 
     pub fn reload_memory(self) {
         self.tasks.spawn(async move {
-            match api::get::<MemoryResponse>(&format!("{}/memory", self.base())).await {
-                Ok(r) => self.memory.set(r.memory),
-                Err(e) => self.on_not_found(e.status),
+            if let Ok(r) = api::get::<MemoryResponse>(&format!("{}/memory", self.base())).await {
+                self.memory.set(r.memory);
             }
         });
     }
@@ -723,9 +722,8 @@ impl SideChat {
         };
         ctx.tasks.spawn(async move {
             let path = format!("{}/conversations/{}/messages", ctx.base(), api::seg(&cid));
-            let res = match api::get::<MessagesResponse>(&path).await {
-                Ok(res) => res,
-                Err(e) => return ctx.on_not_found(e.status),
+            let Ok(res) = api::get::<MessagesResponse>(&path).await else {
+                return;
             };
             let items = res
                 .messages
@@ -762,6 +760,7 @@ impl SideChat {
         // Both requests run to their end even if the Studio goes; only the
         // side chat's update waits on it.
         let base = ctx.base();
+        let project_id = ctx.project_id.get_value();
         let known = self.conversation_id.get_untracked();
         let req = ChatRequest {
             agent_id,
@@ -794,6 +793,11 @@ impl SideChat {
                 ..req
             };
             let run = api::post::<_, CreateRunResponse>("/api/runs", &side_turn(req)).await;
+            // Not a call on the project's path: the project is named here
+            // (deleted from another tab, QA-076).
+            if let Err(e) = &run {
+                api::note_project(&project_id, e);
+            }
             (created, run.map(|r| r.run_id))
         };
         ctx.tasks.spawn_then(work, move |(created, run)| {

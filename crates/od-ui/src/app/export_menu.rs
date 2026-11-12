@@ -466,10 +466,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         // Studio is left; the result goes through `exports`, which the
         // Export menu shown then reads.
         tasks::detached(async move {
-            let outcome = run_export(&base, format, file, &project, &name, |status| {
-                ctx.on_not_found(status);
-            })
-            .await;
+            let outcome = run_export(&base, format, file, &project, &name).await;
             exports.finish(&job, outcome);
         });
     };
@@ -480,10 +477,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             let path = format!("{}/handoff/open", ctx.base());
             match api::post::<_, OkResponse>(&path, &json!({})).await {
                 Ok(_) => status.set(Some(Ok(t(T::FolderOpened).to_owned()))),
-                Err(e) => {
-                    status.set(Some(Err(api::failure(T::HandoffFailed, &e))));
-                    ctx.on_not_found(e.status);
-                }
+                Err(e) => status.set(Some(Err(api::failure(T::HandoffFailed, &e)))),
             }
         });
     };
@@ -495,10 +489,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
                 Ok(h) => copy_text(&h.prompt)
                     .await
                     .map_err(|e| tf(T::HandoffFailed, &[&e])),
-                Err(e) => {
-                    ctx.on_not_found(e.status);
-                    Err(api::failure(T::HandoffFailed, &e))
-                }
+                Err(e) => Err(api::failure(T::HandoffFailed, &e)),
             };
             match res {
                 Ok(()) => status.set(Some(Ok(t(T::PromptCopied).to_owned()))),
@@ -638,7 +629,6 @@ async fn run_export(
     file: Option<String>,
     project: &str,
     name: &str,
-    failed: impl FnOnce(u16),
 ) -> Option<Result<String, String>> {
     let res = match format {
         Format::Zip => api::get_bytes(&format!("{base}/archive"))
@@ -684,10 +674,7 @@ async fn run_export(
     };
     let (bytes, tracks) = match res {
         Ok(r) => r,
-        Err(e) => {
-            failed(e.status);
-            return Some(Err(api::failure(T::ExportFailed, &e)));
-        }
+        Err(e) => return Some(Err(api::failure(T::ExportFailed, &e))),
     };
     // In the app, the Save dialog: the toast then names the file really
     // written and where (QA-048); a download could be renamed

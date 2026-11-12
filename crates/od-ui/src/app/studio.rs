@@ -205,6 +205,57 @@ pub struct ViewedVersion {
     pub content: String,
 }
 
+/// How far the load of the Studio's project went.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Load {
+    Pending,
+    Done,
+    /// Failed with this text; a retry may load it.
+    Failed(String),
+}
+
+/// What the Studio is in, the one place every pane reads it from: the
+/// workspace, the pane switch, the chat's load card, the composer and the
+/// notice toast all `match` this, none of them decides on its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StudioPhase {
+    Loading,
+    Ready,
+    /// The project could not be loaded (text); Retry may load it.
+    Failed(String),
+    /// The project does not exist: deleted (another tab, another window)
+    /// or a wrong link (STU-12, QA-076/079/080).
+    Gone,
+}
+
+impl StudioPhase {
+    /// The phase of a Studio whose project is `gone` (in [`Shell::gone`])
+    /// or else loaded as `load` says. Gone wins: a project deleted after it
+    /// loaded is gone, and a retry cannot bring it back.
+    #[must_use]
+    pub fn of(gone: bool, load: &Load) -> Self {
+        if gone {
+            return Self::Gone;
+        }
+        match load {
+            Load::Pending => Self::Loading,
+            Load::Done => Self::Ready,
+            Load::Failed(e) => Self::Failed(e.clone()),
+        }
+    }
+
+    #[must_use]
+    pub fn is_gone(&self) -> bool {
+        *self == Self::Gone
+    }
+
+    /// No project to work in: no composer, no workspace steps.
+    #[must_use]
+    pub fn unusable(&self) -> bool {
+        matches!(self, Self::Failed(_) | Self::Gone)
+    }
+}
+
 /// Everything the Studio page shares between its panes.
 #[derive(Clone, Copy)]
 pub struct StudioCtx {
@@ -250,10 +301,10 @@ pub struct StudioCtx {
     pub notice: RwSignal<Option<String>>,
     /// The project's event stream dropped and is reconnecting.
     pub link_down: RwSignal<bool>,
-    /// The project could not be loaded; shown until a retry succeeds.
-    pub load_error: RwSignal<Option<String>>,
-    /// The load failed because the project does not exist (404).
-    pub load_gone: RwSignal<bool>,
+    /// How the load of the project went; read [`Self::phase`] instead.
+    pub load: RwSignal<Load>,
+    /// What the Studio is in, from [`Self::load`] and [`Shell::gone`].
+    pub phase: Memo<StudioPhase>,
     pub comments: RwSignal<Vec<PreviewComment>>,
     /// Load failure and unread comments of the Comments tab.
     pub comment_feed: RwSignal<Feed>,
@@ -397,9 +448,8 @@ impl StudioCtx {
         let seq = self.files_seq.get_value().wrapping_add(1);
         self.files_seq.set_value(seq);
         self.tasks.spawn(async move {
-            let res = match api::get::<FilesResponse>(&format!("{}/files", self.base())).await {
-                Ok(res) => res,
-                Err(e) => return self.on_not_found(e.status),
+            let Ok(res) = api::get::<FilesResponse>(&format!("{}/files", self.base())).await else {
+                return;
             };
             // A slower, older answer must not undo a newer one (an upload
             // and the watcher's event both refresh).
@@ -608,6 +658,7 @@ impl StudioCtx {
         // the sent message again.
         let sent = text.clone();
         let base = self.base();
+        let project_id = self.project_id.get_value();
         let work = async move {
             if let Some(patch) = clear {
                 let _ = api::patch::<_, ProjectResponse>(&base, &patch).await;
@@ -616,9 +667,12 @@ impl StudioCtx {
             if let (Ok(_), Some(k)) = (&res, &draft_key) {
                 super::composer::clear_draft_if(k, &sent);
             }
-            // Refused with 404: the project may have been deleted from
-            // another tab (QA-076).
-            let gone = matches!(&res, Err(e) if e.status == 404) && project_missing(&base).await;
+            // Refused: the project was deleted from another tab (QA-076).
+            // Not a call on the project's path, so it is named here.
+            let gone = matches!(&res, Err(e) if e.project_missing());
+            if let Err(e) = &res {
+                api::note_project(&project_id, e);
+            }
             (res, gone)
         };
         self.tasks.spawn_then(work, move |(res, gone)| {
@@ -628,7 +682,6 @@ impl StudioCtx {
                 Err(_) if gone => {
                     turn.update(|t| t.state = TurnState::Failed);
                     self.live_run.set(None);
-                    self.project_gone();
                 }
                 Ok(res) => {
                     self.tools.attachments.update(|a| {
@@ -983,8 +1036,8 @@ impl StudioCtx {
                 }
             },
             // The browser gave up: the stream answered an error, a 404 once
-            // the project is deleted (QA-076).
-            move || self.probe_gone(),
+            // the project is deleted (QA-076), with no code to read.
+            move || self.check_gone(),
         )
         .map(|s| s.on_connection(move |up| self.on_project_link(up)));
         self.project_stream.set_value(stream.map(SendWrapper::new));
@@ -999,9 +1052,8 @@ impl StudioCtx {
     pub fn reload_conversations(self) {
         self.tasks.spawn(async move {
             let path = format!("{}/conversations", self.base());
-            match api::get::<ConversationsResponse>(&path).await {
-                Ok(r) => self.conversations.set(r.conversations),
-                Err(e) => self.on_not_found(e.status),
+            if let Ok(r) = api::get::<ConversationsResponse>(&path).await {
+                self.conversations.set(r.conversations);
             }
         });
     }
@@ -1019,9 +1071,8 @@ impl StudioCtx {
         self.comment_feed.update(Feed::reset);
         self.load_comments().await;
         let base = self.conversation_base(&cid);
-        let res = match api::get::<MessagesResponse>(&format!("{base}/messages")).await {
-            Ok(res) => res,
-            Err(e) => return self.on_not_found(e.status),
+        let Ok(res) = api::get::<MessagesResponse>(&format!("{base}/messages")).await else {
+            return;
         };
         if self.conversation_id.get_untracked().as_deref() != Some(cid.as_str()) {
             return; // Another conversation was opened meanwhile.
@@ -1309,22 +1360,11 @@ impl StudioCtx {
         self.slide(cmd);
     }
 
-    /// A call on this project answered `status`. A 404 may mean the
-    /// project itself is gone, deleted in another tab: see
-    /// [`Self::probe_gone`]. A 404 for something in it (a file, a
-    /// conversation) changes nothing.
-    pub fn on_not_found(self, status: u16) {
-        if status == 404 {
-            self.probe_gone();
-        }
-    }
-
-    /// A failed call on this project, as the text shown for it, after
-    /// [`Self::on_not_found`]. The project itself gone, the text says so
-    /// in the words of the not-found state, not the daemon's bare 404
-    /// (QA-079); the probe then empties the workspace.
+    /// A failed call on this project, as the text shown for it. The
+    /// project itself gone, the text says so in the words of the not-found
+    /// state, not the daemon's bare 404 (QA-079); the call already marked
+    /// it gone (`api::watch_gone`), which empties the workspace.
     pub fn failed(self, e: &api::HttpError) -> String {
-        self.on_not_found(e.status);
         if e.project_missing() {
             t(T::ProjectGone).to_owned()
         } else {
@@ -1335,7 +1375,6 @@ impl StudioCtx {
     /// [`Self::failed`] that says what was not done: `key` is a template
     /// such as "Could not save the comment: {0}" (see [`api::failure`]).
     pub fn failed_to(self, key: T, e: &api::HttpError) -> String {
-        self.on_not_found(e.status);
         if e.project_missing() {
             t(T::ProjectGone).to_owned()
         } else {
@@ -1343,33 +1382,30 @@ impl StudioCtx {
         }
     }
 
-    /// Asks the daemon for the project; gone (404), the Studio shows it as
-    /// for a wrong link (STU-12): not a dropped link, not an agent failure
-    /// (QA-076).
-    pub fn probe_gone(self) {
-        // Also called after an `await` from tasks that outlive the Studio:
-        // its signals may be gone, then there is nothing to switch.
-        if self.load_gone.try_get_untracked().is_none_or(|gone| gone) {
+    /// The project's event stream failed, which says no status: asks the
+    /// daemon for the project, whose answer marks it gone if it is
+    /// (`api::watch_gone`). Every other call on the project says so itself.
+    fn check_gone(self) {
+        if self.phase.get_untracked().is_gone() {
             return;
         }
         let base = self.base();
         self.tasks.spawn(async move {
-            if project_missing(&base).await {
-                self.project_gone();
-            }
+            let _ = api::get::<ProjectResponse>(&base).await;
         });
     }
 
-    /// The project was deleted: the Studio switches to its not-found state,
-    /// the workspace empty as for a wrong link (QA-079).
-    fn project_gone(self) {
-        // Its event stream would only retry and say "Reconnecting".
-        self.project_stream.set_value(None);
-        self.link_down.set(false);
-        // A toast already up said what failed in it; the state says why.
-        self.notice.set(None);
-        self.load_gone.set(true);
-        self.load_error.set(Some(t(T::ProjectGone).to_owned()));
+    /// Leaves what a gone project's Studio would still do, once: the
+    /// Studio switches to its not-found state, the workspace empty as for
+    /// a wrong link (QA-079).
+    fn on_phase(self, phase: &StudioPhase) {
+        if phase.is_gone() {
+            // Its event stream would only retry and say "Reconnecting".
+            self.project_stream.set_value(None);
+            self.link_down.set(false);
+            // A toast already up said what failed in it; the state says why.
+            self.notice.set(None);
+        }
     }
 
     /// Loads history, resumes a live run, then sends a pending prompt.
@@ -1379,13 +1415,16 @@ impl StudioCtx {
             Ok(r) => r.project,
             Err(e) => {
                 // Not a toast: without its project the Studio is unusable,
-                // so the error stays until a retry loads it.
-                self.load_gone.set(e.status == 404);
-                self.load_error.set(Some(e.to_string()));
+                // so the error stays until a retry loads it. A 404 with
+                // no code (a proxy) reads as a wrong link too.
+                if e.status == 404 && e.code.is_none() {
+                    api::mark_gone(&self.project_id.get_value());
+                }
+                self.load.set(Load::Failed(e.to_string()));
                 return;
             }
         };
-        self.load_error.set(None);
+        self.load.set(Load::Done);
         let pending = project.pending_prompt.clone();
         self.project.set(Some(project));
         self.refresh_files();
@@ -1532,11 +1571,6 @@ fn drop_held(key: &str, id: &str) {
     super::composer::save_draft(key, &encode_held(Some(why), &items));
 }
 
-/// Whether the project at `base` (`/api/projects/<id>`) no longer exists.
-async fn project_missing(base: &str) -> bool {
-    matches!(api::get::<ProjectResponse>(base).await, Err(e) if e.status == 404)
-}
-
 fn fail(turn: RwSignal<AssistantTurn>, message: String) {
     turn.update(|t| {
         t.blocks.push(Block::Error(message));
@@ -1549,6 +1583,14 @@ pub fn Studio() -> impl IntoView {
     let shell = Shell::get();
     let params = use_params_map();
     let project_id = params.with_untracked(|p| p.get("id").unwrap_or_default());
+    let load = RwSignal::new(Load::Pending);
+    let phase = {
+        let id = project_id.clone();
+        Memo::new(move |_| {
+            let gone = shell.gone.with(|g| g.contains(&id));
+            load.with(|l| StudioPhase::of(gone, l))
+        })
+    };
     let ctx = StudioCtx {
         shell,
         tasks: Tasks::here(),
@@ -1576,8 +1618,8 @@ pub fn Studio() -> impl IntoView {
         ),
         notice: RwSignal::new(None),
         link_down: RwSignal::new(false),
-        load_error: RwSignal::new(None),
-        load_gone: RwSignal::new(false),
+        load,
+        phase,
         comments: RwSignal::new(Vec::new()),
         comment_feed: RwSignal::new(Feed::default()),
         comments_seq: StoredValue::new(0),
@@ -1659,18 +1701,19 @@ pub fn Studio() -> impl IntoView {
             pane.set(NarrowPane::Preview);
         }
     });
+    Effect::new(move |_| ctx.phase.with(|p| ctx.on_phase(p)));
     // No project: its not-found state is in the chat pane, and the other
     // two have nothing left to show (QA-079). Tracks `pane` too, so every
     // way in (tabs, a chat file link, switcher, palette) lands back on Chat.
     Effect::new(move |_| {
-        if ctx.load_gone.get() && pane.get() != NarrowPane::Chat {
+        if ctx.phase.with(StudioPhase::is_gone) && pane.get() != NarrowPane::Chat {
             pane.set(NarrowPane::Chat);
         }
     });
     let pick = move |p: NarrowPane| {
         // A gone project keeps the Chat tab, where its not-found card is
         // (QA-080); the other two are off, this covers a stale click.
-        if ctx.load_gone.get_untracked() && p != NarrowPane::Chat {
+        if ctx.phase.with_untracked(StudioPhase::is_gone) && p != NarrowPane::Chat {
             return;
         }
         match p {
@@ -1687,7 +1730,7 @@ pub fn Studio() -> impl IntoView {
             <button class="seg" role="radio" data-testid=format!("pane-{}", p.key())
                 aria-checked=move || (pane.get() == p).to_string() tabindex=move || super::focus::roving(pane.get() == p)
                 class:active=move || pane.get() == p
-                disabled=move || p != NarrowPane::Chat && ctx.load_gone.get()
+                disabled=move || p != NarrowPane::Chat && ctx.phase.with(StudioPhase::is_gone)
                 on:click=move |_| pick(p)>
                 {t(label)}
             </button>
@@ -1697,7 +1740,7 @@ pub fn Studio() -> impl IntoView {
         <div
             class="studio"
             class:chat-collapsed=move || ctx.chat.collapsed.get()
-            class:load-failed=move || ctx.load_error.with(Option::is_some)
+            class:load-failed=move || ctx.phase.with(StudioPhase::unusable)
             class:focus=move || files_ui.focus.get()
             class:link-down=move || ctx.link_down.get()
             data-pane=move || pane.get().key()
@@ -1721,7 +1764,7 @@ pub fn Studio() -> impl IntoView {
             // No project (a wrong link, or deleted in another tab): nothing
             // of it to preview, list, restore or ask about (QA-079). The right
             // frame says so too, not "Nothing to preview yet" (QA-080).
-            <Show when=move || !ctx.load_gone.get() fallback=move || view! {
+            <Show when=move || !ctx.phase.with(StudioPhase::is_gone) fallback=move || view! {
                 <section class="workspace files-closed">
                     <section class="preview" data-testid="preview-pane">
                         <PreviewGone/>
@@ -2445,7 +2488,7 @@ fn PreviewEmpty(ctx: StudioCtx) -> impl IntoView {
             <span class="empty-icon">{move || if running() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::Desktop).into_any() }}</span>
             <strong>{move || if running() { t(T::PreviewWaitingTitle) } else { t(T::PreviewEmptyTitle) }}</strong>
             // No project: no steps to follow in it.
-            <Show when=move || ctx.load_error.with(Option::is_none)>
+            <Show when=move || !ctx.phase.with(StudioPhase::unusable)>
                 <p>{move || if running() { t(T::PreviewWaiting) } else { t(T::PreviewEmpty) }}</p>
                 // While the agent runs, the user has done step 1 and step 2
                 // is under way (UI-010).
@@ -2484,7 +2527,7 @@ fn NoticeToast(ctx: StudioCtx) -> impl IntoView {
         <div class="toast-region notice" aria-live="assertive">
             // The project gone, a failure in it is no news: the not-found
             // state says why (QA-079).
-            {move || ctx.notice.get().filter(|_| !ctx.load_gone.get()).map(|text| view! {
+            {move || ctx.notice.get().filter(|_| !ctx.phase.with(StudioPhase::is_gone)).map(|text| view! {
                 <div class="toast error" role="alert" data-testid="notice">
                     <span class="toast-ico">{icon(Glyph::Warning)}</span>
                     <span class="toast-text">{text}</span>
@@ -2561,6 +2604,31 @@ mod tests {
             created_at,
             updated_at: created_at,
         }
+    }
+
+    #[test]
+    fn the_phase_follows_the_load_until_the_project_is_gone() {
+        assert_eq!(StudioPhase::of(false, &Load::Pending), StudioPhase::Loading);
+        assert_eq!(StudioPhase::of(false, &Load::Done), StudioPhase::Ready);
+        assert_eq!(
+            StudioPhase::of(false, &Load::Failed("locked".to_owned())),
+            StudioPhase::Failed("locked".to_owned())
+        );
+        // Gone wins whatever the load says: deleted after it loaded, while
+        // it loads, or a wrong link whose load failed.
+        for load in [Load::Pending, Load::Done, Load::Failed("x".to_owned())] {
+            assert_eq!(StudioPhase::of(true, &load), StudioPhase::Gone, "{load:?}");
+        }
+    }
+
+    #[test]
+    fn only_a_failed_or_gone_project_is_unusable() {
+        assert!(!StudioPhase::Loading.unusable());
+        assert!(!StudioPhase::Ready.unusable());
+        assert!(StudioPhase::Failed("x".to_owned()).unusable());
+        assert!(StudioPhase::Gone.unusable());
+        assert!(StudioPhase::Gone.is_gone());
+        assert!(!StudioPhase::Failed("x".to_owned()).is_gone());
     }
 
     #[test]

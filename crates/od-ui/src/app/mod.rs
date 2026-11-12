@@ -102,6 +102,13 @@ pub struct Shell {
     released: StoredValue<bool>,
     /// Exports still running, whichever screen shows (QA-075).
     pub(crate) exports: export_menu::Exports,
+    /// A failure of work that outlived the screen that started it (Home's
+    /// uploads once the user went on), shown whichever screen is up.
+    pub notice: RwSignal<Option<String>>,
+    /// Projects the daemon said do not exist (deleted, or a wrong link):
+    /// every call on one adds it (`api::watch_gone`), every screen reads
+    /// it from here.
+    pub gone: RwSignal<std::collections::HashSet<String>>,
 }
 
 impl Shell {
@@ -225,8 +232,11 @@ pub fn App() -> impl IntoView {
         leaving: RwSignal::new(None),
         released: StoredValue::new(false),
         exports: export_menu::Exports::new(),
+        notice: RwSignal::new(None),
+        gone: RwSignal::new(std::collections::HashSet::new()),
     };
     provide_context(shell);
+    api::watch_gone(shell.gone);
     let tasks = Tasks::here();
     tasks::detached(async move {
         // A daemon without settings yet still gets a usable UI.
@@ -383,6 +393,7 @@ fn Shelled() -> impl IntoView {
             <ScrollReset/>
             <notify::RunWatcher/>
             <memory_settings::MemoryToast/>
+            <ShellNotice/>
             <div class="app">
                 {mac.then(|| view! { <div class="titlebar" data-tauri-drag-region=""></div> })}
                 <div class="app-body">
@@ -408,6 +419,51 @@ fn Shelled() -> impl IntoView {
                 </div>
             </div>
         </Router>
+    }
+}
+
+/// How long [`ShellNotice`] stays, ms.
+const SHELL_NOTICE_MS: u32 = 8000;
+
+/// [`Shell::notice`] as a toast the user can close; it leaves by itself
+/// after [`SHELL_NOTICE_MS`] unless a newer one replaced it. In the Studio
+/// it is the Studio's notice instead, so the two never stack.
+#[component]
+fn ShellNotice() -> impl IntoView {
+    let shell = Shell::get();
+    let tasks = Tasks::here();
+    let shown = StoredValue::new(0u32);
+    Effect::new(move |_| {
+        // A Studio open has a toast of its own in the same corner: the
+        // text goes there, one toast region at a time.
+        if let Some(studio) = shell.studio.get()
+            && let Some(text) = shell.notice.get()
+        {
+            studio.notice.try_set(Some(text));
+            shell.notice.set(None);
+            return;
+        }
+        if shell.notice.with(Option::is_some) {
+            let n = shown.get_value().wrapping_add(1);
+            shown.set_value(n);
+            tasks.spawn(async move {
+                gloo_timers::future::TimeoutFuture::new(SHELL_NOTICE_MS).await;
+                if shown.get_value() == n {
+                    shell.notice.set(None);
+                }
+            });
+        }
+    });
+    view! {
+        <div class="toast-region notice" aria-live="assertive">
+            {move || shell.notice.get().map(|text| view! {
+                <div class="toast error" role="alert" data-testid="shell-notice">
+                    <span class="toast-ico">{icon(Glyph::Warning)}</span>
+                    <span class="toast-text">{text}</span>
+                    <button class="chip-x" aria-label=t(T::Close) on:click=move |_| shell.notice.set(None)>{icon(Glyph::Close)}</button>
+                </div>
+            })}
+        </div>
     }
 }
 

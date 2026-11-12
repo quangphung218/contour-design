@@ -653,9 +653,9 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
                         close.run(());
                     }
                 }
-                Err(e) => {
-                    error.try_set(Some(e));
-                }
+                // The dialog closed meanwhile: the Studio says it.
+                Err(e) if tasks.alive() => error.set(Some(e)),
+                Err(e) => ctx.notice.set(Some(e)),
             });
     };
     let reference = move |id: String, name: String| {
@@ -684,9 +684,8 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
                 close.run(());
                 focus_composer();
             }
-            Err(e) => {
-                error.try_set(Some(e));
-            }
+            Err(e) if tasks.alive() => error.set(Some(e)),
+            Err(e) => ctx.notice.set(Some(e)),
         });
     };
     let title = match kind {

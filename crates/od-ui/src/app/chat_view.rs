@@ -10,7 +10,7 @@ use super::follow::{JumpToLatest, StickToBottom};
 use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
 use super::preview_tools::DeliverableWarning;
-use super::studio::{StudioCtx, conversation_title, main_conversations};
+use super::studio::{StudioCtx, StudioPhase, conversation_title, main_conversations};
 use super::tasks::Tasks;
 use crate::chat::{
     AssistantTurn, Block, Step, TodoStatus, ToolCall, TurnLayout, plan_progress, run_time_ms,
@@ -71,14 +71,12 @@ impl ChatItem {
     }
 }
 
-/// Uploads the composer's staged files; a 404 may mean the project was
-/// deleted (QA-076).
+/// Uploads the composer's staged files; a project deleted meanwhile is
+/// marked gone by the upload's answer (QA-076).
 fn upload_staged(ctx: StudioCtx) {
     ctx.tasks.spawn(async move {
         let base = ctx.base();
-        if upload_all(base, ctx.chat.uploads, ctx.tools.attachments).await {
-            ctx.on_not_found(404);
-        }
+        upload_all(base, ctx.chat.uploads, ctx.tools.attachments).await;
     });
 }
 
@@ -214,16 +212,22 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     follow.on_scroll();
                 }
             >
-                {move || ctx.load_error.get().map(|e| view! {
+                {move || {
+                    // A missing project in words, not "Not found (HTTP 404)";
+                    // one that does not exist will not load on a retry.
+                    let (text, retry) = match ctx.phase.get() {
+                        StudioPhase::Failed(e) => (e, true),
+                        StudioPhase::Gone => (t(T::ProjectGone).to_owned(), false),
+                        StudioPhase::Loading | StudioPhase::Ready => return None,
+                    };
+                    Some(view! {
                     <div class="msg-error load-error" role="alert" data-testid="load-error">
                         {icon(Glyph::Warning)}
                         <div class="load-error-body">
                             <strong>{t(T::ProjectLoadFailed)}</strong>
-                            // A missing project in words, not "Not found (HTTP 404)".
-                            <span>{if ctx.load_gone.get() { t(T::ProjectGone).to_owned() } else { e }}</span>
+                            <span>{text}</span>
                             <div class="row">
-                                // A project that does not exist will not load on a retry.
-                                {(!ctx.load_gone.get()).then(|| view! {
+                                {retry.then(|| view! {
                                     <button class="btn small" data-testid="load-retry" on:click=move |_| {
                                         ctx.tasks.spawn(ctx.load(shell));
                                     }>{icon(Glyph::Refresh)}{t(T::NextRetry)}</button>
@@ -232,7 +236,8 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                             </div>
                         </div>
                     </div>
-                })}
+                    })
+                }}
                 <For
                     each=move || ctx.items.get()
                     key=|item| item.id.clone()
@@ -249,7 +254,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         }
                     }
                 />
-                <Show when=move || ctx.items.with(Vec::is_empty) && ctx.load_error.with(Option::is_none)>
+                <Show when=move || ctx.items.with(Vec::is_empty) && !ctx.phase.with(StudioPhase::unusable)>
                     <div class="empty-state compact chat-empty" data-testid="chat-empty">
                         <span class="empty-icon">{icon(Glyph::Chat)}</span>
                         <strong>{t(T::DescribeChangeTitle)}</strong>
@@ -325,7 +330,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                     on_mcp_settings=to_mcp
                     on_notice=Callback::new(move |m: String| ctx.notice.set(Some(m)))
                     on_library=import_library
-                    disabled=Signal::derive(move || ctx.load_error.with(Option::is_some))
+                    disabled=Signal::derive(move || ctx.phase.with(StudioPhase::unusable))
                 />
                 <FilePicker trigger=pick_files on_files=stage_files/>
                 <div class="composer-actions">
@@ -357,7 +362,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                                 class=if live { "btn small send-btn is-queue" } else { "btn small primary send-btn" }
                                 data-testid="send"
                                 aria-label=label
-                                disabled=move || (draft.with(|d| d.trim().is_empty()) && !ctx.has_attached()) || uploading() || ctx.load_error.with(Option::is_some)
+                                disabled=move || (draft.with(|d| d.trim().is_empty()) && !ctx.has_attached()) || uploading() || ctx.phase.with(StudioPhase::unusable)
                                 on:click=move |_| send()
                             >
                                 {icon(if live { Glyph::Queue } else { Glyph::Send })}
@@ -680,7 +685,7 @@ fn AssistantView(
                 <RunLog turn=turn/>
             </Show>
             // Nothing to retry or set up in a deleted project (QA-076).
-            <Show when=move || is_last.get() && ctx.live_run.get().is_none() && !ctx.load_gone.get()>
+            <Show when=move || is_last.get() && ctx.live_run.get().is_none() && !ctx.phase.with(StudioPhase::is_gone)>
                 <super::chat_ops::ContinueTasks turn=turn/>
                 <NextSteps turn=turn item_id=item_id.get_value()/>
             </Show>
@@ -709,7 +714,7 @@ fn AssistantView(
 /// but not shown, as the process line above shows the same progress.
 #[component]
 fn RunLine(turn: RwSignal<AssistantTurn>, clock: RunClock, quiet: Signal<bool>) -> impl IntoView {
-    let gone = expect_context::<StudioCtx>().load_gone;
+    let studio = expect_context::<StudioCtx>().phase;
     let line = Memo::new(move |_| {
         turn.with(|tn| match run_phase(tn) {
             RunPhase::Starting => ("starting", None, t(T::RunStarting).to_owned(), None),
@@ -740,7 +745,7 @@ fn RunLine(turn: RwSignal<AssistantTurn>, clock: RunClock, quiet: Signal<bool>) 
                     t(match fail_cause(tn) {
                         // The project was deleted meanwhile (QA-076): the
                         // agent and the link are fine.
-                        _ if gone.get() => T::ProjectGone,
+                        _ if studio.with(StudioPhase::is_gone) => T::ProjectGone,
                         FailCause::Agent => T::RunFailedHint,
                         FailCause::CutOff => T::RunAppClosedHint,
                         // Sent while Contour was unreachable: it never ran.

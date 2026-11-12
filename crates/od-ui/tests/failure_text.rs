@@ -130,7 +130,7 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "studio.rs",
-        "self.load_error.set(Some(e.to_string()));",
+        "self.load.set(Load::Failed(e.to_string()));",
         1,
         "under \"This project could not be opened.\"",
     ),

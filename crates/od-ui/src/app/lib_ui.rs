@@ -175,7 +175,7 @@ pub async fn upload<T: DeserializeOwned>(path: &str, files: &[web_sys::File]) ->
         .map_err(|e| e.to_string())?;
     if !res.ok() {
         // The same words as every other call: no status (QA-081).
-        return Err(super::api::error_of(res).await.to_string());
+        return Err(super::api::error_of(path, res).await.to_string());
     }
     res.json::<T>().await.map_err(|e| e.to_string())
 }

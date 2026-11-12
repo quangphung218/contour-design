@@ -549,6 +549,8 @@ fn AssetPreview(
         "ArrowLeft" if index > 0 => preview.set(Some(index - 1)),
         _ => {}
     };
+    // Outside `view!`: a `>` in an attribute there can end the tag.
+    let at_end = index + 1 >= count;
     view! {
         <div on:keydown=keydown>
             <Modal title=asset.file_name() subtitle=asset.project_name.clone() glyph=kind_glyph(&asset.kind) wide=true testid="media-preview" on_close=Callback::new(move |()| preview.set(None))>
@@ -558,7 +560,7 @@ fn AssetPreview(
                 </div>
                 <div class="dialog-foot">
                     <button class="icon-btn" aria-label=t(T::Previous) disabled=index == 0 on:click=move |_| preview.set(Some(index.saturating_sub(1)))>{icon(Glyph::ChevronLeft)}</button>
-                    <button class="icon-btn" aria-label=t(T::Next) disabled=index + 1 >= count on:click=move |_| preview.set(Some(index + 1))>{icon(Glyph::ChevronRight)}</button>
+                    <button class="icon-btn" aria-label=t(T::Next) disabled=at_end on:click=move |_| preview.set(Some(index + 1))>{icon(Glyph::ChevronRight)}</button>
                     <span class="spacer"></span>
                     <button class="btn ghost danger" on:click=remove>{icon(Glyph::Delete)}{t(T::Delete)}</button>
                     <button class="btn" on:click=dl>{icon(Glyph::Download)}{t(T::Download)}</button>

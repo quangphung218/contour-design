@@ -108,7 +108,12 @@ pub fn QuickSwitcher(ctx: StudioCtx) -> impl IntoView {
                                         aria-selected=move || (selected.get() == i).to_string()
                                         data-testid="switcher-item"
                                         on:mousemove=move |_| selected.set(i)
-                                        on:click=move |_| pick(target.clone())
+                                        // The pick closes the switcher: the click
+                                        // must not reach its handlers, gone with it.
+                                        on:click=move |ev| {
+                                            ev.stop_propagation();
+                                            pick(target.clone());
+                                        }
                                     >
                                         {icon(super::studio::file_glyph(&path))}
                                         <span class="switcher-path mono">{path}</span>
