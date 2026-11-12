@@ -1,7 +1,8 @@
 // QA: when a call fails (docs/qa/test-plan.md §20). Design Jury, comments,
-// manual edit, lint, sketch, Markdown, GenUI, duplicate project and
-// transcript export each show what failed in the user's words (no "HTTP 500", no
-// "daemon", no JSON), keep what the user typed, and work when tried again.
+// manual edit, lint, sketch, Markdown, GenUI, duplicate project,
+// transcript export, conversations and design systems each show what
+// failed in the user's words (no "HTTP 500", no "daemon", no JSON), keep
+// what the user typed, and work when tried again.
 // The daemon's failure is played by `page.route` answering 500 the way the
 // daemon does; "deleted from another tab" deletes through the API.
 //
@@ -554,6 +555,83 @@ test('FAIL-17', 'Projects: a duplicate or a delete that failed says which, and t
   plainWords(duplicateSaid, 'Projects duplicate');
   plainWords(deleteSaid, 'Projects delete');
   assert.match(duplicateSaid, /duplicate/i, `"${duplicateSaid}" does not say the copy failed (QA-088)`);
+  assert.match(deleteSaid, /delete/i, `"${deleteSaid}" does not say the delete failed (QA-088)`);
+});
+
+// ------------------------------------------- the rest of the sweep (QA-088)
+
+test('FAIL-18', 'Studio: a new conversation or a rename that failed says which, and the next try does it', async ({ d, api, newPage }) => {
+  const { page, id } = await studio(newPage, d, 'Conversation fails');
+  const conversations = async () => (await api(projectPath(id, '/conversations'))).body.conversations;
+  const notice = page.getByTestId('notice');
+  let brk = await breakApi(page, (u, r) => u.pathname === projectPath(id, '/conversations') && r.method() === 'POST');
+  const before = (await conversations()).length;
+  await page.getByTestId('new-conversation').click();
+  await until(() => brk.hits === 1, 'the new conversation failed');
+  await notice.waitFor();
+  const newSaid = await notice.innerText();
+  assert.equal((await conversations()).length, before);
+  brk.heal();
+  await page.getByTestId('new-conversation').click();
+  await until(async () => (await conversations()).length === before + 1, 'the next try starts one');
+  brk = await breakApi(page, (u, r) => u.pathname.startsWith(projectPath(id, '/conversations/')) && r.method() === 'PATCH');
+  const rename = async (title) => {
+    await page.getByTestId('conversation-menu').click();
+    await page.getByTestId('rename-conversation').click();
+    await page.getByTestId('conversation-title').fill(title);
+    await page.getByTestId('rename-save').click();
+  };
+  await rename('Not saved');
+  await until(() => brk.hits === 1, 'the rename failed');
+  await until(async () => (await notice.innerText()) !== newSaid, 'the failed rename is said');
+  const renameSaid = await notice.innerText();
+  brk.heal();
+  await rename('Saved title');
+  await until(async () => (await conversations()).some((c) => c.title === 'Saved title'), 'the next rename saves');
+  plainWords(newSaid, 'New conversation');
+  plainWords(renameSaid, 'Rename conversation');
+  assert.match(newSaid, /conversation/i, `"${newSaid}" does not say the new conversation failed (QA-088)`);
+  assert.match(renameSaid, /rename/i, `"${renameSaid}" does not say the rename failed (QA-088)`);
+});
+
+test('FAIL-19', 'Design systems: a copy or a delete that failed says which, and the next try does it', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  const mine = async () => JSON.stringify((await api('/api/design-systems')).body).includes('user:airbnb-copy');
+  const brk = await breakApi(page, (u, r) =>
+    r.method() === 'POST' && u.pathname.startsWith('/api/design-systems/') && /\/(copy|delete)$/.test(u.pathname));
+  await page.goto(`${d.base}/design-systems`);
+  const rows = page.getByTestId('ds-row');
+  await until(async () => (await rows.count()) > 1, 'preset list');
+  await page.getByTestId('ds-search').fill('airbnb');
+  await until(async () => (await rows.count()) === 1, 'search narrows the list');
+  await rows.first().click();
+  const detail = page.getByTestId('ds-detail');
+  const notice = page.getByTestId('ds-notice');
+  await page.getByTestId('ds-copy').click();
+  await until(() => brk.hits === 1, 'the copy failed');
+  await notice.waitFor();
+  const copySaid = await notice.innerText();
+  assert.equal(await mine(), false);
+  brk.heal();
+  await page.getByTestId('ds-copy').click();
+  await until(async () => (await detail.getAttribute('data-id')) === 'user:airbnb-copy', 'the next copy is selected');
+  const brk2 = await breakApi(page, (u, r) => r.method() === 'POST' && u.pathname.endsWith('/delete') && u.pathname.includes('airbnb-copy'));
+  const remove = async () => {
+    await page.getByTestId('ds-more').click();
+    await page.getByTestId('ds-delete').click();
+    await page.getByTestId('ds-delete-confirm-yes').click();
+  };
+  await remove();
+  await until(() => brk2.hits === 1, 'the delete failed');
+  await notice.waitFor();
+  const deleteSaid = await notice.innerText();
+  assert.equal(await mine(), true);
+  brk2.heal();
+  await remove();
+  await until(async () => !(await mine()), 'the next delete deletes it');
+  plainWords(copySaid, 'Design system copy');
+  plainWords(deleteSaid, 'Design system delete');
+  assert.match(copySaid, /design system/i, `"${copySaid}" does not say the copy failed (QA-088)`);
   assert.match(deleteSaid, /delete/i, `"${deleteSaid}" does not say the delete failed (QA-088)`);
 });
 
