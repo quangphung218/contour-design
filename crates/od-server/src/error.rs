@@ -78,6 +78,7 @@ impl From<StoreError> for ApiErr {
                 (S::CONFLICT, ErrorCode::Conflict)
             }
             StoreError::NoWritePermission(_) => (S::FORBIDDEN, ErrorCode::NoWritePermission),
+            StoreError::NoReadPermission => (S::FORBIDDEN, ErrorCode::NoReadPermission),
             StoreError::StorageFull => (S::INSUFFICIENT_STORAGE, ErrorCode::StorageFull),
             _ => {
                 tracing::error!(error = %err, "store error");
@@ -125,5 +126,20 @@ mod tests {
         assert_eq!(full.status, StatusCode::INSUFFICIENT_STORAGE);
         assert_eq!(full.code, ErrorCode::StorageFull);
         assert!(full.message.contains("disk is full"), "{}", full.message);
+    }
+
+    /// QA-085: a refused read has its own code and says "read".
+    #[test]
+    fn read_refusals_are_not_write_refusals() {
+        let denied = ApiErr::from(StoreError::from_read_io(std::io::Error::from(
+            std::io::ErrorKind::PermissionDenied,
+        )));
+        assert_eq!(denied.status, StatusCode::FORBIDDEN);
+        assert_eq!(denied.code, ErrorCode::NoReadPermission);
+        assert!(
+            denied.message.contains("read") && !denied.message.contains("write"),
+            "{}",
+            denied.message
+        );
     }
 }

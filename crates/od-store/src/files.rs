@@ -181,11 +181,11 @@ fn project_root_of(dir: &Path, rel_dir: &str) -> PathBuf {
 /// Resolves an existing file and describes it without reading its bytes.
 ///
 /// # Errors
-/// Path errors, or [`StoreError::FileNotFound`] when it is missing or not a
-/// regular file.
+/// Path errors, [`StoreError::FileNotFound`] when it is missing or not a
+/// regular file, [`StoreError::NoReadPermission`] when the OS refuses.
 pub fn stat_file(root: &ProjectRoot, name: &str) -> Result<(ProjectFile, PathBuf)> {
     let full = root.resolve(name)?;
-    let meta = fs::metadata(&full).map_err(StoreError::from_file_io)?;
+    let meta = fs::metadata(&full).map_err(StoreError::from_read_io)?;
     if !meta.is_file() {
         return Err(StoreError::FileNotFound);
     }
@@ -198,7 +198,7 @@ pub fn stat_file(root: &ProjectRoot, name: &str) -> Result<(ProjectFile, PathBuf
 /// See [`stat_file`].
 pub fn read_file(root: &ProjectRoot, name: &str) -> Result<(ProjectFile, Vec<u8>)> {
     let (file, full) = stat_file(root, name)?;
-    let bytes = fs::read(&full).map_err(StoreError::from_file_io)?;
+    let bytes = fs::read(&full).map_err(StoreError::from_read_io)?;
     Ok((file, bytes))
 }
 
@@ -658,6 +658,24 @@ mod tests {
             .map(|f| f.name)
             .collect();
         assert_eq!(names, ["index.html"]);
+    }
+
+    /// QA-085: a file the user cannot read is a read refusal, not a write
+    /// one. Root reads anything, so the check needs a plain user.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_file_is_a_read_refusal() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = tempfile::tempdir().unwrap();
+        let page = tmp.path().join("index.html");
+        fs::write(&page, b"<p>").unwrap();
+        fs::set_permissions(&page, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::read(&page).is_ok() {
+            return; // running as root
+        }
+        let err = read_file(&managed(&tmp), "index.html").unwrap_err();
+        fs::set_permissions(&page, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(matches!(err, StoreError::NoReadPermission), "{err:?}");
     }
 
     fn managed(tmp: &tempfile::TempDir) -> ProjectRoot {

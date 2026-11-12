@@ -27,6 +27,7 @@ ErrConflict = 與進行中的變更衝突
 ErrTooLarge = 內容過大
 ErrServer = Contour 無法完成此操作。請再試一次。
 ErrNoWritePermission = 沒有寫入權限
+ErrNoReadPermission = 沒有讀取權限
 ErrStorageFull = 磁碟已滿
 JuryOnFailed = 無法開啟 Design Jury：{0}
 JuryOffFailed = 無法關閉 Design Jury：{0}

@@ -27,6 +27,7 @@ ErrConflict = Conflito com uma alteração em andamento
 ErrTooLarge = Grande demais
 ErrServer = O Contour não conseguiu concluir isso. Tente de novo.
 ErrNoWritePermission = Sem permissão de gravação
+ErrNoReadPermission = Sem permissão de leitura
 ErrStorageFull = Disco cheio
 JuryOnFailed = Não foi possível ativar o Design Jury: {0}
 JuryOffFailed = Não foi possível desativar o Design Jury: {0}

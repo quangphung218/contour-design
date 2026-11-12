@@ -177,7 +177,7 @@ pub async fn raw(
 
     let mut handle = tokio::fs::File::open(&full)
         .await
-        .map_err(|e| ApiErr::from(od_store::StoreError::from(e)))?;
+        .map_err(|e| ApiErr::from(od_store::StoreError::from_read_io(e)))?;
     if start > 0 {
         handle
             .seek(SeekFrom::Start(start))
@@ -201,7 +201,7 @@ pub async fn raw(
 async fn still_page(full: &std::path::Path, mime: &str) -> ApiResult<Response> {
     use od_preview::still::{BLANK, MAX_STILL_BYTES, without_scripts};
     use tokio::io::AsyncReadExt as _;
-    let io = |e| ApiErr::from(od_store::StoreError::from(e));
+    let io = |e| ApiErr::from(od_store::StoreError::from_read_io(e));
     let mut bytes = Vec::new();
     tokio::fs::File::open(full)
         .await
@@ -251,7 +251,7 @@ pub async fn react(
         .await?;
     let source = tokio::fs::read_to_string(&full)
         .await
-        .map_err(|e| ApiErr::internal(e.to_string()))?;
+        .map_err(|e| ApiErr::from(od_store::StoreError::from_read_io(e)))?;
     let name = full
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())

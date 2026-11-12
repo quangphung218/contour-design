@@ -42,6 +42,11 @@ pub enum StoreError {
     /// folder or volume. Carries the folder when the caller knows it.
     #[error("{}", no_write_message(.0.as_deref()))]
     NoWritePermission(Option<PathBuf>),
+    /// The OS refused a read (`EACCES`, `EPERM`): a file or folder the
+    /// user cannot read. Built by [`StoreError::from_read_io`] at the read
+    /// sites, since the error kind alone does not say which way it went.
+    #[error("Contour has no permission to read this file. Check its permissions, then try again.")]
+    NoReadPermission,
     /// The disk is full (`ENOSPC`, `SQLITE_FULL`).
     #[error("The disk is full. Free some space, then try again.")]
     StorageFull,
@@ -64,6 +69,17 @@ impl StoreError {
             Self::FileNotFound
         } else {
             Self::from(err)
+        }
+    }
+
+    /// Maps an error from reading a file: `NotFound` to
+    /// [`StoreError::FileNotFound`], a refusal to
+    /// [`StoreError::NoReadPermission`] (QA-085), the rest as `From`.
+    #[must_use]
+    pub fn from_read_io(err: io::Error) -> Self {
+        match err.kind() {
+            io::ErrorKind::PermissionDenied => Self::NoReadPermission,
+            _ => Self::from_file_io(err),
         }
     }
 
@@ -136,5 +152,22 @@ mod tests {
         assert!(!full.to_string().contains("os error"));
         let other = StoreError::from(io::Error::other("boom"));
         assert!(matches!(other, StoreError::Io(_)));
+    }
+
+    /// QA-085: a refused read is not reported as a refused write.
+    #[test]
+    fn read_refusals_are_not_write_refusals() {
+        let denied = StoreError::from_read_io(io::Error::from(io::ErrorKind::PermissionDenied));
+        assert!(matches!(denied, StoreError::NoReadPermission));
+        let text = denied.to_string();
+        assert!(text.contains("read") && !text.contains("write"), "{text}");
+        assert!(matches!(
+            StoreError::from_read_io(io::Error::from(io::ErrorKind::NotFound)),
+            StoreError::FileNotFound
+        ));
+        assert!(matches!(
+            StoreError::from_read_io(io::Error::from(io::ErrorKind::StorageFull)),
+            StoreError::StorageFull
+        ));
     }
 }
