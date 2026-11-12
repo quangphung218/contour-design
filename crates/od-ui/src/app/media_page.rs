@@ -357,7 +357,7 @@ fn LibraryView(
                     ),
                     Default::default(),
                 ),
-                Err(e) => notice.set(Some(Err(e.to_string()))),
+                Err(e) => notice.set(Some(Err(api::failure(T::ProjectCreateFailed, &e)))),
             }
         });
     };
@@ -381,7 +381,7 @@ fn LibraryView(
                     api::file_path(&a.path)
                 );
                 if let Err(e) = api::delete::<Value>(&path).await {
-                    failed = Some(e.to_string());
+                    failed = Some(api::failure(T::DeleteFailed, &e));
                 }
             }
             failed
@@ -681,7 +681,7 @@ fn GenerateView(
         screen.spawn_then(work, move |res| {
             match res {
                 Ok(_) => on_queued.run(()),
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(api::failure(T::MediaQueueFailed, &e))),
             }
             busy.set(false);
         });
@@ -941,7 +941,7 @@ fn ProvidersView() -> impl IntoView {
                     config.set(Some(v));
                     status.set(Some(Ok(())));
                 }
-                Err(e) => status.set(Some(Err(e.to_string()))),
+                Err(e) => status.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
             }
         });
     };
@@ -1042,7 +1042,7 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
                     status.set(Some(Ok(format!("{head}{note}{stop}"))));
                     on_saved.run(());
                 }
-                Err(e) => status.set(Some(Err(e.to_string()))),
+                Err(e) => status.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
             }
             busy.set(false);
         });

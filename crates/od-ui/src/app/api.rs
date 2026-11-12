@@ -51,10 +51,14 @@ pub fn failure_text(template: &str, e: &HttpError) -> String {
 }
 
 /// `template` with no cause, saying to try again: "Could not save the
-/// comment: {0}" reads "Could not save the comment. Try again."
+/// comment: {0}" reads "Could not save the comment. Try again.", and
+/// "Could not add from library ({0})" drops its empty brackets.
 #[must_use]
 pub fn try_again_text(template: &str) -> String {
-    let head = template.replace("{0}", "");
+    let head = template
+        .replace("({0})", "")
+        .replace("\u{ff08}{0}\u{ff09}", "")
+        .replace("{0}", "");
     let head = head.trim_end_matches([':', '：', ' ', '.']);
     format!("{head}. {}.", t(Msg::TryAgain))
 }
@@ -383,6 +387,18 @@ mod tests {
         assert_eq!(
             failure(Msg::CommentFailed, &locked()),
             "Could not save the comment. Try again."
+        );
+        // A reason in brackets leaves none behind (QA-088).
+        assert_eq!(
+            failure_text("Could not add from library ({0})", &locked()),
+            "Could not add from library. Try again."
+        );
+        assert_eq!(
+            failure_text(
+                "\u{65e0}\u{6cd5}\u{6dfb}\u{52a0}\u{ff08}{0}\u{ff09}",
+                &locked()
+            ),
+            format!("\u{65e0}\u{6cd5}\u{6dfb}\u{52a0}. {}.", t(Msg::TryAgain))
         );
     }
 

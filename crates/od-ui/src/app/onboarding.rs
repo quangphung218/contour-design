@@ -59,7 +59,7 @@ pub fn Onboarding() -> impl IntoView {
             let body = json!({ "mode": "agent", "agentId": &agent });
             let res = match api::post::<_, Value>("/api/test/connection", &body).await {
                 Ok(v) => TestState::Done(v),
-                Err(e) => TestState::Failed(e.to_string()),
+                Err(e) => TestState::Failed(api::failure(T::TestRunFailed, &e)),
             };
             if let TestState::Done(v) = &res {
                 remember_test(&agent, v);

@@ -64,7 +64,7 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
                     status.set(Some(Ok(tf(T::TemplateSaved, &[&n]))));
                     close_later(open);
                 }
-                Err(e) => error.set(Some(ctx.failed(&e))),
+                Err(e) => error.set(Some(ctx.failed_to(T::MdSaveFailed, &e))),
             }
         });
     };

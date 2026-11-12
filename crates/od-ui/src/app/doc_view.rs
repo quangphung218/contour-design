@@ -155,7 +155,13 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
         }
         status.set(Status::Saving);
         // Started here: on leaving, the task runs after the view is disposed.
-        let save = replace_content(ctx, &path.get_value(), &content, "Markdown");
+        let save = replace_content(
+            ctx,
+            &path.get_value(),
+            &content,
+            "Markdown",
+            T::MdSaveFailed,
+        );
         leptos::task::spawn_local(async move {
             let res = save.await;
             if save_seq.try_get_value() != Some(n) {
@@ -300,7 +306,7 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
                         Status::Clean => t(T::MdAutoSaveOn).to_owned(),
                         Status::Saving => t(T::Saving).to_owned(),
                         Status::Saved(at) => tf(T::MdAutoSaved, &[&at]),
-                        Status::Failed(e) => tf(T::MdSaveFailed, &[&e]),
+                        Status::Failed(e) => e,
                     }}
                 </span>
             </div>

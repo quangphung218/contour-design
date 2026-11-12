@@ -179,8 +179,7 @@ pub fn BrandReady(ctx: StudioCtx) -> impl IntoView {
                     ui.say(t(T::DsInUse).to_owned());
                 }
                 Err(e) => {
-                    ctx.notice.set(Some(e.to_string()));
-                    ctx.on_not_found(e.status);
+                    ctx.notice.set(Some(ctx.failed_to(T::DsSwitchFailed, &e)));
                 }
             }
             busy.set(false);

@@ -261,6 +261,25 @@ messages! {
     ManualApplyFailed => "The edit was not applied: {0}", "Chỉnh sửa chưa được áp dụng: {0}";
     MessageFailed => "Could not send the message: {0}", "Không gửi được tin nhắn: {0}";
     ManualReadFailed => "Could not read this element from the source: {0}", "Không đọc được phần tử này từ source: {0}";
+    TestRunFailed => "Could not run the test: {0}", "Không chạy được bài test: {0}";
+    ConversationCreateFailed => "Could not start a new conversation: {0}", "Không mở được cuộc trò chuyện mới: {0}";
+    DsSwitchFailed => "Could not change the design system: {0}", "Không đổi được design system: {0}";
+    DsUpdateFailed => "Could not update the design system: {0}", "Không cập nhật được design system: {0}";
+    InstallFailed => "Could not install: {0}", "Không cài được: {0}";
+    UninstallFailed => "Could not uninstall: {0}", "Không gỡ được: {0}";
+    LinkFolderFailed => "Could not link the folder: {0}", "Không liên kết được thư mục: {0}";
+    UnlinkFolderFailed => "Could not unlink the folder: {0}", "Không bỏ liên kết được thư mục: {0}";
+    VersionOpenFailed => "Could not open this version: {0}", "Không mở được phiên bản này: {0}";
+    ScanFailed => "Could not scan the folders: {0}", "Không quét được các thư mục: {0}";
+    ModelsFetchFailed => "Could not fetch the models: {0}", "Không lấy được danh sách model: {0}";
+    RoutineUpdateFailed => "Could not update the automation: {0}", "Không cập nhật được automation: {0}";
+    RoutineRunFailed => "Could not run the automation: {0}", "Không chạy được automation: {0}";
+    ProposalApplyFailed => "Could not apply the proposal: {0}", "Không áp dụng được đề xuất: {0}";
+    ProposalDismissFailed => "Could not dismiss the proposal: {0}", "Không bỏ qua được đề xuất: {0}";
+    AgentDetectFailed => "Could not check for the agent: {0}", "Không kiểm tra được agent: {0}";
+    McpSignInFailed => "Could not start the sign-in: {0}", "Không bắt đầu đăng nhập được: {0}";
+    ReportIssueFailed => "Could not prepare the issue report: {0}", "Không chuẩn bị được báo cáo lỗi: {0}";
+    MediaQueueFailed => "Could not start the generation: {0}", "Không bắt đầu tạo được: {0}";
 
     // Home
     HomeTitle => "What do you want to design?", "Hôm nay thiết kế gì?";

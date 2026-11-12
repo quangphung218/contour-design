@@ -191,7 +191,7 @@ fn McpCatalog() -> impl IntoView {
                         let _ = w.location().reload();
                     }
                 }
-                Err(e) => state.set(Some(Err(e.to_string()))),
+                Err(e) => state.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
             }
         });
     };
@@ -260,7 +260,14 @@ fn InstallIntoAgents() -> impl IntoView {
                         &[&name],
                     )),
                     Ok(v) => Err(v["message"].as_str().unwrap_or_default().to_owned()),
-                    Err(e) => Err(e.to_string()),
+                    Err(e) => Err(api::failure(
+                        if uninstall {
+                            T::UninstallFailed
+                        } else {
+                            T::InstallFailed
+                        },
+                        &e,
+                    )),
                 },
             ));
             busy.set(false);

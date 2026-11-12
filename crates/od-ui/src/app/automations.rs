@@ -636,7 +636,14 @@ fn ProposalsSection(proposals: RwSignal<Vec<Proposal>>, reload: Callback<()>) ->
             busy.set(None);
             match res {
                 Ok(done) => note.set(done.map(Ok)),
-                Err(e) => note.set(Some(Err(e.to_string()))),
+                Err(e) => {
+                    let key = if apply {
+                        T::ProposalApplyFailed
+                    } else {
+                        T::ProposalDismissFailed
+                    };
+                    note.set(Some(Err(api::failure(key, &e))));
+                }
             }
             reload.run(());
         });
@@ -885,7 +892,7 @@ fn RoutineRow(
         screen.spawn(async move {
             match api::patch::<_, Value>(&base(), &json!({"enabled": on})).await {
                 Ok(_) => reload(),
-                Err(e) => failure.set(Some(e.to_string())),
+                Err(e) => failure.set(Some(api::failure(T::RoutineUpdateFailed, &e))),
             }
         });
     };
@@ -896,7 +903,7 @@ fn RoutineRow(
                     failure.set(None);
                     reload();
                 }
-                Err(e) => failure.set(Some(e.to_string())),
+                Err(e) => failure.set(Some(api::failure(T::RoutineRunFailed, &e))),
             }
         });
     };
@@ -909,7 +916,7 @@ fn RoutineRow(
                     failure.set(Some(t(T::CrystallizeNoProposals).to_owned()));
                 }
                 Ok(_) => failure.set(None),
-                Err(e) => failure.set(Some(tf(T::CrystallizeFailed, &[&e.to_string()]))),
+                Err(e) => failure.set(Some(api::failure(T::CrystallizeFailed, &e))),
             }
             crystallizing.set(None);
             on_crystallized.run(());

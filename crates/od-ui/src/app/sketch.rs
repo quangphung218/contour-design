@@ -147,9 +147,11 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
                 strokes: history.with_untracked(|h| h.strokes().to_vec()),
             };
             let res = match serde_json::to_string(&file) {
-                Ok(body) => replace_content(ctx, &path.get_value(), &body, "Sketch")
-                    .await
-                    .map(|_| ()),
+                Ok(body) => {
+                    replace_content(ctx, &path.get_value(), &body, "Sketch", T::MdSaveFailed)
+                        .await
+                        .map(|_| ())
+                }
                 Err(e) => Err(e.to_string()),
             };
             if seq.try_get_value() == Some(n) {

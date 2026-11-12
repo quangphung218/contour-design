@@ -70,7 +70,7 @@ pub fn McpSection() -> impl IntoView {
                     servers.set(list);
                     status.set(Some(Ok(())));
                 }
-                Err(e) => status.set(Some(Err(e.to_string()))),
+                Err(e) => status.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
             }
             saving.set(false);
         });
@@ -164,7 +164,7 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
                 Ok(r) if r["ok"] == true => Probe::Ok(r["tools"].as_array().map_or(0, Vec::len)),
                 Ok(r) if r["needsAuth"] == true => Probe::NeedsAuth,
                 Ok(r) => Probe::Failed(field(&r, "error")),
-                Err(e) => Probe::Failed(e.to_string()),
+                Err(e) => Probe::Failed(api::failure(T::TestRunFailed, &e)),
             }));
         });
     };
@@ -179,7 +179,7 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
                     }
                     probe.set(Some(Probe::Browser));
                 }
-                Err(e) => probe.set(Some(Probe::Failed(e.to_string()))),
+                Err(e) => probe.set(Some(Probe::Failed(api::failure(T::McpSignInFailed, &e)))),
             }
         });
     };

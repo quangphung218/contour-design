@@ -654,7 +654,7 @@ async fn import_folder(
         &serde_json::json!({ "baseDir": dir }),
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| api::failure(T::ImportZipFailed, &e))?;
     navigate(&format!("/projects/{}", r.project.id), Default::default());
     Ok(())
 }
@@ -917,7 +917,7 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>) -> impl IntoView {
             let Some(canonical) = entry["path"].as_str().map(str::to_owned) else {
                 error.set(Some(checked.err().map_or_else(
                     || entry["error"].as_str().unwrap_or_default().to_owned(),
-                    |e| e.to_string(),
+                    |e| api::failure(T::LinkFolderFailed, &e),
                 )));
                 return;
             };

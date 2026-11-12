@@ -323,9 +323,16 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
                         &note,
                         deck.count as usize,
                     );
-                    super::files_panel::replace_content(ctx, &path, &next, t(T::SpeakerNotes)).await
+                    super::files_panel::replace_content(
+                        ctx,
+                        &path,
+                        &next,
+                        t(T::SpeakerNotes),
+                        T::NotesSaveFailed,
+                    )
+                    .await
                 }
-                Err(e) => Err(e.to_string()),
+                Err(e) => Err(ctx.failed_to(T::NotesSaveFailed, &e)),
             };
             saving.set(false);
             match res {
@@ -339,7 +346,7 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
                     });
                     editing.set(false);
                 }
-                Err(e) => ctx.notice.set(Some(tf(T::NotesSaveFailed, &[&e]))),
+                Err(e) => ctx.notice.set(Some(e)),
             }
         });
     };

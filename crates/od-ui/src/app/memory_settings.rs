@@ -169,7 +169,7 @@ fn ImportPanel(rev: MemoryRev) -> impl IntoView {
                     );
                     found.set(Some(list));
                 }
-                Err(e) => status.set(Some(Err(e.to_string()))),
+                Err(e) => status.set(Some(Err(api::failure(T::ImportZipFailed, &e)))),
             }
         });
     };
@@ -302,7 +302,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
                     draft.set(None);
                     status.set(Some(Ok(())));
                 }
-                Err(e) => status.set(Some(Err(e.to_string()))),
+                Err(e) => status.set(Some(Err(api::failure(T::MemoryFailed, &e)))),
             }
         });
     };

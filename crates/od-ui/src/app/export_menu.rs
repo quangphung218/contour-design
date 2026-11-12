@@ -479,7 +479,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
             match api::post::<_, OkResponse>(&path, &json!({})).await {
                 Ok(_) => status.set(Some(Ok(t(T::FolderOpened).to_owned()))),
                 Err(e) => {
-                    status.set(Some(Err(tf(T::HandoffFailed, &[&e.to_string()]))));
+                    status.set(Some(Err(api::failure(T::HandoffFailed, &e))));
                     ctx.on_not_found(e.status);
                 }
             }
@@ -490,15 +490,17 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         leptos::task::spawn_local(async move {
             let path = format!("{}/handoff", ctx.base());
             let res = match api::get::<HandoffResponse>(&path).await {
-                Ok(h) => copy_text(&h.prompt).await,
+                Ok(h) => copy_text(&h.prompt)
+                    .await
+                    .map_err(|e| tf(T::HandoffFailed, &[&e])),
                 Err(e) => {
                     ctx.on_not_found(e.status);
-                    Err(e.to_string())
+                    Err(api::failure(T::HandoffFailed, &e))
                 }
             };
             match res {
                 Ok(()) => status.set(Some(Ok(t(T::PromptCopied).to_owned()))),
-                Err(e) => status.set(Some(Err(tf(T::HandoffFailed, &[&e])))),
+                Err(e) => status.set(Some(Err(e))),
             }
         });
     };
@@ -682,7 +684,7 @@ async fn run_export(
         Ok(r) => r,
         Err(e) => {
             failed(e.status);
-            return Some(Err(tf(T::ExportFailed, &[&e.to_string()])));
+            return Some(Err(api::failure(T::ExportFailed, &e)));
         }
     };
     // In the app, the Save dialog: the toast then names the file really

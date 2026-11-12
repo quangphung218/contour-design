@@ -134,7 +134,7 @@ pub fn DshSetupDialog(
                 }
                 Err(e) => state.set(Some(SetupState {
                     busy: false,
-                    error: Some(e.to_string()),
+                    error: Some(api::failure(T::AgentDetectFailed, &e)),
                 })),
             }
         });

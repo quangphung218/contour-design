@@ -838,7 +838,7 @@ impl StudioCtx {
                     turn.update(|t| t.blocks.push(Block::Steered(item.text)));
                 }
             }
-            Err(e) => self.notice.set(Some(tf(T::SteerFailed, &[&e.to_string()]))),
+            Err(e) => self.notice.set(Some(api::failure(T::SteerFailed, &e))),
         });
     }
 
@@ -949,7 +949,7 @@ impl StudioCtx {
         self.tasks.spawn(async move {
             let path = format!("/api/runs/{}/cancel", api::seg(&run_id));
             if let Err(e) = api::post::<_, serde_json::Value>(&path, &json!({})).await {
-                self.notice.set(Some(tf(T::StopFailed, &[&e.to_string()])));
+                self.notice.set(Some(api::failure(T::StopFailed, &e)));
             }
         });
     }
@@ -1080,10 +1080,9 @@ impl StudioCtx {
                     });
                     self.open_conversation(id).await;
                 }
-                Err(e) => {
-                    self.notice.set(Some(e.to_string()));
-                    self.on_not_found(e.status);
-                }
+                Err(e) => self
+                    .notice
+                    .set(Some(self.failed_to(T::ConversationCreateFailed, &e))),
             }
         });
     }
