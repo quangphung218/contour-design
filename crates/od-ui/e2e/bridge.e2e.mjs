@@ -3,11 +3,13 @@
 // edit key, counting the od:open-link messages the frame posts. WebKit
 // (WKWebView, the macOS app) runs timers inside a native window.open,
 // which the app e2e in Chromium does not see. No daemon, about 10 s.
+// The press table itself runs first, in node (bridges/press.test.mjs).
 // Usage: node bridge.e2e.mjs [bridge.js]   (OD_BRIDGE_ENGINES=chromium,webkit, OD_BRIDGE_CASES=NL,NB)
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
+import { runPressTests } from '../../../bridges/press.test.mjs';
 
 const bridgePath = process.argv[2] || fileURLToPath(new URL('../../../bridges/od-bridge.js', import.meta.url));
 // OD_BRIDGE_CASES=NL,NB runs those cases only.
@@ -85,11 +87,12 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <body style="margin:0;font:16px sans-serif">
 <p><a id="q2" href="https://example.com/q2-link" target="_blank">Q2: the page floods timers, then cancels the link</a>
 <button id="other">Q2: another press</button></p>
-<p><button id="plain">C0: click opens</button></p>
+<p><button id="plain">C0: click opens</button> <button id="late">TO: click opens on a timer</button></p>
 <p><button id="kb">K1: Enter, keyup opens</button></p>
 <p><button id="cb">N1: click opens about:blank, then a web address</button></p>
 <p><button id="ce">N2: click opens '', then a web address</button></p>
 <p><button id="kb2">N3: Enter, keyup opens about:blank, then a web address</button></p>
+<p><a id="nw" href="https://example.com/nw-link" target="_blank">NW: the page opens about:blank, a timer opens a web address</a></p>
 <p><a id="openfirst" href="https://example.com/of-link" target="_blank">R1: the page opens, then cancels the link</a></p>
 <p><a id="blankfirst" href="https://example.com/bf-link" target="_blank">R2: the page cancels, opens about:blank, then a web address</a></p>
 <p><a id="wincancel" href="https://example.com/g-link" target="_blank">G: Enter, the page cancels the link, keyup opens</a></p>
@@ -124,6 +127,7 @@ const frameHtml = `<!doctype html><html><head><script>${dialogShim}</script><scr
 <iframe id="npv" name="pvn" sandbox="${sandbox}" style="${small}" srcdoc="${attr(thiefPage('pv-first'))}"></iframe>
 <iframe id="nout" name="out" sandbox="${sandbox}" style="${small}" srcdoc="&lt;p&gt;out&lt;/p&gt;"></iframe>
 <iframe id="sync" sandbox="${sandbox}" style="${small}" srcdoc="&lt;p&gt;sync&lt;/p&gt;"></iframe></p>
+<p><span id="shadow"></span></p>
 <p id="idle">idle</p>
 <script>
 const on = (id, type, fn) => document.getElementById(id).addEventListener(type, fn);
@@ -168,6 +172,12 @@ addEventListener('load', () => setTimeout(() => {
   nest.contentWindow.postMessage({ type: 'od:nested-port' }, '*', [new MessageChannel().port2]);
 }, 50));
 on('plain', 'click', () => window.open('https://example.com/plain-click'));
+on('late', 'click', () => setTimeout(() => window.open('https://example.com/to-late'), 0));
+// A web component's open shadow root: the click reaches the window with
+// the host as its target, and its handlers run with no window.event.
+document.getElementById('shadow').attachShadow({ mode: 'open' }).innerHTML =
+  '<a id="sh" href="https://example.com/sh-link" target="_blank">SH: a link in a shadow root</a> ' +
+  '<button id="so" onclick="window.open(\\'https://example.com/so-open\\')">SO: a shadow button opens</button>';
 on('kb', 'keyup', (e) => { if (e.key === 'Enter') window.open('https://example.com/kb-keyup'); });
 on('cb', 'click', () => { window.open('about:blank'); window.open('https://example.com/cb-open'); });
 on('ce', 'click', () => { window.open(''); window.open('https://example.com/ce-open'); });
@@ -212,6 +222,7 @@ on('stray', 'keyup', () => window.open('https://example.com/stray'));
 on('kb2', 'keyup', (e) => { if (e.key === 'Enter') { window.open('about:blank'); window.open('https://example.com/kb2-open'); } });
 // Window listeners run after the bridge's own.
 window.addEventListener('click', (e) => {
+  if (e.target.id === 'nw') { setTimeout(() => window.open('https://example.com/nw-timer')); window.open('about:blank'); }
   if (e.target.id === 'openfirst') { window.open('https://example.com/of-open'); e.preventDefault(); }
   if (e.target.id === 'wincancel') e.preventDefault();
   if (e.target.id === 'ce2' || e.target.id === 'q2') e.preventDefault();
@@ -231,11 +242,21 @@ addEventListener('message', (e) => { if (e.data && e.data.type === 'od:open-link
 // Each case and the one tab it asks for.
 const allCases = [
   ['C0', ['plain-click'], (f) => f.locator('#plain').click()],
+  // Inside a shadow root (locators pierce it): its _blank link (SH), its
+  // button's onclick window.open by click (SO) and by Enter (SK).
+  ['SH', ['sh-link'], (f) => f.locator('#sh').click()],
+  ['SO', ['so-open'], (f) => f.locator('#so').click()],
+  ['SK', ['so-open'], (f, page) => enter(f, page, '#so')],
+  // The click's dispatch is over by the page's timer: no tab.
+  ['TO', [], (f) => f.locator('#late').click()],
   ['T1', ['plain-click'], (f) => f.locator('#plain').tap()],
   ['K1', ['kb-keyup'], (f, page) => enter(f, page, '#kb')],
   ['N1', ['cb-open'], (f) => f.locator('#cb').click()],
   ['N2', ['ce-open'], (f) => f.locator('#ce').click()],
   ['N3', ['kb2-open'], (f, page) => enter(f, page, '#kb2')],
+  // A page timer that runs inside the native window.open (WebKit) is in
+  // no event: the link the click held opens, not the timer's address.
+  ['NW', ['nw-link'], (f) => f.locator('#nw').click()],
   ['R1', ['of-open'], (f) => f.locator('#openfirst').click()],
   ['R2', ['bf-open'], (f) => f.locator('#blankfirst').click()],
   // A window listener after the bridge's cancels the link: Enter's press
@@ -505,6 +526,9 @@ async function runEngine(name) {
 
 const results = {};
 try {
+  // The press table alone, in node, before the browsers.
+  const press = runPressTests(bridge);
+  console.log(`[e2e:bridge] press table: ${press.rows} rows, ${press.sequences} random sequences, ${press.tabs} tabs`);
   assert.ok(engines.length > 0, 'no engine to run');
   for (const name of engines) {
     assert.ok(name === 'chromium' || name === 'webkit', `unknown engine ${name}`);
