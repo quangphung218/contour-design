@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.33] - 2026-11-13
+
 ### Fixed
 
 - Closing a panel, a dialog or a menu, switching file or conversation, or leaving a screen while a request is still out no longer crashes the app: History, the file dialogs (delete, move, rename, new), image upload in a Markdown document, Copy under a turn, the folder dialog, the export menu, the side chat, the Text tool and Manual edit, speaker notes and Settings pages finish what was asked and update only what is still on screen. A side chat question, a brief sent from Home, a file dialog's deletes and moves, and a speaker note are now sent to the end even if the Studio is left meanwhile, and a sketch saves its last strokes when its tab is closed within the autosave delay.
@@ -1145,7 +1147,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.32...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.33...HEAD
+[0.2.0-beta.33]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.32...v0.2.0-beta.33
 [0.2.0-beta.32]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.31...v0.2.0-beta.32
 [0.2.0-beta.31]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.30...v0.2.0-beta.31
 [0.2.0-beta.30]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.29...v0.2.0-beta.30
