@@ -5,6 +5,7 @@ use super::api;
 use super::export_menu::copy_text;
 use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use super::terminal;
 use crate::handoff::{self, Framework, Target};
 use crate::i18n::{T, t, tf};
@@ -13,9 +14,10 @@ use od_contracts::{HandoffResponse, SaveTemplateRequest, SaveTemplateResponse};
 
 type Status = RwSignal<Option<Result<String, String>>>;
 
-/// Closes on the next task (design-system.md, shell dialogs).
-fn close_later(open: RwSignal<bool>) {
-    leptos::task::spawn_local(async move {
+/// Closes on the next task (design-system.md, shell dialogs), while the
+/// dialog (`tasks`) is there.
+fn close_later(tasks: Tasks, open: RwSignal<bool>) {
+    tasks.spawn(async move {
         gloo_timers::future::TimeoutFuture::new(0).await;
         open.set(false);
     });
@@ -32,6 +34,7 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
     let description = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
+    let tasks = Tasks::here();
     let input = NodeRef::<leptos::html::Input>::new();
     Effect::new(move |_| {
         if let Some(el) = input.get() {
@@ -47,7 +50,7 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
         }
         busy.set(true);
         error.set(None);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let req = SaveTemplateRequest {
                 name: n.clone(),
                 description: Some(description.get_untracked()).filter(|d| !d.trim().is_empty()),
@@ -62,15 +65,15 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
             match res {
                 Ok(_) => {
                     status.set(Some(Ok(tf(T::TemplateSaved, &[&n]))));
-                    close_later(open);
+                    close_later(tasks, open);
                 }
                 Err(e) => error.set(Some(ctx.failed_to(T::MdSaveFailed, &e))),
             }
         });
     };
     view! {
-        <div class="overlay center" on:click=move |_| close_later(open)
-            on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { close_later(open); }>
+        <div class="overlay center" on:click=move |_| close_later(tasks, open)
+            on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { close_later(tasks, open); }>
             <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="template-title" data-testid="template-dialog"
                 on:click=|ev| ev.stop_propagation()>
                 <div class="dialog-head">
@@ -79,7 +82,7 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
                         <h2 id="template-title">{t(T::SaveAsTemplate)}</h2>
                         <p>{t(T::SaveTemplateBody)}</p>
                     </div>
-                    <button class="icon-btn" aria-label=t(T::Close) on:click=move |_| close_later(open)>{icon(Glyph::Close)}</button>
+                    <button class="icon-btn" aria-label=t(T::Close) on:click=move |_| close_later(tasks, open)>{icon(Glyph::Close)}</button>
                 </div>
                 <div class="dialog-body">
                     <label class="field">
@@ -96,7 +99,7 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
                     {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 </div>
                 <div class="dialog-foot">
-                    <button class="btn ghost" on:click=move |_| close_later(open)>{t(T::Cancel)}</button>
+                    <button class="btn ghost" on:click=move |_| close_later(tasks, open)>{t(T::Cancel)}</button>
                     <button class="btn primary" data-testid="template-save" disabled=move || busy.get() || name.with(|n| n.trim().is_empty())
                         on:click=move |_| save()>
                         {move || busy.get().then(|| view! { <span class="spinner on-accent"></span> })}
@@ -112,6 +115,7 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
 pub fn HandoffDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) -> impl IntoView {
     let framework = RwSignal::new(Framework::Existing);
     let target = RwSignal::new(Target::ClaudeCode);
+    let tasks = Tasks::here();
     let info = LocalResource::new(move || async move {
         api::get::<HandoffResponse>(&format!("{}/handoff", ctx.base()))
             .await
@@ -132,7 +136,7 @@ pub fn HandoffDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) -> im
             .map(|h| h.dir)
             .unwrap_or_default();
         let target = target.get_untracked();
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match copy_text(&text).await {
                 Ok(()) => {
                     if target.is_cli() {
@@ -144,15 +148,15 @@ pub fn HandoffDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) -> im
                         }
                         status.set(Some(Ok(tf(T::HandoffEditorOpened, &[target.name()]))));
                     }
-                    close_later(open);
+                    close_later(tasks, open);
                 }
                 Err(e) => status.set(Some(Err(tf(T::HandoffFailed, &[&e])))),
             }
         });
     };
     view! {
-        <div class="overlay center" on:click=move |_| close_later(open)
-            on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { close_later(open); }>
+        <div class="overlay center" on:click=move |_| close_later(tasks, open)
+            on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { close_later(tasks, open); }>
             <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="handoff-title" data-testid="handoff-dialog"
                 on:click=|ev| ev.stop_propagation()>
                 <div class="dialog-head">
@@ -161,7 +165,7 @@ pub fn HandoffDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) -> im
                         <h2 id="handoff-title">{t(T::HandoffChoose)}</h2>
                         <p>{t(T::HandoffBody)}</p>
                     </div>
-                    <button class="icon-btn" aria-label=t(T::Close) on:click=move |_| close_later(open)>{icon(Glyph::Close)}</button>
+                    <button class="icon-btn" aria-label=t(T::Close) on:click=move |_| close_later(tasks, open)>{icon(Glyph::Close)}</button>
                 </div>
                 <div class="dialog-body">
                     <div class="row tight">
@@ -190,7 +194,7 @@ pub fn HandoffDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) -> im
                     {move || info.get().and_then(Result::err).map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 </div>
                 <div class="dialog-foot">
-                    <button class="btn ghost" on:click=move |_| close_later(open)>{t(T::Cancel)}</button>
+                    <button class="btn ghost" on:click=move |_| close_later(tasks, open)>{t(T::Cancel)}</button>
                     <button class="btn primary" data-testid="handoff-go" disabled=move || prompt().is_none() on:click=move |_| go()>
                         {move || if target.get().is_cli() {
                             view! { {icon(Glyph::Terminal)}{t(T::HandoffCopyOpenTerminal)} }.into_any()

@@ -57,8 +57,10 @@ pub fn return_focus_on_cleanup() {
     });
 }
 
+/// Runs `f` once the DOM settled; touches only elements, so it also runs
+/// after the component went (focus goes back on cleanup).
 fn after_render(f: impl FnOnce() + 'static) {
-    leptos::task::spawn_local(async move {
+    super::tasks::detached(async move {
         gloo_timers::future::TimeoutFuture::new(0).await;
         f();
     });

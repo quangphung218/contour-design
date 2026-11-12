@@ -7,6 +7,7 @@
 use super::byok_form::{ByokForm, TestResultLine, TestState};
 use super::icons::{Glyph, icon};
 use super::onboarding::{AgentPicker, CheckAgainButton};
+use super::tasks::Tasks;
 use super::{Shell, api, desktop};
 use crate::i18n::{Locale, T, t, tf};
 use crate::settings::{AppConfig, PermissionMode, Theme};
@@ -90,6 +91,7 @@ fn obj(v: Option<&Value>) -> Map<String, Value> {
 pub fn SettingsPage() -> impl IntoView {
     provide_context(super::memory_settings::MemoryRev(RwSignal::new(0)));
     let shell = Shell::get();
+    let tasks = Tasks::here();
     let agent = RwSignal::new(None::<String>);
     // Agent ▸ Check again: an agent installed after the app started.
     let checking_agents = RwSignal::new(false);
@@ -98,10 +100,7 @@ pub fn SettingsPage() -> impl IntoView {
             return;
         }
         checking_agents.set(true);
-        leptos::task::spawn_local(async move {
-            shell.rescan_agents().await;
-            checking_agents.set(false);
-        });
+        tasks.spawn_then(shell.rescan_agents(), move |()| checking_agents.set(false));
     });
     let model = RwSignal::new(String::new());
     let reasoning = RwSignal::new(String::new());
@@ -192,9 +191,7 @@ pub fn SettingsPage() -> impl IntoView {
             onboarding_completed: true,
             extra,
         };
-        leptos::task::spawn_local(async move {
-            status.set(Some(shell.save_config(next).await));
-        });
+        tasks.spawn_then(shell.save_config(next), move |res| status.set(Some(res)));
     };
     // Permissions, appearance and language save as soon as they change; the
     // agent card and the API provider form each have their own Save.
@@ -205,8 +202,8 @@ pub fn SettingsPage() -> impl IntoView {
         next.theme = theme.get_untracked();
         next.locale = Some(language.get_untracked().tag().to_owned());
         next.onboarding_completed = true;
-        leptos::task::spawn_local(async move {
-            prefs_saved.set(Some((section, shell.save_config(next).await)));
+        tasks.spawn_then(shell.save_config(next), move |res| {
+            prefs_saved.set(Some((section, res)));
         });
     };
     let prefs_status = move |section: &'static str| {
@@ -265,7 +262,7 @@ pub fn SettingsPage() -> impl IntoView {
             "reasoning": reasoning.get_untracked(),
         });
         agent_test.set(Some(TestState::Running));
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             agent_test.set(Some(
                 match api::post::<_, Value>("/api/test/connection", &body).await {
                     Ok(v) => TestState::Done(v),
@@ -551,7 +548,8 @@ fn AdvancedEnv(agent: RwSignal<Option<String>>) -> impl IntoView {
     let data = RwSignal::new(Value::Null);
     let edits = RwSignal::new(Map::<String, Value>::new());
     let state = RwSignal::new(None::<Result<(), String>>);
-    leptos::task::spawn_local(async move {
+    let tasks = Tasks::here();
+    tasks.spawn(async move {
         if let Ok(v) = api::get::<Value>("/api/agent-cli-env").await {
             data.set(v);
         }
@@ -574,7 +572,7 @@ fn AdvancedEnv(agent: RwSignal<Option<String>>) -> impl IntoView {
             return;
         };
         let body = json!({ "env": { id: Value::Object(edits.get_untracked()) } });
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::put::<_, Value>("/api/agent-cli-env", &body).await {
                 Ok(v) => {
                     data.set(v);
@@ -635,6 +633,7 @@ fn AdvancedEnv(agent: RwSignal<Option<String>>) -> impl IntoView {
 #[component]
 fn GlobalRules() -> impl IntoView {
     let shell = Shell::get();
+    let tasks = Tasks::here();
     let text = RwSignal::new(
         shell
             .config
@@ -655,9 +654,7 @@ fn GlobalRules() -> impl IntoView {
             "customInstructions".to_owned(),
             if v.is_empty() { Value::Null } else { json!(v) },
         );
-        leptos::task::spawn_local(async move {
-            state.set(Some(shell.save_config(next).await));
-        });
+        tasks.spawn_then(shell.save_config(next), move |res| state.set(Some(res)));
     };
     view! {
         <div class="card padded">
@@ -700,8 +697,9 @@ fn GlobalMemory() -> impl IntoView {
     let kind = RwSignal::new("user".to_owned());
     let text = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
+    let tasks = Tasks::here();
     let reload = move || {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             if let Ok(v) = api::get::<Value>("/api/memory").await {
                 list.set(v["memories"].as_array().cloned().unwrap_or_default());
             }
@@ -718,7 +716,7 @@ fn GlobalMemory() -> impl IntoView {
     reload();
     let add = move || {
         let body = json!({ "kind": kind.get_untracked(), "text": text.get_untracked() });
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::post::<_, Value>("/api/memory", &body).await {
                 Ok(_) => {
                     text.set(String::new());
@@ -742,7 +740,7 @@ fn GlobalMemory() -> impl IntoView {
                         let id = m["id"].as_str().unwrap_or_default().to_owned();
                         let remove = move |_| {
                             let id = id.clone();
-                            leptos::task::spawn_local(async move {
+                            tasks.spawn(async move {
                                 let _ = api::delete::<Value>(&format!("/api/memory/{}", api::seg(&id))).await;
                                 rev.0.update(|n| *n += 1);
                             });
@@ -786,7 +784,8 @@ fn ProjectLocations() -> impl IntoView {
         locations.set(v["locations"].as_array().cloned().unwrap_or_default());
         default_id.set(v["defaultId"].as_str().unwrap_or("default").to_owned());
     };
-    leptos::task::spawn_local(async move {
+    let tasks = Tasks::here();
+    tasks.spawn(async move {
         if let Ok(v) = api::get::<Value>("/api/project-locations").await {
             apply(v);
         }
@@ -794,16 +793,22 @@ fn ProjectLocations() -> impl IntoView {
     let put = move |list: Vec<Value>, default: String| {
         let custom: Vec<Value> = list.into_iter().filter(|l| l["id"] != "default").collect();
         let body = json!({ "locations": custom, "defaultId": default });
-        leptos::task::spawn_local(async move {
-            match api::put::<_, Value>("/api/project-locations", &body).await {
-                Ok(v) => {
-                    apply(v);
-                    shell.reload_config().await;
-                    path.set(String::new());
-                    state.set(Some(Ok(t(T::Saved).to_owned())));
-                }
-                Err(e) => state.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
+        // The settings copy is read again even if the page is left, or the
+        // next save would send the old locations back.
+        let work = async move {
+            let res = api::put::<_, Value>("/api/project-locations", &body).await;
+            if res.is_ok() {
+                shell.reload_config().await;
             }
+            res
+        };
+        tasks.spawn_then(work, move |res| match res {
+            Ok(v) => {
+                apply(v);
+                path.set(String::new());
+                state.set(Some(Ok(t(T::Saved).to_owned())));
+            }
+            Err(e) => state.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
         });
     };
     let add_path = move |p: String| {
@@ -816,7 +821,7 @@ fn ProjectLocations() -> impl IntoView {
     };
     let pick = move |_| {
         if desktop::is_desktop() {
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 if let Some(dir) = desktop::pick_folder().await {
                     add_path(dir);
                 }
@@ -826,7 +831,7 @@ fn ProjectLocations() -> impl IntoView {
         }
     };
     let scan = move |_| {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             state.set(Some(
                 match api::post::<_, Value>("/api/project-locations/scan", &json!({})).await {
                     Ok(v) => Ok(tf(
@@ -901,7 +906,8 @@ fn MediaProviders() -> impl IntoView {
     let state = RwSignal::new(None::<Result<(), String>>);
     // Providers whose saved key the daemon dropped on the last save.
     let dropped = RwSignal::new(Vec::<String>::new());
-    leptos::task::spawn_local(async move {
+    let tasks = Tasks::here();
+    tasks.spawn(async move {
         if let Ok(v) = api::get::<Value>("/api/media/config").await {
             stored.set(v);
         }
@@ -954,7 +960,7 @@ fn MediaProviders() -> impl IntoView {
             );
         }
         let body = json!({ "providers": providers });
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::put::<_, Value>("/api/media/config", &body).await {
                 Ok(v) => {
                     dropped.set(super::media_page::key_dropped(&v));
@@ -1029,9 +1035,11 @@ fn About() -> impl IntoView {
     let version = LocalResource::new(|| async { api::get::<Value>("/api/version").await.ok() });
     let exporting = RwSignal::new(false);
     let state = RwSignal::new(None::<Result<String, String>>);
+    let tasks = Tasks::here();
+    // The file is saved even if Settings is left while it downloads.
     let export = move |_| {
         exporting.set(true);
-        leptos::task::spawn_local(async move {
+        let work = async move {
             match api::get_bytes("/api/diagnostics/export").await {
                 Ok(bytes) => {
                     // Same name as the daemon's Content-Disposition.
@@ -1046,10 +1054,13 @@ fn About() -> impl IntoView {
                         d.get_seconds()
                     );
                     let _ = super::export_menu::download(&bytes, &name, "application/zip");
-                    state.set(Some(Ok(tf(T::DiagnosticsSaved, &[&name]))));
+                    Ok(tf(T::DiagnosticsSaved, &[&name]))
                 }
-                Err(e) => state.set(Some(Err(api::failure(T::DownloadFailed, &e)))),
+                Err(e) => Err(api::failure(T::DownloadFailed, &e)),
             }
+        };
+        tasks.spawn_then(work, move |res| {
+            state.set(Some(res));
             exporting.set(false);
         });
     };
@@ -1058,8 +1069,8 @@ fn About() -> impl IntoView {
         let mut next = shell.config.get_untracked().unwrap_or_default();
         next.onboarding_completed = false;
         let navigate = navigate.clone();
-        leptos::task::spawn_local(async move {
-            if shell.save_config(next).await.is_ok() {
+        tasks.spawn_then(shell.save_config(next), move |res| {
+            if res.is_ok() {
                 navigate("/onboarding", Default::default());
             }
         });
@@ -1148,11 +1159,12 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
     });
     let copied = RwSignal::new(None::<bool>);
     let shown = RwSignal::new(false);
+    let tasks = Tasks::here();
     let copy = move |_| {
         let Some(text) = summary.get_untracked() else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let ok = super::export_menu::copy_text(&text).await.is_ok();
             // The text stays one selection away when the clipboard refuses.
             if !ok {
@@ -1358,12 +1370,13 @@ const CREDITS: [(&str, &str); 13] = [
 fn Licenses() -> impl IntoView {
     const FILES: [&str; 3] = ["LICENSE", "NOTICE", "THIRD-PARTY-LICENSES"];
     let open = RwSignal::new(None::<(&'static str, Result<String, String>)>);
+    let tasks = Tasks::here();
     let toggle = move |name: &'static str| {
         if open.with_untracked(|o| o.as_ref().is_some_and(|(n, _)| *n == name)) {
             open.set(None);
             return;
         }
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let text = api::get_text(&format!("/api/licenses/{name}"))
                 .await
                 .map_err(|e| e.to_string());

@@ -3,6 +3,7 @@
 
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, ViewedVersion, is_html_path};
+use super::tasks::Tasks;
 use super::{ago, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -27,12 +28,13 @@ fn versions_url(ctx: StudioCtx, path: &str) -> String {
 #[component]
 pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
     let versions = RwSignal::new(None::<Result<Vec<FileVersion>, String>>);
+    let tasks = Tasks::here();
     let reload = move || {
         let Some(path) = ctx.active_untracked().filter(|p| is_html_path(p)) else {
             versions.set(Some(Ok(Vec::new())));
             return;
         };
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let res = api::get::<FileVersionsResponse>(&versions_url(ctx, &path))
                 .await
                 .map(|r| {
@@ -56,7 +58,8 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
         let Some(path) = ctx.active_untracked() else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        // The panel's: closed, it shows no version any more.
+        tasks.spawn(async move {
             let url = format!("{}/{}", versions_url(ctx, &path), api::seg(&v.id));
             match api::get::<VersionContentResponse>(&url).await {
                 Ok(r) => ctx.viewing.set(Some(ViewedVersion {
@@ -74,7 +77,8 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
         let Some(path) = ctx.active_untracked() else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        // The Studio's: a restore asked for shows even if the panel closes.
+        ctx.tasks.spawn(async move {
             let url = format!("{}/{}/restore", versions_url(ctx, &path), api::seg(&id));
             match api::post::<_, RestoreVersionResponse>(&url, &RestoreVersionRequest::default())
                 .await

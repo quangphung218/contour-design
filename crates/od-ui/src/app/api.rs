@@ -96,8 +96,6 @@ impl fmt::Display for HttpError {
     }
 }
 
-/// What a failed status means, in the user's words; the daemon's own
-/// message (English, precise) follows it.
 /// A non-JSON error body worth showing: one short line of words, not a
 /// proxy's HTML page or a stack trace (those go to the console only).
 fn plain_reason(body: &str) -> bool {
@@ -109,6 +107,8 @@ fn plain_reason(body: &str) -> bool {
         && !b.starts_with('{')
 }
 
+/// What a failed status means, in the user's words; the daemon's own
+/// message (English, precise) follows it.
 fn status_hint(status: u16) -> Option<Msg> {
     Some(match status {
         400 | 422 => Msg::ErrBadRequest,

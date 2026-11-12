@@ -5,6 +5,7 @@
 
 use super::icons::{Glyph, icon};
 use super::manage::{local_time, store, stored};
+use super::tasks::Tasks;
 use super::{ago, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -63,7 +64,7 @@ pub fn Inbox() -> impl IntoView {
     let read = RwSignal::new(id_set(READ_KEY));
     let archived = RwSignal::new(id_set(ARCHIVED_KEY));
     let show_archived = RwSignal::new(false);
-    leptos::task::spawn_local(async move {
+    Tasks::here().spawn(async move {
         let names: BTreeMap<String, String> = api::get::<ProjectsResponse>("/api/projects")
             .await
             .map(|r| r.projects.into_iter().map(|p| (p.id, p.name)).collect())

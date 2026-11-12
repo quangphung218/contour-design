@@ -9,6 +9,7 @@ use super::bridge;
 use super::icons::{Glyph, icon};
 use super::preview_tools::{Tool, panel_head};
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::comment_board::{self as cb, AnchorState, LoadTicket, Marker};
 use crate::i18n::{T, t};
 use crate::preview_bridge::{self as pb, Located};
@@ -360,6 +361,7 @@ pub fn DraftImages(
 ) -> impl IntoView {
     let input = NodeRef::<leptos::html::Input>::new();
     let busy = RwSignal::new(false);
+    let tasks = Tasks::here();
     let picked = move |_| {
         let Some(el) = input.get() else { return };
         let files: Vec<web_sys::File> = el
@@ -373,7 +375,7 @@ pub fn DraftImages(
             return;
         }
         busy.set(true);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match super::files_panel::upload(ctx, T::CommentImageFailed, files, COMMENT_IMAGES_DIR)
                 .await
             {

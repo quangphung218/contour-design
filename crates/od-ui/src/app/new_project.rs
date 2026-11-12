@@ -5,6 +5,7 @@
 
 use super::api;
 use super::icons::{Glyph, icon};
+use super::tasks::Tasks;
 use crate::i18n::{T, t, tf};
 use crate::project_panel::{
     AUDIO_DURATIONS, MEDIA_ASPECTS, MediaSurface, PLATFORMS, PanelChoice, PanelTab, VIDEO_LENGTHS,
@@ -59,6 +60,7 @@ fn generated_name(tab: PanelTab) -> String {
 
 #[component]
 pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
+    let tasks = Tasks::here();
     let navigate = use_navigate();
     let choice = RwSignal::new(PanelChoice::default());
     let busy = RwSignal::new(false);
@@ -100,7 +102,7 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
         let req = c.create_request(&list, &generated_name(c.tab));
         let navigate = navigate.clone();
         busy.set(true);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::post::<_, CreateProjectResponse>("/api/projects", &req).await {
                 Ok(r) => {
                     open.set(false);

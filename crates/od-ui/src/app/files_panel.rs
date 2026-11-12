@@ -10,6 +10,7 @@ use super::export_menu::{copy_text, download};
 use super::icons::{Glyph, icon};
 use super::menu_scrim::MenuScrim;
 use super::studio::{StudioCtx, file_glyph};
+use super::tasks::Tasks;
 use super::terminal;
 use crate::file_tree::{self as ft, GROUP_PAGE, Group, Row};
 use crate::i18n::{T, t, tf};
@@ -72,6 +73,8 @@ pub struct FilesUi {
     /// Info toast (copied, uploaded…); errors go to the Studio notice.
     pub toast: RwSignal<Option<String>>,
     toast_seq: StoredValue<u32>,
+    /// Tasks of the Studio that made it.
+    tasks: Tasks,
 }
 
 impl FilesUi {
@@ -95,6 +98,7 @@ impl FilesUi {
             live: RwSignal::new(Vec::new()),
             toast: RwSignal::new(None),
             toast_seq: StoredValue::new(0),
+            tasks: Tasks::here(),
         }
     }
 
@@ -108,7 +112,7 @@ impl FilesUi {
         let n = self.toast_seq.get_value().wrapping_add(1);
         self.toast_seq.set_value(n);
         self.toast.set(Some(text));
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(TOAST_MS).await;
             if self.toast_seq.try_get_value() == Some(n) {
                 self.toast.set(None);
@@ -120,7 +124,7 @@ impl FilesUi {
     /// and the live artifacts.
     pub fn refresh(self, ctx: StudioCtx) {
         super::live_view::refresh_list(ctx, self);
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             if let Ok(r) = api::get::<FoldersResponse>(&format!("{}/folders", ctx.base())).await {
                 self.folders.set(r.folders);
             }
@@ -138,7 +142,7 @@ impl FilesUi {
     /// Closes the dialog on the next task (see design-system.md: closing
     /// inside a click drops listeners the click still reaches).
     fn close_dialog(self) {
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(0).await;
             self.dialog.set(None);
         });
@@ -248,7 +252,7 @@ pub fn download_file(ctx: StudioCtx, path: &str) {
 /// Copies the project path, or with `full` the path on disk.
 pub fn copy_path(ctx: StudioCtx, ui: FilesUi, path: &str, full: bool) {
     let path = path.to_owned();
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         let text = if full {
             match api::get::<HandoffResponse>(&format!("{}/handoff", ctx.base())).await {
                 Ok(h) => format!("{}/{path}", h.dir.trim_end_matches('/')),
@@ -296,7 +300,7 @@ pub fn upload_and_report(ctx: StudioCtx, ui: FilesUi, files: Vec<web_sys::File>,
     if files.is_empty() {
         return;
     }
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         match upload(ctx, T::UploadFailed, files, &dir).await {
             Ok(paths) => {
                 ui.changed(ctx);
@@ -322,7 +326,7 @@ fn file_list(list: Option<web_sys::FileList>) -> Vec<web_sys::File> {
 }
 
 /// Writes a new text file (never over an existing one) and opens it.
-async fn create_text(ctx: StudioCtx, name: String, content: String) -> Result<String, String> {
+async fn create_text(base: &str, name: String, content: String) -> Result<String, Failed> {
     let req = WriteFileRequest {
         name,
         content,
@@ -330,9 +334,9 @@ async fn create_text(ctx: StudioCtx, name: String, content: String) -> Result<St
         overwrite: Some(false),
         artifact_manifest: None,
     };
-    let res = api::post::<_, FileResponse>(&format!("{}/files", ctx.base()), &req)
+    let res = api::post::<_, FileResponse>(&format!("{base}/files"), &req)
         .await
-        .map_err(|e| ctx.failed_to(T::FileCreateFailed, &e))?;
+        .map_err(|e| (T::FileCreateFailed, e))?;
     Ok(res.file.path)
 }
 
@@ -795,7 +799,7 @@ fn SelectionBar(ctx: StudioCtx, ui: FilesUi) -> impl IntoView {
     let zip = move |_| {
         let items: Vec<String> = ui.selected.get_untracked().into_iter().collect();
         let files = ctx.files.with_untracked(|all| expand(&items, all));
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             let req = ArchiveSelectionRequest { files };
             match api::post_bytes(&format!("{}/archive/selection", ctx.base()), &req).await {
                 Ok(bytes) => {
@@ -885,7 +889,7 @@ fn RowMenu(ctx: StudioCtx, ui: FilesUi, key: String) -> impl IntoView {
                     <button class="menu-item" role="menuitem" data-testid="row-zip-folder" on:click=move |_| {
                         close();
                         let dir = d4.clone();
-                        leptos::task::spawn_local(async move {
+                        ctx.tasks.spawn(async move {
                             let url = format!("{}/archive?root={}", ctx.base(), api::seg(&dir));
                             match api::get_bytes(&url).await {
                                 Ok(bytes) => {
@@ -945,34 +949,97 @@ fn RowMenu(ctx: StudioCtx, ui: FilesUi, key: String) -> impl IntoView {
 /// Moves `items` (files, folders ending in `/`) into folder `dest`. A
 /// folder moves whole on the server: what the files list skips (hidden
 /// files, `dist/`, empty folders) moves with it.
-async fn move_items(ctx: StudioCtx, items: Vec<String>, dest: String) -> Result<usize, String> {
+async fn move_items(base: &str, items: &[String], dest: &str) -> Result<usize, Failed> {
     let mut moved = 0;
-    for item in &items {
+    for item in items {
         match folder_of(item) {
             Some(dir) => {
                 let r = api::post::<_, MoveFolderResponse>(
-                    &format!("{}/move-folder", ctx.base()),
+                    &format!("{base}/move-folder"),
                     &MoveFolderRequest {
                         from: dir.to_owned(),
-                        to: ft::join(&dest, ft::base(dir)),
+                        to: ft::join(dest, ft::base(dir)),
                     },
                 )
                 .await
-                .map_err(|e| ctx.failed_to(T::MoveFailed, &e))?;
+                .map_err(|e| (T::MoveFailed, e))?;
                 moved += r.files;
             }
             None => {
                 api::post::<_, FileResponse>(
-                    &format!("{}/files/rename", ctx.base()),
-                    &json!({ "from": item, "to": ft::join(&dest, ft::base(item)) }),
+                    &format!("{base}/files/rename"),
+                    &json!({ "from": item, "to": ft::join(dest, ft::base(item)) }),
                 )
                 .await
-                .map_err(|e| ctx.failed_to(T::MoveFailed, &e))?;
+                .map_err(|e| (T::MoveFailed, e))?;
                 moved += 1;
             }
         }
     }
     Ok(moved)
+}
+
+/// A request of a file dialog that failed: what was not done, and why.
+type Failed = (T, api::HttpError);
+
+/// What a file dialog did on the server.
+enum Done {
+    Folder(String),
+    Created(String),
+    Renamed(String, String),
+    Moved(usize, String),
+    Deleted(usize),
+    FolderDeleted(String),
+}
+
+impl Done {
+    /// Shows it in the Studio; the message to say, if any.
+    fn show(self, ctx: StudioCtx, ui: FilesUi) -> Option<String> {
+        match self {
+            Self::Folder(folder) => {
+                ui.open.update(|o| {
+                    o.insert(folder.clone());
+                });
+                ui.reveal(&format!("{folder}/x"));
+                Some(tf(T::FolderCreated, &[&folder]))
+            }
+            Self::Created(path) => {
+                ui.reveal(&path);
+                ctx.open_file(&path);
+                None
+            }
+            Self::Renamed(from, to) => {
+                if ctx.tabs.with_untracked(|t| t.open.contains(&from)) {
+                    ctx.tabs.update(|t| t.close(&from));
+                    ctx.open_file(&to);
+                }
+                None
+            }
+            Self::Moved(n, to) => {
+                if !to.is_empty() {
+                    ui.open.update(|o| {
+                        o.insert(to.clone());
+                    });
+                }
+                let shown = if to.is_empty() {
+                    t(T::ProjectRoot).to_owned()
+                } else {
+                    to
+                };
+                Some(tf(T::FilesMoved, &[&n.to_string(), &shown]))
+            }
+            Self::Deleted(n) => Some(tf(T::FilesDeleted, &[&n.to_string()])),
+            Self::FolderDeleted(dir) => {
+                if ui
+                    .scope
+                    .with_untracked(|s| ft::is_inside(s, &dir) || *s == dir)
+                {
+                    ui.scope.set(ft::parent(&dir).to_owned());
+                }
+                Some(tf(T::FolderDeleted, &[&dir]))
+            }
+        }
+    }
 }
 
 #[component]
@@ -989,6 +1056,7 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
     let dest = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
+    let dialog_tasks = Tasks::here();
     let input = NodeRef::<leptos::html::Input>::new();
     Effect::new(move |_| {
         if let Some(el) = input.get() {
@@ -1062,141 +1130,102 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
         }
         busy.set(true);
         error.set(None);
-        leptos::task::spawn_local(async move {
-            let files = ctx.files.get_untracked();
-            let existing = paths_of(&files);
-            let result: Result<Option<String>, String> = match d {
-                Dialog::NewFolder(dir) => api::post::<_, FolderResponse>(
-                    &format!("{}/folders", ctx.base()),
-                    &CreateFolderRequest {
+        // The requests run to their end whatever happens meanwhile (the
+        // dialog closed, the panel hidden, the Studio left); the Studio's
+        // lists follow while it is there, the dialog's state while it is.
+        let base = ctx.base();
+        let existing = ctx.files.with_untracked(|f| paths_of(f));
+        let content = text.get_untracked();
+        let to = dest.get_untracked();
+        let work = async move {
+            Ok(match d {
+                Dialog::NewFolder(dir) => {
+                    let req = CreateFolderRequest {
                         path: ft::join(&dir, &n),
-                    },
-                )
-                .await
-                .map(|r| {
-                    ui.open.update(|o| {
-                        o.insert(r.folder.clone());
-                    });
-                    ui.reveal(&format!("{}/x", r.folder));
-                    Some(tf(T::FolderCreated, &[&r.folder]))
-                })
-                .map_err(|e| ctx.failed_to(T::FolderCreateFailed, &e)),
+                    };
+                    let r = api::post::<_, FolderResponse>(&format!("{base}/folders"), &req)
+                        .await
+                        .map_err(|e| (T::FolderCreateFailed, e))?;
+                    Done::Folder(r.folder)
+                }
                 Dialog::NewDocument(dir) => {
                     let path = ft::free_name(&existing, &dir, &ft::stem_of_title(&n), "md");
-                    create_text(ctx, path, document_template(&n))
-                        .await
-                        .map(|p| {
-                            ui.reveal(&p);
-                            ctx.open_file(&p);
-                            None
-                        })
+                    Done::Created(create_text(&base, path, document_template(&n)).await?)
                 }
                 Dialog::NewPage(dir) => {
                     let path = ft::free_name(&existing, &dir, &ft::stem_of_title(&n), "html");
-                    create_text(ctx, path, page_template(&n)).await.map(|p| {
-                        ui.reveal(&p);
-                        ctx.open_file(&p);
-                        None
-                    })
+                    Done::Created(create_text(&base, path, page_template(&n)).await?)
                 }
                 Dialog::PasteText(dir) => {
-                    let content = text.get_untracked();
-                    create_text(ctx, ft::join(&dir, &n), content)
-                        .await
-                        .map(|p| {
-                            ui.reveal(&p);
-                            ctx.open_file(&p);
-                            None
-                        })
+                    Done::Created(create_text(&base, ft::join(&dir, &n), content).await?)
                 }
                 Dialog::Rename(from) => {
                     let to = ft::join(ft::parent(&from), &n);
-                    api::post::<_, FileResponse>(
-                        &format!("{}/files/rename", ctx.base()),
+                    let r = api::post::<_, FileResponse>(
+                        &format!("{base}/files/rename"),
                         &json!({ "from": from, "to": to }),
                     )
                     .await
-                    .map(|r| {
-                        let was_open = ctx.tabs.with_untracked(|t| t.open.contains(&from));
-                        if was_open {
-                            ctx.tabs.update(|t| t.close(&from));
-                            ctx.open_file(&r.file.path);
-                        }
-                        None
-                    })
-                    .map_err(|e| ctx.failed_to(T::RenameFailed, &e))
+                    .map_err(|e| (T::RenameFailed, e))?;
+                    Done::Renamed(from, r.file.path)
                 }
-                Dialog::Move(items) => {
-                    let to = dest.get_untracked();
-                    move_items(ctx, items, to.clone()).await.map(|n| {
-                        if !to.is_empty() {
-                            ui.open.update(|o| {
-                                o.insert(to.clone());
-                            });
-                        }
-                        let shown = if to.is_empty() {
-                            t(T::ProjectRoot).to_owned()
-                        } else {
-                            to
-                        };
-                        Some(tf(T::FilesMoved, &[&n.to_string(), &shown]))
-                    })
-                }
+                Dialog::Move(items) => Done::Moved(move_items(&base, &items, &to).await?, to),
                 Dialog::Delete(items) => {
-                    let mut out: Result<(), String> = Ok(());
                     for item in &items {
                         let res = match folder_of(item) {
                             Some(dir) => api::delete::<FolderResponse>(&format!(
-                                "{}/folders/{}",
-                                ctx.base(),
+                                "{base}/folders/{}",
                                 api::file_path(dir)
                             ))
                             .await
                             .map(|_| ()),
                             None => api::delete::<OkResponse>(&format!(
-                                "{}/files/{}",
-                                ctx.base(),
+                                "{base}/files/{}",
                                 api::file_path(item)
                             ))
                             .await
                             .map(|_| ()),
                         };
-                        if let Err(e) = res {
-                            out = Err(ctx.failed_to(T::DeleteFailed, &e));
-                            break;
+                        res.map_err(|e| (T::DeleteFailed, e))?;
+                    }
+                    Done::Deleted(items.len())
+                }
+                Dialog::DeleteFolder(dir) => {
+                    api::delete::<FolderResponse>(&format!(
+                        "{base}/folders/{}",
+                        api::file_path(&dir)
+                    ))
+                    .await
+                    .map_err(|e| (T::DeleteFailed, e))?;
+                    Done::FolderDeleted(dir)
+                }
+            })
+        };
+        let tasks = dialog_tasks;
+        ctx.tasks
+            .spawn_then(work, move |res: Result<Done, Failed>| {
+                let result = res
+                    .map(|done| done.show(ctx, ui))
+                    .map_err(|(key, e)| ctx.failed_to(key, &e));
+                let open = tasks.alive();
+                if open {
+                    busy.set(false);
+                }
+                match result {
+                    Ok(message) => {
+                        ui.changed(ctx);
+                        if let Some(m) = message {
+                            ui.say(m);
+                        }
+                        if open {
+                            ui.close_dialog();
                         }
                     }
-                    out.map(|()| Some(tf(T::FilesDeleted, &[&items.len().to_string()])))
+                    // The dialog gone, the Studio says it.
+                    Err(e) if open => error.set(Some(e)),
+                    Err(e) => ctx.notice.set(Some(e)),
                 }
-                Dialog::DeleteFolder(dir) => api::delete::<FolderResponse>(&format!(
-                    "{}/folders/{}",
-                    ctx.base(),
-                    api::file_path(&dir)
-                ))
-                .await
-                .map(|_| {
-                    if ui
-                        .scope
-                        .with_untracked(|s| ft::is_inside(s, &dir) || *s == dir)
-                    {
-                        ui.scope.set(ft::parent(&dir).to_owned());
-                    }
-                    Some(tf(T::FolderDeleted, &[&dir]))
-                })
-                .map_err(|e| ctx.failed_to(T::DeleteFailed, &e)),
-            };
-            busy.set(false);
-            match result {
-                Ok(message) => {
-                    ui.changed(ctx);
-                    if let Some(m) = message {
-                        ui.say(m);
-                    }
-                    ui.close_dialog();
-                }
-                Err(e) => error.set(Some(e)),
-            }
-        });
+            });
     };
     let cancel = move || ui.close_dialog();
     view! {
@@ -1355,7 +1384,7 @@ pub fn FocusToggle() -> impl IntoView {
 
 /// Copies the hand-off prompt for a coding agent (Continue in CLI).
 pub fn continue_in_cli(ctx: StudioCtx, ui: FilesUi) {
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         let res = match api::get::<HandoffResponse>(&format!("{}/handoff", ctx.base())).await {
             Ok(h) => copy_text(&h.prompt)
                 .await

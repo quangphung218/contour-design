@@ -6,10 +6,12 @@ use super::icons::{Glyph, icon};
 use super::menu_scrim::MenuScrim;
 use super::presenter::{DeckChannel, channel_name};
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::Slide;
 use crate::speaker_notes;
 use leptos::prelude::*;
+use od_contracts::FileResponse;
 use send_wrapper::SendWrapper;
 use wasm_bindgen::JsCast;
 
@@ -18,7 +20,7 @@ pub fn load_notes(ctx: StudioCtx, count: u32) {
     let Some(path) = ctx.active_untracked() else {
         return;
     };
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         let url = format!("{}/raw/{}", ctx.base(), api::file_path(&path));
         if let Ok(html) = api::get_text(&url).await
             && ctx.active_untracked().as_deref() == Some(path.as_str())
@@ -297,6 +299,7 @@ pub fn ThumbRail(ctx: StudioCtx, src: Memo<Option<String>>) -> impl IntoView {
 
 #[component]
 pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
+    let tasks = Tasks::here();
     let editing = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
     let saving = RwSignal::new(false);
@@ -312,43 +315,44 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
         };
         let note = draft.get_untracked();
         saving.set(true);
-        leptos::task::spawn_local(async move {
-            let res = match api::get_text(&format!("{}/raw/{}", ctx.base(), api::file_path(&path)))
-                .await
-            {
-                Ok(html) => {
-                    let next = speaker_notes::set_note(
-                        &html,
-                        deck.active as usize,
-                        &note,
-                        deck.count as usize,
-                    );
-                    super::files_panel::replace_content(
-                        ctx,
-                        &path,
-                        &next,
-                        t(T::SpeakerNotes),
-                        T::NotesSaveFailed,
-                    )
-                    .await
+        // The note is written even if the panel closes or the Studio is
+        // left meanwhile; the Studio's notes follow, the panel while open.
+        let base = ctx.base();
+        let label = t(T::SpeakerNotes);
+        let work = async move {
+            let html = api::get_text(&format!("{base}/raw/{}", api::file_path(&path))).await?;
+            let next =
+                speaker_notes::set_note(&html, deck.active as usize, &note, deck.count as usize);
+            let url = format!(
+                "{base}/content/{}?label={}",
+                api::file_path(&path),
+                api::seg(label)
+            );
+            api::put_text::<FileResponse>(&url, &next).await?;
+            Ok(note)
+        };
+        ctx.tasks
+            .spawn_then(work, move |res: Result<String, api::HttpError>| {
+                let open = tasks.alive();
+                if open {
+                    saving.set(false);
                 }
-                Err(e) => Err(ctx.failed_to(T::NotesSaveFailed, &e)),
-            };
-            saving.set(false);
-            match res {
-                Ok(_) => {
-                    ctx.notes.update(|n| {
-                        let i = deck.active as usize;
-                        if n.len() <= i {
-                            n.resize(i + 1, String::new());
+                match res {
+                    Ok(note) => {
+                        ctx.notes.update(|n| {
+                            let i = deck.active as usize;
+                            if n.len() <= i {
+                                n.resize(i + 1, String::new());
+                            }
+                            n[i] = note.trim().to_owned();
+                        });
+                        if open {
+                            editing.set(false);
                         }
-                        n[i] = note.trim().to_owned();
-                    });
-                    editing.set(false);
+                    }
+                    Err(e) => ctx.notice.set(Some(ctx.failed_to(T::NotesSaveFailed, &e))),
                 }
-                Err(e) => ctx.notice.set(Some(e)),
-            }
-        });
+            });
     };
     move || {
         let deck = ctx.deck.get()?;

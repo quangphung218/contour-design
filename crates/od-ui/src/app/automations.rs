@@ -7,7 +7,7 @@
 
 use super::icons::{Glyph, icon};
 use super::manage::local_time;
-use super::tasks::ScreenTasks;
+use super::tasks::Tasks;
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use crate::schedule::{Kind, Preset, city, format_time, parse_time};
@@ -378,7 +378,7 @@ impl Form {
 
 #[component]
 pub fn Automations() -> impl IntoView {
-    let screen = ScreenTasks::provide();
+    let screen = Tasks::here();
     let shell = Shell::get();
     let routines = RwSignal::new(None::<Vec<Routine>>);
     let projects = RwSignal::new(Vec::<Project>::new());
@@ -598,7 +598,7 @@ pub fn Automations() -> impl IntoView {
                         <ul class="routine-list">
                             {list.into_iter().map(|r| {
                                 let project_name = names.iter().find(|p| p.id == r.project_id).map(|p| p.name.clone());
-                                view! { <RoutineRow routine=r project_name=project_name reload=reload on_edit=on_edit on_crystallized=load_proposals/> }
+                                view! { <RoutineRow routine=r project_name=project_name reload=reload on_edit=on_edit on_crystallized=load_proposals page=screen/> }
                             }).collect_view()}
                         </ul>
                     }.into_any()
@@ -612,7 +612,7 @@ pub fn Automations() -> impl IntoView {
 /// Pending evolution proposals with Apply / Reject; hidden when none.
 #[component]
 fn ProposalsSection(proposals: RwSignal<Vec<Proposal>>, reload: Callback<()>) -> impl IntoView {
-    let screen = ScreenTasks::current();
+    let screen = Tasks::here();
     let busy = RwSignal::new(None::<String>);
     let note = RwSignal::new(None::<Result<String, String>>);
     let review = move |id: String, apply: bool| {
@@ -866,8 +866,11 @@ fn RoutineRow(
     reload: impl Fn() + Copy + Send + Sync + 'static,
     on_edit: Callback<Routine>,
     on_crystallized: Callback<()>,
+    /// The page's tasks: rows are rebuilt on every list refresh, so a
+    /// change that ends in a reload runs there.
+    page: Tasks,
 ) -> impl IntoView {
-    let screen = ScreenTasks::current();
+    let screen = Tasks::here();
     let id = StoredValue::new(routine.id.clone());
     let crystallizing = RwSignal::new(None::<String>);
     let history = RwSignal::new(None::<Vec<RoutineRun>>);
@@ -889,42 +892,56 @@ fn RoutineRow(
         load_history();
     }
     let toggle = move |on: bool| {
-        screen.spawn(async move {
-            match api::patch::<_, Value>(&base(), &json!({"enabled": on})).await {
+        let path = base();
+        page.spawn(async move {
+            match api::patch::<_, Value>(&path, &json!({"enabled": on})).await {
                 Ok(_) => reload(),
-                Err(e) => failure.set(Some(api::failure(T::RoutineUpdateFailed, &e))),
+                Err(e) if screen.alive() => {
+                    failure.set(Some(api::failure(T::RoutineUpdateFailed, &e)));
+                }
+                Err(_) => {}
             }
         });
     };
     let run_now = move |_| {
-        screen.spawn(async move {
-            match api::post::<_, Value>(&format!("{}/run", base()), &json!({})).await {
+        let path = format!("{}/run", base());
+        page.spawn(async move {
+            match api::post::<_, Value>(&path, &json!({})).await {
                 Ok(_) => {
-                    failure.set(None);
+                    if screen.alive() {
+                        failure.set(None);
+                    }
                     reload();
                 }
-                Err(e) => failure.set(Some(api::failure(T::RoutineRunFailed, &e))),
+                Err(e) if screen.alive() => {
+                    failure.set(Some(api::failure(T::RoutineRunFailed, &e)));
+                }
+                Err(_) => {}
             }
         });
     };
     let crystallize = move |run_id: String| {
         crystallizing.set(Some(run_id.clone()));
-        screen.spawn(async move {
-            let path = format!("{}/runs/{}/crystallize", base(), api::seg(&run_id));
-            match api::post::<_, CrystallizeResponse>(&path, &json!({})).await {
-                Ok(r) if r.proposals.is_empty() => {
-                    failure.set(Some(t(T::CrystallizeNoProposals).to_owned()));
+        let path = format!("{}/runs/{}/crystallize", base(), api::seg(&run_id));
+        page.spawn(async move {
+            let res = api::post::<_, CrystallizeResponse>(&path, &json!({})).await;
+            if screen.alive() {
+                match res {
+                    Ok(r) if r.proposals.is_empty() => {
+                        failure.set(Some(t(T::CrystallizeNoProposals).to_owned()));
+                    }
+                    Ok(_) => failure.set(None),
+                    Err(e) => failure.set(Some(api::failure(T::CrystallizeFailed, &e))),
                 }
-                Ok(_) => failure.set(None),
-                Err(e) => failure.set(Some(api::failure(T::CrystallizeFailed, &e))),
+                crystallizing.set(None);
             }
-            crystallizing.set(None);
             on_crystallized.run(());
         });
     };
     let remove = move |_| {
-        screen.spawn(async move {
-            let _ = api::delete::<Value>(&base()).await;
+        let path = base();
+        page.spawn(async move {
+            let _ = api::delete::<Value>(&path).await;
             reload();
         });
     };

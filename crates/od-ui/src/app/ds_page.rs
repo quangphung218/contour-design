@@ -9,6 +9,7 @@ use super::ds_create::CreateFlow;
 use super::export_menu::download;
 use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, copy_text, picked_files, query_param, size_label, upload};
+use super::tasks::Tasks;
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use crate::settings::DEFAULT_DESIGN_SYSTEM_KEY;
@@ -66,6 +67,7 @@ fn surface_label(s: Surface) -> &'static str {
 #[component]
 pub fn DesignSystemsPage() -> impl IntoView {
     let shell = Shell::get();
+    let tasks = Tasks::here();
     let systems = RwSignal::new(None::<Vec<DesignSystemSummary>>);
     let scope = RwSignal::new(Scope::Presets);
     let query = RwSignal::new(String::new());
@@ -76,7 +78,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
     let error = RwSignal::new(None::<String>);
 
     let reload = move |select: Option<String>| {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             // An agent may have edited a package in place.
             let _ = api::post::<_, Value>("/api/design-systems/reload", &json!({})).await;
             match api::get::<DesignSystemsResponse>("/api/design-systems").await {
@@ -279,7 +281,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
                             return None;
                         }
                         let summary = systems.with(|l| l.as_ref()?.iter().find(|s| s.id == id).cloned())?;
-                        Some(view! { <DsDetail summary=summary default_id=default_id on_change=on_change/> })
+                        Some(view! { <DsDetail summary=summary default_id=default_id on_change=on_change page=tasks/> })
                     }}
                 </div>
             </div>
@@ -469,8 +471,12 @@ fn DsDetail(
     summary: DesignSystemSummary,
     default_id: Memo<Option<String>>,
     on_change: Callback<Option<String>>,
+    /// The page's tasks: a change that refreshes the list runs there, as
+    /// the refresh replaces this detail.
+    page: Tasks,
 ) -> impl IntoView {
     let shell = Shell::get();
+    let detail = Tasks::here();
     let navigate = use_navigate();
     let id = summary.id.clone();
     let mine = is_mine(&summary);
@@ -492,7 +498,7 @@ fn DsDetail(
         let id = id.clone();
         move || {
             let id = id.clone();
-            leptos::task::spawn_local(async move {
+            detail.spawn(async move {
                 let res = api::get::<Kit>(&ds_url(&id, "kit"))
                     .await
                     .map_err(|e| e.to_string());
@@ -519,7 +525,7 @@ fn DsDetail(
         );
         if running {
             let poll = poll.clone();
-            leptos::task::spawn_local(async move {
+            detail.spawn(async move {
                 gloo_timers::future::TimeoutFuture::new(POLL_MS).await;
                 poll();
             });
@@ -546,16 +552,19 @@ fn DsDetail(
         let load = load.clone();
         move |path: String, body: Value, ok: &'static str, refresh_list: bool| {
             let load = load.clone();
-            leptos::task::spawn_local(async move {
-                match api::post::<_, Value>(&path, &body).await {
-                    Ok(_) => {
-                        say(Ok(ok.to_owned()));
-                        load();
-                        if refresh_list {
-                            on_change.run(None);
+            page.spawn(async move {
+                let res = api::post::<_, Value>(&path, &body).await;
+                if detail.alive() {
+                    match &res {
+                        Ok(_) => {
+                            say(Ok(ok.to_owned()));
+                            load();
                         }
+                        Err(e) => say(Err(api::failure(T::DsUpdateFailed, e))),
                     }
-                    Err(e) => say(Err(api::failure(T::DsUpdateFailed, &e))),
+                }
+                if res.is_ok() && refresh_list {
+                    on_change.run(None);
                 }
             });
         }
@@ -568,7 +577,7 @@ fn DsDetail(
                 .map(|k| k.body.clone())
         });
         if let Some(body) = body {
-            leptos::task::spawn_local(async move {
+            detail.spawn(async move {
                 say(copy_text(&body)
                     .await
                     .map(|()| t(T::CopiedDesignMd).to_owned()));
@@ -599,7 +608,7 @@ fn DsDetail(
             };
             let id = id.clone();
             let load = load.clone();
-            leptos::task::spawn_local(async move {
+            detail.spawn(async move {
                 match api::put::<_, Value>(&ds_url(&id, "design-md"), &json!({ "body": body }))
                     .await
                 {
@@ -623,7 +632,7 @@ fn DsDetail(
             }
             let id = id.clone();
             let load = load.clone();
-            leptos::task::spawn_local(async move {
+            detail.spawn(async move {
                 match api::post::<_, Value>(&ds_url(&id, "token-contract/rebuild"), &json!({}))
                     .await
                 {
@@ -654,7 +663,7 @@ fn DsDetail(
             }
             let id = id.clone();
             let load = load.clone();
-            leptos::task::spawn_local(async move {
+            detail.spawn(async move {
                 match upload::<Value>(&ds_url(&id, "assets"), &files).await {
                     Ok(_) => {
                         say(Ok(t(T::AssetsUploaded).to_owned()));
@@ -729,7 +738,7 @@ fn DsDetail(
                 next.extra
                     .insert(DEFAULT_DESIGN_SYSTEM_KEY.to_owned(), json!(id));
             }
-            leptos::task::spawn_local(async move {
+            detail.spawn(async move {
                 match shell.save_config(next).await {
                     Ok(()) => say(Ok(if is_default {
                         t(T::DefaultCleared)
@@ -754,7 +763,7 @@ fn DsDetail(
         move |_| {
             let id = id.clone();
             let navigate = navigate.clone();
-            leptos::task::spawn_local(async move {
+            detail.spawn(async move {
                 match api::post::<_, Value>(&ds_url(&id, "workspace"), &json!({})).await {
                     Ok(v) => {
                         let pid = v["project"]["id"].as_str().unwrap_or_default().to_owned();
@@ -770,10 +779,13 @@ fn DsDetail(
         move |_| {
             let id = id.clone();
             menu.set(false);
-            leptos::task::spawn_local(async move {
+            page.spawn(async move {
                 match api::post::<_, Value>(&ds_url(&id, "copy"), &json!({})).await {
                     Ok(v) => on_change.run(v["id"].as_str().map(str::to_owned)),
-                    Err(e) => say(Err(api::failure(T::DesignSystemFailed, &e))),
+                    Err(e) if detail.alive() => {
+                        say(Err(api::failure(T::DesignSystemFailed, &e)));
+                    }
+                    Err(_) => {}
                 }
             });
         }
@@ -785,14 +797,19 @@ fn DsDetail(
             let id = id.clone();
             let title = title.clone();
             menu.set(false);
-            leptos::task::spawn_local(async move {
-                match api::get_bytes(&ds_url(&id, "archive")).await {
-                    Ok(bytes) => {
-                        let _ = download(&bytes, &format!("{title}.zip"), "application/zip");
+            // The download goes on if the detail is left meanwhile.
+            detail.spawn_then(
+                async move {
+                    let bytes = api::get_bytes(&ds_url(&id, "archive")).await?;
+                    let _ = download(&bytes, &format!("{title}.zip"), "application/zip");
+                    Ok(())
+                },
+                move |res: api::ApiResult<()>| {
+                    if let Err(e) = res {
+                        say(Err(api::failure(T::DownloadFailed, &e)));
                     }
-                    Err(e) => say(Err(api::failure(T::DownloadFailed, &e))),
-                }
-            });
+                },
+            );
         }
     };
     let toggle_status = {
@@ -816,10 +833,11 @@ fn DsDetail(
         Callback::new(move |()| {
             confirm_delete.set(false);
             let id = id.clone();
-            leptos::task::spawn_local(async move {
+            page.spawn(async move {
                 match api::post::<_, Value>(&ds_url(&id, "delete"), &json!({})).await {
                     Ok(_) => on_change.run(None),
-                    Err(e) => say(Err(api::failure(T::DeleteFailed, &e))),
+                    Err(e) if detail.alive() => say(Err(api::failure(T::DeleteFailed, &e))),
+                    Err(_) => {}
                 }
             });
         })

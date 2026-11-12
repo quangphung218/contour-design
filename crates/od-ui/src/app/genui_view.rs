@@ -7,6 +7,7 @@ use super::api;
 use super::icons::{Glyph, icon};
 use super::sse::Sse;
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::genui::{
     self, Field, FieldKind, FilePick, FormError, Shape, SurfaceRow, authorize_answer,
 };
@@ -32,6 +33,7 @@ struct ProjectSurfaces {
 #[component]
 pub fn GenuiSurfaces(ctx: StudioCtx) -> impl IntoView {
     let rows = RwSignal::new(Vec::<SurfaceRow>::new());
+    let tasks = Tasks::here();
     let base = move || {
         format!(
             "/api/projects/{}/genui",
@@ -39,7 +41,7 @@ pub fn GenuiSurfaces(ctx: StudioCtx) -> impl IntoView {
         )
     };
     let reload = move || {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::get::<ProjectSurfaces>(&base()).await {
                 Ok(r) => rows.set(r.surfaces),
                 Err(e) => ctx.on_not_found(e.status),
@@ -75,7 +77,7 @@ pub fn GenuiSurfaces(ctx: StudioCtx) -> impl IntoView {
     });
     let show_remembered = RwSignal::new(false);
     let revoke = move |surface_id: String| {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let path = format!("{}/{}/revoke", base(), api::seg(&surface_id));
             if let Err(e) = api::post::<_, Value>(&path, &json!({})).await {
                 ctx.notice
@@ -130,6 +132,7 @@ pub fn GenuiSurfaces(ctx: StudioCtx) -> impl IntoView {
 fn SurfaceCard(row: SurfaceRow, on_done: Callback<()>) -> impl IntoView {
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
+    let tasks = Tasks::here();
     let path = StoredValue::new(format!(
         "/api/runs/{}/genui/{}/respond",
         api::seg(row.run_id.as_deref().unwrap_or_default()),
@@ -138,7 +141,7 @@ fn SurfaceCard(row: SurfaceRow, on_done: Callback<()>) -> impl IntoView {
     let answer = Callback::new(move |value: Value| {
         busy.set(true);
         error.set(None);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let res = api::post::<_, Value>(&path.get_value(), &json!({ "value": value })).await;
             busy.set(false);
             match res {

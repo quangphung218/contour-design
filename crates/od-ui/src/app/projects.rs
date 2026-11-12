@@ -9,6 +9,7 @@ use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::manage::{self, RunState, Sort, Tag};
 use super::new_project::NewProjectPanel;
+use super::tasks::Tasks;
 use super::{ago, api, desktop};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -101,11 +102,14 @@ struct Page {
     selecting: RwSignal<bool>,
     selected: RwSignal<BTreeSet<String>>,
     error: RwSignal<Option<String>>,
+    /// The page's tasks: a row's work that ends in a reload runs here, as
+    /// the reload replaces the rows.
+    tasks: Tasks,
 }
 
 impl Page {
     fn reload(self) {
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             match api::get::<ProjectsResponse>("/api/projects").await {
                 Ok(r) => {
                     let ids: Vec<String> = r.projects.iter().map(|p| p.id.clone()).collect();
@@ -144,11 +148,13 @@ pub fn Projects() -> impl IntoView {
         selecting: RwSignal::new(false),
         selected: RwSignal::new(BTreeSet::new()),
         error: RwSignal::new(None),
+        tasks: Tasks::here(),
     };
+    let tasks = page.tasks;
     page.reload();
     if let Ok(handle) = set_interval_with_handle(
         move || {
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 page.statuses.set(manage::fetch_statuses().await);
             });
         },
@@ -178,7 +184,7 @@ pub fn Projects() -> impl IntoView {
             hits.set(Vec::new());
             return;
         }
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(SEARCH_DEBOUNCE_MS).await;
             if search_seq.get_value() != seq {
                 return;
@@ -193,7 +199,7 @@ pub fn Projects() -> impl IntoView {
     });
     Effect::new(move |_| {
         if collection.get() == Collection::Recent {
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 if let Ok(r) = api::get::<ViewsResponse>("/api/recently-viewed").await {
                     recent.set(r.views.into_iter().map(|v| v.project_id).collect());
                 }
@@ -216,7 +222,7 @@ pub fn Projects() -> impl IntoView {
     let nav = navigate.clone();
     let import = move |dir: String| {
         let navigate = nav.clone();
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::post::<_, CreateProjectResponse>(
                 "/api/import/folder",
                 &json!({ "baseDir": dir }),
@@ -242,7 +248,7 @@ pub fn Projects() -> impl IntoView {
             return;
         }
         let import = import_pick.clone();
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             if let Some(dir) = desktop::pick_folder().await {
                 import(dir);
             }
@@ -269,8 +275,8 @@ pub fn Projects() -> impl IntoView {
         input.set_value("");
         let navigate = nav_zip.clone();
         importing.set(true);
-        leptos::task::spawn_local(async move {
-            match import_zip(&file).await {
+        tasks.spawn_then(async move { import_zip(&file).await }, move |res| {
+            match res {
                 Ok(id) => navigate(&format!("/projects/{id}"), Default::default()),
                 Err(e) => page.error.set(Some(e)),
             }
@@ -281,27 +287,33 @@ pub fn Projects() -> impl IntoView {
     let delete_selected = move |_| {
         let ids: Vec<String> = page.selected.get_untracked().into_iter().collect();
         confirm_bulk.set(false);
-        leptos::task::spawn_local(async move {
-            let mut failed = 0usize;
-            for id in &ids {
-                let path = format!("/api/projects/{}", api::seg(id));
-                if api::delete::<OkResponse>(&path).await.is_err() {
-                    failed += 1;
+        let total = ids.len();
+        tasks.spawn_then(
+            async move {
+                let mut failed = 0usize;
+                for id in &ids {
+                    let path = format!("/api/projects/{}", api::seg(id));
+                    if api::delete::<OkResponse>(&path).await.is_err() {
+                        failed += 1;
+                    }
                 }
-            }
-            let deleted = ids.len() - failed;
-            notice.set(Some(if failed == 0 {
-                tf(T::DeletedProjects, &[&deleted.to_string()])
-            } else {
-                tf(
-                    T::DeletedProjectsPartial,
-                    &[&deleted.to_string(), &failed.to_string()],
-                )
-            }));
-            page.selected.set(BTreeSet::new());
-            page.selecting.set(false);
-            page.reload();
-        });
+                failed
+            },
+            move |failed| {
+                let deleted = total - failed;
+                notice.set(Some(if failed == 0 {
+                    tf(T::DeletedProjects, &[&deleted.to_string()])
+                } else {
+                    tf(
+                        T::DeletedProjectsPartial,
+                        &[&deleted.to_string(), &failed.to_string()],
+                    )
+                }));
+                page.selected.set(BTreeSet::new());
+                page.selecting.set(false);
+                page.reload();
+            },
+        );
     };
 
     let set_view = move |v: View| {
@@ -731,7 +743,7 @@ pub fn RecentStrip() -> impl IntoView {
     let projects = RwSignal::new(None::<Vec<Project>>);
     let statuses = RwSignal::new(BTreeMap::<String, RunState>::new());
     let tag = RwSignal::new(None::<Tag>);
-    leptos::task::spawn_local(async move {
+    Tasks::here().spawn(async move {
         let list = api::get::<ProjectsResponse>("/api/projects")
             .await
             .map(|r| r.projects)
@@ -809,6 +821,7 @@ pub fn ProjectCard(project: Project, #[prop(optional)] status: Option<RunState>)
 
 #[component]
 fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
+    let row = Tasks::here();
     let id = StoredValue::new(project.id.clone());
     let name = RwSignal::new(project.name.clone());
     let editing = RwSignal::new(false);
@@ -843,15 +856,20 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
             return;
         };
         name.set(new_name.clone());
-        leptos::task::spawn_local(async move {
-            let path = format!("/api/projects/{}", api::seg(&id.get_value()));
+        let path = format!("/api/projects/{}", api::seg(&id.get_value()));
+        // On the page's tasks: a reload meanwhile replaces this row.
+        page.tasks.spawn(async move {
             match api::patch::<_, ProjectResponse>(&path, &json!({ "name": new_name })).await {
                 Ok(_) => {
-                    saved.set_value(new_name);
+                    if row.alive() {
+                        saved.set_value(new_name);
+                    }
                     page.error.set(None);
                 }
                 Err(e) => {
-                    name.set(saved.get_value());
+                    if row.alive() {
+                        name.set(saved.get_value());
+                    }
                     page.error.set(Some(api::failure(T::RenameFailed, &e)));
                 }
             }
@@ -860,8 +878,8 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
     };
     let rename_key = rename;
     let duplicate = move |_| {
-        leptos::task::spawn_local(async move {
-            let path = format!("/api/projects/{}/duplicate", api::seg(&id.get_value()));
+        let path = format!("/api/projects/{}/duplicate", api::seg(&id.get_value()));
+        page.tasks.spawn(async move {
             if let Err(e) = api::post::<_, DuplicateProjectResponse>(&path, &json!({})).await {
                 page.error.set(Some(api::failure(T::DuplicateFailed, &e)));
             }
@@ -869,8 +887,8 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
         });
     };
     let delete = move |_| {
-        leptos::task::spawn_local(async move {
-            let path = format!("/api/projects/{}", api::seg(&id.get_value()));
+        let path = format!("/api/projects/{}", api::seg(&id.get_value()));
+        page.tasks.spawn(async move {
             if let Err(e) = api::delete::<OkResponse>(&path).await {
                 page.error.set(Some(api::failure(T::DeleteFailed, &e)));
             }
@@ -984,22 +1002,29 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
                 }}
             </div>
             <Show when=move || instructions_open.get()>
-                <InstructionsDialog id=id.get_value() text=instructions open=instructions_open/>
+                <InstructionsDialog id=id.get_value() text=instructions open=instructions_open row=row/>
             </Show>
         </article>
     }
 }
 
-/// Project instructions: injected into every message of the project.
+/// Project instructions: injected into every message of the project. The
+/// save runs on the `row`'s tasks: closed meanwhile, the row still gets it.
 #[component]
-fn InstructionsDialog(id: String, text: RwSignal<String>, open: RwSignal<bool>) -> impl IntoView {
+fn InstructionsDialog(
+    id: String,
+    text: RwSignal<String>,
+    open: RwSignal<bool>,
+    row: Tasks,
+) -> impl IntoView {
+    let dialog = Tasks::here();
     let draft = RwSignal::new(text.get_untracked());
     let error = RwSignal::new(None::<String>);
     let id = StoredValue::new(id);
     let save = move |_| {
         let value = draft.get_untracked();
-        leptos::task::spawn_local(async move {
-            let path = format!("/api/projects/{}", api::seg(&id.get_value()));
+        let path = format!("/api/projects/{}", api::seg(&id.get_value()));
+        row.spawn(async move {
             let body = if value.trim().is_empty() {
                 json!({ "customInstructions": null })
             } else {
@@ -1010,7 +1035,11 @@ fn InstructionsDialog(id: String, text: RwSignal<String>, open: RwSignal<bool>) 
                     text.set(r.project.custom_instructions.unwrap_or_default());
                     open.set(false);
                 }
-                Err(e) => error.set(Some(api::failure(T::MdSaveFailed, &e))),
+                Err(e) => {
+                    if dialog.alive() {
+                        error.set(Some(api::failure(T::MdSaveFailed, &e)));
+                    }
+                }
             }
         });
     };
@@ -1088,8 +1117,8 @@ fn Board(list: Vec<Project>, page: Page) -> impl IntoView {
 fn BoardCard(project: Project, page: Page) -> impl IntoView {
     let id = StoredValue::new(project.id.clone());
     let delete = move |_| {
-        leptos::task::spawn_local(async move {
-            let path = format!("/api/projects/{}", api::seg(&id.get_value()));
+        let path = format!("/api/projects/{}", api::seg(&id.get_value()));
+        page.tasks.spawn(async move {
             let _ = api::delete::<OkResponse>(&path).await;
             page.reload();
         });

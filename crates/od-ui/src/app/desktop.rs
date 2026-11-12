@@ -46,7 +46,7 @@ pub fn set_theme(theme: &str) {
         &JsValue::from_str(theme),
     );
     if let Some(promise) = invoke("set_theme", &args) {
-        wasm_bindgen_futures::spawn_local(async move {
+        super::tasks::detached(async move {
             let _ = JsFuture::from(promise).await;
         });
     }
@@ -60,7 +60,7 @@ pub fn open_link(url: &str) {
     let args = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&args, &JsValue::from_str("url"), &JsValue::from_str(url));
     if let Some(promise) = invoke("open_link", &args) {
-        wasm_bindgen_futures::spawn_local(async move {
+        super::tasks::detached(async move {
             let _ = JsFuture::from(promise).await;
         });
     }
@@ -122,7 +122,7 @@ pub async fn install_update(version: &str) -> Result<(), String> {
 /// Stops a running Update now.
 pub fn cancel_update() {
     if let Some(promise) = invoke("cancel_update", &JsValue::UNDEFINED) {
-        wasm_bindgen_futures::spawn_local(async move {
+        super::tasks::detached(async move {
             let _ = JsFuture::from(promise).await;
         });
     }
@@ -131,7 +131,7 @@ pub fn cancel_update() {
 /// Restarts the app into the update just installed.
 pub fn restart_app() {
     if let Some(promise) = invoke("restart_app", &JsValue::UNDEFINED) {
-        wasm_bindgen_futures::spawn_local(async move {
+        super::tasks::detached(async move {
             let _ = JsFuture::from(promise).await;
         });
     }
@@ -144,7 +144,7 @@ pub fn set_menu_labels(labels: &serde_json::Value) {
         return;
     };
     if let Some(promise) = invoke("set_menu_labels", &args) {
-        wasm_bindgen_futures::spawn_local(async move {
+        super::tasks::detached(async move {
             let _ = JsFuture::from(promise).await;
         });
     }
@@ -193,7 +193,7 @@ pub async fn save_file(bytes: &[u8], name: &str) -> Result<Option<String>, Strin
 /// (QA-064). Does nothing outside the desktop app.
 pub fn reset_dialog_gate() {
     if let Some(promise) = invoke("reset_dialog_gate", &JsValue::UNDEFINED) {
-        wasm_bindgen_futures::spawn_local(async move {
+        super::tasks::detached(async move {
             let _ = JsFuture::from(promise).await;
         });
     }
@@ -204,7 +204,7 @@ pub fn reset_dialog_gate() {
 /// (QA-067). Does nothing outside the desktop app.
 pub fn reload_ack() {
     if let Some(promise) = invoke("reload_ack", &JsValue::UNDEFINED) {
-        wasm_bindgen_futures::spawn_local(async move {
+        super::tasks::detached(async move {
             let _ = JsFuture::from(promise).await;
         });
     }

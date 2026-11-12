@@ -5,6 +5,7 @@
 use super::api;
 use super::bridge;
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::i18n::{T, t};
 use crate::preview_bridge as pb;
 use leptos::prelude::*;
@@ -21,8 +22,11 @@ pub fn comment_label(c: &PreviewComment) -> String {
     }
 }
 
+/// Saves the draft's comment; `draft` and the signals after it are the
+/// draft box's.
 fn add_comment(
     ctx: StudioCtx,
+    draft: Tasks,
     note: String,
     images: RwSignal<Vec<String>>,
     busy: RwSignal<bool>,
@@ -49,16 +53,31 @@ fn add_comment(
         attachments: images.get_untracked(),
     };
     busy.set(true);
-    leptos::task::spawn_local(async move {
-        let path = format!("{}/conversations/{}/comments", ctx.base(), api::seg(&cid));
-        match api::post::<_, CommentResponse>(&path, &req).await {
+    // The comment is kept even if the draft box goes meanwhile; the box
+    // closes or says why only while it is there.
+    let path = format!("{}/conversations/{}/comments", ctx.base(), api::seg(&cid));
+    let work = async move { api::post::<_, CommentResponse>(&path, &req).await };
+    ctx.tasks.spawn_then(work, move |res| {
+        let open = draft.alive();
+        match res {
             Ok(r) => {
                 ctx.comments.update(|c| c.push(r.comment));
-                ctx.comment_draft.set(None);
+                if open {
+                    ctx.comment_draft.set(None);
+                }
             }
-            Err(e) => error.set(Some(ctx.failed_to(T::CommentFailed, &e))),
+            Err(e) => {
+                let why = ctx.failed_to(T::CommentFailed, &e);
+                if open {
+                    error.set(Some(why));
+                } else {
+                    ctx.notice.set(Some(why));
+                }
+            }
         }
-        busy.set(false);
+        if open {
+            busy.set(false);
+        }
     });
 }
 
@@ -152,13 +171,14 @@ fn DraftBox(ctx: StudioCtx, picked: crate::preview_bridge::Picked) -> impl IntoV
     let images = RwSignal::new(Vec::<String>::new());
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
+    let tasks = Tasks::here();
     let view_height = super::bridge::main_frame_height();
     let style = draft_style(&picked.rect, view_height);
     let label = draft_label(&picked.tag, picked.label.as_deref().unwrap_or(&picked.text));
     let submit = move || {
         let text = note.get_untracked().trim().to_owned();
         if !text.is_empty() && !busy.get_untracked() {
-            add_comment(ctx, text, images, busy, error);
+            add_comment(ctx, tasks, text, images, busy, error);
         }
     };
     let submit_key = submit;

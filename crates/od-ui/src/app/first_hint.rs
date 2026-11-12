@@ -11,6 +11,7 @@
 
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, is_previewable};
+use super::tasks::Tasks;
 use super::{store_flag, stored_flag};
 use crate::i18n::{T, t};
 use leptos::ev;
@@ -31,6 +32,7 @@ fn should_show(seen: bool, armed: bool, running: bool, has_artifact: bool) -> bo
 
 #[component]
 pub fn FirstArtifactHint(ctx: StudioCtx) -> impl IntoView {
+    let tasks = Tasks::here();
     let seen = RwSignal::new(stored_flag(SEEN_KEY).unwrap_or(false));
     // Armed when a run starts while the project has nothing to preview
     // (a returning user opening a finished project never sees it).
@@ -52,7 +54,7 @@ pub fn FirstArtifactHint(ctx: StudioCtx) -> impl IntoView {
     });
     Effect::new(move |_| {
         if ready.get() && !settled.get_untracked() {
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 gloo_timers::future::TimeoutFuture::new(SETTLE_MS).await;
                 let _ = settled.try_set(true);
             });

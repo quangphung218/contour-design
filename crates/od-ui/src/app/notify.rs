@@ -4,6 +4,7 @@
 //! watches `GET /api/runs` app-wide; sounds are synthesized (no files).
 
 use super::icons::{Glyph, icon};
+use super::tasks::Tasks;
 use super::{Shell, api};
 use crate::i18n::{T, t};
 use leptos::prelude::*;
@@ -129,8 +130,9 @@ pub fn desktop(title: &str, body: &str) {
 pub fn RunWatcher() -> impl IntoView {
     let shell = Shell::get();
     let running = StoredValue::new(None::<BTreeSet<String>>);
+    let tasks = Tasks::here();
     let tick = move || {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let Ok(r) = api::get::<RunsResponse>("/api/runs").await else {
                 return;
             };
@@ -191,19 +193,18 @@ pub fn NotificationSettings() -> impl IntoView {
     let current = RwSignal::new(prefs(shell));
     let permission = RwSignal::new(web_sys::Notification::permission());
     let state = RwSignal::new(None::<Result<(), String>>);
+    let tasks = Tasks::here();
     let save = move |next: Prefs| {
         current.set(next.clone());
         let mut config = shell.config.get_untracked().unwrap_or_default();
         config
             .extra
             .insert("notifications".to_owned(), next.to_value());
-        leptos::task::spawn_local(async move {
-            state.set(Some(shell.save_config(config).await));
-        });
+        tasks.spawn_then(shell.save_config(config), move |res| state.set(Some(res)));
     };
     let ask = move || {
         if let Ok(p) = web_sys::Notification::request_permission() {
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 let _ = wasm_bindgen_futures::JsFuture::from(p).await;
                 permission.set(web_sys::Notification::permission());
             });
