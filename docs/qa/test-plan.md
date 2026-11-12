@@ -9,7 +9,8 @@ plan adds the mistakes and accidents of real users. Bugs found are in
 [bugs.md](bugs.md); the failed-call pass (QA-081 to QA-084) in
 [bugs-web-failures.md](bugs-web-failures.md); the web pass after beta.28 (QA-074 to QA-078) in
 [bugs-web-beta28.md](bugs-web-beta28.md); the desktop beta.32 pass (QA-085 to QA-088, §18 on
-macOS) in [bugs-desktop-beta32.md](bugs-desktop-beta32.md).
+macOS) in [bugs-desktop-beta32.md](bugs-desktop-beta32.md); the web pass after the beta.34
+redesign (QA-089 to QA-092, §21) in [bugs-web-beta34.md](bugs-web-beta34.md).
 
 ## Priorities and status
 
@@ -124,6 +125,9 @@ time when needed.
 | STU-17 | The Studio names the project | A project | Open it at 1440 and 1024 | The chat head shows the project name (the page heading) above the conversation, at least 100 px wide | P2 | auto |
 | STU-18 | The first-design hint goes away by itself | New browser, empty project | First turn, then a second turn without closing the hint | The hint is gone after the second turn and after a reload | P3 | auto |
 | STU-19 | Manual edit picks the text clicked inside a marked section | Page whose `<article>` has `data-od-id` (as the real Claude writes) | Manual edit, click a paragraph in it | The paragraph is picked, its text in Content (as in a plain section) | P0 | auto (QA-027) |
+| STU-20 | History: a late answer for the file just left is dropped | a.html with 3 versions, b.html with 1 | History on a.html; its list held back; pick b.html; let a.html's answer in | b.html's panel lists only "B only" | P1 | auto |
+| STU-21 | History: a version viewed on the file just left is dropped | a.html with 2 versions, b.html with 1 | View an a.html version, held back; pick b.html; let it in | b.html's live page, no "Viewing vN", no Restore of a.html's version | P1 | auto (QA-089) |
+| STU-22 | A link and a `window.open` button inside a web component open | Page with an open shadow root holding a `_blank` link and a button | Click each | One tab each, at the right address | P1 | auto |
 
 ## 5. Export (`export.qa.mjs`)
 
@@ -562,6 +566,41 @@ last. Bugs: [bugs-web-failures.md](bugs-web-failures.md).
 | FAIL-15 | Markdown could not be read | Project with `notes.md` | Open it while its read fails once; Retry; Reload preview while the read fails | Plain message with Retry, no editor; Retry shows the text, the file unchanged; a failed reload keeps the text, no message | P1 | auto |
 
 Run: `QA_SKIP_BUILD=1 crates/od-ui/e2e/qa/run.sh failures` (~40 s).
+
+## 21. Leaving in the middle of work (`leave.qa.mjs`)
+
+Goal: work the user asked for (a save, an upload, a generation) reaches its
+end whatever screen they go to next, and what they typed or drew a moment
+before leaving is not lost; nothing crashes while views go. Written after
+the beta.34 redesign (tasks tied to their owner, ReadState and Autosave,
+StudioPhase Gone). Expected results from spec.md (nothing the user made is
+lost), the beta.33 and beta.34 changelog entries, and the original app
+(`FileWorkspace.tsx` flushes sketch autosaves on `pagehide`). A slow call
+is a `page.route` that holds the request until the test lets it go; "within
+the autosave delay" pauses the page clock, so the 700 ms timer cannot fire.
+Bugs: [bugs-web-beta34.md](bugs-web-beta34.md).
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| LV-01 | Markdown typed, another document opened at once | a.md, b.md | Type in a.md, click b.md within the delay | a.md has the text, b.md unchanged | P0 | auto |
+| LV-02 | A failed Markdown save is saved on closing the tab | notes.md | Type while saves fail, unfocus, heal, close the tab | The text is in the file | P1 | auto |
+| LV-03 | Markdown typed, page reloaded | notes.md | Type, reload within the delay | The text is in the file | P1 | auto (QA-090) |
+| LV-04 | Sketch stroke, page reloaded | New sketch | Draw, reload within the delay | The stroke is in the file | P1 | auto (QA-090) |
+| LV-16 | Markdown typed, Back to another page load | Studio opened by a page load after Projects | Type, Back | The text is in the file | P1 | auto (QA-090) |
+| LV-12 | Markdown typed, Back inside the app | Studio opened from the Projects list | Type, Back | The text is in the file | P1 | auto |
+| LV-05 | Markdown typed in a project deleted elsewhere | notes.md open; project deleted by API | Type | The not-found state, no raw "not found", no crash | P1 | auto (QA-091) |
+| LV-10 | Ctrl+Tab while typing | notes.md and index.html open | Type, Ctrl+Tab, come back, type | Tab switches, both texts saved, no crash | P0 | auto (QA-091) |
+| LV-11 | Ctrl+W while typing | notes.md open | Type, Ctrl+W | Tab closed, text saved, no crash | P1 | auto (QA-091) |
+| LV-13 | Another file deleted while typing | notes.md, old.md | Delete old.md by API, type | The row goes, typing goes on and saves | P1 | auto |
+| LV-14 | Ctrl+Tab while typing a sketch label | New sketch, Text pen | Type a label, Ctrl+Tab | Tab switches, the label kept, no crash | P1 | auto (QA-091) |
+| LV-15 | A brief sent with Enter from Home | Home | Type, Enter | The Studio opens, no error | P0 | auto |
+| LV-06 | History closed while its list loads | 2 versions | Open History (held), close it, let it in, open again | The list shows, no error | P2 | auto |
+| LV-07 | History A → B → A quickly | a.html 2 versions, b.html 1 | b.html's list held back; pick A again; let it in | A's list | P1 | auto |
+| LV-08 | Upload, then the Studio left | Studio | Upload `bìa sách.png` (held), go to Projects, let it in | The file is in the project | P0 | auto |
+| LV-09 | Media generate, then Library and Home | A fake image provider that answers late | Generate, Library, Home, answer, back to Media | The image is in the Library, the task "done" in Queue | P1 | auto |
+| LV-17 | The daemon stops while a tab is open | Home open | SIGTERM the daemon | It stops within 2 s | P2 | auto (QA-092) |
+
+Run: `QA_SKIP_BUILD=1 crates/od-ui/e2e/qa/run.sh leave` (~1.5 min).
 
 ## Not automated, and why
 
