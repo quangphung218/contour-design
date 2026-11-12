@@ -328,7 +328,8 @@ fn shell_event<R: Runtime>(app: &AppHandle<R>, event: ShellEvent) {
 /// Takes the queued [`ShellEvent`]s one by one, carrying out what each
 /// says before the next. An event an action makes WebKit say (the process
 /// ending inside [`kill_page`]) queues behind and is taken in turn. On the
-/// main thread, never inside a WebKit call: [`shell_event`] runs it.
+/// main thread, never inside a WebKit call: [`shell_event`] runs it, and
+/// the "isn't responding" alert's check ([`question_open`]).
 fn drain_shell<R: Runtime>(app: &AppHandle<R>) {
     let Some(queue) = app.try_state::<ShellQueue>() else {
         return;
@@ -377,9 +378,10 @@ fn run_action<R: Runtime>(app: &AppHandle<R>, action: Action) {
         #[cfg(not(target_os = "macos"))]
         Action::CheckLater { .. } => {}
         Action::ReloadUnheard => reload_unheard(app),
-        // A modal of its own, on the main thread's next turn: the drain
-        // goes on meanwhile, so the page's answer (`reload_ack`) reaches the
-        // state the alert watches (QA-072).
+        // A modal of its own, on the main thread's next turn, so this drain
+        // ends first. While it is up, tao runs no other `run_on_main_thread`
+        // task (a drain sent meanwhile waits for it to close): the alert's
+        // own check takes the queue ([`question_open`], QA-072).
         Action::AskUser(token) => off_webkit_call(app, move |app| ask_user(app, token)),
         Action::Restart(why) => {
             let Some(window) = app.get_webview_window("main") else {
@@ -630,9 +632,21 @@ fn reload_unheard<R: Runtime>(app: &AppHandle<R>) {
 #[cfg(target_os = "macos")]
 fn ask_user<R: Runtime>(app: &AppHandle<R>, token: u64) {
     let asked = app.clone();
-    let open = move || with_shell(&asked, |state| state.is_open(token)).unwrap_or(false);
+    let open = move || question_open(&asked, token);
     let choice = web_process::ask_not_responding(open);
     shell_event(app, ShellEvent::UserChose { token, choice });
+}
+
+/// Whether Reload question `token` is still open, the events queued so far
+/// taken first. For the "isn't responding" alert's timer: the alert runs
+/// inside a `run_on_main_thread` task, and while it is up tao runs no
+/// other, so the drain [`shell_event`] sent for the page's answer
+/// (`reload_ack`) would wait for the alert to close (QA-072). On the main
+/// thread, outside any WebKit call (a timer of the modal's run loop).
+#[cfg(any(target_os = "macos", test))]
+fn question_open<R: Runtime>(app: &AppHandle<R>, token: u64) -> bool {
+    drain_shell(app);
+    with_shell(app, |state| state.is_open(token)).unwrap_or(false)
 }
 
 /// Only macOS asks ([`Action::CheckLater`] does nothing elsewhere).
@@ -2014,6 +2028,23 @@ mod tests {
             queued.push(ShellEvent::ReloadAck),
             "a drain ended: a new one"
         );
+    }
+
+    #[test]
+    fn the_not_responding_alert_sees_the_answer_its_drain_waits_behind() {
+        // QA-072 under tao: while the alert's task runs its modal, the
+        // drain `shell_event` sent waits for it to close. Stand-in: a drain
+        // on its way that never comes.
+        let (app, _window) = shell_app("http://127.0.0.1:5173/projects/p1");
+        let token = reload_asked(&app);
+        assert!(question_open(app.handle(), token), "not answered yet");
+        app.state::<ShellQueue>().0.lock().unwrap().draining = true;
+        shell_event(app.handle(), ShellEvent::ReloadAck);
+        assert!(
+            !question_open(app.handle(), token),
+            "the page answered: the alert closes itself"
+        );
+        settle(&app);
     }
 
     /// WebKit says the web content process ended, and the shell took it.
