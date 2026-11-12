@@ -841,3 +841,68 @@ async fn a_recorded_first_preview_skips_the_database_on_reloads() {
     assert_eq!(a.get(&page).await.status, StatusCode::OK);
     assert_eq!(marks("DELETE FROM usage_marks"), 0);
 }
+
+/// QA-085 and QA-086: a page Contour cannot read. The frame's own load gets
+/// a short HTML page in plain words (no JSON, no status, no "daemon"); an
+/// API call (the Lint panel's) gets a code that says "read".
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unreadable_page_reads_as_words_in_the_frame_and_as_a_read_refusal_to_the_api() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let _timing = TIMING.read().await;
+    let a = app();
+    let id = a.project().await;
+    a.write(&id, "index.html", "<p>x</p>").await;
+    let p = a.preview_url(&id, "index.html").await;
+    let page = a.data.join("projects").join(&id).join("index.html");
+    std::fs::set_permissions(&page, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&page).is_ok() {
+        return; // running as root: nothing is refused
+    }
+    let get = |uri: String, headers: &[(&str, &str)]| {
+        let mut req = Request::get(uri);
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        req.body(Body::empty()).unwrap()
+    };
+    let frame = [
+        ("sec-fetch-dest", "iframe"),
+        ("sec-fetch-mode", "navigate"),
+        ("accept", "text/html,application/xhtml+xml,*/*;q=0.8"),
+    ];
+    let raw = format!("/api/projects/{id}/raw/index.html");
+    let mut replies = vec![
+        a.send(get(format!("{raw}?bridge=1&v=0"), &frame)).await,
+        a.send(get(p.url.clone(), &frame)).await,
+        a.send(get(raw.clone(), &[("accept", "text/html")])).await,
+        a.send(get(raw.clone(), &[("sec-fetch-dest", "document")]))
+            .await,
+    ];
+    let api = [
+        a.get(&format!("{raw}?bridge=1")).await,
+        a.get(&p.url).await,
+        a.get(&format!("/api/projects/{id}/lint/index.html")).await,
+    ];
+    std::fs::set_permissions(&page, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    for (i, r) in replies.drain(..).enumerate() {
+        let text = r.text();
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{i}: {text}");
+        assert!(
+            r.header("content-type").unwrap().starts_with("text/html"),
+            "{i}: {:?}",
+            r.header("content-type")
+        );
+        assert!(text.contains("permission to read"), "{i}: {text}");
+        for bad in ["{\"error", "403", "HTTP", "daemon", "write", "NO_"] {
+            assert!(!text.contains(bad), "{i}: {bad:?} in {text}");
+        }
+        assert!(r.header("content-security-policy").is_some(), "{i}");
+    }
+    for (i, r) in api.iter().enumerate() {
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{i}: {}", r.text());
+        let body: Value = serde_json::from_slice(&r.body).unwrap();
+        assert_eq!(body["error"]["code"], "NO_READ_PERMISSION", "{i}: {body}");
+    }
+}

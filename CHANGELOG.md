@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Studio: a Markdown file or sketch that could be read on a second try no longer keeps the "Could not read" banner over it, and a failed request whose reply is a proxy's web page or a stack trace shows a short reason instead of the raw page (the page goes to the browser console).
+- Studio: a file Contour has no permission to read is reported as "No permission to read" (in the Lint panel and elsewhere), not as a write problem (QA-085); the preview frame shows a short page saying the file could not be read, with Reload preview, instead of the raw `{"error":…}` reply (QA-086).
 - Studio: a Markdown document whose file could not be read now says "Could not read this document. Nothing was saved over it." with Retry, instead of a loading placeholder that never ends; a lint that failed inside Contour or behind a proxy reads "Lint failed. Try again." instead of the raw reply.
 
 ## [0.2.0-beta.32] - 2026-11-11
