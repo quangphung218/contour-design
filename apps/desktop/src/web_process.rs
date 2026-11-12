@@ -18,17 +18,8 @@ pub(crate) fn menu_first(command_only: bool, key: &str) -> bool {
     command_only && matches!(key, "q" | "r")
 }
 
-/// The user's answer to "This page isn't responding" ([`ask_not_responding`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum NotRespondingChoice {
-    /// Wait (the first button, Return).
-    Wait,
-    /// Reload (the second button).
-    Reload,
-    /// Nobody answered: the page answered the Reload question first, so
-    /// the shell closed the alert itself (QA-072).
-    Closed,
-}
+// The user's answer to "This page isn't responding" (`ask_not_responding`).
+pub(crate) use crate::shell_state::NotRespondingChoice;
 
 /// `NSAlertFirstButtonReturn`: Wait.
 const WAIT_RESPONSE: isize = 1000;

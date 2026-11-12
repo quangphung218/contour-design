@@ -12,6 +12,7 @@
 #[cfg(any(target_os = "macos", test))]
 mod js_dialogs;
 mod mcp;
+mod shell_state;
 mod updater;
 #[cfg(any(target_os = "macos", test))]
 mod web_process;
@@ -33,6 +34,10 @@ use tauri::{
     AppHandle, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_dialog::DialogExt;
+
+#[cfg(any(target_os = "macos", test))]
+use shell_state::PREVIEW_STOPPED;
+use shell_state::{Action, RESTART_GRACE, ShellEvent, ShellState};
 
 const OPEN_FOLDER_MENU_ID: &str = "open-folder";
 const SHORTCUTS_MENU_ID: &str = "help-shortcuts";
@@ -209,10 +214,16 @@ fn native_theme(theme: &str) -> Option<tauri::Theme> {
 
 /// The UI sends the menu's words in its language (QA-049).
 #[tauri::command]
-fn set_menu_labels(app: AppHandle, labels: MenuLabels) {
+fn set_menu_labels(app: AppHandle, request: tauri::ipc::Request<'_>, labels: MenuLabels) {
     // Sent as the app's shell shows (od-ui `Shelled`), which then takes
-    // `od:menu`: View ▸ Reload may ask this page from now on.
-    page_listens(&app);
+    // `od:menu`: View ▸ Reload may ask this page from now on. Not a page
+    // gone, whose word came late (R4): its origin says which.
+    let origin = request
+        .headers()
+        .get("Origin")
+        .and_then(|origin| origin.to_str().ok())
+        .map(str::to_owned);
+    shell_event(&app, ShellEvent::MenuListens { origin });
     match build_menu(&app, &labels.or_english()) {
         Ok(menu) => {
             if let Err(e) = app.set_menu(menu) {
@@ -249,164 +260,106 @@ fn reset_dialog_gate(window: tauri::WebviewWindow) {
     let _ = window;
 }
 
-/// How long WebKit gets to say the web content process ended before
-/// [`restart_page`] loads the page itself.
-#[cfg(any(target_os = "macos", test))]
-const RESTART_GRACE: std::time::Duration = std::time::Duration::from_millis(1500);
-
-/// After [`restart_page`] loaded its page itself, WebKit silent for
-/// [`RESTART_GRACE`], how long WebKit's late word that the old web content
-/// process ended is still taken for that restart rather than a crash.
-#[cfg(any(target_os = "macos", test))]
-const LATE_END_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
-
-/// What WebKit's word that the web content process ended calls for
-/// ([`Restarts::ended`]).
-#[cfg(any(target_os = "macos", test))]
-#[derive(Debug, PartialEq, Eq)]
-enum ProcessEnded {
-    /// [`restart_page`] ended it: load the page it left.
-    Load(Url),
-    /// [`restart_page`] ended it, and already loaded its page when WebKit
-    /// stayed silent: nothing to do.
-    LateRestart,
-    /// It ended by itself ([`Crashes`]).
-    Crashed,
+/// Takes `event` into the app's [`ShellState`], if it keeps one: what to
+/// do about it. A lock held only for the step, never across a dispatcher
+/// call, so a WebKit callback may take it.
+fn shell_step<R: Runtime>(app: &impl Manager<R>, event: ShellEvent) -> Vec<Action> {
+    let now = std::time::Instant::now();
+    app.try_state::<Mutex<ShellState>>()
+        .and_then(|state| state.lock().ok().map(|mut state| state.step(event, now)))
+        .unwrap_or_default()
 }
 
-/// The main window's restarts ([`restart_page`]): the page to load once
-/// the web content process is gone, taken when WebKit says it ended
-/// ([`on_page_terminated`]) or, WebKit silent, after [`RESTART_GRACE`].
-/// Nothing there (a crash) reloads the page, as Tauri does by default.
-#[cfg(any(target_os = "macos", test))]
-#[derive(Debug, Default)]
-struct Restarts {
-    next: Option<Url>,
-    /// When the grace timer loaded the page of a restart whose process
-    /// end WebKit had not reported yet.
-    loaded_early: Option<std::time::Instant>,
+/// Reads the app's [`ShellState`], if it keeps one.
+fn with_shell<R: Runtime, T>(app: &impl Manager<R>, f: impl FnOnce(&ShellState) -> T) -> Option<T> {
+    app.try_state::<Mutex<ShellState>>()
+        .and_then(|state| state.lock().ok().map(|state| f(&state)))
 }
 
-#[cfg(any(target_os = "macos", test))]
-impl Restarts {
-    /// A restart that loads `then` began.
-    fn begin(&mut self, then: Url) {
-        self.next = Some(then);
-        self.loaded_early = None;
-    }
+/// Takes `event` into the [`ShellState`] and carries out what it says. A
+/// dispatcher call: on the main thread, never inside a WebKit call
+/// (QA-070; there, [`shell_note`]).
+fn shell_event<R: Runtime>(app: &AppHandle<R>, event: ShellEvent) {
+    let actions = shell_step(app, event);
+    run_actions(app, actions);
+}
 
-    /// [`RESTART_GRACE`] is over at `now`: the page to load, if WebKit has
-    /// not said the process ended. `killed`: the process was asked to
-    /// end, so WebKit may still say so, late.
-    fn grace_over(&mut self, killed: bool, now: std::time::Instant) -> Option<Url> {
-        let next = self.next.take();
-        if next.is_some() && killed {
-            self.loaded_early = Some(now);
-        }
-        next
+/// [`shell_event`] from inside a WebKit call: the step now, what it says
+/// once the call has returned ([`off_webkit_call`]).
+fn shell_note<R: Runtime>(app: &AppHandle<R>, event: ShellEvent) {
+    let actions = shell_step(app, event);
+    if !actions.is_empty() {
+        off_webkit_call(app, move |app| run_actions(app, actions));
     }
+}
 
-    /// WebKit says the web content process ended, at `now`.
-    fn ended(&mut self, now: std::time::Instant) -> ProcessEnded {
-        if let Some(url) = self.next.take() {
-            self.loaded_early = None;
-            return ProcessEnded::Load(url);
+/// Carries out the [`ShellState`]'s `actions`, in order. On the main
+/// thread, never inside a WebKit call (QA-070).
+fn run_actions<R: Runtime>(app: &AppHandle<R>, actions: Vec<Action>) {
+    for action in actions {
+        run_action(app, action);
+    }
+}
+
+fn run_action<R: Runtime>(app: &AppHandle<R>, action: Action) {
+    match action {
+        Action::AskPage(_) => ui_action(app, "reload"),
+        #[cfg(target_os = "macos")]
+        Action::CheckLater { token, after } => {
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(after);
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    shell_event(&handle, ShellEvent::ReloadCheck(token));
+                });
+            });
         }
-        match self.loaded_early.take() {
-            Some(at) if now.saturating_duration_since(at) < LATE_END_WINDOW => {
-                ProcessEnded::LateRestart
+        // Only macOS restarts a page that does not answer.
+        #[cfg(not(target_os = "macos"))]
+        Action::CheckLater { .. } => {}
+        Action::ReloadUnheard => reload_unheard(app),
+        Action::AskUser(token) => ask_user(app, token),
+        Action::Restart(why) => {
+            let Some(window) = app.get_webview_window("main") else {
+                return;
+            };
+            match shown_url(&window) {
+                Some(shown) => shell_event(app, ShellEvent::Restart { shown, why }),
+                None => tracing::warn!("cannot tell which page hung"),
             }
-            _ => ProcessEnded::Crashed,
+        }
+        Action::Kill => kill_page(app),
+        Action::Navigate(url) => {
+            if let Some(window) = app.get_webview_window("main")
+                && let Err(e) = window.navigate(url)
+            {
+                tracing::warn!(error = %e, "cannot load the app again");
+            }
+        }
+        Action::Reload => {
+            if let Some(window) = app.get_webview_window("main")
+                && let Err(e) = window.reload()
+            {
+                tracing::warn!(error = %e, "cannot load the app again");
+            }
         }
     }
-}
-
-/// Runs `f` on the app's [`Restarts`], if it keeps any.
-#[cfg(any(target_os = "macos", test))]
-fn with_restarts<R: Runtime, T>(
-    app: &AppHandle<R>,
-    f: impl FnOnce(&mut Restarts) -> T,
-) -> Option<T> {
-    app.try_state::<Mutex<Restarts>>()
-        .and_then(|restarts| restarts.lock().ok().map(|mut restarts| f(&mut restarts)))
-}
-
-/// The query the Studio reads on load: the shell stopped the design's
-/// preview (od-ui `desktop::preview_was_stopped`).
-#[cfg(any(target_os = "macos", test))]
-const PREVIEW_STOPPED: (&str, &str) = ("preview", "stopped");
-
-/// The query key that says why ([`StopReason`]; od-ui
-/// `desktop::stop_reason`).
-#[cfg(any(target_os = "macos", test))]
-const STOP_REASON_KEY: &str = "why";
-
-/// Why the shell stopped the design's preview, so the Studio says the
-/// right thing (QA-071).
-#[cfg(any(target_os = "macos", test))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StopReason {
-    /// The design hung the window in a dialog loop ([`js_dialogs`]).
-    Dialogs,
-    /// The page did not answer View ▸ Reload and the user chose Reload.
-    Hung,
-    /// The web content process crashed twice in a row ([`Crashes`]).
-    Crashed,
-}
-
-#[cfg(any(target_os = "macos", test))]
-impl StopReason {
-    /// Its value in the query.
-    fn as_query(self) -> &'static str {
-        match self {
-            Self::Dialogs => "dialogs",
-            Self::Hung => "hung",
-            Self::Crashed => "crashed",
-        }
-    }
-}
-
-/// Where the app opens again after a design hung or crashed it (QA-067):
-/// the same page with the preview stopped and why
-/// (`?preview=stopped&why=…`). Present mode goes back to that design's
-/// Studio, which says why and can run it again; it would only loop again.
-#[cfg(any(target_os = "macos", test))]
-fn stopped_preview_url(url: &Url, why: StopReason) -> Url {
-    let mut url = url.clone();
-    let presented = url
-        .path()
-        .strip_prefix("/present/")
-        .and_then(|rest| rest.split('/').next())
-        .filter(|id| !id.is_empty())
-        .map(str::to_owned);
-    if let Some(id) = presented {
-        url.set_path(&format!("/projects/{id}"));
-    }
-    let (key, value) = PREVIEW_STOPPED;
-    let kept: Vec<(String, String)> = url
-        .query_pairs()
-        .filter(|(k, _)| k != key && k != STOP_REASON_KEY)
-        .map(|(k, v)| (k.into_owned(), v.into_owned()))
-        .collect();
-    url.query_pairs_mut()
-        .clear()
-        .extend_pairs(kept)
-        .append_pair(key, value)
-        .append_pair(STOP_REASON_KEY, why.as_query());
-    url
 }
 
 /// Runs `task` on the main thread once the WebKit call running now has
 /// returned. WebKit's delegate callbacks (a JavaScript panel, the web
 /// content process ending) run on the main thread, where
 /// `run_on_main_thread` runs its task at once, inside that call; and the
-/// call may itself sit inside a Tauri dispatcher call: `restart_page`'s
+/// call may itself sit inside a Tauri dispatcher call: [`kill_page`]'s
 /// `with_webview` ends the process, and WebKit says so before returning,
 /// while Tauri holds the window's lock that `navigate`, `reload`, `url`
 /// and `with_webview` take again (QA-070, a deadlock). A thread of its
 /// own first, so the task waits for the main thread's next turn.
-#[cfg(any(target_os = "macos", test))]
-fn off_webkit_call<R: Runtime>(app: &AppHandle<R>, task: fn(&AppHandle<R>)) {
+fn off_webkit_call<R: Runtime>(
+    app: &AppHandle<R>,
+    task: impl FnOnce(&AppHandle<R>) + Send + 'static,
+) {
     let app = app.clone();
     std::thread::spawn(move || {
         let handle = app.clone();
@@ -415,148 +368,25 @@ fn off_webkit_call<R: Runtime>(app: &AppHandle<R>, task: fn(&AppHandle<R>)) {
 }
 
 /// [`js_dialogs`]'s gate saw a design hang the window in a dialog loop:
-/// [`stop_hung_page`], off WebKit's call ([`off_webkit_call`]).
+/// end the web content process and open the app again on the same page,
+/// the preview stopped, off WebKit's call.
 // WebKit callback: no Tauri dispatcher call here (QA-070).
 #[cfg(any(target_os = "macos", test))]
 fn on_hung<R: Runtime>(app: &AppHandle<R>) {
-    off_webkit_call(app, stop_hung_page);
-}
-
-/// A design hung the window in a dialog loop ([`js_dialogs`]'s gate saw
-/// it): end the web content process and open the app again on the same
-/// page, the preview stopped.
-#[cfg(any(target_os = "macos", test))]
-fn stop_hung_page<R: Runtime>(app: &AppHandle<R>) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    match shown_url(&window) {
-        Some(url) => restart_page(app, stopped_preview_url(&url, StopReason::Dialogs)),
-        None => tracing::warn!("cannot tell which page hung"),
-    }
-}
-
-/// How long the page gets to answer View ▸ Reload ([`reload_ack`])
-/// before the shell asks the user whether to restart it.
-#[cfg(target_os = "macos")]
-const RELOAD_ACK_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
-
-/// After Wait, how long until the shell asks again about a page that
-/// still has not answered.
-#[cfg(target_os = "macos")]
-const RELOAD_ASK_AGAIN: std::time::Duration = std::time::Duration::from_secs(5);
-
-/// View ▸ Reload asks the page first, so its leave guard can ask about
-/// work not saved yet (a manual edit not applied); only a page that does
-/// not answer is taken for hung.
-#[derive(Debug, Default)]
-struct ReloadAsk {
-    last: u64,
-    open: Option<u64>,
-    /// The page shown takes `od:menu` (its shell said so, through
-    /// [`set_menu_labels`]); the splash, and the app before its shell
-    /// shows, do not.
-    listening: bool,
-}
-
-impl ReloadAsk {
-    /// A new question; its token. `None` when the page shown does not
-    /// take `od:menu`: it could never answer, so nothing is asked, and the
-    /// shell reloads it itself ([`reload_unheard`]).
-    fn ask(&mut self) -> Option<u64> {
-        if !self.listening {
-            return None;
-        }
-        self.last = self.last.wrapping_add(1);
-        self.open = Some(self.last);
-        Some(self.last)
-    }
-
-    /// The page shown takes `od:menu` from now on.
-    fn listens(&mut self) {
-        self.listening = true;
-    }
-
-    /// The page answered: it reloads, or asks the user, by itself.
-    fn answered(&mut self) {
-        self.open = None;
-    }
-
-    /// A page started loading (its own reload, a navigation, a restart):
-    /// the question was for the page before, which is gone, so nothing
-    /// is left to ask about it.
-    fn page_loaded(&mut self) {
-        self.open = None;
-        self.listening = false;
-    }
-
-    /// Whether question `token` is still open: the page has not answered
-    /// it, and no newer question replaced it.
-    #[cfg(any(target_os = "macos", test))]
-    fn is_open(&self, token: u64) -> bool {
-        self.open == Some(token)
-    }
-
-    /// Whether question `token` is still open (then closed now): the
-    /// page did not answer it. Only macOS restarts a page that does not.
-    #[cfg(any(target_os = "macos", test))]
-    fn unanswered(&mut self, token: u64) -> bool {
-        let open = self.open == Some(token);
-        if open {
-            self.open = None;
-        }
-        open
-    }
+    shell_note(app, ShellEvent::DialogHung);
 }
 
 /// The page took View ▸ Reload (`od:menu` `reload`): it reloads itself,
 /// after its leave guard asks if work would be lost.
 #[tauri::command]
-fn reload_ack(asks: tauri::State<'_, Mutex<ReloadAsk>>) {
-    if let Ok(mut asks) = asks.lock() {
-        asks.answered();
-    }
-}
-
-/// A page started loading in the main window (its own reload, a
-/// navigation, a restart): no Reload question is left about the page
-/// gone, and the new one takes no `od:menu` until its shell says so.
-fn page_started<R: Runtime>(app: &impl Manager<R>) {
-    if let Some(asks) = app.try_state::<Mutex<ReloadAsk>>()
-        && let Ok(mut asks) = asks.lock()
-    {
-        asks.page_loaded();
-    }
-}
-
-/// The page shown takes `od:menu` ([`set_menu_labels`]).
-fn page_listens<R: Runtime>(app: &impl Manager<R>) {
-    if let Some(asks) = app.try_state::<Mutex<ReloadAsk>>()
-        && let Ok(mut asks) = asks.lock()
-    {
-        asks.listens();
-    }
-}
-
-/// The last page the main window started or finished loading
-/// (`on_page_load`), kept aside: once its web content process ended,
-/// WebKit has no address to give ([`shown_url`], QA-073).
-#[derive(Debug, Default)]
-struct LoadedPage(Mutex<Option<Url>>);
-
-/// The main window started or finished loading `url` ([`LoadedPage`]).
-fn page_loaded_at<R: Runtime>(app: &impl Manager<R>, url: &Url) {
-    if let Some(page) = app.try_state::<LoadedPage>()
-        && let Ok(mut page) = page.0.lock()
-    {
-        *page = Some(url.clone());
-    }
+fn reload_ack(app: AppHandle) {
+    shell_event(&app, ShellEvent::ReloadAck);
 }
 
 /// The page `window` shows: WebKit's own address while its web content
-/// process lives, else the last page it loaded ([`LoadedPage`]). Never
-/// wry's `url()` on macOS: once the process ended WebKit's address is
-/// nil, and wry unwraps it and panics the app (QA-073). A dispatcher
+/// process lives, else the last page it loaded ([`ShellState::loaded`]).
+/// Never wry's `url()` on macOS: once the process ended WebKit's address
+/// is nil, and wry unwraps it and panics the app (QA-073). A dispatcher
 /// call: on the main thread, never inside a WebKit call (QA-070).
 fn shown_url<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Option<Url> {
     #[cfg(target_os = "macos")]
@@ -576,21 +406,25 @@ fn shown_url<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Option<Url> {
     #[cfg(not(target_os = "macos"))]
     // url() allowed: WebView2 and WebKitGTK return an error, never panic.
     let live = window.url().ok();
-    live.or_else(|| {
-        window
-            .try_state::<LoadedPage>()
-            .and_then(|page| page.0.lock().ok().and_then(|page| page.clone()))
-    })
+    live.or_else(|| with_shell(window, |state| state.loaded().cloned()).flatten())
 }
 
 /// The main window's `on_page_load` for a page that started loading: the
-/// Reload question ([`page_started`]) and, on macOS, the dialogs the user
-/// blocked on the page gone show again (QA-064).
+/// [`ShellState`] (no Reload question about the page gone; the new one
+/// takes no `od:menu` until its shell says so) and, on macOS, the dialogs
+/// the user blocked on the page gone show again (QA-064).
 // WebKit callback: no Tauri dispatcher call here (QA-070).
-fn on_page_started<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    page_started(window);
+fn on_page_started<R: Runtime>(window: &tauri::WebviewWindow<R>, url: &Url) {
+    shell_note(window.app_handle(), ShellEvent::PageStarted(url.clone()));
     #[cfg(target_os = "macos")]
     js_dialogs::page_loaded_main();
+}
+
+/// The main window's `on_page_load` for a page that finished loading: kept
+/// as the page shown, its address once its web process ended (QA-073).
+// WebKit callback: no Tauri dispatcher call here (QA-070).
+fn on_page_finished<R: Runtime>(window: &tauri::WebviewWindow<R>, url: &Url) {
+    shell_note(window.app_handle(), ShellEvent::PageFinished(url.clone()));
 }
 
 /// QA's test hook for the crash loop (docs/qa/test-plan.md): set to `1`,
@@ -682,65 +516,18 @@ fn unheard_reload_target(shown: &Url, daemon: Option<&Url>) -> Option<Url> {
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
-use web_process::NotRespondingChoice;
-
-/// What the shell does about a View ▸ Reload the page has not answered.
-#[cfg(any(target_os = "macos", test))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NotAnswered {
-    /// End the web content process; open the page with the design's
-    /// preview stopped (the design is what hangs it).
-    Restart,
-    /// Ask again after [`RELOAD_ASK_AGAIN`].
-    AskAgainLater,
-    /// The page answered after all, or a newer Reload took over.
-    Nothing,
-}
-
-/// The step after asking the user (`choice`; `None` when no question
-/// could show, a dialog being up), the question still `open` or not. A
-/// page that is only busy may answer while the user decides: then nothing
-/// happens, whatever the choice (the alert closes itself then, QA-072,
-/// and a Reload pressed just before is a no-op); Reload restarts only a
-/// page still silent.
-#[cfg(any(target_os = "macos", test))]
-fn after_not_answering(open: bool, choice: Option<NotRespondingChoice>) -> NotAnswered {
-    match (open, choice) {
-        (false, _) => NotAnswered::Nothing,
-        (true, Some(NotRespondingChoice::Reload)) => NotAnswered::Restart,
-        (true, Some(NotRespondingChoice::Wait | NotRespondingChoice::Closed) | None) => {
-            NotAnswered::AskAgainLater
-        }
-    }
-}
-
 /// View ▸ Reload (⌘R): the page reloads itself through its leave guard
 /// (`od:menu` `reload`). A page that does not answer within
-/// [`RELOAD_ACK_WAIT`] may be busy or hung: the shell asks the user, from
-/// the native side, whether to wait or restart it ([`check_reload`]).
-fn reload_from_menu(app: &AppHandle) {
-    let Some(asked) = app
-        .try_state::<Mutex<ReloadAsk>>()
-        .and_then(|asks| asks.lock().ok().map(|mut asks| asks.ask()))
-    else {
-        return;
-    };
-    let Some(token) = asked else {
-        reload_unheard(app);
-        return;
-    };
-    ui_action(app, "reload");
-    #[cfg(target_os = "macos")]
-    check_reload(app.clone(), token, RELOAD_ACK_WAIT);
-    #[cfg(not(target_os = "macos"))]
-    let _ = token;
+/// [`shell_state::RELOAD_ACK_WAIT`] may be busy or hung: the shell asks the user, from
+/// the native side, whether to wait or restart it ([`ask_user`]).
+fn reload_from_menu<R: Runtime>(app: &AppHandle<R>) {
+    shell_event(app, ShellEvent::ReloadAsked);
 }
 
 /// View ▸ Reload on a page that does not take `od:menu` (the splash, the
 /// app before its shell shows): nothing to ask it, nor any work to lose,
 /// so the shell loads it again at once ([`unheard_reload_target`]).
-fn reload_unheard(app: &AppHandle) {
+fn reload_unheard<R: Runtime>(app: &AppHandle<R>) {
     show_main(app);
     let Some(window) = app.get_webview_window("main") else {
         return;
@@ -757,113 +544,32 @@ fn reload_unheard(app: &AppHandle) {
     }
 }
 
-/// After `wait`, if the page has still not answered Reload question
-/// `token`, asks the user "This page isn't responding": Wait asks again
-/// later, Reload ends its web content process and opens the page with the
-/// preview stopped, so a design that hangs it does not run again.
+/// The page has still not answered Reload question `token`: asks the
+/// user "This page isn't responding". Wait asks again later, Reload ends
+/// its web content process and opens the page with the preview stopped,
+/// so a design that hangs it does not run again. The alert closes itself
+/// once the question is no longer open (QA-072).
 #[cfg(target_os = "macos")]
-fn check_reload(app: AppHandle, token: u64, wait: std::time::Duration) {
-    std::thread::spawn(move || {
-        std::thread::sleep(wait);
-        let handle = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            let open = move |app: &AppHandle| {
-                app.try_state::<Mutex<ReloadAsk>>()
-                    .and_then(|asks| asks.lock().ok().map(|asks| asks.is_open(token)))
-                    .unwrap_or(false)
-            };
-            if !open(&handle) {
-                return;
-            }
-            let asked = handle.clone();
-            let choice = web_process::ask_not_responding(move || open(&asked));
-            match after_not_answering(open(&handle), choice) {
-                NotAnswered::Nothing => {
-                    if choice == Some(NotRespondingChoice::Reload) {
-                        tracing::info!("the page answered Reload first: not restarting it");
-                    }
-                }
-                NotAnswered::AskAgainLater => check_reload(handle, token, RELOAD_ASK_AGAIN),
-                NotAnswered::Restart => {
-                    if let Some(asks) = handle.try_state::<Mutex<ReloadAsk>>()
-                        && let Ok(mut asks) = asks.lock()
-                    {
-                        asks.unanswered(token);
-                    }
-                    tracing::warn!("the page did not answer Reload: restarting it");
-                    if let Some(window) = handle.get_webview_window("main") {
-                        match shown_url(&window) {
-                            Some(url) => {
-                                restart_page(&handle, stopped_preview_url(&url, StopReason::Hung))
-                            }
-                            None => tracing::warn!("cannot tell which page hung"),
-                        }
-                    }
-                }
-            }
-        });
-    });
+fn ask_user<R: Runtime>(app: &AppHandle<R>, token: u64) {
+    let asked = app.clone();
+    let open = move || with_shell(&asked, |state| state.is_open(token)).unwrap_or(false);
+    let choice = web_process::ask_not_responding(open);
+    shell_event(app, ShellEvent::UserChose { token, choice });
 }
 
-/// Web content crashes within this long of each other make a loop: a
-/// design that crashes the process as it loads would reload for ever.
-#[cfg(any(target_os = "macos", test))]
-const CRASH_LOOP_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
+/// Only macOS asks ([`Action::CheckLater`] does nothing elsewhere).
+#[cfg(not(target_os = "macos"))]
+fn ask_user<R: Runtime>(_app: &AppHandle<R>, _token: u64) {}
 
-/// What a crash of the web content process does ([`Crashes`]).
-#[cfg(any(target_os = "macos", test))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AfterCrash {
-    /// Reload the page shown.
-    Reload,
-    /// The second crash in a row: open the page with the design's preview
-    /// stopped ([`stopped_preview_url`]).
-    StopPreview,
-    /// Crashing even so: leave the window as it is (⌘R, ⌘Q still work).
-    GiveUp,
-}
-
-/// Recent crashes of the web content process, [`CRASH_LOOP_WINDOW`] apart
-/// at most.
-#[cfg(any(target_os = "macos", test))]
-#[derive(Debug, Default)]
-struct Crashes {
-    last: Option<std::time::Instant>,
-    in_a_row: u32,
-}
-
-#[cfg(any(target_os = "macos", test))]
-impl Crashes {
-    /// The web content process crashed at `now`.
-    fn crashed(&mut self, now: std::time::Instant) -> AfterCrash {
-        let again = self
-            .last
-            .is_some_and(|last| now.saturating_duration_since(last) < CRASH_LOOP_WINDOW);
-        self.in_a_row = if again {
-            self.in_a_row.saturating_add(1)
-        } else {
-            1
-        };
-        self.last = Some(now);
-        match self.in_a_row {
-            1 => AfterCrash::Reload,
-            2 => AfterCrash::StopPreview,
-            _ => AfterCrash::GiveUp,
-        }
-    }
-}
-
-/// Ends the main window's web content process and loads `then` in a new
-/// one ([`on_page_terminated`]). On the main thread.
-#[cfg(any(target_os = "macos", test))]
-fn restart_page<R: Runtime>(app: &AppHandle<R>, then: Url) {
+/// Ends the main window's web content process for a restart
+/// ([`ShellEvent::Restart`]); the [`ShellState`] loads its page once
+/// WebKit says the process ended or, WebKit silent, after
+/// [`RESTART_GRACE`]. On the main thread.
+fn kill_page<R: Runtime>(app: &AppHandle<R>) {
     use std::sync::atomic::{AtomicBool, Ordering};
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    // The page is replaced: no Reload question is left about it.
-    page_started(app);
-    with_restarts(app, |restarts| restarts.begin(then));
     let killed = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&killed);
     if let Err(e) = window.with_webview(move |webview| {
@@ -886,29 +592,16 @@ fn restart_page<R: Runtime>(app: &AppHandle<R>, then: Url) {
     std::thread::spawn(move || {
         std::thread::sleep(wait);
         let app = handle.clone();
-        let _ = handle.run_on_main_thread(move || load_after_grace(&app, killed));
+        let _ = handle.run_on_main_thread(move || {
+            shell_event(&app, ShellEvent::GraceOver { killed });
+        });
     });
-}
-
-/// [`RESTART_GRACE`] is over: loads the page [`restart_page`] left, if
-/// WebKit has not said the process ended (which loads it).
-#[cfg(any(target_os = "macos", test))]
-fn load_after_grace<R: Runtime>(app: &AppHandle<R>, killed: bool) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    let now = std::time::Instant::now();
-    if let Some(url) = with_restarts(app, |r| r.grace_over(killed, now)).flatten()
-        && let Err(e) = window.navigate(url)
-    {
-        tracing::warn!(error = %e, "cannot load the app again");
-    }
 }
 
 /// `on_web_content_process_terminate`: a page's dialog or file panel
 /// still up closes (nobody waits for it), then [`on_page_terminated`].
-/// WebKit calls it inside [`restart_page`]'s `with_webview`, which holds
-/// the window's lock (QA-070): only state kept aside
+/// WebKit calls it inside [`kill_page`]'s `with_webview`, which holds the
+/// window's lock (QA-070): only state kept aside
 /// ([`js_dialogs::process_ended_main`]), never Tauri's dispatcher.
 // WebKit callback: no Tauri dispatcher call here (QA-070).
 #[cfg(target_os = "macos")]
@@ -919,52 +612,19 @@ fn on_web_process_ended<R: Runtime>(webview: &tauri::Webview<R>) {
 
 /// WebKit says the main window's web content process ended
 /// ([`page_terminated`]), off WebKit's call ([`off_webkit_call`]): when
-/// [`restart_page`] ended it, WebKit says so inside its `with_webview`.
+/// [`kill_page`] ended it, WebKit says so inside its `with_webview`.
 // WebKit callback: no Tauri dispatcher call here (QA-070).
 #[cfg(any(target_os = "macos", test))]
 fn on_page_terminated<R: Runtime>(app: &AppHandle<R>) {
     off_webkit_call(app, page_terminated);
 }
 
-/// The main window's web content process ended: loads the page
-/// [`restart_page`] left; or nothing, its page loaded already; or, a
-/// crash, reloads the page shown ([`Crashes`]).
+/// The main window's web content process ended ([`ShellEvent::ProcessEnded`]):
+/// a restart's page loads; or nothing, its page loaded already; or, a
+/// crash, the page shown reloads.
 #[cfg(any(target_os = "macos", test))]
 fn page_terminated<R: Runtime>(app: &AppHandle<R>) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    let now = std::time::Instant::now();
-    let ended = with_restarts(app, |r| r.ended(now)).unwrap_or(ProcessEnded::Crashed);
-    let loaded = match ended {
-        ProcessEnded::Load(url) => window.navigate(url),
-        ProcessEnded::LateRestart => {
-            tracing::info!("the web content process ended after its restart");
-            return;
-        }
-        ProcessEnded::Crashed => {
-            let after = app
-                .try_state::<Mutex<Crashes>>()
-                .and_then(|c| c.lock().ok().map(|mut c| c.crashed(now)))
-                .unwrap_or(AfterCrash::Reload);
-            tracing::warn!(?after, "the web content process ended by itself");
-            match after {
-                AfterCrash::Reload => window.reload(),
-                // The process is gone: never wry's `url()` (QA-073).
-                AfterCrash::StopPreview => match shown_url(&window) {
-                    Some(url) => window.navigate(stopped_preview_url(&url, StopReason::Crashed)),
-                    None => {
-                        tracing::warn!("cannot tell which page crashed");
-                        return;
-                    }
-                },
-                AfterCrash::GiveUp => return,
-            }
-        }
-    };
-    if let Err(e) = loaded {
-        tracing::warn!(error = %e, "cannot load the app again");
-    }
+    shell_event(app, ShellEvent::ProcessEnded);
 }
 
 /// The last page handed to the system browser and when. One click can ask
@@ -1146,7 +806,7 @@ fn hide_leaving_fullscreen<R: Runtime>(window: tauri::WebviewWindow<R>) {
 const FULLSCREEN_SETTLE_MS: u64 = 800;
 
 /// Menu actions the UI performs: `window` event `od:menu` with `detail`.
-fn ui_action(app: &AppHandle, action: &str) {
+fn ui_action<R: Runtime>(app: &AppHandle<R>, action: &str) {
     show_main(app);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.eval(format!(
@@ -1690,15 +1350,11 @@ fn main() -> anyhow::Result<()> {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::UpdateSlot::default())
         .manage(opened)
-        .manage(Mutex::new(ReloadAsk::default()))
-        .manage(LoadedPage::default());
+        .manage(Mutex::new(ShellState::default()));
     // The page loads again once its web content process ends: after a
     // design hung it (QA-067), View ▸ Reload, or a crash.
     #[cfg(target_os = "macos")]
-    let builder = builder
-        .manage(Mutex::new(Restarts::default()))
-        .manage(Mutex::new(Crashes::default()))
-        .on_web_content_process_terminate(on_web_process_ended);
+    let builder = builder.on_web_content_process_terminate(on_web_process_ended);
     builder
         .invoke_handler(tauri::generate_handler![
             pick_folder,
@@ -1759,10 +1415,13 @@ fn main() -> anyhow::Result<()> {
                     // A new page may show dialogs again though the user
                     // blocked the last page's (QA-064).
                     .on_page_load(|window, payload| {
-                        // Its address once its web process ended (QA-073).
-                        page_loaded_at(&window, payload.url());
-                        if payload.event() == tauri::webview::PageLoadEvent::Started {
-                            on_page_started(&window);
+                        match payload.event() {
+                            tauri::webview::PageLoadEvent::Started => {
+                                on_page_started(&window, payload.url());
+                            }
+                            tauri::webview::PageLoadEvent::Finished => {
+                                on_page_finished(&window, payload.url());
+                            }
                         }
                         // QA's crash-loop test hook; off unless asked.
                         #[cfg(target_os = "macos")]
@@ -1873,6 +1532,7 @@ fn remove_webview_temp(tmp: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use shell_state::{StopReason, stopped_preview_url};
 
     /// Invokes `cmd` from a page at `page` in the app built with this
     /// crate's ACL (`build.rs`), the UI capability granted to `origin`.
@@ -2203,53 +1863,6 @@ mod tests {
     }
 
     #[test]
-    fn a_lone_crash_reloads() {
-        let t0 = std::time::Instant::now();
-        let mut crashes = Crashes::default();
-        assert_eq!(crashes.crashed(t0), AfterCrash::Reload);
-        // Long after: a crash of its own, not a loop.
-        assert_eq!(crashes.crashed(t0 + CRASH_LOOP_WINDOW), AfterCrash::Reload);
-    }
-
-    #[test]
-    fn a_second_crash_soon_after_stops_the_preview() {
-        // A design that crashes the process as it loads reloaded for ever.
-        let t0 = std::time::Instant::now();
-        let mut crashes = Crashes::default();
-        assert_eq!(crashes.crashed(t0), AfterCrash::Reload);
-        let soon = t0 + CRASH_LOOP_WINDOW - std::time::Duration::from_millis(1);
-        assert_eq!(crashes.crashed(soon), AfterCrash::StopPreview);
-        // Crashing even with the preview stopped: no more loads.
-        assert_eq!(crashes.crashed(soon), AfterCrash::GiveUp);
-        assert_eq!(crashes.crashed(soon), AfterCrash::GiveUp);
-        // Quiet for a while: a new crash reloads again.
-        let later = soon + CRASH_LOOP_WINDOW;
-        assert_eq!(crashes.crashed(later), AfterCrash::Reload);
-    }
-
-    /// A [`ReloadAsk`] for a page that takes `od:menu`.
-    fn listening() -> ReloadAsk {
-        let mut asks = ReloadAsk::default();
-        asks.listens();
-        asks
-    }
-
-    #[test]
-    fn a_page_deaf_to_the_menu_is_reloaded_without_asking() {
-        // The splash, or the app before its shell shows, cannot answer
-        // View ▸ Reload: asking would say "This page isn't responding"
-        // about a page that is fine.
-        let mut asks = ReloadAsk::default();
-        assert_eq!(asks.ask(), None);
-        asks.listens();
-        let token = asks.ask().unwrap();
-        assert!(asks.is_open(token));
-        // A new page listens only once its shell says so.
-        asks.page_loaded();
-        assert_eq!(asks.ask(), None);
-    }
-
-    #[test]
     fn reloading_the_splash_opens_the_app_once_the_daemon_listens() {
         let url = |s: &str| Url::parse(s).unwrap();
         let daemon = url("http://127.0.0.1:5173/");
@@ -2270,52 +1883,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn webkit_late_word_after_a_restart_is_not_a_crash() {
-        // WebKit said nothing within RESTART_GRACE, so the grace timer
-        // loaded the page; WebKit saying the old process ended after that
-        // is the same restart: no second load, no crash counted.
-        let then = Url::parse("http://127.0.0.1:5173/projects/p1?preview=stopped").unwrap();
-        let t0 = std::time::Instant::now();
-        let mut restarts = Restarts::default();
-        restarts.begin(then.clone());
-        assert_eq!(restarts.grace_over(true, t0), Some(then));
-        let late = t0 + LATE_END_WINDOW - std::time::Duration::from_millis(1);
-        assert_eq!(restarts.ended(late), ProcessEnded::LateRestart);
-        // Once: the next end is the new page's own.
-        assert_eq!(restarts.ended(late), ProcessEnded::Crashed);
-    }
-
-    #[test]
-    fn a_process_end_long_after_a_restart_is_a_crash() {
-        let then = Url::parse("http://127.0.0.1:5173/").unwrap();
-        let t0 = std::time::Instant::now();
-        let mut restarts = Restarts::default();
-        restarts.begin(then.clone());
-        assert_eq!(restarts.grace_over(true, t0), Some(then.clone()));
-        assert_eq!(restarts.ended(t0 + LATE_END_WINDOW), ProcessEnded::Crashed);
-        // The process was never asked to end (this WebKit cannot): any
-        // end after is a crash.
-        restarts.begin(then.clone());
-        assert_eq!(restarts.grace_over(false, t0), Some(then));
-        assert_eq!(restarts.ended(t0), ProcessEnded::Crashed);
-    }
-
-    #[test]
-    fn webkit_word_in_time_loads_the_restarts_page_once() {
-        let then = Url::parse("http://127.0.0.1:5173/").unwrap();
-        let t0 = std::time::Instant::now();
-        let mut restarts = Restarts::default();
-        restarts.begin(then.clone());
-        assert_eq!(restarts.ended(t0), ProcessEnded::Load(then));
-        // The grace timer finds nothing left to load.
-        assert_eq!(restarts.grace_over(true, t0), None);
-        assert_eq!(restarts.ended(t0), ProcessEnded::Crashed);
-    }
-
-    /// An app on the mock runtime keeping the shell's Reload, restart and
-    /// crash state, its main window showing `page`, loaded through
-    /// `on_page_load` ([`LoadedPage`]).
+    /// An app on the mock runtime keeping the shell's state
+    /// ([`ShellState`]), its main window showing `page`, loaded through
+    /// `on_page_load`.
     fn shell_app(
         page: &str,
     ) -> (
@@ -2324,10 +1894,7 @@ mod tests {
     ) {
         let context: tauri::Context<tauri::test::MockRuntime> = app_context();
         let app = tauri::test::mock_builder()
-            .manage(Mutex::new(ReloadAsk::default()))
-            .manage(Mutex::new(Restarts::default()))
-            .manage(Mutex::new(Crashes::default()))
-            .manage(LoadedPage::default())
+            .manage(Mutex::new(ShellState::default()))
             .build(context)
             .unwrap();
         let window = tauri::WebviewWindowBuilder::new(
@@ -2337,44 +1904,53 @@ mod tests {
         )
         .build()
         .unwrap();
-        page_loaded_at(&window, &page.parse().unwrap());
+        on_page_started(&window, &page.parse().unwrap());
         (app, window)
     }
 
-    /// Whether the app's Reload question `token` is still open.
-    fn question_open(app: &tauri::App<tauri::test::MockRuntime>, token: u64) -> bool {
-        app.state::<Mutex<ReloadAsk>>()
-            .lock()
-            .unwrap()
-            .is_open(token)
+    /// The app's shell state.
+    fn shell(app: &tauri::App<tauri::test::MockRuntime>) -> std::sync::MutexGuard<'_, ShellState> {
+        app.state::<Mutex<ShellState>>().inner().lock().unwrap()
+    }
+
+    /// The page shown takes `od:menu` and View ▸ Reload asks it: the
+    /// question's token.
+    fn reload_asked(app: &tauri::App<tauri::test::MockRuntime>) -> u64 {
+        shell_step(app, ShellEvent::MenuListens { origin: None });
+        let asked = shell_step(app, ShellEvent::ReloadAsked);
+        match asked.first() {
+            Some(Action::AskPage(token)) => *token,
+            other => panic!("not asked: {other:?}"),
+        }
     }
 
     #[test]
     fn a_page_load_closes_the_reload_question_and_stops_listening() {
         let (app, window) = shell_app("http://127.0.0.1:5173/");
-        page_listens(&window);
-        let token = app
-            .state::<Mutex<ReloadAsk>>()
-            .lock()
-            .unwrap()
-            .ask()
-            .unwrap();
-        on_page_started(&window);
-        assert!(!question_open(&app, token));
-        assert_eq!(app.state::<Mutex<ReloadAsk>>().lock().unwrap().ask(), None);
+        let token = reload_asked(&app);
+        on_page_started(&window, &"http://127.0.0.1:5173/".parse().unwrap());
+        assert!(!shell(&app).is_open(token));
+        assert!(!shell(&app).listens());
+    }
+
+    #[test]
+    fn the_menu_word_of_a_page_gone_elsewhere_is_not_the_new_pages() {
+        // R4: the app's late `set_menu_labels` after the splash started.
+        let (app, window) = shell_app("http://127.0.0.1:5173/");
+        on_page_started(&window, &"tauri://localhost/index.html".parse().unwrap());
+        let late = Some("http://127.0.0.1:5173".to_owned());
+        shell_step(&app, ShellEvent::MenuListens { origin: late });
+        assert!(!shell(&app).listens());
+        let own = Some("tauri://localhost".to_owned());
+        shell_step(&app, ShellEvent::MenuListens { origin: own });
+        assert!(shell(&app).listens());
     }
 
     #[test]
     fn a_hung_page_restarts_on_its_studio_with_the_preview_stopped() {
         // The dialog gate's callback, through to the page loaded again.
         let (app, window) = shell_app("http://127.0.0.1:5173/present/p1");
-        page_listens(&window);
-        let token = app
-            .state::<Mutex<ReloadAsk>>()
-            .lock()
-            .unwrap()
-            .ask()
-            .unwrap();
+        let token = reload_asked(&app);
         on_hung(app.handle());
         let wanted = "http://127.0.0.1:5173/projects/p1?preview=stopped&why=dialogs";
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -2383,7 +1959,7 @@ mod tests {
         }
         assert_eq!(window.url().unwrap().as_str(), wanted);
         assert!(
-            !question_open(&app, token),
+            !shell(&app).is_open(token),
             "the restart closes the question"
         );
     }
@@ -2391,62 +1967,19 @@ mod tests {
     #[test]
     fn webkit_late_word_after_a_restart_leaves_the_page_alone() {
         let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
-        let then = Url::parse("http://127.0.0.1:5173/projects/p1?preview=stopped").unwrap();
-        with_restarts(app.handle(), |r| {
-            r.begin(then.clone());
-            r.grace_over(true, std::time::Instant::now())
-        });
+        let shown = Url::parse("http://127.0.0.1:5173/projects/p1").unwrap();
+        let why = StopReason::Hung;
+        let then = stopped_preview_url(&shown, why);
+        shell_step(&app, ShellEvent::Restart { shown, why });
+        let loaded = shell_step(&app, ShellEvent::GraceOver { killed: true });
+        assert_eq!(loaded, [Action::Navigate(then.clone())]);
         window.navigate(then.clone()).unwrap();
         page_terminated(app.handle());
         assert_eq!(window.url().unwrap(), then);
-        let crashes = app.state::<Mutex<Crashes>>();
-        assert_eq!(crashes.lock().unwrap().in_a_row, 0, "no crash counted");
+        assert_eq!(shell(&app).crashes_in_a_row(), 0, "no crash counted");
         // A crash after it is counted.
         page_terminated(app.handle());
-        assert_eq!(crashes.lock().unwrap().in_a_row, 1);
-    }
-
-    #[test]
-    fn an_answered_reload_is_left_to_the_page() {
-        let mut asks = listening();
-        let token = asks.ask().unwrap();
-        asks.answered();
-        assert!(!asks.unanswered(token), "the page answered: no restart");
-    }
-
-    #[test]
-    fn an_unanswered_reload_restarts_the_page_once() {
-        let mut asks = listening();
-        let token = asks.ask().unwrap();
-        assert!(asks.unanswered(token));
-        assert!(!asks.unanswered(token), "once");
-        // An old question's timer does not act on a newer one.
-        let first = asks.ask().unwrap();
-        let second = asks.ask().unwrap();
-        assert!(!asks.unanswered(first));
-        assert!(asks.unanswered(second));
-    }
-
-    #[test]
-    fn a_page_silent_after_reload_is_restarted_only_on_the_users_word() {
-        use NotAnswered::{AskAgainLater, Nothing, Restart};
-        use NotRespondingChoice::{Closed, Reload, Wait};
-        // A busy page is not killed behind the user's back: Wait, or no
-        // question shown (a dialog is up), asks again later.
-        assert_eq!(after_not_answering(true, Some(Wait)), AskAgainLater);
-        assert_eq!(after_not_answering(true, None), AskAgainLater);
-        assert_eq!(after_not_answering(true, Some(Reload)), Restart);
-        // The page answered while the user decided: its leave guard has
-        // the reload now, whatever the choice.
-        assert_eq!(after_not_answering(false, Some(Reload)), Nothing);
-        assert_eq!(after_not_answering(false, Some(Wait)), Nothing);
-        assert_eq!(after_not_answering(false, None), Nothing);
-        // The page answered, so the shell closed the alert (QA-072): a
-        // Reload on the stale question, or the alert closing, does nothing.
-        assert_eq!(after_not_answering(false, Some(Closed)), Nothing);
-        // Closed with the question still open (no path does it): never a
-        // restart without the user's word.
-        assert_eq!(after_not_answering(true, Some(Closed)), AskAgainLater);
+        assert_eq!(shell(&app).crashes_in_a_row(), 1);
     }
 
     #[test]
@@ -2485,73 +2018,6 @@ mod tests {
     }
 
     #[test]
-    fn a_new_page_closes_the_reload_question() {
-        // The page reloaded some other way (its own reload, a navigation,
-        // a restart): the shell must not ask about it any more.
-        let mut asks = listening();
-        let token = asks.ask().unwrap();
-        asks.page_loaded();
-        assert!(!asks.is_open(token));
-        assert!(!asks.unanswered(token), "no restart either");
-        assert_eq!(asks.ask(), None, "the new page has not said it listens");
-    }
-
-    #[test]
-    fn a_reload_question_stays_open_until_answered_or_replaced() {
-        let mut asks = listening();
-        let first = asks.ask().unwrap();
-        assert!(asks.is_open(first));
-        assert!(asks.is_open(first), "looking does not close it");
-        let second = asks.ask().unwrap();
-        assert!(!asks.is_open(first), "a newer Reload takes over");
-        assert!(asks.is_open(second));
-        asks.answered();
-        assert!(!asks.is_open(second));
-    }
-
-    #[test]
-    fn a_hung_design_reopens_its_studio_with_the_preview_stopped() {
-        let url = |s: &str| Url::parse(s).unwrap();
-        let base = "http://127.0.0.1:5173";
-        let dialogs = StopReason::Dialogs;
-        assert_eq!(
-            stopped_preview_url(&url(&format!("{base}/projects/p1")), dialogs).as_str(),
-            format!("{base}/projects/p1?preview=stopped&why=dialogs")
-        );
-        // Other query kept, the mark not doubled, the fragment kept.
-        assert_eq!(
-            stopped_preview_url(
-                &url(&format!(
-                    "{base}/projects/p1?a=1&preview=stopped&why=hung#x"
-                )),
-                dialogs
-            )
-            .as_str(),
-            format!("{base}/projects/p1?a=1&preview=stopped&why=dialogs#x")
-        );
-        // Present mode would loop again: back to the design's Studio.
-        assert_eq!(
-            stopped_preview_url(&url(&format!("{base}/present/p1?slide=3")), dialogs).as_str(),
-            format!("{base}/projects/p1?slide=3&preview=stopped&why=dialogs")
-        );
-    }
-
-    #[test]
-    fn the_address_says_why_the_preview_stopped() {
-        // QA-071: a busy loop with no dialog is not "kept opening dialogs".
-        let page = Url::parse("http://127.0.0.1:5173/projects/p1").unwrap();
-        let why = |reason| {
-            stopped_preview_url(&page, reason)
-                .query_pairs()
-                .find(|(k, _)| k == STOP_REASON_KEY)
-                .map(|(_, v)| v.into_owned())
-        };
-        assert_eq!(why(StopReason::Dialogs).as_deref(), Some("dialogs"));
-        assert_eq!(why(StopReason::Hung).as_deref(), Some("hung"));
-        assert_eq!(why(StopReason::Crashed).as_deref(), Some("crashed"));
-    }
-
-    #[test]
     fn a_crash_loop_stops_the_preview_saying_it_crashed() {
         let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
         page_terminated(app.handle());
@@ -2562,15 +2028,12 @@ mod tests {
         );
     }
 
-    // macOS only: elsewhere `shown_url` reads wry's `url()`, which the
-    // mock runtime answers with the window's own address.
-    #[cfg(target_os = "macos")]
     #[test]
     fn a_crash_loop_stops_the_page_last_loaded_not_wrys_address() {
         // QA-073: the process is gone, so WebKit has no address (wry's
         // `url()` panics); the page `on_page_load` saw last is the one.
         let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
-        page_loaded_at(
+        on_page_finished(
             &window,
             &Url::parse("http://127.0.0.1:5173/present/p2").unwrap(),
         );
@@ -2582,21 +2045,17 @@ mod tests {
         );
     }
 
-    // macOS only: elsewhere `shown_url` reads wry's `url()`, which the
-    // mock runtime answers with the window's own address.
-    #[cfg(target_os = "macos")]
     #[test]
     fn a_crash_loop_with_no_page_known_leaves_the_window() {
         let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
-        *app.state::<LoadedPage>().0.lock().unwrap() = None;
+        *shell(&app) = ShellState::default();
         page_terminated(app.handle());
         page_terminated(app.handle());
         assert_eq!(
             window.url().unwrap().as_str(),
             "http://127.0.0.1:5173/projects/p1"
         );
-        let crashes = app.state::<Mutex<Crashes>>();
-        assert_eq!(crashes.lock().unwrap().in_a_row, 2);
+        assert_eq!(shell(&app).crashes_in_a_row(), 2);
     }
 
     // macOS only: elsewhere `shown_url` reads wry's `url()`, which the
@@ -2606,27 +2065,33 @@ mod tests {
     fn a_page_load_is_kept_as_the_page_shown() {
         let (app, window) = shell_app("http://127.0.0.1:5173/");
         let next = Url::parse("http://127.0.0.1:5173/projects/p1").unwrap();
-        page_loaded_at(&window, &next);
+        on_page_finished(&window, &next);
         assert_eq!(shown_url(&window), Some(next));
         drop(app);
     }
 
     #[test]
     fn webkit_saying_the_process_ended_inside_a_held_lock_does_not_deadlock() {
-        // QA-070: `restart_page`'s `with_webview` holds Tauri's window
-        // lock while WebKit ends the process and says so, on the main
-        // thread, where `run_on_main_thread` runs at once (as the mock
-        // runtime does). A lock the work takes, held across the callback,
-        // stands in for it: the work must wait for the call to return.
+        // QA-070: `kill_page`'s `with_webview` holds Tauri's window lock
+        // while WebKit ends the process and says so, on the main thread,
+        // where `run_on_main_thread` runs at once (as the mock runtime
+        // does). A lock the work takes, held across the callback, stands
+        // in for it: the work must wait for the call to return.
         let (app, window) = shell_app("http://127.0.0.1:5173/projects/p1");
-        let then =
-            Url::parse("http://127.0.0.1:5173/projects/p1?preview=stopped&why=hung").unwrap();
-        with_restarts(app.handle(), |r| r.begin(then.clone()));
+        let shown = Url::parse("http://127.0.0.1:5173/projects/p1").unwrap();
+        let then = stopped_preview_url(&shown, StopReason::Hung);
+        shell_step(
+            &app,
+            ShellEvent::Restart {
+                shown,
+                why: StopReason::Hung,
+            },
+        );
         let handle = app.handle().clone();
         let (done, returned) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let restarts = handle.state::<Mutex<Restarts>>();
-            let held = restarts.lock().unwrap();
+            let state = handle.state::<Mutex<ShellState>>();
+            let held = state.lock().unwrap();
             on_page_terminated(&handle);
             drop(held);
             let _ = done.send(());
@@ -2923,6 +2388,7 @@ mod tests {
             "on_web_process_ended",
             "on_page_terminated",
             "on_page_started",
+            "on_page_finished",
             "qa_crash_web",
             "on_hung",
             "run_panel",
@@ -2981,11 +2447,14 @@ mod tests {
         // The page a crash loop stops is the one `on_page_load` kept (QA-073).
         let hook = code.find(".on_page_load(").expect("on_page_load");
         let open = hook + ".on_page_load".len();
-        assert!(
-            code[open..=closing(&code, open)].contains("page_loaded_at(&window, payload.url())")
-        );
+        let hook = &code[open..=closing(&code, open)];
+        assert!(hook.contains("on_page_started(&window, payload.url())"));
+        assert!(hook.contains("on_page_finished(&window, payload.url())"));
+        assert!(body("on_page_started").contains("ShellEvent::PageStarted("));
+        assert!(body("on_page_finished").contains("ShellEvent::PageFinished("));
+        assert!(body("on_hung").contains("ShellEvent::DialogHung"));
         let shipped = code.split("\nmod tests").next().unwrap_or_default();
-        assert!(shipped.contains(".manage(LoadedPage::default())"));
+        assert!(shipped.contains(".manage(Mutex::new(ShellState::default()))"));
     }
 
     /// The line over (or the end of) a line that may read an address
