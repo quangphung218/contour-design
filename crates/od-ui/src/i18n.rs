@@ -247,6 +247,7 @@ messages! {
     JuryOffFailed => "Could not turn off the Design Jury: {0}", "Không tắt được Design Jury: {0}";
     JuryStopFailed => "Could not stop the Design Jury: {0}", "Không dừng được Design Jury: {0}";
     DuplicateFailed => "Could not duplicate the project: {0}", "Không nhân bản được project: {0}";
+    ProjectCreateFailed => "Could not create the project: {0}", "Không tạo được project: {0}";
     TranscriptFailed => "Could not download the conversation: {0}", "Không tải được cuộc trò chuyện: {0}";
     SessionModeFailed => "Could not change the mode: {0}", "Không đổi được chế độ: {0}";
     MemoryFailed => "Could not update the memory: {0}", "Không cập nhật được bộ nhớ: {0}";

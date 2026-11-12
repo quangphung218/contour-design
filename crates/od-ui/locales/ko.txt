@@ -33,6 +33,7 @@ JuryOnFailed = Design Jury를 켜지 못했습니다: {0}
 JuryOffFailed = Design Jury를 끄지 못했습니다: {0}
 JuryStopFailed = Design Jury를 중지하지 못했습니다: {0}
 DuplicateFailed = 프로젝트를 복제하지 못했습니다: {0}
+ProjectCreateFailed = 프로젝트를 만들지 못했습니다: {0}
 TranscriptFailed = 대화를 다운로드하지 못했습니다: {0}
 SessionModeFailed = 모드를 바꾸지 못했습니다: {0}
 MemoryFailed = 메모리를 업데이트하지 못했습니다: {0}

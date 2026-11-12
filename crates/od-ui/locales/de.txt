@@ -33,6 +33,7 @@ JuryOnFailed = Design Jury konnte nicht eingeschaltet werden: {0}
 JuryOffFailed = Design Jury konnte nicht ausgeschaltet werden: {0}
 JuryStopFailed = Design Jury konnte nicht gestoppt werden: {0}
 DuplicateFailed = Projekt konnte nicht dupliziert werden: {0}
+ProjectCreateFailed = Projekt konnte nicht erstellt werden: {0}
 TranscriptFailed = Unterhaltung konnte nicht heruntergeladen werden: {0}
 SessionModeFailed = Modus konnte nicht geändert werden: {0}
 MemoryFailed = Gedächtnis konnte nicht aktualisiert werden: {0}

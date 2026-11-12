@@ -33,6 +33,7 @@ JuryOnFailed = روشن کردن Design Jury ممکن نشد: {0}
 JuryOffFailed = خاموش کردن Design Jury ممکن نشد: {0}
 JuryStopFailed = متوقف کردن Design Jury ممکن نشد: {0}
 DuplicateFailed = تکثیر پروژه ممکن نشد: {0}
+ProjectCreateFailed = ساخت پروژه ممکن نشد: {0}
 TranscriptFailed = دانلود گفتگو ممکن نشد: {0}
 SessionModeFailed = تغییر حالت ممکن نشد: {0}
 MemoryFailed = به‌روزرسانی حافظه ممکن نشد: {0}

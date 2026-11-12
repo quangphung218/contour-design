@@ -106,7 +106,7 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                     open.set(false);
                     navigate(&format!("/projects/{}", r.project.id), Default::default());
                 }
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(api::failure(T::ProjectCreateFailed, &e))),
             }
             busy.set(false);
         });

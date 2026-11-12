@@ -539,7 +539,7 @@ fn MyTemplates() -> impl IntoView {
                     description.set(String::new());
                     reload();
                 }
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(api::failure(T::MdSaveFailed, &e))),
             }
         });
     };
@@ -599,7 +599,7 @@ fn MyTemplates() -> impl IntoView {
                                     leptos::task::spawn_local(async move {
                                         match api::post::<_, Value>(&format!("/api/templates/{}/use", api::seg(&id)), &json!({})).await {
                                             Ok(v) => navigate(&format!("/projects/{}", v["project"]["id"].as_str().unwrap_or_default()), Default::default()),
-                                            Err(e) => error.set(Some(e.to_string())),
+                                            Err(e) => error.set(Some(api::failure(T::ProjectCreateFailed, &e))),
                                         }
                                     });
                                 }>{icon(Glyph::ArrowRight)}{t(T::UseTemplate)}</button>

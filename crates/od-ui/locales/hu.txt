@@ -33,6 +33,7 @@ JuryOnFailed = Nem sikerült bekapcsolni a Design Juryt: {0}
 JuryOffFailed = Nem sikerült kikapcsolni a Design Juryt: {0}
 JuryStopFailed = Nem sikerült leállítani a Design Juryt: {0}
 DuplicateFailed = Nem sikerült duplikálni a projektet: {0}
+ProjectCreateFailed = Nem sikerült létrehozni a projektet: {0}
 TranscriptFailed = Nem sikerült letölteni a beszélgetést: {0}
 SessionModeFailed = Nem sikerült módot váltani: {0}
 MemoryFailed = Nem sikerült frissíteni a memóriát: {0}

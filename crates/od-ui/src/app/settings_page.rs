@@ -725,7 +725,7 @@ fn GlobalMemory() -> impl IntoView {
                     error.set(None);
                     rev.0.update(|n| *n += 1);
                 }
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(api::failure(T::MemoryFailed, &e))),
             }
         });
     };

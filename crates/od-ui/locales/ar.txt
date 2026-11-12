@@ -33,6 +33,7 @@ JuryOnFailed = تعذّر تشغيل Design Jury: {0}
 JuryOffFailed = تعذّر إيقاف تشغيل Design Jury: {0}
 JuryStopFailed = تعذّر إيقاف Design Jury: {0}
 DuplicateFailed = تعذّر نسخ المشروع: {0}
+ProjectCreateFailed = تعذّر إنشاء المشروع: {0}
 TranscriptFailed = تعذّر تنزيل المحادثة: {0}
 SessionModeFailed = تعذّر تغيير الوضع: {0}
 MemoryFailed = تعذّر تحديث الذاكرة: {0}

@@ -112,7 +112,67 @@ pub struct Tools {
     /// Text edits the bridge sent before that key came back: written once
     /// it does, so typing right after a reload is not lost.
     early_text_edits: StoredValue<Vec<pb::TextEdit>>,
+    /// Text edits the source did not take, kept to try again (QA-087).
+    pub failed_text: RwSignal<Vec<FailedText>>,
     pub manual: super::manual_edit::Manual,
+}
+
+/// A text edit that could not be written: the frame still shows what was
+/// typed, so the source is not reloaded over it; Try again writes it, and
+/// a next edit of the same element still expects the source's text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FailedText {
+    pub file: String,
+    pub selector: String,
+    /// The element's text in the source.
+    pub before: String,
+    pub text: String,
+    /// What failed, in the user's words.
+    pub message: String,
+}
+
+impl FailedText {
+    /// The edit that writes `text` over the source's text.
+    fn edit(&self) -> SourceEdit {
+        SourceEdit {
+            selector: self.selector.clone(),
+            text: Some(self.text.clone()),
+            expect_text: Some(self.before.clone()),
+            ..SourceEdit::default()
+        }
+    }
+}
+
+/// The text the source holds for `selector` in `file`: after a failed
+/// write the frame's own "before" is the unsaved text (QA-087). A frame
+/// that shows other text was reloaded since (an agent rewrote the file):
+/// its "before" is the source's again.
+fn source_text<'a>(failed: &'a [FailedText], file: &str, e: &'a pb::TextEdit) -> &'a str {
+    failed
+        .iter()
+        .find(|f| f.file == file && f.selector == e.selector && f.text == e.before)
+        .map_or(&e.before, |f| &f.before)
+}
+
+/// Keeps `edits` of `file` that failed with `message`, in place of what
+/// failed before on the same elements.
+fn keep_failed(failed: &mut Vec<FailedText>, file: &str, edits: &[SourceEdit], message: &str) {
+    for e in edits {
+        let Some(text) = &e.text else { continue };
+        failed.retain(|f| !(f.file == file && f.selector == e.selector));
+        failed.push(FailedText {
+            file: file.to_owned(),
+            selector: e.selector.clone(),
+            before: e.expect_text.clone().unwrap_or_default(),
+            text: text.clone(),
+            message: message.to_owned(),
+        });
+    }
+}
+
+/// Drops the failed edits of `file` that `edits` wrote.
+fn drop_written(failed: &mut Vec<FailedText>, file: &str, edits: &[SourceEdit]) {
+    failed.retain(|f| !(f.file == file && edits.iter().any(|e| e.selector == f.selector)));
 }
 
 impl Tools {
@@ -136,6 +196,7 @@ impl Tools {
             claimed_kid: StoredValue::new(String::new()),
             edit_key: StoredValue::new(None),
             early_text_edits: StoredValue::new(Vec::new()),
+            failed_text: RwSignal::new(Vec::new()),
             manual: super::manual_edit::Manual::new(),
         }
     }
@@ -160,6 +221,7 @@ impl Tools {
         self.lint.set(None);
         self.status.set(None);
         self.status_for.set(None);
+        self.failed_text.set(Vec::new());
         self.manual.forget();
     }
 
@@ -606,25 +668,28 @@ impl StudioCtx {
         }
     }
 
-    /// Writes `edits` into the shown file as a manual version. Style saves
-    /// drop the saved overrides; a refused text edit reloads the frame so it
-    /// shows the source again.
     /// Writes a text edit from the bridge to the source, if it is one the
     /// host should write ([`accepted_text_edit`]).
     fn write_text_edit(self, e: &pb::TextEdit) {
-        let active = self.active_untracked();
+        let Some(active) = self.active_untracked() else {
+            return;
+        };
         let key = self.tools.edit_key.get_value();
         if accepted_text_edit(
             e,
             self.tools.tool.get_untracked(),
-            active.as_deref(),
+            Some(&active),
             key.as_deref(),
         ) {
+            let before = self
+                .tools
+                .failed_text
+                .with_untracked(|f| source_text(f, &active, e).to_owned());
             self.save_edits(
                 vec![SourceEdit {
                     selector: e.selector.clone(),
                     text: Some(e.text.clone()),
-                    expect_text: Some(e.before.clone()),
+                    expect_text: Some(before),
                     ..SourceEdit::default()
                 }],
                 false,
@@ -632,6 +697,36 @@ impl StudioCtx {
         }
     }
 
+    /// Writes the shown file's text edits that failed again (Try again,
+    /// QA-087).
+    pub fn retry_text_edits(self) {
+        let Some(file) = self.active_untracked() else {
+            return;
+        };
+        let edits: Vec<SourceEdit> = self.tools.failed_text.with_untracked(|list| {
+            list.iter()
+                .filter(|f| f.file == file)
+                .map(FailedText::edit)
+                .collect()
+        });
+        if !edits.is_empty() {
+            self.save_edits(edits, false);
+        }
+    }
+
+    /// Drops the shown file's text edits that failed: the frame shows the
+    /// source again.
+    pub fn discard_text_edits(self) {
+        let file = self.active_untracked();
+        self.tools
+            .failed_text
+            .update(|list| list.retain(|f| Some(&f.file) != file.as_ref()));
+        self.reload_preview();
+    }
+
+    /// Writes `edits` into the shown file as a manual version. Style saves
+    /// drop the saved overrides. A refused text edit stays in the frame,
+    /// kept to try again: a reload would throw away what was typed (QA-087).
     fn save_edits(self, edits: Vec<SourceEdit>, styles: bool) {
         let Some(file) = self.active_untracked() else {
             return;
@@ -657,13 +752,22 @@ impl StudioCtx {
                                 }
                             }
                         });
+                        tools
+                            .failed_text
+                            .try_update(|list| drop_written(list, &req.file, &req.edits));
                     }
                     tools.saved(&r.file.path, r.version.version);
                 }
                 Err(e) => {
-                    tools.note(self.failed_to(T::SaveFailed, &e));
-                    if !styles {
-                        self.reload_preview();
+                    let message = self.failed_to(T::SaveFailed, &e);
+                    if styles {
+                        tools.note(message);
+                    } else {
+                        // One line says it, with Try again: not also the
+                        // status line.
+                        tools
+                            .failed_text
+                            .try_update(|list| keep_failed(list, &req.file, &req.edits, &message));
                     }
                 }
             }
@@ -893,6 +997,21 @@ pub fn ToolHints(ctx: StudioCtx) -> impl IntoView {
                 <button class="chip-x" title=t(T::Close) aria-label=t(T::Close) on:click=move |_| tools.status.set(None)>{icon(Glyph::Close)}</button>
             </p>
         })}
+        // A text edit not written: the frame keeps the text (QA-087).
+        {move || {
+            let file = ctx.active()?;
+            let message = tools
+                .failed_text
+                .with(|list| list.iter().rev().find(|f| f.file == file).map(|f| f.message.clone()))?;
+            Some(view! {
+                <p class="tool-status" role="alert" data-testid="text-edit-failed">
+                    {icon(Glyph::Info)}
+                    <span class="grow">{message}</span>
+                    <button class="btn small" data-testid="text-edit-retry" on:click=move |_| ctx.retry_text_edits()>{t(T::TryAgain)}</button>
+                    <button class="btn small ghost" data-testid="text-edit-discard" on:click=move |_| ctx.discard_text_edits()>{t(T::Discard)}</button>
+                </p>
+            })
+        }}
     }
 }
 
@@ -1851,6 +1970,55 @@ mod tests {
         assert!(keyed(Some("k1"), Some("k1")));
         assert!(!keyed(None, None));
         assert!(!keyed(Some("k1"), None));
+    }
+
+    #[test]
+    fn a_failed_text_edit_is_kept_and_still_expects_the_source_text() {
+        let edit = |selector: &str, before: &str, text: &str| SourceEdit {
+            selector: selector.into(),
+            text: Some(text.into()),
+            expect_text: Some(before.into()),
+            ..SourceEdit::default()
+        };
+        let mut failed = Vec::new();
+        keep_failed(&mut failed, "a.html", &[edit("h1", "Hello", "New")], "no");
+        // Style edits carry no text: nothing to keep.
+        keep_failed(&mut failed, "a.html", &[SourceEdit::default()], "no");
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].edit(), edit("h1", "Hello", "New"));
+        // Typed again: the frame's "before" is the unsaved text; the
+        // source still has "Hello".
+        let again = pb::TextEdit {
+            key: Some("k".into()),
+            selector: "h1".into(),
+            before: "New".into(),
+            text: "Newer".into(),
+            doc: Some("a.html".into()),
+        };
+        assert_eq!(source_text(&failed, "a.html", &again), "Hello");
+        assert_eq!(source_text(&failed, "b.html", &again), "New");
+        // The frame reloaded on a rewritten source: its "before" is right.
+        let reloaded = pb::TextEdit {
+            before: "Agent title".into(),
+            ..again.clone()
+        };
+        assert_eq!(source_text(&failed, "a.html", &reloaded), "Agent title");
+        // It fails again: one entry, still on the source's text.
+        keep_failed(
+            &mut failed,
+            "a.html",
+            &[edit("h1", "Hello", "Newer")],
+            "again",
+        );
+        keep_failed(&mut failed, "a.html", &[edit("p", "Lead", "L2")], "again");
+        assert_eq!(failed.len(), 2);
+        assert_eq!(failed[0].edit(), edit("h1", "Hello", "Newer"));
+        // Written: gone; the other element is still kept.
+        drop_written(&mut failed, "a.html", &[edit("h1", "Hello", "Newer")]);
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].selector, "p");
+        drop_written(&mut failed, "b.html", &[edit("p", "Lead", "L2")]);
+        assert_eq!(failed.len(), 1);
     }
 
     #[test]

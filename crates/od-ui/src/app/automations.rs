@@ -467,7 +467,7 @@ pub fn Automations() -> impl IntoView {
                     editing.set(None);
                     reload();
                 }
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(api::failure(T::MdSaveFailed, &e))),
             }
             saving.set(false);
         });

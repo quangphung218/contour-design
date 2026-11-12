@@ -464,6 +464,99 @@ test('FAIL-14', 'Transcript export: a download that failed says so, and the next
   plainWords(said, 'Export conversation');
 });
 
+// ------------------------------------------------------------ text tool
+
+/** Clicks `el` with the Text tool on until it is being edited. */
+async function editInPlace(page, el) {
+  await until(async () => {
+    await el.click();
+    return (await el.getAttribute('contenteditable')) !== null;
+  }, 'the clicked text is editable');
+}
+
+/** Marks the frame's page, so a reload shows as the mark gone. */
+const markFrame = (el) => el.evaluate(() => { document.body.dataset.before = '1'; });
+const frameReloaded = (page) => until(async () => (await frame(page).locator('body[data-before]').count()) === 0, 'the preview reloaded');
+
+test('FAIL-16', 'Text tool: an edit that could not be written stays on the page, says so once, and Enter or Try again writes it', async ({ d, api, newPage }) => {
+  const { page, id } = await studio(newPage, d, 'Text edit fails');
+  const onDisk = async () => String((await api(`/api/projects/${id}/raw/index.html`)).body);
+  const failing = () => breakApi(page, (u, r) => u.pathname === projectPath(id, '/source-edits') && r.method() === 'POST');
+  let brk = await failing();
+  const title = frame(page).locator('#title');
+  await title.waitFor();
+  await page.getByTestId('edit-mode').click();
+  await editInPlace(page, title);
+  await page.keyboard.type('Tieu de moi');
+  await page.keyboard.press('Enter');
+  const failed = page.getByTestId('text-edit-failed');
+  await failed.waitFor();
+  const said = await failed.locator('.grow').innerText();
+  assert.equal(await title.innerText(), 'Tieu de moi', 'the typed text was thrown away (QA-087)');
+  assert.equal(await page.getByText(said, { exact: true }).count(), 1, 'the failure is said more than once');
+  // Enter again writes it: the source still has the old text.
+  brk.heal();
+  await markFrame(title);
+  await editInPlace(page, title);
+  await page.keyboard.type('Tieu de moi 2');
+  await page.keyboard.press('Enter');
+  await until(async () => (await onDisk()).includes('>Tieu de moi 2</h1>'), 'Enter writes the edit');
+  await failed.waitFor({ state: 'detached' });
+  await frameReloaded(page);
+  // Try again writes it too.
+  brk = await failing();
+  await editInPlace(page, title);
+  await page.keyboard.type('Second try');
+  await page.keyboard.press('Enter');
+  await failed.waitFor();
+  assert.equal(await title.innerText(), 'Second try', 'the typed text was thrown away (QA-087)');
+  brk.heal();
+  await failed.getByTestId('text-edit-retry').click();
+  await until(async () => (await onDisk()).includes('>Second try</h1>'), 'Try again writes the edit');
+  await failed.waitFor({ state: 'detached' });
+  plainWords(said, 'Text tool');
+});
+
+// ------------------------------------------------------------ projects page
+
+test('FAIL-17', 'Projects: a duplicate or a delete that failed says which, and the next try does it', async ({ d, newPage }) => {
+  const id = await createProject(d, 'Card fails', { 'index.html': PAGE });
+  const { page } = await newPage();
+  const brk = await breakApi(page, (u, r) =>
+    (u.pathname === projectPath(id, '/duplicate') && r.method() === 'POST') ||
+    (u.pathname === projectPath(id) && r.method() === 'DELETE'));
+  await page.goto(`${d.base}/projects`);
+  const card = page.locator(`[data-testid="project-card"][data-project="${id}"]`);
+  await card.waitFor();
+  const before = (await listProjects(d)).length;
+  const alert = page.locator('.error-text[role="alert"]');
+  const remove = async () => {
+    await card.getByRole('button', { name: 'Delete', exact: true }).click();
+    await card.locator('.confirm').waitFor();
+    await card.getByRole('button', { name: 'Delete', exact: true }).click();
+  };
+  await card.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  await until(() => brk.hits === 1, 'the copy failed');
+  await alert.waitFor();
+  const duplicateSaid = await alert.innerText();
+  await remove();
+  await until(() => brk.hits === 2, 'the delete failed');
+  await until(async () => (await alert.innerText()) !== duplicateSaid, 'the failed delete is said');
+  const deleteSaid = await alert.innerText();
+  assert.equal((await listProjects(d)).length, before);
+  brk.heal();
+  // The failed delete leaves its confirmation up: Delete there tries again.
+  await card.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await card.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  await until(async () => (await listProjects(d)).length === before + 1, 'the next Duplicate copies it');
+  await remove();
+  await until(async () => !(await listProjects(d)).some((p) => p.id === id), 'the next Delete deletes it');
+  plainWords(duplicateSaid, 'Projects duplicate');
+  plainWords(deleteSaid, 'Projects delete');
+  assert.match(duplicateSaid, /duplicate/i, `"${duplicateSaid}" does not say the copy failed (QA-088)`);
+  assert.match(deleteSaid, /delete/i, `"${deleteSaid}" does not say the delete failed (QA-088)`);
+});
+
 try {
   await run('failures');
 } finally {

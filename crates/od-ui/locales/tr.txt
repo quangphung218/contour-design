@@ -33,6 +33,7 @@ JuryOnFailed = Design Jury açılamadı: {0}
 JuryOffFailed = Design Jury kapatılamadı: {0}
 JuryStopFailed = Design Jury durdurulamadı: {0}
 DuplicateFailed = Proje çoğaltılamadı: {0}
+ProjectCreateFailed = Proje oluşturulamadı: {0}
 TranscriptFailed = Konuşma indirilemedi: {0}
 SessionModeFailed = Mod değiştirilemedi: {0}
 MemoryFailed = Bellek güncellenemedi: {0}

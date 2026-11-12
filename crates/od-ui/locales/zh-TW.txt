@@ -33,6 +33,7 @@ JuryOnFailed = 無法開啟 Design Jury：{0}
 JuryOffFailed = 無法關閉 Design Jury：{0}
 JuryStopFailed = 無法停止 Design Jury：{0}
 DuplicateFailed = 無法複製專案：{0}
+ProjectCreateFailed = 無法建立專案：{0}
 TranscriptFailed = 無法下載對話：{0}
 SessionModeFailed = 無法切換模式：{0}
 MemoryFailed = 無法更新記憶：{0}

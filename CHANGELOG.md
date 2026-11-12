@@ -10,6 +10,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Studio: a text edit made with the Text tool that could not be written now stays on the page with one line saying so, Try again and Discard; Enter on the same text writes it too. Before, the preview reloaded and the typed text was gone, and the note said "No permission to write" twice (QA-087).
+- Projects: a duplicate or delete that fails now says "Could not duplicate the project. Try again." or "Could not delete. Try again." instead of "Contour could not finish this. Try again."; renaming, folder import, project instructions, creating a project (Home, New project, templates, plugin authoring), saving a template, skill or automation, and memory say what failed the same way (QA-088).
 - Studio: a Markdown file or sketch that could be read on a second try no longer keeps the "Could not read" banner over it, and a failed request whose reply is a proxy's web page or a stack trace shows a short reason instead of the raw page (the page goes to the browser console).
 - Studio: a file Contour has no permission to read is reported as "No permission to read" (in the Lint panel and elsewhere), not as a write problem (QA-085); the preview frame shows a short page saying the file could not be read, with Reload preview, instead of the raw `{"error":…}` reply (QA-086).
 - Studio: a Markdown document whose file could not be read now says "Could not read this document. Nothing was saved over it." with Retry, instead of a loading placeholder that never ends; a lint that failed inside Contour or behind a proxy reads "Lint failed. Try again." instead of the raw reply.
