@@ -187,6 +187,9 @@ pub(crate) enum ShellEvent {
     GraceOver { killed: bool },
     /// WebKit says the web content process ended.
     ProcessEnded,
+    /// QA's crash-loop test hook asks the web content process to end, as
+    /// a design that crashes it would (`main.rs` `qa_crash_web`).
+    QaCrash,
 }
 
 /// What the shell does about an event. Only `main.rs` carries them out,
@@ -212,6 +215,9 @@ pub(crate) enum Action {
     Navigate(Url),
     /// Reload the page shown.
     Reload,
+    /// End the web content process, nothing more: what comes next is a
+    /// crash's ([`ShellEvent::QaCrash`]).
+    EndProcess,
 }
 
 /// `url`'s origin, written the way an `Origin` header is. Not
@@ -245,10 +251,13 @@ pub(crate) struct ShellState {
     /// The page a restart loads once the process is gone.
     next: Option<Url>,
     /// When the grace timer loaded the page of a restart whose process end
-    /// WebKit had not reported yet.
-    loaded_early: Option<Instant>,
-    /// A page started since [`Self::loaded_early`]: a process end now is
-    /// that page's own (R2).
+    /// WebKit had not reported yet, and that page.
+    loaded_early: Option<(Instant, Url)>,
+    /// That page's own start came ([`Self::loaded_early`]): the grace
+    /// timer's load, not a new page.
+    early_started: bool,
+    /// Another page started since [`Self::loaded_early`] (or that page a
+    /// second time): a process end now is that page's own (R2).
     started_since_early: bool,
     /// The last crash and how many came in a row, [`CRASH_LOOP_WINDOW`]
     /// apart at most.
@@ -280,10 +289,16 @@ impl ShellState {
             ShellEvent::PageStarted(url) => {
                 self.new_page();
                 self.page_origin = Some(origin_of(&url));
-                self.loaded = Some(url);
-                if self.loaded_early.is_some() {
-                    self.started_since_early = true;
+                if let Some((_, early)) = &self.loaded_early {
+                    // The grace timer's own load starts its page once: the
+                    // old process's late word may still come after it.
+                    if !self.early_started && *early == url {
+                        self.early_started = true;
+                    } else {
+                        self.started_since_early = true;
+                    }
                 }
+                self.loaded = Some(url);
                 Vec::new()
             }
             ShellEvent::PageFinished(url) => {
@@ -351,7 +366,6 @@ impl ShellState {
                 self.new_page();
                 self.next = Some(stopped_preview_url(&shown, why));
                 self.loaded_early = None;
-                self.started_since_early = false;
                 vec![Action::Kill]
             }
             ShellEvent::GraceOver { killed } => {
@@ -359,12 +373,14 @@ impl ShellState {
                     return Vec::new();
                 };
                 if killed {
-                    self.loaded_early = Some(now);
+                    self.loaded_early = Some((now, next.clone()));
+                    self.early_started = false;
                     self.started_since_early = false;
                 }
                 vec![Action::Navigate(next)]
             }
             ShellEvent::ProcessEnded => self.process_ended(now),
+            ShellEvent::QaCrash => vec![Action::EndProcess],
         }
     }
 
@@ -388,7 +404,9 @@ impl ShellState {
         }
         let since_new_page = std::mem::take(&mut self.started_since_early);
         match self.loaded_early.take() {
-            Some(at) if !since_new_page && now.saturating_duration_since(at) < LATE_END_WINDOW => {
+            Some((at, _))
+                if !since_new_page && now.saturating_duration_since(at) < LATE_END_WINDOW =>
+            {
                 tracing::info!("the web content process ended after its restart");
                 return Vec::new();
             }
@@ -493,6 +511,28 @@ mod tests {
 
     fn stopped(why: StopReason) -> Url {
         stopped_preview_url(&url(APP), why)
+    }
+
+    /// [`loaded_early`], the restart's page started (WebKit's own
+    /// `PageStarted` for the grace timer's load).
+    fn early_page_started(t0: Instant) -> ShellState {
+        let mut state = loaded_early(t0);
+        state.step(ShellEvent::PageStarted(stopped(StopReason::Hung)), t0);
+        state
+    }
+
+    /// [`early_page_started`], then another page started.
+    fn early_then_another(t0: Instant) -> ShellState {
+        let mut state = early_page_started(t0);
+        state.step(ShellEvent::PageStarted(url(APP)), t0);
+        state
+    }
+
+    /// [`early_page_started`], then the same page started again (a reload).
+    fn early_started_twice(t0: Instant) -> ShellState {
+        let mut state = early_page_started(t0);
+        state.step(ShellEvent::PageStarted(stopped(StopReason::Hung)), t0);
+        state
     }
 
     /// One row: a state, an event `after` its start, the actions, and a
@@ -710,11 +750,32 @@ mod tests {
                 |s| s.loaded_early.is_none(),
             ),
             row(
-                "late word after an early load: no crash",
+                "late word before the restart's page started: no crash",
                 loaded_early,
                 E::ProcessEnded,
                 vec![],
                 |s| s.crashes_in_a_row == 0 && s.loaded_early.is_none(),
+            ),
+            row(
+                "late word after the restart's page started: no crash",
+                early_page_started,
+                E::ProcessEnded,
+                vec![],
+                |s| s.crashes_in_a_row == 0 && s.loaded_early.is_none(),
+            ),
+            row(
+                "an end after another page started: a crash (R2)",
+                early_then_another,
+                E::ProcessEnded,
+                vec![Reload],
+                |s| s.crashes_in_a_row == 1,
+            ),
+            row(
+                "an end after the restart's page started twice: a crash (R2)",
+                early_started_twice,
+                E::ProcessEnded,
+                vec![Reload],
+                |s| s.crashes_in_a_row == 1,
             ),
             Row {
                 after: LATE_END_WINDOW,
@@ -733,6 +794,13 @@ mod tests {
                 E::ProcessEnded,
                 vec![Reload],
                 |s| !s.listens() && s.crashes_in_a_row == 1,
+            ),
+            row(
+                "QA's crash hook ends the process, no more",
+                listening,
+                E::QaCrash,
+                vec![EndProcess],
+                |s| s.listens() && s.crashes_in_a_row == 0,
             ),
             row(
                 "a crash closes the question (R1)",
@@ -820,12 +888,26 @@ mod tests {
     }
 
     #[test]
-    fn a_crash_of_the_page_a_restart_loaded_is_a_crash() {
-        // R2: the restart's page started, so the process that ended is its
-        // own, however soon: a crash, reloaded, not a blank window.
+    fn webkit_late_word_after_the_restarts_page_started_is_not_a_crash() {
+        // The app's order: the grace timer navigates, WebKit starts that
+        // page (`PageStarted`), then says the old process ended. The start
+        // is the restart's own load, not a new page.
         let t0 = Instant::now();
         let mut state = loaded_early(t0);
-        state.step(ShellEvent::PageStarted(stopped(StopReason::Hung)), t0);
+        let page = stopped(StopReason::Hung);
+        state.step(ShellEvent::PageStarted(page.clone()), t0);
+        state.step(ShellEvent::PageFinished(page), t0);
+        assert_eq!(state.step(ShellEvent::ProcessEnded, t0), []);
+        assert_eq!(state.crashes_in_a_row, 0);
+    }
+
+    #[test]
+    fn a_crash_after_a_new_page_since_the_restart_is_a_crash() {
+        // R2: a page started since the restart's own, so the process that
+        // ended is that page's, however soon: a crash, reloaded, not a
+        // blank window.
+        let t0 = Instant::now();
+        let mut state = early_then_another(t0);
         assert_eq!(state.step(ShellEvent::ProcessEnded, t0), [Action::Reload]);
         assert_eq!(state.crashes_in_a_row, 1);
     }
@@ -964,39 +1046,93 @@ mod tests {
         }
     }
 
+    /// The pages the runs load, with their origin as the model knows it.
+    const PAGES: [&str; 4] = [
+        APP,
+        "http://127.0.0.1:5173/",
+        "http://127.0.0.1:5173/present/p1",
+        "tauri://localhost/index.html",
+    ];
+
+    /// The origins of [`PAGES`].
+    const ORIGINS: [&str; 2] = ["http://127.0.0.1:5173", "tauri://localhost"];
+
+    /// The model's origin of a page of [`PAGES`] or a stopped preview of
+    /// one: by its prefix, not by the shell's `origin_of`.
+    fn model_origin(page: &Url) -> &'static str {
+        ORIGINS
+            .into_iter()
+            .find(|origin| page.as_str().starts_with(origin))
+            .unwrap_or("?")
+    }
+
+    /// A restart the shell began: its page, whether its process was asked
+    /// to end (WebKit may still say so), whether WebKit said so, whether
+    /// the grace timer ran, how many times the shell loaded its page.
+    struct Restarting {
+        page: Url,
+        killed: bool,
+        said: bool,
+        grace: bool,
+        loads: usize,
+    }
+
+    /// The grace timer loaded a restart's page `at`, WebKit's word owed:
+    /// whether that page's own start came.
+    struct Early {
+        at: Instant,
+        page: Url,
+        own_started: bool,
+    }
+
     /// The world around the shell, for [`random_runs_keep_the_invariants`]:
-    /// what WebKit and the timers still owe it.
+    /// what WebKit and the timers still owe it, and a model of the shell
+    /// kept on its own (never the shell's fields or predicates).
     #[derive(Default)]
     struct World {
-        /// A restart's page: killed (WebKit may still say so), whether
-        /// WebKit said so, the grace timer done, the page's loads.
-        restart: Option<(Url, bool, bool, bool, usize)>,
+        restart: Option<Restarting>,
         /// Questions the shell set a timer or asked the user about.
         checks: Vec<u64>,
+        /// Pages the shell loaded whose start WebKit owes, in order.
+        owed_starts: Vec<Url>,
+        /// The page last started or finished.
+        shown: Option<Url>,
+        /// The origin of the page last started.
+        origin: Option<&'static str>,
+        /// The page shown said it takes `od:menu`, from its own origin.
+        listens: bool,
+        /// The Reload question the page has not answered.
+        open: Option<u64>,
+        /// A restart's page the grace timer loaded; `None` once a process
+        /// end used it, or another page started.
+        early: Option<Early>,
+    }
+
+    impl World {
+        /// A new page replaces the one shown.
+        fn new_page(&mut self) {
+            self.listens = false;
+            self.open = None;
+        }
     }
 
     /// The events the shell can see next, `world` allowing.
     fn next_event(rng: &mut Rng, world: &mut World) -> ShellEvent {
-        let pages = [
-            APP,
-            "http://127.0.0.1:5173/",
-            "http://127.0.0.1:5173/present/p1",
-            "tauri://localhost/index.html",
-        ];
-        let page = |rng: &mut Rng| url(pages[usize::try_from(rng.below(4)).unwrap_or(0)]);
+        let page = |rng: &mut Rng| url(PAGES[usize::try_from(rng.below(4)).unwrap_or(0)]);
         loop {
-            let pick = rng.below(13);
+            let pick = rng.below(14);
             let event = match pick {
                 0 => ShellEvent::PageStarted(page(rng)),
                 1 => ShellEvent::PageFinished(page(rng)),
                 // No shell speaks before a restart's page loads.
-                2 if world.restart.as_ref().is_none_or(|r| r.4 == 1) => ShellEvent::MenuListens {
-                    origin: match rng.below(3) {
-                        0 => None,
-                        1 => Some("http://127.0.0.1:5173".to_owned()),
-                        _ => Some("tauri://localhost".to_owned()),
-                    },
-                },
+                2 if world.restart.as_ref().is_none_or(|r| r.loads == 1) => {
+                    ShellEvent::MenuListens {
+                        origin: match rng.below(3) {
+                            0 => None,
+                            n => Some(ORIGINS[usize::try_from(n - 1).unwrap_or(0)].to_owned()),
+                        },
+                    }
+                }
                 3 => ShellEvent::ReloadAsked,
                 4 => ShellEvent::ReloadAck,
                 5 | 6 if !world.checks.is_empty() => {
@@ -1021,28 +1157,45 @@ mod tests {
                     why: StopReason::Dialogs,
                 },
                 9 => match &mut world.restart {
-                    Some((_, _, _, grace @ false, _)) => {
-                        *grace = true;
+                    Some(restart) if !restart.grace => {
+                        restart.grace = true;
                         ShellEvent::GraceOver {
-                            killed: world.restart.as_ref().is_some_and(|r| r.1),
+                            killed: restart.killed,
                         }
                     }
                     _ => continue,
                 },
                 10 => match &mut world.restart {
                     // WebKit's word of the restart's process, once.
-                    Some((_, true, said @ false, _, _)) => {
-                        *said = true;
+                    Some(restart) if restart.killed && !restart.said => {
+                        restart.said = true;
                         ShellEvent::ProcessEnded
                     }
                     _ => continue,
                 },
                 // A crash, any time.
                 11 => ShellEvent::ProcessEnded,
+                12 => ShellEvent::QaCrash,
+                // WebKit starts a page the shell loaded, as the app's
+                // `on_page_load` says.
+                _ if !world.owed_starts.is_empty() => {
+                    ShellEvent::PageStarted(world.owed_starts.remove(0))
+                }
                 _ => ShellEvent::PageStarted(page(rng)),
             };
             return event;
         }
+    }
+
+    /// What the model expects of a process end at `now`.
+    #[derive(Debug, PartialEq)]
+    enum EndIs {
+        /// A restart's: its page loads.
+        Restart(Url),
+        /// The restart's late word: nothing.
+        Late,
+        /// A crash.
+        Crash,
     }
 
     #[test]
@@ -1055,69 +1208,174 @@ mod tests {
             for _ in 0..200 {
                 now += Duration::from_millis(rng.below(3000));
                 let event = next_event(&mut rng, &mut world);
-                let listened = state.listens();
-                let swallows = state.next.is_none()
-                    && !state.started_since_early
-                    && state
-                        .loaded_early
-                        .is_some_and(|at| now.saturating_duration_since(at) < LATE_END_WINDOW);
-                let fresh_end = state.next.is_none();
-                let actions = state.step(event.clone(), now);
-                let trace =
-                    |state: &ShellState| format!("seed {seed}: {event:?} → {actions:?}, {state:?}");
+                // The model's word, before the step.
+                let listens = world.listens;
+                let open = world.open;
+                let end_is = match (&world.restart, &world.early) {
+                    (Some(restart), _) if restart.loads == 0 => {
+                        EndIs::Restart(restart.page.clone())
+                    }
+                    (_, Some(early))
+                        if now.saturating_duration_since(early.at) < LATE_END_WINDOW =>
+                    {
+                        EndIs::Late
+                    }
+                    _ => EndIs::Crash,
+                };
+                let mut actions = state.step(event.clone(), now);
+                let trace = |actions: &[Action]| format!("seed {seed}: {event:?} → {actions:?}");
+                // The model takes the event.
+                match &event {
+                    ShellEvent::PageStarted(page) => {
+                        world.new_page();
+                        world.origin = Some(model_origin(page));
+                        world.shown = Some(page.clone());
+                        if let Some(early) = &mut world.early {
+                            if !early.own_started && early.page == *page {
+                                early.own_started = true;
+                            } else {
+                                world.early = None;
+                            }
+                        }
+                    }
+                    ShellEvent::PageFinished(page) => world.shown = Some(page.clone()),
+                    ShellEvent::MenuListens { origin } => {
+                        let from = origin.as_deref();
+                        if from.is_none() || world.origin.is_none() || from == world.origin {
+                            world.listens = true;
+                        }
+                    }
+                    ShellEvent::ReloadAsked => {
+                        if listens {
+                            let Some(Action::AskPage(token)) = actions.first() else {
+                                panic!("a listening page not asked: {}", trace(&actions));
+                            };
+                            world.open = Some(*token);
+                        } else {
+                            assert_eq!(actions, [Action::ReloadUnheard], "{}", trace(&actions));
+                        }
+                    }
+                    ShellEvent::ReloadAck => world.open = None,
+                    ShellEvent::ReloadCheck(token) => {
+                        let asks = actions == [Action::AskUser(*token)];
+                        assert_eq!(asks, open == Some(*token), "{}", trace(&actions));
+                    }
+                    ShellEvent::ProcessEnded => {
+                        match &end_is {
+                            EndIs::Restart(page) => {
+                                assert_eq!(
+                                    actions,
+                                    [Action::Navigate(page.clone())],
+                                    "{}",
+                                    trace(&actions)
+                                );
+                            }
+                            EndIs::Late => assert_eq!(actions, [], "{}", trace(&actions)),
+                            // A real crash, after a restart's early load too,
+                            // counts.
+                            EndIs::Crash => assert_eq!(
+                                state.last_crash,
+                                Some(now),
+                                "crash not counted: {}",
+                                trace(&actions)
+                            ),
+                        }
+                        // The page is gone with its process.
+                        world.new_page();
+                        world.early = None;
+                    }
+                    ShellEvent::QaCrash => {
+                        assert_eq!(actions, [Action::EndProcess], "{}", trace(&actions));
+                    }
+                    _ => {}
+                }
+                // The shell's actions, carried out.
+                let mut restarted = None;
                 for action in &actions {
                     match action {
                         // Never ask a page that cannot answer.
                         Action::AskPage(_) => {
-                            assert!(listened, "asked a deaf page: {}", trace(&state))
+                            assert!(listens, "asked a deaf page: {}", trace(&actions))
                         }
                         Action::CheckLater { token, .. } | Action::AskUser(token) => {
                             world.checks.push(*token);
                         }
-                        Action::Restart(why) => {
-                            let shown = state.loaded().cloned().unwrap_or_else(|| url(APP));
-                            let more = state.step(ShellEvent::Restart { shown, why: *why }, now);
-                            assert_eq!(more, [Action::Kill], "{}", trace(&state));
+                        Action::Restart(why) => restarted = Some(*why),
+                        Action::Navigate(page) => world.owed_starts.push(page.clone()),
+                        Action::Reload | Action::ReloadUnheard => {
+                            world
+                                .owed_starts
+                                .push(world.shown.clone().unwrap_or_else(|| url(APP)));
                         }
                         _ => {}
                     }
                 }
-                let kills = actions.contains(&Action::Kill)
-                    || actions.iter().any(|a| matches!(a, Action::Restart(_)));
-                if kills {
-                    let next = state.next.clone().expect("a restart's page");
-                    let killed = rng.below(4) != 0;
-                    world.restart = Some((next, killed, false, false, 0));
+                let begun = match &event {
+                    ShellEvent::Restart { shown, why } => Some((shown.clone(), *why)),
+                    _ => {
+                        restarted.map(|why| (world.shown.clone().unwrap_or_else(|| url(APP)), why))
+                    }
+                };
+                if let Some((shown, why)) = begun {
+                    if !matches!(event, ShellEvent::Restart { .. }) {
+                        // The app reads the address shown and feeds it.
+                        let more = state.step(
+                            ShellEvent::Restart {
+                                shown: shown.clone(),
+                                why,
+                            },
+                            now,
+                        );
+                        actions.extend(more.iter().cloned());
+                        assert_eq!(more, [Action::Kill], "{}", trace(&actions));
+                    }
+                    assert!(actions.contains(&Action::Kill), "{}", trace(&actions));
+                    world.new_page();
+                    world.early = None;
+                    world.restart = Some(Restarting {
+                        page: stopped_preview_url(&shown, why),
+                        killed: rng.below(4) != 0,
+                        said: false,
+                        grace: false,
+                        loads: 0,
+                    });
                 }
                 // Each kill loads its page once, from WebKit's word or the
                 // grace timer, whichever comes first.
                 if let Some(restart) = &mut world.restart {
-                    restart.4 += actions
+                    let loads = actions
                         .iter()
-                        .filter(|a| **a == Action::Navigate(restart.0.clone()))
+                        .filter(|a| **a == Action::Navigate(restart.page.clone()))
                         .count();
-                    assert!(restart.4 <= 1, "a restart loaded twice: {}", trace(&state));
-                    if restart.3 {
-                        assert_eq!(restart.4, 1, "a restart never loaded: {}", trace(&state));
+                    restart.loads += loads;
+                    assert!(
+                        restart.loads <= 1,
+                        "a restart loaded twice: {}",
+                        trace(&actions)
+                    );
+                    if event
+                        == (ShellEvent::GraceOver {
+                            killed: restart.killed,
+                        })
+                    {
+                        assert_eq!(
+                            restart.loads,
+                            1,
+                            "a restart never loaded: {}",
+                            trace(&actions)
+                        );
+                        if loads == 1 && restart.killed {
+                            world.early = Some(Early {
+                                at: now,
+                                page: restart.page.clone(),
+                                own_started: false,
+                            });
+                        }
                     }
                     // Done once the timer ran and WebKit's word, if owed, came:
                     // a later load of its page would be a second.
-                    if restart.3 && (restart.2 || !restart.1) {
+                    if restart.grace && (restart.said || !restart.killed) {
                         world.restart = None;
-                    }
-                }
-                if event == ShellEvent::ProcessEnded {
-                    // The page is gone with its process.
-                    assert!(!state.listens(), "still listening: {}", trace(&state));
-                    assert!(state.open.is_none(), "question open: {}", trace(&state));
-                    // A real crash, after a restart's early load too, counts.
-                    if fresh_end && !swallows {
-                        assert_eq!(
-                            state.last_crash,
-                            Some(now),
-                            "crash not counted: {}",
-                            trace(&state)
-                        );
                     }
                 }
             }
