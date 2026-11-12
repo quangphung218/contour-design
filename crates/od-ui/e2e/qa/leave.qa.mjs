@@ -115,7 +115,7 @@ test('LV-03', 'Markdown typed and the page reloaded within the autosave delay is
   await page.getByTestId('file-tree').waitFor();
   await until(async () => (await raw(d, id, 'notes.md')).includes('then F5'), 'saved on unload', 5000)
     .catch(async () => assert.fail(`notes.md after a reload: ${JSON.stringify(await raw(d, id, 'notes.md'))}`));
-}, { knownBug: 'QA-090' });
+});
 
 test('LV-04', 'A sketch stroke drawn and the page reloaded within the autosave delay is saved', async ({ d, api, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Sketch reload');
@@ -132,7 +132,7 @@ test('LV-04', 'A sketch stroke drawn and the page reloaded within the autosave d
     const j = typeof r.body === 'string' ? JSON.parse(r.body) : r.body;
     return j.strokes?.length === 1;
   }, 'the stroke saved on unload', 5000).catch(async () => assert.fail(`sketch after a reload: ${(await raw(d, id, SKETCH)).slice(0, 200)}`));
-}, { knownBug: 'QA-090' });
+});
 
 test('LV-05', 'Markdown typed in a project deleted from another tab says the project is gone, with no raw "not found"', async ({ d, api, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Note gone', { 'index.html': PAGE, 'notes.md': '# Notes\n' });
@@ -142,7 +142,7 @@ test('LV-05', 'Markdown typed in a project deleted from another tab says the pro
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
   const said = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
   assert.doesNotMatch(said, /HTTP 404|Not found:|project not found|daemon/i, said.slice(0, 400));
-}, { knownBug: 'QA-091' });
+});
 
 // The editor keeps the focus while it goes: a shortcut, the browser's Back,
 // the file deleted under it. Expected: no crash, the text saved.
@@ -166,11 +166,11 @@ test('LV-10', 'Markdown: Ctrl+Tab to the next tab while typing switches tab, sav
   const id = page.url().split('/projects/')[1].split(/[/?#]/)[0];
   await page.getByTestId('md-editor').fill('# Notes\n\nAfter the switch.\n');
   await until(async () => (await raw(d, id, 'notes.md')).includes('After the switch'), 'saved after the switch', 5000);
-}, { knownBug: 'QA-091' });
+});
 
 test('LV-11', 'Markdown: Ctrl+W while typing closes the tab and saves the text', async ({ d, newPage }) => {
   await typingThen(newPage, d, 'Ctrl+W', (p) => p.keyboard.press('Control+w'));
-}, { knownBug: 'QA-091' });
+});
 
 async function backWhileTyping(d, newPage, name, inApp) {
   const { page, id, errors } = await studio(newPage, d, name, { 'index.html': PAGE, 'notes.md': '# Notes\n' });
@@ -195,7 +195,7 @@ test('LV-12', "Markdown: the browser's Back to Projects (opened from its list) w
 
 test('LV-16', "Markdown: the browser's Back to the page before the Studio (another page load) while typing saves the text", async ({ d, newPage }) => {
   await backWhileTyping(d, newPage, 'Back unload', false);
-}, { knownBug: 'QA-090' });
+});
 
 test('LV-13', 'Markdown: another file deleted while typing (by the agent or another tab) does not stop the editor', async ({ d, api, newPage }) => {
   const { page, id } = await studio(newPage, d, 'Other file deleted', { 'index.html': PAGE, 'notes.md': '# Notes\n', 'old.md': '# Old\n' });
@@ -222,7 +222,7 @@ test('LV-14', 'Sketch: Ctrl+Tab while typing a text label switches tab, keeps th
   await frame(page).locator('#title').waitFor();
   await until(async () => (await raw(d, id, SKETCH)).includes('Nhãn'), 'the label saved', 5000)
     .catch(async () => assert.fail(`sketch: ${(await raw(d, id, SKETCH)).slice(0, 300)}; page errors: ${errors.join(' | ').slice(0, 300)}`));
-}, { knownBug: 'QA-091' });
+});
 
 test('LV-15', 'Home: a brief sent with Enter from the focused composer opens the Studio with no error', async ({ d, newPage }) => {
   const { page } = await newPage();
@@ -356,6 +356,6 @@ test('LV-17', 'The daemon stops within 2 s while Home is open in a tab (quit, up
   await done;
   const ms = Date.now() - t0;
   assert.ok(ms < 2000, `the daemon took ${ms} ms to stop with one tab open`);
-}, { daemon: {}, knownBug: 'QA-092' });
+}, { daemon: {} });
 
 await run('leave');

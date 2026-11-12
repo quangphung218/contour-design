@@ -10,6 +10,9 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Studio: Markdown typed or a sketch stroke drawn just before a reload, a closed tab or Back to another page is now saved; before, the last 0.7 s of work was lost (QA-090). Switching or closing a tab (Ctrl+Tab, Ctrl+W, Ctrl+1…9) while typing in a Markdown document or a sketch's text label no longer throws an error in the page, and the label being typed is kept (QA-091).
+- Studio: in History, a version viewed a moment before picking another file no longer shows over that file with a Restore that fails with "version not found"; the new file's live page shows (QA-089).
+- Quitting, updating or restarting Contour no longer takes 5 s whenever a tab of the app is open (QA-092).
 - Studio: an Office file whose text could not be read and a History list that could not load now have Retry; a History reload that fails keeps the versions shown instead of replacing them with the error, and switching file no longer shows the previous file's versions while the new ones load. A Markdown document or sketch whose save failed is saved again when its tab is closed.
 - Desktop: a `target="_blank"` link or a button that calls `window.open` inside a web component (an open shadow root, as Shoelace or Lit build) now opens the system browser, as it does in a browser; before, nothing opened. A key held while a finger taps no longer opens three tabs between them; each press opens at most one.
 

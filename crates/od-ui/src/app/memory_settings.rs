@@ -6,7 +6,7 @@
 use super::api;
 use super::icons::{Glyph, icon};
 use super::sse::Sse;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use send_wrapper::SendWrapper;
@@ -67,7 +67,7 @@ pub fn MemoryControls() -> impl IntoView {
                     aria-label=t(T::MemoryEnable)
                     prop:checked=enabled
                     disabled=move || config.with(Option::is_none)
-                    on:change=move |ev| set("enabled", event_target_checked(&ev))
+                    on:change=live(move |ev| set("enabled", event_target_checked(&ev)))
                 />
                 <span>{t(T::MemoryEnable)}</span>
             </label>
@@ -95,7 +95,7 @@ pub fn MemoryControls() -> impl IntoView {
                                 aria-label=t(label)
                                 prop:checked=move || flag(key)
                                 disabled=move || !enabled()
-                                on:change=move |ev| set(key, event_target_checked(&ev))
+                                on:change=live(move |ev| set(key, event_target_checked(&ev)))
                             />
                         </span>
                     </label>
@@ -234,11 +234,11 @@ fn ImportPanel(rev: MemoryRev, advanced: Tasks) -> impl IntoView {
             <textarea class="input mono" rows="5" data-testid="memory-import-text"
                 placeholder=t(T::MemoryImportPlaceholder)
                 prop:value=move || text.get()
-                on:input=move |ev| text.set(event_target_value(&ev))></textarea>
+                on:input=live(move |ev| text.set(event_target_value(&ev)))></textarea>
             <div class="row">
                 <label class="btn ghost small">
                     {icon(Glyph::Attachment)}{t(T::MemoryImportFile)}
-                    <input type="file" hidden=true accept=".md,.markdown,.txt" data-testid="memory-import-file" on:change=on_file/>
+                    <input type="file" hidden=true accept=".md,.markdown,.txt" data-testid="memory-import-file" on:change=live(on_file)/>
                 </label>
                 <span class="spacer"></span>
                 <button class="btn small" data-testid="memory-import-scan"
@@ -254,10 +254,10 @@ fn ImportPanel(rev: MemoryRev, advanced: Tasks) -> impl IntoView {
                         {list.into_iter().enumerate().map(|(i, (on, kind, text))| view! {
                             <li class="memory-item" data-testid="memory-suggestion">
                                 <input type="checkbox" prop:checked=on aria-label=text.clone()
-                                    on:change=move |ev| {
+                                    on:change=live(move |ev| {
                                         let v = event_target_checked(&ev);
                                         found.update(|l| if let Some(row) = l.as_mut().and_then(|l| l.get_mut(i)) { row.0 = v; });
-                                    }/>
+                                    })/>
                                 <span class="badge">{super::settings_page::memory_kind_label(&kind)}</span>
                                 <span class="grow">{text}</span>
                             </li>
@@ -331,7 +331,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
             <textarea class="input mono" rows="10" data-testid="memory-index-text" spellcheck="false"
                 aria-label=t(T::MemoryIndexTitle)
                 prop:value=move || draft.get().unwrap_or_else(|| saved.get())
-                on:input=move |ev| { status.set(None); draft.set(Some(event_target_value(&ev))); }></textarea>
+                on:input=live(move |ev| { status.set(None); draft.set(Some(event_target_value(&ev))); })></textarea>
             <div class="row">
                 {move || draft.with(Option::is_some).then(|| view! {
                     <span class="badge warning" data-testid="memory-index-dirty">{t(T::MemoryUnsaved)}</span>

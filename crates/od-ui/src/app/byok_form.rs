@@ -4,7 +4,7 @@
 //! the BYOK agent the one runs use.
 
 use super::icons::{Glyph, icon};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::byok::{self, PRESETS};
 use crate::i18n::{T, t, tf};
@@ -254,7 +254,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
             <div class="row wrap">
                 <label class="field grow">
                     <span>{t(T::Provider)}</span>
-                    <select data-testid="byok-preset" on:change=move |ev| pick(event_target_value(&ev))>
+                    <select data-testid="byok-preset" on:change=live(move |ev| pick(event_target_value(&ev)))>
                         {PRESETS.iter().map(|p| {
                             let id = p.id;
                             view! { <option value=id selected=move || preset_id.get() == id>{p.label}</option> }
@@ -265,7 +265,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                 <Show when=move || preset_id.get() == "custom">
                     <label class="field">
                         <span>{t(T::Protocol)}</span>
-                        <select data-testid="byok-protocol" on:change=move |ev| protocol.set(event_target_value(&ev))>
+                        <select data-testid="byok-protocol" on:change=live(move |ev| protocol.set(event_target_value(&ev)))>
                             <option value="anthropic" selected=move || protocol.get() == "anthropic">"Anthropic Messages"</option>
                             <option value="openai" selected=move || protocol.get() == "openai">{t(T::OpenAiCompatible)}</option>
                             <option value="azure" selected=move || protocol.get() == "azure">"Azure OpenAI"</option>
@@ -278,7 +278,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                 <input class="input mono" data-testid="byok-base-url"
                     placeholder=move || if azure() { "https://<resource>.openai.azure.com" } else { "https://…" }
                     prop:value=move || base_url.get()
-                    on:input=move |ev| { base_url.set(event_target_value(&ev)); test.set(None); }/>
+                    on:input=live(move |ev| { base_url.set(event_target_value(&ev)); test.set(None); })/>
             </label>
             <Show when=needs_key>
                 <label class="field">
@@ -289,11 +289,11 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                             type=move || if show_key.get() { "text" } else { "password" }
                             placeholder=if has_key { tf(T::ApiKeyStored, &[&key_hint]) } else { t(T::ApiKeyPlaceholder).to_owned() }
                             prop:value=move || api_key.get()
-                            on:input=move |ev| {
+                            on:input=live(move |ev| {
                                 let (key, changed) = byok::clean_key(&event_target_value(&ev));
                                 cleaned.set(changed);
                                 api_key.set(key);
-                            }/>
+                            })/>
                         <button class="icon-btn" aria-label=move || if show_key.get() { t(T::HideKey) } else { t(T::ShowKey) }
                             data-tip=move || if show_key.get() { t(T::HideKey) } else { t(T::ShowKey) }
                             aria-pressed=move || show_key.get().to_string()
@@ -312,7 +312,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                     <span>{t(T::ApiVersion)}</span>
                     <input class="input mono" data-testid="byok-api-version" placeholder="2024-10-21"
                         prop:value=move || api_version.get()
-                        on:input=move |ev| { api_version.set(event_target_value(&ev)); test.set(None); }/>
+                        on:input=live(move |ev| { api_version.set(event_target_value(&ev)); test.set(None); })/>
                 </label>
             </Show>
             <label class="field">
@@ -320,7 +320,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                 <span class="row">
                     <input class="input mono grow" data-testid="byok-model" list="byok-models"
                         prop:value=move || model.get()
-                        on:input=move |ev| model.set(event_target_value(&ev))/>
+                        on:input=live(move |ev| model.set(event_target_value(&ev)))/>
                     <button class="btn small" data-testid="byok-fetch-models" on:click=fetch>{icon(Glyph::Refresh)}{t(T::FetchModels)}</button>
                 </span>
                 <datalist id="byok-models">

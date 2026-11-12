@@ -5,7 +5,7 @@
 
 use super::icons::{Glyph, icon};
 use super::mcp_settings::McpSection;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -298,7 +298,7 @@ fn InstallIntoAgents() -> impl IntoView {
                     <div class="card padded">
                         <label class="field">
                             <span>{t(T::Client)}</span>
-                            <select data-testid="mcp-client" on:change=move |ev| { client.set(event_target_value(&ev)); result.set(None); }>
+                            <select data-testid="mcp-client" on:change=live(move |ev| { client.set(event_target_value(&ev)); result.set(None); })>
                                 {clients.iter().map(|c| {
                                     let id = c["id"].as_str().unwrap_or_default().to_owned();
                                     let id2 = id.clone();

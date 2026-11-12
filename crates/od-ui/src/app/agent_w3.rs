@@ -8,7 +8,7 @@ use super::follow::{JumpToLatest, StickToBottom};
 use super::icons::{Glyph, icon};
 use super::sse::Sse;
 use super::studio::StudioCtx;
-use super::tasks::{self, Tasks};
+use super::tasks::{self, Tasks, live};
 use super::{Shell, api};
 use crate::chat::{AssistantTurn, Block, TurnState};
 use crate::events::{
@@ -297,7 +297,7 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
                             data-testid="memory-input"
                             placeholder=t(T::MemoryPlaceholder)
                             prop:value=move || draft.get()
-                            on:input=move |ev| draft.set(event_target_value(&ev))
+                            on:input=live(move |ev| draft.set(event_target_value(&ev)))
                             on:keydown=move |ev: web_sys::KeyboardEvent| {
                                 if ev.key() == "Enter" && !ev.is_composing() {
                                     ev.prevent_default();
@@ -519,7 +519,7 @@ pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
         });
     });
     move || {
-        let (report, live) = turn.with(|t| Some((t.critique.clone()?, t.state.is_live())))?;
+        let (report, is_live) = turn.with(|t| Some((t.critique.clone()?, t.state.is_live())))?;
         if let Some(at) = replay.get() {
             let frames = jury_replay::frames(&report);
             let frame = frames.get(at).cloned().unwrap_or(report);
@@ -527,7 +527,7 @@ pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                 <span class="jury-controls">
                     <span class="badge outline">{t(T::JuryReadOnly)}</span>
                     <select class="small select-auto" data-testid="jury-replay-speed" aria-label=t(T::JuryReplaySpeed)
-                        on:change=move |ev| speed.set(Speed::parse(&event_target_value(&ev)))>
+                        on:change=live(move |ev| speed.set(Speed::parse(&event_target_value(&ev))))>
                         {Speed::ALL.into_iter().map(|s| view! {
                             <option value=s.key() selected=move || speed.get() == s>{t(match s {
                                 Speed::Paused => T::JuryPaused,
@@ -545,8 +545,8 @@ pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             .into_any();
             return Some(theater(ctx, frame, true, bar, true));
         }
-        let running = live && report.status == CritiqueStatus::Running;
-        let can_replay = !live && !report.rounds.is_empty();
+        let running = is_live && report.status == CritiqueStatus::Running;
+        let can_replay = !is_live && !report.rounds.is_empty();
         let controls = view! {
             <span class="jury-controls">
                 {running.then(|| view! {
@@ -566,7 +566,7 @@ pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             </span>
         }
         .into_any();
-        Some(theater(ctx, report, live, controls, false))
+        Some(theater(ctx, report, is_live, controls, false))
     }
 }
 
@@ -934,7 +934,7 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
                     rows="2"
                     placeholder=t(T::SideChatPlaceholder)
                     prop:value=move || draft.get()
-                    on:input=move |ev| draft.set(event_target_value(&ev))
+                    on:input=live(move |ev| draft.set(event_target_value(&ev)))
                     on:keydown=move |ev: web_sys::KeyboardEvent| {
                         if ev.key() == "Enter" && !ev.shift_key() && !ev.is_composing() {
                             ev.prevent_default();

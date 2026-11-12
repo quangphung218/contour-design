@@ -133,7 +133,14 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
             }
         };
         // Started here: on leaving, the save runs after the view is disposed.
-        let work = replace_content(ctx, &path.get_value(), &body, "Sketch", T::MdSaveFailed);
+        let work = replace_content(
+            ctx,
+            &path.get_value(),
+            &body,
+            "Sketch",
+            T::MdSaveFailed,
+            save,
+        );
         tasks.spawn_then(work, move |res| {
             if res.is_err() {
                 save.failed();
@@ -214,7 +221,7 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
                 <div class="sketch-paper" style=format!("aspect-ratio:{w}/{h}")>
                     {read_error_banner(read, "sketch-error", "sketch", T::SketchReadFailed, load)}
                     <Show when=move || read.with(ReadState::loaded) fallback=move || read.with(ReadState::waiting).then(|| view! { <div class="skeleton sketch-skeleton"></div> })>
-                        <DrawSurface history=history pen=pen color=color canvas_ref=canvas_ref size=size.get_value() class="sketch-canvas"/>
+                        <DrawSurface history=history pen=pen color=color canvas_ref=canvas_ref size=size.get_value() class="sketch-canvas" left_with_label=Callback::new(move |()| autosave.changed())/>
                     </Show>
                 </div>
             </div>

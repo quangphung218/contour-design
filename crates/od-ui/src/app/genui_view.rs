@@ -7,7 +7,7 @@ use super::api;
 use super::icons::{Glyph, icon};
 use super::sse::Sse;
 use super::studio::StudioCtx;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::genui::{
     self, Field, FieldKind, FilePick, FormError, Shape, SurfaceRow, authorize_answer,
 };
@@ -213,7 +213,7 @@ fn SurfaceCard(row: SurfaceRow, on_done: Callback<()>) -> impl IntoView {
             view! {
                 <p class="genui-prompt">{prompt.unwrap_or_else(|| t(T::GenuiAnswerDefault).to_owned())}</p>
                 <textarea class="input small" rows="3" data-testid="genui-raw" placeholder=t(T::GenuiJsonPlaceholder)
-                    prop:value=move || text.get() on:input=move |ev| text.set(event_target_value(&ev))></textarea>
+                    prop:value=move || text.get() on:input=live(move |ev| text.set(event_target_value(&ev)))></textarea>
                 <div class="row genui-actions">
                     <button class="btn small primary" data-testid="genui-submit" disabled=busy
                         on:click=move |_| answer.run(genui::raw_answer(&text.get_untracked()))>{t(T::GenuiSubmit)}</button>
@@ -315,7 +315,7 @@ fn DiffReview(
         </Show>
         <textarea class="input small genui-reason" rows="2" data-testid="genui-diff-reason"
             placeholder=t(T::GenuiPatchNotes)
-            prop:value=move || reason.get() on:input=move |ev| reason.set(event_target_value(&ev))></textarea>
+            prop:value=move || reason.get() on:input=live(move |ev| reason.set(event_target_value(&ev)))></textarea>
     }
 }
 
@@ -361,24 +361,24 @@ fn FormFields(
                     FieldKind::Bool => view! {
                         <label class="switch">
                             <input type="checkbox" data-testid=format!("genui-field-{}", f.key)
-                                on:change=move |ev| set(key.get_value(), event_target_checked(&ev).to_string())/>
+                                on:change=live(move |ev| set(key.get_value(), event_target_checked(&ev).to_string()))/>
                             <span>{f.label.clone()}</span>
                         </label>
                     }.into_any(),
                     FieldKind::Enum(options) => view! {
                         <select data-testid=format!("genui-field-{}", f.key)
-                            on:change=move |ev| set(key.get_value(), event_target_value(&ev))>
+                            on:change=live(move |ev| set(key.get_value(), event_target_value(&ev)))>
                             {options.into_iter().map(|o| view! { <option value=o.clone()>{o.clone()}</option> }).collect_view()}
                         </select>
                     }.into_any(),
                     FieldKind::Text { multiline: true } => view! {
                         <textarea class="input small" rows="3" data-testid=format!("genui-field-{}", f.key)
-                            on:input=move |ev| set(key.get_value(), event_target_value(&ev))></textarea>
+                            on:input=live(move |ev| set(key.get_value(), event_target_value(&ev)))></textarea>
                     }.into_any(),
                     FieldKind::Text { multiline: false } | FieldKind::Number { .. } => view! {
                         <input class="input small" data-testid=format!("genui-field-{}", f.key)
                             inputmode=if matches!(f.kind, FieldKind::Number { .. }) { "decimal" } else { "text" }
-                            on:input=move |ev| set(key.get_value(), event_target_value(&ev))/>
+                            on:input=live(move |ev| set(key.get_value(), event_target_value(&ev)))/>
                     }.into_any(),
                 };
                 let is_bool = matches!(f.kind, FieldKind::Bool);

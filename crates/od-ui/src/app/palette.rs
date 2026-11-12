@@ -5,6 +5,7 @@
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, file_glyph};
 use super::tasks;
+use super::tasks::live;
 use super::{Shell, api, terminal};
 use crate::fuzzy;
 use crate::i18n::{T, t, tf};
@@ -348,10 +349,10 @@ pub fn CommandPalette() -> impl IntoView {
                         aria-expanded="true"
                         placeholder=t(T::PalettePlaceholder)
                         prop:value=move || query.get()
-                        on:input=move |ev| {
+                        on:input=live(move |ev| {
                             query.set(event_target_value(&ev));
                             selected.set(0);
-                        }
+                        })
                         on:keydown=on_key
                     />
                     <kbd>"Esc"</kbd>

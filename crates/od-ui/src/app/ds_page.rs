@@ -9,7 +9,7 @@ use super::ds_create::CreateFlow;
 use super::export_menu::download;
 use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, copy_text, picked_files, query_param, size_label, upload};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use crate::settings::DEFAULT_DESIGN_SYSTEM_KEY;
@@ -211,7 +211,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
                         placeholder=t(T::DsSearch)
                         aria-label=t(T::DsSearch)
                         prop:value=move || query.get()
-                        on:input=move |ev| query.set(event_target_value(&ev))
+                        on:input=live(move |ev| query.set(event_target_value(&ev)))
                     />
                 </label>
                 <div class="segmented small" role="group" aria-label=t(T::Surface)>
@@ -240,7 +240,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
                     data-testid="ds-category"
                     aria-label=t(T::Category)
                     prop:value=move || category.get()
-                    on:change=move |ev| category.set(event_target_value(&ev))
+                    on:change=live(move |ev| category.set(event_target_value(&ev)))
                 >
                     <option value="">{t(T::AllCategories)}</option>
                     {move || categories.get().into_iter().map(|c| view! { <option value=c.clone()>{c.clone()}</option> }).collect_view()}
@@ -990,7 +990,7 @@ fn DsDetail(
                 <div class="card padded ds-feedback" data-testid="ds-feedback">
                     <label class="field">
                         <span>{t(T::Section)}</span>
-                        <select class="select-auto" prop:value=move || feedback_section.get() on:change=move |ev| feedback_section.set(event_target_value(&ev))>
+                        <select class="select-auto" prop:value=move || feedback_section.get() on:change=live(move |ev| feedback_section.set(event_target_value(&ev)))>
                             <option value="">{t(T::WholeSystem)}</option>
                             {move || kit.with(|k| match k { Some(Ok(k)) => sections(&k.body), _ => Vec::new() })
                                 .into_iter()
@@ -1001,7 +1001,7 @@ fn DsDetail(
                     <label class="field">
                         <span>{t(T::WhatNeedsWork)}</span>
                         <textarea class="input" rows="3" data-testid="ds-feedback-text" placeholder=t(T::FeedbackPlaceholder)
-                            prop:value=move || feedback.get() on:input=move |ev| feedback.set(event_target_value(&ev))></textarea>
+                            prop:value=move || feedback.get() on:input=live(move |ev| feedback.set(event_target_value(&ev)))></textarea>
                     </label>
                     <div class="row end">
                         <button class="btn small ghost" on:click=move |_| feedback_open.set(false)>{t(T::Cancel)}</button>
@@ -1029,7 +1029,7 @@ fn DsDetail(
                 <span class="spacer"></span>
                 <span class="subtle small kit-keys">{if mine { t(T::KitKeysMine) } else { t(T::KitKeys) }}</span>
             </div>
-            <input type="file" class="visually-hidden" aria-label=t(T::UploadFiles) multiple accept="image/*,.svg,.woff,.woff2,.ttf,.otf" node_ref=upload_ref data-testid="ds-asset-input" on:change=on_upload/>
+            <input type="file" class="visually-hidden" aria-label=t(T::UploadFiles) multiple accept="image/*,.svg,.woff,.woff2,.ttf,.otf" node_ref=upload_ref data-testid="ds-asset-input" on:change=live(on_upload)/>
             {move || match kit.get() {
                 None => view! { <div class="skeleton kit-skeleton"></div> }.into_any(),
                 Some(Err(e)) => view! { <p class="error-text">{e}</p> }.into_any(),
@@ -1069,7 +1069,7 @@ fn DsDetail(
                                 <div class="kit-editor">
                                     <textarea class="input mono" rows="22" data-testid="ds-md-editor" aria-label=t(T::DesignMd)
                                         prop:value=move || editing.get().unwrap_or_default()
-                                        on:input=move |ev| editing.set(Some(event_target_value(&ev)))></textarea>
+                                        on:input=live(move |ev| editing.set(Some(event_target_value(&ev))))></textarea>
                                     <div class="row end">
                                         <button class="btn small ghost" on:click=move |_| editing.set(None)>{t(T::Cancel)}</button>
                                         <button class="btn small primary" data-testid="ds-md-save" on:click=move |_| save()>{t(T::Save)}</button>
@@ -1230,7 +1230,7 @@ fn KitOverview(
                                 view! {
                                     <li class="kit-asset" tabindex="0" data-testid="kit-asset"
                                         on:focus=move |_| focused_asset.set(Some(name_focus.clone()))
-                                        on:blur=move |_| focused_asset.set(None)>
+                                        on:blur=live(move |_| focused_asset.set(None))>
                                         {if is_font {
                                             view! { <span class="kit-asset-thumb font">"Aa"</span> }.into_any()
                                         } else {

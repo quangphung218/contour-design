@@ -7,7 +7,7 @@
 use super::export_menu::download;
 use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, query_param, size_label, upload};
-use super::tasks::{self, Tasks};
+use super::tasks::{self, Tasks, live};
 use super::{ago, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -414,14 +414,14 @@ fn LibraryView(
             <label class="lib-search">
                 {icon(Glyph::Search)}
                 <input class="input small" type="search" data-testid="media-search" placeholder=t(T::SearchMedia) aria-label=t(T::SearchMedia)
-                    prop:value=move || query.get() on:input=move |ev| query.set(event_target_value(&ev))/>
+                    prop:value=move || query.get() on:input=live(move |ev| query.set(event_target_value(&ev)))/>
             </label>
-            <select class="select-auto small" aria-label=t(T::ProjectLabel) prop:value=move || project.get() on:change=move |ev| project.set(event_target_value(&ev))>
+            <select class="select-auto small" aria-label=t(T::ProjectLabel) prop:value=move || project.get() on:change=live(move |ev| project.set(event_target_value(&ev)))>
                 <option value="">{t(T::AllProjectsFilter)}</option>
                 {move || projects.get().into_iter().map(|p| view! { <option value=p.id.clone()>{p.name.clone()}</option> }).collect_view()}
             </select>
             <span class="spacer"></span>
-            <input type="file" class="visually-hidden" aria-label=t(T::UploadFiles) multiple accept="image/*,video/*,audio/*" node_ref=upload_ref data-testid="media-upload-input" on:change=on_upload/>
+            <input type="file" class="visually-hidden" aria-label=t(T::UploadFiles) multiple accept="image/*,video/*,audio/*" node_ref=upload_ref data-testid="media-upload-input" on:change=live(on_upload)/>
             <button class="btn small" data-testid="media-upload" on:click=move |_| { if let Some(i) = upload_ref.get_untracked() { i.click(); } }>{icon(Glyph::Upload)}{t(T::Upload)}</button>
         </div>
         {move || notice.get().map(|n| match n {
@@ -432,7 +432,7 @@ fn LibraryView(
             <div class="card padded selection-bar" data-testid="media-selection">
                 <strong>{move || tf(T::SelectedCount, &[&selected.with(Vec::len).to_string()])}</strong>
                 <input class="input small grow" data-testid="media-chat-prompt" placeholder=t(T::ChatToDesignPlaceholder)
-                    prop:value=move || chat_prompt.get() on:input=move |ev| chat_prompt.set(event_target_value(&ev))/>
+                    prop:value=move || chat_prompt.get() on:input=live(move |ev| chat_prompt.set(event_target_value(&ev)))/>
                 <button class="btn small primary" data-testid="media-chat" disabled=move || chatting.get() on:click=chat.clone()>{icon(Glyph::Chat)}{t(T::ChatToDesign)}</button>
                 <button class="btn small ghost danger" data-testid="media-delete" on:click=move |_| confirm_delete.set(true)>{icon(Glyph::Delete)}{t(T::Delete)}</button>
                 <button class="btn small ghost" on:click=move |_| selected.set(Vec::new())>{t(T::ClearSelection)}</button>
@@ -471,7 +471,7 @@ fn LibraryView(
                             <figure class="media-card" class:selected=is_sel data-testid="media-card" data-kind=a.kind.clone() data-path=a.path.clone()>
                                 <button class="media-thumb" aria-label=a.file_name() on:click=move |_| preview.set(Some(i))>{thumb}</button>
                                 <label class="media-check" aria-label=t(T::SelectItem)>
-                                    <input type="checkbox" data-testid="media-select" prop:checked=is_sel2 on:change=move |_| toggle(key.clone())/>
+                                    <input type="checkbox" data-testid="media-select" prop:checked=is_sel2 on:change=live(move |_| toggle(key.clone()))/>
                                 </label>
                                 <figcaption>
                                     <span class="media-name">{icon(kind_glyph(&a.kind))}{a.file_name()}</span>
@@ -702,12 +702,12 @@ fn GenerateView(
             <label class="field">
                 <span>{t(T::Prompt)}</span>
                 <textarea class="input" rows="5" data-testid="gen-prompt" placeholder=t(T::MediaPromptPlaceholder)
-                    prop:value=move || prompt.get() on:input=move |ev| prompt.set(event_target_value(&ev))></textarea>
+                    prop:value=move || prompt.get() on:input=live(move |ev| prompt.set(event_target_value(&ev)))></textarea>
             </label>
             <div class="gen-options">
                 <label class="field">
                     <span>{t(T::Model)}</span>
-                    <select class="input" data-testid="gen-model" prop:value=move || model.get() on:change=move |ev| model.set(event_target_value(&ev))>
+                    <select class="input" data-testid="gen-model" prop:value=move || model.get() on:change=live(move |ev| model.set(event_target_value(&ev)))>
                         {move || {
                             let sf = surface.get();
                             models.get().into_iter().filter(|m| m.surface == sf).map(|m| {
@@ -721,7 +721,7 @@ fn GenerateView(
                 <Show when=move || surface.get() != "audio">
                     <label class="field">
                         <span>{t(T::Ratio)}</span>
-                        <select class="input" data-testid="gen-aspect" prop:value=move || aspect.get() on:change=move |ev| aspect.set(event_target_value(&ev))>
+                        <select class="input" data-testid="gen-aspect" prop:value=move || aspect.get() on:change=live(move |ev| aspect.set(event_target_value(&ev)))>
                             {ASPECTS.into_iter().map(|a| view! { <option value=a>{a}</option> }).collect_view()}
                         </select>
                     </label>
@@ -729,7 +729,7 @@ fn GenerateView(
                 <Show when=move || surface.get() == "video">
                     <label class="field">
                         <span>{t(T::Duration)}</span>
-                        <select class="input" prop:value=move || length.get().to_string() on:change=move |ev| length.set(event_target_value(&ev).parse().unwrap_or(5))>
+                        <select class="input" prop:value=move || length.get().to_string() on:change=live(move |ev| length.set(event_target_value(&ev).parse().unwrap_or(5)))>
                             {VIDEO_LENGTHS.into_iter().map(|s| view! { <option value=s.to_string()>{tf(T::Seconds, &[&s.to_string()])}</option> }).collect_view()}
                         </select>
                     </label>
@@ -737,18 +737,18 @@ fn GenerateView(
                 <Show when=move || surface.get() == "audio">
                     <label class="field">
                         <span>{t(T::Duration)}</span>
-                        <select class="input" prop:value=move || duration.get().to_string() on:change=move |ev| duration.set(event_target_value(&ev).parse().unwrap_or(10))>
+                        <select class="input" prop:value=move || duration.get().to_string() on:change=live(move |ev| duration.set(event_target_value(&ev).parse().unwrap_or(10)))>
                             {AUDIO_DURATIONS.into_iter().map(|s| view! { <option value=s.to_string()>{tf(T::Seconds, &[&s.to_string()])}</option> }).collect_view()}
                         </select>
                     </label>
                     <label class="field">
                         <span>{t(T::Voice)}</span>
-                        <input class="input" placeholder=t(T::VoicePlaceholder) prop:value=move || voice.get() on:input=move |ev| voice.set(event_target_value(&ev))/>
+                        <input class="input" placeholder=t(T::VoicePlaceholder) prop:value=move || voice.get() on:input=live(move |ev| voice.set(event_target_value(&ev)))/>
                     </label>
                 </Show>
                 <label class="field">
                     <span>{t(T::SaveTo)}</span>
-                    <select class="input" data-testid="gen-target" prop:value=move || target.get() on:change=move |ev| target.set(event_target_value(&ev))>
+                    <select class="input" data-testid="gen-target" prop:value=move || target.get() on:change=live(move |ev| target.set(event_target_value(&ev)))>
                         <option value=LIBRARY_PROJECT>{t(T::MediaLibraryProject)}</option>
                         {move || projects.get().into_iter().filter(|p| p.id != LIBRARY_PROJECT).map(|p| view! { <option value=p.id.clone()>{p.name.clone()}</option> }).collect_view()}
                     </select>
@@ -972,7 +972,7 @@ fn ProvidersView() -> impl IntoView {
                                 <span>{t(T::ApiKey)}</span>
                                 <input class="input mono" type="password" autocomplete="off" data-testid=format!("provider-key-{id}") placeholder=t(T::ApiKeyPlaceholder)
                                     prop:value=move || keys.with(|k| k.get(id).cloned().unwrap_or_default())
-                                    on:input=move |ev| { let v = event_target_value(&ev); keys.update(|k| { k.insert(id.to_owned(), v); }); }/>
+                                    on:input=live(move |ev| { let v = event_target_value(&ev); keys.update(|k| { k.insert(id.to_owned(), v); }); })/>
                                 {move || dropped.with(|d| d.iter().any(|d| d == id)).then(|| view! {
                                     <span class="error-text small" role="alert" data-testid=format!("provider-key-dropped-{id}")>{t(T::KeyDroppedNewUrl)}</span>
                                 })}
@@ -981,7 +981,7 @@ fn ProvidersView() -> impl IntoView {
                                 <span>{t(T::BaseUrl)}</span>
                                 <input class="input mono" data-testid=format!("provider-url-{id}") placeholder=default_url
                                     prop:value=move || urls.with(|u| u.get(id).cloned().unwrap_or_default())
-                                    on:input=move |ev| { let v = event_target_value(&ev); urls.update(|u| { u.insert(id.to_owned(), v); }); }/>
+                                    on:input=live(move |ev| { let v = event_target_value(&ev); urls.update(|u| { u.insert(id.to_owned(), v); }); })/>
                             </label>
                         </div>
                     </section>
@@ -1058,14 +1058,14 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
             <div class="gen-options">
                 <label class="field">
                     <span>{t(T::ProjectLabel)}</span>
-                    <select class="input" data-testid="mp4-project" prop:value=move || project.get() on:change=move |ev| project.set(event_target_value(&ev))>
+                    <select class="input" data-testid="mp4-project" prop:value=move || project.get() on:change=live(move |ev| project.set(event_target_value(&ev)))>
                         <option value="">{t(T::ChooseProject)}</option>
                         {move || projects.get().into_iter().map(|p| view! { <option value=p.id.clone()>{p.name.clone()}</option> }).collect_view()}
                     </select>
                 </label>
                 <label class="field">
                     <span>{t(T::FramesPerSecond)}</span>
-                    <select class="input" prop:value=move || fps.get().to_string() on:change=move |ev| fps.set(event_target_value(&ev).parse().unwrap_or(30))>
+                    <select class="input" prop:value=move || fps.get().to_string() on:change=live(move |ev| fps.set(event_target_value(&ev).parse().unwrap_or(30)))>
                         {[24u32, 30, 60].into_iter().map(|f| view! { <option value=f.to_string()>{f}</option> }).collect_view()}
                     </select>
                 </label>

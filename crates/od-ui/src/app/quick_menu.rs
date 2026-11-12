@@ -9,7 +9,7 @@
 use super::composer::close_outside;
 use super::icons::{Glyph, icon};
 use super::leave_guard::use_leave;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{Locale, T, t};
 use crate::settings::Theme;
@@ -180,10 +180,10 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
                     </div>
                     <div class="menu-sep" role="presentation">{t(T::Language)}</div>
                     <select class="small quick-language" data-testid="quick-language" aria-label=t(T::Language)
-                        on:change=move |ev| {
+                        on:change=live(move |ev| {
                             let tag = event_target_value(&ev);
                             save(Box::new(move |c| c.locale = Some(tag)));
-                        }>
+                        })>
                         {Locale::ALL.iter().copied().map(|l| view! {
                             <option value=l.tag() selected=move || shell.locale.get() == l>{l.native_name()}</option>
                         }).collect_view()}

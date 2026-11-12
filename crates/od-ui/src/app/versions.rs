@@ -68,14 +68,26 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
     });
     on_cleanup(move || ctx.viewing.set(None));
 
+    // Each View's number: only the last one shows.
+    let viewed = StoredValue::new(0u64);
     let view_version = move |v: FileVersion| {
         let Some(path) = ctx.active_untracked() else {
             return;
         };
+        viewed.update_value(|n| *n += 1);
+        let mine = (seq.get_value(), viewed.get_value());
         // The panel's: closed, it shows no version any more.
         tasks.spawn(async move {
             let url = format!("{}/{}", versions_url(ctx, &path), api::seg(&v.id));
-            match api::get::<VersionContentResponse>(&url).await {
+            let res = api::get::<VersionContentResponse>(&url).await;
+            // Another file picked (or its content changed) meanwhile: the
+            // panel stays, so this version would show over the new file and
+            // Restore would post it against that file (QA-089). Another View
+            // since: that one shows.
+            if (seq.get_value(), viewed.get_value()) != mine {
+                return;
+            }
+            match res {
                 Ok(r) => ctx.viewing.set(Some(ViewedVersion {
                     id: v.id,
                     version: v.version,

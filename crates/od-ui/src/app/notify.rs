@@ -4,7 +4,7 @@
 //! watches `GET /api/runs` app-wide; sounds are synthesized (no files).
 
 use super::icons::{Glyph, icon};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{T, t};
 use leptos::prelude::*;
@@ -225,12 +225,12 @@ pub fn NotificationSettings() -> impl IntoView {
                              get: fn(&Prefs) -> String,
                              put: fn(&mut Prefs, String)| {
         view! {
-            <select class="small select-auto" data-testid=testid aria-label=label on:change=move |ev| {
+            <select class="small select-auto" data-testid=testid aria-label=label on:change=live(move |ev| {
                 let mut next = current.get_untracked();
                 put(&mut next, event_target_value(&ev));
                 play(&get(&next));
                 save(next);
-            }>
+            })>
                 {list.iter().map(|s| {
                     let s = *s;
                     view! { <option value=s selected=move || current.with(|c| get(c) == s)>{s}</option> }
@@ -243,7 +243,7 @@ pub fn NotificationSettings() -> impl IntoView {
             <div class="row wrap">
                 <label class="switch grow">
                     <input type="checkbox" data-testid="notify-sound" prop:checked=move || current.with(|c| c.sound)
-                        on:change=move |ev| { let mut n = current.get_untracked(); n.sound = event_target_checked(&ev); save(n); }/>
+                        on:change=live(move |ev| { let mut n = current.get_untracked(); n.sound = event_target_checked(&ev); save(n); })/>
                     <span>{icon(Glyph::Sound)}{t(T::CompletionSound)}</span>
                 </label>
                 // Each label wraps with its select, never apart (QA-052).
@@ -258,13 +258,13 @@ pub fn NotificationSettings() -> impl IntoView {
             </div>
             <label class="switch">
                 <input type="checkbox" data-testid="notify-desktop" prop:checked=move || current.with(|c| c.desktop)
-                    on:change=move |ev| {
+                    on:change=live(move |ev| {
                         let on = event_target_checked(&ev);
                         let mut n = current.get_untracked();
                         n.desktop = on;
                         save(n);
                         if on { ask(); }
-                    }/>
+                    })/>
                 <span>{icon(Glyph::Bell)}{t(T::DesktopNotification)}</span>
             </label>
             <p class="muted small">{t(T::DesktopNotificationHint)}</p>

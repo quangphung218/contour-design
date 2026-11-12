@@ -8,7 +8,7 @@ use super::export_menu::download;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::lib_ui::{Modal, copy_text, query_param};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::i18n::{T, locale, t, tf};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
@@ -227,14 +227,14 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
             <label class="lib-search">
                 {icon(Glyph::Search)}
                 <input class="input small" type="search" data-testid="tpl-search" placeholder=t(T::SearchTemplates) aria-label=t(T::SearchTemplates)
-                    prop:value=move || query.get() on:input=move |ev| query.set(event_target_value(&ev))/>
+                    prop:value=move || query.get() on:input=live(move |ev| query.set(event_target_value(&ev)))/>
             </label>
             <div class="segmented small" role="group" aria-label=t(T::Platform)>
                 {[("", T::AllFilter, Glyph::Grid), ("desktop", T::Desktop, Glyph::Desktop), ("mobile", T::Mobile, Glyph::Phone)].into_iter().map(|(p, label, glyph)| view! {
                     <button class="seg" data-testid=format!("tpl-platform-{}", if p.is_empty() { "all" } else { p }) aria-pressed=move || (platform.get() == p).to_string() on:click=move |_| platform.set(p.to_owned())>{icon(glyph)}{t(label)}</button>
                 }).collect_view()}
             </div>
-            <select class="select-auto small" data-testid="tpl-scenario" aria-label=t(T::Industry) prop:value=move || scenario.get() on:change=move |ev| scenario.set(event_target_value(&ev))>
+            <select class="select-auto small" data-testid="tpl-scenario" aria-label=t(T::Industry) prop:value=move || scenario.get() on:change=live(move |ev| scenario.set(event_target_value(&ev)))>
                 <option value="">{t(T::AllIndustries)}</option>
                 {move || scenarios.get().into_iter().map(|s| {
                     let label = scenario_label(&s);
@@ -453,9 +453,9 @@ fn PromptGallery(
             <label class="lib-search">
                 {icon(Glyph::Search)}
                 <input class="input small" type="search" data-testid="prompt-search" placeholder=t(T::SearchPrompts) aria-label=t(T::SearchPrompts)
-                    prop:value=move || query.get() on:input=move |ev| query.set(event_target_value(&ev))/>
+                    prop:value=move || query.get() on:input=live(move |ev| query.set(event_target_value(&ev)))/>
             </label>
-            <select class="select-auto small" aria-label=t(T::Category) prop:value=move || category.get() on:change=move |ev| category.set(event_target_value(&ev))>
+            <select class="select-auto small" aria-label=t(T::Category) prop:value=move || category.get() on:change=live(move |ev| category.set(event_target_value(&ev)))>
                 <option value="">{t(T::AllCategories)}</option>
                 {move || categories.get().into_iter().map(|c| view! { <option value=c.clone()>{c.clone()}</option> }).collect_view()}
             </select>
@@ -558,26 +558,26 @@ fn MyTemplates() -> impl IntoView {
             <div class="gen-options">
                 <label class="field">
                     <span>{t(T::ProjectLabel)}</span>
-                    <select class="input" data-testid="tpl-save-project" prop:value=move || project.get() on:change=move |ev| {
+                    <select class="input" data-testid="tpl-save-project" prop:value=move || project.get() on:change=live(move |ev| {
                         let v = event_target_value(&ev);
                         if name.with_untracked(String::is_empty)
                             && let Some(p) = projects.with_untracked(|l| l.iter().find(|p| p.id == v).cloned()) {
                                 name.set(p.name);
                             }
                         project.set(v);
-                    }>
+                    })>
                         <option value="">{t(T::ChooseProject)}</option>
                         {move || projects.get().into_iter().map(|p| view! { <option value=p.id.clone()>{p.name.clone()}</option> }).collect_view()}
                     </select>
                 </label>
                 <label class="field">
                     <span>{t(T::TemplateName)}</span>
-                    <input class="input" data-testid="tpl-save-name" prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev))/>
+                    <input class="input" data-testid="tpl-save-name" prop:value=move || name.get() on:input=live(move |ev| name.set(event_target_value(&ev)))/>
                 </label>
             </div>
             <label class="field">
                 <span>{t(T::Description)}</span>
-                <input class="input" data-testid="tpl-save-description" prop:value=move || description.get() on:input=move |ev| description.set(event_target_value(&ev))/>
+                <input class="input" data-testid="tpl-save-description" prop:value=move || description.get() on:input=live(move |ev| description.set(event_target_value(&ev)))/>
             </label>
             {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
             <div class="row end">

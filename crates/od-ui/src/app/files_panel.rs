@@ -7,10 +7,11 @@
 
 use super::api;
 use super::export_menu::{copy_text, download};
+use super::file_state::Save;
 use super::icons::{Glyph, icon};
 use super::menu_scrim::MenuScrim;
 use super::studio::{StudioCtx, file_glyph};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::terminal;
 use crate::file_tree::{self as ft, GROUP_PAGE, Group, Row};
 use crate::i18n::{T, t, tf};
@@ -167,16 +168,19 @@ impl Default for FilesUi {
 }
 
 /// Overwrites existing file `path` with `body` (exact path, never renamed);
-/// `label` names the version an HTML file gets.
+/// `label` names the version an HTML file gets. `save` is the autosave's:
+/// one made as the page unloads outlives it ([`Save::unloading`]).
 ///
-/// The URL is built at the call, not when the future first runs: a save
-/// spawned while the Studio goes away must not read its disposed context.
+/// The request starts at the call, not when the future first runs: a save
+/// made while the Studio goes away must not read its disposed context, and
+/// one made as the page unloads must leave before it does.
 pub fn replace_content(
     ctx: StudioCtx,
     path: &str,
     body: &str,
     label: &str,
     failed: T,
+    save: Save,
 ) -> impl Future<Output = Result<ProjectFile, String>> + 'static {
     let url = format!(
         "{}/content/{}?label={}",
@@ -184,10 +188,9 @@ pub fn replace_content(
         api::file_path(path),
         api::seg(label)
     );
-    let body = body.to_owned();
+    let sent = api::put_text_now::<FileResponse>(&url, body, save.unloading());
     async move {
-        api::put_text::<FileResponse>(&url, &body)
-            .await
+        sent.await
             .map(|r| r.file)
             .map_err(|e| ctx.failed_to(failed, &e))
     }
@@ -468,12 +471,12 @@ pub fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
                     aria-label=t(T::UploadFiles)
                     data-testid="upload-input"
                     node_ref=input
-                    on:change=move |_| {
+                    on:change=live(move |_| {
                         let Some(el) = input.get_untracked() else { return };
                         let files = file_list(el.files());
                         el.set_value("");
                         upload_and_report(ctx, ui, files, ui.scope.get_untracked());
-                    }
+                    })
                 />
                 <div class="menu-wrap">
                     <button
@@ -529,7 +532,7 @@ pub fn FilesPanel(ctx: StudioCtx) -> impl IntoView {
                     placeholder=t(T::SearchFiles)
                     aria-label=t(T::SearchFiles)
                     prop:value=move || ui.query.get()
-                    on:input=move |ev| ui.query.set(event_target_value(&ev))
+                    on:input=live(move |ev| ui.query.set(event_target_value(&ev)))
                 />
                 <div class="segmented small icons" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::FilesViewAs)>
                     <button class="seg" role="radio" data-testid="files-view-tree" aria-label=t(T::FilesViewTree) data-tip=t(T::FilesViewTree)
@@ -715,7 +718,7 @@ fn TreeRow(
                 aria-label=t(T::SelectFile)
                 data-testid="file-check"
                 prop:checked=move || checked.get()
-                on:change=check
+                on:change=live(check)
             />
             {main}
             <RowMenu ctx=ctx ui=ui key=key/>
@@ -1247,7 +1250,7 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                             <span>{if is_paste { t(T::FileName) } else { t(T::Name) }}</span>
                             <input class="input" data-testid="file-dialog-name" node_ref=input
                                 prop:value=move || name.get()
-                                on:input=move |ev| name.set(event_target_value(&ev))
+                                on:input=live(move |ev| name.set(event_target_value(&ev)))
                                 on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" && !is_paste { ev.prevent_default(); submit(); }/>
                         </label>
                     })}
@@ -1256,13 +1259,13 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                             <span>{t(T::PastedText)}</span>
                             <textarea class="input mono" rows="8" data-testid="file-dialog-text"
                                 prop:value=move || text.get()
-                                on:input=move |ev| text.set(event_target_value(&ev))></textarea>
+                                on:input=live(move |ev| text.set(event_target_value(&ev)))></textarea>
                         </label>
                     })}
                     {targets.map(|list| view! {
                         <label class="field">
                             <span>{t(T::DestinationFolder)}</span>
-                            <select class="input" data-testid="file-dialog-dest" on:change=move |ev| dest.set(event_target_value(&ev))>
+                            <select class="input" data-testid="file-dialog-dest" on:change=live(move |ev| dest.set(event_target_value(&ev)))>
                                 {list.into_iter().map(|d| {
                                     let label = if d.is_empty() { t(T::ProjectRoot).to_owned() } else { d.clone() };
                                     view! { <option value=d.clone() selected=move || dest.get() == d>{label}</option> }

@@ -388,7 +388,7 @@ test('STU-21', "History: a version of the file just left, viewed a moment before
   const viewing = await page.getByTestId('version-preview').count();
   const banner = await panel.locator('.viewing').count();
   assert.equal(viewing + banner, 0, `b.html shows a.html's old version (frame ${viewing}, banner ${banner})`);
-}, { knownBug: 'QA-089' });
+});
 
 test('STU-22', 'A link and a window.open button inside a web component (shadow root) in the preview each open one tab', async ({ d, newPage }) => {
   const WC = (base) => `<!doctype html><html><body><h1 id="title">Web component</h1><x-card></x-card><script>

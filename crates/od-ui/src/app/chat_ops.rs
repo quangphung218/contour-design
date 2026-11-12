@@ -6,7 +6,7 @@
 use super::chat_view::focus_composer;
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, file_glyph, main_conversation_title};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api, desktop};
 use crate::chat::{AssistantTurn, FileOp, TurnState};
 use crate::guide;
@@ -708,7 +708,7 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
                                 <span>{t(T::FolderPathLabel)}</span>
                                 <input class="input mono" data-testid="link-path" placeholder=t(T::FolderPathPlaceholder)
                                     prop:value=move || path.get()
-                                    on:input=move |ev| path.set(event_target_value(&ev))
+                                    on:input=live(move |ev| path.set(event_target_value(&ev)))
                                     on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" { submit_path() }/>
                             </label>
                         }.into_any(),
@@ -767,7 +767,7 @@ pub fn DesignSystemSwitch(ctx: StudioCtx) -> impl IntoView {
                     systems.track();
                     current()
                 }
-                on:change=move |ev| {
+                on:change=live(move |ev| {
                     let v = event_target_value(&ev);
                     let id = Some(v).filter(|v| !v.is_empty());
                     ctx.tasks.spawn(async move {
@@ -776,7 +776,7 @@ pub fn DesignSystemSwitch(ctx: StudioCtx) -> impl IntoView {
                             Err(e) => ctx.notice.set(Some(ctx.failed_to(T::DsSwitchFailed, &e))),
                         }
                     });
-                }
+                })
             >
                 <option value="">{t(T::NoneOption)}</option>
                 {move || systems.get().unwrap_or_default().into_iter().map(|s| view! {

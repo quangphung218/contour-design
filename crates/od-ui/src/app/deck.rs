@@ -6,7 +6,7 @@ use super::icons::{Glyph, icon};
 use super::menu_scrim::MenuScrim;
 use super::presenter::{DeckChannel, channel_name};
 use super::studio::StudioCtx;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::Slide;
 use crate::speaker_notes;
@@ -385,7 +385,7 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
                         <textarea class="input notes-input" rows="3" data-testid="notes-input"
                             placeholder=t(T::NotesPlaceholder)
                             prop:value=move || draft.get()
-                            on:input=move |ev| draft.set(event_target_value(&ev))
+                            on:input=live(move |ev| draft.set(event_target_value(&ev)))
                             on:keydown=move |ev: web_sys::KeyboardEvent| {
                                 if (ev.meta_key() || ev.ctrl_key()) && ev.key() == "Enter" {
                                     ev.prevent_default();

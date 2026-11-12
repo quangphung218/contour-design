@@ -10,7 +10,7 @@ use super::desktop;
 use super::icons::{Glyph, icon};
 use super::native_shell;
 use super::studio::{StudioCtx, is_html_path};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{
     self as pb, BridgeMsg, Inspected, Override, Snapshot, TweakDef, TweakKind,
@@ -214,6 +214,8 @@ impl Tools {
 
     /// Another file is shown: its edits, tweaks and lint start over.
     pub fn forget_document(self) {
+        // The last file's lint, if it answers now, is not this one's.
+        self.lint_seq.update_value(|n| *n = n.wrapping_add(1));
         self.inspected.set(None);
         self.overrides.set(Vec::new());
         self.extracted.set(None);
@@ -303,7 +305,7 @@ pub fn color_swatch<F: Fn(String) + 'static>(
             class:transparent=clear
             data-testid=testid
             prop:value=hex
-            on:input=move |ev| on_pick(event_target_value(&ev))
+            on:input=live(move |ev| on_pick(event_target_value(&ev)))
         />
     }
 }
@@ -746,7 +748,11 @@ impl StudioCtx {
             (req, res)
         };
         self.tasks.spawn_then(work, move |(req, res)| {
+            // The overrides are the shown file's: another file picked
+            // meanwhile keeps its own.
+            let shown = self.active_untracked().as_deref() == Some(req.file.as_str());
             match res {
+                Ok(r) if !shown => tools.saved(&r.file.path, r.version.version),
                 Ok(r) => {
                     if styles {
                         tools.overrides.set(Vec::new());
@@ -965,10 +971,10 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
                     data-testid="palette"
                     aria-label=palette_tip
                     prop:value=move || tools.palette.get().unwrap_or_default()
-                    on:change=move |ev| {
+                    on:change=live(move |ev| {
                         let v = event_target_value(&ev);
                         ctx.set_palette((!v.is_empty()).then_some(v));
-                    }
+                    })
                 >
                     <option value="">{t(T::PaletteOriginal)}</option>
                     {pb::PALETTES
@@ -1101,12 +1107,12 @@ fn InspectPanel(ctx: StudioCtx) -> impl IntoView {
                                         class="input small"
                                         data-testid=format!("inspect-{prop}")
                                         prop:value=shown
-                                        on:change=move |ev| {
+                                        on:change=live(move |ev| {
                                             let v = event_target_value(&ev).trim().to_owned();
                                             if !v.is_empty() {
                                                 ctx.set_override(&sel_text, prop, &v);
                                             }
-                                        }
+                                        })
                                     />
                                     {set.is_some().then(|| view! {
                                         <button
@@ -1183,12 +1189,12 @@ fn TweaksPanel(ctx: StudioCtx) -> impl IntoView {
                             type="checkbox"
                             data-testid=testid
                             prop:checked=value == "true"
-                            on:change=move |ev| set(event_target_checked(&ev).to_string())
+                            on:change=live(move |ev| set(event_target_checked(&ev).to_string()))
                         />
                     }
                     .into_any(),
                     TweakKind::Select => view! {
-                        <select class="input small" data-testid=testid prop:value=value on:change=move |ev| set(event_target_value(&ev))>
+                        <select class="input small" data-testid=testid prop:value=value on:change=live(move |ev| set(event_target_value(&ev)))>
                             {d.options
                                 .iter()
                                 .map(|o| view! { <option value=o.value().to_owned()>{o.label().to_owned()}</option> })
@@ -1204,16 +1210,16 @@ fn TweaksPanel(ctx: StudioCtx) -> impl IntoView {
                             max=d.max.unwrap_or(1.0).to_string()
                             step=d.step.map_or_else(|| "any".to_owned(), |s| s.to_string())
                             prop:value=value
-                            on:input=move |ev| set(event_target_value(&ev))
+                            on:input=live(move |ev| set(event_target_value(&ev)))
                         />
                     }
                     .into_any(),
                     TweakKind::Color => view! {
-                        <input type="color" class="swatch" data-testid=testid prop:value=value on:input=move |ev| set(event_target_value(&ev))/>
+                        <input type="color" class="swatch" data-testid=testid prop:value=value on:input=live(move |ev| set(event_target_value(&ev)))/>
                     }
                     .into_any(),
                     TweakKind::Text => view! {
-                        <input class="input small" data-testid=testid prop:value=value on:change=move |ev| set(event_target_value(&ev))/>
+                        <input class="input small" data-testid=testid prop:value=value on:change=live(move |ev| set(event_target_value(&ev)))/>
                     }
                     .into_any(),
                 };
@@ -1479,6 +1485,8 @@ async fn attach_annotation(
 /// to undo and Cmd/Ctrl+Shift+Z (or +Y) to redo. Pointer positions are in
 /// canvas pixels, so a canvas scaled by CSS (sketches) draws where the
 /// pointer is. Without `size` the canvas takes its on-screen size.
+/// `left_with_label` runs when a text label being typed is added as the
+/// surface goes: no effect is left by then to see `history` change.
 #[component]
 pub(super) fn DrawSurface(
     history: RwSignal<History>,
@@ -1487,6 +1495,7 @@ pub(super) fn DrawSurface(
     canvas_ref: NodeRef<leptos::html::Canvas>,
     #[prop(optional)] size: Option<(u32, u32)>,
     #[prop(optional)] class: &'static str,
+    #[prop(optional)] left_with_label: Option<Callback<()>>,
 ) -> impl IntoView {
     let drawing = StoredValue::new(false);
     // Where a text mark goes: canvas point and on-screen offset.
@@ -1546,6 +1555,17 @@ pub(super) fn DrawSurface(
             });
         }
     };
+    // A label being typed when the surface goes (Ctrl+Tab, Ctrl+W, the
+    // Studio left) is kept: the field's blur comes after the surface's
+    // signals went (QA-091). The parent's signals are still there.
+    on_cleanup(move || {
+        let typed =
+            text_at.get_untracked().is_some() && text.with_untracked(|t| !t.trim().is_empty());
+        commit_text();
+        if typed && let Some(cb) = left_with_label {
+            cb.run(());
+        }
+    });
     let keys = window_event_listener(leptos::ev::keydown, move |ev| {
         let modifier = ev.ctrl_key() || ev.meta_key();
         if !modifier || ev.alt_key() || super::studio::is_editing(&ev) {
@@ -1604,13 +1624,13 @@ pub(super) fn DrawSurface(
                 placeholder=t(T::DrawTextPlaceholder)
                 autofocus
                 prop:value=move || text.get()
-                on:input=move |ev| text.set(event_target_value(&ev))
+                on:input=live(move |ev| text.set(event_target_value(&ev)))
                 on:keydown=move |ev: web_sys::KeyboardEvent| match ev.key().as_str() {
                     "Enter" => { ev.prevent_default(); commit_text(); }
                     "Escape" => { ev.stop_propagation(); text_at.set(None); text.set(String::new()); }
                     _ => {}
                 }
-                on:blur=move |_| commit_text()
+                on:blur=live(move |_| commit_text())
             />
         })}
     }

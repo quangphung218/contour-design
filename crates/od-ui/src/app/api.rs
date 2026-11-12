@@ -138,16 +138,29 @@ impl std::error::Error for HttpError {}
 pub type ApiResult<T> = Result<T, HttpError>;
 
 fn network(e: gloo_net::Error) -> HttpError {
+    unreachable_daemon(&e)
+}
+
+/// A request that got no answer. The browser's own words ("TypeError:
+/// Failed to fetch") help nobody in the chat: they go to the console
+/// (UI-008).
+fn unreachable_daemon(why: &dyn fmt::Display) -> HttpError {
+    leptos::logging::warn!("request failed: {why}");
     HttpError {
         status: 0,
         code: None,
-        // The browser's own words ("TypeError: Failed to fetch") help
-        // nobody in the chat: they go to the console (UI-008).
-        message: {
-            leptos::logging::warn!("request failed: {e}");
-            t(Msg::DaemonUnreachable).to_owned()
-        },
+        message: t(Msg::DaemonUnreachable).to_owned(),
     }
+}
+
+/// A JS exception of a request made with `fetch` itself.
+fn fetch_failed(e: &wasm_bindgen::JsValue) -> HttpError {
+    let why = js_sys::JSON::stringify(e)
+        .ok()
+        .and_then(|s| s.as_string())
+        .or_else(|| e.as_string())
+        .unwrap_or_else(|| format!("{e:?}"));
+    unreachable_daemon(&why)
 }
 
 /// The failed answer `res` of a call on `path`; a project the daemon says
@@ -387,6 +400,51 @@ pub async fn put_text<T: DeserializeOwned>(path: &str, body: &str) -> ApiResult<
         .body(body)
         .map_err(network)?;
     decode(path, req.send().await.map_err(network)?).await
+}
+
+/// The most a `keepalive` request may carry: the browser allows 64 KiB for
+/// all of them in flight together.
+const KEEPALIVE_MAX: usize = 60 * 1024;
+
+/// `PUT` of a text body (file content), sent at once rather than when the
+/// future is first polled. With `keepalive` (a save as the page unloads) it
+/// outlives the page, while the body fits the browser's quota; a larger
+/// one goes as a plain request, which the unload may cut.
+pub fn put_text_now<T: DeserializeOwned + 'static>(
+    path: &str,
+    body: &str,
+    keepalive: bool,
+) -> impl Future<Output = ApiResult<T>> + use<T> {
+    let sent = fetch_text(path, "PUT", body, keepalive && body.len() <= KEEPALIVE_MAX);
+    let path = path.to_owned();
+    async move {
+        use wasm_bindgen::JsCast;
+        let res = wasm_bindgen_futures::JsFuture::from(sent?)
+            .await
+            .map_err(|e| fetch_failed(&e))?;
+        let res: web_sys::Response = res.dyn_into().map_err(|e| fetch_failed(&e))?;
+        decode(&path, Response::from(res)).await
+    }
+}
+
+/// Starts a `fetch` of `body` as text to `path`.
+fn fetch_text(path: &str, method: &str, body: &str, keepalive: bool) -> ApiResult<js_sys::Promise> {
+    use wasm_bindgen::JsValue;
+    let init = web_sys::RequestInit::new();
+    init.set_method(method);
+    init.set_body(&JsValue::from_str(body));
+    let headers = web_sys::Headers::new().map_err(|e| fetch_failed(&e))?;
+    headers
+        .set("content-type", "text/plain; charset=utf-8")
+        .map_err(|e| fetch_failed(&e))?;
+    init.set_headers_headers(&headers);
+    if keepalive {
+        // No setter in web-sys for it.
+        js_sys::Reflect::set(&init, &JsValue::from_str("keepalive"), &JsValue::TRUE)
+            .map_err(|e| fetch_failed(&e))?;
+    }
+    let window = web_sys::window().ok_or_else(|| unreachable_daemon(&"no window"))?;
+    Ok(window.fetch_with_str_and_init(path, &init))
 }
 
 /// `POST` of a multipart form (uploads).

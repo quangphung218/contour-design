@@ -12,6 +12,7 @@ use super::bridge;
 use super::icons::{Glyph, icon};
 use super::preview_tools::{panel_head, style_edits};
 use super::studio::StudioCtx;
+use super::tasks::live;
 use crate::i18n::{T, t, tf};
 use crate::manual_model::{self as mm, History, Kind, Step};
 use crate::preview_bridge::{self as pb, Inspected, Layer};
@@ -643,12 +644,12 @@ fn field(
     let input = match rows {
         Some(r) => view! {
             <textarea class="input" rows=r data-testid=testid prop:value=move || value.get()
-                on:input=move |ev| value.set(event_target_value(&ev))></textarea>
+                on:input=live(move |ev| value.set(event_target_value(&ev)))></textarea>
         }
         .into_any(),
         None => view! {
             <input class="input small" data-testid=testid prop:value=move || value.get()
-                on:input=move |ev| value.set(event_target_value(&ev))/>
+                on:input=live(move |ev| value.set(event_target_value(&ev)))/>
         }
         .into_any(),
     };
@@ -683,7 +684,7 @@ fn ContentTab(ctx: StudioCtx, el: SourceElementResponse) -> impl IntoView {
         Kind::Image => view! {
             {field(T::ManualImageUrl, m.src, "manual-src", None)}
             {field(T::ManualAlt, m.alt, "manual-alt", None)}
-            <input type="file" accept="image/*" hidden node_ref=upload data-testid="manual-image-input" on:change=picked/>
+            <input type="file" accept="image/*" hidden node_ref=upload data-testid="manual-image-input" on:change=live(picked)/>
             <button class="btn small" data-testid="manual-upload" disabled=move || m.busy.get()
                 on:click=move |_| { if let Some(i) = upload.get() { i.click(); } }>
                 {icon(Glyph::Upload)}{t(T::ManualUploadImage)}
@@ -736,12 +737,12 @@ fn StyleTab(ctx: StudioCtx) -> impl IntoView {
                             <span class="inspect-value">
                                 {picker}
                                 <input class="input small" data-testid=format!("manual-style-{prop}") prop:value=shown
-                                    on:change=move |ev| {
+                                    on:change=live(move |ev| {
                                         let v = event_target_value(&ev).trim().to_owned();
                                         if !v.is_empty() {
                                             ctx.set_override(&s2, prop, &v);
                                         }
-                                    }/>
+                                    })/>
                                 {set.is_some().then(|| view! {
                                     <button class="chip-x" title=t(T::ResetProp) aria-label=t(T::ResetProp)
                                         on:click=move |ev| { ev.prevent_default(); ctx.reset_override(&s3, prop); }>
@@ -785,7 +786,7 @@ fn AttributesTab(ctx: StudioCtx) -> impl IntoView {
             <label class="manual-field">
                 <span class="small subtle">{t(T::ManualAttributesJson)}</span>
                 <textarea class="input mono manual-code" rows="8" spellcheck="false" data-testid="manual-attributes"
-                    prop:value=move || m.attrs.get() on:input=move |ev| m.attrs.set(event_target_value(&ev))></textarea>
+                    prop:value=move || m.attrs.get() on:input=live(move |ev| m.attrs.set(event_target_value(&ev)))></textarea>
             </label>
             <div class="row end">
                 <button class="btn small primary" data-testid="manual-apply-attributes" disabled=move || m.busy.get()
@@ -805,7 +806,7 @@ fn HtmlTab(ctx: StudioCtx) -> impl IntoView {
             <label class="manual-field">
                 <span class="small subtle">{t(T::ManualSelectedHtml)}</span>
                 <textarea class="input mono manual-code" rows="10" spellcheck="false" data-testid="manual-html"
-                    prop:value=move || m.html.get() on:input=move |ev| m.html.set(event_target_value(&ev))></textarea>
+                    prop:value=move || m.html.get() on:input=live(move |ev| m.html.set(event_target_value(&ev)))></textarea>
             </label>
             <div class="row end">
                 <button class="btn small primary" data-testid="manual-apply-html" disabled=move || m.busy.get()
