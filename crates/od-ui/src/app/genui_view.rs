@@ -42,9 +42,8 @@ pub fn GenuiSurfaces(ctx: StudioCtx) -> impl IntoView {
     };
     let reload = move || {
         tasks.spawn(async move {
-            match api::get::<ProjectSurfaces>(&base()).await {
-                Ok(r) => rows.set(r.surfaces),
-                Err(e) => ctx.on_not_found(e.status),
+            if let Ok(r) = api::get::<ProjectSurfaces>(&base()).await {
+                rows.set(r.surfaces);
             }
         });
     };

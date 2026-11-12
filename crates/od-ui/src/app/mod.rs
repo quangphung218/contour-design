@@ -105,6 +105,10 @@ pub struct Shell {
     /// A failure of work that outlived the screen that started it (Home's
     /// uploads once the user went on), shown whichever screen is up.
     pub notice: RwSignal<Option<String>>,
+    /// Projects the daemon said do not exist (deleted, or a wrong link):
+    /// every call on one adds it (`api::watch_gone`), every screen reads
+    /// it from here.
+    pub gone: RwSignal<std::collections::HashSet<String>>,
 }
 
 impl Shell {
@@ -229,8 +233,10 @@ pub fn App() -> impl IntoView {
         released: StoredValue::new(false),
         exports: export_menu::Exports::new(),
         notice: RwSignal::new(None),
+        gone: RwSignal::new(std::collections::HashSet::new()),
     };
     provide_context(shell);
+    api::watch_gone(shell.gone);
     let tasks = Tasks::here();
     tasks::detached(async move {
         // A daemon without settings yet still gets a usable UI.

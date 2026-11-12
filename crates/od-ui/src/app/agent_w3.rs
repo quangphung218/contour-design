@@ -96,9 +96,9 @@ impl StudioCtx {
     /// Loads the project's Design Jury switch and memory.
     pub fn load_w3(self) {
         self.tasks.spawn(async move {
-            match api::get::<CritiqueSettings>(&format!("{}/critique", self.base())).await {
-                Ok(s) => self.jury.set(s.enabled),
-                Err(e) => self.on_not_found(e.status),
+            if let Ok(s) = api::get::<CritiqueSettings>(&format!("{}/critique", self.base())).await
+            {
+                self.jury.set(s.enabled);
             }
         });
         self.reload_memory();
@@ -140,9 +140,8 @@ impl StudioCtx {
 
     pub fn reload_memory(self) {
         self.tasks.spawn(async move {
-            match api::get::<MemoryResponse>(&format!("{}/memory", self.base())).await {
-                Ok(r) => self.memory.set(r.memory),
-                Err(e) => self.on_not_found(e.status),
+            if let Ok(r) = api::get::<MemoryResponse>(&format!("{}/memory", self.base())).await {
+                self.memory.set(r.memory);
             }
         });
     }
@@ -723,9 +722,8 @@ impl SideChat {
         };
         ctx.tasks.spawn(async move {
             let path = format!("{}/conversations/{}/messages", ctx.base(), api::seg(&cid));
-            let res = match api::get::<MessagesResponse>(&path).await {
-                Ok(res) => res,
-                Err(e) => return ctx.on_not_found(e.status),
+            let Ok(res) = api::get::<MessagesResponse>(&path).await else {
+                return;
             };
             let items = res
                 .messages

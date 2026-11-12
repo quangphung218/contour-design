@@ -537,9 +537,6 @@ impl StudioCtx {
         self.tasks.spawn(async move {
             let url = format!("{}/edit-keys/{}", self.base(), api::seg(&kid));
             let res = api::post::<_, EditKeyResponse>(&url, &serde_json::json!({})).await;
-            if let Err(e) = &res {
-                self.on_not_found(e.status);
-            }
             if let Ok(r) = res
                 && tools.frame_kid.get_value() == kid
             {

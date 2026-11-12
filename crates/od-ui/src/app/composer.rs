@@ -266,19 +266,17 @@ async fn upload(base: &str, file: &web_sys::File) -> Result<String, (u16, String
 
 /// Uploads the queued files one by one; each uploaded path goes into
 /// `ready` and its card leaves `uploads`, a failed one stays with its error.
-/// A card removed meanwhile is not attached. Returns whether an upload
-/// answered 404 (the project may be gone, QA-076).
+/// A card removed meanwhile is not attached. A project deleted meanwhile
+/// is marked gone by the upload's answer (QA-076).
 pub async fn upload_all(
     base: String,
     uploads: RwSignal<Vec<Upload>>,
     ready: RwSignal<Vec<String>>,
-) -> bool {
-    let mut not_found = false;
+) {
     for item in claim_uploads(uploads) {
         let result = upload(&base, &item.file).await;
-        not_found |= settle_upload(uploads, ready, SentFile { item, result });
+        settle_upload(uploads, ready, SentFile { item, result });
     }
-    not_found
 }
 
 /// One file sent by [`upload_files`]: its card, and the project-relative
@@ -318,15 +316,11 @@ pub async fn upload_files(base: &str, todo: Vec<Upload>) -> Vec<SentFile> {
 
 /// Shows how `sent` went: its path into `ready` and its card out of
 /// `uploads`, or its card failed with the error. A card removed meanwhile
-/// is not attached. Returns whether the upload answered 404.
-pub fn settle_upload(
-    uploads: RwSignal<Vec<Upload>>,
-    ready: RwSignal<Vec<String>>,
-    sent: SentFile,
-) -> bool {
+/// is not attached.
+pub fn settle_upload(uploads: RwSignal<Vec<Upload>>, ready: RwSignal<Vec<String>>, sent: SentFile) {
     let SentFile { item, result } = sent;
     if !uploads.with_untracked(|u| u.iter().any(|x| x.id == item.id)) {
-        return false;
+        return;
     }
     match result {
         Ok(path) => {
@@ -335,12 +329,8 @@ pub fn settle_upload(
                 let _ = web_sys::Url::revoke_object_url(url);
             }
             ready.update(|r| crate::workspace::add_missing(r, vec![path]));
-            false
         }
-        Err((status, e)) => {
-            set_state(uploads, &item.id, UploadState::Failed(e));
-            status == 404
-        }
+        Err((_, e)) => set_state(uploads, &item.id, UploadState::Failed(e)),
     }
 }
 

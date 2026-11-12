@@ -192,8 +192,13 @@ test('PRJ-13', 'Sending in a project deleted from another tab says the project i
   // The Studio also finds out on its own, from its event stream or any of
   // its calls (PRJ-14); deleted as the message goes, only the send can.
   await page.route(/\/api\/projects\/[^/]+\/events$/, () => {});
+  // Once deleted, the project's other calls are held too: the refused
+  // send alone must say it, not a reload that happens to follow it.
+  let deleted = false;
+  await page.route(/\/api\/projects\/[^/]+(\/.*)?$/, (route) => (deleted ? undefined : route.fallback()));
   await page.route(/\/api\/runs$/, async (route) => {
     if (route.request().method() === 'POST') {
+      deleted = true;
       assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
     }
     await route.continue();
