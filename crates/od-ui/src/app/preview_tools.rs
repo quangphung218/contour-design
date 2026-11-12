@@ -144,11 +144,13 @@ impl FailedText {
 }
 
 /// The text the source holds for `selector` in `file`: after a failed
-/// write the frame's own "before" is the unsaved text (QA-087).
+/// write the frame's own "before" is the unsaved text (QA-087). A frame
+/// that shows other text was reloaded since (an agent rewrote the file):
+/// its "before" is the source's again.
 fn source_text<'a>(failed: &'a [FailedText], file: &str, e: &'a pb::TextEdit) -> &'a str {
     failed
         .iter()
-        .find(|f| f.file == file && f.selector == e.selector)
+        .find(|f| f.file == file && f.selector == e.selector && f.text == e.before)
         .map_or(&e.before, |f| &f.before)
 }
 
@@ -1995,6 +1997,12 @@ mod tests {
         };
         assert_eq!(source_text(&failed, "a.html", &again), "Hello");
         assert_eq!(source_text(&failed, "b.html", &again), "New");
+        // The frame reloaded on a rewritten source: its "before" is right.
+        let reloaded = pb::TextEdit {
+            before: "Agent title".into(),
+            ..again.clone()
+        };
+        assert_eq!(source_text(&failed, "a.html", &reloaded), "Agent title");
         // It fails again: one entry, still on the source's text.
         keep_failed(
             &mut failed,
