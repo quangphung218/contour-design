@@ -99,8 +99,9 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
     let tasks = Tasks::here();
     let load = move || {
         read.update(ReadState::retry);
+        // Read before the task: its first step runs even after the view went.
+        let url = raw_url(ctx, &path.get_value());
         tasks.spawn(async move {
-            let url = raw_url(ctx, &path.get_value());
             let file = match api::get_text(&url).await {
                 Ok(text) => read_sketch(&text),
                 Err(e) => Err(ctx.failed(&e)),

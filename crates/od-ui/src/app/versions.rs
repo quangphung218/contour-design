@@ -30,7 +30,12 @@ fn versions_url(ctx: StudioCtx, path: &str) -> String {
 pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
     let versions = RwSignal::new(ReadState::<Vec<FileVersion>>::default());
     let tasks = Tasks::here();
+    // Each load's number: an answer that comes back after a newer load
+    // started (another file picked, its content changed) is dropped.
+    let seq = StoredValue::new(0u64);
     let reload = move || {
+        seq.update_value(|n| *n += 1);
+        let mine = seq.get_value();
         let Some(path) = ctx.active_untracked().filter(|p| is_html_path(p)) else {
             versions.update(|v| v.read(Ok(Vec::new())));
             return;
@@ -45,7 +50,9 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                     list
                 })
                 .map_err(|e| ctx.failed(&e));
-            versions.update(|v| v.read(res));
+            if seq.try_get_value() == Some(mine) {
+                versions.update(|v| v.read(res));
+            }
         });
     };
     // Refresh when the file or its content changes; another file's list is
