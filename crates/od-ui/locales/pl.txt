@@ -32,6 +32,7 @@ JuryOnFailed = Nie udało się włączyć Design Jury: {0}
 JuryOffFailed = Nie udało się wyłączyć Design Jury: {0}
 JuryStopFailed = Nie udało się zatrzymać Design Jury: {0}
 DuplicateFailed = Nie udało się zduplikować projektu: {0}
+ProjectCreateFailed = Nie udało się utworzyć projektu: {0}
 TranscriptFailed = Nie udało się pobrać rozmowy: {0}
 SessionModeFailed = Nie udało się zmienić trybu: {0}
 MemoryFailed = Nie udało się zaktualizować pamięci: {0}

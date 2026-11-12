@@ -1041,7 +1041,7 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
                 ),
                 Err(e) => {
                     busy.set(false);
-                    error.set(Some(e.to_string()));
+                    error.set(Some(api::failure(T::ProjectCreateFailed, &e)));
                 }
             }
         });
@@ -1073,7 +1073,7 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
                 Ok(v) => on_done.run(Some(Open::Skill(
                     v["id"].as_str().unwrap_or_default().to_owned(),
                 ))),
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(api::failure(T::MdSaveFailed, &e))),
             }
         });
     });

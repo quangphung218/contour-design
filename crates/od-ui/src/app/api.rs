@@ -69,7 +69,13 @@ impl fmt::Display for HttpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // A cause the user can act on: their words, no status, no "daemon".
         if let Some(hint) = self.code.and_then(code_hint) {
-            return write!(f, "{}: {}", t(hint), self.message);
+            // The message may already say it ("Contour has no permission
+            // to write…"): once is enough (QA-087).
+            let hint = t(hint);
+            if self.message.to_lowercase().contains(&hint.to_lowercase()) {
+                return write!(f, "{}", self.message);
+            }
+            return write!(f, "{hint}: {}", self.message);
         }
         // The status and the daemon's own words for an internal failure
         // are in the console (`error_of`), not in front of the user.
@@ -392,9 +398,15 @@ mod tests {
             "Contour has no permission to write to the folder /a.",
         )
         .to_string();
+        // Said once, not "No permission to write: Contour has no
+        // permission to write…" (QA-087).
         assert_eq!(
             denied,
-            "No permission to write: Contour has no permission to write to the folder /a."
+            "Contour has no permission to write to the folder /a."
+        );
+        assert_eq!(
+            e(403, ErrorCode::NoWritePermission, "read-only volume").to_string(),
+            "No permission to write: read-only volume"
         );
         let full = e(
             507,

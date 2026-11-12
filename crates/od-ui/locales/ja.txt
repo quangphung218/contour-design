@@ -32,6 +32,7 @@ JuryOnFailed = Design Jury をオンにできませんでした: {0}
 JuryOffFailed = Design Jury をオフにできませんでした: {0}
 JuryStopFailed = Design Jury を停止できませんでした: {0}
 DuplicateFailed = プロジェクトを複製できませんでした: {0}
+ProjectCreateFailed = プロジェクトを作成できませんでした: {0}
 TranscriptFailed = 会話をダウンロードできませんでした: {0}
 SessionModeFailed = モードを変更できませんでした: {0}
 MemoryFailed = メモリを更新できませんでした: {0}

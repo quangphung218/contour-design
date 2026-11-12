@@ -32,6 +32,7 @@ JuryOnFailed = Не вдалося увімкнути Design Jury: {0}
 JuryOffFailed = Не вдалося вимкнути Design Jury: {0}
 JuryStopFailed = Не вдалося зупинити Design Jury: {0}
 DuplicateFailed = Не вдалося дублювати проєкт: {0}
+ProjectCreateFailed = Не вдалося створити проєкт: {0}
 TranscriptFailed = Не вдалося завантажити розмову: {0}
 SessionModeFailed = Не вдалося змінити режим: {0}
 MemoryFailed = Не вдалося оновити пам'ять: {0}

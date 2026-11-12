@@ -49,7 +49,7 @@ pub fn MemoryControls() -> impl IntoView {
                 }
                 Err(e) => {
                     config.set(before);
-                    error.set(Some(e.to_string()));
+                    error.set(Some(api::failure(T::MemoryFailed, &e)));
                 }
             }
         });

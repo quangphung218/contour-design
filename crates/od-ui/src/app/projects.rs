@@ -224,7 +224,7 @@ pub fn Projects() -> impl IntoView {
             .await
             {
                 Ok(r) => navigate(&format!("/projects/{}", r.project.id), Default::default()),
-                Err(e) => page.error.set(Some(e.to_string())),
+                Err(e) => page.error.set(Some(api::failure(T::ImportZipFailed, &e))),
             }
         });
     };
@@ -856,7 +856,7 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
                 }
                 Err(e) => {
                     name.set(saved.get_value());
-                    page.error.set(Some(e.to_string()));
+                    page.error.set(Some(api::failure(T::RenameFailed, &e)));
                 }
             }
             page.reload();
@@ -867,7 +867,7 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
         leptos::task::spawn_local(async move {
             let path = format!("/api/projects/{}/duplicate", api::seg(&id.get_value()));
             if let Err(e) = api::post::<_, DuplicateProjectResponse>(&path, &json!({})).await {
-                page.error.set(Some(e.to_string()));
+                page.error.set(Some(api::failure(T::DuplicateFailed, &e)));
             }
             page.reload();
         });
@@ -876,7 +876,7 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
         leptos::task::spawn_local(async move {
             let path = format!("/api/projects/{}", api::seg(&id.get_value()));
             if let Err(e) = api::delete::<OkResponse>(&path).await {
-                page.error.set(Some(e.to_string()));
+                page.error.set(Some(api::failure(T::DeleteFailed, &e)));
             }
             page.reload();
         });
@@ -1014,7 +1014,7 @@ fn InstructionsDialog(id: String, text: RwSignal<String>, open: RwSignal<bool>) 
                     text.set(r.project.custom_instructions.unwrap_or_default());
                     open.set(false);
                 }
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(api::failure(T::MdSaveFailed, &e))),
             }
         });
     };

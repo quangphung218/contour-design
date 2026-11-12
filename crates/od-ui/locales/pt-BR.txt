@@ -32,6 +32,7 @@ JuryOnFailed = Não foi possível ativar o Design Jury: {0}
 JuryOffFailed = Não foi possível desativar o Design Jury: {0}
 JuryStopFailed = Não foi possível parar o Design Jury: {0}
 DuplicateFailed = Não foi possível duplicar o projeto: {0}
+ProjectCreateFailed = Não foi possível criar o projeto: {0}
 TranscriptFailed = Não foi possível baixar a conversa: {0}
 SessionModeFailed = Não foi possível mudar o modo: {0}
 MemoryFailed = Não foi possível atualizar a memória: {0}

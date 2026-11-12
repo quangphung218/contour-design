@@ -32,6 +32,7 @@ JuryOnFailed = Tidak dapat menyalakan Design Jury: {0}
 JuryOffFailed = Tidak dapat mematikan Design Jury: {0}
 JuryStopFailed = Tidak dapat menghentikan Design Jury: {0}
 DuplicateFailed = Tidak dapat menduplikasi proyek: {0}
+ProjectCreateFailed = Tidak dapat membuat proyek: {0}
 TranscriptFailed = Tidak dapat mengunduh percakapan: {0}
 SessionModeFailed = Tidak dapat mengubah mode: {0}
 MemoryFailed = Tidak dapat memperbarui memori: {0}

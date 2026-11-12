@@ -295,7 +295,7 @@ pub fn Home() -> impl IntoView {
             let res = match api::post::<_, CreateProjectResponse>("/api/projects", &req).await {
                 Ok(res) => res,
                 Err(e) => {
-                    error.set(Some(e.to_string()));
+                    error.set(Some(api::failure(T::ProjectCreateFailed, &e)));
                     busy.set(false);
                     return;
                 }

@@ -32,6 +32,7 @@ JuryOnFailed = Не удалось включить Design Jury: {0}
 JuryOffFailed = Не удалось выключить Design Jury: {0}
 JuryStopFailed = Не удалось остановить Design Jury: {0}
 DuplicateFailed = Не удалось дублировать проект: {0}
+ProjectCreateFailed = Не удалось создать проект: {0}
 TranscriptFailed = Не удалось скачать разговор: {0}
 SessionModeFailed = Не удалось сменить режим: {0}
 MemoryFailed = Не удалось обновить память: {0}

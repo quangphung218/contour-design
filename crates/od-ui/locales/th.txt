@@ -32,6 +32,7 @@ JuryOnFailed = เปิด Design Jury ไม่ได้: {0}
 JuryOffFailed = ปิด Design Jury ไม่ได้: {0}
 JuryStopFailed = หยุด Design Jury ไม่ได้: {0}
 DuplicateFailed = ทำสำเนาโปรเจกต์ไม่ได้: {0}
+ProjectCreateFailed = สร้างโปรเจกต์ไม่ได้: {0}
 TranscriptFailed = ดาวน์โหลดบทสนทนาไม่ได้: {0}
 SessionModeFailed = เปลี่ยนโหมดไม่ได้: {0}
 MemoryFailed = อัปเดตหน่วยความจำไม่ได้: {0}
