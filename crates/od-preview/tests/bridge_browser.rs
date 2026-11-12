@@ -484,28 +484,37 @@ async fn pins_follow_their_elements(h: &Harness) {
     assert_eq!(first["items"][0]["rect"]["y"], 600.0, "{first}");
     assert!(first["items"][1]["rect"].is_null(), "{first}");
 
-    let since = h.msg_count().await;
-    // Scroll inside the frame through a real wheel event.
-    h.page
-        .execute(
-            chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventParams::builder()
-                .r#type(
-                    chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventType::MouseWheel,
-                )
-                .x(100.0)
-                .y(100.0)
-                .delta_x(0.0)
-                .delta_y(400.0)
-                .build()
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let moved = h
-        .eval(&format!(
-            "window.__after('od:located', {since}, (m) => m.items[0].rect && m.items[0].rect.y < 600, 5000)"
-        ))
-        .await;
+    // Scroll inside the frame through a real wheel event. Under load the
+    // first wheel can land before the frame takes input: send it again
+    // until the frame reports the move, a bounded number of times.
+    let mut moved = Value::Null;
+    for _ in 0..5 {
+        let since = h.msg_count().await;
+        h.page
+            .execute(
+                chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventParams::builder()
+                    .r#type(
+                        chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventType::MouseWheel,
+                    )
+                    .x(100.0)
+                    .y(100.0)
+                    .delta_x(0.0)
+                    .delta_y(400.0)
+                    .build()
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        moved = h
+            .eval(&format!(
+                "window.__after('od:located', {since}, (m) => m.items[0].rect && m.items[0].rect.y < 600, 3000).catch(() => null)"
+            ))
+            .await;
+        if !moved.is_null() {
+            break;
+        }
+    }
+    assert!(!moved.is_null(), "no od:located after 5 wheel events");
     let y = moved["items"][0]["rect"]["y"].as_f64().unwrap();
     assert!(y < 600.0, "{moved}");
 }
