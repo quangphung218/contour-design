@@ -1,0 +1,16 @@
+1794454192.313 http://127.0.0.1:58990/J-pointerup
+1794454194.152 http://127.0.0.1:58990/J-pointerup
+1794454196.573 http://127.0.0.1:58990/J-pointerup
+1794454199.720 http://127.0.0.1:58990/K-keydown-1
+1794454202.066 http://127.0.0.1:58990/K-keydown-1
+1794454204.449 http://127.0.0.1:58990/K-keydown-1
+1794454207.827 http://127.0.0.1:58990/K-keydown-1
+1794454211.067 http://127.0.0.1:58990/L-keyup-e
+1794454235.504 http://127.0.0.1:58990/M-confirm
+1794454243.546 http://127.0.0.1:58990/N-alert
+1794454248.868 http://127.0.0.1:58990/O-prompt-x
+1794454317.065 https://example.com/lk-link
+1794454319.418 https://example.com/cm-link
+1794454321.788 https://example.com/c0-click
+1794454324.177 https://example.com/l1-open
+1794454326.575 https://example.com/l3-label

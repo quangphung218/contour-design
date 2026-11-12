@@ -35,7 +35,7 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 | QA-077 | 🟡 | A failed Media generation shows the provider's raw JSON; a refused key (401) does not point to Providers | `library.qa.mjs` LIB-15, LIB-18 | Closed (beta.30) |
 | QA-078 | 🔵 | Images generated on the Media page are labelled "Uploaded" in the Library | `library.qa.mjs` LIB-16 | Closed (beta.30) |
 | QA-079 | 🟡 | A project deleted from another tab: the Files panel, Versions and side chat stay open beside the not-found state and show "Not found: project not found (HTTP 404)" | `projects.qa.mjs` PRJ-16…PRJ-20 | Closed (beta.31) |
-| QA-080 | 🟡 | On a phone, in a project that is gone (deleted elsewhere or a wrong link), the Files tab is an empty screen and Preview says "Nothing to preview yet" | `projects.qa.mjs` PRJ-21, `studio.qa.mjs` STU-12 | Fixed (unreleased) |
+| QA-080 | 🟡 | On a phone, in a project that is gone (deleted elsewhere or a wrong link), the Files tab is an empty screen and Preview says "Nothing to preview yet" | `projects.qa.mjs` PRJ-21, `studio.qa.mjs` STU-12 | Fixed in beta.32 ([recheck](bugs-desktop-beta32.md)) |
 
 ## Pass / fail by flow
 
