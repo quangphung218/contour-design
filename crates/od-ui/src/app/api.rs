@@ -205,6 +205,25 @@ pub fn mark_gone(id: &str) {
     }
 }
 
+/// Takes `id` off the gone set: the daemon just answered a call on it, so
+/// it exists again (made anew with the same id, as Media's library is).
+fn mark_back(id: &str) {
+    if let Some(gone) = GONE.get()
+        && gone.try_with_untracked(|g| g.contains(id)) == Some(true)
+    {
+        gone.update(|g| {
+            g.remove(id);
+        });
+    }
+}
+
+/// A call on `path` the daemon answered: a project it was made on exists.
+fn note_ok(path: &str) {
+    if let Some((seg, _)) = project_segment(path) {
+        mark_back(&percent_decode(seg));
+    }
+}
+
 /// For a call on project `id` made outside its path (`POST /api/runs`)
 /// that failed with `e`: the project gone, it is marked; another 404 (its
 /// conversation not found, deleted with it) asks about the project.
@@ -353,6 +372,7 @@ async fn decode<T: DeserializeOwned>(path: &str, res: Response) -> ApiResult<T> 
     if !res.ok() {
         return Err(error_of(path, res).await);
     }
+    note_ok(path);
     res.json::<T>().await.map_err(|e| HttpError {
         status,
         code: None,
@@ -701,6 +721,26 @@ mod tests {
             assert!(gone.with_untracked(|g| g.contains("p2")));
             mark_gone("p3");
             assert_eq!(gone.with_untracked(HashSet::len), 2);
+        });
+    }
+
+    #[test]
+    fn a_project_made_again_with_the_same_id_is_not_gone() {
+        // Media checks for its library project, finds none (gone), then
+        // makes it: the next answered call on it takes it off the set.
+        let owner = Owner::new();
+        owner.with(|| {
+            let gone = RwSignal::new(HashSet::new());
+            watch_gone(gone);
+            note_gone(
+                "/api/projects/media-library",
+                &not_found(Some(ErrorCode::ProjectNotFound)),
+            );
+            assert!(gone.with_untracked(|g| g.contains("media-library")));
+            note_ok("/api/runs");
+            assert!(gone.with_untracked(|g| g.contains("media-library")));
+            note_ok("/api/projects/media-library");
+            assert!(!gone.with_untracked(|g| g.contains("media-library")));
         });
     }
 }
