@@ -4,6 +4,7 @@
 
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, file_glyph};
+use super::tasks;
 use super::{Shell, api, terminal};
 use crate::fuzzy;
 use crate::i18n::{T, t, tf};
@@ -223,7 +224,7 @@ pub fn CommandPalette() -> impl IntoView {
     // listeners the same click still reaches on its way up (microtasks run
     // between listeners, so a spawned future is not late enough).
     let close = move || {
-        leptos::task::spawn_local(async move {
+        tasks::detached(async move {
             gloo_timers::future::TimeoutFuture::new(0).await;
             shell.palette.set(false);
         });
@@ -258,7 +259,7 @@ pub fn CommandPalette() -> impl IntoView {
                     c
                 });
                 if let Some(next) = next {
-                    leptos::task::spawn_local(async move {
+                    tasks::detached(async move {
                         let _ = shell.save_config(next).await;
                     });
                 }
@@ -400,7 +401,7 @@ pub fn CommandPalette() -> impl IntoView {
 
 /// Focuses `selector` once the next page has rendered.
 fn focus_later(selector: &'static str) {
-    leptos::task::spawn_local(async move {
+    tasks::detached(async move {
         use wasm_bindgen::JsCast;
         for _ in 0..20 {
             gloo_timers::future::TimeoutFuture::new(50).await;

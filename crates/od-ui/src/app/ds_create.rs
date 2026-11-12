@@ -7,6 +7,7 @@
 //! system, install without an agent.
 
 use super::icons::{Glyph, icon};
+use super::tasks::Tasks;
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -140,6 +141,7 @@ pub fn CreateFlow(
 ) -> impl IntoView {
     use super::lib_ui::{Modal, base64, file_bytes, picked_files};
     let shell = Shell::get();
+    let tasks = Tasks::here();
     let source = RwSignal::new(Source::Describe);
     let name = RwSignal::new(String::new());
     let brief = RwSignal::new(String::new());
@@ -170,7 +172,7 @@ pub fn CreateFlow(
     let run_job = move |body: Value| {
         phase.set(Phase::Running);
         step.set(0);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let job = match api::post::<_, Value>("/api/design-systems/generate", &body).await {
                 Ok(v) => v["job"]["id"].as_str().unwrap_or_default().to_owned(),
                 Err(e) => {
@@ -229,7 +231,7 @@ pub fn CreateFlow(
                 };
                 let body = json!({ "name": n, key: pasted.get_untracked() });
                 phase.set(Phase::Running);
-                leptos::task::spawn_local(async move {
+                tasks.spawn(async move {
                     match api::post::<_, Value>("/api/design-systems/import", &body).await {
                         Ok(v) => on_created.run(v["id"].as_str().unwrap_or_default().to_owned()),
                         Err(e) => phase.set(Phase::Failed(api::failure(T::DesignSystemFailed, &e))),
@@ -239,7 +241,7 @@ pub fn CreateFlow(
             Source::Copy => {
                 let from = copy_from.get_untracked();
                 phase.set(Phase::Running);
-                leptos::task::spawn_local(async move {
+                tasks.spawn(async move {
                     let path = format!("/api/design-systems/{}/copy", api::seg(&from));
                     match api::post::<_, Value>(&path, &json!({ "name": n })).await {
                         Ok(v) => on_created.run(v["id"].as_str().unwrap_or_default().to_owned()),
@@ -269,7 +271,7 @@ pub fn CreateFlow(
 
     let on_files = move |ev: web_sys::Event| {
         let picked = picked_files(&ev);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             for f in picked {
                 if let Ok(bytes) = file_bytes(&f).await {
                     let n = f.name();

@@ -8,6 +8,7 @@ use super::follow::{JumpToLatest, StickToBottom};
 use super::icons::{Glyph, icon};
 use super::sse::Sse;
 use super::studio::StudioCtx;
+use super::tasks::{self, Tasks};
 use super::{Shell, api};
 use crate::chat::{AssistantTurn, Block, TurnState};
 use crate::events::{
@@ -75,7 +76,7 @@ impl StudioCtx {
         let Some(cid) = self.conversation_id.get_untracked() else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let path = format!("{}/conversations/{}", self.base(), api::seg(&cid));
             match api::patch::<_, ConversationResponse>(&path, &json!({ "sessionMode": mode }))
                 .await
@@ -94,7 +95,7 @@ impl StudioCtx {
 
     /// Loads the project's Design Jury switch and memory.
     pub fn load_w3(self) {
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             match api::get::<CritiqueSettings>(&format!("{}/critique", self.base())).await {
                 Ok(s) => self.jury.set(s.enabled),
                 Err(e) => self.on_not_found(e.status),
@@ -117,7 +118,7 @@ impl StudioCtx {
         ) else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let path = format!("{}/conversations/{}/messages", self.base(), api::seg(&cid));
             for _ in 0..30 {
                 let stored = api::get::<MessagesResponse>(&path)
@@ -138,7 +139,7 @@ impl StudioCtx {
     }
 
     pub fn reload_memory(self) {
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             match api::get::<MemoryResponse>(&format!("{}/memory", self.base())).await {
                 Ok(r) => self.memory.set(r.memory),
                 Err(e) => self.on_not_found(e.status),
@@ -186,7 +187,7 @@ fn JuryToggle(ctx: StudioCtx) -> impl IntoView {
     let toggle = move |_| {
         let next = !ctx.jury.get_untracked();
         ctx.jury.set(next);
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             let path = format!("{}/critique", ctx.base());
             if let Err(e) =
                 api::put::<_, CritiqueSettings>(&path, &CritiqueSettings { enabled: next }).await
@@ -232,17 +233,17 @@ fn MemoryMenu(ctx: StudioCtx) -> impl IntoView {
             return;
         }
         draft.set(String::new());
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             apply(api::post(&base(), &json!({ "text": text })).await);
         });
     };
     let remove = move |id: String| {
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             apply(api::delete(&format!("{}/{}", base(), api::seg(&id))).await);
         });
     };
     let clear = move |_| {
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             match api::delete::<serde_json::Value>(&base()).await {
                 Ok(_) => ctx.memory.set(Vec::new()),
                 Err(e) => ctx.notice.set(Some(ctx.failed_to(T::MemoryFailed, &e))),
@@ -350,7 +351,7 @@ pub(super) fn TranscriptMenu(ctx: StudioCtx) -> impl IntoView {
         let Some(cid) = ctx.conversation_id.get_untracked() else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             let path = format!(
                 "{}/conversations/{}/transcript?format={format}",
                 ctx.base(),
@@ -459,6 +460,7 @@ pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     let replay = RwSignal::new(None::<usize>);
     let speed = RwSignal::new(Speed::Fast);
     let tick = StoredValue::new(0u32);
+    let tasks = Tasks::here();
     let interrupt = move || {
         let (running, run_id) = turn.with_untracked(|t| {
             let running = t.state.is_live()
@@ -472,7 +474,7 @@ pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
         };
         pending.set(true);
         let path = format!("{}/critique/{}/interrupt", ctx.base(), api::seg(&run_id));
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             // Only a refusal re-enables it: the run's end settles the theater.
             if let Err(e) = api::post::<_, serde_json::Value>(&path, &serde_json::json!({})).await {
                 pending.set(false);
@@ -508,7 +510,7 @@ pub fn JuryTheater(turn: RwSignal<AssistantTurn>) -> impl IntoView {
         let Some(to) = jury_replay::next(at, len, speed) else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             if speed == Speed::Fast {
                 gloo_timers::future::TimeoutFuture::new(Speed::FAST_MS).await;
             }
@@ -719,7 +721,7 @@ impl SideChat {
         let Some(cid) = self.conversation_id.get_untracked() else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             let path = format!("{}/conversations/{}/messages", ctx.base(), api::seg(&cid));
             let res = match api::get::<MessagesResponse>(&path).await {
                 Ok(res) => res,
@@ -757,44 +759,50 @@ impl SideChat {
             return;
         };
         self.live_run.set(Some(String::new()));
-        leptos::task::spawn_local(async move {
-            let cid = match self.conversation_id.get_untracked() {
-                Some(cid) => cid,
+        // Both requests run to their end even if the Studio goes; only the
+        // side chat's update waits on it.
+        let base = ctx.base();
+        let known = self.conversation_id.get_untracked();
+        let req = ChatRequest {
+            agent_id,
+            message: text,
+            project_id: ctx.project_id.get_value(),
+            user_message_id: Some(user_id),
+            assistant_message_id: Some(assistant_id),
+            client_request_id: Some(api::random_id()),
+            model: shell
+                .config
+                .with_untracked(|c| c.as_ref().and_then(|c| c.model.clone())),
+            locale: Some(shell.locale.get_untracked().tag().to_owned()),
+            ..ChatRequest::default()
+        };
+        let work = async move {
+            let (cid, created) = match known {
+                Some(cid) => (cid, None),
                 None => {
                     let body = json!({ "title": t(T::SideChat), "sessionMode": "chat" });
-                    let path = format!("{}/conversations", ctx.base());
+                    let path = format!("{base}/conversations");
                     match api::post::<_, ConversationResponse>(&path, &body).await {
-                        Ok(r) => {
-                            let id = r.conversation.id.clone();
-                            self.conversation_id.set(Some(id.clone()));
-                            ctx.reload_conversations();
-                            id
-                        }
-                        Err(e) => {
-                            fail(turn, ctx.failed_to(T::MessageFailed, &e));
-                            self.live_run.set(None);
-                            return;
-                        }
+                        Ok(r) => (r.conversation.id.clone(), Some(r.conversation.id)),
+                        Err(e) => return (None, Err(e)),
                     }
                 }
             };
             let req = ChatRequest {
-                agent_id,
-                message: text,
-                project_id: ctx.project_id.get_value(),
                 conversation_id: Some(cid),
-                user_message_id: Some(user_id),
-                assistant_message_id: Some(assistant_id),
-                client_request_id: Some(api::random_id()),
-                model: shell
-                    .config
-                    .with_untracked(|c| c.as_ref().and_then(|c| c.model.clone())),
-                locale: Some(shell.locale.get_untracked().tag().to_owned()),
                 sent_at: Some(js_sys::Date::now() as i64),
-                ..ChatRequest::default()
+                ..req
             };
-            match api::post::<_, CreateRunResponse>("/api/runs", &side_turn(req)).await {
-                Ok(res) => self.attach(ctx, res.run_id, turn),
+            let run = api::post::<_, CreateRunResponse>("/api/runs", &side_turn(req)).await;
+            (created, run.map(|r| r.run_id))
+        };
+        ctx.tasks.spawn_then(work, move |(created, run)| {
+            if let Some(id) = created {
+                self.conversation_id.set(Some(id));
+                ctx.reload_conversations();
+            }
+            match run {
+                Ok(run_id) => self.attach(ctx, run_id, turn),
                 Err(e) => {
                     fail(turn, ctx.failed_to(T::MessageFailed, &e));
                     self.live_run.set(None);
@@ -840,7 +848,7 @@ impl SideChat {
                 s.close();
             }
         });
-        leptos::task::spawn_local(async move {
+        ctx.tasks.spawn(async move {
             self.stream.set_value(None);
         });
         // A side question may still touch files (or memory).
@@ -852,7 +860,7 @@ impl SideChat {
         let Some(run_id) = self.live_run.get_untracked().filter(|r| !r.is_empty()) else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        tasks::detached(async move {
             let path = format!("/api/runs/{}/cancel", api::seg(&run_id));
             let _ = api::post::<_, serde_json::Value>(&path, &json!({})).await;
         });

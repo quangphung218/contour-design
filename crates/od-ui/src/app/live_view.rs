@@ -7,6 +7,7 @@ use super::api;
 use super::files_panel::FilesUi;
 use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::i18n::{T, t};
 use leptos::prelude::*;
 use serde_json::{Value, json};
@@ -37,7 +38,7 @@ fn query(ctx: StudioCtx) -> String {
 
 /// Re-reads the project's live artifacts.
 pub fn refresh_list(ctx: StudioCtx, ui: FilesUi) {
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         if let Ok(v) = api::get::<Value>(&format!("/api/live-artifacts?{}", query(ctx))).await {
             let list = v["artifacts"].as_array().cloned().unwrap_or_default();
             ui.live.set(list);
@@ -126,6 +127,7 @@ pub fn LiveView(ctx: StudioCtx, path: String) -> impl IntoView {
     let rev = RwSignal::new(0u32);
     let busy = RwSignal::new(false);
     let message = RwSignal::new(None::<Result<String, String>>);
+    let tasks = Tasks::here();
     let detail = {
         let base = base.clone();
         LocalResource::new(move || {
@@ -169,7 +171,7 @@ pub fn LiveView(ctx: StudioCtx, path: String) -> impl IntoView {
             busy.set(true);
             message.set(None);
             let url = format!("{base}/refresh?{}", query(ctx));
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 let res = api::post::<_, Value>(&url, &json!({})).await;
                 busy.set(false);
                 match res {

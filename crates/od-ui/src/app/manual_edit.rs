@@ -217,7 +217,7 @@ impl StudioCtx {
             expect_tag: Some(i.tag.clone()),
             expect_text: Some(i.text.clone()),
         };
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let res = api::post::<_, SourceElementResponse>(
                 &format!("{}/source-element", self.base()),
                 &req,
@@ -284,10 +284,12 @@ impl StudioCtx {
         let tools = self.tools;
         // As sent: what is typed while it saves is not written yet.
         let sent = m.drafts();
-        leptos::task::spawn_local(async move {
-            match api::post::<_, SourceEditResponse>(&format!("{}/source-edits", self.base()), &req)
-                .await
-            {
+        // The write lands even if the Studio is left meanwhile; the panel
+        // shows it only while the Studio is there.
+        let path = format!("{}/source-edits", self.base());
+        let work = async move { api::post::<_, SourceEditResponse>(&path, &req).await };
+        self.tasks.spawn_then(work, move |res| {
+            match res {
                 Ok(r) => {
                     if let Some(before) = r.previous_version_id {
                         m.history.update(|h| {
@@ -444,7 +446,7 @@ impl StudioCtx {
         };
         m.busy.set(true);
         m.error.set(None);
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let url = format!(
                 "{}/files/{}/versions/{}/restore",
                 self.base(),
@@ -477,7 +479,7 @@ impl StudioCtx {
             return;
         };
         m.busy.set(true);
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             match super::files_panel::upload(self, vec![file], IMAGES_DIR).await {
                 Ok(paths) => {
                     m.busy.set(false);

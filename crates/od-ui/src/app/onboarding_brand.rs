@@ -6,6 +6,7 @@
 use super::api;
 use super::ds_create::{STEPS, step_index};
 use super::icons::{Glyph, icon};
+use super::tasks::Tasks;
 use crate::brand_step::{brand_name, normalize_url};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -24,8 +25,15 @@ pub enum BrandState {
 }
 
 /// `agent`: the agent that runs the extraction, the one picked and tested.
+/// `tasks`: onboarding's, as the extraction updates only its `state` and
+/// keeps polling when this step hides (a retest), or Continue would wait
+/// for ever.
 #[component]
-pub fn BrandStep(state: RwSignal<BrandState>, agent: RwSignal<Option<String>>) -> impl IntoView {
+pub fn BrandStep(
+    state: RwSignal<BrandState>,
+    agent: RwSignal<Option<String>>,
+    tasks: Tasks,
+) -> impl IntoView {
     let url = RwSignal::new(String::new());
     let valid = move || url.with(|u| normalize_url(u).is_some());
     let start = move || {
@@ -38,7 +46,7 @@ pub fn BrandStep(state: RwSignal<BrandState>, agent: RwSignal<Option<String>>) -
         state.set(BrandState::Running(0));
         let name = brand_name(&target);
         let body = json!({ "name": name, "brief": "", "urls": [target], "agentId": agent.get_untracked() });
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let job = match api::post::<_, Value>("/api/design-systems/generate", &body).await {
                 Ok(v) => v["job"]["id"].as_str().unwrap_or_default().to_owned(),
                 Err(e) => {

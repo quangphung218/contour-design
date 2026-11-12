@@ -5,6 +5,7 @@
 
 use super::icons::{Glyph, icon};
 use super::mcp_settings::McpSection;
+use super::tasks::Tasks;
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -161,9 +162,12 @@ fn McpCatalog() -> impl IntoView {
             .and_then(|v| v["templates"].as_array().cloned())
             .unwrap_or_default()
     });
+    let tasks = Tasks::here();
     let state = RwSignal::new(None::<Result<String, String>>);
+    // Read, then write the list: the write goes through even if the page
+    // is left in between.
     let add = move |entry: Value| {
-        leptos::task::spawn_local(async move {
+        let work = async move {
             let current = api::get::<Value>("/api/mcp/servers")
                 .await
                 .unwrap_or(Value::Null);
@@ -176,22 +180,23 @@ fn McpCatalog() -> impl IntoView {
             }
             let id = entry["id"].as_str().unwrap_or_default().to_owned();
             if servers.iter().any(|s| s["id"] == id.as_str()) {
-                state.set(Some(Err(tf(T::McpAlreadyAdded, &[&id]))));
-                return;
+                return Err(tf(T::McpAlreadyAdded, &[&id]));
             }
             let mut server = entry["server"].clone();
             server["id"] = json!(id);
             server["enabled"] = json!(true);
             servers.push(server);
             match api::put::<_, Value>("/api/mcp/servers", &json!({ "servers": servers })).await {
-                Ok(_) => {
-                    state.set(Some(Ok(tf(T::McpAdded, &[&id]))));
-                    // The editor above reads the list once: show the new row.
-                    if let Some(w) = web_sys::window() {
-                        let _ = w.location().reload();
-                    }
-                }
-                Err(e) => state.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
+                Ok(_) => Ok(tf(T::McpAdded, &[&id])),
+                Err(e) => Err(api::failure(T::MdSaveFailed, &e)),
+            }
+        };
+        tasks.spawn_then(work, move |res| {
+            let added = res.is_ok();
+            state.set(Some(res));
+            // The editor above reads the list once: show the new row.
+            if added && let Some(w) = web_sys::window() {
+                let _ = w.location().reload();
             }
         });
     };
@@ -240,6 +245,7 @@ fn InstallIntoAgents() -> impl IntoView {
     let client = RwSignal::new("claude".to_owned());
     let result = RwSignal::new(None::<Result<String, String>>);
     let busy = RwSignal::new(false);
+    let tasks = Tasks::here();
     // The daemon's message names the client by id ("installed contour into
     // claude"); success is told here with the client's name and what to do
     // next. Failures keep the daemon's message: it says what went wrong.
@@ -247,7 +253,7 @@ fn InstallIntoAgents() -> impl IntoView {
         let id = client.get_untracked();
         result.set(None);
         busy.set(true);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let url = format!("/api/mcp/install/{}", api::seg(&id));
             result.set(Some(
                 match api::post::<_, Value>(&url, &json!({ "uninstall": uninstall })).await {

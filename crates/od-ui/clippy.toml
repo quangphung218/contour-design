@@ -1,0 +1,16 @@
+# Clippy reads the nearest clippy.toml only, so this one repeats the
+# workspace's (../../clippy.toml): change both together.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+
+# A task spawned raw outlives the component that spawned it and panics
+# when it touches that component's signals after an await. Spawn through
+# `app::tasks` (`Tasks::here().spawn`, `.spawn_then`, `tasks::detached`);
+# only `tasks.rs` calls these.
+disallowed-methods = [
+    { path = "leptos::task::spawn_local", reason = "spawn through app::tasks (Tasks::here() or tasks::detached)" },
+    { path = "leptos::task::spawn", reason = "spawn through app::tasks (Tasks::here() or tasks::detached)" },
+    { path = "wasm_bindgen_futures::spawn_local", reason = "spawn through app::tasks (Tasks::here() or tasks::detached)" },
+    { path = "any_spawner::Executor::spawn_local", reason = "spawn through app::tasks (Tasks::here() or tasks::detached)" },
+    { path = "reactive_graph::spawn_local_scoped", reason = "spawn through app::tasks (Tasks::here() or tasks::detached)" },
+]

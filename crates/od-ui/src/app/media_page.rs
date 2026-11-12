@@ -7,7 +7,7 @@
 use super::export_menu::download;
 use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, query_param, size_label, upload};
-use super::tasks::ScreenTasks;
+use super::tasks::{self, Tasks};
 use super::{ago, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -159,7 +159,7 @@ const AUDIO_DURATIONS: [u32; 6] = [5, 10, 15, 30, 60, 120];
 
 #[component]
 pub fn MediaPage() -> impl IntoView {
-    let screen = ScreenTasks::provide();
+    let screen = Tasks::here();
     let template = query_param("template");
     let tab = RwSignal::new(if template.is_some() {
         Tab::Generate
@@ -282,7 +282,7 @@ fn LibraryView(
     projects: RwSignal<Vec<Project>>,
     on_change: Callback<()>,
 ) -> impl IntoView {
-    let screen = ScreenTasks::current();
+    let screen = Tasks::here();
     let navigate = use_navigate();
     let kind = RwSignal::new(String::new());
     let query = RwSignal::new(String::new());
@@ -486,7 +486,7 @@ fn LibraryView(
         {move || preview.get().and_then(|i| visible.with(|l| l.get(i).cloned())).map(|a| {
             let count = visible.with(Vec::len);
             let i = preview.get_untracked().unwrap_or(0);
-            view! { <AssetPreview asset=a index=i count=count preview=preview on_change=on_change/> }
+            view! { <AssetPreview asset=a index=i count=count preview=preview on_change=on_change library=screen/> }
         })}
     }
 }
@@ -498,8 +498,10 @@ fn AssetPreview(
     count: usize,
     preview: RwSignal<Option<usize>>,
     on_change: Callback<()>,
+    /// The library's tasks: a delete only updates the library, and the
+    /// preview may be closed or moved on meanwhile.
+    library: Tasks,
 ) -> impl IntoView {
-    let screen = ScreenTasks::current();
     let navigate = use_navigate();
     let src = asset.src();
     let stage = match asset.kind.as_str() {
@@ -518,7 +520,8 @@ fn AssetPreview(
             let src = src.clone();
             let name = name.clone();
             let mime = mime.clone();
-            screen.spawn(async move {
+            // No signal touched: the download goes on if the preview closes.
+            tasks::detached(async move {
                 if let Ok(bytes) = api::get_bytes(&src).await {
                     let _ = download(&bytes, &name, &mime);
                 }
@@ -533,7 +536,7 @@ fn AssetPreview(
                 api::seg(&a.project_id),
                 api::file_path(&a.path)
             );
-            screen.spawn(async move {
+            library.spawn(async move {
                 if api::delete::<Value>(&path).await.is_ok() {
                     preview.set(None);
                     on_change.run(());
@@ -573,7 +576,7 @@ fn GenerateView(
     on_queued: Callback<()>,
     on_providers: Callback<()>,
 ) -> impl IntoView {
-    let screen = ScreenTasks::current();
+    let screen = Tasks::here();
     let models = RwSignal::new(Vec::<Model>::new());
     let configured = RwSignal::new(Vec::<String>::new());
     let surface = RwSignal::new("image".to_owned());
@@ -771,7 +774,7 @@ fn QueueView(
     on_change: Callback<()>,
     on_providers: Callback<()>,
 ) -> impl IntoView {
-    let screen = ScreenTasks::current();
+    let screen = Tasks::here();
     let project_name = move |id: &str| {
         projects.with(|l| {
             l.iter()
@@ -895,7 +898,7 @@ pub fn provider_names(ids: &[String]) -> String {
 
 #[component]
 fn ProvidersView() -> impl IntoView {
-    let screen = ScreenTasks::current();
+    let screen = Tasks::here();
     let config = RwSignal::new(None::<Value>);
     let keys = RwSignal::new(std::collections::HashMap::<String, String>::new());
     let urls = RwSignal::new(std::collections::HashMap::<String, String>::new());
@@ -999,7 +1002,7 @@ fn ProvidersView() -> impl IntoView {
 
 #[component]
 fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl IntoView {
-    let screen = ScreenTasks::current();
+    let screen = Tasks::here();
     let project = RwSignal::new(String::new());
     let fps = RwSignal::new(30u32);
     let busy = RwSignal::new(false);

@@ -11,6 +11,7 @@ use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
 use super::preview_tools::DeliverableWarning;
 use super::studio::{StudioCtx, conversation_title, main_conversations};
+use super::tasks::Tasks;
 use crate::chat::{
     AssistantTurn, Block, Step, TodoStatus, ToolCall, TurnLayout, plan_progress, run_time_ms,
 };
@@ -1010,9 +1011,10 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     // `Err`: the log could not be read, which is not an agent that said
     // nothing.
     let log = RwSignal::new(None::<Result<String, ()>>);
+    let tasks = Tasks::here();
     match turn.with_untracked(|t| t.run_id.clone()) {
         None => log.set(Some(Ok(String::new()))),
-        Some(id) => leptos::task::spawn_local(async move {
+        Some(id) => tasks.spawn(async move {
             let url = format!("/api/runs/{}/events", super::api::seg(&id));
             let record = super::api::get_text(&url)
                 .await

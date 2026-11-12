@@ -12,6 +12,7 @@ use super::api;
 use super::desktop;
 use super::icons::{Glyph, icon};
 use super::lib_ui::Modal;
+use super::tasks::Tasks;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use serde_json::Value;
@@ -174,6 +175,7 @@ async fn check() -> Check {
 pub fn UpdateDialog() -> impl IntoView {
     let state = RwSignal::new(None::<Check>);
     let phase = RwSignal::new(Phase::Starting);
+    let tasks = Tasks::here();
     let seq = StoredValue::new(0u32);
     let busy = move || matches!(state.get_untracked(), Some(Check::Installing { .. }));
     let run = move || {
@@ -184,7 +186,7 @@ pub fn UpdateDialog() -> impl IntoView {
         seq.update_value(|n| *n += 1);
         let mine = seq.get_value();
         state.set(Some(Check::Checking));
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let found = check().await;
             if seq.get_value() == mine && state.get_untracked().is_some() {
                 state.set(Some(found));
@@ -200,8 +202,10 @@ pub fn UpdateDialog() -> impl IntoView {
         state.set(Some(Check::Installing {
             version: version.clone(),
         }));
-        leptos::task::spawn_local(async move {
-            let next = match desktop::install_update(&version).await {
+        let to = version.clone();
+        let work = async move { desktop::install_update(&to).await };
+        tasks.spawn_then(work, move |res| {
+            let next = match res {
                 Ok(()) => Some(Check::Installed { version }),
                 Err(kind) if kind == "cancelled" => None,
                 Err(kind) => Some(Check::InstallFailed {
@@ -244,7 +248,7 @@ pub fn UpdateDialog() -> impl IntoView {
     });
     view! {
         <Show when=move || state.with(Option::is_some)>
-            <UpdateModal state=state phase=phase retry=Callback::new(move |()| run()) install=install/>
+            <UpdateModal state=state phase=phase retry=Callback::new(move |()| run()) install=install tasks=tasks/>
         </Show>
     }
 }
@@ -293,12 +297,14 @@ fn UpdateModal(
     phase: RwSignal<Phase>,
     retry: Callback<()>,
     install: Callback<(String, String)>,
+    /// The dialog's tasks: closing touches only its `state`.
+    tasks: Tasks,
 ) -> impl IntoView {
     super::focus::return_focus_on_cleanup();
     // On the next task, as the shortcuts dialog does: the click that closes
     // must still reach its other listeners.
     let close = Callback::new(move |()| {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(0).await;
             state.set(None);
         });

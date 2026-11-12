@@ -4,6 +4,7 @@
 
 use super::api;
 use super::icons::{Glyph, icon};
+use super::tasks::Tasks;
 use crate::i18n::{T, t};
 use crate::intent::Chip;
 use leptos::prelude::*;
@@ -209,6 +210,7 @@ fn PromptsTab(
     set_chip: Callback<Chip>,
     focus: Callback<()>,
 ) -> impl IntoView {
+    let tasks = Tasks::here();
     let list = LocalResource::new(move || async move {
         api::get::<Value>(&format!("/api/prompt-templates?surface={surface}"))
             .await
@@ -217,7 +219,7 @@ fn PromptsTab(
             .unwrap_or_default()
     });
     let use_one = move |id: String| {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let path = format!("/api/prompt-templates/{surface}/{}", api::seg(&id));
             if let Ok(v) = api::get::<Value>(&path).await {
                 set_chip.run(if surface == "video" {

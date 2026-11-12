@@ -4,6 +4,7 @@
 
 use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::chat::AssistantTurn;
 use crate::i18n::{T, t, tf};
 use crate::media_row::{self, Cell, Row};
@@ -37,6 +38,7 @@ fn cell_glyph(surface: &str) -> Glyph {
 #[component]
 pub fn MediaRows(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     let ctx = expect_context::<StudioCtx>();
+    let tasks = Tasks::here();
     // Elapsed time ticks while a generation runs.
     let now = RwSignal::new(js_sys::Date::now() as i64);
     let ticking = StoredValue::new(false);
@@ -46,7 +48,7 @@ pub fn MediaRows(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             return;
         }
         ticking.set_value(true);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             loop {
                 gloo_timers::future::TimeoutFuture::new(1_000).await;
                 now.set(js_sys::Date::now() as i64);

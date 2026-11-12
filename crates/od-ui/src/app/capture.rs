@@ -8,6 +8,7 @@ use super::icons::{Glyph, icon};
 use super::menu_scrim::MenuScrim;
 use super::preview_tools::{page_png, save_png};
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
@@ -57,7 +58,7 @@ fn copy_to_clipboard(ctx: StudioCtx, ui: FilesUi) {
             .clipboard()
             .write(&js_sys::Array::of1(&item)))
     })();
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         let res = match write {
             Ok(p) => wasm_bindgen_futures::JsFuture::from(p).await.map(|_| ()),
             Err(e) => Err(e),
@@ -72,10 +73,11 @@ fn copy_to_clipboard(ctx: StudioCtx, ui: FilesUi) {
     });
 }
 
-/// Saves the page under `screenshots/` and attaches it to the next message.
-fn to_chat(ctx: StudioCtx, ui: FilesUi, busy: RwSignal<bool>) {
+/// Saves the page under `screenshots/` and attaches it to the next message;
+/// `tasks` and `busy` are the menu's.
+fn to_chat(ctx: StudioCtx, ui: FilesUi, tasks: Tasks, busy: RwSignal<bool>) {
     busy.set(true);
-    leptos::task::spawn_local(async move {
+    tasks.spawn(async move {
         let res = match shot(ctx).await {
             Ok(png) => {
                 let name = format!(
@@ -98,7 +100,7 @@ fn to_chat(ctx: StudioCtx, ui: FilesUi, busy: RwSignal<bool>) {
     });
 }
 
-fn save_file(ctx: StudioCtx, busy: RwSignal<bool>) {
+fn save_file(ctx: StudioCtx, tasks: Tasks, busy: RwSignal<bool>) {
     busy.set(true);
     let stem = ctx
         .active_untracked()
@@ -108,7 +110,7 @@ fn save_file(ctx: StudioCtx, busy: RwSignal<bool>) {
                 .map_or(name.clone(), |(s, _)| s.to_owned())
         })
         .unwrap_or_else(|| "preview".to_owned());
-    leptos::task::spawn_local(async move {
+    tasks.spawn(async move {
         let res = shot(ctx).await;
         busy.set(false);
         match res.map(|png| data_url_bytes(&png)) {
@@ -127,6 +129,7 @@ pub fn ScreenshotMenu(ctx: StudioCtx) -> impl IntoView {
     let ui = FilesUi::get();
     let open = RwSignal::new(false);
     let busy = RwSignal::new(false);
+    let tasks = Tasks::here();
     view! {
         <div class="menu-wrap">
             <button class="icon-btn" data-testid="screenshot" aria-haspopup="menu"
@@ -142,10 +145,10 @@ pub fn ScreenshotMenu(ctx: StudioCtx) -> impl IntoView {
                     <button class="menu-item" role="menuitem" data-testid="screenshot-copy" on:click=move |_| { open.set(false); copy_to_clipboard(ctx, ui); }>
                         {icon(Glyph::Clipboard)}{t(T::ScreenshotCopy)}
                     </button>
-                    <button class="menu-item" role="menuitem" data-testid="screenshot-chat" on:click=move |_| { open.set(false); to_chat(ctx, ui, busy); }>
+                    <button class="menu-item" role="menuitem" data-testid="screenshot-chat" on:click=move |_| { open.set(false); to_chat(ctx, ui, tasks, busy); }>
                         {icon(Glyph::Attachment)}{t(T::ScreenshotToChat)}
                     </button>
-                    <button class="menu-item" role="menuitem" data-testid="screenshot-save" on:click=move |_| { open.set(false); save_file(ctx, busy); }>
+                    <button class="menu-item" role="menuitem" data-testid="screenshot-save" on:click=move |_| { open.set(false); save_file(ctx, tasks, busy); }>
                         {icon(Glyph::Download)}{t(T::ScreenshotSave)}
                     </button>
                 </div>

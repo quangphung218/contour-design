@@ -8,6 +8,7 @@ use super::files_panel::{
 };
 use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::file_tree as ft;
 use crate::i18n::{T, t, tf};
 use crate::markdown;
@@ -106,9 +107,10 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
     let area = NodeRef::<leptos::html::Textarea>::new();
     // Why the file could not be read (the reason, for the tooltip).
     let read_error = RwSignal::new(None::<String>);
+    let tasks = Tasks::here();
     let load = move || {
         read_error.set(None);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let Some(url) = path.try_get_value().map(|p| raw_url(ctx, &p)) else {
                 return;
             };
@@ -154,7 +156,7 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
             return;
         }
         status.set(Status::Saving);
-        // Started here: on leaving, the task runs after the view is disposed.
+        // Started here: on leaving, the save runs after the view is disposed.
         let save = replace_content(
             ctx,
             &path.get_value(),
@@ -162,9 +164,8 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
             "Markdown",
             T::MdSaveFailed,
         );
-        leptos::task::spawn_local(async move {
-            let res = save.await;
-            if save_seq.try_get_value() != Some(n) {
+        tasks.spawn_then(save, move |res| {
+            if save_seq.get_value() != n {
                 return;
             }
             match res {
@@ -181,9 +182,9 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
     let schedule = move || {
         let n = typed.get_value().wrapping_add(1);
         typed.set_value(n);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(SAVE_DELAY_MS).await;
-            if typed.try_get_value() == Some(n) {
+            if typed.get_value() == n {
                 save_now();
             }
         });
@@ -198,9 +199,13 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
         if images.is_empty() {
             return false;
         }
-        leptos::task::spawn_local(async move {
-            let doc = path.get_value();
-            match upload(ctx, images, ft::parent(&doc)).await {
+        // The upload runs to its end; the link goes in while the editor is
+        // there.
+        let doc = path.get_value();
+        let dir = ft::parent(&doc).to_owned();
+        let work = async move { upload(ctx, images, &dir).await };
+        tasks.spawn_then(work, move |res| {
+            match res {
                 Ok(stored) => {
                     let snippet = stored
                         .iter()

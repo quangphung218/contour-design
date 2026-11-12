@@ -7,6 +7,7 @@ use super::files_panel::{FilesUi, anchor_style};
 use super::icons::{Glyph, icon};
 use super::menu_scrim::MenuScrim;
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use od_contracts::{DuplicateProjectResponse, HandoffResponse, ProjectResponse};
@@ -58,17 +59,33 @@ fn start(ctx: StudioCtx, ui: FilesUi) {
         .with_untracked(|f| f.iter().map(|f| f.path.clone()).collect());
     let agent = ctx.shell.agent_id();
     ui.ds_job.set(Some(DsJob::Running(name.clone())));
-    leptos::task::spawn_local(async move {
-        let fail = |e: String| ui.ds_job.set(Some(DsJob::Failed(e)));
-        let dir = match api::get::<HandoffResponse>(&format!("{}/handoff", ctx.base())).await {
+    // The job is started even if the Studio is left meanwhile; following
+    // it is the Studio's.
+    let handoff = format!("{}/handoff", ctx.base());
+    let work = async move {
+        let dir = match api::get::<HandoffResponse>(&handoff).await {
             Ok(h) => h.dir,
-            Err(e) => return fail(ctx.failed(&e)),
+            Err(e) => return Err((e, true)),
         };
         let body = json!({ "name": name, "brief": brief(&name, &dir, &files), "agentId": agent });
-        let job = match api::post::<_, Value>("/api/design-systems/generate", &body).await {
-            Ok(v) => v["job"]["id"].as_str().unwrap_or_default().to_owned(),
-            Err(e) => return fail(e.to_string()),
-        };
+        match api::post::<_, Value>("/api/design-systems/generate", &body).await {
+            Ok(v) => Ok(v["job"]["id"].as_str().unwrap_or_default().to_owned()),
+            Err(e) => Err((e, false)),
+        }
+    };
+    ctx.tasks.spawn_then(work, move |res| match res {
+        Ok(job) => follow(ctx, ui, job),
+        Err((e, ours)) => {
+            let why = if ours { ctx.failed(&e) } else { e.to_string() };
+            ui.ds_job.set(Some(DsJob::Failed(why)));
+        }
+    });
+}
+
+/// Polls design system job `job` until it ends.
+fn follow(ctx: StudioCtx, ui: FilesUi, job: String) {
+    ctx.tasks.spawn(async move {
+        let fail = |e: String| ui.ds_job.set(Some(DsJob::Failed(e)));
         loop {
             gloo_timers::future::TimeoutFuture::new(POLL_MS).await;
             let v = match api::get::<Value>(&format!("/api/design-systems/jobs/{}", api::seg(&job)))
@@ -104,7 +121,7 @@ fn duplicate(ctx: StudioCtx) {
 }
 
 fn duplicate_now(ctx: StudioCtx, release: super::leave_guard::Release) {
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         match api::post::<_, DuplicateProjectResponse>(
             &format!("{}/duplicate", ctx.base()),
             &json!({}),
@@ -167,9 +184,10 @@ pub fn ProjectMenu(ctx: StudioCtx) -> impl IntoView {
 pub fn BrandReady(ctx: StudioCtx) -> impl IntoView {
     let ui = FilesUi::get();
     let busy = RwSignal::new(false);
+    let tasks = Tasks::here();
     let use_it = move |id: String| {
         busy.set(true);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::patch::<_, ProjectResponse>(&ctx.base(), &json!({ "designSystemId": id }))
                 .await
             {

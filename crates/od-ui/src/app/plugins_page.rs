@@ -8,6 +8,7 @@
 
 use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, copy_text, initials, localized, query_param, tint};
+use super::tasks::Tasks;
 use super::{Shell, api, desktop};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::in_locale;
@@ -176,6 +177,7 @@ fn monograms(plugins: &[(String, String)]) -> std::collections::HashMap<String, 
 
 #[component]
 pub fn PluginsPage() -> impl IntoView {
+    let tasks = Tasks::here();
     let plugins = RwSignal::new(None::<Vec<Value>>);
     let skills = RwSignal::new(None::<Vec<SkillSummary>>);
     let kind = RwSignal::new(if query_param("skill").is_some() {
@@ -205,7 +207,7 @@ pub fn PluginsPage() -> impl IntoView {
     });
 
     let reload = move || {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::get::<Value>("/api/plugins").await {
                 Ok(v) => plugins.set(Some(v["plugins"].as_array().cloned().unwrap_or_default())),
                 Err(e) => error.set(Some(e.to_string())),
@@ -228,6 +230,12 @@ pub fn PluginsPage() -> impl IntoView {
         }
         open.set(next);
         reload();
+    });
+    // Made here, not in the dialog's view: it runs from the page's tasks
+    // after the dialog may have closed.
+    let on_created = Callback::new(move |next: Option<Open>| {
+        creating.set(false);
+        on_change.run(next);
     });
     // A plugin or skill removed from its page: back to the list, unless
     // something else opened meanwhile. The reply can come late on a busy
@@ -352,9 +360,9 @@ pub fn PluginsPage() -> impl IntoView {
             {move || match open.get() {
                 Some(Open::Plugin(id)) => {
                     let mono = monos.with_untracked(|m| m.get(&id).cloned());
-                    view! { <PluginDetail id=id mono=mono on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed/> }.into_any()
+                    view! { <PluginDetail id=id mono=mono on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks/> }.into_any()
                 }
-                Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed/> }.into_any(),
+                Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks/> }.into_any(),
                 None => view! {
                     <div class="lib-toolbar">
                         <div class="segmented" role="group" aria-label=t(T::NavPlugins)>
@@ -395,8 +403,9 @@ pub fn PluginsPage() -> impl IntoView {
             }}
             <Show when=move || creating.get()>
                 <CreateDialog
+                    page=tasks
                     on_close=Callback::new(move |()| creating.set(false))
-                    on_done=Callback::new(move |next: Option<Open>| { creating.set(false); on_change.run(next); })
+                    on_done=on_created
                 />
             </Show>
         </section>
@@ -649,7 +658,10 @@ fn PluginDetail(
     mono: Option<String>,
     on_back: Callback<()>,
     on_removed: Callback<Open>,
+    /// The page's tasks, for an uninstall that ends on the list.
+    page: Tasks,
 ) -> impl IntoView {
+    let tasks = Tasks::here();
     let navigate = use_navigate();
     let plugin = RwSignal::new(None::<Result<Value, String>>);
     let values = RwSignal::new(Map::new());
@@ -657,7 +669,7 @@ fn PluginDetail(
     let notice = RwSignal::new(None::<Result<String, String>>);
     {
         let id = id.clone();
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let res = api::get::<Value>(&format!("/api/plugins/{}", api::seg(&id))).await;
             plugin.set(Some(
                 res.map(|v| v["plugin"].clone()).map_err(|e| e.to_string()),
@@ -671,7 +683,7 @@ fn PluginDetail(
             let navigate = navigate.clone();
             busy.set(true);
             let body = json!({ "inputs": values.get_untracked(), "locale": locale().tag() });
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 match api::post::<_, Value>(&format!("/api/plugins/{}/use", api::seg(&id)), &body)
                     .await
                 {
@@ -696,7 +708,7 @@ fn PluginDetail(
         Callback::new(move |()| {
             confirm_uninstall.set(false);
             let id = id.clone();
-            leptos::task::spawn_local(async move {
+            page.spawn(async move {
                 match api::post::<_, Value>(
                     &format!("/api/plugins/{}/uninstall", api::seg(&id)),
                     &json!({}),
@@ -704,7 +716,10 @@ fn PluginDetail(
                 .await
                 {
                     Ok(_) => on_removed.run(Open::Plugin(id)),
-                    Err(e) => notice.set(Some(Err(api::failure(T::UninstallFailed, &e)))),
+                    Err(e) if tasks.alive() => {
+                        notice.set(Some(Err(api::failure(T::UninstallFailed, &e))));
+                    }
+                    Err(_) => {}
                 }
             });
         })
@@ -779,7 +794,7 @@ fn PluginDetail(
                                             <p class="prompt-preview" data-testid="plugin-query">{move || values.with(|m| fill_query(&q, m, &fq))}</p>
                                             <button class="btn small ghost" on:click=move |_| {
                                                 let text = q2.clone();
-                                                leptos::task::spawn_local(async move {
+                                                tasks.spawn(async move {
                                                     notice.set(Some(copy_text(&text).await.map(|()| t(T::Copied).to_owned())));
                                                 });
                                             }>{icon(Glyph::Duplicate)}{t(T::CopyPrompt)}</button>
@@ -831,7 +846,14 @@ fn meta_list(label: T, items: Vec<String>) -> Option<impl IntoView> {
 }
 
 #[component]
-fn SkillDetailView(id: String, on_back: Callback<()>, on_removed: Callback<Open>) -> impl IntoView {
+fn SkillDetailView(
+    id: String,
+    on_back: Callback<()>,
+    on_removed: Callback<Open>,
+    /// The page's tasks, for a delete that ends on the list.
+    page: Tasks,
+) -> impl IntoView {
+    let tasks = Tasks::here();
     let navigate = use_navigate();
     let detail = RwSignal::new(None::<Result<SkillDetail, String>>);
     let editing = RwSignal::new(false);
@@ -840,7 +862,7 @@ fn SkillDetailView(id: String, on_back: Callback<()>, on_removed: Callback<Open>
         let id = id.clone();
         Callback::new(move |()| {
             let id = id.clone();
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 let res = api::get::<SkillDetail>(&format!("/api/skills/{}", api::seg(&id))).await;
                 detail.set(Some(res.map_err(|e| e.to_string())));
             });
@@ -855,10 +877,11 @@ fn SkillDetailView(id: String, on_back: Callback<()>, on_removed: Callback<Open>
         let id = id.clone();
         move |_| {
             let id = id.clone();
-            leptos::task::spawn_local(async move {
+            page.spawn(async move {
                 match api::delete::<Value>(&format!("/api/skills/{}", api::seg(&id))).await {
                     Ok(_) => on_removed.run(Open::Skill(id)),
-                    Err(e) => notice.set(Some(api::failure(T::DeleteFailed, &e))),
+                    Err(e) if tasks.alive() => notice.set(Some(api::failure(T::DeleteFailed, &e))),
+                    Err(_) => {}
                 }
             });
         }
@@ -906,7 +929,7 @@ fn SkillDetailView(id: String, on_back: Callback<()>, on_removed: Callback<Open>
                                     on_cancel=Callback::new(move |()| editing.set(false))
                                     on_save=Callback::new(move |body: Value| {
                                         let id = id.clone();
-                                        leptos::task::spawn_local(async move {
+                                        tasks.spawn(async move {
                                             match api::put::<_, Value>(&format!("/api/skills/{}", api::seg(&id)), &body).await {
                                                 Ok(_) => { editing.set(false); load.run(()); }
                                                 Err(e) => notice.set(Some(api::failure(T::MdSaveFailed, &e))),
@@ -1009,8 +1032,15 @@ enum CreateMode {
     Skill,
 }
 
+/// What it installs or saves ends on the page (`on_done`), so that runs on
+/// the `page`'s tasks: closed meanwhile, the list still shows it.
 #[component]
-fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl IntoView {
+fn CreateDialog(
+    on_close: Callback<()>,
+    on_done: Callback<Option<Open>>,
+    page: Tasks,
+) -> impl IntoView {
+    let tasks = Tasks::here();
     let shell = Shell::get();
     let _ = shell;
     let navigate = use_navigate();
@@ -1030,7 +1060,7 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
         };
         let navigate = navigate.clone();
         busy.set(true);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::post::<_, Value>("/api/plugins/author", &body).await {
                 Ok(v) => navigate(
                     &format!(
@@ -1048,32 +1078,34 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
     });
     let install = move |dir: String| {
         busy.set(true);
-        leptos::task::spawn_local(async move {
+        page.spawn(async move {
             match api::post::<_, Value>("/api/plugins/install", &json!({ "path": dir })).await {
                 Ok(v) => on_done.run(Some(Open::Plugin(
                     v["plugin"]["id"].as_str().unwrap_or_default().to_owned(),
                 ))),
-                Err(e) => {
+                Err(e) if tasks.alive() => {
                     busy.set(false);
                     error.set(Some(api::failure(T::InstallFailed, &e)));
                 }
+                Err(_) => {}
             }
         });
     };
     let pick = move |_| {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             if let Some(dir) = desktop::pick_folder().await {
                 path.set(dir);
             }
         });
     };
     let save_skill = Callback::new(move |body: Value| {
-        leptos::task::spawn_local(async move {
+        page.spawn(async move {
             match api::post::<_, Value>("/api/skills", &body).await {
                 Ok(v) => on_done.run(Some(Open::Skill(
                     v["id"].as_str().unwrap_or_default().to_owned(),
                 ))),
-                Err(e) => error.set(Some(api::failure(T::MdSaveFailed, &e))),
+                Err(e) if tasks.alive() => error.set(Some(api::failure(T::MdSaveFailed, &e))),
+                Err(_) => {}
             }
         });
     });
