@@ -515,49 +515,288 @@
   // keyed: a page script can neither fake the click nor post the message.
   // A ⌘ / Ctrl-click opens any web link, as in a browser (QA-063); the
   // page's `window.open` counts only in its handler of a real click or key
-  // (QA-061).
+  // (QA-061). A link or a handler inside a web component's (open) shadow
+  // root counts the same.
   // ---------------------------------------------------------------------
   function webAddress(href) {
     return /^https?:\/\//i.test(href) ? href : null;
   }
 
+  // The link the click went to: the nearest `a[href]` on the event's
+  // composed path, so one inside a shadow root is found too (`target` is
+  // the shadow host by the time the event reaches the window).
+  var linkOf = (function () {
+    try {
+      var call = Function.prototype.call;
+      var pathOf = Function.prototype.bind.call(call, Event.prototype.composedPath);
+      var matchesOf = Function.prototype.bind.call(call, Element.prototype.matches);
+      return function (e) {
+        var path = pathOf(e);
+        for (var i = 0; i < path.length; i++) {
+          var n = path[i];
+          if (n && n.nodeType === 1 && matchesOf(n, 'a[href]')) return n;
+        }
+        return null;
+      };
+    } catch (_) {
+      return function (e) {
+        var el = e.target;
+        while (el && el.nodeType !== 1) el = el.parentNode;
+        return el && el.closest ? el.closest('a[href]') : null;
+      };
+    }
+  })();
+
   function newWindowLink(e) {
     if (!e.isTrusted || e.defaultPrevented || e.button !== 0) return null;
     if (e.shiftKey || e.altKey) return null;
-    var el = e.target;
-    while (el && el.nodeType !== 1) el = el.parentNode;
-    var a = el && el.closest ? el.closest('a[href]') : null;
+    var a = linkOf(e);
     if (!a || a.hasAttribute('download')) return null;
     var newTab = e.metaKey || e.ctrlKey;
     if (!newTab && String(a.getAttribute('target')).toLowerCase() !== '_blank') return null;
     return webAddress(a.href);
   }
 
-  // Whether the page runs `window.open` inside its handler of the user's
-  // own click or key in this frame, and that gesture has not opened a tab
-  // yet: one press opens at most one tab, as a browser's popup blocker
-  // allows, however many of its events (`pointerup`, `mouseup`, `click`;
-  // `keydown`, `keyup`) the page handles, and a held key's repeats open
-  // none. A press arms the check (the first listener of the window, so
-  // the page cannot stop it); the first open disarms it, and so does the
-  // end of the press, after its last event: `keyup` for a key, `click`,
-  // `auxclick`, `pointercancel` or `dragend` for a pointer (Enter's own
-  // `click` comes before its `keyup`; WebKit ends a drag with no `click`
-  // and no `pointercancel`), and a mouse's `pointerup` too, whose `mouseup`
-  // and `click` (if any) come straight after it. So a key pressed on the host
-  // and let go in the frame opens nothing. A `_blank` link spends the same
-  // press, and only a web address spends it; a key's press comes back if
-  // the page cancels the link, for its `keyup`. Picking an element for a
-  // comment opens nothing. Not
-  // `navigator.userActivation`: a click on the host (the reload button, a
-  // file) can activate the frame too, and a page's timer then opened the
-  // browser on load. `window.event`, `setTimeout` and prototypes are the
-  // page's to replace, so what the check uses is taken now, before any
-  // page script runs; `isTrusted` is unforgeable.
-  // The `_blank` click whose press the bridge holds for its link until
-  // dispatch is over: a page listener may open a tab of its own instead,
-  // in the same event, and the link then opens none.
-  var pendingLink = null;
+  // The press: the user's own click, tap or key in this frame, which lets
+  // the page's `window.open` (or a `_blank` link) open one tab, as a
+  // browser's popup blocker allows, however many of its events
+  // (`pointerup`, `mouseup`, `click`; `keydown`, `keyup`) the page handles;
+  // a held key's repeats open none. No press, no tab. One object and one
+  // table (`odPress.transition`), with no DOM: bridges/press.test.mjs runs
+  // it in node against random event sequences.
+  //
+  // state       event (trusted)                         next state
+  // (any)       pointerdown (a touch's: the primary),   armed, a new id
+  //             touchstart (one finger, no touch's
+  //             pointerdown before it), keydown (not
+  //             a repeat)
+  // armed       its last event: `keyup` for a key;      ended (`endedBy`)
+  //             `click`, `auxclick`, `pointercancel`,
+  //             `dragend`, a mouse's `pointerup` or a
+  //             touch's `touchend` for a pointer; a
+  //             dialog that took focus
+  // ended       an event the same input brings          ended, `endedBy` that event
+  //             straight after `endedBy` (FOLLOWS)
+  // armed       window.open in an event that opens      spent: one tab
+  // ended       … in `endedBy` itself                   spent: one tab
+  // ended       … in any other event                    spent: no tab
+  // armed/ended focus leaves the frame, outside a       spent: no tab
+  //             native call
+  // armed/ended a `_blank` link's click                 held-by-link
+  // held-by-link window.open in that same click         spent: one tab (the page's)
+  // held-by-link dispatch over, the page left the link  spent: the link's tab
+  // held-by-link dispatch over, the page cancelled it   armed / ended again for a
+  //             (`settle`)                              key with no newer press and
+  //                                                     no blur since; else spent
+  // spent       anything                                spent
+  //
+  // Whether the press is over is read as it is spent, from the events
+  // themselves, not from a timer set when it ended: a page that queues
+  // thousands of short tasks holds such a timer back, and the user's input
+  // still runs between them (a stray `keyup` in WebKit). So input that comes
+  // in between closes the press: a key let go between a touch's `touchend`
+  // and its `click`, which can come tasks later, or between a mouse's
+  // `pointerup` and `click`, leaves that `click` opening nothing. A touch
+  // press ends with the first `touchend` in this frame: a tap's `click` (if
+  // any) comes after it, tasks later, but with nothing of the user's in
+  // between; a finger that comes down while another is on the screen here
+  // arms nothing (one touch, one press, however many fingers). Every object
+  // the table reads or makes has all its fields as its own, so no getter a
+  // page put on `Object.prototype` is consulted.
+  // od-press:begin
+  var odPress = (function () {
+    var setOf = function (names) {
+      var set = Object.create(null);
+      for (var i = 0; i < names.length; i++) set[names[i]] = true;
+      return set;
+    };
+    // The events whose handlers' `window.open` counts.
+    var OPENS = setOf(['click', 'auxclick', 'mouseup', 'pointerup', 'touchend', 'keydown', 'keyup']);
+    // The events that end a pointer's press (a touch's `pointerup` does not).
+    var POINTER_ENDS = setOf(['click', 'auxclick', 'pointercancel', 'dragend', 'pointerup']);
+    // What one input brings straight after an end: a mouse's `mouseup` and
+    // `click` or `auxclick` after its `pointerup`, a Space key's `click`
+    // after its `keyup`, a tap's `mouseup` and `click` after its `touchend`
+    // (a page that cancels a tap's `pointerdown` gets its `click` with no
+    // `mouseup`), the control's `click` a `<label>` passes on after its own.
+    var FOLLOWS = Object.create(null);
+    FOLLOWS.pointerup = setOf(['mouseup', 'click', 'auxclick']);
+    FOLLOWS.mouseup = setOf(['click', 'auxclick']);
+    FOLLOWS.keyup = setOf(['click']);
+    FOLLOWS.click = setOf(['click']);
+    FOLLOWS.touchend = setOf(['mouseup', 'click']);
+    // `endedBy` of a press a dialog ended outside any event.
+    var ENDED = { ended: true };
+
+    var press = function (p, state, endedBy, endedType, link) {
+      return {
+        id: p.id,
+        kind: p.kind,
+        touch: p.touch,
+        state: state,
+        endedBy: endedBy,
+        endedType: endedType,
+        blursAt: p.blursAt,
+        link: link
+      };
+    };
+    var as = function (p, state) {
+      return press(p, state, p.endedBy, p.endedType, state === 'held-by-link' ? p.link : null);
+    };
+    // `held`: the press a `_blank` link holds (still `press` unless a newer
+    // one came); `last`: the last trusted input event; `touching`: a touch
+    // armed by its `pointerdown` has not ended, so its `touchstart` arms no
+    // second press (a key's press in between would otherwise get a tab of
+    // its own on the touch's events, and the touch one more).
+    var make = function (cur, held, blurs, last, ids, touching) {
+      return { press: cur, held: held, blurs: blurs, last: last, ids: ids, touching: touching };
+    };
+    var world = function (s, cur, held) {
+      return make(cur, held, s.blurs, s.last, s.ids, s.touching);
+    };
+    var out = function (armed, spent, id, open, restored) {
+      return { armed: armed, spent: spent, id: id, open: open, restored: restored };
+    };
+    var NOTHING = out(false, false, 0, false, false);
+    var result = function (s, o) {
+      return { s: s, out: o };
+    };
+    var live = function (p) {
+      return p !== null && (p.state === 'armed' || p.state === 'ended');
+    };
+    var ended = function (p, ev, type) {
+      return press(p, p.state === 'armed' ? 'ended' : p.state, ev, type, p.link);
+    };
+
+    function input(s, type, f) {
+      if (f.trusted !== true) return result(s, NOTHING);
+      var p = s.press;
+      if (p !== null && p.endedBy !== null && s.last === p.endedBy) {
+        var after = FOLLOWS[p.endedType];
+        if (after !== undefined && after[type] === true) p = press(p, p.state, f.ev, type, p.link);
+      }
+      if (type === 'pointerdown' || type === 'touchstart' || type === 'keydown') {
+        return arm(make(p, s.held, s.blurs, f.ev, s.ids, s.touching), type, f);
+      }
+      var kind = type === 'keyup' ? 'key' : POINTER_ENDS[type] === true && !(type === 'pointerup' && f.touch) ? 'pointer' : null;
+      var ends = p !== null && p.endedBy === null && (kind !== null ? p.kind === kind : type === 'touchend' && p.touch);
+      var touching = s.touching && type !== 'touchend' && !(type === 'pointercancel' && f.touch);
+      return result(make(ends ? ended(p, f.ev, type) : p, s.held, s.blurs, f.ev, s.ids, touching), NOTHING);
+    }
+
+    function arm(s, type, f) {
+      if (type === 'keydown' && f.repeat) return result(s, NOTHING);
+      var touch = type === 'touchstart' || (type === 'pointerdown' && f.touch);
+      if (type === 'touchstart' && (f.fingers !== 1 || s.touching)) return result(s, NOTHING);
+      if (touch && type === 'pointerdown' && !f.primary) return result(s, NOTHING);
+      var id = s.ids + 1;
+      var p = {
+        id: id,
+        kind: type === 'keydown' ? 'key' : 'pointer',
+        touch: touch,
+        state: 'armed',
+        endedBy: null,
+        endedType: '',
+        blursAt: s.blurs,
+        link: null
+      };
+      return result(make(p, s.held, s.blurs, s.last, id, type === 'pointerdown' ? touch : s.touching), out(true, false, id, false, false));
+    }
+
+    // `spend`: the page's window.open of a web address; `link`: a `_blank`
+    // link's click. In the event being dispatched (`f.ev`, null outside one).
+    function spend(s, type, f) {
+      var p = s.press;
+      if (f.selectMode === true) {
+        return result(world(s, live(p) ? as(p, 'spent') : p, s.held), NOTHING);
+      }
+      var ev = f.ev;
+      if (ev === null || f.trusted !== true || OPENS[f.type] !== true) return result(s, NOTHING);
+      if ((f.type === 'keydown' || f.type === 'keyup') && f.repeat) return result(s, NOTHING);
+      if (live(p) && p.endedBy !== null && ev !== p.endedBy) p = as(p, 'spent');
+      if (live(p)) {
+        if (type === 'link') {
+          var held = press(p, 'held-by-link', p.endedBy, p.endedType, ev);
+          return result(world(s, held, held), out(false, p.kind, p.id, false, false));
+        }
+        return result(world(s, as(p, 'spent'), s.held), out(false, p.kind, p.id, false, false));
+      }
+      var h = s.held;
+      if (type === 'spend' && h !== null && h.link === ev) {
+        var cur = p !== null && p.id === h.id ? as(p, 'spent') : p;
+        return result(world(s, cur, null), out(false, 'link', h.id, false, false));
+      }
+      return result(world(s, p, s.held), NOTHING);
+    }
+
+    // Dispatch of the held link's click is over.
+    function settle(s, f) {
+      var h = s.held;
+      if (h === null || h.link !== f.ev) return result(s, NOTHING);
+      var p = s.press;
+      var mine = p !== null && p.id === h.id;
+      if (!f.prevented) {
+        return result(world(s, mine ? as(p, 'spent') : p, null), out(false, false, h.id, true, false));
+      }
+      if (mine && p.kind === 'key' && p.blursAt === s.blurs) {
+        var back = as(p, p.endedBy === null ? 'armed' : 'ended');
+        return result(world(s, back, null), out(false, false, h.id, false, true));
+      }
+      return result(world(s, mine ? as(p, 'spent') : p, null), NOTHING);
+    }
+
+    // The next state and what to do, for an event `type` with `facts`.
+    function transition(s, type, f) {
+      var p = s.press;
+      if (type === 'blur') {
+        var cur = !f.inNative && live(p) ? as(p, 'spent') : p;
+        return result(make(cur, s.held, s.blurs + 1, s.last, s.ids, s.touching), NOTHING);
+      }
+      if (type === 'dialog-blurred') {
+        if (p === null || p.endedBy !== null) return result(s, NOTHING);
+        var by = f.ev === null ? ENDED : f.ev;
+        return result(world(s, ended(p, by, f.ev === null ? '' : f.type), s.held), NOTHING);
+      }
+      if (type === 'spend' || type === 'link') return spend(s, type, f);
+      if (type === 'settle') return settle(s, f);
+      if (type === 'nested-spend') {
+        return result(world(s, live(p) ? as(p, 'spent') : p, s.held), NOTHING);
+      }
+      return input(s, type, f);
+    }
+
+    // Every field the table reads, so none is looked up on a prototype.
+    // `flag` is `inNative` for `blur`, `selectMode` for `spend` and `link`,
+    // `prevented` for `settle`.
+    function facts(ev, type, trusted, repeat, touch, primary, fingers, flag) {
+      return {
+        ev: ev,
+        type: type,
+        trusted: trusted,
+        repeat: repeat,
+        touch: touch,
+        primary: primary,
+        fingers: fingers,
+        inNative: flag,
+        selectMode: flag,
+        prevented: flag
+      };
+    }
+
+    return {
+      initial: function () {
+        return make(null, null, 0, null, 0, false);
+      },
+      transition: transition,
+      facts: facts,
+      // A press that has not ended and opened nothing yet.
+      armed: function (s) {
+        return s.press !== null && s.press.state === 'armed';
+      }
+    };
+  })();
+  // od-press:end
+
   // Inside the native `window.open`, where WebKit runs timers, or a native
   // dialog (`alert`, `confirm`, `prompt`), which can take focus from the
   // app's window: the link's own open waits till it returns, and its
@@ -565,12 +804,31 @@
   // focus ends the press once it returns (its key's `keyup` fell on the
   // dialog).
   var inNative = 0;
-  // How many times the frame's window lost focus, inside a dialog or not.
-  var blurs = 0;
-  var endPress = function () {};
+  var press = odPress.initial();
+  var pressStep = function (type, facts) {
+    var r = odPress.transition(press, type, facts);
+    press = r.s;
+    return r.out;
+  };
   var timer = Function.prototype.bind.call(setTimeout, window);
-  // Gives a press the link spent back (`spendGesture` says what it spent).
-  var restoreGesture = function () {};
+  // What the page's window.open spent: 'key' or 'pointer' (the press),
+  // 'link' (the press a link held); false when none.
+  var spendGesture = function () {
+    return false;
+  };
+  // A `_blank` link's click takes the press (true when it did) until the
+  // dispatch is over; then `settleLink` says whether the link opens.
+  var holdForLink = function () {
+    return false;
+  };
+  var settleLink = function () {
+    return false;
+  };
+  var endPress = function () {};
+  // Around a native call: no event is being dispatched inside it, as far
+  // as the page's window.open goes (WebKit runs the page's timers there).
+  var enterNative = function () {};
+  var leaveNative = function () {};
   // A nested copy's press, named to the bridge above over its port (see
   // "Nested srcdoc frames").
   var notePress = function () {};
@@ -586,25 +844,41 @@
   // Before this window's native `window.open`, which can spend the
   // activation a nested frame's press is still on its way with.
   var noteOpen = function () {};
-  var spendGesture = (function () {
+  // A press arms at the first listener of the window, so the page cannot
+  // stop it. Not `navigator.userActivation`: a click on the host (the
+  // reload button, a file) can activate the frame too, and a page's timer
+  // then opened the browser on load. Nor `window.event`: a handler inside
+  // a shadow root does not set it. The event being dispatched is the
+  // innermost one the window's first capture listener saw whose dispatch
+  // is not over (`eventPhase` 0 once it is). `setTimeout` and prototypes
+  // are the page's to replace, so what the check uses is taken now, before
+  // any page script runs; `isTrusted` is unforgeable.
+  (function () {
     try {
       var bind = Function.prototype.bind;
       var callOf = function (fn) {
         return bind.call(Function.prototype.call, fn);
       };
-      var currentEvent = bind.call(Object.getOwnPropertyDescriptor(window, 'event').get, window);
-      var typeOf = callOf(Object.getOwnPropertyDescriptor(Event.prototype, 'type').get);
-      var repeatOf = callOf(Object.getOwnPropertyDescriptor(KeyboardEvent.prototype, 'repeat').get);
-      var kinds = Object.create(null);
-      kinds.click = kinds.auxclick = kinds.mouseup = kinds.pointerup = 1;
-      kinds.touchend = kinds.keydown = kinds.keyup = 1;
-      // What armed the check: 'key' or 'pointer'; null when disarmed.
-      var armed = null;
-      // `blurs` when it armed.
-      var armedAt = 0;
-      // Presses armed so far, and which of them the last spend took.
-      var arms = 0;
-      var spentArms = -1;
+      var getterOf = function (proto, name) {
+        return callOf(Object.getOwnPropertyDescriptor(proto, name).get);
+      };
+      var typeOf = getterOf(Event.prototype, 'type');
+      var phaseOf = getterOf(Event.prototype, 'eventPhase');
+      var repeatOf = getterOf(KeyboardEvent.prototype, 'repeat');
+      var pointerTypeOf = getterOf(PointerEvent.prototype, 'pointerType');
+      var primaryOf = getterOf(PointerEvent.prototype, 'isPrimary');
+      var facts = odPress.facts;
+      // Fingers on the screen after a touch event; none without touch events.
+      var fingersOf = function () {
+        return 0;
+      };
+      try {
+        var touchesOf = getterOf(TouchEvent.prototype, 'touches');
+        var lengthOf = getterOf(TouchList.prototype, 'length');
+        fingersOf = function (e) {
+          return lengthOf(touchesOf(e));
+        };
+      } catch (_) {}
       // The frame tree's user activation, which a press in a nested frame
       // gives this window too, and whether a tab has opened on it already:
       // one activation, one tab, whichever frame opens it. A press here
@@ -618,214 +892,147 @@
       } catch (_) {
         activeNow = null;
       }
-      var activationSpent = false;
-      var watching = false;
       // The nested frame whose press holds the next tab, till when: taken
       // as the press comes, while the activation is fresh, since the
       // frame's own window.open can spend the activation (the app denies
       // the window it asks for) before its link reaches this window. As
       // long as an activation lasts in Chromium.
       var now = bind.call(performance.now, performance);
-      var pressFrom = null;
-      var pressUntil = 0;
-      // When this window's own native window.open last ran on a live
-      // activation (WebKit spends it there, the app denying the window):
-      // a nested press that comes within a second was on it.
-      var openedActiveAt = -Infinity;
-      noteOpen = function () {
-        if (activeNow && activeNow()) openedActiveAt = now();
-      };
-      var spendActivation = function () {
-        activationSpent = true;
-        if (!activeNow || watching) return;
-        watching = true;
-        timer(function poll() {
-          if (activationSpent && activeNow()) return timer(poll, 250);
-          activationSpent = false;
-          watching = false;
-        }, 250);
-      };
-      // Whether the press is over is read as it is spent, from the events
-      // themselves, not from a timer set when it ended: a page that queues
-      // thousands of short tasks holds such a timer back, and the user's
-      // input still runs between them (a stray `keyup` in WebKit). A press
-      // ends with its last event (`endedBy`): that event's handlers, and
-      // those of the events the same input brings straight after it (a
-      // mouse's `mouseup` and `click` or `auxclick` after its `pointerup`, a
-      // Space key's `click` after its `keyup`, a tap's `mouseup` and `click`
-      // after its `touchend`, the control's `click` a `<label>` passes on
-      // after its own), still spend it; any other event does not. So input
-      // that comes in between closes the press: a key let go between a
-      // touch's `touchend` and its `click`, which can come tasks later, or
-      // between a mouse's `pointerup` and `click`, leaves that `click`
-      // opening nothing.
-      // What the press was: 'key' or 'pointer', kept once it is spent (a
-      // link may give a key's press back).
-      var pressKind = null;
-      var endedBy = null;
-      // The last trusted input event, and what may come straight after an
-      // end in the same input.
-      var lastInput = null;
-      var follows = Object.create(null);
-      follows.pointerup = Object.create(null);
-      follows.pointerup.mouseup = follows.pointerup.click = follows.pointerup.auxclick = 1;
-      follows.mouseup = Object.create(null);
-      follows.mouseup.click = follows.mouseup.auxclick = 1;
-      follows.keyup = Object.create(null);
-      follows.keyup.click = 1;
-      // A click on a `<label>` clicks its control too, in the same task.
-      follows.click = Object.create(null);
-      follows.click.click = 1;
-      // A page that cancels a tap's `pointerdown` gets its `click` with no
-      // `mouseup` (Chromium and WebKit alike); nor does a touch bring a
-      // `pointerup` or `auxclick` after its `touchend`.
-      follows.touchend = Object.create(null);
-      follows.touchend.mouseup = follows.touchend.click = 1;
-      var pointerTypeOf = callOf(Object.getOwnPropertyDescriptor(PointerEvent.prototype, 'pointerType').get);
-      var primaryOf = callOf(Object.getOwnPropertyDescriptor(PointerEvent.prototype, 'isPrimary').get);
-      // Fingers on the screen after a touch event; none without touch events.
-      var fingersOf = function () {
-        return 0;
-      };
-      try {
-        var touchesOf = callOf(Object.getOwnPropertyDescriptor(TouchEvent.prototype, 'touches').get);
-        var lengthOf = callOf(Object.getOwnPropertyDescriptor(TouchList.prototype, 'length').get);
-        fingersOf = function (e) {
-          return lengthOf(touchesOf(e));
-        };
-      } catch (_) {}
-      // A touch press ends with the first `touchend` in this frame: a tap's
-      // `click` (if any) comes after it, tasks later, but with nothing of
-      // the user's in between. So a touch that gets no click (the page
-      // cancelled one of its events, a drag on `touch-action: none`, a long
-      // press, a second finger here or in another frame) leaves nothing
-      // open, and a finger that comes down while another is on the screen
-      // here arms nothing: one touch, one press, however many fingers. A
-      // touch the browser cancels ends with its `pointercancel`.
-      var pressTouch = false;
-      var over = function (ev) {
-        return endedBy !== null && ev !== endedBy;
-      };
-      var input = function (e) {
-        if (e.isTrusted !== true) return false;
-        var after = endedBy !== null && lastInput === endedBy ? follows[typeOf(endedBy)] : null;
-        if (after && after[typeOf(e)] === 1) endedBy = e;
-        lastInput = e;
-        return true;
-      };
-      var arm = function (e) {
-        if (!input(e)) return;
-        var type = typeOf(e);
-        if (type === 'keydown' && repeatOf(e)) return;
-        var touch = type === 'touchstart' || (type === 'pointerdown' && pointerTypeOf(e) === 'touch');
-        if (type === 'touchstart' && fingersOf(e) !== 1) return;
-        if (touch && type === 'pointerdown' && !primaryOf(e)) return;
-        armed = type === 'keydown' ? 'key' : 'pointer';
-        pressKind = armed;
-        pressTouch = touch;
-        endedBy = null;
-        armedAt = blurs;
-        arms++;
-        activationSpent = false;
-        notePress();
-      };
-      window.addEventListener('pointerdown', arm, true);
-      window.addEventListener('touchstart', arm, { capture: true, passive: true });
-      window.addEventListener('keydown', arm, true);
-      var endOn = function (kind) {
-        return function (e) {
-          if (!input(e)) return;
-          if (pressKind === kind && endedBy === null) endedBy = e;
-        };
-      };
-      window.addEventListener('keyup', endOn('key'), true);
-      // Focus leaving the frame takes the end of the press with it (Tab out:
-      // its keyup falls on the host).
-      window.addEventListener('blur', function (e) {
-        if (e.target !== window) return;
-        blurs++;
-        if (!inNative) armed = null;
-      }, true);
-      ['click', 'auxclick', 'pointercancel', 'dragend'].forEach(function (type) {
-        window.addEventListener(type, endOn('pointer'), true);
-      });
-      // A mouse's press can end with no `click` (the page took away the
-      // element it went down on). A touch's ends with its `touchend`.
-      var endPointer = endOn('pointer');
-      window.addEventListener('pointerup', function (e) {
-        if (pointerTypeOf(e) !== 'touch') endPointer(e);
-        else input(e);
-      }, true);
-      window.addEventListener('mouseup', input, true);
-      window.addEventListener('touchend', function (e) {
-        if (!input(e)) return;
-        if (pressTouch && endedBy === null) endedBy = e;
-      }, { capture: true, passive: true });
-      // A dialog that took focus ends the press: the handler that showed it
-      // may still spend it, nothing after.
-      var ENDED = {};
-      endPress = function () {
-        if (endedBy === null) endedBy = currentEvent() || ENDED;
-      };
-      // Not once focus has left the frame since the key went down (a
-      // dialog in the link's own handler, before this listener spent it),
-      // nor over a newer press.
-      restoreGesture = function (by) {
-        if (by === 'key' && armedAt === blurs && arms === spentArms) {
-          armed = by;
-          activationSpent = false;
-        }
-      };
-      // A press in the frame while focus is there, on an activation no tab
-      // has opened on yet (without the API, while a press here holds).
-      pressNested = function (frame) {
-        if (selectMode) return false;
-        if (activeNow ? activationSpent : !armed || over(null)) return false;
-        if (activeNow && !activeNow() && now() - openedActiveAt > 1000) return null;
-        pressFrom = frame;
-        pressUntil = now() + 5000;
-        return true;
-      };
-      spendNested = function (frame) {
-        if (selectMode || pressFrom !== frame || now() > pressUntil) return false;
-        pressFrom = null;
-        armed = null;
-        spentArms = arms;
-        spendActivation();
-        return true;
-      };
-      // What it spent: 'key' or 'pointer' (the press), 'link' (the press a
-      // link held); false when none.
-      return function () {
-        if (selectMode) {
-          armed = null;
-          return false;
-        }
-        var ev = currentEvent();
-        if (!ev || ev.isTrusted !== true) return false;
-        var type = typeOf(ev);
-        if (kinds[type] !== 1) return false;
-        if ((type === 'keydown' || type === 'keyup') && repeatOf(ev)) return false;
-        if (armed && over(ev)) armed = null;
-        if (armed) {
-          var by = armed;
-          armed = null;
-          spentArms = arms;
-          spendActivation();
-          return by;
-        }
-        if (pendingLink === ev) {
-          pendingLink = null;
-          return 'link';
-        }
-        return false;
-      };
     } catch (_) {
       // No such getters: the page's window.open opens nothing.
-      return function () {
-        return false;
-      };
+      return;
     }
+    var activationSpent = false;
+    var watching = false;
+    var pressFrom = null;
+    var pressUntil = 0;
+    // When this window's own native window.open last ran on a live
+    // activation (WebKit spends it there, the app denying the window):
+    // a nested press that comes within a second was on it.
+    var openedActiveAt = -Infinity;
+    noteOpen = function () {
+      if (activeNow && activeNow()) openedActiveAt = now();
+    };
+    var spendActivation = function () {
+      activationSpent = true;
+      if (!activeNow || watching) return;
+      watching = true;
+      timer(function poll() {
+        if (activationSpent && activeNow()) return timer(poll, 250);
+        activationSpent = false;
+        watching = false;
+      }, 250);
+    };
+
+    // The events being dispatched, innermost last (a `<label>`'s click
+    // dispatches its control's inside its own), and NATIVE for a native
+    // call. A finished one is dropped when next looked at.
+    var NATIVE = {};
+    var stack = Object.create(null);
+    var depth = 0;
+    var settled = function () {
+      while (depth > 0) {
+        var top = stack[depth - 1];
+        if (top === NATIVE || phaseOf(top) !== 0) return;
+        stack[--depth] = null;
+      }
+    };
+    var currentEvent = function () {
+      settled();
+      var top = depth > 0 ? stack[depth - 1] : null;
+      return top === NATIVE ? null : top;
+    };
+    enterNative = function () {
+      settled();
+      stack[depth++] = NATIVE;
+    };
+    leaveNative = function () {
+      settled();
+      if (depth > 0 && stack[depth - 1] === NATIVE) stack[--depth] = null;
+    };
+
+    var track = function (type) {
+      var key = type === 'keydown' || type === 'keyup';
+      var pointer = type === 'pointerdown' || type === 'pointerup' || type === 'pointercancel';
+      return function (e) {
+        settled();
+        stack[depth++] = e;
+        var trusted = e.isTrusted === true;
+        var out = pressStep(type, facts(
+          e,
+          type,
+          trusted,
+          trusted && key ? repeatOf(e) : false,
+          trusted && pointer ? pointerTypeOf(e) === 'touch' : false,
+          trusted && pointer ? primaryOf(e) : true,
+          trusted && type === 'touchstart' ? fingersOf(e) : 0,
+          false
+        ));
+        if (out.armed) {
+          activationSpent = false;
+          notePress();
+        }
+      };
+    };
+    ['pointerdown', 'keydown', 'keyup', 'click', 'auxclick', 'pointercancel', 'dragend', 'pointerup', 'mouseup'].forEach(function (type) {
+      window.addEventListener(type, track(type), true);
+    });
+    ['touchstart', 'touchend'].forEach(function (type) {
+      window.addEventListener(type, track(type), { capture: true, passive: true });
+    });
+    // Focus leaving the frame takes the end of the press with it (Tab out:
+    // its keyup falls on the host).
+    window.addEventListener('blur', function (e) {
+      if (e.target !== window) return;
+      pressStep('blur', facts(null, 'blur', true, false, false, true, 0, inNative > 0));
+    }, true);
+    // A dialog that took focus ends the press: the handler that showed it
+    // may still spend it, nothing after.
+    endPress = function () {
+      var ev = currentEvent();
+      pressStep('dialog-blurred', facts(ev, ev === null ? '' : typeOf(ev), true, false, false, true, 0, false));
+    };
+
+    var spendIn = function (type) {
+      var ev = currentEvent();
+      var trusted = ev !== null && ev.isTrusted === true;
+      var t = trusted ? typeOf(ev) : '';
+      var repeat = trusted && (t === 'keydown' || t === 'keyup') ? repeatOf(ev) : false;
+      var out = pressStep(type, facts(ev, t, trusted, repeat, false, true, 0, selectMode === true));
+      if (out.spent === 'key' || out.spent === 'pointer') spendActivation();
+      return out.spent;
+    };
+    spendGesture = function () {
+      return spendIn('spend');
+    };
+    holdForLink = function () {
+      return spendIn('link') !== false;
+    };
+    // A cancelled link gives a key's press back: Enter's `keyup` is still
+    // to come. Not once focus has left the frame since the key went down
+    // (a dialog in the link's own handler), nor over a newer press.
+    settleLink = function (e, prevented) {
+      var out = pressStep('settle', facts(e, 'click', true, false, false, true, 0, prevented));
+      if (out.restored) activationSpent = false;
+      return out.open;
+    };
+    // A press in the frame while focus is there, on an activation no tab
+    // has opened on yet (without the API, while a press here holds).
+    pressNested = function (frame) {
+      if (selectMode) return false;
+      if (activeNow ? activationSpent : !odPress.armed(press)) return false;
+      if (activeNow && !activeNow() && now() - openedActiveAt > 1000) return null;
+      pressFrom = frame;
+      pressUntil = now() + 5000;
+      return true;
+    };
+    spendNested = function (frame) {
+      if (selectMode || pressFrom !== frame || now() > pressUntil) return false;
+      pressFrom = null;
+      pressStep('nested-spend', facts(null, '', true, false, false, true, 0, false));
+      spendActivation();
+      return true;
+    };
   })();
 
   function openLink(href) {
@@ -835,21 +1042,15 @@
 
   // A window listener the page adds after this one runs after it, so
   // whether the page cancelled the click is read once dispatch is over;
-  // till then the link holds the press (`pendingLink`). A cancelled link
-  // gives a key's press back: Enter's `keyup` is still to come.
+  // till then the link holds the press: a page listener may open a tab of
+  // its own instead, in the same event, and the link then opens none.
   window.addEventListener('click', function (e) {
     if (!CAN_OPEN) return;
     var href = newWindowLink(e);
-    if (!href) return;
-    var by = spendGesture();
-    if (!by) return;
-    pendingLink = e;
+    if (!href || !holdForLink()) return;
     timer(function settle() {
       if (inNative) return timer(settle);
-      if (pendingLink !== e) return;
-      pendingLink = null;
-      if (!e.defaultPrevented) openLink(href);
-      else restoreGesture(by);
+      if (settleLink(e, e.defaultPrevented === true)) openLink(href);
     });
   });
 
@@ -868,10 +1069,12 @@
       var opened;
       noteOpen();
       inNative++;
+      enterNative();
       try {
         opened = nativeOpen.apply(this, arguments);
       } finally {
         inNative--;
+        leaveNative();
       }
       if (spent) openLink(href);
       return opened;
@@ -881,13 +1084,15 @@
     var nativeDialog = window[name];
     if (typeof nativeDialog !== 'function') return;
     window[name] = function () {
-      var before = blurs;
+      var before = press.blurs;
       inNative++;
+      enterNative();
       try {
         return nativeDialog.apply(this, arguments);
       } finally {
         inNative--;
-        if (blurs !== before) endPress();
+        leaveNative();
+        if (press.blurs !== before) endPress();
       }
     };
   });

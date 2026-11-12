@@ -297,7 +297,6 @@ pub fn command() -> clap::Command {
 }
 
 /// Runs `od` with `args` (program name first), after [`strip_self_arg`].
-#[must_use]
 pub fn main_with(args: Vec<OsString>) -> ExitCode {
     ExitCode::from(main_code(args))
 }
