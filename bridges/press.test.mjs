@@ -334,7 +334,9 @@ function rows(P) {
   const g = () => ({ id: ++gestureIds, real: true });
   const e = (type, gg, extra) => ({ atom: 'event', ev: event(type, gg, extra) });
   const cases = [];
-  const add = (name, want, build) => cases.push([name, want, build]);
+  // `where`: which event each tab opens in (for rows where the count alone
+  // holds under a wrong rule: the tab moves to another event or link).
+  const add = (name, want, build, where) => cases.push([name, want, build, where]);
   add('click opens', 1, (x = g()) => [e('pointerdown', x), e('pointerup', x), e('mouseup', x), e('click', x, { before: ['open'] })]);
   add('pointerup, mouseup and click open one', 1, (x = g()) => [e('pointerdown', x), e('pointerup', x, { before: ['open'] }), e('mouseup', x, { before: ['open'] }), e('click', x, { before: ['open'] })]);
   add('two opens in one click', 1, (x = g()) => [e('pointerdown', x), e('pointerup', x), e('click', x, { before: ['open', 'open'] })]);
@@ -360,9 +362,35 @@ function rows(P) {
   add('the page dispatches its own keydown', 0, () => [e('keydown', PAGE, { trusted: false }), e('keyup', PAGE, { before: ['open'] })]);
   add('select mode', 0, (x = g()) => [{ atom: 'select' }, e('pointerdown', x), e('pointerup', x), e('click', x, { before: ['open'] })]);
   add('page timer', 0, () => [{ atom: 'page-timer-open' }]);
-  for (const [name, want, build] of cases) {
+  // A press opens nothing in the event that begins it (no popup blocker
+  // lets `pointerdown` open), and its click then still may.
+  add('open in pointerdown opens nothing', 0, (x = g()) => [e('pointerdown', x, { before: ['open'] }), e('pointerup', x), e('mouseup', x), e('click', x)]);
+  // A key held down (A) while the mouse clicks: A's repeats do not spend
+  // the mouse's press, so its click opens the tab.
+  {
+    let click;
+    add('a held key\'s repeat leaves the mouse\'s press', 1, (x = g(), y = g()) => {
+      click = e('click', y, { before: ['open'] });
+      return [e('keydown', x), e('pointerdown', y), e('keydown', x, { repeat: true, before: ['open'] }), e('pointerup', y), e('mouseup', y), click];
+    }, () => [click.ev]);
+  }
+  // Two `_blank` links clicked before the first one's settle timer runs:
+  // one tab, the second link's (the first one's settle decides nothing for
+  // the press the second link holds).
+  {
+    let second;
+    add('two _blank clicks before settle: one tab, the second href', 1, (x = g(), y = g()) => {
+      second = e('click', y, { link: true });
+      return [e('pointerdown', x), e('pointerup', x), e('click', x, { link: true }), e('pointerdown', y), e('pointerup', y), second, { atom: 'timers' }];
+    }, () => [second.ev]);
+  }
+  for (const [name, want, build, where] of cases) {
     const run = play(P, build());
     assert.equal(run.opens.length, want, `row "${name}": ${run.opens.length} tabs, want ${want}`);
+    if (where) {
+      const evs = where();
+      run.opens.forEach((o, i) => assert.equal(o.ev, evs[i], `row "${name}": tab ${i + 1} opened in ${o.ev && o.ev.type} of the wrong gesture or link`));
+    }
     check(run, false, `row "${name}"`);
   }
   return cases.length;
