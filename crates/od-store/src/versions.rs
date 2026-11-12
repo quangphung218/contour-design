@@ -173,7 +173,7 @@ pub fn read_version(
         if err.kind() == std::io::ErrorKind::NotFound {
             StoreError::VersionNotFound
         } else {
-            err.into()
+            StoreError::from_read_io(err)
         }
     })?;
     Ok((

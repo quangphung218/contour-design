@@ -27,6 +27,7 @@ ErrConflict = يتعارض مع تغيير قيد التنفيذ
 ErrTooLarge = كبير جدًا
 ErrServer = تعذّر على Contour إكمال هذا. حاول مرة أخرى.
 ErrNoWritePermission = لا يوجد إذن بالكتابة
+ErrNoReadPermission = لا يوجد إذن بالقراءة
 ErrStorageFull = القرص ممتلئ
 JuryOnFailed = تعذّر تشغيل Design Jury: {0}
 JuryOffFailed = تعذّر إيقاف تشغيل Design Jury: {0}

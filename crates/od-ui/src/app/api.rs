@@ -114,6 +114,7 @@ fn status_hint(status: u16) -> Option<Msg> {
 fn code_hint(code: ErrorCode) -> Option<Msg> {
     match code {
         ErrorCode::NoWritePermission => Some(Msg::ErrNoWritePermission),
+        ErrorCode::NoReadPermission => Some(Msg::ErrNoReadPermission),
         ErrorCode::StorageFull => Some(Msg::ErrStorageFull),
         _ => None,
     }
@@ -395,6 +396,17 @@ mod tests {
         assert_eq!(
             denied,
             "No permission to write: Contour has no permission to write to the folder /a."
+        );
+        // QA-085: a refused read says "read", not "write".
+        let unreadable = e(
+            403,
+            ErrorCode::NoReadPermission,
+            "Contour has no permission to read this file. Check its permissions, then try again.",
+        )
+        .to_string();
+        assert!(
+            unreadable.starts_with("No permission to read: ") && !unreadable.contains("write"),
+            "{unreadable}"
         );
         let full = e(
             507,

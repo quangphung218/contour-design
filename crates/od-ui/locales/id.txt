@@ -27,6 +27,7 @@ ErrConflict = Bentrok dengan perubahan yang sedang berjalan
 ErrTooLarge = Terlalu besar
 ErrServer = Contour tidak dapat menyelesaikan ini. Coba lagi.
 ErrNoWritePermission = Tidak ada izin menulis
+ErrNoReadPermission = Tidak ada izin membaca
 ErrStorageFull = Disk penuh
 JuryOnFailed = Tidak dapat menyalakan Design Jury: {0}
 JuryOffFailed = Tidak dapat mematikan Design Jury: {0}

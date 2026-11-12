@@ -38,6 +38,8 @@ pub enum ErrorCode {
     /// The OS refused a write (read-only folder or volume); the message
     /// names the folder when known.
     NoWritePermission,
+    /// The OS refused a read (a file or folder the user cannot read).
+    NoReadPermission,
     /// The disk is full.
     StorageFull,
 }

@@ -27,6 +27,7 @@ ErrConflict = 進行中の変更と競合しています
 ErrTooLarge = サイズが大きすぎます
 ErrServer = Contour はこの操作を完了できませんでした。もう一度お試しください。
 ErrNoWritePermission = 書き込み権限がありません
+ErrNoReadPermission = 読み取り権限がありません
 ErrStorageFull = ディスク容量不足
 JuryOnFailed = Design Jury をオンにできませんでした: {0}
 JuryOffFailed = Design Jury をオフにできませんでした: {0}

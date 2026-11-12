@@ -27,6 +27,7 @@ ErrConflict = Entra en conflicto con un cambio en curso
 ErrTooLarge = Demasiado grande
 ErrServer = Contour no pudo terminar esto. Inténtalo de nuevo.
 ErrNoWritePermission = Sin permiso de escritura
+ErrNoReadPermission = Sin permiso de lectura
 ErrStorageFull = Disco lleno
 JuryOnFailed = No se pudo activar el Design Jury: {0}
 JuryOffFailed = No se pudo desactivar el Design Jury: {0}
