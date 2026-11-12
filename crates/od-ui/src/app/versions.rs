@@ -1,6 +1,7 @@
 //! File version history (spec 1.2): list the versions of the previewed HTML
 //! file by source (AI, manual, restore), view one, restore it.
 
+use super::file_state::ReadState;
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, ViewedVersion, is_html_path};
 use super::tasks::Tasks;
@@ -27,13 +28,19 @@ fn versions_url(ctx: StudioCtx, path: &str) -> String {
 
 #[component]
 pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
-    let versions = RwSignal::new(None::<Result<Vec<FileVersion>, String>>);
+    let versions = RwSignal::new(ReadState::<Vec<FileVersion>>::default());
     let tasks = Tasks::here();
+    // Each load's number: an answer that comes back after a newer load
+    // started (another file picked, its content changed) is dropped.
+    let seq = StoredValue::new(0u64);
     let reload = move || {
+        seq.update_value(|n| *n += 1);
+        let mine = seq.get_value();
         let Some(path) = ctx.active_untracked().filter(|p| is_html_path(p)) else {
-            versions.set(Some(Ok(Vec::new())));
+            versions.update(|v| v.read(Ok(Vec::new())));
             return;
         };
+        versions.update(ReadState::retry);
         tasks.spawn(async move {
             let res = api::get::<FileVersionsResponse>(&versions_url(ctx, &path))
                 .await
@@ -43,14 +50,21 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                     list
                 })
                 .map_err(|e| ctx.failed(&e));
-            versions.set(Some(res));
+            if seq.try_get_value() == Some(mine) {
+                versions.update(|v| v.read(res));
+            }
         });
     };
-    // Refresh when the file or its content changes.
-    Effect::new(move |_| {
-        ctx.active();
-        ctx.preview_rev.get();
+    // Refresh when the file or its content changes; another file's list is
+    // not kept.
+    Effect::new(move |shown: Option<Option<String>>| {
+        let active = ctx.active();
+        ctx.preview_rev.track();
+        if shown.is_some_and(|s| s != active) {
+            versions.set(ReadState::default());
+        }
         reload();
+        active
     });
     on_cleanup(move || ctx.viewing.set(None));
 
@@ -118,10 +132,17 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                 }
             })}
             <ul class="version-list">
-                {move || match versions.get() {
-                    None => view! { <li class="empty small">{t(T::Loading)}</li> }.into_any(),
-                    Some(Err(e)) => view! { <li class="error-text small">{e}</li> }.into_any(),
-                    Some(Ok(list)) if list.is_empty() => {
+                {move || match versions.with(|v| (v.value().cloned(), v.error().map(str::to_owned))) {
+                    (None, None) => view! { <li class="empty small">{t(T::Loading)}</li> }.into_any(),
+                    (None, Some(e)) => view! {
+                        <li class="error-text small" role="alert" data-testid="versions-read-error">
+                            {e}
+                            <button class="btn small" data-testid="versions-retry" on:click=move |_| reload()>
+                                {icon(Glyph::Restore)}{t(T::NextRetry)}
+                            </button>
+                        </li>
+                    }.into_any(),
+                    (Some(list), _) if list.is_empty() => {
                         let msg = if ctx.active().is_some_and(|p| is_html_path(&p)) {
                             t(T::NoVersions)
                         } else {
@@ -129,7 +150,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                         };
                         view! { <li class="empty small">{msg}</li> }.into_any()
                     }
-                    Some(Ok(list)) => list
+                    (Some(list), _) => list
                         .into_iter()
                         .map(|v| {
                             let current = v.current;

@@ -19,6 +19,7 @@ mod ds_page;
 mod dsh_setup;
 mod export_extra;
 mod export_menu;
+mod file_state;
 mod files_panel;
 mod first_hint;
 mod focus;

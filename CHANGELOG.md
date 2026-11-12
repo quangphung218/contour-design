@@ -10,6 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Studio: an Office file whose text could not be read and a History list that could not load now have Retry; a History reload that fails keeps the versions shown instead of replacing them with the error, and switching file no longer shows the previous file's versions while the new ones load. A Markdown document or sketch whose save failed is saved again when its tab is closed.
 - Desktop: a `target="_blank"` link or a button that calls `window.open` inside a web component (an open shadow root, as Shoelace or Lit build) now opens the system browser, as it does in a browser; before, nothing opened. A key held while a finger taps no longer opens three tabs between them; each press opens at most one.
 
 ## [0.2.0-beta.33] - 2026-11-13
