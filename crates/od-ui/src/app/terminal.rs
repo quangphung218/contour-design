@@ -7,6 +7,7 @@
 
 use super::api;
 use super::studio::StudioCtx;
+use super::tasks;
 use crate::i18n::{T, t, tf};
 use leptos::ev;
 use leptos::html;
@@ -46,7 +47,7 @@ fn next_number(ctx: StudioCtx) -> usize {
 
 /// Starts a shell and shows its tab.
 pub fn open(ctx: StudioCtx) {
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         let url = format!(
             "/api/projects/{}/terminals",
             api::seg(&ctx.project_id.get_value())
@@ -70,7 +71,7 @@ pub fn open(ctx: StudioCtx) {
 
 /// Shows tabs for shells still running from before a reload.
 pub fn restore(ctx: StudioCtx) {
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         let url = format!(
             "/api/projects/{}/terminals",
             api::seg(&ctx.project_id.get_value())
@@ -98,7 +99,7 @@ pub fn close(ctx: StudioCtx, id: String) {
     if ctx.active_term.get_untracked().as_deref() == Some(id.as_str()) {
         ctx.active_term.set(None);
     }
-    leptos::task::spawn_local(async move {
+    tasks::detached(async move {
         let _ = api::delete::<Value>(&format!("/api/terminals/{}", api::seg(&id))).await;
     });
 }

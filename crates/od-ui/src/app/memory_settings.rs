@@ -6,6 +6,7 @@
 use super::api;
 use super::icons::{Glyph, icon};
 use super::sse::Sse;
+use super::tasks::Tasks;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use send_wrapper::SendWrapper;
@@ -28,7 +29,8 @@ const HOOKS: [(&str, T, T); 4] = [
 pub fn MemoryControls() -> impl IntoView {
     let config = RwSignal::new(None::<Value>);
     let error = RwSignal::new(None::<String>);
-    leptos::task::spawn_local(async move {
+    let tasks = Tasks::here();
+    tasks.spawn(async move {
         if let Ok(v) = api::get::<Value>("/api/memory/config").await {
             config.set(Some(v));
         }
@@ -41,7 +43,7 @@ pub fn MemoryControls() -> impl IntoView {
                 c[key] = json!(on);
             }
         });
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::patch::<_, Value>("/api/memory/config", &json!({ key: on })).await {
                 Ok(v) => {
                     config.set(Some(v));
@@ -116,6 +118,7 @@ enum Panel {
 #[component]
 pub fn MemoryAdvanced() -> impl IntoView {
     let rev = expect_context::<MemoryRev>();
+    let tasks = Tasks::here();
     let panel = RwSignal::new(Panel::None);
     let toggle = move |p: Panel| panel.update(|cur| *cur = if *cur == p { Panel::None } else { p });
     view! {
@@ -133,7 +136,7 @@ pub fn MemoryAdvanced() -> impl IntoView {
                 </button>
             </div>
             {move || match panel.get() {
-                Panel::Import => view! { <ImportPanel rev=rev/> }.into_any(),
+                Panel::Import => view! { <ImportPanel rev=rev advanced=tasks/> }.into_any(),
                 Panel::Index => view! { <IndexPanel rev=rev/> }.into_any(),
                 Panel::None => ().into_any(),
             }}
@@ -141,14 +144,17 @@ pub fn MemoryAdvanced() -> impl IntoView {
     }
 }
 
+/// `advanced`: the tasks of [`MemoryAdvanced`], which outlives the panel,
+/// so a closed panel still has the list reload after an import.
 #[component]
-fn ImportPanel(rev: MemoryRev) -> impl IntoView {
+fn ImportPanel(rev: MemoryRev, advanced: Tasks) -> impl IntoView {
+    let tasks = Tasks::here();
     let text = RwSignal::new(String::new());
     let found = RwSignal::new(None::<Vec<(bool, String, String)>>);
     let status = RwSignal::new(None::<Result<String, String>>);
     let scan = move || {
         let body = json!({ "text": text.get_untracked() });
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::post::<_, Value>("/api/memory/import", &body).await {
                 Ok(v) => {
                     let list: Vec<(bool, String, String)> = v["suggestions"]
@@ -175,7 +181,7 @@ fn ImportPanel(rev: MemoryRev) -> impl IntoView {
     };
     let on_file = move |ev: web_sys::Event| {
         let picked = super::lib_ui::picked_files(&ev);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             if let Some(f) = picked.into_iter().next()
                 && let Ok(bytes) = super::lib_ui::file_bytes(&f).await
             {
@@ -192,7 +198,9 @@ fn ImportPanel(rev: MemoryRev) -> impl IntoView {
             .filter(|(on, ..)| *on)
             .map(|(_, k, t)| (k, t))
             .collect();
-        leptos::task::spawn_local(async move {
+        // One request per fact: all of them go through, even if the panel
+        // closes in between.
+        let work = async move {
             let (mut saved, mut failed) = (0usize, 0usize);
             for (kind, text) in picked {
                 let body = json!({ "kind": kind, "text": text });
@@ -201,7 +209,13 @@ fn ImportPanel(rev: MemoryRev) -> impl IntoView {
                     Err(_) => failed += 1,
                 }
             }
+            (saved, failed)
+        };
+        advanced.spawn_then(work, move |(saved, failed)| {
             rev.0.update(|n| *n += 1);
+            if !tasks.alive() {
+                return;
+            }
             found.set(None);
             text.set(String::new());
             status.set(Some(if failed == 0 {
@@ -274,8 +288,9 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
     let draft = RwSignal::new(None::<String>);
     let root = RwSignal::new(String::new());
     let status = RwSignal::new(None::<Result<(), String>>);
+    let tasks = Tasks::here();
     let load = move || {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             if let Ok(v) = api::get::<Value>("/api/memory/index").await {
                 saved.set(v["index"].as_str().unwrap_or_default().to_owned());
                 root.set(v["rootDir"].as_str().unwrap_or_default().to_owned());
@@ -295,7 +310,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
         let Some(index) = draft.get_untracked() else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::put::<_, Value>("/api/memory/index", &json!({ "index": index })).await {
                 Ok(v) => {
                     saved.set(v["index"].as_str().unwrap_or_default().to_owned());
@@ -347,6 +362,7 @@ pub fn MemoryToast() -> impl IntoView {
     let location = leptos_router::hooks::use_location();
     // (sequence, text, opens Settings ▸ Memory)
     let shown = RwSignal::new(None::<(u32, String, bool)>);
+    let tasks = Tasks::here();
     let seq = StoredValue::new(0u32);
     let stream = StoredValue::new(None::<SendWrapper<Sse>>);
     let on_settings = Memo::new(move |_| location.pathname.with(|p| p.starts_with("/settings")));
@@ -371,7 +387,7 @@ pub fn MemoryToast() -> impl IntoView {
                 seq.update_value(|n| *n += 1);
                 let mine = seq.get_value();
                 shown.set(Some((mine, text, v["scope"] != "project")));
-                leptos::task::spawn_local(async move {
+                tasks.spawn(async move {
                     gloo_timers::future::TimeoutFuture::new(TOAST_MS).await;
                     if shown.with_untracked(|s| s.as_ref().is_some_and(|(n, ..)| *n == mine)) {
                         shown.set(None);

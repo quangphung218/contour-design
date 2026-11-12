@@ -18,7 +18,7 @@ use super::preview_tools::{self, DrawLayer, Tool, ToolBar, ToolHints, ToolPanel,
 use super::sketch::{SketchView, is_sketch};
 use super::sse::Sse;
 use super::switcher::QuickSwitcher;
-use super::tasks::ScreenTasks;
+use super::tasks::{self, Tasks};
 use super::terminal::{self, TermTab, TerminalView};
 use super::versions::VersionsPanel;
 use super::{Shell, api};
@@ -211,7 +211,7 @@ pub struct StudioCtx {
     /// App context, kept here because async tasks run without an owner.
     pub shell: Shell,
     /// The studio's async work: it stops once the studio is left.
-    pub tasks: ScreenTasks,
+    pub tasks: Tasks,
     pub project_id: StoredValue<String>,
     pub project: RwSignal<Option<Project>>,
     pub conversation_id: RwSignal<Option<String>>,
@@ -498,13 +498,22 @@ impl StudioCtx {
 
     /// Sends a user turn, or queues it while a run is going.
     pub fn send(self, text: String, shell: Shell) {
-        self.send_at(text, shell, js_sys::Date::now() as i64, false);
+        self.send_at(text, shell, js_sys::Date::now() as i64, false, None);
     }
 
     /// [`Self::send`] for a turn the user sent at `sent_at` (epoch ms):
     /// a queued message keeps its own time for Recent projects, and
-    /// `from_queue` marks it as not sent by the reader just now.
-    fn send_at(self, text: String, shell: Shell, sent_at: i64, from_queue: bool) {
+    /// `from_queue` marks it as not sent by the reader just now. `clear`, a
+    /// patch of the project, goes to the server first, in the same work as
+    /// the run (the brief from Home: see [`Self::load`]).
+    fn send_at(
+        self,
+        text: String,
+        shell: Shell,
+        sent_at: i64,
+        from_queue: bool,
+        clear: Option<serde_json::Value>,
+    ) {
         let text = text.trim().to_owned();
         if text.is_empty() {
             return;
@@ -600,6 +609,9 @@ impl StudioCtx {
         let sent = text.clone();
         let base = self.base();
         let work = async move {
+            if let Some(patch) = clear {
+                let _ = api::patch::<_, ProjectResponse>(&base, &patch).await;
+            }
             let res = api::post::<_, CreateRunResponse>("/api/runs", &req).await;
             if let (Ok(_), Some(k)) = (&res, &draft_key) {
                 super::composer::clear_draft_if(k, &sent);
@@ -790,7 +802,7 @@ impl StudioCtx {
             .queue
             .try_update(|q| (!q.is_empty()).then(|| q.remove(0)));
         if let Some(Some(next)) = next {
-            self.send_at(next.text, shell, next.sent_at, auto);
+            self.send_at(next.text, shell, next.sent_at, auto, None);
         }
     }
 
@@ -906,7 +918,7 @@ impl StudioCtx {
         // Every file's version is saved, the studio left or not; nothing on
         // screen waits for it.
         let base = self.base();
-        leptos::task::spawn_local(async move {
+        tasks::detached(async move {
             for f in files {
                 let path = format!("{base}/files/{}/versions", api::file_path(&f));
                 let req = CreateVersionRequest {
@@ -1411,19 +1423,20 @@ impl StudioCtx {
                 .as_mut()
                 .map(super::composer::take_pending)
                 .unwrap_or_default();
-            // Clear first so a reload never sends the brief twice.
+            // Cleared first so a reload never sends the brief twice, in the
+            // send's own work: leaving the Studio meanwhile drops neither.
             let mut patch = json!({ "pendingPrompt": null });
             if staged.is_some() {
                 patch["metadata"] = json!(meta);
             }
-            let _ = api::patch::<_, ProjectResponse>(&base, &patch).await;
             if let Some((files, context)) = staged {
                 self.tools
                     .attachments
                     .update(|a| crate::workspace::add_missing(a, files));
                 self.chat.context.set(context);
             }
-            self.send(prompt, shell);
+            let now = js_sys::Date::now() as i64;
+            self.send_at(prompt, shell, now, false, Some(patch));
         }
     }
 }
@@ -1538,7 +1551,7 @@ pub fn Studio() -> impl IntoView {
     let project_id = params.with_untracked(|p| p.get("id").unwrap_or_default());
     let ctx = StudioCtx {
         shell,
-        tasks: ScreenTasks::provide(),
+        tasks: Tasks::here(),
         project_id: StoredValue::new(project_id),
         project: RwSignal::new(None),
         conversation_id: RwSignal::new(None),
@@ -1887,6 +1900,7 @@ fn reveal_active_tab(list: &web_sys::HtmlDivElement) {
 
 #[component]
 fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
+    let tasks = Tasks::here();
     let device = RwSignal::new(Device::Desktop);
     let stage = NodeRef::<leptos::html::Div>::new();
     let stage_size = observe_size(stage);
@@ -1959,7 +1973,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     // can land just after the frame's `load` event: give it a moment.
     let forget_deck = move |_| {
         let loaded = src.get_untracked();
-        ctx.tasks.spawn(async move {
+        tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(DECK_READY_WITHIN_MS).await;
             // `try_`: the studio may be gone by then.
             if src.try_get_untracked() == Some(loaded)
@@ -2452,12 +2466,13 @@ const NOTICE_MS: u32 = 8000;
 /// leaves by itself after [`NOTICE_MS`] unless a newer one replaced it.
 #[component]
 fn NoticeToast(ctx: StudioCtx) -> impl IntoView {
+    let tasks = Tasks::here();
     let shown = StoredValue::new(0u32);
     Effect::new(move |_| {
         if ctx.notice.with(Option::is_some) {
             let n = shown.get_value().wrapping_add(1);
             shown.set_value(n);
-            ctx.tasks.spawn(async move {
+            tasks.spawn(async move {
                 gloo_timers::future::TimeoutFuture::new(NOTICE_MS).await;
                 if shown.try_get_value() == Some(n) {
                     ctx.notice.set(None);

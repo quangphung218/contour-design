@@ -5,6 +5,7 @@
 //! [`crate::models`]; this module is the browser side.
 
 use super::icons::{Glyph, icon};
+use super::tasks::{self, Tasks};
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use crate::mention::{self, Candidate, MentionKind, Slash, Trigger};
@@ -537,6 +538,7 @@ pub fn MentionArea(
 ) -> impl IntoView {
     let area = node_ref.unwrap_or_default();
     let open = RwSignal::new(None::<(bool, Trigger)>);
+    let tasks = Tasks::here();
     let index = RwSignal::new(0usize);
     let dragging = RwSignal::new(false);
 
@@ -746,7 +748,7 @@ pub fn MentionArea(
                     // After a click on a row has landed; not if the field has
                     // the focus again by then (typing on right after a click
                     // elsewhere would lose the list it just opened).
-                    leptos::task::spawn_local(async move {
+                    tasks.spawn(async move {
                         gloo_timers::future::TimeoutFuture::new(150).await;
                         // The composer may be gone by now (Home → Studio).
                         let refocused = area.try_get_untracked().flatten().is_some_and(|el| {
@@ -1283,7 +1285,7 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
             return;
         };
         let next = models::with_selection(&base, &agent_id, &sel);
-        leptos::task::spawn_local(async move {
+        tasks::detached(async move {
             let _ = shell.save_config(next).await;
         });
     };

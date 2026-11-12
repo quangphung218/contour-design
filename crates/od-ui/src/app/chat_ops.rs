@@ -6,7 +6,7 @@
 use super::chat_view::focus_composer;
 use super::icons::{Glyph, icon};
 use super::studio::{StudioCtx, file_glyph, main_conversation_title};
-use super::tasks::ScreenTasks;
+use super::tasks::Tasks;
 use super::{Shell, api, desktop};
 use crate::chat::{AssistantTurn, FileOp, TurnState};
 use crate::guide;
@@ -26,6 +26,7 @@ const FILES_SHOWN: usize = 4;
 /// Rename and delete of the open conversation, next to its picker.
 #[component]
 pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
+    let tasks = Tasks::here();
     let open = RwSignal::new(false);
     let wrap = NodeRef::<Div>::new();
     super::composer::close_outside(open, wrap);
@@ -40,7 +41,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
     // The form and the dialog go away on the next task: removing them inside
     // their own handler drops the closure that is still running.
     let rename = move |title: String| {
-        next_tick(move || renaming.set(None));
+        next_tick(tasks, move || renaming.set(None));
         let Some(cid) = ctx.conversation_id.get_untracked() else {
             return;
         };
@@ -59,9 +60,9 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
             }
         });
     };
-    let cancel_delete = move || next_tick(move || confirming.set(false));
+    let cancel_delete = move || next_tick(tasks, move || confirming.set(false));
     let delete = move || {
-        next_tick(move || confirming.set(false));
+        next_tick(tasks, move || confirming.set(false));
         let Some(cid) = ctx.conversation_id.get_untracked() else {
             return;
         };
@@ -177,9 +178,9 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-/// Runs `f` on the next task.
-fn next_tick(f: impl FnOnce() + 'static) {
-    leptos::task::spawn_local(async move {
+/// Runs `f` on the next task, while `tasks`' owner is there.
+fn next_tick(tasks: Tasks, f: impl FnOnce() + 'static) {
+    tasks.spawn(async move {
         gloo_timers::future::TimeoutFuture::new(0).await;
         f();
     });
@@ -188,6 +189,7 @@ fn next_tick(f: impl FnOnce() + 'static) {
 /// The drag handle on the chat pane's right edge (arrow keys move it 16 px).
 #[component]
 pub fn ChatResizer(ctx: StudioCtx) -> impl IntoView {
+    let tasks = Tasks::here();
     let dragging = RwSignal::new(false);
     let studio_box = move |el: &web_sys::Element| {
         el.closest(".studio")
@@ -222,7 +224,7 @@ pub fn ChatResizer(ctx: StudioCtx) -> impl IntoView {
     Effect::new(move |_| {
         ctx.chat.width.track();
         handle.track();
-        next_tick(measure);
+        next_tick(tasks, measure);
     });
     view! {
         <div
@@ -432,7 +434,7 @@ fn more_line(hidden: u64, unlisted: u64, expanded: bool) -> MoreLine {
 /// Copy under a finished turn: its prose, "Copied" for two seconds.
 #[component]
 pub fn CopyTurn(turn: RwSignal<AssistantTurn>) -> impl IntoView {
-    let screen = ScreenTasks::current();
+    let tasks = Tasks::here();
     let copied = RwSignal::new(false);
     view! {
         <button
@@ -440,7 +442,7 @@ pub fn CopyTurn(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             data-testid="copy-message"
             on:click=move |_| {
                 let text = turn.with_untracked(guide::copy_text);
-                screen.spawn(async move {
+                tasks.spawn(async move {
                     if super::export_menu::copy_text(&text).await.is_ok() {
                         copied.set(true);
                         gloo_timers::future::TimeoutFuture::new(2000).await;
@@ -626,6 +628,9 @@ enum FolderDialog {
 
 #[component]
 fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> impl IntoView {
+    // The link lands in the Studio's project; the dialog (its error, its
+    // `close`) only while it is open.
+    let tasks = Tasks::here();
     let path = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
     let projects = LocalResource::new(|| async {
@@ -644,9 +649,13 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
             .spawn_then(link_dir(base, meta, dir), move |res| match res {
                 Ok((_, p)) => {
                     ctx.project.set(Some(p));
-                    close.run(());
+                    if tasks.alive() {
+                        close.run(());
+                    }
                 }
-                Err(e) => error.set(Some(e)),
+                Err(e) => {
+                    error.try_set(Some(e));
+                }
             });
     };
     let reference = move |id: String, name: String| {
@@ -663,6 +672,9 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
         ctx.tasks.spawn_then(work, move |res| match res {
             Ok((dir, p)) => {
                 ctx.project.set(Some(p));
+                if !tasks.alive() {
+                    return;
+                }
                 ctx.draft.update(|d| {
                     if !d.trim().is_empty() {
                         d.push_str("\n\n");
@@ -672,7 +684,9 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
                 close.run(());
                 focus_composer();
             }
-            Err(e) => error.set(Some(e)),
+            Err(e) => {
+                error.try_set(Some(e));
+            }
         });
     };
     let title = match kind {

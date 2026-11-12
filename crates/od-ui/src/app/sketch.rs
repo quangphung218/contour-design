@@ -7,6 +7,7 @@ use super::files_panel::{FilesUi, raw_url, replace_content};
 use super::icons::{Glyph, icon};
 use super::preview_tools::{DRAW_COLORS, DrawSurface, compose, draw_controls, save_png};
 use super::studio::StudioCtx;
+use super::tasks::Tasks;
 use crate::file_tree as ft;
 use crate::i18n::{T, t, tf};
 use crate::sketch_model::{History, Pen, SketchFile};
@@ -46,7 +47,7 @@ pub fn new_sketch(ctx: StudioCtx, ui: FilesUi, dir: String) {
         .files
         .with_untracked(|f| f.iter().map(|f| f.path.clone()).collect());
     let path = ft::free_name(&existing, &dir, "sketch", "sketch.json");
-    leptos::task::spawn_local(async move {
+    ctx.tasks.spawn(async move {
         match create(ctx, path, &SketchFile::blank()).await {
             Ok(p) => {
                 ctx.refresh_files();
@@ -96,9 +97,10 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
     let busy = RwSignal::new(false);
     let size = StoredValue::new((SketchFile::WIDTH, SketchFile::HEIGHT));
     let path = StoredValue::new(path);
+    let tasks = Tasks::here();
     let load = move || {
         read_error.set(None);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let Some(url) = path.try_get_value().map(|p| raw_url(ctx, &p)) else {
                 return;
             };
@@ -124,37 +126,32 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
         });
     };
     load();
-    // Saved a moment after the last change.
+    // Saved a moment after the last change, and at once when the view
+    // goes (tab switch, leaving the Studio) with a change not saved yet.
     let seq = StoredValue::new(0u32);
-    Effect::new(move |first: Option<()>| {
-        history.track();
-        if first.is_none() || !loaded.get_untracked() {
-            return;
-        }
-        let n = seq.get_value().wrapping_add(1);
-        seq.set_value(n);
-        leptos::task::spawn_local(async move {
-            gloo_timers::future::TimeoutFuture::new(SAVE_DELAY_MS).await;
-            if seq.try_get_value() != Some(n) {
+    let pending = StoredValue::new(false);
+    let save_now = move || {
+        pending.set_value(false);
+        let n = seq.get_value();
+        saved.set(SaveState::Saving);
+        let (width, height) = size.get_value();
+        let file = SketchFile {
+            version: 1,
+            width,
+            height,
+            strokes: history.with_untracked(|h| h.strokes().to_vec()),
+        };
+        let body = match serde_json::to_string(&file) {
+            Ok(body) => body,
+            Err(_) => {
+                saved.set(SaveState::Failed);
                 return;
             }
-            saved.set(SaveState::Saving);
-            let (width, height) = size.get_value();
-            let file = SketchFile {
-                version: 1,
-                width,
-                height,
-                strokes: history.with_untracked(|h| h.strokes().to_vec()),
-            };
-            let res = match serde_json::to_string(&file) {
-                Ok(body) => {
-                    replace_content(ctx, &path.get_value(), &body, "Sketch", T::MdSaveFailed)
-                        .await
-                        .map(|_| ())
-                }
-                Err(e) => Err(e.to_string()),
-            };
-            if seq.try_get_value() == Some(n) {
+        };
+        // Started here: on leaving, the save runs after the view is disposed.
+        let save = replace_content(ctx, &path.get_value(), &body, "Sketch", T::MdSaveFailed);
+        tasks.spawn_then(save, move |res| {
+            if seq.get_value() == n {
                 saved.set(if res.is_ok() {
                     SaveState::Done
                 } else {
@@ -162,6 +159,26 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
                 });
             }
         });
+    };
+    Effect::new(move |first: Option<()>| {
+        history.track();
+        if first.is_none() || !loaded.get_untracked() {
+            return;
+        }
+        let n = seq.get_value().wrapping_add(1);
+        seq.set_value(n);
+        pending.set_value(true);
+        tasks.spawn(async move {
+            gloo_timers::future::TimeoutFuture::new(SAVE_DELAY_MS).await;
+            if seq.get_value() == n {
+                save_now();
+            }
+        });
+    });
+    on_cleanup(move || {
+        if pending.get_value() {
+            save_now();
+        }
     });
     let to_chat = move |_| {
         if busy.get_untracked() {
@@ -170,7 +187,7 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
         busy.set(true);
         let (w, h) = size.get_value();
         let strokes = history.with_untracked(|h| h.strokes().to_vec());
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let stem = path.get_value();
             let stem = stem
                 .strip_suffix(".sketch.json")

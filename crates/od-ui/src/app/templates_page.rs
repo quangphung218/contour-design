@@ -8,6 +8,7 @@ use super::export_menu::download;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::lib_ui::{Modal, copy_text, query_param};
+use super::tasks::Tasks;
 use crate::i18n::{T, locale, t, tf};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
@@ -290,6 +291,7 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
 
 #[component]
 fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoView {
+    let tasks = Tasks::here();
     let navigate = use_navigate();
     let id = template.info.id.clone();
     let name = name_of(&template);
@@ -319,7 +321,7 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
             let name = name.clone();
             let navigate = navigate.clone();
             busy.set(true);
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 match api::post::<_, Value>(
                     &format!("/api/design-templates/{}/remix", api::seg(&id)),
                     &json!({ "name": name }),
@@ -351,14 +353,19 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
         move |_| {
             let src = src.clone();
             let name = name.clone();
-            leptos::task::spawn_local(async move {
-                match api::get_bytes(&src).await {
-                    Ok(bytes) => {
-                        let _ = download(&bytes, &format!("{name}.html"), "text/html");
+            // The download goes on if the preview is closed meanwhile.
+            tasks.spawn_then(
+                async move {
+                    let bytes = api::get_bytes(&src).await?;
+                    let _ = download(&bytes, &format!("{name}.html"), "text/html");
+                    Ok(())
+                },
+                move |res: api::ApiResult<()>| {
+                    if let Err(e) = res {
+                        notice.set(Some(api::failure(T::DownloadFailed, &e)));
                     }
-                    Err(e) => notice.set(Some(api::failure(T::DownloadFailed, &e))),
-                }
-            });
+                },
+            );
         }
     };
     let fullscreen = move |_| {
@@ -370,7 +377,7 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
         let prompt = prompt.clone();
         move |_| {
             let p = prompt.clone();
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 notice.set(Some(match copy_text(&p).await {
                     Ok(()) => t(T::Copied).to_owned(),
                     Err(e) => e,
@@ -422,6 +429,7 @@ fn PromptGallery(
     prompts: LocalResource<Vec<PromptTemplate>>,
     surface: &'static str,
 ) -> impl IntoView {
+    let tasks = Tasks::here();
     let navigate = use_navigate();
     let category = RwSignal::new(String::new());
     let query = RwSignal::new(String::new());
@@ -482,7 +490,7 @@ fn PromptGallery(
                                     <button class="btn small ghost" data-testid="prompt-copy" on:click=move |_| {
                                         let path = path.clone();
                                         let id = id.clone();
-                                        leptos::task::spawn_local(async move {
+                                        tasks.spawn(async move {
                                             if let Ok(v) = api::get::<Value>(&path).await
                                                 && copy_text(v["promptTemplate"]["prompt"].as_str().unwrap_or_default()).await.is_ok() {
                                                     copied.set(Some(id));
@@ -504,6 +512,7 @@ fn PromptGallery(
 
 #[component]
 fn MyTemplates() -> impl IntoView {
+    let tasks = Tasks::here();
     let navigate = use_navigate();
     let saved = RwSignal::new(None::<Vec<Saved>>);
     let projects = RwSignal::new(Vec::<Project>::new());
@@ -512,7 +521,7 @@ fn MyTemplates() -> impl IntoView {
     let description = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
     let reload = move || {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::get::<Value>("/api/templates").await {
                 Ok(v) => saved.set(serde_json::from_value(v["templates"].clone()).ok()),
                 Err(e) => error.set(Some(e.to_string())),
@@ -520,7 +529,7 @@ fn MyTemplates() -> impl IntoView {
         });
     };
     reload();
-    leptos::task::spawn_local(async move {
+    tasks.spawn(async move {
         if let Ok(r) = api::get::<ProjectsResponse>("/api/projects").await {
             projects.set(r.projects);
         }
@@ -531,7 +540,7 @@ fn MyTemplates() -> impl IntoView {
             "description": description.get_untracked(),
             "sourceProjectId": project.get_untracked(),
         });
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::post::<_, Value>("/api/templates", &body).await {
                 Ok(_) => {
                     error.set(None);
@@ -596,7 +605,7 @@ fn MyTemplates() -> impl IntoView {
                                 <button class="btn small primary" data-testid="tpl-saved-use" on:click=move |_| {
                                     let id = id.clone();
                                     let navigate = navigate.clone();
-                                    leptos::task::spawn_local(async move {
+                                    tasks.spawn(async move {
                                         match api::post::<_, Value>(&format!("/api/templates/{}/use", api::seg(&id)), &json!({})).await {
                                             Ok(v) => navigate(&format!("/projects/{}", v["project"]["id"].as_str().unwrap_or_default()), Default::default()),
                                             Err(e) => error.set(Some(api::failure(T::ProjectCreateFailed, &e))),
@@ -605,7 +614,7 @@ fn MyTemplates() -> impl IntoView {
                                 }>{icon(Glyph::ArrowRight)}{t(T::UseTemplate)}</button>
                                 <button class="icon-btn danger" aria-label=t(T::Delete) data-testid="tpl-saved-delete" on:click=move |_| {
                                     let id = id_del.clone();
-                                    leptos::task::spawn_local(async move {
+                                    tasks.spawn(async move {
                                         let _ = api::delete::<Value>(&format!("/api/templates/{}", api::seg(&id))).await;
                                         reload();
                                     });

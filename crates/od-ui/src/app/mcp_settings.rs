@@ -3,6 +3,7 @@
 //! and header entries (shown masked by the daemon) round-trip untouched.
 
 use super::icons::{Glyph, icon};
+use super::tasks::Tasks;
 use super::{api, desktop};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -40,6 +41,7 @@ fn same_as_saved(servers: &[Value], saved: &[Value]) -> bool {
 
 #[component]
 pub fn McpSection() -> impl IntoView {
+    let tasks = Tasks::here();
     let servers = RwSignal::new(Vec::<Value>::new());
     // The list as last loaded or saved: Save is for changes only.
     let saved = RwSignal::new(Vec::<Value>::new());
@@ -49,7 +51,7 @@ pub fn McpSection() -> impl IntoView {
     // then would probe a server it does not know yet.
     let saving = RwSignal::new(false);
     let reload = move || {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             if let Ok(r) = api::get::<Value>("/api/mcp/servers").await {
                 let list = r["servers"].as_array().cloned().unwrap_or_default();
                 saved.set(list.clone());
@@ -62,7 +64,7 @@ pub fn McpSection() -> impl IntoView {
         let body =
             json!({"servers": servers.get_untracked().iter().map(for_save).collect::<Vec<_>>()});
         saving.set(true);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::put::<_, Value>("/api/mcp/servers", &body).await {
                 Ok(r) => {
                     let list = r["servers"].as_array().cloned().unwrap_or_default();
@@ -102,7 +104,7 @@ pub fn McpSection() -> impl IntoView {
                         </div>
                     }.into_any();
                 }
-                (0..count).map(|i| view! { <McpRow servers=servers index=i saving=saving/> }).collect_view().into_any()
+                (0..count).map(|i| view! { <McpRow servers=servers index=i saving=saving section=tasks/> }).collect_view().into_any()
             }}
         </div>
         <div class="row end">
@@ -120,8 +122,15 @@ pub fn McpSection() -> impl IntoView {
     }
 }
 
+/// `section`: the section's tasks, for work that updates only its list.
 #[component]
-fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -> impl IntoView {
+fn McpRow(
+    servers: RwSignal<Vec<Value>>,
+    index: usize,
+    saving: RwSignal<bool>,
+    section: Tasks,
+) -> impl IntoView {
+    let tasks = Tasks::here();
     let probe = RwSignal::new(None::<Probe>);
     let get = move |key: &'static str| {
         move || servers.with(|s| s.get(index).map(|v| field(v, key)).unwrap_or_default())
@@ -159,7 +168,7 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
     };
     let test = move |_| {
         let url = format!("/api/mcp/servers/{}/test", api::seg(&id()));
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             probe.set(Some(match api::post::<_, Value>(&url, &json!({})).await {
                 Ok(r) if r["ok"] == true => Probe::Ok(r["tools"].as_array().map_or(0, Vec::len)),
                 Ok(r) if r["needsAuth"] == true => Probe::NeedsAuth,
@@ -171,7 +180,7 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
     let sign_in = move |_| {
         let url = format!("/api/mcp/servers/{}/oauth/start", api::seg(&id()));
         let on_desktop = desktop::is_desktop();
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::post::<_, Value>(&url, &json!({"open": on_desktop})).await {
                 Ok(r) => {
                     if !on_desktop && let Some(w) = web_sys::window() {
@@ -185,7 +194,7 @@ fn McpRow(servers: RwSignal<Vec<Value>>, index: usize, saving: RwSignal<bool>) -
     };
     let sign_out = move |_| {
         let url = format!("/api/mcp/servers/{}/oauth", api::seg(&id()));
-        leptos::task::spawn_local(async move {
+        section.spawn(async move {
             let _ = api::delete::<Value>(&url).await;
             servers.update(|s| {
                 if let Some(v) = s.get_mut(index) {

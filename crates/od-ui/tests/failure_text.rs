@@ -119,7 +119,13 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
     (
         "project_actions.rs",
         "Err(e) => return fail(e.to_string()),",
-        2,
+        1,
+        "under \"Could not create the design system\"",
+    ),
+    (
+        "project_actions.rs",
+        "Err((e, false)) => fail(e.to_string()),",
+        1,
         "under \"Could not create the design system\"",
     ),
     (
@@ -158,12 +164,6 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
         "serde_json::from_str(text).map_err(|e| e.to_string())",
         1,
         "serde decode, shown under SketchReadFailed",
-    ),
-    (
-        "sketch.rs",
-        "Err(e) => Err(e.to_string()),",
-        1,
-        "serde encode on save; only SaveState::Failed is shown",
     ),
     (
         "api.rs",

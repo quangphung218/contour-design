@@ -8,6 +8,7 @@
 
 use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, copy_text};
+use super::tasks::Tasks;
 use super::{Shell, api};
 use crate::events::AgentInfo;
 use crate::i18n::{T, t, tf};
@@ -61,13 +62,14 @@ fn still_missing(agent: &AgentInfo) -> String {
 
 #[component]
 fn Command(label: &'static str, text: &'static str, testid: &'static str) -> impl IntoView {
+    let tasks = Tasks::here();
     let copied = RwSignal::new(false);
     view! {
         <div class="dsh-command" data-testid=testid>
             <div class="dsh-command-head">
                 <span class="muted small">{label}</span>
                 <button class="btn ghost small" on:click=move |_| {
-                    leptos::task::spawn_local(async move {
+                    tasks.spawn(async move {
                         if copy_text(text).await.is_ok() {
                             copied.set(true);
                         }
@@ -91,6 +93,9 @@ pub fn DshSetupDialog(
     cli_path: Option<String>,
 ) -> impl IntoView {
     let shell = Shell::get();
+    // The dialog stays while a detection runs (close waits on `busy`), so
+    // its tasks cover the card's `state` too.
+    let tasks = Tasks::here();
     let cli_path = RwSignal::new(cli_path);
     // The last detection that found the agent still unavailable: the card
     // takes it on close, so it reopens showing what was found.
@@ -114,7 +119,7 @@ pub fn DshSetupDialog(
             busy: true,
             error: None,
         }));
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let path = format!("/api/agents/{DSH_ID}/detect");
             match api::post::<_, Detected>(&path, &json!({})).await {
                 Ok(Detected { agent }) if agent.available => {

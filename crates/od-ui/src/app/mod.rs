@@ -76,6 +76,7 @@ use leptos::prelude::*;
 use leptos_router::components::{A, Route, Router, Routes};
 use leptos_router::hooks::{use_location, use_navigate};
 use leptos_router::path;
+use tasks::Tasks;
 
 /// App-wide state shared through context.
 #[derive(Clone, Copy)]
@@ -135,7 +136,7 @@ impl Shell {
     }
 
     pub fn reload_agents(self) {
-        leptos::task::spawn_local(async move {
+        tasks::detached(async move {
             let res = api::get::<AgentsResponse>("/api/agents")
                 .await
                 .map(|r| r.agents)
@@ -226,7 +227,8 @@ pub fn App() -> impl IntoView {
         exports: export_menu::Exports::new(),
     };
     provide_context(shell);
-    leptos::task::spawn_local(async move {
+    let tasks = Tasks::here();
+    tasks::detached(async move {
         // A daemon without settings yet still gets a usable UI.
         let config = api::get::<AppConfig>("/api/app-config")
             .await
@@ -254,7 +256,7 @@ pub fn App() -> impl IntoView {
     Effect::new(move |_| {
         let wanted = shell.locale.get();
         if !i18n::has_dict(wanted) {
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 load_dict(wanted).await;
                 dict_loaded.update(|n| *n += 1);
             });
@@ -622,7 +624,7 @@ fn ViewTracker() -> impl IntoView {
         else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        tasks::detached(async move {
             let _ = api::post::<_, serde_json::Value>(
                 &format!("/api/projects/{}/viewed", api::seg(&id)),
                 &serde_json::json!({}),
@@ -653,7 +655,7 @@ fn ScrollReset() -> impl IntoView {
         // The first run is a full load (a typed URL, a reload, `set_href`):
         // the browser found no section to scroll to, the page renders later.
         if (moved || first) && !back_or_forward && !anchor.is_empty() {
-            leptos::task::spawn_local(scroll_to_anchor(anchor));
+            tasks::detached(scroll_to_anchor(anchor));
         } else if moved
             && !back_or_forward
             && let Some(main) = element_by_id("main")

@@ -71,7 +71,7 @@ pub fn ShortcutsDialog() -> impl IntoView {
     // listeners the same click still reaches on its way up (microtasks run
     // between listeners, so a spawned future is not late enough).
     let close = move || {
-        leptos::task::spawn_local(async move {
+        super::tasks::detached(async move {
             gloo_timers::future::TimeoutFuture::new(0).await;
             shell.shortcuts.set(false);
         });

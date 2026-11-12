@@ -9,6 +9,7 @@
 use super::composer::close_outside;
 use super::icons::{Glyph, icon};
 use super::leave_guard::use_leave;
+use super::tasks::Tasks;
 use super::{Shell, api};
 use crate::i18n::{Locale, T, t};
 use crate::settings::Theme;
@@ -68,6 +69,7 @@ const SECTIONS: [(&str, T, Glyph); 4] = [
 #[component]
 pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
     let shell = Shell::get();
+    let tasks = Tasks::here();
     let navigate = use_leave();
     let open = RwSignal::new(false);
     let wrap = NodeRef::<Div>::new();
@@ -80,20 +82,19 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
         seq.update_value(|n| *n += 1);
         let mine = seq.get_value();
         notice.set(Some(r));
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(NOTICE_MS).await;
             if seq.get_value() == mine {
                 notice.set(None);
             }
         });
     };
+    // Several steps (summary, clipboard, log folder): all of them run.
     let report = move || {
-        leptos::task::spawn_local(async move {
-            match report_issue().await {
-                Ok(r) if r.copied => show(Ok(r.log_dir)),
-                Ok(r) => manual.set(Some(r.text)),
-                Err(e) => show(Err(e)),
-            }
+        tasks.spawn_then(report_issue(), move |res| match res {
+            Ok(r) if r.copied => show(Ok(r.log_dir)),
+            Ok(r) => manual.set(Some(r.text)),
+            Err(e) => show(Err(e)),
         });
     };
     let nav_docs = navigate.clone();
@@ -119,8 +120,8 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
     let save = move |f: Box<dyn FnOnce(&mut crate::settings::AppConfig)>| {
         let mut next = shell.config.get_untracked().unwrap_or_default();
         f(&mut next);
-        leptos::task::spawn_local(async move {
-            if let Err(e) = shell.save_config(next).await {
+        tasks.spawn_then(shell.save_config(next), move |res| {
+            if let Err(e) = res {
                 show(Err(e));
             }
         });

@@ -4,6 +4,7 @@
 //! the BYOK agent the one runs use.
 
 use super::icons::{Glyph, icon};
+use super::tasks::Tasks;
 use super::{Shell, api};
 use crate::byok::{self, PRESETS};
 use crate::i18n::{T, t, tf};
@@ -76,6 +77,7 @@ const KEY_REQUIRED_ID: &str = "byok-key-required";
 #[component]
 pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl IntoView {
     let shell = Shell::get();
+    let tasks = Tasks::here();
     let stored = shell
         .config
         .with_untracked(|c| c.as_ref().and_then(|c| c.extra.get("byok").cloned()))
@@ -154,7 +156,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
         let mut b = body();
         b["mode"] = json!("provider");
         test.set(Some(TestState::Running));
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             test.set(Some(
                 match api::post::<_, Value>("/api/test/connection", &b).await {
                     Ok(v) => TestState::Done(v),
@@ -166,7 +168,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
     let fetch = move |_| {
         let b = body();
         fetch_state.set(None);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match api::post::<_, Value>("/api/provider/models", &b).await {
                 Ok(v) => {
                     let list: Vec<String> = v["models"]
@@ -221,14 +223,19 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
         next.agent_id = Some("byok".to_owned());
         let sent_key = !api_key.get_untracked().is_empty();
         let sent_base = base_url.get_untracked();
-        leptos::task::spawn_local(async move {
+        let work = async move {
             let res = shell.save_config(next).await;
+            if res.is_ok() {
+                shell.reload_agents();
+            }
+            res
+        };
+        tasks.spawn_then(work, move |res| {
             if res.is_ok() {
                 if sent_key {
                     key_base.set(Some(sent_base));
                 }
                 api_key.set(String::new());
-                shell.reload_agents();
                 if let Some(cb) = on_saved {
                     cb.run(());
                 }

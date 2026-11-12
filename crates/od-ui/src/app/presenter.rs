@@ -6,6 +6,7 @@
 use super::api;
 use super::bridge::{self, Source};
 use super::icons::{Glyph, icon};
+use super::tasks::Tasks;
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{self as pb, BridgeMsg, Slide};
 use crate::speaker_notes;
@@ -142,7 +143,7 @@ pub fn Presenter() -> impl IntoView {
 
     {
         let raw = raw.clone();
-        leptos::task::spawn_local(async move {
+        Tasks::here().spawn(async move {
             if let Ok(html) = api::get_text(&raw).await {
                 let n = count.get_untracked().max(1) as usize;
                 notes.set(speaker_notes::extract(&html, n));

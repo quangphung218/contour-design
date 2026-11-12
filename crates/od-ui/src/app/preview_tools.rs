@@ -10,6 +10,7 @@ use super::desktop;
 use super::icons::{Glyph, icon};
 use super::native_shell;
 use super::studio::{StudioCtx, is_html_path};
+use super::tasks::Tasks;
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{
     self as pb, BridgeMsg, Inspected, Override, Snapshot, TweakDef, TweakKind,
@@ -533,7 +534,7 @@ impl StudioCtx {
         // Take this load's edit key, then re-read the inspected element
         // (its answer counts only with the key).
         tools.claimed_kid.set_value(kid.clone());
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let url = format!("{}/edit-keys/{}", self.base(), api::seg(&kid));
             let res = api::post::<_, EditKeyResponse>(&url, &serde_json::json!({})).await;
             if let Err(e) = &res {
@@ -741,16 +742,20 @@ impl StudioCtx {
         };
         let tools = self.tools;
         let path = format!("{}/source-edits", self.base());
-        // The write lands even if the Studio is left meanwhile; after the
-        // `await` its signals may be gone, so only `try_*` touches them.
-        leptos::task::spawn_local(async move {
-            match api::post::<_, SourceEditResponse>(&path, &req).await {
+        // The write lands even if the Studio is left meanwhile; the tools
+        // show it only while the Studio is there.
+        let work = async move {
+            let res = api::post::<_, SourceEditResponse>(&path, &req).await;
+            (req, res)
+        };
+        self.tasks.spawn_then(work, move |(req, res)| {
+            match res {
                 Ok(r) => {
                     if styles {
-                        let _ = tools.overrides.try_set(Vec::new());
-                        let _ = tools.extracted.try_set(None);
+                        tools.overrides.set(Vec::new());
+                        tools.extracted.set(None);
                     } else {
-                        tools.overrides.try_update(|list| {
+                        tools.overrides.update(|list| {
                             for e in &req.edits {
                                 if let Some(text) = &e.text {
                                     retext_overrides(list, &e.selector, text);
@@ -759,7 +764,7 @@ impl StudioCtx {
                         });
                         tools
                             .failed_text
-                            .try_update(|list| drop_written(list, &req.file, &req.edits));
+                            .update(|list| drop_written(list, &req.file, &req.edits));
                     }
                     tools.saved(&r.file.path, r.version.version);
                 }
@@ -772,7 +777,7 @@ impl StudioCtx {
                         // status line.
                         tools
                             .failed_text
-                            .try_update(|list| keep_failed(list, &req.file, &req.edits, &message));
+                            .update(|list| keep_failed(list, &req.file, &req.edits, &message));
                     }
                 }
             }
@@ -811,7 +816,7 @@ impl StudioCtx {
         let tools = self.tools;
         tools.lint_seq.update_value(|n| *n = n.wrapping_add(1));
         let seq = tools.lint_seq.get_value();
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let url = format!("{}/lint/{}", self.base(), api::file_path(&path));
             // A project deleted elsewhere says so (QA-079).
             let res = api::get::<LintResponse>(&url).await.map_err(|e| {
@@ -836,7 +841,7 @@ impl StudioCtx {
     /// files the run wrote, project-relative.
     pub fn check_deliverable(self, run_id: String, written: Vec<String>) {
         let tools = self.tools;
-        leptos::task::spawn_local(async move {
+        self.tasks.spawn(async move {
             let url = format!("/api/runs/{}/deliverable", api::seg(&run_id));
             if let Ok(d) = api::get::<DeliverableResponse>(&url).await {
                 if let Some(page) = other_page(&d, &written) {
@@ -1658,6 +1663,7 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
     let pen = RwSignal::new(Pen::Free);
     let color = RwSignal::new(DRAW_COLORS[0]);
     let busy = RwSignal::new(false);
+    let tasks = Tasks::here();
 
     let attach = move || {
         let Some(canvas) = canvas_ref.get_untracked() else {
@@ -1669,7 +1675,7 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
         }
         busy.set(true);
         let (w, h) = (canvas.width().max(1), canvas.height().max(1));
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match attach_annotation(ctx, list, w, h).await {
                 Ok(with_snapshot) => {
                     history.set(History::default());

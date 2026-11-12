@@ -10,6 +10,7 @@ use super::ds_create::CreateFlow;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::lib_ui::query_param;
+use super::tasks::Tasks;
 use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::{
@@ -53,6 +54,7 @@ fn store(key: &str, value: Option<&str>) {
 #[component]
 pub fn Home() -> impl IntoView {
     let shell = Shell::get();
+    let tasks = Tasks::here();
     let navigate = use_navigate();
     // What was typed and picked here last, until it is sent.
     let brief = RwSignal::new(stored(PROMPT_KEY).unwrap_or_default());
@@ -291,7 +293,7 @@ pub fn Home() -> impl IntoView {
         busy.set(true);
         error.set(None);
         let navigate = navigate.clone();
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let res = match api::post::<_, CreateProjectResponse>("/api/projects", &req).await {
                 Ok(res) => res,
                 Err(e) => {
@@ -368,7 +370,7 @@ pub fn Home() -> impl IntoView {
     // Track C2: no project yet, so library assets go up with the first
     // turn like attached files.
     let import_library = Callback::new(move |assets: Vec<super::library_picker::LibraryAsset>| {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             match super::library_picker::as_files(&assets).await {
                 Ok(files) => stage_files.run(files),
                 Err(e) => error.set(Some(e)),
@@ -418,8 +420,8 @@ pub fn Home() -> impl IntoView {
                             on_attach=Callback::new(move |()| pick_files.update(|n| *n += 1))
                             on_library=import_library
                         >
-                            <HomeActions ds_open=ds_open folder=folder on_plugin=create_plugin error=error/>
-                            <WorkingDirItems dir=working_dir/>
+                            <HomeActions ds_open=ds_open folder=folder on_plugin=create_plugin error=error tasks=tasks/>
+                            <WorkingDirItems dir=working_dir tasks=tasks/>
                         </PlusMenu>
                         <ChipRow chip=chip picked=chip_picked set_chip=Callback::new(set_chip)/>
                         <label class="picker">
@@ -599,13 +601,15 @@ pub fn Home() -> impl IntoView {
 }
 
 /// Home's own items in the "+" menu: start a design system, a plugin, or a
-/// project over a folder. Each closes the menu.
+/// project over a folder. Each closes the menu, so the folder import runs
+/// on Home's `tasks`.
 #[component]
 fn HomeActions(
     ds_open: RwSignal<bool>,
     folder: RwSignal<Option<String>>,
     on_plugin: Callback<()>,
     error: RwSignal<Option<String>>,
+    tasks: Tasks,
 ) -> impl IntoView {
     let navigate = use_navigate();
     let menu = expect_context::<super::composer::PlusMenuOpen>().0;
@@ -614,13 +618,19 @@ fn HomeActions(
         close();
         if desktop::is_desktop() {
             let navigate = navigate.clone();
-            leptos::task::spawn_local(async move {
-                if let Some(d) = desktop::pick_folder().await
-                    && let Err(e) = import_folder(&navigate, d).await
-                {
-                    error.set(Some(e));
-                }
-            });
+            tasks.spawn_then(
+                async move {
+                    match desktop::pick_folder().await {
+                        Some(d) => Some(import_folder(d).await),
+                        None => None,
+                    }
+                },
+                move |res| match res {
+                    Some(Ok(path)) => navigate(&path, Default::default()),
+                    Some(Err(e)) => error.set(Some(e)),
+                    None => {}
+                },
+            );
         } else {
             folder.set(Some(String::new()));
         }
@@ -643,20 +653,16 @@ fn HomeActions(
     }
 }
 
-/// A project over an existing folder (the files stay where they are), then
-/// the Studio.
-async fn import_folder(
-    navigate: &impl Fn(&str, leptos_router::NavigateOptions),
-    dir: String,
-) -> Result<(), String> {
+/// A project over an existing folder (the files stay where they are); the
+/// path of its Studio.
+async fn import_folder(dir: String) -> Result<String, String> {
     let r = api::post::<_, CreateProjectResponse>(
         "/api/import/folder",
         &serde_json::json!({ "baseDir": dir }),
     )
     .await
     .map_err(|e| api::failure(T::ImportZipFailed, &e))?;
-    navigate(&format!("/projects/{}", r.project.id), Default::default());
-    Ok(())
+    Ok(format!("/projects/{}", r.project.id))
 }
 
 fn chip_glyph(c: Chip) -> Glyph {
@@ -867,9 +873,13 @@ fn Examples(
 
 /// Working directory items of the Home "+" menu: choose or change the
 /// folder, recent folders, remove it.
+///
+/// The menu may close while a folder is checked: the pick runs on Home's
+/// `tasks`, and only touches this list's own signals while it is there.
 #[component]
-fn WorkingDirItems(dir: RwSignal<Option<String>>) -> impl IntoView {
+fn WorkingDirItems(dir: RwSignal<Option<String>>, tasks: Tasks) -> impl IntoView {
     let shell = Shell::get();
+    let mine = Tasks::here();
     let typing = RwSignal::new(None::<String>);
     let error = RwSignal::new(None::<String>);
     // Recent folders that still exist, checked when the menu opens.
@@ -903,7 +913,7 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>) -> impl IntoView {
         }
     });
     let choose = move |path: String| {
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let checked = api::post::<_, serde_json::Value>(
                 "/api/linked-dirs/check",
                 &serde_json::json!({ "paths": [path] }),
@@ -915,14 +925,18 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>) -> impl IntoView {
                 .map(|v| v["dirs"][0].clone())
                 .unwrap_or_default();
             let Some(canonical) = entry["path"].as_str().map(str::to_owned) else {
-                error.set(Some(checked.err().map_or_else(
-                    || entry["error"].as_str().unwrap_or_default().to_owned(),
-                    |e| api::failure(T::LinkFolderFailed, &e),
-                )));
+                if mine.alive() {
+                    error.set(Some(checked.err().map_or_else(
+                        || entry["error"].as_str().unwrap_or_default().to_owned(),
+                        |e| api::failure(T::LinkFolderFailed, &e),
+                    )));
+                }
                 return;
             };
-            error.set(None);
-            typing.set(None);
+            if mine.alive() {
+                error.set(None);
+                typing.set(None);
+            }
             dir.set(Some(canonical.clone()));
             if let Some(mut config) = shell.config.get_untracked() {
                 let mut list: Vec<String> = config
@@ -941,7 +955,7 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>) -> impl IntoView {
     };
     let pick = move |_| {
         if desktop::is_desktop() {
-            leptos::task::spawn_local(async move {
+            tasks.spawn(async move {
                 if let Some(d) = desktop::pick_folder().await {
                     choose(d);
                 }
@@ -1001,14 +1015,16 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>) -> impl IntoView {
 /// picks it with the system dialog instead). Open while `typing` is set.
 #[component]
 fn FromFolderForm(typing: RwSignal<Option<String>>) -> impl IntoView {
+    let tasks = Tasks::here();
     let navigate = use_navigate();
     let error = RwSignal::new(None::<String>);
     let import = move || {
         let dir = typing.get_untracked().unwrap_or_default().trim().to_owned();
         let navigate = navigate.clone();
-        leptos::task::spawn_local(async move {
-            if let Err(e) = import_folder(&navigate, dir).await {
-                error.set(Some(e));
+        tasks.spawn(async move {
+            match import_folder(dir).await {
+                Ok(path) => navigate(&path, Default::default()),
+                Err(e) => error.set(Some(e)),
             }
         });
     };

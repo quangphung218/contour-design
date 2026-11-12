@@ -5,6 +5,7 @@ use super::api;
 use super::icons::{Glyph, icon};
 use super::menu_scrim::MenuScrim;
 use super::studio::StudioCtx;
+use super::tasks::{self, Tasks};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::ExportFit;
 use leptos::prelude::*;
@@ -378,6 +379,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     let template_open = RwSignal::new(false);
     let handoff_open = RwSignal::new(false);
     let status = RwSignal::new(None::<Result<String, String>>);
+    let tasks = Tasks::here();
     let exports = ctx.shell.exports;
     let project_id = ctx.project_id.get_value();
     // An export of this project runs, maybe started before the Studio was
@@ -410,7 +412,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         }
         let shown = shown_seq.get_untracked().wrapping_add(1);
         shown_seq.set(shown);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(TOAST_MS).await;
             // The menu may be gone (the user left the Studio): its signals
             // are disposed then, and reading them would panic.
@@ -463,7 +465,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
         // Not a screen task: the export and its download go on when the
         // Studio is left; the result goes through `exports`, which the
         // Export menu shown then reads.
-        leptos::task::spawn_local(async move {
+        tasks::detached(async move {
             let outcome = run_export(&base, format, file, &project, &name, |status| {
                 ctx.on_not_found(status);
             })
@@ -474,7 +476,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
 
     let open_folder = move |_| {
         open.set(false);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let path = format!("{}/handoff/open", ctx.base());
             match api::post::<_, OkResponse>(&path, &json!({})).await {
                 Ok(_) => status.set(Some(Ok(t(T::FolderOpened).to_owned()))),
@@ -487,7 +489,7 @@ pub fn ExportMenu(ctx: StudioCtx) -> impl IntoView {
     };
     let copy_prompt = move |_| {
         open.set(false);
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             let path = format!("{}/handoff", ctx.base());
             let res = match api::get::<HandoffResponse>(&path).await {
                 Ok(h) => copy_text(&h.prompt)

@@ -7,6 +7,7 @@ use super::Shell;
 use super::api;
 use super::byok_form::{ByokForm, TestResultLine, TestState};
 use super::icons::{Glyph, icon};
+use super::tasks::Tasks;
 use crate::events::AgentInfo;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -17,6 +18,7 @@ use serde_json::{Value, json};
 #[component]
 pub fn Onboarding() -> impl IntoView {
     let shell = Shell::get();
+    let tasks = Tasks::here();
     let navigate = use_navigate();
     let picked = RwSignal::new(None::<String>);
     let error = RwSignal::new(None::<String>);
@@ -55,19 +57,25 @@ pub fn Onboarding() -> impl IntoView {
         seq.update_value(|n| *n += 1);
         let mine = seq.get_value();
         test.set(Some(TestState::Running));
-        leptos::task::spawn_local(async move {
-            let body = json!({ "mode": "agent", "agentId": &agent });
-            let res = match api::post::<_, Value>("/api/test/connection", &body).await {
-                Ok(v) => TestState::Done(v),
-                Err(e) => TestState::Failed(api::failure(T::TestRunFailed, &e)),
-            };
-            if let TestState::Done(v) = &res {
-                remember_test(&agent, v);
-            }
-            if is_latest(seq, mine) {
-                test.set(Some(res));
-            }
-        });
+        // The answer is kept even if onboarding is left: the test is paid.
+        tasks.spawn_then(
+            async move {
+                let body = json!({ "mode": "agent", "agentId": &agent });
+                let res = match api::post::<_, Value>("/api/test/connection", &body).await {
+                    Ok(v) => TestState::Done(v),
+                    Err(e) => TestState::Failed(api::failure(T::TestRunFailed, &e)),
+                };
+                if let TestState::Done(v) = &res {
+                    remember_test(&agent, v);
+                }
+                res
+            },
+            move |res| {
+                if is_latest(seq, mine) {
+                    test.set(Some(res));
+                }
+            },
+        );
     };
     Effect::new(move |_| {
         let Some(agent) = picked.get() else {
@@ -93,8 +101,8 @@ pub fn Onboarding() -> impl IntoView {
             }
             checking.set(true);
             let had = picked.get_untracked();
-            leptos::task::spawn_local(async move {
-                shell.rescan_agents().await;
+            // The shell's list is updated even if onboarding is left.
+            tasks.spawn_then(shell.rescan_agents(), move |()| {
                 checking.set(false);
                 still_none.set(shell.agents.with_untracked(
                     |a| matches!(a, Some(Ok(list)) if !list.iter().any(installed)),
@@ -148,23 +156,21 @@ pub fn Onboarding() -> impl IntoView {
 
     let finish = move |agent: Option<String>| {
         let navigate = navigate.clone();
-        leptos::task::spawn_local(async move {
-            let mut next = shell.config.get_untracked().unwrap_or_default();
-            if agent.is_some() {
-                next.agent_id = agent;
-            }
-            // The extracted system becomes the default for new projects.
-            if let super::onboarding_brand::BrandState::Done(id, _) = brand.get_untracked() {
-                next.extra.insert(
-                    crate::settings::DEFAULT_DESIGN_SYSTEM_KEY.to_owned(),
-                    serde_json::json!(id),
-                );
-            }
-            next.onboarding_completed = true;
-            match shell.save_config(next).await {
-                Ok(()) => navigate("/", Default::default()),
-                Err(e) => error.set(Some(e)),
-            }
+        let mut next = shell.config.get_untracked().unwrap_or_default();
+        if agent.is_some() {
+            next.agent_id = agent;
+        }
+        // The extracted system becomes the default for new projects.
+        if let super::onboarding_brand::BrandState::Done(id, _) = brand.get_untracked() {
+            next.extra.insert(
+                crate::settings::DEFAULT_DESIGN_SYSTEM_KEY.to_owned(),
+                serde_json::json!(id),
+            );
+        }
+        next.onboarding_completed = true;
+        tasks.spawn_then(shell.save_config(next), move |res| match res {
+            Ok(()) => navigate("/", Default::default()),
+            Err(e) => error.set(Some(e)),
         });
     };
     let finish_skip = finish.clone();
@@ -227,7 +233,7 @@ pub fn Onboarding() -> impl IntoView {
                 // Extracting a brand runs the agent: only the picked one, once
                 // it passed its test.
                 <Show when=agent_ready>
-                    <super::onboarding_brand::BrandStep state=brand agent=picked/>
+                    <super::onboarding_brand::BrandStep state=brand agent=picked tasks=tasks/>
                 </Show>
                 {move || no_browser().then(|| view! {
                     <p class="onboarding-note" data-testid="onboarding-chrome">
@@ -499,6 +505,7 @@ fn SignInLine(command: &'static str, testid: &'static str) -> impl IntoView {
 /// and how to sign in once installed.
 #[component]
 fn InstallCard(agent: AgentInfo, featured: &'static Featured) -> impl IntoView {
+    let tasks = Tasks::here();
     let windows = on_windows();
     let command = (!windows).then_some(featured.unix);
     let copied = RwSignal::new(false);
@@ -506,7 +513,7 @@ fn InstallCard(agent: AgentInfo, featured: &'static Featured) -> impl IntoView {
         let Some(command) = command else {
             return;
         };
-        leptos::task::spawn_local(async move {
+        tasks.spawn(async move {
             if super::lib_ui::copy_text(command).await.is_ok() {
                 copied.set(true);
                 gloo_timers::future::TimeoutFuture::new(2_000).await;
