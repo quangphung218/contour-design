@@ -27,6 +27,7 @@ ErrConflict = ขัดแย้งกับการเปลี่ยนแป
 ErrTooLarge = ใหญ่เกินไป
 ErrServer = Contour ทำรายการนี้ไม่สำเร็จ ลองอีกครั้ง
 ErrNoWritePermission = ไม่มีสิทธิ์เขียน
+ErrNoReadPermission = ไม่มีสิทธิ์อ่าน
 ErrStorageFull = ดิสก์เต็ม
 JuryOnFailed = เปิด Design Jury ไม่ได้: {0}
 JuryOffFailed = ปิด Design Jury ไม่ได้: {0}

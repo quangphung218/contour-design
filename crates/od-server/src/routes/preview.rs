@@ -25,7 +25,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, middleware};
-use od_contracts::ErrorCode;
+use od_contracts::{ApiErrorResponse, ErrorCode};
 use od_preview::{
     MAX_INJECT_BYTES, PREVIEW_CSP, PREVIEW_IFRAME_SANDBOX, PreviewUrlResponse, ProjectEvent,
     encode_path, encode_segment, inject_bridge_keyed, is_edit_key_id, is_scope_token,
@@ -78,6 +78,79 @@ pub(crate) fn host_frame_load(headers: &HeaderMap) -> bool {
         && headers
             .get("sec-fetch-dest")
             .is_none_or(|dest| dest.as_bytes() == b"iframe")
+}
+
+/// Whether the request is a page load (the preview frame navigating), not
+/// a fetch or a subresource: `Sec-Fetch-Dest` says so when sent, else an
+/// `Accept` that asks for HTML.
+fn is_navigation(headers: &HeaderMap) -> bool {
+    match headers.get("sec-fetch-dest") {
+        Some(dest) => matches!(dest.as_bytes(), b"iframe" | b"frame" | b"document"),
+        None => headers
+            .get(header::ACCEPT)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.to_ascii_lowercase().contains("text/html")),
+    }
+}
+
+/// The error page loads nothing and runs nothing.
+const ERROR_PAGE_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'";
+/// API error bodies are small; a larger one is not ours.
+const MAX_ERROR_BODY: usize = 64 * 1024;
+
+/// What the frame says when its page could not be served, by error code.
+fn error_page_text(code: Option<ErrorCode>) -> &'static str {
+    match code {
+        Some(ErrorCode::NoReadPermission) => {
+            "Contour has no permission to read this file. Check its permissions, then press Reload preview."
+        }
+        Some(ErrorCode::FileNotFound | ErrorCode::NotFound | ErrorCode::ProjectNotFound) => {
+            "The file was not found. It may have been moved or deleted. Press Reload preview to try again."
+        }
+        _ => "Something went wrong while opening it. Press Reload preview to try again.",
+    }
+}
+
+/// QA-086: the frame shows whatever a navigation gets, so an API error
+/// (JSON, for fetches) becomes a short page in plain words. The status
+/// stays for tools; the page names neither it nor the code.
+async fn as_error_page(res: Response) -> Response {
+    let status = res.status();
+    let json = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .is_some_and(|v| v.as_bytes().starts_with(b"application/json"));
+    if !(status.is_client_error() || status.is_server_error()) || !json {
+        return res;
+    }
+    let bytes = axum::body::to_bytes(res.into_body(), MAX_ERROR_BODY)
+        .await
+        .unwrap_or_default();
+    let code = serde_json::from_slice::<ApiErrorResponse>(&bytes)
+        .ok()
+        .map(|body| body.error.code);
+    let html = format!(
+        "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<title>Page not opened</title><style>\
+body{{margin:0;min-height:100vh;display:grid;place-items:center;\
+font:15px/1.5 system-ui,sans-serif;color:#2b2b2b;background:#fff}}\
+@media (prefers-color-scheme:dark){{body{{color:#e6e6e6;background:#1e1e1e}}}}\
+main{{max-width:32em;padding:24px}}h1{{font-size:17px;margin:0 0 8px}}p{{margin:0}}\
+</style><main role=\"alert\"><h1>Contour could not open this page</h1><p>{}</p></main></html>",
+        error_page_text(code)
+    );
+    (
+        status,
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::CONTENT_SECURITY_POLICY, ERROR_PAGE_CSP),
+        ],
+        html,
+    )
+        .into_response()
 }
 
 /// Records the project's first preview (Settings ▸ About ▸ Your usage),
@@ -187,9 +260,18 @@ async fn with_bridge(
 /// document whose relative URLs resolve under the project's live scope.
 /// The first such page the host loads is the project's first preview
 /// (Settings ▸ About ▸ Your usage).
+/// A frame's load of a `raw` file that fails gets an error page.
 async fn raw_bridge(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    let navigation = req.method() == Method::GET
+        && raw_target(req.uri().path()).is_some()
+        && is_navigation(req.headers());
     if req.method() != Method::GET || !wants_bridge(req.uri().query()) {
-        return next.run(req).await;
+        let res = next.run(req).await;
+        return if navigation {
+            as_error_page(res).await
+        } else {
+            res
+        };
     }
     let Some((id, file)) = raw_target(req.uri().path()) else {
         return next.run(req).await;
@@ -215,10 +297,15 @@ async fn raw_bridge(State(state): State<AppState>, mut req: Request, next: Next)
         record_first_preview(&state, &id).await;
     }
     let preview = &state.preview;
-    with_bridge(res, Some(&base_href), || {
+    let res = with_bridge(res, Some(&base_href), || {
         kid.and_then(|kid| preview.edit_keys.issue(&id, &kid))
     })
-    .await
+    .await;
+    if navigation {
+        as_error_page(res).await
+    } else {
+        res
+    }
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -276,11 +363,31 @@ pub async fn preview_url(
     Ok(([(header::CACHE_CONTROL, "no-store")], ApiJson(body)).into_response())
 }
 
+/// Serves a file under a preview scope; a frame's load that fails gets an
+/// error page instead of the API's JSON (QA-086).
 pub async fn scoped(
     State(state): State<AppState>,
     Extension(preview): Extension<Preview>,
     Path((id, scope, path)): Path<(String, String, String)>,
     RawQuery(query): RawQuery,
+    headers: HeaderMap,
+) -> Response {
+    let navigation = is_navigation(&headers);
+    let res = serve_scoped(state, &preview, (id, scope, path), query, headers)
+        .await
+        .unwrap_or_else(IntoResponse::into_response);
+    if navigation {
+        as_error_page(res).await
+    } else {
+        res
+    }
+}
+
+async fn serve_scoped(
+    state: AppState,
+    preview: &Preview,
+    (id, scope, path): (String, String, String),
+    query: Option<String>,
     mut headers: HeaderMap,
 ) -> ApiResult<Response> {
     if !is_scope_token(&scope) {
@@ -390,5 +497,27 @@ mod tests {
         );
         assert_eq!(raw_target("/api/projects/p1/files/a.html"), None);
         assert_eq!(raw_target("/api/projects/p1/raw/"), None);
+    }
+
+    #[test]
+    fn only_page_loads_count_as_navigation() {
+        let h = |pairs: &[(&'static str, &'static str)]| {
+            let mut m = HeaderMap::new();
+            for (k, v) in pairs {
+                m.insert(*k, HeaderValue::from_static(v));
+            }
+            m
+        };
+        assert!(is_navigation(&h(&[("sec-fetch-dest", "iframe")])));
+        assert!(is_navigation(&h(&[("sec-fetch-dest", "document")])));
+        assert!(is_navigation(&h(&[("accept", "text/html,*/*;q=0.8")])));
+        // The Studio's fetch and a page's own subresources keep JSON.
+        assert!(!is_navigation(&h(&[
+            ("sec-fetch-dest", "empty"),
+            ("accept", "text/html")
+        ])));
+        assert!(!is_navigation(&h(&[("sec-fetch-dest", "image")])));
+        assert!(!is_navigation(&h(&[("accept", "*/*")])));
+        assert!(!is_navigation(&HeaderMap::new()));
     }
 }

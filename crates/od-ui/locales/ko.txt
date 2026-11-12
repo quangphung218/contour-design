@@ -27,6 +27,7 @@ ErrConflict = 진행 중인 다른 변경과 충돌합니다
 ErrTooLarge = 너무 큼
 ErrServer = Contour가 이 작업을 끝내지 못했습니다. 다시 시도하세요.
 ErrNoWritePermission = 쓰기 권한 없음
+ErrNoReadPermission = 읽기 권한 없음
 ErrStorageFull = 디스크가 가득 참
 JuryOnFailed = Design Jury를 켜지 못했습니다: {0}
 JuryOffFailed = Design Jury를 끄지 못했습니다: {0}

@@ -27,6 +27,7 @@ ErrConflict = Devam eden bir değişiklikle çakışıyor
 ErrTooLarge = Çok büyük
 ErrServer = Contour bunu tamamlayamadı. Tekrar deneyin.
 ErrNoWritePermission = Yazma izni yok
+ErrNoReadPermission = Okuma izni yok
 ErrStorageFull = Disk dolu
 JuryOnFailed = Design Jury açılamadı: {0}
 JuryOffFailed = Design Jury kapatılamadı: {0}

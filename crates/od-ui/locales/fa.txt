@@ -27,6 +27,7 @@ ErrConflict = با تغییر در حال انجام تداخل دارد
 ErrTooLarge = خیلی بزرگ
 ErrServer = Contour نتوانست این کار را تمام کند. دوباره امتحان کنید.
 ErrNoWritePermission = اجازهٔ نوشتن وجود ندارد
+ErrNoReadPermission = اجازهٔ خواندن وجود ندارد
 ErrStorageFull = دیسک پر است
 JuryOnFailed = روشن کردن Design Jury ممکن نشد: {0}
 JuryOffFailed = خاموش کردن Design Jury ممکن نشد: {0}

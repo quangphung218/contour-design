@@ -27,6 +27,7 @@ ErrConflict = Kollidiert mit einer laufenden Änderung
 ErrTooLarge = Zu groß
 ErrServer = Contour konnte das nicht abschließen. Versuch es noch einmal.
 ErrNoWritePermission = Keine Schreibberechtigung
+ErrNoReadPermission = Keine Leseberechtigung
 ErrStorageFull = Festplatte voll
 JuryOnFailed = Design Jury konnte nicht eingeschaltet werden: {0}
 JuryOffFailed = Design Jury konnte nicht ausgeschaltet werden: {0}

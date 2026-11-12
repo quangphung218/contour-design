@@ -27,6 +27,7 @@ ErrConflict = Конфлікт зі змінами, що тривають
 ErrTooLarge = Завелике
 ErrServer = Contour не зміг це виконати. Спробуйте ще раз.
 ErrNoWritePermission = Немає дозволу на запис
+ErrNoReadPermission = Немає дозволу на читання
 ErrStorageFull = Диск заповнено
 JuryOnFailed = Не вдалося увімкнути Design Jury: {0}
 JuryOffFailed = Не вдалося вимкнути Design Jury: {0}

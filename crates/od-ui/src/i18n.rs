@@ -239,6 +239,7 @@ messages! {
     ErrTooLarge => "Too large", "Dữ liệu quá lớn";
     ErrServer => "Contour could not finish this. Try again.", "Contour chưa làm được việc này. Thử lại nhé.";
     ErrNoWritePermission => "No permission to write", "Không có quyền ghi";
+    ErrNoReadPermission => "No permission to read", "Không có quyền đọc";
     ErrStorageFull => "Disk full", "Ổ đĩa đã đầy";
     // What was not done, then why ({0}); an internal failure ends the
     // sentence with "Try again." instead (`api::failure`, QA-081).

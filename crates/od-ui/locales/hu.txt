@@ -27,6 +27,7 @@ ErrConflict = Ütközik egy folyamatban lévő módosítással
 ErrTooLarge = Túl nagy
 ErrServer = A Contour nem tudta befejezni. Próbáld újra.
 ErrNoWritePermission = Nincs írási jogosultság
+ErrNoReadPermission = Nincs olvasási jogosultság
 ErrStorageFull = Megtelt a lemez
 JuryOnFailed = Nem sikerült bekapcsolni a Design Juryt: {0}
 JuryOffFailed = Nem sikerült kikapcsolni a Design Juryt: {0}
