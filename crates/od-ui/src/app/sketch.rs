@@ -33,7 +33,7 @@ async fn create(ctx: StudioCtx, path: String, sketch: &SketchFile) -> Result<Str
     api::post::<_, FileResponse>(&format!("{}/files", ctx.base()), &req)
         .await
         .map(|r| r.file.path)
-        .map_err(|e| ctx.failed(&e))
+        .map_err(|e| ctx.failed_to(T::FileCreateFailed, &e))
 }
 
 /// Creates a blank sketch in `dir` (`sketches/` at the root) and opens it.
@@ -197,12 +197,13 @@ pub fn SketchView(ctx: StudioCtx, path: String) -> impl IntoView {
                 Ok(png) => {
                     save_png(
                         ctx,
+                        T::SketchAttachFailed,
                         format!("{stem}-{}.png", js_sys::Date::now() as u64),
                         &png,
                     )
                     .await
                 }
-                Err(e) => Err(e),
+                Err(e) => Err(tf(T::SketchAttachFailed, &[&e])),
             };
             busy.set(false);
             match res {

@@ -480,7 +480,9 @@ impl StudioCtx {
         };
         m.busy.set(true);
         self.tasks.spawn(async move {
-            match super::files_panel::upload(self, vec![file], IMAGES_DIR).await {
+            match super::files_panel::upload(self, T::ManualUploadFailed, vec![file], IMAGES_DIR)
+                .await
+            {
                 Ok(paths) => {
                     m.busy.set(false);
                     self.refresh_files();
@@ -491,7 +493,7 @@ impl StudioCtx {
                 }
                 Err(e) => {
                     m.busy.set(false);
-                    m.error.set(Some(tf(T::ManualUploadFailed, &[&e])));
+                    m.error.set(Some(e));
                 }
             }
         });

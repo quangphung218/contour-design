@@ -272,24 +272,26 @@ pub fn copy_path(ctx: StudioCtx, ui: FilesUi, path: &str, full: bool) {
 }
 
 /// Uploads browser files into folder `dir`; never overwrites (the daemon
-/// picks `name-1.ext` on a clash). Returns the stored paths.
+/// picks `name-1.ext` on a clash). Returns the stored paths; a failure
+/// reads as `key`, the action it served ("Upload failed: {0}").
 pub async fn upload(
     ctx: StudioCtx,
+    key: T,
     files: Vec<web_sys::File>,
     dir: &str,
 ) -> Result<Vec<String>, String> {
-    let form = web_sys::FormData::new().map_err(|e| format!("{e:?}"))?;
+    let js = |e: wasm_bindgen::JsValue| tf(key, &[&format!("{e:?}")]);
+    let form = web_sys::FormData::new().map_err(js)?;
     if !dir.is_empty() {
-        form.append_with_str("dir", dir)
-            .map_err(|e| format!("{e:?}"))?;
+        form.append_with_str("dir", dir).map_err(js)?;
     }
     for f in &files {
         form.append_with_blob_and_filename("file", f, &f.name())
-            .map_err(|e| format!("{e:?}"))?;
+            .map_err(js)?;
     }
     let res: UploadResponse = api::post_form(&format!("{}/upload", ctx.base()), form)
         .await
-        .map_err(|e| ctx.failed(&e))?;
+        .map_err(|e| ctx.failed_to(key, &e))?;
     Ok(res.files.into_iter().map(|f| f.path).collect())
 }
 
@@ -299,7 +301,7 @@ pub fn upload_and_report(ctx: StudioCtx, ui: FilesUi, files: Vec<web_sys::File>,
         return;
     }
     ctx.tasks.spawn(async move {
-        match upload(ctx, files, &dir).await {
+        match upload(ctx, T::UploadFailed, files, &dir).await {
             Ok(paths) => {
                 ui.changed(ctx);
                 if !dir.is_empty() {
@@ -313,7 +315,7 @@ pub fn upload_and_report(ctx: StudioCtx, ui: FilesUi, files: Vec<web_sys::File>,
                 }
                 ui.say(tf(T::FilesUploaded, &[&paths.len().to_string()]));
             }
-            Err(e) => ctx.notice.set(Some(tf(T::UploadFailed, &[&e]))),
+            Err(e) => ctx.notice.set(Some(e)),
         }
     });
 }

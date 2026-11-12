@@ -188,7 +188,7 @@ fn McpCatalog() -> impl IntoView {
             servers.push(server);
             match api::put::<_, Value>("/api/mcp/servers", &json!({ "servers": servers })).await {
                 Ok(_) => Ok(tf(T::McpAdded, &[&id])),
-                Err(e) => Err(api::failure(T::MdSaveFailed, &e)),
+                Err(e) => Err(api::failure(T::InstallFailed, &e)),
             }
         };
         tasks.spawn_then(work, move |res| {

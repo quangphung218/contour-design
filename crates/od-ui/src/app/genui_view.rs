@@ -80,7 +80,8 @@ pub fn GenuiSurfaces(ctx: StudioCtx) -> impl IntoView {
         tasks.spawn(async move {
             let path = format!("{}/{}/revoke", base(), api::seg(&surface_id));
             if let Err(e) = api::post::<_, Value>(&path, &json!({})).await {
-                ctx.notice.set(Some(ctx.failed(&e)));
+                ctx.notice
+                    .set(Some(ctx.failed_to(T::GenuiRevokeFailed, &e)));
             }
             reload();
         });

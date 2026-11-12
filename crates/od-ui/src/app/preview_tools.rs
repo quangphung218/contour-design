@@ -1419,12 +1419,19 @@ pub(super) async fn page_png(tools: Tools) -> Option<String> {
     .ok()
 }
 
-/// Stores a PNG data URL as `name` in the project; returns its path.
-pub(super) async fn save_png(ctx: StudioCtx, name: String, png: &str) -> Result<String, String> {
+/// Stores a PNG data URL as `name` in the project; returns its path. A
+/// failure reads as `key`, the action it served ("Could not attach the
+/// screenshot: {0}").
+pub(super) async fn save_png(
+    ctx: StudioCtx,
+    key: T,
+    name: String,
+    png: &str,
+) -> Result<String, String> {
     let content = png
         .split_once(',')
         .map(|(_, b64)| b64.to_owned())
-        .ok_or("bad image data")?;
+        .ok_or_else(|| tf(key, &["bad image data"]))?;
     let req = WriteFileRequest {
         name,
         content,
@@ -1434,12 +1441,13 @@ pub(super) async fn save_png(ctx: StudioCtx, name: String, png: &str) -> Result<
     };
     let res = api::post::<_, FileResponse>(&format!("{}/files", ctx.base()), &req)
         .await
-        .map_err(|e| ctx.failed(&e))?;
+        .map_err(|e| ctx.failed_to(key, &e))?;
     Ok(res.file.path)
 }
 
 /// Composes the annotation, stores it in the project and attaches it to
-/// the next message. Returns whether the page snapshot made it in.
+/// the next message. Returns whether the page snapshot made it in; a
+/// failure reads as [`T::DrawFailed`].
 async fn attach_annotation(
     ctx: StudioCtx,
     strokes: Vec<Stroke>,
@@ -1456,13 +1464,16 @@ async fn attach_annotation(
         .map(|img| compose(width, height, Some(img), &strokes))
     {
         Some(Ok(png)) => (png, true),
-        _ => (compose(width, height, None, &strokes)?, false),
+        _ => (
+            compose(width, height, None, &strokes).map_err(|e| tf(T::DrawFailed, &[&e]))?,
+            false,
+        ),
     };
     let name = format!(
         "{ANNOTATIONS_DIR}/annotation-{}.png",
         js_sys::Date::now() as u64
     );
-    let path = save_png(ctx, name, &png).await?;
+    let path = save_png(ctx, T::DrawFailed, name, &png).await?;
     ctx.tools.attachments.update(|a| a.push(path));
     Ok(with_snapshot)
 }
@@ -1678,7 +1689,7 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
                     );
                     ctx.set_tool(None);
                 }
-                Err(e) => tools.note(tf(T::DrawFailed, &[&e])),
+                Err(e) => tools.note(e),
             }
             busy.set(false);
         });
