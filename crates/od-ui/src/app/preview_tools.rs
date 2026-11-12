@@ -226,16 +226,19 @@ impl Tools {
     }
 
     /// A status line for whatever file is shown.
+    /// Safe after an `await`: the Studio may be gone by then.
     pub fn note(self, text: String) {
-        self.status.set(Some(text));
-        self.status_for.set(None);
+        let _ = self.status.try_set(Some(text));
+        let _ = self.status_for.try_set(None);
     }
 
     /// "Saved to `path` as v`version`", tied to that file's tab.
+    /// Safe after an `await`, like [`Self::note`].
     pub fn saved(self, path: &str, version: u32) {
-        self.status
-            .set(Some(tf(T::SavedVersion, &[path, &version.to_string()])));
-        self.status_for.set(Some(path.to_owned()));
+        let _ = self
+            .status
+            .try_set(Some(tf(T::SavedVersion, &[path, &version.to_string()])));
+        let _ = self.status_for.try_set(Some(path.to_owned()));
     }
 }
 
@@ -737,15 +740,17 @@ impl StudioCtx {
             label: None,
         };
         let tools = self.tools;
+        let path = format!("{}/source-edits", self.base());
+        // The write lands even if the Studio is left meanwhile; after the
+        // `await` its signals may be gone, so only `try_*` touches them.
         leptos::task::spawn_local(async move {
-            let path = format!("{}/source-edits", self.base());
             match api::post::<_, SourceEditResponse>(&path, &req).await {
                 Ok(r) => {
                     if styles {
-                        tools.overrides.set(Vec::new());
-                        tools.extracted.set(None);
+                        let _ = tools.overrides.try_set(Vec::new());
+                        let _ = tools.extracted.try_set(None);
                     } else {
-                        tools.overrides.update(|list| {
+                        tools.overrides.try_update(|list| {
                             for e in &req.edits {
                                 if let Some(text) = &e.text {
                                     retext_overrides(list, &e.selector, text);
