@@ -73,11 +73,12 @@ fn start(ctx: StudioCtx, ui: FilesUi) {
             Err(e) => Err((e, false)),
         }
     };
-    ctx.tasks.spawn_then(work, move |res| match res {
-        Ok(job) => follow(ctx, ui, job),
-        Err((e, ours)) => {
-            let why = if ours { ctx.failed(&e) } else { e.to_string() };
-            ui.ds_job.set(Some(DsJob::Failed(why)));
+    ctx.tasks.spawn_then(work, move |res| {
+        let fail = |e: String| ui.ds_job.set(Some(DsJob::Failed(e)));
+        match res {
+            Ok(job) => follow(ctx, ui, job),
+            Err((e, true)) => fail(ctx.failed(&e)),
+            Err((e, false)) => fail(e.to_string()),
         }
     });
 }
