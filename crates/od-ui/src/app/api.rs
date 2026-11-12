@@ -409,16 +409,20 @@ mod tests {
             e(403, ErrorCode::NoWritePermission, "read-only volume").to_string(),
             "No permission to write: read-only volume"
         );
-        // QA-085: a refused read says "read", not "write".
+        // QA-085: a refused read says "read", not "write"; once (QA-087).
         let unreadable = e(
             403,
             ErrorCode::NoReadPermission,
             "Contour has no permission to read this file. Check its permissions, then try again.",
         )
         .to_string();
-        assert!(
-            unreadable.starts_with("No permission to read: ") && !unreadable.contains("write"),
-            "{unreadable}"
+        assert_eq!(
+            unreadable,
+            "Contour has no permission to read this file. Check its permissions, then try again."
+        );
+        assert_eq!(
+            e(403, ErrorCode::NoReadPermission, "locked").to_string(),
+            "No permission to read: locked"
         );
         let full = e(
             507,
