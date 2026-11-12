@@ -34,12 +34,12 @@ pub struct Report {
 pub async fn report_issue() -> Result<Report, String> {
     let v = api::get::<Value>("/api/diagnostics/summary")
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| api::failure(T::ReportIssueFailed, &e))?;
     let text = v["text"].as_str().unwrap_or_default().to_owned();
     let copied = super::export_menu::copy_text(&text).await.is_ok();
     api::post::<_, Value>("/api/diagnostics/open-logs", &serde_json::json!({}))
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| api::failure(T::ReportIssueFailed, &e))?;
     Ok(Report {
         text,
         log_dir: v["logDir"].as_str().unwrap_or_default().to_owned(),

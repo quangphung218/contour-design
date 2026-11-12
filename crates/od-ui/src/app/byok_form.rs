@@ -158,7 +158,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
             test.set(Some(
                 match api::post::<_, Value>("/api/test/connection", &b).await {
                     Ok(v) => TestState::Done(v),
-                    Err(e) => TestState::Failed(e.to_string()),
+                    Err(e) => TestState::Failed(api::failure(T::TestRunFailed, &e)),
                 },
             ));
         });
@@ -180,7 +180,7 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                     fetch_state.set(Some(Ok(list.len())));
                     fetched.set(list);
                 }
-                Err(e) => fetch_state.set(Some(Err(e.to_string()))),
+                Err(e) => fetch_state.set(Some(Err(api::failure(T::ModelsFetchFailed, &e)))),
             }
         });
     };

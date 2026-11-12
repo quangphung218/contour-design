@@ -269,7 +269,7 @@ pub fn SettingsPage() -> impl IntoView {
             agent_test.set(Some(
                 match api::post::<_, Value>("/api/test/connection", &body).await {
                     Ok(v) => TestState::Done(v),
-                    Err(e) => TestState::Failed(e.to_string()),
+                    Err(e) => TestState::Failed(api::failure(T::TestRunFailed, &e)),
                 },
             ));
         });
@@ -581,7 +581,7 @@ fn AdvancedEnv(agent: RwSignal<Option<String>>) -> impl IntoView {
                     edits.set(Map::new());
                     state.set(Some(Ok(())));
                 }
-                Err(e) => state.set(Some(Err(e.to_string()))),
+                Err(e) => state.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
             }
         });
     };
@@ -802,7 +802,7 @@ fn ProjectLocations() -> impl IntoView {
                     path.set(String::new());
                     state.set(Some(Ok(t(T::Saved).to_owned())));
                 }
-                Err(e) => state.set(Some(Err(e.to_string()))),
+                Err(e) => state.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
             }
         });
     };
@@ -836,7 +836,7 @@ fn ProjectLocations() -> impl IntoView {
                             &v["existing"].as_u64().unwrap_or(0).to_string(),
                         ],
                     )),
-                    Err(e) => Err(e.to_string()),
+                    Err(e) => Err(api::failure(T::ScanFailed, &e)),
                 },
             ));
         });
@@ -962,7 +962,7 @@ fn MediaProviders() -> impl IntoView {
                     edits.set(Map::new());
                     state.set(Some(Ok(())));
                 }
-                Err(e) => state.set(Some(Err(e.to_string()))),
+                Err(e) => state.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
             }
         });
     };
@@ -1048,7 +1048,7 @@ fn About() -> impl IntoView {
                     let _ = super::export_menu::download(&bytes, &name, "application/zip");
                     state.set(Some(Ok(tf(T::DiagnosticsSaved, &[&name]))));
                 }
-                Err(e) => state.set(Some(Err(e.to_string()))),
+                Err(e) => state.set(Some(Err(api::failure(T::DownloadFailed, &e)))),
             }
             exporting.set(false);
         });

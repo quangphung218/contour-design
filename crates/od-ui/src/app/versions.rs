@@ -64,7 +64,9 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                     version: v.version,
                     content: r.content,
                 })),
-                Err(e) => ctx.notice.set(Some(ctx.failed(&e))),
+                Err(e) => ctx
+                    .notice
+                    .set(Some(ctx.failed_to(T::VersionOpenFailed, &e))),
             }
         });
     };

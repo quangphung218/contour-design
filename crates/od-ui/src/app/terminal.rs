@@ -63,9 +63,7 @@ pub fn open(ctx: StudioCtx) {
                 ctx.side.open.set(false);
                 ctx.active_term.set(Some(info.id));
             }
-            Err(e) => ctx
-                .notice
-                .set(Some(tf(T::TerminalFailed, &[&e.to_string()]))),
+            Err(e) => ctx.notice.set(Some(api::failure(T::TerminalFailed, &e))),
         }
     });
 }

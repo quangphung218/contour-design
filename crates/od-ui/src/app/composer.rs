@@ -255,7 +255,7 @@ async fn upload(base: &str, file: &web_sys::File) -> Result<String, (u16, String
         .map_err(|e| (0, format!("{e:?}")))?;
     let res: UploadResponse = api::post_form(&format!("{base}/upload"), form)
         .await
-        .map_err(|e| (e.status, e.to_string()))?;
+        .map_err(|e| (e.status, api::failure(T::UploadFailed, &e)))?;
     res.files
         .into_iter()
         .next()

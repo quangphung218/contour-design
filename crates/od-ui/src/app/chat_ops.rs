@@ -54,8 +54,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
         ctx.tasks.spawn(async move {
             let path = format!("{}/conversations/{}", ctx.base(), api::seg(&cid));
             if let Err(e) = api::patch::<_, Value>(&path, &json!({ "title": title })).await {
-                ctx.notice.set(Some(e.to_string()));
-                ctx.on_not_found(e.status);
+                ctx.notice.set(Some(ctx.failed_to(T::RenameFailed, &e)));
                 ctx.reload_conversations();
             }
         });
@@ -88,10 +87,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
                         }
                     }
                 }
-                Err(e) => {
-                    ctx.notice.set(Some(e.to_string()));
-                    ctx.on_not_found(e.status);
-                }
+                Err(e) => ctx.notice.set(Some(ctx.failed_to(T::DeleteFailed, &e))),
             }
         });
     };
@@ -519,7 +515,7 @@ async fn link_dir(
 ) -> Result<(String, Project), String> {
     let checked: Value = api::post("/api/linked-dirs/check", &json!({ "paths": [dir] }))
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| api::failure(T::LinkFolderFailed, &e))?;
     let entry = &checked["dirs"][0];
     let Some(path) = entry["path"].as_str().map(str::to_owned) else {
         return Err(entry["error"].as_str().unwrap_or("refused").to_owned());
@@ -527,7 +523,7 @@ async fn link_dir(
     if !meta.linked_dirs.contains(&path) {
         meta.linked_dirs.push(path.clone());
     }
-    let project = save_metadata(&base, meta).await?;
+    let project = save_metadata(&base, meta, T::LinkFolderFailed).await?;
     Ok((path, project))
 }
 
@@ -542,10 +538,10 @@ fn link_input(ctx: StudioCtx) -> (String, ProjectMetadata) {
     (ctx.base(), meta)
 }
 
-async fn save_metadata(base: &str, meta: ProjectMetadata) -> Result<Project, String> {
+async fn save_metadata(base: &str, meta: ProjectMetadata, failed: T) -> Result<Project, String> {
     let res: ProjectResponse = api::patch(base, &json!({ "metadata": meta }))
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| api::failure(failed, &e))?;
     Ok(res.project)
 }
 
@@ -596,7 +592,7 @@ pub fn ContextFolders(ctx: StudioCtx) -> impl IntoView {
                                     let mut meta = ctx.project.with_untracked(|p| p.as_ref().and_then(|p| p.metadata.clone())).unwrap_or_default();
                                     meta.linked_dirs.retain(|x| x != &gone);
                                     let base = ctx.base();
-                                    ctx.tasks.spawn_then(async move { save_metadata(&base, meta).await }, move |res| match res {
+                                    ctx.tasks.spawn_then(async move { save_metadata(&base, meta, T::UnlinkFolderFailed).await }, move |res| match res {
                                         Ok(p) => ctx.project.set(Some(p)),
                                         Err(e) => ctx.notice.set(Some(e)),
                                     });
@@ -661,7 +657,7 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
             let path = format!("/api/projects/{}/handoff", api::seg(&id));
             match api::get::<HandoffResponse>(&path).await {
                 Ok(h) => link_dir(base, meta, h.dir).await,
-                Err(e) => Err(e.to_string()),
+                Err(e) => Err(api::failure(T::LinkFolderFailed, &e)),
             }
         };
         ctx.tasks.spawn_then(work, move |res| match res {
@@ -764,10 +760,7 @@ pub fn DesignSystemSwitch(ctx: StudioCtx) -> impl IntoView {
                     ctx.tasks.spawn(async move {
                         match api::patch::<_, ProjectResponse>(&ctx.base(), &json!({ "designSystemId": id })).await {
                             Ok(r) => ctx.project.set(Some(r.project)),
-                            Err(e) => {
-                                ctx.notice.set(Some(e.to_string()));
-                                ctx.on_not_found(e.status);
-                            }
+                            Err(e) => ctx.notice.set(Some(ctx.failed_to(T::DsSwitchFailed, &e))),
                         }
                     });
                 }

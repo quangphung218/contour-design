@@ -174,7 +174,7 @@ pub fn CreateFlow(
             let job = match api::post::<_, Value>("/api/design-systems/generate", &body).await {
                 Ok(v) => v["job"]["id"].as_str().unwrap_or_default().to_owned(),
                 Err(e) => {
-                    phase.set(Phase::Failed(e.to_string()));
+                    phase.set(Phase::Failed(api::failure(T::DesignSystemFailed, &e)));
                     return;
                 }
             };
@@ -183,7 +183,7 @@ pub fn CreateFlow(
                 let v = match api::get::<Value>(&format!("/api/design-systems/jobs/{job}")).await {
                     Ok(v) => v,
                     Err(e) => {
-                        phase.set(Phase::Failed(e.to_string()));
+                        phase.set(Phase::Failed(api::failure(T::DesignSystemFailed, &e)));
                         return;
                     }
                 };
@@ -201,9 +201,10 @@ pub fn CreateFlow(
                         return;
                     }
                     Some("failed") => {
-                        phase.set(Phase::Failed(
-                            v["job"]["error"].as_str().unwrap_or_default().to_owned(),
-                        ));
+                        phase.set(Phase::Failed(tf(
+                            T::DesignSystemFailed,
+                            &[v["job"]["error"].as_str().unwrap_or_default()],
+                        )));
                         return;
                     }
                     _ => {}
@@ -231,7 +232,7 @@ pub fn CreateFlow(
                 leptos::task::spawn_local(async move {
                     match api::post::<_, Value>("/api/design-systems/import", &body).await {
                         Ok(v) => on_created.run(v["id"].as_str().unwrap_or_default().to_owned()),
-                        Err(e) => phase.set(Phase::Failed(e.to_string())),
+                        Err(e) => phase.set(Phase::Failed(api::failure(T::DesignSystemFailed, &e))),
                     }
                 });
             }
@@ -242,7 +243,7 @@ pub fn CreateFlow(
                     let path = format!("/api/design-systems/{}/copy", api::seg(&from));
                     match api::post::<_, Value>(&path, &json!({ "name": n })).await {
                         Ok(v) => on_created.run(v["id"].as_str().unwrap_or_default().to_owned()),
-                        Err(e) => phase.set(Phase::Failed(e.to_string())),
+                        Err(e) => phase.set(Phase::Failed(api::failure(T::DesignSystemFailed, &e))),
                     }
                 });
             }
@@ -392,7 +393,7 @@ pub fn CreateFlow(
                             }).collect_view()}
                         </ol>
                     }.into_any()),
-                    Phase::Failed(e) => Some(view! { <p class="error-text" role="alert" data-testid="dsc-error">{tf(T::DesignSystemFailed, &[e.as_str()])}</p> }.into_any()),
+                    Phase::Failed(e) => Some(view! { <p class="error-text" role="alert" data-testid="dsc-error">{e}</p> }.into_any()),
                     _ => None,
                 }}
             </div>

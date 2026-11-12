@@ -42,7 +42,7 @@ pub fn BrandStep(state: RwSignal<BrandState>, agent: RwSignal<Option<String>>) -
             let job = match api::post::<_, Value>("/api/design-systems/generate", &body).await {
                 Ok(v) => v["job"]["id"].as_str().unwrap_or_default().to_owned(),
                 Err(e) => {
-                    state.set(BrandState::Failed(e.to_string()));
+                    state.set(BrandState::Failed(api::failure(T::DesignSystemFailed, &e)));
                     return;
                 }
             };
@@ -56,7 +56,7 @@ pub fn BrandStep(state: RwSignal<BrandState>, agent: RwSignal<Option<String>>) -
                 {
                     Ok(v) => v,
                     Err(e) => {
-                        state.set(BrandState::Failed(e.to_string()));
+                        state.set(BrandState::Failed(api::failure(T::DesignSystemFailed, &e)));
                         return;
                     }
                 };
@@ -73,9 +73,10 @@ pub fn BrandStep(state: RwSignal<BrandState>, agent: RwSignal<Option<String>>) -
                         return;
                     }
                     Some("failed") => {
-                        state.set(BrandState::Failed(
-                            job["error"].as_str().unwrap_or_default().to_owned(),
-                        ));
+                        state.set(BrandState::Failed(tf(
+                            T::DesignSystemFailed,
+                            &[job["error"].as_str().unwrap_or_default()],
+                        )));
                         return;
                     }
                     _ => state.set(BrandState::Running(step_index(
@@ -125,7 +126,7 @@ pub fn BrandStep(state: RwSignal<BrandState>, agent: RwSignal<Option<String>>) -
                     </div>
                     {match other {
                         BrandState::Failed(e) => Some(view! {
-                            <p class="error-text small" role="alert" data-testid="onboarding-brand-error">{tf(T::DesignSystemFailed, &[&e])}</p>
+                            <p class="error-text small" role="alert" data-testid="onboarding-brand-error">{e}</p>
                         }),
                         _ => None,
                     }}

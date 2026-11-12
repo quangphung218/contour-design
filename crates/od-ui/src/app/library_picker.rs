@@ -66,7 +66,7 @@ pub async fn apply_to_project(
     });
     let v = api::post::<_, Value>("/api/library/assets/apply", &body)
         .await
-        .map_err(|e| tf(T::LibraryImportFailed, &[&e.to_string()]))?;
+        .map_err(|e| api::failure(T::LibraryImportFailed, &e))?;
     Ok(v["files"]
         .as_array()
         .into_iter()
@@ -81,7 +81,7 @@ pub async fn as_files(assets: &[LibraryAsset]) -> Result<Vec<web_sys::File>, Str
     for a in assets {
         let bytes = api::get_bytes(&a.raw_url())
             .await
-            .map_err(|e| tf(T::LibraryImportFailed, &[&e.to_string()]))?;
+            .map_err(|e| api::failure(T::LibraryImportFailed, &e))?;
         let parts = js_sys::Array::new();
         parts.push(&js_sys::Uint8Array::from(bytes.as_slice()));
         let file = web_sys::File::new_with_u8_array_sequence(&parts, a.name())

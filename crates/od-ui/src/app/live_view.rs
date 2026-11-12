@@ -7,7 +7,7 @@ use super::api;
 use super::files_panel::FilesUi;
 use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
-use crate::i18n::{T, t, tf};
+use crate::i18n::{T, t};
 use leptos::prelude::*;
 use serde_json::{Value, json};
 
@@ -174,7 +174,7 @@ pub fn LiveView(ctx: StudioCtx, path: String) -> impl IntoView {
                 busy.set(false);
                 match res {
                     Ok(_) => message.set(Some(Ok(t(T::LiveRefreshed).to_owned()))),
-                    Err(e) => message.set(Some(Err(tf(T::LiveRefreshError, &[&e.to_string()])))),
+                    Err(e) => message.set(Some(Err(api::failure(T::LiveRefreshError, &e)))),
                 }
                 rev.update(|r| *r = r.wrapping_add(1));
                 refresh_list(ctx, ui);

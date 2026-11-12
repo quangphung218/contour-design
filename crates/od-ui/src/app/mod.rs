@@ -112,7 +112,7 @@ impl Shell {
     pub async fn save_config(self, next: AppConfig) -> Result<(), String> {
         let saved: AppConfig = api::put("/api/app-config", &next.to_patch())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| api::failure(T::MdSaveFailed, &e))?;
         self.set_locale(locale_of(&saved));
         self.config.set(Some(saved));
         Ok(())

@@ -684,7 +684,7 @@ fn PluginDetail(
                     ),
                     Err(e) => {
                         busy.set(false);
-                        notice.set(Some(Err(e.to_string())));
+                        notice.set(Some(Err(api::failure(T::ProjectCreateFailed, &e))));
                     }
                 }
             });
@@ -704,7 +704,7 @@ fn PluginDetail(
                 .await
                 {
                     Ok(_) => on_removed.run(Open::Plugin(id)),
-                    Err(e) => notice.set(Some(Err(e.to_string()))),
+                    Err(e) => notice.set(Some(Err(api::failure(T::UninstallFailed, &e)))),
                 }
             });
         })
@@ -858,7 +858,7 @@ fn SkillDetailView(id: String, on_back: Callback<()>, on_removed: Callback<Open>
             leptos::task::spawn_local(async move {
                 match api::delete::<Value>(&format!("/api/skills/{}", api::seg(&id))).await {
                     Ok(_) => on_removed.run(Open::Skill(id)),
-                    Err(e) => notice.set(Some(e.to_string())),
+                    Err(e) => notice.set(Some(api::failure(T::DeleteFailed, &e))),
                 }
             });
         }
@@ -909,7 +909,7 @@ fn SkillDetailView(id: String, on_back: Callback<()>, on_removed: Callback<Open>
                                         leptos::task::spawn_local(async move {
                                             match api::put::<_, Value>(&format!("/api/skills/{}", api::seg(&id)), &body).await {
                                                 Ok(_) => { editing.set(false); load.run(()); }
-                                                Err(e) => notice.set(Some(e.to_string())),
+                                                Err(e) => notice.set(Some(api::failure(T::MdSaveFailed, &e))),
                                             }
                                         });
                                     })
@@ -1055,7 +1055,7 @@ fn CreateDialog(on_close: Callback<()>, on_done: Callback<Option<Open>>) -> impl
                 ))),
                 Err(e) => {
                     busy.set(false);
-                    error.set(Some(e.to_string()));
+                    error.set(Some(api::failure(T::InstallFailed, &e)));
                 }
             }
         });

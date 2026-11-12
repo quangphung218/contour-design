@@ -172,6 +172,7 @@ pub fn replace_content(
     path: &str,
     body: &str,
     label: &str,
+    failed: T,
 ) -> impl Future<Output = Result<ProjectFile, String>> + 'static {
     let url = format!(
         "{}/content/{}?label={}",
@@ -184,7 +185,7 @@ pub fn replace_content(
         api::put_text::<FileResponse>(&url, &body)
             .await
             .map(|r| r.file)
-            .map_err(|e| ctx.failed(&e))
+            .map_err(|e| ctx.failed_to(failed, &e))
     }
 }
 

@@ -555,7 +555,7 @@ fn DsDetail(
                             on_change.run(None);
                         }
                     }
-                    Err(e) => say(Err(e.to_string())),
+                    Err(e) => say(Err(api::failure(T::DsUpdateFailed, &e))),
                 }
             });
         }
@@ -608,7 +608,7 @@ fn DsDetail(
                         say(Ok(t(T::Saved).to_owned()));
                         load();
                     }
-                    Err(e) => say(Err(e.to_string())),
+                    Err(e) => say(Err(api::failure(T::MdSaveFailed, &e))),
                 }
             });
         }
@@ -634,7 +634,7 @@ fn DsDetail(
                         say(Ok(t(T::RebuildProposed).to_owned()));
                         load();
                     }
-                    Err(e) => say(Err(e.to_string())),
+                    Err(e) => say(Err(api::failure(T::DsUpdateFailed, &e))),
                 }
             });
         }
@@ -760,7 +760,7 @@ fn DsDetail(
                         let pid = v["project"]["id"].as_str().unwrap_or_default().to_owned();
                         navigate(&format!("/projects/{pid}"), Default::default());
                     }
-                    Err(e) => say(Err(e.to_string())),
+                    Err(e) => say(Err(api::failure(T::ProjectCreateFailed, &e))),
                 }
             });
         }
@@ -773,7 +773,7 @@ fn DsDetail(
             leptos::task::spawn_local(async move {
                 match api::post::<_, Value>(&ds_url(&id, "copy"), &json!({})).await {
                     Ok(v) => on_change.run(v["id"].as_str().map(str::to_owned)),
-                    Err(e) => say(Err(e.to_string())),
+                    Err(e) => say(Err(api::failure(T::DesignSystemFailed, &e))),
                 }
             });
         }
@@ -790,7 +790,7 @@ fn DsDetail(
                     Ok(bytes) => {
                         let _ = download(&bytes, &format!("{title}.zip"), "application/zip");
                     }
-                    Err(e) => say(Err(e.to_string())),
+                    Err(e) => say(Err(api::failure(T::DownloadFailed, &e))),
                 }
             });
         }
@@ -819,7 +819,7 @@ fn DsDetail(
             leptos::task::spawn_local(async move {
                 match api::post::<_, Value>(&ds_url(&id, "delete"), &json!({})).await {
                     Ok(_) => on_change.run(None),
-                    Err(e) => say(Err(e.to_string())),
+                    Err(e) => say(Err(api::failure(T::DeleteFailed, &e))),
                 }
             });
         })

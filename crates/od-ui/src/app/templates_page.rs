@@ -335,7 +335,7 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
                     ),
                     Err(e) => {
                         busy.set(false);
-                        notice.set(Some(e.to_string()));
+                        notice.set(Some(api::failure(T::ProjectCreateFailed, &e)));
                     }
                 }
             });
@@ -356,7 +356,7 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
                     Ok(bytes) => {
                         let _ = download(&bytes, &format!("{name}.html"), "text/html");
                     }
-                    Err(e) => notice.set(Some(e.to_string())),
+                    Err(e) => notice.set(Some(api::failure(T::DownloadFailed, &e))),
                 }
             });
         }
