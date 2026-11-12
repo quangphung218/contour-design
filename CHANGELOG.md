@@ -23,6 +23,7 @@ All notable changes to Contour are recorded here. The format follows
 - Studio: a file Contour has no permission to read is reported as "No permission to read" (in the Lint panel and elsewhere), not as a write problem (QA-085); the preview frame shows a short page saying the file could not be read, with Reload preview, instead of the raw `{"error":…}` reply (QA-086).
 - Studio: a Markdown document whose file could not be read now says "Could not read this document. Nothing was saved over it." with Retry, instead of a loading placeholder that never ends; a lint that failed inside Contour or behind a proxy reads "Lint failed. Try again." instead of the raw reply.
 - Desktop (macOS): after the window gave up on a design that kept crashing it, View ▸ Reload loads the page again instead of saying "This page isn't responding" about the dead page, and a stopped preview no longer says it hung when it crashed. A crash of the page a restart just loaded now reloads it instead of leaving the window blank.
+- Desktop (macOS): after the shell restarted a page that did not answer View ▸ Reload, WebKit's late word that the old page ended no longer reloads the new page a second time.
 
 ## [0.2.0-beta.32] - 2026-11-11
 
