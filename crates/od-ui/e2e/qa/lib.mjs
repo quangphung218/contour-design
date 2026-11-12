@@ -100,8 +100,15 @@ export async function startDaemon({ agents = true, env = {}, data } = {}) {
     if (!d.proc || d.proc.exitCode !== null) return;
     const done = new Promise((r) => d.proc.once('exit', r));
     d.proc.kill('SIGTERM');
-    await Promise.race([done, sleep(5000)]);
-    if (d.proc.exitCode === null) d.proc.kill('SIGKILL');
+    // The daemon drains open responses for up to 5 s (DRAIN_LIMIT), and
+    // an open tab's event streams take all of it (QA-092).
+    await Promise.race([done, sleep(8000)]);
+    if (d.proc.exitCode === null && d.proc.signalCode === null) {
+      d.proc.kill('SIGKILL');
+      // A respawn on the same data folder before the old one is gone says
+      // "an od daemon is already running".
+      await done;
+    }
   };
   d.restart = async () => {
     await d.stop();
