@@ -414,4 +414,94 @@ test('PRJ-21', 'On a phone, after a project deleted from another tab says so, th
   await noRawNotFound(page);
 });
 
+/**
+ * Holds every call on project `id` (no answer) except the project itself
+ * and the paths under it that `allowed` matches: what the test does is
+ * then the only thing that can tell the Studio the project went.
+ */
+async function holdAfterDelete(page, id, allowed) {
+  const base = `/api/projects/${id}`;
+  await page.route((u) => u.pathname.startsWith(`${base}/`), (route) => {
+    const rest = new URL(route.request().url()).pathname.slice(base.length);
+    return allowed.test(rest) ? route.fallback() : undefined;
+  });
+}
+
+// A deleted project takes its conversations and comments with it: their
+// calls answer "conversation not found", not "project not found", and the
+// Studio must still land on the not-found state.
+const CONVERSATION_ACTIONS = {
+  'opening another conversation': async (page, other) => {
+    await page.getByTestId('conversation').selectOption(other);
+  },
+  'renaming the conversation': async (page) => {
+    await page.getByTestId('conversation-menu').click();
+    await page.getByTestId('rename-conversation').click();
+    await page.getByTestId('conversation-title').fill('Renamed');
+    await page.getByTestId('rename-save').click();
+  },
+  // The note is written while the other tab deletes: the element is
+  // picked before, the Add after.
+  'adding a comment on the preview': {
+    before: async (page) => {
+      const mode = page.getByTestId('comment-mode');
+      await mode.click();
+      await until(async () => (await mode.getAttribute('aria-pressed')) === 'true', 'comment mode on');
+      await page.frameLocator('[data-testid="preview"]').locator('#t').click();
+      await page.getByTestId('comment-note').fill('Bigger title');
+    },
+    act: async (page) => {
+      await page.getByTestId('comment-add').click();
+    },
+  },
+};
+
+for (const [n, [what, step]] of Object.entries(CONVERSATION_ACTIONS).entries()) {
+  const { before = async () => {}, act } = typeof step === 'function' ? { act: step } : step;
+  test(`PRJ-${22 + n}`, `${what[0].toUpperCase()}${what.slice(1)} in a project deleted from another tab says the project is gone`, async ({ d, api, newPage }) => {
+    const id = await createProject(d, `Deleted, ${what}`, { 'index.html': '<h1 id="t">Talk</h1>' });
+    const other = (await api(`/api/projects/${id}/conversations`, { method: 'POST', body: { title: 'Other' } })).body.conversation.id;
+    const { page } = await newPage();
+    // As PRJ-13: held, the event stream cannot tell; only the action can.
+    await page.route(/\/api\/projects\/[^/]+\/events$/, () => {});
+    await page.goto(`${d.base}/projects/${id}`);
+    await page.getByTestId('composer').waitFor();
+    await page.frameLocator('[data-testid="preview"]').locator('#t').waitFor();
+    await before(page);
+    // Once deleted, only the action's own conversation calls and the
+    // project itself answer: a reload that happens to follow must not be
+    // what says it.
+    await holdAfterDelete(page, id, /\/conversations\/[^/]+(\/.*)?$/);
+    assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
+    await act(page, other);
+    await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
+    assert.equal(await page.getByTestId('composer').isDisabled(), true, 'composer on in a deleted project');
+    assert.equal(await page.getByTestId('preview').count(), 0, 'the preview of a deleted project');
+    await noRawNotFound(page);
+  });
+}
+
+test('PRJ-25', 'Asking again in the side chat of a project deleted from another tab says the project is gone', async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'Deleted between side questions', { 'index.html': '<h1 id="t">Side</h1>' });
+  const { page } = await newPage();
+  await page.route(/\/api\/projects\/[^/]+\/events$/, () => {});
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.getByTestId('composer').waitFor();
+  await page.getByTestId('side-chat-tab').click();
+  const ask = async (text) => {
+    await page.getByTestId('side-composer').fill(text);
+    await page.getByTestId('side-composer').press('Enter');
+  };
+  // The side conversation exists: the next question goes straight to a run.
+  await ask('first question');
+  const first = page.getByTestId('side-assistant-msg').first();
+  await until(async () => ['succeeded', 'failed', 'canceled'].includes(await first.getAttribute('data-state')), 'the first answer ends', 30_000);
+  await holdAfterDelete(page, id, /^$/);
+  assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
+  await ask('second question');
+  await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
+  assert.equal(await page.getByTestId('side-composer').count(), 0, 'a side composer for a deleted project');
+  await noRawNotFound(page);
+});
+
 await run('projects');

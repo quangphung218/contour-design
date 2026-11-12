@@ -205,7 +205,6 @@ pub struct ViewedVersion {
     pub content: String,
 }
 
-/// Everything the Studio page shares between its panes.
 /// How far the load of the Studio's project went.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Load {
@@ -257,6 +256,7 @@ impl StudioPhase {
     }
 }
 
+/// Everything the Studio page shares between its panes.
 #[derive(Clone, Copy)]
 pub struct StudioCtx {
     /// App context, kept here because async tasks run without an owner.
@@ -670,8 +670,8 @@ impl StudioCtx {
             // Refused: the project was deleted from another tab (QA-076).
             // Not a call on the project's path, so it is named here.
             let gone = matches!(&res, Err(e) if e.project_missing());
-            if gone {
-                api::mark_gone(&project_id);
+            if let Err(e) = &res {
+                api::note_project(&project_id, e);
             }
             (res, gone)
         };

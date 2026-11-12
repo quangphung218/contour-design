@@ -426,13 +426,23 @@ fn Shelled() -> impl IntoView {
 const SHELL_NOTICE_MS: u32 = 8000;
 
 /// [`Shell::notice`] as a toast the user can close; it leaves by itself
-/// after [`SHELL_NOTICE_MS`] unless a newer one replaced it.
+/// after [`SHELL_NOTICE_MS`] unless a newer one replaced it. In the Studio
+/// it is the Studio's notice instead, so the two never stack.
 #[component]
 fn ShellNotice() -> impl IntoView {
     let shell = Shell::get();
     let tasks = Tasks::here();
     let shown = StoredValue::new(0u32);
     Effect::new(move |_| {
+        // A Studio open has a toast of its own in the same corner: the
+        // text goes there, one toast region at a time.
+        if let Some(studio) = shell.studio.get()
+            && let Some(text) = shell.notice.get()
+        {
+            studio.notice.try_set(Some(text));
+            shell.notice.set(None);
+            return;
+        }
         if shell.notice.with(Option::is_some) {
             let n = shown.get_value().wrapping_add(1);
             shown.set_value(n);

@@ -760,6 +760,7 @@ impl SideChat {
         // Both requests run to their end even if the Studio goes; only the
         // side chat's update waits on it.
         let base = ctx.base();
+        let project_id = ctx.project_id.get_value();
         let known = self.conversation_id.get_untracked();
         let req = ChatRequest {
             agent_id,
@@ -792,6 +793,11 @@ impl SideChat {
                 ..req
             };
             let run = api::post::<_, CreateRunResponse>("/api/runs", &side_turn(req)).await;
+            // Not a call on the project's path: the project is named here
+            // (deleted from another tab, QA-076).
+            if let Err(e) = &run {
+                api::note_project(&project_id, e);
+            }
             (created, run.map(|r| r.run_id))
         };
         ctx.tasks.spawn_then(work, move |(created, run)| {

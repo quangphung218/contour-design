@@ -306,8 +306,16 @@ pub fn Home() -> impl IntoView {
                 .map_err(|e| api::failure(T::ProjectCreateFailed, &e))?;
             let base = format!("/api/projects/{}", api::seg(&res.project.id));
             let sent = upload_files(&base, todo).await;
+            // A card removed from the tray meanwhile is not attached, nor
+            // reported; Home left, the tray is gone and every file counts.
+            let kept = |s: &SentFile| {
+                uploads
+                    .try_with_untracked(|u| u.iter().any(|x| x.id == s.item.id))
+                    .unwrap_or(true)
+            };
             let failed: Vec<String> = sent
                 .iter()
+                .filter(|s| kept(s))
                 .filter_map(|s| {
                     s.result
                         .as_ref()
@@ -315,7 +323,7 @@ pub fn Home() -> impl IntoView {
                         .map(|(_, e)| format!("{}: {e}", s.item.name))
                 })
                 .collect();
-            for s in &sent {
+            for s in sent.iter().filter(|s| kept(s)) {
                 if let Ok(path) = &s.result {
                     crate::workspace::add_missing(&mut files, vec![path.clone()]);
                 }

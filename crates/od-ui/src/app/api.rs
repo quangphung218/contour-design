@@ -205,25 +205,80 @@ pub fn mark_gone(id: &str) {
     }
 }
 
+/// For a call on project `id` made outside its path (`POST /api/runs`)
+/// that failed with `e`: the project gone, it is marked; another 404 (its
+/// conversation not found, deleted with it) asks about the project.
+pub fn note_project(id: &str, e: &HttpError) {
+    if e.project_missing() {
+        mark_gone(id);
+    } else if e.status == 404 {
+        check_project(&seg(id));
+    }
+}
+
 /// [`mark_gone`] for the project of `path` if `e` says it does not exist.
+/// A 404 for something in it (a conversation, a comment, a file) may be
+/// the project gone too: deleted, it takes its conversations and comments
+/// with it, and the daemon then names what it looked up first. The
+/// project is asked once, and its own answer marks it.
 fn note_gone(path: &str, e: &HttpError) {
     if let Some(id) = gone_project(path, e) {
         mark_gone(&id);
+    } else if let Some(seg) = project_to_check(path, e) {
+        check_project(seg);
     }
+}
+
+thread_local! {
+    /// Projects being asked by [`check_project`], so a burst of 404s asks
+    /// once.
+    static CHECKING: std::cell::RefCell<HashSet<String>> = std::cell::RefCell::new(HashSet::new());
+}
+
+/// Asks the daemon for the project whose path segment is `seg`; its
+/// answer goes through [`error_of`], which marks it gone if it is.
+fn check_project(seg: &str) {
+    let id = percent_decode(seg);
+    let known = GONE
+        .get()
+        .and_then(|g| g.try_with_untracked(|g| g.contains(&id)))
+        .unwrap_or(true);
+    if known || !CHECKING.with_borrow_mut(|c| c.insert(id.clone())) {
+        return;
+    }
+    let path = format!("/api/projects/{seg}");
+    super::tasks::detached(async move {
+        let _ = get::<serde_json::Value>(&path).await;
+        CHECKING.with_borrow_mut(|c| c.remove(&id));
+    });
+}
+
+/// The project segment of `path` (`/api/projects/<seg>/…`), and whether
+/// the path goes on under it.
+fn project_segment(path: &str) -> Option<(&str, bool)> {
+    let rest = path.strip_prefix("/api/projects/")?;
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let seg = &rest[..end];
+    (!seg.is_empty()).then(|| (seg, rest[end..].starts_with('/')))
 }
 
 /// The project a call on `path` was made on, when the daemon answered `e`
 /// that it does not exist; a missing file, version or conversation in it
-/// is not the project gone.
+/// is not the project gone (see [`project_to_check`]).
 fn gone_project(path: &str, e: &HttpError) -> Option<String> {
     if !e.project_missing() {
         return None;
     }
-    let seg = path
-        .strip_prefix("/api/projects/")?
-        .split(['/', '?', '#'])
-        .next()?;
-    (!seg.is_empty()).then(|| percent_decode(seg))
+    project_segment(path).map(|(seg, _)| percent_decode(seg))
+}
+
+/// The project segment to ask about when a call under it (not the project
+/// itself, which would ask again) answered 404 for something else.
+fn project_to_check<'a>(path: &'a str, e: &HttpError) -> Option<&'a str> {
+    if e.status != 404 || e.project_missing() {
+        return None;
+    }
+    project_segment(path).and_then(|(seg, nested)| nested.then_some(seg))
 }
 
 /// `s` with its `%XX` escapes decoded (the inverse of [`seg`], without JS).
@@ -596,16 +651,49 @@ mod tests {
     }
 
     #[test]
+    fn a_404_for_something_in_a_project_asks_about_the_project() {
+        for code in [
+            Some(ErrorCode::ConversationNotFound),
+            Some(ErrorCode::NotFound),
+            Some(ErrorCode::FileNotFound),
+            None,
+        ] {
+            assert_eq!(
+                project_to_check(
+                    "/api/projects/p%201/conversations/c1/comments",
+                    &not_found(code)
+                ),
+                Some("p%201"),
+                "{code:?}"
+            );
+        }
+        // The project itself: its own answer is the fact, no asking again.
+        assert_eq!(project_to_check("/api/projects/p1", &not_found(None)), None);
+        assert_eq!(
+            project_to_check("/api/projects/p1?x=1", &not_found(None)),
+            None
+        );
+        // Already said, or not a 404, or not a project's call.
+        let missing = not_found(Some(ErrorCode::ProjectNotFound));
+        assert_eq!(project_to_check("/api/projects/p1/files", &missing), None);
+        let locked = HttpError {
+            status: 500,
+            code: None,
+            message: "x".to_owned(),
+        };
+        assert_eq!(project_to_check("/api/projects/p1/files", &locked), None);
+        assert_eq!(
+            project_to_check("/api/runs/r1/events", &not_found(None)),
+            None
+        );
+    }
+
+    #[test]
     fn a_failed_call_marks_its_project_gone_once() {
         let owner = Owner::new();
         owner.with(|| {
             let gone = RwSignal::new(HashSet::new());
             watch_gone(gone);
-            note_gone(
-                "/api/projects/p2/raw/a.html",
-                &not_found(Some(ErrorCode::FileNotFound)),
-            );
-            assert!(gone.with_untracked(HashSet::is_empty), "a missing file");
             note_gone(
                 "/api/projects/p2/raw/a.html",
                 &not_found(Some(ErrorCode::ProjectNotFound)),
