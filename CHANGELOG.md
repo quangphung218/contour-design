@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Desktop: a `target="_blank"` link or a button that calls `window.open` inside a web component (an open shadow root, as Shoelace or Lit build) now opens the system browser, as it does in a browser; before, nothing opened. A key held while a finger taps no longer opens three tabs between them; each press opens at most one.
+
 ## [0.2.0-beta.33] - 2026-11-13
 
 ### Fixed
