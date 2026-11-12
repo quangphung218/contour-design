@@ -280,6 +280,9 @@ messages! {
     McpSignInFailed => "Could not start the sign-in: {0}", "Không bắt đầu đăng nhập được: {0}";
     ReportIssueFailed => "Could not prepare the issue report: {0}", "Không chuẩn bị được báo cáo lỗi: {0}";
     MediaQueueFailed => "Could not start the generation: {0}", "Không bắt đầu tạo được: {0}";
+    GenuiRevokeFailed => "Could not revoke the remembered answer: {0}", "Không thu hồi được câu trả lời đã nhớ: {0}";
+    ScreenshotAttachFailed => "Could not attach the screenshot: {0}", "Không đính kèm được ảnh chụp: {0}";
+    SketchAttachFailed => "Could not attach the sketch: {0}", "Không đính kèm được sketch: {0}";
 
     // Home
     HomeTitle => "What do you want to design?", "Hôm nay thiết kế gì?";

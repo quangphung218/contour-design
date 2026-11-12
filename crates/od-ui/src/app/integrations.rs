@@ -191,7 +191,7 @@ fn McpCatalog() -> impl IntoView {
                         let _ = w.location().reload();
                     }
                 }
-                Err(e) => state.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
+                Err(e) => state.set(Some(Err(api::failure(T::InstallFailed, &e)))),
             }
         });
     };

@@ -1042,7 +1042,7 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
                     status.set(Some(Ok(format!("{head}{note}{stop}"))));
                     on_saved.run(());
                 }
-                Err(e) => status.set(Some(Err(api::failure(T::MdSaveFailed, &e)))),
+                Err(e) => status.set(Some(Err(api::failure(T::ExportFailed, &e)))),
             }
             busy.set(false);
         });
