@@ -376,7 +376,12 @@ pub fn CommandPalette() -> impl IntoView {
                                         aria-selected=move || (selected.get() == i).to_string()
                                         data-testid="palette-item"
                                         on:mousemove=move |_| selected.set(i)
-                                        on:click=move |_| run(action.clone())
+                                        // Running closes the palette: the click must
+                                        // not reach its handlers, gone with it.
+                                        on:click=move |ev| {
+                                            ev.stop_propagation();
+                                            run(action.clone());
+                                        }
                                     >
                                         {icon(c.glyph)}
                                         <span class="switcher-path">{c.label}</span>
