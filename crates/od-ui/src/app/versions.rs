@@ -66,31 +66,42 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
         reload();
         active
     });
-    on_cleanup(move || ctx.viewing.set(None));
+    on_cleanup(move || ctx.back_to_live());
 
+    // Each View's number: only the last one shows.
+    let viewed = StoredValue::new(0u64);
     let view_version = move |v: FileVersion| {
         let Some(path) = ctx.active_untracked() else {
             return;
         };
+        viewed.update_value(|n| *n += 1);
+        let mine = (seq.get_value(), viewed.get_value());
         // The panel's: closed, it shows no version any more.
         tasks.spawn(async move {
             let url = format!("{}/{}", versions_url(ctx, &path), api::seg(&v.id));
-            match api::get::<VersionContentResponse>(&url).await {
-                Ok(r) => ctx.viewing.set(Some(ViewedVersion {
+            let res = api::get::<VersionContentResponse>(&url).await;
+            // Another file picked (or its content changed) meanwhile: the
+            // panel stays, so this version would show over the new file and
+            // Restore would post it against that file (QA-089). Another View
+            // since: that one shows.
+            if (seq.get_value(), viewed.get_value()) != mine {
+                return;
+            }
+            match res {
+                Ok(r) => ctx.view(ViewedVersion {
+                    path,
                     id: v.id,
                     version: v.version,
                     content: r.content,
-                })),
+                }),
                 Err(e) => ctx
                     .notice
                     .set(Some(ctx.failed_to(T::VersionOpenFailed, &e))),
             }
         });
     };
-    let restore = move |id: String| {
-        let Some(path) = ctx.active_untracked() else {
-            return;
-        };
+    // `path`: the file the version is of, never another file picked since.
+    let restore = move |path: String, id: String| {
         // The Studio's: a restore asked for shows even if the panel closes.
         ctx.tasks.spawn(async move {
             let url = format!("{}/{}/restore", versions_url(ctx, &path), api::seg(&id));
@@ -98,7 +109,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                 .await
             {
                 Ok(_) => {
-                    ctx.viewing.set(None);
+                    ctx.back_to_live();
                     ctx.reload_preview();
                 }
                 Err(e) => ctx.notice.set(Some(ctx.failed_to(T::RestoreFailed, &e))),
@@ -119,14 +130,14 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                     {icon(Glyph::Close)}
                 </button>
             </div>
-            {move || ctx.viewing.get().map(|v| {
-                let id = v.id.clone();
+            {move || ctx.viewed().map(|v| {
+                let (path, id) = (v.path.clone(), v.id.clone());
                 view! {
                     <div class="viewing">
                         <strong>{icon(Glyph::Eye)}{tf(T::ViewingVersion, &[&v.version.to_string()])}</strong>
                         <div class="row">
-                            <button class="btn small" on:click=move |_| ctx.viewing.set(None)>{t(T::BackToLive)}</button>
-                            <button class="btn small primary" on:click=move |_| restore(id.clone())>{icon(Glyph::Restore)}{t(T::Restore)}</button>
+                            <button class="btn small" on:click=move |_| ctx.back_to_live()>{t(T::BackToLive)}</button>
+                            <button class="btn small primary" on:click=move |_| restore(path.clone(), id.clone())>{icon(Glyph::Restore)}{t(T::Restore)}</button>
                         </div>
                     </div>
                 }
@@ -175,7 +186,7 @@ pub fn VersionsPanel(ctx: StudioCtx) -> impl IntoView {
                                             class="btn small"
                                             data-testid="version-restore"
                                             disabled=current
-                                            on:click=move |_| restore(id.clone())
+                                            on:click=move |_| if let Some(path) = ctx.active_untracked() { restore(path, id.clone()) }
                                         >
                                             {icon(Glyph::Restore)}
                                             {t(T::Restore)}

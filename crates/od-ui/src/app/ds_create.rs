@@ -7,7 +7,7 @@
 //! system, install without an agent.
 
 use super::icons::{Glyph, icon};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -308,11 +308,11 @@ pub fn CreateFlow(
                 {match rows {
                     Some(r) => view! {
                         <textarea class="input" class:mono=testid == "dsc-paste" rows=r data-testid=testid placeholder=t(placeholder)
-                            prop:value=move || signal.get() on:input=move |ev| signal.set(event_target_value(&ev))></textarea>
+                            prop:value=move || signal.get() on:input=live(move |ev| signal.set(event_target_value(&ev)))></textarea>
                     }.into_any(),
                     None => view! {
                         <input class="input" data-testid=testid placeholder=t(placeholder)
-                            prop:value=move || signal.get() on:input=move |ev| signal.set(event_target_value(&ev))/>
+                            prop:value=move || signal.get() on:input=live(move |ev| signal.set(event_target_value(&ev)))/>
                     }.into_any(),
                 }}
             </label>
@@ -348,7 +348,7 @@ pub fn CreateFlow(
                     Source::Files => view! {
                         <label class="field">
                             <span>{t(T::SourceFiles)}</span>
-                            <input type="file" multiple data-testid="dsc-files" on:change=on_files/>
+                            <input type="file" multiple data-testid="dsc-files" on:change=live(on_files)/>
                             <span class="muted">{t(T::SourceFilesHint)}</span>
                         </label>
                         <ul class="file-chips">
@@ -367,14 +367,14 @@ pub fn CreateFlow(
                     Source::Copy => view! {
                         <label class="field">
                             <span>{t(T::CopyFrom)}</span>
-                            <select class="input" data-testid="dsc-copy-from" prop:value=move || copy_from.get() on:change=move |ev| {
+                            <select class="input" data-testid="dsc-copy-from" prop:value=move || copy_from.get() on:change=live(move |ev| {
                                 let v = event_target_value(&ev);
                                 if name.with_untracked(|n| n.trim().is_empty())
                                     && let Some(s) = systems.get_untracked().into_iter().find(|s| s.id == v) {
                                         name.set(tf(T::CopyOfName, &[&s.title]));
                                     }
                                 copy_from.set(v);
-                            }>
+                            })>
                                 <option value="">{t(T::ChooseDesignSystem)}</option>
                                 {move || systems.get().into_iter().map(|s| view! { <option value=s.id.clone()>{format!("{} · {}", s.title, s.category)}</option> }).collect_view()}
                             </select>
@@ -434,7 +434,7 @@ fn BrandPicker(on_pick: Callback<Brand>, on_close: Callback<()>) -> impl IntoVie
         <Modal title=t(T::StartFromBrand).to_owned() subtitle=t(T::BrandPickerSub).to_owned() glyph=Glyph::Star testid="brand-picker" on_close=on_close>
             <div class="dialog-body">
                 <input class="input" type="search" placeholder=t(T::SearchBrands) aria-label=t(T::SearchBrands)
-                    prop:value=move || query.get() on:input=move |ev| query.set(event_target_value(&ev))/>
+                    prop:value=move || query.get() on:input=live(move |ev| query.set(event_target_value(&ev)))/>
                 <div class="brand-grid">
                     {move || {
                         let q = query.get().to_lowercase();

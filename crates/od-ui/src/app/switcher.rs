@@ -3,6 +3,7 @@
 
 use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
+use super::tasks::live;
 use crate::fuzzy;
 use crate::i18n::{T, t};
 use leptos::prelude::*;
@@ -80,10 +81,10 @@ pub fn QuickSwitcher(ctx: StudioCtx) -> impl IntoView {
                     data-testid="switcher-input"
                     placeholder=t(T::SwitcherPlaceholder)
                     prop:value=move || query.get()
-                    on:input=move |ev| {
+                    on:input=live(move |ev| {
                         query.set(event_target_value(&ev));
                         selected.set(0);
-                    }
+                    })
                     on:keydown=on_key
                 />
                 <kbd>"Esc"</kbd>

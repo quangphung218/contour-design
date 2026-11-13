@@ -388,7 +388,41 @@ test('STU-21', "History: a version of the file just left, viewed a moment before
   const viewing = await page.getByTestId('version-preview').count();
   const banner = await panel.locator('.viewing').count();
   assert.equal(viewing + banner, 0, `b.html shows a.html's old version (frame ${viewing}, banner ${banner})`);
-}, { knownBug: 'QA-089' });
+});
+
+test('STU-21b', 'History: a version viewed, then Ctrl+Tab or Ctrl+W to the other file, does not show over it', async ({ d, api, newPage }) => {
+  const id = await createProject(d, 'History view keys', {});
+  for (const [file, prompts] of Object.entries({ 'a.html': ['A old', 'A new'], 'b.html': ['B only'] })) {
+    for (const prompt of prompts) {
+      await writeFile(d, id, file, `<!doctype html><h1>${prompt}</h1>`);
+      const r = await api(`/api/projects/${id}/files/${file}/versions`, { method: 'POST', body: { prompt } });
+      assert.ok(r.status < 300, `version of ${file}: ${r.status}`);
+    }
+  }
+  const { page } = await newPage();
+  await page.goto(`${d.base}/projects/${id}`);
+  await page.getByTestId('file-tree').waitFor();
+  await row(page, 'b.html').click();
+  await frame(page).locator('h1', { hasText: 'B only' }).waitFor();
+  const panel = page.getByTestId('versions');
+  // A version of a.html on view (loaded, no slow network), then another
+  // way to b.html than a click on its row: a shortcut.
+  for (const key of ['Control+Tab', 'Control+w']) {
+    await row(page, 'a.html').click();
+    await frame(page).locator('h1', { hasText: 'A new' }).waitFor();
+    if (!(await panel.count())) await page.getByTestId('history').click();
+    await panel.locator('[data-testid="version"]', { hasText: 'A old' }).getByTestId('version-view').click();
+    await page.getByTestId('version-preview').waitFor();
+    await page.locator('body').click({ position: { x: 5, y: 5 } }).catch(() => {});
+    await page.keyboard.press(key);
+    await panel.locator('.pane-title', { hasText: 'b.html' }).waitFor();
+    await frame(page).locator('h1', { hasText: 'B only' }).waitFor();
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const viewing = await page.getByTestId('version-preview').count();
+    const banner = await panel.locator('.viewing').count();
+    assert.equal(viewing + banner, 0, `${key}: b.html shows a.html's old version (frame ${viewing}, banner ${banner})`);
+  }
+});
 
 test('STU-22', 'A link and a window.open button inside a web component (shadow root) in the preview each open one tab', async ({ d, newPage }) => {
   const WC = (base) => `<!doctype html><html><body><h1 id="title">Web component</h1><x-card></x-card><script>

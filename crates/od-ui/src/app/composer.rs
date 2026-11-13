@@ -5,7 +5,7 @@
 //! [`crate::models`]; this module is the browser side.
 
 use super::icons::{Glyph, icon};
-use super::tasks::{self, Tasks};
+use super::tasks::{self, Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use crate::mention::{self, Candidate, MentionKind, Slash, Trigger};
@@ -754,10 +754,10 @@ pub fn MentionArea(
                 placeholder=move || placeholder.get()
                 aria-autocomplete="list"
                 prop:value=move || draft.get()
-                on:input=move |ev| {
+                on:input=live(move |ev| {
                     draft.set(event_target_value(&ev));
                     refresh();
-                }
+                })
                 on:click=move |_| refresh()
                 on:keyup=move |ev: web_sys::KeyboardEvent| {
                     if matches!(ev.key().as_str(), "ArrowLeft" | "ArrowRight" | "Home" | "End") {
@@ -767,7 +767,7 @@ pub fn MentionArea(
                 on:keydown=on_key
                 on:paste=on_paste
                 on:focus=move |_| if let Some(cb) = on_focus { cb.run(true) }
-                on:blur=move |_| {
+                on:blur=live(move |_| {
                     if let Some(cb) = on_focus {
                         cb.run(false);
                     }
@@ -787,7 +787,7 @@ pub fn MentionArea(
                             open.set(None);
                         }
                     });
-                }
+                })
             ></textarea>
             {move || open.get().map(|(slash, trigger)| {
                 let rows = rows_now.get();
@@ -1035,14 +1035,14 @@ pub fn FilePicker(trigger: RwSignal<u32>, on_files: Callback<Vec<web_sys::File>>
             hidden=true
             data-testid="file-input"
             node_ref=input
-            on:change=move |ev| {
+            on:change=live(move |ev| {
                 let el = event_target::<web_sys::HtmlInputElement>(&ev);
                 let files = files_of(el.files());
                 el.set_value("");
                 if !files.is_empty() {
                     on_files.run(files);
                 }
-            }
+            })
         />
     }
 }
@@ -1232,7 +1232,7 @@ pub fn PlusMenu(
                                 <input class="input small plus-search" type="search" data-testid="plus-search"
                                     placeholder=t(T::SearchList) aria-label=t(T::SearchList)
                                     prop:value=move || search.get()
-                                    on:input=move |ev| search.set(event_target_value(&ev))/>
+                                    on:input=live(move |ev| search.set(event_target_value(&ev)))/>
                                 <div class="plus-list">
                                     {move || {
                                         let rows = items();
@@ -1366,12 +1366,12 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
                         view! {
                             <label class="field">
                                 <span>{t(T::Agent)}</span>
-                                <select data-testid="model-agent" on:change=move |ev| {
+                                <select data-testid="model-agent" on:change=live(move |ev| {
                                     let next = event_target_value(&ev);
                                     custom.set(false);
                                     let sel = shell.config.with_untracked(|c| c.as_ref().map(|c| models::selection(c, &next))).unwrap_or_default();
                                     save(next, sel);
-                                }>
+                                })>
                                     {agents.into_iter().map(|(aid, name)| {
                                         let selected = aid == id;
                                         view! { <option value=aid selected=selected>{name}</option> }
@@ -1380,7 +1380,7 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
                             </label>
                             <label class="field">
                                 <span>{t(T::Model)}</span>
-                                <select data-testid="model-select" on:change=move |ev| {
+                                <select data-testid="model-select" on:change=live(move |ev| {
                                     let v = event_target_value(&ev);
                                     if v == "__custom" {
                                         custom.set(true);
@@ -1388,7 +1388,7 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
                                     }
                                     custom.set(false);
                                     save(id_m.clone(), Selection { model: Some(v).filter(|v| v != "default"), ..sel_m.clone() });
-                                }>
+                                })>
                                     {models_list.iter().map(|m| {
                                         let label = if *m == "default" { t(T::DefaultChoice).to_owned() } else { (*m).to_owned() };
                                         let selected = !is_custom && *m == model_value;
@@ -1400,20 +1400,20 @@ pub fn ModelPicker(#[prop(optional)] up: bool) -> impl IntoView {
                             {is_custom.then(|| view! {
                                 <input class="input small" data-testid="model-custom" placeholder=t(T::CustomModel)
                                     prop:value=sel_c.model.clone().unwrap_or_default()
-                                    on:change=move |ev| {
+                                    on:change=live(move |ev| {
                                         let v = event_target_value(&ev).trim().to_owned();
                                         save(id_c.clone(), Selection { model: Some(v).filter(|v| !v.is_empty()), ..sel_c.clone() });
-                                    }/>
+                                    })/>
                             })}
                             {(!efforts.is_empty()).then(|| {
                                 let effort = sel_r.reasoning.clone().unwrap_or_else(|| "default".to_owned());
                                 view! {
                                     <label class="field">
                                         <span>{t(T::ReasoningEffort)}</span>
-                                        <select data-testid="model-reasoning" on:change=move |ev| {
+                                        <select data-testid="model-reasoning" on:change=live(move |ev| {
                                             let v = event_target_value(&ev);
                                             save(id_r.clone(), Selection { reasoning: Some(v).filter(|v| v != "default"), ..sel_r.clone() });
-                                        }>
+                                        })>
                                             {efforts.iter().map(|e| {
                                                 let label = if *e == "default" { t(T::DefaultChoice).to_owned() } else { (*e).to_owned() };
                                                 view! { <option value=*e selected=*e == effort>{label}</option> }

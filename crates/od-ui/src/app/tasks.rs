@@ -101,6 +101,34 @@ impl Tasks {
     }
 }
 
+/// `handler`, run only while the component it was made in is there: the
+/// handler of an event the browser fires on an element as it goes.
+///
+/// A focused field that leaves the page gets `blur` and `focusout` (and
+/// `change`, its value changed) while Leptos removes its DOM, which is
+/// after it disposed the field's owner: a handler that reads a signal then
+/// panics, and a write is lost (QA-091). Every `on:blur`, `on:focusout`,
+/// `on:change` and `on:input` handler goes through it (a test in this
+/// module reads the sources).
+///
+/// The handler is skipped once the owner **where `live` is called** went,
+/// even if it only writes into state that outlives it. So call it in the
+/// owner of the state the handler writes: a field in a list that re-renders
+/// (the Tweaks and Inspect rows) and writes into `StudioCtx` takes its
+/// `live(…)` from the panel or the Studio, not from the row, or its last
+/// `change` is dropped when the row re-renders. Work that must not be lost
+/// when the field goes (a label being typed) is done in an `on_cleanup`:
+/// WebKit fires no `blur` or `change` on a field removed from the page at
+/// all, so the cleanup is what keeps it there.
+pub fn live<E>(handler: impl Fn(E) + 'static) -> impl Fn(E) + 'static {
+    let tasks = Tasks::here();
+    move |ev| {
+        if tasks.alive() {
+            handler(ev);
+        }
+    }
+}
+
 /// Spawns `work`, which touches no signal of a component that may go (a
 /// record kept for the history, a write to storage, a call into the
 /// desktop shell, a store that lives as long as the app); it runs to its
@@ -336,6 +364,115 @@ mod tests {
         drop(owner);
         assert_eq!(poll(&mut f), Poll::Ready(None));
         assert_eq!(steps.get(), 1, "nothing after the first await ran");
+    }
+
+    /// The events a browser fires on a field as it leaves the page (or
+    /// that can come with one): their handlers go through [`live`].
+    const LEAVING: [&str; 4] = ["blur", "focusout", "change", "input"];
+
+    /// Each handler in `src` of a [`LEAVING`] event not wrapped in
+    /// `live(…)`, as `file:line`.
+    fn unguarded(file: &str, src: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for event in LEAVING {
+            let attr = format!("on:{event}");
+            for (at, _) in src.match_indices(&attr) {
+                let rest = &src[at + attr.len()..];
+                // The value after `=`, or after a modifier first (`:target`).
+                let value = match rest.as_bytes().first() {
+                    Some(b'=') => &rest[1..],
+                    Some(b':') => match rest.find('=') {
+                        Some(eq)
+                            if rest[1..eq]
+                                .bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b == b'_') =>
+                        {
+                            &rest[eq + 1..]
+                        }
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+                if !value.trim_start().starts_with("live(") {
+                    let line = src[..at].matches('\n').count() + 1;
+                    found.push(format!("{file}:{line} on:{event}"));
+                }
+            }
+        }
+        found
+    }
+
+    fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                rust_files(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn every_handler_of_an_event_fired_as_a_field_goes_is_live() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        rust_files(&root, &mut files);
+        assert!(files.len() > 20, "the sources were found");
+        let mut found = Vec::new();
+        for path in files {
+            let src = std::fs::read_to_string(&path).unwrap();
+            let name = path.strip_prefix(&root).unwrap().display().to_string();
+            found.extend(unguarded(&name, &src));
+        }
+        assert!(
+            found.is_empty(),
+            "wrap these handlers in `live(…)` (QA-091):\n{}",
+            found.join("\n")
+        );
+    }
+
+    #[test]
+    fn a_handler_not_wrapped_in_live_is_found() {
+        // Built at run time: this file is scanned too.
+        let src = format!(
+            "view! {{\n  <textarea on:{}=live(move |_| save())\n    on:{}=move |_| autosave.save_now()/>\n}}",
+            "input", "blur"
+        );
+        assert_eq!(unguarded("doc_view.rs", &src), ["doc_view.rs:3 on:blur"]);
+        let multi = format!("<input on:{}=\n    live(move |ev| x.set(ev))/>", "change");
+        assert!(
+            unguarded("a.rs", &multi).is_empty(),
+            "a handler on the next line"
+        );
+        let named = format!("<input on:{}=on_input/>", "input");
+        assert_eq!(unguarded("a.rs", &named), ["a.rs:1 on:input"]);
+        // Leptos 0.8's typed-target form.
+        let target = format!(
+            "<input on:{}:target=move |ev| x.set(ev.target().value())/>",
+            "input"
+        );
+        assert_eq!(unguarded("a.rs", &target), ["a.rs:1 on:input"]);
+        let target_live = format!("<input on:{}:target=live(move |ev| x.set(ev))/>", "change");
+        assert!(unguarded("a.rs", &target_live).is_empty());
+        // Another event that starts with the same name is not one of them.
+        let other = format!("<div on:{}=move |_| x.get()/>", "inputx");
+        assert!(unguarded("a.rs", &other).is_empty());
+    }
+
+    #[test]
+    fn a_live_handler_runs_while_its_owner_is_there_only() {
+        let owner = Owner::new();
+        let ran = Rc::new(Cell::new(0));
+        let handler = owner.with(|| {
+            let ran = ran.clone();
+            live(move |n: u32| ran.set(ran.get() + n))
+        });
+        handler(1);
+        assert_eq!(ran.get(), 1);
+        drop(owner);
+        handler(1);
+        assert_eq!(ran.get(), 1, "nothing once the owner went");
     }
 
     #[test]

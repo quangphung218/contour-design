@@ -200,9 +200,20 @@ fn wide_window() -> bool {
 /// A file version shown in place of the live preview.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewedVersion {
+    /// The file it is a version of: shown only while that file is.
+    pub path: String,
     pub id: String,
     pub version: u32,
     pub content: String,
+}
+
+/// `viewing` if it is a version of `active`: one viewed before another
+/// file was picked is not that file's (QA-089).
+fn version_of<'a>(
+    viewing: Option<&'a ViewedVersion>,
+    active: Option<&str>,
+) -> Option<&'a ViewedVersion> {
+    viewing.filter(|v| Some(v.path.as_str()) == active)
 }
 
 /// How far the load of the Studio's project went.
@@ -287,6 +298,8 @@ pub struct StudioCtx {
     pub files: RwSignal<Vec<ProjectFile>>,
     /// Open file tabs; the active tab is the previewed file.
     pub tabs: RwSignal<Tabs>,
+    /// `tabs.active`, read through [`Self::active`].
+    active: Memo<Option<String>>,
     /// Terminal tabs, after the file tabs.
     pub terms: RwSignal<Vec<TermTab>>,
     /// The terminal shown instead of the preview, if any.
@@ -337,7 +350,8 @@ pub struct StudioCtx {
     /// Under 480 px: the preview's edit and zoom tools show, on a row of
     /// their own, instead of folded behind "More actions".
     pub preview_tools_open: RwSignal<bool>,
-    pub viewing: RwSignal<Option<ViewedVersion>>,
+    /// Read through [`Self::viewed`]: it may be another file's.
+    viewing: RwSignal<Option<ViewedVersion>>,
     /// Inspect, text edit, draw, tweaks, palette, lint (spec 1.2).
     pub tools: Tools,
     /// Mode of the open conversation, sent with each run.
@@ -417,8 +431,39 @@ impl StudioCtx {
     }
 
     /// The previewed file (tracked).
+    /// The file shown. Tracks only which file it is: `tabs` changes for
+    /// other reasons too (every files refresh, an upload, the watcher),
+    /// and a view that read it directly was built again each time, with
+    /// the state of the components in it (a comment being typed).
     pub fn active(self) -> Option<String> {
-        self.tabs.with(|t| t.active.clone())
+        self.active.get()
+    }
+
+    /// The version on view, if it is a version of the file shown. Every
+    /// way to another file (a click, Ctrl+Tab, Cmd+1…9, Cmd+W, a tab
+    /// closed, the Files panel) leaves the other file's version unshown,
+    /// with no Restore against the wrong file (QA-089). Tracks both.
+    pub fn viewed(self) -> Option<ViewedVersion> {
+        let active = self.active();
+        self.viewing
+            .with(|v| version_of(v.as_ref(), active.as_deref()).cloned())
+    }
+
+    /// Whether a version of the file shown is on view ([`Self::viewed`]).
+    pub fn is_viewing(self) -> bool {
+        let active = self.active();
+        self.viewing
+            .with(|v| version_of(v.as_ref(), active.as_deref()).is_some())
+    }
+
+    /// Shows `v` in place of the live preview.
+    pub fn view(self, v: ViewedVersion) {
+        self.viewing.set(Some(v));
+    }
+
+    /// Back to the live file.
+    pub fn back_to_live(self) {
+        self.viewing.set(None);
     }
 
     pub fn active_untracked(self) -> Option<String> {
@@ -1591,6 +1636,7 @@ pub fn Studio() -> impl IntoView {
             load.with(|l| StudioPhase::of(gone, l))
         })
     };
+    let tabs = RwSignal::new(Tabs::default());
     let ctx = StudioCtx {
         shell,
         tasks: Tasks::here(),
@@ -1606,7 +1652,8 @@ pub fn Studio() -> impl IntoView {
         held_owner: StoredValue::new(None),
         dequeued: StoredValue::new(None),
         files: RwSignal::new(Vec::new()),
-        tabs: RwSignal::new(Tabs::default()),
+        tabs,
+        active: Memo::new(move |_| tabs.with(|t| t.active.clone())),
         terms: RwSignal::new(Vec::new()),
         active_term: RwSignal::new(None),
         recent: RwSignal::new(Vec::new()),
@@ -2059,7 +2106,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
         if super::live_view::is_live(&path) {
             return Some(Special::Live(path));
         }
-        if ctx.show_code.get() || ctx.viewing.with(Option::is_some) {
+        if ctx.show_code.get() || ctx.is_viewing() {
             return None;
         }
         if is_markdown(&path) {
@@ -2074,7 +2121,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
         doc.then_some(Special::Doc(path))
     });
     // Rendered pages, images and versions; reloads with the preview.
-    let live_page = move || match (src.get(), ctx.viewing.get()) {
+    let live_page = move || match (src.get(), ctx.viewed()) {
         (None, _) => view! { <PreviewEmpty ctx=ctx/> }.into_any(),
         // A version on view shows its own source, not the live file's.
         (Some(_), Some(v)) if ctx.show_code.get() => {
@@ -2234,7 +2281,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <span class="pane-title path-title mono" title=move || ctx.active().unwrap_or_default()>
                     {move || ctx.active().unwrap_or_default()}
                 </span>
-                <Show when=move || is_html() && ctx.viewing.with(Option::is_none) && !ctx.show_code.get()>
+                <Show when=move || is_html() && !ctx.is_viewing() && !ctx.show_code.get()>
                     <span class="head-divider" aria-hidden="true"></span>
                     <ToolBar ctx=ctx/>
                     <span class="head-divider" aria-hidden="true"></span>
@@ -2261,7 +2308,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 </Show>
             </div>
             <DeckBar ctx=ctx/>
-            <Show when=move || is_html() && ctx.viewing.with(Option::is_none) && !ctx.show_code.get()>
+            <Show when=move || is_html() && !ctx.is_viewing() && !ctx.show_code.get()>
                 <ToolHints ctx=ctx/>
             </Show>
             {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{icon(Glyph::Comment)}{t(T::CommentModeOn)}</p> })}
@@ -2594,6 +2641,24 @@ fn CodeView(ctx: StudioCtx, version: Option<String>) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_version_shows_only_over_its_own_file() {
+        let v = ViewedVersion {
+            path: "a.html".into(),
+            id: "v1".into(),
+            version: 1,
+            content: "<h1>A old</h1>".into(),
+        };
+        assert_eq!(version_of(Some(&v), Some("a.html")), Some(&v));
+        assert_eq!(
+            version_of(Some(&v), Some("b.html")),
+            None,
+            "Ctrl+Tab to b.html"
+        );
+        assert_eq!(version_of(Some(&v), None), None, "every tab closed");
+        assert_eq!(version_of(None, Some("a.html")), None);
+    }
 
     fn conv(id: &str, title: Option<&str>, created_at: i64) -> Conversation {
         Conversation {

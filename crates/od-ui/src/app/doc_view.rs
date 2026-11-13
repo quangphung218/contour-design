@@ -9,7 +9,7 @@ use super::files_panel::{
 };
 use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::file_tree as ft;
 use crate::i18n::{T, t, tf};
 use crate::markdown;
@@ -147,6 +147,7 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
             &content,
             "Markdown",
             T::MdSaveFailed,
+            save,
         );
         tasks.spawn_then(work, move |res| {
             if !save.is_latest() {
@@ -226,17 +227,17 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
                 placeholder=t(T::MdPlaceholder)
                 spellcheck="true"
                 prop:value=move || text.get()
-                on:input=move |ev| {
+                on:input=live(move |ev| {
                     text.set(event_target_value(&ev));
                     autosave.changed();
-                }
+                })
                 on:keydown=move |ev: web_sys::KeyboardEvent| {
                     if (ev.meta_key() || ev.ctrl_key()) && ev.key().eq_ignore_ascii_case("s") {
                         ev.prevent_default();
                         autosave.save_now();
                     }
                 }
-                on:blur=move |_| autosave.save_now()
+                on:blur=live(move |_| autosave.save_now())
                 on:paste=move |ev: web_sys::ClipboardEvent| {
                     let files = ev
                         .clipboard_data()

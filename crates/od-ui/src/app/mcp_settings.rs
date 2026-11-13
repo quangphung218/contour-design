@@ -3,7 +3,7 @@
 //! and header entries (shown masked by the daemon) round-trip untouched.
 
 use super::icons::{Glyph, icon};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{api, desktop};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -216,7 +216,7 @@ fn McpRow(
             <div class="row mcp-head">
                 <label class="field grow">
                     <span>{t(T::McpId)}</span>
-                    <input class="input mono" data-testid="mcp-id" prop:value=id on:change=move |ev| set("id", json!(event_target_value(&ev)))/>
+                    <input class="input mono" data-testid="mcp-id" prop:value=id on:change=live(move |ev| set("id", json!(event_target_value(&ev))))/>
                 </label>
                 <div class="segmented small transport">
                     <button class="seg" class:active=move || !is_http() on:click=move |_| switch_transport(false)>"stdio"</button>
@@ -225,7 +225,7 @@ fn McpRow(
                 <label class="switch">
                     <input type="checkbox"
                         prop:checked=move || servers.with(|s| s.get(index).and_then(|v| v["enabled"].as_bool()).unwrap_or(true))
-                        on:change=move |ev| set("enabled", json!(event_target_checked(&ev)))/>
+                        on:change=live(move |ev| set("enabled", json!(event_target_checked(&ev))))/>
                     <span>{t(T::RoutineEnabled)}</span>
                 </label>
             </div>
@@ -234,26 +234,26 @@ fn McpRow(
                 fallback=move || view! {
                     <label class="field">
                         <span>{t(T::McpCommand)}</span>
-                        <input class="input mono" data-testid="mcp-command" prop:value=get("command") on:change=move |ev| set("command", json!(event_target_value(&ev)))/>
+                        <input class="input mono" data-testid="mcp-command" prop:value=get("command") on:change=live(move |ev| set("command", json!(event_target_value(&ev))))/>
                     </label>
                     <label class="field">
                         <span>{t(T::McpArgs)}</span>
                         <textarea class="input mono" rows="2" data-testid="mcp-args"
                             prop:value=move || servers.with(|s| s.get(index).and_then(|v| v["args"].as_array().cloned()).unwrap_or_default()
                                 .iter().filter_map(|a| a.as_str().map(str::to_owned)).collect::<Vec<_>>().join("\n"))
-                            on:change=move |ev| {
+                            on:change=live(move |ev| {
                                 let args: Vec<String> = event_target_value(&ev).lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect();
                                 set("args", json!(args));
-                            }></textarea>
+                            })></textarea>
                     </label>
                 }
             >
                 <label class="field">
                     <span>{t(T::McpUrl)}</span>
-                    <input class="input mono" data-testid="mcp-url" prop:value=get("url") on:change=move |ev| set("url", json!(event_target_value(&ev)))/>
+                    <input class="input mono" data-testid="mcp-url" prop:value=get("url") on:change=live(move |ev| set("url", json!(event_target_value(&ev))))/>
                 </label>
                 <label class="radio-row">
-                    <input type="checkbox" prop:checked=oauth on:change=move |ev| set("auth", json!(if event_target_checked(&ev) { "oauth" } else { "none" }))/>
+                    <input type="checkbox" prop:checked=oauth on:change=live(move |ev| set("auth", json!(if event_target_checked(&ev) { "oauth" } else { "none" })))/>
                     <span>{t(T::McpUseOauth)}</span>
                 </label>
             </Show>

@@ -5,7 +5,7 @@
 use super::api;
 use super::bridge;
 use super::studio::StudioCtx;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::i18n::{T, t};
 use crate::preview_bridge as pb;
 use leptos::prelude::*;
@@ -191,7 +191,7 @@ fn DraftBox(ctx: StudioCtx, picked: crate::preview_bridge::Picked) -> impl IntoV
                 data-testid="comment-note"
                 placeholder=t(T::CommentPlaceholder)
                 prop:value=move || note.get()
-                on:input=move |ev| note.set(event_target_value(&ev))
+                on:input=live(move |ev| note.set(event_target_value(&ev)))
                 on:keydown=move |ev: web_sys::KeyboardEvent| {
                     // Cmd/Ctrl+Enter sends (Shift+Enter is a new line), and
                     // so does a plain Enter.

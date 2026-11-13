@@ -6,7 +6,7 @@
 use super::api;
 use super::ds_create::{STEPS, step_index};
 use super::icons::{Glyph, icon};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::brand_step::{brand_name, normalize_url};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -126,7 +126,7 @@ pub fn BrandStep(
                             aria-label=t(T::BrandStepUrl)
                             placeholder="acme.com"
                             prop:value=move || url.get()
-                            on:input=move |ev| url.set(event_target_value(&ev))
+                            on:input=live(move |ev| url.set(event_target_value(&ev)))
                             on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" { start() }/>
                         <button class="btn" data-testid="onboarding-brand-extract" disabled=move || !valid() on:click=move |_| start()>
                             {icon(Glyph::Sparkle)}{t(T::BrandStepExtract)}

@@ -11,7 +11,7 @@ use super::icons::{Glyph, icon};
 use super::preview_comments::comment_label;
 use super::preview_tools::DeliverableWarning;
 use super::studio::{StudioCtx, StudioPhase, conversation_title, main_conversations};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::chat::{
     AssistantTurn, Block, Step, TodoStatus, ToolCall, TurnLayout, plan_progress, run_time_ms,
 };
@@ -393,10 +393,10 @@ fn ConversationBar(ctx: StudioCtx) -> impl IntoView {
                     data-testid="conversation"
                     aria-label=t(T::Conversation)
                     disabled=move || ctx.live_run.get().is_some()
-                    on:change=move |ev| {
+                    on:change=live(move |ev| {
                         let id = event_target_value(&ev);
                         ctx.tasks.spawn(ctx.open_conversation(id));
-                    }
+                    })
                 >
                     {move || {
                         let current = ctx.conversation_id.get();
@@ -551,7 +551,7 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
                                             class="input"
                                             rows="2"
                                             prop:value=q.text.clone()
-                                            on:change=move |ev| {
+                                            on:change=live(move |ev| {
                                                 let text = event_target_value(&ev);
                                                 ctx.queue.update(|q| {
                                                     if let Some(item) = q.iter_mut().find(|x| x.id == id_save) {
@@ -559,7 +559,7 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
                                                     }
                                                 });
                                                 editing.set(None);
-                                            }
+                                            })
                                         ></textarea>
                                     }.into_any()
                                 } else {
@@ -1383,7 +1383,7 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
                                 name=id.clone()
                                 disabled=move || !active.get()
                                 prop:checked=move || answers.with(|a| a.get(&id_checked).is_some_and(|v| v.contains(&value_checked)))
-                                on:change=move |_| answers.update(|a| {
+                                on:change=live(move |_| answers.update(|a| {
                                     let entry = a.entry(id.clone()).or_default();
                                     if multi {
                                         if let Some(i) = entry.iter().position(|v| *v == value) {
@@ -1394,7 +1394,7 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
                                     } else {
                                         *entry = vec![value.clone()];
                                     }
-                                })
+                                }))
                             />
                             <span>{o.label.clone()}</span>
                         </label>
@@ -1404,7 +1404,7 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
                 .into_any()
         }
         QuestionKind::Select => view! {
-            <select disabled=move || !active.get() on:change=move |ev| set_one(event_target_value(&ev))>
+            <select disabled=move || !active.get() on:change=live(move |ev| set_one(event_target_value(&ev)))>
                 <option value="">{t(T::Choose)}</option>
                 {q.options.iter().map(|o| view! { <option value=o.value.clone()>{o.label.clone()}</option> }).collect_view()}
             </select>
@@ -1416,7 +1416,7 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
                 rows="3"
                 placeholder=q.placeholder.clone()
                 disabled=move || !active.get()
-                on:input=move |ev| set_one(event_target_value(&ev))
+                on:input=live(move |ev| set_one(event_target_value(&ev)))
             ></textarea>
         }
         .into_any(),
@@ -1425,7 +1425,7 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
                 class="input"
                 placeholder=q.placeholder.clone()
                 disabled=move || !active.get()
-                on:input=move |ev| set_one(event_target_value(&ev))
+                on:input=live(move |ev| set_one(event_target_value(&ev)))
             />
         }
         .into_any(),

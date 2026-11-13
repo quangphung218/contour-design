@@ -9,7 +9,7 @@ use super::bridge;
 use super::icons::{Glyph, icon};
 use super::preview_tools::{Tool, panel_head};
 use super::studio::StudioCtx;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::comment_board::{self as cb, AnchorState, LoadTicket, Marker};
 use crate::i18n::{T, t};
 use crate::preview_bridge::{self as pb, Located};
@@ -410,7 +410,7 @@ pub fn DraftImages(
                 hidden
                 node_ref=input
                 data-testid="comment-image-input"
-                on:change=picked
+                on:change=live(picked)
             />
             <button
                 class="btn small ghost"

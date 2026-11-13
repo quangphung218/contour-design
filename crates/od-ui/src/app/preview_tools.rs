@@ -10,7 +10,7 @@ use super::desktop;
 use super::icons::{Glyph, icon};
 use super::native_shell;
 use super::studio::{StudioCtx, is_html_path};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::i18n::{T, t, tf};
 use crate::preview_bridge::{
     self as pb, BridgeMsg, Inspected, Override, Snapshot, TweakDef, TweakKind,
@@ -176,6 +176,51 @@ fn drop_written(failed: &mut Vec<FailedText>, file: &str, edits: &[SourceEdit]) 
     failed.retain(|f| !(f.file == file && edits.iter().any(|e| e.selector == f.selector)));
 }
 
+/// What a save of `req` that answered `res` (the file and version written,
+/// or why not) does to the tools; `active` is the file on screen by then.
+/// The overrides are the shown file's: another file picked meanwhile keeps
+/// its own.
+fn after_save(
+    tools: Tools,
+    active: Option<&str>,
+    styles: bool,
+    req: &SourceEditRequest,
+    res: Result<(String, u32), String>,
+) {
+    let shown = active == Some(req.file.as_str());
+    match res {
+        Ok((path, version)) if !shown => tools.saved(&path, version),
+        Ok((path, version)) => {
+            if styles {
+                tools.overrides.set(Vec::new());
+                tools.extracted.set(None);
+            } else {
+                tools.overrides.update(|list| {
+                    for e in &req.edits {
+                        if let Some(text) = &e.text {
+                            retext_overrides(list, &e.selector, text);
+                        }
+                    }
+                });
+                tools
+                    .failed_text
+                    .update(|list| drop_written(list, &req.file, &req.edits));
+            }
+            tools.saved(&path, version);
+        }
+        Err(message) => {
+            if styles {
+                tools.note(message);
+            } else {
+                // One line says it, with Try again: not also the status line.
+                tools
+                    .failed_text
+                    .update(|list| keep_failed(list, &req.file, &req.edits, &message));
+            }
+        }
+    }
+}
+
 impl Tools {
     pub fn new() -> Self {
         Self {
@@ -214,6 +259,8 @@ impl Tools {
 
     /// Another file is shown: its edits, tweaks and lint start over.
     pub fn forget_document(self) {
+        // The last file's lint, if it answers now, is not this one's.
+        self.lint_seq.update_value(|n| *n = n.wrapping_add(1));
         self.inspected.set(None);
         self.overrides.set(Vec::new());
         self.extracted.set(None);
@@ -303,7 +350,7 @@ pub fn color_swatch<F: Fn(String) + 'static>(
             class:transparent=clear
             data-testid=testid
             prop:value=hex
-            on:input=move |ev| on_pick(event_target_value(&ev))
+            on:input=live(move |ev| on_pick(event_target_value(&ev)))
         />
     }
 }
@@ -746,38 +793,10 @@ impl StudioCtx {
             (req, res)
         };
         self.tasks.spawn_then(work, move |(req, res)| {
-            match res {
-                Ok(r) => {
-                    if styles {
-                        tools.overrides.set(Vec::new());
-                        tools.extracted.set(None);
-                    } else {
-                        tools.overrides.update(|list| {
-                            for e in &req.edits {
-                                if let Some(text) = &e.text {
-                                    retext_overrides(list, &e.selector, text);
-                                }
-                            }
-                        });
-                        tools
-                            .failed_text
-                            .update(|list| drop_written(list, &req.file, &req.edits));
-                    }
-                    tools.saved(&r.file.path, r.version.version);
-                }
-                Err(e) => {
-                    let message = self.failed_to(T::SaveFailed, &e);
-                    if styles {
-                        tools.note(message);
-                    } else {
-                        // One line says it, with Try again: not also the
-                        // status line.
-                        tools
-                            .failed_text
-                            .update(|list| keep_failed(list, &req.file, &req.edits, &message));
-                    }
-                }
-            }
+            let res = res
+                .map(|r| (r.file.path, r.version.version))
+                .map_err(|e| self.failed_to(T::SaveFailed, &e));
+            after_save(tools, self.active_untracked().as_deref(), styles, &req, res);
         });
     }
 
@@ -965,10 +984,10 @@ pub fn ToolBar(ctx: StudioCtx) -> impl IntoView {
                     data-testid="palette"
                     aria-label=palette_tip
                     prop:value=move || tools.palette.get().unwrap_or_default()
-                    on:change=move |ev| {
+                    on:change=live(move |ev| {
                         let v = event_target_value(&ev);
                         ctx.set_palette((!v.is_empty()).then_some(v));
-                    }
+                    })
                 >
                     <option value="">{t(T::PaletteOriginal)}</option>
                     {pb::PALETTES
@@ -1101,12 +1120,12 @@ fn InspectPanel(ctx: StudioCtx) -> impl IntoView {
                                         class="input small"
                                         data-testid=format!("inspect-{prop}")
                                         prop:value=shown
-                                        on:change=move |ev| {
+                                        on:change=live(move |ev| {
                                             let v = event_target_value(&ev).trim().to_owned();
                                             if !v.is_empty() {
                                                 ctx.set_override(&sel_text, prop, &v);
                                             }
-                                        }
+                                        })
                                     />
                                     {set.is_some().then(|| view! {
                                         <button
@@ -1183,12 +1202,12 @@ fn TweaksPanel(ctx: StudioCtx) -> impl IntoView {
                             type="checkbox"
                             data-testid=testid
                             prop:checked=value == "true"
-                            on:change=move |ev| set(event_target_checked(&ev).to_string())
+                            on:change=live(move |ev| set(event_target_checked(&ev).to_string()))
                         />
                     }
                     .into_any(),
                     TweakKind::Select => view! {
-                        <select class="input small" data-testid=testid prop:value=value on:change=move |ev| set(event_target_value(&ev))>
+                        <select class="input small" data-testid=testid prop:value=value on:change=live(move |ev| set(event_target_value(&ev)))>
                             {d.options
                                 .iter()
                                 .map(|o| view! { <option value=o.value().to_owned()>{o.label().to_owned()}</option> })
@@ -1204,16 +1223,16 @@ fn TweaksPanel(ctx: StudioCtx) -> impl IntoView {
                             max=d.max.unwrap_or(1.0).to_string()
                             step=d.step.map_or_else(|| "any".to_owned(), |s| s.to_string())
                             prop:value=value
-                            on:input=move |ev| set(event_target_value(&ev))
+                            on:input=live(move |ev| set(event_target_value(&ev)))
                         />
                     }
                     .into_any(),
                     TweakKind::Color => view! {
-                        <input type="color" class="swatch" data-testid=testid prop:value=value on:input=move |ev| set(event_target_value(&ev))/>
+                        <input type="color" class="swatch" data-testid=testid prop:value=value on:input=live(move |ev| set(event_target_value(&ev)))/>
                     }
                     .into_any(),
                     TweakKind::Text => view! {
-                        <input class="input small" data-testid=testid prop:value=value on:change=move |ev| set(event_target_value(&ev))/>
+                        <input class="input small" data-testid=testid prop:value=value on:change=live(move |ev| set(event_target_value(&ev)))/>
                     }
                     .into_any(),
                 };
@@ -1479,6 +1498,8 @@ async fn attach_annotation(
 /// to undo and Cmd/Ctrl+Shift+Z (or +Y) to redo. Pointer positions are in
 /// canvas pixels, so a canvas scaled by CSS (sketches) draws where the
 /// pointer is. Without `size` the canvas takes its on-screen size.
+/// `left_with_label` runs when a text label being typed is added as the
+/// surface goes: no effect is left by then to see `history` change.
 #[component]
 pub(super) fn DrawSurface(
     history: RwSignal<History>,
@@ -1487,6 +1508,7 @@ pub(super) fn DrawSurface(
     canvas_ref: NodeRef<leptos::html::Canvas>,
     #[prop(optional)] size: Option<(u32, u32)>,
     #[prop(optional)] class: &'static str,
+    #[prop(optional)] left_with_label: Option<Callback<()>>,
 ) -> impl IntoView {
     let drawing = StoredValue::new(false);
     // Where a text mark goes: canvas point and on-screen offset.
@@ -1546,6 +1568,17 @@ pub(super) fn DrawSurface(
             });
         }
     };
+    // A label being typed when the surface goes (Ctrl+Tab, Ctrl+W, the
+    // Studio left) is kept: the field's blur comes after the surface's
+    // signals went (QA-091). The parent's signals are still there.
+    on_cleanup(move || {
+        let typed =
+            text_at.get_untracked().is_some() && text.with_untracked(|t| !t.trim().is_empty());
+        commit_text();
+        if typed && let Some(cb) = left_with_label {
+            cb.run(());
+        }
+    });
     let keys = window_event_listener(leptos::ev::keydown, move |ev| {
         let modifier = ev.ctrl_key() || ev.meta_key();
         if !modifier || ev.alt_key() || super::studio::is_editing(&ev) {
@@ -1604,13 +1637,13 @@ pub(super) fn DrawSurface(
                 placeholder=t(T::DrawTextPlaceholder)
                 autofocus
                 prop:value=move || text.get()
-                on:input=move |ev| text.set(event_target_value(&ev))
+                on:input=live(move |ev| text.set(event_target_value(&ev)))
                 on:keydown=move |ev: web_sys::KeyboardEvent| match ev.key().as_str() {
                     "Enter" => { ev.prevent_default(); commit_text(); }
                     "Escape" => { ev.stop_propagation(); text_at.set(None); text.set(String::new()); }
                     _ => {}
                 }
-                on:blur=move |_| commit_text()
+                on:blur=live(move |_| commit_text())
             />
         })}
     }
@@ -1863,6 +1896,69 @@ mod tests {
         assert!(edits[0].text.is_none());
         assert_eq!(edits[0].expect_tag.as_deref(), Some("h1"));
         assert_eq!(edits[0].expect_text.as_deref(), Some("h1 text"));
+    }
+
+    #[test]
+    fn a_lint_asked_before_a_file_switch_does_not_land_on_the_next_file() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let tools = Tools::new();
+            // `refresh_lint` keeps the number it was asked with.
+            let asked = tools.lint_seq.get_value();
+            tools.forget_document();
+            assert_ne!(
+                tools.lint_seq.get_value(),
+                asked,
+                "a.html's lint is dropped on b.html"
+            );
+        });
+    }
+
+    fn style_save(file: &str) -> SourceEditRequest {
+        SourceEditRequest {
+            file: file.into(),
+            edits: vec![SourceEdit {
+                selector: "h1".into(),
+                ..SourceEdit::default()
+            }],
+            label: None,
+        }
+    }
+
+    #[test]
+    fn a_save_that_answers_after_a_file_switch_keeps_the_new_file_s_overrides() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let tools = Tools::new();
+            // a.html's style save is out; b.html is shown and edited.
+            tools.overrides.set(vec![ov("h1", "color", "B")]);
+            after_save(
+                tools,
+                Some("b.html"),
+                true,
+                &style_save("a.html"),
+                Ok(("a.html".into(), 3)),
+            );
+            assert_eq!(
+                tools.overrides.get_untracked().len(),
+                1,
+                "b.html's override kept"
+            );
+            assert_eq!(
+                tools.status_for.get_untracked().as_deref(),
+                Some("a.html"),
+                "a.html's save is said"
+            );
+            // Still on a.html: its saved overrides go.
+            after_save(
+                tools,
+                Some("a.html"),
+                true,
+                &style_save("a.html"),
+                Ok(("a.html".into(), 4)),
+            );
+            assert!(tools.overrides.get_untracked().is_empty());
+        });
     }
 
     fn ov(selector: &str, prop: &str, text: &str) -> Override {

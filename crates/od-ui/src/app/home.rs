@@ -11,7 +11,7 @@ use super::ds_create::CreateFlow;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::lib_ui::query_param;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::{
@@ -488,10 +488,10 @@ pub fn Home() -> impl IntoView {
                                     })
                                 }
                                 disabled=move || systems.with(Option::is_none)
-                                on:change=move |ev| {
+                                on:change=live(move |ev| {
                                     let v = event_target_value(&ev);
                                     design_system.set(Some(v).filter(|v| !v.is_empty()));
-                                }
+                                })
                             >
                                 <option value="">{t(T::NoneOption)}</option>
                                 // While the list loads, the kept pick stays chosen,
@@ -536,10 +536,10 @@ pub fn Home() -> impl IntoView {
                                     chip_templates.track();
                                     template.get().unwrap_or_default()
                                 }
-                                on:change=move |ev| {
+                                on:change=live(move |ev| {
                                     let v = event_target_value(&ev);
                                     template.set(Some(v).filter(|v| !v.is_empty()));
-                                }
+                                })
                             >
                                 <option value="">{t(T::DefaultTemplate)}</option>
                                 {move || {
@@ -822,7 +822,7 @@ fn MediaBar(chip: RwSignal<Chip>, media: RwSignal<MediaOptions>) -> impl IntoVie
             view! {
                 <label class="picker" data-tip=t(label) data-tip-pos="top">
                     {icon(glyph)}
-                    <select data-testid=testid aria-label=t(label) on:change=move |ev| set.run(event_target_value(&ev))>
+                    <select data-testid=testid aria-label=t(label) on:change=live(move |ev| set.run(event_target_value(&ev)))>
                         {values.into_iter().map(|(v, l)| {
                             let selected = v == current;
                             view! { <option value=v selected=selected>{l}</option> }
@@ -874,10 +874,10 @@ fn MediaBar(chip: RwSignal<Chip>, media: RwSignal<MediaOptions>) -> impl IntoVie
                         placeholder=t(T::MediaNotes)
                         aria-label=t(T::MediaNotes)
                         prop:value=opts.notes.clone().unwrap_or_default()
-                        on:change=move |ev| {
+                        on:change=live(move |ev| {
                             let v = event_target_value(&ev);
                             media.update(|m| m.notes = Some(v));
-                        }
+                        })
                     />
                 })}
                 {(!spec.durations.is_empty()).then(|| select(
@@ -1019,7 +1019,7 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>, tasks: Tasks) -> impl IntoView
             <div class="working-dir-field">
                 <input class="input small mono" data-testid="working-dir-path" placeholder=t(T::FolderPathPlaceholder)
                     aria-label=t(T::FolderPathLabel) prop:value=value
-                    on:input=move |ev| typing.set(Some(event_target_value(&ev)))
+                    on:input=live(move |ev| typing.set(Some(event_target_value(&ev))))
                     on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" {
                         ev.prevent_default();
                         choose(typing.get_untracked().unwrap_or_default().trim().to_owned());
@@ -1082,7 +1082,7 @@ fn FromFolderForm(typing: RwSignal<Option<String>>) -> impl IntoView {
                 <div class="from-folder" data-testid="from-folder-form">
                     <input class="input small mono" data-testid="from-folder-path" placeholder=t(T::FolderPathPlaceholder)
                         aria-label=t(T::FolderPathLabel) prop:value=value autofocus=true
-                        on:input=move |ev| typing.set(Some(event_target_value(&ev)))
+                        on:input=live(move |ev| typing.set(Some(event_target_value(&ev))))
                         on:keydown=move |ev: web_sys::KeyboardEvent| match ev.key().as_str() {
                             "Enter" => import_key(),
                             "Escape" => typing.set(None),

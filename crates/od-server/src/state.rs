@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
+use tokio_util::sync::{CancellationToken, WaitForCancellationFutureOwned};
 use tokio_util::task::TaskTracker;
 
 /// Default daemon port, shared with the CLI.
@@ -49,6 +50,10 @@ pub struct RunContext {
     /// Launch and finalize tasks of chat runs: shutdown waits for them so
     /// each turn is recorded as it ended.
     pub tasks: TaskTracker,
+    /// Cancelled when the daemon starts to stop: the event streams that
+    /// never end on their own (memory, a project's files) end then, so the
+    /// shutdown does not wait the whole drain for an open tab (QA-092).
+    stopping: CancellationToken,
 }
 
 /// How long shutdown waits for stopped runs: the abort line's grace, then
@@ -65,6 +70,7 @@ impl RunContext {
             pending_cancels: Mutex::default(),
             shutdown_cut: Mutex::default(),
             tasks: TaskTracker::new(),
+            stopping: CancellationToken::new(),
         }
     }
 
@@ -73,6 +79,7 @@ impl RunContext {
     /// ended and its turn is recorded (failed as `daemon_restart`; a run
     /// the user had stopped already stays canceled), or the limit passes.
     pub async fn stop_all(&self) {
+        self.stopping.cancel();
         {
             let mut pending = self.pending_cancels();
             self.engine.cancel_all();
@@ -100,6 +107,12 @@ impl RunContext {
                 "runs still ending at shutdown"
             );
         }
+    }
+
+    /// Resolves once the daemon starts to stop ([`Self::stop_all`]). An
+    /// endless response (an event stream a tab keeps open) ends with it.
+    pub fn stopping(&self) -> WaitForCancellationFutureOwned {
+        self.stopping.clone().cancelled_owned()
     }
 
     /// Whether the shutdown, not the user, stopped the unlaunched `run`

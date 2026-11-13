@@ -21,10 +21,10 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 
 | ID | Sev | Bug | Test | Root cause |
 |---|---|---|---|---|
-| QA-091 | 🟠 | A Markdown editor or a sketch's text label that has the focus when its view goes (Ctrl+Tab, Ctrl+W, Ctrl+1…9, project deleted elsewhere) panics in its `blur` handler; the sketch label is lost | `leave.qa.mjs` LV-05, LV-10, LV-11, LV-14 | `on:blur` reads signals already disposed |
-| QA-090 | 🟠 | Markdown typed or a sketch stroke drawn less than 700 ms before a reload, a tab close or a Back to another page load is lost | `leave.qa.mjs` LV-03, LV-04, LV-16 | no save on `pagehide` |
-| QA-089 | 🟠 | History: View on a version of file A, then file B picked before it loads: B's tab shows A's version, "Viewing vN" and a Restore that fails with "Not found: version not found" | `studio.qa.mjs` STU-21 | `view_version` answer applied without checking the file is still shown |
-| QA-092 | 🔵 | Stopping the daemon (quit, update, restart) takes 5 s whenever any tab of the app is open, and logs "responses still open at shutdown" | `leave.qa.mjs` LV-17 | event streams (`/api/memory/events`, project `/events`) never end on shutdown |
+| QA-091 | 🟠 | A Markdown editor or a sketch's text label that has the focus when its view goes (Ctrl+Tab, Ctrl+W, Ctrl+1…9, project deleted elsewhere) panics in its `blur` handler; the sketch label is lost | `leave.qa.mjs` LV-05, LV-10, LV-11, LV-14 | `on:blur` reads signals already disposed. Fixed (unreleased) |
+| QA-090 | 🟠 | Markdown typed or a sketch stroke drawn less than 700 ms before a reload, a tab close or a Back to another page load is lost | `leave.qa.mjs` LV-03, LV-04, LV-16 | no save on `pagehide`. Fixed (unreleased) |
+| QA-089 | 🟠 | History: View on a version of file A, then file B picked before it loads: B's tab shows A's version, "Viewing vN" and a Restore that fails with "Not found: version not found" | `studio.qa.mjs` STU-21, STU-21b | `view_version` answer applied without checking the file is still shown. Fixed (unreleased) |
+| QA-092 | 🔵 | Stopping the daemon (quit, update, restart) takes 5 s whenever any tab of the app is open, and logs "responses still open at shutdown" | `leave.qa.mjs` LV-17 | event streams (`/api/memory/events`, project `/events`) never end on shutdown. Fixed (unreleased) |
 
 ## Pass / fail by area
 
@@ -88,6 +88,13 @@ same `on:blur=move |_| save_now()` reading `save_seq.get_value()`.
 (`Callback::run` on blur; not reproduced with Enter on Home),
 `ds_page.rs:1233` (only `set`, which does not panic).
 
+**Fixed (unreleased)**: every `on:blur`, `on:focusout`, `on:change` and
+`on:input` handler in `crates/od-ui/src` (182) goes through
+`tasks::live`, which does nothing once the handler's owner went; a test
+(`every_handler_of_an_event_fired_as_a_field_goes_is_live`) reads the
+sources and fails on a new one that does not. The sketch's text label
+being typed is added in the draw surface's cleanup, before its blur.
+
 ## QA-090 🟠 The autosave does not run when the page unloads
 
 **Steps (LV-03, LV-04, LV-16):** type in `notes.md` (or draw a sketch
@@ -107,6 +114,12 @@ its owner's cleanup; nothing runs on `pagehide`. Fix: flush every pending
 autosave on `pagehide` with a `keepalive` request (a plain fetch may be
 cancelled by the unload). The leave guard (`leave_guard.rs`) does not count
 a pending autosave in `would_lose`, so no "Leave page?" either.
+
+**Fixed (unreleased)**: `file_state.rs` keeps the autosaves on screen and
+saves their pending change on `pagehide` and `beforeunload`, with a
+`keepalive` request started before the handler returns (bodies over
+60 KiB go as a plain request, the browser's quota). No "Leave page?":
+the save is sent instead.
 
 ## QA-089 🟠 History: a version viewed on the file just left shows over the new file
 
@@ -130,6 +143,17 @@ for whatever file is shown by then. `show_tab` clears `viewing` only before
 the answer. Fix: compare the file (or the `seq` the list uses) before
 setting `viewing`. Sibling of 38c03f1a, missed by its grep.
 
+**Fixed (unreleased)**: the answer is dropped when the list's `seq` moved
+(another file, or its content changed) or another View came after it. A
+version already on view was cleared only by `show_tab`, so Ctrl+Tab,
+Cmd+1…9, Cmd+W, a tab's close button and the Files panel left it over the
+next file (STU-21b): `ViewedVersion` now keeps its path, and
+`StudioCtx::viewed` returns it only while that file is shown. Same pattern
+in `preview_tools.rs`: a lint of the file just left no longer lands on the
+next one (`forget_document` moves `lint_seq`), and a save that answers
+after a file switch no longer clears or rewrites the new file's overrides
+(`after_save`); both have unit tests.
+
 ## QA-092 🔵 The daemon takes 5 s to stop whenever a tab is open
 
 **Steps (LV-17):** open Home in a tab, send SIGTERM to `od daemon` (what
@@ -150,6 +174,10 @@ its stream on every screen but Settings. Fix: end the event streams on the
 daemon's shutdown signal. Old (24 Oct); it turned CHAT-06 red because the
 harness waited exactly 5 s and then respawned before the killed daemon was
 gone (the harness now waits for the exit).
+
+**Fixed (unreleased)**: both streams end with `RunContext::stopping`,
+cancelled as the shutdown starts (`tests/shutdown_streams.rs`: 0.3 s,
+5.0 s without it).
 
 ## New press rows (bridges/press.test.mjs) and their mutations
 

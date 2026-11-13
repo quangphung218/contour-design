@@ -8,7 +8,7 @@
 
 use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, copy_text, initials, localized, query_param, tint};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api, desktop};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::in_locale;
@@ -383,7 +383,7 @@ pub fn PluginsPage() -> impl IntoView {
                         <label class="lib-search">
                             {icon(Glyph::Search)}
                             <input class="input small" type="search" data-testid="plugins-search" placeholder=t(T::SearchPlugins) aria-label=t(T::SearchPlugins)
-                                prop:value=move || query.get() on:input=move |ev| query.set(event_target_value(&ev))/>
+                                prop:value=move || query.get() on:input=live(move |ev| query.set(event_target_value(&ev)))/>
                         </label>
                     </div>
                     <div class="chips lib-chips" role="radiogroup" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::Category)>
@@ -541,7 +541,7 @@ fn InputsForm(fields: Vec<InputField>, values: RwSignal<Map<String, Value>>) -> 
                 _ if !f.options.is_empty() || f.kind == "select" => {
                     let set = set.clone();
                     view! {
-                        <select class="input" data-testid=format!("input-{name}") required=f.required prop:value=current on:change=move |ev| set(json!(event_target_value(&ev)))>
+                        <select class="input" data-testid=format!("input-{name}") required=f.required prop:value=current on:change=live(move |ev| set(json!(event_target_value(&ev))))>
                             <option value="">{t(T::SelectPlaceholder)}</option>
                             {f.options.iter().map(|o| view! { <option value=o.clone()>{o.clone()}</option> }).collect_view()}
                         </select>
@@ -551,7 +551,7 @@ fn InputsForm(fields: Vec<InputField>, values: RwSignal<Map<String, Value>>) -> 
                     let set = set.clone();
                     view! {
                         <input class="input" type="number" data-testid=format!("input-{name}") placeholder=f.placeholder.clone() prop:value=current
-                            on:change=move |ev| set(event_target_value(&ev).parse::<f64>().map(|n| json!(n)).unwrap_or(Value::Null))/>
+                            on:change=live(move |ev| set(event_target_value(&ev).parse::<f64>().map(|n| json!(n)).unwrap_or(Value::Null)))/>
                     }.into_any()
                 }
                 "boolean" => {
@@ -559,19 +559,19 @@ fn InputsForm(fields: Vec<InputField>, values: RwSignal<Map<String, Value>>) -> 
                     let checked = current.clone();
                     view! {
                         <label class="switch"><input type="checkbox" data-testid=format!("input-{name}") prop:checked=move || checked() == "true"
-                            on:change=move |ev| set(json!(event_target_checked(&ev)))/><span>{f.placeholder.clone()}</span></label>
+                            on:change=live(move |ev| set(json!(event_target_checked(&ev))))/><span>{f.placeholder.clone()}</span></label>
                     }.into_any()
                 }
                 "text" => {
                     let set = set.clone();
                     view! {
                         <textarea class="input" rows="3" data-testid=format!("input-{name}") placeholder=f.placeholder.clone() prop:value=current
-                            on:input=move |ev| set(json!(event_target_value(&ev)))></textarea>
+                            on:input=live(move |ev| set(json!(event_target_value(&ev))))></textarea>
                     }.into_any()
                 }
                 _ => view! {
                     <input class="input" data-testid=format!("input-{name}") placeholder=f.placeholder.clone() prop:value=current
-                        on:input=move |ev| set(json!(event_target_value(&ev)))/>
+                        on:input=live(move |ev| set(json!(event_target_value(&ev))))/>
                 }.into_any(),
             };
             view! { <label class="field">{label}{control}</label> }
@@ -1002,19 +1002,19 @@ fn SkillForm(
         <div class="card padded skill-form" data-testid="skill-form">
             <label class="field">
                 <span>{t(T::SkillName)}<em class="required" aria-hidden="true">"*"</em></span>
-                <input class="input" data-testid="skill-name" disabled=name_locked prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev))/>
+                <input class="input" data-testid="skill-name" disabled=name_locked prop:value=move || name.get() on:input=live(move |ev| name.set(event_target_value(&ev)))/>
             </label>
             <label class="field">
                 <span>{t(T::Description)}</span>
-                <textarea class="input" rows="2" data-testid="skill-description" prop:value=move || description.get() on:input=move |ev| description.set(event_target_value(&ev))></textarea>
+                <textarea class="input" rows="2" data-testid="skill-description" prop:value=move || description.get() on:input=live(move |ev| description.set(event_target_value(&ev)))></textarea>
             </label>
             <label class="field">
                 <span>{t(T::Triggers)}</span>
-                <input class="input" data-testid="skill-triggers" placeholder=t(T::TriggersPlaceholder) prop:value=move || triggers.get() on:input=move |ev| triggers.set(event_target_value(&ev))/>
+                <input class="input" data-testid="skill-triggers" placeholder=t(T::TriggersPlaceholder) prop:value=move || triggers.get() on:input=live(move |ev| triggers.set(event_target_value(&ev)))/>
             </label>
             <label class="field">
                 <span>{t(T::SkillBody)}<em class="required" aria-hidden="true">"*"</em></span>
-                <textarea class="input mono" rows="12" data-testid="skill-body-input" prop:value=move || body.get() on:input=move |ev| body.set(event_target_value(&ev))></textarea>
+                <textarea class="input mono" rows="12" data-testid="skill-body-input" prop:value=move || body.get() on:input=live(move |ev| body.set(event_target_value(&ev)))></textarea>
             </label>
             <div class="row end">
                 <button class="btn ghost" on:click=move |_| on_cancel.run(())>{t(T::Cancel)}</button>
@@ -1128,7 +1128,7 @@ fn CreateDialog(
                         <label class="field">
                             <span>{t(T::PluginBrief)}</span>
                             <textarea class="input" rows="4" data-testid="plugin-brief" placeholder=t(T::PluginBriefPlaceholder)
-                                prop:value=move || brief.get() on:input=move |ev| brief.set(event_target_value(&ev))></textarea>
+                                prop:value=move || brief.get() on:input=live(move |ev| brief.set(event_target_value(&ev)))></textarea>
                         </label>
                         <div class="row end">
                             <button class="btn primary" data-testid="plugin-author" disabled=move || busy.get() || brief.with(|b| b.trim().is_empty()) on:click=move |_| author.run(false)>
@@ -1141,7 +1141,7 @@ fn CreateDialog(
                         <label class="field">
                             <span>{t(T::PluginLink)}</span>
                             <input class="input mono" data-testid="plugin-link" placeholder=t(T::PluginLinkPlaceholder)
-                                prop:value=move || link.get() on:input=move |ev| link.set(event_target_value(&ev))/>
+                                prop:value=move || link.get() on:input=live(move |ev| link.set(event_target_value(&ev)))/>
                         </label>
                         <div class="row end">
                             <button class="btn primary" data-testid="plugin-fetch" disabled=move || busy.get() || link.with(|l| l.trim().is_empty()) on:click=move |_| author.run(true)>
@@ -1157,7 +1157,7 @@ fn CreateDialog(
                                 <span>{t(T::FolderPathLabel)}</span>
                                 <div class="row">
                                     <input class="input mono grow" data-testid="plugin-path" placeholder=t(T::PluginPathPlaceholder)
-                                        prop:value=move || path.get() on:input=move |ev| path.set(event_target_value(&ev))/>
+                                        prop:value=move || path.get() on:input=live(move |ev| path.set(event_target_value(&ev)))/>
                                     {desktop::is_desktop().then(|| view! { <button class="btn" on:click=pick>{icon(Glyph::FolderOpen)}{t(T::Browse)}</button> })}
                                 </div>
                             </label>

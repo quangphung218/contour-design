@@ -7,6 +7,7 @@
 use super::api;
 use super::icons::{Glyph, icon};
 use super::lib_ui::Modal;
+use super::tasks::live;
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
 use serde::Deserialize;
@@ -151,7 +152,7 @@ pub fn LibraryPicker(
                     placeholder=t(T::LibrarySearch)
                     aria-label=t(T::LibrarySearch)
                     prop:value=move || query.get()
-                    on:input=move |ev| query.set(event_target_value(&ev))/>
+                    on:input=live(move |ev| query.set(event_target_value(&ev)))/>
                 <div class="segmented small" role="tablist" on:keydown=move |ev| super::focus::group_keys(&ev, true) aria-label=t(T::LibraryFilterKind)>
                     {KINDS.into_iter().map(|(k, label)| view! {
                         <button class="seg" role="tab" data-testid="library-kind" data-kind=k

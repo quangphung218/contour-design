@@ -9,7 +9,7 @@ use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::manage::{self, RunState, Sort, Tag};
 use super::new_project::NewProjectPanel;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{ago, api, desktop};
 use crate::i18n::{T, t, tf};
 use leptos::prelude::*;
@@ -359,7 +359,7 @@ pub fn Projects() -> impl IntoView {
                         aria-label=t(T::ImportZip)
                         data-testid="import-zip-input"
                         node_ref=zip_input
-                        on:change=on_zip
+                        on:change=live(on_zip)
                     />
                     <button
                         class="btn"
@@ -403,7 +403,7 @@ pub fn Projects() -> impl IntoView {
                                         data-testid="folder-path"
                                         placeholder=t(T::FolderPathPlaceholder)
                                         prop:value=move || path_field.get().unwrap_or_default()
-                                        on:input=move |ev| path_field.set(Some(event_target_value(&ev)))
+                                        on:input=live(move |ev| path_field.set(Some(event_target_value(&ev))))
                                         on:keydown=move |ev: web_sys::KeyboardEvent| {
                                             if ev.key() == "Enter" {
                                                 import_key();
@@ -440,14 +440,14 @@ pub fn Projects() -> impl IntoView {
                         aria-label=t(T::SearchProjects)
                         placeholder=t(T::SearchProjectsPlaceholder)
                         prop:value=move || query.get()
-                        on:input=move |ev| query.set(event_target_value(&ev))
+                        on:input=live(move |ev| query.set(event_target_value(&ev)))
                     />
                 </label>
                 <select
                     class="small select-auto"
                     data-testid="project-type-filter"
                     aria-label=t(T::FilterByType)
-                    on:change=move |ev| tag.set(Tag::parse(&event_target_value(&ev)))
+                    on:change=live(move |ev| tag.set(Tag::parse(&event_target_value(&ev))))
                 >
                     <option value="" selected=move || tag.get().is_none()>{t(T::AnyType)}</option>
                     {Tag::ALL.into_iter().map(|tg| view! {
@@ -458,11 +458,11 @@ pub fn Projects() -> impl IntoView {
                     class="small select-auto"
                     data-testid="project-sort"
                     aria-label=t(T::SortBy)
-                    on:change=move |ev| {
+                    on:change=live(move |ev| {
                         let s = Sort::parse(&event_target_value(&ev));
                         sort.set(s);
                         manage::store(SORT_KEY, s.id());
-                    }
+                    })
                 >
                     {Sort::ALL.into_iter().map(|s| view! {
                         <option value=s.id() selected=move || sort.get() == s>{s.label()}</option>
@@ -757,7 +757,7 @@ pub fn RecentStrip() -> impl IntoView {
                 <h2>{t(T::RecentProjects)}</h2>
                 <span class="spacer"></span>
                 <select class="small select-auto" data-testid="recent-type-filter" aria-label=t(T::FilterByType)
-                    on:change=move |ev| tag.set(Tag::parse(&event_target_value(&ev)))>
+                    on:change=live(move |ev| tag.set(Tag::parse(&event_target_value(&ev))))>
                     <option value="">{t(T::AnyType)}</option>
                     {Tag::ALL.into_iter().map(|tg| view! { <option value=tg.id()>{tg.label()}</option> }).collect_view()}
                 </select>
@@ -831,7 +831,7 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
     let tag = Tag::of(&project);
     let imported = project.metadata.as_ref().and_then(|m| m.base_dir.clone());
     let updated = project.updated_at;
-    let live = Memo::new(move |_| {
+    let artifacts = Memo::new(move |_| {
         page.live
             .with(|l| l.get(&id.get_value()).cloned().unwrap_or_default())
     });
@@ -908,7 +908,7 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
         >
             <Show when=move || page.selecting.get()>
                 <label class="select-check" aria-label=t(T::SelectProject)>
-                    <input type="checkbox" data-testid="project-select" prop:checked=checked on:change=move |_| toggle_select()/>
+                    <input type="checkbox" data-testid="project-select" prop:checked=checked on:change=live(move |_| toggle_select())/>
                 </label>
             </Show>
             <A href=href attr:class="cover-link" attr:tabindex="-1" attr:aria-hidden="true">
@@ -922,7 +922,7 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
                                 class="input small"
                                 aria-label=t(T::Rename)
                                 prop:value=move || name.get()
-                                on:input=move |ev| name.set(event_target_value(&ev))
+                                on:input=live(move |ev| name.set(event_target_value(&ev)))
                                 on:keydown={
                                     move |ev: web_sys::KeyboardEvent| {
                                         if ev.key() == "Enter" {
@@ -951,7 +951,7 @@ fn ProjectRow(project: Project, page: Page, compact: bool) -> impl IntoView {
                     <span>{ago(updated)}</span>
                 </span>
                 {move || {
-                    let l = live.get();
+                    let l = artifacts.get();
                     view! { <LiveBadges artifacts=l/> }
                 }}
                 {move || instructions.with(|i| !i.trim().is_empty()).then(|| view! {
@@ -1064,7 +1064,7 @@ fn InstructionsDialog(
                         aria-label=t(T::ProjectInstructions)
                         placeholder=t(T::ProjectInstructionsPlaceholder)
                         prop:value=move || draft.get()
-                        on:input=move |ev| draft.set(event_target_value(&ev))
+                        on:input=live(move |ev| draft.set(event_target_value(&ev)))
                     ></textarea>
                     <span class="muted small">{move || format!("{} / {MAX_INSTRUCTIONS}", draft.with(|d| d.chars().count()))}</span>
                     {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}

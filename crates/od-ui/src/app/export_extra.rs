@@ -5,7 +5,7 @@ use super::api;
 use super::export_menu::copy_text;
 use super::icons::{Glyph, icon};
 use super::studio::StudioCtx;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::terminal;
 use crate::handoff::{self, Framework, Target};
 use crate::i18n::{T, t, tf};
@@ -88,13 +88,13 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
                     <label class="field">
                         <span>{t(T::TemplateName)}</span>
                         <input class="input" data-testid="template-name" node_ref=input
-                            prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev))
+                            prop:value=move || name.get() on:input=live(move |ev| name.set(event_target_value(&ev)))
                             on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" { ev.prevent_default(); save(); }/>
                     </label>
                     <label class="field">
                         <span>{t(T::TemplateDescription)}</span>
                         <textarea class="input" rows="3" data-testid="template-description" placeholder=t(T::TemplateDescriptionHint)
-                            prop:value=move || description.get() on:input=move |ev| description.set(event_target_value(&ev))></textarea>
+                            prop:value=move || description.get() on:input=live(move |ev| description.set(event_target_value(&ev)))></textarea>
                     </label>
                     {move || error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                 </div>
@@ -171,7 +171,7 @@ pub fn HandoffDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) -> im
                     <div class="row tight">
                         <label class="field grow">
                             <span>{t(T::HandoffFramework)}</span>
-                            <select class="input" data-testid="handoff-framework" on:change=move |ev| framework.set(Framework::from_key(&event_target_value(&ev)))>
+                            <select class="input" data-testid="handoff-framework" on:change=live(move |ev| framework.set(Framework::from_key(&event_target_value(&ev))))>
                                 {Framework::ALL.into_iter().map(|f| view! {
                                     <option value=f.key() selected=move || framework.get() == f>{f.name().unwrap_or(t(T::HandoffExistingStack))}</option>
                                 }).collect_view()}
@@ -179,7 +179,7 @@ pub fn HandoffDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) -> im
                         </label>
                         <label class="field grow">
                             <span>{t(T::HandoffTarget)}</span>
-                            <select class="input" data-testid="handoff-target" on:change=move |ev| target.set(Target::from_key(&event_target_value(&ev)))>
+                            <select class="input" data-testid="handoff-target" on:change=live(move |ev| target.set(Target::from_key(&event_target_value(&ev))))>
                                 {Target::ALL.into_iter().map(|x| view! {
                                     <option value=x.key() selected=move || target.get() == x>{x.name()}</option>
                                 }).collect_view()}

@@ -7,7 +7,7 @@
 
 use super::icons::{Glyph, icon};
 use super::manage::local_time;
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
 use crate::schedule::{Kind, Preset, city, format_time, parse_time};
@@ -528,7 +528,7 @@ pub fn Automations() -> impl IntoView {
                         }}
                     </h2>
                     <select class="small select-auto" data-testid="routine-template" aria-label=t(T::UseTemplate)
-                        on:change=move |ev| use_template(event_target_value(&ev))>
+                        on:change=live(move |ev| use_template(event_target_value(&ev)))>
                         <option value="">{t(T::UseTemplate)}</option>
                         {TEMPLATES.iter().map(|tpl| view! { <option value=tpl.id>{t(tpl.title)}</option> }).collect_view()}
                     </select>
@@ -537,22 +537,22 @@ pub fn Automations() -> impl IntoView {
                 <label class="field">
                     <span>{t(T::RoutineName)}</span>
                     <input class="input" data-testid="routine-name" placeholder=t(T::RoutineNamePlaceholder)
-                        prop:value=move || form.name.get() on:input=move |ev| form.name.set(event_target_value(&ev))/>
+                        prop:value=move || form.name.get() on:input=live(move |ev| form.name.set(event_target_value(&ev)))/>
                 </label>
                 <fieldset class="field">
                     <legend>{t(T::RoutineProject)}</legend>
                     <label class="radio-row">
                         <input type="radio" name="routine-target" data-testid="routine-each-run"
-                            prop:checked=move || form.each_run.get() on:change=move |_| form.each_run.set(true)/>
+                            prop:checked=move || form.each_run.get() on:change=live(move |_| form.each_run.set(true))/>
                         <span><strong>{t(T::TargetCreateEachRun)}</strong><span class="muted block">{t(T::TargetCreateEachRunHint)}</span></span>
                     </label>
                     <label class="radio-row">
                         <input type="radio" name="routine-target" data-testid="routine-reuse"
-                            prop:checked=move || !form.each_run.get() on:change=move |_| form.each_run.set(false)/>
+                            prop:checked=move || !form.each_run.get() on:change=live(move |_| form.each_run.set(false))/>
                         <span class="grow">
                             <strong>{t(T::TargetReuse)}</strong><span class="muted block">{t(T::TargetReuseHint)}</span>
                             <select data-testid="routine-project" disabled=move || form.each_run.get()
-                                on:change=move |ev| form.project.set(event_target_value(&ev))>
+                                on:change=live(move |ev| form.project.set(event_target_value(&ev)))>
                                 {move || projects.get().into_iter().map(|p| {
                                     let id = p.id.clone();
                                     view! { <option value=p.id.clone() selected=move || form.project.get() == id>{p.name}</option> }
@@ -564,7 +564,7 @@ pub fn Automations() -> impl IntoView {
                 <label class="field">
                     <span>{t(T::RoutinePrompt)}</span>
                     <textarea class="input" rows="3" data-testid="routine-prompt" placeholder=t(T::RoutinePromptPlaceholder)
-                        prop:value=move || form.prompt.get() on:input=move |ev| form.prompt.set(event_target_value(&ev))></textarea>
+                        prop:value=move || form.prompt.get() on:input=live(move |ev| form.prompt.set(event_target_value(&ev)))></textarea>
                 </label>
                 <SchedulePicker form=form/>
                 <div class="row end">
@@ -801,21 +801,21 @@ fn SchedulePicker(form: Form) -> impl IntoView {
                         <span>{t(T::FieldMinute)}</span>
                         <input class="input" type="number" min="0" max="59" data-testid="schedule-minute"
                             prop:value=move || match form.preset.get() { Preset::Hourly { minute } => minute.to_string(), _ => "0".to_owned() }
-                            on:change=move |ev| {
+                            on:change=live(move |ev| {
                                 let m = event_target_value(&ev).parse::<u32>().unwrap_or(0).min(59);
                                 form.set_preset(Preset::Hourly { minute: m });
-                            }/>
+                            })/>
                     </label>
                 </Show>
                 <Show when=move || matches!(kind(), Kind::Daily | Kind::Weekdays | Kind::Weekly)>
                     <label class="field">
                         <span>{t(T::FieldTime)}</span>
                         <input class="input" type="time" data-testid="schedule-time"
-                            prop:value=time on:change=move |ev| set_time(event_target_value(&ev))/>
+                            prop:value=time on:change=live(move |ev| set_time(event_target_value(&ev)))/>
                     </label>
                     <label class="field grow">
                         <span>{t(T::FieldTimezone)}</span>
-                        <select data-testid="schedule-timezone" on:change=move |ev| set_tz(event_target_value(&ev))>
+                        <select data-testid="schedule-timezone" on:change=live(move |ev| set_tz(event_target_value(&ev)))>
                             {move || {
                                 let current = tz();
                                 let mut list = zone_list.get_value();
@@ -848,11 +848,11 @@ fn SchedulePicker(form: Form) -> impl IntoView {
                 <span>{t(T::CronLine)}</span>
                 <input class="input mono" data-testid="routine-schedule"
                     prop:value=move || form.cron.get()
-                    on:input=move |ev| {
+                    on:input=live(move |ev| {
                         let v = event_target_value(&ev);
                         form.preset.set(Preset::from_cron(&v));
                         form.cron.set(v);
-                    }/>
+                    })/>
                 <span class="muted">{move || describe(&form.cron.get())}" · "{t(T::RoutineScheduleHint)}</span>
             </label>
         </fieldset>
@@ -967,7 +967,7 @@ fn RoutineRow(
                 <span class="routine-icon">{icon(Glyph::Automations)}</span>
                 <strong class="grow">{routine.name.clone()}</strong>
                 <label class="switch">
-                    <input type="checkbox" data-testid="routine-enabled" prop:checked=routine.enabled on:change=move |ev| toggle(event_target_checked(&ev))/>
+                    <input type="checkbox" data-testid="routine-enabled" prop:checked=routine.enabled on:change=live(move |ev| toggle(event_target_checked(&ev)))/>
                     <span>{t(T::RoutineEnabled)}</span>
                 </label>
                 <button class="btn small" data-testid="routine-run" on:click=run_now>{icon(Glyph::Play)}{t(T::RoutineRunNow)}</button>

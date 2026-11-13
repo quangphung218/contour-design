@@ -469,6 +469,8 @@ pub async fn events(
             Some((Ok::<_, Infallible>(sse), (None, sub, id)))
         },
     );
+    // Ends when the daemon stops, as the memory stream does (QA-092).
+    let stream = futures_util::StreamExt::take_until(stream, state.runs.stopping());
     let mut res = Sse::new(stream)
         .keep_alive(KeepAlive::new().interval(KEEPALIVE))
         .into_response();

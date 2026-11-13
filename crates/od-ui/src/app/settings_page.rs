@@ -7,7 +7,7 @@
 use super::byok_form::{ByokForm, TestResultLine, TestState};
 use super::icons::{Glyph, icon};
 use super::onboarding::{AgentPicker, CheckAgainButton};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use super::{Shell, api, desktop};
 use crate::i18n::{Locale, T, t, tf};
 use crate::settings::{AppConfig, PermissionMode, Theme};
@@ -279,10 +279,10 @@ pub fn SettingsPage() -> impl IntoView {
                     type="radio"
                     name="permission"
                     prop:checked=move || permission.get() == mode
-                    on:change=move |_| {
+                    on:change=live(move |_| {
                         permission.set(mode);
                         save_prefs("permissions");
-                    }
+                    })
                 />
                 <span>
                     <strong>{t(title)}</strong>
@@ -362,10 +362,10 @@ pub fn SettingsPage() -> impl IntoView {
                                         <input
                                             class="input"
                                             prop:value=move || agent.get().unwrap_or_default()
-                                            on:input=move |ev| {
+                                            on:input=live(move |ev| {
                                                 let v = event_target_value(&ev);
                                                 agent.set(Some(v).filter(|v| !v.trim().is_empty()));
-                                            }
+                                            })
                                         />
                                     </label>
                                 })}
@@ -378,7 +378,7 @@ pub fn SettingsPage() -> impl IntoView {
                                             list="agent-models"
                                             placeholder=t(T::ModelPlaceholder)
                                             prop:value=move || model.get()
-                                            on:input=move |ev| model.set(event_target_value(&ev))
+                                            on:input=live(move |ev| model.set(event_target_value(&ev)))
                                         />
                                         <datalist id="agent-models">
                                             {move || models_for(&agent.get().unwrap_or_default()).iter().map(|m| view! {
@@ -390,7 +390,7 @@ pub fn SettingsPage() -> impl IntoView {
                                     <Show when=move || !reasoning_for(&agent.get().unwrap_or_default()).is_empty()>
                                         <label class="field">
                                             <span>{t(T::ReasoningEffort)}</span>
-                                            <select data-testid="reasoning" on:change=move |ev| reasoning.set(event_target_value(&ev))>
+                                            <select data-testid="reasoning" on:change=live(move |ev| reasoning.set(event_target_value(&ev)))>
                                                 {move || reasoning_for(&agent.get().unwrap_or_default()).iter().map(|r| {
                                                     let r = *r;
                                                     view! { <option value=r selected=move || reasoning.get() == r || (r == "default" && reasoning.get().is_empty())>{r}</option> }
@@ -401,7 +401,7 @@ pub fn SettingsPage() -> impl IntoView {
                                     <Show when=move || !tiers_for(&agent.get().unwrap_or_default()).is_empty()>
                                         <label class="field">
                                             <span>{t(T::ServiceTier)}</span>
-                                            <select data-testid="service-tier" on:change=move |ev| tier.set(event_target_value(&ev))>
+                                            <select data-testid="service-tier" on:change=live(move |ev| tier.set(event_target_value(&ev)))>
                                                 {move || tiers_for(&agent.get().unwrap_or_default()).iter().map(|(v, label)| {
                                                     let v = *v;
                                                     view! { <option value=v selected=move || tier.get() == v || (v == "default" && tier.get().is_empty())>{t(*label)}</option> }
@@ -484,10 +484,10 @@ pub fn SettingsPage() -> impl IntoView {
                                 class="select-auto"
                                 data-testid="language"
                                 aria-label=t(T::Language)
-                                on:change=move |ev| {
+                                on:change=live(move |ev| {
                                     language.set(Locale::parse(&event_target_value(&ev)));
                                     save_prefs("language");
-                                }
+                                })
                             >
                                 {Locale::ALL
                                     .iter()
@@ -608,10 +608,10 @@ fn AdvancedEnv(agent: RwSignal<Option<String>>) -> impl IntoView {
                                     type=if secret { "password" } else { "text" }
                                     placeholder=placeholder
                                     prop:value=value
-                                    on:input=move |ev| {
+                                    on:input=live(move |ev| {
                                         let v = event_target_value(&ev);
                                         edits.update(|e| { e.insert(key.clone(), json!(v)); });
-                                    }/>
+                                    })/>
                             </label>
                         }
                     }).collect_view()
@@ -663,7 +663,7 @@ fn GlobalRules() -> impl IntoView {
                 <textarea class="input" rows="6" maxlength=MAX_RULES.to_string() data-testid="global-rules"
                     placeholder=t(T::GlobalRulesPlaceholder)
                     prop:value=move || text.get()
-                    on:input=move |ev| text.set(event_target_value(&ev))></textarea>
+                    on:input=live(move |ev| text.set(event_target_value(&ev)))></textarea>
                 <span class="muted">{move || format!("{} / {MAX_RULES}", text.with(|v| v.chars().count()))}</span>
             </label>
             <div class="row end">
@@ -756,14 +756,14 @@ fn GlobalMemory() -> impl IntoView {
                 }}
             </ul>
             <div class="row">
-                <select class="small select-auto" aria-label=t(T::MemoryKind) data-testid="global-memory-kind" on:change=move |ev| kind.set(event_target_value(&ev))>
+                <select class="small select-auto" aria-label=t(T::MemoryKind) data-testid="global-memory-kind" on:change=live(move |ev| kind.set(event_target_value(&ev)))>
                     {["user", "feedback", "project", "reference", "profile", "rule"].into_iter().map(|k| view! {
                         <option value=k selected=move || kind.get() == k>{memory_kind_label(k)}</option>
                     }).collect_view()}
                 </select>
                 <input class="input small grow" data-testid="global-memory-text" placeholder=t(T::GlobalMemoryPlaceholder)
                     prop:value=move || text.get()
-                    on:input=move |ev| text.set(event_target_value(&ev))
+                    on:input=live(move |ev| text.set(event_target_value(&ev)))
                     on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Enter" { add_key() }/>
                 <button class="btn small" data-testid="global-memory-add" disabled=move || text.with(|t| t.trim().is_empty()) on:click=move |_| add()>{icon(Glyph::Add)}{t(T::Add)}</button>
             </div>
@@ -884,7 +884,7 @@ fn ProjectLocations() -> impl IntoView {
                 {(!desktop::is_desktop()).then(|| view! {
                     <input class="input small mono grow" data-testid="location-path" placeholder=t(T::FolderPathPlaceholder)
                         prop:value=move || path.get()
-                        on:input=move |ev| path.set(event_target_value(&ev))/>
+                        on:input=live(move |ev| path.set(event_target_value(&ev)))/>
                 })}
                 <button class="btn small" data-testid="location-add" on:click=pick>{icon(Glyph::Add)}{t(T::AddFolder)}</button>
                 <button class="btn small ghost" data-testid="location-scan" on:click=scan>{icon(Glyph::Search)}{t(T::ScanLocations)}</button>
@@ -993,7 +993,7 @@ fn MediaProviders() -> impl IntoView {
                                     let tail = stored.with(|s| s["providers"][id]["apiKeyTail"].as_str().unwrap_or_default().to_owned());
                                     if tail.is_empty() { t(T::PasteApiKey).to_owned() } else { tf(T::ApiKeyStored, &[&format!("…{tail}")]) }
                                 }
-                                on:input=move |ev| set(id, "apiKey", event_target_value(&ev))/>
+                                on:input=live(move |ev| set(id, "apiKey", event_target_value(&ev)))/>
                             {move || dropped.with(|d| d.iter().any(|d| d == id)).then(|| view! {
                                 <span class="error-text small" role="alert" data-testid="media-key-dropped">{t(T::KeyDroppedNewUrl)}</span>
                             })}
@@ -1002,13 +1002,13 @@ fn MediaProviders() -> impl IntoView {
                             <span>{t(T::BaseUrl)}</span>
                             <input class="input mono" data-testid="media-base-url" placeholder=t(T::OverrideBaseUrl)
                                 prop:value=move || field(id, "baseUrl")
-                                on:input=move |ev| set(id, "baseUrl", event_target_value(&ev))/>
+                                on:input=live(move |ev| set(id, "baseUrl", event_target_value(&ev)))/>
                         </label>
                         <label class="field grow">
                             <span>{t(T::Model)}</span>
                             <input class="input mono" data-testid="media-model" placeholder=t(T::ProviderDefault)
                                 prop:value=move || field(id, "model")
-                                on:input=move |ev| set(id, "model", event_target_value(&ev))/>
+                                on:input=live(move |ev| set(id, "model", event_target_value(&ev)))/>
                         </label>
                     </div>
                 </div>

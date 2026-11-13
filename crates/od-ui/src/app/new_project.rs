@@ -5,7 +5,7 @@
 
 use super::api;
 use super::icons::{Glyph, icon};
-use super::tasks::Tasks;
+use super::tasks::{Tasks, live};
 use crate::i18n::{T, t, tf};
 use crate::project_panel::{
     AUDIO_DURATIONS, MEDIA_ASPECTS, MediaSurface, PLATFORMS, PanelChoice, PanelTab, VIDEO_LENGTHS,
@@ -122,7 +122,7 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
             <label class="switch">
                 <input type="checkbox" data-testid=testid
                     prop:checked=move || choice.with(get)
-                    on:change=move |ev| choice.update(|c| put(c, event_target_checked(&ev)))/>
+                    on:change=live(move |ev| choice.update(|c| put(c, event_target_checked(&ev))))/>
                 <span>{t(label)}</span>
             </label>
         }
@@ -157,14 +157,14 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                         <input class="input" data-testid="panel-name"
                             placeholder=move || generated_name(tab())
                             prop:value=move || choice.with(|c| c.name.clone())
-                            on:input=move |ev| { let v = event_target_value(&ev); choice.update(|c| c.name = v) }/>
+                            on:input=live(move |ev| { let v = event_target_value(&ev); choice.update(|c| c.name = v) })/>
                     </label>
                     <label class="field">
                         <span>{t(T::DesignSystem)}</span>
-                        <select data-testid="panel-design-system" on:change=move |ev| {
+                        <select data-testid="panel-design-system" on:change=live(move |ev| {
                             let v = event_target_value(&ev);
                             choice.update(|c| c.design_system_id = Some(v).filter(|v| !v.is_empty()));
-                        }>
+                        })>
                             <option value="">{t(T::NoDesignSystem)}</option>
                             {move || systems.get().unwrap_or_default().into_iter().map(|d| {
                                 let id = d.id.clone();
@@ -220,7 +220,7 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                         <label class="radio-row">
                             <input type="checkbox" data-testid="panel-speaker-notes"
                                 prop:checked=move || choice.with(|c| c.speaker_notes)
-                                on:change=move |ev| { let v = event_target_checked(&ev); choice.update(|c| c.speaker_notes = v) }/>
+                                on:change=live(move |ev| { let v = event_target_checked(&ev); choice.update(|c| c.speaker_notes = v) })/>
                             <span><strong>{t(T::UseSpeakerNotes)}</strong><span class="muted block">{t(T::UseSpeakerNotesHint)}</span></span>
                         </label>
                     </Show>
@@ -228,11 +228,11 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                     <Show when=move || tab() == PanelTab::Template>
                         <label class="field">
                             <span>{t(T::Template)}</span>
-                            <select data-testid="panel-template" on:change=move |ev| {
+                            <select data-testid="panel-template" on:change=live(move |ev| {
                                 let v = event_target_value(&ev);
                                 let label = templates.get().unwrap_or_default().into_iter().find(|s| s.info.id == v).map(|s| s.info.name);
                                 choice.update(|c| { c.template_id = Some(v).filter(|v| !v.is_empty()); c.template_label = label; });
-                            }>
+                            })>
                                 <option value="">{t(T::PickTemplate)}</option>
                                 {move || templates.get().unwrap_or_default().into_iter().map(|s| {
                                     let id = s.info.id.clone();
@@ -243,7 +243,7 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                         <label class="radio-row">
                             <input type="checkbox" data-testid="panel-animations"
                                 prop:checked=move || choice.with(|c| c.animations)
-                                on:change=move |ev| { let v = event_target_checked(&ev); choice.update(|c| c.animations = v) }/>
+                                on:change=live(move |ev| { let v = event_target_checked(&ev); choice.update(|c| c.animations = v) })/>
                             <span><strong>{t(T::IncludeAnimations)}</strong><span class="muted block">{t(T::IncludeAnimationsHint)}</span></span>
                         </label>
                     </Show>
@@ -259,10 +259,10 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                         </div>
                         <label class="field">
                             <span>{t(T::MediaModel)}</span>
-                            <select data-testid="panel-media-model" on:change=move |ev| {
+                            <select data-testid="panel-media-model" on:change=live(move |ev| {
                                 let v = event_target_value(&ev);
                                 choice.update(|c| c.media_model = Some(v).filter(|v| !v.is_empty()));
-                            }>
+                            })>
                                 <option value="">{t(T::ProviderDefault)}</option>
                                 {move || {
                                     let surface = choice.with(|c| c.surface.id());
@@ -279,7 +279,7 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                         <Show when=move || choice.with(|c| c.surface != MediaSurface::Audio)>
                             <label class="field">
                                 <span>{t(T::Aspect)}</span>
-                                <select data-testid="panel-aspect" on:change=move |ev| { let v = event_target_value(&ev); choice.update(|c| c.aspect = v) }>
+                                <select data-testid="panel-aspect" on:change=live(move |ev| { let v = event_target_value(&ev); choice.update(|c| c.aspect = v) })>
                                     {MEDIA_ASPECTS.into_iter().map(|a| view! { <option value=a selected=move || choice.with(|c| c.aspect == a)>{a}</option> }).collect_view()}
                                 </select>
                             </label>
@@ -287,10 +287,10 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                         <Show when=move || choice.with(|c| c.surface == MediaSurface::Video)>
                             <label class="field">
                                 <span>{t(T::VideoLength)}</span>
-                                <select data-testid="panel-length" on:change=move |ev| {
+                                <select data-testid="panel-length" on:change=live(move |ev| {
                                     let v = event_target_value(&ev).parse().unwrap_or(5);
                                     choice.update(|c| c.video_length = v);
-                                }>
+                                })>
                                     {VIDEO_LENGTHS.into_iter().map(|n| view! { <option value=n.to_string() selected=move || choice.with(|c| c.video_length == n)>{tf(T::Seconds, &[&n.to_string()])}</option> }).collect_view()}
                                 </select>
                             </label>
@@ -299,17 +299,17 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
                             <div class="row">
                                 <label class="field grow">
                                     <span>{t(T::AudioKind)}</span>
-                                    <select data-testid="panel-audio-kind" on:change=move |ev| { let v = event_target_value(&ev); choice.update(|c| c.audio_kind = v) }>
+                                    <select data-testid="panel-audio-kind" on:change=live(move |ev| { let v = event_target_value(&ev); choice.update(|c| c.audio_kind = v) })>
                                         <option value="speech" selected=move || choice.with(|c| c.audio_kind == "speech")>{t(T::AudioSpeech)}</option>
                                         <option value="sfx" selected=move || choice.with(|c| c.audio_kind == "sfx")>{t(T::AudioSfx)}</option>
                                     </select>
                                 </label>
                                 <label class="field grow">
                                     <span>{t(T::Duration)}</span>
-                                    <select data-testid="panel-audio-duration" on:change=move |ev| {
+                                    <select data-testid="panel-audio-duration" on:change=live(move |ev| {
                                         let v = event_target_value(&ev).parse().unwrap_or(10);
                                         choice.update(|c| c.audio_duration = v);
-                                    }>
+                                    })>
                                         {AUDIO_DURATIONS.into_iter().map(|n| view! { <option value=n.to_string() selected=move || choice.with(|c| c.audio_duration == n)>{tf(T::Seconds, &[&n.to_string()])}</option> }).collect_view()}
                                     </select>
                                 </label>
