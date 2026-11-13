@@ -23,7 +23,7 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 |---|---|---|---|---|
 | QA-091 | 🟠 | A Markdown editor or a sketch's text label that has the focus when its view goes (Ctrl+Tab, Ctrl+W, Ctrl+1…9, project deleted elsewhere) panics in its `blur` handler; the sketch label is lost | `leave.qa.mjs` LV-05, LV-10, LV-11, LV-14 | `on:blur` reads signals already disposed. Fixed (unreleased) |
 | QA-090 | 🟠 | Markdown typed or a sketch stroke drawn less than 700 ms before a reload, a tab close or a Back to another page load is lost | `leave.qa.mjs` LV-03, LV-04, LV-16 | no save on `pagehide`. Fixed (unreleased) |
-| QA-089 | 🟠 | History: View on a version of file A, then file B picked before it loads: B's tab shows A's version, "Viewing vN" and a Restore that fails with "Not found: version not found" | `studio.qa.mjs` STU-21 | `view_version` answer applied without checking the file is still shown. Fixed (unreleased) |
+| QA-089 | 🟠 | History: View on a version of file A, then file B picked before it loads: B's tab shows A's version, "Viewing vN" and a Restore that fails with "Not found: version not found" | `studio.qa.mjs` STU-21, STU-21b | `view_version` answer applied without checking the file is still shown. Fixed (unreleased) |
 | QA-092 | 🔵 | Stopping the daemon (quit, update, restart) takes 5 s whenever any tab of the app is open, and logs "responses still open at shutdown" | `leave.qa.mjs` LV-17 | event streams (`/api/memory/events`, project `/events`) never end on shutdown. Fixed (unreleased) |
 
 ## Pass / fail by area
@@ -142,6 +142,17 @@ file switch, so `tasks.spawn` keeps the task, and `ctx.viewing.set(…)` runs
 for whatever file is shown by then. `show_tab` clears `viewing` only before
 the answer. Fix: compare the file (or the `seq` the list uses) before
 setting `viewing`. Sibling of 38c03f1a, missed by its grep.
+
+**Fixed (unreleased)**: the answer is dropped when the list's `seq` moved
+(another file, or its content changed) or another View came after it. A
+version already on view was cleared only by `show_tab`, so Ctrl+Tab,
+Cmd+1…9, Cmd+W, a tab's close button and the Files panel left it over the
+next file (STU-21b): `ViewedVersion` now keeps its path, and
+`StudioCtx::viewed` returns it only while that file is shown. Same pattern
+in `preview_tools.rs`: a lint of the file just left no longer lands on the
+next one (`forget_document` moves `lint_seq`), and a save that answers
+after a file switch no longer clears or rewrites the new file's overrides
+(`after_save`); both have unit tests.
 
 ## QA-092 🔵 The daemon takes 5 s to stop whenever a tab is open
 

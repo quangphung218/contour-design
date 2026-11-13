@@ -262,7 +262,7 @@ pub fn sync_deck(ctx: StudioCtx) {
 pub fn ThumbRail(ctx: StudioCtx, src: Memo<Option<String>>) -> impl IntoView {
     move || {
         let deck = ctx.deck.get()?;
-        if deck.count < 2 || ctx.presenting.get() || ctx.viewing.with(Option::is_some) {
+        if deck.count < 2 || ctx.presenting.get() || ctx.is_viewing() {
             return None;
         }
         let url = src.get_untracked()?;

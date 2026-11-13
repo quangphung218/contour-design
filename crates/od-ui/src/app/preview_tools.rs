@@ -176,6 +176,51 @@ fn drop_written(failed: &mut Vec<FailedText>, file: &str, edits: &[SourceEdit]) 
     failed.retain(|f| !(f.file == file && edits.iter().any(|e| e.selector == f.selector)));
 }
 
+/// What a save of `req` that answered `res` (the file and version written,
+/// or why not) does to the tools; `active` is the file on screen by then.
+/// The overrides are the shown file's: another file picked meanwhile keeps
+/// its own.
+fn after_save(
+    tools: Tools,
+    active: Option<&str>,
+    styles: bool,
+    req: &SourceEditRequest,
+    res: Result<(String, u32), String>,
+) {
+    let shown = active == Some(req.file.as_str());
+    match res {
+        Ok((path, version)) if !shown => tools.saved(&path, version),
+        Ok((path, version)) => {
+            if styles {
+                tools.overrides.set(Vec::new());
+                tools.extracted.set(None);
+            } else {
+                tools.overrides.update(|list| {
+                    for e in &req.edits {
+                        if let Some(text) = &e.text {
+                            retext_overrides(list, &e.selector, text);
+                        }
+                    }
+                });
+                tools
+                    .failed_text
+                    .update(|list| drop_written(list, &req.file, &req.edits));
+            }
+            tools.saved(&path, version);
+        }
+        Err(message) => {
+            if styles {
+                tools.note(message);
+            } else {
+                // One line says it, with Try again: not also the status line.
+                tools
+                    .failed_text
+                    .update(|list| keep_failed(list, &req.file, &req.edits, &message));
+            }
+        }
+    }
+}
+
 impl Tools {
     pub fn new() -> Self {
         Self {
@@ -748,42 +793,10 @@ impl StudioCtx {
             (req, res)
         };
         self.tasks.spawn_then(work, move |(req, res)| {
-            // The overrides are the shown file's: another file picked
-            // meanwhile keeps its own.
-            let shown = self.active_untracked().as_deref() == Some(req.file.as_str());
-            match res {
-                Ok(r) if !shown => tools.saved(&r.file.path, r.version.version),
-                Ok(r) => {
-                    if styles {
-                        tools.overrides.set(Vec::new());
-                        tools.extracted.set(None);
-                    } else {
-                        tools.overrides.update(|list| {
-                            for e in &req.edits {
-                                if let Some(text) = &e.text {
-                                    retext_overrides(list, &e.selector, text);
-                                }
-                            }
-                        });
-                        tools
-                            .failed_text
-                            .update(|list| drop_written(list, &req.file, &req.edits));
-                    }
-                    tools.saved(&r.file.path, r.version.version);
-                }
-                Err(e) => {
-                    let message = self.failed_to(T::SaveFailed, &e);
-                    if styles {
-                        tools.note(message);
-                    } else {
-                        // One line says it, with Try again: not also the
-                        // status line.
-                        tools
-                            .failed_text
-                            .update(|list| keep_failed(list, &req.file, &req.edits, &message));
-                    }
-                }
-            }
+            let res = res
+                .map(|r| (r.file.path, r.version.version))
+                .map_err(|e| self.failed_to(T::SaveFailed, &e));
+            after_save(tools, self.active_untracked().as_deref(), styles, &req, res);
         });
     }
 
@@ -1883,6 +1896,69 @@ mod tests {
         assert!(edits[0].text.is_none());
         assert_eq!(edits[0].expect_tag.as_deref(), Some("h1"));
         assert_eq!(edits[0].expect_text.as_deref(), Some("h1 text"));
+    }
+
+    #[test]
+    fn a_lint_asked_before_a_file_switch_does_not_land_on_the_next_file() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let tools = Tools::new();
+            // `refresh_lint` keeps the number it was asked with.
+            let asked = tools.lint_seq.get_value();
+            tools.forget_document();
+            assert_ne!(
+                tools.lint_seq.get_value(),
+                asked,
+                "a.html's lint is dropped on b.html"
+            );
+        });
+    }
+
+    fn style_save(file: &str) -> SourceEditRequest {
+        SourceEditRequest {
+            file: file.into(),
+            edits: vec![SourceEdit {
+                selector: "h1".into(),
+                ..SourceEdit::default()
+            }],
+            label: None,
+        }
+    }
+
+    #[test]
+    fn a_save_that_answers_after_a_file_switch_keeps_the_new_file_s_overrides() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let tools = Tools::new();
+            // a.html's style save is out; b.html is shown and edited.
+            tools.overrides.set(vec![ov("h1", "color", "B")]);
+            after_save(
+                tools,
+                Some("b.html"),
+                true,
+                &style_save("a.html"),
+                Ok(("a.html".into(), 3)),
+            );
+            assert_eq!(
+                tools.overrides.get_untracked().len(),
+                1,
+                "b.html's override kept"
+            );
+            assert_eq!(
+                tools.status_for.get_untracked().as_deref(),
+                Some("a.html"),
+                "a.html's save is said"
+            );
+            // Still on a.html: its saved overrides go.
+            after_save(
+                tools,
+                Some("a.html"),
+                true,
+                &style_save("a.html"),
+                Ok(("a.html".into(), 4)),
+            );
+            assert!(tools.overrides.get_untracked().is_empty());
+        });
     }
 
     fn ov(selector: &str, prop: &str, text: &str) -> Override {

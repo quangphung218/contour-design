@@ -109,9 +109,17 @@ impl Tasks {
 /// after it disposed the field's owner: a handler that reads a signal then
 /// panics, and a write is lost (QA-091). Every `on:blur`, `on:focusout`,
 /// `on:change` and `on:input` handler goes through it (a test in this
-/// module reads the sources). Call it in the view, where the owner is the
-/// one of the signals the handler touches. Work that must not be lost when
-/// the field goes (a label being typed) is done in an `on_cleanup` too.
+/// module reads the sources).
+///
+/// The handler is skipped once the owner **where `live` is called** went,
+/// even if it only writes into state that outlives it. So call it in the
+/// owner of the state the handler writes: a field in a list that re-renders
+/// (the Tweaks and Inspect rows) and writes into `StudioCtx` takes its
+/// `live(…)` from the panel or the Studio, not from the row, or its last
+/// `change` is dropped when the row re-renders. Work that must not be lost
+/// when the field goes (a label being typed) is done in an `on_cleanup`:
+/// WebKit fires no `blur` or `change` on a field removed from the page at
+/// all, so the cleanup is what keeps it there.
 pub fn live<E>(handler: impl Fn(E) + 'static) -> impl Fn(E) + 'static {
     let tasks = Tasks::here();
     move |ev| {
@@ -367,10 +375,25 @@ mod tests {
     fn unguarded(file: &str, src: &str) -> Vec<String> {
         let mut found = Vec::new();
         for event in LEAVING {
-            let attr = format!("on:{event}=");
+            let attr = format!("on:{event}");
             for (at, _) in src.match_indices(&attr) {
-                let handler = src[at + attr.len()..].trim_start();
-                if !handler.starts_with("live(") {
+                let rest = &src[at + attr.len()..];
+                // The value after `=`, or after a modifier first (`:target`).
+                let value = match rest.as_bytes().first() {
+                    Some(b'=') => &rest[1..],
+                    Some(b':') => match rest.find('=') {
+                        Some(eq)
+                            if rest[1..eq]
+                                .bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b == b'_') =>
+                        {
+                            &rest[eq + 1..]
+                        }
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+                if !value.trim_start().starts_with("live(") {
                     let line = src[..at].matches('\n').count() + 1;
                     found.push(format!("{file}:{line} on:{event}"));
                 }
@@ -424,6 +447,17 @@ mod tests {
         );
         let named = format!("<input on:{}=on_input/>", "input");
         assert_eq!(unguarded("a.rs", &named), ["a.rs:1 on:input"]);
+        // Leptos 0.8's typed-target form.
+        let target = format!(
+            "<input on:{}:target=move |ev| x.set(ev.target().value())/>",
+            "input"
+        );
+        assert_eq!(unguarded("a.rs", &target), ["a.rs:1 on:input"]);
+        let target_live = format!("<input on:{}:target=live(move |ev| x.set(ev))/>", "change");
+        assert!(unguarded("a.rs", &target_live).is_empty());
+        // Another event that starts with the same name is not one of them.
+        let other = format!("<div on:{}=move |_| x.get()/>", "inputx");
+        assert!(unguarded("a.rs", &other).is_empty());
     }
 
     #[test]
