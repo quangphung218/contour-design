@@ -41,8 +41,11 @@ async function wentBack(p, frame) {
 const fields = `<p id="plain" tabindex="-1">plain text</p>
 <input id="text" value="abc"> <input id="check" type="checkbox"> <input id="ro" value="ro" readonly>
 <textarea id="area">abc</textarea> <div id="edit" contenteditable="true">abc</div> <span id="host"></span>
+<x-closed id="closed"></x-closed>
 <button id="btn">button</button>
-<script>document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<input id="inner" value="abc">';</script>`;
+<script>document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<input id="inner" value="abc">';
+window.closedRoot = document.getElementById('closed').attachShadow({ mode: 'closed' });
+closedRoot.innerHTML = '<input id="sealed" value="abc">';</script>`;
 const inner = `<!doctype html><html><body>${recorder}${fields}</body></html>`;
 const attr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 const page = `<!doctype html><html><body>${recorder}${fields}
@@ -90,6 +93,13 @@ for (const name of engines) {
       await frame.waitForFunction(() => seen.length === 1);
       assert.equal(await frame.evaluate(() => seen[0]), false, `${name}, ${where}: a shadow root's field keeps Backspace`);
       assert.equal(await frame.evaluate(() => document.getElementById('host').shadowRoot.getElementById('inner').value), 'ab');
+      // A field in a closed shadow root: the window sees only the custom
+      // element, so it keeps the key.
+      await frame.evaluate(() => { seen.length = 0; atEnd(closedRoot.getElementById('sealed')); });
+      await p.keyboard.press('Backspace');
+      await frame.waitForFunction(() => seen.length === 1);
+      assert.equal(await frame.evaluate(() => seen[0]), false, `${name}, ${where}: a closed shadow root's field keeps Backspace`);
+      assert.equal(await frame.evaluate(() => closedRoot.getElementById('sealed').value), 'ab');
       // The input method's own Backspace while it composes is left alone.
       const composing = await frame.evaluate(() => {
         const e = new KeyboardEvent('keydown', { key: 'Backspace', isComposing: true, bubbles: true, cancelable: true });

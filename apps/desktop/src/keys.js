@@ -25,6 +25,9 @@
     var tag = el.tagName;
     if (tag === 'TEXTAREA') return !el.readOnly && !el.disabled;
     if (tag === 'INPUT') return TEXT[(el.type || 'text').toLowerCase()] === 1 && !el.readOnly && !el.disabled;
+    // A custom element seen from outside: the host of a closed shadow root,
+    // whose field cannot be told apart from here. It keeps its key.
+    if (tag.indexOf('-') !== -1) return true;
     return false;
   }
   // Capture phase on the window, before any of the page's: a page (a

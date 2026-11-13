@@ -1081,13 +1081,12 @@ fn FromFolderForm(typing: RwSignal<Option<String>>) -> impl IntoView {
     super::focus::focus_on_mount(path_input);
     move || {
         open.get().then(|| {
-            let value = typing.get_untracked().unwrap_or_default();
             let import = import.clone();
             let import_key = import_key.clone();
             view! {
                 <div class="from-folder" data-testid="from-folder-form">
                     <input class="input small mono" data-testid="from-folder-path" placeholder=t(T::FolderPathPlaceholder)
-                        aria-label=t(T::FolderPathLabel) prop:value=value node_ref=path_input
+                        aria-label=t(T::FolderPathLabel) prop:value=move || typing.get().unwrap_or_default() node_ref=path_input
                         on:input=live(move |ev| typing.set(Some(event_target_value(&ev))))
                         on:keydown=move |ev: web_sys::KeyboardEvent| match ev.key().as_str() {
                             "Enter" => import_key(),
