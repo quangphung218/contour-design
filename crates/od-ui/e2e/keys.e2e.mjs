@@ -2,8 +2,10 @@
 // of the window): Backspace outside a text field has its default (WKWebView:
 // go Back) cancelled, in the app's page and in a design's sandboxed frame;
 // in a field, a contenteditable, a shadow root's field, or while an input
-// method composes, it is left alone (QA-093). Chromium and WebKit, no
-// daemon, a few seconds.
+// method composes, it is left alone (QA-093). A page that stops the key's
+// propagation does not get past it: in WebKit, which does go Back, the
+// same page without keys.js does. Chromium and WebKit, no daemon, a few
+// seconds.
 // Usage: node keys.e2e.mjs   (OD_BRIDGE_ENGINES=chromium,webkit)
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -13,8 +15,29 @@ const keys = readFileSync(new URL('../../../apps/desktop/src/keys.js', import.me
 const engines = (process.env.OD_BRIDGE_ENGINES || 'chromium,webkit').split(',').map((e) => e.trim()).filter(Boolean);
 
 // Each page logs, after keys.js, whether a Backspace reached the window
-// with its default cancelled.
+// with its default cancelled (bubble phase: nothing on the page stops it).
 const recorder = `<script>window.atEnd = (el) => { el.focus(); try { el.setSelectionRange(9, 9); } catch {} }; window.seen = []; addEventListener('keydown', (e) => { if (e.key === 'Backspace') seen.push(e.defaultPrevented); });</script>`;
+
+// A page that stops every key on its way up (a React root, a slide
+// library), in the app's window and in a design frame. Each logs the keys
+// that reach it, on the window's capture phase (after keys.js).
+const stopper = `<script>window.keys = []; addEventListener('keydown', (e) => keys.push(e.key), true);
+document.addEventListener('keydown', (e) => e.stopPropagation());</script><p id="plain" tabindex="-1">plain text</p>`;
+const stopFrame = `<!doctype html><html><body>${stopper}</body></html>`;
+const stopPage = `<!doctype html><html><body>${stopper}
+<iframe id="design" sandbox="allow-scripts" style="width:600px;height:100px" src="http://keys.test/stop-frame"></iframe></body></html>`;
+
+/** In WebKit: whether a Backspace on the plain text of `frame` went Back.
+ * The frame gets a history entry of its own (`#b`); the key after the
+ * Backspace is seen only once a Back it started has run. */
+async function wentBack(p, frame) {
+  await frame.locator('#plain').click();
+  await frame.evaluate(() => { history.pushState(null, '', '#b'); keys.length = 0; });
+  await p.keyboard.press('Backspace');
+  await p.keyboard.press('z');
+  await frame.waitForFunction(() => keys.includes('z'));
+  return frame.evaluate(() => location.hash !== '#b');
+}
 const fields = `<p id="plain" tabindex="-1">plain text</p>
 <input id="text" value="abc"> <input id="check" type="checkbox"> <input id="ro" value="ro" readonly>
 <textarea id="area">abc</textarea> <div id="edit" contenteditable="true">abc</div> <span id="host"></span>
@@ -78,6 +101,21 @@ for (const name of engines) {
     // In a field the key still edits.
     assert.equal(await p.evaluate(() => document.getElementById('text').value), 'ab');
     assert.equal(await design.evaluate(() => document.getElementById('area').value), 'ab');
+    if (name === 'webkit') {
+      for (const guarded of [false, true]) {
+        const ctx = await browser.newContext();
+        if (guarded) await ctx.addInitScript({ content: keys });
+        const sp = await ctx.newPage();
+        await sp.route('http://keys.test/**', (route) => route.fulfill({ contentType: 'text/html', body: route.request().url().endsWith('/stop-frame') ? stopFrame : stopPage }));
+        await sp.goto('http://keys.test/stop');
+        const df = sp.frames().find((f) => f !== sp.mainFrame());
+        await df.waitForFunction(() => !!document.getElementById('plain'));
+        for (const [where, frame] of [['app', sp.mainFrame()], ['design frame', df]]) {
+          assert.equal(await wentBack(sp, frame), !guarded, `webkit, ${where}, the page stops the key: ${guarded ? 'stays' : 'goes Back without keys.js'}`);
+        }
+        await ctx.close();
+      }
+    }
     console.log(`[keys] ${name}: ok`);
   } finally {
     await browser.close();

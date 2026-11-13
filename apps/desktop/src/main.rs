@@ -2704,6 +2704,8 @@ mod tests {
             "the main window's builder runs keys.js in every frame"
         );
         assert!(KEYS_JS.contains("'Backspace'") && KEYS_JS.contains("isComposing"));
+        // Capture phase: a page that stops the key does not get past it.
+        assert!(KEYS_JS.contains("}, true);"));
     }
 
     #[test]

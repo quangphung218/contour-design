@@ -27,13 +27,16 @@
     if (tag === 'INPUT') return TEXT[(el.type || 'text').toLowerCase()] === 1 && !el.readOnly && !el.disabled;
     return false;
   }
+  // Capture phase on the window, before any of the page's: a page (a
+  // React root, a slide library) that stops the key's propagation does
+  // not keep it from here.
   window.addEventListener('keydown', function (e) {
-    if (e.key !== 'Backspace' || e.defaultPrevented) return;
+    if (e.key !== 'Backspace') return;
     if (e.isComposing || e.keyCode === 229) return;
     // The element itself, inside a shadow root too (`target` is its host
-    // by the time the key reaches the window).
+    // as seen from the window).
     var path = typeof e.composedPath === 'function' ? e.composedPath() : [];
     if (editsText(path[0] || e.target)) return;
     e.preventDefault();
-  });
+  }, true);
 })();
