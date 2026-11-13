@@ -298,6 +298,8 @@ pub struct StudioCtx {
     pub files: RwSignal<Vec<ProjectFile>>,
     /// Open file tabs; the active tab is the previewed file.
     pub tabs: RwSignal<Tabs>,
+    /// `tabs.active`, read through [`Self::active`].
+    active: Memo<Option<String>>,
     /// Terminal tabs, after the file tabs.
     pub terms: RwSignal<Vec<TermTab>>,
     /// The terminal shown instead of the preview, if any.
@@ -429,8 +431,12 @@ impl StudioCtx {
     }
 
     /// The previewed file (tracked).
+    /// The file shown. Tracks only which file it is: `tabs` changes for
+    /// other reasons too (every files refresh, an upload, the watcher),
+    /// and a view that read it directly was built again each time, with
+    /// the state of the components in it (a comment being typed).
     pub fn active(self) -> Option<String> {
-        self.tabs.with(|t| t.active.clone())
+        self.active.get()
     }
 
     /// The version on view, if it is a version of the file shown. Every
@@ -1630,6 +1636,7 @@ pub fn Studio() -> impl IntoView {
             load.with(|l| StudioPhase::of(gone, l))
         })
     };
+    let tabs = RwSignal::new(Tabs::default());
     let ctx = StudioCtx {
         shell,
         tasks: Tasks::here(),
@@ -1645,7 +1652,8 @@ pub fn Studio() -> impl IntoView {
         held_owner: StoredValue::new(None),
         dequeued: StoredValue::new(None),
         files: RwSignal::new(Vec::new()),
-        tabs: RwSignal::new(Tabs::default()),
+        tabs,
+        active: Memo::new(move |_| tabs.with(|t| t.active.clone())),
         terms: RwSignal::new(Vec::new()),
         active_term: RwSignal::new(None),
         recent: RwSignal::new(Vec::new()),
