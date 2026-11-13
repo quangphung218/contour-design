@@ -364,6 +364,10 @@ pub fn DraftImages(
     let busy = RwSignal::new(false);
     let here = Tasks::here();
     let file = StoredValue::new(file);
+    let sending = move || {
+        ctx.comment_drafts
+            .with(|d| file.with_value(|f| d.get(f).is_some_and(|d| d.sending)))
+    };
     let images = move || {
         ctx.comment_drafts.with(|d| {
             file.with_value(|f| d.get(f).map(|d| d.images.clone()))
@@ -422,7 +426,7 @@ pub fn DraftImages(
                 view! {
                     <span class="draft-image" data-testid="draft-image">
                         <img src=url alt=""/>
-                        <button class="chip-x" aria-label=t(T::Remove)
+                        <button class="chip-x" aria-label=t(T::Remove) disabled=sending
                             on:click=move |_| file.with_value(|f| ctx.remove_draft_image(f, &gone))>
                             {icon(Glyph::Close)}
                         </button>
@@ -441,7 +445,7 @@ pub fn DraftImages(
             <button
                 class="btn small ghost"
                 data-testid="comment-attach-image"
-                disabled=move || { let full = images().len() >= od_contracts::MAX_COMMENT_IMAGES; busy.get() || full }
+                disabled=move || { let full = images().len() >= od_contracts::MAX_COMMENT_IMAGES; busy.get() || sending() || full }
                 on:click=move |_| { if let Some(el) = input.get() { el.click(); } }
             >
                 {icon(Glyph::Image)}{t(T::CommentAttachImage)}
