@@ -321,7 +321,9 @@ try {
   app.on('pageerror', (e) => pageErrors.push(e.message));
   const appDialog = app.getByTestId('update-dialog');
   const appFocused = () => app.evaluate(() => document.activeElement?.getAttribute('data-testid'));
-  const calls = () => app.evaluate(() => window.__shell.calls.filter((c) => c !== 'set_theme' && c !== 'set_menu_labels'));
+  // Leaves out what every page tells the shell as it shows: its theme,
+  // the menu's words, whether it holds work not saved.
+  const calls = () => app.evaluate(() => window.__shell.calls.filter((c) => !['set_theme', 'set_menu_labels', 'set_unsaved'].includes(c)));
   // A fresh page each time (the same URL with a hash would not reload it):
   // the shell stub starts over with the support sessionStorage gives it.
   const openAbout = async () => {
