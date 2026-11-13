@@ -307,10 +307,15 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
     let editing = RwSignal::new(None::<u32>);
     let draft = RwSignal::new(String::new());
     let saving = RwSignal::new(false);
+    // Opened, and shown again after a reload: the letters go on into it.
+    let input = NodeRef::<leptos::html::Textarea>::new();
+    super::focus::focus_on_mount(input);
     // Another file: leave the editor.
     let shown = Memo::new(move |_| ctx.active());
     Effect::new(move |prev: Option<()>| {
-        shown.track();
+        // Read, not `track()`: a memo never read has no sources and
+        // never changes.
+        shown.with(|_| ());
         if prev.is_some() {
             editing.set(None);
         }
@@ -389,7 +394,7 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
                 </div>
                 {move || if here() {
                     view! {
-                        <textarea class="input notes-input" rows="3" data-testid="notes-input"
+                        <textarea class="input notes-input" rows="3" data-testid="notes-input" node_ref=input
                             placeholder=t(T::NotesPlaceholder)
                             prop:value=move || draft.get()
                             on:input=live(move |ev| draft.set(event_target_value(&ev)))

@@ -460,6 +460,17 @@ try {
   // The save reloads the preview (file-changed); the slide stays.
   await sleep(1200);
   await until(async () => (await counter.textContent()) === '2 / 3', 'reload keeps the slide');
+  // A note being edited goes when another file shows: back on the deck,
+  // the same slide shows no editor (QA-095 keeps it over a reload only).
+  await page.getByTestId('notes-edit').click();
+  await page.getByTestId('notes-input').fill('Not saved');
+  await row('index.html').click();
+  await page.locator('.tab.active', { hasText: 'index.html' }).waitFor();
+  await page.getByTestId('speaker-notes').waitFor({ state: 'detached' });
+  await row('deck.html').click();
+  await until(async () => (await counter.textContent()) === '2 / 3', 'deck back on slide 2');
+  await page.getByTestId('notes-text').filter({ hasText: 'Pause here & smile' }).waitFor();
+  assert.equal(await page.getByTestId('notes-input').count(), 0, 'no editor left over from before');
   results.speakerNotes = 'edited and saved';
 
   await page.getByTestId('deck-present-menu').click();

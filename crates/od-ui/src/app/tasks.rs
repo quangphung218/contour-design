@@ -469,6 +469,70 @@ mod tests {
         assert!(unguarded("a.rs", &spaced_live).is_empty());
     }
 
+    /// Each call of `track()` in `src` on a memo made by a `let` of the
+    /// same file, as `file:line`. `track()` only subscribes: a memo never read
+    /// has no sources, so the effect never runs again.
+    fn memo_tracks(file: &str, src: &str) -> Vec<String> {
+        let mut memos = Vec::new();
+        for (at, _) in src.match_indices("let ") {
+            let rest = &src[at + 4..];
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            let after = rest[name.len()..].trim_start();
+            let value = after
+                .split_once('=')
+                .filter(|(ty, _)| !ty.contains(';'))
+                .map(|(_, v)| v.trim_start());
+            if !name.is_empty() && value.is_some_and(|v| v.starts_with("Memo::new")) {
+                memos.push(name);
+            }
+        }
+        let mut found = Vec::new();
+        for name in memos {
+            for (at, _) in src.match_indices(&format!("{name}.track()")) {
+                let before = src[..at].chars().next_back();
+                if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+                    continue;
+                }
+                let line = src[..at].matches('\n').count() + 1;
+                found.push(format!("{file}:{line} {name}"));
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn no_effect_tracks_a_memo_without_reading_it() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        rust_files(&root, &mut files);
+        let mut found = Vec::new();
+        for path in files {
+            let src = std::fs::read_to_string(&path).unwrap();
+            let name = path.strip_prefix(&root).unwrap().display().to_string();
+            found.extend(memo_tracks(&name, &src));
+        }
+        assert!(
+            found.is_empty(),
+            "read these memos (`m.with(|_| ())`) instead of `track()`:\n{}",
+            found.join("\n")
+        );
+    }
+
+    #[test]
+    fn a_memo_tracked_and_never_read_is_found() {
+        // Built at run time: this file is scanned too.
+        let t = "track";
+        let src = format!(
+            "let shown = Memo::new(move |_| ctx.active());\nEffect::new(move |_| {{\n    shown.{t}();\n}});\nlet sig = RwSignal::new(0);\nsig.{t}();\nnot_shown.{t}();"
+        );
+        assert_eq!(memo_tracks("a.rs", &src), ["a.rs:3 shown"]);
+        let typed = format!("let shown: Memo<u32> = Memo::new(|_| 1);\nshown.{t}();");
+        assert_eq!(memo_tracks("a.rs", &typed), ["a.rs:2 shown"]);
+    }
+
     #[test]
     fn a_live_handler_runs_while_its_owner_is_there_only() {
         let owner = Owner::new();

@@ -1777,7 +1777,9 @@ pub fn watch_lint(ctx: StudioCtx) {
     // Another file: its tool state starts over.
     let shown = Memo::new(move |_| ctx.active());
     Effect::new(move |prev: Option<()>| {
-        shown.track();
+        // Read, not `track()`: a memo never read has no sources and
+        // never changes.
+        shown.with(|_| ());
         if prev.is_some() {
             ctx.tools.forget_document();
             if ctx.tools.tool.get_untracked() == Some(Tool::Tweaks) {

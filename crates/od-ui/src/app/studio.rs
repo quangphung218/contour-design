@@ -2082,7 +2082,9 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     };
     // A new document: deck state comes back with its `od:deck-ready`.
     Effect::new(move |_| {
-        src.track();
+        // Read, not `track()`: a memo never read has no sources and
+        // never changes.
+        src.with(|_| ());
         ctx.deck.set(None);
         ctx.export_fit.set(None);
     });
@@ -2092,7 +2094,9 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     let shown = Memo::new(move |_| ctx.active());
     // Another file: the comment draft was on an element of the last one.
     Effect::new(move |prev: Option<()>| {
-        shown.track();
+        // Read, not `track()`: a memo never read has no sources and
+        // never changes.
+        shown.with(|_| ());
         if prev.is_some() {
             ctx.comment_draft.set(None);
         }
