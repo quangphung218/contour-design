@@ -817,6 +817,7 @@ messages! {
     CommentMode => "Add comment", "Thêm bình luận";
     CommentModeOn => "Click an element to comment", "Bấm vào một phần tử để bình luận";
     CommentPlaceholder => "What should change here?", "Cần sửa gì ở đây?";
+    CommentReselect => "This element is no longer on the page. Pick one to comment on.", "Phần tử này không còn trên trang. Chọn lại phần tử để bình luận.";
     AddComment => "Add comment", "Thêm bình luận";
     RemoveComment => "Remove", "Gỡ";
     Detach => "Don't send", "Không gửi";
@@ -1813,7 +1814,7 @@ messages! {
     ManualApplyContent => "Content", "Nội dung";
     ManualLeaveTitle => "Leave this page?", "Rời trang này?";
     ManualLeave => "Leave", "Rời trang";
-    ManualLeaveConfirm => "An edit is not applied yet. Leave and lose it?", "Có chỉnh sửa chưa áp dụng. Rời trang và bỏ chỉnh sửa này?";
+    LeaveDraftsConfirm => "These files have a comment not sent or an edit not applied. Leave and lose them?", "Các file này có bình luận chưa gửi hoặc chỉnh sửa chưa áp dụng. Rời trang và bỏ chúng?";
     ManualApplyStyle => "Style", "Kiểu";
     ManualApplyAttributes => "Attributes", "Thuộc tính";
     ManualApplyHtml => "HTML", "HTML";

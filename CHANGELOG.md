@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Studio: a comment being written (its note, images and element) and a Manual edit change not applied now stay with their file when another file shows (a click, Ctrl+Tab, Cmd+1…9), and come back when it shows again; Apply writes only to that file. A comment whose element is gone by then keeps its note and images and asks to pick the element again. Leaving the Studio asks while any file has such work, and names the files. Cancel on a comment deletes the images uploaded for it from `comments/`; turning comment mode off keeps the comment for later.
+
 ## [0.2.0-beta.34] - 2026-11-13
 
 ### Fixed

@@ -592,6 +592,7 @@ SlideN = 슬라이드 {0}
 CommentMode = 댓글 추가
 CommentModeOn = 요소를 클릭해 댓글 달기
 CommentPlaceholder = 여기서 무엇을 바꿔야 하나요?
+CommentReselect = 이 요소는 더 이상 페이지에 없습니다. 댓글을 달 요소를 다시 고르세요.
 AddComment = 댓글 추가
 RemoveComment = 삭제
 Detach = 보내지 않음
@@ -1738,7 +1739,7 @@ ProjectNameRequired = 프로젝트 이름을 입력하세요.
 ApiKeyRequired = API 키가 필요합니다
 ManualLeaveTitle = 이 페이지에서 나갈까요?
 ManualLeave = 나가기
-ManualLeaveConfirm = 적용하지 않은 편집이 있습니다. 나가면서 버릴까요?
+LeaveDraftsConfirm = 이 파일들에 보내지 않은 댓글이나 적용하지 않은 편집이 있습니다. 나가면서 버릴까요?
 # Desktop app menu bar
 MenuAbout = {0}에 관하여
 MenuServices = 서비스

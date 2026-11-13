@@ -1,5 +1,6 @@
-//! Leaving a page that holds work not saved yet (a manual edit not
-//! applied): every in-app way out asks first, as the original's
+//! Leaving a page that holds work not saved yet (a comment not sent, a
+//! manual edit not applied, in any file): every in-app way out asks first,
+//! naming the files, as the original's
 //! `FileWorkspace` navigation guard does, the browser's Back included, and
 //! the browser asks before a close or reload.
 //!
@@ -17,9 +18,10 @@ use leptos_router::hooks::use_navigate;
 use send_wrapper::SendWrapper;
 use wasm_bindgen::JsCast;
 
-/// While the calling component lives, leaving asks when `unsaved` answers
-/// true. `unsaved` should track the signals its answer depends on.
-pub fn guard_leaving(unsaved: Callback<(), bool>) {
+/// While the calling component lives, leaving asks when `unsaved` names
+/// files (the files with work not saved). `unsaved` should track the
+/// signals its answer depends on.
+pub fn guard_leaving(unsaved: Callback<(), Vec<String>>) {
     let shell = Shell::get();
     shell.unsaved.set(Some(unsaved));
     on_cleanup(move || shell.unsaved.set(None));
@@ -80,10 +82,16 @@ pub fn leave_then(shell: Shell, leave: impl Fn(Release) + Send + Sync + 'static)
 }
 
 impl Shell {
-    fn would_lose(self) -> bool {
+    /// The files whose work leaving would lose.
+    fn losing(self) -> Vec<String> {
         self.unsaved
             .get_untracked()
-            .is_some_and(|unsaved| untrack(|| unsaved.run(())))
+            .map(|unsaved| untrack(|| unsaved.run(())))
+            .unwrap_or_default()
+    }
+
+    fn would_lose(self) -> bool {
+        !self.losing().is_empty()
     }
 }
 
@@ -145,7 +153,10 @@ pub fn LeaveGuard() -> impl IntoView {
     let armed = StoredValue::new(None::<String>);
     Effect::new(move |_| {
         let url = here();
-        let lose = shell.unsaved.get().is_some_and(|unsaved| unsaved.run(()));
+        let lose = shell
+            .unsaved
+            .get()
+            .is_some_and(|unsaved| !unsaved.run(()).is_empty());
         if lose && armed.with_value(|a| a.as_deref() != Some(url.as_str())) {
             push_entry(&url);
             armed.set_value(Some(url));
@@ -233,7 +244,12 @@ pub fn LeaveGuard() -> impl IntoView {
         <Show when=move || shell.leaving.with(Option::is_some)>
             <Modal title=t(T::ManualLeaveTitle).to_owned() glyph=Glyph::EditText on_close=stay testid="leave-dialog"
                 initial_focus="[data-testid=leave-stay]">
-                <div class="dialog-body"><p>{t(T::ManualLeaveConfirm)}</p></div>
+                <div class="dialog-body">
+                    <p>{t(T::LeaveDraftsConfirm)}</p>
+                    <ul class="leave-files" data-testid="leave-files">
+                        {shell.losing().into_iter().map(|f| view! { <li class="mono small">{f}</li> }).collect_view()}
+                    </ul>
+                </div>
                 <div class="dialog-foot">
                     <button class="btn" data-testid="leave-stay" on:click=move |_| stay.run(())>{t(T::Cancel)}</button>
                     <button class="btn danger" data-testid="leave-go" on:click=move |_| leave.run(())>{t(T::ManualLeave)}</button>

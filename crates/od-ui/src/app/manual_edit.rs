@@ -77,6 +77,20 @@ pub struct Manual {
     read_seq: StoredValue<u32>,
     /// Which drafts are clean (match the source or were just written).
     book: StoredValue<mm::DraftBook>,
+    /// Other files' changes typed and not applied, by file: they come back
+    /// when the file shows again, and the leave guard lists them.
+    kept: RwSignal<BTreeMap<String, Kept>>,
+}
+
+/// A file's picked element with a change typed and not applied, kept while
+/// another file shows.
+#[derive(Clone)]
+struct Kept {
+    selected: String,
+    element: Option<Result<SourceElementResponse, String>>,
+    drafts: mm::Drafts,
+    book: mm::DraftBook,
+    tab: Tab,
 }
 
 impl Manual {
@@ -97,24 +111,110 @@ impl Manual {
             html: RwSignal::new(String::new()),
             read_seq: StoredValue::new(0),
             book: StoredValue::new(mm::DraftBook::default()),
+            kept: RwSignal::new(BTreeMap::new()),
         }
     }
 
-    /// Another file is shown: its layers, selection, history and what was
-    /// typed for its element go. A draft kept would be for an element no
-    /// longer picked, and the leave guard would ask about it.
-    pub fn forget(self) {
+    /// `now` is shown instead of `last`: the layers, selection and history
+    /// go. A change typed and not applied for `last`'s element is kept, and
+    /// `now`'s comes back. Undo stays with the file it was made on: none.
+    pub fn forget(self, last: Option<&str>, now: Option<&str>) {
+        if let (Some(last), Some(selected)) = (last, self.selected.get_untracked())
+            && self.unapplied()
+        {
+            let kept = Kept {
+                selected,
+                element: self.element.get_untracked(),
+                drafts: self.drafts(),
+                book: self.book.get_value(),
+                tab: self.tab.get_untracked(),
+            };
+            self.kept.update(|k| _ = k.insert(last.to_owned(), kept));
+        }
+        // The last file's element, if its read answers now, is not this one's.
+        self.read_seq.update_value(|n| *n = n.wrapping_add(1));
         self.layers.set(Vec::new());
         self.selected.set(None);
         self.element.set(None);
         self.history.update(History::clear);
         self.error.set(None);
-        for field in [
-            self.text, self.href, self.src, self.alt, self.attrs, self.html,
-        ] {
-            field.set(String::new());
-        }
+        self.set_drafts(mm::Drafts::default());
         self.book.set_value(mm::DraftBook::default());
+        let back = now
+            .filter(|f| self.kept.with_untracked(|k| k.contains_key(*f)))
+            .and_then(|f| {
+                let mut out = None;
+                self.kept.update(|k| out = k.remove(f));
+                out
+            });
+        if let Some(k) = back {
+            self.selected.set(Some(k.selected));
+            self.element.set(k.element);
+            self.set_drafts(k.drafts);
+            self.book.set_value(k.book);
+            self.tab.set(k.tab);
+        }
+    }
+
+    /// Files with a change typed and not applied, `shown` the file on
+    /// screen; tracks what the answer depends on.
+    pub fn unapplied_files(self, shown: Option<&str>) -> Vec<String> {
+        self.track_drafts();
+        let mut files: Vec<String> = self.kept.with(|k| k.keys().cloned().collect());
+        if let Some(file) = shown
+            && self.selected.with(Option::is_some)
+            && self.unapplied()
+        {
+            files.push(file.to_owned());
+        }
+        files
+    }
+
+    /// A write of `file` saved the drafts `sent` for `part`. `shown`: the
+    /// file is on screen, its drafts are the fields'; else they are kept,
+    /// and go once nothing is left to apply.
+    fn written(self, file: &str, shown: bool, part: mm::Part, sent: &mm::Drafts) {
+        if shown {
+            self.book.update_value(|book| book.written(part, sent));
+            return;
+        }
+        if !self.kept.with_untracked(|k| k.contains_key(file)) {
+            return;
+        }
+        self.kept.update(|k| {
+            if let Some(kept) = k.get_mut(file) {
+                kept.book.written(part, sent);
+                if !kept.book.dirty(&kept.drafts) {
+                    k.remove(file);
+                }
+            }
+        });
+    }
+
+    /// Drops the kept drafts of files `keep` refuses (deleted, renamed).
+    pub fn drop_gone(self, keep: impl Fn(&str) -> bool) {
+        if self.kept.with_untracked(|k| k.keys().all(|f| keep(f))) {
+            return;
+        }
+        self.kept.update(|k| k.retain(|f, _| keep(f)));
+    }
+
+    /// An image uploaded for `page`'s element, `shown` the file on screen
+    /// now. True when `page` shows and its field took it, to apply now;
+    /// else `page`'s kept draft takes it, to apply there (never here).
+    fn take_upload(self, page: &str, shown: Option<&str>, src: String) -> bool {
+        if shown == Some(page) {
+            self.src.set(src);
+            return true;
+        }
+        if self.kept.with_untracked(|k| k.contains_key(page)) {
+            self.kept.update(|k| {
+                if let Some(kept) = k.get_mut(page) {
+                    kept.drafts.src = src;
+                }
+            });
+        }
+        false
     }
 
     fn drafts(self) -> mm::Drafts {
@@ -174,7 +274,9 @@ impl Manual {
 impl StudioCtx {
     pub(super) fn enter_manual(self) {
         self.tools.manual.error.set(None);
-        bridge::post_main(&pb::layers_request());
+        // An element picked here before (its draft kept over a file
+        // switch) is outlined and read again.
+        self.manual_ready();
     }
 
     pub(super) fn leave_manual(self) {
@@ -291,6 +393,7 @@ impl StudioCtx {
             label: Some(VERSION_LABEL.to_owned()),
         };
         let tools = self.tools;
+        let file = req.file.clone();
         // As sent: what is typed while it saves is not written yet.
         let sent = m.drafts();
         // The write lands even if the Studio is left meanwhile; the panel
@@ -298,9 +401,12 @@ impl StudioCtx {
         let path = format!("{}/source-edits", self.base());
         let work = async move { api::post::<_, SourceEditResponse>(&path, &req).await };
         self.tasks.spawn_then(work, move |res| {
+            // Another file shown meanwhile: the panel, its history and its
+            // selection are that file's; only `file`'s kept draft follows.
+            let shown = self.active_untracked().as_deref() == Some(file.as_str());
             match res {
                 Ok(r) => {
-                    if let Some(before) = r.previous_version_id {
+                    if shown && let Some(before) = r.previous_version_id {
                         m.history.update(|h| {
                             h.record(Step {
                                 label: label.clone(),
@@ -310,10 +416,19 @@ impl StudioCtx {
                         });
                     }
                     tools.saved(&r.file.path, r.version.version);
-                    m.book.update_value(|book| book.written(part, &sent));
-                    after();
+                    m.written(&file, shown, part, &sent);
+                    if shown {
+                        after();
+                    }
                 }
-                Err(e) => m.error.set(Some(self.failed_to(T::ManualApplyFailed, &e))),
+                Err(e) => {
+                    let why = self.failed_to(T::ManualApplyFailed, &e);
+                    if shown {
+                        m.error.set(Some(why));
+                    } else {
+                        self.notice.set(Some(why));
+                    }
+                }
             }
             m.busy.set(false);
         });
@@ -466,19 +581,30 @@ impl StudioCtx {
                 prompt: None,
                 expect_version_id: Some(expect),
             };
-            match api::post::<_, RestoreVersionResponse>(&url, &req).await {
+            let res = api::post::<_, RestoreVersionResponse>(&url, &req).await;
+            // Another file shown meanwhile: the history is that file's.
+            let shown = self.active_untracked().as_deref() == Some(file.as_str());
+            match res {
                 // The fields follow the restored source on its read,
                 // except what was typed and not applied.
-                Ok(_) => {
+                Ok(_) if shown => {
                     m.history
                         .update(|h| if undo { h.undone() } else { h.redone() });
                 }
-                Err(e) => m
-                    .error
-                    .set(Some(self.failed_to(T::ManualHistoryFailed, &e))),
+                Ok(_) => {}
+                Err(e) => {
+                    let why = self.failed_to(T::ManualHistoryFailed, &e);
+                    if shown {
+                        m.error.set(Some(why));
+                    } else {
+                        self.notice.set(Some(why));
+                    }
+                }
             }
             m.busy.set(false);
-            self.reload_preview();
+            if shown {
+                self.reload_preview();
+            }
         });
     }
 
@@ -496,8 +622,11 @@ impl StudioCtx {
                     m.busy.set(false);
                     self.refresh_files();
                     if let Some(path) = paths.first() {
-                        m.src.set(mm::relative_url(&page, path));
-                        self.manual_save_content();
+                        let src = mm::relative_url(&page, path);
+                        let shown = self.active_untracked();
+                        if m.take_upload(&page, shown.as_deref(), src) {
+                            self.manual_save_content();
+                        }
                     }
                 }
                 Err(e) => {
@@ -521,13 +650,6 @@ fn kind_glyph(kind: &str) -> Glyph {
 #[component]
 pub fn ManualEditPanel(ctx: StudioCtx) -> impl IntoView {
     let m = ctx.tools.manual;
-    // While the panel is open, a change typed and not applied asks before
-    // the page is left. Tracked: the guard holds a history entry once the
-    // answer turns true.
-    super::leave_guard::guard_leaving(Callback::new(move |()| {
-        m.track_drafts();
-        m.unapplied()
-    }));
     let layers = move || {
         let list = m.layers.get();
         if list.is_empty() {
@@ -831,26 +953,133 @@ mod forget_tests {
     use super::*;
     use od_contracts::SourceElementResponse;
 
+    fn lead() -> SourceElementResponse {
+        SourceElementResponse {
+            tag: "p".to_owned(),
+            attributes: Vec::new(),
+            outer_html: "<p class=\"lead\">was</p>".to_owned(),
+            text: "was".to_owned(),
+            text_only: true,
+        }
+    }
+
+    /// `m` with `p.lead` of the shown file picked and read, and `typed` in
+    /// its text field.
+    fn picked(m: Manual, typed: &str) {
+        let el = lead();
+        m.selected.set(Some("p.lead".to_owned()));
+        m.book.update_value(|book| {
+            book.read(&mm::Drafts::of(&el), &el, false);
+        });
+        m.set_drafts(mm::Drafts::of(&el));
+        m.element.set(Some(Ok(el)));
+        m.text.set(typed.to_owned());
+    }
+
     #[test]
-    fn another_file_leaves_no_draft_for_the_leave_guard() {
+    fn a_change_not_applied_comes_back_with_its_file() {
         let owner = Owner::new();
         owner.with(|| {
             let m = Manual::new();
-            let el = SourceElementResponse {
-                tag: "p".to_owned(),
-                attributes: Vec::new(),
-                outer_html: "<p class=\"lead\">was</p>".to_owned(),
-                text: "was".to_owned(),
-                text_only: true,
-            };
-            m.book.update_value(|book| {
-                book.read(&mm::Drafts::of(&el), &el, false);
-            });
-            m.text.set("Typed not applied".to_owned());
-            assert!(m.unapplied(), "a change typed");
-            m.forget();
-            assert!(!m.unapplied(), "nothing left to ask about");
-            assert_eq!(m.text.get_untracked(), "");
+            picked(m, "Typed not applied");
+            m.tab.set(Tab::Html);
+            assert_eq!(m.unapplied_files(Some("a.html")), ["a.html"]);
+            m.forget(Some("a.html"), Some("b.html"));
+            assert_eq!(m.text.get_untracked(), "", "b.html shows none of it");
+            assert!(m.selected.get_untracked().is_none());
+            assert!(!m.unapplied(), "b.html has nothing typed");
+            assert_eq!(
+                m.unapplied_files(Some("b.html")),
+                ["a.html"],
+                "the leave guard still lists a.html"
+            );
+            m.forget(Some("b.html"), Some("a.html"));
+            assert_eq!(m.text.get_untracked(), "Typed not applied");
+            assert_eq!(m.selected.get_untracked().as_deref(), Some("p.lead"));
+            assert_eq!(m.tab.get_untracked(), Tab::Html);
+            assert!(m.unapplied(), "still to apply, on a.html");
+            assert_eq!(m.unapplied_files(Some("a.html")), ["a.html"]);
+        });
+    }
+
+    #[test]
+    fn a_file_gone_takes_its_kept_change() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let m = Manual::new();
+            picked(m, "Typed");
+            m.forget(Some("a.html"), Some("b.html"));
+            m.drop_gone(|f| f != "a.html");
+            assert!(
+                m.unapplied_files(Some("b.html")).is_empty(),
+                "a.html was deleted"
+            );
+        });
+    }
+
+    #[test]
+    fn nothing_typed_keeps_nothing() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let m = Manual::new();
+            picked(m, "was");
+            m.forget(Some("a.html"), Some("b.html"));
+            m.forget(Some("b.html"), Some("a.html"));
+            assert!(
+                m.selected.get_untracked().is_none(),
+                "a clean pick starts over"
+            );
+            assert!(m.unapplied_files(Some("a.html")).is_empty());
+        });
+    }
+
+    #[test]
+    fn a_late_read_of_the_last_file_is_dropped() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let m = Manual::new();
+            let seq = m.read_seq.get_value();
+            m.forget(Some("a.html"), Some("b.html"));
+            assert_ne!(
+                m.read_seq.get_value(),
+                seq,
+                "a read sent for a.html is stale"
+            );
+        });
+    }
+
+    #[test]
+    fn a_write_that_lands_after_a_switch_cleans_its_own_file_only() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let m = Manual::new();
+            picked(m, "Sent");
+            let sent = m.drafts();
+            m.forget(Some("a.html"), Some("b.html"));
+            // b.html's own element, typed too.
+            picked(m, "On b");
+            m.written("a.html", false, mm::Part::Content, &sent);
+            assert!(m.unapplied(), "b.html's text is still not applied");
+            assert_eq!(
+                m.unapplied_files(Some("b.html")),
+                ["b.html"],
+                "a.html's draft was written: nothing left to ask about"
+            );
+        });
+    }
+
+    #[test]
+    fn an_image_uploaded_after_a_switch_goes_to_its_own_file() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let m = Manual::new();
+            picked(m, "Typed");
+            m.forget(Some("a.html"), Some("b.html"));
+            let now = m.take_upload("a.html", Some("b.html"), "assets/new.png".to_owned());
+            assert!(!now, "nothing applied to b.html");
+            assert_eq!(m.src.get_untracked(), "", "b.html's field untouched");
+            m.forget(Some("b.html"), Some("a.html"));
+            assert_eq!(m.src.get_untracked(), "assets/new.png");
         });
     }
 }

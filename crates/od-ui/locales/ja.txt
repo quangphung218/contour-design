@@ -592,6 +592,7 @@ SlideN = スライド {0}
 CommentMode = コメントを追加
 CommentModeOn = 要素をクリックしてコメント
 CommentPlaceholder = ここをどう変更しますか？
+CommentReselect = この要素はページ上にありません。コメントする要素を選び直してください。
 AddComment = コメントを追加
 RemoveComment = 削除
 Detach = 送信しない
@@ -1738,7 +1739,7 @@ ProjectNameRequired = プロジェクト名は必須です。
 ApiKeyRequired = APIキーが必要です
 ManualLeaveTitle = このページから移動しますか？
 ManualLeave = 移動する
-ManualLeaveConfirm = 未適用の編集があります。破棄して移動しますか？
+LeaveDraftsConfirm = これらのファイルに未送信のコメントか未適用の編集があります。破棄して移動しますか？
 # Desktop app menu bar
 MenuAbout = {0}について
 MenuServices = サービス

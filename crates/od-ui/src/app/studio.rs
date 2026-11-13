@@ -31,7 +31,7 @@ use crate::events::{
 use crate::file_tree::is_markdown;
 use crate::highlight::{Lang, highlight};
 use crate::i18n::{T, t, tf};
-use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Picked, Slide};
+use crate::preview_bridge::{self as pb, BridgeMsg, DeckState, Slide};
 use crate::workspace::{
     QueueHold, Queued, Tabs, decode_held, encode_held, held_for, queue_hold, touch_recent,
 };
@@ -324,8 +324,9 @@ pub struct StudioCtx {
     /// Number of the latest comment load; older answers are dropped.
     pub(super) comments_seq: StoredValue<u32>,
     pub comment_mode: RwSignal<bool>,
-    /// The element picked in comment mode, waiting for its note.
-    pub comment_draft: RwSignal<Option<Picked>>,
+    /// Comments being written, by file: the element picked in comment
+    /// mode, the note and images typed. Another file shown keeps them.
+    pub comment_drafts: RwSignal<super::preview_comments::CommentDrafts>,
     /// Where each shown comment's element is now (`od:located`), so pins
     /// follow scroll and reflow; missing ids fall back to the stored box.
     pub pin_rects: RwSignal<HashMap<String, CommentRect>>,
@@ -1241,10 +1242,8 @@ impl StudioCtx {
             // Comments are placed on the rendered page.
             self.show_code.set(false);
         }
+        // Off keeps the drafts: their box shows again with comment mode.
         self.comment_mode.set(on);
-        if !on {
-            self.comment_draft.set(None);
-        }
         bridge::post_main(&pb::select_mode(on, false));
     }
 
@@ -1264,6 +1263,7 @@ impl StudioCtx {
             }
             (Source::Main, BridgeMsg::Located { items }) => {
                 self.on_located(&items);
+                self.on_draft_located(&items);
                 self.pin_rects.set(
                     items
                         .into_iter()
@@ -1311,7 +1311,7 @@ impl StudioCtx {
             (Source::Main, BridgeMsg::Esc) => self.presenting.set(false),
             (Source::Main, BridgeMsg::Select(picked)) => {
                 if self.comment_mode.get_untracked() {
-                    self.comment_draft.set(Some(picked));
+                    self.pick_for_comment(picked);
                 } else if self.tools.tool.get_untracked() == Some(Tool::Inspect) {
                     self.inspect(&picked.selector);
                 } else if self.tools.tool.get_untracked() == Some(Tool::Manual) {
@@ -1678,7 +1678,7 @@ pub fn Studio() -> impl IntoView {
         comment_feed: RwSignal::new(Feed::default()),
         comments_seq: StoredValue::new(0),
         comment_mode: RwSignal::new(false),
-        comment_draft: RwSignal::new(None),
+        comment_drafts: RwSignal::new(Default::default()),
         pin_rects: RwSignal::new(HashMap::new()),
         anchors: RwSignal::new(HashMap::new()),
         frame_ready: RwSignal::new(0),
@@ -1716,6 +1716,10 @@ pub fn Studio() -> impl IntoView {
     preview_tools::watch_lint(ctx);
     super::deck::sync_deck(ctx);
     super::composer::keep_draft(ctx.draft, ctx.chat, ctx.project_id, ctx.conversation_id);
+    // Leaving the Studio asks while any file has a comment not sent or a
+    // Manual edit change not applied, and names the files.
+    super::leave_guard::guard_leaving(Callback::new(move |()| ctx.unsent_files()));
+    super::preview_comments::forget_gone_drafts(ctx);
     ctx.keep_held_queue();
     // The command palette offers this Studio's commands while it is open.
     shell.studio.set(Some(ctx));
@@ -2091,16 +2095,9 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     // The file shown, not its content: a reload of the same file (the
     // agent or the watcher wrote it) keeps what the user is typing over
     // it, and the views that hold it (QA-095).
+    // Another file keeps the comment draft of the last one, for when it
+    // shows again.
     let shown = Memo::new(move |_| ctx.active());
-    // Another file: the comment draft was on an element of the last one.
-    Effect::new(move |prev: Option<()>| {
-        // Read, not `track()`: a memo never read has no sources and
-        // never changes.
-        shown.with(|_| ());
-        if prev.is_some() {
-            ctx.comment_draft.set(None);
-        }
-    });
     // Speaker notes follow the document and its slide count.
     let notes_key = Memo::new(move |_| (src.get(), ctx.deck.with(|d| d.map(|d| d.count))));
     Effect::new(move |_| match notes_key.get() {

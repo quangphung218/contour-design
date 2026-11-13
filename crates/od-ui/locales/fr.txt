@@ -592,6 +592,7 @@ SlideN = Diapositive {0}
 CommentMode = Ajouter un commentaire
 CommentModeOn = Cliquez sur un élément à commenter
 CommentPlaceholder = Qu'est-ce qui doit changer ici ?
+CommentReselect = Cet élément n'est plus sur la page. Choisissez-en un à commenter.
 AddComment = Ajouter
 RemoveComment = Retirer
 Detach = Ne pas envoyer
@@ -1739,7 +1740,7 @@ ProjectNameRequired = Un nom de projet est requis.
 ApiKeyRequired = Clé API requise
 ManualLeaveTitle = Quitter cette page ?
 ManualLeave = Quitter
-ManualLeaveConfirm = Une modification n’est pas appliquée. Quitter et la perdre ?
+LeaveDraftsConfirm = Ces fichiers ont un commentaire non envoyé ou une modification non appliquée. Quitter et les perdre ?
 # Desktop app menu bar
 MenuAbout = À propos de {0}
 MenuServices = Services

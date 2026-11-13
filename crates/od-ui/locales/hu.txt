@@ -592,6 +592,7 @@ SlideN = {0}. dia
 CommentMode = Megjegyzés hozzáadása
 CommentModeOn = Kattints egy elemre a megjegyzéshez
 CommentPlaceholder = Mit kell itt módosítani?
+CommentReselect = Ez az elem már nincs az oldalon. Válasszon egyet a megjegyzéshez.
 AddComment = Hozzáadás
 RemoveComment = Eltávolítás
 Detach = Ne küldd el
@@ -1732,7 +1733,7 @@ ProjectNameRequired = A projekt neve kötelező.
 ApiKeyRequired = API-kulcs szükséges
 ManualLeaveTitle = Kilép az oldalról?
 ManualLeave = Kilépés
-ManualLeaveConfirm = Egy módosítás még nincs alkalmazva. Kilép és elveti?
+LeaveDraftsConfirm = Ezekben a fájlokban el nem küldött megjegyzés vagy nem alkalmazott módosítás van. Kilép és elveti őket?
 # Desktop app menu bar
 MenuAbout = A(z) {0} névjegye
 MenuServices = Szolgáltatások

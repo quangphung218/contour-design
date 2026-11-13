@@ -592,6 +592,7 @@ SlideN = الشريحة {0}
 CommentMode = أضف تعليقًا
 CommentModeOn = انقر على عنصر للتعليق
 CommentPlaceholder = ما الذي يجب تغييره هنا؟
+CommentReselect = لم يعد هذا العنصر في الصفحة. اختر عنصرًا للتعليق عليه.
 AddComment = إضافة تعليق
 RemoveComment = إزالة
 Detach = لا ترسل
@@ -1732,7 +1733,7 @@ ProjectNameRequired = اسم المشروع مطلوب.
 ApiKeyRequired = مفتاح API مطلوب
 ManualLeaveTitle = مغادرة هذه الصفحة؟
 ManualLeave = مغادرة
-ManualLeaveConfirm = هناك تعديل لم يُطبَّق بعد. هل تغادر وتفقده؟
+LeaveDraftsConfirm = في هذه الملفات تعليق لم يُرسل أو تعديل لم يُطبَّق. هل تغادر وتفقدها؟
 # Desktop app menu bar
 MenuAbout = حول {0}
 MenuServices = الخدمات

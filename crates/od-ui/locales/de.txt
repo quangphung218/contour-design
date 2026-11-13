@@ -592,6 +592,7 @@ SlideN = Folie {0}
 CommentMode = Kommentar hinzufügen
 CommentModeOn = Element anklicken, um zu kommentieren
 CommentPlaceholder = Was soll sich hier ändern?
+CommentReselect = Dieses Element ist nicht mehr auf der Seite. Wähle eines zum Kommentieren aus.
 AddComment = Kommentieren
 RemoveComment = Entfernen
 Detach = Nicht senden
@@ -1733,7 +1734,7 @@ ProjectNameRequired = Ein Projektname ist erforderlich.
 ApiKeyRequired = API-Key erforderlich
 ManualLeaveTitle = Diese Seite verlassen?
 ManualLeave = Verlassen
-ManualLeaveConfirm = Eine Änderung ist noch nicht angewendet. Verlassen und verwerfen?
+LeaveDraftsConfirm = Diese Dateien haben einen nicht gesendeten Kommentar oder eine nicht angewendete Änderung. Verlassen und verwerfen?
 # Desktop app menu bar
 MenuAbout = Über {0}
 MenuServices = Dienste

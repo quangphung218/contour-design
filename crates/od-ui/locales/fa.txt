@@ -592,6 +592,7 @@ SlideN = اسلاید {0}
 CommentMode = افزودن نظر
 CommentModeOn = برای نظر دادن روی یک عنصر کلیک کنید
 CommentPlaceholder = اینجا چه چیزی باید تغییر کند؟
+CommentReselect = این عنصر دیگر در صفحه نیست. عنصری را برای نظر دادن انتخاب کنید.
 AddComment = افزودن نظر
 RemoveComment = حذف
 Detach = ارسال نشود
@@ -1738,7 +1739,7 @@ ProjectNameRequired = نام پروژه الزامی است.
 ApiKeyRequired = کلید API لازم است
 ManualLeaveTitle = از این صفحه خارج می‌شوید؟
 ManualLeave = خروج
-ManualLeaveConfirm = یک ویرایش هنوز اعمال نشده است. خارج شوید و آن را از دست بدهید؟
+LeaveDraftsConfirm = این فایل‌ها نظر ارسال‌نشده یا ویرایش اعمال‌نشده دارند. خارج شوید و آن‌ها را از دست بدهید؟
 # Desktop app menu bar
 MenuAbout = درباره {0}
 MenuServices = سرویس‌ها

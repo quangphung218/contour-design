@@ -257,10 +257,11 @@ impl Tools {
         kid
     }
 
-    /// Another file is shown: its edits, tweaks and lint start over. What
-    /// is tied to its own file stays for when it shows again: "Saved to"
-    /// (`status_for`) and a text edit not written, with its text (QA-087).
-    pub fn forget_document(self) {
+    /// `now` is shown instead of `last`: its edits, tweaks and lint start
+    /// over. What is tied to its own file stays for when it shows again:
+    /// "Saved to" (`status_for`), a text edit not written, with its text
+    /// (QA-087), and a Manual edit change not applied.
+    pub fn forget_document(self, last: Option<&str>, now: Option<&str>) {
         // The last file's lint, if it answers now, is not this one's.
         self.lint_seq.update_value(|n| *n = n.wrapping_add(1));
         self.inspected.set(None);
@@ -269,7 +270,7 @@ impl Tools {
         self.tweaks.set(Vec::new());
         self.tweak_values.set(BTreeMap::new());
         self.lint.set(None);
-        self.manual.forget();
+        self.manual.forget(last, now);
     }
 
     /// A status line for whatever file is shown.
@@ -1775,16 +1776,15 @@ pub fn watch_lint(ctx: StudioCtx) {
     });
     // Another file: its tool state starts over.
     let shown = Memo::new(move |_| ctx.active());
-    Effect::new(move |prev: Option<()>| {
-        // Read, not `track()`: a memo never read has no sources and
-        // never changes.
-        shown.with(|_| ());
-        if prev.is_some() {
-            ctx.tools.forget_document();
+    Effect::new(move |last: Option<Option<String>>| {
+        let now = shown.get();
+        if let Some(last) = last {
+            ctx.tools.forget_document(last.as_deref(), now.as_deref());
             if ctx.tools.tool.get_untracked() == Some(Tool::Tweaks) {
                 ctx.set_tool(None);
             }
         }
+        now
     });
 }
 
@@ -1908,7 +1908,7 @@ mod tests {
             let tools = Tools::new();
             // `refresh_lint` keeps the number it was asked with.
             let asked = tools.lint_seq.get_value();
-            tools.forget_document();
+            tools.forget_document(Some("a.html"), Some("b.html"));
             assert_ne!(
                 tools.lint_seq.get_value(),
                 asked,
@@ -1930,7 +1930,7 @@ mod tests {
                 text: "typed".to_owned(),
                 message: "no".to_owned(),
             }]);
-            tools.forget_document();
+            tools.forget_document(Some("a.html"), Some("b.html"));
             assert_eq!(tools.status_for.get_untracked().as_deref(), Some("a.html"));
             assert!(
                 tools.status.get_untracked().is_some(),
