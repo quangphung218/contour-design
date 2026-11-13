@@ -121,6 +121,9 @@ for (const name of engines) {
         const df = sp.frames().find((f) => f !== sp.mainFrame());
         await df.waitForFunction(() => !!document.getElementById('plain'));
         for (const [where, frame] of [['app', sp.mainFrame()], ['design frame', df]]) {
+          // Only the Mac's WebKit goes Back on the key (Linux's does not),
+          // so the control without keys.js proves something there only.
+          if (!guarded && process.platform !== 'darwin') continue;
           assert.equal(await wentBack(sp, frame), !guarded, `webkit, ${where}, the page stops the key: ${guarded ? 'stays' : 'goes Back without keys.js'}`);
         }
         await ctx.close();
