@@ -377,13 +377,15 @@ mod tests {
         for event in LEAVING {
             let attr = format!("on:{event}");
             for (at, _) in src.match_indices(&attr) {
-                let rest = &src[at + attr.len()..];
+                // The macro allows spaces before the `=` (rustfmt-style).
+                let rest = src[at + attr.len()..].trim_start();
                 // The value after `=`, or after a modifier first (`:target`).
                 let value = match rest.as_bytes().first() {
                     Some(b'=') => &rest[1..],
                     Some(b':') => match rest.find('=') {
                         Some(eq)
                             if rest[1..eq]
+                                .trim_end()
                                 .bytes()
                                 .all(|b| b.is_ascii_alphanumeric() || b == b'_') =>
                         {
@@ -458,6 +460,13 @@ mod tests {
         // Another event that starts with the same name is not one of them.
         let other = format!("<div on:{}=move |_| x.get()/>", "inputx");
         assert!(unguarded("a.rs", &other).is_empty());
+        // rustfmt-style spaces around `=` hide nothing.
+        let spaced = format!("<input on:{} = move |_| save()/>", "blur");
+        assert_eq!(unguarded("a.rs", &spaced), ["a.rs:1 on:blur"]);
+        let spaced_target = format!("<input on:{}:target = move |ev| x.set(ev)/>", "input");
+        assert_eq!(unguarded("a.rs", &spaced_target), ["a.rs:1 on:input"]);
+        let spaced_live = format!("<input on:{} =\n    live(move |_| save())/>", "change");
+        assert!(unguarded("a.rs", &spaced_live).is_empty());
     }
 
     #[test]
