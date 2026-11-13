@@ -54,7 +54,7 @@ SH
 chmod +x "$work/bin/npx"
 step "macos-universal/Tauri bundle" "$work/macos-bundle.sh"
 step "bundle/Tauri bundle" "$work/bundle.sh"
-bundle() { (cd "$work" && env WORK="$work" PATH="$work/bin:$PATH" TAURI_CLI_VERSION=0 "$@" bash "$work/macos-bundle.sh") >"$work/out" 2>&1; }
+bundle() { (cd "$work" && env WORK="$work" RUNNER_TEMP="$work" PATH="$work/bin:$PATH" TAURI_CLI_VERSION=0 "$@" bash "$work/macos-bundle.sh") >"$work/out" 2>&1; }
 empty="APPLE_CERTIFICATE= APPLE_CERTIFICATE_PASSWORD= APPLE_SIGNING_IDENTITY= APPLE_ID= APPLE_PASSWORD= APPLE_TEAM_ID="
 bundle RUNNER_OS=macOS $empty
 check "no secrets: unsigned build, warning, no empty APPLE_* passed on" '[ ! -s "$work/npx-env" ] && grep -q "::warning::macOS signing secrets are not set" "$work/out"'
