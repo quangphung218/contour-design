@@ -15,6 +15,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Studio: a comment on a deck is saved on the slide its element was picked on; before, it took the slide shown when Add was pressed, so a comment picked on slide 2 and sent from slide 1 (or after another deck was shown) landed on slide 1. The comment box shows only over its own slide. A comment being sent can no longer be sent twice or cancelled (which deleted its images) after a file switch.
+- Studio: Add on a comment waits for an image still uploading (the box says so); before, the comment was saved without it and the image stayed in `comments/` with nothing pointing to it. An image that still lands after a comment is saved stays in the box for the next one. On a deck, picking an element on another slide than the comment being written no longer moves its note there unseen: the box says the comment is on slide N, with Go to slide N and Discard it.
 
 ### Known issues
 

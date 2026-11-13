@@ -819,6 +819,10 @@ messages! {
     CommentPlaceholder => "What should change here?", "Cần sửa gì ở đây?";
     CommentReselect => "This element is no longer on the page. Pick one to comment on.", "Phần tử này không còn trên trang. Chọn lại phần tử để bình luận.";
     AddComment => "Add comment", "Thêm bình luận";
+    CommentUploading => "Uploading the image… Add waits for it.", "Đang tải ảnh lên… Chờ tải xong mới thêm được.";
+    CommentDraftElsewhere => "A comment on slide {0} is not sent yet.", "Bình luận ở slide {0} chưa gửi.";
+    CommentGoToDraft => "Go to slide {0}", "Về slide {0}";
+    CommentDiscardDraft => "Discard it", "Bỏ bình luận đó";
     RemoveComment => "Remove", "Gỡ";
     Detach => "Don't send", "Không gửi";
     AttachToNext => "Send with next message", "Gửi kèm tin nhắn sau";
