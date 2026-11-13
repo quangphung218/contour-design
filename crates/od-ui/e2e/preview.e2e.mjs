@@ -603,6 +603,52 @@ addEventListener('keydown', function (e) {
   await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
   results.deckDrafts = 'sent with the slide picked on; the box hides over another slide, within a deck and across decks; typing goes on over a reload on slide 2';
 
+  // An element picked over slide 1 while a comment waits on slide 2: the
+  // note does not move to it unseen; the box says where the draft is.
+  const elsewhere = page.getByTestId('comment-elsewhere');
+  await pickTwo();
+  await page.getByTestId('comment-note').click();
+  await page.keyboard.type('Hidden on two');
+  await page.getByTestId('deck-prev').click();
+  await onSlide('A one', '1 / 3');
+  const pickOne = async () => until(async () => {
+    await frame.getByRole('heading', { name: 'A one' }).click({ timeout: 2000 });
+    return (await elsewhere.count()) === 1;
+  }, 'the box over slide 1 says the draft is on slide 2');
+  await pickOne();
+  assert.equal(await page.getByTestId('comment-draft').count(), 0, 'the slide 2 draft over slide 1');
+  assert.match(await elsewhere.textContent(), /slide 2/);
+  await page.getByTestId('comment-elsewhere-go').click();
+  await onSlide('A two', '2 / 3');
+  await elsewhere.waitFor({ state: 'detached' });
+  await page.getByTestId('comment-draft').waitFor();
+  assert.match(await page.getByTestId('comment-draft').textContent(), /A two/, 'still on its element');
+  await page.getByTestId('comment-note').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' still');
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Hidden on two still');
+  // Given up for the element picked on slide 1: a new draft there, empty.
+  await page.getByTestId('deck-prev').click();
+  await onSlide('A one', '1 / 3');
+  await pickOne();
+  await page.getByTestId('comment-elsewhere-discard').click();
+  await page.getByTestId('comment-draft').waitFor();
+  assert.match(await page.getByTestId('comment-draft').textContent(), /A one/, 'on the element picked');
+  assert.equal(await page.getByTestId('comment-note').inputValue(), '', 'the slide 2 note given up');
+  await page.getByTestId('deck-next').click();
+  await onSlide('A two', '2 / 3');
+  assert.equal(await page.getByTestId('comment-draft').count(), 0, 'nothing left on slide 2');
+  await page.getByTestId('deck-prev').click();
+  await onSlide('A one', '1 / 3');
+  await page.getByTestId('comment-note').click();
+  await page.keyboard.type('On one');
+  posted = commentPosts.length;
+  await page.getByTestId('comment-add').click();
+  await until(async () => commentPosts.length === posted + 1, 'the slide 1 comment sent');
+  assert.deepEqual([commentPosts.at(-1).note, commentPosts.at(-1).slideIndex], ['On one', 0]);
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  results.deckPickElsewhere = 'a pick over another slide keeps the hidden draft, says where it is, goes back to it or gives it up';
+
   // A comment being sent: Cancel and Escape do not drop it or its image,
   // and the box shown again after a switch does not send it twice.
   await row('other.html').click();
@@ -632,8 +678,54 @@ addEventListener('keydown', function (e) {
   await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
   assert.equal(commentPosts.length, posted + 1, 'sent once');
   assert.ok((await files()).includes(sendingImage), 'the image of the comment sent is kept');
+
+  // An image still uploading: Add (and Enter) wait for it, so it is not
+  // left out of the comment and its file orphaned.
+  const pickOther = async () => until(async () => {
+    await frame.locator('#other').click({ timeout: 2000 });
+    return (await page.getByTestId('comment-draft').count()) === 1;
+  }, 'a draft on other.html again');
+  // Cancelled while it uploads, then picked again: the image is not the
+  // new draft's, and its file goes.
+  await pickOther();
+  const upCancelled = await held(/\/upload$/);
+  await page.getByTestId('comment-image-input').setInputFiles({ name: 'dropped.png', mimeType: 'image/png', buffer: PNG });
+  await upCancelled.hit;
+  await page.getByTestId('comment-cancel').click();
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  await pickOther();
+  await upCancelled.release();
+  await until(async () => !(await files()).some((f) => f.startsWith('comments/dropped')), 'the image of the draft cancelled deleted');
+  await stays(async () => (await page.getByTestId('draft-image').count()) === 0, 'the image of the draft cancelled in the new one');
+  assert.equal(await page.getByTestId('comment-uploading').count(), 0, 'the new draft waits for the image of the cancelled one');
+  await page.getByTestId('comment-note').click();
+  await page.keyboard.type('With a late image');
+  const up = await held(/\/upload$/);
+  await page.getByTestId('comment-image-input').setInputFiles({ name: 'late.png', mimeType: 'image/png', buffer: PNG });
+  await up.hit;
+  await page.getByTestId('comment-uploading').waitFor();
+  assert.ok(await page.getByTestId('comment-add').isDisabled(), 'Add while the image uploads');
+  posted = commentPosts.length;
+  await page.getByTestId('comment-note').press('Enter');
+  // Away and back: the box built again still waits for the image.
+  await row('deck-b.html').click();
+  await onSlide('B one', '1 / 3');
+  await row('other.html').click();
+  await frame.locator('#other').waitFor();
+  await page.getByTestId('comment-draft').waitFor();
+  assert.ok(await page.getByTestId('comment-add').isDisabled(), 'Add while the image uploads, box shown again');
+  assert.equal(commentPosts.length, posted, 'Enter sent it without the image');
+  await up.release();
+  await page.getByTestId('draft-image').waitFor();
+  await page.getByTestId('comment-uploading').waitFor({ state: 'detached' });
+  const lateImage = (await files()).find((f) => f.startsWith('comments/late'));
+  assert.ok(lateImage, 'the image uploaded');
+  await page.getByTestId('comment-add').click();
+  await until(async () => commentPosts.length === posted + 1, 'the comment with the late image sent');
+  assert.deepEqual(commentPosts.at(-1).attachments.map((a) => a.path ?? a), [lateImage], 'sent with its image');
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
   await page.getByTestId('comment-mode').click();
-  results.commentSending = 'Cancel off, Escape kept, no second send after a switch, image kept';
+  results.commentSending = 'Cancel off, Escape kept, no second send after a switch, image kept; Add waits for an image uploading';
 
   // The Comments tab again, as the steps below expect it.
   await page.getByTestId('comments-tab').click();

@@ -15,6 +15,7 @@ use crate::i18n::{T, t};
 use crate::preview_bridge::{self as pb, Located};
 use leptos::prelude::*;
 use od_contracts::{CommentStatus, CommentsResponse, PreviewComment};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 impl StudioCtx {
     /// The list a comment load would be for now (`None`: no conversation,
@@ -361,12 +362,16 @@ pub fn DraftImages(
     error: RwSignal<Option<String>>,
 ) -> impl IntoView {
     let input = NodeRef::<leptos::html::Input>::new();
-    let busy = RwSignal::new(false);
     let here = Tasks::here();
     let file = StoredValue::new(file);
     let sending = move || {
         ctx.comment_drafts
             .with(|d| file.with_value(|f| d.get(f).is_some_and(|d| d.sending)))
+    };
+    // Kept in the draft: Add waits for it, and a box shown again knows.
+    let busy = move || {
+        ctx.comment_drafts
+            .with(|d| file.with_value(|f| d.get(f).is_some_and(|d| !d.uploads.is_empty())))
     };
     let images = move || {
         ctx.comment_drafts.with(|d| {
@@ -386,27 +391,36 @@ pub fn DraftImages(
         if files.is_empty() {
             return;
         }
-        busy.set(true);
         let file = file.get_value();
+        let token = NEXT_UPLOAD.fetch_add(1, Ordering::Relaxed);
+        ctx.comment_drafts.update(|d| {
+            if let Some(d) = d.get_mut(&file) {
+                d.uploads.push(token);
+            }
+        });
         // The Studio's task: the images land in the draft even if its box
         // went meanwhile (another file shown).
         ctx.tasks.spawn(async move {
             let res =
                 super::files_panel::upload(ctx, T::CommentImageFailed, files, COMMENT_IMAGES_DIR)
                     .await;
-            if here.alive() {
-                busy.set(false);
+            // The draft this upload was for: not one cancelled meanwhile,
+            // nor a new one picked since.
+            let mine = ctx
+                .comment_drafts
+                .with_untracked(|d| d.get(&file).is_some_and(|d| d.uploads.contains(&token)));
+            let landed = res.as_deref().unwrap_or_default();
+            if mine {
+                ctx.comment_drafts.update(|d| {
+                    if let Some(d) = d.get_mut(&file) {
+                        d.uploads.retain(|t| *t != token);
+                        d.images.extend_from_slice(landed);
+                    }
+                });
             }
             match res {
                 Ok(paths) => {
-                    let kept = ctx.comment_drafts.with_untracked(|d| d.contains_key(&file));
-                    if kept {
-                        ctx.comment_drafts.update(|d| {
-                            if let Some(d) = d.get_mut(&file) {
-                                d.images.extend(paths);
-                            }
-                        });
-                    } else {
+                    if !mine {
                         // Cancelled meanwhile: nothing holds them.
                         ctx.drop_draft_images(&paths);
                     }
@@ -445,7 +459,7 @@ pub fn DraftImages(
             <button
                 class="btn small ghost"
                 data-testid="comment-attach-image"
-                disabled=move || { let full = images().len() >= od_contracts::MAX_COMMENT_IMAGES; busy.get() || sending() || full }
+                disabled=move || { let full = images().len() >= od_contracts::MAX_COMMENT_IMAGES; busy() || sending() || full }
                 on:click=move |_| { if let Some(el) = input.get() { el.click(); } }
             >
                 {icon(Glyph::Image)}{t(T::CommentAttachImage)}
@@ -453,6 +467,9 @@ pub fn DraftImages(
         </div>
     }
 }
+
+/// Tells one image upload of a comment draft from another.
+static NEXT_UPLOAD: AtomicU32 = AtomicU32::new(0);
 
 /// Project folder of images attached to comments.
 const COMMENT_IMAGES_DIR: &str = "comments";
