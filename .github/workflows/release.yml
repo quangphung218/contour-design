@@ -334,7 +334,9 @@ jobs:
         run: |
           mkdir -p dist-release
           bundle=target/universal-apple-darwin/release/bundle
-          find "$bundle" -maxdepth 2 -type f -name '*.dmg' \
+          # Only the finished .dmg (Tauri moves it to bundle/dmg): a bundle
+          # tried again can leave hdiutil's rw.<pid>.*.dmg in bundle/macos.
+          find "$bundle/dmg" -maxdepth 1 -type f -name '*.dmg' \
             -exec cp {} dist-release/ \;
           # The updater's bundle is Contour.app.tar.gz: named like the .dmg.
           for f in "$bundle"/macos/*.app.tar.gz "$bundle"/macos/*.app.tar.gz.sig; do
