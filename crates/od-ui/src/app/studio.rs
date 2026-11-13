@@ -1594,6 +1594,13 @@ pub(super) fn is_editing(ev: &web_sys::KeyboardEvent) -> bool {
     is_editing_target(ev.target())
 }
 
+/// Delete on a focused item (a tab, a terminal tab) removes it. A Mac's
+/// delete key sends `Backspace`; its Delete (fn ⌫) is the forward one
+/// (QA-093).
+fn is_delete_key(ev: &web_sys::KeyboardEvent) -> bool {
+    matches!(ev.key().as_str(), "Delete" | "Backspace")
+}
+
 /// Whether `target` is a text field (input, textarea, editable, terminal).
 pub(super) fn is_editing_target(target: Option<web_sys::EventTarget>) -> bool {
     use wasm_bindgen::JsCast;
@@ -1893,9 +1900,9 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                         let close_key = path.clone();
                         view! {
                             <div class="tab" class:active=active role="presentation" data-testid="tab" title=path.clone()>
-                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete"
+                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete Backspace"
                                     on:click=move |_| ctx.open_file(&open)
-                                    on:keydown=move |ev| if ev.key() == "Delete" { ev.prevent_default(); ctx.tabs.update(|t| t.close(&close_key)); }
+                                    on:keydown=move |ev| if is_delete_key(&ev) { ev.prevent_default(); ctx.tabs.update(|t| t.close(&close_key)); }
                                 >{icon(if live { Glyph::Sparkle } else { file_glyph(&name) })}<span class="tab-label">{name.clone()}</span></button>
                                 <button
                                     class="tab-close"
@@ -1921,9 +1928,9 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                         let (show, close, close_key) = (term.id.clone(), term.id.clone(), term.id.clone());
                         view! {
                             <div class="tab term-tab" class:active=active role="presentation" data-testid="terminal-tab">
-                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete"
+                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete Backspace"
                                     on:click=move |_| { ctx.side.open.set(false); ctx.active_term.set(Some(show.clone())); }
-                                    on:keydown=move |ev| if ev.key() == "Delete" { ev.prevent_default(); terminal::close(ctx, close_key.clone()); }
+                                    on:keydown=move |ev| if is_delete_key(&ev) { ev.prevent_default(); terminal::close(ctx, close_key.clone()); }
                                 >
                                     {icon(Glyph::Terminal)}
                                     {tf(T::TerminalTab, &[&term.number.to_string()])}
@@ -2075,10 +2082,24 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
     };
     // A new document: deck state comes back with its `od:deck-ready`.
     Effect::new(move |_| {
-        src.track();
+        // Read, not `track()`: a memo never read has no sources and
+        // never changes.
+        src.with(|_| ());
         ctx.deck.set(None);
         ctx.export_fit.set(None);
-        ctx.comment_draft.set(None);
+    });
+    // The file shown, not its content: a reload of the same file (the
+    // agent or the watcher wrote it) keeps what the user is typing over
+    // it, and the views that hold it (QA-095).
+    let shown = Memo::new(move |_| ctx.active());
+    // Another file: the comment draft was on an element of the last one.
+    Effect::new(move |prev: Option<()>| {
+        // Read, not `track()`: a memo never read has no sources and
+        // never changes.
+        shown.with(|_| ());
+        if prev.is_some() {
+            ctx.comment_draft.set(None);
+        }
     });
     // Speaker notes follow the document and its slide count.
     let notes_key = Memo::new(move |_| (src.get(), ctx.deck.with(|d| d.map(|d| d.count))));
@@ -2120,8 +2141,10 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             .with(|f| f.iter().any(|f| f.path == path && is_document(f)));
         doc.then_some(Special::Doc(path))
     });
-    // Rendered pages, images and versions; reloads with the preview.
-    let live_page = move || match (src.get(), ctx.viewed()) {
+    // Rendered pages, images and versions. Built again for another file
+    // only: on a reload only the frame (keyed by its URL) is new, and the
+    // comment draft and drawing over it stay (QA-095).
+    let live_page = move || match (shown.get(), ctx.viewed()) {
         (None, _) => view! { <PreviewEmpty ctx=ctx/> }.into_any(),
         // A version on view shows its own source, not the live file's.
         (Some(_), Some(v)) if ctx.show_code.get() => {
@@ -2143,16 +2166,21 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             </div>
         }
         .into_any(),
-        (Some(url), None) if is_image() => {
-            view! { <img class="preview-image" src=url alt=t(T::Preview)/> }.into_any()
+        (Some(_), None) if is_image() => {
+            view! { <img class="preview-image" src=move || src.get() alt=t(T::Preview)/> }
+                .into_any()
         }
-        (Some(url), None) => {
+        (Some(_), None) => {
             // Each load of a bridged frame gets a fresh
             // edit-key id (od-preview `edit_key`).
-            let url = if url.contains("bridge=1") {
-                format!("{url}&key={}", ctx.tools.new_frame_kid())
-            } else {
-                url
+            let frame_url = move || {
+                src.get().map(|url| {
+                    if url.contains("bridge=1") {
+                        format!("{url}&key={}", ctx.tools.new_frame_kid())
+                    } else {
+                        url
+                    }
+                })
             };
             view! {
                 <div class="frame-zoom" style=frame_box>
@@ -2165,7 +2193,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                     // preview back to an older load instead of leaving, and
                     // the leave guard lost count (QA-033). A new iframe's
                     // first load adds none.
-                    <For each=move || std::iter::once(url.clone()) key=|u: &String| u.clone() let:url>
+                    <For each=frame_url key=|u: &String| u.clone() let:url>
                         <iframe
                             class="preview-frame"
                             data-testid="preview"

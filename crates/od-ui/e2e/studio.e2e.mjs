@@ -350,6 +350,16 @@ try {
   await page.keyboard.press('Control+w');
   await until(async () => (await page.getByTestId('tab').count()) === 1, 'Ctrl+W closed a tab');
   await page.locator('.tab.active', { hasText: 'index.html' }).waitFor();
+  // A Mac's delete key is Backspace: on a focused tab it closes it, as
+  // Delete does (QA-093).
+  await page.keyboard.press('Control+p');
+  await page.getByTestId('switcher-input').fill('deck');
+  await page.getByTestId('switcher-input').press('Enter');
+  await page.locator('.tab.active', { hasText: 'deck.html' }).waitFor();
+  await page.locator('.tab.active .tab-name').focus();
+  await page.keyboard.press('Backspace');
+  await until(async () => (await page.getByTestId('tab').count()) === 1, 'Backspace closed the focused tab');
+  await page.locator('.tab.active', { hasText: 'index.html' }).waitFor();
   results.quickSwitcher = 'ok';
 
   // 11b. Run status and next steps, files panel, code view, zoom, then the

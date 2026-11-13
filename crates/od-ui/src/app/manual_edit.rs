@@ -100,13 +100,21 @@ impl Manual {
         }
     }
 
-    /// Another file is shown: its layers, selection and history go.
+    /// Another file is shown: its layers, selection, history and what was
+    /// typed for its element go. A draft kept would be for an element no
+    /// longer picked, and the leave guard would ask about it.
     pub fn forget(self) {
         self.layers.set(Vec::new());
         self.selected.set(None);
         self.element.set(None);
         self.history.update(History::clear);
         self.error.set(None);
+        for field in [
+            self.text, self.href, self.src, self.alt, self.attrs, self.html,
+        ] {
+            field.set(String::new());
+        }
+        self.book.set_value(mm::DraftBook::default());
     }
 
     fn drafts(self) -> mm::Drafts {
@@ -815,5 +823,34 @@ fn HtmlTab(ctx: StudioCtx) -> impl IntoView {
                 </button>
             </div>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod forget_tests {
+    use super::*;
+    use od_contracts::SourceElementResponse;
+
+    #[test]
+    fn another_file_leaves_no_draft_for_the_leave_guard() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let m = Manual::new();
+            let el = SourceElementResponse {
+                tag: "p".to_owned(),
+                attributes: Vec::new(),
+                outer_html: "<p class=\"lead\">was</p>".to_owned(),
+                text: "was".to_owned(),
+                text_only: true,
+            };
+            m.book.update_value(|book| {
+                book.read(&mm::Drafts::of(&el), &el, false);
+            });
+            m.text.set("Typed not applied".to_owned());
+            assert!(m.unapplied(), "a change typed");
+            m.forget();
+            assert!(!m.unapplied(), "nothing left to ask about");
+            assert_eq!(m.text.get_untracked(), "");
+        });
     }
 }

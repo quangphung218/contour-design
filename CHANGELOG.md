@@ -10,6 +10,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Studio: a comment being written on the preview (its note and attached images), a drawing on the preview and a speaker note being edited now stay when the agent or the folder watcher rewrites the file shown; before, the reload threw them away and left the image unused in `comments/` (QA-095).
+- Desktop (macOS): Backspace where no text field has the focus no longer goes Back and leaves the Studio, in the app or in a design's preview; with the Vietnamese Telex input method each accent typed sent one. The Mac's delete key (Backspace) now closes a focused tab or terminal tab, as Delete does (QA-093).
+- A field shown after the page loaded now takes the focus each time it shows: a second sketch text label, renaming a conversation, Home's "From folder" path; before, only the first one did, and what was typed went to the page. "From folder" no longer loses the focus after the first letter typed (QA-094).
+- Studio: going to another file now clears the preview tools' state of the last one (Inspect changes, tweaks, Manual edit's pick); before, it stayed over the new file. A comment draft and a speaker note being edited are cleared on another file as meant, not only kept over a reload.
 - Studio: Markdown typed or a sketch stroke drawn just before a reload, a closed tab or Back to another page is now saved; before, the last 0.7 s of work was lost (QA-090). Switching or closing a tab (Ctrl+Tab, Ctrl+W, Ctrl+1…9) while typing in a Markdown document or a sketch's text label no longer throws an error in the page, and the label being typed is kept (QA-091).
 - Studio: in History, a version viewed before going to another file (a click, Ctrl+Tab, Cmd+1…9, Cmd+W, a tab closed) no longer shows over that file with a Restore that fails with "version not found"; the new file's live page shows (QA-089).
 - Quitting, updating or restarting Contour no longer takes 5 s whenever a tab of the app is open (QA-092).

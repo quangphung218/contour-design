@@ -285,6 +285,14 @@ try {
   await page.getByTestId('comment-note').fill('Make the title bigger');
   await page.getByTestId('comment-image-input').setInputFiles({ name: 'ref.png', mimeType: 'image/png', buffer: PNG });
   await page.getByTestId('draft-image').waitFor();
+  // The agent rewrites the file commented on: the frame reloads, the draft
+  // stays with its note and image (QA-095).
+  await frame.locator('body').evaluate(() => { window.__beforeRewrite = true; });
+  await write('page.html', (await fileText('page.html')) + '\n<!-- rewritten by the agent -->\n');
+  await until(async () => (await frame.locator('body').evaluate(() => !window.__beforeRewrite).catch(() => false)), 'the frame reloaded');
+  await frame.locator('h1').waitFor();
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Make the title bigger', 'the note kept over a reload');
+  assert.equal(await page.getByTestId('draft-image').count(), 1, 'the image kept over a reload');
   await page.getByTestId('comment-add').click();
   await page.getByTestId('comment-pin').first().waitFor();
   await page.getByTestId('comments-tab').click();
@@ -343,6 +351,25 @@ try {
   await item.getByTestId('comment-resolve').click();
   await page.getByTestId('comments-empty').waitFor();
   results.commentsTab = 'list, image, anchored, reselect scrolls, stale, lost, resolve and reopen, image sent with the message';
+  // A draft on another file's element goes when the file shown changes
+  // (it is kept only over a reload of the same file, QA-095).
+  await write('draft.html', '<!doctype html><html><body><p id="pick" style="font-size:24px">Pick me</p></body></html>');
+  await write('other.html', '<!doctype html><html><body><p id="other">Other page</p></body></html>');
+  await row('draft.html').click();
+  await frame.locator('#pick').waitFor();
+  await page.getByTestId('comment-mode').click();
+  await until(async () => {
+    await frame.locator('#pick').click({ timeout: 2000 });
+    return (await page.getByTestId('comment-draft').count()) === 1;
+  }, 'a draft on draft.html');
+  await page.getByTestId('comment-note').fill('On draft.html only');
+  await row('other.html').click();
+  await frame.locator('#other').waitFor();
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  await row('draft.html').click();
+  await frame.locator('#pick').waitFor();
+  assert.equal(await page.getByTestId('comment-draft').count(), 0, 'the draft did not come back over draft.html');
+  await page.getByTestId('comment-mode').click();
 
   // 4b. Reload guard: a page that loads itself under a fresh edit-key id
   // each time gets no key for it (only the host's loads do), so its loads

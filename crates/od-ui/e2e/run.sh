@@ -65,6 +65,7 @@ specs=(
   "OD_E2E_DS_PORT design-system.e2e.mjs"     # + 1
   "OD_E2E_MOTION_PORT motion.e2e.mjs"        # + 15; MP4 through `od media`
   "- bridge.e2e.mjs"                         # Chromium and WebKit, no daemon
+  "- keys.e2e.mjs"                           # Chromium and WebKit, no daemon
   "OD_E2E_REVIEW_PORT review.e2e.mjs"        # + 17; 2026-11-04 design review
   "OD_E2E_POLISH_PORT polish.e2e.mjs"        # + 14; beta.7 design review
   "OD_E2E_USAGE_PORT usage.e2e.mjs"          # + 12; Settings ▸ About ▸ usage

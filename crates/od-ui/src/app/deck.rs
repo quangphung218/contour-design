@@ -300,14 +300,25 @@ pub fn ThumbRail(ctx: StudioCtx, src: Memo<Option<String>>) -> impl IntoView {
 #[component]
 pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
     let tasks = Tasks::here();
-    let editing = RwSignal::new(false);
+    // The slide whose notes are being edited. A reload of the file (the
+    // agent wrote it) drops the deck for a moment and comes back on slide
+    // 1 before the slide the user was on: the editor only hides meanwhile,
+    // with what was typed (QA-095). Another slide hides it too.
+    let editing = RwSignal::new(None::<u32>);
     let draft = RwSignal::new(String::new());
     let saving = RwSignal::new(false);
-    // Another slide or file: leave the editor.
-    Effect::new(move |_| {
-        ctx.deck.with(|d| d.map(|d| d.active));
-        ctx.active();
-        editing.set(false);
+    // Opened, and shown again after a reload: the letters go on into it.
+    let input = NodeRef::<leptos::html::Textarea>::new();
+    super::focus::focus_on_mount(input);
+    // Another file: leave the editor.
+    let shown = Memo::new(move |_| ctx.active());
+    Effect::new(move |prev: Option<()>| {
+        // Read, not `track()`: a memo never read has no sources and
+        // never changes.
+        shown.with(|_| ());
+        if prev.is_some() {
+            editing.set(None);
+        }
     });
     let save = move || {
         let (Some(path), Some(deck)) = (ctx.active_untracked(), ctx.deck.get_untracked()) else {
@@ -347,7 +358,7 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
                             n[i] = note.trim().to_owned();
                         });
                         if open {
-                            editing.set(false);
+                            editing.set(None);
                         }
                     }
                     Err(e) => ctx.notice.set(Some(ctx.failed_to(T::NotesSaveFailed, &e))),
@@ -364,6 +375,7 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
             .with(|n| n.get(deck.active as usize).cloned())
             .filter(|n| !n.trim().is_empty());
         let current = note.clone().unwrap_or_default();
+        let here = move || editing.get() == Some(deck.active);
         Some(view! {
             <aside class="notes-panel" data-testid="speaker-notes">
                 <div class="notes-head">
@@ -371,18 +383,18 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
                         {format!("{} · {}", t(T::SpeakerNotes), tf(T::SlideN, &[&(deck.active + 1).to_string()]))}
                     </span>
                     <span class="spacer"></span>
-                    {move || (!editing.get() && !ctx.presenting.get()).then(|| {
+                    {move || (!here() && !ctx.presenting.get()).then(|| {
                         let current = current.clone();
                         view! {
-                            <button class="btn small ghost" data-testid="notes-edit" on:click=move |_| { draft.set(current.clone()); editing.set(true); }>
+                            <button class="btn small ghost" data-testid="notes-edit" on:click=move |_| { draft.set(current.clone()); editing.set(Some(deck.active)); }>
                                 {icon(Glyph::Rename)}{t(T::EditNotes)}
                             </button>
                         }
                     })}
                 </div>
-                {move || if editing.get() {
+                {move || if here() {
                     view! {
-                        <textarea class="input notes-input" rows="3" data-testid="notes-input"
+                        <textarea class="input notes-input" rows="3" data-testid="notes-input" node_ref=input
                             placeholder=t(T::NotesPlaceholder)
                             prop:value=move || draft.get()
                             on:input=live(move |ev| draft.set(event_target_value(&ev)))
@@ -392,11 +404,11 @@ pub fn NotesPanel(ctx: StudioCtx) -> impl IntoView {
                                     save();
                                 } else if ev.key() == "Escape" {
                                     ev.stop_propagation();
-                                    editing.set(false);
+                                    editing.set(None);
                                 }
                             }></textarea>
                         <div class="row end tight">
-                            <button class="btn small ghost" on:click=move |_| editing.set(false)>{t(T::Cancel)}</button>
+                            <button class="btn small ghost" on:click=move |_| editing.set(None)>{t(T::Cancel)}</button>
                             <button class="btn small primary" data-testid="notes-save" disabled=move || saving.get() on:click=move |_| save()>
                                 {move || saving.get().then(|| view! { <span class="spinner on-accent"></span> })}
                                 {t(T::SaveNotes)}

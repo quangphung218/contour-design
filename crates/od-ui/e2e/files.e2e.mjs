@@ -359,10 +359,16 @@ try {
   await page.keyboard.press('Control+Shift+z');
   await until(async () => JSON.parse(await fileText(sketchFile)).strokes.length === 1, 'redo saved');
   await page.getByTestId('draw-text').click();
-  await page.mouse.click(b.x + 100, b.y + 220);
-  await page.getByTestId('draw-text-input').fill('Hero');
-  await page.getByTestId('draw-text-input').press('Enter');
-  await until(async () => JSON.parse(await fileText(sketchFile)).strokes.some((s) => s.text === 'Hero'), 'text mark saved');
+  // Two labels typed with the keyboard, no click into the field: each new
+  // field must take the focus (the `autofocus` attribute works once a
+  // page, QA-094).
+  for (const [label, y] of [['Hero', 220], ['Footer', 260]]) {
+    await page.mouse.click(b.x + 100, b.y + y);
+    await until(async () => page.evaluate(() => document.activeElement?.dataset.testid === 'draw-text-input'), `${label} field focused`);
+    await page.keyboard.type(label);
+    await page.keyboard.press('Enter');
+    await until(async () => JSON.parse(await fileText(sketchFile)).strokes.some((s) => s.text === label), `${label} mark saved`);
+  }
   await shot('sketch');
   await page.getByTestId('sketch-to-chat').click();
   await page.getByTestId('attachment-chip').waitFor();
@@ -439,6 +445,13 @@ try {
   await page.getByTestId('deck-notes').click();
   await page.getByTestId('notes-edit').click();
   await page.getByTestId('notes-input').fill('Pause here & smile');
+  // The agent rewrites the deck meanwhile: the preview reloads (the deck
+  // gone for a moment, then back on slide 2), the note typed stays (QA-095).
+  await frame.locator('body').evaluate(() => { window.__beforeRewrite = true; });
+  await fetch(`${BASE}/api/projects/${pid}/files`, json({ name: 'deck.html', content: (await fileText('deck.html')) + '\n<!-- agent -->\n', overwrite: true }));
+  await until(async () => (await frame.locator('body').evaluate(() => !window.__beforeRewrite).catch(() => false)), 'the deck reloaded');
+  await until(async () => (await counter.textContent()) === '2 / 3', 'back on slide 2');
+  assert.equal(await page.getByTestId('notes-input').inputValue(), 'Pause here & smile', 'the note typed kept over a reload');
   await page.getByTestId('notes-save').click();
   await page.getByTestId('notes-text').filter({ hasText: 'Pause here & smile' }).waitFor();
   assert.match(await fileText('deck.html'), /<aside class="notes">Pause here &amp; smile<\/aside><\/section>/);
@@ -447,6 +460,17 @@ try {
   // The save reloads the preview (file-changed); the slide stays.
   await sleep(1200);
   await until(async () => (await counter.textContent()) === '2 / 3', 'reload keeps the slide');
+  // A note being edited goes when another file shows: back on the deck,
+  // the same slide shows no editor (QA-095 keeps it over a reload only).
+  await page.getByTestId('notes-edit').click();
+  await page.getByTestId('notes-input').fill('Not saved');
+  await row('index.html').click();
+  await page.locator('.tab.active', { hasText: 'index.html' }).waitFor();
+  await page.getByTestId('speaker-notes').waitFor({ state: 'detached' });
+  await row('deck.html').click();
+  await until(async () => (await counter.textContent()) === '2 / 3', 'deck back on slide 2');
+  await page.getByTestId('notes-text').filter({ hasText: 'Pause here & smile' }).waitFor();
+  assert.equal(await page.getByTestId('notes-input').count(), 0, 'no editor left over from before');
   results.speakerNotes = 'edited and saved';
 
   await page.getByTestId('deck-present-menu').click();
