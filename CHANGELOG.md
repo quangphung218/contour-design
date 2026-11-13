@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.34] - 2026-11-13
+
 ### Fixed
 
 - Studio: a comment being written on the preview (its note and attached images), a drawing on the preview and a speaker note being edited now stay when the agent or the folder watcher rewrites the file shown; before, the reload threw them away and left the image unused in `comments/` (QA-095).
@@ -1160,7 +1162,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.33...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.34...HEAD
+[0.2.0-beta.34]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.33...v0.2.0-beta.34
 [0.2.0-beta.33]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.32...v0.2.0-beta.33
 [0.2.0-beta.32]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.31...v0.2.0-beta.32
 [0.2.0-beta.31]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.30...v0.2.0-beta.31
