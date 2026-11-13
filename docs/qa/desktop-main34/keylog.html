@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body style="font:16px monospace">
+<input id="f" placeholder="field" style="font:16px monospace;width:300px">
+<pre id="log" style="background:#ffd;min-height:300px"></pre>
+<script>
+var L=document.getElementById('log');
+addEventListener('keydown',function(e){L.textContent+=e.type+' key='+JSON.stringify(e.key)+' code='+e.code+' meta='+e.metaKey+' ctrl='+e.ctrlKey+' alt='+e.altKey+' shift='+e.shiftKey+'\n'},true);
+</script></body></html>

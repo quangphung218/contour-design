@@ -10,7 +10,9 @@ plan adds the mistakes and accidents of real users. Bugs found are in
 [bugs-web-failures.md](bugs-web-failures.md); the web pass after beta.28 (QA-074 to QA-078) in
 [bugs-web-beta28.md](bugs-web-beta28.md); the desktop beta.32 pass (QA-085 to QA-088, §18 on
 macOS) in [bugs-desktop-beta32.md](bugs-desktop-beta32.md); the web pass after the beta.34
-redesign (QA-089 to QA-092, §21) in [bugs-web-beta34.md](bugs-web-beta34.md).
+redesign (QA-089 to QA-092, §21) in [bugs-web-beta34.md](bugs-web-beta34.md); the desktop
+pass on main before beta.34 (QA-093 to QA-095, §19 and §21 by hand) in
+[bugs-desktop-main34.md](bugs-desktop-main34.md).
 
 ## Priorities and status
 
@@ -511,6 +513,16 @@ on a QA copy (bundle id `dev.contour.desktop.qa`, its own `OD_DATA_DIR`).
   closes by itself within a second, nothing pressed
   ([busywait.sh](desktop-beta26/busywait.sh): no layer-8 window after the
   reload). A page's own dialog shown above it is never closed by this.
+- [ ] **A page's alert above "isn't responding"**:
+  [dialogs34.html](desktop-main34/dialogs34.html) BA (busy 15 s, then
+  `alert`), ⌘R, with and without Wait
+  ([busy34.sh](desktop-main34/busy34.sh) `810 289 [779 384] 60`). The
+  page's alert shows on top and stays until OK; then both close and the
+  page reloads. Keep the mouse still: busy34.sh logs it, and a moved mouse
+  means a person may have pressed something.
+- [ ] **Backspace outside a field** (QA-093): in the Studio, click an empty
+  part of the chat pane, press ⌫: still in the Studio. Same with Telex on,
+  typing `first` into a design's preview.
 - [ ] **Crash loop** (two crashes within 10 s): start the QA copy with the
   test hook `OD_QA_CRASH_WEB=1` (read only by a debug build or a copy whose
   bundle id ends `.qa`; a release Contour ignores it), for example

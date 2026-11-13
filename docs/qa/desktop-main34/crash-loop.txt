@@ -1,0 +1,9 @@
+2026-11-13T08:21:34.097117Z  WARN od_desktop: QA test hook: a design's page crashes its web content process
+2026-11-13T08:21:59.603297Z  WARN od_desktop: QA test hook: ended the web content process
+2026-11-13T08:21:59.604739Z  WARN od_desktop::shell_state: the web content process ended by itself after=Reload
+2026-11-13T08:21:59.724937Z  WARN od_desktop: QA test hook: ended the web content process
+2026-11-13T08:21:59.725037Z  WARN od_desktop::shell_state: the web content process ended by itself after=StopPreview
+2026-11-13T08:22:40.958933Z  WARN od_desktop: QA test hook: ended the web content process
+2026-11-13T08:22:40.959182Z  WARN od_desktop::shell_state: the web content process ended by itself after=Reload
+2026-11-13T08:22:41.066221Z  WARN od_desktop: QA test hook: ended the web content process
+2026-11-13T08:22:41.066312Z  WARN od_desktop::shell_state: the web content process ended by itself after=StopPreview
