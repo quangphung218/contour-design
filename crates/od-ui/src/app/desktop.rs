@@ -210,6 +210,41 @@ pub fn reload_ack() {
     }
 }
 
+/// Tells the shell whether the page holds work not saved (a comment not
+/// sent, a Manual edit not applied): closing the window or quitting the
+/// app asks the page first while it does (`od:menu` `close` / `quit`).
+/// Does nothing outside the desktop app.
+pub fn set_unsaved(unsaved: bool) {
+    let args = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("unsaved"),
+        &JsValue::from_bool(unsaved),
+    );
+    if let Some(promise) = invoke("set_unsaved", &args) {
+        super::tasks::detached(async move {
+            let _ = JsFuture::from(promise).await;
+        });
+    }
+}
+
+/// The page's answer to the shell's `od:menu` `close` or `quit`:
+/// `asking` (the user is being asked; the shell waits), `go` (close or
+/// quit now) or `stay`. Does nothing outside the desktop app.
+pub fn close_answer(answer: &str) {
+    let args = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("answer"),
+        &JsValue::from_str(answer),
+    );
+    if let Some(promise) = invoke("close_answer", &args) {
+        super::tasks::detached(async move {
+            let _ = JsFuture::from(promise).await;
+        });
+    }
+}
+
 /// Whether the page's query (`location.search`) says the shell stopped
 /// the design's preview: it hung or crashed the window, so the shell
 /// loaded the app again with `preview=stopped` (QA-067).

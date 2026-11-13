@@ -2,13 +2,16 @@
 //! manual edit not applied, in any file): every in-app way out asks first,
 //! naming the files, as the original's
 //! `FileWorkspace` navigation guard does, the browser's Back included, and
-//! the browser asks before a close or reload.
+//! the browser asks before a close or reload. In the desktop app, closing
+//! the window or quitting asks too: the shell knows whether work would be
+//! lost (`set_unsaved`) and sends `od:menu` `close` or `quit`.
 //!
 //! The question is the app's own dialog, not `window.confirm`: in the
 //! desktop app `tauri-plugin-dialog` makes `confirm` async, so its answer
 //! never reaches a click handler (QA-011).
 
 use super::Shell;
+use super::desktop;
 use super::icons::Glyph;
 use super::lib_ui::Modal;
 use crate::i18n::{T, t};
@@ -38,6 +41,21 @@ pub(super) enum Leave {
     /// while the question is open, and the target is this many entries
     /// back.
     Back(i32),
+    /// The desktop app's window closing or the app quitting: the shell
+    /// holds it until the answer (`close_answer`).
+    App,
+}
+
+/// The desktop shell's `od:menu` `close` or `quit`: the shell holds the
+/// close until the page answers, `go` at once when nothing would be lost,
+/// else after the question (`asking` first, so the shell waits).
+fn app_closing(shell: Shell) {
+    if shell.would_lose() {
+        desktop::close_answer("asking");
+        shell.leaving.set(Some(Leave::App));
+    } else {
+        desktop::close_answer("go");
+    }
 }
 
 /// `navigate(path)`, unless leaving would lose unsaved work: then the
@@ -151,12 +169,19 @@ pub fn LeaveGuard() -> impl IntoView {
         )
     };
     let armed = StoredValue::new(None::<String>);
+    // What the desktop shell was last told (`set_unsaved`).
+    let told = StoredValue::new(None::<bool>);
+    let desktop = desktop::is_desktop();
     Effect::new(move |_| {
         let url = here();
         let lose = shell
             .unsaved
             .get()
             .is_some_and(|unsaved| !unsaved.run(()).is_empty());
+        if desktop && told.get_value() != Some(lose) {
+            told.set_value(Some(lose));
+            desktop::set_unsaved(lose);
+        }
         if lose && armed.with_value(|a| a.as_deref() != Some(url.as_str())) {
             push_entry(&url);
             armed.set_value(Some(url));
@@ -203,9 +228,20 @@ pub fn LeaveGuard() -> impl IntoView {
             true,
         );
     }
+    // The desktop window closing or the app quitting (`close_guard` in
+    // the shell).
+    let menu = window_event_listener(
+        ev::Custom::<web_sys::CustomEvent>::new("od:menu"),
+        move |e| {
+            if matches!(e.detail().as_string().as_deref(), Some("close" | "quit")) {
+                app_closing(shell);
+            }
+        },
+    );
     let listeners = StoredValue::new(SendWrapper::new((on_click, on_pop)));
     on_cleanup(move || {
         unload.remove();
+        menu.remove();
         if let Some(w) = web_sys::window() {
             listeners.with_value(|l| {
                 let (click, pop) = &**l;
@@ -222,7 +258,12 @@ pub fn LeaveGuard() -> impl IntoView {
             });
         }
     });
-    let stay = Callback::new(move |()| shell.leaving.set(None));
+    let stay = Callback::new(move |()| {
+        if matches!(shell.leaving.get_untracked(), Some(Leave::App)) {
+            desktop::close_answer("stay");
+        }
+        shell.leaving.set(None);
+    });
     let leave = Callback::new(move |()| {
         let Some(way) = shell.leaving.get_untracked() else {
             return;
@@ -237,6 +278,11 @@ pub fn LeaveGuard() -> impl IntoView {
                     released.set_value(true);
                     let _ = history.go_with_delta(-steps);
                 }
+            }
+            Leave::App => {
+                // The window goes with the page: no second ask.
+                released.set_value(true);
+                desktop::close_answer("go");
             }
         }
     });

@@ -8,9 +8,12 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod close_guard;
 // macOS only; the pure parts also build for tests everywhere.
 #[cfg(any(target_os = "macos", test))]
 mod js_dialogs;
+#[cfg(target_os = "macos")]
+mod mac_quit;
 mod mcp;
 mod shell_state;
 mod updater;
@@ -35,6 +38,7 @@ use tauri::{
 };
 use tauri_plugin_dialog::DialogExt;
 
+use close_guard::{CloseAction, CloseEvent, CloseGuard, Reply, Way};
 #[cfg(any(target_os = "macos", test))]
 use shell_state::PREVIEW_STOPPED;
 use shell_state::{Action, RESTART_GRACE, ShellEvent, ShellState};
@@ -55,6 +59,9 @@ const UPDATES_MENU_ID: &str = "help-check-updates";
 const RELOAD_MENU_ID: &str = "view-reload";
 /// File ▸ Close Window on macOS: ours, so it has no ⌘W ([`menu_spec`]).
 const CLOSE_WINDOW_MENU_ID: &str = "close-window";
+/// File ▸ Quit on Windows: ours, so it asks first about work not saved
+/// ([`close_guard`]); the OS's ended the app at once.
+const QUIT_MENU_ID: &str = "app-quit";
 /// Whether closing the main window only hides it: macOS, where the app
 /// stays in the Dock with its runs going and the Dock icon shows it again
 /// (QA-043). Elsewhere closing the window quits, as before.
@@ -354,6 +361,10 @@ fn drain_shell<R: Runtime>(app: &AppHandle<R>) {
 /// Takes `event` into the [`ShellState`] and carries out what it says. A
 /// dispatcher call: only [`drain_shell`] and the actions it runs call it.
 fn step_and_run<R: Runtime>(app: &AppHandle<R>, event: ShellEvent) {
+    // The page that said it holds work not saved is gone.
+    if matches!(event, ShellEvent::PageStarted(_) | ShellEvent::ProcessEnded) {
+        close_event(app, CloseEvent::PageGone);
+    }
     let actions = shell_step(app, event);
     run_actions(app, actions);
 }
@@ -450,6 +461,85 @@ fn on_hung<R: Runtime>(app: &AppHandle<R>) {
 #[tauri::command]
 fn reload_ack(app: AppHandle) {
     shell_event(&app, ShellEvent::ReloadAck);
+}
+
+/// The page holds work not saved (a comment not sent, a Manual edit not
+/// applied), or no longer: closing or quitting asks it first while it does
+/// ([`close_guard`]).
+#[tauri::command]
+fn set_unsaved(app: AppHandle, unsaved: bool) {
+    close_event(&app, CloseEvent::Unsaved(unsaved));
+}
+
+/// The page's answer to `od:menu` `close` or `quit`: `asking` (the user
+/// is being asked), `go` (close for real) or `stay`.
+#[tauri::command]
+fn close_answer(app: AppHandle, answer: String) -> Result<(), String> {
+    let reply = Reply::parse(&answer).ok_or_else(|| format!("unknown answer {answer:?}"))?;
+    close_event(&app, CloseEvent::Reply(reply));
+    Ok(())
+}
+
+/// Takes the user's ask to close or quit `way` into the [`CloseGuard`]:
+/// `true` when the guard holds it (the caller prevents it) while the page
+/// asks about work not saved.
+fn hold_close<R: Runtime>(app: &AppHandle<R>, way: Way) -> bool {
+    let Some((held, actions)) = app
+        .try_state::<Mutex<CloseGuard>>()
+        .and_then(|guard| guard.lock().ok().map(|mut guard| guard.ask(way)))
+    else {
+        return false;
+    };
+    run_close_actions(app, actions);
+    held
+}
+
+/// Takes `event` into the [`CloseGuard`] and carries out what it says. The
+/// lock is held for the step only.
+fn close_event<R: Runtime>(app: &AppHandle<R>, event: CloseEvent) {
+    let actions = app
+        .try_state::<Mutex<CloseGuard>>()
+        .and_then(|guard| guard.lock().ok().map(|mut guard| guard.step(event)))
+        .unwrap_or_default();
+    run_close_actions(app, actions);
+}
+
+/// Carries out the [`CloseGuard`]'s `actions` on a thread of their own:
+/// never inside the event loop's callback or AppKit's `terminate:`, and
+/// not behind a modal on the main thread.
+fn run_close_actions<R: Runtime>(app: &AppHandle<R>, actions: Vec<CloseAction>) {
+    if actions.iter().all(|a| *a == CloseAction::Let) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        for action in actions {
+            run_close_action(&app, action);
+        }
+    });
+}
+
+fn run_close_action<R: Runtime>(app: &AppHandle<R>, action: CloseAction) {
+    match action {
+        CloseAction::Let => {}
+        CloseAction::AskPage(way) => ui_action(app, way.as_menu()),
+        CloseAction::CheckLater { token, after } => {
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(after);
+                close_event(&app, CloseEvent::Check(token));
+            });
+        }
+        CloseAction::Go(Way::Close) => {
+            // Not `close`: that would ask again.
+            if let Some(window) = app.get_webview_window("main")
+                && let Err(e) = window.destroy()
+            {
+                tracing::warn!(error = %e, "cannot close the window");
+            }
+        }
+        CloseAction::Go(Way::Quit) => app.exit(0),
+    }
 }
 
 /// The page `window` shows: WebKit's own address while its web content
@@ -837,7 +927,9 @@ fn show_main<R: Runtime>(app: &AppHandle<R>) {
 /// The app's event loop:
 /// - the main window's close button (and File ▸ Close Window) on macOS
 ///   hides the window; the app and its runs keep going ([`HIDE_ON_CLOSE`]).
-///   Quit (⌘Q) does not come through here.
+///   Quit (⌘Q) does not come through here (`mac_quit`).
+/// - elsewhere closing it quits, after the page asks about work not saved
+///   ([`close_guard`]).
 /// - the Dock icon shows it again.
 /// - on exit, running agents and the terminal tabs' shells, which would
 ///   outlive the app, stop ([`before_exit`]).
@@ -848,10 +940,14 @@ fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
             label,
             event: WindowEvent::CloseRequested { api, .. },
             ..
-        } if HIDE_ON_CLOSE && label == "main" => {
-            api.prevent_close();
-            if let Some(window) = app.get_webview_window(label) {
-                hide_leaving_fullscreen(window);
+        } if label == "main" => {
+            if HIDE_ON_CLOSE {
+                api.prevent_close();
+                if let Some(window) = app.get_webview_window(label) {
+                    hide_leaving_fullscreen(window);
+                }
+            } else if hold_close(app, Way::Close) {
+                api.prevent_close();
             }
         }
         #[cfg(target_os = "macos")]
@@ -956,7 +1052,7 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
 /// `allow-<command>` for each app command (`build.rs` generates them): the
 /// daemon's page is a remote origin to Tauri, which refuses it any app
 /// command without one.
-const APP_COMMAND_PERMISSIONS: [&str; 11] = [
+const APP_COMMAND_PERMISSIONS: [&str; 13] = [
     "allow-pick-folder",
     "allow-set-theme",
     "allow-set-menu-labels",
@@ -968,6 +1064,8 @@ const APP_COMMAND_PERMISSIONS: [&str; 11] = [
     "allow-open-link",
     "allow-reset-dialog-gate",
     "allow-reload-ack",
+    "allow-set-unsaved",
+    "allow-close-answer",
 ];
 
 /// The main window stays on the daemon's origin (and the bundled splash
@@ -1225,7 +1323,8 @@ fn menu_spec(l: &MenuLabels, os: &str) -> Vec<Section> {
     if os != "linux" {
         let mut entries = vec![close_window.clone()];
         if !mac {
-            entries.push(native(Native::Quit, &l.quit));
+            // Ours: the OS's ended the app before the page could ask.
+            entries.push(item(QUIT_MENU_ID, &l.quit, None));
         }
         bar.push(Section {
             id: None,
@@ -1437,7 +1536,8 @@ fn main() -> anyhow::Result<()> {
         .manage(updater::UpdateSlot::default())
         .manage(opened)
         .manage(Mutex::new(ShellState::default()))
-        .manage(ShellQueue::default());
+        .manage(ShellQueue::default())
+        .manage(Mutex::new(CloseGuard::default()));
     // The page loads again once its web content process ends: after a
     // design hung it (QA-067), View ▸ Reload, or a crash.
     #[cfg(target_os = "macos")]
@@ -1454,13 +1554,20 @@ fn main() -> anyhow::Result<()> {
             updater::restart_app,
             open_link,
             reset_dialog_gate,
-            reload_ack
+            reload_ack,
+            set_unsaved,
+            close_answer
         ])
         .menu(|app| build_menu(app, &MenuLabels::default()))
         .on_menu_event(|app, event| match event.id().as_ref() {
             CLOSE_WINDOW_MENU_ID => {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.close();
+                }
+            }
+            QUIT_MENU_ID => {
+                if !hold_close(app, Way::Quit) {
+                    app.exit(0);
                 }
             }
             OPEN_FOLDER_MENU_ID => open_folder_from_menu(app),
@@ -1544,6 +1651,10 @@ fn main() -> anyhow::Result<()> {
                 }
                 // ⌘Q and ⌘R work while a page hangs the window (QA-067).
                 web_process::menu_keys_first();
+                // Quit (⌘Q, the menu, the Dock) asks first about work not
+                // saved.
+                let quitting = handle.clone();
+                mac_quit::install(move || !hold_close(&quitting, Way::Quit));
             }
             #[cfg(not(target_os = "macos"))]
             let _ = window;
@@ -1680,6 +1791,8 @@ mod tests {
             "open_link",
             "reset_dialog_gate",
             "reload_ack",
+            "set_unsaved",
+            "close_answer",
         ] {
             assert_eq!(
                 invoke_from(origin, &format!("{origin}/studio"), cmd),
@@ -2332,6 +2445,130 @@ mod tests {
             assert_eq!(kept, Some(true));
         } else {
             assert_eq!(kept, None);
+        }
+    }
+
+    /// A mock app keeping the [`CloseGuard`], its main window built.
+    fn close_app() -> (
+        tauri::App<tauri::test::MockRuntime>,
+        tauri::WebviewWindow<tauri::test::MockRuntime>,
+    ) {
+        let context: tauri::Context<tauri::test::MockRuntime> = app_context();
+        let app = tauri::test::mock_builder()
+            .manage(Mutex::new(CloseGuard::default()))
+            .build(context)
+            .unwrap();
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::App("index.html".into()))
+            .build()
+            .unwrap();
+        (app, window)
+    }
+
+    /// Closes the main window of `app`: whether it is still there once the
+    /// event loop goes idle.
+    fn closed_window_kept(
+        app: tauri::App<tauri::test::MockRuntime>,
+        window: tauri::WebviewWindow<tauri::test::MockRuntime>,
+    ) -> bool {
+        let kept = Arc::new(Mutex::new(None::<bool>));
+        let seen = Arc::clone(&kept);
+        app.run(move |handle, event| match event {
+            RunEvent::Ready => window.close().unwrap(),
+            RunEvent::WindowEvent { .. } => on_run_event(handle, &event),
+            RunEvent::MainEventsCleared => {
+                let mut seen = seen.lock().unwrap();
+                if seen.is_none() {
+                    *seen = Some(handle.get_webview_window("main").is_some());
+                    window.destroy().unwrap();
+                }
+            }
+            _ => {}
+        });
+        let kept = *kept.lock().unwrap();
+        kept == Some(true)
+    }
+
+    #[test]
+    fn closing_with_work_not_saved_keeps_the_window_while_the_page_asks() {
+        // Windows and Linux: the close went at once and the work was lost.
+        let (app, window) = close_app();
+        close_event(app.handle(), CloseEvent::Unsaved(true));
+        assert!(closed_window_kept(app, window));
+        // Nothing unsaved: it closes as before (hides on macOS).
+        let (app, window) = close_app();
+        close_event(app.handle(), CloseEvent::Unsaved(true));
+        close_event(app.handle(), CloseEvent::Unsaved(false));
+        assert_eq!(closed_window_kept(app, window), HIDE_ON_CLOSE);
+    }
+
+    #[test]
+    fn a_close_or_quit_is_held_only_for_work_not_saved() {
+        let (app, _window) = close_app();
+        let handle = app.handle();
+        assert!(!hold_close(handle, Way::Quit));
+        assert!(!hold_close(handle, Way::Close));
+        close_event(handle, CloseEvent::Unsaved(true));
+        assert!(hold_close(handle, Way::Quit));
+        // A page gone holds nothing: the next page says so itself.
+        close_event(handle, CloseEvent::PageGone);
+        assert!(!hold_close(handle, Way::Quit));
+        // No guard kept (the headless paths): never held.
+        let context: tauri::Context<tauri::test::MockRuntime> = app_context();
+        let bare = tauri::test::mock_builder().build(context).unwrap();
+        assert!(!hold_close(bare.handle(), Way::Quit));
+    }
+
+    #[test]
+    fn every_way_to_close_or_quit_asks_the_close_guard() {
+        // Not covered by any test that runs the real app: the wiring.
+        let code = shipped(include_str!("main.rs"));
+        let body = |name: &str| fn_bodies(&code, name).concat();
+        // The window's close (Windows, Linux).
+        let packed = |code: String| code.split_whitespace().collect::<String>();
+        let run = packed(body("on_run_event"));
+        assert!(
+            run.contains("elseifhold_close(app,Way::Close){api.prevent_close();}"),
+            "the close held is prevented: {run}"
+        );
+        // macOS Quit (⌘Q, the menu, the Dock).
+        let setup = hook_args(&code, ".setup(").concat();
+        assert!(setup.contains("mac_quit::install(move || !hold_close(&quitting, Way::Quit))"));
+        // Windows File ▸ Quit, ours.
+        let menu = hook_args(&code, ".on_menu_event(").concat();
+        let quit = &menu[menu.find("QUIT_MENU_ID =>").expect("File ▸ Quit's event")..];
+        let arm = &quit[..quit.find("OPEN_FOLDER_MENU_ID").unwrap_or(quit.len())];
+        assert!(arm.contains("if !hold_close(app, Way::Quit) {"), "{arm}");
+        // The page's word, and a page gone.
+        assert!(body("set_unsaved").contains("CloseEvent::Unsaved(unsaved)"));
+        assert!(body("close_answer").contains("CloseEvent::Reply(reply)"));
+        assert!(body("step_and_run").contains("CloseEvent::PageGone"));
+        assert!(code.contains(".manage(Mutex::new(CloseGuard::default()))"));
+        // The page is asked by the word its leave guard takes.
+        assert!(body("run_close_action").contains("ui_action(app, way.as_menu())"));
+    }
+
+    #[test]
+    fn quit_on_windows_is_ours_so_it_asks_first() {
+        let bar = menu_spec(&MenuLabels::default(), "windows");
+        let file: Vec<_> = rows(&bar)
+            .into_iter()
+            .filter(|(menu, _)| *menu == "File")
+            .map(|(_, e)| e.clone())
+            .collect();
+        assert!(file.contains(&Entry::Item {
+            id: QUIT_MENU_ID,
+            text: "Quit Contour".into(),
+            accelerator: None,
+        }));
+        // The OS's Quit ended the app before the page could ask.
+        for os in ["windows", "linux"] {
+            let bar = menu_spec(&MenuLabels::default(), os);
+            assert!(
+                !rows(&bar)
+                    .iter()
+                    .any(|(_, e)| matches!(e, Entry::Native(Native::Quit, _))),
+                "{os}"
+            );
         }
     }
 
