@@ -471,6 +471,21 @@ impl StudioCtx {
         self.tabs.with_untracked(|t| t.active.clone())
     }
 
+    /// The slide the user is on, tracked. While a live reload puts the
+    /// deck back where it was, that slide, not the slide 0 the deck goes
+    /// through on the way: what hangs on the slide (a comment draft being
+    /// typed in) must not be torn down and built again by a reload.
+    pub fn shown_slide(self) -> Option<u32> {
+        let slide = self.deck.get().map(|d| d.active);
+        let path = self.active_untracked();
+        self.restoring
+            .with_value(|r| match (r, &path) {
+                (Some((p, target, _)), Some(cur)) if p == cur => Some(*target),
+                _ => None,
+            })
+            .or(slide)
+    }
+
     /// Opens `path` in a tab (or switches to its tab).
     /// Opens `path` in a tab and, on a phone-width window, shows the preview.
     pub fn open_file(self, path: &str) {
@@ -1272,8 +1287,9 @@ impl StudioCtx {
                 );
             }
             (Source::Main, BridgeMsg::DeckReady { count }) => {
-                self.deck.set(Some(DeckState { active: 0, count }));
-                // Live reload keeps the slide the user was on.
+                // Live reload keeps the slide the user was on. The restore
+                // is noted before the deck is set, so what reads the deck
+                // (`shown_slide`) never sees the slide 0 in between.
                 let path = self.active_untracked();
                 let keep = self.last_slide.with_value(|l| match (l, &path) {
                     (Some((p, i)), Some(cur)) if p == cur && *i > 0 && *i < count => Some(*i),
@@ -1283,26 +1299,32 @@ impl StudioCtx {
                     Some(i) => {
                         self.restoring
                             .set_value(path.map(|p| (p, i, RESTORE_PATIENCE)));
+                        self.deck.set(Some(DeckState { active: 0, count }));
                         self.slide(Slide::Go(i));
                     }
-                    None => bridge::post_main(&pb::slide_state_request()),
+                    None => {
+                        self.deck.set(Some(DeckState { active: 0, count }));
+                        bridge::post_main(&pb::slide_state_request());
+                    }
                 }
             }
             (Source::Main, BridgeMsg::SlideState { active, count }) => {
-                self.deck.set(Some(DeckState { active, count }));
                 let path = self.active_untracked();
                 // The bridge reports slide 0 right after `deck-ready`, before
                 // the restore lands; a reload in between must not take that
-                // for where the user was.
+                // for where the user was. The restore is settled before the
+                // deck is set, so `shown_slide` reads where the deck ends.
                 let pending = self.restoring.get_value();
                 if let Some((p, target, left)) = pending.filter(|(p, ..)| Some(p) == path.as_ref())
                 {
                     if active != target && left > 0 {
                         self.restoring.set_value(Some((p, target, left - 1)));
+                        self.deck.set(Some(DeckState { active, count }));
                         return;
                     }
                     self.restoring.set_value(None);
                 }
+                self.deck.set(Some(DeckState { active, count }));
                 if let Some(path) = path {
                     self.last_slide.set_value(Some((path, active)));
                 }

@@ -584,12 +584,24 @@ addEventListener('keydown', function (e) {
   await onSlide('A two', '2 / 3');
   await page.getByTestId('comment-draft').waitFor();
   assert.equal(await page.getByTestId('comment-note').inputValue(), 'Across decks');
+  // The agent rewrites the deck while the user types on slide 2: the reload
+  // goes through slide 0, the box must not be built again (focus, IME).
+  // Typed with the keyboard: `fill` focuses the box itself.
+  await page.getByTestId('comment-note').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' typed');
+  await frame.locator('body').evaluate(() => { window.__beforeDeckRewrite = true; });
+  await write('deck-a.html', DECK('A') + '\n<!-- rewritten by the agent -->\n');
+  await until(async () => (await frame.locator('body').evaluate(() => !window.__beforeDeckRewrite).catch(() => false)), 'the deck reloaded');
+  await onSlide('A two', '2 / 3');
+  await page.keyboard.type(' on');
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Across decks typed on', 'typing goes on over a deck reload on slide 2');
   posted = commentPosts.length;
   await page.getByTestId('comment-add').click();
   await until(async () => commentPosts.length === posted + 1, 'the comment across decks sent');
   assert.equal(commentPosts.at(-1).slideIndex, 1, 'across decks: slide 2');
   await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
-  results.deckDrafts = 'sent with the slide picked on; the box hides over another slide, within a deck and across decks';
+  results.deckDrafts = 'sent with the slide picked on; the box hides over another slide, within a deck and across decks; typing goes on over a reload on slide 2';
 
   // A comment being sent: Cancel and Escape do not drop it or its image,
   // and the box shown again after a switch does not send it twice.

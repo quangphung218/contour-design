@@ -347,7 +347,8 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
     let open_pin = RwSignal::new(None::<String>);
     let pins = move || {
         let file = ctx.active();
-        let slide = ctx.deck.get().map(|d| d.active);
+        // Not `deck.active`: a reload of the deck goes through slide 0.
+        let slide = ctx.shown_slide();
         ctx.comments.with(|list| {
             list.iter()
                 .filter(|c| Some(&c.file_path) == file.as_ref())
@@ -384,7 +385,8 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
     // Over a deck, only on the slide it was picked on (as the pins).
     let draft_file = Memo::new(move |_| {
         let file = ctx.active()?;
-        let slide = ctx.deck.get().map(|d| d.active);
+        // Not `deck.active`: a reload of the deck goes through slide 0.
+        let slide = ctx.shown_slide();
         let shown = ctx.comment_mode.get()
             && ctx
                 .comment_drafts
