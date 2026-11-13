@@ -285,6 +285,14 @@ try {
   await page.getByTestId('comment-note').fill('Make the title bigger');
   await page.getByTestId('comment-image-input').setInputFiles({ name: 'ref.png', mimeType: 'image/png', buffer: PNG });
   await page.getByTestId('draft-image').waitFor();
+  // The agent rewrites the file commented on: the frame reloads, the draft
+  // stays with its note and image (QA-095).
+  await frame.locator('body').evaluate(() => { window.__beforeRewrite = true; });
+  await write('page.html', (await fileText('page.html')) + '\n<!-- rewritten by the agent -->\n');
+  await until(async () => (await frame.locator('body').evaluate(() => !window.__beforeRewrite).catch(() => false)), 'the frame reloaded');
+  await frame.locator('h1').waitFor();
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Make the title bigger', 'the note kept over a reload');
+  assert.equal(await page.getByTestId('draft-image').count(), 1, 'the image kept over a reload');
   await page.getByTestId('comment-add').click();
   await page.getByTestId('comment-pin').first().waitFor();
   await page.getByTestId('comments-tab').click();

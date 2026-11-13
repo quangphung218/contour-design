@@ -10,6 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Studio: a comment being written on the preview (its note and attached images), a drawing on the preview and a speaker note being edited now stay when the agent or the folder watcher rewrites the file shown; before, the reload threw them away and left the image unused in `comments/` (QA-095).
 - Studio: Markdown typed or a sketch stroke drawn just before a reload, a closed tab or Back to another page is now saved; before, the last 0.7 s of work was lost (QA-090). Switching or closing a tab (Ctrl+Tab, Ctrl+W, Ctrl+1…9) while typing in a Markdown document or a sketch's text label no longer throws an error in the page, and the label being typed is kept (QA-091).
 - Studio: in History, a version viewed before going to another file (a click, Ctrl+Tab, Cmd+1…9, Cmd+W, a tab closed) no longer shows over that file with a Restore that fails with "version not found"; the new file's live page shows (QA-089).
 - Quitting, updating or restarting Contour no longer takes 5 s whenever a tab of the app is open (QA-092).

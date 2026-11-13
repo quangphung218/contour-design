@@ -439,6 +439,13 @@ try {
   await page.getByTestId('deck-notes').click();
   await page.getByTestId('notes-edit').click();
   await page.getByTestId('notes-input').fill('Pause here & smile');
+  // The agent rewrites the deck meanwhile: the preview reloads (the deck
+  // gone for a moment, then back on slide 2), the note typed stays (QA-095).
+  await frame.locator('body').evaluate(() => { window.__beforeRewrite = true; });
+  await fetch(`${BASE}/api/projects/${pid}/files`, json({ name: 'deck.html', content: (await fileText('deck.html')) + '\n<!-- agent -->\n', overwrite: true }));
+  await until(async () => (await frame.locator('body').evaluate(() => !window.__beforeRewrite).catch(() => false)), 'the deck reloaded');
+  await until(async () => (await counter.textContent()) === '2 / 3', 'back on slide 2');
+  assert.equal(await page.getByTestId('notes-input').inputValue(), 'Pause here & smile', 'the note typed kept over a reload');
   await page.getByTestId('notes-save').click();
   await page.getByTestId('notes-text').filter({ hasText: 'Pause here & smile' }).waitFor();
   assert.match(await fileText('deck.html'), /<aside class="notes">Pause here &amp; smile<\/aside><\/section>/);

@@ -2078,7 +2078,17 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
         src.track();
         ctx.deck.set(None);
         ctx.export_fit.set(None);
-        ctx.comment_draft.set(None);
+    });
+    // The file shown, not its content: a reload of the same file (the
+    // agent or the watcher wrote it) keeps what the user is typing over
+    // it, and the views that hold it (QA-095).
+    let shown = Memo::new(move |_| ctx.active());
+    // Another file: the comment draft was on an element of the last one.
+    Effect::new(move |prev: Option<()>| {
+        shown.track();
+        if prev.is_some() {
+            ctx.comment_draft.set(None);
+        }
     });
     // Speaker notes follow the document and its slide count.
     let notes_key = Memo::new(move |_| (src.get(), ctx.deck.with(|d| d.map(|d| d.count))));
@@ -2120,8 +2130,10 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             .with(|f| f.iter().any(|f| f.path == path && is_document(f)));
         doc.then_some(Special::Doc(path))
     });
-    // Rendered pages, images and versions; reloads with the preview.
-    let live_page = move || match (src.get(), ctx.viewed()) {
+    // Rendered pages, images and versions. Built again for another file
+    // only: on a reload only the frame (keyed by its URL) is new, and the
+    // comment draft and drawing over it stay (QA-095).
+    let live_page = move || match (shown.get(), ctx.viewed()) {
         (None, _) => view! { <PreviewEmpty ctx=ctx/> }.into_any(),
         // A version on view shows its own source, not the live file's.
         (Some(_), Some(v)) if ctx.show_code.get() => {
@@ -2143,16 +2155,21 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             </div>
         }
         .into_any(),
-        (Some(url), None) if is_image() => {
-            view! { <img class="preview-image" src=url alt=t(T::Preview)/> }.into_any()
+        (Some(_), None) if is_image() => {
+            view! { <img class="preview-image" src=move || src.get() alt=t(T::Preview)/> }
+                .into_any()
         }
-        (Some(url), None) => {
+        (Some(_), None) => {
             // Each load of a bridged frame gets a fresh
             // edit-key id (od-preview `edit_key`).
-            let url = if url.contains("bridge=1") {
-                format!("{url}&key={}", ctx.tools.new_frame_kid())
-            } else {
-                url
+            let frame_url = move || {
+                src.get().map(|url| {
+                    if url.contains("bridge=1") {
+                        format!("{url}&key={}", ctx.tools.new_frame_kid())
+                    } else {
+                        url
+                    }
+                })
             };
             view! {
                 <div class="frame-zoom" style=frame_box>
@@ -2165,7 +2182,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                     // preview back to an older load instead of leaving, and
                     // the leave guard lost count (QA-033). A new iframe's
                     // first load adds none.
-                    <For each=move || std::iter::once(url.clone()) key=|u: &String| u.clone() let:url>
+                    <For each=frame_url key=|u: &String| u.clone() let:url>
                         <iframe
                             class="preview-frame"
                             data-testid="preview"
