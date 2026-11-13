@@ -97,6 +97,8 @@ const DOWNLOADS = `http://127.0.0.1:${releases.address().port}/quangphung218/con
 // events as the shell does, and refuses a signature other than the one the
 // app trusts (the real check: minisign in tauri-plugin-updater).
 function desktopShell({ downloads, good }) {
+  // Not in a design's frame (sandboxed: no sessionStorage).
+  if (window.top !== window) return;
   const calls = [];
   let cancelled = false;
   const support = sessionStorage.getItem('od-e2e-support') || 'ready';
@@ -366,6 +368,41 @@ try {
   await until(async () => (await calls()).includes('restart_app'), 'Restart asks the shell');
   assert.deepEqual(await calls(), ['update_support', 'install_update 0.2.0-beta.99', 'restart_app']);
   results.desktopUpdate = 'ok';
+
+  // 9b. Restart with a comment not sent: the leave guard asks first.
+  const made = await api('/api/projects', { method: 'POST', body: JSON.stringify({ name: 'Restart' }) });
+  const rpid = made.body.project.id;
+  const wrote = await api(`/api/projects/${rpid}/files`, { method: 'POST', body: JSON.stringify({ name: 'r.html', content: '<!doctype html><html><body><h1>Restart me</h1></body></html>' }) });
+  assert.equal(wrote.status, 200);
+  await app.goto(BASE + `/projects/${rpid}`);
+  await app.locator('[data-testid="file-row"][data-path="r.html"]').click();
+  const rFrame = app.frameLocator('iframe[data-testid="preview"]');
+  await rFrame.locator('h1').waitFor();
+  await app.getByTestId('comment-mode').click();
+  await until(async () => {
+    await rFrame.locator('h1').click({ timeout: 2000 });
+    return (await app.getByTestId('comment-note').count()) === 1;
+  }, 'a comment draft on r.html');
+  await app.getByTestId('comment-note').fill('Before the restart');
+  const restarts = async () => (await calls()).filter((c) => c === 'restart_app').length;
+  const installAndRestart = async () => {
+    await app.evaluate(() => window.dispatchEvent(new CustomEvent('od:menu', { detail: 'check-updates' })));
+    await app.getByTestId('update-now').click();
+    await app.getByTestId('update-restart').click();
+  };
+  const restartsBefore = await restarts();
+  await installAndRestart();
+  await app.getByTestId('leave-dialog').waitFor();
+  assert.equal((await app.getByTestId('leave-files').innerText()).trim(), 'r.html', 'the question names the draft\'s file');
+  assert.equal(await appDialog.count(), 0, 'the update dialog closed under the question');
+  await app.getByTestId('leave-stay').click();
+  await sleep(300);
+  assert.equal(await restarts(), restartsBefore, 'Cancel: no restart');
+  assert.equal(await app.getByTestId('comment-note').inputValue(), 'Before the restart', 'Cancel keeps the comment');
+  await installAndRestart();
+  await app.getByTestId('leave-go').click();
+  await until(async () => (await restarts()) === restartsBefore + 1, 'Leave restarts');
+  results.restartAsks = 'ok';
 
   // 10. A signature the app does not trust: nothing installed, no Try again.
   latest = { status: 200, body: latestJson('0.2.0-beta.99', 'c2lnbmVkIGJ5IHNvbWVvbmUgZWxzZQ==') };

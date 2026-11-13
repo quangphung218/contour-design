@@ -218,6 +218,11 @@ pub(crate) enum Action {
     /// End the web content process, nothing more: what comes next is a
     /// crash's ([`ShellEvent::QaCrash`]).
     EndProcess,
+    /// The page shown is gone for real (another started, its process
+    /// ended): what it said it holds unsaved goes with it (`close_guard`).
+    /// Not on a restart's late word: the page shown then is the new one,
+    /// alive, and its word would be lost until its work changes.
+    PageGone,
 }
 
 /// `url`'s origin, written the way an `Origin` header is. Not
@@ -299,7 +304,7 @@ impl ShellState {
                     }
                 }
                 self.loaded = Some(url);
-                Vec::new()
+                vec![Action::PageGone]
             }
             ShellEvent::PageFinished(url) => {
                 self.loaded = Some(url);
@@ -395,26 +400,28 @@ impl ShellState {
     /// The web content process ended at `now`: a restart's page loads; a
     /// restart's late word does nothing; anything else is a crash.
     fn process_ended(&mut self, now: Instant) -> Vec<Action> {
-        // The page is gone with its process, whatever comes next (R1).
-        self.open = None;
-        self.listening = None;
         if let Some(url) = self.next.take() {
+            self.page_gone();
             self.loaded_early = None;
-            return vec![Action::Navigate(url)];
+            return vec![Action::PageGone, Action::Navigate(url)];
         }
         let since_new_page = std::mem::take(&mut self.started_since_early);
         match self.loaded_early.take() {
             Some((at, _))
                 if !since_new_page && now.saturating_duration_since(at) < LATE_END_WINDOW =>
             {
+                // The old process's: the page shown (the restart's) stays,
+                // and so do its menu and its question.
                 tracing::info!("the web content process ended after its restart");
                 return Vec::new();
             }
             _ => {}
         }
+        self.page_gone();
         let after = self.crashed(now);
         tracing::warn!(?after, "the web content process ended by itself");
-        match after {
+        let mut actions = vec![Action::PageGone];
+        actions.extend(match after {
             AfterCrash::Reload => vec![Action::Reload],
             AfterCrash::StopPreview => match &self.loaded {
                 Some(url) => vec![Action::Navigate(stopped_preview_url(
@@ -427,7 +434,14 @@ impl ShellState {
                 }
             },
             AfterCrash::GiveUp => Vec::new(),
-        }
+        });
+        actions
+    }
+
+    /// The page is gone with its process, whatever comes next (R1).
+    fn page_gone(&mut self) {
+        self.open = None;
+        self.listening = None;
     }
 
     /// The web content process crashed at `now`.
@@ -518,6 +532,13 @@ mod tests {
     fn early_page_started(t0: Instant) -> ShellState {
         let mut state = loaded_early(t0);
         state.step(ShellEvent::PageStarted(stopped(StopReason::Hung)), t0);
+        state
+    }
+
+    /// [`early_page_started`], its shell taking `od:menu`.
+    fn early_page_listening(t0: Instant) -> ShellState {
+        let mut state = early_page_started(t0);
+        state.step(ShellEvent::MenuListens { origin: None }, t0);
         state
     }
 
@@ -672,10 +693,10 @@ mod tests {
             ),
             // Pages.
             row(
-                "page start: deaf, question closed",
+                "page start: the page gone, deaf, question closed",
                 asked,
                 E::PageStarted(url(APP)),
-                vec![],
+                vec![PageGone],
                 |s| !s.listens() && !s.is_open(1),
             ),
             row(
@@ -725,7 +746,7 @@ mod tests {
                 "WebKit says it ended: the restart's page",
                 restarting,
                 E::ProcessEnded,
-                vec![Navigate(stopped(StopReason::Hung))],
+                vec![PageGone, Navigate(stopped(StopReason::Hung))],
                 |s| s.next.is_none() && s.crashes_in_a_row == 0,
             ),
             row(
@@ -764,17 +785,24 @@ mod tests {
                 |s| s.crashes_in_a_row == 0 && s.loaded_early.is_none(),
             ),
             row(
+                "late word after the restart's page took the menu: the page stays",
+                early_page_listening,
+                E::ProcessEnded,
+                vec![],
+                ShellState::listens,
+            ),
+            row(
                 "an end after another page started: a crash (R2)",
                 early_then_another,
                 E::ProcessEnded,
-                vec![Reload],
+                vec![PageGone, Reload],
                 |s| s.crashes_in_a_row == 1,
             ),
             row(
                 "an end after the restart's page started twice: a crash (R2)",
                 early_started_twice,
                 E::ProcessEnded,
-                vec![Reload],
+                vec![PageGone, Reload],
                 |s| s.crashes_in_a_row == 1,
             ),
             Row {
@@ -783,7 +811,7 @@ mod tests {
                     "late word too late: a crash",
                     loaded_early,
                     E::ProcessEnded,
-                    vec![Reload],
+                    vec![PageGone, Reload],
                     |s| s.crashes_in_a_row == 1,
                 )
             },
@@ -792,7 +820,7 @@ mod tests {
                 "a crash reloads, and the page is deaf (R1)",
                 listening,
                 E::ProcessEnded,
-                vec![Reload],
+                vec![PageGone, Reload],
                 |s| !s.listens() && s.crashes_in_a_row == 1,
             ),
             row(
@@ -806,7 +834,7 @@ mod tests {
                 "a crash closes the question (R1)",
                 asked,
                 E::ProcessEnded,
-                vec![Reload],
+                vec![PageGone, Reload],
                 |s| !s.is_open(1),
             ),
             Row {
@@ -819,7 +847,7 @@ mod tests {
                         s
                     },
                     E::ProcessEnded,
-                    vec![Navigate(stopped(StopReason::Crashed))],
+                    vec![PageGone, Navigate(stopped(StopReason::Crashed))],
                     |s| s.crashes_in_a_row == 2,
                 )
             },
@@ -884,7 +912,10 @@ mod tests {
         let late = t0 + LATE_END_WINDOW - Duration::from_millis(1);
         assert_eq!(state.step(ShellEvent::ProcessEnded, late), []);
         // Once: the next end is the new page's own.
-        assert_eq!(state.step(ShellEvent::ProcessEnded, late), [Action::Reload]);
+        assert_eq!(
+            state.step(ShellEvent::ProcessEnded, late),
+            [Action::PageGone, Action::Reload]
+        );
     }
 
     #[test]
@@ -908,7 +939,10 @@ mod tests {
         // blank window.
         let t0 = Instant::now();
         let mut state = early_then_another(t0);
-        assert_eq!(state.step(ShellEvent::ProcessEnded, t0), [Action::Reload]);
+        assert_eq!(
+            state.step(ShellEvent::ProcessEnded, t0),
+            [Action::PageGone, Action::Reload]
+        );
         assert_eq!(state.crashes_in_a_row, 1);
     }
 
@@ -917,12 +951,15 @@ mod tests {
         let t0 = Instant::now();
         let mut state = loaded_early(t0);
         let ended = state.step(ShellEvent::ProcessEnded, t0 + LATE_END_WINDOW);
-        assert_eq!(ended, [Action::Reload]);
+        assert_eq!(ended, [Action::PageGone, Action::Reload]);
         // The process was never asked to end (this WebKit cannot): any
         // end after is a crash.
         let mut state = restarting(t0);
         state.step(ShellEvent::GraceOver { killed: false }, t0);
-        assert_eq!(state.step(ShellEvent::ProcessEnded, t0), [Action::Reload]);
+        assert_eq!(
+            state.step(ShellEvent::ProcessEnded, t0),
+            [Action::PageGone, Action::Reload]
+        );
     }
 
     #[test]
@@ -930,10 +967,19 @@ mod tests {
         let t0 = Instant::now();
         let mut state = restarting(t0);
         let ended = state.step(ShellEvent::ProcessEnded, t0);
-        assert_eq!(ended, [Action::Navigate(stopped(StopReason::Hung))]);
+        assert_eq!(
+            ended,
+            [
+                Action::PageGone,
+                Action::Navigate(stopped(StopReason::Hung))
+            ]
+        );
         // The grace timer finds nothing left to load.
         assert_eq!(state.step(ShellEvent::GraceOver { killed: true }, t0), []);
-        assert_eq!(state.step(ShellEvent::ProcessEnded, t0), [Action::Reload]);
+        assert_eq!(
+            state.step(ShellEvent::ProcessEnded, t0),
+            [Action::PageGone, Action::Reload]
+        );
     }
 
     #[test]
@@ -1227,6 +1273,7 @@ mod tests {
                 // The model takes the event.
                 match &event {
                     ShellEvent::PageStarted(page) => {
+                        assert_eq!(actions, [Action::PageGone], "{}", trace(&actions));
                         world.new_page();
                         world.origin = Some(model_origin(page));
                         world.shown = Some(page.clone());
@@ -1265,7 +1312,7 @@ mod tests {
                             EndIs::Restart(page) => {
                                 assert_eq!(
                                     actions,
-                                    [Action::Navigate(page.clone())],
+                                    [Action::PageGone, Action::Navigate(page.clone())],
                                     "{}",
                                     trace(&actions)
                                 );
@@ -1280,8 +1327,13 @@ mod tests {
                                 trace(&actions)
                             ),
                         }
-                        // The page is gone with its process.
-                        world.new_page();
+                        // The page is gone with its process, unless the
+                        // word is the old one's: then the page shown stays.
+                        let gone = actions.first() == Some(&Action::PageGone);
+                        assert_eq!(gone, !matches!(end_is, EndIs::Late), "{}", trace(&actions));
+                        if gone {
+                            world.new_page();
+                        }
                         world.early = None;
                     }
                     ShellEvent::QaCrash => {

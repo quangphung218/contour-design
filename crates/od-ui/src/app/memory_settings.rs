@@ -399,7 +399,8 @@ pub fn MemoryToast() -> impl IntoView {
         stream.set_value(sse.map(SendWrapper::new));
     });
     on_cleanup(move || stream.set_value(None));
-    let navigate = leptos_router::hooks::use_navigate();
+    // Shown over the Studio too: Settings through the leave guard.
+    let navigate = super::leave_guard::use_leave();
     move || {
         let navigate = navigate.clone();
         shown.get().map(|(_, text, global)| view! {
@@ -408,7 +409,7 @@ pub fn MemoryToast() -> impl IntoView {
                     on:click=move |_| {
                         shown.set(None);
                         if global {
-                            navigate("/settings#settings-memory", Default::default());
+                            navigate("/settings#settings-memory");
                         }
                     }>
                     {icon(Glyph::Memory)}

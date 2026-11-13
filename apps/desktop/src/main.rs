@@ -361,10 +361,6 @@ fn drain_shell<R: Runtime>(app: &AppHandle<R>) {
 /// Takes `event` into the [`ShellState`] and carries out what it says. A
 /// dispatcher call: only [`drain_shell`] and the actions it runs call it.
 fn step_and_run<R: Runtime>(app: &AppHandle<R>, event: ShellEvent) {
-    // The page that said it holds work not saved is gone.
-    if matches!(event, ShellEvent::PageStarted(_) | ShellEvent::ProcessEnded) {
-        close_event(app, CloseEvent::PageGone);
-    }
     let actions = shell_step(app, event);
     run_actions(app, actions);
 }
@@ -408,6 +404,8 @@ fn run_action<R: Runtime>(app: &AppHandle<R>, action: Action) {
                 None => tracing::warn!("cannot tell which page hung"),
             }
         }
+        // The page that said it holds work not saved is gone.
+        Action::PageGone => close_event(app, CloseEvent::PageGone),
         Action::Kill => kill_page(app),
         Action::EndProcess => end_process(app),
         Action::Navigate(url) => {
@@ -1007,8 +1005,9 @@ fn open_folder_from_menu(app: &AppHandle) {
         let Some(daemon) = handle.try_state::<Daemon>() else {
             return;
         };
-        let target = match import_folder(&daemon.state.store, &path, None) {
-            Ok((project, _)) => daemon.url.join(&format!("projects/{}", project.id)),
+        let listens = with_shell(&handle, ShellState::listens).unwrap_or(false);
+        let way = match import_folder(&daemon.state.store, &path, None) {
+            Ok((project, _)) => open_project_way(listens, &daemon.url, &project.id),
             Err(e) => {
                 handle
                     .dialog()
@@ -1018,11 +1017,44 @@ fn open_folder_from_menu(app: &AppHandle) {
                 return;
             }
         };
-        if let (Ok(url), Some(window)) = (target, handle.get_webview_window("main")) {
-            show_main(&handle);
-            let _ = window.navigate(url);
+        match way {
+            OpenProject::AskPage(detail) => ui_action(&handle, &detail),
+            OpenProject::Navigate(url) => {
+                if let Some(window) = handle.get_webview_window("main") {
+                    show_main(&handle);
+                    let _ = window.navigate(url);
+                }
+            }
+            OpenProject::Nothing => {}
         }
     });
+}
+
+/// How File ▸ Open Folder… opens the project the folder was imported as.
+#[derive(Debug, PartialEq, Eq)]
+enum OpenProject {
+    /// The page takes `od:menu`: it opens the project through its leave
+    /// guard, which asks first if work would be lost (od-ui
+    /// `OPEN_PROJECT_MENU`). The shell's own `navigate` would drop that
+    /// work unasked: WKWebView shows no `beforeunload` question.
+    AskPage(String),
+    /// A page that takes no `od:menu` (the splash, the app before its
+    /// shell shows) holds nothing to lose: load the project at once.
+    Navigate(Url),
+    Nothing,
+}
+
+fn open_project_way(listens: bool, daemon: &Url, project: &str) -> OpenProject {
+    if listens {
+        return OpenProject::AskPage(format!("open-project:{project}"));
+    }
+    match daemon.join(&format!("projects/{project}")) {
+        Ok(url) => OpenProject::Navigate(url),
+        Err(e) => {
+            tracing::warn!(error = %e, "cannot open the project");
+            OpenProject::Nothing
+        }
+    }
 }
 
 /// IPC (the folder picker) for the main window, only while it shows the
@@ -2531,6 +2563,85 @@ mod tests {
     }
 
     #[test]
+    fn open_folder_asks_a_page_that_takes_the_menu() {
+        let daemon = Url::parse("http://127.0.0.1:7456/").unwrap();
+        // The app's page: its leave guard opens the project (od-ui
+        // `OPEN_PROJECT_MENU`), asking first if work would be lost.
+        assert_eq!(
+            open_project_way(true, &daemon, "0f3c-id"),
+            OpenProject::AskPage("open-project:0f3c-id".to_owned())
+        );
+        // The splash: nothing to lose, loaded at once.
+        assert_eq!(
+            open_project_way(false, &daemon, "0f3c-id"),
+            OpenProject::Navigate(Url::parse("http://127.0.0.1:7456/projects/0f3c-id").unwrap())
+        );
+        // The wiring: the way is taken before the import, and the shell
+        // navigates only when the page takes no menu.
+        let code = shipped(include_str!("main.rs"));
+        let body = fn_bodies(&code, "open_folder_from_menu")
+            .concat()
+            .split_whitespace()
+            .collect::<String>();
+        assert!(
+            body.contains("with_shell(&handle,ShellState::listens)"),
+            "{body}"
+        );
+        assert!(
+            body.contains("OpenProject::AskPage(detail)=>ui_action(&handle,&detail)"),
+            "{body}"
+        );
+        assert_eq!(body.matches(".navigate(").count(), 1, "{body}");
+    }
+
+    #[test]
+    fn only_a_page_really_gone_drops_its_word_of_work_not_saved() {
+        let context: tauri::Context<tauri::test::MockRuntime> = app_context();
+        let app = tauri::test::mock_builder()
+            .manage(Mutex::new(CloseGuard::default()))
+            .manage(Mutex::new(ShellState::default()))
+            .build(context)
+            .unwrap();
+        let handle = app.handle();
+        let page = Url::parse("http://127.0.0.1:5173/projects/p1").unwrap();
+        let state = |event| {
+            let now = std::time::Instant::now();
+            handle
+                .state::<Mutex<ShellState>>()
+                .lock()
+                .unwrap()
+                .step(event, now);
+        };
+        // A hung page restarted; WebKit silent, so the grace timer loaded
+        // the restart's page, which started and says it holds work.
+        state(ShellEvent::PageStarted(page.clone()));
+        let why = shell_state::StopReason::Hung;
+        state(ShellEvent::Restart {
+            shown: page.clone(),
+            why,
+        });
+        state(ShellEvent::GraceOver { killed: true });
+        let restarted = shell_state::stopped_preview_url(&page, why);
+        step_and_run(handle, ShellEvent::PageStarted(restarted));
+        close_event(handle, CloseEvent::Unsaved(true));
+        // WebKit's late word that the old process ended: the page shown
+        // is the new one, alive; ⌘Q still asks it.
+        step_and_run(handle, ShellEvent::ProcessEnded);
+        assert!(
+            hold_close(handle, Way::Quit),
+            "a late word dropped the page's word"
+        );
+        close_event(handle, CloseEvent::Reply(Reply::Stay));
+        // Its own process ending is a page gone.
+        step_and_run(handle, ShellEvent::ProcessEnded);
+        assert!(!hold_close(handle, Way::Quit));
+        // So is another page started.
+        close_event(handle, CloseEvent::Unsaved(true));
+        step_and_run(handle, ShellEvent::PageStarted(page));
+        assert!(!hold_close(handle, Way::Quit));
+    }
+
+    #[test]
     fn every_way_to_close_or_quit_asks_the_close_guard() {
         // Not covered by any test that runs the real app: the wiring.
         let code = shipped(include_str!("main.rs"));
@@ -2553,7 +2664,10 @@ mod tests {
         // The page's word, and a page gone.
         assert!(body("set_unsaved").contains("CloseEvent::Unsaved(unsaved)"));
         assert!(body("close_answer").contains("CloseEvent::Reply(reply)"));
-        assert!(body("step_and_run").contains("CloseEvent::PageGone"));
+        assert!(
+            body("run_action")
+                .contains("Action::PageGone => close_event(app, CloseEvent::PageGone)")
+        );
         assert!(code.contains(".manage(Mutex::new(CloseGuard::default()))"));
         // The page is asked by the word its leave guard takes.
         assert!(body("run_close_action").contains("ui_action(app, way.as_menu())"));
