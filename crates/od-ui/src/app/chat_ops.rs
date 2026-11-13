@@ -31,6 +31,8 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
     let wrap = NodeRef::<Div>::new();
     super::composer::close_outside(open, wrap);
     let renaming = RwSignal::new(None::<String>);
+    let title_input = NodeRef::<leptos::html::Input>::new();
+    super::focus::focus_on_mount(title_input);
     let confirming = RwSignal::new(false);
     let current_title = move || {
         let cid = ctx.conversation_id.get_untracked()?;
@@ -129,7 +131,7 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
                         data-testid="conversation-title"
                         aria-label=t(T::RenameConversation)
                         prop:value=title
-                        autofocus=true
+                        node_ref=title_input
                         on:keydown=move |ev: web_sys::KeyboardEvent| match ev.key().as_str() {
                             "Enter" => {
                                 ev.prevent_default();

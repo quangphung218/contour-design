@@ -1514,6 +1514,8 @@ pub(super) fn DrawSurface(
     // Where a text mark goes: canvas point and on-screen offset.
     let text_at = RwSignal::new(None::<((f64, f64), (f64, f64))>);
     let text = RwSignal::new(String::new());
+    let text_input = NodeRef::<leptos::html::Input>::new();
+    super::focus::focus_on_mount(text_input);
     let redraw = move || {
         let Some(canvas) = canvas_ref.get() else {
             return;
@@ -1635,7 +1637,7 @@ pub(super) fn DrawSurface(
                 data-testid="draw-text-input"
                 style=format!("left:{x}px;top:{}px;color:{}", y - 16.0, color.get_untracked())
                 placeholder=t(T::DrawTextPlaceholder)
-                autofocus
+                node_ref=text_input
                 prop:value=move || text.get()
                 on:input=live(move |ev| text.set(event_target_value(&ev)))
                 on:keydown=move |ev: web_sys::KeyboardEvent| match ev.key().as_str() {

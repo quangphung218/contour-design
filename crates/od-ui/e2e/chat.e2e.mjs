@@ -721,8 +721,18 @@ try {
   // 15. Rename and delete conversations.
   await page.getByTestId('conversation-menu').click();
   await page.getByTestId('rename-conversation').click();
-  await page.getByTestId('conversation-title').fill('Hero ideas');
-  await page.getByTestId('conversation-title').press('Enter');
+  // Opened twice and typed with the keyboard: the field must take the
+  // focus each time (the `autofocus` attribute works once a page, QA-094).
+  const focused = (id) => until(async () => page.evaluate((id) => document.activeElement?.dataset.testid === id, id), `${id} focused`);
+  await focused('conversation-title');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('rename-form').waitFor({ state: 'detached' });
+  await page.getByTestId('conversation-menu').click();
+  await page.getByTestId('rename-conversation').click();
+  await focused('conversation-title');
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('Hero ideas');
+  await page.keyboard.press('Enter');
   await until(async () => (await page.getByTestId('conversation').evaluate((e) => e.selectedOptions[0]?.textContent)) === 'Hero ideas', 'Hero ideas selected');
   await until(async () => (await api(`/api/projects/${projectId}/conversations`)).conversations.some((c) => c.title === 'Hero ideas'), 'title saved');
   await page.getByTestId('new-conversation').click();
@@ -792,7 +802,15 @@ try {
   await page.goto(BASE + '/');
   await page.getByTestId('plus-menu').click();
   await page.getByTestId('action-from-folder').click();
-  await page.getByTestId('from-folder-path').fill(join(work, 'site'));
+  await focused('from-folder-path');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('from-folder-form').waitFor({ state: 'detached' });
+  await page.getByTestId('plus-menu').click();
+  await page.getByTestId('action-from-folder').click();
+  await focused('from-folder-path');
+  // Letter by letter: each one must land in the same, still focused field.
+  await page.keyboard.type(join(work, 'site'));
+  assert.equal(await page.getByTestId('from-folder-path').inputValue(), join(work, 'site'));
   await page.getByTestId('from-folder-open').click();
   await page.waitForURL((u) => u.pathname.startsWith('/projects/') && !u.pathname.endsWith(projectId));
   const imported = (await api(`/api/projects/${page.url().split('/projects/')[1]}`)).project;

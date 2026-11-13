@@ -36,6 +36,26 @@ pub fn focus_while_open<E>(
     });
 }
 
+/// Focuses `node` each time it mounts: a field shown later (a sketch
+/// label, a rename box). Use this, not the HTML `autofocus` attribute,
+/// which a document honours once (QA-094): the second field built after
+/// a page load would not get the focus.
+pub fn focus_on_mount<E>(node: NodeRef<E>)
+where
+    E: ElementType + 'static,
+    E::Output: JsCast + Clone + 'static,
+{
+    Effect::new(move |_| {
+        if let Some(el) = node.get()
+            && let Ok(el) = el
+                .unchecked_into::<web_sys::Element>()
+                .dyn_into::<web_sys::HtmlElement>()
+        {
+            let _ = el.focus();
+        }
+    });
+}
+
 /// Call in a component that takes the focus while it is shown: when it
 /// unmounts and focus was left on nothing, it goes back to the element
 /// that had it when the component mounted.
@@ -121,6 +141,64 @@ pub fn roving(picked: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::next_index;
+
+    /// Each `autofocus` attribute in `src`, as `file:line` (QA-094: a
+    /// document applies it once; use [`super::focus_on_mount`]).
+    fn autofocus_attrs(file: &str, src: &str) -> Vec<String> {
+        let word = concat!("auto", "focus");
+        src.lines()
+            .enumerate()
+            .filter(|(_, l)| !l.trim_start().starts_with("//"))
+            .filter(|(_, l)| {
+                l.match_indices(word).any(|(at, _)| {
+                    let before = l[..at].chars().next_back();
+                    let after = l[at + word.len()..].chars().next();
+                    let part = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+                    !part(before) && !part(after)
+                })
+            })
+            .map(|(i, _)| format!("{file}:{}", i + 1))
+            .collect()
+    }
+
+    #[test]
+    fn no_field_relies_on_the_autofocus_attribute() {
+        fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    rust_files(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        rust_files(&root, &mut files);
+        assert!(files.len() > 20, "the sources were found");
+        let found: Vec<String> = files
+            .iter()
+            .flat_map(|p| {
+                let src = std::fs::read_to_string(p).unwrap();
+                autofocus_attrs(&p.strip_prefix(&root).unwrap().display().to_string(), &src)
+            })
+            .collect();
+        assert!(
+            found.is_empty(),
+            "focus these with `focus_on_mount` (QA-094):\n{}",
+            found.join("\n")
+        );
+    }
+
+    #[test]
+    fn an_autofocus_attribute_is_found() {
+        let a = concat!("auto", "focus");
+        let src = format!(
+            "<input\n  {a}\n/>\n<input {a}=true/>\n// {a} in a comment\n<x initial_{a}=1/>"
+        );
+        assert_eq!(autofocus_attrs("a.rs", &src), ["a.rs:2", "a.rs:4"]);
+    }
 
     #[test]
     fn arrows_wrap_and_home_end_jump() {

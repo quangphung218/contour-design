@@ -359,10 +359,16 @@ try {
   await page.keyboard.press('Control+Shift+z');
   await until(async () => JSON.parse(await fileText(sketchFile)).strokes.length === 1, 'redo saved');
   await page.getByTestId('draw-text').click();
-  await page.mouse.click(b.x + 100, b.y + 220);
-  await page.getByTestId('draw-text-input').fill('Hero');
-  await page.getByTestId('draw-text-input').press('Enter');
-  await until(async () => JSON.parse(await fileText(sketchFile)).strokes.some((s) => s.text === 'Hero'), 'text mark saved');
+  // Two labels typed with the keyboard, no click into the field: each new
+  // field must take the focus (the `autofocus` attribute works once a
+  // page, QA-094).
+  for (const [label, y] of [['Hero', 220], ['Footer', 260]]) {
+    await page.mouse.click(b.x + 100, b.y + y);
+    await until(async () => page.evaluate(() => document.activeElement?.dataset.testid === 'draw-text-input'), `${label} field focused`);
+    await page.keyboard.type(label);
+    await page.keyboard.press('Enter');
+    await until(async () => JSON.parse(await fileText(sketchFile)).strokes.some((s) => s.text === label), `${label} mark saved`);
+  }
   await shot('sketch');
   await page.getByTestId('sketch-to-chat').click();
   await page.getByTestId('attachment-chip').waitFor();

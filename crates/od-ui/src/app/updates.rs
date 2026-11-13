@@ -319,7 +319,7 @@ fn UpdateModal(
         state.get().map(|s| match s {
             Check::Checking => view! {
                 <Modal title=t(T::CheckForUpdates).to_owned() glyph=Glyph::Refresh on_close=close
-                    testid="update-dialog" autofocus="[data-testid=update-close]">
+                    testid="update-dialog" initial_focus="[data-testid=update-close]">
                     <div class="dialog-body">
                         <p class="row" role="status" data-testid="update-checking"><span class="spinner"></span>{t(T::CheckingForUpdates)}</p>
                     </div>
@@ -333,7 +333,7 @@ fn UpdateModal(
                 let target = (version.clone(), url.clone());
                 view! {
                     <Modal title=tf(T::UpdateAvailable, &[&version]) glyph=Glyph::Download on_close=close
-                        testid="update-dialog" autofocus="[data-testid=update-now]">
+                        testid="update-dialog" initial_focus="[data-testid=update-now]">
                         <div class="dialog-body">
                             <p role="status" data-testid="update-available">{tf(T::UpdateYouHave, &[&current])}</p>
                         </div>
@@ -349,7 +349,7 @@ fn UpdateModal(
             }
             Check::Update { version, url, current, install: how } => view! {
                 <Modal title=tf(T::UpdateAvailable, &[&version]) glyph=Glyph::Download on_close=close
-                    testid="update-dialog" autofocus="[data-testid=update-view]">
+                    testid="update-dialog" initial_focus="[data-testid=update-view]">
                     <div class="dialog-body">
                         <p role="status" data-testid="update-available">{tf(T::UpdateYouHave, &[&current])}</p>
                         {how.hint().map(|h| view! { <p class="muted small" data-testid="update-hint">{t(h)}</p> })}
@@ -363,7 +363,7 @@ fn UpdateModal(
             .into_any(),
             Check::Installing { version } => view! {
                 <Modal title=tf(T::UpdatingTo, &[&version]) glyph=Glyph::Download on_close=cancel
-                    testid="update-dialog" autofocus="[data-testid=update-cancel]">
+                    testid="update-dialog" initial_focus="[data-testid=update-cancel]">
                     <div class="dialog-body">{progress_view(phase)}</div>
                     <div class="dialog-foot">
                         <button class="btn" data-testid="update-cancel"
@@ -375,7 +375,7 @@ fn UpdateModal(
             .into_any(),
             Check::Installed { version } => view! {
                 <Modal title=tf(T::UpdateInstalled, &[&version]) glyph=Glyph::Check on_close=close
-                    testid="update-dialog" autofocus="[data-testid=update-restart]">
+                    testid="update-dialog" initial_focus="[data-testid=update-restart]">
                     <div class="dialog-body">
                         <p role="status" data-testid="update-installed">{t(T::UpdateRestartHint)}</p>
                     </div>
@@ -392,7 +392,7 @@ fn UpdateModal(
                 let focus = if why.retry() { "[data-testid=update-now]" } else { "[data-testid=update-view]" };
                 view! {
                     <Modal title=t(T::UpdateNotInstalled).to_owned() glyph=Glyph::Warning on_close=close
-                        testid="update-dialog" autofocus=focus>
+                        testid="update-dialog" initial_focus=focus>
                         <div class="dialog-body">
                             <p role="alert" data-testid="update-install-failed" data-kind=format!("{why:?}")>{t(why.message())}</p>
                         </div>
@@ -410,7 +410,7 @@ fn UpdateModal(
             }
             Check::Current(current) => view! {
                 <Modal title=t(T::UpToDate).to_owned() glyph=Glyph::Check on_close=close
-                    testid="update-dialog" autofocus="[data-testid=update-close]">
+                    testid="update-dialog" initial_focus="[data-testid=update-close]">
                     <div class="dialog-body">
                         <p role="status" data-testid="update-current">{tf(T::UpToDateHint, &[&current])}</p>
                     </div>
@@ -424,7 +424,7 @@ fn UpdateModal(
                 let message = if s == Check::RateLimited { T::UpdateRateLimited } else { T::UpdateCheckFailed };
                 view! {
                     <Modal title=t(T::CheckForUpdates).to_owned() glyph=Glyph::Warning on_close=close
-                        testid="update-dialog" autofocus="[data-testid=update-retry]">
+                        testid="update-dialog" initial_focus="[data-testid=update-retry]">
                         <div class="dialog-body">
                             <p role="alert" data-testid="update-failed">{t(message)}</p>
                         </div>

@@ -1074,14 +1074,20 @@ fn FromFolderForm(typing: RwSignal<Option<String>>) -> impl IntoView {
         });
     };
     let import_key = import.clone();
+    // Built when the form opens, not on each letter: a rebuilt field
+    // would lose the focus and the caret.
+    let open = Memo::new(move |_| typing.with(Option::is_some));
+    let path_input = NodeRef::<leptos::html::Input>::new();
+    super::focus::focus_on_mount(path_input);
     move || {
-        typing.get().map(|value| {
+        open.get().then(|| {
+            let value = typing.get_untracked().unwrap_or_default();
             let import = import.clone();
             let import_key = import_key.clone();
             view! {
                 <div class="from-folder" data-testid="from-folder-form">
                     <input class="input small mono" data-testid="from-folder-path" placeholder=t(T::FolderPathPlaceholder)
-                        aria-label=t(T::FolderPathLabel) prop:value=value autofocus=true
+                        aria-label=t(T::FolderPathLabel) prop:value=value node_ref=path_input
                         on:input=live(move |ev| typing.set(Some(event_target_value(&ev))))
                         on:keydown=move |ev: web_sys::KeyboardEvent| match ev.key().as_str() {
                             "Enter" => import_key(),
