@@ -257,7 +257,9 @@ impl Tools {
         kid
     }
 
-    /// Another file is shown: its edits, tweaks and lint start over.
+    /// Another file is shown: its edits, tweaks and lint start over. What
+    /// is tied to its own file stays for when it shows again: "Saved to"
+    /// (`status_for`) and a text edit not written, with its text (QA-087).
     pub fn forget_document(self) {
         // The last file's lint, if it answers now, is not this one's.
         self.lint_seq.update_value(|n| *n = n.wrapping_add(1));
@@ -267,9 +269,6 @@ impl Tools {
         self.tweaks.set(Vec::new());
         self.tweak_values.set(BTreeMap::new());
         self.lint.set(None);
-        self.status.set(None);
-        self.status_for.set(None);
-        self.failed_text.set(Vec::new());
         self.manual.forget();
     }
 
@@ -1914,6 +1913,33 @@ mod tests {
                 tools.lint_seq.get_value(),
                 asked,
                 "a.html's lint is dropped on b.html"
+            );
+        });
+    }
+
+    #[test]
+    fn another_file_keeps_what_is_tied_to_its_own_file() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let tools = Tools::new();
+            tools.saved("a.html", 3);
+            tools.failed_text.set(vec![FailedText {
+                file: "a.html".to_owned(),
+                selector: "h1".to_owned(),
+                before: "was".to_owned(),
+                text: "typed".to_owned(),
+                message: "no".to_owned(),
+            }]);
+            tools.forget_document();
+            assert_eq!(tools.status_for.get_untracked().as_deref(), Some("a.html"));
+            assert!(
+                tools.status.get_untracked().is_some(),
+                "Saved to a.html, back on it"
+            );
+            assert_eq!(
+                tools.failed_text.with_untracked(Vec::len),
+                1,
+                "the text typed kept"
             );
         });
     }
