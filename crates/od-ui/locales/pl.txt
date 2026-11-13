@@ -591,6 +591,7 @@ SlideN = Slajd {0}
 CommentMode = Dodaj komentarz
 CommentModeOn = Kliknij element, aby dodać komentarz
 CommentPlaceholder = Co tu zmienić?
+CommentReselect = Tego elementu nie ma już na stronie. Wybierz element do skomentowania.
 AddComment = Dodaj komentarz
 RemoveComment = Usuń
 Detach = Nie wysyłaj
@@ -1738,7 +1739,7 @@ ProjectNameRequired = Nazwa projektu jest wymagana.
 ApiKeyRequired = Wymagany klucz API
 ManualLeaveTitle = Opuścić tę stronę?
 ManualLeave = Wyjdź
-ManualLeaveConfirm = Edycja nie została zastosowana. Wyjść i ją utracić?
+LeaveDraftsConfirm = Te pliki mają niewysłany komentarz lub niezastosowaną edycję. Wyjść i je utracić?
 # Desktop app menu bar
 MenuAbout = {0} – informacje
 MenuServices = Usługi

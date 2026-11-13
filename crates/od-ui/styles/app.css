@@ -534,6 +534,8 @@ details.agent-missing[open] > summary .ico:last-child, details.advanced-env[open
 .dialog.wide-dialog { width: min(680px, 100%); }
 .panel-tabs { flex-wrap: wrap; }
 .dialog-body fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
+/* The leave question's files with work not sent (leave_guard). */
+.leave-files { margin: 0; padding-left: var(--space-4); max-height: 10rem; overflow-y: auto; overflow-wrap: anywhere; }
 .dialog-body fieldset.field > legend, .form-card fieldset.field > legend { padding: 0; margin-bottom: var(--space-1-5); font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text-secondary); }
 .chip-row { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
 

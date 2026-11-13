@@ -592,6 +592,7 @@ SlideN = Slide {0}
 CommentMode = Tambah komentar
 CommentModeOn = Klik elemen untuk berkomentar
 CommentPlaceholder = Apa yang perlu diubah di sini?
+CommentReselect = Elemen ini sudah tidak ada di halaman. Pilih elemen untuk dikomentari.
 AddComment = Tambah komentar
 RemoveComment = Hapus
 Detach = Jangan kirim
@@ -1732,7 +1733,7 @@ ProjectNameRequired = Nama proyek wajib diisi.
 ApiKeyRequired = API key wajib diisi
 ManualLeaveTitle = Tinggalkan halaman ini?
 ManualLeave = Tinggalkan
-ManualLeaveConfirm = Ada edit yang belum diterapkan. Tinggalkan dan buang?
+LeaveDraftsConfirm = File ini punya komentar yang belum dikirim atau edit yang belum diterapkan. Tinggalkan dan buang?
 # Desktop app menu bar
 MenuAbout = Tentang {0}
 MenuServices = Layanan

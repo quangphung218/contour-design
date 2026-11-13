@@ -356,12 +356,24 @@ fn CommentItem(
 #[component]
 pub fn DraftImages(
     ctx: StudioCtx,
-    images: RwSignal<Vec<String>>,
+    /// The file whose draft these images are.
+    file: String,
     error: RwSignal<Option<String>>,
 ) -> impl IntoView {
     let input = NodeRef::<leptos::html::Input>::new();
     let busy = RwSignal::new(false);
-    let tasks = Tasks::here();
+    let here = Tasks::here();
+    let file = StoredValue::new(file);
+    let sending = move || {
+        ctx.comment_drafts
+            .with(|d| file.with_value(|f| d.get(f).is_some_and(|d| d.sending)))
+    };
+    let images = move || {
+        ctx.comment_drafts.with(|d| {
+            file.with_value(|f| d.get(f).map(|d| d.images.clone()))
+                .unwrap_or_default()
+        })
+    };
     let picked = move |_| {
         let Some(el) = input.get() else { return };
         let files: Vec<web_sys::File> = el
@@ -369,35 +381,53 @@ pub fn DraftImages(
             .map(|l| (0..l.length()).filter_map(|i| l.get(i)).collect())
             .unwrap_or_default();
         el.set_value("");
-        let room = od_contracts::MAX_COMMENT_IMAGES.saturating_sub(images.get_untracked().len());
+        let room = od_contracts::MAX_COMMENT_IMAGES.saturating_sub(untrack(images).len());
         let files: Vec<_> = files.into_iter().take(room).collect();
         if files.is_empty() {
             return;
         }
         busy.set(true);
-        tasks.spawn(async move {
-            match super::files_panel::upload(ctx, T::CommentImageFailed, files, COMMENT_IMAGES_DIR)
-                .await
-            {
+        let file = file.get_value();
+        // The Studio's task: the images land in the draft even if its box
+        // went meanwhile (another file shown).
+        ctx.tasks.spawn(async move {
+            let res =
+                super::files_panel::upload(ctx, T::CommentImageFailed, files, COMMENT_IMAGES_DIR)
+                    .await;
+            if here.alive() {
+                busy.set(false);
+            }
+            match res {
                 Ok(paths) => {
-                    images.update(|i| i.extend(paths));
+                    let kept = ctx.comment_drafts.with_untracked(|d| d.contains_key(&file));
+                    if kept {
+                        ctx.comment_drafts.update(|d| {
+                            if let Some(d) = d.get_mut(&file) {
+                                d.images.extend(paths);
+                            }
+                        });
+                    } else {
+                        // Cancelled meanwhile: nothing holds them.
+                        ctx.drop_draft_images(&paths);
+                    }
                     ctx.refresh_files();
                 }
-                Err(e) => error.set(Some(e)),
+                Err(e) if here.alive() => error.set(Some(e)),
+                Err(e) => ctx.notice.set(Some(e)),
             }
-            busy.set(false);
         });
     };
     let base = ctx.base();
     view! {
         <div class="draft-images">
-            {move || images.get().into_iter().map(|path| {
+            {move || images().into_iter().map(|path| {
                 let url = format!("{base}/raw/{}", api::file_path(&path));
                 let gone = path.clone();
                 view! {
                     <span class="draft-image" data-testid="draft-image">
                         <img src=url alt=""/>
-                        <button class="chip-x" aria-label=t(T::Remove) on:click=move |_| images.update(|i| i.retain(|p| p != &gone))>
+                        <button class="chip-x" aria-label=t(T::Remove) disabled=sending
+                            on:click=move |_| file.with_value(|f| ctx.remove_draft_image(f, &gone))>
                             {icon(Glyph::Close)}
                         </button>
                     </span>
@@ -415,7 +445,7 @@ pub fn DraftImages(
             <button
                 class="btn small ghost"
                 data-testid="comment-attach-image"
-                disabled=move || busy.get() || images.with(|i| i.len() >= od_contracts::MAX_COMMENT_IMAGES)
+                disabled=move || { let full = images().len() >= od_contracts::MAX_COMMENT_IMAGES; busy.get() || sending() || full }
                 on:click=move |_| { if let Some(el) = input.get() { el.click(); } }
             >
                 {icon(Glyph::Image)}{t(T::CommentAttachImage)}

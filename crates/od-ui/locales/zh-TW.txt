@@ -592,6 +592,7 @@ SlideN = 投影片 {0}
 CommentMode = 新增留言
 CommentModeOn = 點選元素即可留言
 CommentPlaceholder = 這裡需要改什麼？
+CommentReselect = 此元素已不在頁面上。請重新選擇要留言的元素。
 AddComment = 新增留言
 RemoveComment = 移除
 Detach = 不傳送
@@ -1732,7 +1733,7 @@ ProjectNameRequired = 專案名稱不能為空。
 ApiKeyRequired = 需要 API 金鑰
 ManualLeaveTitle = 離開此頁面？
 ManualLeave = 離開
-ManualLeaveConfirm = 有修改尚未套用。離開並捨棄？
+LeaveDraftsConfirm = 這些檔案有未送出的留言或尚未套用的修改。離開並捨棄？
 # Desktop app menu bar
 MenuAbout = 關於 {0}
 MenuServices = 服務

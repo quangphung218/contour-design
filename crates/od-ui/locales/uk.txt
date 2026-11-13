@@ -592,6 +592,7 @@ SlideN = Слайд {0}
 CommentMode = Додати коментар
 CommentModeOn = Клацніть елемент, щоб прокоментувати
 CommentPlaceholder = Що тут змінити?
+CommentReselect = Цього елемента вже немає на сторінці. Виберіть елемент для коментаря.
 AddComment = Додати коментар
 RemoveComment = Вилучити
 Detach = Не надсилати
@@ -1738,7 +1739,7 @@ ProjectNameRequired = Вкажіть назву проєкту.
 ApiKeyRequired = Потрібен ключ API
 ManualLeaveTitle = Піти з цієї сторінки?
 ManualLeave = Піти
-ManualLeaveConfirm = Є незастосована правка. Піти й втратити її?
+LeaveDraftsConfirm = У цих файлах є невідправлений коментар або незастосована правка. Піти й втратити їх?
 # Desktop app menu bar
 MenuAbout = Про {0}
 MenuServices = Служби

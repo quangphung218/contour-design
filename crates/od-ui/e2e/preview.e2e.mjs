@@ -351,25 +351,293 @@ try {
   await item.getByTestId('comment-resolve').click();
   await page.getByTestId('comments-empty').waitFor();
   results.commentsTab = 'list, image, anchored, reselect scrolls, stale, lost, resolve and reopen, image sent with the message';
-  // A draft on another file's element goes when the file shown changes
-  // (it is kept only over a reload of the same file, QA-095).
-  await write('draft.html', '<!doctype html><html><body><p id="pick" style="font-size:24px">Pick me</p></body></html>');
-  await write('other.html', '<!doctype html><html><body><p id="other">Other page</p></body></html>');
+  // 4a. Drafts stay with their file: a comment (note, image, element) and
+  // a Manual edit change not applied come back when the file shows again,
+  // after Ctrl+Tab away and back; leaving the Studio asks about them and
+  // names the file.
+  const commentPosts = [];
+  page.on('request', (req) => {
+    if (req.method() === 'POST' && /\/conversations\/[^/]+\/comments$/.test(new URL(req.url()).pathname)) commentPosts.push(req.postDataJSON());
+  });
+  const DRAFT = '<!doctype html><html><body><p id="pick" style="font-size:24px">Pick me</p><p id="next">Next one</p></body></html>';
+  const OTHER = '<!doctype html><html><body><p id="other">Other page</p></body></html>';
+  await write('draft.html', DRAFT);
+  await write('other.html', OTHER);
+  await row('other.html').click();
+  await frame.locator('#other').waitFor();
   await row('draft.html').click();
   await frame.locator('#pick').waitFor();
+  // Away and back by the keyboard: the next tab, then the one before.
+  const away = async () => {
+    await page.keyboard.press('Control+Tab');
+    await until(async () => !(await frame.locator('#pick').count()), 'another file shows');
+  };
+  const back = async () => {
+    await page.keyboard.press('Control+Shift+Tab');
+    await frame.locator('#pick, #next').first().waitFor();
+  };
+  const files = async () => (await api('/files')).files.map((f) => f.path);
   await page.getByTestId('comment-mode').click();
   await until(async () => {
     await frame.locator('#pick').click({ timeout: 2000 });
     return (await page.getByTestId('comment-draft').count()) === 1;
   }, 'a draft on draft.html');
   await page.getByTestId('comment-note').fill('On draft.html only');
+  await page.getByTestId('comment-image-input').setInputFiles({ name: 'kept.png', mimeType: 'image/png', buffer: PNG });
+  await page.getByTestId('draft-image').waitFor();
+  await page.getByTestId('comment-note').focus();
+  await away();
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  await back();
+  await page.getByTestId('comment-draft').waitFor();
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'On draft.html only', 'the note came back');
+  assert.equal(await page.getByTestId('draft-image').count(), 1, 'the image came back');
+  assert.equal(await page.getByTestId('comment-reselect').count(), 0, 'its element is still there');
+  // Leaving the Studio from another file asks, and names draft.html.
+  await away();
+  await page.getByRole('link', { name: 'Projects' }).first().click();
+  const leaveDialog = page.getByTestId('leave-dialog');
+  await leaveDialog.waitFor();
+  assert.deepEqual(await leaveDialog.getByTestId('leave-files').locator('li').allTextContents(), ['draft.html']);
+  await leaveDialog.getByTestId('leave-stay').click();
+  await leaveDialog.waitFor({ state: 'detached' });
+  // Its element goes while another file shows: the note and image wait
+  // for an element picked again.
+  await write('draft.html', DRAFT.replace(/<p id="pick"[^<]*<\/p>/, ''));
+  await back();
+  await frame.locator('#next').waitFor();
+  await page.getByTestId('comment-reselect').waitFor();
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'On draft.html only');
+  assert.ok(await page.getByTestId('comment-add').isDisabled(), 'no comment on an element gone');
+  await frame.locator('#next').click();
+  await page.getByTestId('comment-reselect').waitFor({ state: 'detached' });
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'On draft.html only', 'kept over the new pick');
+  await page.getByTestId('comment-add').click();
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  await until(async () => commentPosts.length === 1, 'the comment sent');
+  assert.equal(commentPosts[0].filePath, 'draft.html');
+  assert.equal(commentPosts[0].note, 'On draft.html only');
+  assert.ok(commentPosts[0].selector.includes('next') || commentPosts[0].text === 'Next one', `on the element picked again: ${JSON.stringify(commentPosts[0])}`);
+  assert.equal(commentPosts[0].attachments.length, 1, 'with its image');
+  // An image attached, then Cancel: the uploaded file goes too.
+  await frame.locator('#next').click();
+  await page.getByTestId('comment-draft').waitFor();
+  await page.getByTestId('comment-image-input').setInputFiles({ name: 'dropped.png', mimeType: 'image/png', buffer: PNG });
+  await page.getByTestId('draft-image').waitFor();
+  const dropped = (await files()).find((f) => f.startsWith('comments/dropped'));
+  assert.ok(dropped, 'the image uploaded');
+  await page.getByTestId('comment-cancel').click();
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  await until(async () => !(await files()).includes(dropped), 'the cancelled image deleted');
+  assert.ok((await files()).some((f) => f.startsWith('comments/kept')), 'the sent comment keeps its image');
+  await page.getByTestId('comment-mode').click();
+  results.commentDrafts = 'kept over Ctrl+Tab with image, leave asks naming the file, element gone then picked again, Cancel deletes the image';
+
+  // Manual edit: a change typed, not applied, comes back with its file and
+  // is applied there only.
+  await write('draft.html', DRAFT);
+  await frame.locator('#pick').waitFor();
+  await page.getByTestId('manual-edit-mode').click();
+  await frame.locator('#pick').click();
+  await element.and(page.locator('[data-tag="p"]')).waitFor();
+  await panel.getByTestId('manual-tab-content').click();
+  await panel.getByTestId('manual-text').fill('Typed not applied');
+  await away();
+  await until(async () => (await panel.getByTestId('manual-text').count()) === 0
+    || (await panel.getByTestId('manual-text').inputValue()) !== 'Typed not applied', 'other.html shows none of it');
+  await back();
+  await frame.locator('#pick').waitFor();
+  await until(async () => (await panel.getByTestId('manual-text').inputValue()) === 'Typed not applied', 'the change came back');
+  await until(async () => {
+    await panel.getByTestId('manual-apply-content').click();
+    return (await fileText('draft.html')).includes('Typed not applied');
+  }, 'applied to draft.html');
+  assert.equal(await fileText('other.html'), OTHER, 'other.html untouched');
+  // A request held until the test lets it go (`release`); `hit` once sent.
+  const held = async (match) => {
+    let release;
+    let seen;
+    let passed;
+    let first = true;
+    const gate = new Promise((r) => { release = r; });
+    const sent = new Promise((r) => { seen = r; });
+    const through = new Promise((r) => { passed = r; });
+    const hit = Promise.race([sent, sleep(10_000).then(() => { throw new Error(`no request matched ${match}`); })]);
+    hit.catch(() => {});
+    // The first request only; others go on.
+    const handler = async (route) => {
+      if (!first) return route.fallback();
+      first = false;
+      seen();
+      await gate;
+      await route.fallback();
+      passed();
+    };
+    // On the context, as the route that blocks the network: the later one
+    // runs first, and falls back to it.
+    await context.route(match, handler);
+    return { hit, release: async () => { release(); await through; await context.unroute(match, handler); } };
+  };
+  // `fn` holds for `ms`: what must not happen after an answer lands.
+  const stays = async (fn, label, ms = 1500) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      if (!(await fn().catch(() => false))) throw new Error(`${label}: it changed`);
+      await sleep(50);
+    }
+  };
+  // An undo of draft.html that answers once other.html shows does not
+  // reload other.html's frame.
+  const restore = await held(/\/versions\/[^/]+\/restore$/);
+  await page.getByTestId('manual-undo').click();
+  await restore.hit;
   await row('other.html').click();
   await frame.locator('#other').waitFor();
-  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  await frame.locator('body').evaluate(() => { window.__sameFrame = true; });
+  await restore.release();
+  await until(async () => !(await fileText('draft.html')).includes('Typed not applied'), 'the undo written to draft.html');
+  await stays(() => frame.locator('body').evaluate(() => window.__sameFrame === true), 'other.html reloaded by the undo of draft.html');
+  // A delete on draft.html that answers once other.html shows leaves
+  // other.html's pick and its (empty) undo history alone.
   await row('draft.html').click();
-  await frame.locator('#pick').waitFor();
-  assert.equal(await page.getByTestId('comment-draft').count(), 0, 'the draft did not come back over draft.html');
+  await frame.locator('#pick').click();
+  await element.and(page.locator('[data-tag="p"]')).waitFor();
+  const edit = await held(/\/source-edits$/);
+  await page.getByTestId('manual-delete').click();
+  await edit.hit;
+  await row('other.html').click();
+  await frame.locator('#other').click();
+  await element.and(page.locator('[data-tag="p"]')).waitFor();
+  await edit.release();
+  await until(async () => !(await fileText('draft.html')).includes('id="pick"'), 'the delete written to draft.html');
+  await stays(async () => (await element.count()) === 1, "other.html's pick cleared by draft.html's delete");
+  assert.ok(await page.getByTestId('manual-undo').isDisabled(), "other.html offers to undo draft.html's delete");
+  results.manualLate = 'an undo and a delete answering after a switch leave the file shown alone';
+  await page.getByTestId('manual-edit-mode').click();
+
+  // Comments on a deck: sent with the slide they were picked on, the box
+  // shown over that slide only; within the deck and across decks.
+  const DECK = (name) => `<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:40px system-ui}.slide{display:none;width:100vw;height:100vh;padding:40px;box-sizing:border-box}
+.slide.active{display:block}
+</style></head><body>
+<section class="slide active"><h1>${name} one</h1></section>
+<section class="slide"><h1>${name} two</h1></section>
+<section class="slide"><h1>${name} three</h1></section>
+<script>
+var i = 0, s = [].slice.call(document.querySelectorAll('.slide'));
+function show(n) { i = Math.max(0, Math.min(s.length - 1, n)); s.forEach(function (e, k) { e.classList.toggle('active', k === i); }); }
+addEventListener('keydown', function (e) {
+  if (e.key === 'ArrowRight') show(i + 1);
+  if (e.key === 'ArrowLeft') show(i - 1);
+  if (e.key === 'Home') show(0);
+  if (e.key === 'End') show(s.length - 1);
+});
+</script></body></html>`;
+  await write('deck-a.html', DECK('A'));
+  await write('deck-b.html', DECK('B'));
+  const counter = page.getByTestId('deck-counter');
+  const onSlide = async (heading, at) => {
+    await until(async () => (await counter.textContent()) === at, `deck at ${at}`).catch(async (e) => {
+      throw new Error(`${e.message}; counter ${await counter.count()} "${await counter.first().textContent({ timeout: 500 }).catch(() => '-')}", active tab ${await page.locator('.tab.active').first().textContent({ timeout: 500 }).catch(() => '-')}, shown ${await frame.locator('.slide.active h1').textContent({ timeout: 500 }).catch(() => '-')}, comment mode ${await page.getByTestId('comment-mode').getAttribute('aria-pressed').catch(() => '-')}`);
+    });
+    await frame.getByRole('heading', { name: heading }).waitFor();
+  };
+  await row('deck-b.html').click();
+  await onSlide('B one', '1 / 3');
+  await row('deck-a.html').click();
+  await onSlide('A one', '1 / 3');
+  await page.getByTestId('deck-next').click();
+  await onSlide('A two', '2 / 3');
   await page.getByTestId('comment-mode').click();
+  const pickTwo = async () => until(async () => {
+    await frame.getByRole('heading', { name: 'A two' }).click({ timeout: 2000 });
+    return (await page.getByTestId('comment-draft').count()) === 1;
+  }, 'a draft on slide 2');
+  await pickTwo();
+  await page.getByTestId('comment-note').fill('On slide two');
+  await page.getByTestId('deck-prev').click();
+  await onSlide('A one', '1 / 3');
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  await page.getByTestId('deck-next').click();
+  await onSlide('A two', '2 / 3');
+  await page.getByTestId('comment-draft').waitFor();
+  let posted = commentPosts.length;
+  await page.getByTestId('comment-add').click();
+  await until(async () => commentPosts.length === posted + 1, 'the slide 2 comment sent');
+  assert.equal(commentPosts.at(-1).slideIndex, 1, 'within the deck: slide 2');
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  // Across decks: deck-a opens again on slide 1, the draft waits for 2.
+  await pickTwo();
+  await page.getByTestId('comment-note').fill('Across decks');
+  await row('deck-b.html').click();
+  await onSlide('B one', '1 / 3');
+  // deck-b's slide is the one remembered now: deck-a opens on slide 1.
+  await page.getByTestId('deck-next').click();
+  await onSlide('B two', '2 / 3');
+  await page.getByTestId('deck-prev').click();
+  await onSlide('B one', '1 / 3');
+  await row('deck-a.html').click();
+  await onSlide('A one', '1 / 3');
+  assert.equal(await page.getByTestId('comment-draft').count(), 0, 'the slide 2 draft over slide 1');
+  await page.getByTestId('deck-next').click();
+  await onSlide('A two', '2 / 3');
+  await page.getByTestId('comment-draft').waitFor();
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Across decks');
+  // The agent rewrites the deck while the user types on slide 2: the reload
+  // goes through slide 0, the box must not be built again (focus, IME).
+  // Typed with the keyboard: `fill` focuses the box itself.
+  await page.getByTestId('comment-note').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' typed');
+  await frame.locator('body').evaluate(() => { window.__beforeDeckRewrite = true; });
+  await write('deck-a.html', DECK('A') + '\n<!-- rewritten by the agent -->\n');
+  await until(async () => (await frame.locator('body').evaluate(() => !window.__beforeDeckRewrite).catch(() => false)), 'the deck reloaded');
+  await onSlide('A two', '2 / 3');
+  await page.keyboard.type(' on');
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Across decks typed on', 'typing goes on over a deck reload on slide 2');
+  posted = commentPosts.length;
+  await page.getByTestId('comment-add').click();
+  await until(async () => commentPosts.length === posted + 1, 'the comment across decks sent');
+  assert.equal(commentPosts.at(-1).slideIndex, 1, 'across decks: slide 2');
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  results.deckDrafts = 'sent with the slide picked on; the box hides over another slide, within a deck and across decks; typing goes on over a reload on slide 2';
+
+  // A comment being sent: Cancel and Escape do not drop it or its image,
+  // and the box shown again after a switch does not send it twice.
+  await row('other.html').click();
+  await frame.locator('#other').waitFor();
+  await until(async () => {
+    await frame.locator('#other').click({ timeout: 2000 });
+    return (await page.getByTestId('comment-draft').count()) === 1;
+  }, 'a draft on other.html');
+  await page.getByTestId('comment-note').fill('Sent once');
+  await page.getByTestId('comment-image-input').setInputFiles({ name: 'sending.png', mimeType: 'image/png', buffer: PNG });
+  await page.getByTestId('draft-image').waitFor();
+  const sendingImage = (await files()).find((f) => f.startsWith('comments/sending'));
+  const post = await held(/\/conversations\/[^/]+\/comments$/);
+  posted = commentPosts.length;
+  await page.getByTestId('comment-add').click();
+  await post.hit;
+  assert.ok(await page.getByTestId('comment-cancel').isDisabled(), 'Cancel while it is sent');
+  await page.getByTestId('comment-note').press('Escape');
+  assert.equal(await page.getByTestId('comment-draft').count(), 1, 'Escape dropped a comment being sent');
+  await row('deck-b.html').click();
+  await onSlide('B one', '1 / 3');
+  await row('other.html').click();
+  await frame.locator('#other').waitFor();
+  await page.getByTestId('comment-draft').waitFor();
+  assert.ok(await page.getByTestId('comment-add').isDisabled(), 'Add again while it is sent');
+  await post.release();
+  await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
+  assert.equal(commentPosts.length, posted + 1, 'sent once');
+  assert.ok((await files()).includes(sendingImage), 'the image of the comment sent is kept');
+  await page.getByTestId('comment-mode').click();
+  results.commentSending = 'Cancel off, Escape kept, no second send after a switch, image kept';
+
+  // The Comments tab again, as the steps below expect it.
+  await page.getByTestId('comments-tab').click();
+  results.manualDrafts = 'kept over Ctrl+Tab, applied to its own file';
 
   // 4b. Reload guard: a page that loads itself under a fresh edit-key id
   // each time gets no key for it (only the host's loads do), so its loads

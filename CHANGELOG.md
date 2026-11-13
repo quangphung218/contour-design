@@ -8,6 +8,18 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Studio: a comment being written (its note, images and element) and a Manual edit change not applied now stay with their file when another file shows (a click, Ctrl+Tab, Cmd+1…9), and come back when it shows again; Apply writes only to that file. A comment whose element is gone by then keeps its note and images and asks to pick the element again. Leaving the Studio asks while any file has such work, and names the files. Cancel on a comment deletes the images uploaded for it from `comments/`; turning comment mode off keeps the comment for later.
+
+### Fixed
+
+- Studio: a comment on a deck is saved on the slide its element was picked on; before, it took the slide shown when Add was pressed, so a comment picked on slide 2 and sent from slide 1 (or after another deck was shown) landed on slide 1. The comment box shows only over its own slide. A comment being sent can no longer be sent twice or cancelled (which deleted its images) after a file switch.
+
+### Known issues
+
+- Desktop: closing the window on Windows and Linux, or quitting with ⌘Q on macOS, does not yet ask about a comment not sent or a Manual edit change not applied; they are lost. Leaving the Studio, reloading and closing a browser tab do ask.
+
 ## [0.2.0-beta.34] - 2026-11-13
 
 ### Fixed

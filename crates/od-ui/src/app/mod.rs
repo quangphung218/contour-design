@@ -95,7 +95,7 @@ pub struct Shell {
     /// The open Studio, whose commands the palette adds.
     pub(crate) studio: RwSignal<Option<studio::StudioCtx>>,
     /// Whether leaving the page would lose work (`leave_guard`).
-    unsaved: RwSignal<Option<Callback<(), bool>>>,
+    unsaved: RwSignal<Option<Callback<(), Vec<String>>>>,
     /// Where the user asked to go while work would be lost: the leave
     /// question is open.
     leaving: RwSignal<Option<leave_guard::Leave>>,

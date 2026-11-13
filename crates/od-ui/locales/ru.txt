@@ -592,6 +592,7 @@ SlideN = Слайд {0}
 CommentMode = Добавить комментарий
 CommentModeOn = Нажмите на элемент, чтобы оставить комментарий
 CommentPlaceholder = Что здесь изменить?
+CommentReselect = Этого элемента больше нет на странице. Выберите элемент для комментария.
 AddComment = Комментировать
 RemoveComment = Удалить
 Detach = Не отправлять
@@ -1738,7 +1739,7 @@ ProjectNameRequired = Укажите название проекта.
 ApiKeyRequired = Нужен ключ API
 ManualLeaveTitle = Уйти с этой страницы?
 ManualLeave = Уйти
-ManualLeaveConfirm = Есть неприменённая правка. Уйти и потерять её?
+LeaveDraftsConfirm = В этих файлах есть неотправленный комментарий или неприменённая правка. Уйти и потерять их?
 # Desktop app menu bar
 MenuAbout = О программе {0}
 MenuServices = Службы

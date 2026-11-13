@@ -592,6 +592,7 @@ SlideN = สไลด์ {0}
 CommentMode = เพิ่มความคิดเห็น
 CommentModeOn = คลิกองค์ประกอบเพื่อคอมเมนต์
 CommentPlaceholder = ตรงนี้ควรเปลี่ยนอะไร
+CommentReselect = องค์ประกอบนี้ไม่อยู่ในหน้าแล้ว เลือกองค์ประกอบที่จะแสดงความคิดเห็น
 AddComment = เพิ่มคอมเมนต์
 RemoveComment = ลบออก
 Detach = ไม่ต้องส่ง
@@ -1732,7 +1733,7 @@ ProjectNameRequired = ต้องระบุชื่อโปรเจกต�
 ApiKeyRequired = ต้องใช้คีย์ API
 ManualLeaveTitle = ออกจากหน้านี้หรือไม่
 ManualLeave = ออก
-ManualLeaveConfirm = มีการแก้ไขที่ยังไม่ได้ใช้ ออกและทิ้งการแก้ไขนี้หรือไม่
+LeaveDraftsConfirm = ไฟล์เหล่านี้มีความคิดเห็นที่ยังไม่ส่งหรือการแก้ไขที่ยังไม่ได้ใช้ ออกและทิ้งไปหรือไม่
 # Desktop app menu bar
 MenuAbout = เกี่ยวกับ {0}
 MenuServices = บริการ
