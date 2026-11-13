@@ -717,9 +717,13 @@ document.getElementById('mail').addEventListener('click', (e) => e.preventDefaul
   await desk.addInitScript(() => {
     if (window.top !== window) return;
     window.__shellCalls = [];
+    // The close guard's words: `set_unsaved true`, `close_answer go`.
+    window.__closeCalls = [];
     window.__TAURI_INTERNALS__ = {
       invoke: async (cmd, args = {}) => {
         window.__shellCalls.push(args && args.url ? `${cmd} ${args.url}` : cmd);
+        if (cmd === 'set_unsaved') window.__closeCalls.push(`${cmd} ${args.unsaved}`);
+        if (cmd === 'close_answer') window.__closeCalls.push(`${cmd} ${args.answer}`);
         return null;
       },
     };
@@ -937,6 +941,48 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await menuReload();
   await until(() => desk.evaluate(() => window.__beforeReload !== true).catch(() => false), 'with nothing unsaved, Reload reloads at once');
   results.menuReload = 'View ▸ Reload answers the shell (reload_ack); with a manual edit not applied it asks (Cancel keeps the edit, Leave reloads); with nothing unsaved it reloads';
+  // Closing the window (Windows, Linux) or quitting (macOS ⌘Q, the
+  // menu, the Dock): the shell knows whether work would be lost
+  // (`set_unsaved`), and asks the page (`od:menu` `close` / `quit`), which
+  // answers `go`, or `asking` then the user's choice.
+  const closeCalls = () => desk.evaluate(() => window.__closeCalls);
+  const lastUnsaved = async () => (await closeCalls()).filter((c) => c.startsWith('set_unsaved')).at(-1);
+  const answers = async () => (await closeCalls()).filter((c) => c.startsWith('close_answer'));
+  const menu = (detail) => desk.evaluate((d) => window.dispatchEvent(new CustomEvent('od:menu', { detail: d })), detail);
+  await desk.locator('[data-testid="file-row"][data-path="reload.html"]').click();
+  await deskPage.locator('h1').waitFor();
+  await until(async () => (await lastUnsaved()) === 'set_unsaved false', 'the page tells the shell it holds nothing');
+  // Nothing unsaved: `go` at once, no question.
+  await menu('close');
+  await until(async () => (await answers()).at(-1) === 'close_answer go', 'with nothing unsaved the close goes at once');
+  assert.equal(await desk.getByTestId('leave-dialog').count(), 0, 'no question with nothing unsaved');
+  // A manual edit typed: the shell is told, a quit asks.
+  await desk.getByTestId('manual-edit-mode').click();
+  await until(async () => {
+    await deskPage.locator('h1').click();
+    return (await desk.getByTestId('manual-text').count()) > 0;
+  }, 'the manual edit picks the heading again', 15_000);
+  await until(async () => {
+    await desk.getByTestId('manual-text').fill('Typed before quitting');
+    await sleep(500);
+    return (await desk.getByTestId('manual-text').inputValue()) === 'Typed before quitting';
+  }, 'the manual edit keeps the text typed before quitting', 15_000);
+  await until(async () => (await lastUnsaved()) === 'set_unsaved true', 'the page tells the shell it holds work not saved');
+  const before = (await answers()).length;
+  await menu('quit');
+  await desk.getByTestId('leave-dialog').waitFor();
+  assert.match(await desk.getByTestId('leave-files').innerText(), /reload\.html/, 'the question names the file');
+  assert.deepEqual((await answers()).slice(before), ['close_answer asking'], 'the page says it asks, so the shell waits');
+  await desk.getByTestId('leave-stay').click();
+  await until(async () => (await answers()).at(-1) === 'close_answer stay', 'Cancel tells the shell to stay');
+  assert.equal(await desk.getByTestId('manual-text').inputValue(), 'Typed before quitting', 'Cancel keeps the edit');
+  assert.equal(await desk.getByTestId('leave-dialog').count(), 0, 'Cancel closes the question');
+  // Close the window: Leave tells the shell to go.
+  await menu('close');
+  await desk.getByTestId('leave-go').click();
+  await until(async () => (await answers()).at(-1) === 'close_answer go', 'Leave tells the shell to close');
+  assert.deepEqual((await answers()).slice(before), ['close_answer asking', 'close_answer stay', 'close_answer asking', 'close_answer go']);
+  results.menuClose = 'the page tells the desktop shell whether it holds work not saved (set_unsaved); od:menu close / quit answers go at once with nothing unsaved, else asks with the leave dialog naming the file (asking, then stay on Cancel with the edit kept, go on Leave)';
   await deskContext.close();
   results.blankLinks = 'a real click on a _blank web link (also with ⌘/Ctrl) or a window.open in a click asks the shell; page-cancelled (also on window, after the bridge), same-frame, mailto, synthetic clicks, a window.open with no click (also with a made-up window.event), a second window.open in the same click, in another event of the same press (pointerup/mouseup/click, keydown/keyup, the click of a _blank link) or in a comment-mode pick, a key let go in the frame after its press began on the host, and unkeyed messages do not; a window.open of a non-web address leaves the press to the next one; a window.open in the keyup of Enter, of a page that cancels a _blank link in a window listener (before or after it opens), or after one of about:blank in the same click, asks once; a keyup after Tab out of the frame and back opens nothing; "Open in new tab" asks the shell';
 

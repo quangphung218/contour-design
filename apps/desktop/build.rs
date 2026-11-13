@@ -16,6 +16,8 @@ const APP_COMMANDS: &[&str] = &[
     "open_link",
     "reset_dialog_gate",
     "reload_ack",
+    "set_unsaved",
+    "close_answer",
 ];
 
 fn main() {
