@@ -316,7 +316,20 @@ jobs:
             echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; no updater signatures, so Update now cannot install this release (docs/release.md, Updater signing)"
             unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
           fi
-          npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" bundle --target universal-apple-darwin --bundles app,dmg ${updater[@]+"${updater[@]}"}
+          # hdiutil on the hosted runners fails now and then with "Resource
+          # busy" (beta.29–34: 4 of 6 releases needed a rerun). Only that
+          # error is tried again; any other one fails the step at once.
+          set -o pipefail
+          for try in 1 2 3; do
+            if npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" bundle --target universal-apple-darwin --bundles app,dmg ${updater[@]+"${updater[@]}"} 2>&1 | tee "$RUNNER_TEMP/bundle.log"; then
+              break
+            fi
+            if [ "$try" = 3 ] || ! grep -q 'hdiutil: .*Resource busy' "$RUNNER_TEMP/bundle.log"; then
+              exit 1
+            fi
+            echo "::warning::hdiutil was busy (try $try of 3); trying again in 30 s"
+            sleep 30
+          done
       - name: Collect files
         run: |
           mkdir -p dist-release
