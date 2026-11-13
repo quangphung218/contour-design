@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.35] - 2026-11-14
+
 ### Changed
 
 - Studio: a comment being written (its note, images and element) and a Manual edit change not applied now stay with their file when another file shows (a click, Ctrl+Tab, Cmd+1…9), and come back when it shows again; Apply writes only to that file. A comment whose element is gone by then keeps its note and images and asks to pick the element again. Leaving the Studio asks while any file has such work, and names the files. Cancel on a comment deletes the images uploaded for it from `comments/`; turning comment mode off keeps the comment for later.
@@ -1172,7 +1174,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.34...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.35...HEAD
+[0.2.0-beta.35]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.34...v0.2.0-beta.35
 [0.2.0-beta.34]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.33...v0.2.0-beta.34
 [0.2.0-beta.33]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.32...v0.2.0-beta.33
 [0.2.0-beta.32]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.31...v0.2.0-beta.32
