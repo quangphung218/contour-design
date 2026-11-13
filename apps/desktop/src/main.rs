@@ -2415,9 +2415,20 @@ mod tests {
         );
     }
 
+    /// Two mock event loops (`App::run`) at once abort the test binary now
+    /// and then (SIGABRT, no message; `make check` on macOS): one at a time.
+    static MOCK_LOOP: Mutex<()> = Mutex::new(());
+
+    fn one_mock_loop() -> std::sync::MutexGuard<'static, ()> {
+        MOCK_LOOP
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[test]
     fn closing_the_window_hides_it_on_macos() {
         // QA-043: the red button quit the app and stopped its runs.
+        let _one = one_mock_loop();
         let context: tauri::Context<tauri::test::MockRuntime> = app_context();
         let app = tauri::test::mock_builder().build(context).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::App("index.html".into()))
@@ -2470,6 +2481,7 @@ mod tests {
         app: tauri::App<tauri::test::MockRuntime>,
         window: tauri::WebviewWindow<tauri::test::MockRuntime>,
     ) -> bool {
+        let _one = one_mock_loop();
         let kept = Arc::new(Mutex::new(None::<bool>));
         let seen = Arc::clone(&kept);
         app.run(move |handle, event| match event {
