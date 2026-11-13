@@ -39,6 +39,9 @@ use tauri_plugin_dialog::DialogExt;
 use shell_state::PREVIEW_STOPPED;
 use shell_state::{Action, RESTART_GRACE, ShellEvent, ShellState};
 
+/// Run in every frame of the main window: Backspace outside a text field
+/// does not go Back (QA-093).
+const KEYS_JS: &str = include_str!("keys.js");
 const OPEN_FOLDER_MENU_ID: &str = "open-folder";
 const SHORTCUTS_MENU_ID: &str = "help-shortcuts";
 const PALETTE_MENU_ID: &str = "help-palette";
@@ -1479,6 +1482,9 @@ fn main() -> anyhow::Result<()> {
             let nav_origin = Arc::clone(&origin);
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                    // Every frame, the design previews too: Backspace
+                    // outside a text field does not go Back (QA-093).
+                    .initialization_script_for_all_frames(KEYS_JS)
                     .on_navigation(move |url| {
                         let ok = allowed_navigation(url, nav_origin.get().map(String::as_str));
                         if !ok {
@@ -2682,6 +2688,22 @@ mod tests {
             .next()
             .unwrap_or_default()
             .to_owned()
+    }
+
+    #[test]
+    fn every_frame_of_the_window_keeps_backspace_from_going_back() {
+        // QA-093: WKWebView goes Back on a Backspace outside a text field,
+        // in the app and in a design's frame alike.
+        let code = shipped(include_str!("main.rs"));
+        let start = code
+            .find("WebviewWindowBuilder::new(")
+            .expect("the window's builder");
+        let end = start + code[start..].find("window.build()").expect("its build");
+        assert!(
+            code[start..end].contains(".initialization_script_for_all_frames(KEYS_JS)"),
+            "the main window's builder runs keys.js in every frame"
+        );
+        assert!(KEYS_JS.contains("'Backspace'") && KEYS_JS.contains("isComposing"));
     }
 
     #[test]

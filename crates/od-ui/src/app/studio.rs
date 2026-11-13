@@ -1594,6 +1594,13 @@ pub(super) fn is_editing(ev: &web_sys::KeyboardEvent) -> bool {
     is_editing_target(ev.target())
 }
 
+/// Delete on a focused item (a tab, a terminal tab) removes it. A Mac's
+/// delete key sends `Backspace`; its Delete (fn ⌫) is the forward one
+/// (QA-093).
+fn is_delete_key(ev: &web_sys::KeyboardEvent) -> bool {
+    matches!(ev.key().as_str(), "Delete" | "Backspace")
+}
+
 /// Whether `target` is a text field (input, textarea, editable, terminal).
 pub(super) fn is_editing_target(target: Option<web_sys::EventTarget>) -> bool {
     use wasm_bindgen::JsCast;
@@ -1893,9 +1900,9 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                         let close_key = path.clone();
                         view! {
                             <div class="tab" class:active=active role="presentation" data-testid="tab" title=path.clone()>
-                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete"
+                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete Backspace"
                                     on:click=move |_| ctx.open_file(&open)
-                                    on:keydown=move |ev| if ev.key() == "Delete" { ev.prevent_default(); ctx.tabs.update(|t| t.close(&close_key)); }
+                                    on:keydown=move |ev| if is_delete_key(&ev) { ev.prevent_default(); ctx.tabs.update(|t| t.close(&close_key)); }
                                 >{icon(if live { Glyph::Sparkle } else { file_glyph(&name) })}<span class="tab-label">{name.clone()}</span></button>
                                 <button
                                     class="tab-close"
@@ -1921,9 +1928,9 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                         let (show, close, close_key) = (term.id.clone(), term.id.clone(), term.id.clone());
                         view! {
                             <div class="tab term-tab" class:active=active role="presentation" data-testid="terminal-tab">
-                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete"
+                                <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete Backspace"
                                     on:click=move |_| { ctx.side.open.set(false); ctx.active_term.set(Some(show.clone())); }
-                                    on:keydown=move |ev| if ev.key() == "Delete" { ev.prevent_default(); terminal::close(ctx, close_key.clone()); }
+                                    on:keydown=move |ev| if is_delete_key(&ev) { ev.prevent_default(); terminal::close(ctx, close_key.clone()); }
                                 >
                                     {icon(Glyph::Terminal)}
                                     {tf(T::TerminalTab, &[&term.number.to_string()])}
