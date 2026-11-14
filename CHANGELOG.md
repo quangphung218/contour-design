@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.37] - 2026-11-14
+
 ### Fixed
 
 - Studio: renaming or moving a file (or the folder it is in) from the Files panel now keeps its comment being written (note, images, element) and its Manual edit change not applied, under the new name; before, they were thrown away without a word (QA-097). The tab is renamed in place and stays shown; the pins of comments already sent follow the file too, where before they disappeared. A file renamed, moved or deleted outside the app (the agent, Finder) still drops its work not saved, and the Studio now says which file lost it.
@@ -1188,7 +1190,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.36...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.37...HEAD
+[0.2.0-beta.37]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.36...v0.2.0-beta.37
 [0.2.0-beta.36]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.35...v0.2.0-beta.36
 [0.2.0-beta.35]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.34...v0.2.0-beta.35
 [0.2.0-beta.34]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.33...v0.2.0-beta.34
