@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Studio: images attached to a comment not sent yet are no longer listed in the prompt of Hand off to coding agent. A file whose content is replaced from the Files panel at the path of such an image is now the project's and ships in the ZIP. An image whose comment page was left while its Manual edit write failed is deleted at once instead of after a day; one the disk refuses to delete stays out of the ZIP until a later release or sweep deletes it.
+
 ## [0.2.0-beta.37] - 2026-11-14
 
 ### Fixed

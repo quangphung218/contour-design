@@ -400,3 +400,65 @@ async fn a_write_that_fails_after_the_page_is_written_keeps_its_image() {
         "the page points to an image the release deleted"
     );
 }
+
+/// A Manual write that fails before the page is written (the page cannot
+/// be replaced) still claims its image: the same write tried again
+/// writes it, and the release after leaves it with the page.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_write_that_fails_before_the_page_is_written_can_be_tried_again() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = daemon().await;
+    let (project, _) = d.project().await;
+    let res = d
+        .post(
+            &format!("/api/projects/{project}/files"),
+            &json!({"name": "index.html", "content": "<!doctype html><html><body><img src=\"x.png\"></body></html>"}),
+        )
+        .await;
+    assert_eq!(res.status().as_u16(), 200);
+    let img = upload(&d, &project, "hero.png", Some("s1")).await["files"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // The project folder takes no new file: the page cannot be replaced.
+    let root = d
+        .state
+        .store
+        .project_root(&d.state.store.get_project(&project).unwrap())
+        .unwrap()
+        .dir;
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let status = write_src(&d, &project, &img, &[&img]).await;
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(status >= 400, "the page could not be written: {status}");
+    // Try again: written, and the image is the page's.
+    assert_eq!(write_src(&d, &project, &img, &[&img]).await, 200);
+    assert_eq!(release(&d, &project, "s1").await, 200);
+    assert!(files(&d, &project).await.contains(&img));
+    assert!(zip_names(&d, &project).await.contains(&img));
+}
+
+/// The prompt handed to a coding agent lists the project's files, not the
+/// images of a comment not sent yet.
+#[tokio::test]
+async fn the_handoff_prompt_leaves_draft_images_out() {
+    let d = daemon().await;
+    let (project, _) = d.project().await;
+    let draft = upload(&d, &project, "draft.png", Some("s1")).await["files"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mine = upload(&d, &project, "mine.png", None).await["files"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let prompt = d
+        .get_json(&format!("/api/projects/{project}/handoff"))
+        .await["prompt"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(prompt.contains(&format!("`{mine}`")), "{prompt}");
+    assert!(!prompt.contains(&draft), "{prompt}");
+}

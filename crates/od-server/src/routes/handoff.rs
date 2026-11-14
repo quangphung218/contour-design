@@ -74,7 +74,10 @@ async fn handoff(
         .blocking(move |s| {
             let project = s.get_project(&id)?;
             let dir = s.project_root(&project)?.dir;
-            let files = s.list_files(&project.id)?;
+            // Images of comments not sent yet are no part of the design.
+            let drafts = s.unclaimed_draft_uploads(&project.id)?;
+            let mut files = s.list_files(&project.id)?;
+            files.retain(|f| !drafts.contains(&f.path));
             Ok((project, dir, files))
         })
         .await?;

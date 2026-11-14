@@ -1107,4 +1107,27 @@ test('DL-46', 'Deck: typing on while the agent rewrites the deck (it reloads thr
   assert.equal(await page.getByTestId('comment-note').inputValue(), 'First half, second half');
 });
 
+test('DL-52', 'Back from the back-forward cache: the old draft images are gone, the words stay, a new image is kept', async ({ d, newPage }) => {
+  const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
+  await typeNote(page, 'Back again');
+  await attach(page, 'old.png');
+  assert.equal((await commentImages(d, id)).length, 1, 'the image uploaded');
+  // Playwright's Chromium keeps no page in the back-forward cache, so the
+  // two events the browser sends around one are sent here: the page is
+  // put away (its session released), then shown again from the cache.
+  const gone = released(page);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await gone;
+  await noImages(d, id, 'the image goes with the session put away');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await until(async () => (await page.getByTestId('draft-image').count()) === 0, 'the chip of the deleted image goes');
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Back again', 'the words stay');
+  // A new session: an image uploaded now is not deleted as one landing
+  // after the old session's release.
+  await attach(page, 'new.png');
+  assert.equal((await commentImages(d, id)).length, 1, 'the new image kept');
+  await page.getByTestId('comment-add').click();
+  await until(async () => (await zipNames(d, id)).some((n) => n.startsWith('comments/')), 'the comment\'s image ships');
+});
+
 await run('drafts');

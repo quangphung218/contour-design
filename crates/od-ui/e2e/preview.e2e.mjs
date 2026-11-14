@@ -851,14 +851,16 @@ const fake = () => { window.event = { isTrusted: true, type: 'click' }; };
 let n = 0;
 fake();
 window.open('https://example.com/w-load');
-const loop = setInterval(() => { fake(); window.open('https://example.com/loop-' + ++n); if (n >= 8) clearInterval(loop); }, 200);
+const loop = setInterval(() => { fake(); window.open('https://example.com/loop-' + ++n); if (n >= 8) { clearInterval(loop); window.__done = true; } }, 200);
 </script></body></html>`);
   await desk.goto(`${BASE}/projects/${pid}`);
   await desk.locator('[data-testid="file-row"][data-path="popups.html"]').click();
-  await desk.frameLocator('iframe[data-testid="preview"]').locator('#ready').waitFor();
-  await sleep(2000);
-  const unasked = await desk.evaluate(() => window.__shellCalls.filter((c) => c.startsWith('open_link')));
-  assert.deepEqual(unasked, [], 'a window.open with no click asks nothing');
+  const popups = desk.frameLocator('iframe[data-testid="preview"]').locator('body');
+  await popups.locator('#ready').waitFor();
+  // The page's own timer, not a time picked here: wait for its last open.
+  await until(() => popups.evaluate(() => window.__done === true), 'the popups.html loop ran to its end');
+  const unasked = () => desk.evaluate(() => window.__shellCalls.filter((c) => c.startsWith('open_link')));
+  await stays(async () => (await unasked()).length === 0, 'a window.open with no click asks nothing', 400);
   await desk.locator('[data-testid="file-row"][data-path="links.html"]').click();
   const deskFrame = desk.frameLocator('iframe[data-testid="preview"]');
   await deskFrame.locator('#out').waitFor();
@@ -873,20 +875,20 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await deskFrame.locator('#same').click();
   await deskFrame.locator('#mail').click();
   await deskFrame.locator('#late').click();
-  await sleep(400);
+  const onlyOut = async () => (await opened()).every((c) => c === 'open_link https://example.com/p1');
+  await stays(onlyOut, 'a page-cancelled, same-frame or mailto link asks nothing', 400);
   // A click a page script makes is not the user's.
   const realClicks = (await opened()).length;
+  const noMore = async () => (await opened()).length === realClicks;
   await deskFrame.locator('#out').evaluate((a) => a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
-  await sleep(400);
-  assert.equal((await opened()).length, realClicks, 'a synthetic click asks nothing');
+  await stays(noMore, 'a synthetic click asks nothing', 400);
   // Nor does a message the page posts itself, without the frame's key or
   // with a made-up one.
   await deskFrame.locator('body').evaluate(() => {
     parent.postMessage({ type: 'od:open-link', href: 'https://example.com/forged' }, '*');
     parent.postMessage({ type: 'od:open-link', key: 'made-up', href: 'https://example.com/forged' }, '*');
   });
-  await sleep(400);
-  assert.equal((await opened()).length, realClicks, 'a page-made od:open-link asks nothing');
+  await stays(noMore, 'a page-made od:open-link asks nothing', 400);
   assert.ok((await opened()).every((c) => c === 'open_link https://example.com/p1'), `opened: ${await opened()}`);
   // QA-061: the window opens nothing itself, so a design's `window.open`
   // reaches the shell only through the bridge, and only in a real click.
@@ -896,18 +898,19 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await deskFrame.locator('#wo').evaluate((b) => b.click());
   await deskFrame.locator('#wo20').click();
   await until(() => asked('https://example.com/many-0'), 'the first window.open of a click asks the shell');
-  await sleep(300);
-  const many = (await opened()).filter((c) => c.startsWith('open_link https://example.com/many-'));
-  assert.deepEqual(many, ['open_link https://example.com/many-0'], 'one click asks for one tab');
+  /** Holds while the shell was asked for exactly `want` of the URLs `match`. */
+  const only = (match, want, label) => stays(async () => {
+    const got = (await opened()).filter((c) => match.test(c));
+    return JSON.stringify(got) === JSON.stringify(want);
+  }, label, 300);
+  await only(/^open_link https:\/\/example\.com\/many-/, ['open_link https://example.com/many-0'], 'one click asks for one tab');
   await deskFrame.locator('#keys').focus();
   await desk.keyboard.down('a');
   await desk.keyboard.down('a');
   await desk.keyboard.down('a');
   await desk.keyboard.up('a');
   await until(() => asked('https://example.com/key-0'), 'a key in a keydown handler asks the shell');
-  await sleep(300);
-  const keys = (await opened()).filter((c) => c.startsWith('open_link https://example.com/key-'));
-  assert.deepEqual(keys, ['open_link https://example.com/key-0'], 'a held key asks for one tab');
+  await only(/^open_link https:\/\/example\.com\/key-/, ['open_link https://example.com/key-0'], 'a held key asks for one tab');
   // One press of a mouse button or a key asks for one tab, though the
   // page opens one in each of its events, each a different URL.
   await deskFrame.locator('#gesture').click();
@@ -915,16 +918,12 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await deskFrame.locator('#enter').focus();
   await desk.keyboard.press('Enter');
   await until(() => asked('https://example.com/e-keydown'), 'window.open in a keydown handler asks the shell');
-  await sleep(300);
-  const gestures = (await opened()).filter((c) => /^open_link https:\/\/example\.com\/[ge]-/.test(c));
-  assert.deepEqual(gestures, ['open_link https://example.com/g-pointerup', 'open_link https://example.com/e-keydown'], 'one press asks for one tab');
+  await only(/^open_link https:\/\/example\.com\/[ge]-/, ['open_link https://example.com/g-pointerup', 'open_link https://example.com/e-keydown'], 'one press asks for one tab');
   // A `_blank` link spends the same press: the page's window.open in its
   // pointerup and the link's own click ask for one tab, not two.
   await deskFrame.locator('#both').click();
   await until(() => asked('https://example.com/both-open'), 'window.open in a _blank link\'s pointerup asks the shell');
-  await sleep(300);
-  const both = (await opened()).filter((c) => c.startsWith('open_link https://example.com/both-'));
-  assert.deepEqual(both, ['open_link https://example.com/both-open'], 'a _blank link and a window.open in one press ask for one tab');
+  await only(/^open_link https:\/\/example\.com\/both-/, ['open_link https://example.com/both-open'], 'a _blank link and a window.open in one press ask for one tab');
   // Only a web address spends the press: about:blank and mailto in its
   // pointerup leave it to the window.open of its click.
   await deskFrame.locator('#nonweb').click();
@@ -939,8 +938,7 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
     await desk.keyboard.down('Shift');
     await deskFrame.locator('#letgo').evaluate((el) => el.focus());
     await desk.keyboard.up('Shift');
-    await sleep(300);
-    assert.equal(await asked('https://example.com/letgo'), false, `a key let go in the frame after ${after} opens nothing`);
+    await stays(async () => !(await asked('https://example.com/letgo')), `a key let go in the frame after ${after} opens nothing`, 300);
   };
   await deskFrame.locator('#idle').click();
   await letGo('a click');
@@ -958,15 +956,11 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   // listener after the bridge's, asks for its own tab, not the link's.
   await deskFrame.locator('#track').click();
   await until(() => asked('https://example.com/track-redirect'), 'window.open of a page that cancels a _blank link asks the shell');
-  await sleep(300);
-  const track = (await opened()).filter((c) => c.startsWith('open_link https://example.com/track-'));
-  assert.deepEqual(track, ['open_link https://example.com/track-redirect'], 'a cancelled _blank link and the page\'s window.open ask for one tab');
+  await only(/^open_link https:\/\/example\.com\/track-/, ['open_link https://example.com/track-redirect'], 'a cancelled _blank link and the page\'s window.open ask for one tab');
   // The same when the page opens first and cancels after.
   await deskFrame.locator('#openfirst').click();
   await until(() => asked('https://example.com/of-open'), 'window.open of a page that opens, then cancels a _blank link asks the shell');
-  await sleep(300);
-  const openFirst = (await opened()).filter((c) => c.startsWith('open_link https://example.com/of-'));
-  assert.deepEqual(openFirst, ['open_link https://example.com/of-open'], 'a _blank link the page opens, then cancels asks for one tab');
+  await only(/^open_link https:\/\/example\.com\/of-/, ['open_link https://example.com/of-open'], 'a _blank link the page opens, then cancels asks for one tab');
   // about:blank first leaves the press to the web address after it.
   await deskFrame.locator('#blankthen').click();
   await until(() => asked('https://example.com/blankthen'), 'a window.open after one of about:blank in the same click asks the shell');
@@ -974,12 +968,10 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   // back: the keyup in the frame opens nothing.
   await deskFrame.locator('#tabback').focus();
   await desk.keyboard.press('Tab');
-  await sleep(150);
-  assert.ok(await desk.evaluate(() => document.activeElement && document.activeElement.tagName !== 'IFRAME'), 'Tab leaves the frame');
+  await until(() => desk.evaluate(() => document.activeElement && document.activeElement.tagName !== 'IFRAME'), 'Tab leaves the frame');
   await desk.keyboard.press('Shift+Tab');
-  await sleep(300);
-  assert.ok(await deskFrame.locator('#tabback').evaluate((el) => document.activeElement === el), 'Shift+Tab comes back to the frame');
-  assert.equal(await asked('https://example.com/tabback'), false, 'a keyup after Tab out and back opens nothing');
+  await until(() => deskFrame.locator('#tabback').evaluate((el) => document.activeElement === el), 'Shift+Tab comes back to the frame');
+  await stays(async () => !(await asked('https://example.com/tabback')), 'a keyup after Tab out and back opens nothing', 300);
   // QA-063: ⌘ / Ctrl-click on a web link, `_blank` or not, opens it.
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
   const outs = (await opened()).filter((c) => c === 'open_link https://example.com/p1').length;
@@ -995,11 +987,14 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await until(() => asked(`${BASE}/api/projects/${pid}/raw/links.html`), `"Open in new tab" asks the shell: ${await opened()}`);
   // Picking an element for a comment opens nothing the page asks for.
   await desk.getByTestId('comment-mode').click();
-  await sleep(150);
+  // The frame is in comment mode once hovering #pick outlines it.
+  await until(async () => {
+    await deskFrame.locator('#pick').hover();
+    return deskFrame.locator('[data-od-bridge-ui]').evaluateAll((els) => els.some((e) => e.style.display !== 'none'));
+  }, 'comment mode reaches the frame');
   await deskFrame.locator('#pick').click();
   await desk.getByTestId('comment-draft').waitFor();
-  await sleep(300);
-  assert.deepEqual((await opened()).filter((c) => c.includes('/pick-')), [], 'a click in comment mode asks nothing');
+  await stays(async () => (await opened()).every((c) => !c.includes('/pick-')), 'a click in comment mode asks nothing', 300);
   await desk.getByTestId('comment-mode').click();
   // QA-068: the preview's reload lifts the dialogs the user blocked, as
   // opening another design does.

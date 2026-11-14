@@ -536,8 +536,11 @@ impl Store {
                 .map(|(file, _)| file);
         }
         let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
         files::stat_file(&root, &safe)?;
-        files::write_file_exact(&root, &safe, bytes)
+        let file = files::write_file_exact(&root, &safe, bytes)?;
+        self.forget_draft_row(project_id, &file.name)?;
+        Ok(file)
     }
 
     /// # Errors
