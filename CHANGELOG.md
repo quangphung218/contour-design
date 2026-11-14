@@ -8,6 +8,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Desktop: opening Contour while it already runs (the Dock, Finder, or a copy on a disk image or in Downloads) now shows the running window instead of a second copy that failed with "an od daemon is already running … use it (od --daemon-url …) or set OD_DATA_DIR…". Opening it again while the last copy is still quitting, or as Update now restarts it, waits up to 12 seconds for that copy to close. When `od daemon start` holds the data folder, the dialog says so and what to do, in English or Vietnamese as the app's language; the URL and folder go to the log. A copy started with its own `OD_DATA_DIR` still runs beside the app.
+- e2e: `crates/od-ui/e2e/run.sh` no longer leaves `od daemon start` processes behind when a scenario crashes or the run is stopped.
+
 ## [0.2.0-beta.35] - 2026-11-14
 
 ### Changed

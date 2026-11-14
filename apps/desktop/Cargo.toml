@@ -26,6 +26,10 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 # No `zip`: only Tauri v1 bundles (`v1Compatible`) need it; ours are v2.
 tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }
+# A second launch shows the running window and quits (src/data_lock.rs).
+tauri-plugin-single-instance = "2"
+# The start-up dialog's language when the app has none set (src/data_lock.rs).
+sys-locale = "0.3"
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -9,6 +9,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod close_guard;
+mod data_lock;
 // macOS only; the pure parts also build for tests everywhere.
 #[cfg(any(target_os = "macos", test))]
 mod js_dialogs;
@@ -148,7 +149,12 @@ fn daemon_resource_root(
 }
 
 async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Result<Daemon> {
-    let mut lock = DaemonLock::acquire(data_dir.root())?;
+    // The app's own last copy may still hold it (quitting, Update now).
+    let mut lock = {
+        let root = data_dir.root().to_path_buf();
+        tokio::task::spawn_blocking(move || data_lock::acquire_waiting(&root, data_lock::APP_WAIT))
+            .await??
+    };
     let store = {
         let data_dir = data_dir.clone();
         tokio::task::spawn_blocking(move || Store::open(data_dir))
@@ -163,6 +169,10 @@ async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Resu
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
     let local = listener.local_addr()?;
     lock.record_url(&format!("http://{local}"))?;
+    if let Err(e) = data_lock::record_app_url(data_dir.root(), &format!("http://{local}")) {
+        // The next launch then does not wait for this copy to quit.
+        tracing::warn!(error = %e, "cannot record the app's url beside the lock");
+    }
     let runs = open_runs(&store, &lock).await?;
     let state = AppState {
         store: Arc::new(store),
@@ -1560,7 +1570,19 @@ fn main() -> anyhow::Result<()> {
     od_server::logs::init(Some(data_dir.root()));
 
     let opened = Arc::new(LastOpened::default());
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // First, so a second launch quits before anything else starts: the
+    // running window shows instead (Dock, Finder, a copy on a disk image).
+    let builder = if data_lock::single_instance(std::env::var_os(od_store::DATA_DIR_ENV).as_deref())
+    {
+        builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            tracing::info!("opened again: showing the window");
+            show_main(app);
+        }))
+    } else {
+        builder
+    };
+    let builder = builder
         .plugin(tauri_plugin_dialog::init())
         // Its key: `plugins.updater` in tauri.conf.json. Its own commands
         // stay ungranted; Update now goes through `updater::install_update`.
@@ -1691,16 +1713,12 @@ fn main() -> anyhow::Result<()> {
             #[cfg(not(target_os = "macos"))]
             let _ = window;
             let root = resource_root(&handle);
+            let lock_root = data_dir.root().to_path_buf();
             tauri::async_runtime::spawn(async move {
                 let daemon = match start_daemon(data_dir, root).await {
                     Ok(daemon) => daemon,
                     Err(e) => {
-                        // Typically a CLI daemon already owns the data dir.
-                        handle
-                            .dialog()
-                            .message(format!("{e:#}"))
-                            .title(APP_NAME)
-                            .blocking_show();
+                        start_failed(&handle, &lock_root, &e);
                         handle.exit(1);
                         return;
                     }
@@ -1732,6 +1750,37 @@ fn main() -> anyhow::Result<()> {
         .context("building the desktop app")?
         .run(|app, event| on_run_event(app, &event));
     Ok(())
+}
+
+/// The daemon did not start: the dialog says why, before the app quits.
+/// The data folder held by something else gets words the user can act on,
+/// in the UI's language; the URL and the folder go to the log.
+fn start_failed(app: &AppHandle, data_root: &std::path::Path, e: &anyhow::Error) {
+    use tauri_plugin_dialog::{MessageDialogButtons, MessageDialogKind};
+    let held = e
+        .downcast_ref::<data_lock::Refused>()
+        .and_then(|refused| refused.holder.map(|holder| (holder, &refused.error)));
+    let Some((holder, error)) = held else {
+        tracing::error!(error = %format!("{e:#}"), "the daemon did not start");
+        app.dialog()
+            .message(format!("{e:#}"))
+            .title(APP_NAME)
+            .blocking_show();
+        return;
+    };
+    tracing::warn!(
+        ?holder,
+        lock = %data_lock::lock_path(data_root).display(),
+        %error,
+        "the data folder is held"
+    );
+    let text = data_lock::held_text(holder, data_lock::lang_of(data_root));
+    app.dialog()
+        .message(text.message)
+        .title(text.title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCustom(text.button.to_owned()))
+        .blocking_show();
 }
 
 /// Quitting, restarting after an update, or the Windows installer taking
