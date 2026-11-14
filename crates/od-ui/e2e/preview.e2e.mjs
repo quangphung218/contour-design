@@ -128,6 +128,25 @@ try {
   const frame = page.frameLocator('iframe[data-testid="preview"]');
   const hint = page.getByTestId('first-artifact-hint');
 
+  // 0. QA-101: a page just opened shows the Lint button with its own
+  // check's result, with no turn and no Reload preview; so does the page
+  // switched to next.
+  {
+    const lp = (await (await fetch(`${BASE}/api/projects`, json({ name: 'Lint shown' }))).json()).project.id;
+    const put = (name, content) => fetch(`${BASE}/api/projects/${lp}/files`, json({ name, content, overwrite: true }));
+    await put('index.html', '<!doctype html><html lang="en"><head><title>One</title></head><body><h1 id="one">One</h1></body></html>');
+    await put('b.html', '<!doctype html><html lang="en"><head><title>Two</title></head><body><h3 id="two">🚀 Fast</h3></body></html>');
+    await page.goto(`${BASE}/projects/${lp}`);
+    await frame.locator('#one').waitFor();
+    const badge = page.getByTestId('lint-badge');
+    await until(async () => (await badge.getAttribute('data-count')) === '0', 'the Lint button of the page just opened');
+    await page.locator('[data-testid="file-row"][data-path="b.html"]').click();
+    await frame.locator('#two').waitFor();
+    await until(async () => Number(await badge.getAttribute('data-count')) > 0, 'the Lint button of the page switched to');
+    assert.match(await badge.getAttribute('class'), /p0/, 'b.html\'s emoji icon, not index.html\'s clean result');
+    results.lintOnOpen = 'shown on opening and on switching, no turn';
+  }
+
   // 1. First artifact hint: a new project's first run writes a page; the
   // hint shows once the run ends, and stays gone after it is closed.
   await page.goto(`${BASE}/projects/${pid}`);

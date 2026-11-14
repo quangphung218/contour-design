@@ -465,6 +465,6 @@ test('STU-23', 'Opening a page, and then another, shows the Lint button with the
   await frame.locator('#title', { hasText: 'Two' }).waitFor();
   await until(() => answered > 1, 'the lint of b.html answered');
   assert.ok(await badge.waitFor({ timeout: 4000 }).then(() => true, () => false), 'no Lint button after switching to another page');
-}, { knownBug: 'QA-101' });
+});
 
 await run('studio');

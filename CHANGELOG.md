@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Studio: images attached to a comment not sent yet are no longer listed in the prompt of Hand off to coding agent. A file whose content is replaced from the Files panel at the path of such an image is now the project's and ships in the ZIP. An image whose comment page was left while its Manual edit write failed is deleted at once instead of after a day; one the disk refuses to delete stays out of the ZIP until a later release or sweep deletes it.
+- Studio: the Lint button shows again as soon as a page opens, and for each page switched to, with that page's result; since beta.34 it showed only after Reload preview or an agent turn, and a lint that failed no longer said so (QA-101).
 
 ## [0.2.0-beta.37] - 2026-11-14
 
