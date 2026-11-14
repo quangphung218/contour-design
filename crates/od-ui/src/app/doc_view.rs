@@ -179,7 +179,7 @@ pub fn MarkdownView(ctx: StudioCtx, path: String) -> impl IntoView {
         // there.
         let doc = path.get_value();
         let dir = ft::parent(&doc).to_owned();
-        let work = async move { upload(ctx, T::UploadFailed, images, &dir).await };
+        let work = async move { upload(ctx, T::UploadFailed, images, &dir, None).await };
         tasks.spawn_then(work, move |res| {
             match res {
                 Ok(stored) => {

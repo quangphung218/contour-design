@@ -593,6 +593,7 @@ CommentMode = Додати коментар
 CommentModeOn = Клацніть елемент, щоб прокоментувати
 CommentPlaceholder = Що тут змінити?
 CommentReselect = Цього елемента вже немає на сторінці. Виберіть елемент для коментаря.
+DraftsDroppedFileGone = Незбережену роботу в {0} відкинуто: файлу більше немає.
 AddComment = Додати коментар
 CommentUploading = Завантаження зображення… Додавання чекає на нього.
 CommentDraftElsewhere = Коментар на слайді {0} ще не надіслано.

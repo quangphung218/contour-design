@@ -71,6 +71,22 @@ impl Tabs {
         self.active = Some(self.open[next].clone());
     }
 
+    /// Tabs of files renamed or moved (`to` says where a path went) take
+    /// the new path in place; the active one stays active.
+    pub fn rename(&mut self, to: impl Fn(&str) -> Option<String>) {
+        let mut open: Vec<String> = Vec::with_capacity(self.open.len());
+        for p in &self.open {
+            let next = to(p).unwrap_or_else(|| p.clone());
+            if !open.contains(&next) {
+                open.push(next);
+            }
+        }
+        self.open = open;
+        if let Some(next) = self.active.as_deref().and_then(&to) {
+            self.active = Some(next);
+        }
+    }
+
     /// Drops tabs whose file no longer exists.
     pub fn retain_existing(&mut self, exists: impl Fn(&str) -> bool) {
         let active = self.active.clone();
@@ -254,6 +270,21 @@ mod tests {
         assert_eq!(t.active.as_deref(), Some("a"));
         t.cycle(false);
         assert_eq!(t.active.as_deref(), Some("c"));
+    }
+
+    #[test]
+    fn a_rename_keeps_the_tab_in_place_and_active() {
+        let mut t = tabs(&["a", "b", "c"], "b");
+        t.rename(|p| (p == "b").then(|| "x".to_owned()));
+        assert_eq!(t, tabs(&["a", "x", "c"], "x"));
+        // A folder moved: every tab in it; another file shown stays shown.
+        let mut t = tabs(&["d/a", "b", "d/c"], "b");
+        t.rename(|p| p.strip_prefix("d/").map(|r| format!("e/{r}")));
+        assert_eq!(t, tabs(&["e/a", "b", "e/c"], "b"));
+        // Onto a path open already: one tab.
+        let mut t = tabs(&["a", "b"], "a");
+        t.rename(|p| (p == "a").then(|| "b".to_owned()));
+        assert_eq!(t, tabs(&["b"], "b"));
     }
 
     #[test]

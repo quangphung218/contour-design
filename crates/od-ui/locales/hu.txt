@@ -593,6 +593,7 @@ CommentMode = Megjegyzés hozzáadása
 CommentModeOn = Kattints egy elemre a megjegyzéshez
 CommentPlaceholder = Mit kell itt módosítani?
 CommentReselect = Ez az elem már nincs az oldalon. Válasszon egyet a megjegyzéshez.
+DraftsDroppedFileGone = A(z) {0} nem mentett munkája elveszett: a fájl már nem létezik.
 AddComment = Hozzáadás
 CommentUploading = Kép feltöltése… A hozzáadás megvárja.
 CommentDraftElsewhere = A(z) {0}. dián lévő megjegyzés még nincs elküldve.

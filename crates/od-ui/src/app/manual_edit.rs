@@ -77,6 +77,10 @@ pub struct Manual {
     read_seq: StoredValue<u32>,
     /// Which drafts are clean (match the source or were just written).
     book: StoredValue<mm::DraftBook>,
+    /// Images uploaded from the Content tab and not written into a page
+    /// yet: the server keeps them out of the project until a write takes
+    /// them (`drafts`).
+    uploaded: StoredValue<Vec<String>>,
     /// Other files' changes typed and not applied, by file: they come back
     /// when the file shows again, and the leave guard lists them.
     kept: RwSignal<BTreeMap<String, Kept>>,
@@ -111,6 +115,7 @@ impl Manual {
             html: RwSignal::new(String::new()),
             read_seq: StoredValue::new(0),
             book: StoredValue::new(mm::DraftBook::default()),
+            uploaded: StoredValue::new(Vec::new()),
             kept: RwSignal::new(BTreeMap::new()),
         }
     }
@@ -191,12 +196,37 @@ impl Manual {
         });
     }
 
-    /// Drops the kept drafts of files `keep` refuses (deleted, renamed).
-    pub fn drop_gone(self, keep: impl Fn(&str) -> bool) {
-        if self.kept.with_untracked(|k| k.keys().all(|f| keep(f))) {
+    /// Drops the kept drafts of files `keep` refuses (deleted, or renamed
+    /// outside the app); returns those files.
+    pub fn drop_gone(self, keep: impl Fn(&str) -> bool) -> Vec<String> {
+        let gone: Vec<String> = self
+            .kept
+            .with_untracked(|k| k.keys().filter(|f| !keep(f)).cloned().collect());
+        if !gone.is_empty() {
+            self.kept.update(|k| k.retain(|f, _| keep(f)));
+        }
+        gone
+    }
+
+    /// Files renamed or moved in the app (`to` says where a path went):
+    /// their kept changes go with them. The shown file's change stays in
+    /// the fields: the switch to its new name keeps them (`renamed`).
+    pub fn rename(self, to: impl Fn(&str) -> Option<String>) {
+        if self
+            .kept
+            .with_untracked(|k| k.keys().all(|f| to(f).is_none()))
+        {
             return;
         }
-        self.kept.update(|k| k.retain(|f, _| keep(f)));
+        self.kept.update(|k| {
+            let moved: Vec<(String, String)> =
+                k.keys().filter_map(|f| Some((f.clone(), to(f)?))).collect();
+            let taken: Vec<(String, Kept)> = moved
+                .into_iter()
+                .filter_map(|(from, next)| Some((next, k.remove(&from)?)))
+                .collect();
+            k.extend(taken);
+        });
     }
 
     /// An image uploaded for `page`'s element, `shown` the file on screen
@@ -396,10 +426,34 @@ impl StudioCtx {
         let file = req.file.clone();
         // As sent: what is typed while it saves is not written yet.
         let sent = m.drafts();
+        // An image uploaded for this element and written now is the
+        // page's: the server ships it from then on.
+        let claim: Vec<String> = if part == mm::Part::Content {
+            m.uploaded.with_value(|u| {
+                u.iter()
+                    .filter(|p| mm::relative_url(&file, p) == sent.src)
+                    .cloned()
+                    .collect()
+            })
+        } else {
+            Vec::new()
+        };
+        let (base, session) = (self.base(), self.draft_session.get_value());
         // The write lands even if the Studio is left meanwhile; the panel
         // shows it only while the Studio is there.
-        let path = format!("{}/source-edits", self.base());
-        let work = async move { api::post::<_, SourceEditResponse>(&path, &req).await };
+        let path = format!("{base}/source-edits");
+        let claimed = claim.clone();
+        let work = async move {
+            let res = api::post::<_, SourceEditResponse>(&path, &req).await;
+            if res.is_ok() && !claimed.is_empty() {
+                let url = format!("{base}/drafts/{}/claim", api::seg(&session));
+                let body = od_contracts::ClaimDraftsRequest { paths: claimed };
+                if let Err(e) = api::post::<_, od_contracts::OkResponse>(&url, &body).await {
+                    leptos::logging::warn!("claim of uploaded images failed: {e:?}");
+                }
+            }
+            res
+        };
         self.tasks.spawn_then(work, move |res| {
             // Another file shown meanwhile: the panel, its history and its
             // selection are that file's; only `file`'s kept draft follows.
@@ -417,6 +471,8 @@ impl StudioCtx {
                     }
                     tools.saved(&r.file.path, r.version.version);
                     m.written(&file, shown, part, &sent);
+                    m.uploaded
+                        .update_value(|u| u.retain(|p| !claim.contains(p)));
                     if shown {
                         after();
                     }
@@ -614,14 +670,24 @@ impl StudioCtx {
             return;
         };
         m.busy.set(true);
+        // As this page's draft's: until a write takes it, it is no part of
+        // the project, and it goes with the page (`drafts`).
+        let session = self.draft_session.get_value();
         self.tasks.spawn(async move {
-            match super::files_panel::upload(self, T::ManualUploadFailed, vec![file], IMAGES_DIR)
-                .await
+            match super::files_panel::upload(
+                self,
+                T::ManualUploadFailed,
+                vec![file],
+                IMAGES_DIR,
+                Some(&session),
+            )
+            .await
             {
                 Ok(paths) => {
                     m.busy.set(false);
                     self.refresh_files();
                     if let Some(path) = paths.first() {
+                        m.uploaded.update_value(|u| u.push(path.clone()));
                         let src = mm::relative_url(&page, path);
                         let shown = self.active_untracked();
                         if m.take_upload(&page, shown.as_deref(), src) {

@@ -592,6 +592,7 @@ CommentMode = Yorum ekle
 CommentModeOn = Yorum yapmak için bir öğeye tıklayın
 CommentPlaceholder = Burada ne değişmeli?
 CommentReselect = Bu öğe artık sayfada yok. Yorum yapmak için bir öğe seçin.
+DraftsDroppedFileGone = {0} üzerindeki kaydedilmemiş çalışma atıldı: dosya artık yok.
 AddComment = Yorum ekle
 CommentUploading = Görsel yükleniyor… Ekleme bitmesini bekliyor.
 CommentDraftElsewhere = Slayt {0} üzerindeki yorum henüz gönderilmedi.

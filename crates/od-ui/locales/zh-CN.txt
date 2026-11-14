@@ -593,6 +593,7 @@ CommentMode = 添加评论
 CommentModeOn = 点击页面元素添加评论
 CommentPlaceholder = 这里要改什么？
 CommentReselect = 此元素已不在页面上。请重新选择要评论的元素。
+DraftsDroppedFileGone = 已放弃 {0} 上未保存的内容：文件已不存在。
 AddComment = 添加评论
 CommentUploading = 正在上传图片… 上传完成后才能添加。
 CommentDraftElsewhere = 第 {0} 页的评论还没发送。

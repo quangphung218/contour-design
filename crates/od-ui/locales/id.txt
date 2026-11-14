@@ -593,6 +593,7 @@ CommentMode = Tambah komentar
 CommentModeOn = Klik elemen untuk berkomentar
 CommentPlaceholder = Apa yang perlu diubah di sini?
 CommentReselect = Elemen ini sudah tidak ada di halaman. Pilih elemen untuk dikomentari.
+DraftsDroppedFileGone = Pekerjaan yang belum disimpan di {0} dibuang: berkas sudah tidak ada.
 AddComment = Tambah komentar
 CommentUploading = Mengunggah gambar… Tambah menunggu hingga selesai.
 CommentDraftElsewhere = Komentar di slide {0} belum dikirim.

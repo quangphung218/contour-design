@@ -593,6 +593,7 @@ CommentMode = افزودن نظر
 CommentModeOn = برای نظر دادن روی یک عنصر کلیک کنید
 CommentPlaceholder = اینجا چه چیزی باید تغییر کند؟
 CommentReselect = این عنصر دیگر در صفحه نیست. عنصری را برای نظر دادن انتخاب کنید.
+DraftsDroppedFileGone = کار ذخیره‌نشده در {0} کنار گذاشته شد: فایل دیگر وجود ندارد.
 AddComment = افزودن نظر
 CommentUploading = در حال بارگذاری تصویر… افزودن منتظر می‌ماند.
 CommentDraftElsewhere = نظری روی اسلاید {0} هنوز ارسال نشده است.
