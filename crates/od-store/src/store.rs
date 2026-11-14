@@ -422,8 +422,14 @@ impl Store {
     ) -> Result<ProjectFile> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
+        let existed = overwrite
+            && crate::paths::sanitize_path(name)
+                .is_ok_and(|safe| files::stat_file(&root, &safe).is_ok());
         let file = files::write_file(&root, name, bytes, overwrite, artifact_manifest)?;
         self.forget_draft_row(project_id, &file.name)?;
+        if !existed {
+            self.forget_comments_at(project_id, &file.name)?;
+        }
         // Like the original app, every HTML save lands in the history.
         if is_html_name(&file.name)
             && let Ok(text) = std::str::from_utf8(bytes)
@@ -448,6 +454,7 @@ impl Store {
         let _guard = self.versions_guard();
         let file = files::create_file_exact(&root, name, bytes)?;
         self.forget_draft_row(project_id, &file.name)?;
+        self.forget_comments_at(project_id, &file.name)?;
         if is_html_name(&file.name)
             && let Ok(text) = std::str::from_utf8(bytes)
         {
@@ -474,17 +481,23 @@ impl Store {
         let _guard = self.versions_guard();
         // A draft's image deleted (its x, Cancel), or found gone already
         // (the agent, Finder): no longer one to release, and a file put at
-        // its path later is not taken for it.
+        // its path later is not taken for it. The comments on the file go
+        // too (QA-100), and comments sent with it as an image lose it.
+        let forget = |rel: &str| {
+            self.with_conn(|conn| {
+                crate::drafts::forget(conn, project_id, rel)?;
+                Ok(crate::comments::forget(conn, project_id, rel)?)
+            })
+        };
         let rel = match files::delete_file(&root, name) {
             Ok(rel) => rel,
             Err(StoreError::FileNotFound) => {
-                let rel = validate_project_path(name)?;
-                self.with_conn(|conn| Ok(crate::drafts::forget(conn, project_id, &rel)?))?;
+                forget(&validate_project_path(name)?)?;
                 return Err(StoreError::FileNotFound);
             }
             Err(e) => return Err(e),
         };
-        self.with_conn(|conn| Ok(crate::drafts::forget(conn, project_id, &rel)?))?;
+        forget(&rel)?;
         versions::mark_deleted(&root.dir, &rel)
     }
 
@@ -494,19 +507,28 @@ impl Store {
         self.with_conn(|conn| Ok(crate::drafts::forget(conn, project_id, path)?))
     }
 
+    /// A new file at `path` (none was there): comments left there by a
+    /// file gone outside the app are not about it (QA-100).
+    fn forget_comments_at(&self, project_id: &str, path: &str) -> Result<()> {
+        self.with_conn(|conn| Ok(crate::comments::forget(conn, project_id, path)?))
+    }
+
     /// What is recorded by path follows files renamed or moved: the
-    /// comments sent on them (their pins), and the images of drafts.
+    /// comments sent on them (their pins and images, QA-099), the images
+    /// of drafts, and the project's entry file.
     fn follow_renames(&self, project_id: &str, pairs: &[(String, String)]) -> Result<()> {
         self.with_conn(|conn| {
             let tx = conn.unchecked_transaction()?;
+            crate::comments::renamed(&tx, project_id, pairs)?;
+            crate::drafts::renamed(&tx, project_id, pairs)?;
             for (from, to) in pairs {
                 tx.execute(
-                    "UPDATE preview_comments SET file_path = ?3 \
-                     WHERE project_id = ?1 AND file_path = ?2",
+                    "UPDATE projects SET metadata_json = json_set(metadata_json, '$.entryFile', ?3) \
+                     WHERE id = ?1 AND json_valid(metadata_json) \
+                     AND json_extract(metadata_json, '$.entryFile') = ?2",
                     rusqlite::params![project_id, from, to],
                 )?;
             }
-            crate::drafts::renamed(&tx, project_id, pairs)?;
             tx.commit()?;
             Ok(())
         })
@@ -564,8 +586,12 @@ impl Store {
         let _guard = self.versions_guard();
         let (rel, held) = files::delete_folder(&root, path)?;
         // The drafts' images in it went too: their rows go with them, or a
-        // file put at one of those paths later would be taken for one.
-        self.with_conn(|conn| Ok(crate::drafts::forget_folder(conn, project_id, &rel)?))?;
+        // file put at one of those paths later would be taken for one. So
+        // do the comments on its files, and the images in it from comments.
+        self.with_conn(|conn| {
+            crate::drafts::forget_folder(conn, project_id, &rel)?;
+            Ok(crate::comments::forget_folder(conn, project_id, &rel)?)
+        })?;
         for name in held.iter().filter(|n| is_html_name(n)) {
             versions::mark_deleted(&root.dir, name)?;
         }
@@ -603,6 +629,7 @@ impl Store {
         let uploaded = files::upload_file(&root, dir, original_name, bytes)?;
         // Not a draft's until the caller records it so.
         self.forget_draft_row(project_id, &uploaded.path)?;
+        self.forget_comments_at(project_id, &uploaded.path)?;
         if is_html_name(&uploaded.name)
             && let Ok(text) = std::str::from_utf8(bytes)
         {

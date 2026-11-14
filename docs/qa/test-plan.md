@@ -708,6 +708,10 @@ user made is lost unseen) and the beta.37 changelog.
 | MV-08 | Duplicate with a sent and a draft image | One sent, one draft; Duplicate | Sent image copied, draft image not | P1 | auto |
 | MV-09 | Draft image's folder moved, then Leave | Draft + image, move `comments`, Leave | Out of the ZIP; deleted on Leave | P2 | auto |
 | MV-10 | Draft image's folder moved, then Add | Draft + image, move `comments`, Add | Saved with its image at the new path | P2 | auto (QA-099) |
+| MV-11 | Comment sent with an image, that image deleted | Add, image ▸ Delete | The comment stays, with no broken image; a file later at that name is not its image | P2 | auto |
+| MV-12 | Comment sent, its folder deleted, another folder moved to its name | Add, delete `pages`, `next/pages` ▸ Move to root | No pin on the new page; no comment left | P1 | auto |
+| MV-13 | Draft with two images, one deleted, then Add | Draft + 2 images, one ▸ Delete, Add | The draft shows one image; saved with it | P2 | auto |
+| MV-14 | Files attached to the next message, one renamed, one deleted | @ two files, rename one, delete the other | The chip shows the new name; the deleted one leaves | P2 | auto |
 
 ## Not automated, and why
 
