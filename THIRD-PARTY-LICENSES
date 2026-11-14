@@ -30,7 +30,7 @@ ts-interface-checker 0.1.13 -- Apache-2.0
 Lucide icons (34, in the guizang-ppt deck template) 1.58.0 -- ISC
 
 
-2. Rust crates (658)
+2. Rust crates (686)
 --------------------
 
 adler2 2.0.1 -- 0BSD OR MIT OR Apache-2.0, used under MIT -- https://github.com/oyvindln/adler2
@@ -47,7 +47,15 @@ anstyle-wincon 3.0.11 -- MIT OR Apache-2.0, used under MIT -- https://github.com
 any_spawner 0.3.0 -- MIT -- https://github.com/leptos-rs/leptos
 anyhow 1.0.104 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dtolnay/anyhow
 arc-swap 1.9.3 -- MIT OR Apache-2.0, used under MIT -- https://github.com/vorner/arc-swap
+async-broadcast 0.7.2 -- MIT OR Apache-2.0, used under MIT -- https://github.com/smol-rs/async-broadcast
+async-channel 2.5.0 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/async-channel
+async-executor 1.14.1 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/async-executor
+async-io 2.6.0 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/async-io
 async-lock 3.4.2 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/async-lock
+async-process 2.5.0 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/async-process
+async-recursion 1.2.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dcchut/async-recursion
+async-signal 0.2.14 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/async-signal
+async-task 4.7.1 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/async-task
 async-trait 0.1.92 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dtolnay/async-trait
 async-tungstenite 0.32.1 -- MIT -- https://github.com/sdroege/async-tungstenite
 atk 0.18.2 -- MIT -- https://github.com/gtk-rs/gtk3-rs
@@ -68,6 +76,7 @@ bitflags 2.13.2 -- MIT OR Apache-2.0, used under MIT -- https://github.com/bitfl
 block-buffer 0.10.4 -- MIT OR Apache-2.0, used under MIT -- https://github.com/RustCrypto/utils
 block-buffer 0.12.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/RustCrypto/utils
 block2 0.6.2 -- MIT -- https://github.com/madsmtm/objc2
+blocking 1.7.0 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/blocking
 brotli 8.0.4 -- BSD-3-Clause AND MIT -- https://github.com/dropbox/rust-brotli
 brotli-decompressor 5.0.3 -- BSD-3-Clause/MIT, used under MIT -- https://github.com/dropbox/rust-brotli-decompressor
 bumpalo 3.20.3 -- MIT OR Apache-2.0, used under MIT -- https://github.com/fitzgen/bumpalo
@@ -97,6 +106,7 @@ codee 0.3.5 -- MIT OR Apache-2.0, used under MIT -- https://github.com/Synphonyt
 collection_literals 1.0.3 -- MIT -- https://github.com/staedoix/collection_literals
 colorchoice 1.0.5 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-cli/anstyle.git
 combine 4.6.9 -- MIT -- https://github.com/Marwes/combine
+concurrent-queue 2.5.0 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/concurrent-queue
 config 0.15.25 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-cli/config-rs
 console_error_panic_hook 0.1.7 -- Apache-2.0/MIT, used under MIT -- https://github.com/rustwasm/console_error_panic_hook
 const-oid 0.10.2 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/RustCrypto/formats
@@ -159,6 +169,9 @@ either 1.19.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rayon-r
 either_of 0.1.6 -- MIT -- https://github.com/leptos-rs/leptos
 embed_plist 1.2.2 -- MIT OR Apache-2.0, used under MIT -- https://github.com/nvzqz/embed-plist-rs
 encoding_rs 0.8.35 -- (Apache-2.0 OR MIT) AND BSD-3-Clause -- https://github.com/hsivonen/encoding_rs
+endi 1.1.1 -- MIT -- https://github.com/zeenix/endi
+enumflags2 0.7.12 -- MIT OR Apache-2.0, used under MIT -- https://github.com/meithecatte/enumflags2
+enumflags2_derive 0.7.12 -- MIT OR Apache-2.0, used under MIT -- https://github.com/meithecatte/enumflags2
 equivalent 1.0.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/indexmap-rs/equivalent
 erased 0.1.2 -- MIT -- https://github.com/JonathanBrouwer/erased
 erased-serde 0.4.10 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dtolnay/erased-serde
@@ -186,6 +199,7 @@ futures-channel 0.3.34 -- MIT OR Apache-2.0, used under MIT -- https://github.co
 futures-core 0.3.34 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-lang/futures-rs
 futures-executor 0.3.34 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-lang/futures-rs
 futures-io 0.3.34 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-lang/futures-rs
+futures-lite 2.6.1 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/futures-lite
 futures-macro 0.3.34 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-lang/futures-rs
 futures-sink 0.3.34 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-lang/futures-rs
 futures-task 0.3.34 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust-lang/futures-rs
@@ -225,6 +239,7 @@ hashbrown 0.17.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rust
 hashlink 0.12.2 -- MIT OR Apache-2.0, used under MIT -- https://github.com/djc/hashlink
 heck 0.4.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/withoutboats/heck
 heck 0.5.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/withoutboats/heck
+hermit-abi 0.5.3 -- MIT OR Apache-2.0, used under MIT -- https://github.com/hermit-os/hermit-rs
 hex 0.4.3 -- MIT OR Apache-2.0, used under MIT -- https://github.com/KokaKiwi/rust-hex
 html-escape 0.2.15 -- MIT -- https://github.com/magiclen/html-escape
 html-escape 0.3.0 -- MIT -- https://github.com/magiclen/html-escape
@@ -354,6 +369,7 @@ once_cell_polyfill 1.70.2 -- MIT OR Apache-2.0, used under MIT -- https://github
 openssl-probe 0.2.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/rustls/openssl-probe
 option-ext 0.2.0 -- MPL-2.0 -- https://github.com/soc/option-ext.git
 or_poisoned 0.1.0 -- MIT -- https://github.com/leptos-rs/leptos
+ordered-stream 0.2.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/danieldg/ordered-stream
 osakit 0.3.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/mdevils/rust-osakit
 pango 0.18.3 -- MIT -- https://github.com/gtk-rs/gtk-rs-core
 pango-sys 0.18.0 -- MIT -- https://github.com/gtk-rs/gtk-rs-core
@@ -373,9 +389,11 @@ phf_shared 0.13.1 -- MIT -- https://github.com/rust-phf/rust-phf
 pin-project 1.1.13 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/taiki-e/pin-project
 pin-project-internal 1.1.13 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/taiki-e/pin-project
 pin-project-lite 0.2.17 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/taiki-e/pin-project-lite
+piper 0.2.5 -- MIT OR Apache-2.0, used under MIT -- https://github.com/smol-rs/piper
 plist 1.8.0 -- MIT -- https://github.com/ebarnard/rust-plist/
 png 0.17.16 -- MIT OR Apache-2.0, used under MIT -- https://github.com/image-rs/image-png
 png 0.18.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/image-rs/image-png
+polling 3.11.0 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/smol-rs/polling
 portable-pty 0.9.0 -- MIT -- https://github.com/wezterm/wezterm
 potential_utf 0.1.6 -- Unicode-3.0 -- https://github.com/unicode-org/icu4x
 powerfmt 0.2.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/jhpratt/powerfmt
@@ -508,6 +526,7 @@ syn 3.0.9 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dtolnay/syn
 syn_derive 0.2.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/Kyuuhachi/syn_derive
 sync_wrapper 1.0.2 -- Apache-2.0 -- https://github.com/Actyx/sync_wrapper
 synstructure 0.14.0 -- MIT -- https://github.com/mystor/synstructure
+sys-locale 0.3.2 -- MIT OR Apache-2.0, used under MIT -- https://github.com/1Password/sys-locale
 system-configuration 0.7.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/mullvad/system-configuration-rs
 system-configuration-sys 0.6.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/mullvad/system-configuration-rs
 tachys 0.2.4 -- MIT -- https://github.com/leptos-rs/leptos
@@ -519,6 +538,7 @@ tauri-codegen 2.6.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/t
 tauri-macros 2.6.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/tauri
 tauri-plugin-dialog 2.7.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/plugins-workspace
 tauri-plugin-fs 2.5.2 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/plugins-workspace
+tauri-plugin-single-instance 2.4.5 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/plugins-workspace
 tauri-plugin-updater 2.12.0 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/plugins-workspace
 tauri-runtime 2.11.3 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/tauri
 tauri-runtime-wry 2.11.4 -- Apache-2.0 OR MIT, used under MIT -- https://github.com/tauri-apps/tauri
@@ -568,6 +588,7 @@ typed-builder-macro 0.21.2 -- MIT OR Apache-2.0, used under MIT -- https://githu
 typed-path 0.13.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/chipsenkbeil/typed-path
 typeid 1.0.3 -- MIT OR Apache-2.0, used under MIT -- https://github.com/dtolnay/typeid
 typenum 1.20.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/paholg/typenum
+uds_windows 1.2.1 -- MIT -- https://github.com/haraldh/rust_uds_windows
 unic-char-property 0.9.0 -- MIT/Apache-2.0, used under MIT -- https://github.com/open-i18n/rust-unic/
 unic-char-range 0.9.0 -- MIT/Apache-2.0, used under MIT -- https://github.com/open-i18n/rust-unic/
 unic-common 0.9.0 -- MIT/Apache-2.0, used under MIT -- https://github.com/open-i18n/rust-unic/
@@ -679,6 +700,10 @@ xxhash-rust 0.8.19 -- BSL-1.0 -- https://github.com/DoumanAsh/xxhash-rust
 yansi 1.0.1 -- MIT OR Apache-2.0, used under MIT -- https://github.com/SergioBenitez/yansi
 yoke 0.8.4 -- Unicode-3.0 -- https://github.com/unicode-org/icu4x
 yoke-derive 0.8.4 -- Unicode-3.0 -- https://github.com/unicode-org/icu4x
+zbus 5.19.0 -- MIT -- https://github.com/z-galaxy/zbus/
+zbus_macros 5.19.0 -- MIT -- https://github.com/z-galaxy/zbus/
+zbus_names 4.3.5 -- MIT -- https://github.com/z-galaxy/zbus/
+zcheapstr 1.2.0 -- MIT -- https://github.com/z-galaxy/zcheapstr/
 zerocopy 0.8.63 -- BSD-2-Clause OR Apache-2.0 OR MIT, used under MIT -- https://github.com/google/zerocopy
 zerocopy-derive 0.8.63 -- BSD-2-Clause OR Apache-2.0 OR MIT, used under MIT -- https://github.com/google/zerocopy
 zerofrom 0.1.8 -- Unicode-3.0 -- https://github.com/unicode-org/icu4x
@@ -691,6 +716,9 @@ zerovec-derive 0.11.7 -- Unicode-3.0 -- https://github.com/unicode-org/icu4x
 zip 9.4.2 -- MIT -- https://github.com/zip-rs/zip2
 zlib-rs 0.6.8 -- Zlib -- https://github.com/trifectatechfoundation/zlib-rs
 zmij 1.0.23 -- MIT -- https://github.com/dtolnay/zmij
+zvariant 5.15.1 -- MIT -- https://github.com/z-galaxy/zbus/
+zvariant_derive 5.15.1 -- MIT -- https://github.com/z-galaxy/zbus/
+zvariant_utils 4.2.0 -- MIT -- https://github.com/z-galaxy/zbus/
 
 
 3. MPL-2.0 source code
@@ -1453,16 +1481,25 @@ SOFTWARE.
 Used by: adler2 2.0.1 (LICENSE-MIT)
 Used by: allocator-api2 0.2.21 (LICENSE-MIT)
 Used by: anyhow 1.0.104 (LICENSE-MIT)
+Used by: async-channel 2.5.0 (LICENSE-MIT)
+Used by: async-executor 1.14.1 (LICENSE-MIT)
+Used by: async-io 2.6.0 (LICENSE-MIT)
 Used by: async-lock 3.4.2 (LICENSE-MIT)
+Used by: async-process 2.5.0 (LICENSE-MIT)
+Used by: async-recursion 1.2.0 (LICENSE-MIT)
+Used by: async-signal 0.2.14 (LICENSE-MIT)
+Used by: async-task 4.7.1 (LICENSE-MIT)
 Used by: async-trait 0.1.92 (LICENSE-MIT)
 Used by: atk 0.18.2 (LICENSE)
 Used by: atk-sys 0.18.2 (LICENSE)
 Used by: atomic-waker 1.1.2 (LICENSE-MIT)
+Used by: blocking 1.7.0 (LICENSE-MIT)
 Used by: cairo-rs 0.18.5 (LICENSE)
 Used by: cairo-sys-rs 0.18.2 (LICENSE)
 Used by: camino 1.2.6 (LICENSE-MIT)
 Used by: cargo-platform 0.1.9 (LICENSE-MIT)
 Used by: cargo_metadata 0.19.2 (LICENSE-MIT)
+Used by: concurrent-queue 2.5.0 (LICENSE-MIT)
 Used by: ctor 0.8.0 (LICENSE-MIT)
 Used by: ctor-proc-macro 0.0.7 (LICENSE-MIT)
 Used by: displaydoc 0.2.7 (LICENSE-MIT)
@@ -1470,10 +1507,12 @@ Used by: dtoa 1.0.11 (LICENSE-MIT)
 Used by: dtor 0.3.0 (LICENSE-MIT)
 Used by: dtor-proc-macro 0.0.6 (LICENSE-MIT)
 Used by: dyn-clone 1.0.20 (LICENSE-MIT)
+Used by: endi 1.1.1 (LICENSE-MIT)
 Used by: erased-serde 0.4.10 (LICENSE-MIT)
 Used by: event-listener 5.4.2 (LICENSE-MIT)
 Used by: event-listener-strategy 0.5.4 (LICENSE-MIT)
 Used by: fastrand 2.5.0 (LICENSE-MIT)
+Used by: futures-lite 2.6.1 (LICENSE-MIT)
 Used by: gdk 0.18.2 (LICENSE)
 Used by: gdk-pixbuf 0.18.5 (LICENSE)
 Used by: gdk-pixbuf-sys 0.18.0 (LICENSE)
@@ -1490,12 +1529,14 @@ Used by: gobject-sys 0.18.0 (LICENSE)
 Used by: gtk 0.18.2 (LICENSE)
 Used by: gtk-sys 0.18.2 (LICENSE)
 Used by: gtk3-macros 0.18.2 (LICENSE)
+Used by: hermit-abi 0.5.3 (LICENSE-MIT)
 Used by: itoa 1.0.18 (LICENSE-MIT)
 Used by: lazy_static 1.5.1 (LICENSE-MIT)
 Used by: linux-raw-sys 0.12.1 (LICENSE-MIT)
 Used by: num_enum 0.7.6 (LICENSE-MIT)
 Used by: num_enum_derive 0.7.6 (LICENSE-MIT)
 Used by: once_cell 1.21.4 (LICENSE-MIT)
+Used by: ordered-stream 0.2.0 (LICENSE-MIT)
 Used by: pango 0.18.3 (LICENSE)
 Used by: pango-sys 0.18.0 (LICENSE)
 Used by: parking 2.2.1 (LICENSE-MIT)
@@ -1505,6 +1546,8 @@ Used by: pathdiff 0.2.3 (LICENSE-MIT)
 Used by: pin-project 1.1.13 (LICENSE-MIT)
 Used by: pin-project-internal 1.1.13 (LICENSE-MIT)
 Used by: pin-project-lite 0.2.17 (LICENSE-MIT)
+Used by: piper 0.2.5 (LICENSE-MIT)
+Used by: polling 3.11.0 (LICENSE-MIT)
 Used by: prettyplease 0.2.37 (LICENSE-MIT)
 Used by: proc-macro-crate 1.3.1 (LICENSE-MIT)
 Used by: proc-macro-crate 2.0.2 (LICENSE-MIT)
@@ -1555,6 +1598,7 @@ Used by: wit-bindgen 0.46.0 (LICENSE-MIT)
 Used by: x11 2.21.0 (LICENSE-MIT)
 Used by: x11-dl 2.21.0 (LICENSE-MIT)
 Used by: zmij 1.0.23 (LICENSE-MIT)
+Used by: zvariant_utils 4.2.0 (LICENSE)
 ================================================================================
 
 Permission is hereby granted, free of charge, to any
@@ -1866,6 +1910,32 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+================================================================================
+Used by: async-broadcast 0.7.2 (LICENSE-MIT)
+================================================================================
+
+The MIT License (MIT)
+
+Copyright (c) 2020 Yoshua Wuyts
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ================================================================================
 Used by: async-tungstenite 0.32.1 (LICENSE)
@@ -4565,6 +4635,66 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+================================================================================
+Used by: enumflags2 0.7.12 (LICENSE-MIT)
+================================================================================
+
+Copyright (c) 2017-2023 Maik Klein, Maja Kądziołka
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+================================================================================
+Used by: enumflags2_derive 0.7.12 (LICENSE-MIT)
+================================================================================
+
+Copyright (c) 2017 Maik Klein
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 
 ================================================================================
 Used by: equivalent 1.0.3 (LICENSE-MIT)
@@ -8998,6 +9128,32 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
+Used by: sys-locale 0.3.2 (LICENSE-MIT)
+================================================================================
+
+MIT License
+
+Copyright (c) 2021 1Password
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
 Used by: system-configuration 0.7.0 (LICENSE-MIT)
 Used by: system-configuration-sys 0.6.0 (LICENSE-MIT)
 ================================================================================
@@ -9122,6 +9278,32 @@ Used by: tauri-utils 2.9.3 (LICENSE_MIT)
 MIT License
 
 Copyright (c) 2017 - Present Tauri Apps Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+Used by: tauri-plugin-single-instance 2.4.5 (LICENSE_MIT)
+================================================================================
+
+MIT License
+
+Copyright (c) 2017 - Present The Tauri Programme in the Commons Conservancy
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9510,6 +9692,32 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+================================================================================
+Used by: uds_windows 1.2.1 (LICENSE)
+================================================================================
+
+    MIT License
+
+    Copyright (c) Microsoft Corporation. All rights reserved.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE
 
 ================================================================================
 Used by: unicode-ident 1.0.27 (LICENSE-UNICODE)
@@ -10078,6 +10286,70 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+Used by: zbus 5.19.0 (LICENSE)
+Used by: zbus_macros 5.19.0 (LICENSE)
+Used by: zbus_names 4.3.5 (LICENSE)
+Used by: zvariant 5.15.1 (LICENSE)
+Used by: zvariant_derive 5.15.1 (LICENSE)
+================================================================================
+
+Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+================================================================================
+Used by: zcheapstr 1.2.0 (LICENSE)
+================================================================================
+
+Copyright (c) 2026 Zeeshan Ali Khan & zcheapstr contributors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 
 ================================================================================
 Used by: zerocopy 0.8.63 (LICENSE-MIT)

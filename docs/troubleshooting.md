@@ -7,11 +7,11 @@ issue.
 
 ## Running
 
-### "an od daemon is already running at … on …" / the app quits at start
+### "an od daemon is already running at … on …" / "Contour can't open yet"
 
-Each data folder has one daemon (`daemon.lock`). The message names the URL
-of the daemon that owns the folder: an `od` daemon, or the desktop app.
-Use that one, or stop it:
+Each data folder has one daemon (`daemon.lock`). The CLI's message names
+the URL of the daemon that owns the folder: an `od` daemon, or the desktop
+app. Use that one, or stop it:
 
 ```bash
 od daemon status                 # answers if a daemon listens on :7456
@@ -20,6 +20,19 @@ pkill -x od                      # stops od daemons; quit the desktop app from i
 
 To run a second, independent daemon, give it its own data folder and port:
 `OD_DATA_DIR=/tmp/contour-2 od daemon start --port 7460`.
+
+The desktop app keeps one copy per user: opening it again (the Dock, Finder,
+a copy on a disk image) shows the running window. A copy that is still
+quitting (its agents stopping) or restarting after Update now holds the
+folder for a few seconds; a new launch waits up to 12 s for it. The app
+recognises its own copy by `daemon.lock.app`, the URL it last recorded
+beside `daemon.lock`. When something else holds the folder, mostly
+`od daemon start`, the app says "Contour can't open yet" ("Chưa mở được
+Contour"): stop that daemon and open the app again. "Contour is already
+open" means another copy of the app kept the folder past those 12 s. The
+log (`<data folder>/logs/daemon.log`, line "the data folder is held") has
+the URL and the folder. A copy started with its own `OD_DATA_DIR` runs
+beside the app, as before.
 
 ### Port 7456 is in use
 
