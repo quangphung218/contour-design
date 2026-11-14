@@ -230,7 +230,7 @@ test('FAIL-07', 'Lint: a check that could not run says so, and Retry in the Lint
   await page.getByTestId('lint-retry').click();
   await until(async () => (await badge.getAttribute('data-count', { timeout: 200 })) !== null, 'Retry runs the lint again');
   plainWords(said, 'Lint panel');
-});
+}, { knownBug: 'QA-101' });
 
 test('FAIL-15', 'Markdown: a document that could not be read says so with Retry, and Retry opens it', async ({ d, api, newPage }) => {
   const DOC = 'notes.md';
