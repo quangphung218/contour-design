@@ -6,17 +6,25 @@
 # (e.g. demo.mjs). Without, runs every scenario, OD_E2E_JOBS at a time
 # (default 3 on CI, 2 elsewhere: each scenario has its own browser and
 # daemon, and the debug UI bundle takes about 1 GB per tab).
+#   OD_E2E_SKIP_BUILD=1  reuse the built UI bundle, `od` and node_modules
+# A scenario that dies before it stops its daemon (an uncaught error, run.sh
+# itself stopped) leaves no `od daemon start` behind: each scenario runs in
+# a process group of its own, ended when the scenario ends and on exit.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 ui="$here/.."
 root="$(cd "$ui/../.." && pwd)"
 
-(cd "$ui" && trunk build)
-cargo build -p od-cli --bin od --manifest-path "$root/Cargo.toml"
+if [ -z "${OD_E2E_SKIP_BUILD:-}" ]; then
+  (cd "$ui" && trunk build)
+  cargo build -p od-cli --bin od --manifest-path "$root/Cargo.toml"
+fi
 target_dir="$(cargo metadata --format-version 1 --no-deps --manifest-path "$root/Cargo.toml" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).target_directory))')"
 
 cd "$here"
-[ -d node_modules/playwright ] && [ -d node_modules/axe-core ] || npm ci --no-audit --no-fund
+if [ -z "${OD_E2E_SKIP_BUILD:-}" ]; then
+  [ -d node_modules/playwright ] && [ -d node_modules/axe-core ] || npm ci --no-audit --no-fund
+fi
 export OD_UI_DIST="$ui/dist" OD_E2E_BIN="$target_dir/debug/od" OD_MOCK_AGENTS="$here/mock-agent" \
   OD_RESOURCE_ROOT="$root/content"
 # A fixed port collides when two worktrees run the e2e at once, so each
@@ -40,9 +48,32 @@ free_port() {
     };
     pick(50);'
 }
+
+# Job control: every background job gets a process group of its own, whose
+# id is the job's pid, so `kill -- -PID` ends the scenario's node and the
+# daemon it spawned, even once node is gone. Scenarios no longer get the
+# terminal's Ctrl+C themselves: run.sh traps it and ends their groups.
+set -m
+pids=()
+# end_group PID: ends what is left of the scenario PID started.
+end_group() { kill -TERM -- "-$1" 2>/dev/null || true; }
+cleanup() {
+  for pid in ${pids[@]+"${pids[@]}"}; do end_group "$pid"; done
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
 if [ $# -gt 0 ]; then
   [ -n "$fixed_port" ] || { OD_E2E_PORT="$(free_port)"; export OD_E2E_PORT; }
-  for script in "$@"; do node "$script"; done
+  for script in "$@"; do
+    node "$script" &
+    pids=($!)
+    rc=0
+    wait "${pids[0]}" || rc=$?
+    end_group "${pids[0]}"
+    pids=()
+    [ "$rc" = 0 ] || exit "$rc"
+  done
   exit 0
 fi
 
@@ -88,11 +119,6 @@ pids=() names=() starts=()
 used_ports=" "
 failed=()
 started_all=$(date +%s)
-cleanup() {
-  for pid in ${pids[@]+"${pids[@]}"}; do kill "$pid" 2>/dev/null || true; done
-}
-trap cleanup EXIT
-trap 'exit 130' INT TERM
 
 start() {
   local var="$1" script="$2" port
@@ -117,6 +143,7 @@ reap() {
       kill -0 "${pids[$i]}" 2>/dev/null && continue
       rc=0
       wait "${pids[$i]}" || rc=$?
+      end_group "${pids[$i]}"
       local name="${names[$i]}" took=$(($(date +%s) - starts[i]))
       echo "--- ${name} ($([ "$rc" = 0 ] && echo PASS || echo "FAIL, exit $rc"), ${took}s)"
       cat "$logs/$name.log"
