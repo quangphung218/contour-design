@@ -173,16 +173,18 @@ pub fn held_text(holder: Holder, lang: Lang) -> Text {
     match (holder, lang) {
         (Holder::Other, Lang::En) => Text {
             title: "Contour can't open yet",
-            message: "Another program is using Contour's data, most likely \
-                      \"od daemon start\" in a terminal. Stop it (Ctrl+C in \
+            message: "Another Contour (an older version, perhaps hidden) or \
+                      \"od daemon start\" in a terminal is using Contour's \
+                      data. Quit that Contour, or stop the command (Ctrl+C in \
                       that terminal), then open Contour again.",
             button: "Quit",
         },
         (Holder::Other, Lang::Vi) => Text {
             title: "Chưa mở được Contour",
-            message: "Một chương trình khác đang dùng dữ liệu của Contour, \
-                      thường là lệnh \"od daemon start\" trong terminal. Dừng \
-                      lệnh đó (Ctrl+C trong terminal) rồi mở lại Contour.",
+            message: "Một Contour khác (bản cũ, có thể đang ẩn) hoặc lệnh \
+                      \"od daemon start\" trong terminal đang dùng dữ liệu \
+                      của Contour. Thoát Contour đó hoặc dừng lệnh (Ctrl+C \
+                      trong terminal) rồi mở lại Contour.",
             button: "Thoát",
         },
         (Holder::App, Lang::En) => Text {
@@ -337,11 +339,16 @@ mod tests {
                 assert!(acts.iter().all(|a| message.contains(a)), "{message}");
             }
         }
-        assert!(
-            held_text(Holder::Other, Lang::En)
-                .message
-                .contains("od daemon start")
-        );
+        // An older Contour (no app URL file) is `Other` too: the words name
+        // both, not only the CLI.
+        for (lang, app) in [
+            (Lang::En, "Quit that Contour"),
+            (Lang::Vi, "Thoát Contour đó"),
+        ] {
+            let message = held_text(Holder::Other, lang).message;
+            assert!(message.contains("od daemon start"), "{message}");
+            assert!(message.contains(app), "{message}");
+        }
         assert_ne!(
             held_text(Holder::App, Lang::Vi),
             held_text(Holder::App, Lang::En)
