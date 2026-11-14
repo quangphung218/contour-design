@@ -99,8 +99,21 @@ fn draft_by_id_mut(drafts: &mut CommentDrafts, id: u64) -> Option<&mut CommentDr
 }
 
 /// The drafts of files renamed or moved (`moves`) go with them, as they
-/// are: note, images, element, a send on its way.
-pub fn rename_drafts(drafts: &mut CommentDrafts, moves: &[super::drafts::Move]) {
+/// are: note, element, a send on its way. Their images follow wherever
+/// those moved (QA-099): the server moved its record of them too. A draft
+/// left at a new path (its file deleted, the list not read again yet) is
+/// not mixed in: it is returned, its images to go.
+pub fn rename_drafts(
+    drafts: &mut CommentDrafts,
+    moves: &[super::drafts::Move],
+) -> Vec<CommentDraft> {
+    for d in drafts.values_mut() {
+        for p in &mut d.images {
+            if let Some(next) = super::drafts::moved(moves, p) {
+                *p = next;
+            }
+        }
+    }
     let renamed: Vec<(String, String)> = drafts
         .keys()
         .filter_map(|f| Some((f.clone(), super::drafts::moved(moves, f)?)))
@@ -109,9 +122,38 @@ pub fn rename_drafts(drafts: &mut CommentDrafts, moves: &[super::drafts::Move]) 
         .into_iter()
         .filter_map(|(from, to)| Some((to, drafts.remove(&from)?)))
         .collect();
-    for (to, d) in taken.drain(..) {
-        drafts.insert(to, d);
+    taken
+        .drain(..)
+        .filter_map(|(to, d)| drafts.insert(to, d))
+        .collect()
+}
+
+/// Files deleted in the app (`gone`): the images among them leave the
+/// drafts holding them (sent, the server would answer "file not found").
+/// Returns whether any did.
+pub fn drop_deleted_images(drafts: &mut CommentDrafts, gone: impl Fn(&str) -> bool) -> bool {
+    let mut any = false;
+    for d in drafts.values_mut() {
+        let before = d.images.len();
+        d.images.retain(|p| !gone(p));
+        any |= d.images.len() != before;
     }
+    any
+}
+
+/// Files deleted in the app (`gone`): the comments sent on them go, and
+/// the images among them leave the comments sent with them, as the server
+/// did (QA-100). Returns whether anything changed.
+pub fn drop_deleted_comments(list: &mut Vec<PreviewComment>, gone: impl Fn(&str) -> bool) -> bool {
+    let before = list.len();
+    list.retain(|c| !gone(&c.file_path));
+    let mut any = list.len() != before;
+    for c in list.iter_mut() {
+        let n = c.attachments.len();
+        c.attachments.retain(|a| !gone(&a.path));
+        any |= c.attachments.len() != n;
+    }
+    any
 }
 
 /// `od:locate` id of `file`'s draft on the element `selector`. It names the
@@ -1181,6 +1223,121 @@ mod draft_tests {
             "as it was, a send on its way included"
         );
         assert_eq!(drafts["site/pages/b.html"].id, b);
+    }
+
+    #[test]
+    fn a_drafts_images_follow_their_folder_moved_or_their_rename() {
+        use super::super::drafts::Move;
+        let mut drafts = CommentDrafts::new();
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
+        typed(
+            &mut drafts,
+            "a.html",
+            "Send after",
+            &["comments/a.png", "comments/b.png"],
+        );
+        pick_draft(&mut drafts, "c.html", picked("h1"), None, None);
+        typed(&mut drafts, "c.html", "Kept", &["shots/c.png"]);
+        let left = rename_drafts(
+            &mut drafts,
+            &[
+                Move {
+                    from: "comments".into(),
+                    to: "old/comments".into(),
+                    folder: true,
+                },
+                Move {
+                    from: "old/comments/b.png".into(),
+                    to: "old/comments/ref.png".into(),
+                    folder: false,
+                },
+            ],
+        );
+        assert!(left.is_empty());
+        assert_eq!(
+            drafts["a.html"].images,
+            ["old/comments/a.png", "old/comments/ref.png"],
+            "QA-099: sent, they are found"
+        );
+        assert_eq!(drafts["c.html"].images, ["shots/c.png"]);
+    }
+
+    #[test]
+    fn a_draft_left_where_a_file_is_renamed_to_is_not_mixed_in() {
+        use super::super::drafts::Move;
+        let mut drafts = CommentDrafts::new();
+        // a.html deleted, the list not read again: its draft is still here.
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
+        typed(&mut drafts, "a.html", "About Alpha", &["comments/a.png"]);
+        pick_draft(&mut drafts, "b.html", picked("p"), None, None);
+        typed(&mut drafts, "b.html", "About Beta", &[]);
+        let left = rename_drafts(
+            &mut drafts,
+            &[Move {
+                from: "b.html".into(),
+                to: "a.html".into(),
+                folder: false,
+            }],
+        );
+        assert_eq!(drafts.keys().collect::<Vec<_>>(), ["a.html"]);
+        assert_eq!(drafts["a.html"].note, "About Beta");
+        assert_eq!(left.len(), 1, "Alpha's draft is handed back");
+        assert_eq!(left[0].images, ["comments/a.png"], "its images to go");
+    }
+
+    #[test]
+    fn deleted_files_leave_the_drafts_and_the_comments_sent() {
+        let gone = ["comments/a.png".to_owned(), "pages/".to_owned()];
+        let at = |p: &str| super::super::drafts::is_moving(&gone, p);
+        let mut drafts = CommentDrafts::new();
+        pick_draft(&mut drafts, "x.html", picked("h1"), None, None);
+        typed(
+            &mut drafts,
+            "x.html",
+            "n",
+            &["comments/a.png", "comments/b.png"],
+        );
+        assert!(drop_deleted_images(&mut drafts, at));
+        assert_eq!(drafts["x.html"].images, ["comments/b.png"]);
+        assert!(!drop_deleted_images(&mut drafts, at), "nothing more");
+        let comment = |file: &str, images: &[&str]| PreviewComment {
+            id: file.to_owned(),
+            project_id: "p".into(),
+            conversation_id: "c".into(),
+            file_path: file.to_owned(),
+            element_id: String::new(),
+            selector: "h1".into(),
+            label: "h1".into(),
+            text: String::new(),
+            position: CommentRect::default(),
+            html_hint: String::new(),
+            slide_index: None,
+            note: "n".into(),
+            status: CommentStatus::Attached,
+            attachments: images
+                .iter()
+                .map(|p| od_contracts::CommentImage {
+                    path: (*p).to_owned(),
+                    name: String::new(),
+                })
+                .collect(),
+            created_at: 0,
+            updated_at: 0,
+        };
+        let mut list = vec![
+            comment("pages/a.html", &[]),
+            comment("pages2/b.html", &["comments/a.png", "comments/b.png"]),
+        ];
+        assert!(drop_deleted_comments(&mut list, at));
+        assert_eq!(
+            list.len(),
+            1,
+            "QA-100: the comment on the deleted file goes"
+        );
+        assert_eq!(list[0].file_path, "pages2/b.html", "not one under pages2/");
+        assert_eq!(list[0].attachments.len(), 1);
+        assert_eq!(list[0].attachments[0].path, "comments/b.png");
+        assert!(!drop_deleted_comments(&mut list, at));
     }
 
     #[test]

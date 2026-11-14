@@ -13,7 +13,8 @@ macOS) in [bugs-desktop-beta32.md](bugs-desktop-beta32.md); the web pass after t
 redesign (QA-089 to QA-092, §21) in [bugs-web-beta34.md](bugs-web-beta34.md); the desktop
 pass on main before beta.34 (QA-093 to QA-095, §19 and §21 by hand) in
 [bugs-desktop-main34.md](bugs-desktop-main34.md); the pass on main after beta.36
-(QA-096 to QA-098, §22 and §23) in [bugs-main36.md](bugs-main36.md).
+(QA-096 to QA-098, §22 and §23) in [bugs-main36.md](bugs-main36.md); the pass on main after
+beta.37 (QA-099 to QA-101, §24) in [bugs-main37.md](bugs-main37.md).
 
 ## Priorities and status
 
@@ -131,6 +132,7 @@ time when needed.
 | STU-20 | History: a late answer for the file just left is dropped | a.html with 3 versions, b.html with 1 | History on a.html; its list held back; pick b.html; let a.html's answer in | b.html's panel lists only "B only" | P1 | auto |
 | STU-21 | History: a version viewed on the file just left is dropped | a.html with 2 versions, b.html with 1 | View an a.html version, held back; pick b.html; let it in | b.html's live page, no "Viewing vN", no Restore of a.html's version | P1 | auto (QA-089) |
 | STU-22 | A link and a `window.open` button inside a web component open | Page with an open shadow root holding a `_blank` link and a button | Click each | One tab each, at the right address | P1 | auto |
+| STU-23 | The Lint button shows on a page just opened | Two pages | Open the project; switch to the other page | The Lint button, with the check's result, each time | P1 | auto (QA-101) |
 
 ## 5. Export (`export.qa.mjs`)
 
@@ -568,7 +570,7 @@ last. Bugs: [bugs-web-failures.md](bugs-web-failures.md).
 | FAIL-04 | Comments list not loaded | Project opened while `GET …/comments` fails | Open All comments, Retry | "Could not load" with Retry; Retry shows the list | P1 | auto |
 | FAIL-05 | Manual edit not written | Manual edit, h1 text typed | Apply while `…/source-edits` fails; Apply again | A message that says the edit was not applied, the text kept, the second Apply writes the file | P1 | auto (QA-082) |
 | FAIL-06 | Manual edit in a deleted project | As FAIL-05, project deleted in another tab | Apply | The not-found state, no raw "not found" | P1 | auto |
-| FAIL-07 | Lint could not run | Page opened while `…/lint/` fails | Look for Lint, open it, Retry | Something says the check could not run; Retry in the Lint panel runs it | P2 | auto (QA-083) |
+| FAIL-07 | Lint could not run | Page opened while `…/lint/` fails | Look for Lint, open it, Retry | Something says the check could not run; Retry in the Lint panel runs it | P2 | auto (QA-083; QA-101) |
 | FAIL-08 | New sketch not created | Studio | New ▸ Sketch while `POST …/files` fails; again | Plain message, no editor for a file that is not there; the second opens one | P1 | auto (QA-081) |
 | FAIL-09 | Sketch not saved | Sketch open | Draw while `PUT …/content/…` fails; draw again | "Not saved"; the next save holds both strokes, "Saved" | P1 | auto |
 | FAIL-10 | Sketch could not be read | Sketch with 2 strokes | Reopen while its read fails once; draw | No blank canvas that replaces the file: the 2 strokes stay | P0 | auto (QA-084) |
@@ -685,6 +687,31 @@ for it") and spec.md (nothing the user made is lost unseen).
 | DL-50 | Manual change kept on a file not shown, renamed | Type, switch, rename | The change comes back on the new name | P2 | auto |
 | DL-51 | Manual image applied, Studio left before the write is saved | `source-edits` held, Projects, then let go | The page's image stays on disk and ships | P1 | auto |
 | DL-52 | Back from the back-forward cache with a comment draft | `pagehide` and `pageshow` (persisted) sent | The old image is deleted, the note stays, a new image is kept and ships | P2 | auto |
+
+## 24. Files moved, exported and copied with comments (`filemoves.qa.mjs`)
+
+Goal: what #198 made follow a file (a comment's pin, a draft's images)
+follows it through every rename and move, also of the `comments` folder
+itself; a draft's image ships nowhere; a deleted file's comments do not
+come back on another file. Expected results from spec.md (nothing the
+user made is lost unseen) and the beta.37 changelog.
+
+| ID | Scenario | Steps | Expected | P | Status |
+|---|---|---|---|---|---|
+| MV-01 | Comment sent with an image, file moved into a folder | Add, Files ▸ Move to | Pin on the new path; image loads | P1 | auto |
+| MV-02 | Comment sent, its folder moved | Add, folder ▸ Move to | Pin on the new path | P1 | auto |
+| MV-03 | Comment sent with an image, `comments/` moved | Add, `comments` ▸ Move to | The comment's image still loads | P2 | auto (QA-099) |
+| MV-04 | Comment sent with an image, that image renamed | Add, image ▸ Rename | The comment's image still loads | P2 | auto (QA-099) |
+| MV-05 | Comment sent, its file deleted, another renamed to its name | Add, delete a.html, b.html ▸ Rename a.html | No pin on the new a.html; nothing attached | P1 | auto (QA-100) |
+| MV-06 | Folder ZIP and selection ZIP with a draft image | Draft + image; ZIP of `comments`, ZIP of a selection | Draft image left out; in once sent | P1 | auto |
+| MV-07 | Library assets with a draft image | Draft + image; Library ▸ Assets | Left out; listed once sent | P2 | auto |
+| MV-08 | Duplicate with a sent and a draft image | One sent, one draft; Duplicate | Sent image copied, draft image not | P1 | auto |
+| MV-09 | Draft image's folder moved, then Leave | Draft + image, move `comments`, Leave | Out of the ZIP; deleted on Leave | P2 | auto |
+| MV-10 | Draft image's folder moved, then Add | Draft + image, move `comments`, Add | Saved with its image at the new path | P2 | auto (QA-099) |
+| MV-11 | Comment sent with an image, that image deleted | Add, image ▸ Delete | The comment stays, with no broken image; a file later at that name is not its image | P2 | auto |
+| MV-12 | Comment sent, its folder deleted, another folder moved to its name | Add, delete `pages`, `next/pages` ▸ Move to root | No pin on the new page; no comment left | P1 | auto |
+| MV-13 | Draft with two images, one deleted, then Add | Draft + 2 images, one ▸ Delete, Add | The draft shows one image; saved with it | P2 | auto |
+| MV-14 | Files attached to the next message, one renamed, one deleted | @ two files, rename one, delete the other | The chip shows the new name; the deleted one leaves | P2 | auto |
 
 ## Not automated, and why
 

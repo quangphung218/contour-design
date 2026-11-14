@@ -124,7 +124,8 @@ pub(crate) fn renamed(
     project_id: &str,
     pairs: &[(String, String)],
 ) -> rusqlite::Result<()> {
-    for (from, to) in pairs {
+    // A rename onto itself moves nothing: its row stays.
+    for (from, to) in pairs.iter().filter(|(from, to)| from != to) {
         forget(conn, project_id, to)?;
         conn.execute(
             "UPDATE draft_uploads SET path = ?3 WHERE project_id = ?1 AND path = ?2",
@@ -751,6 +752,19 @@ mod tests {
         assert_eq!(
             s.unclaimed_draft_uploads(&p).unwrap_or_default(),
             HashSet::from([moved.path])
+        );
+    }
+
+    #[test]
+    fn a_draft_image_renamed_onto_itself_stays_a_drafts() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "img.png");
+        s.rename_file(&p, &img, &img)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default(),
+            HashSet::from([img]),
+            "not taken for the project's, so it ships nowhere"
         );
     }
 
