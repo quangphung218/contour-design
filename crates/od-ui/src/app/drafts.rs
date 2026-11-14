@@ -11,8 +11,9 @@
 //! app releases every session as it quits, and the server sweeps what a
 //! crash left after a day.
 //!
-//! A comment being sent when its Studio goes holds the release back
-//! ([`Sends`]): its images are its own once it is saved.
+//! A comment being sent, or a Manual edit write that puts an image in its
+//! page, holds the release back when its Studio goes ([`Sends`]): its
+//! images are its own once it is saved.
 
 use super::api;
 use super::tasks;
@@ -44,9 +45,10 @@ pub fn release_unloading(base: &str, session: &str) {
     api::post_unloading(&release_url(base, session));
 }
 
-/// Comments being sent, by draft session, and the sessions whose page
-/// went meanwhile: their release waits for the last send to end, else it
-/// would delete images the comment is saving with.
+/// Sends that take a draft's images (a comment, a Manual edit write with an
+/// image), by draft session, and the sessions whose page went meanwhile:
+/// their release waits for the last send to end, else it would delete
+/// images the send is saving with.
 #[derive(Debug, Default)]
 pub struct Sends(HashMap<String, Pending>);
 
@@ -57,12 +59,12 @@ struct Pending {
 }
 
 impl Sends {
-    /// A comment of `session` is being sent.
+    /// A send of `session` (a comment, a Manual write) is on its way.
     pub fn begin(&mut self, session: &str) {
         self.0.entry(session.to_owned()).or_default().sending += 1;
     }
 
-    /// A comment of `session` was sent (or failed). True when its page
+    /// A send of `session` was saved (or failed). True when its page
     /// went meanwhile and this was the last one: release it now.
     pub fn end(&mut self, session: &str) -> bool {
         let Some(p) = self.0.get_mut(session) else {
@@ -89,7 +91,7 @@ impl Sends {
         }
     }
 
-    /// Whether a comment of `session` is being sent.
+    /// Whether a send of `session` is on its way.
     pub fn busy(&self, session: &str) -> bool {
         self.0.get(session).is_some_and(|p| p.sending > 0)
     }
