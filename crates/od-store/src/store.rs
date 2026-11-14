@@ -423,6 +423,7 @@ impl Store {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         let file = files::write_file(&root, name, bytes, overwrite, artifact_manifest)?;
+        self.forget_draft_row(project_id, &file.name)?;
         // Like the original app, every HTML save lands in the history.
         if is_html_name(&file.name)
             && let Ok(text) = std::str::from_utf8(bytes)
@@ -446,6 +447,7 @@ impl Store {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         let file = files::create_file_exact(&root, name, bytes)?;
+        self.forget_draft_row(project_id, &file.name)?;
         if is_html_name(&file.name)
             && let Ok(text) = std::str::from_utf8(bytes)
         {
@@ -480,6 +482,12 @@ impl Store {
             )?)
         })?;
         versions::mark_deleted(&root.dir, &rel)
+    }
+
+    /// A file written at `path` that is not a draft's: a row a draft left
+    /// there (its file gone outside the app) is no longer true.
+    fn forget_draft_row(&self, project_id: &str, path: &str) -> Result<()> {
+        self.with_conn(|conn| Ok(crate::drafts::forget(conn, project_id, path)?))
     }
 
     /// What is recorded by path follows files renamed or moved: the
@@ -548,6 +556,9 @@ impl Store {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         let (rel, held) = files::delete_folder(&root, path)?;
+        // The drafts' images in it went too: their rows go with them, or a
+        // file put at one of those paths later would be taken for one.
+        self.with_conn(|conn| Ok(crate::drafts::forget_folder(conn, project_id, &rel)?))?;
         for name in held.iter().filter(|n| is_html_name(n)) {
             versions::mark_deleted(&root.dir, name)?;
         }
@@ -583,6 +594,8 @@ impl Store {
     ) -> Result<UploadedFile> {
         let root = self.root_for(project_id)?;
         let uploaded = files::upload_file(&root, dir, original_name, bytes)?;
+        // Not a draft's until the caller records it so.
+        self.forget_draft_row(project_id, &uploaded.path)?;
         if is_html_name(&uploaded.name)
             && let Ok(text) = std::str::from_utf8(bytes)
         {

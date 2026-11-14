@@ -264,8 +264,94 @@ async fn opening_a_project_sweeps_draft_images_a_day_old() {
             Ok(())
         })
         .unwrap();
+    let full = d.state.store.stat_file(&project, &old).unwrap().1;
+    let then = std::time::SystemTime::now()
+        - std::time::Duration::from_millis(
+            u64::try_from(od_store::drafts::DRAFT_MAX_AGE_MS).unwrap() + 1000,
+        );
+    std::fs::File::options()
+        .write(true)
+        .open(full)
+        .and_then(|f| f.set_modified(then))
+        .unwrap();
     d.get_json(&format!("/api/projects/{project}")).await;
     let listed = files(&d, &project).await;
     assert!(!listed.contains(&old), "{listed:?}");
     assert!(listed.contains(&fresh), "another page's draft of an hour");
+}
+
+/// Writes `<img>` into the page with `src`, taking `claim` (a Manual edit
+/// image applied).
+async fn write_src(d: &Daemon, project: &str, src: &str, claim: &[&str]) -> u16 {
+    d.post(
+        &format!("/api/projects/{project}/source-edits"),
+        &json!({
+            "file": "index.html",
+            "edits": [{"selector": "html > body:nth-of-type(1) > img:nth-of-type(1)",
+                       "expectTag": "img", "attributes": {"src": src}}],
+            "label": "Manual edit",
+            "claim": claim,
+        }),
+    )
+    .await
+    .status()
+    .as_u16()
+}
+
+#[tokio::test]
+async fn a_manual_write_takes_its_draft_image_in_the_same_step() {
+    let d = daemon().await;
+    let (project, _) = d.project().await;
+    let res = d
+        .post(
+            &format!("/api/projects/{project}/files"),
+            &json!({"name": "index.html", "content": "<!doctype html><html><body><img src=\"x.png\"></body></html>"}),
+        )
+        .await;
+    assert_eq!(res.status().as_u16(), 200);
+    let img = upload(&d, &project, "hero.png", Some("s1")).await["files"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(write_src(&d, &project, &img, &[&img]).await, 200);
+    // The release after the write: the page's image stays and ships.
+    assert_eq!(release(&d, &project, "s1").await, 200);
+    assert!(files(&d, &project).await.contains(&img));
+    assert!(zip_names(&d, &project).await.contains(&img));
+
+    // Released before the write: the write is refused, the page untouched.
+    let late = upload(&d, &project, "late.png", Some("s2")).await["files"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(release(&d, &project, "s2").await, 200);
+    assert_eq!(write_src(&d, &project, &late, &[&late]).await, 404);
+    let page = d
+        .http
+        .get(format!("{}/api/projects/{project}/raw/index.html", d.base))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(page.contains(&img) && !page.contains(&late), "{page}");
+
+    // A write that fails gives its image back to the draft.
+    let other = upload(&d, &project, "other.png", Some("s3")).await["files"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let res = d
+        .post(
+            &format!("/api/projects/{project}/source-edits"),
+            &json!({"file": "index.html", "edits": [{"selector": "h9", "attributes": {"src": other}}],
+                    "claim": [other]}),
+        )
+        .await;
+    assert!(res.status().as_u16() >= 400);
+    assert!(
+        !zip_names(&d, &project).await.contains(&other),
+        "still a draft's"
+    );
 }

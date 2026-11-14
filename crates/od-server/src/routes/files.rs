@@ -301,22 +301,6 @@ pub async fn release_drafts(
     Ok(ApiJson(OkResponse { ok: true }))
 }
 
-/// `POST drafts/<session>/claim {paths}`: images uploaded for a draft that
-/// the page took (a Manual edit image written into it): the project's now.
-pub async fn claim_drafts(
-    State(state): State<AppState>,
-    Path((id, session)): Path<(String, String)>,
-    ApiJson(req): ApiJson<od_contracts::ClaimDraftsRequest>,
-) -> ApiResult<ApiJson<OkResponse>> {
-    if !od_store::drafts::valid_session(&session) {
-        return Err(ApiErr::bad_request("bad draft session"));
-    }
-    state
-        .blocking(move |s| s.claim_draft_uploads(&id, &req.paths))
-        .await?;
-    Ok(ApiJson(OkResponse { ok: true }))
-}
-
 async fn next_field(m: &mut Multipart) -> ApiResult<Option<axum::extract::multipart::Field<'_>>> {
     m.next_field().await.map_err(multipart_err)
 }

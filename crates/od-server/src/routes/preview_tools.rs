@@ -130,9 +130,16 @@ async fn source_edits(
         .take(120)
         .collect::<String>();
     let (file, version, previous) = blocking(&state, move |s| {
-        s.edit_html_tracked(&id, &req.file, &label, |html| {
+        // The drafts' images it puts in the page are the page's before it
+        // is written: a release after this deletes none of them.
+        let taken = s.take_draft_uploads(&id, &req.claim)?;
+        let res = s.edit_html_tracked(&id, &req.file, &label, |html| {
             apply_edits(html, &req.edits).map_err(patch_err)
-        })
+        });
+        if res.is_err() {
+            s.give_back_draft_uploads(&id, taken);
+        }
+        res
     })
     .await?;
     Ok(ApiJson(SourceEditResponse {

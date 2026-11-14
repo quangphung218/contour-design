@@ -58,10 +58,6 @@ pub fn router(state: AppState) -> Router {
             "/api/projects/{id}/drafts/{session}/release",
             post(files::release_drafts),
         )
-        .route(
-            "/api/projects/{id}/drafts/{session}/claim",
-            post(files::claim_drafts),
-        )
         .route("/api/projects/{id}/raw/{*path}", get(raw::raw))
         .route("/api/projects/{id}/react/{*path}", get(raw::react))
         .route("/api/skills", get(content::list_skills))

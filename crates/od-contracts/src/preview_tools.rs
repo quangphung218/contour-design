@@ -85,6 +85,12 @@ pub struct SourceEditRequest {
     /// Version label; defaults to "Edited in preview".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Images uploaded for a draft that this write puts in the page: they
+    /// are the page's from this write on, taken in the same step, so no
+    /// release of the draft deletes them after it (or the write is refused
+    /// if one was deleted before).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claim: Vec<String>,
 }
 
 /// The file after the edits, and the manual version that records them.
