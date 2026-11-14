@@ -234,17 +234,25 @@ pub async fn write(
 }
 
 /// `POST upload`: multipart with an optional `dir` field and file parts.
-/// Names are sanitized and never overwrite an existing file.
+/// Names are sanitized and never overwrite an existing file. A `draft`
+/// field names the Studio page's draft session the files are for (a
+/// comment's images): they are recorded as a draft's, and one landing
+/// after that session was released is deleted at once and not listed.
 pub async fn upload(
     State(state): State<AppState>,
     Path(id): Path<String>,
     mut multipart: Multipart,
 ) -> ApiResult<ApiJson<UploadResponse>> {
     let mut dir: Option<String> = None;
+    let mut draft: Option<String> = None;
     let mut parts: Vec<(String, Bytes)> = Vec::new();
     while let Some(field) = next_field(&mut multipart).await? {
         if field.name() == Some("dir") && field.file_name().is_none() {
             dir = Some(field.text().await.map_err(multipart_err)?);
+            continue;
+        }
+        if field.name() == Some("draft") && field.file_name().is_none() {
+            draft = Some(field.text().await.map_err(multipart_err)?);
             continue;
         }
         if let Some(original) = field.file_name().map(str::to_owned) {
@@ -254,13 +262,23 @@ pub async fn upload(
     if parts.is_empty() {
         return Err(ApiErr::bad_request("no files in upload"));
     }
+    if let Some(session) = &draft
+        && !od_store::drafts::valid_session(session)
+    {
+        return Err(ApiErr::bad_request("bad draft session"));
+    }
     let project = id.clone();
     let files: Vec<od_contracts::UploadedFile> = state
         .blocking(move |s| {
-            parts
-                .iter()
-                .map(|(original, bytes)| s.upload_file(&project, dir.as_deref(), original, bytes))
-                .collect()
+            let mut kept = Vec::new();
+            for (original, bytes) in &parts {
+                let f = s.upload_file(&project, dir.as_deref(), original, bytes)?;
+                match &draft {
+                    Some(session) if !s.record_draft_upload(&project, session, &f.path)? => {}
+                    _ => kept.push(f),
+                }
+            }
+            Ok(kept)
         })
         .await?;
     // A run going now must not list the user's upload as its own (UI-012).
@@ -268,6 +286,35 @@ pub async fn upload(
         state.runs.engine.note_placed(&id, &f.path, f.size, f.mtime);
     }
     Ok(ApiJson(UploadResponse { files }))
+}
+
+/// `POST drafts/<session>/release`: the Studio page that session is
+/// went (left, reloaded, closed): the images it uploaded for drafts that
+/// nothing took are deleted, and so is any that lands later.
+pub async fn release_drafts(
+    State(state): State<AppState>,
+    Path((id, session)): Path<(String, String)>,
+) -> ApiResult<ApiJson<OkResponse>> {
+    state
+        .blocking(move |s| s.release_draft_session(&id, &session))
+        .await?;
+    Ok(ApiJson(OkResponse { ok: true }))
+}
+
+/// `POST drafts/<session>/claim {paths}`: images uploaded for a draft that
+/// the page took (a Manual edit image written into it): the project's now.
+pub async fn claim_drafts(
+    State(state): State<AppState>,
+    Path((id, session)): Path<(String, String)>,
+    ApiJson(req): ApiJson<od_contracts::ClaimDraftsRequest>,
+) -> ApiResult<ApiJson<OkResponse>> {
+    if !od_store::drafts::valid_session(&session) {
+        return Err(ApiErr::bad_request("bad draft session"));
+    }
+    state
+        .blocking(move |s| s.claim_draft_uploads(&id, &req.paths))
+        .await?;
+    Ok(ApiJson(OkResponse { ok: true }))
 }
 
 async fn next_field(m: &mut Multipart) -> ApiResult<Option<axum::extract::multipart::Field<'_>>> {

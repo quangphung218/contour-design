@@ -184,8 +184,11 @@ async fn archive_selection(
     let (name, zip) = state
         .blocking(move |s| {
             let project = s.get_project(&id)?;
+            // Images of comments not sent yet are no part of the project.
+            let drafts = s.unclaimed_draft_uploads(&id)?;
             let entries = wanted
                 .iter()
+                .filter(|f| !drafts.contains(f.trim_matches('/')))
                 .map(|f| {
                     let (file, full) = s.stat_file(&id, f)?;
                     Ok((file.name, full))

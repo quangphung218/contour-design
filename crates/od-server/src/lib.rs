@@ -54,6 +54,14 @@ pub fn router(state: AppState) -> Router {
             get(files::get).post(files::post).delete(files::delete),
         )
         .route("/api/projects/{id}/upload", post(files::upload))
+        .route(
+            "/api/projects/{id}/drafts/{session}/release",
+            post(files::release_drafts),
+        )
+        .route(
+            "/api/projects/{id}/drafts/{session}/claim",
+            post(files::claim_drafts),
+        )
         .route("/api/projects/{id}/raw/{*path}", get(raw::raw))
         .route("/api/projects/{id}/react/{*path}", get(raw::react))
         .route("/api/skills", get(content::list_skills))

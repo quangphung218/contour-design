@@ -38,11 +38,17 @@ impl Store {
     pub fn open(data: DataDir) -> Result<Self> {
         data.ensure()?;
         let conn = db::open(&data.db_path())?;
-        Ok(Self {
+        let store = Self {
             data,
             conn: Mutex::new(conn),
             versions_lock: Mutex::new(()),
-        })
+        };
+        // Images of drafts a page never released (it crashed) go after a
+        // day; the projects opened meanwhile already leave them out.
+        if let Err(e) = store.sweep_draft_uploads(crate::drafts::DRAFT_MAX_AGE_MS) {
+            tracing::warn!(error = %e, "cannot sweep old draft images");
+        }
+        Ok(store)
     }
 
     #[must_use]
@@ -343,10 +349,15 @@ impl Store {
             conversation_id: None,
         };
         let (project, conversation_id) = self.create_project(req)?;
+        // Images of comments not sent yet are no part of the project.
+        let drafts = self.unclaimed_draft_uploads(id)?;
         let copy = || -> Result<Vec<String>> {
             let target_root = self.project_root(&project)?;
             let mut copied = Vec::new();
-            for file in files::list_files(&source_root)? {
+            for file in files::list_files(&source_root)?
+                .into_iter()
+                .filter(|f| !drafts.contains(&f.name))
+            {
                 let (_, bytes) = files::read_file(&source_root, &file.name)?;
                 files::write_file(
                     &target_root,
@@ -450,6 +461,7 @@ impl Store {
         let _guard = self.versions_guard();
         let (old_name, file) = files::rename_file(&root, from, to)?;
         versions::rename_store(&root.dir, &old_name, &file.name)?;
+        self.follow_renames(project_id, &[(old_name, file.name.clone())])?;
         Ok(file)
     }
 
@@ -459,7 +471,33 @@ impl Store {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         let rel = files::delete_file(&root, name)?;
+        // A draft's image deleted (its x, Cancel): no longer one to release.
+        self.with_conn(|conn| {
+            Ok(crate::drafts::claim(
+                conn,
+                project_id,
+                std::slice::from_ref(&rel),
+            )?)
+        })?;
         versions::mark_deleted(&root.dir, &rel)
+    }
+
+    /// What is recorded by path follows files renamed or moved: the
+    /// comments sent on them (their pins), and the images of drafts.
+    fn follow_renames(&self, project_id: &str, pairs: &[(String, String)]) -> Result<()> {
+        self.with_conn(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            for (from, to) in pairs {
+                tx.execute(
+                    "UPDATE preview_comments SET file_path = ?3 \
+                     WHERE project_id = ?1 AND file_path = ?2",
+                    rusqlite::params![project_id, from, to],
+                )?;
+            }
+            crate::drafts::renamed(&tx, project_id, pairs)?;
+            tx.commit()?;
+            Ok(())
+        })
     }
 
     /// Overwrites the existing file at exactly `name` (never renamed by the
@@ -528,6 +566,7 @@ impl Store {
         for (old, new) in &renamed {
             versions::rename_store(&root.dir, old, new)?;
         }
+        self.follow_renames(project_id, &renamed)?;
         Ok((rel, renamed.len()))
     }
 

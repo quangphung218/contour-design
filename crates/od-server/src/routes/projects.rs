@@ -52,7 +52,15 @@ pub async fn get(
 ) -> ApiResult<ApiJson<ProjectResponse>> {
     let wanted = id.clone();
     let project = state
-        .blocking(move |s| s.get_project(&id))
+        .blocking(move |s| {
+            let project = s.get_project(&id)?;
+            // Opening a project: images of drafts no page released for a
+            // day (a crash) go.
+            if let Err(e) = s.sweep_draft_uploads(od_store::drafts::DRAFT_MAX_AGE_MS) {
+                tracing::warn!(error = %e, "cannot sweep old draft images");
+            }
+            Ok(project)
+        })
         .await
         .inspect_err(|e| {
             // A link to a project that is gone (Recent, Messages, a bookmark).

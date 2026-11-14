@@ -93,6 +93,13 @@ pub struct UploadResponse {
     pub files: Vec<UploadedFile>,
 }
 
+/// `POST /api/projects/:id/drafts/:session/claim`: images uploaded for a
+/// draft that the page took; they ship with the project now.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClaimDraftsRequest {
+    pub paths: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VersionSource {
