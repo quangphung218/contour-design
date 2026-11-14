@@ -14,6 +14,7 @@ mod deck;
 mod desktop;
 mod doc_view;
 mod docs_page;
+mod drafts;
 mod ds_create;
 mod ds_page;
 mod dsh_setup;
@@ -106,6 +107,9 @@ pub struct Shell {
     /// A failure of work that outlived the screen that started it (Home's
     /// uploads once the user went on), shown whichever screen is up.
     pub notice: RwSignal<Option<String>>,
+    /// Comments being sent, by draft session: a Studio left meanwhile
+    /// releases its drafts' images once they are saved (`drafts`).
+    pub(crate) draft_sends: StoredValue<drafts::Sends>,
     /// Projects the daemon said do not exist (deleted, or a wrong link):
     /// every call on one adds it (`api::watch_gone`), every screen reads
     /// it from here.
@@ -235,6 +239,7 @@ pub fn App() -> impl IntoView {
         exports: export_menu::Exports::new(),
         notice: RwSignal::new(None),
         gone: RwSignal::new(std::collections::HashSet::new()),
+        draft_sends: StoredValue::new(drafts::Sends::default()),
     };
     provide_context(shell);
     api::watch_gone(shell.gone);

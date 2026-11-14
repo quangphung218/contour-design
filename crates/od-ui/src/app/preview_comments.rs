@@ -14,6 +14,7 @@ use od_contracts::{
     CommentRect, CommentResponse, CommentStatus, CreateCommentRequest, PreviewComment,
 };
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Pin label: the element's tag, else "element".
 pub fn comment_label(c: &PreviewComment) -> String {
@@ -28,6 +29,10 @@ pub fn comment_label(c: &PreviewComment) -> String {
 /// file: another file shown leaves it, and it shows again with its file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommentDraft {
+    /// Tells it from any other draft, whatever file it is on: what finds
+    /// it again after an `await` (a send, an upload) or from its box finds
+    /// it by this, not by a file a rename may have changed meanwhile.
+    pub id: u64,
     pub picked: Picked,
     pub note: String,
     /// Images uploaded for it (`comments/…`).
@@ -68,6 +73,47 @@ impl CommentDraft {
 /// Comment drafts by file.
 pub type CommentDrafts = BTreeMap<String, CommentDraft>;
 
+/// The images of upload `token` landed (`landed`, none if it failed): the
+/// draft waiting for it takes them, whatever its file is called now (a
+/// rename meanwhile). False when no draft waits for it any more (cancelled
+/// or given up meanwhile): nothing holds them.
+pub fn land_upload(drafts: &mut CommentDrafts, token: u32, landed: &[String]) -> bool {
+    let Some(d) = drafts.values_mut().find(|d| d.uploads.contains(&token)) else {
+        return false;
+    };
+    d.uploads.retain(|t| *t != token);
+    d.images.extend_from_slice(landed);
+    true
+}
+
+/// The next draft's [`CommentDraft::id`].
+static NEXT_DRAFT: AtomicU64 = AtomicU64::new(1);
+
+/// The file of the draft `id`, and the draft.
+pub fn draft_by_id(drafts: &CommentDrafts, id: u64) -> Option<(&String, &CommentDraft)> {
+    drafts.iter().find(|(_, d)| d.id == id)
+}
+
+fn draft_by_id_mut(drafts: &mut CommentDrafts, id: u64) -> Option<&mut CommentDraft> {
+    drafts.values_mut().find(|d| d.id == id)
+}
+
+/// The drafts of files renamed or moved (`moves`) go with them, as they
+/// are: note, images, element, a send on its way.
+pub fn rename_drafts(drafts: &mut CommentDrafts, moves: &[super::drafts::Move]) {
+    let renamed: Vec<(String, String)> = drafts
+        .keys()
+        .filter_map(|f| Some((f.clone(), super::drafts::moved(moves, f)?)))
+        .collect();
+    let mut taken: Vec<(String, CommentDraft)> = renamed
+        .into_iter()
+        .filter_map(|(from, to)| Some((to, drafts.remove(&from)?)))
+        .collect();
+    for (to, d) in taken.drain(..) {
+        drafts.insert(to, d);
+    }
+}
+
 /// `od:locate` id of `file`'s draft on the element `selector`. It names the
 /// selector: an answer for an element picked before is not this one's.
 fn draft_locate_id(file: &str, selector: &str) -> String {
@@ -79,9 +125,20 @@ fn draft_locate_id(file: &str, selector: &str) -> String {
 /// now. A draft being sent stays as it is. A draft hidden on another slide
 /// with something in it (or being sent) keeps its element: the pick waits
 /// for the user to go back to it or give it up.
-pub fn pick_draft(drafts: &mut CommentDrafts, file: &str, picked: Picked, slide: Option<u32>) {
+///
+/// `count` is the deck's slide count, if known: a draft on a slide past it
+/// (the deck lost that slide) is here, wherever the pick is.
+pub fn pick_draft(
+    drafts: &mut CommentDrafts,
+    file: &str,
+    picked: Picked,
+    slide: Option<u32>,
+    count: Option<u32>,
+) {
     match drafts.get_mut(file) {
-        Some(d) if !on_slide(d.slide, slide) && (d.sending || d.unsent()) => {
+        Some(d)
+            if draft_slide_shown(d.slide, slide, count).is_none() && (d.sending || d.unsent()) =>
+        {
             d.waiting = Some(Waiting { picked, slide });
         }
         Some(d) if d.sending => {}
@@ -99,6 +156,7 @@ pub fn pick_draft(drafts: &mut CommentDrafts, file: &str, picked: Picked, slide:
 
 fn new_draft(picked: Picked, slide: Option<u32>) -> CommentDraft {
     CommentDraft {
+        id: NEXT_DRAFT.fetch_add(1, Ordering::Relaxed),
         picked,
         note: String::new(),
         images: Vec::new(),
@@ -122,19 +180,23 @@ fn take_waiting(drafts: &mut CommentDrafts, file: &str) -> Option<CommentDraft> 
     drafts.insert(file.to_owned(), new_draft(w.picked, w.slide))
 }
 
-/// `file`'s draft saved with the note `note` and the images `sent`: it
+/// The draft `id` saved with the note `note` and the images `sent`: it
 /// goes, unless something came to it meanwhile: images (or ones still on
 /// the way), or words typed while it was sent. Those stay in it, for the
 /// next comment, rather than be lost unseen. The note stays whole once
-/// typed into: the user sees what was sent and takes it from there.
-fn sent_draft(drafts: &mut CommentDrafts, file: &str, note: &str, sent: &[String]) {
-    let Some(d) = drafts.get_mut(file) else {
+/// typed into: the user sees what was sent and takes it from there. Found
+/// by id: its file may have been renamed while it was sent.
+fn sent_draft(drafts: &mut CommentDrafts, id: u64, note: &str, sent: &[String]) {
+    let Some(file) = draft_by_id(drafts, id).map(|(f, _)| f.clone()) else {
+        return;
+    };
+    let Some(d) = drafts.get_mut(&file) else {
         return;
     };
     d.images.retain(|p| !sent.contains(p));
     let typed = d.note.trim() != note;
     if !typed && d.images.is_empty() && d.uploads.is_empty() {
-        drafts.remove(file);
+        drafts.remove(&file);
     } else {
         if !typed {
             d.note.clear();
@@ -147,6 +209,24 @@ fn sent_draft(drafts: &mut CommentDrafts, file: &str, note: &str, sent: &[String
 /// the pins, anything when the file is no deck (yet) or it has no slide.
 fn on_slide(on: Option<u32>, shown: Option<u32>) -> bool {
     shown.is_none() || on.is_none() || on == shown
+}
+
+/// Whether a draft picked on slide `on` shows over slide `shown` of a deck
+/// of `count` slides (if known), and if so whether its slide is gone:
+/// `Some(false)` over its own slide (as the pins), `Some(true)` over any
+/// slide once the deck has no slide `on` any more (the agent rewrote it
+/// shorter): the note shows, to pick an element again or discard it,
+/// rather than wait unseen on a slide that is not there. `None`: it waits
+/// on its own slide. Its slide is kept: a deck that grows back (the agent
+/// still writing it) shows it there again.
+pub fn draft_slide_shown(on: Option<u32>, shown: Option<u32>, count: Option<u32>) -> Option<bool> {
+    if on_slide(on, shown) {
+        return Some(false);
+    }
+    match (on, count) {
+        (Some(on), Some(count)) if on >= count => Some(true),
+        _ => None,
+    }
 }
 
 /// Takes `file`'s draft out (Cancel), unless it is being sent: its images
@@ -200,22 +280,44 @@ fn orphans(images: &[String], comments: &[PreviewComment], drafts: &CommentDraft
         .collect()
 }
 
-/// Takes out of `drafts` those of files `keep` refuses, and returns them.
-fn drop_gone(drafts: &mut CommentDrafts, keep: impl Fn(&str) -> bool) -> Vec<CommentDraft> {
+/// Takes out of `drafts` those of files `keep` refuses, and returns them
+/// with their files.
+fn drop_gone(
+    drafts: &mut CommentDrafts,
+    keep: impl Fn(&str) -> bool,
+) -> Vec<(String, CommentDraft)> {
     let gone: Vec<String> = drafts.keys().filter(|f| !keep(f)).cloned().collect();
-    gone.iter().filter_map(|f| drafts.remove(f)).collect()
+    gone.into_iter()
+        .filter_map(|f| drafts.remove(&f).map(|d| (f, d)))
+        .collect()
 }
 
-/// A file deleted or renamed takes its drafts along (comment, Manual
-/// edit): nothing would show them again, and the leave guard would ask
-/// about them for good.
+/// A file gone (deleted, or renamed or moved outside the app: the agent,
+/// Finder) takes its drafts along (comment, Manual edit): nothing would
+/// show them again, and the leave guard would ask about them for good. The
+/// Studio says which files lost work. A file being renamed or moved in the
+/// app is not gone: its drafts follow it once the server answers.
 pub fn forget_gone_drafts(ctx: StudioCtx) {
     Effect::new(move |_| {
         let present: std::collections::HashSet<String> = ctx
             .files
             .with(|files| files.iter().map(|f| f.path.clone()).collect());
-        let keep = |p: &str| super::live_view::is_live(p) || present.contains(p);
-        ctx.tools.manual.drop_gone(keep);
+        let moving = ctx.moving.get_value();
+        let keep = |p: &str| {
+            super::live_view::is_live(p)
+                || present.contains(p)
+                || super::drafts::is_moving(&moving, p)
+        };
+        let mut lost = ctx.tools.manual.drop_gone(keep);
+        let say = move |mut lost: Vec<String>| {
+            if lost.is_empty() {
+                return;
+            }
+            lost.sort();
+            lost.dedup();
+            ctx.notice
+                .set(Some(tf(T::DraftsDroppedFileGone, &[&lost.join(", ")])));
+        };
         // A draft being sent stays: its answer takes it out.
         let keep_draft =
             |p: &str, drafts: &CommentDrafts| keep(p) || drafts.get(p).is_some_and(|d| d.sending);
@@ -223,6 +325,7 @@ pub fn forget_gone_drafts(ctx: StudioCtx) {
             .comment_drafts
             .with_untracked(|d| d.keys().any(|f| !keep_draft(f, d)));
         if !any_gone {
+            say(lost);
             return;
         }
         let mut gone = Vec::new();
@@ -234,8 +337,14 @@ pub fn forget_gone_drafts(ctx: StudioCtx) {
                 .collect();
             gone = drop_gone(d, |f| keep(f) || sending.iter().any(|s| s == f));
         });
-        let images: Vec<String> = gone.into_iter().flat_map(|d| d.images).collect();
+        lost.extend(
+            gone.iter()
+                .filter(|(_, d)| d.unsent())
+                .map(|(f, _)| f.clone()),
+        );
+        let images: Vec<String> = gone.into_iter().flat_map(|(_, d)| d.images).collect();
         ctx.drop_draft_images(&images);
+        say(lost);
     });
 }
 
@@ -265,9 +374,10 @@ impl StudioCtx {
         let Some(file) = self.active_untracked() else {
             return;
         };
-        let slide = self.deck.get_untracked().map(|d| d.active);
+        let deck = self.deck.get_untracked();
+        let (slide, count) = (deck.map(|d| d.active), deck.map(|d| d.count));
         self.comment_drafts
-            .update(|d| pick_draft(d, &file, picked, slide));
+            .update(|d| pick_draft(d, &file, picked, slide, count));
     }
 
     /// The shown file's draft element answered `od:locate`.
@@ -360,22 +470,34 @@ impl StudioCtx {
     }
 }
 
-/// Saves `file`'s draft as a comment, with `note`, unless it is being
+impl StudioCtx {
+    /// Whether a draft picked on slide `on` of the shown file shows now,
+    /// and if so whether its slide is gone ([`draft_slide_shown`]). Tracks
+    /// the deck.
+    fn draft_here(self, on: Option<u32>) -> Option<bool> {
+        let count = self.deck.with(|d| d.map(|d| d.count));
+        draft_slide_shown(on, self.shown_slide(), count)
+    }
+}
+
+/// Saves the draft `id` as a comment, with `note`, unless it is being
 /// sent already. `draft` and `error` are the draft box's.
 fn add_comment(
     ctx: StudioCtx,
-    file: String,
+    id: u64,
     draft: Tasks,
     note: String,
     error: RwSignal<Option<String>>,
 ) {
-    let (Some(d), Some(cid)) = (
-        ctx.comment_drafts.with_untracked(|d| d.get(&file).cloned()),
+    let (Some((file, d)), Some(cid)) = (
+        ctx.comment_drafts
+            .with_untracked(|d| draft_by_id(d, id).map(|(f, d)| (f.clone(), d.clone()))),
         ctx.conversation_id.get_untracked(),
     ) else {
         return;
     };
-    if d.sending || d.lost || !d.uploads.is_empty() {
+    let slide_gone = untrack(|| ctx.draft_here(d.slide)) == Some(true);
+    if d.sending || d.lost || slide_gone || !d.uploads.is_empty() {
         return;
     }
     let picked = d.picked;
@@ -394,28 +516,43 @@ fn add_comment(
         attachments: d.images.clone(),
     };
     let sent = d.images;
-    let set_sending = move |file: &str, on: bool| {
+    // By id: a rename while it is sent moves it to another file.
+    let set_sending = move |on: bool| {
         ctx.comment_drafts.update(|d| {
-            if let Some(d) = d.get_mut(file) {
+            if let Some(d) = draft_by_id_mut(d, id) {
                 d.sending = on;
             }
         });
     };
-    set_sending(&file, true);
+    set_sending(true);
     // The comment is kept even if the draft box goes meanwhile; the box
-    // says why it failed only while it is there.
+    // says why it failed only while it is there. Its images are its own
+    // once saved: the page leaving meanwhile releases its drafts' images
+    // only after it ([`super::drafts::Sends`]).
     let path = format!("{}/conversations/{}/comments", ctx.base(), api::seg(&cid));
-    let work = async move { api::post::<_, CommentResponse>(&path, &req).await };
+    let (sends, session, base) = (
+        ctx.shell.draft_sends,
+        ctx.draft_session.get_value(),
+        ctx.base(),
+    );
+    sends.update_value(|s| s.begin(&session));
+    let work = async move {
+        let res = api::post::<_, CommentResponse>(&path, &req).await;
+        if sends.try_update_value(|s| s.end(&session)) == Some(true) {
+            super::drafts::release(&base, &session);
+        }
+        res
+    };
     ctx.tasks.spawn_then(work, move |res| match res {
         Ok(r) => {
             ctx.comments.update(|c| c.push(r.comment));
             // Sent: nothing left to ask about, shown or not, but images
             // or words that came meanwhile.
             ctx.comment_drafts
-                .update(|d| sent_draft(d, &file, &note, &sent));
+                .update(|d| sent_draft(d, id, &note, &sent));
         }
         Err(e) => {
-            set_sending(&file, false);
+            set_sending(false);
             let why = ctx.failed_to(T::CommentFailed, &e);
             if draft.alive() {
                 error.set(Some(why));
@@ -467,15 +604,19 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
     // The note box of the shown file's draft, while comment mode is on.
     // Keyed by file only: typing in it does not build it again.
     // Over a deck, only on the slide it was picked on (as the pins).
+    // Keyed by the draft's id: a rename of its file keeps the box, and
+    // what is typed in it, as it is. Over a deck that lost the draft's
+    // slide, on whatever slide shows (`draft_here`).
     let draft_file = Memo::new(move |_| {
         let file = ctx.active()?;
+        if !ctx.comment_mode.get() {
+            return None;
+        }
+        let (id, on) = ctx
+            .comment_drafts
+            .with(|d| d.get(&file).map(|d| (d.id, d.slide)))?;
         // Not `deck.active`: a reload of the deck goes through slide 0.
-        let slide = ctx.shown_slide();
-        let shown = ctx.comment_mode.get()
-            && ctx
-                .comment_drafts
-                .with(|d| d.get(&file).is_some_and(|d| on_slide(d.slide, slide)));
-        shown.then_some(file)
+        ctx.draft_here(on).map(|_| id)
     });
     // An element picked over another slide than the draft's: the box says
     // the draft waits there (its slide, 0-based), at the element picked.
@@ -485,12 +626,12 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
         if !ctx.comment_mode.get() {
             return None;
         }
-        ctx.comment_drafts.with(|d| {
+        let (on, waits) = ctx.comment_drafts.with(|d| {
             let d = d.get(&file)?;
-            let w = d.waiting.as_ref()?;
-            (!on_slide(d.slide, slide) && on_slide(w.slide, slide))
-                .then(|| (file.clone(), d.slide.unwrap_or_default()))
-        })
+            Some((d.slide, d.waiting.as_ref()?.slide))
+        })?;
+        (ctx.draft_here(on).is_none() && on_slide(waits, slide))
+            .then(|| (file.clone(), on.unwrap_or_default()))
     });
     view! {
         <div class="comment-layer" aria-live="polite">
@@ -547,67 +688,67 @@ pub fn CommentLayer(ctx: StudioCtx) -> impl IntoView {
                     })
                     .collect_view()
             }}
-            {move || draft_file.get().map(|file| view! { <DraftBox ctx=ctx file=file/> })}
+            {move || draft_file.get().map(|id| view! { <DraftBox ctx=ctx id=id/> })}
             {move || elsewhere.get().map(|(file, slide)| view! { <DraftElsewhere ctx=ctx file=file slide=slide/> })}
         </div>
     }
 }
 
 #[component]
-fn DraftBox(ctx: StudioCtx, file: String) -> impl IntoView {
+fn DraftBox(ctx: StudioCtx, id: u64) -> impl IntoView {
     let error = RwSignal::new(None::<String>);
     let tasks = Tasks::here();
     let view_height = super::bridge::main_frame_height();
-    let file = StoredValue::new(file);
-    // Its fields, read from the drafts: they outlive the box.
-    let read = move |f: fn(&CommentDraft) -> String| {
-        ctx.comment_drafts.with(|d| {
-            file.with_value(|file| d.get(file).map(f))
-                .unwrap_or_default()
-        })
+    // Its fields, read from the drafts by id: they outlive the box, and
+    // its file may be renamed while it shows.
+    let with = move |f: &dyn Fn(&CommentDraft) -> Option<String>| {
+        ctx.comment_drafts
+            .with(|d| draft_by_id(d, id).and_then(|(_, d)| f(d)))
+            .unwrap_or_default()
     };
-    let note = move || read(|d| d.note.clone());
+    let note = move || with(&|d| Some(d.note.clone()));
     let flag = move |f: fn(&CommentDraft) -> bool| {
         ctx.comment_drafts
-            .with(|d| file.with_value(|file| d.get(file).is_some_and(f)))
+            .with(|d| draft_by_id(d, id).is_some_and(|(_, d)| f(d)))
     };
-    let lost = move || flag(|d| d.lost);
+    // Its element gone, or the deck slide it was on.
+    let slide = move || {
+        ctx.comment_drafts
+            .with(|d| draft_by_id(d, id).and_then(|(_, d)| d.slide))
+    };
+    let lost = move || flag(|d| d.lost) || ctx.draft_here(slide()) == Some(true);
     // An image on its way: Add waits for it, else it would miss the comment.
     let uploading = move || flag(|d| !d.uploads.is_empty());
     // Kept in the draft: a box shown again while it is sent knows it.
     let sending = move || flag(|d| d.sending);
-    let style = move || {
-        ctx.comment_drafts.with(|d| {
-            file.with_value(|file| {
-                d.get(file)
-                    .map(|d| draft_style(&d.picked.rect, view_height))
-            })
-            .unwrap_or_default()
-        })
-    };
+    let style = move || with(&|d| Some(draft_style(&d.picked.rect, view_height)));
     let label = move || {
-        ctx.comment_drafts.with(|d| {
-            file.with_value(|file| {
-                d.get(file).map(|d| {
-                    let p = &d.picked;
-                    draft_label(&p.tag, p.label.as_deref().unwrap_or(&p.text))
-                })
-            })
-            .unwrap_or_default()
+        with(&|d| {
+            let p = &d.picked;
+            Some(draft_label(&p.tag, p.label.as_deref().unwrap_or(&p.text)))
         })
     };
+    // Each key typed goes to this draft, whatever its file is called now.
     let set_note = move |text: String| {
         ctx.comment_drafts.update(|d| {
-            if let Some(d) = file.with_value(|file| d.get_mut(file)) {
+            if let Some(d) = draft_by_id_mut(d, id) {
                 d.note = text;
             }
         });
     };
-    let cancel = move || file.with_value(|file| ctx.cancel_comment_draft(file));
+    let file = move || {
+        ctx.comment_drafts
+            .with_untracked(|d| draft_by_id(d, id).map(|(f, _)| f.clone()))
+    };
+    let cancel = move || {
+        if let Some(f) = file() {
+            ctx.cancel_comment_draft(&f);
+        }
+    };
     let submit = move || {
         let text = note().trim().to_owned();
         if !text.is_empty() {
-            add_comment(ctx, file.get_value(), tasks, text, error);
+            add_comment(ctx, id, tasks, text, error);
         }
     };
     let submit_key = submit;
@@ -636,7 +777,7 @@ fn DraftBox(ctx: StudioCtx, file: String) -> impl IntoView {
                     }
                 }
             ></textarea>
-            <super::comments_panel::DraftImages ctx=ctx file=file.get_value() error=error/>
+            <super::comments_panel::DraftImages ctx=ctx id=id error=error/>
             {move || uploading().then(|| view! {
                 <p class="muted small" data-testid="comment-uploading">{t(T::CommentUploading)}</p>
             })}
@@ -768,6 +909,10 @@ mod draft_tests {
         }
     }
 
+    fn id(drafts: &CommentDrafts, file: &str) -> u64 {
+        drafts[file].id
+    }
+
     fn typed(drafts: &mut CommentDrafts, file: &str, note: &str, images: &[&str]) {
         let d = drafts.get_mut(file).expect("a draft");
         d.note = note.to_owned();
@@ -777,9 +922,9 @@ mod draft_tests {
     #[test]
     fn each_file_keeps_its_own_draft() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
         typed(&mut drafts, "a.html", "Bigger", &["comments/ref.png"]);
-        pick_draft(&mut drafts, "b.html", picked("p"), None);
+        pick_draft(&mut drafts, "b.html", picked("p"), None, None);
         assert_eq!(
             drafts["a.html"].note, "Bigger",
             "b.html's pick leaves a.html's"
@@ -794,10 +939,10 @@ mod draft_tests {
     #[test]
     fn an_element_picked_again_keeps_the_note_and_images() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
         typed(&mut drafts, "a.html", "Bigger", &["comments/ref.png"]);
         drafts.get_mut("a.html").unwrap().lost = true;
-        pick_draft(&mut drafts, "a.html", picked("h2"), None);
+        pick_draft(&mut drafts, "a.html", picked("h2"), None, None);
         let d = &drafts["a.html"];
         assert_eq!(d.picked.selector, "h2");
         assert_eq!(
@@ -809,7 +954,7 @@ mod draft_tests {
     #[test]
     fn the_draft_element_found_again_or_not() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
         let at = CommentRect {
             x: 10.0,
             y: 20.0,
@@ -836,7 +981,7 @@ mod draft_tests {
         let other = [found(draft_locate_id("a.html", "h1"), Some(at))];
         assert!(locate_draft(&mut drafts, "a.html", &other));
         assert!(drafts["a.html"].lost, "other text: pick it again");
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
         let gone = [found(draft_locate_id("a.html", "h1"), None)];
         assert!(locate_draft(&mut drafts, "a.html", &gone));
         assert!(drafts["a.html"].lost, "pick it again");
@@ -845,28 +990,28 @@ mod draft_tests {
     #[test]
     fn the_draft_keeps_the_slide_it_was_picked_on() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "deck.html", picked("h1"), Some(1));
+        pick_draft(&mut drafts, "deck.html", picked("h1"), Some(1), None);
         assert_eq!(drafts["deck.html"].slide, Some(1));
         // Shown over its own slide only, as the pins.
         assert!(on_slide(Some(1), Some(1)));
         assert!(!on_slide(Some(1), Some(0)), "slide 1 shown: the box hides");
         assert!(on_slide(Some(1), None), "deck not known yet");
         assert!(on_slide(None, Some(0)), "picked on no deck");
-        pick_draft(&mut drafts, "deck.html", picked("h2"), Some(2));
+        pick_draft(&mut drafts, "deck.html", picked("h2"), Some(2), None);
         assert_eq!(drafts["deck.html"].slide, Some(2), "picked again there");
     }
 
     #[test]
     fn a_draft_being_sent_is_not_cancelled_or_picked_over() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
         typed(&mut drafts, "a.html", "Bigger", &["comments/ref.png"]);
         drafts.get_mut("a.html").unwrap().sending = true;
         assert!(
             cancel_draft(&mut drafts, "a.html").is_none(),
             "its images are the comment's"
         );
-        pick_draft(&mut drafts, "a.html", picked("h2"), None);
+        pick_draft(&mut drafts, "a.html", picked("h2"), None, None);
         assert_eq!(drafts["a.html"].picked.selector, "h1", "sent as picked");
         drafts.get_mut("a.html").unwrap().sending = false;
         assert!(cancel_draft(&mut drafts, "a.html").is_some());
@@ -876,10 +1021,10 @@ mod draft_tests {
     #[test]
     fn a_pick_over_another_slide_leaves_a_draft_hidden_there() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "deck.html", picked("h1"), Some(1));
+        pick_draft(&mut drafts, "deck.html", picked("h1"), Some(1), None);
         typed(&mut drafts, "deck.html", "About slide two", &[]);
         // Slide 0 shown: the note does not move to an element unseen.
-        pick_draft(&mut drafts, "deck.html", picked("h2"), Some(0));
+        pick_draft(&mut drafts, "deck.html", picked("h2"), Some(0), None);
         let d = &drafts["deck.html"];
         assert_eq!((d.picked.selector.as_str(), d.slide), ("h1", Some(1)));
         let w = d.waiting.as_ref().expect("the pick waits");
@@ -892,8 +1037,8 @@ mod draft_tests {
         assert_eq!((d.note.as_str(), d.waiting.is_none()), ("", true));
         // Picked again on its own slide: the waiting pick goes.
         typed(&mut drafts, "deck.html", "About slide one", &[]);
-        pick_draft(&mut drafts, "deck.html", picked("h3"), Some(2));
-        pick_draft(&mut drafts, "deck.html", picked("p"), Some(0));
+        pick_draft(&mut drafts, "deck.html", picked("h3"), Some(2), None);
+        pick_draft(&mut drafts, "deck.html", picked("p"), Some(0), None);
         let d = &drafts["deck.html"];
         assert_eq!(
             (d.picked.selector.as_str(), d.waiting.is_none()),
@@ -901,7 +1046,7 @@ mod draft_tests {
         );
         // Nothing typed yet: nothing to lose, the draft moves.
         typed(&mut drafts, "deck.html", " ", &[]);
-        pick_draft(&mut drafts, "deck.html", picked("h1"), Some(2));
+        pick_draft(&mut drafts, "deck.html", picked("h1"), Some(2), None);
         assert_eq!(drafts["deck.html"].slide, Some(2));
         assert!(drafts["deck.html"].waiting.is_none());
     }
@@ -909,9 +1054,9 @@ mod draft_tests {
     #[test]
     fn a_draft_being_sent_is_not_given_up_for_a_pick_elsewhere() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "deck.html", picked("h1"), Some(1));
+        pick_draft(&mut drafts, "deck.html", picked("h1"), Some(1), None);
         drafts.get_mut("deck.html").unwrap().sending = true;
-        pick_draft(&mut drafts, "deck.html", picked("h2"), Some(0));
+        pick_draft(&mut drafts, "deck.html", picked("h2"), Some(0), None);
         assert!(drafts["deck.html"].waiting.is_some(), "told where it is");
         assert!(take_waiting(&mut drafts, "deck.html").is_none());
         assert_eq!(drafts["deck.html"].picked.selector, "h1");
@@ -920,12 +1065,13 @@ mod draft_tests {
     #[test]
     fn images_landing_while_it_is_sent_stay_in_the_draft() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
         typed(&mut drafts, "a.html", "Bigger", &["comments/a.png"]);
         let sent = ["comments/a.png".to_owned()];
-        sent_draft(&mut drafts, "a.html", "Bigger", &sent);
+        let at = id(&drafts, "a.html");
+        sent_draft(&mut drafts, at, "Bigger", &sent);
         assert!(drafts.is_empty(), "all sent: the draft goes");
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
         typed(
             &mut drafts,
             "a.html",
@@ -933,27 +1079,30 @@ mod draft_tests {
             &["comments/a.png", "comments/late.png"],
         );
         drafts.get_mut("a.html").unwrap().sending = true;
-        sent_draft(&mut drafts, "a.html", "Bigger", &sent);
+        let at = id(&drafts, "a.html");
+        sent_draft(&mut drafts, at, "Bigger", &sent);
         let d = &drafts["a.html"];
         assert_eq!(d.images, ["comments/late.png"], "kept, not lost unseen");
         assert_eq!((d.note.as_str(), d.sending), ("", false));
         // One still on its way: the draft waits for it.
         drafts.get_mut("a.html").unwrap().images.clear();
         drafts.get_mut("a.html").unwrap().uploads.push(7);
-        sent_draft(&mut drafts, "a.html", "", &[]);
+        let at = id(&drafts, "a.html");
+        sent_draft(&mut drafts, at, "", &[]);
         assert!(drafts.contains_key("a.html"));
     }
 
     #[test]
     fn words_typed_while_it_is_sent_stay_in_the_draft() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
         typed(&mut drafts, "a.html", "Bigger ", &["comments/a.png"]);
         drafts.get_mut("a.html").unwrap().sending = true;
         // Typed on while the comment was saved.
         drafts.get_mut("a.html").unwrap().note = "Bigger, and bolder".to_owned();
         let sent = ["comments/a.png".to_owned()];
-        sent_draft(&mut drafts, "a.html", "Bigger", &sent);
+        let at = id(&drafts, "a.html");
+        sent_draft(&mut drafts, at, "Bigger", &sent);
         let d = drafts.get("a.html").expect("not dropped unseen");
         assert_eq!(
             (d.note.as_str(), d.images.len(), d.sending),
@@ -966,7 +1115,8 @@ mod draft_tests {
             "Again more",
             &["comments/a.png", "comments/b.png"],
         );
-        sent_draft(&mut drafts, "a.html", "Again", &sent);
+        let at = id(&drafts, "a.html");
+        sent_draft(&mut drafts, at, "Again", &sent);
         let d = &drafts["a.html"];
         assert_eq!(
             (d.note.as_str(), d.images.as_slice()),
@@ -974,14 +1124,15 @@ mod draft_tests {
         );
         // Only spaces added: nothing to keep.
         typed(&mut drafts, "a.html", "Same  ", &[]);
-        sent_draft(&mut drafts, "a.html", "Same", &[]);
+        let at = id(&drafts, "a.html");
+        sent_draft(&mut drafts, at, "Same", &[]);
         assert!(drafts.is_empty());
     }
 
     #[test]
     fn an_image_on_its_way_is_work_not_sent() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
         assert!(
             unsent_files(&drafts).is_empty(),
             "an element picked, nothing more"
@@ -995,10 +1146,130 @@ mod draft_tests {
     }
 
     #[test]
+    fn a_draft_follows_its_file_renamed_or_moved() {
+        use super::super::drafts::Move;
+        let mut drafts = CommentDrafts::new();
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
+        typed(&mut drafts, "a.html", "Keep this", &["comments/a.png"]);
+        pick_draft(&mut drafts, "pages/b.html", picked("p"), None, None);
+        pick_draft(&mut drafts, "z.html", picked("p"), None, None);
+        let (a, b) = (id(&drafts, "a.html"), id(&drafts, "pages/b.html"));
+        drafts.get_mut("a.html").unwrap().sending = true;
+        rename_drafts(
+            &mut drafts,
+            &[
+                Move {
+                    from: "a.html".into(),
+                    to: "c.html".into(),
+                    folder: false,
+                },
+                Move {
+                    from: "pages".into(),
+                    to: "site/pages".into(),
+                    folder: true,
+                },
+            ],
+        );
+        assert_eq!(
+            drafts.keys().collect::<Vec<_>>(),
+            ["c.html", "site/pages/b.html", "z.html"]
+        );
+        let c = &drafts["c.html"];
+        assert_eq!(
+            (c.id, c.note.as_str(), c.images.len(), c.sending),
+            (a, "Keep this", 1, true),
+            "as it was, a send on its way included"
+        );
+        assert_eq!(drafts["site/pages/b.html"].id, b);
+    }
+
+    #[test]
+    fn a_draft_renamed_while_it_is_sent_goes_when_it_is_saved() {
+        let mut drafts = CommentDrafts::new();
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
+        typed(&mut drafts, "a.html", "Bigger", &["comments/a.png"]);
+        let at = id(&drafts, "a.html");
+        drafts.get_mut("a.html").unwrap().sending = true;
+        let d = drafts.remove("a.html").unwrap();
+        drafts.insert("c.html".into(), d);
+        sent_draft(&mut drafts, at, "Bigger", &["comments/a.png".to_owned()]);
+        assert!(drafts.is_empty(), "found by id under its new name");
+    }
+
+    #[test]
+    fn an_image_lands_in_its_draft_whatever_its_file_is_called_now() {
+        let mut drafts = CommentDrafts::new();
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
+        drafts.get_mut("a.html").unwrap().uploads.push(7);
+        let d = drafts.remove("a.html").unwrap();
+        drafts.insert("c.html".into(), d);
+        assert!(land_upload(&mut drafts, 7, &["comments/x.png".to_owned()]));
+        let c = &drafts["c.html"];
+        assert_eq!(
+            (c.images.as_slice(), c.uploads.len()),
+            (&["comments/x.png".to_owned()][..], 0)
+        );
+        // Its draft cancelled meanwhile: nothing holds them.
+        assert!(!land_upload(&mut drafts, 8, &["comments/y.png".to_owned()]));
+    }
+
+    #[test]
+    fn a_draft_on_a_slide_the_deck_lost_shows_on_the_slide_shown() {
+        // Its own slide, any count: shown, not lost.
+        assert_eq!(draft_slide_shown(Some(1), Some(1), Some(3)), Some(false));
+        // Another slide that is there: it waits there.
+        assert_eq!(draft_slide_shown(Some(1), Some(0), Some(3)), None);
+        // The deck rewritten with 1 slide: shown here, to pick again.
+        assert_eq!(draft_slide_shown(Some(1), Some(0), Some(1)), Some(true));
+        // Count not known yet: as before.
+        assert_eq!(draft_slide_shown(Some(1), Some(0), None), None);
+        // Grown back: its own slide again, the slide kept.
+        assert_eq!(draft_slide_shown(Some(1), Some(0), Some(2)), None);
+        assert_eq!(draft_slide_shown(Some(1), Some(1), Some(2)), Some(false));
+    }
+
+    #[test]
+    fn a_pick_over_a_deck_that_lost_the_draft_slide_takes_the_note() {
+        let mut drafts = CommentDrafts::new();
+        pick_draft(&mut drafts, "deck.html", picked("h1"), Some(1), Some(3));
+        typed(&mut drafts, "deck.html", "Slide two note", &[]);
+        pick_draft(&mut drafts, "deck.html", picked("h2"), Some(0), Some(1));
+        let d = &drafts["deck.html"];
+        assert_eq!(
+            (
+                d.picked.selector.as_str(),
+                d.slide,
+                d.note.as_str(),
+                d.waiting.is_none()
+            ),
+            ("h2", Some(0), "Slide two note", true)
+        );
+    }
+
+    #[test]
+    fn a_file_being_renamed_keeps_its_draft() {
+        let mut drafts = CommentDrafts::new();
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
+        pick_draft(&mut drafts, "pages/b.html", picked("h1"), None, None);
+        pick_draft(&mut drafts, "gone.html", picked("h1"), None, None);
+        // The watcher lists the files before the rename's answer came.
+        let present = ["c.html".to_owned()];
+        let moving = ["a.html".to_owned(), "pages/".to_owned()];
+        let gone = drop_gone(&mut drafts, |p| {
+            present.iter().any(|f| f == p) || super::super::drafts::is_moving(&moving, p)
+        });
+        assert_eq!(
+            gone.into_iter().map(|(f, _)| f).collect::<Vec<_>>(),
+            ["gone.html"]
+        );
+        assert_eq!(drafts.len(), 2);
+    }
+
+    #[test]
     fn a_file_gone_takes_its_draft() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "a.html", picked("h1"), None);
-        pick_draft(&mut drafts, "b.html", picked("h1"), None);
+        pick_draft(&mut drafts, "a.html", picked("h1"), None, None);
+        pick_draft(&mut drafts, "b.html", picked("h1"), None, None);
         let gone = drop_gone(&mut drafts, |f| f == "b.html");
         assert_eq!(gone.len(), 1);
         assert_eq!(drafts.keys().collect::<Vec<_>>(), ["b.html"]);
@@ -1007,7 +1278,7 @@ mod draft_tests {
     #[test]
     fn only_images_nothing_holds_are_orphans() {
         let mut drafts = CommentDrafts::new();
-        pick_draft(&mut drafts, "b.html", picked("p"), None);
+        pick_draft(&mut drafts, "b.html", picked("p"), None, None);
         typed(&mut drafts, "b.html", "", &["comments/b.png"]);
         let comment: PreviewComment = serde_json::from_value(serde_json::json!({
             "id": "c1", "projectId": "p", "conversationId": "c", "filePath": "a.html",

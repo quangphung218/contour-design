@@ -130,9 +130,22 @@ async fn source_edits(
         .take(120)
         .collect::<String>();
     let (file, version, previous) = blocking(&state, move |s| {
-        s.edit_html_tracked(&id, &req.file, &label, |html| {
-            apply_edits(html, &req.edits).map_err(patch_err)
-        })
+        // The drafts' images it puts in the page are the page's before it
+        // is written: a release after this deletes none of them.
+        let taken = s.take_draft_uploads(&id, &req.claim)?;
+        // Once the new text is made, the page may be written even if a
+        // later step fails (its version): the images stay the page's then.
+        // Only a write that failed before that gives them back.
+        let made = std::cell::Cell::new(false);
+        let res = s.edit_html_tracked(&id, &req.file, &label, |html| {
+            let out = apply_edits(html, &req.edits).map_err(patch_err)?;
+            made.set(true);
+            Ok(out)
+        });
+        if res.is_err() && !made.get() {
+            s.give_back_draft_uploads(&id, taken);
+        }
+        res
     })
     .await?;
     Ok(ApiJson(SourceEditResponse {

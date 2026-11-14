@@ -593,6 +593,7 @@ CommentMode = 新增留言
 CommentModeOn = 點選元素即可留言
 CommentPlaceholder = 這裡需要改什麼？
 CommentReselect = 此元素已不在頁面上。請重新選擇要留言的元素。
+DraftsDroppedFileGone = 已捨棄 {0} 上未儲存的內容：檔案已不存在。
 AddComment = 新增留言
 CommentUploading = 正在上傳圖片… 上傳完成後才能新增。
 CommentDraftElsewhere = 投影片 {0} 的留言尚未送出。

@@ -162,7 +162,23 @@ impl Store {
             updated_at: now,
         };
         let position = serde_json::to_string(&comment.position)?;
+        let images: Vec<String> = comment.attachments.iter().map(|a| a.path.clone()).collect();
+        let root = if images.is_empty() {
+            None
+        } else {
+            Some(self.root_for(project_id)?)
+        };
         self.with_conn(|conn| {
+            let conn = conn.unchecked_transaction()?;
+            // Its images are the comment's now: no release takes them.
+            // One a release took since they were checked is gone: the
+            // comment is refused rather than kept pointing to nothing.
+            crate::drafts::claim(&conn, project_id, &images)?;
+            if let Some(root) = &root {
+                for path in &images {
+                    files::stat_file(root, path)?;
+                }
+            }
             conn.execute(
                 &format!(
                     "INSERT INTO preview_comments ({COLUMNS}) \
@@ -192,6 +208,7 @@ impl Store {
                     params![comment.id, i as i64, image.path, image.name],
                 )?;
             }
+            conn.commit()?;
             Ok(())
         })?;
         Ok(comment)

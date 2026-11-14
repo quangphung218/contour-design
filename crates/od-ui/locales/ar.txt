@@ -593,6 +593,7 @@ CommentMode = أضف تعليقًا
 CommentModeOn = انقر على عنصر للتعليق
 CommentPlaceholder = ما الذي يجب تغييره هنا؟
 CommentReselect = لم يعد هذا العنصر في الصفحة. اختر عنصرًا للتعليق عليه.
+DraftsDroppedFileGone = تم تجاهل العمل غير المحفوظ في {0}: لم يعد الملف موجودًا.
 AddComment = إضافة تعليق
 CommentUploading = جارٍ رفع الصورة… انتظر حتى يكتمل.
 CommentDraftElsewhere = تعليق على الشريحة {0} لم يُرسل بعد.

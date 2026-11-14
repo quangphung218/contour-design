@@ -593,6 +593,7 @@ CommentMode = เพิ่มความคิดเห็น
 CommentModeOn = คลิกองค์ประกอบเพื่อคอมเมนต์
 CommentPlaceholder = ตรงนี้ควรเปลี่ยนอะไร
 CommentReselect = องค์ประกอบนี้ไม่อยู่ในหน้าแล้ว เลือกองค์ประกอบที่จะแสดงความคิดเห็น
+DraftsDroppedFileGone = ทิ้งงานที่ยังไม่บันทึกใน {0} แล้ว: ไม่มีไฟล์นี้อีกต่อไป
 AddComment = เพิ่มคอมเมนต์
 CommentUploading = กำลังอัปโหลดรูปภาพ… รอให้เสร็จก่อนเพิ่ม
 CommentDraftElsewhere = คอมเมนต์ในสไลด์ {0} ยังไม่ได้ส่ง

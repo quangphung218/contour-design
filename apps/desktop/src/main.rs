@@ -1781,10 +1781,15 @@ fn start_failed(app: &AppHandle, data_root: &std::path::Path, e: &anyhow::Error)
 
 /// Quitting, restarting after an update, or the Windows installer taking
 /// over: stops running agents (as Stop does) and the terminal tabs' shells,
-/// which would outlive the app, and releases the data folder's lock.
+/// which would outlive the app, deletes the images of comments not sent
+/// (the window, the daemon's only page, goes with them; WebKit may not get
+/// to say so itself), and releases the data folder's lock.
 pub(crate) fn before_exit<R: Runtime>(app: &AppHandle<R>) {
     if let Some(daemon) = app.try_state::<Daemon>() {
         tauri::async_runtime::block_on(daemon.state.shutdown());
+        if let Err(e) = daemon.state.store.release_all_draft_uploads() {
+            tracing::warn!(error = %e, "cannot delete the images of drafts not sent");
+        }
         if let Ok(mut lock) = daemon.lock.lock() {
             lock.take();
         }
@@ -2724,6 +2729,23 @@ mod tests {
             "{}",
             &all[at..next]
         );
+    }
+
+    #[test]
+    fn quitting_or_restarting_deletes_the_images_of_drafts_not_sent() {
+        // The wiring (the store's tests cover `release_all_draft_uploads`):
+        // Quit, Restart after an update and the installer all end in
+        // `before_exit`, and the window cannot be counted on to say it left.
+        let code = shipped(include_str!("main.rs"));
+        let packed = |code: &str| code.split_whitespace().collect::<String>();
+        let exit = packed(&fn_bodies(&code, "before_exit").concat());
+        let release = exit
+            .find("daemon.state.store.release_all_draft_uploads()")
+            .expect("before_exit releases the drafts' images");
+        let unlock = exit.find("lock.take()").expect("the lock let go");
+        assert!(release < unlock, "before the next launch may open the data");
+        let run = packed(&fn_bodies(&code, "on_run_event").concat());
+        assert!(run.contains("RunEvent::Exit=>before_exit(app)"), "{run}");
     }
 
     #[test]

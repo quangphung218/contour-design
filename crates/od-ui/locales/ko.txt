@@ -593,6 +593,7 @@ CommentMode = 댓글 추가
 CommentModeOn = 요소를 클릭해 댓글 달기
 CommentPlaceholder = 여기서 무엇을 바꿔야 하나요?
 CommentReselect = 이 요소는 더 이상 페이지에 없습니다. 댓글을 달 요소를 다시 고르세요.
+DraftsDroppedFileGone = {0}의 저장하지 않은 작업을 버렸습니다. 파일이 더 이상 없습니다.
 AddComment = 댓글 추가
 CommentUploading = 이미지 업로드 중… 완료되면 추가할 수 있습니다.
 CommentDraftElsewhere = 슬라이드 {0}의 댓글이 아직 전송되지 않았습니다.
