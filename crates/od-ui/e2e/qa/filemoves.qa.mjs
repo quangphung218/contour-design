@@ -97,6 +97,18 @@ async function brokenImages(d, id) {
   return bad;
 }
 
+/** The images the Comments tab shows (no reload: what the Studio holds) that do not load. */
+async function brokenShown(page) {
+  await page.getByTestId('comments-tab').click();
+  await page.getByTestId('comment-image').first().waitFor();
+  const bad = [];
+  for (const href of await page.getByTestId('comment-image').evaluateAll((els) => els.map((e) => e.href))) {
+    const r = await fetch(href);
+    if (r.status !== 200) bad.push(`${new URL(href).pathname} → ${r.status}`);
+  }
+  return bad;
+}
+
 const zipOf = async (r) => Object.keys(await unzip(Buffer.from(await r.arrayBuffer()))).sort();
 
 test('MV-01', 'A comment sent with an image keeps its pin and image when its file moves into a folder', async ({ d, newPage }) => {
@@ -137,7 +149,8 @@ test('MV-03', 'Moving the comments folder keeps the images of the comments sent'
   await moveFolderTo(page, 'comments', 'old');
   await until(async () => (await listFiles(d, id)).some((f) => f.startsWith('old/comments/')), 'moved');
   assert.deepEqual(await brokenImages(d, id), [], 'the comment sent points to an image that is no longer there');
-}, { knownBug: 'QA-099' });
+  assert.deepEqual(await brokenShown(page), [], 'the Comments tab shows the image at its old path');
+});
 
 test('MV-04', 'Renaming an image a comment was sent with keeps that comment\'s image', async ({ d, newPage }) => {
   const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
@@ -151,7 +164,8 @@ test('MV-04', 'Renaming an image a comment was sent with keeps that comment\'s i
   await page.getByTestId('file-dialog-confirm').click();
   await until(async () => (await listFiles(d, id)).includes('comments/reference.png'), 'renamed');
   assert.deepEqual(await brokenImages(d, id), [], 'the comment sent points to the old name');
-}, { knownBug: 'QA-099' });
+  assert.deepEqual(await brokenShown(page), [], 'the Comments tab shows the image at its old name');
+});
 
 test('MV-05', 'A comment sent on a deleted file does not come back on the file renamed to that name', async ({ d, newPage }) => {
   const { page, id, frame } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha'), 'b.html': CPAGE('Beta') }, 'a.html');
@@ -169,7 +183,7 @@ test('MV-05', 'A comment sent on a deleted file does not come back on the file r
   // The pins are drawn once the page is in; give them the time a pin takes.
   await until(async () => (await page.getByTestId('comment-pin').count()) > 0, 'a pin', 2500).catch(() => {});
   assert.equal(await page.getByTestId('comment-pin').count(), 0, 'the comment about the deleted Alpha page is pinned on Beta');
-}, { knownBug: 'QA-100' });
+});
 
 test('MV-06', 'The ZIP of a folder and of a selection leave out an image of a comment not sent', async ({ d, newPage }) => {
   const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
@@ -257,6 +271,100 @@ test('MV-10', 'A comment draft whose image\'s folder was moved can still be sent
   });
   assert.equal(saved.attachments.length, 1, 'with its image');
   assert.deepEqual(await brokenImages(d, id), []);
-}, { knownBug: 'QA-099' });
+});
+
+test('MV-11', 'Deleting an image a comment was sent with keeps the comment, without a broken image', async ({ d, newPage }) => {
+  const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
+  await typeNote(page, 'Keep my note');
+  await attach(page, 'pic.png');
+  await send(page);
+  const [img] = await commentImages(d, id);
+  await folderRow(page, 'comments').click();
+  await rowMenu(page, fileRow(page, img), 'row-delete');
+  await page.getByTestId('file-dialog-confirm').click();
+  await until(async () => !(await listFiles(d, id)).includes(img), 'deleted');
+  const [c] = await comments(d, id);
+  assert.equal(c?.note, 'Keep my note', 'the comment stays');
+  assert.deepEqual(await brokenImages(d, id), [], 'the comment points to an image deleted');
+  // An image put at that name later is not the comment's.
+  await fetch(`${d.base}/api/projects/${id}/files`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: img, content: 'not an image' }),
+  });
+  assert.deepEqual((await comments(d, id))[0].attachments, []);
+});
+
+test('MV-12', 'A comment sent in a deleted folder does not come back on the folder moved to that name', async ({ d, newPage }) => {
+  const { page, id, frame } = await commentDraft(newPage, d, { 'pages/a.html': CPAGE('Alpha'), 'next/pages/a.html': CPAGE('Beta') }, 'pages/a.html');
+  await typeNote(page, 'About Alpha only');
+  await send(page);
+  await rowMenu(page, folderRow(page, 'pages'), 'row-delete-folder');
+  await page.getByTestId('file-dialog-confirm').click();
+  await folderRow(page, 'pages').waitFor({ state: 'detached' });
+  await folderRow(page, 'next').click();
+  await moveFolderTo(page, 'next/pages', '');
+  await until(async () => (await listFiles(d, id)).includes('pages/a.html'), 'moved');
+  assert.deepEqual(await comments(d, id), [], 'the comment on the deleted page is kept');
+  // The folder may show open already (its old self was): open it only if not.
+  await until(async () => {
+    if (await fileRow(page, 'pages/a.html').isVisible()) return true;
+    await folderRow(page, 'pages').click({ timeout: 2000 }).catch(() => {});
+    return fileRow(page, 'pages/a.html').isVisible();
+  }, 'pages/a.html listed');
+  await fileRow(page, 'pages/a.html').click();
+  await frame.locator('#pick', { hasText: 'Beta' }).waitFor();
+  await until(async () => (await page.getByTestId('comment-pin').count()) > 0, 'a pin', 2500).catch(() => {});
+  assert.equal(await page.getByTestId('comment-pin').count(), 0, 'the comment about the deleted Alpha page is pinned on Beta');
+});
+
+test('MV-13', 'A comment draft whose image was deleted can still be sent, without it', async ({ d, newPage }) => {
+  const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
+  await typeNote(page, 'Send without it');
+  await attach(page, 'gone.png');
+  await attach(page, 'kept.png');
+  const imgs = await commentImages(d, id);
+  const gone = imgs.find((f) => f.includes('gone'));
+  await folderRow(page, 'comments').click();
+  await rowMenu(page, fileRow(page, gone), 'row-delete');
+  await page.getByTestId('file-dialog-confirm').click();
+  await until(async () => (await page.getByTestId('draft-image').count()) === 1, 'the deleted image leaves the draft', 4000).catch(() => {
+    assert.fail('the draft still shows the deleted image');
+  });
+  await page.getByTestId('comment-add').click();
+  const saved = await until(async () => (await comments(d, id)).find((c) => c.note === 'Send without it'), 'the comment saved', 5000).catch(async () => {
+    const err = await page.locator('[role="alert"], .error-text').allTextContents();
+    assert.fail(`the comment could not be sent after its image was deleted: ${JSON.stringify(err)}`);
+  });
+  assert.deepEqual(saved.attachments.map((a) => a.path), imgs.filter((f) => f !== gone));
+});
+
+test('MV-14', 'A file attached to the next message follows its rename, and leaves with its delete', async ({ d, newPage }) => {
+  const id = await createProject(d, 'Attach moves', { 'a.html': CPAGE('Alpha'), 'notes.md': '# Notes' });
+  const { page } = await newPage();
+  await page.goto(`${d.base}/projects/${id}`);
+  const composer = page.getByTestId('composer');
+  await composer.waitFor();
+  const mention = async (q, path) => {
+    await composer.pressSequentially(`@${q}`);
+    await page.locator('[data-testid="mention-item"]', { hasText: path }).first().click();
+  };
+  await mention('a.ht', 'a.html');
+  await mention('notes', 'notes.md');
+  const chips = async () => (await page.getByTestId('attachment-chip').evaluateAll((els) => els.map((e) => e.title))).sort();
+  await until(async () => (await chips()).length === 2, 'two chips');
+  await rowMenu(page, fileRow(page, 'a.html'), 'row-rename');
+  await page.getByTestId('file-dialog-name').fill('c.html');
+  await page.getByTestId('file-dialog-confirm').click();
+  await until(async () => (await listFiles(d, id)).includes('c.html'), 'renamed');
+  await until(async () => (await chips()).includes('c.html'), 'the chip follows', 3000).catch(async () => {
+    assert.fail(`the chip still names the old file: ${await chips()}`);
+  });
+  await rowMenu(page, fileRow(page, 'notes.md'), 'row-delete');
+  await page.getByTestId('file-dialog-confirm').click();
+  await until(async () => (await chips()).length === 1, 'the deleted file leaves', 3000).catch(async () => {
+    assert.fail(`a deleted file is still attached: ${await chips()}`);
+  });
+  assert.deepEqual(await chips(), ['c.html']);
+});
 
 await run('filemoves');
