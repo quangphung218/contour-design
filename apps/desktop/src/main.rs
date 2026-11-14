@@ -168,11 +168,7 @@ async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Resu
     // collides on the port (the data dir lock above refuses a second daemon).
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
     let local = listener.local_addr()?;
-    lock.record_url(&format!("http://{local}"))?;
-    if let Err(e) = data_lock::record_app_url(data_dir.root(), &format!("http://{local}")) {
-        // The next launch then does not wait for this copy to quit.
-        tracing::warn!(error = %e, "cannot record the app's url beside the lock");
-    }
+    data_lock::record(&mut lock, data_dir.root(), &format!("http://{local}"))?;
     let runs = open_runs(&store, &lock).await?;
     let state = AppState {
         store: Arc::new(store),
@@ -2688,6 +2684,46 @@ mod tests {
         close_event(handle, CloseEvent::Unsaved(true));
         step_and_run(handle, ShellEvent::PageStarted(page));
         assert!(!hold_close(handle, Way::Quit));
+    }
+
+    #[test]
+    fn a_launch_keeps_one_app_and_waits_for_the_last_to_let_go() {
+        // The wiring of `data_lock` (its tests cover the parts): no test
+        // runs the real start-up.
+        let code = shipped(include_str!("main.rs"));
+        let packed = |code: &str| code.split_whitespace().collect::<String>();
+        // The lock: taken waiting for the app's own last copy, and the URL
+        // recorded as the app's, else the next launch never waits.
+        let start = packed(&fn_bodies(&code, "start_daemon").concat());
+        assert!(
+            start.contains("data_lock::acquire_waiting(&root,data_lock::APP_WAIT)"),
+            "{start}"
+        );
+        assert!(
+            start.contains("data_lock::record(&mutlock,data_dir.root(),"),
+            "{start}"
+        );
+        assert!(!start.contains("DaemonLock::acquire("), "{start}");
+        assert!(!start.contains(".record_url("), "{start}");
+        // A second launch on the app's own folder shows the running window
+        // and quits, before anything else starts.
+        let all = packed(&code);
+        let plugin = "letbuilder=ifdata_lock::single_instance(std::env::var_os(od_store::DATA_DIR_ENV).as_deref()){builder.plugin(tauri_plugin_single_instance::init(|app,_,_|{";
+        let at = all.find(plugin).expect("the single-instance plugin");
+        let shows = &all[at + plugin.len()..];
+        assert!(
+            shows[..shows.find('}').expect("its callback")].contains("show_main(app);"),
+            "{shows}"
+        );
+        let next = all
+            .find("letbuilder=builder.plugin(tauri_plugin_dialog::init())")
+            .expect("the plugins after it");
+        assert!(at < next, "the single-instance plugin comes first");
+        assert!(
+            all[at..next].contains("}else{builder};"),
+            "{}",
+            &all[at..next]
+        );
     }
 
     #[test]

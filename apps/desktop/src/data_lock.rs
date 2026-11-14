@@ -77,6 +77,20 @@ pub fn record_app_url(data_root: &Path, url: &str) -> std::io::Result<()> {
     std::fs::write(data_root.join(APP_URL_FILE), url)
 }
 
+/// Records `url` in `daemon.lock`, for clients, then as the app's
+/// ([`record_app_url`]), so the next launch waits for this copy to quit.
+/// Without the second the next launch does not wait: only logged.
+///
+/// # Errors
+/// When `daemon.lock` cannot be written.
+pub fn record(lock: &mut DaemonLock, data_root: &Path, url: &str) -> std::io::Result<()> {
+    lock.record_url(url)?;
+    if let Err(e) = record_app_url(data_root, url) {
+        tracing::warn!(error = %e, "cannot record the app's url beside the lock");
+    }
+    Ok(())
+}
+
 /// The lock could not be taken.
 #[derive(Debug)]
 pub struct Refused {
@@ -268,6 +282,27 @@ mod tests {
         release.join().expect("release");
         assert!(lock.is_ok(), "{:?}", lock.err());
         assert!(started.elapsed() >= Duration::from_millis(400));
+    }
+
+    /// What the app records once it listens: the next launch knows the
+    /// holder for this app, and clients find its URL.
+    #[test]
+    fn the_recorded_url_marks_the_holder_as_the_app() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let data = tmp.path().join("data");
+        let mut lock = DaemonLock::acquire(&data).expect("first lock");
+        record(&mut lock, &data, APP).expect("record");
+        let read = |file: &str| std::fs::read_to_string(data.join(file)).expect(file);
+        assert_eq!(read(LOCK_FILE), APP);
+        assert_eq!(read(APP_URL_FILE), APP);
+        let refused = acquire_waiting(&data, Duration::from_millis(300)).expect_err("held");
+        assert_eq!(refused.holder, Some(Holder::App));
+        // Again on a later launch: both files take the new URL.
+        drop(lock);
+        let mut lock = DaemonLock::acquire(&data).expect("lock again");
+        record(&mut lock, &data, "http://127.0.0.1:5002").expect("record");
+        assert_eq!(read(LOCK_FILE), "http://127.0.0.1:5002");
+        assert_eq!(read(APP_URL_FILE), "http://127.0.0.1:5002");
     }
 
     /// `od daemon start` on the folder: no wait, it says who.
