@@ -1767,34 +1767,47 @@ pub fn DeliverableWarning(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-/// Lints the shown HTML file whenever it (re)loads.
+/// Lints the shown HTML file whenever it (re)loads, and starts its tool
+/// state over when another file shows. One Effect, so the order is fixed:
+/// forgetting bumps `lint_seq`, and a lint started before it would be
+/// dropped as stale (QA-101).
 pub fn watch_lint(ctx: StudioCtx) {
-    Effect::new(move |_| {
-        ctx.preview_rev.track();
-        if let Some(path) = ctx.active().filter(|p| is_html_path(p)) {
-            ctx.refresh_lint(path);
-        }
-    });
-    // Another file: its tool state starts over. Not the shown file
-    // renamed or moved (`renamed`): it is the same document, and a Manual
-    // edit change typed in it stays in its fields (QA-097).
     let shown = Memo::new(move |_| ctx.active());
     Effect::new(move |last: Option<Option<String>>| {
+        ctx.preview_rev.track();
         let now = shown.get();
-        let renamed = ctx.renamed.try_update_value(Option::take).flatten();
-        if let Some(last) = last {
-            let rename = matches!(&renamed, Some((from, to))
-                if last.as_deref() == Some(from.as_str()) && now.as_deref() == Some(to.as_str()));
-            if rename {
-                return now;
+        // A reload of the same file keeps `renamed` for the switch it is for.
+        if last.as_ref() != Some(&now) {
+            let renamed = ctx.renamed.try_update_value(Option::take).flatten();
+            if let Some(last) = &last {
+                forget_unless_renamed(ctx, last.as_deref(), now.as_deref(), renamed);
             }
-            ctx.tools.forget_document(last.as_deref(), now.as_deref());
-            if ctx.tools.tool.get_untracked() == Some(Tool::Tweaks) {
-                ctx.set_tool(None);
-            }
+        }
+        if let Some(path) = now.clone().filter(|p| is_html_path(p)) {
+            ctx.refresh_lint(path);
         }
         now
     });
+}
+
+/// Another file: its tool state starts over. Not the shown file renamed or
+/// moved (`renamed`): it is the same document, and a Manual edit change
+/// typed in it stays in its fields (QA-097).
+fn forget_unless_renamed(
+    ctx: StudioCtx,
+    last: Option<&str>,
+    now: Option<&str>,
+    renamed: Option<(String, String)>,
+) {
+    let rename = matches!(&renamed, Some((from, to))
+        if last == Some(from.as_str()) && now == Some(to.as_str()));
+    if rename {
+        return;
+    }
+    ctx.tools.forget_document(last, now);
+    if ctx.tools.tool.get_untracked() == Some(Tool::Tweaks) {
+        ctx.set_tool(None);
+    }
 }
 
 #[cfg(test)]
