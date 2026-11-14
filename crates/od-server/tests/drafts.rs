@@ -49,6 +49,11 @@ async fn files(d: &Daemon, project: &str) -> Vec<String> {
         .collect()
 }
 
+/// Whether `path` is on disk in the project (listed or not).
+fn on_disk(d: &Daemon, project: &str, path: &str) -> bool {
+    d.state.store.stat_file(project, path).is_ok()
+}
+
 async fn zip_names(d: &Daemon, project: &str) -> Vec<String> {
     let bytes = d
         .http
@@ -107,9 +112,10 @@ async fn a_draft_image_ships_only_once_a_comment_takes_it() {
     assert_eq!(res.status().as_u16(), 200);
     let up = upload(&d, &project, "ref.png", Some("s1")).await;
     let img = up["files"][0]["path"].as_str().unwrap().to_owned();
+    assert!(on_disk(&d, &project, &img));
     assert!(
-        files(&d, &project).await.contains(&img),
-        "listed for the draft"
+        !files(&d, &project).await.contains(&img),
+        "not listed while a draft's (the agent's list_files, the Files panel)"
     );
     assert!(
         !zip_names(&d, &project).await.contains(&img),
@@ -180,16 +186,16 @@ async fn a_release_deletes_the_session_images_and_any_landing_later() {
     assert_eq!(release(&d, &project, "s1").await, 200);
     let listed = files(&d, &project).await;
     assert!(!listed.contains(&mine), "{listed:?}");
-    assert!(listed.contains(&theirs), "another page's draft stays");
+    assert!(
+        on_disk(&d, &project, &theirs) && !listed.contains(&theirs),
+        "another page's draft stays, not listed"
+    );
     assert!(listed.contains(&plain), "an upload of the user's own stays");
     // Upload held past the release: deleted at once, not listed.
     let late = upload(&d, &project, "late.png", Some("s1")).await;
     assert_eq!(late["files"], json!([]));
     assert!(
-        files(&d, &project)
-            .await
-            .iter()
-            .all(|f| !f.contains("late")),
+        !on_disk(&d, &project, "comments/late.png"),
         "the late image is gone"
     );
     assert_eq!(
@@ -267,7 +273,10 @@ async fn opening_a_project_sweeps_draft_images_a_day_old() {
     d.get_json(&format!("/api/projects/{project}")).await;
     let listed = files(&d, &project).await;
     assert!(!listed.contains(&old), "{listed:?}");
-    assert!(listed.contains(&fresh), "another page's draft of an hour");
+    assert!(
+        on_disk(&d, &project, &fresh),
+        "another page's draft of an hour"
+    );
 }
 
 /// Writes `<img>` into the page with `src`, taking `claim` (a Manual edit

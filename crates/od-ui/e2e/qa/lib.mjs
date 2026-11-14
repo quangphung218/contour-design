@@ -11,7 +11,7 @@
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -184,6 +184,19 @@ export async function listFiles(d, id) {
   const r = await apiFor(d)(`/api/projects/${id}/files`);
   const files = Array.isArray(r.body) ? r.body : r.body.files || [];
   return files.map((f) => (typeof f === 'string' ? f : f.path || f.name));
+}
+
+/**
+ * Every file in the project folder, hidden ones aside: what is on disk,
+ * listed or not (`GET files` leaves out the images of comments not sent).
+ */
+export function diskFiles(d, id) {
+  const dir = join(d.data, 'projects', id);
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => join(e.parentPath, e.name).slice(dir.length + 1))
+    .filter((p) => !p.split('/').some((s) => s.startsWith('.')))
+    .sort();
 }
 
 /**

@@ -46,7 +46,16 @@ fn parse_target(rest: &str) -> Target<'_> {
 }
 
 pub async fn list(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Response> {
-    let files = state.blocking(move |s| s.list_files(&id)).await?;
+    // Images of comments not sent yet are no part of the project (the
+    // UI's chips, the agent's `list_files`): like the handoff and exports.
+    let files = state
+        .blocking(move |s| {
+            let drafts = s.unclaimed_draft_uploads(&id)?;
+            let mut files = s.list_files(&id)?;
+            files.retain(|f| !drafts.contains(&f.path));
+            Ok(files)
+        })
+        .await?;
     Ok((NO_STORE, ApiJson(FilesResponse { files })).into_response())
 }
 
