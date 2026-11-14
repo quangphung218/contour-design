@@ -44,6 +44,15 @@ async function until(fn, label, timeout = 15_000) {
   throw new Error(`timed out waiting for ${label}`);
 }
 
+/** `fn` holds for `ms`: what must not happen after an answer lands. */
+async function stays(fn, label, ms = 1500) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (!(await fn().catch(() => false))) throw new Error(`${label}: it changed`);
+    await sleep(50);
+  }
+}
+
 const api = async (path, opts = {}) => {
   const r = await fetch(BASE + path, {
     ...opts,
@@ -185,8 +194,7 @@ try {
   await page.locator('#main').waitFor();
   await page.goto(BASE + '/settings#settings-about');
   await page.getByTestId('about-version').waitFor();
-  await sleep(1500);
-  assert.deepEqual(releasesSeen, [], 'nothing asks for releases until a click');
+  await stays(async () => releasesSeen.length === 0, 'nothing asks for releases until a click');
   results.noRequestAtStart = 'ok';
 
   // 2. A newer pre-release (a draft and an older one do not count).
@@ -230,8 +238,7 @@ try {
   await until(async () => (await focused()) === 'update-close', 'focus on Close while checking');
   await dialog.screenshot({ path: OUT + 'checking.png' });
   await close();
-  await sleep(2500);
-  assert.equal(await dialog.count(), 0, 'a late answer does not reopen the dialog');
+  await stays(async () => (await dialog.count()) === 0, 'a late answer does not reopen the dialog', 2500);
   results.checking = 'ok';
 
   // 5. GitHub fails: a short message and Try again, which checks again;
@@ -396,8 +403,7 @@ try {
   assert.equal((await app.getByTestId('leave-files').innerText()).trim(), 'r.html', 'the question names the draft\'s file');
   assert.equal(await appDialog.count(), 0, 'the update dialog closed under the question');
   await app.getByTestId('leave-stay').click();
-  await sleep(300);
-  assert.equal(await restarts(), restartsBefore, 'Cancel: no restart');
+  await stays(async () => (await restarts()) === restartsBefore, 'Cancel: no restart');
   assert.equal(await app.getByTestId('comment-note').inputValue(), 'Before the restart', 'Cancel keeps the comment');
   await installAndRestart();
   await app.getByTestId('leave-go').click();
@@ -442,9 +448,10 @@ try {
   // Help ▸ Check for Updates meanwhile does not replace the running update.
   const checksBefore = releasesSeen.length;
   await app.evaluate(() => window.dispatchEvent(new CustomEvent('od:menu', { detail: 'check-updates' })));
-  await sleep(300);
-  assert.equal(await app.getByTestId('update-progress').count(), 1, 'the download stays on screen');
-  assert.equal(releasesSeen.length, checksBefore, 'no check while updating');
+  await stays(
+    async () => (await app.getByTestId('update-progress').count()) === 1 && releasesSeen.length === checksBefore,
+    'the download stays on screen, no check while updating',
+  );
   await app.getByTestId('update-cancel').click();
   await appDialog.waitFor({ state: 'detached' });
   assert.ok((await calls()).includes('cancel_update'));

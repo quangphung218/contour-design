@@ -48,6 +48,15 @@ async function until(fn, label, timeout = 10_000) {
   throw new Error(`timed out waiting for ${label}`);
 }
 
+/** `fn` holds for `ms`: what must not happen after an answer lands. */
+async function stays(fn, label, ms = 1500) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (!(await fn().catch(() => false))) throw new Error(`${label}: it changed`);
+    await sleep(50);
+  }
+}
+
 const json = (body) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 // 1×1 PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -477,14 +486,6 @@ try {
     // runs first, and falls back to it.
     await context.route(match, handler);
     return { hit, release: async () => { release(); await through; await context.unroute(match, handler); } };
-  };
-  // `fn` holds for `ms`: what must not happen after an answer lands.
-  const stays = async (fn, label, ms = 1500) => {
-    const end = Date.now() + ms;
-    while (Date.now() < end) {
-      if (!(await fn().catch(() => false))) throw new Error(`${label}: it changed`);
-      await sleep(50);
-    }
   };
   // An undo of draft.html that answers once other.html shows does not
   // reload other.html's frame.
@@ -1045,8 +1046,7 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await desk.getByTestId('leave-stay').waitFor();
   assert.ok((await desk.evaluate(() => window.__shellCalls)).includes('reload_ack'), 'the page answers Reload');
   await desk.getByTestId('leave-stay').click();
-  await sleep(500);
-  assert.equal(await desk.evaluate(() => window.__beforeReload), true, 'Cancel keeps the page');
+  await stays(() => desk.evaluate(() => window.__beforeReload === true), 'Cancel keeps the page');
   assert.equal(await desk.getByTestId('manual-text').inputValue(), 'Not applied yet', 'Cancel keeps the edit');
   await menuReload();
   await desk.getByTestId('leave-go').click();
@@ -1142,8 +1142,7 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await desk.getByTestId('leave-dialog').waitFor();
   assert.equal((await desk.getByTestId('leave-files').innerText()).trim(), 'reload.html');
   await desk.getByTestId('leave-stay').click();
-  await sleep(300);
-  assert.equal(await desk.evaluate(() => window.__beforeOpen), true, 'Cancel keeps the page');
+  await stays(() => desk.evaluate(() => window.__beforeOpen === true), 'Cancel keeps the page');
   await desk.locator('[data-testid="file-row"][data-path="reload.html"]').click();
   await desk.getByTestId('comment-note').waitFor();
   assert.equal(await desk.getByTestId('comment-note').inputValue(), 'A comment not sent', 'Cancel keeps the comment');

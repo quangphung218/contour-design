@@ -480,11 +480,11 @@ fn ShellNotice() -> impl IntoView {
     }
 }
 
-/// Window event that toggles the sidebar (Cmd/Ctrl+B, desktop menu).
 /// The desktop shell's `od:menu` detail for File ▸ Open Folder…: this,
 /// then the id of the project the folder was imported as.
 const OPEN_PROJECT_MENU: &str = "open-project:";
 
+/// Window event that toggles the sidebar (Cmd/Ctrl+B, desktop menu).
 const TOGGLE_SIDEBAR_EVENT: &str = "od:toggle-sidebar";
 
 /// Follows the sidebar link to `href` as if clicked.

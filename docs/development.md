@@ -228,6 +228,10 @@ one's output goes to `e2e/test-results/logs/<name>.log` and is printed whole
 when it ends; a failing scenario fails the run and its log is printed again
 at the end. `c4-depth` checks its 18 languages `OD_E2E_C4_TABS` at a time
 (default 4). `run.sh <script>…` runs only those scripts, one after another.
+`OD_E2E_SKIP_BUILD=1` reuses the UI bundle, `od` and the npm packages built
+by an earlier run. A scenario that dies, or `run.sh` stopped, leaves no
+daemon behind: each scenario runs in a process group of its own, ended with
+it (`make e2e-qa`, `e2e/qa/run.sh`, likewise; `QA_SKIP_BUILD=1` there).
 
 Run one scenario after `make e2e` has built everything once:
 
