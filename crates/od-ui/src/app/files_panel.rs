@@ -1169,7 +1169,10 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
             .update_value(|m| m.extend(moving.iter().cloned()));
         let work = async move {
             let mut moves: Vec<Move> = Vec::new();
+            // What was deleted, done or not after it (`dir/` for a folder).
+            let mut gone: Vec<String> = Vec::new();
             let done = &mut moves;
+            let deleted = &mut gone;
             let res: Result<Done, Failed> = async move {
                 Ok(match d {
                     Dialog::NewFolder(dir) => {
@@ -1227,6 +1230,7 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                                 .map(|_| ()),
                             };
                             res.map_err(|e| (T::DeleteFailed, e))?;
+                            deleted.push(item.clone());
                         }
                         Done::Deleted(items.len())
                     }
@@ -1237,23 +1241,25 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                         ))
                         .await
                         .map_err(|e| (T::DeleteFailed, e))?;
+                        deleted.push(format!("{dir}/"));
                         Done::FolderDeleted(dir)
                     }
                 })
             }
             .await;
-            (res, moves)
+            (res, moves, gone)
         };
         let tasks = dialog_tasks;
         ctx.tasks.spawn_then(
             work,
-            move |(res, moves): (Result<Done, Failed>, Vec<Move>)| {
+            move |(res, moves, gone): (Result<Done, Failed>, Vec<Move>, Vec<String>)| {
                 // What moved, done or not after it: drafts, tabs and
                 // comments follow, in one go, before anything shows the
-                // new list.
+                // new list. What was deleted takes its comments along.
                 ctx.moving
                     .update_value(|m| m.retain(|p| !moving.contains(p)));
                 ctx.follow_moves(&moves);
+                ctx.follow_deletes(&gone);
                 let result = res
                     .map(|done| done.show(ctx, ui))
                     .map_err(|(key, e)| ctx.failed_to(key, &e));

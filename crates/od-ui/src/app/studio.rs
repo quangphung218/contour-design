@@ -517,11 +517,12 @@ impl StudioCtx {
 
     /// Files and folders renamed or moved in the app (`moves`, in order):
     /// what the Studio keeps by path follows them at once, in one go: the
-    /// comment drafts and Manual edit changes not applied (QA-097), the
-    /// tabs (renamed in place, the shown one still shown, with its tool
-    /// state), the recent files, the slide to come back to, a text edit
-    /// not written, and the pins of the comments sent (the server moved
-    /// those too).
+    /// comment drafts and their images, Manual edit changes not applied
+    /// (QA-097), the tabs (renamed in place, the shown one still shown,
+    /// with its tool state), the recent files, the slide to come back to,
+    /// a text edit not written, the files attached to the next message,
+    /// and the pins and images of the comments sent (the server moved
+    /// those too, QA-099).
     pub(super) fn follow_moves(self, moves: &[super::drafts::Move]) {
         if moves.is_empty() {
             return;
@@ -532,12 +533,28 @@ impl StudioCtx {
         {
             self.renamed.set_value(Some((active, next)));
         }
-        if self
-            .comment_drafts
-            .with_untracked(|d| d.keys().any(|f| to(f).is_some()))
-        {
+        if self.comment_drafts.with_untracked(|d| {
+            d.iter()
+                .any(|(f, d)| to(f).is_some() || d.images.iter().any(|p| to(p).is_some()))
+        }) {
+            let mut left = Vec::new();
             self.comment_drafts
-                .update(|d| super::preview_comments::rename_drafts(d, moves));
+                .update(|d| left = super::preview_comments::rename_drafts(d, moves));
+            let images: Vec<String> = left.into_iter().flat_map(|d| d.images).collect();
+            self.drop_draft_images(&images);
+        }
+        if self
+            .tools
+            .attachments
+            .with_untracked(|a| a.iter().any(|p| to(p).is_some()))
+        {
+            self.tools.attachments.update(|a| {
+                for p in a.iter_mut() {
+                    if let Some(next) = to(p) {
+                        *p = next;
+                    }
+                }
+            });
         }
         self.tools.manual.rename(to);
         if self
@@ -579,17 +596,52 @@ impl StudioCtx {
                 }
             });
         }
-        if self
-            .comments
-            .with_untracked(|c| c.iter().any(|c| to(&c.file_path).is_some()))
-        {
+        if self.comments.with_untracked(|c| {
+            c.iter().any(|c| {
+                to(&c.file_path).is_some() || c.attachments.iter().any(|a| to(&a.path).is_some())
+            })
+        }) {
             self.comments.update(|c| {
                 for c in c.iter_mut() {
                     if let Some(next) = to(&c.file_path) {
                         c.file_path = next;
                     }
+                    for a in &mut c.attachments {
+                        if let Some(next) = to(&a.path) {
+                            a.path = next;
+                        }
+                    }
                 }
             });
+        }
+    }
+
+    /// Files and folders (`dir/`) deleted in the app (`gone`): what the
+    /// Studio keeps by path lets them go at once, as the server did: the
+    /// comments sent on them (QA-100) and the images among them, from the
+    /// comments sent and from the drafts, and the files attached to the
+    /// next message. Drafts on a deleted file go with the next file list
+    /// ([`super::preview_comments::forget_gone_drafts`]), which says so.
+    pub(super) fn follow_deletes(self, gone: &[String]) {
+        if gone.is_empty() {
+            return;
+        }
+        // The path itself, or one under a folder deleted.
+        let at = |p: &str| super::drafts::is_moving(gone, p);
+        let mut comments = self.comments.get_untracked();
+        if super::preview_comments::drop_deleted_comments(&mut comments, at) {
+            self.comments.set(comments);
+        }
+        let mut drafts = self.comment_drafts.get_untracked();
+        if super::preview_comments::drop_deleted_images(&mut drafts, at) {
+            self.comment_drafts.set(drafts);
+        }
+        if self
+            .tools
+            .attachments
+            .with_untracked(|a| a.iter().any(|p| at(p)))
+        {
+            self.tools.attachments.update(|a| a.retain(|p| !at(p)));
         }
     }
 
