@@ -8,6 +8,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Files: a page renamed to a name that is not a page's (`page.html` → `page.md`) and back keeps its version history; since beta.38 the next save wiped it. Renaming a file only in case (`a.html` → `A.html`) on macOS now renames it on disk too, not only its comments. A rename or folder move that fails partway (the version history or the database could not follow) puts the files back, instead of leaving the comments, draft images and entry page under the old name. Deleting the project's entry page (or its folder) clears it, so the next file at that name does not become the cover; deleting a file already gone outside the app closes its history too.
+- Studio: deleting a file already gone outside the app, or renaming a file to the name of one gone outside the app, no longer keeps showing the comments the server let go. Images attached to a comment not sent yet are no longer listed in the Files panel or the agent's `list_files`. Back from the browser's back-forward cache, a Manual edit image not applied (deleted with the old session) no longer stays in the Image URL field; the field shows the page's own image again.
+
 ## [0.2.0-beta.38] - 2026-11-15
 
 ### Fixed
