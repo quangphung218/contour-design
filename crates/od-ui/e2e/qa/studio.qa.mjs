@@ -448,4 +448,23 @@ customElements.define('x-card', class extends HTMLElement {
   assert.deepEqual(urls, [`${d.base}/api/health?from=button`, `${d.base}/api/health?from=link`], `tabs: ${urls.join(', ')}`);
 });
 
+test('STU-23', 'Opening a page, and then another, shows the Lint button with the check\'s result', async ({ d, newPage }) => {
+  const page1 = '<!doctype html><html><body><h1 id="title">One</h1></body></html>';
+  const page2 = '<!doctype html><html><body><h1 id="title">Two</h1></body></html>';
+  const id = await createProject(d, 'Lint shown', { 'index.html': page1, 'b.html': page2 });
+  const { page } = await newPage();
+  let answered = 0;
+  page.on('response', (r) => { if (new URL(r.url()).pathname.includes('/lint/') && r.status() === 200) answered++; });
+  await page.goto(`${d.base}/projects/${id}`);
+  const frame = page.frameLocator('[data-testid="preview"]');
+  await frame.locator('#title', { hasText: 'One' }).waitFor();
+  await until(() => answered > 0, 'the lint answered');
+  const badge = page.getByTestId('lint-badge');
+  assert.ok(await badge.waitFor({ timeout: 4000 }).then(() => true, () => false), 'the lint answered, yet no Lint button on the page just opened');
+  await page.locator('[data-testid="file-row"][data-path="b.html"]').click();
+  await frame.locator('#title', { hasText: 'Two' }).waitFor();
+  await until(() => answered > 1, 'the lint of b.html answered');
+  assert.ok(await badge.waitFor({ timeout: 4000 }).then(() => true, () => false), 'no Lint button after switching to another page');
+}, { knownBug: 'QA-101' });
+
 await run('studio');
