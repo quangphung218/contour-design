@@ -593,6 +593,7 @@ CommentMode = コメントを追加
 CommentModeOn = 要素をクリックしてコメント
 CommentPlaceholder = ここをどう変更しますか？
 CommentReselect = この要素はページ上にありません。コメントする要素を選び直してください。
+DraftsDroppedFileGone = {0} の未保存の作業を破棄しました。ファイルがなくなりました。
 AddComment = コメントを追加
 CommentUploading = 画像をアップロード中… 完了までお待ちください。
 CommentDraftElsewhere = スライド {0} のコメントはまだ送信されていません。

@@ -6,6 +6,7 @@
 //! and the panel's info toast. Tree logic lives in `crate::file_tree`.
 
 use super::api;
+use super::drafts::Move;
 use super::export_menu::{copy_text, download};
 use super::file_state::Save;
 use super::icons::{Glyph, icon};
@@ -276,17 +277,23 @@ pub fn copy_path(ctx: StudioCtx, ui: FilesUi, path: &str, full: bool) {
 
 /// Uploads browser files into folder `dir`; never overwrites (the daemon
 /// picks `name-1.ext` on a clash). Returns the stored paths; a failure
-/// reads as `key`, the action it served ("Upload failed: {0}").
+/// reads as `key`, the action it served ("Upload failed: {0}"). `draft`:
+/// the draft session they are for (`drafts`), images of work not saved
+/// yet that do not ship until it is.
 pub async fn upload(
     ctx: StudioCtx,
     key: T,
     files: Vec<web_sys::File>,
     dir: &str,
+    draft: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let js = |e: wasm_bindgen::JsValue| tf(key, &[&format!("{e:?}")]);
     let form = web_sys::FormData::new().map_err(js)?;
     if !dir.is_empty() {
         form.append_with_str("dir", dir).map_err(js)?;
+    }
+    if let Some(session) = draft {
+        form.append_with_str("draft", session).map_err(js)?;
     }
     for f in &files {
         form.append_with_blob_and_filename("file", f, &f.name())
@@ -304,7 +311,7 @@ pub fn upload_and_report(ctx: StudioCtx, ui: FilesUi, files: Vec<web_sys::File>,
         return;
     }
     ctx.tasks.spawn(async move {
-        match upload(ctx, T::UploadFailed, files, &dir).await {
+        match upload(ctx, T::UploadFailed, files, &dir, None).await {
             Ok(paths) => {
                 ui.changed(ctx);
                 if !dir.is_empty() {
@@ -951,8 +958,14 @@ fn RowMenu(ctx: StudioCtx, ui: FilesUi, key: String) -> impl IntoView {
 
 /// Moves `items` (files, folders ending in `/`) into folder `dest`. A
 /// folder moves whole on the server: what the files list skips (hidden
-/// files, `dist/`, empty folders) moves with it.
-async fn move_items(base: &str, items: &[String], dest: &str) -> Result<usize, Failed> {
+/// files, `dist/`, empty folders) moves with it. Each move done is added
+/// to `done`, those before a failure too.
+async fn move_items(
+    base: &str,
+    items: &[String],
+    dest: &str,
+    done: &mut Vec<Move>,
+) -> Result<usize, Failed> {
     let mut moved = 0;
     for item in items {
         match folder_of(item) {
@@ -966,15 +979,25 @@ async fn move_items(base: &str, items: &[String], dest: &str) -> Result<usize, F
                 )
                 .await
                 .map_err(|e| (T::MoveFailed, e))?;
+                done.push(Move {
+                    from: dir.to_owned(),
+                    to: r.folder,
+                    folder: true,
+                });
                 moved += r.files;
             }
             None => {
-                api::post::<_, FileResponse>(
+                let r = api::post::<_, FileResponse>(
                     &format!("{base}/files/rename"),
                     &json!({ "from": item, "to": ft::join(dest, ft::base(item)) }),
                 )
                 .await
                 .map_err(|e| (T::MoveFailed, e))?;
+                done.push(Move {
+                    from: item.clone(),
+                    to: r.file.path,
+                    folder: false,
+                });
                 moved += 1;
             }
         }
@@ -989,7 +1012,7 @@ type Failed = (T, api::HttpError);
 enum Done {
     Folder(String),
     Created(String),
-    Renamed(String, String),
+    Renamed,
     Moved(usize, String),
     Deleted(usize),
     FolderDeleted(String),
@@ -1011,13 +1034,8 @@ impl Done {
                 ctx.open_file(&path);
                 None
             }
-            Self::Renamed(from, to) => {
-                if ctx.tabs.with_untracked(|t| t.open.contains(&from)) {
-                    ctx.tabs.update(|t| t.close(&from));
-                    ctx.open_file(&to);
-                }
-                None
-            }
+            // Its tab, drafts and comments followed it already.
+            Self::Renamed => None,
             Self::Moved(n, to) => {
                 if !to.is_empty() {
                     ui.open.update(|o| {
@@ -1140,73 +1158,102 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
         let existing = ctx.files.with_untracked(|f| paths_of(f));
         let content = text.get_untracked();
         let to = dest.get_untracked();
+        // A rename or move on its way: the watcher may list its files gone
+        // before the answer comes; their drafts and tabs wait for it.
+        let moving: Vec<String> = match &d {
+            Dialog::Rename(from) => vec![from.clone()],
+            Dialog::Move(items) => items.clone(),
+            _ => Vec::new(),
+        };
+        ctx.moving
+            .update_value(|m| m.extend(moving.iter().cloned()));
         let work = async move {
-            Ok(match d {
-                Dialog::NewFolder(dir) => {
-                    let req = CreateFolderRequest {
-                        path: ft::join(&dir, &n),
-                    };
-                    let r = api::post::<_, FolderResponse>(&format!("{base}/folders"), &req)
-                        .await
-                        .map_err(|e| (T::FolderCreateFailed, e))?;
-                    Done::Folder(r.folder)
-                }
-                Dialog::NewDocument(dir) => {
-                    let path = ft::free_name(&existing, &dir, &ft::stem_of_title(&n), "md");
-                    Done::Created(create_text(&base, path, document_template(&n)).await?)
-                }
-                Dialog::NewPage(dir) => {
-                    let path = ft::free_name(&existing, &dir, &ft::stem_of_title(&n), "html");
-                    Done::Created(create_text(&base, path, page_template(&n)).await?)
-                }
-                Dialog::PasteText(dir) => {
-                    Done::Created(create_text(&base, ft::join(&dir, &n), content).await?)
-                }
-                Dialog::Rename(from) => {
-                    let to = ft::join(ft::parent(&from), &n);
-                    let r = api::post::<_, FileResponse>(
-                        &format!("{base}/files/rename"),
-                        &json!({ "from": from, "to": to }),
-                    )
-                    .await
-                    .map_err(|e| (T::RenameFailed, e))?;
-                    Done::Renamed(from, r.file.path)
-                }
-                Dialog::Move(items) => Done::Moved(move_items(&base, &items, &to).await?, to),
-                Dialog::Delete(items) => {
-                    for item in &items {
-                        let res = match folder_of(item) {
-                            Some(dir) => api::delete::<FolderResponse>(&format!(
-                                "{base}/folders/{}",
-                                api::file_path(dir)
-                            ))
-                            .await
-                            .map(|_| ()),
-                            None => api::delete::<OkResponse>(&format!(
-                                "{base}/files/{}",
-                                api::file_path(item)
-                            ))
-                            .await
-                            .map(|_| ()),
+            let mut moves: Vec<Move> = Vec::new();
+            let done = &mut moves;
+            let res: Result<Done, Failed> = async move {
+                Ok(match d {
+                    Dialog::NewFolder(dir) => {
+                        let req = CreateFolderRequest {
+                            path: ft::join(&dir, &n),
                         };
-                        res.map_err(|e| (T::DeleteFailed, e))?;
+                        let r = api::post::<_, FolderResponse>(&format!("{base}/folders"), &req)
+                            .await
+                            .map_err(|e| (T::FolderCreateFailed, e))?;
+                        Done::Folder(r.folder)
                     }
-                    Done::Deleted(items.len())
-                }
-                Dialog::DeleteFolder(dir) => {
-                    api::delete::<FolderResponse>(&format!(
-                        "{base}/folders/{}",
-                        api::file_path(&dir)
-                    ))
-                    .await
-                    .map_err(|e| (T::DeleteFailed, e))?;
-                    Done::FolderDeleted(dir)
-                }
-            })
+                    Dialog::NewDocument(dir) => {
+                        let path = ft::free_name(&existing, &dir, &ft::stem_of_title(&n), "md");
+                        Done::Created(create_text(&base, path, document_template(&n)).await?)
+                    }
+                    Dialog::NewPage(dir) => {
+                        let path = ft::free_name(&existing, &dir, &ft::stem_of_title(&n), "html");
+                        Done::Created(create_text(&base, path, page_template(&n)).await?)
+                    }
+                    Dialog::PasteText(dir) => {
+                        Done::Created(create_text(&base, ft::join(&dir, &n), content).await?)
+                    }
+                    Dialog::Rename(from) => {
+                        let to = ft::join(ft::parent(&from), &n);
+                        let r = api::post::<_, FileResponse>(
+                            &format!("{base}/files/rename"),
+                            &json!({ "from": from, "to": to }),
+                        )
+                        .await
+                        .map_err(|e| (T::RenameFailed, e))?;
+                        done.push(Move {
+                            from,
+                            to: r.file.path,
+                            folder: false,
+                        });
+                        Done::Renamed
+                    }
+                    Dialog::Move(items) => {
+                        Done::Moved(move_items(&base, &items, &to, done).await?, to)
+                    }
+                    Dialog::Delete(items) => {
+                        for item in &items {
+                            let res = match folder_of(item) {
+                                Some(dir) => api::delete::<FolderResponse>(&format!(
+                                    "{base}/folders/{}",
+                                    api::file_path(dir)
+                                ))
+                                .await
+                                .map(|_| ()),
+                                None => api::delete::<OkResponse>(&format!(
+                                    "{base}/files/{}",
+                                    api::file_path(item)
+                                ))
+                                .await
+                                .map(|_| ()),
+                            };
+                            res.map_err(|e| (T::DeleteFailed, e))?;
+                        }
+                        Done::Deleted(items.len())
+                    }
+                    Dialog::DeleteFolder(dir) => {
+                        api::delete::<FolderResponse>(&format!(
+                            "{base}/folders/{}",
+                            api::file_path(&dir)
+                        ))
+                        .await
+                        .map_err(|e| (T::DeleteFailed, e))?;
+                        Done::FolderDeleted(dir)
+                    }
+                })
+            }
+            .await;
+            (res, moves)
         };
         let tasks = dialog_tasks;
-        ctx.tasks
-            .spawn_then(work, move |res: Result<Done, Failed>| {
+        ctx.tasks.spawn_then(
+            work,
+            move |(res, moves): (Result<Done, Failed>, Vec<Move>)| {
+                // What moved, done or not after it: drafts, tabs and
+                // comments follow, in one go, before anything shows the
+                // new list.
+                ctx.moving
+                    .update_value(|m| m.retain(|p| !moving.contains(p)));
+                ctx.follow_moves(&moves);
                 let result = res
                     .map(|done| done.show(ctx, ui))
                     .map_err(|(key, e)| ctx.failed_to(key, &e));
@@ -1228,7 +1275,8 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                     Err(e) if open => error.set(Some(e)),
                     Err(e) => ctx.notice.set(Some(e)),
                 }
-            });
+            },
+        );
     };
     let cancel = move || ui.close_dialog();
     view! {

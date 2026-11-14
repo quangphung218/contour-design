@@ -427,6 +427,14 @@ pub fn put_text_now<T: DeserializeOwned + 'static>(
     }
 }
 
+/// `POST` with no body as the page unloads (`keepalive`): sent at once,
+/// it outlives the page; its answer is not read.
+pub fn post_unloading(path: &str) {
+    if let Err(e) = fetch_text(path, "POST", "", true) {
+        leptos::logging::warn!("{path}: {e:?}");
+    }
+}
+
 /// Starts a `fetch` of `body` as text to `path`.
 fn fetch_text(path: &str, method: &str, body: &str, keepalive: bool) -> ApiResult<js_sys::Promise> {
     use wasm_bindgen::JsValue;

@@ -8,6 +8,12 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Studio: renaming or moving a file (or the folder it is in) from the Files panel now keeps its comment being written (note, images, element) and its Manual edit change not applied, under the new name; before, they were thrown away without a word (QA-097). The tab is renamed in place and stays shown; the pins of comments already sent follow the file too, where before they disappeared. A file renamed, moved or deleted outside the app (the agent, Finder) still drops its work not saved, and the Studio now says which file lost it.
+- Studio: a comment being written on a deck slide that the agent then removed now shows on the slide shown, asking to pick the element again or Cancel; before, it could not be seen, sent or discarded, yet every way out asked about it (QA-098). A deck that grows back shows it on its slide again.
+- Studio: images attached to a comment that was never sent no longer stay in the project: leaving the Studio (Leave, Back, another project), reloading or closing the page, and quitting or restarting the desktop app delete them, an image still uploading included; a comment sent just before leaving keeps its images. Until a comment takes them they are left out of the ZIP export, Library assets and Duplicate; images a crashed page left behind are deleted after a day (QA-096). An image uploaded in Manual edit and not written into the page is treated the same way. A comment draft open for more than a day in another tab loses its images to that sweep.
+
 ## [0.2.0-beta.36] - 2026-11-14
 
 ### Fixed

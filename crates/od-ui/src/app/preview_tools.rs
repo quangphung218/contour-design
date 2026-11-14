@@ -783,6 +783,7 @@ impl StudioCtx {
             file: file.clone(),
             edits,
             label: None,
+            claim: Vec::new(),
         };
         let tools = self.tools;
         let path = format!("{}/source-edits", self.base());
@@ -1774,11 +1775,19 @@ pub fn watch_lint(ctx: StudioCtx) {
             ctx.refresh_lint(path);
         }
     });
-    // Another file: its tool state starts over.
+    // Another file: its tool state starts over. Not the shown file
+    // renamed or moved (`renamed`): it is the same document, and a Manual
+    // edit change typed in it stays in its fields (QA-097).
     let shown = Memo::new(move |_| ctx.active());
     Effect::new(move |last: Option<Option<String>>| {
         let now = shown.get();
+        let renamed = ctx.renamed.try_update_value(Option::take).flatten();
         if let Some(last) = last {
+            let rename = matches!(&renamed, Some((from, to))
+                if last.as_deref() == Some(from.as_str()) && now.as_deref() == Some(to.as_str()));
+            if rename {
+                return now;
+            }
             ctx.tools.forget_document(last.as_deref(), now.as_deref());
             if ctx.tools.tool.get_untracked() == Some(Tool::Tweaks) {
                 ctx.set_tool(None);
@@ -1952,6 +1961,7 @@ mod tests {
                 ..SourceEdit::default()
             }],
             label: None,
+            claim: Vec::new(),
         }
     }
 

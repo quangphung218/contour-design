@@ -466,7 +466,10 @@ pub async fn archive(
         .blocking(move |s| {
             let project = s.get_project(&id)?;
             let root = s.project_root(&project)?;
-            let files = od_store::files::list_files(&root)?;
+            let mut files = od_store::files::list_files(&root)?;
+            // Images of comments not sent yet are no part of the project.
+            let drafts = s.unclaimed_draft_uploads(&id)?;
+            files.retain(|f| !drafts.contains(&f.name));
             Ok((project, root, files))
         })
         .await?;

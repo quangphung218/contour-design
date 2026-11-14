@@ -818,6 +818,7 @@ messages! {
     CommentModeOn => "Click an element to comment", "Bấm vào một phần tử để bình luận";
     CommentPlaceholder => "What should change here?", "Cần sửa gì ở đây?";
     CommentReselect => "This element is no longer on the page. Pick one to comment on.", "Phần tử này không còn trên trang. Chọn lại phần tử để bình luận.";
+    DraftsDroppedFileGone => "Work not saved on {0} was discarded: the file is no longer there.", "Đã bỏ phần chưa lưu trên {0}: tệp không còn nữa.";
     AddComment => "Add comment", "Thêm bình luận";
     CommentUploading => "Uploading the image… Add waits for it.", "Đang tải ảnh lên… Chờ tải xong mới thêm được.";
     CommentDraftElsewhere => "A comment on slide {0} is not sent yet.", "Bình luận ở slide {0} chưa gửi.";

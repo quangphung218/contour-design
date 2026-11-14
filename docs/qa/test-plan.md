@@ -12,7 +12,8 @@ plan adds the mistakes and accidents of real users. Bugs found are in
 macOS) in [bugs-desktop-beta32.md](bugs-desktop-beta32.md); the web pass after the beta.34
 redesign (QA-089 to QA-092, §21) in [bugs-web-beta34.md](bugs-web-beta34.md); the desktop
 pass on main before beta.34 (QA-093 to QA-095, §19 and §21 by hand) in
-[bugs-desktop-main34.md](bugs-desktop-main34.md).
+[bugs-desktop-main34.md](bugs-desktop-main34.md); the pass on main after beta.36
+(QA-096 to QA-098, §22 and §23) in [bugs-main36.md](bugs-main36.md).
 
 ## Priorities and status
 
@@ -613,6 +614,76 @@ Bugs: [bugs-web-beta34.md](bugs-web-beta34.md).
 | LV-17 | The daemon stops while a tab is open | Home open | SIGTERM the daemon | It stops within 2 s | P2 | auto (QA-092) |
 
 Run: `QA_SKIP_BUILD=1 crates/od-ui/e2e/qa/run.sh leave` (~1.5 min).
+
+## 22. Desktop app: one window per data folder (manual, macOS)
+
+Goal: opening Contour while it runs (Dock, Finder, a second copy, `open
+-n`) shows the running window; `od daemon start` on the same data folder
+gets a dialog the user can act on; Update now restarts into the new
+version. Expected results from the beta.36 changelog entry and
+[troubleshooting.md](../troubleshooting.md). Run on a QA build whose
+*compiled* identifier is `dev.contour.desktop.qa` (`tauri build --config
+'{"identifier":"dev.contour.desktop.qa"}'`): the single-instance socket is
+`/tmp/<identifier>_si.sock`, so a copy that only renames the bundle id in
+`Info.plist` would talk to the owner's Contour. Single instance is on only
+without `OD_DATA_DIR`, so the copy's data folder comes from a `HOME` of
+its own, passed with `open --env HOME=<qa>/home` ([qa.sh](main36/qa.sh)).
+`LSEnvironment` `HOME` in `Info.plist` is ignored: the copy then opens the
+owner's data folder. Never launch the copy from Finder or the Dock while it
+is not running, for the same reason. Bugs: [bugs-main36.md](bugs-main36.md).
+
+| ID | Scenario | Steps | Expected | P |
+|---|---|---|---|---|
+| SI-01 | Second launch while the window shows | Open the copy, then `open -n` it | One process; the window comes to the front | P0 |
+| SI-02 | … while the window is closed (⌘W, hidden) | Close the window, open the app again (`open -n`, Finder) | The window shows again | P0 |
+| SI-03 | … while minimised | ⌘M, open again | The window is unminimised and in front | P1 |
+| SI-04 | … while hidden (⌘H) | ⌘H, open again | The app unhides, window in front | P1 |
+| SI-05 | … from a second copy of the app (disk image, Downloads) | Copy the `.app` elsewhere, open the copy | The first copy's window shows; the second process quits | P0 |
+| SI-06 | … while the app is quitting | ⌘Q with an agent run going (stopping takes up to 8 s), open again at once | The new launch waits for the old copy and opens a window; never nothing at all, never a lock dialog | P1 |
+| SI-07 | Two launches at the same instant, nothing running | `open -n` twice within 50 ms | One window, one daemon; no lock dialog | P2 |
+| SI-08 | A copy with its own `OD_DATA_DIR` runs beside the app | App open; start a second copy with `OD_DATA_DIR=<tmp>` | Both run | P1 |
+| LK-01 | `od daemon start` holds the data folder (English) | `od daemon start` on the copy's folder, then open the app | Dialog "Contour can't open yet", says to quit the other Contour or stop the command; Quit quits; the log has the URL and folder | P0 |
+| LK-02 | Same, Vietnamese | `locale` `vi` in `app-config.json` | "Chưa mở được Contour", the Vietnamese words, button "Thoát" | P1 |
+| LK-03 | After stopping the command, the app opens | LK-01, Ctrl+C the daemon, open again | The app opens on the same data | P0 |
+| LK-04 | Lock held by the app's own copy that does not let go | A second copy on the same folder blocked past 12 s | "Contour is already open" after ≈ 12 s | P2 |
+| LK-05 | An older Contour (beta.35) holds the folder | beta.35 open on the folder, open beta.36 | The dialog names an older Contour too | P1 |
+| UP-01 | Update now, then Restart | beta.35 on its own folder, Settings ▸ Update now ▸ Restart | beta.36 opens on the same data, no lock dialog, the window shows once | P0 |
+| UP-02 | Restart with a comment not sent | As UP-01 with a comment draft | Restart asks first (beta.35 changelog); Cancel stays | P1 |
+
+## 23. Drafts after beta.35 (`drafts.qa.mjs`, DL-28 on)
+
+Goal: a comment being written (note, images, element) stays with its file
+and is never lost without a question; an image uploaded for a draft that
+is thrown away is not left behind in `comments/`. Expected results from
+the beta.35 changelog ("Cancel on a comment deletes the images uploaded
+for it") and spec.md (nothing the user made is lost unseen).
+
+| ID | Scenario | Steps | Expected | P | Status |
+|---|---|---|---|---|---|
+| DL-28 | A comment with an image, then Leave | Draft + image, Projects ▸ Leave | Projects opens; the image is not left in `comments/` | P1 | auto (QA-096, fixed) |
+| DL-29 | Same, image still uploading | Image upload held, Projects ▸ Leave, upload lands | No file left in `comments/` | P1 | auto (QA-096, fixed) |
+| DL-30 | A comment draft, then a page reload | Draft with a note, reload | The browser asks before leaving | P1 | auto |
+| DL-31 | Drafts on two files | Draft on a.html and b.html, Projects | The question names both files | P1 | auto |
+| DL-32 | A file with a comment draft renamed | Draft on a.html, rename it to c.html in the Files panel | The note is kept on c.html, or the rename asks first | P2 | auto (QA-097, fixed) |
+| DL-33 | A file with a comment draft deleted | Draft with an image on a.html, delete a.html | The delete asks; afterwards no draft image left in `comments/` | P2 | auto |
+| DL-34 | Deck: the slide a comment is on goes | Draft on slide 2, the deck rewritten with 1 slide | The note can still be sent or discarded | P1 | auto (QA-098, fixed) |
+| DL-35 | A file with a Manual edit change not applied renamed | Typed in Content, rename page.html | The change is kept, or the rename asks; leaving still asks | P2 | auto (QA-097, fixed) |
+| DL-36 | Back, then Leave | Draft + image, browser Back ▸ Leave | No image left in `comments/` | P1 | auto |
+| DL-37 | Reload chosen, or the page crashes | Draft + image, reload ▸ Leave; then a crash (no request) | Reload: image deleted. Crash: image not in the ZIP | P1 | auto |
+| DL-38 | Add, then leave at once | Comment POST held, Projects, POST lands | The comment has its image; the release after it keeps it | P1 | auto |
+| DL-39 | A file with a draft moved into a folder | Files ▸ Move to | Note and image on `refs/a.html` | P2 | auto |
+| DL-40 | The folder holding it moved | Folder ▸ Move to | Note on the new path | P2 | auto |
+| DL-41 | The agent renames it | `files/rename` from outside the app | Draft and image go; the Studio names the file | P2 | auto |
+| DL-42 | Manual image uploaded, another file shown, Leave | Upload held, switch file, Leave | The image not applied is not left in `assets/` | P2 | auto |
+| DL-43 | A comment sent with an image, then Leave | Add, Projects | The image stays and ships | P1 | auto |
+| DL-44 | A rename that fails | Rename onto a name taken | Draft stays on the old name; a later delete outside the app takes it | P2 | auto |
+| DL-45 | Watcher before the rename's answer, image landing meanwhile | Rename answer and upload held | Words typed meanwhile, the image and the tab follow | P1 | auto |
+| DL-46 | Deck reloads while typing | Agent rewrites the deck mid-note | No key lost | P1 | auto |
+| DL-47 | Manual image written into the page | Upload on the image element, Leave | The image stays and ships | P1 | auto |
+| DL-48 | A sent comment's file renamed | Add, rename | The pin stays | P2 | auto |
+| DL-49 | A text edit not written, file renamed | Source edit fails, rename | Try again writes the renamed file | P2 | auto |
+| DL-50 | Manual change kept on a file not shown, renamed | Type, switch, rename | The change comes back on the new name | P2 | auto |
+| DL-51 | Manual image applied, Studio left before the write is saved | `source-edits` held, Projects, then let go | The page's image stays on disk and ships | P1 | auto |
 
 ## Not automated, and why
 

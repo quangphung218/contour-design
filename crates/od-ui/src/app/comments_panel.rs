@@ -7,6 +7,7 @@
 use super::api;
 use super::bridge;
 use super::icons::{Glyph, icon};
+use super::preview_comments::CommentDraft;
 use super::preview_tools::{Tool, panel_head};
 use super::studio::StudioCtx;
 use super::tasks::{Tasks, live};
@@ -357,27 +358,30 @@ fn CommentItem(
 #[component]
 pub fn DraftImages(
     ctx: StudioCtx,
-    /// The file whose draft these images are.
-    file: String,
+    /// The draft whose images these are (its file may be renamed).
+    id: u64,
     error: RwSignal<Option<String>>,
 ) -> impl IntoView {
+    use super::preview_comments::draft_by_id;
     let input = NodeRef::<leptos::html::Input>::new();
     let here = Tasks::here();
-    let file = StoredValue::new(file);
-    let sending = move || {
+    let flag = move |f: fn(&CommentDraft) -> bool| {
         ctx.comment_drafts
-            .with(|d| file.with_value(|f| d.get(f).is_some_and(|d| d.sending)))
+            .with(|d| draft_by_id(d, id).is_some_and(|(_, d)| f(d)))
     };
+    let sending = move || flag(|d| d.sending);
     // Kept in the draft: Add waits for it, and a box shown again knows.
-    let busy = move || {
-        ctx.comment_drafts
-            .with(|d| file.with_value(|f| d.get(f).is_some_and(|d| !d.uploads.is_empty())))
-    };
+    let busy = move || flag(|d| !d.uploads.is_empty());
     let images = move || {
         ctx.comment_drafts.with(|d| {
-            file.with_value(|f| d.get(f).map(|d| d.images.clone()))
+            draft_by_id(d, id)
+                .map(|(_, d)| d.images.clone())
                 .unwrap_or_default()
         })
+    };
+    let file = move || {
+        ctx.comment_drafts
+            .with_untracked(|d| draft_by_id(d, id).map(|(f, _)| f.clone()))
     };
     let picked = move |_| {
         let Some(el) = input.get() else { return };
@@ -391,33 +395,33 @@ pub fn DraftImages(
         if files.is_empty() {
             return;
         }
-        let file = file.get_value();
         let token = NEXT_UPLOAD.fetch_add(1, Ordering::Relaxed);
         ctx.comment_drafts.update(|d| {
-            if let Some(d) = d.get_mut(&file) {
+            if let Some(d) = d.values_mut().find(|d| d.id == id) {
                 d.uploads.push(token);
             }
         });
+        // Sent as this page's draft session's: the server deletes them if
+        // the page goes before a comment takes them, even if they land
+        // after it went.
+        let session = ctx.draft_session.get_value();
         // The Studio's task: the images land in the draft even if its box
         // went meanwhile (another file shown).
         ctx.tasks.spawn(async move {
-            let res =
-                super::files_panel::upload(ctx, T::CommentImageFailed, files, COMMENT_IMAGES_DIR)
-                    .await;
-            // The draft this upload was for: not one cancelled meanwhile,
-            // nor a new one picked since.
-            let mine = ctx
-                .comment_drafts
-                .with_untracked(|d| d.get(&file).is_some_and(|d| d.uploads.contains(&token)));
+            let res = super::files_panel::upload(
+                ctx,
+                T::CommentImageFailed,
+                files,
+                COMMENT_IMAGES_DIR,
+                Some(&session),
+            )
+            .await;
+            // The draft waiting for this upload, whatever its file is now
+            // (renamed meanwhile); none if it was cancelled or given up.
             let landed = res.as_deref().unwrap_or_default();
-            if mine {
-                ctx.comment_drafts.update(|d| {
-                    if let Some(d) = d.get_mut(&file) {
-                        d.uploads.retain(|t| *t != token);
-                        d.images.extend_from_slice(landed);
-                    }
-                });
-            }
+            let mut mine = false;
+            ctx.comment_drafts
+                .update(|d| mine = super::preview_comments::land_upload(d, token, landed));
             match res {
                 Ok(paths) => {
                     if !mine {
@@ -441,7 +445,7 @@ pub fn DraftImages(
                     <span class="draft-image" data-testid="draft-image">
                         <img src=url alt=""/>
                         <button class="chip-x" aria-label=t(T::Remove) disabled=sending
-                            on:click=move |_| file.with_value(|f| ctx.remove_draft_image(f, &gone))>
+                            on:click=move |_| if let Some(f) = file() { ctx.remove_draft_image(&f, &gone) }>
                             {icon(Glyph::Close)}
                         </button>
                     </span>

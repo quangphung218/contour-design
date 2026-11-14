@@ -85,8 +85,10 @@ fn collect(s: &Store, q: &ListQuery) -> Result<Vec<Asset>, StoreError> {
         let Ok(files) = s.list_files(&p.id) else {
             continue;
         };
+        // Images of comments not sent yet are not the project's media.
+        let drafts = s.unclaimed_draft_uploads(&p.id)?;
         for f in files {
-            if !is_media(f.kind) {
+            if !is_media(f.kind) || drafts.contains(&f.name) {
                 continue;
             }
             if q.kind.as_deref().is_some_and(|k| k != kind_name(f.kind)) {

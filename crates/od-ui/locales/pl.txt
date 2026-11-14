@@ -592,6 +592,7 @@ CommentMode = Dodaj komentarz
 CommentModeOn = Kliknij element, aby dodać komentarz
 CommentPlaceholder = Co tu zmienić?
 CommentReselect = Tego elementu nie ma już na stronie. Wybierz element do skomentowania.
+DraftsDroppedFileGone = Niezapisana praca w {0} została odrzucona: pliku już nie ma.
 AddComment = Dodaj komentarz
 CommentUploading = Przesyłanie obrazu… Dodawanie czeka na koniec.
 CommentDraftElsewhere = Komentarz na slajdzie {0} nie został jeszcze wysłany.

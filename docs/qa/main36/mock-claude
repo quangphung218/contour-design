@@ -1,0 +1,15 @@
+#!/bin/sh
+# QA36 mock: `qa-stubborn` streams and ignores SIGTERM for 20 s (quit then
+# waits the full stop limit); everything else goes to the QA mock.
+qa=${QA_REPO:?repo root}/crates/od-ui/e2e/qa/mock-agent/claude
+case "$1" in --version|-p) [ "$1" = --version ] && exec "$qa" "$@";; esac
+if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then exec "$qa" "$@"; fi
+IFS= read -r line
+case "$line" in *qa-stubborn*)
+  trap '' TERM
+  printf '{"type":"system","subtype":"init","session_id":"s1"}\n'
+  printf '{"type":"assistant","message":{"id":"st1","role":"assistant","content":[{"type":"text","text":"Stubborn. "}]}}\n'
+  i=0; while [ $i -lt 100 ]; do sleep 0.2; i=$((i + 1)); done
+  exit 0;;
+esac
+printf '%s\n' "$line" | "$qa" "$@"

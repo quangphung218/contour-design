@@ -327,6 +327,16 @@ pub struct StudioCtx {
     /// Comments being written, by file: the element picked in comment
     /// mode, the note and images typed. Another file shown keeps them.
     pub comment_drafts: RwSignal<super::preview_comments::CommentDrafts>,
+    /// This page's draft session: sent with the images uploaded for
+    /// drafts, released when the page goes (`drafts`).
+    pub draft_session: StoredValue<String>,
+    /// Files and folders (`dir/`) whose rename or move is on its way: the
+    /// watcher may list them gone before the answer says where they went,
+    /// and their drafts and tabs must not go with that.
+    pub moving: StoredValue<Vec<String>>,
+    /// The file shown renamed (from, to): the next switch of the shown file
+    /// is that rename, not another file, so its tool state stays.
+    pub renamed: StoredValue<Option<(String, String)>>,
     /// Where each shown comment's element is now (`od:located`), so pins
     /// follow scroll and reflow; missing ids fall back to the stored box.
     pub pin_rects: RwSignal<HashMap<String, CommentRect>>,
@@ -505,6 +515,109 @@ impl StudioCtx {
         self.viewing.set(None);
     }
 
+    /// Files and folders renamed or moved in the app (`moves`, in order):
+    /// what the Studio keeps by path follows them at once, in one go: the
+    /// comment drafts and Manual edit changes not applied (QA-097), the
+    /// tabs (renamed in place, the shown one still shown, with its tool
+    /// state), the recent files, the slide to come back to, a text edit
+    /// not written, and the pins of the comments sent (the server moved
+    /// those too).
+    pub(super) fn follow_moves(self, moves: &[super::drafts::Move]) {
+        if moves.is_empty() {
+            return;
+        }
+        let to = |p: &str| super::drafts::moved(moves, p);
+        if let Some(active) = self.active_untracked()
+            && let Some(next) = to(&active)
+        {
+            self.renamed.set_value(Some((active, next)));
+        }
+        if self
+            .comment_drafts
+            .with_untracked(|d| d.keys().any(|f| to(f).is_some()))
+        {
+            self.comment_drafts
+                .update(|d| super::preview_comments::rename_drafts(d, moves));
+        }
+        self.tools.manual.rename(to);
+        if self
+            .tabs
+            .with_untracked(|t| t.open.iter().any(|p| to(p).is_some()))
+        {
+            self.tabs.update(|t| t.rename(to));
+        }
+        if self
+            .recent
+            .with_untracked(|r| r.iter().any(|p| to(p).is_some()))
+        {
+            self.recent.update(|r| {
+                for p in r.iter_mut() {
+                    if let Some(next) = to(p) {
+                        *p = next;
+                    }
+                }
+            });
+        }
+        self.last_slide.update_value(|l| {
+            if let Some((p, _)) = l
+                && let Some(next) = to(p)
+            {
+                *p = next;
+            }
+        });
+        // A text edit not written (QA-087): tied to its file by path too.
+        let tools = self.tools;
+        if tools
+            .failed_text
+            .with_untracked(|f| f.iter().any(|f| to(&f.file).is_some()))
+        {
+            tools.failed_text.update(|f| {
+                for f in f.iter_mut() {
+                    if let Some(next) = to(&f.file) {
+                        f.file = next;
+                    }
+                }
+            });
+        }
+        if self
+            .comments
+            .with_untracked(|c| c.iter().any(|c| to(&c.file_path).is_some()))
+        {
+            self.comments.update(|c| {
+                for c in c.iter_mut() {
+                    if let Some(next) = to(&c.file_path) {
+                        c.file_path = next;
+                    }
+                }
+            });
+        }
+    }
+
+    /// This page goes (`unloading`: reloaded or closed; else the Studio
+    /// left in the app): the images of its drafts go, once the comments
+    /// being sent are saved. As the page unloads, one still being sent
+    /// keeps them: the server's sweep takes what it leaves.
+    fn release_drafts(self, unloading: bool) {
+        let (Some(session), Some(base)) = (
+            self.draft_session.try_get_value(),
+            self.project_id
+                .try_with_value(|id| format!("/api/projects/{}", api::seg(id))),
+        ) else {
+            return;
+        };
+        let sends = self.shell.draft_sends;
+        if unloading {
+            if !sends.with_value(|s| s.busy(&session)) {
+                super::drafts::release_unloading(&base, &session);
+            }
+        } else if sends
+            .try_update_value(|s| s.leave(&session))
+            .unwrap_or(true)
+        {
+            super::drafts::release(&base, &session);
+        }
+    }
+
     pub fn refresh_files(self) {
         let seq = self.files_seq.get_value().wrapping_add(1);
         self.files_seq.set_value(seq);
@@ -521,9 +634,13 @@ impl StudioCtx {
                 res.files.into_iter().filter(is_previewable).collect();
             files.sort_by(|a, b| a.path.cmp(&b.path));
             // Live artifact tabs are not files.
+            // A file being renamed keeps its tab: the rename moves it.
+            let moving = self.moving.get_value();
             self.tabs.update(|t| {
                 t.retain_existing(|p| {
-                    super::live_view::is_live(p) || files.iter().any(|f| f.path == p)
+                    super::live_view::is_live(p)
+                        || files.iter().any(|f| f.path == p)
+                        || super::drafts::is_moving(&moving, p)
                 })
             });
             if self.active_untracked().is_none() {
@@ -1701,6 +1818,9 @@ pub fn Studio() -> impl IntoView {
         comments_seq: StoredValue::new(0),
         comment_mode: RwSignal::new(false),
         comment_drafts: RwSignal::new(Default::default()),
+        draft_session: StoredValue::new(super::drafts::new_session()),
+        moving: StoredValue::new(Vec::new()),
+        renamed: StoredValue::new(None),
         pin_rects: RwSignal::new(HashMap::new()),
         anchors: RwSignal::new(HashMap::new()),
         frame_ready: RwSignal::new(0),
@@ -1742,6 +1862,18 @@ pub fn Studio() -> impl IntoView {
     // Manual edit change not applied, and names the files.
     super::leave_guard::guard_leaving(Callback::new(move |()| ctx.unsent_files()));
     super::preview_comments::forget_gone_drafts(ctx);
+    // The images of drafts go with this page, whichever way it goes: the
+    // Studio left in the app (the cleanup below), or the page reloaded or
+    // closed. A page back from the back-forward cache let its session go:
+    // it takes a new one, its drafts' images gone with the old.
+    let unload = window_event_listener(ev::pagehide, move |_| ctx.release_drafts(true));
+    let back = window_event_listener(ev::pageshow, move |e| {
+        if e.persisted() {
+            ctx.draft_session.set_value(super::drafts::new_session());
+            ctx.comment_drafts
+                .update(|d| d.values_mut().for_each(|d| d.images.clear()));
+        }
+    });
     ctx.keep_held_queue();
     // The command palette offers this Studio's commands while it is open.
     shell.studio.set(Some(ctx));
@@ -1764,6 +1896,9 @@ pub fn Studio() -> impl IntoView {
         }
     });
     on_cleanup(move || {
+        unload.remove();
+        back.remove();
+        ctx.release_drafts(false);
         keys.remove();
         more_keys.remove();
         messages.remove();
