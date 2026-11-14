@@ -472,15 +472,19 @@ impl Store {
     pub fn delete_file(&self, project_id: &str, name: &str) -> Result<()> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
-        let rel = files::delete_file(&root, name)?;
-        // A draft's image deleted (its x, Cancel): no longer one to release.
-        self.with_conn(|conn| {
-            Ok(crate::drafts::claim(
-                conn,
-                project_id,
-                std::slice::from_ref(&rel),
-            )?)
-        })?;
+        // A draft's image deleted (its x, Cancel), or found gone already
+        // (the agent, Finder): no longer one to release, and a file put at
+        // its path later is not taken for it.
+        let rel = match files::delete_file(&root, name) {
+            Ok(rel) => rel,
+            Err(StoreError::FileNotFound) => {
+                let rel = validate_project_path(name)?;
+                self.with_conn(|conn| Ok(crate::drafts::forget(conn, project_id, &rel)?))?;
+                return Err(StoreError::FileNotFound);
+            }
+            Err(e) => return Err(e),
+        };
+        self.with_conn(|conn| Ok(crate::drafts::forget(conn, project_id, &rel)?))?;
         versions::mark_deleted(&root.dir, &rel)
     }
 

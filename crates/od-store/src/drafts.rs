@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS draft_uploads (
   path TEXT NOT NULL,
   session TEXT NOT NULL,
   uploaded_at INTEGER NOT NULL,
+  ident TEXT,
   PRIMARY KEY (project_id, path)
 );
 CREATE INDEX IF NOT EXISTS idx_draft_uploads_session ON draft_uploads(session);
@@ -38,7 +39,44 @@ CREATE TABLE IF NOT EXISTS draft_sessions_released (
 ";
 
 pub(crate) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(SCHEMA)
+    conn.execute_batch(SCHEMA)?;
+    // A record made before files were told apart by `ident` gains it.
+    let has_ident: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('draft_uploads') WHERE name = 'ident')",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_ident {
+        conn.execute_batch("ALTER TABLE draft_uploads ADD COLUMN ident TEXT")?;
+    }
+    Ok(())
+}
+
+/// What tells the file the server wrote for a draft from another file put
+/// at the same path later: its size, its mtime to the nanosecond and, where
+/// there is one, its inode. A file moved, copied or unzipped there keeps
+/// its own mtime, often older than the record, so the mtime alone is not
+/// enough. `None` when the file cannot be read.
+fn file_ident(root: &ProjectRoot, path: &str) -> Option<String> {
+    let (_, full) = files::stat_file(root, path).ok()?;
+    let meta = std::fs::symlink_metadata(full).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    Some(format!("{}:{mtime}:{}", meta.len(), inode(&meta)))
+}
+
+#[cfg(unix)]
+fn inode(meta: &std::fs::Metadata) -> u64 {
+    std::os::unix::fs::MetadataExt::ino(meta)
+}
+
+#[cfg(not(unix))]
+fn inode(_: &std::fs::Metadata) -> u64 {
+    0
 }
 
 /// Whether `session` is a draft session id a page may send: 1 to 64 ASCII
@@ -129,14 +167,27 @@ pub(crate) fn forget_folder(
 /// written and still be that image (clocks of a write and its record).
 const MTIME_SLACK_MS: f64 = 2000.0;
 
-/// Deletes the file `path` of a draft recorded at `uploaded_at` (ms); one
-/// already gone is fine. A file written there after the record is another
-/// file (put back by the agent, Finder or a restore): it stays.
-fn delete_image(root: &ProjectRoot, path: &str, uploaded_at: i64) {
-    if let Ok((file, _)) = files::stat_file(root, path)
-        && file.mtime > uploaded_at as f64 + MTIME_SLACK_MS
-    {
-        tracing::info!(path, "a draft image's path holds a newer file: kept");
+/// Which file a delete of a draft image may take.
+enum Expect<'a> {
+    /// The one just uploaded, whatever it is (its session was released).
+    Any,
+    /// The one recorded: `ident` ([`file_ident`]), or for a record made
+    /// before it was kept, one not written after `uploaded_at` (ms).
+    Recorded(Option<&'a str>, i64),
+}
+
+/// Deletes the file `path` of a draft; one already gone is fine. Another
+/// file at that path (put there by the agent, Finder, an unzip, a restore)
+/// is the user's: it stays.
+fn delete_image(root: &ProjectRoot, path: &str, expect: Expect<'_>) {
+    let other = match expect {
+        Expect::Any => false,
+        Expect::Recorded(Some(ident), _) => file_ident(root, path).is_some_and(|now| now != ident),
+        Expect::Recorded(None, uploaded_at) => files::stat_file(root, path)
+            .is_ok_and(|(file, _)| file.mtime > uploaded_at as f64 + MTIME_SLACK_MS),
+    };
+    if other {
+        tracing::info!(path, "a draft image's path holds another file: kept");
         return;
     }
     match files::delete_file(root, path) {
@@ -152,6 +203,7 @@ pub struct TakenDraft {
     path: String,
     session: String,
     uploaded_at: i64,
+    ident: Option<String>,
 }
 
 impl Store {
@@ -167,13 +219,19 @@ impl Store {
         let root = self.root_for(project_id)?;
         self.with_conn(|conn| {
             if released(conn, session)? {
-                delete_image(&root, path, i64::MAX);
+                delete_image(&root, path, Expect::Any);
                 return Ok(false);
             }
             conn.execute(
-                "INSERT OR REPLACE INTO draft_uploads (project_id, path, session, uploaded_at) \
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![project_id, path, session, crate::now_ms()],
+                "INSERT OR REPLACE INTO draft_uploads \
+                 (project_id, path, session, uploaded_at, ident) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    project_id,
+                    path,
+                    session,
+                    crate::now_ms(),
+                    file_ident(&root, path)
+                ],
             )?;
             Ok(true)
         })
@@ -194,18 +252,20 @@ impl Store {
                  VALUES (?1, ?2)",
                 params![session, crate::now_ms()],
             )?;
-            let rows: Vec<(String, i64)> = {
+            let rows: Vec<(String, i64, Option<String>)> = {
                 let mut stmt = conn.prepare(
-                    "SELECT path, uploaded_at FROM draft_uploads \
+                    "SELECT path, uploaded_at, ident FROM draft_uploads \
                      WHERE project_id = ?1 AND session = ?2",
                 )?;
-                stmt.query_map(params![project_id, session], |r| Ok((r.get(0)?, r.get(1)?)))?
-                    .collect::<rusqlite::Result<Vec<_>>>()?
+                stmt.query_map(params![project_id, session], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?
             };
-            for (path, at) in &rows {
-                delete_image(&root, path, *at);
+            for (path, at, ident) in &rows {
+                delete_image(&root, path, Expect::Recorded(ident.as_deref(), *at));
             }
-            let paths: Vec<String> = rows.into_iter().map(|(p, _)| p).collect();
+            let paths: Vec<String> = rows.into_iter().map(|(p, ..)| p).collect();
             conn.execute(
                 "DELETE FROM draft_uploads WHERE project_id = ?1 AND session = ?2",
                 params![project_id, session],
@@ -236,17 +296,20 @@ impl Store {
     /// Deletes the draft images not taken uploaded at or before `before`
     /// (ms), and forgets sessions released as long ago.
     fn drop_drafts_before(&self, before: i64) -> Result<usize> {
-        let rows: Vec<(String, String, i64)> = self.with_conn(|conn| {
+        let rows: Vec<(String, String, i64, Option<String>)> = self.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT project_id, path, uploaded_at FROM draft_uploads WHERE uploaded_at <= ?1",
+                "SELECT project_id, path, uploaded_at, ident FROM draft_uploads \
+                 WHERE uploaded_at <= ?1",
             )?;
             let rows = stmt
-                .query_map([before], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .query_map([before], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(rows)
         })?;
         let mut gone = 0;
-        for (project, path, at) in rows {
+        for (project, path, at, ident) in rows {
             // A project whose folder is gone: its rows go all the same.
             let root = self.root_for(&project).ok();
             self.with_conn(|conn| {
@@ -258,7 +321,7 @@ impl Store {
                 )?;
                 if n > 0 {
                     if let Some(root) = &root {
-                        delete_image(root, &path, at);
+                        delete_image(root, &path, Expect::Recorded(ident.as_deref(), at));
                     }
                     gone += 1;
                 }
@@ -301,17 +364,24 @@ impl Store {
             for path in paths {
                 let row = conn
                     .query_row(
-                        "SELECT session, uploaded_at FROM draft_uploads \
+                        "SELECT session, uploaded_at, ident FROM draft_uploads \
                          WHERE project_id = ?1 AND path = ?2",
                         params![project_id, path],
-                        |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+                        |r| {
+                            Ok((
+                                r.get::<_, String>(0)?,
+                                r.get::<_, i64>(1)?,
+                                r.get::<_, Option<String>>(2)?,
+                            ))
+                        },
                     )
                     .optional()?;
-                if let Some((session, uploaded_at)) = row {
+                if let Some((session, uploaded_at, ident)) = row {
                     taken.push(TakenDraft {
                         path: path.clone(),
                         session,
                         uploaded_at,
+                        ident,
                     });
                 }
             }
@@ -325,9 +395,9 @@ impl Store {
         let res = self.with_conn(|conn| {
             for t in &taken {
                 conn.execute(
-                    "INSERT OR IGNORE INTO draft_uploads (project_id, path, session, uploaded_at) \
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![project_id, t.path, t.session, t.uploaded_at],
+                    "INSERT OR IGNORE INTO draft_uploads \
+                     (project_id, path, session, uploaded_at, ident) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![project_id, t.path, t.session, t.uploaded_at, t.ident],
                 )?;
             }
             Ok(())
@@ -499,10 +569,8 @@ mod tests {
         let (_tmp, s, p, _) = store();
         let (old, _) = upload(&s, &p, "s1", "old.png");
         age(&s, DRAFT_MAX_AGE_MS + 60 * 60 * 1000);
-        age_file(&s, &p, &old, DRAFT_MAX_AGE_MS + 2 * 60 * 60 * 1000);
         let (fresh, _) = upload(&s, &p, "s2", "fresh.png");
         age(&s, 60 * 60 * 1000);
-        age_file(&s, &p, &fresh, 60 * 60 * 1000);
         assert_eq!(s.sweep_draft_uploads(DRAFT_MAX_AGE_MS).unwrap_or(0), 1);
         assert!(!exists(&s, &p, &old), "25 hours old: gone");
         assert!(exists(&s, &p, &fresh), "an hour old: another tab's draft");
@@ -570,7 +638,6 @@ mod tests {
             Ok(())
         })
         .unwrap_or_else(|e| panic!("{e}"));
-        age_file(&s, &p, &old, DRAFT_MAX_AGE_MS + 1000);
         drop(s);
         // The daemon starts again after a crash.
         let s = Store::open(DataDir::new(tmp.path())).unwrap_or_else(|e| panic!("{e}"));
@@ -686,6 +753,66 @@ mod tests {
         s.release_draft_session(&p, "s2")
             .unwrap_or_else(|e| panic!("{e}"));
         assert!(s.take_draft_uploads(&p, &[late]).is_err());
+    }
+
+    #[test]
+    fn a_file_put_where_a_draft_image_was_stays_whatever_its_mtime() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "shot.png");
+        let full = s.stat_file(&p, &img).unwrap_or_else(|e| panic!("{e}")).1;
+        // The draft's image goes outside the app; the user moves an old
+        // image of theirs there (Finder, `mv`, unzip keep its mtime).
+        std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(&full, b"the user's old picture").unwrap_or_else(|e| panic!("{e}"));
+        age_file(&s, &p, &img, 60 * 60 * 1000);
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(exists(&s, &p, &img), "the user's file was deleted");
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+        // Same for the quit of the app and the sweep.
+        let (other, _) = upload(&s, &p, "s2", "other.png");
+        let full = s.stat_file(&p, &other).unwrap_or_else(|e| panic!("{e}")).1;
+        std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(&full, b"another of theirs").unwrap_or_else(|e| panic!("{e}"));
+        age_file(&s, &p, &other, 60 * 60 * 1000);
+        s.release_all_draft_uploads()
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(exists(&s, &p, &other));
+    }
+
+    #[test]
+    fn a_draft_image_found_gone_on_delete_leaves_no_row() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "gone.png");
+        let full = s.stat_file(&p, &img).unwrap_or_else(|e| panic!("{e}")).1;
+        std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+        assert!(matches!(
+            s.delete_file(&p, &img),
+            Err(StoreError::FileNotFound)
+        ));
+        assert!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty(),
+            "a file put there later would be taken for the draft's"
+        );
+    }
+
+    #[test]
+    fn a_record_made_before_ident_gains_the_column() {
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let conn =
+            Connection::open(tmp.path().join("old.sqlite")).unwrap_or_else(|e| panic!("{e}"));
+        conn.execute_batch(
+            "CREATE TABLE draft_uploads (project_id TEXT NOT NULL, path TEXT NOT NULL, \
+             session TEXT NOT NULL, uploaded_at INTEGER NOT NULL, PRIMARY KEY (project_id, path));",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        ensure_schema(&conn).unwrap_or_else(|e| panic!("{e}"));
+        ensure_schema(&conn).unwrap_or_else(|e| panic!("{e}"));
+        conn.execute(
+            "INSERT INTO draft_uploads VALUES ('p', 'a.png', 's', 0, 'x')",
+            [],
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
     }
 
     #[test]

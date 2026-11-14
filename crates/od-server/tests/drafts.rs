@@ -264,16 +264,6 @@ async fn opening_a_project_sweeps_draft_images_a_day_old() {
             Ok(())
         })
         .unwrap();
-    let full = d.state.store.stat_file(&project, &old).unwrap().1;
-    let then = std::time::SystemTime::now()
-        - std::time::Duration::from_millis(
-            u64::try_from(od_store::drafts::DRAFT_MAX_AGE_MS).unwrap() + 1000,
-        );
-    std::fs::File::options()
-        .write(true)
-        .open(full)
-        .and_then(|f| f.set_modified(then))
-        .unwrap();
     d.get_json(&format!("/api/projects/{project}")).await;
     let listed = files(&d, &project).await;
     assert!(!listed.contains(&old), "{listed:?}");
@@ -353,5 +343,60 @@ async fn a_manual_write_takes_its_draft_image_in_the_same_step() {
     assert!(
         !zip_names(&d, &project).await.contains(&other),
         "still a draft's"
+    );
+}
+
+/// A Manual write whose page is written but whose version fails: the page
+/// points to the image, so it stays the page's and no release deletes it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_write_that_fails_after_the_page_is_written_keeps_its_image() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = daemon().await;
+    let (project, _) = d.project().await;
+    let res = d
+        .post(
+            &format!("/api/projects/{project}/files"),
+            &json!({"name": "index.html", "content": "<!doctype html><html><body><img src=\"x.png\"></body></html>"}),
+        )
+        .await;
+    assert_eq!(res.status().as_u16(), 200);
+    let img = upload(&d, &project, "hero.png", Some("s1")).await["files"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // index.html's history can no longer be written: the page is, its
+    // version is not.
+    let root = d
+        .state
+        .store
+        .project_root(&d.state.store.get_project(&project).unwrap())
+        .unwrap()
+        .dir;
+    let versions: Vec<_> = std::fs::read_dir(root.join(".file-versions"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.is_dir())
+        .collect();
+    assert_eq!(versions.len(), 1, "{versions:?}");
+    let locked = &versions[0];
+    std::fs::set_permissions(locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let status = write_src(&d, &project, &img, &[&img]).await;
+    std::fs::set_permissions(locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(status >= 400, "the version failed: {status}");
+    let page = d
+        .http
+        .get(format!("{}/api/projects/{project}/raw/index.html", d.base))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(page.contains(&img), "the page was written: {page}");
+    assert_eq!(release(&d, &project, "s1").await, 200);
+    assert!(
+        files(&d, &project).await.contains(&img),
+        "the page points to an image the release deleted"
     );
 }
