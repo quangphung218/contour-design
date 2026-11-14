@@ -279,6 +279,20 @@ impl DraftBook {
         })
     }
 
+    /// Images uploaded for `page` and deleted since (`gone`: the page's
+    /// draft session let them go, back from the back-forward cache): a
+    /// `src` typed as one of them goes back to what it held when clean,
+    /// as a comment draft loses the chip of such an image. Returns whether
+    /// `typed` changed; its other fields stay.
+    pub fn drop_images(&self, typed: &mut Drafts, page: &str, gone: &[String]) -> bool {
+        let lost = gone.iter().any(|p| relative_url(page, p) == typed.src);
+        let Some(clean) = self.clean.as_ref().filter(|c| lost && c.src != typed.src) else {
+            return false;
+        };
+        typed.src.clone_from(&clean.src);
+        true
+    }
+
     /// A write of `part` succeeded with the drafts `sent` (as they were when
     /// the write started): those fields are clean now. The other fields keep
     /// their state, so what the user typed in another tab, or while the
@@ -332,6 +346,21 @@ mod tests {
             text: "Fresh".into(),
             text_only: true,
         }
+    }
+
+    #[test]
+    fn an_image_deleted_with_its_session_leaves_the_src_typed_as_it() {
+        let img = el_with(vec![attr("src", "../hero.png")], "<img>", "");
+        let mut book = DraftBook::default();
+        let mut ui = book.read(&Drafts::default(), &img, false);
+        ui.src = "../assets/new.png".into();
+        ui.alt = "typed".into();
+        let gone = vec!["assets/new.png".to_owned()];
+        assert!(!book.drop_images(&mut ui, "pages/a.html", &["assets/other.png".into()]));
+        assert!(book.drop_images(&mut ui, "pages/a.html", &gone));
+        assert_eq!(ui.src, "../hero.png", "back to the source's");
+        assert_eq!(ui.alt, "typed", "the other fields stay");
+        assert!(!book.drop_images(&mut ui, "pages/a.html", &gone));
     }
 
     #[test]

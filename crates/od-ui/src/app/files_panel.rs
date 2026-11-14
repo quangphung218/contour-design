@@ -1229,8 +1229,22 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                                 .await
                                 .map(|_| ()),
                             };
-                            res.map_err(|e| (T::DeleteFailed, e))?;
-                            deleted.push(item.clone());
+                            match res {
+                                Ok(()) => deleted.push(item.clone()),
+                                // Gone already (the agent, Finder): the
+                                // server let what it kept by the file's
+                                // path go as for a delete, so does the
+                                // Studio; the failure still shows.
+                                Err(e)
+                                    if e.status == 404
+                                        && !e.project_missing()
+                                        && folder_of(item).is_none() =>
+                                {
+                                    deleted.push(item.clone());
+                                    return Err((T::DeleteFailed, e));
+                                }
+                                Err(e) => return Err((T::DeleteFailed, e)),
+                            }
                         }
                         Done::Deleted(items.len())
                     }
@@ -1260,6 +1274,10 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
                     .update_value(|m| m.retain(|p| !moving.contains(p)));
                 ctx.follow_moves(&moves);
                 ctx.follow_deletes(&gone);
+                // The server may have let more go than the Studio knows:
+                // comments left at a path by a file gone outside the app,
+                // once a file is renamed, moved or made there (QA-100).
+                ctx.reload_comments();
                 let result = res
                     .map(|done| done.show(ctx, ui))
                     .map_err(|(key, e)| ctx.failed_to(key, &e));
