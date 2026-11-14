@@ -783,6 +783,7 @@ impl StudioCtx {
             file: file.clone(),
             edits,
             label: None,
+            claim: Vec::new(),
         };
         let tools = self.tools;
         let path = format!("{}/source-edits", self.base());
@@ -1960,6 +1961,7 @@ mod tests {
                 ..SourceEdit::default()
             }],
             label: None,
+            claim: Vec::new(),
         }
     }
 

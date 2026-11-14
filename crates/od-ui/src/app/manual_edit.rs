@@ -417,40 +417,46 @@ impl StudioCtx {
         }
         m.busy.set(true);
         m.error.set(None);
-        let req = SourceEditRequest {
-            file,
-            edits,
-            label: Some(VERSION_LABEL.to_owned()),
-        };
+        let file_now = file.clone();
         let tools = self.tools;
-        let file = req.file.clone();
         // As sent: what is typed while it saves is not written yet.
         let sent = m.drafts();
         // An image uploaded for this element and written now is the
-        // page's: the server ships it from then on.
+        // page's: the server takes it in the same step as the write, so
+        // no release of this page's drafts can delete it after.
         let claim: Vec<String> = if part == mm::Part::Content {
             m.uploaded.with_value(|u| {
                 u.iter()
-                    .filter(|p| mm::relative_url(&file, p) == sent.src)
+                    .filter(|p| mm::relative_url(&file_now, p) == sent.src)
                     .cloned()
                     .collect()
             })
         } else {
             Vec::new()
         };
+        let req = SourceEditRequest {
+            file,
+            edits,
+            label: Some(VERSION_LABEL.to_owned()),
+            claim: claim.clone(),
+        };
+        let file = req.file.clone();
         let (base, session) = (self.base(), self.draft_session.get_value());
         // The write lands even if the Studio is left meanwhile; the panel
-        // shows it only while the Studio is there.
+        // shows it only while the Studio is there. One that puts a draft's
+        // image in the page holds the page's release until it is done, as
+        // a comment being sent does: else the release could delete the
+        // image before the write takes it.
+        let sends = self.shell.draft_sends;
+        let holds = !claim.is_empty();
+        if holds {
+            sends.update_value(|s| s.begin(&session));
+        }
         let path = format!("{base}/source-edits");
-        let claimed = claim.clone();
         let work = async move {
             let res = api::post::<_, SourceEditResponse>(&path, &req).await;
-            if res.is_ok() && !claimed.is_empty() {
-                let url = format!("{base}/drafts/{}/claim", api::seg(&session));
-                let body = od_contracts::ClaimDraftsRequest { paths: claimed };
-                if let Err(e) = api::post::<_, od_contracts::OkResponse>(&url, &body).await {
-                    leptos::logging::warn!("claim of uploaded images failed: {e:?}");
-                }
+            if holds && sends.try_update_value(|s| s.end(&session)) == Some(true) {
+                super::drafts::release(&base, &session);
             }
             res
         };

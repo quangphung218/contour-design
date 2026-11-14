@@ -683,6 +683,7 @@ for it") and spec.md (nothing the user made is lost unseen).
 | DL-48 | A sent comment's file renamed | Add, rename | The pin stays | P2 | auto |
 | DL-49 | A text edit not written, file renamed | Source edit fails, rename | Try again writes the renamed file | P2 | auto |
 | DL-50 | Manual change kept on a file not shown, renamed | Type, switch, rename | The change comes back on the new name | P2 | auto |
+| DL-51 | Manual image applied, Studio left before the write is saved | `source-edits` held, Projects, then let go | The page's image stays on disk and ships | P1 | auto |
 
 ## Not automated, and why
 

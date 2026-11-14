@@ -999,6 +999,39 @@ test('DL-50', 'Manual edit: a change kept on a file not shown follows that file 
   });
 });
 
+test('DL-51', 'Manual edit: an image applied, then leaving before the write is saved: the image stays with the page', async ({ d, newPage }) => {
+  const IMG = '<!doctype html><html><body><h1>Pictures</h1><img id="pic" src="x.png" alt="pic" style="width:80px;height:80px"></body></html>';
+  const id = await createProject(d, 'Manual image', { 'img.html': IMG });
+  const { page } = await newPage();
+  await page.goto(`${d.base}/projects/${id}`);
+  const frame = page.frameLocator('[data-testid="preview"]');
+  await fileRow(page, 'img.html').click();
+  await frame.locator('#pic').waitFor({ state: 'attached' });
+  await page.getByTestId('manual-edit-mode').click();
+  const panel = page.getByTestId('manual-edit-panel');
+  await panel.waitFor();
+  await panel.locator('[data-testid="manual-layer"][title="html > body:nth-of-type(1) > img:nth-of-type(1)"]').click();
+  await panel.getByTestId('manual-element').and(page.locator('[data-tag="img"]')).waitFor();
+  await panel.getByTestId('manual-tab-content').click();
+  // The write held until the Studio is left.
+  let release;
+  const held = new Promise((r) => { release = r; });
+  let seen = false;
+  await page.route(/\/source-edits$/, async (route) => { seen = true; await held; await route.continue(); });
+  await panel.getByTestId('manual-image-input').setInputFiles({ name: 'hero.png', mimeType: 'image/png', buffer: PNG });
+  await until(() => seen, 'the write sent');
+  const gone = released(page);
+  await page.getByRole('link', { name: 'Projects' }).first().click();
+  const dialog = page.getByTestId('leave-dialog');
+  if (await dialog.waitFor({ timeout: 1500 }).then(() => true, () => false)) await dialog.getByTestId('leave-go').click();
+  await until(async () => new URL(page.url()).pathname === '/projects', 'Projects opens');
+  release();
+  await gone;
+  assert.ok((await raw(d, id, 'img.html')).includes('src="assets/hero.png"'), 'the write saved');
+  assert.ok((await listFiles(d, id)).includes('assets/hero.png'), 'the page points to an image the release deleted');
+  assert.ok((await zipNames(d, id)).includes('assets/hero.png'), 'the page\'s image ships');
+});
+
 test('DL-43', 'A comment sent with its image, then Leave: the image stays and ships', async ({ d, newPage }) => {
   const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
   await typeNote(page, 'Sent');
