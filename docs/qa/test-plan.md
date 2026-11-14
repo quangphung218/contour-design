@@ -660,14 +660,29 @@ for it") and spec.md (nothing the user made is lost unseen).
 
 | ID | Scenario | Steps | Expected | P | Status |
 |---|---|---|---|---|---|
-| DL-28 | A comment with an image, then Leave | Draft + image, Projects ▸ Leave | Projects opens; the image is not left in `comments/` | P1 | auto (QA-096) |
-| DL-29 | Same, image still uploading | Image upload held, Projects ▸ Leave, upload lands | No file left in `comments/` | P1 | auto (QA-096) |
+| DL-28 | A comment with an image, then Leave | Draft + image, Projects ▸ Leave | Projects opens; the image is not left in `comments/` | P1 | auto (QA-096, fixed) |
+| DL-29 | Same, image still uploading | Image upload held, Projects ▸ Leave, upload lands | No file left in `comments/` | P1 | auto (QA-096, fixed) |
 | DL-30 | A comment draft, then a page reload | Draft with a note, reload | The browser asks before leaving | P1 | auto |
 | DL-31 | Drafts on two files | Draft on a.html and b.html, Projects | The question names both files | P1 | auto |
-| DL-32 | A file with a comment draft renamed | Draft on a.html, rename it to c.html in the Files panel | The note is kept on c.html, or the rename asks first | P2 | auto (QA-097) |
+| DL-32 | A file with a comment draft renamed | Draft on a.html, rename it to c.html in the Files panel | The note is kept on c.html, or the rename asks first | P2 | auto (QA-097, fixed) |
 | DL-33 | A file with a comment draft deleted | Draft with an image on a.html, delete a.html | The delete asks; afterwards no draft image left in `comments/` | P2 | auto |
-| DL-34 | Deck: the slide a comment is on goes | Draft on slide 2, the deck rewritten with 1 slide | The note can still be sent or discarded | P1 | auto (QA-098) |
-| DL-35 | A file with a Manual edit change not applied renamed | Typed in Content, rename page.html | The change is kept, or the rename asks; leaving still asks | P2 | auto (QA-097) |
+| DL-34 | Deck: the slide a comment is on goes | Draft on slide 2, the deck rewritten with 1 slide | The note can still be sent or discarded | P1 | auto (QA-098, fixed) |
+| DL-35 | A file with a Manual edit change not applied renamed | Typed in Content, rename page.html | The change is kept, or the rename asks; leaving still asks | P2 | auto (QA-097, fixed) |
+| DL-36 | Back, then Leave | Draft + image, browser Back ▸ Leave | No image left in `comments/` | P1 | auto |
+| DL-37 | Reload chosen, or the page crashes | Draft + image, reload ▸ Leave; then a crash (no request) | Reload: image deleted. Crash: image not in the ZIP | P1 | auto |
+| DL-38 | Add, then leave at once | Comment POST held, Projects, POST lands | The comment has its image; the release after it keeps it | P1 | auto |
+| DL-39 | A file with a draft moved into a folder | Files ▸ Move to | Note and image on `refs/a.html` | P2 | auto |
+| DL-40 | The folder holding it moved | Folder ▸ Move to | Note on the new path | P2 | auto |
+| DL-41 | The agent renames it | `files/rename` from outside the app | Draft and image go; the Studio names the file | P2 | auto |
+| DL-42 | Manual image uploaded, another file shown, Leave | Upload held, switch file, Leave | The image not applied is not left in `assets/` | P2 | auto |
+| DL-43 | A comment sent with an image, then Leave | Add, Projects | The image stays and ships | P1 | auto |
+| DL-44 | A rename that fails | Rename onto a name taken | Draft stays on the old name; a later delete outside the app takes it | P2 | auto |
+| DL-45 | Watcher before the rename's answer, image landing meanwhile | Rename answer and upload held | Words typed meanwhile, the image and the tab follow | P1 | auto |
+| DL-46 | Deck reloads while typing | Agent rewrites the deck mid-note | No key lost | P1 | auto |
+| DL-47 | Manual image written into the page | Upload on the image element, Leave | The image stays and ships | P1 | auto |
+| DL-48 | A sent comment's file renamed | Add, rename | The pin stays | P2 | auto |
+| DL-49 | A text edit not written, file renamed | Source edit fails, rename | Try again writes the renamed file | P2 | auto |
+| DL-50 | Manual change kept on a file not shown, renamed | Type, switch, rename | The change comes back on the new name | P2 | auto |
 
 ## Not automated, and why
 
