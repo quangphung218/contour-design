@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.38] - 2026-11-15
+
 ### Fixed
 
 - Studio: images attached to a comment not sent yet are no longer listed in the prompt of Hand off to coding agent. A file whose content is replaced from the Files panel at the path of such an image is now the project's and ships in the ZIP. An image whose comment page was left while its Manual edit write failed is deleted at once instead of after a day; one the disk refuses to delete stays out of the ZIP until a later release or sweep deletes it.
@@ -1196,7 +1198,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.37...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.38...HEAD
+[0.2.0-beta.38]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.37...v0.2.0-beta.38
 [0.2.0-beta.37]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.36...v0.2.0-beta.37
 [0.2.0-beta.36]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.35...v0.2.0-beta.36
 [0.2.0-beta.35]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.34...v0.2.0-beta.35
