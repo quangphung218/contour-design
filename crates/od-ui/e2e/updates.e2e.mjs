@@ -442,6 +442,8 @@ try {
   latest = { status: 200, body: latestJson('0.2.0-beta.99') };
   await app.evaluate(() => { window.__shell.delay = 400; });
   await checkNow();
+  // Hold the fake download at 1 MB so the checks below cannot race its timer.
+  await app.evaluate(() => { window.__shell.holdAt = 1_000_000; });
   await app.getByTestId('update-now').click();
   await app.getByTestId('update-progress').waitFor();
   await until(async () => (await appFocused()) === 'update-cancel', 'focus on Cancel');
@@ -453,6 +455,7 @@ try {
     'the download stays on screen, no check while updating',
   );
   await app.getByTestId('update-cancel').click();
+  await app.evaluate(() => { window.__shell.holdAt = null; });
   await appDialog.waitFor({ state: 'detached' });
   assert.ok((await calls()).includes('cancel_update'));
   assert.equal(await app.evaluate(() => window.__shell.installed), null, 'a cancelled update installs nothing');
