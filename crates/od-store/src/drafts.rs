@@ -178,8 +178,10 @@ enum Expect<'a> {
 
 /// Deletes the file `path` of a draft; one already gone is fine. Another
 /// file at that path (put there by the agent, Finder, an unzip, a restore)
-/// is the user's: it stays.
-fn delete_image(root: &ProjectRoot, path: &str, expect: Expect<'_>) {
+/// is the user's: it stays. False when the draft's file is still there (the
+/// disk refused the delete): its row must stay, or the file would ship as
+/// the project's.
+fn delete_image(root: &ProjectRoot, path: &str, expect: Expect<'_>) -> bool {
     let other = match expect {
         Expect::Any => false,
         Expect::Recorded(Some(ident), _) => file_ident(root, path).is_some_and(|now| now != ident),
@@ -188,11 +190,14 @@ fn delete_image(root: &ProjectRoot, path: &str, expect: Expect<'_>) {
     };
     if other {
         tracing::info!(path, "a draft image's path holds another file: kept");
-        return;
+        return true;
     }
     match files::delete_file(root, path) {
-        Ok(_) | Err(StoreError::FileNotFound) => {}
-        Err(e) => tracing::warn!(path, error = %e, "cannot delete a draft image"),
+        Ok(_) | Err(StoreError::FileNotFound) => true,
+        Err(e) => {
+            tracing::warn!(path, error = %e, "cannot delete a draft image");
+            false
+        }
     }
 }
 
@@ -219,6 +224,7 @@ impl Store {
         let root = self.root_for(project_id)?;
         self.with_conn(|conn| {
             if released(conn, session)? {
+                // No row to keep: a sweep never sees it if this fails.
                 delete_image(&root, path, Expect::Any);
                 return Ok(false);
             }
@@ -238,8 +244,8 @@ impl Store {
     }
 
     /// The session's page is gone: deletes every image it uploaded that
-    /// nothing took, and every one that lands later. Returns the paths
-    /// deleted.
+    /// nothing took, and every one that lands later. One the disk would not
+    /// delete keeps its row, for the sweep. Returns the paths released.
     ///
     /// # Errors
     /// A bad session id, project or SQLite errors.
@@ -262,14 +268,13 @@ impl Store {
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?
             };
-            for (path, at, ident) in &rows {
-                delete_image(&root, path, Expect::Recorded(ident.as_deref(), *at));
+            let mut paths = Vec::new();
+            for (path, at, ident) in rows {
+                if delete_image(&root, &path, Expect::Recorded(ident.as_deref(), at)) {
+                    forget(conn, project_id, &path)?;
+                    paths.push(path);
+                }
             }
-            let paths: Vec<String> = rows.into_iter().map(|(p, ..)| p).collect();
-            conn.execute(
-                "DELETE FROM draft_uploads WHERE project_id = ?1 AND session = ?2",
-                params![project_id, session],
-            )?;
             Ok(paths)
         })
     }
@@ -294,7 +299,8 @@ impl Store {
     }
 
     /// Deletes the draft images not taken uploaded at or before `before`
-    /// (ms), and forgets sessions released as long ago.
+    /// (ms), and forgets sessions released as long ago. One the disk would
+    /// not delete keeps its row, for the next sweep.
     fn drop_drafts_before(&self, before: i64) -> Result<usize> {
         let rows: Vec<(String, String, i64, Option<String>)> = self.with_conn(|conn| {
             let mut stmt = conn.prepare(
@@ -314,15 +320,18 @@ impl Store {
             let root = self.root_for(&project).ok();
             self.with_conn(|conn| {
                 // Taken meanwhile (a comment sent): it stays.
-                let n = conn.execute(
-                    "DELETE FROM draft_uploads WHERE project_id = ?1 AND path = ?2 \
-                     AND uploaded_at <= ?3",
+                let still: bool = conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM draft_uploads WHERE project_id = ?1 \
+                     AND path = ?2 AND uploaded_at <= ?3)",
                     params![project, path, before],
+                    |r| r.get(0),
                 )?;
-                if n > 0 {
-                    if let Some(root) = &root {
-                        delete_image(root, &path, Expect::Recorded(ident.as_deref(), at));
-                    }
+                let deleted = still
+                    && root.as_ref().is_none_or(|root| {
+                        delete_image(root, &path, Expect::Recorded(ident.as_deref(), at))
+                    });
+                if deleted {
+                    forget(conn, &project, &path)?;
                     gone += 1;
                 }
                 Ok(())
@@ -342,8 +351,10 @@ impl Store {
     /// puts them in a page, under the lock a release takes: once taken no
     /// release deletes them. One that is not there any more (a release
     /// came first) refuses the write rather than let the page point to
-    /// nothing. Give them back with [`Self::give_back_draft_uploads`] if
-    /// the write fails.
+    /// nothing; one taken already (a write tried again) is fine. Give them
+    /// back with [`Self::give_back_draft_uploads`] only if the write failed
+    /// before the page was written: once it is, they are the page's even
+    /// if a later step fails.
     ///
     /// # Errors
     /// [`StoreError::FileNotFound`] for an image gone, SQLite errors.
@@ -390,10 +401,24 @@ impl Store {
         })
     }
 
-    /// A write that took `taken` failed: they are drafts' images again.
+    /// A write that took `taken` failed before the page was written: they
+    /// are drafts' images again. One whose session was released meanwhile
+    /// goes at once, as an upload landing after it does.
     pub fn give_back_draft_uploads(&self, project_id: &str, taken: Vec<TakenDraft>) {
+        let root = self.root_for(project_id).ok();
         let res = self.with_conn(|conn| {
             for t in &taken {
+                if released(conn, &t.session)?
+                    && root.as_ref().is_some_and(|root| {
+                        delete_image(
+                            root,
+                            &t.path,
+                            Expect::Recorded(t.ident.as_deref(), t.uploaded_at),
+                        )
+                    })
+                {
+                    continue;
+                }
                 conn.execute(
                     "INSERT OR IGNORE INTO draft_uploads \
                      (project_id, path, session, uploaded_at, ident) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -813,6 +838,97 @@ mod tests {
             [],
         )
         .unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    #[test]
+    fn a_record_with_no_ident_takes_only_a_file_not_newer_than_it() {
+        let (_tmp, s, p, _) = store();
+        // `file_ident` could not read them when they were recorded.
+        let (img, _) = upload(&s, &p, "s1", "draft.png");
+        let (newer, _) = upload(&s, &p, "s1", "newer.png");
+        s.with_conn(|c| {
+            c.execute("UPDATE draft_uploads SET ident = NULL", [])?;
+            Ok(())
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+        // A file at `newer`'s path written a minute after its record: the
+        // agent's, the user's.
+        s.with_conn(|c| {
+            c.execute(
+                "UPDATE draft_uploads SET uploaded_at = uploaded_at - 60000 WHERE path = ?1",
+                [&newer],
+            )?;
+            Ok(())
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+        let full = s.stat_file(&p, &newer).unwrap_or_else(|e| panic!("{e}")).1;
+        std::fs::write(&full, b"written later").unwrap_or_else(|e| panic!("{e}"));
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(!exists(&s, &p, &img), "the draft's image went");
+        assert!(exists(&s, &p, &newer), "a file newer than the record stays");
+    }
+
+    #[test]
+    fn a_write_failing_after_its_session_was_released_deletes_its_images() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let taken = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        // The page went while the write ran, then the write failed.
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(exists(&s, &p, &img), "taken: the release leaves it");
+        s.give_back_draft_uploads(&p, taken);
+        assert!(!exists(&s, &p, &img), "no page will take it now");
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_draft_image_that_cannot_be_deleted_stays_a_drafts() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "stuck.png");
+        let (other, _) = upload(&s, &p, "s2", "other.png");
+        let full = s.stat_file(&p, &img).unwrap_or_else(|e| panic!("{e}")).1;
+        let dir = full.parent().unwrap_or_else(|| panic!("no folder"));
+        let lock = |mode| {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode))
+                .unwrap_or_else(|e| panic!("{e}"));
+        };
+        // The disk refuses the deletes: the files stay, and so do their
+        // rows, out of the ZIP and for the next release or sweep.
+        lock(0o555);
+        let released = s.release_draft_session(&p, "s1");
+        let all = s.release_all_draft_uploads();
+        lock(0o755);
+        released.unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(all.unwrap_or_else(|e| panic!("{e}")), 0, "none went");
+        assert!(exists(&s, &p, &img) && exists(&s, &p, &other));
+        assert_eq!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default(),
+            HashSet::from([img.clone(), other.clone()])
+        );
+        assert_eq!(s.release_all_draft_uploads().unwrap_or(0), 2);
+        assert!(!exists(&s, &p, &img) && !exists(&s, &p, &other));
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    #[test]
+    fn a_file_replaced_where_a_draft_image_is_is_the_users() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "a.png");
+        s.replace_file(&p, &img, b"the user's picture", "Edit")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty(),
+            "left out of the ZIP"
+        );
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(exists(&s, &p, &img));
     }
 
     #[test]
