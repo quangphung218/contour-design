@@ -7,7 +7,7 @@
 // system in localStorage, and warns before leaving with unsaved manual edits.
 
 import assert from 'node:assert/strict';
-import { test, run, createProject, until, sleep, waitTurn, writeFile } from './lib.mjs';
+import { test, run, createProject, until, sleep, waitTurn, writeFile, listFiles, OUT } from './lib.mjs';
 
 const PAGE = '<!doctype html><html><body><h1 data-od-id="t">Hello tea</h1>' +
   '<p class="lead" data-od-id="lead">Fresh leaves daily.</p></body></html>';
@@ -499,5 +499,201 @@ test('DL-26', 'A Duplicate that fails after Leave stays on the page, and a reloa
   });
   assert.equal(await panel.getByTestId('manual-text').inputValue(), 'Not applied');
 });
+
+// ------------------------------------------- §23: comment drafts (beta.35)
+
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
+const CPAGE = (t) => `<!doctype html><html><body><p id="pick" style="font-size:24px">${t}</p><p id="next">Next one</p></body></html>`;
+const fileRow = (page, path) => page.locator(`[data-testid="file-row"][data-path="${path}"]`);
+const commentImages = async (d, id) => (await listFiles(d, id)).filter((f) => f.startsWith('comments/'));
+
+/** Picks #pick in the preview until a comment box opens on it. */
+async function pickDraft(page, frame) {
+  await until(async () => {
+    await frame.locator('#pick').click({ timeout: 2000 });
+    return (await page.getByTestId('comment-draft').count()) === 1;
+  }, 'a comment draft');
+}
+
+/** Opens `files` in a new project, shows `file`, turns comment mode on and picks #pick. */
+async function commentDraft(newPage, d, files, file) {
+  const id = await createProject(d, 'Comment drafts', files);
+  const p = await newPage();
+  const { page } = p;
+  await page.goto(`${d.base}/projects/${id}`);
+  const frame = page.frameLocator('[data-testid="preview"]');
+  await fileRow(page, file).click();
+  await frame.locator('#pick').waitFor();
+  await page.getByTestId('comment-mode').click();
+  await pickDraft(page, frame);
+  return { ...p, id, frame };
+}
+
+/** Projects ▸ Leave on the question that names the files with work. */
+async function leaveToProjects(page) {
+  await page.getByRole('link', { name: 'Projects' }).first().click();
+  const dialog = page.getByTestId('leave-dialog');
+  await dialog.waitFor();
+  const named = await dialog.getByTestId('leave-files').locator('li').allTextContents();
+  await dialog.getByTestId('leave-go').click();
+  await until(async () => new URL(page.url()).pathname === '/projects', 'Projects opens');
+  return named;
+}
+
+test('DL-28', 'A comment with an image, left with Leave, leaves no image behind in comments/', async ({ d, newPage }) => {
+  const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
+  await page.getByTestId('comment-note').fill('Bigger title');
+  await page.getByTestId('comment-image-input').setInputFiles({ name: 'ref.png', mimeType: 'image/png', buffer: PNG });
+  await page.getByTestId('draft-image').waitFor();
+  assert.equal((await commentImages(d, id)).length, 1, 'the image uploaded');
+  assert.deepEqual(await leaveToProjects(page), ['a.html']);
+  // Leave throws the comment away, as Cancel does: Cancel deletes its images.
+  await until(async () => (await commentImages(d, id)).length === 0, 'the thrown-away image deleted', 4000).catch(async () => {
+    assert.fail(`after Leave the draft's image stays in the project: ${JSON.stringify(await commentImages(d, id))}`);
+  });
+}, { knownBug: 'QA-096' });
+
+test('DL-29', 'An image still uploading when the user leaves with Leave is not left in comments/', async ({ d, newPage }) => {
+  const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
+  let release;
+  const held = new Promise((r) => { release = r; });
+  let seen = false;
+  await page.route(/\/upload$/, async (route) => {
+    seen = true;
+    await held;
+    await route.continue();
+  });
+  await page.getByTestId('comment-note').fill('Wait for me');
+  await page.getByTestId('comment-image-input').setInputFiles({ name: 'slow.png', mimeType: 'image/png', buffer: PNG });
+  await until(() => seen, 'the upload sent');
+  await page.getByTestId('comment-uploading').waitFor();
+  assert.deepEqual(await leaveToProjects(page), ['a.html']);
+  release();
+  // The upload lands after Leave: nothing holds it any more.
+  await until(async () => (await commentImages(d, id)).length > 0, 'the upload landed', 4000).catch(() => {});
+  await until(async () => (await commentImages(d, id)).length === 0, 'no image left', 4000).catch(async () => {
+    assert.fail(`an image uploaded for a draft thrown away stays in the project: ${JSON.stringify(await commentImages(d, id))}`);
+  });
+}, { knownBug: 'QA-096' });
+
+test('DL-30', 'A page reload with a comment note not sent asks first', async ({ d, newPage }) => {
+  const { page } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
+  await page.getByTestId('comment-note').fill('Not sent yet');
+  let asked = 0;
+  page.on('dialog', async (dlg) => {
+    if (dlg.type() === 'beforeunload') asked++;
+    await dlg.dismiss().catch(() => {});
+  });
+  await page.evaluate(() => { location.reload(); });
+  await until(() => asked > 0, 'the browser asks before the reload', 3000).catch(() => {
+    assert.fail('a reload throws the comment note away without asking');
+  });
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Not sent yet');
+});
+
+test('DL-31', 'Comment drafts on two files: leaving names both', async ({ d, newPage }) => {
+  const { page, frame } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha'), 'b.html': CPAGE('Beta') }, 'a.html');
+  await page.getByTestId('comment-note').fill('On a');
+  await fileRow(page, 'b.html').click();
+  await frame.locator('#pick', { hasText: 'Beta' }).waitFor();
+  await pickDraft(page, frame);
+  await page.getByTestId('comment-note').fill('On b');
+  assert.deepEqual(await leaveToProjects(page), ['a.html', 'b.html']);
+});
+
+test('DL-32', 'Renaming a file that has a comment note not sent keeps the note or asks first', async ({ d, newPage }) => {
+  const { page, frame, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha'), 'z.html': CPAGE('Zed') }, 'a.html');
+  await page.getByTestId('comment-note').fill('Keep this note');
+  await page.getByTestId('comment-image-input').setInputFiles({ name: 'ren.png', mimeType: 'image/png', buffer: PNG });
+  await page.getByTestId('draft-image').waitFor();
+  await fileRow(page, 'a.html').hover();
+  await page.locator('.file-row', { has: fileRow(page, 'a.html') }).getByTestId('row-menu').click();
+  await page.getByTestId('row-rename').click();
+  await page.getByTestId('file-dialog-name').fill('c.html');
+  await page.getByTestId('file-dialog-confirm').click();
+  await fileRow(page, 'c.html').waitFor();
+  // The note is still there on c.html (or the rename asked; it did not).
+  await fileRow(page, 'c.html').click();
+  await frame.locator('#pick').waitFor();
+  await until(async () => (await page.getByTestId('comment-note').count()) === 1, 'the note on c.html', 3000).catch(async () => {
+    assert.fail(`renaming a.html threw its comment note away without a word; images now ${JSON.stringify(await commentImages(d, id))}`);
+  });
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Keep this note');
+}, { knownBug: 'QA-097' });
+
+test('DL-33', 'Deleting a file that has a comment draft with an image leaves no image behind', async ({ d, newPage }) => {
+  const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha'), 'z.html': CPAGE('Zed') }, 'a.html');
+  await page.getByTestId('comment-note').fill('Delete me');
+  await page.getByTestId('comment-image-input').setInputFiles({ name: 'del.png', mimeType: 'image/png', buffer: PNG });
+  await page.getByTestId('draft-image').waitFor();
+  await fileRow(page, 'a.html').hover();
+  await page.locator('.file-row', { has: fileRow(page, 'a.html') }).getByTestId('row-menu').click();
+  await page.getByTestId('row-delete').click();
+  const dialog = page.getByTestId('file-dialog');
+  await dialog.waitFor();
+  await page.getByTestId('file-dialog-confirm').click();
+  await fileRow(page, 'a.html').waitFor({ state: 'detached' });
+  await until(async () => (await commentImages(d, id)).length === 0, 'the draft image deleted', 4000).catch(async () => {
+    assert.fail(`the deleted file's draft image stays: ${JSON.stringify(await commentImages(d, id))}`);
+  });
+});
+
+test('DL-34', 'Deck: the agent drops the slide a comment is being written on; the note is kept', async ({ d, newPage }) => {
+  const deck = (n) => `<!doctype html><html><head><meta charset="utf-8"><style>
+.slide{display:none;height:100vh}.slide.active{display:block}</style></head><body>
+${Array.from({ length: n }, (_, k) => `<section class="slide${k ? '' : ' active'}"><h1 id="${k === 1 ? 'pick' : `h${k}`}">S${k + 1}</h1></section>`).join('\n')}
+<script>var i=0,s=[].slice.call(document.querySelectorAll('.slide'));
+function show(n){i=Math.max(0,Math.min(s.length-1,n));s.forEach(function(e,k){e.classList.toggle('active',k===i)});}
+addEventListener('keydown',function(e){if(e.key==='ArrowRight')show(i+1);if(e.key==='ArrowLeft')show(i-1);});
+addEventListener('message',function(e){var d=e.data||{};if(d.type==='od:slide:go'||d.type==='od-slide-go')show(d.index);});</script></body></html>`;
+  const id = await createProject(d, 'Deck drafts', { 'deck.html': deck(3) });
+  const { page } = await newPage();
+  await page.goto(`${d.base}/projects/${id}`);
+  const frame = page.frameLocator('[data-testid="preview"]');
+  await fileRow(page, 'deck.html').click();
+  const counter = page.getByTestId('deck-counter');
+  await until(async () => (await counter.textContent()) === '1 / 3', 'deck 1 / 3');
+  await page.getByTestId('deck-next').click();
+  await until(async () => (await counter.textContent()) === '2 / 3', 'deck 2 / 3');
+  await page.getByTestId('comment-mode').click();
+  await pickDraft(page, frame);
+  await page.getByTestId('comment-note').fill('Slide two note');
+  await writeFile(d, id, 'deck.html', deck(1));
+  await until(async () => (await counter.textContent()) === '1 / 1', 'deck rewritten to 1 slide');
+  // The note must not be lost: shown, or kept with "pick again" / "on slide 2".
+  const kept = async () => {
+    if (await page.getByTestId('comment-note').count()) return page.getByTestId('comment-note').inputValue();
+    return null;
+  };
+  const note = await until(kept, 'the note still reachable', 3000).catch(() => null);
+  if (note !== 'Slide two note') {
+    await page.screenshot({ path: `${OUT}/DL-34-deck-slide-gone.png` });
+    const elsewhere = await page.getByTestId('comment-elsewhere').count();
+    // Is the draft still held? Leaving says so.
+    await page.getByRole('link', { name: 'Projects' }).first().click();
+    const dialog = page.getByTestId('leave-dialog');
+    const asked = await dialog.waitFor({ timeout: 2000 }).then(() => true, () => false);
+    const named = asked ? await dialog.getByTestId('leave-files').locator('li').allTextContents() : [];
+    assert.fail(`the note on slide 2 cannot be seen after the deck lost slide 2 (box ${await page.getByTestId('comment-draft').count()}, "go to slide" ${elsewhere}); ` +
+      (asked ? `yet leaving still asks about ${JSON.stringify(named)}: work held that cannot be reached or discarded` : 'and leaving does not ask: it is gone'));
+  }
+}, { knownBug: 'QA-098' });
+
+test('DL-35', 'Renaming a file with a Manual edit change not applied keeps the change or asks first', async ({ d, newPage }) => {
+  const { page, panel, id } = await editLead(newPage, d);
+  await writeFile(d, id, 'z.html', CPAGE('Zed'));
+  await fileRow(page, 'z.html').waitFor();
+  await panel.getByTestId('manual-text').fill('Typed, not applied');
+  await fileRow(page, 'page.html').hover();
+  await page.locator('.file-row', { has: fileRow(page, 'page.html') }).getByTestId('row-menu').click();
+  await page.getByTestId('row-rename').click();
+  await page.getByTestId('file-dialog-name').fill('renamed.html');
+  await page.getByTestId('file-dialog-confirm').click();
+  await fileRow(page, 'renamed.html').waitFor();
+  // The change not applied is still somewhere: leaving asks about it.
+  await page.getByRole('link', { name: 'Projects' }).first().click();
+  const asked = await page.getByTestId('leave-dialog').waitFor({ timeout: 2000 }).then(() => true, () => false);
+  assert.ok(asked, 'renaming the file threw the Manual edit change away: leaving no longer asks');
+}, { knownBug: 'QA-097' });
 
 await run('drafts');
