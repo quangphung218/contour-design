@@ -428,7 +428,7 @@ impl Store {
         let file = files::write_file(&root, name, bytes, overwrite, artifact_manifest)?;
         self.forget_draft_row(project_id, &file.name)?;
         if !existed {
-            self.forget_comments_at(project_id, &file.name)?;
+            self.forget_comments_at(&root, project_id, &file.name)?;
         }
         // Like the original app, every HTML save lands in the history.
         if is_html_name(&file.name)
@@ -454,7 +454,7 @@ impl Store {
         let _guard = self.versions_guard();
         let file = files::create_file_exact(&root, name, bytes)?;
         self.forget_draft_row(project_id, &file.name)?;
-        self.forget_comments_at(project_id, &file.name)?;
+        self.forget_comments_at(&root, project_id, &file.name)?;
         if is_html_name(&file.name)
             && let Ok(text) = std::str::from_utf8(bytes)
         {
@@ -469,8 +469,14 @@ impl Store {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         let (old_name, file) = files::rename_file(&root, from, to)?;
-        versions::rename_store(&root.dir, &old_name, &file.name)?;
-        self.follow_renames(project_id, &[(old_name, file.name.clone())])?;
+        if let Err(err) =
+            self.follow_renames(&root, project_id, &[(old_name.clone(), file.name.clone())])
+        {
+            // All or nothing: the file back at its old name, where what
+            // is recorded by path still is.
+            files::put_back(&root, &file.name, &old_name);
+            return Err(err);
+        }
         Ok(file)
     }
 
@@ -482,23 +488,25 @@ impl Store {
         // A draft's image deleted (its x, Cancel), or found gone already
         // (the agent, Finder): no longer one to release, and a file put at
         // its path later is not taken for it. The comments on the file go
-        // too (QA-100), and comments sent with it as an image lose it.
+        // too (QA-100), and comments sent with it as an image lose it. It
+        // is no longer the project's entry page, and its history closes:
+        // neither goes to the next file at its name.
         let forget = |rel: &str| {
             self.with_conn(|conn| {
                 crate::drafts::forget(conn, project_id, rel)?;
-                Ok(crate::comments::forget(conn, project_id, rel)?)
-            })
+                crate::comments::forget(conn, project_id, rel)?;
+                forget_entry(conn, project_id, rel, false)
+            })?;
+            versions::mark_deleted(&root.dir, rel)
         };
-        let rel = match files::delete_file(&root, name) {
-            Ok(rel) => rel,
+        match files::delete_file(&root, name) {
+            Ok(rel) => forget(&rel),
             Err(StoreError::FileNotFound) => {
                 forget(&validate_project_path(name)?)?;
-                return Err(StoreError::FileNotFound);
+                Err(StoreError::FileNotFound)
             }
-            Err(e) => return Err(e),
-        };
-        forget(&rel)?;
-        versions::mark_deleted(&root.dir, &rel)
+            Err(e) => Err(e),
+        }
     }
 
     /// A file written at `path` that is not a draft's: a row a draft left
@@ -509,14 +517,27 @@ impl Store {
 
     /// A new file at `path` (none was there): comments left there by a
     /// file gone outside the app are not about it (QA-100).
-    fn forget_comments_at(&self, project_id: &str, path: &str) -> Result<()> {
-        self.with_conn(|conn| Ok(crate::comments::forget(conn, project_id, path)?))
+    /// Nor does a history a page renamed to that name (not a page's) took
+    /// along ([`versions::rename_store`]).
+    /// The caller holds [`Self::versions_guard`].
+    fn forget_comments_at(&self, root: &ProjectRoot, project_id: &str, path: &str) -> Result<()> {
+        self.with_conn(|conn| Ok(crate::comments::forget(conn, project_id, path)?))?;
+        if is_html_name(path) {
+            return Ok(());
+        }
+        versions::mark_deleted(&root.dir, path)
     }
 
     /// What is recorded by path follows files renamed or moved: the
     /// comments sent on them (their pins and images, QA-099), the images
-    /// of drafts, and the project's entry file.
-    fn follow_renames(&self, project_id: &str, pairs: &[(String, String)]) -> Result<()> {
+    /// of drafts, the project's entry file, and the histories. All or
+    /// nothing: on an error none moved (the caller puts the files back).
+    fn follow_renames(
+        &self,
+        root: &ProjectRoot,
+        project_id: &str,
+        pairs: &[(String, String)],
+    ) -> Result<()> {
         self.with_conn(|conn| {
             let tx = conn.unchecked_transaction()?;
             crate::comments::renamed(&tx, project_id, pairs)?;
@@ -529,7 +550,26 @@ impl Store {
                     rusqlite::params![project_id, from, to],
                 )?;
             }
-            tx.commit()?;
+            let mut moved: Vec<&(String, String)> = Vec::new();
+            let undo = |moved: &[&(String, String)]| {
+                for (from, to) in moved.iter().rev() {
+                    let _ = versions::rename_store(&root.dir, to, from);
+                }
+            };
+            for pair in pairs {
+                match versions::rename_store(&root.dir, &pair.0, &pair.1) {
+                    Ok(true) => moved.push(pair),
+                    Ok(false) => {}
+                    Err(err) => {
+                        undo(&moved);
+                        return Err(err);
+                    }
+                }
+            }
+            if let Err(err) = tx.commit() {
+                undo(&moved);
+                return Err(err.into());
+            }
             Ok(())
         })
     }
@@ -590,9 +630,10 @@ impl Store {
         // do the comments on its files, and the images in it from comments.
         self.with_conn(|conn| {
             crate::drafts::forget_folder(conn, project_id, &rel)?;
-            Ok(crate::comments::forget_folder(conn, project_id, &rel)?)
+            crate::comments::forget_folder(conn, project_id, &rel)?;
+            forget_entry(conn, project_id, &rel, true)
         })?;
-        for name in held.iter().filter(|n| is_html_name(n)) {
+        for name in &held {
             versions::mark_deleted(&root.dir, name)?;
         }
         Ok(rel)
@@ -607,10 +648,10 @@ impl Store {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         let (rel, renamed) = files::move_folder(&root, from, to)?;
-        for (old, new) in &renamed {
-            versions::rename_store(&root.dir, old, new)?;
+        if let Err(err) = self.follow_renames(&root, project_id, &renamed) {
+            files::put_back(&root, &rel, &validate_project_path(from)?);
+            return Err(err);
         }
-        self.follow_renames(project_id, &renamed)?;
         Ok((rel, renamed.len()))
     }
 
@@ -629,11 +670,11 @@ impl Store {
         let uploaded = files::upload_file(&root, dir, original_name, bytes)?;
         // Not a draft's until the caller records it so.
         self.forget_draft_row(project_id, &uploaded.path)?;
-        self.forget_comments_at(project_id, &uploaded.path)?;
+        let _guard = self.versions_guard();
+        self.forget_comments_at(&root, project_id, &uploaded.path)?;
         if is_html_name(&uploaded.name)
             && let Ok(text) = std::str::from_utf8(bytes)
         {
-            let _guard = self.versions_guard();
             versions::ensure_current_version(&root.dir, &uploaded.name, text, manual())?;
         }
         Ok(uploaded)
@@ -792,6 +833,33 @@ impl Store {
     }
 }
 
+/// The project's entry file is `path` (or under folder `path`, `folder`),
+/// gone: it no longer names one, so the cover falls back
+/// ([`files::ProjectRoot::cover_html`]) rather than to the next file put
+/// at that name.
+fn forget_entry(
+    conn: &rusqlite::Connection,
+    project_id: &str,
+    path: &str,
+    folder: bool,
+) -> Result<()> {
+    let (pattern, len) = if folder {
+        let prefix = format!("{}/", path.trim_end_matches('/'));
+        let len = i64::try_from(prefix.len()).unwrap_or(i64::MAX);
+        (prefix, len)
+    } else {
+        (path.to_owned(), -1)
+    };
+    conn.execute(
+        "UPDATE projects SET metadata_json = json_remove(metadata_json, '$.entryFile') \
+         WHERE id = ?1 AND json_valid(metadata_json) AND CASE WHEN ?3 < 0 \
+         THEN json_extract(metadata_json, '$.entryFile') = ?2 \
+         ELSE substr(json_extract(metadata_json, '$.entryFile'), 1, ?3) = ?2 END",
+        rusqlite::params![project_id, pattern, len],
+    )?;
+    Ok(())
+}
+
 pub(crate) fn manual() -> NewVersion {
     NewVersion {
         source: Some(VersionSource::Manual),
@@ -815,4 +883,52 @@ fn non_empty(value: Option<String>) -> Option<String> {
 
 fn truncate_chars(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use od_contracts::CreateProjectRequest;
+
+    /// The second history cannot follow: the first one, moved already,
+    /// goes back, so no history sits under a name its file does not have.
+    #[cfg(unix)]
+    #[test]
+    fn histories_moved_before_one_that_cannot_follow_go_back() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let s = Store::open(DataDir::new(tmp.path())).unwrap_or_else(|e| panic!("{e}"));
+        let (project, _) = s
+            .create_project(CreateProjectRequest {
+                name: "p".into(),
+                ..CreateProjectRequest::default()
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        let p = project.id.clone();
+        for name in ["a.html", "b.html"] {
+            s.write_file(&p, name, b"<p>x</p>", true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        let root = s.project_root(&project).unwrap_or_else(|e| panic!("{e}"));
+        let manifest = |name: &str| {
+            let digest = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(name.as_bytes()));
+            root.dir
+                .join(versions::VERSION_ROOT)
+                .join(&digest[..24])
+                .join("manifest.json")
+        };
+        let mode = |m| fs::set_permissions(manifest("b.html"), fs::Permissions::from_mode(m));
+        mode(0o444).unwrap_or_else(|e| panic!("{e}"));
+        let pairs = [
+            ("a.html".to_owned(), "x.html".to_owned()),
+            ("b.html".to_owned(), "y.html".to_owned()),
+        ];
+        let res = s.follow_renames(&root, &p, &pairs);
+        mode(0o644).unwrap_or_else(|e| panic!("{e}"));
+        assert!(res.is_err());
+        for (name, len) in [("a.html", 1), ("b.html", 1), ("x.html", 0), ("y.html", 0)] {
+            let list = versions::list_versions(&root.dir, name).unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(list.len(), len, "{name}");
+        }
+    }
 }

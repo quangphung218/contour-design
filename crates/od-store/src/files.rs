@@ -363,24 +363,56 @@ pub fn rename_file(root: &ProjectRoot, from: &str, to: &str) -> Result<(String, 
     if !source_meta.is_file() {
         return Err(StoreError::FileNotFound);
     }
-    let target = root.resolve(&new_name)?;
+    let mut target = root.resolve(&new_name)?;
+    let mut new_name = new_name;
     if source == target {
-        return Ok((old_name, describe(&root.real_dir(), new_name, &source_meta)));
-    }
-    if fs::symlink_metadata(&target).is_ok() {
+        if old_name == new_name {
+            return Ok((old_name, describe(&root.real_dir(), new_name, &source_meta)));
+        }
+        // One file under both names: a file system that folds case
+        // (APFS: `a.html` → `A.html`), or a link. The file takes the new
+        // name on disk too, not only in what is recorded by path.
+        if fs::symlink_metadata(root.dir.join(&old_name))
+            .map_err(StoreError::from_file_io)?
+            .is_symlink()
+        {
+            return Err(StoreError::FileExists);
+        }
+        target = root.real_dir().join(&new_name);
+    } else if fs::symlink_metadata(&target).is_ok() {
         return Err(StoreError::FileExists);
     }
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
     fs::rename(&source, &target)?;
+    // The name as stored (a folder's case is the folder's own).
+    if let Ok(real) = fs::canonicalize(&target) {
+        new_name = to_project_path(&root.real_dir(), &real);
+        target = real;
+    }
     let old_sidecar = root.resolve(&format!("{old_name}{ARTIFACT_SUFFIX}"))?;
     if old_sidecar.is_file() {
-        let new_sidecar = root.resolve(&format!("{new_name}{ARTIFACT_SUFFIX}"))?;
+        let new_sidecar = root.real_dir().join(format!("{new_name}{ARTIFACT_SUFFIX}"));
         fs::rename(old_sidecar, new_sidecar)?;
     }
     let meta = fs::metadata(&target)?;
     Ok((old_name, describe(&root.real_dir(), new_name, &meta)))
+}
+
+/// Undoes [`rename_file`] or [`move_folder`] (`now` back to `was`) when what
+/// follows the rename failed. Best effort: the error being reported is the
+/// one that made the undo needed.
+pub fn put_back(root: &ProjectRoot, now: &str, was: &str) {
+    let real = root.real_dir();
+    let (now_path, was_path) = (real.join(now), real.join(was));
+    if fs::rename(&now_path, &was_path).is_err() {
+        return;
+    }
+    let sidecar = |p: &str| real.join(format!("{p}{ARTIFACT_SUFFIX}"));
+    if was_path.is_file() && sidecar(now).is_file() {
+        let _ = fs::rename(sidecar(now), sidecar(was));
+    }
 }
 
 /// Candidate names `name`, `name-1`, `name-2`…
@@ -641,6 +673,29 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
         assert!(!target.exists(), "no fallback write when the name is taken");
+    }
+
+    /// A link renamed to the name of the file it points at is not that
+    /// file renamed (what is recorded by path must not move to it).
+    #[cfg(unix)]
+    #[test]
+    fn a_link_renamed_onto_its_own_target_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.html"), b"<p>").unwrap();
+        std::os::unix::fs::symlink("a.html", tmp.path().join("b.html")).unwrap();
+        let root = ProjectRoot {
+            dir: tmp.path().to_path_buf(),
+            imported: false,
+        };
+        assert!(matches!(
+            rename_file(&root, "b.html", "a.html"),
+            Err(StoreError::FileExists)
+        ));
+        assert!(
+            fs::symlink_metadata(tmp.path().join("b.html"))
+                .unwrap()
+                .is_symlink()
+        );
     }
 
     #[test]
