@@ -309,6 +309,20 @@ fn UpdateModal(
             state.set(None);
         });
     });
+    // Restart into the update: the leave guard asks first if work would
+    // be lost, with this dialog gone (closed as `close` does). Cancel keeps
+    // the page; the update waits for the next start.
+    let shell = super::Shell::get();
+    let restart = move || {
+        tasks.spawn(async move {
+            gloo_timers::future::TimeoutFuture::new(0).await;
+            state.set(None);
+            super::leave_guard::leave_then(shell, |release| {
+                release.now();
+                desktop::restart_app();
+            });
+        });
+    };
     // While installing the files are being replaced: Cancel only before that.
     let cancel = Callback::new(move |()| {
         if phase.get_untracked() != Phase::Installing {
@@ -382,7 +396,7 @@ fn UpdateModal(
                     <div class="dialog-foot">
                         <button class="btn" data-testid="update-close" on:click=move |_| close.run(())>{t(T::Later)}</button>
                         <button class="btn primary" data-testid="update-restart"
-                            on:click=move |_| desktop::restart_app()>{icon(Glyph::Refresh)}{t(T::RestartApp)}</button>
+                            on:click=move |_| restart()>{icon(Glyph::Refresh)}{t(T::RestartApp)}</button>
                     </div>
                 </Modal>
             }

@@ -57,10 +57,11 @@ pub struct Waiting {
 }
 
 impl CommentDraft {
-    /// Holds something the user would lose: a note or an image.
+    /// Holds something the user would lose: a note, an image, or one on
+    /// its way (leaving would drop it, and its file would stay unseen).
     #[must_use]
     pub fn unsent(&self) -> bool {
-        !self.note.trim().is_empty() || !self.images.is_empty()
+        !self.note.trim().is_empty() || !self.images.is_empty() || !self.uploads.is_empty()
     }
 }
 
@@ -121,18 +122,23 @@ fn take_waiting(drafts: &mut CommentDrafts, file: &str) -> Option<CommentDraft> 
     drafts.insert(file.to_owned(), new_draft(w.picked, w.slide))
 }
 
-/// `file`'s draft saved with the images `sent`: it goes, unless images
-/// came to it meanwhile (or are still on the way). Those stay in it, for
-/// the next comment, rather than be lost unseen with their files kept.
-fn sent_draft(drafts: &mut CommentDrafts, file: &str, sent: &[String]) {
+/// `file`'s draft saved with the note `note` and the images `sent`: it
+/// goes, unless something came to it meanwhile: images (or ones still on
+/// the way), or words typed while it was sent. Those stay in it, for the
+/// next comment, rather than be lost unseen. The note stays whole once
+/// typed into: the user sees what was sent and takes it from there.
+fn sent_draft(drafts: &mut CommentDrafts, file: &str, note: &str, sent: &[String]) {
     let Some(d) = drafts.get_mut(file) else {
         return;
     };
     d.images.retain(|p| !sent.contains(p));
-    if d.images.is_empty() && d.uploads.is_empty() {
+    let typed = d.note.trim() != note;
+    if !typed && d.images.is_empty() && d.uploads.is_empty() {
         drafts.remove(file);
     } else {
-        d.note.clear();
+        if !typed {
+            d.note.clear();
+        }
         d.sending = false;
     }
 }
@@ -383,7 +389,7 @@ fn add_comment(
         html_hint: String::new(),
         // The slide it was picked on, not the one shown now.
         slide_index: d.slide,
-        note,
+        note: note.clone(),
         status: Some(CommentStatus::Attached),
         attachments: d.images.clone(),
     };
@@ -404,8 +410,9 @@ fn add_comment(
         Ok(r) => {
             ctx.comments.update(|c| c.push(r.comment));
             // Sent: nothing left to ask about, shown or not, but images
-            // that came meanwhile.
-            ctx.comment_drafts.update(|d| sent_draft(d, &file, &sent));
+            // or words that came meanwhile.
+            ctx.comment_drafts
+                .update(|d| sent_draft(d, &file, &note, &sent));
         }
         Err(e) => {
             set_sending(&file, false);
@@ -916,7 +923,7 @@ mod draft_tests {
         pick_draft(&mut drafts, "a.html", picked("h1"), None);
         typed(&mut drafts, "a.html", "Bigger", &["comments/a.png"]);
         let sent = ["comments/a.png".to_owned()];
-        sent_draft(&mut drafts, "a.html", &sent);
+        sent_draft(&mut drafts, "a.html", "Bigger", &sent);
         assert!(drafts.is_empty(), "all sent: the draft goes");
         pick_draft(&mut drafts, "a.html", picked("h1"), None);
         typed(
@@ -926,15 +933,65 @@ mod draft_tests {
             &["comments/a.png", "comments/late.png"],
         );
         drafts.get_mut("a.html").unwrap().sending = true;
-        sent_draft(&mut drafts, "a.html", &sent);
+        sent_draft(&mut drafts, "a.html", "Bigger", &sent);
         let d = &drafts["a.html"];
         assert_eq!(d.images, ["comments/late.png"], "kept, not lost unseen");
         assert_eq!((d.note.as_str(), d.sending), ("", false));
         // One still on its way: the draft waits for it.
         drafts.get_mut("a.html").unwrap().images.clear();
         drafts.get_mut("a.html").unwrap().uploads.push(7);
-        sent_draft(&mut drafts, "a.html", &[]);
+        sent_draft(&mut drafts, "a.html", "", &[]);
         assert!(drafts.contains_key("a.html"));
+    }
+
+    #[test]
+    fn words_typed_while_it_is_sent_stay_in_the_draft() {
+        let mut drafts = CommentDrafts::new();
+        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        typed(&mut drafts, "a.html", "Bigger ", &["comments/a.png"]);
+        drafts.get_mut("a.html").unwrap().sending = true;
+        // Typed on while the comment was saved.
+        drafts.get_mut("a.html").unwrap().note = "Bigger, and bolder".to_owned();
+        let sent = ["comments/a.png".to_owned()];
+        sent_draft(&mut drafts, "a.html", "Bigger", &sent);
+        let d = drafts.get("a.html").expect("not dropped unseen");
+        assert_eq!(
+            (d.note.as_str(), d.images.len(), d.sending),
+            ("Bigger, and bolder", 0, false)
+        );
+        // Words and a late image: both stay.
+        typed(
+            &mut drafts,
+            "a.html",
+            "Again more",
+            &["comments/a.png", "comments/b.png"],
+        );
+        sent_draft(&mut drafts, "a.html", "Again", &sent);
+        let d = &drafts["a.html"];
+        assert_eq!(
+            (d.note.as_str(), d.images.as_slice()),
+            ("Again more", &["comments/b.png".to_owned()][..])
+        );
+        // Only spaces added: nothing to keep.
+        typed(&mut drafts, "a.html", "Same  ", &[]);
+        sent_draft(&mut drafts, "a.html", "Same", &[]);
+        assert!(drafts.is_empty());
+    }
+
+    #[test]
+    fn an_image_on_its_way_is_work_not_sent() {
+        let mut drafts = CommentDrafts::new();
+        pick_draft(&mut drafts, "a.html", picked("h1"), None);
+        assert!(
+            unsent_files(&drafts).is_empty(),
+            "an element picked, nothing more"
+        );
+        drafts.get_mut("a.html").unwrap().uploads.push(3);
+        assert_eq!(
+            unsent_files(&drafts),
+            ["a.html"],
+            "leaving would drop the image"
+        );
     }
 
     #[test]

@@ -347,6 +347,18 @@ fn Shelled() -> impl IntoView {
     let menu = window_event_listener(
         leptos::ev::Custom::<web_sys::CustomEvent>::new("od:menu"),
         move |ev| match ev.detail().as_string().as_deref() {
+            // File ▸ Open Folder…: the shell imported the folder; its
+            // Studio opens through the leave guard. A full load, as the
+            // palette's: the Studio reads its project once.
+            Some(open) if open.starts_with(OPEN_PROJECT_MENU) => {
+                let path = format!("/projects/{}", api::seg(&open[OPEN_PROJECT_MENU.len()..]));
+                leave_guard::leave_then(shell, move |release| {
+                    release.now();
+                    if let Some(w) = web_sys::window() {
+                        let _ = w.location().assign(&path);
+                    }
+                });
+            }
             Some("shortcuts") => shell.shortcuts.set(true),
             Some("palette") => shell.palette.set(true),
             Some("settings") => click_link("/settings"),
@@ -469,6 +481,10 @@ fn ShellNotice() -> impl IntoView {
 }
 
 /// Window event that toggles the sidebar (Cmd/Ctrl+B, desktop menu).
+/// The desktop shell's `od:menu` detail for File ▸ Open Folder…: this,
+/// then the id of the project the folder was imported as.
+const OPEN_PROJECT_MENU: &str = "open-project:";
+
 const TOGGLE_SIDEBAR_EVENT: &str = "od:toggle-sidebar";
 
 /// Follows the sidebar link to `href` as if clicked.

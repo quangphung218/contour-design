@@ -627,10 +627,23 @@ addEventListener('keydown', function (e) {
   await page.keyboard.press('End');
   await page.keyboard.type(' still');
   assert.equal(await page.getByTestId('comment-note').inputValue(), 'Hidden on two still');
-  // Given up for the element picked on slide 1: a new draft there, empty.
+  // Go let the pick on slide 1 go: back there, no box says so again.
   await page.getByTestId('deck-prev').click();
   await onSlide('A one', '1 / 3');
+  await stays(async () => (await elsewhere.count()) === 0, 'the pick let go by Go asks again on slide 1');
+  // Given up for the element picked on slide 1: a new draft there, empty.
   await pickOne();
+  // Over slide 3 neither the draft (slide 2) nor the pick (slide 1) shows.
+  await page.getByTestId('deck-next').click();
+  await onSlide('A two', '2 / 3');
+  await page.getByTestId('deck-next').click();
+  await onSlide('A three', '3 / 3');
+  await stays(async () => (await elsewhere.count()) === 0 && (await page.getByTestId('comment-draft').count()) === 0, 'a box over slide 3');
+  await page.getByTestId('deck-prev').click();
+  await onSlide('A two', '2 / 3');
+  await page.getByTestId('deck-prev').click();
+  await onSlide('A one', '1 / 3');
+  await elsewhere.waitFor();
   await page.getByTestId('comment-elsewhere-discard').click();
   await page.getByTestId('comment-draft').waitFor();
   assert.match(await page.getByTestId('comment-draft').textContent(), /A one/, 'on the element picked');
@@ -674,7 +687,17 @@ addEventListener('keydown', function (e) {
   await frame.locator('#other').waitFor();
   await page.getByTestId('comment-draft').waitFor();
   assert.ok(await page.getByTestId('comment-add').isDisabled(), 'Add again while it is sent');
+  // Words typed while it is sent are not dropped when it lands.
+  await page.getByTestId('comment-note').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(', and more');
   await post.release();
+  await until(async () => commentPosts.length === posted + 1, 'the comment sent');
+  await until(async () => !(await page.getByTestId('comment-add').isDisabled()), 'the draft is not sent any more');
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'Sent once, and more', 'words typed while it was sent');
+  assert.equal(commentPosts.at(-1).note, 'Sent once', 'sent as it was');
+  assert.equal(await page.getByTestId('draft-image').count(), 0, 'the image went with the comment');
+  await page.getByTestId('comment-cancel').click();
   await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
   assert.equal(commentPosts.length, posted + 1, 'sent once');
   assert.ok((await files()).includes(sendingImage), 'the image of the comment sent is kept');
@@ -1074,7 +1097,67 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await desk.getByTestId('leave-go').click();
   await until(async () => (await answers()).at(-1) === 'close_answer go', 'Leave tells the shell to close');
   assert.deepEqual((await answers()).slice(before), ['close_answer asking', 'close_answer stay', 'close_answer asking', 'close_answer go']);
-  results.menuClose = 'the page tells the desktop shell whether it holds work not saved (set_unsaved); od:menu close / quit answers go at once with nothing unsaved, else asks with the leave dialog naming the file (asking, then stay on Cancel with the edit kept, go on Leave)';
+  // A fresh page (the stub's Leave closes nothing): it tells the shell
+  // again. Work in any file counts, a comment too, and an image still
+  // uploading for it with nothing typed.
+  await desk.reload();
+  await until(async () => (await lastUnsaved()) === 'set_unsaved false', 'the page loaded again tells the shell it holds nothing');
+  await desk.locator('[data-testid="file-row"][data-path="reload.html"]').click();
+  await deskPage.locator('h1').waitFor();
+  await desk.getByTestId('comment-mode').click();
+  await until(async () => {
+    await deskPage.locator('h1').click({ timeout: 2000 });
+    return (await desk.getByTestId('comment-note').count()) === 1;
+  }, 'a comment draft on reload.html');
+  await stays(async () => (await lastUnsaved()) === 'set_unsaved false', 'an element picked, nothing more, is no work', 500);
+  let releaseUpload;
+  const uploadGate = new Promise((r) => { releaseUpload = r; });
+  let uploadHit;
+  const uploadSeen = new Promise((r) => { uploadHit = r; });
+  await desk.route(/\/upload$/, async (route) => { uploadHit(); await uploadGate; await route.continue(); });
+  await desk.getByTestId('comment-image-input').setInputFiles({ name: 'quit.png', mimeType: 'image/png', buffer: PNG });
+  await uploadSeen;
+  await until(async () => (await lastUnsaved()) === 'set_unsaved true', 'an image on its way is work not saved');
+  await menu('quit');
+  await desk.getByTestId('leave-dialog').waitFor();
+  assert.equal((await desk.getByTestId('leave-files').innerText()).trim(), 'reload.html', 'the image uploading for reload.html');
+  await desk.getByTestId('leave-stay').click();
+  releaseUpload();
+  await desk.getByTestId('draft-image').waitFor();
+  await desk.unroute(/\/upload$/);
+  // A comment typed, then another file shown: the question names the
+  // draft's file, not the one shown.
+  await desk.getByTestId('comment-note').fill('A comment not sent');
+  await desk.locator('[data-testid="file-row"][data-path="links.html"]').click();
+  await deskPage.locator('#out').waitFor();
+  await menu('quit');
+  await desk.getByTestId('leave-dialog').waitFor();
+  assert.equal((await desk.getByTestId('leave-files').innerText()).trim(), 'reload.html', 'the draft\'s file, not the one shown');
+  await desk.getByTestId('leave-stay').click();
+  assert.equal(await lastUnsaved(), 'set_unsaved true');
+  // File ▸ Open Folder: the shell imported the folder and asks the page to
+  // open its project (`open-project:<id>`), through the leave guard.
+  await desk.evaluate(() => { window.__beforeOpen = true; });
+  await menu(`open-project:${pid}`);
+  await desk.getByTestId('leave-dialog').waitFor();
+  assert.equal((await desk.getByTestId('leave-files').innerText()).trim(), 'reload.html');
+  await desk.getByTestId('leave-stay').click();
+  await sleep(300);
+  assert.equal(await desk.evaluate(() => window.__beforeOpen), true, 'Cancel keeps the page');
+  await desk.locator('[data-testid="file-row"][data-path="reload.html"]').click();
+  await desk.getByTestId('comment-note').waitFor();
+  assert.equal(await desk.getByTestId('comment-note').inputValue(), 'A comment not sent', 'Cancel keeps the comment');
+  await menu(`open-project:${pid}`);
+  await desk.getByTestId('leave-go').click();
+  await until(() => desk.evaluate(() => window.__beforeOpen !== true).catch(() => false), 'Leave opens the project');
+  assert.ok(desk.url().includes(`/projects/${pid}`), "the project opened");
+  await until(async () => (await lastUnsaved()) === 'set_unsaved false', 'the page opened tells the shell it holds nothing');
+  // Nothing unsaved: it opens at once.
+  await desk.evaluate(() => { window.__beforeOpen = true; });
+  await menu(`open-project:${pid}`);
+  await until(() => desk.evaluate(() => window.__beforeOpen !== true).catch(() => false), 'with nothing unsaved the project opens at once');
+  results.openFolder = 'File ▸ Open Folder (od:menu open-project:<id>) asks with work not saved (Cancel keeps it, Leave opens the project) and opens at once with none';
+  results.menuClose = 'the page tells the desktop shell whether it holds work not saved (set_unsaved), again once loaded again; od:menu close / quit answers go at once with nothing unsaved, else asks with the leave dialog naming the file (asking, then stay on Cancel with the edit kept, go on Leave); a comment draft and an image uploading with nothing typed count, named by their file while another shows';
   await deskContext.close();
   results.blankLinks = 'a real click on a _blank web link (also with ⌘/Ctrl) or a window.open in a click asks the shell; page-cancelled (also on window, after the bridge), same-frame, mailto, synthetic clicks, a window.open with no click (also with a made-up window.event), a second window.open in the same click, in another event of the same press (pointerup/mouseup/click, keydown/keyup, the click of a _blank link) or in a comment-mode pick, a key let go in the frame after its press began on the host, and unkeyed messages do not; a window.open of a non-web address leaves the press to the next one; a window.open in the keyup of Enter, of a page that cancels a _blank link in a window listener (before or after it opens), or after one of about:blank in the same click, asks once; a keyup after Tab out of the frame and back opens nothing; "Open in new tab" asks the shell';
 

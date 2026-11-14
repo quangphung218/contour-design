@@ -354,13 +354,29 @@ try {
   await shot('settings-memory-off', async () => page.getByTestId('memory-controls').scrollIntoViewIfNeeded());
   await page.getByTestId('memory-enabled').check();
   await until(async () => (await api('/api/memory/config')).enabled === true, 'switch back on');
-  // A learned preference shows the global toast; View opens Settings.
+  // A learned preference shows the global toast; View opens Settings,
+  // through the leave guard: a comment not sent asks first.
+  const toastPage = await fetch(`${BASE}/api/projects/${projectId}/files`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'toast.html', content: '<!doctype html><html><body><h1>Toast</h1></body></html>' }) });
+  assert.equal(toastPage.status, 200);
   await page.goto(BASE + `/projects/${projectId}`);
+  await page.locator('[data-testid="file-row"][data-path="toast.html"]').click();
+  const toastFrame = page.frameLocator('[data-testid="preview"]');
+  await toastFrame.locator('h1', { hasText: 'Toast' }).waitFor();
+  await page.getByTestId('comment-mode').click();
+  await until(async () => {
+    await toastFrame.locator('h1').click({ timeout: 2000 });
+    return (await page.getByTestId('comment-note').count()) === 1;
+  }, 'a comment draft on toast.html');
+  await page.getByTestId('comment-note').fill('Not sent yet');
   await send('I prefer warm photography in every hero');
   const globalToast = page.getByTestId('memory-toast');
   await globalToast.getByText('Memory updated (1)').waitFor();
   await shot('memory-toast', async () => globalToast.waitFor());
   await globalToast.click();
+  await page.getByTestId('leave-dialog').waitFor();
+  assert.match(await page.getByTestId('leave-files').innerText(), /toast\.html/, 'the toast asks before leaving the draft');
+  assert.ok(page.url().includes('/projects/'), 'still in the Studio while asked');
+  await page.getByTestId('leave-go').click();
   await page.waitForURL('**/settings#settings-memory');
   await until(async () => (await page.getByTestId('global-memory-item').count()) === 2, 'learned entry listed');
   results.settingsMemory = 'ok';
