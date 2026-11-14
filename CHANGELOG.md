@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.36] - 2026-11-14
+
 ### Fixed
 
 - Desktop: opening Contour while it already runs (the Dock, Finder, or a copy on a disk image or in Downloads) now shows the running window instead of a second copy that failed with "an od daemon is already running … use it (od --daemon-url …) or set OD_DATA_DIR…". Opening it again while the last copy is still quitting, or as Update now restarts it, waits up to 12 seconds for that copy to close. When `od daemon start` holds the data folder, the dialog says so and what to do, in English or Vietnamese as the app's language; the URL and folder go to the log. A copy started with its own `OD_DATA_DIR` still runs beside the app.
@@ -1180,7 +1182,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.35...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.36...HEAD
+[0.2.0-beta.36]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.35...v0.2.0-beta.36
 [0.2.0-beta.35]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.34...v0.2.0-beta.35
 [0.2.0-beta.34]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.33...v0.2.0-beta.34
 [0.2.0-beta.33]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.32...v0.2.0-beta.33
