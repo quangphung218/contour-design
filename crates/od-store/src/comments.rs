@@ -34,6 +34,68 @@ pub(crate) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(SCHEMA)
 }
 
+/// What the comments of `project_id` record by path follows files renamed
+/// or moved (with their folder): the file a comment is on (its pin) and
+/// the images it was sent with. A rename never lands on a file there, so
+/// rows already at a new path were about a file gone outside the app:
+/// they go, rather than mix with the ones moved there.
+pub(crate) fn renamed(
+    conn: &Connection,
+    project_id: &str,
+    pairs: &[(String, String)],
+) -> rusqlite::Result<()> {
+    for (from, to) in pairs.iter().filter(|(from, to)| from != to) {
+        forget(conn, project_id, to)?;
+        conn.execute(
+            "UPDATE preview_comments SET file_path = ?3 WHERE project_id = ?1 AND file_path = ?2",
+            params![project_id, from, to],
+        )?;
+        conn.execute(
+            "UPDATE preview_comment_images SET path = ?3 WHERE path = ?2 \
+             AND comment_id IN (SELECT id FROM preview_comments WHERE project_id = ?1)",
+            params![project_id, from, to],
+        )?;
+    }
+    Ok(())
+}
+
+/// The file at `path` is gone, or a new one is there: the comments on it
+/// go (their images' rows with them), and comments sent with an image at
+/// `path` keep their note without it. Nothing a file later at `path`
+/// would show as its own.
+pub(crate) fn forget(conn: &Connection, project_id: &str, path: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM preview_comments WHERE project_id = ?1 AND file_path = ?2",
+        params![project_id, path],
+    )?;
+    conn.execute(
+        "DELETE FROM preview_comment_images WHERE path = ?2 \
+         AND comment_id IN (SELECT id FROM preview_comments WHERE project_id = ?1)",
+        params![project_id, path],
+    )?;
+    Ok(())
+}
+
+/// [`forget`] for every path under folder `dir`, deleted.
+pub(crate) fn forget_folder(
+    conn: &Connection,
+    project_id: &str,
+    dir: &str,
+) -> rusqlite::Result<()> {
+    let prefix = format!("{}/", dir.trim_end_matches('/'));
+    let len = i64::try_from(prefix.len()).unwrap_or(i64::MAX);
+    conn.execute(
+        "DELETE FROM preview_comments WHERE project_id = ?1 AND substr(file_path, 1, ?3) = ?2",
+        params![project_id, prefix, len],
+    )?;
+    conn.execute(
+        "DELETE FROM preview_comment_images WHERE substr(path, 1, ?3) = ?2 \
+         AND comment_id IN (SELECT id FROM preview_comments WHERE project_id = ?1)",
+        params![project_id, prefix, len],
+    )?;
+    Ok(())
+}
+
 /// Every comment's images, in order (one query for the whole list).
 fn attach_images(conn: &Connection, comments: &mut [PreviewComment]) -> Result<()> {
     if comments.is_empty() {
@@ -436,6 +498,242 @@ mod tests {
             s.list_comments(&p, &c).map(|l| l.len()).ok(),
             Some(1),
             "a refused comment is not stored"
+        );
+    }
+
+    /// A comment on `file`, sent with `images`.
+    fn on(s: &Store, p: &str, c: &str, file: &str, images: &[&str]) -> PreviewComment {
+        s.create_comment(
+            p,
+            c,
+            CreateCommentRequest {
+                file_path: file.into(),
+                attachments: images.iter().map(|i| (*i).to_owned()).collect(),
+                ..req(&format!("On {file}"))
+            },
+        )
+        .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    fn write(s: &Store, p: &str, files: &[&str]) {
+        for f in files {
+            s.write_file(p, f, b"x", true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+    }
+
+    /// Each comment: its file and its images' paths.
+    fn where_(s: &Store, p: &str, c: &str) -> Vec<(String, Vec<String>)> {
+        s.list_comments(p, c)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .into_iter()
+            .map(|c| {
+                (
+                    c.file_path,
+                    c.attachments.into_iter().map(|a| a.path).collect(),
+                )
+            })
+            .collect()
+    }
+
+    fn pair(file: &str, images: &[&str]) -> (String, Vec<String>) {
+        (
+            file.to_owned(),
+            images.iter().map(|i| (*i).to_owned()).collect(),
+        )
+    }
+
+    /// Deleted outside the app (the agent's shell, Finder).
+    fn remove_outside(s: &Store, p: &str, file: &str) {
+        let full = s.stat_file(p, file).unwrap_or_else(|e| panic!("{e}")).1;
+        std::fs::remove_file(full).unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    #[test]
+    fn a_rename_takes_the_comments_pins_and_images_along() {
+        let (_tmp, s, p, c) = store();
+        write(&s, &p, &["a.html", "comments/pic.png"]);
+        on(&s, &p, &c, "a.html", &["comments/pic.png"]);
+        s.rename_file(&p, "a.html", "refs/a.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "comments/pic.png", "comments/reference.png")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            where_(&s, &p, &c),
+            [pair("refs/a.html", &["comments/reference.png"])],
+            "QA-099: the image follows its file"
+        );
+        // Renamed onto itself, nothing moves and nothing goes.
+        s.rename_file(&p, "refs/a.html", "refs/a.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "comments/reference.png", "comments/reference.png")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            where_(&s, &p, &c),
+            [pair("refs/a.html", &["comments/reference.png"])]
+        );
+    }
+
+    #[test]
+    fn a_folder_moved_takes_the_comments_on_its_files_and_their_images() {
+        let (_tmp, s, p, c) = store();
+        write(
+            &s,
+            &p,
+            &[
+                "pages/a.html",
+                "pages2/b.html",
+                "comments/pic.png",
+                "old/z.html",
+            ],
+        );
+        on(&s, &p, &c, "pages/a.html", &["comments/pic.png"]);
+        on(&s, &p, &c, "pages2/b.html", &[]);
+        s.move_folder(&p, "comments", "old/comments")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.move_folder(&p, "pages", "site/pages")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            where_(&s, &p, &c),
+            [
+                pair("site/pages/a.html", &["old/comments/pic.png"]),
+                pair("pages2/b.html", &[]),
+            ],
+            "QA-099: a folder's prefix, and only its own"
+        );
+    }
+
+    #[test]
+    fn a_deleted_files_comments_do_not_come_back_on_the_next_file_at_its_name() {
+        let (_tmp, s, p, c) = store();
+        write(&s, &p, &["a.html", "b.html", "comments/pic.png"]);
+        on(&s, &p, &c, "a.html", &["comments/pic.png"]);
+        s.delete_file(&p, "a.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(where_(&s, &p, &c), [], "QA-100: gone with its file");
+        s.rename_file(&p, "b.html", "a.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(where_(&s, &p, &c), []);
+        let images: i64 = s
+            .with_conn(|conn| {
+                Ok(
+                    conn.query_row("SELECT COUNT(*) FROM preview_comment_images", [], |r| {
+                        r.get(0)
+                    })?,
+                )
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(images, 0, "the image rows went with the comment");
+    }
+
+    #[test]
+    fn a_deleted_image_leaves_its_comment_without_it() {
+        let (_tmp, s, p, c) = store();
+        write(&s, &p, &["a.html", "comments/one.png", "comments/two.png"]);
+        on(
+            &s,
+            &p,
+            &c,
+            "a.html",
+            &["comments/one.png", "comments/two.png"],
+        );
+        s.delete_file(&p, "comments/one.png")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(where_(&s, &p, &c), [pair("a.html", &["comments/two.png"])]);
+        // Another image put at that name later is not the comment's.
+        write(&s, &p, &["comments/one.png"]);
+        assert_eq!(where_(&s, &p, &c), [pair("a.html", &["comments/two.png"])]);
+    }
+
+    #[test]
+    fn a_deleted_folder_takes_the_comments_on_its_files_and_its_images() {
+        let (_tmp, s, p, c) = store();
+        write(
+            &s,
+            &p,
+            &["pages/a.html", "pages2/b.html", "comments/pic.png"],
+        );
+        on(&s, &p, &c, "pages/a.html", &[]);
+        on(&s, &p, &c, "pages2/b.html", &["comments/pic.png"]);
+        s.delete_folder(&p, "pages")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.delete_folder(&p, "comments")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            where_(&s, &p, &c),
+            [pair("pages2/b.html", &[])],
+            "only the folder's own, not pages2/"
+        );
+        write(&s, &p, &["pages/a.html"]);
+        assert_eq!(where_(&s, &p, &c), [pair("pages2/b.html", &[])]);
+    }
+
+    #[test]
+    fn a_rename_onto_comments_left_by_a_file_gone_outside_does_not_mix_them() {
+        let (_tmp, s, p, c) = store();
+        write(&s, &p, &["a.html", "b.html"]);
+        on(&s, &p, &c, "a.html", &[]);
+        on(&s, &p, &c, "b.html", &[]);
+        remove_outside(&s, &p, "a.html");
+        s.rename_file(&p, "b.html", "a.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let left = s.list_comments(&p, &c).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(left.len(), 1, "only b's comment, moved: {left:?}");
+        assert_eq!(left[0].note, "On b.html");
+        assert_eq!(left[0].file_path, "a.html");
+    }
+
+    #[test]
+    fn a_new_file_where_one_went_outside_the_app_starts_with_no_comments() {
+        let (_tmp, s, p, c) = store();
+        write(&s, &p, &["w.html", "x.html", "u.html", "kept.html"]);
+        for f in ["w.html", "x.html", "u.html", "kept.html"] {
+            on(&s, &p, &c, f, &[]);
+        }
+        for f in ["w.html", "x.html", "u.html"] {
+            remove_outside(&s, &p, f);
+        }
+        s.write_file(&p, "w.html", b"<p>new</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.create_file_exact(&p, "x.html", b"<p>new</p>")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.upload_file(&p, None, "u.html", b"<p>new</p>")
+            .unwrap_or_else(|e| panic!("{e}"));
+        // A file written over (the agent's edit, a save) keeps its comments.
+        s.write_file(&p, "kept.html", b"<p>edited</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.replace_file(&p, "kept.html", b"<p>again</p>", "Manual edit")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(where_(&s, &p, &c), [pair("kept.html", &[])]);
+    }
+
+    #[test]
+    fn the_entry_file_follows_a_rename_and_a_folder_move() {
+        let (_tmp, s, p, _) = store();
+        write(&s, &p, &["site/home.html"]);
+        let mut project = s.get_project(&p).unwrap_or_else(|e| panic!("{e}"));
+        project.metadata = Some(od_contracts::ProjectMetadata {
+            entry_file: Some("site/home.html".into()),
+            intent: Some("keep".into()),
+            ..Default::default()
+        });
+        s.with_conn(|conn| crate::db::update_project(conn, &project))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let entry = |s: &Store| {
+            let m = s.get_project(&p).unwrap_or_else(|e| panic!("{e}")).metadata;
+            m.map(|m| (m.entry_file, m.intent))
+        };
+        s.rename_file(&p, "site/home.html", "site/index.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            entry(&s),
+            Some((Some("site/index.html".into()), Some("keep".into())))
+        );
+        s.move_folder(&p, "site", "web")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            entry(&s),
+            Some((Some("web/index.html".into()), Some("keep".into())))
         );
     }
 

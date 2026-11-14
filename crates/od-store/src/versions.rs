@@ -335,13 +335,21 @@ pub fn mark_deleted(project_dir: &Path, file_name: &str) -> Result<()> {
 }
 
 /// Moves a history along with a renamed HTML file. An existing history at
-/// the target is replaced.
+/// the target is replaced. A page renamed to a name that is not a page's
+/// closes its history like a delete; a file renamed to a page's name does
+/// not take the history left there by a page gone outside the app.
 ///
 /// # Errors
 /// I/O and JSON errors.
 pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<()> {
-    if from == to || !is_html_name(from) || !is_html_name(to) {
+    if from == to {
         return Ok(());
+    }
+    match (is_html_name(from), is_html_name(to)) {
+        (true, true) => {}
+        (true, false) => return mark_deleted(project_dir, from),
+        (false, true) => return mark_deleted(project_dir, to),
+        (false, false) => return Ok(()),
     }
     let old_dir = store_dir(project_dir, from);
     if !old_dir.is_dir() {
@@ -408,6 +416,24 @@ mod tests {
         let v = create_version(dir, "a.html", "y", NewVersion::default()).unwrap();
         assert_eq!(v.version, 1);
         assert_eq!(list_versions(dir, "a.html").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_page_renamed_to_another_kind_closes_its_history_and_takes_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        create_version(dir, "a.html", "x", NewVersion::default()).unwrap();
+        rename_store(dir, "a.html", "a.txt").unwrap();
+        // A new a.html starts its own history.
+        let v = ensure_current_version(dir, "a.html", "y", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 1, "not the old page's version 2");
+        // A history left at b.html (its page gone outside the app) is not
+        // the history of a file renamed to b.html.
+        create_version(dir, "b.html", "old", NewVersion::default()).unwrap();
+        rename_store(dir, "notes.txt", "b.html").unwrap();
+        let v = ensure_current_version(dir, "b.html", "new", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 1);
+        assert_eq!(list_versions(dir, "b.html").unwrap().len(), 1);
     }
 
     #[test]
