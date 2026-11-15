@@ -706,10 +706,19 @@ impl Store {
         bytes: &[u8],
     ) -> Result<UploadedFile> {
         let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
         let uploaded = files::upload_file(&root, dir, original_name, bytes)?;
+        // Its name is known only once written: a page whose history would be
+        // refused (a linked history folder) goes again, as a write's would
+        // not have been written.
+        if records_version(&uploaded.name, bytes)
+            && let Err(err) = versions::refuse_linked_history(&root.dir, &uploaded.name)
+        {
+            let _ = files::delete_file(&root, &uploaded.path);
+            return Err(err);
+        }
         // Not a draft's until the caller records it so.
         self.forget_draft_row(project_id, &uploaded.path)?;
-        let _guard = self.versions_guard();
         self.forget_comments_at(&root, project_id, &uploaded.path)?;
         if is_html_name(&uploaded.name)
             && let Ok(text) = std::str::from_utf8(bytes)
