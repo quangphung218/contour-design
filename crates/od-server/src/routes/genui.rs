@@ -490,9 +490,13 @@ fn diff_review_bridge(
 /// project first (a link out of it is refused), and the rename replaces a
 /// link at the target instead of writing through it.
 fn write_in_project(cwd: &FsPath, rel: &str, text: &str) -> Result<(), String> {
-    let target = od_store::paths::resolve_safe_real(cwd, rel).map_err(|e| e.to_string())?;
-    let dir = target.parent().ok_or("no parent folder")?;
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    od_store::paths::resolve_safe_real(cwd, rel).map_err(|e| e.to_string())?;
+    // The folder resolved, not the file: a resolved link would name the
+    // file it points to, and the rename would replace that file.
+    let (parent, name) = rel.rsplit_once('/').ok_or("no parent folder")?;
+    let dir = od_store::paths::resolve_safe_real(cwd, parent).map_err(|e| e.to_string())?;
+    let target = dir.join(name);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let tmp = dir.join(format!(".od-write.{}.tmp", uuid::Uuid::new_v4().simple()));
     let written = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, &target));
     if written.is_err() {
@@ -573,6 +577,34 @@ async fn prefill(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The agent left a link at the decision file: the write replaces the
+    /// link, never the file it points to.
+    #[cfg(unix)]
+    #[test]
+    fn a_decision_written_over_a_link_replaces_the_link() {
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let cwd = tmp.path();
+        std::fs::create_dir(cwd.join("review")).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(cwd.join("notes.txt"), "mine").unwrap_or_else(|e| panic!("{e}"));
+        std::os::unix::fs::symlink("../notes.txt", cwd.join("review/decision.json"))
+            .unwrap_or_else(|e| panic!("{e}"));
+        write_in_project(cwd, "review/decision.json", "{}").unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            std::fs::read_to_string(cwd.join("notes.txt")).unwrap_or_else(|e| panic!("{e}")),
+            "mine"
+        );
+        let decision = cwd.join("review/decision.json");
+        assert!(
+            !std::fs::symlink_metadata(&decision)
+                .unwrap_or_else(|e| panic!("{e}"))
+                .is_symlink()
+        );
+        assert_eq!(
+            std::fs::read_to_string(decision).unwrap_or_else(|e| panic!("{e}")),
+            "{}"
+        );
+    }
 
     #[test]
     fn derived_diff_review_follows_declared_ids() {
