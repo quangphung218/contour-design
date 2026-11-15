@@ -703,8 +703,17 @@ async fn restore_targets_unsanitized_file_name() {
         .get(&format!("/api/projects/{id}/files/My%20Page.html/versions"))
         .await
         .typed();
-    assert_eq!(listed.versions.len(), 2);
-    assert!(listed.versions[1].current);
+    // v1, the agent's edit kept before the restore overwrote it, the restore.
+    assert_eq!(listed.versions.len(), 3);
+    assert!(listed.versions[2].current);
+    let kept: serde_json::Value = h
+        .get(&format!(
+            "/api/projects/{id}/files/My%20Page.html/versions/{}",
+            listed.versions[1].id
+        ))
+        .await
+        .json();
+    assert_eq!(kept["content"], "<p>v2-edited</p>", "{kept}");
 }
 
 /// Review round 1, item 3: each HTML write through the API is a version.

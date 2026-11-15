@@ -454,11 +454,7 @@ impl Store {
         }
         note_write(&root, &file.name, before.as_deref(), bytes);
         // Like the original app, every HTML save lands in the history.
-        if is_html_name(&file.name)
-            && let Ok(text) = std::str::from_utf8(bytes)
-        {
-            versions::ensure_current_version(&root.dir, &file.name, text, manual())?;
-        }
+        snapshot_written(&root, &file.name, bytes);
         Ok(file)
     }
 
@@ -483,11 +479,7 @@ impl Store {
         let file = files::create_file_exact(&root, name, bytes)?;
         self.forget_draft_row(project_id, &file.name)?;
         self.forget_comments_at(&root, project_id, &file.name)?;
-        if is_html_name(&file.name)
-            && let Ok(text) = std::str::from_utf8(bytes)
-        {
-            versions::ensure_current_version(&root.dir, &file.name, text, manual())?;
-        }
+        snapshot_written(&root, &file.name, bytes);
         Ok(file)
     }
 
@@ -496,6 +488,14 @@ impl Store {
     pub fn rename_file(&self, project_id: &str, from: &str, to: &str) -> Result<ProjectFile> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
+        // A history that cannot follow is refused before the file moves;
+        // undoing the move below stays for the errors only moving finds.
+        for name in [validate_project_path(from), crate::paths::sanitize_path(to)]
+            .into_iter()
+            .flatten()
+        {
+            versions::refuse_linked_history(&root.dir, &name)?;
+        }
         let (old_name, file, sidecar_moved) = files::rename_file(&root, from, to)?;
         if let Err(err) =
             self.follow_renames(&root, project_id, &[(old_name.clone(), file.name.clone())])
@@ -525,7 +525,8 @@ impl Store {
                 crate::comments::forget(conn, project_id, rel)?;
                 forget_entry(conn, project_id, rel, false)
             })?;
-            versions::mark_deleted(&root.dir, rel)
+            close_history(&root, rel);
+            Ok(())
         };
         match files::delete_file(&root, name) {
             Ok(rel) => forget(&rel),
@@ -559,10 +560,10 @@ impl Store {
     /// The caller holds [`Self::versions_guard`].
     fn forget_comments_at(&self, root: &ProjectRoot, project_id: &str, path: &str) -> Result<()> {
         self.with_conn(|conn| Ok(crate::comments::forget(conn, project_id, path)?))?;
-        if is_html_name(path) {
-            return Ok(());
+        if !is_html_name(path) {
+            close_history(root, path);
         }
-        versions::mark_deleted(&root.dir, path)
+        Ok(())
     }
 
     /// What is recorded by path follows files renamed or moved: the
@@ -673,7 +674,7 @@ impl Store {
             forget_entry(conn, project_id, &rel, true)
         })?;
         for name in &held {
-            versions::mark_deleted(&root.dir, name)?;
+            close_history(&root, name);
         }
         Ok(rel)
     }
@@ -686,6 +687,10 @@ impl Store {
     pub fn move_folder(&self, project_id: &str, from: &str, to: &str) -> Result<(String, usize)> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
+        // The folder of all histories a link: refused before anything
+        // moves. A page's own history folder a link is found as its
+        // history follows, and the folder moves back.
+        versions::refuse_linked_history(&root.dir, &validate_project_path(from)?)?;
         let (rel, renamed) = files::move_folder(&root, from, to)?;
         if let Err(err) = self.follow_renames(&root, project_id, &renamed) {
             files::put_back(&root, &rel, &validate_project_path(from)?, false);
@@ -720,11 +725,7 @@ impl Store {
         // Not a draft's until the caller records it so.
         self.forget_draft_row(project_id, &uploaded.path)?;
         self.forget_comments_at(&root, project_id, &uploaded.path)?;
-        if is_html_name(&uploaded.name)
-            && let Ok(text) = std::str::from_utf8(bytes)
-        {
-            versions::ensure_current_version(&root.dir, &uploaded.name, text, manual())?;
-        }
+        snapshot_written(&root, &uploaded.name, bytes);
         Ok(uploaded)
     }
 
@@ -856,6 +857,18 @@ impl Store {
                 ));
             }
         }
+        // What the file holds now is kept in the history before it is
+        // overwritten (as an edit does): a change made outside the app
+        // since the last version is not lost to the restore.
+        match files::read_file(&root, &safe) {
+            Ok((_, now)) => {
+                if let Ok(text) = std::str::from_utf8(&now) {
+                    versions::ensure_current_version(&root.dir, &safe, text, manual())?;
+                }
+            }
+            Err(StoreError::FileNotFound) => {}
+            Err(err) => return Err(err),
+        }
         // Exact name: the file may carry characters the sanitizer would
         // rewrite (`My Page.html`), and restore must hit that same file.
         let file = files::write_file_exact(&root, &safe, content.as_bytes())?;
@@ -893,6 +906,27 @@ fn records_version(name: &str, bytes: &[u8]) -> bool {
 fn note_write(root: &ProjectRoot, name: &str, before: Option<&[u8]>, after: &[u8]) {
     if let Err(err) = versions::note_write(&root.dir, name, before, after) {
         tracing::warn!(file = name, error = %err, "the history of a page renamed away cannot follow a write");
+    }
+}
+
+/// The history of `name` closes after its file went (or a file that is
+/// not it came): the disk changed already, so a history that cannot close
+/// is logged, not reported as the operation failing.
+fn close_history(root: &ProjectRoot, name: &str) {
+    if let Err(err) = versions::mark_deleted(&root.dir, name) {
+        tracing::warn!(file = name, error = %err, "the history of a file gone cannot close");
+    }
+}
+
+/// The version every HTML save records ([`versions::ensure_current_version`]),
+/// after the write: a linked history folder was refused before it, so what
+/// fails here is logged, not reported as the write failing.
+fn snapshot_written(root: &ProjectRoot, name: &str, bytes: &[u8]) {
+    if is_html_name(name)
+        && let Ok(text) = std::str::from_utf8(bytes)
+        && let Err(err) = versions::ensure_current_version(&root.dir, name, text, manual())
+    {
+        tracing::warn!(file = name, error = %err, "a page written cannot be recorded in its history");
     }
 }
 

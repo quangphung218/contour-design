@@ -11,6 +11,8 @@ pub mod edit;
 pub mod error;
 pub mod files;
 pub mod genui;
+#[cfg(test)]
+mod history_tests;
 pub mod manage;
 pub mod memory;
 pub mod memory_index;
