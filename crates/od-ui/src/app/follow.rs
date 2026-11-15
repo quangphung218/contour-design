@@ -168,37 +168,30 @@ impl StickToBottom {
         });
     }
 
+    /// Keeps the end in view, while following, through every change the
+    /// signals behind [`Self::changed`] miss: the list's DOM changing, an
+    /// item growing with no DOM change (an image loading), the list's box
+    /// getting shorter (a panel under it coming: the deliverable warning,
+    /// the queue, chips; nothing in the list changes then).
     fn observe(self) {
-        type Callback = wasm_bindgen::closure::Closure<dyn FnMut(js_sys::Array)>;
-        let observer = StoredValue::new(None::<SendWrapper<(web_sys::MutationObserver, Callback)>>);
+        let observers = StoredValue::new(None::<SendWrapper<Observers>>);
         Effect::new(move |_| {
             let Some(el) = self.list.get() else {
                 return;
             };
-            let target = el.clone();
-            let on_change = Callback::new(move |_: js_sys::Array| {
-                if self.sync() {
-                    target.set_scroll_top(target.scroll_height());
-                }
-            });
-            let Ok(obs) = web_sys::MutationObserver::new(on_change.as_ref().unchecked_ref()) else {
+            let Some(new) = Observers::new(self, &el) else {
                 return;
             };
-            let init = web_sys::MutationObserverInit::new();
-            init.set_child_list(true);
-            init.set_subtree(true);
-            init.set_character_data(true);
-            let _ = obs.observe_with_options(&el, &init);
-            observer.update_value(|o| {
-                if let Some(old) = o.replace(SendWrapper::new((obs, on_change))) {
-                    old.0.disconnect();
+            observers.update_value(|o| {
+                if let Some(old) = o.replace(SendWrapper::new(new)) {
+                    old.disconnect();
                 }
             });
         });
         on_cleanup(move || {
-            observer.with_value(|o| {
+            observers.with_value(|o| {
                 if let Some(o) = o {
-                    o.0.disconnect();
+                    o.disconnect();
                 }
             });
         });
@@ -283,6 +276,85 @@ impl StickToBottom {
     fn jump(self) {
         self.state.update(Follow::jump);
         self.to_end();
+    }
+}
+
+type Callback = wasm_bindgen::closure::Closure<dyn FnMut(js_sys::Array)>;
+
+/// What [`StickToBottom::observe`] watches on one list element, with the
+/// callbacks they hold.
+struct Observers {
+    mutations: web_sys::MutationObserver,
+    sizes: web_sys::ResizeObserver,
+    _on_mutation: Callback,
+    _on_size: Callback,
+}
+
+impl Observers {
+    fn new(follow: StickToBottom, el: &web_sys::HtmlDivElement) -> Option<Self> {
+        let to_end = {
+            let el = el.clone();
+            move || {
+                if follow.sync() {
+                    el.set_scroll_top(el.scroll_height());
+                }
+            }
+        };
+        let on_size = Callback::new({
+            let to_end = to_end.clone();
+            move |_: js_sys::Array| to_end()
+        });
+        let sizes = web_sys::ResizeObserver::new(on_size.as_ref().unchecked_ref()).ok()?;
+        // Each item of the list too: one can grow with nothing added to
+        // the list (an image in a turn loading).
+        let on_mutation = Callback::new({
+            let (list, sizes) = (el.clone(), sizes.clone());
+            move |records: js_sys::Array| {
+                for r in records
+                    .iter()
+                    .filter_map(|r| r.dyn_into::<web_sys::MutationRecord>().ok())
+                {
+                    if r.target().is_some_and(|t| list.is_same_node(Some(&t))) {
+                        for_elements(&r.added_nodes(), |e| sizes.observe(e));
+                        for_elements(&r.removed_nodes(), |e| sizes.unobserve(e));
+                    }
+                }
+                to_end();
+            }
+        });
+        let mutations =
+            web_sys::MutationObserver::new(on_mutation.as_ref().unchecked_ref()).ok()?;
+        let init = web_sys::MutationObserverInit::new();
+        init.set_child_list(true);
+        init.set_subtree(true);
+        init.set_character_data(true);
+        let _ = mutations.observe_with_options(el, &init);
+        sizes.observe(el);
+        for_elements(&el.child_nodes(), |e| sizes.observe(e));
+        Some(Self {
+            mutations,
+            sizes,
+            _on_mutation: on_mutation,
+            _on_size: on_size,
+        })
+    }
+
+    fn disconnect(&self) {
+        self.mutations.disconnect();
+        self.sizes.disconnect();
+    }
+}
+
+/// Calls `f` with each element of `nodes` (text and comment nodes have no
+/// box to watch).
+fn for_elements(nodes: &web_sys::NodeList, mut f: impl FnMut(&web_sys::Element)) {
+    for i in 0..nodes.length() {
+        if let Some(e) = nodes
+            .get(i)
+            .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        {
+            f(&e);
+        }
     }
 }
 
