@@ -499,6 +499,10 @@ impl StudioCtx {
             let shown = self.active_untracked().as_deref() == Some(file.as_str());
             match res {
                 Ok(r) => {
+                    // The image it took is the project's now: listed.
+                    if holds {
+                        self.refresh_files();
+                    }
                     if shown && let Some(before) = r.previous_version_id {
                         m.history.update(|h| {
                             h.record(Step {
