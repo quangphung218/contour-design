@@ -389,7 +389,10 @@ try {
   await clearContext();
   results.toolbox = 'ok';
 
-  // 13c. Quote a selection from the transcript.
+  // 13c. Quote a selection from the transcript. The chip just closed made
+  // the list taller: the scroll that clamps it, which hides the Quote
+  // button as any scroll does, lands on the next frame.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await page.evaluate(() => {
     const p = [...document.querySelectorAll('[data-testid=assistant-msg] .md p')].pop();
     const range = document.createRange();
@@ -412,7 +415,7 @@ try {
     const size = page.viewportSize();
     await page.setViewportSize({ width: 1440, height: 600 });
     const list = page.getByTestId('messages');
-    const metrics = () => list.evaluate((e) => ({ top: e.scrollTop, gap: e.scrollHeight - e.scrollTop - e.clientHeight, height: e.scrollHeight }));
+    const metrics = () => list.evaluate((e) => ({ top: e.scrollTop, gap: e.scrollHeight - e.scrollTop - e.clientHeight, height: e.scrollHeight, client: e.clientHeight }));
     const turns = await page.getByTestId('assistant-msg').count();
     await composer.fill('a slow page');
     await composer.press('Enter');
@@ -467,11 +470,72 @@ try {
     await live.getByText(/Wrote index\.html \(v\d+\)/).waitFor();
     await list.evaluate((e) => e.scrollTo(0, 0));
     await until(async () => (await metrics()).top === 0, 'scrolled up again');
+    // The deliverable check answers after the turn rendered (CI, PR #206):
+    // its warning under the list makes the list shorter, with nothing
+    // changing inside it, and the end must stay in view.
+    let releaseCheck;
+    const checkHeld = new Promise((r) => (releaseCheck = r));
+    const deliverable = '**/api/runs/*/deliverable';
+    await page.route(deliverable, async (route) => {
+      await checkHeld;
+      await route.continue();
+    });
     await composer.fill('back to the end');
     await composer.press('Enter');
     await lastTurnDone(turns + 2);
     // Turn files and next steps render a moment after the run ends.
     await until(async () => (await metrics()).gap <= 48, 'sending goes to the end');
+    // Released once nothing in the list changed for a while: the list's
+    // own changes (turn files read again) would scroll it to the end and
+    // hide the bug.
+    await list.evaluate((e) => {
+      window.__listChanged = performance.now();
+      new MutationObserver(() => (window.__listChanged = performance.now())).observe(e, { childList: true, subtree: true, characterData: true, attributes: true });
+    });
+    const listQuiet = (label) => until(() => list.evaluate(() => performance.now() - window.__listChanged > 600), `${label}: the list quiet`);
+    await listQuiet('the deliverable check');
+    const box = (await metrics()).client;
+    releaseCheck();
+    await page.getByTestId('deliverable-warning').waitFor();
+    await until(async () => (await metrics()).client < box, 'the warning made the list shorter');
+    await until(async () => (await metrics()).gap <= 48, 'a panel under the list coming keeps the end in view');
+    await page.unroute(deliverable);
+    // An image in the last turn loads after it joined the list: the turn
+    // grows with nothing added to the list. At the end, it stays in view;
+    // up the transcript, the reader stays put. (In a turn above the view,
+    // the browser's scroll anchoring would keep the end in view anyway.)
+    const last = page.getByTestId('assistant-msg').last();
+    const held = [];
+    await page.route('**/e2e-slow-*.svg', async (route) => {
+      await new Promise((r) => held.push(r));
+      await route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="240"/>' });
+    });
+    const addImage = (n) => last.evaluate((m, n) => {
+      const img = document.createElement('img');
+      img.src = `/e2e-slow-${n}.svg`;
+      img.style.display = 'block';
+      img.style.width = '40px';
+      m.append(img);
+    }, n);
+    await addImage(1);
+    await until(async () => held.length === 1, 'the image requested');
+    await until(async () => (await metrics()).gap <= 48, 'at the end before the image loads');
+    await listQuiet('the first image');
+    const short = (await metrics()).height;
+    held.shift()();
+    await until(async () => (await metrics()).height >= short + 200, 'the image loaded');
+    await until(async () => (await metrics()).gap <= 48, 'an image loading keeps the end in view');
+    await list.evaluate((e) => e.scrollTo(0, 0));
+    await until(async () => (await metrics()).top === 0, 'scrolled up for the image');
+    await addImage(2);
+    await until(async () => held.length === 1, 'the second image requested');
+    const tall = (await metrics()).height;
+    held.shift()();
+    await until(async () => (await metrics()).height >= tall + 200, 'the second image loaded');
+    await sleep(300);
+    assert.equal((await metrics()).top, 0, 'an image loading does not pull the reader down');
+    await page.unroute('**/e2e-slow-*.svg');
+    await last.locator('img[src^="/e2e-slow-"]').evaluateAll((imgs) => imgs.forEach((i) => i.remove()));
     // The preview's file name ends in an ellipsis when it does not fit,
     // and goes (the tab names the file) where it would be cut to a letter.
     const pathTitle = page.locator('.preview-head .path-title');
