@@ -5,7 +5,7 @@
 use crate::error::{Result, StoreError};
 use crate::files;
 use crate::paths::validate_project_path;
-use crate::store::{Store, manual, utf8};
+use crate::store::{Store, manual, record_or_put_back, utf8};
 use crate::versions::{self, NewVersion};
 use od_contracts::{FileVersion, ProjectFile, PromptSource, VersionSource};
 
@@ -17,7 +17,8 @@ impl Store {
     /// # Errors
     /// Project, path and I/O errors; [`StoreError::NotHtml`] (from the
     /// history, before anything is read into `edit`); whatever `edit`
-    /// returns.
+    /// returns. When the new version cannot be recorded, the file is put
+    /// back first: an error means the page is as it was.
     pub fn edit_html<E: From<StoreError>>(
         &self,
         project_id: &str,
@@ -49,17 +50,19 @@ impl Store {
         let previous = versions::ensure_current_version(&root.dir, &safe, before, manual())?;
         let after = edit(before)?;
         let file = files::write_file_exact(&root, &safe, after.as_bytes())?;
-        let version = versions::create_version(
-            &root.dir,
-            &file.name,
-            &after,
-            NewVersion {
-                source: Some(VersionSource::Manual),
-                prompt_source: Some(PromptSource::Manual),
-                label: Some(label.to_owned()),
-                ..NewVersion::default()
-            },
-        )?;
+        let version = record_or_put_back(&root, &file.name, Some(&bytes), || {
+            versions::create_version(
+                &root.dir,
+                &file.name,
+                &after,
+                NewVersion {
+                    source: Some(VersionSource::Manual),
+                    prompt_source: Some(PromptSource::Manual),
+                    label: Some(label.to_owned()),
+                    ..NewVersion::default()
+                },
+            )
+        })?;
         Ok((file, version, previous))
     }
 }

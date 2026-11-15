@@ -356,7 +356,8 @@ async fn a_manual_write_takes_its_draft_image_in_the_same_step() {
 }
 
 /// A Manual write whose page is written but whose version fails: the page
-/// points to the image, so it stays the page's and no release deletes it.
+/// is put back, and the image (the page's once its text was made, as the
+/// put back could fail too) is kept: no release deletes it.
 #[cfg(unix)]
 #[tokio::test]
 async fn a_write_that_fails_after_the_page_is_written_keeps_its_image() {
@@ -374,8 +375,8 @@ async fn a_write_that_fails_after_the_page_is_written_keeps_its_image() {
         .as_str()
         .unwrap()
         .to_owned();
-    // index.html's history can no longer be written: the page is, its
-    // version is not.
+    // index.html's history can no longer be written: the page is, then
+    // put back, as its version is not.
     let root = d
         .state
         .store
@@ -402,11 +403,11 @@ async fn a_write_that_fails_after_the_page_is_written_keeps_its_image() {
         .text()
         .await
         .unwrap();
-    assert!(page.contains(&img), "the page was written: {page}");
+    assert!(!page.contains(&img), "the page was not put back: {page}");
     assert_eq!(release(&d, &project, "s1").await, 200);
     assert!(
         files(&d, &project).await.contains(&img),
-        "the page points to an image the release deleted"
+        "the release deleted an image the page may point to"
     );
 }
 

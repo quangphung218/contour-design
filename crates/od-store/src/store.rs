@@ -818,7 +818,9 @@ impl Store {
     /// Writes the snapshot back to the file and records a restore version.
     ///
     /// # Errors
-    /// [`StoreError::VersionNotFound`], path or I/O errors.
+    /// [`StoreError::VersionNotFound`], path or I/O errors;
+    /// [`StoreError::BadRequest`] when the file is not UTF-8 (it could not
+    /// be kept in the history). On an error the file is as it was.
     pub fn restore_version(
         &self,
         project_id: &str,
@@ -859,16 +861,17 @@ impl Store {
         }
         // What the file holds now is kept in the history before it is
         // overwritten (as an edit does): a change made outside the app
-        // since the last version is not lost to the restore.
-        match files::read_file(&root, &safe) {
+        // since the last version is not lost to the restore. A page that is
+        // not UTF-8 cannot be kept (a version holds text), so it is not
+        // overwritten either.
+        let before = match files::read_file(&root, &safe) {
             Ok((_, now)) => {
-                if let Ok(text) = std::str::from_utf8(&now) {
-                    versions::ensure_current_version(&root.dir, &safe, text, manual())?;
-                }
+                versions::ensure_current_version(&root.dir, &safe, utf8(&now)?, manual())?;
+                Some(now)
             }
-            Err(StoreError::FileNotFound) => {}
+            Err(StoreError::FileNotFound) => None,
             Err(err) => return Err(err),
-        }
+        };
         // Exact name: the file may carry characters the sanitizer would
         // rewrite (`My Page.html`), and restore must hit that same file.
         let file = files::write_file_exact(&root, &safe, content.as_bytes())?;
@@ -878,20 +881,44 @@ impl Store {
         } else {
             PromptSource::Restore
         };
-        let version = versions::create_version(
-            &root.dir,
-            &file.name,
-            &content,
-            NewVersion {
-                prompt: manual_prompt.or(restored.prompt),
-                prompt_source: Some(prompt_source),
-                source: Some(VersionSource::Restore),
-                label: None,
-                restore_from_version_id: Some(restored.id),
-            },
-        )?;
+        let version = record_or_put_back(&root, &file.name, before.as_deref(), || {
+            versions::create_version(
+                &root.dir,
+                &file.name,
+                &content,
+                NewVersion {
+                    prompt: manual_prompt.or(restored.prompt),
+                    prompt_source: Some(prompt_source),
+                    source: Some(VersionSource::Restore),
+                    label: None,
+                    restore_from_version_id: Some(restored.id),
+                },
+            )
+        })?;
         Ok((file, version))
     }
+}
+
+/// Records the version an operation returns after it wrote `name` (a
+/// restore, an edit). The caller needs that version, so an error here is
+/// not only logged ([`snapshot_written`]): the file goes back to `before`
+/// (kept in the history already; `None`: there was no file) and the
+/// error is reported, true, since the disk is as it was.
+pub(crate) fn record_or_put_back<T>(
+    root: &ProjectRoot,
+    name: &str,
+    before: Option<&[u8]>,
+    record: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    record().inspect_err(|err| {
+        let put_back = match before {
+            Some(bytes) => files::write_file_exact(root, name, bytes).map(drop),
+            None => files::delete_file(root, name).map(drop),
+        };
+        if let Err(back) = put_back {
+            tracing::warn!(file = name, error = %err, put_back = %back, "a page written cannot be recorded in its history, nor put back");
+        }
+    })
 }
 
 /// Whether writing `bytes` at `name` records a version: every HTML save
