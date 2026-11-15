@@ -14,6 +14,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const PAGE: &str = "page.html";
+/// Where the page went in [`State::Away`].
+const AWAY: &str = "page.md";
 
 /// The state of `page.html`'s history before the operation.
 #[derive(Clone, Copy, Debug)]
@@ -35,9 +37,12 @@ enum State {
     /// Two versions; the agent's shell wrote the page since in an encoding
     /// that is not UTF-8 (Windows-1258).
     OpenNotUtf8,
+    /// Two versions; renamed to `page.md`, which holds its history now
+    /// (no file at the page's name).
+    Away,
 }
 
-const STATES: [State; 8] = [
+const STATES: [State; 9] = [
     State::Absent,
     State::Open,
     State::OpenChanged,
@@ -46,6 +51,7 @@ const STATES: [State; 8] = [
     State::LinkedRoot,
     State::LinkedPage,
     State::OpenNotUtf8,
+    State::Away,
 ];
 
 /// What a cell expects.
@@ -159,6 +165,18 @@ impl Case {
                 two(self);
                 unwrap(fs::write(self.dir.join(PAGE), b"<p>c\xe0 ph\xea</p>"));
             }
+            State::Away => {
+                two(self);
+                unwrap(self.store.rename_file(&self.project, PAGE, AWAY));
+            }
+        }
+    }
+
+    /// The page deleted outside the app (in [`State::Away`] it is not there).
+    fn page_gone(&self) {
+        match fs::remove_file(self.dir.join(PAGE)) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            res => unwrap(res),
         }
     }
 
@@ -208,7 +226,7 @@ struct Op {
     /// The history counted after a success.
     check: Option<&'static str>,
     /// Per state, in [`STATES`] order.
-    want: [Want; 8],
+    want: [Want; 9],
 }
 
 fn ops() -> Vec<Op> {
@@ -230,6 +248,7 @@ fn ops() -> Vec<Op> {
                 R,
                 R,
                 Y(Some(3)),
+                Y(Some(1)),
             ],
         },
         Op {
@@ -240,7 +259,7 @@ fn ops() -> Vec<Op> {
                 st.write_file(p, "notes.txt", b"n", true, None).map(drop)
             },
             check: None,
-            want: [Y(None); 8],
+            want: [Y(None); 9],
         },
         Op {
             name: "create page",
@@ -259,6 +278,7 @@ fn ops() -> Vec<Op> {
                 R,
                 Y(Some(1)),
                 Y(Some(1)),
+                Y(Some(1)),
             ],
         },
         Op {
@@ -269,7 +289,7 @@ fn ops() -> Vec<Op> {
                 st.create_file_exact(p, "c.txt", b"c").map(drop)
             },
             check: None,
-            want: [Y(None); 8],
+            want: [Y(None); 9],
         },
         Op {
             name: "upload page",
@@ -288,6 +308,7 @@ fn ops() -> Vec<Op> {
                 R,
                 Y(Some(1)),
                 Y(Some(1)),
+                Y(Some(1)),
             ],
         },
         Op {
@@ -299,7 +320,7 @@ fn ops() -> Vec<Op> {
                     .map(drop)
             },
             check: None,
-            want: [Y(None); 8],
+            want: [Y(None); 9],
         },
         Op {
             name: "replace page",
@@ -318,6 +339,7 @@ fn ops() -> Vec<Op> {
                 R,
                 R,
                 U,
+                Fnf,
             ],
         },
         Op {
@@ -328,7 +350,7 @@ fn ops() -> Vec<Op> {
                 st.replace_file(p, "style.css", b"b{}", "Edit").map(drop)
             },
             check: None,
-            want: [Y(None); 8],
+            want: [Y(None); 9],
         },
         Op {
             name: "rename page",
@@ -347,6 +369,7 @@ fn ops() -> Vec<Op> {
                 R,
                 R,
                 Y(Some(2)),
+                Fnf,
             ],
         },
         Op {
@@ -364,6 +387,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(1)),
                 Y(Some(1)),
                 R,
+                Y(Some(1)),
                 Y(Some(1)),
                 Y(Some(1)),
             ],
@@ -385,17 +409,38 @@ fn ops() -> Vec<Op> {
                 Y(None),
                 Y(None),
                 Y(Some(0)),
+                Fnf,
             ],
         },
         Op {
             name: "delete page gone",
-            before: Some(|c| unwrap(fs::remove_file(c.dir.join(PAGE)))),
+            before: Some(Case::page_gone),
             run: |c| {
                 let (st, p) = (&c.store, c.project.as_str());
                 st.delete_file(p, PAGE)
             },
             check: None,
-            want: [Fnf; 8],
+            want: [Fnf; 9],
+        },
+        Op {
+            name: "rename page gone",
+            before: Some(Case::page_gone),
+            run: |c| {
+                let (st, p) = (&c.store, c.project.as_str());
+                st.rename_file(p, PAGE, "moved.html").map(drop)
+            },
+            check: None,
+            want: [Fnf; 9],
+        },
+        Op {
+            name: "move folder gone",
+            before: Some(|c| unwrap(fs::remove_dir_all(c.dir.join("pages")))),
+            run: |c| {
+                let (st, p) = (&c.store, c.project.as_str());
+                st.move_folder(p, "pages", "site/pages").map(drop)
+            },
+            check: None,
+            want: [Fnf; 9],
         },
         Op {
             name: "delete folder",
@@ -412,6 +457,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(0)),
                 Y(Some(0)),
                 Y(None),
+                Y(Some(0)),
                 Y(Some(0)),
                 Y(Some(0)),
             ],
@@ -433,6 +479,7 @@ fn ops() -> Vec<Op> {
                 R,
                 R,
                 Y(Some(2)),
+                Fnf,
             ],
         },
         Op {
@@ -443,7 +490,7 @@ fn ops() -> Vec<Op> {
                 st.read_version(p, PAGE, &c.old_id()).map(drop)
             },
             check: None,
-            want: [Vnf, Y(None), Y(None), Vnf, Vnf, R, R, Y(None)],
+            want: [Vnf, Y(None), Y(None), Vnf, Vnf, R, R, Y(None), Vnf],
         },
         Op {
             name: "restore old",
@@ -453,7 +500,7 @@ fn ops() -> Vec<Op> {
                 st.restore_version(p, PAGE, &c.old_id(), None).map(drop)
             },
             check: Some(PAGE),
-            want: [Vnf, Y(Some(3)), Y(Some(4)), Vnf, Vnf, R, R, U],
+            want: [Vnf, Y(Some(3)), Y(Some(4)), Vnf, Vnf, R, R, U, Vnf],
         },
         Op {
             name: "create version",
@@ -473,6 +520,7 @@ fn ops() -> Vec<Op> {
                 R,
                 R,
                 U,
+                Fnf,
             ],
         },
     ]
@@ -514,6 +562,10 @@ fn every_operation_in_every_history_state() {
             let leaked = unwrap(fs::read_dir(&case.elsewhere)).next().is_some();
             if let Some(fail) = fail {
                 failures.push(format!("{cell}: {fail}"));
+            }
+            // No op names `page.md`: the history it holds stays the page's.
+            if matches!(state, State::Away) && !versions::renamed_away(&case.dir, AWAY) {
+                failures.push(format!("{cell}: the history away was lost"));
             }
             if leaked {
                 failures.push(format!("{cell}: written through the link"));
@@ -576,6 +628,61 @@ fn a_history_that_cannot_update_does_not_fail_what_is_done() {
     assert!(!case.dir.join(PAGE).exists());
 }
 
+/// What is recorded by path (a draft's row, the comments) cannot be
+/// forgotten (its table gone) after the disk changed: the operation is
+/// reported done, not failed, since the file is written or gone already,
+/// and a history still closes.
+#[test]
+fn a_record_that_cannot_update_does_not_fail_what_is_done() {
+    let mut failures = Vec::new();
+    for table in ["draft_uploads", "preview_comments"] {
+        let case = Case::new(State::Open);
+        let (st, p) = (&case.store, case.project.as_str());
+        unwrap(st.with_conn(|c| Ok(c.execute_batch(&format!("DROP TABLE {table}"))?)));
+        let gone = |name: &str| !case.dir.join(name).exists();
+        let closed = |name: &str| unwrap(versions::list_versions(&case.dir, name)).is_empty();
+        let ops: [(&str, Result<(), StoreError>, bool); 6] = [
+            (
+                "write",
+                st.write_file(p, "w.txt", b"w", false, None).map(drop),
+                case.dir.join("w.txt").exists(),
+            ),
+            (
+                "create",
+                st.create_file_exact(p, "c.txt", b"c").map(drop),
+                case.dir.join("c.txt").exists(),
+            ),
+            (
+                "upload",
+                st.upload_file(p, None, "u.png", b"\x89PNG\r\n\x1a\n")
+                    .map(drop),
+                case.dir.join("u.png").exists(),
+            ),
+            (
+                "replace",
+                st.replace_file(p, "style.css", b"b{}", "Edit").map(drop),
+                unwrap(fs::read(case.dir.join("style.css"))) == b"b{}",
+            ),
+            (
+                "delete",
+                st.delete_file(p, PAGE),
+                gone(PAGE) && closed(PAGE),
+            ),
+            (
+                "delete folder",
+                st.delete_folder(p, "pages").map(drop),
+                gone("pages") && closed("pages/p.html"),
+            ),
+        ];
+        for (name, res, done) in ops {
+            if res.is_err() || !done {
+                failures.push(format!("{name} × {table}: {res:?}, done: {done}"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+}
+
 /// The version a restore or an edit returns cannot be recorded (its
 /// history folder read-only) after the page was written: the page goes
 /// back to what it held, so the error reported is true and a retry does
@@ -596,11 +703,20 @@ fn a_restore_or_edit_whose_version_cannot_be_recorded_leaves_the_page() {
         .store
         .replace_file(&case.project, PAGE, b"<p>edited</p>", "Edit");
     let after_edit = page();
+    // The page deleted outside the app (its history still open): the
+    // restore made it again, and it goes again.
+    unwrap(fs::remove_file(case.dir.join(PAGE)));
+    let remake = case
+        .store
+        .restore_version(&case.project, PAGE, &case.old_id(), None);
+    let after_remake = case.dir.join(PAGE).exists();
     mode(0o755);
     assert!(restore.is_err(), "restore: {restore:?}");
     assert_eq!(after_restore, "<p>two</p>", "restore");
     assert!(edit.is_err(), "edit: {edit:?}");
     assert_eq!(after_edit, "<p>two</p>", "edit");
+    assert!(remake.is_err(), "restore of a page gone: {remake:?}");
+    assert!(!after_remake, "the page restored stayed");
     assert_eq!(unwrap(versions::list_versions(&case.dir, PAGE)).len(), 2);
 }
 

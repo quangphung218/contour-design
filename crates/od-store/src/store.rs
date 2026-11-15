@@ -448,9 +448,9 @@ impl Store {
             _ => None,
         };
         let file = files::write_file(&root, name, bytes, overwrite, artifact_manifest)?;
-        self.forget_draft_row(project_id, &file.name)?;
+        self.forget_draft_row(project_id, &file.name);
         if !existed {
-            self.forget_comments_at(&root, project_id, &file.name)?;
+            self.forget_comments_at(&root, project_id, &file.name);
         }
         note_write(&root, &file.name, before.as_deref(), bytes);
         // Like the original app, every HTML save lands in the history.
@@ -477,8 +477,8 @@ impl Store {
             versions::refuse_linked_history(&root.dir, &exact)?;
         }
         let file = files::create_file_exact(&root, name, bytes)?;
-        self.forget_draft_row(project_id, &file.name)?;
-        self.forget_comments_at(&root, project_id, &file.name)?;
+        self.forget_draft_row(project_id, &file.name);
+        self.forget_comments_at(&root, project_id, &file.name);
         snapshot_written(&root, &file.name, bytes);
         Ok(file)
     }
@@ -490,11 +490,17 @@ impl Store {
         let _guard = self.versions_guard();
         // A history that cannot follow is refused before the file moves;
         // undoing the move below stays for the errors only moving finds.
+        // A file gone is not found, whatever its history (as a delete).
         for name in [validate_project_path(from), crate::paths::sanitize_path(to)]
             .into_iter()
             .flatten()
         {
-            versions::refuse_linked_history(&root.dir, &name)?;
+            versions::refuse_linked_history(&root.dir, &name).map_err(
+                |err| match files::stat_file(&root, from) {
+                    Err(StoreError::FileNotFound) => StoreError::FileNotFound,
+                    _ => err,
+                },
+            )?;
         }
         let (old_name, file, sidecar_moved) = files::rename_file(&root, from, to)?;
         if let Err(err) =
@@ -520,18 +526,21 @@ impl Store {
         // is no longer the project's entry page, and its history closes:
         // neither goes to the next file at its name.
         let forget = |rel: &str| {
-            self.with_conn(|conn| {
+            let forgot = self.with_conn(|conn| {
                 crate::drafts::forget(conn, project_id, rel)?;
                 crate::comments::forget(conn, project_id, rel)?;
                 forget_entry(conn, project_id, rel, false)
-            })?;
+            });
+            log_unforgotten(rel, forgot);
             close_history(&root, rel);
-            Ok(())
         };
         match files::delete_file(&root, name) {
-            Ok(rel) => forget(&rel),
+            Ok(rel) => {
+                forget(&rel);
+                Ok(())
+            }
             Err(StoreError::FileNotFound) => {
-                forget(&validate_project_path(name)?)?;
+                forget(&validate_project_path(name)?);
                 Err(StoreError::FileNotFound)
             }
             Err(e) => Err(e),
@@ -548,22 +557,25 @@ impl Store {
     }
 
     /// A file written at `path` that is not a draft's: a row a draft left
-    /// there (its file gone outside the app) is no longer true.
-    fn forget_draft_row(&self, project_id: &str, path: &str) -> Result<()> {
-        self.with_conn(|conn| Ok(crate::drafts::forget(conn, project_id, path)?))
+    /// there (its file gone outside the app) is no longer true. Called
+    /// after the write, so an error is logged ([`log_unforgotten`]).
+    fn forget_draft_row(&self, project_id: &str, path: &str) {
+        let forgot = self.with_conn(|conn| Ok(crate::drafts::forget(conn, project_id, path)?));
+        log_unforgotten(path, forgot);
     }
 
     /// A new file at `path` (none was there): comments left there by a
     /// file gone outside the app are not about it (QA-100).
     /// Nor does a history a page renamed to that name (not a page's) took
-    /// along ([`versions::rename_store`]).
+    /// along ([`versions::rename_store`]). Called after the write, so an
+    /// error is logged ([`log_unforgotten`]).
     /// The caller holds [`Self::versions_guard`].
-    fn forget_comments_at(&self, root: &ProjectRoot, project_id: &str, path: &str) -> Result<()> {
-        self.with_conn(|conn| Ok(crate::comments::forget(conn, project_id, path)?))?;
+    fn forget_comments_at(&self, root: &ProjectRoot, project_id: &str, path: &str) {
+        let forgot = self.with_conn(|conn| Ok(crate::comments::forget(conn, project_id, path)?));
+        log_unforgotten(path, forgot);
         if !is_html_name(path) {
             close_history(root, path);
         }
-        Ok(())
     }
 
     /// What is recorded by path follows files renamed or moved: the
@@ -640,7 +652,7 @@ impl Store {
         files::stat_file(&root, &safe)?;
         let before = self.away_before(&root, &safe);
         let file = files::write_file_exact(&root, &safe, bytes)?;
-        self.forget_draft_row(project_id, &file.name)?;
+        self.forget_draft_row(project_id, &file.name);
         note_write(&root, &file.name, before.as_deref(), bytes);
         Ok(file)
     }
@@ -668,11 +680,12 @@ impl Store {
         // The drafts' images in it went too: their rows go with them, or a
         // file put at one of those paths later would be taken for one. So
         // do the comments on its files, and the images in it from comments.
-        self.with_conn(|conn| {
+        let forgot = self.with_conn(|conn| {
             crate::drafts::forget_folder(conn, project_id, &rel)?;
             crate::comments::forget_folder(conn, project_id, &rel)?;
             forget_entry(conn, project_id, &rel, true)
-        })?;
+        });
+        log_unforgotten(&rel, forgot);
         for name in &held {
             close_history(&root, name);
         }
@@ -689,11 +702,19 @@ impl Store {
         let _guard = self.versions_guard();
         // The folder of all histories a link: refused before anything
         // moves. A page's own history folder a link is found as its
-        // history follows, and the folder moves back.
-        versions::refuse_linked_history(&root.dir, &validate_project_path(from)?)?;
+        // history follows, and the folder moves back. A folder gone is not
+        // found, whatever the histories (as a delete).
+        let from_rel = validate_project_path(from)?;
+        versions::refuse_linked_history(&root.dir, &from_rel).map_err(|err| {
+            if fs::symlink_metadata(root.dir.join(&from_rel)).is_ok_and(|m| m.is_dir()) {
+                err
+            } else {
+                StoreError::FileNotFound
+            }
+        })?;
         let (rel, renamed) = files::move_folder(&root, from, to)?;
         if let Err(err) = self.follow_renames(&root, project_id, &renamed) {
-            files::put_back(&root, &rel, &validate_project_path(from)?, false);
+            files::put_back(&root, &rel, &from_rel, false);
             return Err(err);
         }
         Ok((rel, renamed.len()))
@@ -723,8 +744,8 @@ impl Store {
             return Err(err);
         }
         // Not a draft's until the caller records it so.
-        self.forget_draft_row(project_id, &uploaded.path)?;
-        self.forget_comments_at(&root, project_id, &uploaded.path)?;
+        self.forget_draft_row(project_id, &uploaded.path);
+        self.forget_comments_at(&root, project_id, &uploaded.path);
         snapshot_written(&root, &uploaded.name, bytes);
         Ok(uploaded)
     }
@@ -933,6 +954,18 @@ fn records_version(name: &str, bytes: &[u8]) -> bool {
 fn note_write(root: &ProjectRoot, name: &str, before: Option<&[u8]>, after: &[u8]) {
     if let Err(err) = versions::note_write(&root.dir, name, before, after) {
         tracing::warn!(file = name, error = %err, "the history of a page renamed away cannot follow a write");
+    }
+}
+
+/// What is recorded by path about `path` (a draft's row, comments, the
+/// entry file) is forgotten after the disk changed: an error is logged,
+/// not reported as the operation failing, since the file is written or
+/// gone already and a retry would not do the same (a second upload, a
+/// conflict, a 404). A row left over is about a file no longer there; a
+/// draft's is kept from deleting another file by its `ident`.
+fn log_unforgotten(path: &str, forgot: Result<()>) {
+    if let Err(err) = forgot {
+        tracing::warn!(file = path, error = %err, "what was recorded at a path changed on disk cannot be forgotten");
     }
 }
 
