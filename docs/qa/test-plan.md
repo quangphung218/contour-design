@@ -14,7 +14,8 @@ redesign (QA-089 to QA-092, §21) in [bugs-web-beta34.md](bugs-web-beta34.md); t
 pass on main before beta.34 (QA-093 to QA-095, §19 and §21 by hand) in
 [bugs-desktop-main34.md](bugs-desktop-main34.md); the pass on main after beta.36
 (QA-096 to QA-098, §22 and §23) in [bugs-main36.md](bugs-main36.md); the pass on main after
-beta.37 (QA-099 to QA-101, §24) in [bugs-main37.md](bugs-main37.md).
+beta.37 (QA-099 to QA-101, §24) in [bugs-main37.md](bugs-main37.md); the pass on main after
+#204–#209 (QA-102 on, §25) in [bugs-main39.md](bugs-main39.md).
 
 ## Priorities and status
 
@@ -715,6 +716,42 @@ user made is lost unseen) and the beta.37 changelog.
 | MV-14 | Files attached to the next message, one renamed, one deleted | @ two files, rename one, delete the other | The chip shows the new name; the deleted one leaves | P2 | auto |
 | MV-15 | Delete a file already gone outside the app | Comment on a.html; `rm a.html` before the list reloads; Files ▸ Delete | Delete failed shows; the Comments tab no longer lists its comment | P2 | auto |
 | MV-16 | Rename onto the name of a file gone outside the app | Comment on a.html; `rm a.html`; rename b.html → a.html | No comment listed or pinned on the renamed file | P2 | auto |
+
+## 25. File operations after beta.38 (`fileops.qa.mjs`)
+
+Goal: what #204–#209 changed in the file operations holds for the user:
+a page's history survives a trip to `page.md` and back (for that file
+only), a rename only in case reaches the disk, deleting the entry page
+lets go of it, a folder with diacritics lets go of its comments, a link
+the agent's shell made is never deleted, moved or written through, and
+the chat keeps its end in view when a run ends. Expected results from
+spec.md (nothing the user made is lost unseen) and the Unreleased
+changelog.
+
+| ID | Scenario | Steps | Expected | P | Status |
+|---|---|---|---|---|---|
+| FO-01 | Page renamed to .md and back | v1, v2; Rename page.md; Rename page.html; a save | History lists v1, v2; the next save adds v3, keeps both | P1 | auto |
+| FO-02 | Same, page.md edited in the app between | Rename page.md; write page.md; Rename page.html | History keeps v1, v2 | P1 | auto |
+| FO-03 | Same, page.md replaced outside the app | Rename page.md; `rm` + new file; Rename page.html | The old page's versions do not come with it | P2 | auto (QA-102) |
+| FO-04 | Rename only in case | Comment + version on about.html; Rename About.html | Disk and list say About.html; comment, pin and versions follow | P1 | auto |
+| FO-05 | Delete the entry page | entryFile home.html; Delete; agent writes home.html | entryFile cleared; the project opens on index.html | P1 | auto |
+| FO-06 | Delete a page already gone outside the app | v1, v2; `rm`; Delete (fails); new page at that name | The new page's history has no v1, v2 | P2 | auto |
+| FO-07 | Delete folder `Ảnh/` | Comment + image on Ảnh/a.html; Delete folder; new Ảnh/a.html | No comment kept; no pin on the new page | P1 | auto |
+| FO-08 | Delete `Ảnh/` made by a shell (NFD name) | Folder made outside in NFD; comment; Delete folder | No comment kept | P2 | auto |
+| FO-09 | Rename and move in `Ảnh/` | Comment; Rename bìa.html; Move Ảnh into Lưu trữ | Comment on `Lưu trữ/Ảnh/bìa.html`, pin shown | P2 | auto |
+| FO-10 | Delete a link to a folder | `inner → real/`, `shared → /tmp/…`; DELETE both | Refused; real/ and the outside folder keep their files | P0 | auto |
+| FO-11 | Delete, rename, write a link to a file | `l.html → a.html` | All refused, a.html unchanged; the error names the link | P1 | auto |
+| FO-12 | Write, upload, move, rename into a linked folder | `shared → /tmp/…` | All refused; nothing lands outside | P1 | auto |
+| FO-13 | Move a linked folder, or one inside it | `via → real/` | Refused; real/ intact | P1 | auto |
+| FO-14 | Write a page with `.file-versions` a link | Link it; write index.html, new.html | Refused before the page changes; nothing new on disk | P1 | auto |
+| FO-15 | Upload a page with `.file-versions` a link | Files ▸ Upload landing.html, then logo.png | "Upload failed" shown; no landing.html left; the image uploads | P1 | auto |
+| FO-16 | A link is not offered | Folder and file links | Not in the Files panel, not a Move to destination | P2 | auto |
+| FO-17 | Page deleted in the app, written again by a shell | v1, v2; Delete; shell writes page.html; History | None of the deleted page's versions | P2 | auto (QA-102) |
+| FO-18 | Delete a file with `.file-versions` a link | Link it; Files ▸ Delete b.html, notes.txt | Deleted with no error, or refused with the file still there | P2 | auto (QA-103) |
+| CS-01 | Run ends with the "did not write its page" warning, short window | 1360×600, two turns, a third | The last lines in view, no Jump to latest | P1 | auto |
+| CS-02 | Same on a phone | 390×740 | Same | P1 | auto |
+| CS-03 | Reader up the transcript as the run ends | Scroll to top mid-run | Stays at the top; Jump to latest shows | P1 | auto |
+| CS-04 | Message queued at the end | Queue while a slow run streams | The end stays in view as the queue shows and after | P2 | auto |
 
 ## Not automated, and why
 

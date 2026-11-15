@@ -1,0 +1,5 @@
+1. page.html on disk: <!doctype html><html><body><p id="pick">NEW PAGE FROM THE SHELL</p></body></html>
+2. History lists: [{"v":1,"prompt":null,"current":false},{"v":2,"prompt":"v1","current":false},{"v":3,"prompt":null,"current":false},{"v":4,"prompt":"v2","current":true}]
+3. Restore v1: 200
+4. page.html on disk: <!doctype html><html><body><p id="pick">Old one</p></body></html>
+5. Versions now hold: v1:Old one, v2:Old one, v3:Old two, v4:Old two, v5:Old one -> any with the shell page? false
