@@ -843,19 +843,19 @@ fn forget_entry(
     path: &str,
     folder: bool,
 ) -> Result<()> {
-    let (pattern, len) = if folder {
-        let prefix = format!("{}/", path.trim_end_matches('/'));
-        let len = i64::try_from(prefix.len()).unwrap_or(i64::MAX);
-        (prefix, len)
+    let pattern = if folder {
+        format!("{}/", path.trim_end_matches('/'))
     } else {
-        (path.to_owned(), -1)
+        path.to_owned()
     };
+    // `length` of SQLite itself: `substr` counts characters, Rust's `len`
+    // bytes (`Ảnh/` is 4 of one, 6 of the other).
     conn.execute(
         "UPDATE projects SET metadata_json = json_remove(metadata_json, '$.entryFile') \
-         WHERE id = ?1 AND json_valid(metadata_json) AND CASE WHEN ?3 < 0 \
-         THEN json_extract(metadata_json, '$.entryFile') = ?2 \
-         ELSE substr(json_extract(metadata_json, '$.entryFile'), 1, ?3) = ?2 END",
-        rusqlite::params![project_id, pattern, len],
+         WHERE id = ?1 AND json_valid(metadata_json) AND CASE WHEN ?3 \
+         THEN substr(json_extract(metadata_json, '$.entryFile'), 1, length(?2)) = ?2 \
+         ELSE json_extract(metadata_json, '$.entryFile') = ?2 END",
+        rusqlite::params![project_id, pattern, folder],
     )?;
     Ok(())
 }
@@ -889,6 +889,49 @@ fn truncate_chars(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
     use od_contracts::CreateProjectRequest;
+
+    /// The undo of a page renamed away, its history closed by a delete
+    /// (a page made again outside the app since): the history stays closed.
+    #[cfg(unix)]
+    #[test]
+    fn undoing_a_rename_away_does_not_open_a_deleted_pages_history() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let s = Store::open(DataDir::new(tmp.path())).unwrap_or_else(|e| panic!("{e}"));
+        let (project, _) = s
+            .create_project(CreateProjectRequest {
+                name: "p".into(),
+                ..CreateProjectRequest::default()
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        let p = project.id.clone();
+        for (name, text) in [("a.html", "<p>old</p>"), ("b.html", "<p>b</p>")] {
+            s.write_file(&p, name, text.as_bytes(), true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        let root = s.project_root(&project).unwrap_or_else(|e| panic!("{e}"));
+        s.delete_file(&p, "a.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        fs::write(root.dir.join("a.html"), b"<p>agent new</p>").unwrap_or_else(|e| panic!("{e}"));
+        let digest = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(b"b.html"));
+        let manifest = root
+            .dir
+            .join(versions::VERSION_ROOT)
+            .join(&digest[..24])
+            .join("manifest.json");
+        let mode = |m| fs::set_permissions(&manifest, fs::Permissions::from_mode(m));
+        mode(0o444).unwrap_or_else(|e| panic!("{e}"));
+        let pairs = [
+            ("a.html".to_owned(), "a.md".to_owned()),
+            ("b.html".to_owned(), "y.html".to_owned()),
+        ];
+        let res = s.follow_renames(&root, &p, &pairs);
+        mode(0o644).unwrap_or_else(|e| panic!("{e}"));
+        assert!(res.is_err());
+        let v = versions::ensure_current_version(&root.dir, "a.html", "<p>agent new</p>", manual())
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(v.version, 1, "the deleted page's history came back");
+    }
 
     /// The second history cannot follow: the first one, moved already,
     /// goes back, so no history sits under a name its file does not have.

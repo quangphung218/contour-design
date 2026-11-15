@@ -83,15 +83,17 @@ pub(crate) fn forget_folder(
     dir: &str,
 ) -> rusqlite::Result<()> {
     let prefix = format!("{}/", dir.trim_end_matches('/'));
-    let len = i64::try_from(prefix.len()).unwrap_or(i64::MAX);
+    // `length` of SQLite itself: `substr` counts characters, Rust's `len`
+    // bytes (`Ảnh/` is 4 of one, 6 of the other).
     conn.execute(
-        "DELETE FROM preview_comments WHERE project_id = ?1 AND substr(file_path, 1, ?3) = ?2",
-        params![project_id, prefix, len],
+        "DELETE FROM preview_comments WHERE project_id = ?1 \
+         AND substr(file_path, 1, length(?2)) = ?2",
+        params![project_id, prefix],
     )?;
     conn.execute(
-        "DELETE FROM preview_comment_images WHERE substr(path, 1, ?3) = ?2 \
+        "DELETE FROM preview_comment_images WHERE substr(path, 1, length(?2)) = ?2 \
          AND comment_id IN (SELECT id FROM preview_comments WHERE project_id = ?1)",
-        params![project_id, prefix, len],
+        params![project_id, prefix],
     )?;
     Ok(())
 }
@@ -763,6 +765,54 @@ mod tests {
             .collect();
         names.sort();
         names
+    }
+
+    /// A folder name with diacritics: more bytes than characters.
+    #[test]
+    fn a_deleted_folder_with_diacritics_takes_its_comments_images_and_entry() {
+        let (_tmp, s, p, c) = store();
+        write(&s, &p, &["Ảnh/home.html", "Ảnh/pic.png", "Ảnhx.html"]);
+        on(&s, &p, &c, "Ảnh/home.html", &[]);
+        on(&s, &p, &c, "Ảnhx.html", &["Ảnh/pic.png"]);
+        set_entry(&s, &p, "Ảnh/home.html");
+        s.delete_folder(&p, "Ảnh").unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(where_(&s, &p, &c), [pair("Ảnhx.html", &[])]);
+        assert_eq!(entry(&s, &p), Some((None, Some("keep".into()))));
+    }
+
+    /// A page deleted, then made again outside the app (the agent's
+    /// shell) and renamed away and back: the deleted page's history stays
+    /// closed, not the new page's.
+    #[test]
+    fn a_deleted_pages_history_does_not_come_back_through_a_round_trip() {
+        let (_tmp, s, p, _) = store();
+        for t in [&b"<p>old one</p>"[..], b"<p>old two</p>"] {
+            s.write_file(&p, "page.html", t, true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        s.delete_file(&p, "page.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let dir = s
+            .project_root(&s.get_project(&p).unwrap_or_else(|e| panic!("{e}")))
+            .unwrap_or_else(|e| panic!("{e}"))
+            .dir;
+        std::fs::write(dir.join("page.html"), b"<p>agent new</p>")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "page.html", "page.md")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "page.md", "page.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.write_file(&p, "page.html", b"<p>new save</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let list = s
+            .list_versions(&p, "page.html")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .versions;
+        assert_eq!(
+            list.len(),
+            1,
+            "the deleted page's history came back: {list:?}"
+        );
     }
 
     #[test]

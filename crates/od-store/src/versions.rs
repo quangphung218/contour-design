@@ -75,6 +75,11 @@ struct Manifest {
     entries: Vec<Entry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     deleted_at: Option<i64>,
+    /// Closed only because its page took a name that is not a page's
+    /// ([`rename_store`]): a rename back to a page's name opens it again.
+    /// A history closed by a delete stays closed through such a round trip.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    renamed_away: bool,
 }
 
 /// Options for [`create_version`].
@@ -345,7 +350,8 @@ pub fn mark_deleted(project_dir: &Path, file_name: &str) -> Result<()> {
 /// file brings none: it is not the renamed file's. A page renamed to a
 /// name that is not a page's takes its history along closed, and gets it
 /// back once renamed to a page's name again (`page.html` → `page.md` →
-/// `page.html` keeps it).
+/// `page.html` keeps it); one already closed (its page deleted) stays
+/// closed.
 ///
 /// # Errors
 /// I/O and JSON errors; the history is then where it was.
@@ -369,9 +375,18 @@ pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
             to.clone_into(&mut entry.file_name);
         }
         match (is_html_name(from), is_html_name(to)) {
-            (false, true) => manifest.deleted_at = None,
-            (_, false) => manifest.deleted_at = Some(crate::now_ms()),
-            (true, true) => {}
+            (false, true) => {
+                if std::mem::take(&mut manifest.renamed_away) {
+                    manifest.deleted_at = None;
+                }
+            }
+            (true, false) => {
+                if manifest.deleted_at.is_none() {
+                    manifest.deleted_at = Some(crate::now_ms());
+                    manifest.renamed_away = true;
+                }
+            }
+            (false, false) | (true, true) => {}
         }
         write_manifest(&new_dir, to, &mut manifest)
     };
@@ -465,6 +480,21 @@ mod tests {
         let list = list_versions(dir, "page.html").unwrap();
         assert_eq!(list.len(), 3);
         assert!(list.iter().all(|v| v.file_name == "page.html"));
+    }
+
+    #[test]
+    fn a_deleted_pages_history_stays_closed_through_a_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        create_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        mark_deleted(dir, "page.html").unwrap();
+        // Another page.html (the agent's), renamed away and back.
+        assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        assert!(rename_store(dir, "page.md", "page.html").unwrap());
+        let v = ensure_current_version(dir, "page.html", "new", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 1, "the deleted page's history came back");
+        assert_eq!(list_versions(dir, "page.html").unwrap().len(), 1);
     }
 
     #[test]
