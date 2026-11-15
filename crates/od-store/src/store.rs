@@ -143,12 +143,23 @@ impl Store {
             return Ok(());
         }
         let path = root.dir.join(PROJECT_MANIFEST_PATH);
+        // The agent can make the folder a link (to one outside the
+        // project): nothing is written there. SQLite stays the source of
+        // truth.
+        if crate::paths::through_link(
+            &root.dir,
+            PROJECT_MANIFEST_PATH
+                .rsplit_once('/')
+                .map_or(PROJECT_MANIFEST_PATH, |(dir, _)| dir),
+        ) {
+            tracing::warn!(project = %project.id, "the project's manifest folder is a link; manifest not written");
+            return Ok(());
+        }
         let manifest = ProjectManifest::from(project);
         let bytes = serde_json::to_vec_pretty(&manifest)?;
-        path.parent()
-            .map_or(Ok(()), fs::create_dir_all)
-            .and_then(|()| fs::write(&path, bytes))
-            .map_err(|e| StoreError::from(e).in_folder(&root.dir))
+        // Through a temp file and a rename: a link at the manifest is
+        // replaced, never written through.
+        files::replace_atomic(&path, &bytes).map_err(|e| e.in_folder(&root.dir))
     }
 
     /// Creates the row, a first conversation, the folder and its manifest.
@@ -422,14 +433,21 @@ impl Store {
     ) -> Result<ProjectFile> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
+        let safe = crate::paths::sanitize_path(name).ok();
         let existed = overwrite
-            && crate::paths::sanitize_path(name)
-                .is_ok_and(|safe| files::stat_file(&root, &safe).is_ok());
+            && safe
+                .as_deref()
+                .is_some_and(|safe| files::stat_file(&root, safe).is_ok());
+        let before = match &safe {
+            Some(safe) if existed => self.away_before(&root, safe),
+            _ => None,
+        };
         let file = files::write_file(&root, name, bytes, overwrite, artifact_manifest)?;
         self.forget_draft_row(project_id, &file.name)?;
         if !existed {
             self.forget_comments_at(&root, project_id, &file.name)?;
         }
+        note_write(&root, &file.name, before.as_deref(), bytes);
         // Like the original app, every HTML save lands in the history.
         if is_html_name(&file.name)
             && let Ok(text) = std::str::from_utf8(bytes)
@@ -468,13 +486,13 @@ impl Store {
     pub fn rename_file(&self, project_id: &str, from: &str, to: &str) -> Result<ProjectFile> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
-        let (old_name, file) = files::rename_file(&root, from, to)?;
+        let (old_name, file, sidecar_moved) = files::rename_file(&root, from, to)?;
         if let Err(err) =
             self.follow_renames(&root, project_id, &[(old_name.clone(), file.name.clone())])
         {
             // All or nothing: the file back at its old name, where what
             // is recorded by path still is.
-            files::put_back(&root, &file.name, &old_name);
+            files::put_back(&root, &file.name, &old_name, sidecar_moved);
             return Err(err);
         }
         Ok(file)
@@ -507,6 +525,15 @@ impl Store {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// What `name` holds before a write, read only when it carries the
+    /// history of a page renamed to it ([`versions::note_write`] needs it).
+    fn away_before(&self, root: &ProjectRoot, name: &str) -> Option<Vec<u8>> {
+        if !versions::renamed_away(&root.dir, name) {
+            return None;
+        }
+        files::read_file(root, name).ok().map(|(_, bytes)| bytes)
     }
 
     /// A file written at `path` that is not a draft's: a row a draft left
@@ -600,8 +627,10 @@ impl Store {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         files::stat_file(&root, &safe)?;
+        let before = self.away_before(&root, &safe);
         let file = files::write_file_exact(&root, &safe, bytes)?;
         self.forget_draft_row(project_id, &file.name)?;
+        note_write(&root, &file.name, before.as_deref(), bytes);
         Ok(file)
     }
 
@@ -649,7 +678,7 @@ impl Store {
         let _guard = self.versions_guard();
         let (rel, renamed) = files::move_folder(&root, from, to)?;
         if let Err(err) = self.follow_renames(&root, project_id, &renamed) {
-            files::put_back(&root, &rel, &validate_project_path(from)?);
+            files::put_back(&root, &rel, &validate_project_path(from)?, false);
             return Err(err);
         }
         Ok((rel, renamed.len()))
@@ -833,6 +862,15 @@ impl Store {
     }
 }
 
+/// [`versions::note_write`] after a write that already changed the file:
+/// a history that cannot follow is logged, not reported as the write
+/// failing.
+fn note_write(root: &ProjectRoot, name: &str, before: Option<&[u8]>, after: &[u8]) {
+    if let Err(err) = versions::note_write(&root.dir, name, before, after) {
+        tracing::warn!(file = name, error = %err, "the history of a page renamed away cannot follow a write");
+    }
+}
+
 /// The project's entry file is `path` (or under folder `path`, `folder`),
 /// gone: it no longer names one, so the cover falls back
 /// ([`files::ProjectRoot::cover_html`]) rather than to the next file put
@@ -914,19 +952,17 @@ mod tests {
             .unwrap_or_else(|e| panic!("{e}"));
         fs::write(root.dir.join("a.html"), b"<p>agent new</p>").unwrap_or_else(|e| panic!("{e}"));
         let digest = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(b"b.html"));
-        let manifest = root
-            .dir
-            .join(versions::VERSION_ROOT)
-            .join(&digest[..24])
-            .join("manifest.json");
-        let mode = |m| fs::set_permissions(&manifest, fs::Permissions::from_mode(m));
-        mode(0o444).unwrap_or_else(|e| panic!("{e}"));
+        // Its folder read-only: the manifest (written through a temp file
+        // and a rename) cannot be replaced.
+        let history = root.dir.join(versions::VERSION_ROOT).join(&digest[..24]);
+        let mode = |m| fs::set_permissions(&history, fs::Permissions::from_mode(m));
+        mode(0o555).unwrap_or_else(|e| panic!("{e}"));
         let pairs = [
             ("a.html".to_owned(), "a.md".to_owned()),
             ("b.html".to_owned(), "y.html".to_owned()),
         ];
         let res = s.follow_renames(&root, &p, &pairs);
-        mode(0o644).unwrap_or_else(|e| panic!("{e}"));
+        mode(0o755).unwrap_or_else(|e| panic!("{e}"));
         assert!(res.is_err());
         let v = versions::ensure_current_version(&root.dir, "a.html", "<p>agent new</p>", manual())
             .unwrap_or_else(|e| panic!("{e}"));
@@ -953,21 +989,20 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{e}"));
         }
         let root = s.project_root(&project).unwrap_or_else(|e| panic!("{e}"));
-        let manifest = |name: &str| {
+        // Its folder read-only: the manifest (written through a temp file
+        // and a rename) cannot be replaced.
+        let history = |name: &str| {
             let digest = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(name.as_bytes()));
-            root.dir
-                .join(versions::VERSION_ROOT)
-                .join(&digest[..24])
-                .join("manifest.json")
+            root.dir.join(versions::VERSION_ROOT).join(&digest[..24])
         };
-        let mode = |m| fs::set_permissions(manifest("b.html"), fs::Permissions::from_mode(m));
-        mode(0o444).unwrap_or_else(|e| panic!("{e}"));
+        let mode = |m| fs::set_permissions(history("b.html"), fs::Permissions::from_mode(m));
+        mode(0o555).unwrap_or_else(|e| panic!("{e}"));
         let pairs = [
             ("a.html".to_owned(), "x.html".to_owned()),
             ("b.html".to_owned(), "y.html".to_owned()),
         ];
         let res = s.follow_renames(&root, &p, &pairs);
-        mode(0o644).unwrap_or_else(|e| panic!("{e}"));
+        mode(0o755).unwrap_or_else(|e| panic!("{e}"));
         assert!(res.is_err());
         for (name, len) in [("a.html", 1), ("b.html", 1), ("x.html", 0), ("y.html", 0)] {
             let list = versions::list_versions(&root.dir, name).unwrap_or_else(|e| panic!("{e}"));

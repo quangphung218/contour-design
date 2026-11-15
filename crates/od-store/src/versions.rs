@@ -104,9 +104,22 @@ fn is_version_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-fn store_dir(project_dir: &Path, file_name: &str) -> PathBuf {
+/// The history folder of `file_name`. A history folder (or the folder of
+/// all of them) the agent made a link is refused: what is written there
+/// would land wherever it points, maybe outside the project.
+fn store_dir(project_dir: &Path, file_name: &str) -> Result<PathBuf> {
     let digest = hex::encode(Sha256::digest(file_name.as_bytes()));
-    project_dir.join(VERSION_ROOT).join(&digest[..24])
+    let root = project_dir.join(VERSION_ROOT);
+    let dir = root.join(&digest[..24]);
+    if [&root, &dir]
+        .iter()
+        .any(|p| fs::symlink_metadata(p).is_ok_and(|m| m.is_symlink()))
+    {
+        return Err(StoreError::BadRequest(format!(
+            "{VERSION_ROOT} holds a link; Contour does not write version history through it"
+        )));
+    }
+    Ok(dir)
 }
 
 /// Lowercase hex sha256 of the snapshot bytes.
@@ -138,8 +151,9 @@ fn write_manifest(dir: &Path, file_name: &str, manifest: &mut Manifest) -> Resul
     fs::create_dir_all(dir)?;
     manifest.schema_version = SCHEMA_VERSION;
     file_name.clone_into(&mut manifest.file_name);
-    fs::write(dir.join(MANIFEST), serde_json::to_vec_pretty(manifest)?)?;
-    Ok(())
+    // Through a temp file and a rename: a link at the manifest is
+    // replaced, never written through.
+    crate::files::replace_atomic(&dir.join(MANIFEST), &serde_json::to_vec_pretty(manifest)?)
 }
 
 fn require_html(file_name: &str) -> Result<()> {
@@ -154,7 +168,7 @@ fn require_html(file_name: &str) -> Result<()> {
 /// [`StoreError::NotHtml`] or I/O and JSON errors.
 pub fn list_versions(project_dir: &Path, file_name: &str) -> Result<Vec<FileVersion>> {
     require_html(file_name)?;
-    let manifest = read_manifest(&store_dir(project_dir, file_name))?;
+    let manifest = read_manifest(&store_dir(project_dir, file_name)?)?;
     let current = manifest.current_version_id.as_deref();
     Ok(manifest.entries.iter().map(|e| e.public(current)).collect())
 }
@@ -172,7 +186,7 @@ pub fn read_version(
     if !is_version_id(version_id) {
         return Err(StoreError::BadRequest("version id required".to_owned()));
     }
-    let dir = store_dir(project_dir, file_name);
+    let dir = store_dir(project_dir, file_name)?;
     let manifest = read_manifest(&dir)?;
     let entry = manifest
         .entries
@@ -220,7 +234,7 @@ pub fn create_version(
     opts: NewVersion,
 ) -> Result<FileVersion> {
     require_html(file_name)?;
-    let dir = store_dir(project_dir, file_name);
+    let dir = store_dir(project_dir, file_name)?;
     let mut manifest = read_manifest(&dir)?;
     let restoring_own = opts
         .restore_from_version_id
@@ -310,7 +324,7 @@ pub fn ensure_current_version(
     opts: NewVersion,
 ) -> Result<FileVersion> {
     require_html(file_name)?;
-    let dir = store_dir(project_dir, file_name);
+    let dir = store_dir(project_dir, file_name)?;
     let manifest = read_manifest(&dir)?;
     if manifest.deleted_at.is_none()
         && let Some(current) = manifest
@@ -334,7 +348,7 @@ pub fn ensure_current_version(
 /// # Errors
 /// I/O and JSON errors.
 pub fn mark_deleted(project_dir: &Path, file_name: &str) -> Result<()> {
-    let dir = store_dir(project_dir, file_name);
+    let dir = store_dir(project_dir, file_name)?;
     if !is_html_name(file_name) {
         return match fs::remove_dir_all(&dir) {
             Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err.into()),
@@ -364,12 +378,12 @@ pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
     if from == to {
         return Ok(false);
     }
-    let old_dir = store_dir(project_dir, from);
+    let old_dir = store_dir(project_dir, from)?;
     if !old_dir.is_dir() {
         mark_deleted(project_dir, to)?;
         return Ok(false);
     }
-    let new_dir = store_dir(project_dir, to);
+    let new_dir = store_dir(project_dir, to)?;
     if new_dir.exists() {
         fs::remove_dir_all(&new_dir)?;
     }
@@ -405,6 +419,45 @@ pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
         return Err(err);
     }
     Ok(true)
+}
+
+/// Whether `file_name` (not a page's name) holds the history of a page
+/// renamed to it, which a write in the app follows ([`note_write`]).
+#[must_use]
+pub fn renamed_away(project_dir: &Path, file_name: &str) -> bool {
+    !is_html_name(file_name)
+        && store_dir(project_dir, file_name)
+            .and_then(|dir| read_manifest(&dir))
+            .is_ok_and(|m| m.renamed_away)
+}
+
+/// A file that is not a page, written by the app (`before` what it held
+/// just before). If it is a page renamed away ([`rename_store`]) and still
+/// that page (`before` matches the digest it left with), the digest
+/// follows the write, so a rename back keeps the history. A file replaced
+/// outside the app meanwhile is not the page: its history closes for good.
+///
+/// # Errors
+/// I/O and JSON errors.
+pub fn note_write(
+    project_dir: &Path,
+    file_name: &str,
+    before: Option<&[u8]>,
+    after: &[u8],
+) -> Result<()> {
+    if is_html_name(file_name) {
+        return Ok(());
+    }
+    let dir = store_dir(project_dir, file_name)?;
+    let mut manifest = read_manifest(&dir)?;
+    if !manifest.renamed_away {
+        return Ok(());
+    }
+    let same = manifest.away_digest.is_some()
+        && manifest.away_digest == before.map(|b| hex::encode(Sha256::digest(b)));
+    // Not the page: no digest, so no rename back opens the history.
+    manifest.away_digest = same.then(|| hex::encode(Sha256::digest(after)));
+    write_manifest(&dir, file_name, &mut manifest)
 }
 
 /// The digest of the file being renamed: at `to` once renamed, at `from`
@@ -524,6 +577,73 @@ mod tests {
         assert_eq!(list_versions(dir, "page.html").unwrap().len(), 1);
     }
 
+    /// A write only follows a page renamed away: other files get no
+    /// history from it.
+    #[test]
+    fn a_write_to_a_file_with_no_history_away_records_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        note_write(dir, "style.css", None, b"a{}").unwrap();
+        note_write(dir, "page.html", None, b"<p>").unwrap();
+        assert!(!dir.join(VERSION_ROOT).exists());
+        // A deleted page's history taken along stays closed.
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        mark_deleted(dir, "page.html").unwrap();
+        fs::write(dir.join("page.md"), "one").unwrap();
+        assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        note_write(dir, "page.md", Some(b"one"), b"one").unwrap();
+        assert!(rename_store(dir, "page.md", "page.html").unwrap());
+        let v = ensure_current_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 1);
+    }
+
+    /// A write follows the page only when what it replaced was the page:
+    /// a file put there outside the app (or one never read) closes the
+    /// history, even if the app then writes the page's own bytes back.
+    #[test]
+    fn a_write_over_another_file_closes_the_history_away() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let len = |name: &str| list_versions(dir, name).unwrap().len();
+        // Replaced outside the app, then the page's bytes written back.
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        create_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        fs::write(dir.join("page.md"), "two").unwrap();
+        assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        note_write(dir, "page.md", Some(b"# agent"), b"two").unwrap();
+        fs::rename(dir.join("page.md"), dir.join("page.html")).unwrap();
+        assert!(rename_store(dir, "page.md", "page.html").unwrap());
+        ensure_current_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        assert_eq!(len("page.html"), 1, "the history came back");
+        // Unread as it left (no digest), then written.
+        create_version(dir, "b.html", "one", NewVersion::default()).unwrap();
+        create_version(dir, "b.html", "two", NewVersion::default()).unwrap();
+        assert!(rename_store(dir, "b.html", "b.md").unwrap());
+        note_write(dir, "b.md", None, b"x").unwrap();
+        fs::write(dir.join("b.html"), "x").unwrap();
+        assert!(rename_store(dir, "b.md", "b.html").unwrap());
+        ensure_current_version(dir, "b.html", "x", NewVersion::default()).unwrap();
+        assert_eq!(len("b.html"), 1, "a page never read took its history back");
+    }
+
+    /// A manifest the agent made a link is replaced, never written
+    /// through.
+    #[cfg(unix)]
+    #[test]
+    fn a_manifest_that_is_a_link_is_replaced_not_written_through() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("p");
+        fs::create_dir(&dir).unwrap();
+        create_version(&dir, "a.html", "x", NewVersion::default()).unwrap();
+        let outside = tmp.path().join("outside.txt");
+        fs::write(&outside, "mine").unwrap();
+        let manifest = store_dir(&dir, "a.html").unwrap().join(MANIFEST);
+        fs::remove_file(&manifest).unwrap();
+        std::os::unix::fs::symlink(&outside, &manifest).unwrap();
+        let _ = create_version(&dir, "a.html", "y", NewVersion::default());
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "mine");
+    }
+
     /// No file could be read as the page left (nor as it came back): not
     /// known to be the page, so its history stays closed.
     #[test]
@@ -550,7 +670,7 @@ mod tests {
         assert!(rename_store(dir, "page.html", "page.md").unwrap());
         assert!(rename_store(dir, "page.md", "page.html").unwrap());
         assert!(
-            read_manifest(&store_dir(dir, "page.html"))
+            read_manifest(&store_dir(dir, "page.html").unwrap())
                 .unwrap()
                 .deleted_at
                 .is_none()
@@ -606,12 +726,14 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
         create_version(dir, "a.html", "x", NewVersion::default()).unwrap();
-        let old = store_dir(dir, "a.html");
-        fs::set_permissions(old.join(MANIFEST), fs::Permissions::from_mode(0o444)).unwrap();
+        // Its folder read-only: the manifest (written through a temp file
+        // and a rename) cannot be replaced; the folder itself still moves.
+        let old = store_dir(dir, "a.html").unwrap();
+        fs::set_permissions(&old, fs::Permissions::from_mode(0o555)).unwrap();
         let res = rename_store(dir, "a.html", "b.html");
         fs::set_permissions(
-            store_dir(dir, "a.html").join(MANIFEST),
-            fs::Permissions::from_mode(0o644),
+            store_dir(dir, "a.html").unwrap(),
+            fs::Permissions::from_mode(0o755),
         )
         .unwrap();
         assert!(res.is_err());

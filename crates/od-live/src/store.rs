@@ -40,6 +40,18 @@ impl ArtifactPaths {
     }
 }
 
+/// [`LiveError::Validation`] when `path` is a link (the agent's shell can
+/// make one): what is written there would land wherever it points.
+fn refuse_link(path: &Path) -> Result<()> {
+    if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(LiveError::Validation(format!(
+            "{} is a link; Contour does not write live artifacts through it",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     let mut tmp = tempfile_in(dir)?;
@@ -127,9 +139,10 @@ impl LiveStore {
         if !model::is_safe_id(id) {
             return Err(LiveError::NotFound);
         }
-        Ok(ArtifactPaths {
-            dir: self.root().join(id),
-        })
+        let dir = self.root().join(id);
+        refuse_link(&self.root())?;
+        refuse_link(&dir)?;
+        Ok(ArtifactPaths { dir })
     }
 
     /// Writes template, data, rendered preview, provenance and the record.
@@ -184,6 +197,7 @@ impl LiveStore {
             last_refreshed_at: None,
             document,
         };
+        refuse_link(&self.root())?;
         fs::create_dir_all(self.root())?;
         let tmp = ArtifactPaths {
             dir: self
@@ -205,6 +219,11 @@ impl LiveStore {
     /// # Errors
     /// I/O errors other than a missing folder; corrupt records.
     pub fn list(&self) -> Result<Vec<Summary>> {
+        // A folder the agent made a link is not this project's: nothing
+        // in it is listed (as a linked artifact folder is skipped below).
+        if refuse_link(&self.root()).is_err() {
+            return Ok(Vec::new());
+        }
         let entries = match fs::read_dir(self.root()) {
             Ok(e) => e,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -378,6 +397,9 @@ impl LiveStore {
 
     pub(crate) fn append_refresh(&self, id: &str, entry: &Value) -> Result<()> {
         let path = self.paths(id)?.file(REFRESHES_FILE);
+        // Appending follows a link: a log the agent linked to another
+        // file would grow that file.
+        refuse_link(&path)?;
         let mut line = serde_json::to_vec(entry).map_err(|e| LiveError::Io(e.into()))?;
         line.push(b'\n');
         let mut f = fs::OpenOptions::new()
