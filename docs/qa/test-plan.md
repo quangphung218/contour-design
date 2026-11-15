@@ -633,7 +633,10 @@ without `OD_DATA_DIR`, so the copy's data folder comes from a `HOME` of
 its own, passed with `open --env HOME=<qa>/home` ([qa.sh](main36/qa.sh)).
 `LSEnvironment` `HOME` in `Info.plist` is ignored: the copy then opens the
 owner's data folder. Never launch the copy from Finder or the Dock while it
-is not running, for the same reason. Bugs: [bugs-main36.md](bugs-main36.md).
+is not running, for the same reason. The lock dialog is a
+`CFUserNotification` alert owned by `UserNotificationCenter`, not by the
+app, whose own window then is the splash: drive it as that process. Bugs:
+[bugs-main36.md](bugs-main36.md), [bugs-desktop-beta39.md](bugs-desktop-beta39.md).
 
 | ID | Scenario | Steps | Expected | P |
 |---|---|---|---|---|
@@ -645,11 +648,13 @@ is not running, for the same reason. Bugs: [bugs-main36.md](bugs-main36.md).
 | SI-06 | … while the app is quitting | ⌘Q with an agent run going (stopping takes up to 8 s), open again at once | The new launch waits for the old copy and opens a window; never nothing at all, never a lock dialog | P1 |
 | SI-07 | Two launches at the same instant, nothing running | `open -n` twice within 50 ms | One window, one daemon; no lock dialog | P2 |
 | SI-08 | A copy with its own `OD_DATA_DIR` runs beside the app | App open; start a second copy with `OD_DATA_DIR=<tmp>` | Both run | P1 |
+| SI-09 | Reopen from the Dock or Finder (no new process) | Window closed, minimised or hidden; `open` without `-n` | The window shows and is in front | P0 |
 | LK-01 | `od daemon start` holds the data folder (English) | `od daemon start` on the copy's folder, then open the app | Dialog "Contour can't open yet", says to quit the other Contour or stop the command; Quit quits; the log has the URL and folder | P0 |
 | LK-02 | Same, Vietnamese | `locale` `vi` in `app-config.json` | "Chưa mở được Contour", the Vietnamese words, button "Thoát" | P1 |
 | LK-03 | After stopping the command, the app opens | LK-01, Ctrl+C the daemon, open again | The app opens on the same data | P0 |
 | LK-04 | Lock held by the app's own copy that does not let go | A second copy on the same folder blocked past 12 s | "Contour is already open" after ≈ 12 s | P2 |
 | LK-05 | An older Contour (beta.35) holds the folder | beta.35 open on the folder, open beta.36 | The dialog names an older Contour too | P1 |
+| LK-06 | Opened again while the lock dialog shows | LK-01, then `open -n` and `open` | One process, one dialog, still on top | P2 |
 | UP-01 | Update now, then Restart | beta.35 on its own folder, Settings ▸ Update now ▸ Restart | beta.36 opens on the same data, no lock dialog, the window shows once | P0 |
 | UP-02 | Restart with a comment not sent | As UP-01 with a comment draft | Restart asks first (beta.35 changelog); Cancel stays | P1 |
 
