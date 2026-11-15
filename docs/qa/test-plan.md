@@ -758,6 +758,40 @@ changelog.
 | CS-03 | Reader up the transcript as the run ends | Scroll to top mid-run | Stays at the top; Jump to latest shows | P1 | auto |
 | CS-04 | Message queued at the end | Queue while a slow run streams | The end stays in view as the queue shows and after | P2 | auto |
 
+## 26. When the database cannot follow the disk (`dbfail.qa.mjs`)
+
+Goal: what #215 changed holds for the user. A file operation the disk has
+done is reported done even when the database cannot let go of what it
+kept at that path (comments, draft images, the entry page): no false
+"Could not …" that makes the user retry into a second upload, a conflict
+or a 404, and after a reload the Studio shows what is on disk. Renaming or
+moving a file or folder the agent's shell removed says it is not found,
+even with `.file-versions` a link, as Delete does. Expected results from
+spec.md (nothing the user made is lost unseen, a message says what
+happened) and #215's changelog line.
+
+How the database is made to fail: a SQLite trigger that refuses the one
+statement (`DELETE FROM preview_comments`, the entry page's `UPDATE
+projects`), or another program holding the database's write lock (the
+`sqlite3` shell in `BEGIN IMMEDIATE`) past the daemon's 5 s busy wait, as
+a backup tool or a DB browser left open would.
+
+| ID | Scenario | Steps | Expected | P | Status |
+|---|---|---|---|---|---|
+| DB-01 | Delete a page with a comment, comments cannot be deleted | Comment on b.html; trigger; Files ▸ Delete b.html | Dialog closes, no error, b.html gone; after the DB recovers and a reload, b.html not listed and its comment not shown | P1 | auto |
+| DB-02 | Delete a folder with a comment, same | Comment on f/a.html; trigger; Delete folder f | Same, for the folder | P1 | auto |
+| DB-03 | Upload a page where a comment was left | Comment on old.html; shell `rm`; trigger; Files ▸ Upload old.html | No "Upload failed"; listed once; after reload, still one old.html, no `old (1).html` | P1 | auto |
+| DB-04 | Paste text where a comment was left | Same; Files ▸ New ▸ Paste text as old.html | Created, no error; after reload listed once | P1 | auto |
+| DB-05 | Delete the entry page, the project cannot be updated | entryFile home.html; trigger on the entry; Delete home.html | No error; after reload the Studio opens on a page that is there, with no error | P1 | auto |
+| DB-06 | Another program holds the database: Delete, New page, Upload | Lock held; each from the Files panel | Each says done (no error), disk changed; after release + reload the list is the disk, nothing doubled | P0 | auto |
+| DB-07 | Same: Rename | Lock held; Files ▸ Rename | Renamed and listed so, or "Could not rename" with the file unchanged; never "failed" with the file moved | P1 | auto |
+| DB-08 | Same: attach an image to a comment | Lock held; comment ▸ attach image; Try again | Attached, or "could not" with no stray image in Files; Try again makes one copy | P1 | auto (QA-105) |
+| GONE-01 | Rename a file the agent removed, `.file-versions` a link | Rename dialog open; shell `rm`; Rename | "Could not rename: Not found …", not "holds a link"; the row goes | P1 | auto |
+| GONE-02 | Move a folder the agent removed, same | Move dialog open; shell `rm -r`; Move | "Could not move: Not found …" | P1 | auto |
+| GONE-03 | Move a file the agent removed, same | Move dialog open; shell `rm`; Move | "Could not move: Not found …" | P2 | auto |
+| GONE-04 | Same rename without the link | No link; rename a removed file | The same not-found message (one wording for one case) | P2 | auto |
+| GONE-05 | A file still there, `.file-versions` a link | Rename, Move an existing file | Refused, the message names the link; the file stays | P1 | auto |
+
 ## Not automated, and why
 
 - **Desktop shell (Tauri)**: native menus, Cmd+O folder dialog, Finder
