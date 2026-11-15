@@ -410,12 +410,13 @@ async fn a_write_that_fails_after_the_page_is_written_keeps_its_image() {
     );
 }
 
-/// A Manual write that fails before the page is written (the page cannot
-/// be replaced) still claims its image: the same write tried again
-/// writes it, and the release after leaves it with the page.
+/// A Manual write that fails writing the page (the folder takes no new
+/// file, after the image was claimed) keeps its image claimed: it is not
+/// given back, so the same write tried again writes it, and the release
+/// after leaves it with the page.
 #[cfg(unix)]
 #[tokio::test]
-async fn a_write_that_fails_before_the_page_is_written_can_be_tried_again() {
+async fn a_write_that_fails_writing_the_page_can_be_tried_again() {
     use std::os::unix::fs::PermissionsExt;
     let d = daemon().await;
     let (project, _) = d.project().await;

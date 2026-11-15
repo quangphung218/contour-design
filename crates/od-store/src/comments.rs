@@ -925,6 +925,61 @@ mod tests {
         assert_eq!(list.len(), 1, "the folder's page.md took the old history");
     }
 
+    /// The page renamed to markdown, then that file replaced outside the
+    /// app (the agent's shell: removed, another written): renamed to a
+    /// page, the other file does not take the old page's history.
+    #[test]
+    fn a_markdown_file_replaced_outside_the_app_does_not_take_the_pages_history() {
+        let (_tmp, s, p, _) = store();
+        for text in [&b"<p>one</p>"[..], b"<p>two</p>"] {
+            s.write_file(&p, "page.html", text, true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        s.rename_file(&p, "page.html", "page.md")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let full = s
+            .stat_file(&p, "page.md")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .1;
+        std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(&full, b"# agent notes").unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "page.md", "page.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.write_file(&p, "page.html", b"<p>agent page</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let list = s
+            .list_versions(&p, "page.html")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .versions;
+        assert_eq!(list.len(), 1, "the old page's history came back: {list:?}");
+    }
+
+    /// The sidecar cannot take the new name: the file stays at its old
+    /// name, and so do its comments and history (all or nothing).
+    #[test]
+    fn a_rename_whose_sidecar_cannot_follow_leaves_everything_at_the_old_name() {
+        let (_tmp, s, p, c) = store();
+        let manifest = serde_json::json!({"kind": "page"});
+        s.write_file(&p, "a.html", b"<p>a</p>", true, Some(&manifest))
+            .unwrap_or_else(|e| panic!("{e}"));
+        on(&s, &p, &c, "a.html", &[]);
+        let dir = s
+            .project_root(&s.get_project(&p).unwrap_or_else(|e| panic!("{e}")))
+            .unwrap_or_else(|e| panic!("{e}"))
+            .dir;
+        std::fs::create_dir_all(dir.join("b.html.artifact.json/x"))
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(s.rename_file(&p, "a.html", "b.html").is_err());
+        assert!(s.stat_file(&p, "a.html").is_ok() && s.stat_file(&p, "b.html").is_err());
+        assert_eq!(where_(&s, &p, &c), vec![pair("a.html", &[])]);
+        let len = |name: &str| {
+            s.list_versions(&p, name)
+                .map(|r| r.versions.len())
+                .unwrap_or(0)
+        };
+        assert_eq!((len("a.html"), len("b.html")), (1, 0));
+    }
+
     #[test]
     fn a_rename_with_project_metadata_that_is_not_json_still_takes_the_comments() {
         let (_tmp, s, p, c) = store();

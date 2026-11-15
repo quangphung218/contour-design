@@ -382,6 +382,13 @@ pub fn rename_file(root: &ProjectRoot, from: &str, to: &str) -> Result<(String, 
     } else if fs::symlink_metadata(&target).is_ok() {
         return Err(StoreError::FileExists);
     }
+    // A link, or a file in a linked folder, is not listed: renaming it
+    // would rename the file it points to, under another name than the
+    // one what is recorded by path follows.
+    if through_link(&root.dir, &old_name) {
+        return Err(StoreError::FileNotFound);
+    }
+    let old_sidecar = root.resolve(&format!("{old_name}{ARTIFACT_SUFFIX}"))?;
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -391,13 +398,32 @@ pub fn rename_file(root: &ProjectRoot, from: &str, to: &str) -> Result<(String, 
         new_name = to_project_path(&root.real_dir(), &real);
         target = real;
     }
-    let old_sidecar = root.resolve(&format!("{old_name}{ARTIFACT_SUFFIX}"))?;
-    if old_sidecar.is_file() {
-        let new_sidecar = root.real_dir().join(format!("{new_name}{ARTIFACT_SUFFIX}"));
-        fs::rename(old_sidecar, new_sidecar)?;
+    let follow = || -> std::io::Result<fs::Metadata> {
+        if old_sidecar.is_file() {
+            let new_sidecar = root.real_dir().join(format!("{new_name}{ARTIFACT_SUFFIX}"));
+            fs::rename(&old_sidecar, new_sidecar)?;
+        }
+        fs::metadata(&target)
+    };
+    match follow() {
+        Ok(meta) => Ok((old_name, describe(&root.real_dir(), new_name, &meta))),
+        Err(err) => {
+            // All or nothing: the file back where its sidecar and what is
+            // recorded by path still are.
+            put_back(root, &new_name, &old_name);
+            Err(err.into())
+        }
     }
-    let meta = fs::metadata(&target)?;
-    Ok((old_name, describe(&root.real_dir(), new_name, &meta)))
+}
+
+/// Whether `rel` under `dir` goes through a symlink: is one, or is in a
+/// folder that is one.
+fn through_link(dir: &Path, rel: &str) -> bool {
+    let mut path = dir.to_path_buf();
+    rel.split('/').any(|part| {
+        path.push(part);
+        fs::symlink_metadata(&path).is_ok_and(|m| m.is_symlink())
+    })
 }
 
 /// Undoes [`rename_file`] or [`move_folder`] (`now` back to `was`) when what
@@ -696,6 +722,57 @@ mod tests {
                 .unwrap()
                 .is_symlink()
         );
+    }
+
+    /// A link (as the agent's shell makes) is not a listed file: renaming
+    /// it renames neither it nor the file it points to.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_or_a_file_in_a_linked_folder_is_not_renamed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.html"), b"<p>").unwrap();
+        std::os::unix::fs::symlink("a.html", dir.join("l.html")).unwrap();
+        fs::create_dir(dir.join("real")).unwrap();
+        fs::write(dir.join("real/b.html"), b"<p>").unwrap();
+        std::os::unix::fs::symlink("real", dir.join("ld")).unwrap();
+        let root = ProjectRoot {
+            dir: dir.to_path_buf(),
+            imported: false,
+        };
+        assert!(matches!(
+            rename_file(&root, "l.html", "m.html"),
+            Err(StoreError::FileNotFound)
+        ));
+        assert!(matches!(
+            rename_file(&root, "ld/b.html", "c.html"),
+            Err(StoreError::FileNotFound)
+        ));
+        assert!(dir.join("a.html").is_file() && dir.join("real/b.html").is_file());
+        assert!(!dir.join("m.html").exists() && !dir.join("c.html").exists());
+        // The file itself still renames.
+        rename_file(&root, "a.html", "m.html").unwrap();
+        assert!(dir.join("m.html").is_file());
+    }
+
+    /// The sidecar cannot take the new name (a folder holds it): the file
+    /// goes back to its old name, with its sidecar.
+    #[test]
+    fn a_rename_whose_sidecar_cannot_follow_puts_the_file_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.html"), b"<p>").unwrap();
+        fs::write(dir.join(format!("a.html{ARTIFACT_SUFFIX}")), b"{}").unwrap();
+        fs::create_dir(dir.join(format!("b.html{ARTIFACT_SUFFIX}"))).unwrap();
+        fs::write(dir.join(format!("b.html{ARTIFACT_SUFFIX}/x")), b"").unwrap();
+        let root = ProjectRoot {
+            dir: dir.to_path_buf(),
+            imported: false,
+        };
+        assert!(rename_file(&root, "a.html", "b.html").is_err());
+        assert!(dir.join("a.html").is_file(), "back at its old name");
+        assert!(!dir.join("b.html").exists());
+        assert!(dir.join(format!("a.html{ARTIFACT_SUFFIX}")).is_file());
     }
 
     #[test]

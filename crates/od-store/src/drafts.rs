@@ -916,6 +916,39 @@ mod tests {
         assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
     }
 
+    /// Its session released while the write ran, the write failed, and
+    /// the disk refuses the delete: the image is a draft's again, out of
+    /// the ZIP, for a later release or sweep.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_write_whose_image_cannot_be_deleted_gives_it_back() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let taken = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let full = s.stat_file(&p, &img).unwrap_or_else(|e| panic!("{e}")).1;
+        let dir = full.parent().unwrap_or_else(|| panic!("no folder"));
+        let lock = |mode| {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode))
+                .unwrap_or_else(|e| panic!("{e}"));
+        };
+        lock(0o555);
+        s.give_back_draft_uploads(&p, taken);
+        lock(0o755);
+        assert!(exists(&s, &p, &img), "the disk kept it");
+        assert_eq!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default(),
+            HashSet::from([img.clone()]),
+            "a draft's again, not the project's"
+        );
+        assert_eq!(s.release_all_draft_uploads().unwrap_or(0), 1);
+        assert!(!exists(&s, &p, &img));
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_draft_image_that_cannot_be_deleted_stays_a_drafts() {
