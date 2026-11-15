@@ -532,10 +532,43 @@ try {
     const tall = (await metrics()).height;
     held.shift()();
     await until(async () => (await metrics()).height >= tall + 200, 'the second image loaded');
-    await sleep(300);
+    // The resize observer reports in the frame that laid the image out
+    // (after that frame's animation callbacks): two frames on, it has.
+    await list.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     assert.equal((await metrics()).top, 0, 'an image loading does not pull the reader down');
     await page.unroute('**/e2e-slow-*.svg');
     await last.locator('img[src^="/e2e-slow-"]').evaluateAll((imgs) => imgs.forEach((i) => i.remove()));
+    // An item gone from the list is no longer watched for its size: the
+    // turns of a conversation left are not kept alive by the observer.
+    await page.evaluate(() => {
+      const watched = new Map();
+      const P = ResizeObserver.prototype;
+      const own = { observe: P.observe, unobserve: P.unobserve, disconnect: P.disconnect };
+      window.__roRestore = () => Object.assign(P, own);
+      window.__roWatches = (e) => [...watched.values()].some((s) => s.has(e));
+      P.observe = function (e, o) {
+        if (!watched.has(this)) watched.set(this, new Set());
+        watched.get(this).add(e);
+        return own.observe.call(this, e, o);
+      };
+      P.unobserve = function (e) {
+        watched.get(this)?.delete(e);
+        return own.unobserve.call(this, e);
+      };
+      P.disconnect = function () {
+        watched.delete(this);
+        return own.disconnect.call(this);
+      };
+    });
+    const probeWatched = () => page.evaluate(() => window.__roWatches(window.__probe));
+    await list.evaluate((e) => e.append((window.__probe = document.createElement('div'))));
+    await until(probeWatched, 'an item added to the list is watched');
+    await page.evaluate(() => window.__probe.remove());
+    await until(async () => !(await probeWatched()), 'an item gone from the list is no longer watched');
+    await page.evaluate(() => {
+      window.__roRestore();
+      delete window.__probe;
+    });
     // The preview's file name ends in an ellipsis when it does not fit,
     // and goes (the tab names the file) where it would be cut to a letter.
     const pathTitle = page.locator('.preview-head .path-title');
