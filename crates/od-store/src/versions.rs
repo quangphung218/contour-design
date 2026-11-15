@@ -104,32 +104,116 @@ fn is_version_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-/// The history folder of `file_name`. A history folder (or the folder of
-/// all of them) the agent made a link is refused: what is written there
-/// would land wherever it points, maybe outside the project.
-fn store_dir(project_dir: &Path, file_name: &str) -> Result<PathBuf> {
+/// The state of a file's history, as [`resolve`] finds it. Every public
+/// function of this module goes through it and matches every state, so
+/// none reads the closing marks of a manifest on its own.
+///
+/// What each kind of operation does in each state:
+///
+/// | Operation | `Linked` | `Absent` | `Open` | `Closed` |
+/// |---|---|---|---|---|
+/// | Record a version ([`create_version`], [`ensure_current_version`]) | refused (the caller checks first, [`refuse_linked_history`]) | starts v1 | appends | wiped, starts v1 |
+/// | Close ([`mark_deleted`], [`note_write`]) | skipped: nothing is read through the link | nothing | closes | stays closed |
+/// | Read ([`list_versions`], [`read_version`]) | refused | empty | its entries | empty, as `Absent`: not the file's now |
+/// | Move ([`rename_store`]) | refused | closes what the target held | moves | moves, still closed |
+///
+/// A `Store` operation resolves (and refuses) first, then changes the
+/// disk, then updates the history; an error in that last step is logged,
+/// never reported as the operation failing.
+enum History {
+    /// The history folder, or the folder of all of them, is a link the
+    /// agent made: what is written there would land wherever it points,
+    /// maybe outside the project.
+    Linked,
+    /// No history: no manifest, or no entries.
+    Absent,
+    Open(Manifest),
+    /// The file it was recorded for is gone (deleted, or replaced by
+    /// another). `away` is the digest of the page as it took a name that
+    /// is not a page's ([`rename_store`]): only the same bytes renamed back
+    /// to a page's name open it again. `None` is closed for good.
+    Closed {
+        manifest: Manifest,
+        away: Option<String>,
+    },
+}
+
+/// The history folder of `file_name` and the state of the history in it.
+///
+/// # Errors
+/// I/O and JSON errors reading its manifest.
+fn resolve(project_dir: &Path, file_name: &str) -> Result<(PathBuf, History)> {
+    let (dir, linked) = locate(project_dir, file_name);
+    if linked {
+        return Ok((dir, History::Linked));
+    }
+    let manifest = read_manifest(&dir)?;
+    let history = if manifest.entries.is_empty() {
+        History::Absent
+    } else if manifest.deleted_at.is_none() {
+        History::Open(manifest)
+    } else {
+        let away = if manifest.renamed_away {
+            manifest.away_digest.clone()
+        } else {
+            None
+        };
+        History::Closed { manifest, away }
+    };
+    Ok((dir, history))
+}
+
+/// The history folder of `file_name`, and whether it (or the folder of
+/// all of them) is a link: the part of [`resolve`] that reads no manifest.
+fn locate(project_dir: &Path, file_name: &str) -> (PathBuf, bool) {
     let digest = hex::encode(Sha256::digest(file_name.as_bytes()));
     let root = project_dir.join(VERSION_ROOT);
     let dir = root.join(&digest[..24]);
-    if [&root, &dir]
+    let linked = [&root, &dir]
         .iter()
-        .any(|p| fs::symlink_metadata(p).is_ok_and(|m| m.is_symlink()))
-    {
-        return Err(StoreError::BadRequest(format!(
-            "{VERSION_ROOT} holds a link; Contour does not write version history through it"
-        )));
-    }
-    Ok(dir)
+        .any(|p| fs::symlink_metadata(p).is_ok_and(|m| m.is_symlink()));
+    (dir, linked)
+}
+
+fn linked() -> StoreError {
+    StoreError::BadRequest(format!(
+        "{VERSION_ROOT} holds a link; Contour does not write version history through it"
+    ))
+}
+
+/// Writes an open or closed history back; the only place that sets the
+/// closing marks [`resolve`] reads.
+fn save(dir: &Path, file_name: &str, history: History) -> Result<()> {
+    let mut manifest = match history {
+        History::Linked | History::Absent => return Ok(()),
+        History::Open(mut manifest) => {
+            manifest.deleted_at = None;
+            manifest.renamed_away = false;
+            manifest.away_digest = None;
+            manifest
+        }
+        History::Closed { mut manifest, away } => {
+            manifest.deleted_at = manifest.deleted_at.or_else(|| Some(crate::now_ms()));
+            manifest.renamed_away = away.is_some();
+            manifest.away_digest = away;
+            manifest
+        }
+    };
+    write_manifest(dir, file_name, &mut manifest)
 }
 
 /// Refuses, as recording a version of `file_name` would, a history folder
-/// that is a link. For a write that records one after it: checked first,
-/// the page is not written when its history will be refused.
+/// that is a link. Checked before a write that records one (or moves a
+/// history) changes the disk: the file is not written when its history
+/// will be refused.
 ///
 /// # Errors
 /// [`StoreError::BadRequest`] when the history folder holds a link.
 pub fn refuse_linked_history(project_dir: &Path, file_name: &str) -> Result<()> {
-    store_dir(project_dir, file_name).map(drop)
+    if locate(project_dir, file_name).1 {
+        return Err(linked());
+    }
+    Ok(())
 }
 
 /// Lowercase hex sha256 of the snapshot bytes.
@@ -174,11 +258,25 @@ fn require_html(file_name: &str) -> Result<()> {
     }
 }
 
-/// # Errors
-/// [`StoreError::NotHtml`] or I/O and JSON errors.
-pub fn list_versions(project_dir: &Path, file_name: &str) -> Result<Vec<FileVersion>> {
+/// The open history of a page, for reading: a closed one is not the file
+/// at that name now ([`History`]).
+fn open_for_read(project_dir: &Path, file_name: &str) -> Result<(PathBuf, Option<Manifest>)> {
     require_html(file_name)?;
-    let manifest = read_manifest(&store_dir(project_dir, file_name)?)?;
+    let (dir, history) = resolve(project_dir, file_name)?;
+    match history {
+        History::Linked => Err(linked()),
+        History::Open(manifest) => Ok((dir, Some(manifest))),
+        History::Absent | History::Closed { .. } => Ok((dir, None)),
+    }
+}
+
+/// # Errors
+/// [`StoreError::NotHtml`], [`StoreError::BadRequest`] for a linked
+/// history folder, or I/O and JSON errors.
+pub fn list_versions(project_dir: &Path, file_name: &str) -> Result<Vec<FileVersion>> {
+    let Some(manifest) = open_for_read(project_dir, file_name)?.1 else {
+        return Ok(Vec::new());
+    };
     let current = manifest.current_version_id.as_deref();
     Ok(manifest.entries.iter().map(|e| e.public(current)).collect())
 }
@@ -186,7 +284,8 @@ pub fn list_versions(project_dir: &Path, file_name: &str) -> Result<Vec<FileVers
 /// Returns the version and its snapshot text.
 ///
 /// # Errors
-/// [`StoreError::VersionNotFound`] for an unknown id or missing snapshot.
+/// [`StoreError::VersionNotFound`] for an unknown id, a missing snapshot,
+/// or a closed history.
 pub fn read_version(
     project_dir: &Path,
     file_name: &str,
@@ -196,8 +295,8 @@ pub fn read_version(
     if !is_version_id(version_id) {
         return Err(StoreError::BadRequest("version id required".to_owned()));
     }
-    let dir = store_dir(project_dir, file_name)?;
-    let manifest = read_manifest(&dir)?;
+    let (dir, manifest) = open_for_read(project_dir, file_name)?;
+    let manifest = manifest.ok_or(StoreError::VersionNotFound)?;
     let entry = manifest
         .entries
         .iter()
@@ -232,11 +331,12 @@ fn safe_content_path(entry: &Entry) -> String {
 
 /// Appends a snapshot of `content` and makes it current.
 ///
-/// A history marked deleted (the file was removed) is wiped first, unless
-/// this is a restore of one of its own entries.
+/// A closed history (its file deleted or replaced) is wiped first: it is
+/// not this file's, a restore of one of its entries included.
 ///
 /// # Errors
-/// [`StoreError::NotHtml`] or I/O and JSON errors.
+/// [`StoreError::NotHtml`], [`StoreError::BadRequest`] for a linked
+/// history folder, or I/O and JSON errors.
 pub fn create_version(
     project_dir: &Path,
     file_name: &str,
@@ -244,17 +344,16 @@ pub fn create_version(
     opts: NewVersion,
 ) -> Result<FileVersion> {
     require_html(file_name)?;
-    let dir = store_dir(project_dir, file_name)?;
-    let mut manifest = read_manifest(&dir)?;
-    let restoring_own = opts
-        .restore_from_version_id
-        .as_deref()
-        .is_some_and(|id| manifest.entries.iter().any(|e| e.id == id));
-    if manifest.deleted_at.is_some() && !restoring_own {
-        let _ = fs::remove_dir_all(&dir);
-        manifest = Manifest::default();
-    }
-    manifest.deleted_at = None;
+    let (dir, history) = resolve(project_dir, file_name)?;
+    let mut manifest = match history {
+        History::Linked => return Err(linked()),
+        History::Absent => Manifest::default(),
+        History::Open(manifest) => manifest,
+        History::Closed { .. } => {
+            let _ = fs::remove_dir_all(&dir);
+            Manifest::default()
+        }
+    };
     fs::create_dir_all(&dir)?;
 
     let restored_from = opts
@@ -322,8 +421,8 @@ pub fn create_version(
     Ok(public)
 }
 
-/// Creates a baseline version when the history is empty (or deleted).
-/// Returns the current version otherwise.
+/// Creates a baseline version when the history is empty (or closed).
+/// Returns the current version when it holds `content` already.
 ///
 /// # Errors
 /// Same as [`create_version`].
@@ -334,43 +433,54 @@ pub fn ensure_current_version(
     opts: NewVersion,
 ) -> Result<FileVersion> {
     require_html(file_name)?;
-    let dir = store_dir(project_dir, file_name)?;
-    let manifest = read_manifest(&dir)?;
-    if manifest.deleted_at.is_none()
-        && let Some(current) = manifest
-            .current_version_id
-            .as_deref()
-            .and_then(|id| manifest.entries.iter().find(|e| e.id == id))
-        && fs::read_to_string(dir.join(safe_content_path(current)))
-            .ok()
-            .as_deref()
-            == Some(content)
-    {
-        return Ok(current.public(Some(&current.id)));
+    let (dir, history) = resolve(project_dir, file_name)?;
+    match history {
+        History::Linked => return Err(linked()),
+        History::Open(manifest) => {
+            if let Some(current) = manifest
+                .current_version_id
+                .as_deref()
+                .and_then(|id| manifest.entries.iter().find(|e| e.id == id))
+                && fs::read_to_string(dir.join(safe_content_path(current)))
+                    .ok()
+                    .as_deref()
+                    == Some(content)
+            {
+                return Ok(current.public(Some(&current.id)));
+            }
+        }
+        History::Absent | History::Closed { .. } => {}
     }
     create_version(project_dir, file_name, content, opts)
 }
 
-/// Marks a file's history deleted; the next save starts a fresh history.
-/// A file that is not a page holds a history only while it is the page it
-/// was renamed from ([`rename_store`]); that history goes for good.
+/// Closes a file's history; the next save starts a fresh one. A file that
+/// is not a page holds a history only while it is the page it was renamed
+/// from ([`rename_store`]); that history goes for good. A linked history
+/// folder is left alone: nothing is read through it.
 ///
 /// # Errors
 /// I/O and JSON errors.
 pub fn mark_deleted(project_dir: &Path, file_name: &str) -> Result<()> {
-    let dir = store_dir(project_dir, file_name)?;
-    if !is_html_name(file_name) {
-        return match fs::remove_dir_all(&dir) {
-            Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err.into()),
-            _ => Ok(()),
-        };
+    let (dir, history) = resolve(project_dir, file_name)?;
+    match history {
+        History::Linked | History::Absent => Ok(()),
+        History::Open(_) | History::Closed { .. } if !is_html_name(file_name) => {
+            match fs::remove_dir_all(&dir) {
+                Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err.into()),
+                _ => Ok(()),
+            }
+        }
+        History::Open(manifest) => save(
+            &dir,
+            file_name,
+            History::Closed {
+                manifest,
+                away: None,
+            },
+        ),
+        History::Closed { .. } => Ok(()),
     }
-    let mut manifest = read_manifest(&dir)?;
-    if manifest.entries.is_empty() {
-        return Ok(());
-    }
-    manifest.deleted_at = Some(crate::now_ms());
-    write_manifest(&dir, file_name, &mut manifest)
 }
 
 /// Moves a history along with a renamed file; returns whether one moved
@@ -383,46 +493,57 @@ pub fn mark_deleted(project_dir: &Path, file_name: &str) -> Result<()> {
 /// closed.
 ///
 /// # Errors
-/// I/O and JSON errors; the history is then where it was.
+/// [`StoreError::BadRequest`] when either history folder is a link
+/// (nothing moved); I/O and JSON errors, the history is then where it was.
 pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
     if from == to {
         return Ok(false);
     }
-    let old_dir = store_dir(project_dir, from)?;
-    if !old_dir.is_dir() {
+    refuse_linked_history(project_dir, to)?;
+    let (old_dir, history) = resolve(project_dir, from)?;
+    if matches!(history, History::Linked) {
+        return Err(linked());
+    }
+    let new_dir = locate(project_dir, to).0;
+    if matches!(history, History::Absent) {
         mark_deleted(project_dir, to)?;
         return Ok(false);
     }
-    let new_dir = store_dir(project_dir, to)?;
     if new_dir.exists() {
         fs::remove_dir_all(&new_dir)?;
     }
     fs::rename(&old_dir, &new_dir)?;
     let relabel = || {
-        let mut manifest = read_manifest(&new_dir)?;
-        for entry in &mut manifest.entries {
-            to.clone_into(&mut entry.file_name);
-        }
-        match (is_html_name(from), is_html_name(to)) {
-            (false, true) => {
-                let left = manifest.away_digest.take();
-                if std::mem::take(&mut manifest.renamed_away)
-                    && left.is_some()
-                    && left == renamed_digest(project_dir, from, to)
-                {
-                    manifest.deleted_at = None;
+        let relabelled = |mut manifest: Manifest| {
+            for entry in &mut manifest.entries {
+                to.clone_into(&mut entry.file_name);
+            }
+            manifest
+        };
+        let moved = match (history, is_html_name(from), is_html_name(to)) {
+            (History::Linked | History::Absent, _, _) => return Ok(()),
+            // Back at a page's name: open again only as the same bytes.
+            (History::Closed { manifest, away }, false, true) => {
+                if away.is_some() && away == renamed_digest(project_dir, from, to) {
+                    History::Open(relabelled(manifest))
+                } else {
+                    History::Closed {
+                        manifest: relabelled(manifest),
+                        away: None,
+                    }
                 }
             }
-            (true, false) => {
-                if manifest.deleted_at.is_none() {
-                    manifest.deleted_at = Some(crate::now_ms());
-                    manifest.renamed_away = true;
-                    manifest.away_digest = renamed_digest(project_dir, from, to);
-                }
-            }
-            (false, false) | (true, true) => {}
-        }
-        write_manifest(&new_dir, to, &mut manifest)
+            (History::Open(manifest), true, false) => History::Closed {
+                manifest: relabelled(manifest),
+                away: renamed_digest(project_dir, from, to),
+            },
+            (History::Open(manifest), _, _) => History::Open(relabelled(manifest)),
+            (History::Closed { manifest, away }, _, _) => History::Closed {
+                manifest: relabelled(manifest),
+                away,
+            },
+        };
+        save(&new_dir, to, moved)
     };
     if let Err(err) = relabel() {
         let _ = fs::rename(&new_dir, &old_dir);
@@ -436,9 +557,10 @@ pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
 #[must_use]
 pub fn renamed_away(project_dir: &Path, file_name: &str) -> bool {
     !is_html_name(file_name)
-        && store_dir(project_dir, file_name)
-            .and_then(|dir| read_manifest(&dir))
-            .is_ok_and(|m| m.renamed_away)
+        && resolve(project_dir, file_name).is_ok_and(|(_, history)| match history {
+            History::Closed { away, .. } => away.is_some(),
+            History::Linked | History::Absent | History::Open(_) => false,
+        })
 }
 
 /// A file that is not a page, written by the app (`before` what it held
@@ -458,16 +580,22 @@ pub fn note_write(
     if is_html_name(file_name) {
         return Ok(());
     }
-    let dir = store_dir(project_dir, file_name)?;
-    let mut manifest = read_manifest(&dir)?;
-    if !manifest.renamed_away {
-        return Ok(());
+    let (dir, history) = resolve(project_dir, file_name)?;
+    match history {
+        History::Closed {
+            manifest,
+            away: Some(left),
+        } => {
+            let same = before.is_some_and(|b| hex::encode(Sha256::digest(b)) == left);
+            // Not the page: no digest, so no rename back opens the history.
+            let away = same.then(|| hex::encode(Sha256::digest(after)));
+            save(&dir, file_name, History::Closed { manifest, away })
+        }
+        History::Linked
+        | History::Absent
+        | History::Open(_)
+        | History::Closed { away: None, .. } => Ok(()),
     }
-    let same = manifest.away_digest.is_some()
-        && manifest.away_digest == before.map(|b| hex::encode(Sha256::digest(b)));
-    // Not the page: no digest, so no rename back opens the history.
-    manifest.away_digest = same.then(|| hex::encode(Sha256::digest(after)));
-    write_manifest(&dir, file_name, &mut manifest)
 }
 
 /// The digest of the file being renamed: at `to` once renamed, at `from`
@@ -482,6 +610,10 @@ fn renamed_digest(project_dir: &Path, from: &str, to: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn history_dir(dir: &Path, name: &str) -> PathBuf {
+        resolve(dir, name).unwrap().0
+    }
 
     #[test]
     fn create_list_read_restore_cycle() {
@@ -647,7 +779,7 @@ mod tests {
         create_version(&dir, "a.html", "x", NewVersion::default()).unwrap();
         let outside = tmp.path().join("outside.txt");
         fs::write(&outside, "mine").unwrap();
-        let manifest = store_dir(&dir, "a.html").unwrap().join(MANIFEST);
+        let manifest = history_dir(&dir, "a.html").join(MANIFEST);
         fs::remove_file(&manifest).unwrap();
         std::os::unix::fs::symlink(&outside, &manifest).unwrap();
         let _ = create_version(&dir, "a.html", "y", NewVersion::default());
@@ -679,12 +811,10 @@ mod tests {
         // Forward and undone before the file moved.
         assert!(rename_store(dir, "page.html", "page.md").unwrap());
         assert!(rename_store(dir, "page.md", "page.html").unwrap());
-        assert!(
-            read_manifest(&store_dir(dir, "page.html").unwrap())
-                .unwrap()
-                .deleted_at
-                .is_none()
-        );
+        assert!(matches!(
+            resolve(dir, "page.html").unwrap().1,
+            History::Open(_)
+        ));
         let v = ensure_current_version(dir, "page.html", "two", NewVersion::default()).unwrap();
         assert_eq!(v.version, 2, "the same version, not a new history");
         assert_eq!(list_versions(dir, "page.html").unwrap().len(), 2);
@@ -738,17 +868,34 @@ mod tests {
         create_version(dir, "a.html", "x", NewVersion::default()).unwrap();
         // Its folder read-only: the manifest (written through a temp file
         // and a rename) cannot be replaced; the folder itself still moves.
-        let old = store_dir(dir, "a.html").unwrap();
+        let old = history_dir(dir, "a.html");
         fs::set_permissions(&old, fs::Permissions::from_mode(0o555)).unwrap();
         let res = rename_store(dir, "a.html", "b.html");
         fs::set_permissions(
-            store_dir(dir, "a.html").unwrap(),
+            history_dir(dir, "a.html"),
             fs::Permissions::from_mode(0o755),
         )
         .unwrap();
         assert!(res.is_err());
         assert_eq!(list_versions(dir, "a.html").unwrap().len(), 1);
         assert!(list_versions(dir, "b.html").unwrap().is_empty());
+    }
+
+    /// Closing a history whose folder is a link: nothing is read through
+    /// it, so there is nothing to close, and nothing is written there.
+    #[cfg(unix)]
+    #[test]
+    fn closing_a_linked_history_is_a_no_op() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("p");
+        let elsewhere = tmp.path().join("elsewhere");
+        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, dir.join(VERSION_ROOT)).unwrap();
+        for name in ["a.html", "a.txt"] {
+            mark_deleted(&dir, name).unwrap();
+        }
+        assert!(fs::read_dir(&elsewhere).unwrap().next().is_none());
     }
 
     #[test]
