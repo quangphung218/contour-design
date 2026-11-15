@@ -767,18 +767,39 @@ impl Store {
         uploads: &[(N, B)],
         draft: Option<&str>,
     ) -> Result<Vec<UploadedFile>> {
+        self.upload_files_each(project_id, dir, uploads, draft, |_| {})
+    }
+
+    /// [`Self::upload_files`], calling `stored` with each upload's path
+    /// once it is stored (and recorded or deleted again), so a test can
+    /// act between two uploads of a batch as another request would.
+    pub(crate) fn upload_files_each<N: AsRef<str>, B: AsRef<[u8]>>(
+        &self,
+        project_id: &str,
+        dir: Option<&str>,
+        uploads: &[(N, B)],
+        draft: Option<&str>,
+        mut stored: impl FnMut(&str),
+    ) -> Result<Vec<UploadedFile>> {
         let mut written: Vec<String> = Vec::with_capacity(uploads.len());
         let mut kept = Vec::with_capacity(uploads.len());
-        let stored = uploads.iter().try_for_each(|(name, bytes)| {
+        let outcome = uploads.iter().try_for_each(|(name, bytes)| {
             let f = self.upload_file(project_id, dir, name.as_ref(), bytes.as_ref())?;
+            // Listed before it is recorded: one the record refuses goes too.
             written.push(f.path.clone());
+            let path = f.path.clone();
             match draft {
-                Some(session) if !self.record_draft_upload(project_id, session, &f.path)? => {}
+                Some(session) if !self.record_draft_upload(project_id, session, &f.path)? => {
+                    // Deleted at once, its path free again: another
+                    // upload may take it before the undo below runs.
+                    written.pop();
+                }
                 _ => kept.push(f),
             }
+            stored(&path);
             Ok(())
         });
-        match stored {
+        match outcome {
             Ok(()) => Ok(kept),
             Err(err) => {
                 for path in &written {

@@ -1043,6 +1043,42 @@ mod tests {
         assert!(!exists(&s, &p, "comments/c.png"));
     }
 
+    /// An upload of a batch for a released session is deleted at once, its
+    /// path free again: when a later one fails, the undo leaves alone the
+    /// file another upload put there in between.
+    #[cfg(unix)]
+    #[test]
+    fn a_batch_undone_keeps_the_file_another_upload_put_where_one_of_its_was() {
+        let (_tmp, s, p, _) = store();
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        // The page fails: its history would be written through a link.
+        let dir = s.root_for(&p).unwrap_or_else(|e| panic!("{e}")).dir;
+        let elsewhere = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        std::os::unix::fs::symlink(elsewhere.path(), dir.join(crate::versions::VERSION_ROOT))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let theirs: &[u8] = b"\x89PNG\r\n\x1a\nanother page's";
+        let both = [("a.png", PNG), ("b.html", b"<p>b</p>".as_slice())];
+        let failed = s.upload_files_each(&p, Some("comments"), &both, Some("s1"), |path| {
+            if path == "comments/a.png" {
+                assert!(!exists(&s, &p, path), "a late draft image is deleted");
+                let other = s
+                    .upload_file(&p, Some("comments"), "a.png", theirs)
+                    .unwrap_or_else(|e| panic!("{e}"));
+                assert_eq!(other.path, path);
+            }
+        });
+        assert!(failed.is_err());
+        assert_eq!(
+            s.read_file(&p, "comments/a.png")
+                .map(|(_, bytes)| bytes)
+                .unwrap_or_else(|e| panic!("{e}")),
+            theirs,
+            "another upload's file deleted"
+        );
+        assert!(!exists(&s, &p, "comments/b.html"));
+    }
+
     /// A project whose filling fails is not left half made.
     #[test]
     fn a_project_that_cannot_be_filled_is_removed() {

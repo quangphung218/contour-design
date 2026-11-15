@@ -774,7 +774,9 @@ pub async fn upload_assets(
     mut multipart: Multipart,
 ) -> ApiResult<Json<Value>> {
     let e = editable(&state, &id)?;
-    let mut saved = Vec::new();
+    // Every file read and checked before any is written: one refused
+    // and none of the batch lands.
+    let mut parts = Vec::new();
     while let Some(field) = multipart
         .next_field()
         .await
@@ -793,16 +795,22 @@ pub async fn upload_assets(
         if bytes.len() > MAX_ASSET_BYTES {
             return Err(ApiErr::bad_request(format!("{name} is larger than 20 MB")));
         }
-        tokio::fs::create_dir_all(inside(&e.dir, ASSETS_DIR)?)
-            .await
-            .map_err(|err| ApiErr::internal(err.to_string()))?;
+        parts.push((name, bytes));
+    }
+    if parts.is_empty() {
+        return Err(ApiErr::bad_request("no files in upload"));
+    }
+    // A write that fails half way keeps those before it: they replace
+    // assets of the same name, so Try again writes them over, adding none.
+    tokio::fs::create_dir_all(inside(&e.dir, ASSETS_DIR)?)
+        .await
+        .map_err(|err| ApiErr::internal(err.to_string()))?;
+    let mut saved = Vec::with_capacity(parts.len());
+    for (name, bytes) in parts {
         tokio::fs::write(inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?, &bytes)
             .await
             .map_err(|err| ApiErr::internal(err.to_string()))?;
         saved.push(json!({ "name": name, "kind": asset_kind(&name), "size": bytes.len() }));
-    }
-    if saved.is_empty() {
-        return Err(ApiErr::bad_request("no files in upload"));
     }
     Ok(Json(json!({ "assets": saved })))
 }
@@ -873,6 +881,58 @@ pub async fn list_revisions(
     Ok(Json(json!({ "revisions": revisions_of(&e.dir) })))
 }
 
+/// A package file an accept writes, with what it held before (`None`: it
+/// was not there).
+type Prior = (PathBuf, Option<Vec<u8>>);
+
+/// Writes an accepted revision's files into the package `dir`, all or
+/// nothing: on an error those written (or being written) get their old
+/// content back. Returns that old content, for [`put_back`] should the
+/// decision itself not be saved.
+fn accept_files(dir: &std::path::Path, files: &[RevisionFile]) -> ApiResult<Vec<Prior>> {
+    let mut prior = Vec::new();
+    let wrote = files
+        .iter()
+        .filter(|f| REVISABLE.contains(&f.name.as_str()))
+        .try_for_each(|f| {
+            let path = inside(dir, &f.name)?;
+            let old = match std::fs::read(&path) {
+                Ok(bytes) => Some(bytes),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+                Err(err) => return Err(ApiErr::internal(err.to_string())),
+            };
+            // Listed before the write: one that fails half way is put back.
+            prior.push((path.clone(), old));
+            internal(std::fs::write(&path, &f.content))
+        });
+    match wrote {
+        Ok(()) => Ok(prior),
+        Err(err) => {
+            put_back(&prior);
+            Err(err)
+        }
+    }
+}
+
+/// Undoes [`accept_files`]: each file gets back what it held.
+fn put_back(prior: &[Prior]) {
+    for (path, old) in prior.iter().rev() {
+        let undone = match old {
+            Some(bytes) => std::fs::write(path, bytes),
+            None => std::fs::remove_file(path).or_else(|err| {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    Ok(())
+                } else {
+                    Err(err)
+                }
+            }),
+        };
+        if let Err(err) = undone {
+            tracing::warn!(file = %path.display(), error = %err, "an accept that failed cannot be undone");
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct DecideBody {
     status: String,
@@ -905,22 +965,24 @@ pub async fn decide(
     let dir = e.dir.clone();
     let out = r.clone();
     write_and_reload(&state, move || {
-        if accept {
-            for f in &r.files {
-                if REVISABLE.contains(&f.name.as_str()) {
-                    std::fs::write(inside(&dir, &f.name)?, &f.content)
-                        .map_err(|err| ApiErr::internal(err.to_string()))?;
-                }
-            }
-        }
-        write_revision(
+        let prior = if accept {
+            accept_files(&dir, &r.files)?
+        } else {
+            Vec::new()
+        };
+        let decided = write_revision(
             &dir,
             &Revision {
                 files: Vec::new(),
                 ..r
             },
-        )
-        .map_err(|err| ApiErr::internal(err.to_string()))
+        );
+        // Still pending: the package goes back to what it was, so a
+        // Reject after this leaves none of the revision in it.
+        if decided.is_err() {
+            put_back(&prior);
+        }
+        internal(decided)
     })
     .await?;
     Ok(Json(
