@@ -487,13 +487,21 @@ fn diff_review_bridge(
 
 /// Writes `rel` under the project `cwd` through a temp file and a rename.
 /// The agent controls the folder, so the path is resolved inside the
-/// project first (a link out of it is refused), and the rename replaces a
-/// link at the target instead of writing through it.
+/// project first (a link out of it, or a linked folder on the way, is
+/// refused), and the rename replaces a link at the target instead of
+/// writing through it.
 fn write_in_project(cwd: &FsPath, rel: &str, text: &str) -> Result<(), String> {
     od_store::paths::resolve_safe_real(cwd, rel).map_err(|e| e.to_string())?;
     // The folder resolved, not the file: a resolved link would name the
     // file it points to, and the rename would replace that file.
     let (parent, name) = rel.rsplit_once('/').ok_or("no parent folder")?;
+    // A folder on the way that is a link is refused too, as the Files
+    // panel refuses it: the decision would land in another folder.
+    if od_store::paths::through_link(cwd, parent) {
+        return Err(format!(
+            "{parent} goes through a link; the decision is not written there"
+        ));
+    }
     let dir = od_store::paths::resolve_safe_real(cwd, parent).map_err(|e| e.to_string())?;
     let target = dir.join(name);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -577,6 +585,19 @@ async fn prefill(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The decision folder is a link to another folder of the project: the
+    /// decision is refused, not written there.
+    #[cfg(unix)]
+    #[test]
+    fn a_decision_folder_that_is_a_link_is_refused() {
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let cwd = tmp.path();
+        std::fs::create_dir(cwd.join("real")).unwrap_or_else(|e| panic!("{e}"));
+        std::os::unix::fs::symlink("real", cwd.join("review")).unwrap_or_else(|e| panic!("{e}"));
+        assert!(write_in_project(cwd, "review/decision.json", "{}").is_err());
+        assert!(!cwd.join("real/decision.json").exists());
+    }
 
     /// The agent left a link at the decision file: the write replaces the
     /// link, never the file it points to.

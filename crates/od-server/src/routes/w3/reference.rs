@@ -624,6 +624,24 @@ fn claim(dir: &FsPath, mark: &str, source: Option<&str>) -> Result<bool, RunErr>
     )))
 }
 
+/// Rewrites the mark a run of this command left in `dir`: through a temp
+/// file and a rename, so a link the agent put at the mark is replaced,
+/// never written through (it may point at any file of the user's).
+fn rewrite_mark(dir: &FsPath, mark: &str, body: &str) -> std::io::Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let tmp = dir.join(format!(
+        "{MARK_TMP}w{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = std::fs::write(&tmp, body).and_then(|()| std::fs::rename(&tmp, dir.join(mark)));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
+}
+
 /// Puts `dir/mark` holding `body` in place in one step: another run never
 /// reads it half written. `AlreadyExists` when another run's mark is there.
 fn place_mark(dir: &FsPath, mark: &str, body: &str) -> std::io::Result<()> {
@@ -1125,7 +1143,7 @@ fn take_and_fill(
     old.extend(["facts.json", "contact-sheet.png", "audio.m4a"].map(str::to_owned));
     remove_listed(out, &old).map_err(io)?;
     if !created {
-        std::fs::write(out.join(REFERENCE_MARK), mark_head(Some(film))).map_err(io)?;
+        rewrite_mark(out, REFERENCE_MARK, &mark_head(Some(film))).map_err(io)?;
     }
     for sub in ["scenes", "grid"] {
         std::fs::create_dir_all(out.join(sub)).map_err(io)?;
@@ -1139,7 +1157,7 @@ fn take_and_fill(
         let _ = if created {
             std::fs::remove_file(out.join(REFERENCE_MARK))
         } else {
-            std::fs::write(out.join(REFERENCE_MARK), mark_head(Some(film)))
+            rewrite_mark(out, REFERENCE_MARK, &mark_head(Some(film)))
         };
     }
     Ok(res?)
@@ -1409,7 +1427,7 @@ fn take_and_pair(
     *lock = Some(RunLock::take(dir)?);
     // Only the pairs the last run listed under its mark go.
     remove_listed(dir, &listed_pairs(dir)).map_err(io)?;
-    std::fs::write(dir.join(COMPARE_MARK), MARK_TEXT).map_err(io)?;
+    rewrite_mark(dir, COMPARE_MARK, MARK_TEXT).map_err(io)?;
     let mut written = Vec::new();
     let res = score(tools, a, b, points, Some(dir), &mut written);
     if res.is_err() {
@@ -1419,7 +1437,7 @@ fn take_and_pair(
         let _ = if created {
             std::fs::remove_file(dir.join(COMPARE_MARK))
         } else {
-            std::fs::write(dir.join(COMPARE_MARK), MARK_TEXT)
+            rewrite_mark(dir, COMPARE_MARK, MARK_TEXT)
         };
     }
     Ok(res?)
@@ -1546,6 +1564,44 @@ pub async fn reference(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The agent made a folder's compare mark a link to another file:
+    /// marking the folder replaces the link, never the file it points to.
+    #[cfg(unix)]
+    #[test]
+    fn a_mark_that_is_a_link_is_replaced_not_written_through() {
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let dir = tmp.path().join("pairs");
+        std::fs::create_dir(&dir).unwrap_or_else(|e| panic!("{e}"));
+        let outside = tmp.path().join("outside.txt");
+        std::fs::write(&outside, "mine").unwrap_or_else(|e| panic!("{e}"));
+        std::os::unix::fs::symlink(&outside, dir.join(COMPARE_MARK))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let tools = Tools {
+            ffmpeg: tmp.path().join("no-ffmpeg"),
+            ffprobe: tmp.path().join("no-ffprobe"),
+        };
+        let probe = Probe {
+            duration: 1.0,
+            width: 2,
+            height: 2,
+            fps: 1.0,
+            has_audio: false,
+        };
+        let video = tmp.path().join("a.mp4");
+        let _ = take_and_pair(
+            &tools,
+            (&video, &probe),
+            (&video, &probe),
+            1,
+            &dir,
+            &mut None,
+        );
+        assert_eq!(
+            std::fs::read_to_string(&outside).unwrap_or_default(),
+            "mine"
+        );
+    }
 
     #[test]
     fn matroska_duration_tags_read_as_seconds() {
