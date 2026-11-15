@@ -174,6 +174,21 @@ pub fn lang_of(data_root: &Path) -> Lang {
     lang(setting.as_deref(), sys_locale::get_locale().as_deref())
 }
 
+/// What the start-up splash (`static/index.html`, English) runs to speak
+/// `lang`, as the lock dialog does (QA-104). The splash has no language
+/// files: the app's saved `locale` is only readable here.
+pub fn splash_js(lang: Lang) -> Option<&'static str> {
+    match lang {
+        Lang::En => None,
+        Lang::Vi => Some(
+            "document.addEventListener('DOMContentLoaded', () => {\n  \
+             const text = document.getElementById('splash-text');\n  \
+             if (text) { document.documentElement.lang = 'vi'; \
+             text.textContent = 'Đang mở Contour…'; }\n});",
+        ),
+    }
+}
+
 /// The words of the dialog for a held lock: what is going on and what to
 /// do. No URL or folder: those go to the log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -395,5 +410,21 @@ mod tests {
         assert!(single_instance(None));
         assert!(single_instance(Some(std::ffi::OsStr::new(""))));
         assert!(!single_instance(Some(std::ffi::OsStr::new("/tmp/qa"))));
+    }
+
+    /// The splash speaks the dialog's language (QA-104): English in the
+    /// page, Vietnamese put in before it shows.
+    #[test]
+    fn the_splash_speaks_the_dialogs_language() {
+        let page = include_str!("../static/index.html");
+        assert!(page.contains(r#"<html lang="en">"#), "the page is English");
+        assert!(page.contains(r#"id="splash-text">Opening Contour…<"#));
+        assert!(
+            !page.contains("Đang mở"),
+            "no Vietnamese in the page itself"
+        );
+        assert_eq!(splash_js(Lang::En), None);
+        let vi = splash_js(Lang::Vi).unwrap_or_else(|| panic!("no script for vi"));
+        assert!(vi.contains("splash-text") && vi.contains("Đang mở Contour…"));
     }
 }

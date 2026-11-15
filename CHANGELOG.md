@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Desktop: the start-up splash speaks the app's language, as the dialog that can follow it does; it said "Đang mở Contour…" to everyone (QA-104).
+
 ## [0.2.0-beta.39] - 2026-11-16
 
 ### Fixed
