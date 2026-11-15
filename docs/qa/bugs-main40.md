@@ -102,7 +102,13 @@ and pass on both.
   (`manual_edit.rs:718`, the same route with a draft session). A
   multi-file upload that fails on file 2 (#215's own list) answers an
   error with file 1 written.
-- **Test**: `dbfail.qa.mjs` DB-08 (`knownBug('QA-105')`).
+- **Test**: `dbfail.qa.mjs` DB-08.
+- **Fixed**: an upload is all or nothing (`Store::upload_files`): a file
+  that fails, or a draft's image the database cannot record, and the
+  files of that upload already written are deleted before the error.
+  Try again lands at the same name. Its siblings (Library upload and
+  apply, a project from a template, Remix or Chat to design) follow the
+  same rule.
 
 ## Noted, not a bug
 

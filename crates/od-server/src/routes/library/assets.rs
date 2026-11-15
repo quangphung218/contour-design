@@ -183,10 +183,7 @@ pub async fn upload(
     let files = state
         .blocking(move |s| {
             let pid = library_project(s)?;
-            parts
-                .iter()
-                .map(|(name, bytes)| s.upload_file(&pid, Some(UPLOAD_DIR), name, bytes))
-                .collect::<Result<Vec<_>, _>>()
+            s.upload_files(&pid, Some(UPLOAD_DIR), &parts, None)
         })
         .await?;
     Ok(Json(
@@ -255,7 +252,7 @@ pub async fn chat(
                 .filter(|n| !n.is_empty())
                 .unwrap_or("Design from library")
                 .to_owned();
-            let (project, cid) = s.create_project(CreateProjectRequest {
+            let req = CreateProjectRequest {
                 id: None,
                 name,
                 skill_id: None,
@@ -267,18 +264,20 @@ pub async fn chat(
                 }),
                 custom_instructions: None,
                 conversation_id: None,
+            };
+            let (_, cid, project) = s.create_project_with(req, |project, _| {
+                let paths: Vec<String> = s
+                    .upload_files(&project.id, Some("assets"), &copies, None)?
+                    .into_iter()
+                    .map(|f| f.name)
+                    .collect();
+                let prompt = chat_prompt(body.prompt.as_deref(), &paths);
+                s.update_project(
+                    &project.id,
+                    serde_json::from_value(json!({ "pendingPrompt": prompt }))
+                        .map_err(|e| StoreError::BadRequest(e.to_string()))?,
+                )
             })?;
-            let mut paths = Vec::new();
-            for (base, bytes) in &copies {
-                let f = s.upload_file(&project.id, Some("assets"), base, bytes)?;
-                paths.push(f.name);
-            }
-            let prompt = chat_prompt(body.prompt.as_deref(), &paths);
-            let project = s.update_project(
-                &project.id,
-                serde_json::from_value(json!({ "pendingPrompt": prompt }))
-                    .map_err(|e| StoreError::BadRequest(e.to_string()))?,
-            )?;
             Ok((project, cid))
         })
         .await?;

@@ -278,17 +278,7 @@ pub async fn upload(
     }
     let project = id.clone();
     let files: Vec<od_contracts::UploadedFile> = state
-        .blocking(move |s| {
-            let mut kept = Vec::new();
-            for (original, bytes) in &parts {
-                let f = s.upload_file(&project, dir.as_deref(), original, bytes)?;
-                match &draft {
-                    Some(session) if !s.record_draft_upload(&project, session, &f.path)? => {}
-                    _ => kept.push(f),
-                }
-            }
-            Ok(kept)
-        })
+        .blocking(move |s| s.upload_files(&project, dir.as_deref(), &parts, draft.as_deref()))
         .await?;
     // A run going now must not list the user's upload as its own (UI-012).
     for f in &files {

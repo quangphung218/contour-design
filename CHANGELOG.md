@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Files: writing, creating, uploading, replacing or deleting a file, or deleting a folder, no longer reports an error after it was done when the database could not let go of what it held at that path (draft images, comments, the entry page); that is logged, and a deleted page's history still closes. Renaming or moving a file or folder already gone outside the app answers "not found" even when `.file-versions` is a link, as deleting does.
+- Files: an upload is all or nothing. When one file cannot be stored, or an image attached to a comment cannot be recorded as the draft's (the database held by another program), the files it already wrote are deleted before the error, so Try again no longer adds `shot-1.png` copies or leaves the image in the project (QA-105). Applying Library assets to a project checks every asset before copying any, and a Library upload, or a project made from a template, Remix or Chat to design that fails partway, leaves nothing behind.
 - Desktop: the start-up splash speaks the app's language, as the dialog that can follow it does; it said "Đang mở Contour…" to everyone (QA-104).
 
 ## [0.2.0-beta.39] - 2026-11-16

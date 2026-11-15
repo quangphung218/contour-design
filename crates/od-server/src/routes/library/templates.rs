@@ -238,7 +238,7 @@ pub async fn use_template(
                 .as_ref()
                 .and_then(|f| f.iter().find(|f| f.path.ends_with(".html")))
                 .map(|f| f.path.clone());
-            let (project, cid) = s.create_project(CreateProjectRequest {
+            let req = CreateProjectRequest {
                 id: None,
                 name: non_empty(body.name).unwrap_or_else(|| t.name.clone()),
                 skill_id: None,
@@ -253,10 +253,15 @@ pub async fn use_template(
                 }),
                 custom_instructions: None,
                 conversation_id: None,
+            };
+            // All or nothing: a file that cannot be written and the
+            // project goes, so Try again does not make a second one.
+            let (project, cid, ()) = s.create_project_with(req, |project, _| {
+                for f in t.files.unwrap_or_default() {
+                    s.write_file(&project.id, &f.path, f.content.as_bytes(), true, None)?;
+                }
+                Ok(())
             })?;
-            for f in t.files.unwrap_or_default() {
-                s.write_file(&project.id, &f.path, f.content.as_bytes(), true, None)?;
-            }
             Ok((project, cid))
         })
         .await?;
@@ -330,7 +335,7 @@ pub async fn remix(
     let skill_id = entry.info.id.clone();
     let (project, conversation_id) = state
         .blocking(move |s| {
-            let (project, cid) = s.create_project(CreateProjectRequest {
+            let req = CreateProjectRequest {
                 id: None,
                 name,
                 skill_id: Some(skill_id),
@@ -339,8 +344,10 @@ pub async fn remix(
                 metadata: Some(remix_metadata(kind)),
                 custom_instructions: None,
                 conversation_id: None,
+            };
+            let (project, cid, _) = s.create_project_with(req, |project, _| {
+                s.write_file(&project.id, "index.html", &html, true, None)
             })?;
-            s.write_file(&project.id, "index.html", &html, true, None)?;
             Ok((project, cid))
         })
         .await?;
