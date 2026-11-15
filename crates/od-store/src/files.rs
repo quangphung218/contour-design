@@ -7,7 +7,7 @@
 use crate::error::{Result, StoreError};
 use crate::paths::{
     assert_visible_for_import, is_ignored_dir_name, kind_for, mime_for, resolve_safe_real,
-    sanitize_name, sanitize_path, to_project_path, validate_project_path,
+    sanitize_name, sanitize_path, through_link, to_project_path, validate_project_path,
 };
 use od_contracts::{ProjectFile, UploadedFile};
 use serde_json::Value;
@@ -238,6 +238,16 @@ fn write_atomic(target: &Path, bytes: &[u8], place: Place) -> Result<()> {
     }
 }
 
+/// Replaces `target` with `bytes` through a temp file and a rename: a
+/// reader never sees a partial file, and a link at `target` is replaced
+/// (the rename acts on the name), never written through.
+///
+/// # Errors
+/// I/O errors.
+pub(crate) fn replace_atomic(target: &Path, bytes: &[u8]) -> Result<()> {
+    write_atomic(target, bytes, Place::Overwrite)
+}
+
 /// Claims `target` without overwriting: hard-links the finished temp file
 /// (readers never see a partial file). File systems without hard links
 /// (exFAT, FAT, many SMB shares) fall back to `create_new` and writing in
@@ -460,16 +470,6 @@ fn refuse_link(root: &ProjectRoot, rel: &str) -> Result<()> {
         ));
     }
     Ok(())
-}
-
-/// Whether `rel` under `dir` goes through a symlink: is one, or is in a
-/// folder that is one.
-fn through_link(dir: &Path, rel: &str) -> bool {
-    let mut path = dir.to_path_buf();
-    rel.split('/').any(|part| {
-        path.push(part);
-        fs::symlink_metadata(&path).is_ok_and(|m| m.is_symlink())
-    })
 }
 
 /// Undoes [`rename_file`] or [`move_folder`] (`now` back to `was`) when what

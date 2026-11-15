@@ -193,6 +193,18 @@ pub fn resolve_safe_real(root: &Path, name: &str) -> Result<PathBuf> {
     Ok(real)
 }
 
+/// Whether `rel` under `dir` goes through a symlink: is one, or is in a
+/// folder that is one. What is written, deleted or moved at such a path
+/// would change the file or folder the link points to.
+#[must_use]
+pub fn through_link(dir: &Path, rel: &str) -> bool {
+    let mut path = dir.to_path_buf();
+    rel.split('/').any(|part| {
+        path.push(part);
+        std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_symlink())
+    })
+}
+
 /// Canonicalizes the longest existing prefix of `path` and re-appends the
 /// missing tail. A missing component that is itself a (dangling) symlink is
 /// rejected: writing through it would land wherever it points.

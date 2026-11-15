@@ -954,6 +954,138 @@ mod tests {
         assert_eq!(list.len(), 1, "the old page's history came back: {list:?}");
     }
 
+    /// The page renamed to markdown, that file replaced outside the app,
+    /// then edited in the app: the edit is of the other file, so renamed
+    /// back it does not take the old page's history.
+    #[test]
+    fn a_markdown_file_replaced_outside_then_edited_in_the_app_takes_no_history() {
+        let (_tmp, s, p, _) = store();
+        for text in [&b"<p>one</p>"[..], b"<p>two</p>"] {
+            s.write_file(&p, "page.html", text, true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        let dir = project_dir(&s, &p);
+        for edit in 0..2 {
+            s.rename_file(&p, "page.html", "page.md")
+                .unwrap_or_else(|e| panic!("{e}"));
+            std::fs::remove_file(dir.join("page.md")).unwrap_or_else(|e| panic!("{e}"));
+            std::fs::write(dir.join("page.md"), b"# agent notes").unwrap_or_else(|e| panic!("{e}"));
+            if edit == 0 {
+                s.replace_file(&p, "page.md", b"# edited", "Edit")
+                    .unwrap_or_else(|e| panic!("{e}"));
+            } else {
+                s.write_file(&p, "page.md", b"# written", true, None)
+                    .unwrap_or_else(|e| panic!("{e}"));
+            }
+            s.rename_file(&p, "page.md", "page.html")
+                .unwrap_or_else(|e| panic!("{e}"));
+            s.write_file(&p, "page.html", b"<p>new</p>", true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+            let list = s
+                .list_versions(&p, "page.html")
+                .unwrap_or_else(|e| panic!("{e}"))
+                .versions;
+            assert_eq!(list.len(), 1, "edit {edit}: the old history came back");
+            // The next round starts from a page with a history of 2.
+            s.write_file(&p, "page.html", b"<p>two</p>", true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+    }
+
+    /// A history that cannot be read does not fail a write that already
+    /// changed the file: the write is reported done.
+    #[test]
+    fn a_write_whose_history_cannot_be_read_still_succeeds() {
+        use sha2::Digest as _;
+        let (_tmp, s, p, _) = store();
+        write(&s, &p, &["style.css"]);
+        let hash = hex::encode(sha2::Sha256::digest(b"style.css"));
+        let history = project_dir(&s, &p)
+            .join(crate::versions::VERSION_ROOT)
+            .join(&hash[..24]);
+        std::fs::create_dir_all(&history).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(history.join("manifest.json"), b"not json")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.write_file(&p, "style.css", b"b{}", true, None)
+            .unwrap_or_else(|e| panic!("write: {e}"));
+        s.replace_file(&p, "style.css", b"c{}", "Edit")
+            .unwrap_or_else(|e| panic!("replace: {e}"));
+    }
+
+    /// The project's own manifest is never written through a link the
+    /// agent left there: neither the file nor the folder.
+    #[cfg(unix)]
+    #[test]
+    fn the_project_manifest_is_not_written_through_a_link() {
+        let (tmp, s, p, _) = store();
+        let dir = project_dir(&s, &p);
+        let outside = tmp.path().join("outside.txt");
+        std::fs::write(&outside, b"mine").unwrap_or_else(|e| panic!("{e}"));
+        let manifest = dir.join(crate::store::PROJECT_MANIFEST_PATH);
+        std::fs::remove_file(&manifest).unwrap_or_else(|e| panic!("{e}"));
+        std::os::unix::fs::symlink(&outside, &manifest).unwrap_or_else(|e| panic!("{e}"));
+        let rename = |name: &str| {
+            s.update_project(
+                &p,
+                od_contracts::UpdateProjectRequest {
+                    name: Some(name.into()),
+                    ..od_contracts::UpdateProjectRequest::default()
+                },
+            )
+            .unwrap_or_else(|e| panic!("{e}"))
+        };
+        rename("q");
+        assert_eq!(std::fs::read(&outside).unwrap_or_default(), b"mine");
+        assert!(
+            !std::fs::symlink_metadata(&manifest)
+                .unwrap_or_else(|e| panic!("{e}"))
+                .is_symlink(),
+            "the link is replaced by the manifest"
+        );
+        // The folder a link to another folder: nothing written in it.
+        let elsewhere = tmp.path().join("elsewhere");
+        std::fs::create_dir(&elsewhere).unwrap_or_else(|e| panic!("{e}"));
+        let meta = manifest.parent().unwrap_or_else(|| panic!("no parent"));
+        std::fs::remove_dir_all(meta).unwrap_or_else(|e| panic!("{e}"));
+        std::os::unix::fs::symlink(&elsewhere, meta).unwrap_or_else(|e| panic!("{e}"));
+        rename("r");
+        assert!(
+            std::fs::read_dir(&elsewhere)
+                .unwrap_or_else(|e| panic!("{e}"))
+                .next()
+                .is_none(),
+            "written into the linked folder"
+        );
+    }
+
+    /// A history folder the agent made a link is refused, not written
+    /// through: no history lands outside the project.
+    #[cfg(unix)]
+    #[test]
+    fn a_history_folder_that_is_a_link_is_not_written_through() {
+        let (tmp, s, p, _) = store();
+        let dir = project_dir(&s, &p);
+        let elsewhere = tmp.path().join("elsewhere");
+        std::fs::create_dir(&elsewhere).unwrap_or_else(|e| panic!("{e}"));
+        let _ = std::fs::remove_dir_all(dir.join(crate::versions::VERSION_ROOT));
+        std::os::unix::fs::symlink(&elsewhere, dir.join(crate::versions::VERSION_ROOT))
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(s.write_file(&p, "page.html", b"<p>", true, None).is_err());
+        assert!(
+            std::fs::read_dir(&elsewhere)
+                .unwrap_or_else(|e| panic!("{e}"))
+                .next()
+                .is_none(),
+            "a history was written outside the project"
+        );
+    }
+
+    fn project_dir(s: &Store, p: &str) -> std::path::PathBuf {
+        s.project_root(&s.get_project(p).unwrap_or_else(|e| panic!("{e}")))
+            .unwrap_or_else(|e| panic!("{e}"))
+            .dir
+    }
+
     /// The page renamed to markdown and edited in the app (the files
     /// panel, a write): still the page, so renamed back it keeps its
     /// history.
