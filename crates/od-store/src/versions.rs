@@ -407,6 +407,26 @@ pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
     Ok(true)
 }
 
+/// A file that is not a page, written by the app: if it is a page renamed
+/// away ([`rename_store`]), it is still that page, so its digest follows
+/// the write and a rename back keeps the history. A file written outside
+/// the app does not come here: its history stays closed.
+///
+/// # Errors
+/// I/O and JSON errors.
+pub fn note_write(project_dir: &Path, file_name: &str, bytes: &[u8]) -> Result<()> {
+    if is_html_name(file_name) {
+        return Ok(());
+    }
+    let dir = store_dir(project_dir, file_name);
+    let mut manifest = read_manifest(&dir)?;
+    if !manifest.renamed_away {
+        return Ok(());
+    }
+    manifest.away_digest = Some(hex::encode(Sha256::digest(bytes)));
+    write_manifest(&dir, file_name, &mut manifest)
+}
+
 /// The digest of the file being renamed: at `to` once renamed, at `from`
 /// while its history moves first (the undo of a rename that failed).
 fn renamed_digest(project_dir: &Path, from: &str, to: &str) -> Option<String> {
@@ -522,6 +542,26 @@ mod tests {
             .unwrap();
         assert_eq!(v.version, 1, "the old page's history came back");
         assert_eq!(list_versions(dir, "page.html").unwrap().len(), 1);
+    }
+
+    /// A write only follows a page renamed away: other files get no
+    /// history from it.
+    #[test]
+    fn a_write_to_a_file_with_no_history_away_records_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        note_write(dir, "style.css", b"a{}").unwrap();
+        note_write(dir, "page.html", b"<p>").unwrap();
+        assert!(!dir.join(VERSION_ROOT).exists());
+        // A deleted page's history taken along stays closed.
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        mark_deleted(dir, "page.html").unwrap();
+        fs::write(dir.join("page.md"), "one").unwrap();
+        assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        note_write(dir, "page.md", b"one").unwrap();
+        assert!(rename_store(dir, "page.md", "page.html").unwrap());
+        let v = ensure_current_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 1);
     }
 
     /// No file could be read as the page left (nor as it came back): not

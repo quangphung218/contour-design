@@ -430,6 +430,7 @@ impl Store {
         if !existed {
             self.forget_comments_at(&root, project_id, &file.name)?;
         }
+        versions::note_write(&root.dir, &file.name, bytes)?;
         // Like the original app, every HTML save lands in the history.
         if is_html_name(&file.name)
             && let Ok(text) = std::str::from_utf8(bytes)
@@ -468,13 +469,13 @@ impl Store {
     pub fn rename_file(&self, project_id: &str, from: &str, to: &str) -> Result<ProjectFile> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
-        let (old_name, file) = files::rename_file(&root, from, to)?;
+        let (old_name, file, sidecar_moved) = files::rename_file(&root, from, to)?;
         if let Err(err) =
             self.follow_renames(&root, project_id, &[(old_name.clone(), file.name.clone())])
         {
             // All or nothing: the file back at its old name, where what
             // is recorded by path still is.
-            files::put_back(&root, &file.name, &old_name);
+            files::put_back(&root, &file.name, &old_name, sidecar_moved);
             return Err(err);
         }
         Ok(file)
@@ -602,6 +603,7 @@ impl Store {
         files::stat_file(&root, &safe)?;
         let file = files::write_file_exact(&root, &safe, bytes)?;
         self.forget_draft_row(project_id, &file.name)?;
+        versions::note_write(&root.dir, &file.name, bytes)?;
         Ok(file)
     }
 
@@ -649,7 +651,7 @@ impl Store {
         let _guard = self.versions_guard();
         let (rel, renamed) = files::move_folder(&root, from, to)?;
         if let Err(err) = self.follow_renames(&root, project_id, &renamed) {
-            files::put_back(&root, &rel, &validate_project_path(from)?);
+            files::put_back(&root, &rel, &validate_project_path(from)?, false);
             return Err(err);
         }
         Ok((rel, renamed.len()))

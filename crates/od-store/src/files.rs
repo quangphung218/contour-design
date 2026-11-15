@@ -1,6 +1,8 @@
 //! File operations inside one project folder. All names go through
 //! [`resolve_safe_real`]; listing skips hidden entries, generated trees,
-//! symlinks and `.artifact.json` sidecars.
+//! symlinks and `.artifact.json` sidecars. Reads follow a symlink; nothing
+//! is written, deleted or moved through one (see `through_link`), so the
+//! file or folder it points to is never changed under another name.
 
 use crate::error::{Result, StoreError};
 use crate::paths::{
@@ -312,14 +314,20 @@ fn write_named(
     if target.is_dir() {
         return Err(StoreError::BadRequest("path is a directory".to_owned()));
     }
+    let manifest = artifact_manifest.filter(|m| m.is_object());
+    let sidecar_rel = format!("{rel}{ARTIFACT_SUFFIX}");
+    refuse_link(root, &rel)?;
+    if manifest.is_some() {
+        refuse_link(root, &sidecar_rel)?;
+    }
     let place = if overwrite {
         Place::Overwrite
     } else {
         Place::CreateNew
     };
     write_atomic(&target, bytes, place)?;
-    if let Some(manifest) = artifact_manifest.filter(|m| m.is_object()) {
-        let sidecar = root.resolve(&format!("{rel}{ARTIFACT_SUFFIX}"))?;
+    if let Some(manifest) = manifest {
+        let sidecar = root.resolve(&sidecar_rel)?;
         write_atomic(
             &sidecar,
             &serde_json::to_vec_pretty(manifest)?,
@@ -336,6 +344,11 @@ fn write_named(
 /// Path errors or [`StoreError::FileNotFound`].
 pub fn delete_file(root: &ProjectRoot, name: &str) -> Result<String> {
     let full = root.resolve(name)?;
+    // A link, or a file in a linked folder, is not listed: deleting it
+    // would delete the file it points to.
+    if through_link(&root.dir, &validate_project_path(name)?) {
+        return Err(StoreError::FileNotFound);
+    }
     let meta = fs::symlink_metadata(&full).map_err(StoreError::from_file_io)?;
     if meta.is_dir() {
         return Err(StoreError::BadRequest("path is a directory".to_owned()));
@@ -351,10 +364,18 @@ pub fn delete_file(root: &ProjectRoot, name: &str) -> Result<String> {
 
 /// Renames `from` to a sanitized `to`, moving the artifact sidecar along.
 ///
+/// Returns the old name, the file, and whether a sidecar moved (what
+/// [`put_back`] must move back).
+///
 /// # Errors
-/// Path errors, [`StoreError::FileNotFound`] for a missing source,
-/// [`StoreError::FileExists`] when the target exists.
-pub fn rename_file(root: &ProjectRoot, from: &str, to: &str) -> Result<(String, ProjectFile)> {
+/// Path errors, [`StoreError::FileNotFound`] for a missing source or one
+/// through a link, [`StoreError::FileExists`] when the target exists,
+/// [`StoreError::BadRequest`] for a target through a link.
+pub fn rename_file(
+    root: &ProjectRoot,
+    from: &str,
+    to: &str,
+) -> Result<(String, ProjectFile, bool)> {
     assert_visible_for_import(to, root.imported)?;
     let old_name = validate_project_path(from)?;
     let new_name = sanitize_path(to)?;
@@ -367,7 +388,11 @@ pub fn rename_file(root: &ProjectRoot, from: &str, to: &str) -> Result<(String, 
     let mut new_name = new_name;
     if source == target {
         if old_name == new_name {
-            return Ok((old_name, describe(&root.real_dir(), new_name, &source_meta)));
+            return Ok((
+                old_name,
+                describe(&root.real_dir(), new_name, &source_meta),
+                false,
+            ));
         }
         // One file under both names: a file system that folds case
         // (APFS: `a.html` → `A.html`), or a link. The file takes the new
@@ -388,7 +413,10 @@ pub fn rename_file(root: &ProjectRoot, from: &str, to: &str) -> Result<(String, 
     if through_link(&root.dir, &old_name) {
         return Err(StoreError::FileNotFound);
     }
-    let old_sidecar = root.resolve(&format!("{old_name}{ARTIFACT_SUFFIX}"))?;
+    refuse_link(root, &new_name)?;
+    // Not resolved: a sidecar that is a link moves as the link, never the
+    // file it points to.
+    let old_sidecar = root.real_dir().join(format!("{old_name}{ARTIFACT_SUFFIX}"));
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -398,22 +426,40 @@ pub fn rename_file(root: &ProjectRoot, from: &str, to: &str) -> Result<(String, 
         new_name = to_project_path(&root.real_dir(), &real);
         target = real;
     }
-    let follow = || -> std::io::Result<fs::Metadata> {
-        if old_sidecar.is_file() {
+    let mut sidecar_moved = false;
+    let mut follow = || -> std::io::Result<fs::Metadata> {
+        if fs::symlink_metadata(&old_sidecar).is_ok_and(|m| !m.is_dir()) {
             let new_sidecar = root.real_dir().join(format!("{new_name}{ARTIFACT_SUFFIX}"));
             fs::rename(&old_sidecar, new_sidecar)?;
+            sidecar_moved = true;
         }
         fs::metadata(&target)
     };
     match follow() {
-        Ok(meta) => Ok((old_name, describe(&root.real_dir(), new_name, &meta))),
+        Ok(meta) => Ok((
+            old_name,
+            describe(&root.real_dir(), new_name, &meta),
+            sidecar_moved,
+        )),
         Err(err) => {
             // All or nothing: the file back where its sidecar and what is
             // recorded by path still are.
-            put_back(root, &new_name, &old_name);
+            put_back(root, &new_name, &old_name, sidecar_moved);
             Err(err.into())
         }
     }
+}
+
+/// [`StoreError::BadRequest`] when `rel` goes through a link: writing
+/// there would change the file or folder it points to.
+fn refuse_link(root: &ProjectRoot, rel: &str) -> Result<()> {
+    if through_link(&root.dir, rel) {
+        return Err(StoreError::BadRequest(
+            "this path goes through a link; Contour does not change what a link points to"
+                .to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 /// Whether `rel` under `dir` goes through a symlink: is one, or is in a
@@ -428,15 +474,17 @@ fn through_link(dir: &Path, rel: &str) -> bool {
 
 /// Undoes [`rename_file`] or [`move_folder`] (`now` back to `was`) when what
 /// follows the rename failed. Best effort: the error being reported is the
-/// one that made the undo needed.
-pub fn put_back(root: &ProjectRoot, now: &str, was: &str) {
+/// one that made the undo needed. The sidecar moves back only when the
+/// rename moved it (`sidecar_moved`): one found at `now` otherwise is another
+/// file's, left by a file gone outside the app.
+pub fn put_back(root: &ProjectRoot, now: &str, was: &str, sidecar_moved: bool) {
     let real = root.real_dir();
     let (now_path, was_path) = (real.join(now), real.join(was));
-    if fs::rename(&now_path, &was_path).is_err() {
+    if fs::rename(&now_path, &was_path).is_err() || !sidecar_moved {
         return;
     }
     let sidecar = |p: &str| real.join(format!("{p}{ARTIFACT_SUFFIX}"));
-    if was_path.is_file() && sidecar(now).is_file() {
+    if was_path.is_file() && fs::symlink_metadata(sidecar(now)).is_ok_and(|m| !m.is_dir()) {
         let _ = fs::rename(sidecar(now), sidecar(was));
     }
 }
@@ -481,7 +529,9 @@ pub fn upload_file(
     };
     root.ensure_exists()?;
     if !rel_dir.is_empty() {
-        fs::create_dir_all(root.resolve(&rel_dir)?)?;
+        let full = root.resolve(&rel_dir)?;
+        refuse_link(root, &rel_dir)?;
+        fs::create_dir_all(full)?;
     }
     let safe = sanitize_name(original_name);
     for file_name in candidate_names(&safe) {
@@ -556,6 +606,7 @@ pub fn create_folder(root: &ProjectRoot, path: &str) -> Result<String> {
     if full.exists() && !full.is_dir() {
         return Err(StoreError::FileExists);
     }
+    refuse_link(root, &rel)?;
     fs::create_dir_all(&full)?;
     Ok(rel)
 }
@@ -573,7 +624,9 @@ pub fn delete_folder(root: &ProjectRoot, path: &str) -> Result<(String, Vec<Stri
     }
     let full = root.resolve(&rel)?;
     let meta = fs::symlink_metadata(&full).map_err(StoreError::from_file_io)?;
-    if !meta.is_dir() {
+    // A link (or a folder in a linked one) is not a listed folder: the
+    // folder it points to, and all in it, would go.
+    if !meta.is_dir() || through_link(&root.dir, &rel) {
         return Err(StoreError::FileNotFound);
     }
     let mut held = Vec::new();
@@ -589,9 +642,10 @@ pub fn delete_folder(root: &ProjectRoot, path: &str) -> Result<(String, Vec<Stri
 ///
 /// # Errors
 /// Path errors, [`StoreError::FileNotFound`] when `from` is not a folder
-/// (a symlink is not one), [`StoreError::ReservedPath`] for hidden folders,
+/// (a symlink, or a folder in a linked one, is not one),
+/// [`StoreError::ReservedPath`] for hidden folders,
 /// [`StoreError::FileExists`] when `to` exists, [`StoreError::BadRequest`]
-/// for a move into itself.
+/// for a move into itself or into a linked folder.
 pub fn move_folder(
     root: &ProjectRoot,
     from: &str,
@@ -607,10 +661,13 @@ pub fn move_folder(
     }
     let source = root.resolve(&from)?;
     let meta = fs::symlink_metadata(root.dir.join(&from)).map_err(StoreError::from_file_io)?;
-    if !meta.is_dir() {
+    // A folder in a linked folder is not listed: the folder that would
+    // move is not the one named.
+    if !meta.is_dir() || through_link(&root.dir, &from) {
         return Err(StoreError::FileNotFound);
     }
     let target = root.resolve(&to)?;
+    refuse_link(root, &to)?;
     if target.starts_with(&source) {
         return Err(StoreError::BadRequest(
             "a folder cannot move into itself".to_owned(),
@@ -753,6 +810,199 @@ mod tests {
         // The file itself still renames.
         rename_file(&root, "a.html", "m.html").unwrap();
         assert!(dir.join("m.html").is_file());
+    }
+
+    /// A project with `a.html`, `real/b.html`, the link `l.html` → `a.html`
+    /// and the link `ld` → `real` (as the agent's shell makes them).
+    #[cfg(unix)]
+    fn linked(tmp: &tempfile::TempDir) -> ProjectRoot {
+        let dir = tmp.path();
+        fs::write(dir.join("a.html"), b"a").unwrap();
+        fs::create_dir_all(dir.join("real/sub")).unwrap();
+        fs::write(dir.join("real/b.html"), b"b").unwrap();
+        fs::write(dir.join("real/sub/c.html"), b"c").unwrap();
+        std::os::unix::fs::symlink("a.html", dir.join("l.html")).unwrap();
+        std::os::unix::fs::symlink("real", dir.join("ld")).unwrap();
+        managed(tmp)
+    }
+
+    /// What `linked` made is all still there, the links as links.
+    #[cfg(unix)]
+    fn untouched(tmp: &tempfile::TempDir) {
+        let dir = tmp.path();
+        assert_eq!(fs::read(dir.join("a.html")).unwrap(), b"a");
+        assert_eq!(fs::read(dir.join("real/b.html")).unwrap(), b"b");
+        assert_eq!(fs::read(dir.join("real/sub/c.html")).unwrap(), b"c");
+        for link in ["l.html", "ld"] {
+            assert!(fs::symlink_metadata(dir.join(link)).unwrap().is_symlink());
+        }
+        let mut real: Vec<_> = fs::read_dir(dir.join("real"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        real.sort();
+        assert_eq!(
+            real,
+            ["b.html", "sub"],
+            "nothing added to the linked folder"
+        );
+    }
+
+    /// Deleting a link, or a file or folder in a linked folder, never
+    /// deletes what it points to.
+    #[cfg(unix)]
+    #[test]
+    fn deleting_through_a_link_spares_what_it_points_to() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = linked(&tmp);
+        for name in ["l.html", "ld/b.html"] {
+            assert!(
+                matches!(delete_file(&root, name), Err(StoreError::FileNotFound)),
+                "{name}"
+            );
+        }
+        for path in ["ld", "ld/sub"] {
+            assert!(
+                matches!(delete_folder(&root, path), Err(StoreError::FileNotFound)),
+                "{path}"
+            );
+        }
+        untouched(&tmp);
+    }
+
+    /// A folder in a linked folder, or a move into one, is refused: the
+    /// folder that would move (or land) is not the one named.
+    #[cfg(unix)]
+    #[test]
+    fn moving_a_folder_through_a_link_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = linked(&tmp);
+        fs::create_dir(tmp.path().join("pages")).unwrap();
+        assert!(matches!(
+            move_folder(&root, "ld/sub", "moved"),
+            Err(StoreError::FileNotFound)
+        ));
+        assert!(matches!(
+            move_folder(&root, "pages", "ld/pages"),
+            Err(StoreError::BadRequest(_))
+        ));
+        assert!(!tmp.path().join("moved").exists());
+        assert!(tmp.path().join("pages").is_dir());
+        untouched(&tmp);
+    }
+
+    /// Writing at a link, or in a linked folder, is refused rather than
+    /// changing the file or folder it points to.
+    #[cfg(unix)]
+    #[test]
+    fn writing_through_a_link_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = linked(&tmp);
+        let refused = |res: Result<ProjectFile>, what: &str| {
+            assert!(
+                matches!(res, Err(StoreError::BadRequest(_))),
+                "{what}: {res:?}"
+            );
+        };
+        refused(write_file(&root, "l.html", b"x", true, None), "l.html");
+        refused(
+            write_file(&root, "ld/b.html", b"x", true, None),
+            "ld/b.html",
+        );
+        refused(
+            write_file(&root, "ld/new.html", b"x", false, None),
+            "ld/new",
+        );
+        refused(write_file_exact(&root, "l.html", b"x"), "exact");
+        refused(create_file_exact(&root, "ld/new.html", b"x"), "create");
+        // The sidecar a link holds is not written through either.
+        std::os::unix::fs::symlink("a.html", tmp.path().join("m.html.artifact.json")).unwrap();
+        let manifest = serde_json::json!({"kind": "page"});
+        refused(
+            write_file(&root, "m.html", b"m", true, Some(&manifest)),
+            "sidecar",
+        );
+        assert!(matches!(
+            upload_file(&root, Some("ld"), "new.png", b"x"),
+            Err(StoreError::BadRequest(_))
+        ));
+        for path in ["ld", "ld/new"] {
+            assert!(
+                matches!(create_folder(&root, path), Err(StoreError::BadRequest(_))),
+                "{path}"
+            );
+        }
+        assert!(matches!(
+            rename_file(&root, "a.html", "ld/a.html"),
+            Err(StoreError::BadRequest(_))
+        ));
+        untouched(&tmp);
+    }
+
+    /// A sidecar that is a link moves as the link: the file it points to
+    /// stays where it is.
+    #[cfg(unix)]
+    #[test]
+    fn a_sidecar_that_is_a_link_moves_as_the_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.html"), b"<p>").unwrap();
+        fs::write(dir.join("notes.json"), b"{}").unwrap();
+        std::os::unix::fs::symlink("notes.json", dir.join(format!("a.html{ARTIFACT_SUFFIX}")))
+            .unwrap();
+        rename_file(&managed(&tmp), "a.html", "b.html").unwrap();
+        assert_eq!(fs::read(dir.join("notes.json")).unwrap(), b"{}");
+        assert!(
+            fs::symlink_metadata(dir.join(format!("b.html{ARTIFACT_SUFFIX}")))
+                .unwrap()
+                .is_symlink()
+        );
+    }
+
+    /// Undoing a rename whose sidecar did not move leaves the sidecar at
+    /// the new name where it is: it is another file's (one gone outside
+    /// the app), not the renamed file's.
+    #[test]
+    fn putting_back_a_rename_leaves_a_sidecar_it_did_not_move() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("b.html"), b"<p>").unwrap();
+        fs::write(dir.join(format!("b.html{ARTIFACT_SUFFIX}")), b"stale").unwrap();
+        put_back(&managed(&tmp), "b.html", "a.html", false);
+        assert!(dir.join("a.html").is_file());
+        assert!(!dir.join(format!("a.html{ARTIFACT_SUFFIX}")).exists());
+        assert_eq!(
+            fs::read(dir.join(format!("b.html{ARTIFACT_SUFFIX}"))).unwrap(),
+            b"stale"
+        );
+    }
+
+    /// Windows refuses to replace a read-only file: the sidecar cannot
+    /// follow, and the stale one at the new name must not replace the
+    /// renamed file's own.
+    #[cfg(windows)]
+    #[test]
+    fn a_sidecar_that_cannot_replace_a_read_only_one_is_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.html"), b"<p>").unwrap();
+        fs::write(dir.join(format!("a.html{ARTIFACT_SUFFIX}")), b"own").unwrap();
+        let stale = dir.join(format!("b.html{ARTIFACT_SUFFIX}"));
+        fs::write(&stale, b"stale").unwrap();
+        let mut perms = fs::metadata(&stale).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&stale, perms.clone()).unwrap();
+        let res = rename_file(&managed(&tmp), "a.html", "b.html");
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        let _ = fs::set_permissions(&stale, perms);
+        if res.is_err() {
+            assert_eq!(
+                fs::read(dir.join(format!("a.html{ARTIFACT_SUFFIX}"))).unwrap(),
+                b"own"
+            );
+            assert!(dir.join("a.html").is_file());
+        }
     }
 
     /// The sidecar cannot take the new name (a folder holds it): the file
