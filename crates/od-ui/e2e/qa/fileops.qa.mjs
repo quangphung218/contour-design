@@ -156,7 +156,7 @@ test('FO-03', 'A page.md replaced outside the app does not take the old page\'s 
   await fileRow(page, 'page.html').click();
   const shown = await historyShown(page);
   assert.ok(!shown.includes('old page v1') && !shown.includes('old page v2'), `the old page's versions came with a different file: ${shown}`);
-}, { knownBug: 'QA-102' });
+});
 
 test('FO-17', 'A page deleted in the app, then written again by the agent\'s shell, does not offer the deleted page\'s versions', async ({ d, api, newPage }) => {
   const id = await createProject(d, 'Deleted then shell', { 'other.html': CPAGE('Other') });
@@ -173,7 +173,7 @@ test('FO-17', 'A page deleted in the app, then written again by the agent\'s she
   await page.frameLocator('[data-testid="preview"]').locator('#pick', { hasText: 'Written by the shell' }).waitFor();
   const shown = await historyShown(page);
   assert.ok(!shown.includes('deleted v1') && !shown.includes('deleted v2'), `History offers the deleted page's versions: ${shown}`);
-}, { knownBug: 'QA-102' });
+});
 
 test('FO-04', 'Renaming a file only in case renames it on disk, and its comment and versions follow', async ({ d, api, newPage }) => {
   const id = await createProject(d, 'Case rename', { 'other.html': CPAGE('Other') });
@@ -410,7 +410,11 @@ test('FO-15', 'With the version history folder a link, uploading a page says it 
     assert.match(said, /fail|could not|link/i, `the notice: ${said}`);
     assert.ok(!existsSync(join(dir, 'landing.html')), 'the refused page stays in the project');
     assert.ok(!(await listFiles(d, id)).includes('landing.html'), 'the refused page is listed');
+    const answered = page.waitForResponse((r) => r.url().endsWith(`/api/projects/${id}/upload`) && r.request().method() === 'POST');
     await page.getByTestId('upload-input').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: PNG });
+    // On disk is not enough: before QA-103's fix the image was written and the upload answered 400.
+    const res = await answered;
+    assert.ok(res.ok(), `the image upload answered ${res.status()}: ${await res.text()}`);
     await until(async () => (await listFiles(d, id)).includes('logo.png'), 'an image still uploads');
     assert.deepEqual(readdirSync(outside), ['keep.txt'], 'the folder the link points to was written');
   } finally {
@@ -443,7 +447,7 @@ test('FO-18', 'With the version history folder a link, deleting a file either de
   } finally {
     rmSync(outside, { recursive: true, force: true });
   }
-}, { knownBug: 'QA-103' });
+});
 
 test('FO-16', 'A link the agent made is not offered in the Files panel or as a Move to destination', async ({ d, newPage }) => {
   const id = await createProject(d, 'Link listing', { 'index.html': CPAGE('Index'), 'real/a.html': CPAGE('A'), 'b.html': CPAGE('B') });
