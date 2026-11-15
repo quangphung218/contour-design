@@ -122,6 +122,16 @@ fn store_dir(project_dir: &Path, file_name: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
+/// Refuses, as recording a version of `file_name` would, a history folder
+/// that is a link. For a write that records one after it: checked first,
+/// the page is not written when its history will be refused.
+///
+/// # Errors
+/// [`StoreError::BadRequest`] when the history folder holds a link.
+pub fn refuse_linked_history(project_dir: &Path, file_name: &str) -> Result<()> {
+    store_dir(project_dir, file_name).map(drop)
+}
+
 /// Lowercase hex sha256 of the snapshot bytes.
 #[must_use]
 pub fn content_digest(content: &str) -> String {
