@@ -13,7 +13,7 @@
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -404,7 +404,11 @@ try {
     await page.keyboard.press('Control+Shift+Tab');
     await frame.locator('#pick, #next').first().waitFor();
   };
-  const files = async () => (await api('/files')).files.map((f) => f.path);
+  // On disk: `GET files` leaves out the images of comments not sent.
+  const projectDir = join(data, 'projects', pid);
+  const files = async () => readdirSync(projectDir, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => join(e.parentPath, e.name).slice(projectDir.length + 1));
   await page.getByTestId('comment-mode').click();
   await until(async () => {
     await frame.locator('#pick').click({ timeout: 2000 });

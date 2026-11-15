@@ -7,7 +7,7 @@
 // system in localStorage, and warns before leaving with unsaved manual edits.
 
 import assert from 'node:assert/strict';
-import { test, run, createProject, until, sleep, waitTurn, writeFile, listFiles, unzip, OUT } from './lib.mjs';
+import { test, run, createProject, until, sleep, waitTurn, writeFile, listFiles, diskFiles, unzip, OUT } from './lib.mjs';
 
 const PAGE = '<!doctype html><html><body><h1 data-od-id="t">Hello tea</h1>' +
   '<p class="lead" data-od-id="lead">Fresh leaves daily.</p></body></html>';
@@ -505,7 +505,8 @@ test('DL-26', 'A Duplicate that fails after Leave stays on the page, and a reloa
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
 const CPAGE = (t) => `<!doctype html><html><body><p id="pick" style="font-size:24px">${t}</p><p id="next">Next one</p></body></html>`;
 const fileRow = (page, path) => page.locator(`[data-testid="file-row"][data-path="${path}"]`);
-const commentImages = async (d, id) => (await listFiles(d, id)).filter((f) => f.startsWith('comments/'));
+// On disk: `GET files` leaves out the images of comments not sent.
+const commentImages = async (d, id) => diskFiles(d, id).filter((f) => f.startsWith('comments/'));
 
 /** Picks #pick in the preview until a comment box opens on it. */
 async function pickDraft(page, frame) {
@@ -893,7 +894,7 @@ test('DL-42', 'Manual edit: an image uploaded, another file shown, then Leave: t
   await fileRow(page, 'z.html').click();
   await frame.locator('#pick').waitFor();
   release();
-  const assets = async () => (await listFiles(d, id)).filter((f) => f.startsWith('assets/'));
+  const assets = async () => diskFiles(d, id).filter((f) => f.startsWith('assets/'));
   await until(async () => (await assets()).length === 1, 'the image landed');
   assert.ok(!(await zipNames(d, id)).some((n) => n.startsWith('assets/')), 'not applied: not in the ZIP');
   await page.getByRole('link', { name: 'Projects' }).first().click();
@@ -1128,6 +1129,56 @@ test('DL-52', 'Back from the back-forward cache: the old draft images are gone, 
   assert.equal((await commentImages(d, id)).length, 1, 'the new image kept');
   await page.getByTestId('comment-add').click();
   await until(async () => (await zipNames(d, id)).some((n) => n.startsWith('comments/')), 'the comment\'s image ships');
+});
+
+test('DL-53', 'Back from the back-forward cache: a Manual edit image not applied goes, the src back to the page\'s own, the alt typed stays', async ({ d, newPage }) => {
+  const IMG = '<!doctype html><html><body><h1>Pictures</h1><img id="pic" src="x.png" alt="pic" style="width:80px;height:80px"></body></html>';
+  const id = await createProject(d, 'Manual image back', { 'img.html': IMG, 'z.html': CPAGE('Zed') });
+  const { page } = await newPage();
+  await page.goto(`${d.base}/projects/${id}`);
+  const frame = page.frameLocator('[data-testid="preview"]');
+  await fileRow(page, 'img.html').click();
+  await frame.locator('#pic').waitFor({ state: 'attached' });
+  await page.getByTestId('manual-edit-mode').click();
+  const panel = page.getByTestId('manual-edit-panel');
+  await panel.waitFor();
+  const img = panel.getByTestId('manual-element').and(page.locator('[data-tag="img"]'));
+  await panel.locator('[data-testid="manual-layer"][title="html > body:nth-of-type(1) > img:nth-of-type(1)"]').click();
+  await img.waitFor();
+  await panel.getByTestId('manual-tab-content').click();
+  await panel.getByTestId('manual-alt').fill('Typed alt');
+  // The upload lands while another file shows: img.html keeps the change,
+  // its src the image uploaded, not written.
+  let release;
+  const held = new Promise((r) => { release = r; });
+  let seen = false;
+  await page.route(/\/upload$/, async (route) => { seen = true; await held; await route.continue(); });
+  await panel.getByTestId('manual-image-input').setInputFiles({ name: 'hero.png', mimeType: 'image/png', buffer: PNG });
+  await until(() => seen, 'the upload sent');
+  await fileRow(page, 'z.html').click();
+  await frame.locator('#pick').waitFor();
+  release();
+  const assets = () => diskFiles(d, id).filter((f) => f.startsWith('assets/'));
+  await until(async () => assets().length === 1, 'the image landed');
+  await page.unroute(/\/upload$/);
+  // Put away in the back-forward cache (its session released), then back.
+  const gone = released(page);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await gone;
+  await until(async () => assets().length === 0, 'the image goes with the session put away');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await fileRow(page, 'img.html').click();
+  await img.waitFor();
+  await panel.getByTestId('manual-tab-content').click();
+  assert.equal(await panel.getByTestId('manual-alt').inputValue(), 'Typed alt', 'the alt typed stays');
+  await until(async () => (await panel.getByTestId('manual-src').inputValue()) === 'x.png', 'the src back to the page\'s own', 4000).catch(async () => {
+    assert.fail(`the src points to the image deleted: ${await panel.getByTestId('manual-src').inputValue()}`);
+  });
+  // Applied now: the page keeps its own image, nothing fails.
+  await panel.getByTestId('manual-apply-content').click();
+  await until(async () => (await raw(d, id, 'img.html')).includes('alt="Typed alt"'), 'the alt written');
+  assert.ok((await raw(d, id, 'img.html')).includes('src="x.png"'));
+  assert.equal(await page.getByTestId('manual-error').count(), 0);
 });
 
 await run('drafts');

@@ -83,15 +83,17 @@ pub(crate) fn forget_folder(
     dir: &str,
 ) -> rusqlite::Result<()> {
     let prefix = format!("{}/", dir.trim_end_matches('/'));
-    let len = i64::try_from(prefix.len()).unwrap_or(i64::MAX);
+    // `length` of SQLite itself: `substr` counts characters, Rust's `len`
+    // bytes (`Ảnh/` is 4 of one, 6 of the other).
     conn.execute(
-        "DELETE FROM preview_comments WHERE project_id = ?1 AND substr(file_path, 1, ?3) = ?2",
-        params![project_id, prefix, len],
+        "DELETE FROM preview_comments WHERE project_id = ?1 \
+         AND substr(file_path, 1, length(?2)) = ?2",
+        params![project_id, prefix],
     )?;
     conn.execute(
-        "DELETE FROM preview_comment_images WHERE substr(path, 1, ?3) = ?2 \
+        "DELETE FROM preview_comment_images WHERE substr(path, 1, length(?2)) = ?2 \
          AND comment_id IN (SELECT id FROM preview_comments WHERE project_id = ?1)",
-        params![project_id, prefix, len],
+        params![project_id, prefix],
     )?;
     Ok(())
 }
@@ -735,6 +737,301 @@ mod tests {
             entry(&s),
             Some((Some("web/index.html".into()), Some("keep".into())))
         );
+    }
+
+    fn set_entry(s: &Store, p: &str, entry: &str) {
+        let mut project = s.get_project(p).unwrap_or_else(|e| panic!("{e}"));
+        project.metadata = Some(od_contracts::ProjectMetadata {
+            entry_file: Some(entry.into()),
+            intent: Some("keep".into()),
+            ..Default::default()
+        });
+        s.with_conn(|conn| crate::db::update_project(conn, &project))
+            .unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    fn entry(s: &Store, p: &str) -> Option<(Option<String>, Option<String>)> {
+        let m = s.get_project(p).unwrap_or_else(|e| panic!("{e}")).metadata;
+        m.map(|m| (m.entry_file, m.intent))
+    }
+
+    fn on_disk(s: &Store, p: &str) -> Vec<String> {
+        let project = s.get_project(p).unwrap_or_else(|e| panic!("{e}"));
+        let root = s.project_root(&project).unwrap_or_else(|e| panic!("{e}"));
+        let mut names: Vec<String> = crate::files::list_files(&root)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// A folder name with diacritics: more bytes than characters.
+    #[test]
+    fn a_deleted_folder_with_diacritics_takes_its_comments_images_and_entry() {
+        let (_tmp, s, p, c) = store();
+        write(&s, &p, &["Ảnh/home.html", "Ảnh/pic.png", "Ảnhx.html"]);
+        on(&s, &p, &c, "Ảnh/home.html", &[]);
+        on(&s, &p, &c, "Ảnhx.html", &["Ảnh/pic.png"]);
+        set_entry(&s, &p, "Ảnh/home.html");
+        s.delete_folder(&p, "Ảnh").unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(where_(&s, &p, &c), [pair("Ảnhx.html", &[])]);
+        assert_eq!(entry(&s, &p), Some((None, Some("keep".into()))));
+    }
+
+    /// A page deleted, then made again outside the app (the agent's
+    /// shell) and renamed away and back: the deleted page's history stays
+    /// closed, not the new page's.
+    #[test]
+    fn a_deleted_pages_history_does_not_come_back_through_a_round_trip() {
+        let (_tmp, s, p, _) = store();
+        for t in [&b"<p>old one</p>"[..], b"<p>old two</p>"] {
+            s.write_file(&p, "page.html", t, true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        s.delete_file(&p, "page.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let dir = s
+            .project_root(&s.get_project(&p).unwrap_or_else(|e| panic!("{e}")))
+            .unwrap_or_else(|e| panic!("{e}"))
+            .dir;
+        std::fs::write(dir.join("page.html"), b"<p>agent new</p>")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "page.html", "page.md")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "page.md", "page.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.write_file(&p, "page.html", b"<p>new save</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let list = s
+            .list_versions(&p, "page.html")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .versions;
+        assert_eq!(
+            list.len(),
+            1,
+            "the deleted page's history came back: {list:?}"
+        );
+    }
+
+    #[test]
+    fn a_deleted_entry_file_no_longer_names_the_entry_page() {
+        let (_tmp, s, p, _) = store();
+        write(
+            &s,
+            &p,
+            &["site/home.html", "x/a.html", "xy.html", "gone.html"],
+        );
+        set_entry(&s, &p, "site/home.html");
+        s.delete_file(&p, "site/home.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(entry(&s, &p), Some((None, Some("keep".into()))));
+        // A file put at that name later is not the entry page for it.
+        write(&s, &p, &["site/home.html"]);
+        assert_eq!(entry(&s, &p), Some((None, Some("keep".into()))));
+        // A folder's own files only, not `xy.html`.
+        set_entry(&s, &p, "xy.html");
+        s.delete_folder(&p, "x").unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            entry(&s, &p),
+            Some((Some("xy.html".into()), Some("keep".into())))
+        );
+        write(&s, &p, &["x/a.html"]);
+        set_entry(&s, &p, "x/a.html");
+        s.delete_folder(&p, "x").unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(entry(&s, &p), Some((None, Some("keep".into()))));
+        // Gone outside the app, then deleted in it.
+        set_entry(&s, &p, "gone.html");
+        remove_outside(&s, &p, "gone.html");
+        assert!(matches!(
+            s.delete_file(&p, "gone.html"),
+            Err(StoreError::FileNotFound)
+        ));
+        assert_eq!(entry(&s, &p), Some((None, Some("keep".into()))));
+    }
+
+    #[test]
+    fn a_page_deleted_after_it_went_outside_the_app_closes_its_history() {
+        let (_tmp, s, p, _) = store();
+        s.write_file(&p, "gone.html", b"<p>one</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        remove_outside(&s, &p, "gone.html");
+        assert!(matches!(
+            s.delete_file(&p, "gone.html"),
+            Err(StoreError::FileNotFound)
+        ));
+        s.write_file(&p, "gone.html", b"<p>new</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let list = s
+            .list_versions(&p, "gone.html")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .versions;
+        assert_eq!(list.len(), 1, "the next page there took the old history");
+    }
+
+    #[test]
+    fn a_page_renamed_to_markdown_and_back_keeps_its_history() {
+        let (_tmp, s, p, _) = store();
+        for text in [&b"<p>one</p>"[..], b"<p>two</p>"] {
+            s.write_file(&p, "page.html", text, true, None)
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        s.rename_file(&p, "page.html", "page.md")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "page.md", "page.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.write_file(&p, "page.html", b"<p>three</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let list = s
+            .list_versions(&p, "page.html")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .versions;
+        assert_eq!(list.len(), 3, "the round trip lost the history: {list:?}");
+        // A markdown file put where the page went outside the app is not
+        // the page: renamed to one, it starts its own history.
+        s.rename_file(&p, "page.html", "page.md")
+            .unwrap_or_else(|e| panic!("{e}"));
+        remove_outside(&s, &p, "page.md");
+        s.upload_file(&p, None, "page.md", b"# new")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "page.md", "page.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let list = s
+            .list_versions(&p, "page.html")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .versions;
+        assert_eq!(list.len(), 1);
+        // Nor does one put where a folder holding such a file was deleted.
+        s.write_file(&p, "page.html", b"<p>four</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "page.html", "x/page.md")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.delete_folder(&p, "x").unwrap_or_else(|e| panic!("{e}"));
+        // Put back outside the app (the agent's shell).
+        let dir = s
+            .project_root(&s.get_project(&p).unwrap_or_else(|e| panic!("{e}")))
+            .unwrap_or_else(|e| panic!("{e}"))
+            .dir
+            .join("x");
+        std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(dir.join("page.md"), b"# again").unwrap_or_else(|e| panic!("{e}"));
+        s.rename_file(&p, "x/page.md", "page.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let list = s
+            .list_versions(&p, "page.html")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .versions;
+        assert_eq!(list.len(), 1, "the folder's page.md took the old history");
+    }
+
+    #[test]
+    fn a_rename_with_project_metadata_that_is_not_json_still_takes_the_comments() {
+        let (_tmp, s, p, c) = store();
+        write(&s, &p, &["a.html"]);
+        on(&s, &p, &c, "a.html", &[]);
+        for (i, bad) in ["not json", ""].into_iter().enumerate() {
+            s.with_conn(|conn| {
+                conn.execute(
+                    "UPDATE projects SET metadata_json = ?2 WHERE id = ?1",
+                    rusqlite::params![p, bad],
+                )?;
+                Ok(())
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+            let (from, to) = if i == 0 {
+                ("a.html", "b.html")
+            } else {
+                ("b.html", "a.html")
+            };
+            s.rename_file(&p, from, to)
+                .unwrap_or_else(|e| panic!("{bad:?}: {e}"));
+            assert_eq!(where_(&s, &p, &c), [pair(to, &[])], "{bad:?}");
+        }
+        // Deleted, the entry page it is not cleared from does not fail it.
+        s.delete_file(&p, "a.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        write(&s, &p, &["x/y.html"]);
+        s.delete_folder(&p, "x").unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    #[test]
+    fn a_rename_only_in_case_renames_the_file_on_disk_too() {
+        let (_tmp, s, p, c) = store();
+        write(&s, &p, &["a.html", "comments/pic.png"]);
+        on(&s, &p, &c, "a.html", &["comments/pic.png"]);
+        let file = s
+            .rename_file(&p, "a.html", "A.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(file.path, "A.html");
+        s.rename_file(&p, "comments/pic.png", "comments/Pic.png")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(on_disk(&s, &p), ["A.html", "comments/Pic.png"]);
+        assert_eq!(where_(&s, &p, &c), [pair("A.html", &["comments/Pic.png"])]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_rename_whose_history_cannot_move_leaves_all_at_the_old_name() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, s, p, c) = store();
+        s.write_file(&p, "a.html", b"<p>a</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        on(&s, &p, &c, "a.html", &[]);
+        let project = s.get_project(&p).unwrap_or_else(|e| panic!("{e}"));
+        let histories = s
+            .project_root(&project)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .dir
+            .join(crate::versions::VERSION_ROOT);
+        let mode = |m| std::fs::set_permissions(&histories, std::fs::Permissions::from_mode(m));
+        mode(0o555).unwrap_or_else(|e| panic!("{e}"));
+        let res = s.rename_file(&p, "a.html", "b.html");
+        mode(0o755).unwrap_or_else(|e| panic!("{e}"));
+        assert!(res.is_err(), "{res:?}");
+        assert_eq!(on_disk(&s, &p), ["a.html"], "the file is back at its name");
+        assert_eq!(where_(&s, &p, &c), [pair("a.html", &[])]);
+        let versions = s
+            .list_versions(&p, "a.html")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .versions;
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[test]
+    fn a_rename_or_move_whose_records_cannot_follow_puts_the_files_back() {
+        let (_tmp, s, p, c) = store();
+        s.write_file(&p, "a.html", b"<p>a</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.write_file(&p, "pages/b.html", b"<p>b</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        on(&s, &p, &c, "a.html", &[]);
+        on(&s, &p, &c, "pages/b.html", &[]);
+        s.with_conn(|conn| {
+            conn.execute_batch(
+                "CREATE TRIGGER no_moves BEFORE UPDATE ON preview_comments \
+                 BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+            )?;
+            Ok(())
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert!(s.rename_file(&p, "a.html", "b.html").is_err());
+        assert!(s.move_folder(&p, "pages", "site/pages").is_err());
+        assert_eq!(on_disk(&s, &p), ["a.html", "pages/b.html"]);
+        assert_eq!(
+            where_(&s, &p, &c),
+            [pair("a.html", &[]), pair("pages/b.html", &[])]
+        );
+        for (name, len) in [("a.html", 1), ("pages/b.html", 1), ("b.html", 0)] {
+            let list = crate::versions::list_versions(
+                &s.project_root(&s.get_project(&p).unwrap_or_else(|e| panic!("{e}")))
+                    .unwrap_or_else(|e| panic!("{e}"))
+                    .dir,
+                name,
+            )
+            .unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(list.len(), len, "{name}: the history moved anyway");
+        }
     }
 
     #[test]

@@ -75,6 +75,11 @@ struct Manifest {
     entries: Vec<Entry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     deleted_at: Option<i64>,
+    /// Closed only because its page took a name that is not a page's
+    /// ([`rename_store`]): a rename back to a page's name opens it again.
+    /// A history closed by a delete stays closed through such a round trip.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    renamed_away: bool,
 }
 
 /// Options for [`create_version`].
@@ -318,14 +323,19 @@ pub fn ensure_current_version(
 }
 
 /// Marks a file's history deleted; the next save starts a fresh history.
+/// A file that is not a page holds a history only while it is the page it
+/// was renamed from ([`rename_store`]); that history goes for good.
 ///
 /// # Errors
 /// I/O and JSON errors.
 pub fn mark_deleted(project_dir: &Path, file_name: &str) -> Result<()> {
-    if !is_html_name(file_name) {
-        return Ok(());
-    }
     let dir = store_dir(project_dir, file_name);
+    if !is_html_name(file_name) {
+        return match fs::remove_dir_all(&dir) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err.into()),
+            _ => Ok(()),
+        };
+    }
     let mut manifest = read_manifest(&dir)?;
     if manifest.entries.is_empty() {
         return Ok(());
@@ -334,37 +344,57 @@ pub fn mark_deleted(project_dir: &Path, file_name: &str) -> Result<()> {
     write_manifest(&dir, file_name, &mut manifest)
 }
 
-/// Moves a history along with a renamed HTML file. An existing history at
-/// the target is replaced. A page renamed to a name that is not a page's
-/// closes its history like a delete; a file renamed to a page's name does
-/// not take the history left there by a page gone outside the app.
+/// Moves a history along with a renamed file; returns whether one moved
+/// (what [`rename_store`]`(to, from)` undoes). A history left at the
+/// target, by a file gone outside the app, is replaced, or closed when the
+/// file brings none: it is not the renamed file's. A page renamed to a
+/// name that is not a page's takes its history along closed, and gets it
+/// back once renamed to a page's name again (`page.html` → `page.md` →
+/// `page.html` keeps it); one already closed (its page deleted) stays
+/// closed.
 ///
 /// # Errors
-/// I/O and JSON errors.
-pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<()> {
+/// I/O and JSON errors; the history is then where it was.
+pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
     if from == to {
-        return Ok(());
-    }
-    match (is_html_name(from), is_html_name(to)) {
-        (true, true) => {}
-        (true, false) => return mark_deleted(project_dir, from),
-        (false, true) => return mark_deleted(project_dir, to),
-        (false, false) => return Ok(()),
+        return Ok(false);
     }
     let old_dir = store_dir(project_dir, from);
     if !old_dir.is_dir() {
-        return Ok(());
+        mark_deleted(project_dir, to)?;
+        return Ok(false);
     }
     let new_dir = store_dir(project_dir, to);
     if new_dir.exists() {
         fs::remove_dir_all(&new_dir)?;
     }
     fs::rename(&old_dir, &new_dir)?;
-    let mut manifest = read_manifest(&new_dir)?;
-    for entry in &mut manifest.entries {
-        to.clone_into(&mut entry.file_name);
+    let relabel = || {
+        let mut manifest = read_manifest(&new_dir)?;
+        for entry in &mut manifest.entries {
+            to.clone_into(&mut entry.file_name);
+        }
+        match (is_html_name(from), is_html_name(to)) {
+            (false, true) => {
+                if std::mem::take(&mut manifest.renamed_away) {
+                    manifest.deleted_at = None;
+                }
+            }
+            (true, false) => {
+                if manifest.deleted_at.is_none() {
+                    manifest.deleted_at = Some(crate::now_ms());
+                    manifest.renamed_away = true;
+                }
+            }
+            (false, false) | (true, true) => {}
+        }
+        write_manifest(&new_dir, to, &mut manifest)
+    };
+    if let Err(err) = relabel() {
+        let _ = fs::rename(&new_dir, &old_dir);
+        return Err(err);
     }
-    write_manifest(&new_dir, to, &mut manifest)
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -434,6 +464,81 @@ mod tests {
         let v = ensure_current_version(dir, "b.html", "new", NewVersion::default()).unwrap();
         assert_eq!(v.version, 1);
         assert_eq!(list_versions(dir, "b.html").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_page_renamed_away_and_back_keeps_its_history() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        create_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        assert!(rename_store(dir, "page.md", "notes/page.md").unwrap());
+        assert!(rename_store(dir, "notes/page.md", "page.html").unwrap());
+        let v = ensure_current_version(dir, "page.html", "three", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 3, "the round trip lost the history");
+        let list = list_versions(dir, "page.html").unwrap();
+        assert_eq!(list.len(), 3);
+        assert!(list.iter().all(|v| v.file_name == "page.html"));
+    }
+
+    #[test]
+    fn a_deleted_pages_history_stays_closed_through_a_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        create_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        mark_deleted(dir, "page.html").unwrap();
+        // Another page.html (the agent's), renamed away and back.
+        assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        assert!(rename_store(dir, "page.md", "page.html").unwrap());
+        let v = ensure_current_version(dir, "page.html", "new", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 1, "the deleted page's history came back");
+        assert_eq!(list_versions(dir, "page.html").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_history_taken_along_by_a_file_that_is_not_a_page_goes_with_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        rename_store(dir, "page.html", "page.md").unwrap();
+        mark_deleted(dir, "page.md").unwrap();
+        // Another page.md, renamed to a page, starts its own history.
+        assert!(!rename_store(dir, "page.md", "page.html").unwrap());
+        let v = ensure_current_version(dir, "page.html", "new", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 1);
+    }
+
+    #[test]
+    fn a_page_with_no_history_renamed_onto_one_left_behind_does_not_take_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        // b.html's history, its page gone outside the app; a.html has none.
+        create_version(dir, "b.html", "old", NewVersion::default()).unwrap();
+        assert!(!rename_store(dir, "a.html", "b.html").unwrap());
+        let v = ensure_current_version(dir, "b.html", "new", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 1, "not b's old history's version 2");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_history_that_cannot_be_relabelled_stays_where_it_was() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        create_version(dir, "a.html", "x", NewVersion::default()).unwrap();
+        let old = store_dir(dir, "a.html");
+        fs::set_permissions(old.join(MANIFEST), fs::Permissions::from_mode(0o444)).unwrap();
+        let res = rename_store(dir, "a.html", "b.html");
+        fs::set_permissions(
+            store_dir(dir, "a.html").join(MANIFEST),
+            fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        assert!(res.is_err());
+        assert_eq!(list_versions(dir, "a.html").unwrap().len(), 1);
+        assert!(list_versions(dir, "b.html").unwrap().is_empty());
     }
 
     #[test]

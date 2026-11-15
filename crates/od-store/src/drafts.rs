@@ -153,13 +153,11 @@ pub(crate) fn forget_folder(
     dir: &str,
 ) -> rusqlite::Result<()> {
     let prefix = format!("{}/", dir.trim_end_matches('/'));
+    // `length` of SQLite itself: `substr` counts characters, Rust's `len`
+    // bytes (`Ảnh/` is 4 of one, 6 of the other).
     conn.execute(
-        "DELETE FROM draft_uploads WHERE project_id = ?1 AND substr(path, 1, ?3) = ?2",
-        params![
-            project_id,
-            prefix,
-            i64::try_from(prefix.len()).unwrap_or(i64::MAX)
-        ],
+        "DELETE FROM draft_uploads WHERE project_id = ?1 AND substr(path, 1, length(?2)) = ?2",
+        params![project_id, prefix],
     )?;
     Ok(())
 }
@@ -694,6 +692,25 @@ mod tests {
         assert!(
             exists(&s, &p, &img),
             "the user's file was taken for the draft's"
+        );
+    }
+
+    /// A folder name with diacritics: more bytes than characters.
+    #[test]
+    fn a_folder_with_diacritics_deleted_takes_its_rows() {
+        let (_tmp, s, p, _) = store();
+        let img = s
+            .upload_file(&p, Some("Ảnh"), "shot.png", PNG)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .path;
+        assert!(
+            s.record_draft_upload(&p, "s1", &img)
+                .unwrap_or_else(|e| panic!("{e}"))
+        );
+        s.delete_folder(&p, "Ảnh").unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty(),
+            "its row stayed with the folder gone"
         );
     }
 

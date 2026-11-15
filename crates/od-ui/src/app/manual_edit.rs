@@ -247,6 +247,39 @@ impl Manual {
         false
     }
 
+    /// The page is back from the back-forward cache: its draft session
+    /// let the images uploaded here go (`drafts`). A change that put one
+    /// in an image's `src`, not written, loses it (`shown`'s fields and
+    /// the kept ones); what else was typed stays.
+    pub fn session_gone(self, shown: Option<&str>) {
+        let gone = self.uploaded.with_value(Clone::clone);
+        if gone.is_empty() {
+            return;
+        }
+        self.uploaded.set_value(Vec::new());
+        if let Some(page) = shown {
+            let mut typed = self.drafts();
+            if self
+                .book
+                .with_value(|b| b.drop_images(&mut typed, page, &gone))
+            {
+                self.src.set(typed.src);
+            }
+        }
+        let lost = |k: &BTreeMap<String, Kept>| {
+            k.iter()
+                .any(|(page, kept)| kept.book.drop_images(&mut kept.drafts.clone(), page, &gone))
+        };
+        if self.kept.with_untracked(lost) {
+            self.kept.update(|k| {
+                for (page, kept) in k.iter_mut() {
+                    kept.book.drop_images(&mut kept.drafts, page, &gone);
+                }
+                k.retain(|_, kept| kept.book.dirty(&kept.drafts));
+            });
+        }
+    }
+
     fn drafts(self) -> mm::Drafts {
         mm::Drafts {
             text: self.text.get_untracked(),
@@ -466,6 +499,10 @@ impl StudioCtx {
             let shown = self.active_untracked().as_deref() == Some(file.as_str());
             match res {
                 Ok(r) => {
+                    // The image it took is the project's now: listed.
+                    if holds {
+                        self.refresh_files();
+                    }
                     if shown && let Some(before) = r.previous_version_id {
                         m.history.update(|h| {
                             h.record(Step {

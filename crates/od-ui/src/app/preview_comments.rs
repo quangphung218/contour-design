@@ -587,6 +587,11 @@ fn add_comment(
     };
     ctx.tasks.spawn_then(work, move |res| match res {
         Ok(r) => {
+            // Its images are the project's now: the Files panel lists them
+            // (not while a draft's, and no file changed to say so).
+            if !r.comment.attachments.is_empty() {
+                ctx.refresh_files();
+            }
             ctx.comments.update(|c| c.push(r.comment));
             // Sent: nothing left to ask about, shown or not, but images
             // or words that came meanwhile.

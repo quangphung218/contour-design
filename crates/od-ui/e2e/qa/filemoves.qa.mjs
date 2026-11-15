@@ -7,13 +7,16 @@
 // lost unseen) and the beta.37 changelog.
 
 import assert from 'node:assert/strict';
-import { test, run, createProject, until, listFiles, unzip } from './lib.mjs';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { test, run, createProject, until, listFiles, diskFiles, unzip } from './lib.mjs';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
 const CPAGE = (t) => `<!doctype html><html><body><p id="pick" style="font-size:24px">${t}</p><p id="next">Next one</p></body></html>`;
 const fileRow = (page, path) => page.locator(`[data-testid="file-row"][data-path="${path}"]`);
 const folderRow = (page, path) => page.locator(`[data-testid="folder-row"][data-path="${path}"]`);
-const commentImages = async (d, id) => (await listFiles(d, id)).filter((f) => f.startsWith('comments/'));
+// On disk: `GET files` leaves out the images of comments not sent.
+const commentImages = async (d, id) => diskFiles(d, id).filter((f) => f.startsWith('comments/'));
 
 async function pickDraft(page, frame) {
   await until(async () => {
@@ -147,7 +150,7 @@ test('MV-03', 'Moving the comments folder keeps the images of the comments sent'
   // The Files panel lists comments/ as any folder: tidying it away is a
   // normal thing to do.
   await moveFolderTo(page, 'comments', 'old');
-  await until(async () => (await listFiles(d, id)).some((f) => f.startsWith('old/comments/')), 'moved');
+  await until(async () => diskFiles(d, id).some((f) => f.startsWith('old/comments/')), 'moved');
   assert.deepEqual(await brokenImages(d, id), [], 'the comment sent points to an image that is no longer there');
   assert.deepEqual(await brokenShown(page), [], 'the Comments tab shows the image at its old path');
 });
@@ -247,14 +250,14 @@ test('MV-09', 'Moving a folder that holds a comment draft\'s image keeps it out 
   await typeNote(page, 'Draft with picture');
   await attach(page, 'moving.png');
   await moveFolderTo(page, 'comments', 'old');
-  await until(async () => (await listFiles(d, id)).some((f) => f.startsWith('old/comments/')), 'moved');
+  await until(async () => diskFiles(d, id).some((f) => f.startsWith('old/comments/')), 'moved');
   const all = await zipOf(await fetch(`${d.base}/api/projects/${id}/archive`));
   assert.ok(!all.some((n) => n.startsWith('old/comments/')), `a draft image ships after its folder moved: ${all}`);
   await page.getByRole('link', { name: 'Projects' }).first().click();
   await page.getByTestId('leave-dialog').getByTestId('leave-go').click();
   await until(async () => new URL(page.url()).pathname === '/projects', 'Projects opens');
-  await until(async () => !(await listFiles(d, id)).some((f) => f.startsWith('old/comments/')), 'the draft image deleted', 6000).catch(async () => {
-    assert.fail(`a draft image thrown away stays after its folder moved: ${await listFiles(d, id)}`);
+  await until(async () => !diskFiles(d, id).some((f) => f.startsWith('old/comments/')), 'the draft image deleted', 6000).catch(async () => {
+    assert.fail(`a draft image thrown away stays after its folder moved: ${diskFiles(d, id)}`);
   });
 });
 
@@ -263,7 +266,7 @@ test('MV-10', 'A comment draft whose image\'s folder was moved can still be sent
   await typeNote(page, 'Send after the move');
   await attach(page, 'moving.png');
   await moveFolderTo(page, 'comments', 'old');
-  await until(async () => (await listFiles(d, id)).some((f) => f.startsWith('old/comments/')), 'moved');
+  await until(async () => diskFiles(d, id).some((f) => f.startsWith('old/comments/')), 'moved');
   await page.getByTestId('comment-add').click();
   const saved = await until(async () => (await comments(d, id)).find((c) => c.note === 'Send after the move'), 'the comment saved', 5000).catch(async () => {
     const err = await page.locator('[role="alert"], .error-text').allTextContents();
@@ -317,25 +320,26 @@ test('MV-12', 'A comment sent in a deleted folder does not come back on the fold
   assert.equal(await page.getByTestId('comment-pin').count(), 0, 'the comment about the deleted Alpha page is pinned on Beta');
 });
 
-test('MV-13', 'A comment draft whose image was deleted can still be sent, without it', async ({ d, newPage }) => {
+test('MV-13', 'A comment draft whose images\' folder was deleted can still be sent, without them', async ({ d, newPage }) => {
   const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha') }, 'a.html');
   await typeNote(page, 'Send without it');
   await attach(page, 'gone.png');
-  await attach(page, 'kept.png');
-  const imgs = await commentImages(d, id);
-  const gone = imgs.find((f) => f.includes('gone'));
-  await folderRow(page, 'comments').click();
-  await rowMenu(page, fileRow(page, gone), 'row-delete');
+  await attach(page, 'also.png');
+  assert.equal((await commentImages(d, id)).length, 2);
+  // Not listed while a draft's (beta.39): the folder is what the Files
+  // panel offers to delete.
+  assert.ok(!(await fileRow(page, 'comments/gone.png').count()), 'a draft image is listed');
+  await rowMenu(page, folderRow(page, 'comments'), 'row-delete-folder');
   await page.getByTestId('file-dialog-confirm').click();
-  await until(async () => (await page.getByTestId('draft-image').count()) === 1, 'the deleted image leaves the draft', 4000).catch(() => {
-    assert.fail('the draft still shows the deleted image');
+  await until(async () => (await page.getByTestId('draft-image').count()) === 0, 'the deleted images leave the draft', 4000).catch(() => {
+    assert.fail('the draft still shows the deleted images');
   });
   await page.getByTestId('comment-add').click();
   const saved = await until(async () => (await comments(d, id)).find((c) => c.note === 'Send without it'), 'the comment saved', 5000).catch(async () => {
     const err = await page.locator('[role="alert"], .error-text').allTextContents();
-    assert.fail(`the comment could not be sent after its image was deleted: ${JSON.stringify(err)}`);
+    assert.fail(`the comment could not be sent after its images were deleted: ${JSON.stringify(err)}`);
   });
-  assert.deepEqual(saved.attachments.map((a) => a.path), imgs.filter((f) => f !== gone));
+  assert.deepEqual(saved.attachments, []);
 });
 
 test('MV-14', 'A file attached to the next message follows its rename, and leaves with its delete', async ({ d, newPage }) => {
@@ -365,6 +369,66 @@ test('MV-14', 'A file attached to the next message follows its rename, and leave
     assert.fail(`a deleted file is still attached: ${await chips()}`);
   });
   assert.deepEqual(await chips(), ['c.html']);
+});
+
+/** Deleted outside the app (the agent's shell, Finder). */
+const removeOutside = (d, id, path) => rmSync(join(d.data, 'projects', id, path));
+
+/** The comments the Comments tab lists for the file shown (no reload: what the Studio holds). */
+async function listed(page) {
+  const tab = page.getByTestId('comments-tab');
+  if ((await tab.getAttribute('aria-pressed')) !== 'true') await tab.click();
+  await page.getByTestId('comments-panel').waitFor();
+  return page.getByTestId('comment-item').count();
+}
+
+test('MV-15', 'Deleting a file already gone outside the app: the Studio lets its comment go too, and says the delete failed', async ({ d, newPage }) => {
+  const { page, id } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha'), 'b.html': CPAGE('Beta') }, 'a.html');
+  await typeNote(page, 'About Alpha');
+  await send(page);
+  assert.equal(await listed(page), 1);
+  // Attached to the next message too.
+  await page.getByTestId('comment-mode').click();
+  const composer = page.getByTestId('composer');
+  await composer.click();
+  await composer.pressSequentially('@a.ht');
+  await page.locator('[data-testid="mention-item"]', { hasText: 'a.html' }).first().click({ timeout: 5000 });
+  const chips = () => page.getByTestId('attachment-chip').evaluateAll((els) => els.map((e) => e.title));
+  await until(async () => (await chips()).includes('a.html'), 'the chip');
+  // The list not read again yet: the row is still there to delete.
+  const stale = await (await fetch(`${d.base}/api/projects/${id}/files`)).text();
+  await page.route(/\/api\/projects\/[^/]+\/files$/, (r) => (r.request().method() === 'GET'
+    ? r.fulfill({ status: 200, contentType: 'application/json', body: stale })
+    : r.continue()));
+  removeOutside(d, id, 'a.html');
+  await rowMenu(page, fileRow(page, 'a.html'), 'row-delete');
+  await page.getByTestId('file-dialog-confirm').click();
+  await page.getByTestId('file-dialog').getByRole('alert').waitFor();
+  assert.deepEqual(await comments(d, id), [], 'the server let the comment go');
+  await page.getByTestId('file-dialog').getByRole('button', { name: 'Cancel' }).click();
+  await until(async () => (await listed(page)) === 0, 'the Studio lets it go too', 4000).catch(() => {
+    assert.fail('the Studio still lists a comment the server deleted');
+  });
+  assert.deepEqual(await chips(), [], 'the file gone is still attached to the next message');
+});
+
+test('MV-16', 'A file renamed to the name of one gone outside the app does not show the comments left there', async ({ d, newPage }) => {
+  const { page, id, frame } = await commentDraft(newPage, d, { 'a.html': CPAGE('Alpha'), 'b.html': CPAGE('Beta') }, 'a.html');
+  await typeNote(page, 'About the old Alpha');
+  await send(page);
+  removeOutside(d, id, 'a.html');
+  await fileRow(page, 'a.html').waitFor({ state: 'detached' });
+  await rowMenu(page, fileRow(page, 'b.html'), 'row-rename');
+  await page.getByTestId('file-dialog-name').fill('a.html');
+  await page.getByTestId('file-dialog-confirm').click();
+  await page.getByTestId('file-dialog').waitFor({ state: 'detached' });
+  assert.deepEqual(await comments(d, id), [], 'the server let the comment left there go');
+  await fileRow(page, 'a.html').click();
+  await frame.locator('#pick', { hasText: 'Beta' }).waitFor();
+  await until(async () => (await listed(page)) === 0, 'not listed on the renamed file', 4000).catch(() => {
+    assert.fail('the comment about the old Alpha is listed on the file renamed to its name');
+  });
+  assert.equal(await page.getByTestId('comment-pin').count(), 0, 'pinned on the renamed file');
 });
 
 await run('filemoves');

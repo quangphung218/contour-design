@@ -687,6 +687,7 @@ for it") and spec.md (nothing the user made is lost unseen).
 | DL-50 | Manual change kept on a file not shown, renamed | Type, switch, rename | The change comes back on the new name | P2 | auto |
 | DL-51 | Manual image applied, Studio left before the write is saved | `source-edits` held, Projects, then let go | The page's image stays on disk and ships | P1 | auto |
 | DL-52 | Back from the back-forward cache with a comment draft | `pagehide` and `pageshow` (persisted) sent | The old image is deleted, the note stays, a new image is kept and ships | P2 | auto |
+| DL-53 | Back from the back-forward cache with a Manual edit image not applied | Image uploaded while another file shows, alt typed; `pagehide` and `pageshow` (persisted) | The image is deleted; Image URL shows the page's own again, the alt stays; Apply writes the alt with no error | P2 | auto |
 
 ## 24. Files moved, exported and copied with comments (`filemoves.qa.mjs`)
 
@@ -710,8 +711,10 @@ user made is lost unseen) and the beta.37 changelog.
 | MV-10 | Draft image's folder moved, then Add | Draft + image, move `comments`, Add | Saved with its image at the new path | P2 | auto (QA-099) |
 | MV-11 | Comment sent with an image, that image deleted | Add, image ▸ Delete | The comment stays, with no broken image; a file later at that name is not its image | P2 | auto |
 | MV-12 | Comment sent, its folder deleted, another folder moved to its name | Add, delete `pages`, `next/pages` ▸ Move to root | No pin on the new page; no comment left | P1 | auto |
-| MV-13 | Draft with two images, one deleted, then Add | Draft + 2 images, one ▸ Delete, Add | The draft shows one image; saved with it | P2 | auto |
+| MV-13 | Draft with two images, their folder deleted, then Add | Draft + 2 images (not listed while a draft's), `comments` ▸ Delete folder, Add | The draft shows no image; saved without them | P2 | auto |
 | MV-14 | Files attached to the next message, one renamed, one deleted | @ two files, rename one, delete the other | The chip shows the new name; the deleted one leaves | P2 | auto |
+| MV-15 | Delete a file already gone outside the app | Comment on a.html; `rm a.html` before the list reloads; Files ▸ Delete | Delete failed shows; the Comments tab no longer lists its comment | P2 | auto |
+| MV-16 | Rename onto the name of a file gone outside the app | Comment on a.html; `rm a.html`; rename b.html → a.html | No comment listed or pinned on the renamed file | P2 | auto |
 
 ## Not automated, and why
 

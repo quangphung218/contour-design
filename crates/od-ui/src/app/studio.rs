@@ -1924,6 +1924,9 @@ pub fn Studio() -> impl IntoView {
             ctx.draft_session.set_value(super::drafts::new_session());
             ctx.comment_drafts
                 .update(|d| d.values_mut().for_each(|d| d.images.clear()));
+            ctx.tools
+                .manual
+                .session_gone(ctx.active_untracked().as_deref());
         }
     });
     ctx.keep_held_queue();
