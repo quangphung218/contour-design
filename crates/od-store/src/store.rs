@@ -519,6 +519,11 @@ impl Store {
     pub fn delete_file(&self, project_id: &str, name: &str) -> Result<()> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
+        self.delete_file_held(&root, project_id, name)
+    }
+
+    /// [`Self::delete_file`] for a caller holding [`Self::versions_guard`].
+    fn delete_file_held(&self, root: &ProjectRoot, project_id: &str, name: &str) -> Result<()> {
         // A draft's image deleted (its x, Cancel), or found gone already
         // (the agent, Finder): no longer one to release, and a file put at
         // its path later is not taken for it. The comments on the file go
@@ -532,9 +537,9 @@ impl Store {
                 forget_entry(conn, project_id, rel, false)
             });
             log_unforgotten(rel, forgot);
-            close_history(&root, rel);
+            close_history(root, rel);
         };
-        match files::delete_file(&root, name) {
+        match files::delete_file(root, name) {
             Ok(rel) => {
                 forget(&rel);
                 Ok(())
@@ -731,6 +736,20 @@ impl Store {
         original_name: &str,
         bytes: &[u8],
     ) -> Result<UploadedFile> {
+        self.upload_file_ident(project_id, dir, original_name, bytes)
+            .map(|(uploaded, _)| uploaded)
+    }
+
+    /// [`Self::upload_file`], with the file's identity
+    /// ([`crate::drafts::file_ident`]) taken before another write can come:
+    /// `None` when it cannot be read.
+    fn upload_file_ident(
+        &self,
+        project_id: &str,
+        dir: Option<&str>,
+        original_name: &str,
+        bytes: &[u8],
+    ) -> Result<(UploadedFile, Option<String>)> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         let uploaded = files::upload_file(&root, dir, original_name, bytes)?;
@@ -747,14 +766,17 @@ impl Store {
         self.forget_draft_row(project_id, &uploaded.path);
         self.forget_comments_at(&root, project_id, &uploaded.path);
         snapshot_written(&root, &uploaded.name, bytes);
-        Ok(uploaded)
+        let ident = crate::drafts::file_ident(&root, &uploaded.path);
+        Ok((uploaded, ident))
     }
 
     /// Stores several uploads under `dir`, all or nothing: one that fails
     /// (or, for the draft session `draft`, cannot be recorded as its) and
     /// those already stored are deleted again before the error is
     /// returned. An upload never overwrites, so a kept half would make
-    /// Try again add `-1` copies (QA-105). Returns the files kept: with a
+    /// Try again add `-1` copies (QA-105). Only a file still the one
+    /// stored is deleted: one released (its page left), deleted or
+    /// replaced since, its path maybe another upload's now, is left alone. Returns the files kept: with a
     /// `draft` released already, those deleted at once are left out
     /// ([`Self::record_draft_upload`]).
     ///
@@ -781,17 +803,18 @@ impl Store {
         draft: Option<&str>,
         mut stored: impl FnMut(&str),
     ) -> Result<Vec<UploadedFile>> {
-        let mut written: Vec<String> = Vec::with_capacity(uploads.len());
+        // Each stored file's path and identity when written.
+        let mut written: Vec<(String, Option<String>)> = Vec::with_capacity(uploads.len());
         let mut kept = Vec::with_capacity(uploads.len());
         let outcome = uploads.iter().try_for_each(|(name, bytes)| {
-            let f = self.upload_file(project_id, dir, name.as_ref(), bytes.as_ref())?;
+            let (f, ident) =
+                self.upload_file_ident(project_id, dir, name.as_ref(), bytes.as_ref())?;
             // Listed before it is recorded: one the record refuses goes too.
-            written.push(f.path.clone());
+            written.push((f.path.clone(), ident));
             let path = f.path.clone();
             match draft {
                 Some(session) if !self.record_draft_upload(project_id, session, &f.path)? => {
-                    // Deleted at once, its path free again: another
-                    // upload may take it before the undo below runs.
+                    // Deleted at once: nothing of it to undo.
                     written.pop();
                 }
                 _ => kept.push(f),
@@ -802,15 +825,38 @@ impl Store {
         match outcome {
             Ok(()) => Ok(kept),
             Err(err) => {
-                for path in &written {
-                    match self.delete_file(project_id, path) {
-                        Ok(()) | Err(StoreError::FileNotFound) => {}
-                        Err(undo) => {
-                            tracing::warn!(file = %path, error = %undo, "an upload that failed cannot be undone");
-                        }
-                    }
-                }
+                self.undo_uploads(project_id, &written);
                 Err(err)
+            }
+        }
+    }
+
+    /// Deletes the files a failed batch stored, each only while it is still
+    /// the one written (same identity): the guard held from that check to
+    /// the delete, no upload or write of the app comes between.
+    fn undo_uploads(&self, project_id: &str, written: &[(String, Option<String>)]) {
+        if written.is_empty() {
+            return;
+        }
+        let root = match self.root_for(project_id) {
+            Ok(root) => root,
+            Err(err) => {
+                tracing::warn!(project = %project_id, error = %err, "an upload that failed cannot be undone");
+                return;
+            }
+        };
+        let _guard = self.versions_guard();
+        for (path, ident) in written {
+            let now = crate::drafts::file_ident(&root, path);
+            if ident.is_none() || now != *ident {
+                tracing::info!(file = %path, "a failed upload's path holds another file or none: kept");
+                continue;
+            }
+            match self.delete_file_held(&root, project_id, path) {
+                Ok(()) | Err(StoreError::FileNotFound) => {}
+                Err(undo) => {
+                    tracing::warn!(file = %path, error = %undo, "an upload that failed cannot be undone");
+                }
             }
         }
     }

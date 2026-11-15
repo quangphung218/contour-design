@@ -57,7 +57,7 @@ pub(crate) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
 /// there is one, its inode. A file moved, copied or unzipped there keeps
 /// its own mtime, often older than the record, so the mtime alone is not
 /// enough. `None` when the file cannot be read.
-fn file_ident(root: &ProjectRoot, path: &str) -> Option<String> {
+pub(crate) fn file_ident(root: &ProjectRoot, path: &str) -> Option<String> {
     let (_, full) = files::stat_file(root, path).ok()?;
     let meta = std::fs::symlink_metadata(full).ok()?;
     let mtime = meta
@@ -1077,6 +1077,72 @@ mod tests {
             "another upload's file deleted"
         );
         assert!(!exists(&s, &p, "comments/b.html"));
+    }
+
+    /// The page is left while its batch is stored: the release deletes an
+    /// image recorded already, and another upload takes its path before a
+    /// later image fails. The undo deletes only what is still the batch's.
+    #[cfg(unix)]
+    #[test]
+    fn a_batch_undone_after_its_page_was_left_mid_way_keeps_the_other_upload() {
+        let (_tmp, s, p, _) = store();
+        let dir = s.root_for(&p).unwrap_or_else(|e| panic!("{e}")).dir;
+        let elsewhere = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        std::os::unix::fs::symlink(elsewhere.path(), dir.join(crate::versions::VERSION_ROOT))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let theirs: &[u8] = b"\x89PNG\r\n\x1a\nanother page's";
+        let batch = [
+            ("keep.png", PNG),
+            ("a.png", PNG),
+            ("b.html", b"<p>b</p>".as_slice()),
+        ];
+        let failed = s.upload_files_each(&p, Some("comments"), &batch, Some("s1"), |path| {
+            if path == "comments/a.png" {
+                assert!(exists(&s, &p, path), "recorded, the session alive");
+                let gone = s
+                    .release_draft_session(&p, "s1")
+                    .unwrap_or_else(|e| panic!("{e}"));
+                assert_eq!(gone.len(), 2, "{gone:?}");
+                let other = s
+                    .upload_file(&p, Some("comments"), "a.png", theirs)
+                    .unwrap_or_else(|e| panic!("{e}"));
+                assert_eq!(other.path, path);
+            }
+        });
+        assert!(failed.is_err());
+        assert_eq!(
+            s.read_file(&p, "comments/a.png")
+                .map(|(_, bytes)| bytes)
+                .unwrap_or_else(|e| panic!("{e}")),
+            theirs,
+            "another upload's file deleted by the undo"
+        );
+        for path in ["comments/keep.png", "comments/b.html"] {
+            assert!(!exists(&s, &p, path), "{path} kept");
+        }
+    }
+
+    /// The undo still deletes what the batch stored when nothing touched
+    /// it, a file of another kind put next to it left alone.
+    #[test]
+    fn a_batch_undone_deletes_its_own_files() {
+        let (_tmp, s, p, _) = store();
+        let refuse = "CREATE TRIGGER no_c BEFORE INSERT ON draft_uploads \
+                      WHEN NEW.path LIKE '%c.png' BEGIN SELECT RAISE(ABORT, 'busy'); END;";
+        s.with_conn(|c| Ok(c.execute_batch(refuse)?))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let batch = [("a.png", PNG), ("b.png", PNG), ("c.png", PNG)];
+        let failed = s.upload_files_each(&p, Some("comments"), &batch, Some("s1"), |path| {
+            if path == "comments/b.png" {
+                // Replaced in place (the agent's shell): no longer the batch's.
+                let full = s.stat_file(&p, path).unwrap_or_else(|e| panic!("{e}")).1;
+                std::fs::write(full, b"the agent's").unwrap_or_else(|e| panic!("{e}"));
+            }
+        });
+        assert!(failed.is_err());
+        assert!(!exists(&s, &p, "comments/a.png"));
+        assert!(!exists(&s, &p, "comments/c.png"));
+        assert!(exists(&s, &p, "comments/b.png"), "replaced since, kept");
     }
 
     /// A project whose filling fails is not left half made.
