@@ -473,3 +473,100 @@ async fn the_handoff_prompt_leaves_draft_images_out() {
     assert!(prompt.contains(&format!("`{mine}`")), "{prompt}");
     assert!(!prompt.contains(&draft), "{prompt}");
 }
+
+/// Uploads `names` in one request into `comments/`, for draft session
+/// `draft` if any. Returns the status and the files answered.
+async fn upload_all(
+    d: &Daemon,
+    project: &str,
+    names: &[&str],
+    draft: Option<&str>,
+) -> (u16, Value) {
+    let mut body =
+        format!("--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"dir\"\r\n\r\ncomments\r\n");
+    if let Some(s) = draft {
+        body.push_str(&format!(
+            "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"draft\"\r\n\r\n{s}\r\n"
+        ));
+    }
+    for name in names {
+        body.push_str(&format!(
+            "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\nContent-Type: application/octet-stream\r\n\r\n<p>{name}</p>\r\n"
+        ));
+    }
+    body.push_str(&format!("--{BOUNDARY}--\r\n"));
+    let res = d
+        .http
+        .post(format!("{}/api/projects/{project}/upload", d.base))
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={BOUNDARY}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    let status = res.status().as_u16();
+    (status, res.json().await.unwrap_or(Value::Null))
+}
+
+/// QA-105: a draft's image the database cannot record is not kept as a
+/// plain project file; Try again lands it at the same name, not `-1`.
+#[tokio::test]
+async fn a_draft_image_the_database_cannot_record_is_not_kept() {
+    let d = daemon().await;
+    let (project, _) = d.project().await;
+    d.state
+        .store
+        .with_conn(|c| {
+            c.execute_batch(
+                "CREATE TRIGGER no_draft BEFORE INSERT ON draft_uploads \
+                 BEGIN SELECT RAISE(ABORT, 'busy'); END;",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let (status, v) = upload_all(&d, &project, &["shot.png"], Some("s1")).await;
+    assert!(status >= 500, "the record failed: {status} {v}");
+    assert!(
+        !on_disk(&d, &project, "comments/shot.png"),
+        "the image not recorded stays in the project"
+    );
+    d.state
+        .store
+        .with_conn(|c| Ok(c.execute_batch("DROP TRIGGER no_draft;")?))
+        .unwrap();
+    let (status, v) = upload_all(&d, &project, &["shot.png"], Some("s1")).await;
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["files"][0]["path"], "comments/shot.png", "Try again: {v}");
+}
+
+/// An upload of several files is all or nothing: one refused (a page
+/// whose history folder is a link) and the ones before it are gone too,
+/// so trying again does not add `-1` copies. The same with a draft.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_upload_one_file_of_which_fails_keeps_none() {
+    let d = daemon().await;
+    let (project, _) = d.project().await;
+    let root = d
+        .state
+        .store
+        .project_root(&d.state.store.get_project(&project).unwrap())
+        .unwrap()
+        .dir;
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), root.join(".file-versions")).unwrap();
+    for draft in [None, Some("s1")] {
+        let (status, v) = upload_all(&d, &project, &["a.png", "b.html", "c.png"], draft).await;
+        assert!(status >= 400, "b.html refused: {status} {v}");
+        let left: Vec<_> = std::fs::read_dir(root.join("comments"))
+            .map(|r| r.map(|e| e.unwrap().file_name()).collect())
+            .unwrap_or_default();
+        assert!(left.is_empty(), "{draft:?}: kept {left:?}");
+    }
+    std::fs::remove_file(root.join(".file-versions")).unwrap();
+    let (status, v) = upload_all(&d, &project, &["a.png", "b.html"], None).await;
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["files"][0]["path"], "comments/a.png", "Try again: {v}");
+}

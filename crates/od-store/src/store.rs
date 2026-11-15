@@ -750,6 +750,74 @@ impl Store {
         Ok(uploaded)
     }
 
+    /// Stores several uploads under `dir`, all or nothing: one that fails
+    /// (or, for the draft session `draft`, cannot be recorded as its) and
+    /// those already stored are deleted again before the error is
+    /// returned. An upload never overwrites, so a kept half would make
+    /// Try again add `-1` copies (QA-105). Returns the files kept: with a
+    /// `draft` released already, those deleted at once are left out
+    /// ([`Self::record_draft_upload`]).
+    ///
+    /// # Errors
+    /// As [`Self::upload_file`] and [`Self::record_draft_upload`].
+    pub fn upload_files<N: AsRef<str>, B: AsRef<[u8]>>(
+        &self,
+        project_id: &str,
+        dir: Option<&str>,
+        uploads: &[(N, B)],
+        draft: Option<&str>,
+    ) -> Result<Vec<UploadedFile>> {
+        let mut written: Vec<String> = Vec::with_capacity(uploads.len());
+        let mut kept = Vec::with_capacity(uploads.len());
+        let stored = uploads.iter().try_for_each(|(name, bytes)| {
+            let f = self.upload_file(project_id, dir, name.as_ref(), bytes.as_ref())?;
+            written.push(f.path.clone());
+            match draft {
+                Some(session) if !self.record_draft_upload(project_id, session, &f.path)? => {}
+                _ => kept.push(f),
+            }
+            Ok(())
+        });
+        match stored {
+            Ok(()) => Ok(kept),
+            Err(err) => {
+                for path in &written {
+                    match self.delete_file(project_id, path) {
+                        Ok(()) | Err(StoreError::FileNotFound) => {}
+                        Err(undo) => {
+                            tracing::warn!(file = %path, error = %undo, "an upload that failed cannot be undone");
+                        }
+                    }
+                }
+                Err(err)
+            }
+        }
+    }
+
+    /// Creates a project ([`Self::create_project`]) and runs `fill` on it
+    /// (its id, its first conversation's), all or nothing: when `fill`
+    /// fails the project is deleted again, so Try again does not leave a
+    /// second, half-made one.
+    ///
+    /// # Errors
+    /// As [`Self::create_project`], or what `fill` returns.
+    pub fn create_project_with<T>(
+        &self,
+        req: CreateProjectRequest,
+        fill: impl FnOnce(&Project, &str) -> Result<T>,
+    ) -> Result<(Project, String, T)> {
+        let (project, conversation_id) = self.create_project(req)?;
+        match fill(&project, &conversation_id) {
+            Ok(filled) => Ok((project, conversation_id, filled)),
+            Err(err) => {
+                if let Err(cleanup) = self.delete_project(&project.id) {
+                    tracing::warn!(project = %project.id, error = %cleanup, "a project half made cannot be removed");
+                }
+                Err(err)
+            }
+        }
+    }
+
     /// Lists a file's history, recording the current content as a baseline
     /// when the history is empty.
     ///

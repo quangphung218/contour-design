@@ -386,7 +386,7 @@ test('DB-08', 'While another program holds the database, an image attached to a 
     assert.deepEqual(stray, [], 'the image refused stays in the project');
     assert.deepEqual(listedAfter, [], 'the image refused is listed as a project file');
   }
-}, { timeout: 120_000, knownBug: 'QA-105' });
+}, { timeout: 120_000 });
 
 // ------------------------------------- removed by the agent, then renamed
 

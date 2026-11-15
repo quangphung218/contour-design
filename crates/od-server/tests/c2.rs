@@ -402,6 +402,30 @@ async fn library_assets_are_copied_into_the_project_and_attached() {
         .await;
         assert_eq!(status, want, "{body} → {v}");
     }
+
+    // All or nothing: one asset refused and none is copied, so trying
+    // again does not add `-2` copies of the ones before it.
+    let library = || {
+        let mut names: Vec<_> =
+            std::fs::read_dir(d.data.join(format!("projects/{target}/library")))
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect();
+        names.sort();
+        names
+    };
+    let before = library();
+    for refused in ["notes.md", "gone.png"] {
+        let (status, v) = send(
+            &d,
+            reqwest::Method::POST,
+            "/api/library/assets/apply",
+            &apply(json!([{"projectId": source, "path": "shots/hero.png"}, {"projectId": source, "path": refused}])),
+        )
+        .await;
+        assert!(status >= 400, "{refused}: {status} {v}");
+        assert_eq!(library(), before, "{refused}: an asset copied");
+    }
 }
 
 /// A jury that closes round 1, then thinks forever (until interrupted).

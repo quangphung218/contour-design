@@ -400,6 +400,29 @@ async fn saved_templates_and_remix() {
     for n in ["index.html", "css/site.css", "about.html"] {
         assert!(names.contains(&n), "{names:?}");
     }
+    // A file that cannot be written (under the page written before it):
+    // no project is left half made for Try again to add to.
+    d.state
+        .store
+        .with_conn(|c| {
+            c.execute(
+                "UPDATE templates SET files_json = json_insert(files_json, '$[#]', \
+                 json('{\"path\":\"index.html/x.css\",\"content\":\"x\"}')) WHERE id = ?1",
+                [&tid],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let projects = || async {
+        d.get_json("/api/projects").await["projects"]
+            .as_array()
+            .unwrap()
+            .len()
+    };
+    let before = projects().await;
+    let (s, v) = call(&d, "POST", &format!("/api/templates/{tid}/use"), None).await;
+    assert!(s >= 400, "{s} {v}");
+    assert_eq!(projects().await, before, "a half-made project is left");
     let (s, _) = call(
         &d,
         "POST",

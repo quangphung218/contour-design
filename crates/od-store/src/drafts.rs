@@ -1004,4 +1004,68 @@ mod tests {
         let (_tmp, s, p, _) = store();
         assert!(s.release_draft_session(&p, "a b").is_err());
     }
+
+    /// Several uploads for a draft, all or nothing (QA-105): the second
+    /// that cannot be recorded and both go, rows and files, so Try again
+    /// lands them at the same names.
+    #[test]
+    fn uploads_one_of_which_cannot_be_recorded_keep_none() {
+        let (_tmp, s, p, _) = store();
+        let refuse = "CREATE TRIGGER no_b BEFORE INSERT ON draft_uploads \
+                      WHEN NEW.path LIKE '%b.png' BEGIN SELECT RAISE(ABORT, 'busy'); END;";
+        s.with_conn(|c| Ok(c.execute_batch(refuse)?))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let both = [("a.png", PNG), ("b.png", PNG)];
+        assert!(
+            s.upload_files(&p, Some("comments"), &both, Some("s1"))
+                .is_err()
+        );
+        for path in ["comments/a.png", "comments/b.png"] {
+            assert!(!exists(&s, &p, path), "{path} kept");
+        }
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+        s.with_conn(|c| Ok(c.execute_batch("DROP TRIGGER no_b;")?))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let paths: Vec<String> = s
+            .upload_files(&p, Some("comments"), &both, Some("s1"))
+            .unwrap_or_else(|e| panic!("{e}"))
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(paths, ["comments/a.png", "comments/b.png"]);
+        // A session released already: none kept, none an error.
+        s.release_draft_session(&p, "s2")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let late = s
+            .upload_files(&p, Some("comments"), &[("c.png", PNG)], Some("s2"))
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(late.is_empty());
+        assert!(!exists(&s, &p, "comments/c.png"));
+    }
+
+    /// A project whose filling fails is not left half made.
+    #[test]
+    fn a_project_that_cannot_be_filled_is_removed() {
+        let (_tmp, s, _, _) = store();
+        let before = s.list_projects().unwrap_or_else(|e| panic!("{e}")).len();
+        let mut dir = None;
+        let made = s.create_project_with(
+            CreateProjectRequest {
+                name: "half".into(),
+                ..CreateProjectRequest::default()
+            },
+            |project, _| {
+                s.write_file(&project.id, "index.html", b"<p>a</p>", true, None)?;
+                dir = Some(s.stat_file(&project.id, "index.html")?.1);
+                Err::<(), _>(StoreError::BadRequest("the second file".into()))
+            },
+        );
+        assert!(made.is_err());
+        assert_eq!(
+            s.list_projects().unwrap_or_else(|e| panic!("{e}")).len(),
+            before
+        );
+        let page = dir.unwrap_or_else(|| panic!("filled"));
+        assert!(!page.exists(), "{page:?} left on disk");
+    }
 }
