@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.39] - 2026-11-16
+
 ### Fixed
 
 - Files: a page renamed to a name that is not a page's (`page.html` → `page.md`) and back keeps its version history; since beta.38 the next save wiped it. Renaming a file only in case (`a.html` → `A.html`) on macOS now renames it on disk too, not only its comments. A rename or folder move that fails partway (the version history or the database could not follow) puts the files back, instead of leaving the comments, draft images and entry page under the old name. Deleting the project's entry page (or its folder) clears it, so the next file at that name does not become the cover; deleting a file already gone outside the app closes its history too. Deleting a folder whose name has diacritics (`Ảnh/`) now also lets go of the comments, comment images and draft images under it. A `page.md` replaced outside the app after a page was renamed to it, then renamed back to `page.html`, no longer takes the old page's history; edited in the app (Files panel, a write) it keeps it. Renaming a link (or a file in a linked folder) is refused instead of renaming the file it points to, and a rename whose artifact sidecar cannot follow puts the file back under its old name, without moving a leftover sidecar of the new name onto it. Deleting, moving or writing through a link (as the agent's shell makes them) is refused too: deleting a link to a folder no longer deletes everything in that folder, and writing at a link no longer overwrites the file it points to. An artifact sidecar that is a link moves as the link. The project's own files are not written through a link either: `.open-design/project.json`, the version history (`.file-versions` or a page's folder in it, refused with an error before the page is written; an uploaded page is removed again), live artifacts (`.live-artifacts`), staged skills (`.od-skills`, the link is replaced by a folder), review decisions and the marks of reference and compare folders. A `page.md` replaced outside the app and then edited in the app no longer takes the old page's history back, and a write whose history cannot follow no longer reports the write as failed.
@@ -1205,7 +1207,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.38...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.39...HEAD
+[0.2.0-beta.39]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.38...v0.2.0-beta.39
 [0.2.0-beta.38]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.37...v0.2.0-beta.38
 [0.2.0-beta.37]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.36...v0.2.0-beta.37
 [0.2.0-beta.36]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.35...v0.2.0-beta.36
