@@ -196,3 +196,74 @@ fn artifacts_without_a_refreshable_source_do_not_refresh() {
     store.delete(&a.id).unwrap();
     assert!(store.list().unwrap().is_empty());
 }
+
+/// The agent made the live artifacts folder, an artifact's folder or its
+/// refresh log a link: nothing is written through it (spec 3.2 keeps
+/// writes in the project).
+#[cfg(unix)]
+#[test]
+fn links_in_the_live_artifacts_folder_are_not_written_through() {
+    use std::os::unix::fs::symlink;
+    // The whole folder a link: creating is refused.
+    let (tmp, _root, store) = setup();
+    let elsewhere = tmp.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    symlink(&elsewhere, store.root()).unwrap();
+    assert!(
+        store
+            .create(kpi_input(), Some(TEMPLATE), None, None)
+            .is_err()
+    );
+    assert!(std::fs::read_dir(&elsewhere).unwrap().next().is_none());
+
+    // An artifact's folder a link: updating is refused.
+    let (tmp, root, store) = setup();
+    let a = store
+        .create(kpi_input(), Some(TEMPLATE), None, None)
+        .unwrap();
+    let dir = store.paths(&a.id).unwrap().dir;
+    let moved = tmp.path().join("moved");
+    std::fs::rename(&dir, &moved).unwrap();
+    symlink(&moved, &dir).unwrap();
+    let other = TEMPLATE.replace("<h1>", "<h2>").replace("</h1>", "</h2>");
+    assert!(
+        store
+            .update(&a.id, UpdateInput::default(), Some(&other), None)
+            .is_err()
+    );
+    assert_eq!(
+        std::fs::read_to_string(moved.join("template.html")).unwrap(),
+        TEMPLATE
+    );
+
+    // Its refresh log a link to another file: the line is not added there.
+    std::fs::remove_file(&dir).unwrap();
+    std::fs::rename(&moved, &dir).unwrap();
+    let outside = tmp.path().join("outside.txt");
+    std::fs::write(&outside, "mine").unwrap();
+    symlink(&outside, dir.join("refreshes.jsonl")).unwrap();
+    std::fs::create_dir_all(root.dir.join("data")).unwrap();
+    std::fs::write(root.dir.join("data/kpis.json"), r#"{"rows":[]}"#).unwrap();
+    let _ = store.refresh(&root, &a.id);
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), "mine");
+
+    // The whole folder made a link to one holding an artifact: listing
+    // skips it, updating is refused.
+    let (tmp, _root, store) = setup();
+    let a = store
+        .create(kpi_input(), Some(TEMPLATE), None, None)
+        .unwrap();
+    let moved = tmp.path().join("moved-root");
+    std::fs::rename(store.root(), &moved).unwrap();
+    symlink(&moved, store.root()).unwrap();
+    assert!(store.list().unwrap().is_empty());
+    assert!(
+        store
+            .update(&a.id, UpdateInput::default(), Some(&other), None)
+            .is_err()
+    );
+    assert_eq!(
+        std::fs::read_to_string(moved.join(&a.id).join("template.html")).unwrap(),
+        TEMPLATE
+    );
+}
