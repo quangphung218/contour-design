@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Files: writing, creating, uploading, replacing or deleting a file, or deleting a folder, no longer reports an error after it was done when the database could not let go of what it held at that path (draft images, comments, the entry page); that is logged, and a deleted page's history still closes. Renaming or moving a file or folder already gone outside the app answers "not found" even when `.file-versions` is a link, as deleting does.
+
 ## [0.2.0-beta.39] - 2026-11-16
 
 ### Fixed
