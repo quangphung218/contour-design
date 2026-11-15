@@ -1085,6 +1085,8 @@ mod tests {
         assert!(!dir.join("page.html").exists(), "written, then refused");
         assert!(s.create_file_exact(&p, "other.html", b"<p>").is_err());
         assert!(!dir.join("other.html").exists(), "created, then refused");
+        assert!(s.upload_file(&p, None, "up.html", b"<p>").is_err());
+        assert!(!dir.join("up.html").exists(), "uploaded, then refused");
         empty(crate::versions::VERSION_ROOT);
         // Only the page's own history folder a link.
         std::fs::remove_file(&root).unwrap_or_else(|e| panic!("{e}"));
