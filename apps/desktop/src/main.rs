@@ -1637,51 +1637,57 @@ fn main() -> anyhow::Result<()> {
             // splash may load.
             let origin: Arc<OnceLock<String>> = Arc::new(OnceLock::new());
             let nav_origin = Arc::clone(&origin);
-            let window =
-                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                    // Every frame, the design previews too: Backspace
-                    // outside a text field does not go Back (QA-093).
-                    .initialization_script_for_all_frames(KEYS_JS)
-                    .on_navigation(move |url| {
-                        let ok = allowed_navigation(url, nav_origin.get().map(String::as_str));
-                        if !ok {
-                            tracing::warn!(%url, "blocked a navigation away from the app");
+            let builder =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()));
+            // The splash in the lock dialog's language (QA-104).
+            let builder = match data_lock::splash_js(data_lock::lang_of(data_dir.root())) {
+                Some(js) => builder.initialization_script(js),
+                None => builder,
+            };
+            let window = builder
+                // Every frame, the design previews too: Backspace
+                // outside a text field does not go Back (QA-093).
+                .initialization_script_for_all_frames(KEYS_JS)
+                .on_navigation(move |url| {
+                    let ok = allowed_navigation(url, nav_origin.get().map(String::as_str));
+                    if !ok {
+                        tracing::warn!(%url, "blocked a navigation away from the app");
+                    }
+                    ok
+                })
+                // The app never opens a second webview, nor the browser
+                // from here: the request does not say which frame asked,
+                // and a design's `window.open` with no click opened the
+                // browser on every load (QA-061). The app's own links go
+                // through `open_link`, a design's through the preview
+                // bridge's keyed `od:open-link`, which needs a real click.
+                .on_new_window(move |url, _| {
+                    tracing::warn!(%url, "blocked a new window");
+                    tauri::webview::NewWindowResponse::Deny
+                })
+                // A new page may show dialogs again though the user
+                // blocked the last page's (QA-064).
+                .on_page_load(|window, payload| {
+                    match payload.event() {
+                        tauri::webview::PageLoadEvent::Started => {
+                            on_page_started(&window, payload.url());
                         }
-                        ok
-                    })
-                    // The app never opens a second webview, nor the browser
-                    // from here: the request does not say which frame asked,
-                    // and a design's `window.open` with no click opened the
-                    // browser on every load (QA-061). The app's own links go
-                    // through `open_link`, a design's through the preview
-                    // bridge's keyed `od:open-link`, which needs a real click.
-                    .on_new_window(move |url, _| {
-                        tracing::warn!(%url, "blocked a new window");
-                        tauri::webview::NewWindowResponse::Deny
-                    })
-                    // A new page may show dialogs again though the user
-                    // blocked the last page's (QA-064).
-                    .on_page_load(|window, payload| {
-                        match payload.event() {
-                            tauri::webview::PageLoadEvent::Started => {
-                                on_page_started(&window, payload.url());
-                            }
-                            tauri::webview::PageLoadEvent::Finished => {
-                                on_page_finished(&window, payload.url());
-                            }
+                        tauri::webview::PageLoadEvent::Finished => {
+                            on_page_finished(&window, payload.url());
                         }
-                        // QA's crash-loop test hook; off unless asked.
-                        #[cfg(target_os = "macos")]
-                        if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                            qa_crash_web(&window, payload.url());
-                        }
-                    })
-                    .title(APP_NAME)
-                    .inner_size(1360.0, 860.0)
-                    .min_inner_size(900.0, 600.0)
-                    // Files dropped on the window reach the page as HTML5 drops
-                    // (files panel, Markdown editor) instead of Tauri events.
-                    .disable_drag_drop_handler();
+                    }
+                    // QA's crash-loop test hook; off unless asked.
+                    #[cfg(target_os = "macos")]
+                    if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        qa_crash_web(&window, payload.url());
+                    }
+                })
+                .title(APP_NAME)
+                .inner_size(1360.0, 860.0)
+                .min_inner_size(900.0, 600.0)
+                // Files dropped on the window reach the page as HTML5 drops
+                // (files panel, Markdown editor) instead of Tauri events.
+                .disable_drag_drop_handler();
             // The UI draws its own title strip under the traffic lights
             // (od-ui `data-shell="mac"`, dragged via data-tauri-drag-region).
             #[cfg(target_os = "macos")]
