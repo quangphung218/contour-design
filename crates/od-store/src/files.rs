@@ -977,7 +977,8 @@ mod tests {
         );
     }
 
-    /// Windows refuses to replace a read-only file: the sidecar cannot
+    /// Windows refuses to replace a read-only file (std renames without
+    /// `FILE_RENAME_FLAG_IGNORE_READONLY_ATTRIBUTE`): the sidecar cannot
     /// follow, and the stale one at the new name must not replace the
     /// renamed file's own.
     #[cfg(windows)]
@@ -996,13 +997,13 @@ mod tests {
         #[allow(clippy::permissions_set_readonly_false)]
         perms.set_readonly(false);
         let _ = fs::set_permissions(&stale, perms);
-        if res.is_err() {
-            assert_eq!(
-                fs::read(dir.join(format!("a.html{ARTIFACT_SUFFIX}"))).unwrap(),
-                b"own"
-            );
-            assert!(dir.join("a.html").is_file());
-        }
+        assert!(res.is_err(), "the read-only sidecar was replaced");
+        assert_eq!(
+            fs::read(dir.join(format!("a.html{ARTIFACT_SUFFIX}"))).unwrap(),
+            b"own"
+        );
+        assert!(dir.join("a.html").is_file());
+        assert_eq!(fs::read(&stale).unwrap(), b"stale");
     }
 
     /// The sidecar cannot take the new name (a folder holds it): the file

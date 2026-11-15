@@ -438,6 +438,11 @@ impl Store {
             && safe
                 .as_deref()
                 .is_some_and(|safe| files::stat_file(&root, safe).is_ok());
+        if let Some(safe) = &safe
+            && records_version(safe, bytes)
+        {
+            versions::refuse_linked_history(&root.dir, safe)?;
+        }
         let before = match &safe {
             Some(safe) if existed => self.away_before(&root, safe),
             _ => None,
@@ -470,6 +475,11 @@ impl Store {
     ) -> Result<ProjectFile> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
+        if let Ok(exact) = validate_project_path(name)
+            && records_version(&exact, bytes)
+        {
+            versions::refuse_linked_history(&root.dir, &exact)?;
+        }
         let file = files::create_file_exact(&root, name, bytes)?;
         self.forget_draft_row(project_id, &file.name)?;
         self.forget_comments_at(&root, project_id, &file.name)?;
@@ -860,6 +870,12 @@ impl Store {
         )?;
         Ok((file, version))
     }
+}
+
+/// Whether writing `bytes` at `name` records a version: every HTML save
+/// that is text.
+fn records_version(name: &str, bytes: &[u8]) -> bool {
+    is_html_name(name) && std::str::from_utf8(bytes).is_ok()
 }
 
 /// [`versions::note_write`] after a write that already changed the file:

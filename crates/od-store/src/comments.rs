@@ -1058,8 +1058,10 @@ mod tests {
         );
     }
 
-    /// A history folder the agent made a link is refused, not written
-    /// through: no history lands outside the project.
+    /// A history folder the agent made a link (the folder of all of them,
+    /// or one page's) is refused before the page is written: no history
+    /// lands outside the project, and a write that fails leaves the page
+    /// as it was.
     #[cfg(unix)]
     #[test]
     fn a_history_folder_that_is_a_link_is_not_written_through() {
@@ -1067,17 +1069,41 @@ mod tests {
         let dir = project_dir(&s, &p);
         let elsewhere = tmp.path().join("elsewhere");
         std::fs::create_dir(&elsewhere).unwrap_or_else(|e| panic!("{e}"));
-        let _ = std::fs::remove_dir_all(dir.join(crate::versions::VERSION_ROOT));
-        std::os::unix::fs::symlink(&elsewhere, dir.join(crate::versions::VERSION_ROOT))
-            .unwrap_or_else(|e| panic!("{e}"));
+        let empty = |label: &str| {
+            assert!(
+                std::fs::read_dir(&elsewhere)
+                    .unwrap_or_else(|e| panic!("{e}"))
+                    .next()
+                    .is_none(),
+                "{label}: a history was written outside the project"
+            );
+        };
+        let root = dir.join(crate::versions::VERSION_ROOT);
+        let _ = std::fs::remove_dir_all(&root);
+        std::os::unix::fs::symlink(&elsewhere, &root).unwrap_or_else(|e| panic!("{e}"));
         assert!(s.write_file(&p, "page.html", b"<p>", true, None).is_err());
+        assert!(!dir.join("page.html").exists(), "written, then refused");
+        assert!(s.create_file_exact(&p, "other.html", b"<p>").is_err());
+        assert!(!dir.join("other.html").exists(), "created, then refused");
+        empty(crate::versions::VERSION_ROOT);
+        // Only the page's own history folder a link.
+        std::fs::remove_file(&root).unwrap_or_else(|e| panic!("{e}"));
+        s.write_file(&p, "page.html", b"<p>one</p>", true, None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let digest = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(b"page.html"));
+        let history = root.join(&digest[..24]);
+        std::fs::remove_dir_all(&history).unwrap_or_else(|e| panic!("{e}"));
+        std::os::unix::fs::symlink(&elsewhere, &history).unwrap_or_else(|e| panic!("{e}"));
         assert!(
-            std::fs::read_dir(&elsewhere)
-                .unwrap_or_else(|e| panic!("{e}"))
-                .next()
-                .is_none(),
-            "a history was written outside the project"
+            s.write_file(&p, "page.html", b"<p>two</p>", true, None)
+                .is_err()
         );
+        assert_eq!(
+            std::fs::read(dir.join("page.html")).unwrap_or_default(),
+            b"<p>one</p>",
+            "written, then refused"
+        );
+        empty("the page's history folder");
     }
 
     fn project_dir(s: &Store, p: &str) -> std::path::PathBuf {
