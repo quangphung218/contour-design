@@ -105,8 +105,10 @@ fn is_version_id(id: &str) -> bool {
 }
 
 /// The state of a file's history, as [`resolve`] finds it. Every public
-/// function of this module goes through it and matches every state, so
-/// none reads the closing marks of a manifest on its own.
+/// function of this module that reads a history goes through it and
+/// matches every state, so none reads the closing marks of a manifest on
+/// its own. (Closing the history of a file that is not a page reads none:
+/// it goes, whatever it holds.)
 ///
 /// What each kind of operation does in each state:
 ///
@@ -456,21 +458,26 @@ pub fn ensure_current_version(
 
 /// Closes a file's history; the next save starts a fresh one. A file that
 /// is not a page holds a history only while it is the page it was renamed
-/// from ([`rename_store`]); that history goes for good. A linked history
-/// folder is left alone: nothing is read through it.
+/// from ([`rename_store`]); that history goes for good, unread (a broken
+/// manifest goes too). A linked history folder is left alone: nothing is
+/// read through it.
 ///
 /// # Errors
 /// I/O and JSON errors.
 pub fn mark_deleted(project_dir: &Path, file_name: &str) -> Result<()> {
+    if !is_html_name(file_name) {
+        let (dir, linked) = locate(project_dir, file_name);
+        if linked {
+            return Ok(());
+        }
+        return match fs::remove_dir_all(&dir) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err.into()),
+            _ => Ok(()),
+        };
+    }
     let (dir, history) = resolve(project_dir, file_name)?;
     match history {
         History::Linked | History::Absent => Ok(()),
-        History::Open(_) | History::Closed { .. } if !is_html_name(file_name) => {
-            match fs::remove_dir_all(&dir) {
-                Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err.into()),
-                _ => Ok(()),
-            }
-        }
         History::Open(manifest) => save(
             &dir,
             file_name,
@@ -896,6 +903,12 @@ mod tests {
             mark_deleted(&dir, name).unwrap();
         }
         assert!(fs::read_dir(&elsewhere).unwrap().next().is_none());
+        // What the link points to, at the folder a.txt's history would
+        // have, is not deleted through it.
+        let theirs = locate(&dir, "a.txt").0;
+        fs::create_dir(&theirs).unwrap();
+        mark_deleted(&dir, "a.txt").unwrap();
+        assert!(theirs.exists(), "deleted through the link");
     }
 
     #[test]

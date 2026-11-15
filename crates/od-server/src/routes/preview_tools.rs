@@ -134,8 +134,10 @@ async fn source_edits(
         // is written: a release after this deletes none of them.
         let taken = s.take_draft_uploads(&id, &req.claim)?;
         // Once the new text is made, the page may be written even if a
-        // later step fails (its version): the images stay the page's then.
-        // Only a write that failed before that gives them back.
+        // later step fails (its version: the page is put back then, but
+        // putting back can fail too): the images stay the page's, kept
+        // rather than released. Only a write that failed before that gives
+        // them back.
         let made = std::cell::Cell::new(false);
         let res = s.edit_html_tracked(&id, &req.file, &label, |html| {
             let out = apply_edits(html, &req.edits).map_err(patch_err)?;

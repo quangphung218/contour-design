@@ -32,9 +32,12 @@ enum State {
     LinkedRoot,
     /// The page's own history folder is a link.
     LinkedPage,
+    /// Two versions; the agent's shell wrote the page since in an encoding
+    /// that is not UTF-8 (Windows-1258).
+    OpenNotUtf8,
 }
 
-const STATES: [State; 7] = [
+const STATES: [State; 8] = [
     State::Absent,
     State::Open,
     State::OpenChanged,
@@ -42,6 +45,7 @@ const STATES: [State; 7] = [
     State::ClosedReplaced,
     State::LinkedRoot,
     State::LinkedPage,
+    State::OpenNotUtf8,
 ];
 
 /// What a cell expects.
@@ -54,9 +58,11 @@ enum Want {
     VersionNotFound,
     /// Refused as a linked history folder.
     Refused,
+    /// Refused: the page is not UTF-8 text, which no version can hold.
+    NotUtf8,
 }
 
-use Want::{FileNotFound as Fnf, Ok as Y, Refused as R, VersionNotFound as Vnf};
+use Want::{FileNotFound as Fnf, NotUtf8 as U, Ok as Y, Refused as R, VersionNotFound as Vnf};
 
 struct Case {
     store: Store,
@@ -149,6 +155,10 @@ impl Case {
                 unwrap(fs::remove_dir_all(&history));
                 unwrap(std::os::unix::fs::symlink(&self.elsewhere, &history));
             }
+            State::OpenNotUtf8 => {
+                two(self);
+                unwrap(fs::write(self.dir.join(PAGE), b"<p>c\xe0 ph\xea</p>"));
+            }
         }
     }
 
@@ -198,7 +208,7 @@ struct Op {
     /// The history counted after a success.
     check: Option<&'static str>,
     /// Per state, in [`STATES`] order.
-    want: [Want; 7],
+    want: [Want; 8],
 }
 
 fn ops() -> Vec<Op> {
@@ -219,6 +229,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(1)),
                 R,
                 R,
+                Y(Some(3)),
             ],
         },
         Op {
@@ -229,7 +240,7 @@ fn ops() -> Vec<Op> {
                 st.write_file(p, "notes.txt", b"n", true, None).map(drop)
             },
             check: None,
-            want: [Y(None); 7],
+            want: [Y(None); 8],
         },
         Op {
             name: "create page",
@@ -247,6 +258,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(1)),
                 R,
                 Y(Some(1)),
+                Y(Some(1)),
             ],
         },
         Op {
@@ -257,7 +269,7 @@ fn ops() -> Vec<Op> {
                 st.create_file_exact(p, "c.txt", b"c").map(drop)
             },
             check: None,
-            want: [Y(None); 7],
+            want: [Y(None); 8],
         },
         Op {
             name: "upload page",
@@ -275,6 +287,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(1)),
                 R,
                 Y(Some(1)),
+                Y(Some(1)),
             ],
         },
         Op {
@@ -286,7 +299,7 @@ fn ops() -> Vec<Op> {
                     .map(drop)
             },
             check: None,
-            want: [Y(None); 7],
+            want: [Y(None); 8],
         },
         Op {
             name: "replace page",
@@ -304,6 +317,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(2)),
                 R,
                 R,
+                U,
             ],
         },
         Op {
@@ -314,7 +328,7 @@ fn ops() -> Vec<Op> {
                 st.replace_file(p, "style.css", b"b{}", "Edit").map(drop)
             },
             check: None,
-            want: [Y(None); 7],
+            want: [Y(None); 8],
         },
         Op {
             name: "rename page",
@@ -332,6 +346,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(0)),
                 R,
                 R,
+                Y(Some(2)),
             ],
         },
         Op {
@@ -349,6 +364,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(1)),
                 Y(Some(1)),
                 R,
+                Y(Some(1)),
                 Y(Some(1)),
             ],
         },
@@ -368,6 +384,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(0)),
                 Y(None),
                 Y(None),
+                Y(Some(0)),
             ],
         },
         Op {
@@ -378,7 +395,7 @@ fn ops() -> Vec<Op> {
                 st.delete_file(p, PAGE)
             },
             check: None,
-            want: [Fnf; 7],
+            want: [Fnf; 8],
         },
         Op {
             name: "delete folder",
@@ -395,6 +412,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(0)),
                 Y(Some(0)),
                 Y(None),
+                Y(Some(0)),
                 Y(Some(0)),
             ],
         },
@@ -414,6 +432,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(1)),
                 R,
                 R,
+                Y(Some(2)),
             ],
         },
         Op {
@@ -424,7 +443,7 @@ fn ops() -> Vec<Op> {
                 st.read_version(p, PAGE, &c.old_id()).map(drop)
             },
             check: None,
-            want: [Vnf, Y(None), Y(None), Vnf, Vnf, R, R],
+            want: [Vnf, Y(None), Y(None), Vnf, Vnf, R, R, Y(None)],
         },
         Op {
             name: "restore old",
@@ -434,7 +453,7 @@ fn ops() -> Vec<Op> {
                 st.restore_version(p, PAGE, &c.old_id(), None).map(drop)
             },
             check: Some(PAGE),
-            want: [Vnf, Y(Some(3)), Y(Some(4)), Vnf, Vnf, R, R],
+            want: [Vnf, Y(Some(3)), Y(Some(4)), Vnf, Vnf, R, R, U],
         },
         Op {
             name: "create version",
@@ -453,6 +472,7 @@ fn ops() -> Vec<Op> {
                 Y(Some(1)),
                 R,
                 R,
+                U,
             ],
         },
     ]
@@ -464,6 +484,7 @@ fn got(res: &Result<(), StoreError>) -> Option<Want> {
         Err(StoreError::FileNotFound) => Some(Fnf),
         Err(StoreError::VersionNotFound) => Some(Vnf),
         Err(StoreError::BadRequest(msg)) if msg.contains(VERSION_ROOT) => Some(R),
+        Err(StoreError::BadRequest(msg)) if msg.contains("UTF-8") => Some(U),
         Err(_) => Some(Y(Some(usize::MAX))),
     }
 }
@@ -553,4 +574,47 @@ fn a_history_that_cannot_update_does_not_fail_what_is_done() {
     assert!(write.is_ok(), "write: {write:?}");
     assert!(delete.is_ok(), "delete: {delete:?}");
     assert!(!case.dir.join(PAGE).exists());
+}
+
+/// The version a restore or an edit returns cannot be recorded (its
+/// history folder read-only) after the page was written: the page goes
+/// back to what it held, so the error reported is true and a retry does
+/// not apply the edit twice.
+#[test]
+fn a_restore_or_edit_whose_version_cannot_be_recorded_leaves_the_page() {
+    use std::os::unix::fs::PermissionsExt;
+    let case = Case::new(State::Open);
+    let history = case.history_dir(PAGE);
+    let mode = |m| unwrap(fs::set_permissions(&history, fs::Permissions::from_mode(m)));
+    let page = || unwrap(fs::read_to_string(case.dir.join(PAGE)));
+    mode(0o555);
+    let restore = case
+        .store
+        .restore_version(&case.project, PAGE, &case.old_id(), None);
+    let after_restore = page();
+    let edit = case
+        .store
+        .replace_file(&case.project, PAGE, b"<p>edited</p>", "Edit");
+    let after_edit = page();
+    mode(0o755);
+    assert!(restore.is_err(), "restore: {restore:?}");
+    assert_eq!(after_restore, "<p>two</p>", "restore");
+    assert!(edit.is_err(), "edit: {edit:?}");
+    assert_eq!(after_edit, "<p>two</p>", "edit");
+    assert_eq!(unwrap(versions::list_versions(&case.dir, PAGE)).len(), 2);
+}
+
+/// The history a page took to a name that is not a page's goes with that
+/// file when it is deleted, even with its manifest broken: it is not read
+/// first. The next file at that name is then renamed freely.
+#[test]
+fn a_broken_history_goes_with_a_file_that_is_not_a_page() {
+    let case = Case::new(State::Open);
+    unwrap(case.store.rename_file(&case.project, PAGE, "page.md"));
+    let history = case.history_dir("page.md");
+    unwrap(fs::write(history.join("manifest.json"), "{not json"));
+    unwrap(case.store.delete_file(&case.project, "page.md"));
+    assert!(!history.exists(), "the broken history stayed");
+    case.shell("page.md", "# new");
+    unwrap(case.store.rename_file(&case.project, "page.md", PAGE));
 }
