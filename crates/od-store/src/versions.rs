@@ -80,6 +80,11 @@ struct Manifest {
     /// A history closed by a delete stays closed through such a round trip.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     renamed_away: bool,
+    /// The digest of the page as it took that name: only the same file
+    /// renamed back opens the history again, not one put at that name
+    /// outside the app (or changed there) meanwhile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    away_digest: Option<String>,
 }
 
 /// Options for [`create_version`].
@@ -376,7 +381,11 @@ pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
         }
         match (is_html_name(from), is_html_name(to)) {
             (false, true) => {
-                if std::mem::take(&mut manifest.renamed_away) {
+                let left = manifest.away_digest.take();
+                if std::mem::take(&mut manifest.renamed_away)
+                    && left.is_some()
+                    && left == renamed_digest(project_dir, from, to)
+                {
                     manifest.deleted_at = None;
                 }
             }
@@ -384,6 +393,7 @@ pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
                 if manifest.deleted_at.is_none() {
                     manifest.deleted_at = Some(crate::now_ms());
                     manifest.renamed_away = true;
+                    manifest.away_digest = renamed_digest(project_dir, from, to);
                 }
             }
             (false, false) | (true, true) => {}
@@ -395,6 +405,15 @@ pub fn rename_store(project_dir: &Path, from: &str, to: &str) -> Result<bool> {
         return Err(err);
     }
     Ok(true)
+}
+
+/// The digest of the file being renamed: at `to` once renamed, at `from`
+/// while its history moves first (the undo of a rename that failed).
+fn renamed_digest(project_dir: &Path, from: &str, to: &str) -> Option<String> {
+    [to, from]
+        .iter()
+        .find_map(|name| fs::read(project_dir.join(name)).ok())
+        .map(|bytes| hex::encode(Sha256::digest(&bytes)))
 }
 
 #[cfg(test)]
@@ -472,14 +491,73 @@ mod tests {
         let dir = tmp.path();
         create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
         create_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        // The file moves along with its history (as `Store::rename_file`).
+        fs::create_dir(dir.join("notes")).unwrap();
+        fs::write(dir.join("page.md"), "two").unwrap();
         assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        fs::rename(dir.join("page.md"), dir.join("notes/page.md")).unwrap();
         assert!(rename_store(dir, "page.md", "notes/page.md").unwrap());
+        fs::rename(dir.join("notes/page.md"), dir.join("page.html")).unwrap();
         assert!(rename_store(dir, "notes/page.md", "page.html").unwrap());
         let v = ensure_current_version(dir, "page.html", "three", NewVersion::default()).unwrap();
         assert_eq!(v.version, 3, "the round trip lost the history");
         let list = list_versions(dir, "page.html").unwrap();
         assert_eq!(list.len(), 3);
         assert!(list.iter().all(|v| v.file_name == "page.html"));
+    }
+
+    #[test]
+    fn a_file_changed_while_away_does_not_take_the_pages_history_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        create_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        fs::write(dir.join("page.md"), "two").unwrap();
+        assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        // The agent's shell puts another page.md there.
+        fs::remove_file(dir.join("page.md")).unwrap();
+        fs::write(dir.join("page.html"), "# agent notes").unwrap();
+        assert!(rename_store(dir, "page.md", "page.html").unwrap());
+        let v = ensure_current_version(dir, "page.html", "# agent notes", NewVersion::default())
+            .unwrap();
+        assert_eq!(v.version, 1, "the old page's history came back");
+        assert_eq!(list_versions(dir, "page.html").unwrap().len(), 1);
+    }
+
+    /// No file could be read as the page left (nor as it came back): not
+    /// known to be the page, so its history stays closed.
+    #[test]
+    fn a_page_unread_as_it_left_does_not_take_its_history_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        assert!(rename_store(dir, "page.md", "page.html").unwrap());
+        let v = ensure_current_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 1);
+    }
+
+    /// The undo of a rename back (its history moves first, the file is
+    /// still at the name it leaves) finds the file there.
+    #[test]
+    fn undoing_a_rename_back_keeps_the_history_for_the_same_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        create_version(dir, "page.html", "one", NewVersion::default()).unwrap();
+        create_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        fs::write(dir.join("page.html"), "two").unwrap();
+        // Forward and undone before the file moved.
+        assert!(rename_store(dir, "page.html", "page.md").unwrap());
+        assert!(rename_store(dir, "page.md", "page.html").unwrap());
+        assert!(
+            read_manifest(&store_dir(dir, "page.html"))
+                .unwrap()
+                .deleted_at
+                .is_none()
+        );
+        let v = ensure_current_version(dir, "page.html", "two", NewVersion::default()).unwrap();
+        assert_eq!(v.version, 2, "the same version, not a new history");
+        assert_eq!(list_versions(dir, "page.html").unwrap().len(), 2);
     }
 
     #[test]
