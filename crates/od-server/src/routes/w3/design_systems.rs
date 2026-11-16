@@ -124,18 +124,7 @@ fn clean_url(u: &str) -> Option<String> {
 
 /// A safe file name for `source/`.
 fn source_name(raw: &str) -> Option<String> {
-    let base = raw.rsplit(['/', '\\']).next()?.trim();
-    let clean: String = base
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    (!clean.is_empty() && !clean.starts_with('.')).then_some(clean)
+    crate::routes::library::design_systems::kept_name(raw)
 }
 
 /// What a running job is doing, from the files in its staging folder.
@@ -207,6 +196,12 @@ pub async fn generate(
         sources.files.push(name.clone());
         attached.push((name, bytes));
     }
+    crate::routes::library::design_systems::refuse_same_name(
+        body.files
+            .iter()
+            .zip(&attached)
+            .map(|(f, (name, _))| (f.name.as_str(), name.as_str())),
+    )?;
     let brief = if body.brief.trim().is_empty() && !sources.is_empty() {
         design_system_gen::SOURCES_ONLY_BRIEF
     } else {
@@ -248,7 +243,7 @@ pub async fn generate(
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?
-    .map_err(|e| ApiErr::internal(format!("creating the staging folder: {e}")))?;
+    .map_err(ApiErr::io)?;
 
     let (run, _) = state
         .runs

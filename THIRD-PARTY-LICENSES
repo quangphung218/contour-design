@@ -30,7 +30,7 @@ ts-interface-checker 0.1.13 -- Apache-2.0
 Lucide icons (34, in the guizang-ppt deck template) 1.58.0 -- ISC
 
 
-2. Rust crates (686)
+2. Rust crates (687)
 --------------------
 
 adler2 2.0.1 -- 0BSD OR MIT OR Apache-2.0, used under MIT -- https://github.com/oyvindln/adler2
@@ -596,6 +596,7 @@ unic-ucd-ident 0.9.0 -- MIT/Apache-2.0, used under MIT -- https://github.com/ope
 unic-ucd-version 0.9.0 -- MIT/Apache-2.0, used under MIT -- https://github.com/open-i18n/rust-unic/
 unicase 2.10.0 -- MIT OR Apache-2.0, used under MIT -- https://github.com/seanmonstar/unicase
 unicode-ident 1.0.27 -- (MIT OR Apache-2.0) AND Unicode-3.0 -- https://github.com/dtolnay/unicode-ident
+unicode-normalization 0.1.26 -- (MIT OR Apache-2.0) AND Unicode-3.0 -- https://github.com/unicode-rs/unicode-normalization
 unicode-segmentation 1.13.3 -- MIT OR Apache-2.0, used under MIT -- https://github.com/unicode-rs/unicode-segmentation
 unicode-xid 0.2.6 -- MIT OR Apache-2.0, used under MIT -- https://github.com/unicode-rs/unicode-xid
 untrusted 0.9.0 -- ISC -- https://github.com/briansmith/untrusted
@@ -791,6 +792,7 @@ THE SOFTWARE.
 ================================================================================
 Used by: Remix Icon 4.8.0 (LICENSE)
 Used by: encoding_rs 0.8.35 (LICENSE-APACHE)
+Used by: unicode-normalization 0.1.26 (LICENSE-APACHE)
 ================================================================================
 
                                  Apache License
@@ -5066,6 +5068,7 @@ Used by: fs4 1.1.0 (LICENSE-MIT)
 Used by: heck 0.4.1 (LICENSE-MIT)
 Used by: heck 0.5.0 (LICENSE-MIT)
 Used by: linear-map 1.2.0 (LICENSE-MIT)
+Used by: unicode-normalization 0.1.26 (LICENSE-MIT)
 Used by: unicode-segmentation 1.13.3 (LICENSE-MIT)
 Used by: unicode-xid 0.2.6 (LICENSE-MIT)
 ================================================================================
@@ -9721,6 +9724,7 @@ Used by: uds_windows 1.2.1 (LICENSE)
 
 ================================================================================
 Used by: unicode-ident 1.0.27 (LICENSE-UNICODE)
+Used by: unicode-normalization 0.1.26 (LICENSE-UNICODE)
 ================================================================================
 
 UNICODE LICENSE V3

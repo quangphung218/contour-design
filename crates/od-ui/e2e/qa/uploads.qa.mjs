@@ -6,10 +6,11 @@
 // saved template or Chat to design, and a comment's draft image that the
 // user's own program rewrote in place.
 //
-// How one file is made to fail: a name longer than the disk allows (300
-// letters, as "Save page as" or a camera app can make), a page while
+// A file whose name is longer than the disk allows (300 letters, as "Save
+// page as" or a camera app can make) lands under a shortened name
+// (QA-106). How one file is made to fail: a page while
 // `.file-versions` is a link, a SQLite trigger refusing one row, a saved
-// template naming a file that cannot be written, a revision folder whose
+// template naming a file too long for the disk, a revision folder whose
 // decision file is read-only.
 
 import assert from 'node:assert/strict';
@@ -29,9 +30,15 @@ const projectDir = (d, id) => join(d.data, 'projects', id);
 const dbPath = (d) => join(d.data, 'app.sqlite');
 const sql = (d, statement) => execFileSync('sqlite3', [dbPath(d), '.timeout 5000', statement], { encoding: 'utf8' });
 const pngsOnDisk = (d, id) => diskFiles(d, id).filter((f) => f.endsWith('.png'));
-// What a failed upload must not say alone: a bare "try again" that fails
-// the same way again, with no word on which file or why.
-const BARE_RETRY = /^(Upload failed|Could not attach the image|Contour could not finish this)[.:]?\s*(Try again\.?)?$|could not finish this/i;
+/** The one name among `names` that LONG was shortened to (QA-106): it
+ *  keeps .png, fits the disk, and starts as LONG does. */
+function shortened(names) {
+  const long = names.filter((n) => n.startsWith('anh-chup-man-hinh-'));
+  assert.equal(long.length, 1, `the long one: ${JSON.stringify(names)}`);
+  assert.ok(long[0].endsWith('.png'), long[0]);
+  assert.ok(Buffer.byteLength(long[0]) <= 200, `${Buffer.byteLength(long[0])} bytes`);
+  return long[0];
+}
 
 async function openStudio(newPage, d, id) {
   const p = await newPage();
@@ -91,27 +98,24 @@ const uploadAnswer = (page, path) =>
 
 // ------------------------------------------------------------ Files panel
 
-test('UL-01', 'Files panel: two images where one name is too long: neither is left, the message says why, and the good one alone lands at its own name', async ({ d, newPage }) => {
+test('UL-01', 'Files panel: two images where one name is too long for the disk: both land, the long one under a shortened name that keeps .png', async ({ d, newPage }) => {
   const id = await createProject(d, 'Upload long name', { 'index.html': CPAGE('Index') });
   const { page } = await openStudio(newPage, d, id);
   const answered = uploadAnswer(page, `/api/projects/${id}/upload`);
   await page.getByTestId('upload-input').setInputFiles([png('ok.png'), png(LONG)]);
   const status = (await answered).status();
-  const said = await alertSaying(page, /upload|tải/i);
-  // All or nothing (#218): nothing of the batch stays.
-  assert.deepEqual(pngsOnDisk(d, id), [], `left on disk after the failed batch (${status})`);
-  assert.equal(await fileRow(page, 'ok.png').count(), 0, 'ok.png is listed');
-  assert.ok(!(await zipNames(d, id)).includes('ok.png'), 'ok.png is in the ZIP');
-  // Sent again without the long one: its own name, no ok-1.png.
-  await page.getByTestId('upload-input').setInputFiles([png('ok.png')]);
+  assert.equal(status, 200, 'the upload was refused');
   await fileRow(page, 'ok.png').waitFor();
-  assert.deepEqual(pngsOnDisk(d, id), ['ok.png']);
-  // The message: which file, and that its name is too long (Try again
-  // alone sends the same file and fails the same way).
-  console.log(`      (upload ${status}; said ${JSON.stringify(said)})`);
-  assert.doesNotMatch(said, BARE_RETRY, `the message gives no reason: ${said}`);
-  assert.match(said, /name|tên/i, `the message does not say the name is the problem: ${said}`);
-}, { knownBug: 'QA-106' });
+  const long = shortened(pngsOnDisk(d, id));
+  await fileRow(page, long).waitFor();
+  assert.ok((await zipNames(d, id)).includes(long), 'the long one is not in the ZIP');
+  // Sent again: a name of its own next to it, never written over.
+  await page.getByTestId('upload-input').setInputFiles([png(LONG)]);
+  await until(() => pngsOnDisk(d, id).length === 3, 'the long one again');
+  const longs = pngsOnDisk(d, id).filter((n) => n !== 'ok.png');
+  assert.equal(new Set(longs).size, 2, JSON.stringify(longs));
+  assert.ok(longs.every((n) => Buffer.byteLength(n) <= 205 && n.endsWith('.png')), JSON.stringify(longs));
+});
 
 test('UL-02', 'Files panel: an image and a page while the history folder is a link: refused, the message names the link, and the image is not left', async ({ d, newPage }) => {
   const id = await createProject(d, 'Upload linked history', { 'index.html': CPAGE('Index') });
@@ -131,22 +135,18 @@ test('UL-02', 'Files panel: an image and a page while the history folder is a li
 
 // ------------------------------------------------------------ comments
 
-test('UL-03', 'Comment: two images where one name is too long: no chip, nothing in comments/, and the good one again lands as comments/shot.png', async ({ d, newPage }) => {
+test('UL-03', 'Comment: two images where one name is too long: both attached, the long one in comments/ under a shortened name that keeps .png', async ({ d, newPage }) => {
   const { page, id } = await commentBox(newPage, d, 'Comment long name');
   const answered = uploadAnswer(page, `/api/projects/${id}/upload`);
   await page.getByTestId('comment-image-input').setInputFiles([png('shot.png'), png(LONG)]);
-  const status = (await answered).status();
-  const said = await commentBoxSays(page).catch(() => '');
-  assert.ok(said, 'nothing says the images were not attached');
+  assert.equal((await answered).status(), 200, 'the upload was refused');
+  await until(async () => (await page.getByTestId('draft-image').count()) === 2, 'both attached');
   if (process.env.QA_SHOTS) await page.screenshot({ path: join(process.env.QA_SHOTS, 'UL-03-long-name.png') });
-  assert.equal(await page.getByTestId('draft-image').count(), 0, 'a chip shows for the failed batch');
-  assert.deepEqual(pngsOnDisk(d, id), [], `left in comments/ after the failed batch (${status})`);
-  await page.getByTestId('comment-image-input').setInputFiles([png('shot.png')]);
-  await until(async () => (await page.getByTestId('draft-image').count()) === 1, 'shot.png attached');
-  assert.deepEqual(pngsOnDisk(d, id), ['comments/shot.png']);
-  console.log(`      (upload ${status}; said ${JSON.stringify(said)})`);
-  assert.doesNotMatch(said, BARE_RETRY, `the message gives no reason: ${said}`);
-}, { knownBug: 'QA-106' });
+  const disk = pngsOnDisk(d, id);
+  assert.ok(disk.includes('comments/shot.png'), JSON.stringify(disk));
+  assert.ok(shortened(disk.map((n) => n.replace(/^comments\//, ''))), JSON.stringify(disk));
+  assert.equal(await page.getByTestId('comment-draft').getByText(/Could not attach/).count(), 0, 'a failure line shows');
+});
 
 test('UL-04', 'Comment: the second image cannot be recorded as the draft\'s: nothing stays; once the database takes it, both land at their own names', async ({ d, newPage }) => {
   const { page, id } = await commentBox(newPage, d, 'Comment record refused');
@@ -169,21 +169,18 @@ test('UL-04', 'Comment: the second image cannot be recorded as the draft\'s: not
 
 // ------------------------------------------------------------ composer
 
-test('UL-05', 'Chat composer: two files where one name is too long: the good one is attached, the other\'s card says why', async ({ d, newPage }) => {
+test('UL-05', 'Chat composer: two files where one name is too long: both attached, the long one under a shortened name that keeps .png', async ({ d, newPage }) => {
   const id = await createProject(d, 'Composer long name', { 'index.html': CPAGE('Index') });
   const { page } = await openStudio(newPage, d, id);
   await page.getByTestId('file-input').setInputFiles([png('ok.png'), png(LONG)]);
-  // One by one by design: ok.png is attached, the long one fails alone.
-  await until(() => pngsOnDisk(d, id).includes('ok.png'), 'ok.png uploaded');
-  // A failed file keeps its card, its error in the card's tooltip.
-  const failed = page.locator('[data-testid="upload-chip"][data-state="failed"]');
-  await failed.waitFor();
-  const said = (await failed.getAttribute('title')) || '';
-  console.log(`      (on disk ${JSON.stringify(pngsOnDisk(d, id))}; said ${JSON.stringify(said)})`);
-  assert.deepEqual(pngsOnDisk(d, id), ['ok.png'], 'a part of the long one stays');
-  assert.ok(said, 'nothing says the long one failed');
-  assert.doesNotMatch(said, BARE_RETRY, `the message gives no reason: ${said}`);
-}, { knownBug: 'QA-106' });
+  await until(() => pngsOnDisk(d, id).length === 2, 'both uploaded');
+  const disk = pngsOnDisk(d, id);
+  assert.ok(disk.includes('ok.png'), JSON.stringify(disk));
+  shortened(disk);
+  // Uploaded, a card becomes an attachment chip; none stays failed.
+  await until(async () => (await page.getByTestId('attachment-chip').count()) === 2
+    && (await page.getByTestId('upload-chip').count()) === 0, 'two attached, none failed');
+});
 
 // ------------------------------------------------------------ Library
 
@@ -192,20 +189,17 @@ function libraryUploads(d) {
   return existsSync(lib) ? readdirSync(lib).sort() : [];
 }
 
-test('UL-06', 'Media library: two images where one name is too long: no tile, nothing kept, and the good one again lands once', async ({ d, newPage }) => {
+test('UL-06', 'Media library: two images where one name is too long: both kept, the long one under a shortened name that keeps .png', async ({ d, newPage }) => {
   const { page } = await newPage();
   await page.goto(d.base + '/media');
   const before = libraryUploads(d);
   await page.getByTestId('media-upload-input').setInputFiles([png('up06.png'), png(LONG)]);
-  const said = await alertSaying(page, /./);
-  assert.deepEqual(libraryUploads(d), before, 'a file of the failed batch is kept');
-  assert.equal(await page.getByTestId('media-card').filter({ hasText: 'up06.png' }).count(), 0, 'a tile shows');
-  await page.getByTestId('media-upload-input').setInputFiles([png('up06.png')]);
   await page.getByTestId('media-card').filter({ hasText: 'up06.png' }).first().waitFor();
-  assert.deepEqual(libraryUploads(d).filter((n) => n.startsWith('up06')), ['up06.png']);
-  console.log(`      (said ${JSON.stringify(said)})`);
-  assert.doesNotMatch(said, BARE_RETRY, `the message gives no reason: ${said}`);
-}, { knownBug: 'QA-106' });
+  const added = libraryUploads(d).filter((n) => !before.includes(n));
+  assert.ok(added.includes('up06.png'), JSON.stringify(added));
+  const long = shortened(added);
+  await page.getByTestId('media-card').filter({ hasText: long.slice(0, 20) }).first().waitFor();
+});
 
 test('UL-07', 'Add from library: one of two chosen assets deleted meanwhile: an error, and the project gets neither copy', async ({ d, api, newPage }) => {
   for (const n of ['up07-a.png', 'up07-b.png']) {
@@ -272,6 +266,8 @@ test('UL-09', 'Using a saved template one of whose files cannot be written: an e
     assert.ok((await answered).status() >= 400, 'the template was used');
     const said = await alertSaying(page, /project/i);
     console.log(`      (try ${i + 1}: said ${JSON.stringify(said)})`);
+    // QA-106: a name the disk refuses is said, not "try again".
+    assert.match(said, /name is too long/i, `the message does not say the name is the problem: ${said}`);
     assert.equal(new URL(page.url()).pathname, '/templates', 'opened a half-made project');
     assert.equal((await listProjects(d)).length, projects, 'a half-made project is listed');
     assert.equal(readdirSync(join(d.data, 'projects')).length, folders, 'a half-made project folder stays');
@@ -323,7 +319,7 @@ test('DS-02', 'Design system: two images with Vietnamese names (màu.png, mẫu.
   if (process.env.QA_SHOTS) await page.screenshot({ path: join(process.env.QA_SHOTS, 'DS-02-vietnamese-names.png') });
   if ((await notice.getAttribute('role')) === 'alert') return; // refused with a reason: fine
   assert.deepEqual(kept.sort(), [red.length, blue.length].sort(), `"${said}", but the package keeps ${JSON.stringify(dsAssets(d, id))}`);
-}, { knownBug: 'QA-107' });
+});
 
 test('DS-03', 'Accepting a revision whose decision cannot be saved: an error, tokens.css unchanged, still pending; Reject later leaves tokens.css as before', async ({ d, api, newPage }) => {
   const id = await importSystem(api, 'Ds three');

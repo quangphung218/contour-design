@@ -7,7 +7,7 @@
 use crate::error::{Result, StoreError};
 use crate::paths::{
     assert_visible_for_import, is_ignored_dir_name, kind_for, mime_for, resolve_safe_real,
-    sanitize_name, sanitize_path, through_link, to_project_path, validate_project_path,
+    sanitize_path, through_link, to_project_path, upload_name, validate_project_path,
 };
 use od_contracts::{ProjectFile, UploadedFile};
 use serde_json::Value;
@@ -533,7 +533,7 @@ pub fn upload_file(
         refuse_link(root, &rel_dir)?;
         fs::create_dir_all(full)?;
     }
-    let safe = sanitize_name(original_name);
+    let safe = upload_name(original_name);
     for file_name in candidate_names(&safe) {
         let rel = if rel_dir.is_empty() {
             file_name

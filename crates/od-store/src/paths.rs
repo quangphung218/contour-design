@@ -116,8 +116,20 @@ pub fn assert_visible_for_import(name: &str, imported: bool) -> Result<()> {
     Ok(())
 }
 
-/// Makes one path segment filesystem-friendly: keeps Unicode letters and
-/// digits, `.`, `_`, `-`; whitespace runs become `-`; the rest becomes `_`.
+/// A combining accent: macOS may send `mẫu` decomposed (NFD), its accents
+/// as marks after the letter, which are not alphanumeric themselves.
+fn is_combining_mark(ch: char) -> bool {
+    matches!(ch,
+        '\u{300}'..='\u{36f}'
+        | '\u{1ab0}'..='\u{1aff}'
+        | '\u{1dc0}'..='\u{1dff}'
+        | '\u{20d0}'..='\u{20ff}'
+        | '\u{fe20}'..='\u{fe2f}')
+}
+
+/// Makes one path segment filesystem-friendly: keeps Unicode letters,
+/// digits and accents, `.`, `_`, `-`; whitespace runs become `-`; the rest
+/// becomes `_`.
 #[must_use]
 pub fn sanitize_name(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
@@ -131,7 +143,7 @@ pub fn sanitize_name(raw: &str) -> String {
             continue;
         }
         in_space = false;
-        if ch.is_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+        if ch.is_alphanumeric() || is_combining_mark(ch) || matches!(ch, '.' | '_' | '-') {
             out.push(ch);
         } else {
             out.push('_');
@@ -146,6 +158,42 @@ pub fn sanitize_name(raw: &str) -> String {
     } else {
         out
     }
+}
+
+/// The longest name, in bytes, [`upload_name`] gives: under the 255 every
+/// disk allows, with room for the `-9999` an upload adds to a taken name.
+pub const MAX_UPLOAD_NAME_BYTES: usize = 200;
+
+/// Longest extension [`upload_name`] keeps whole when it shortens a name.
+const MAX_KEPT_EXTENSION_BYTES: usize = 16;
+
+/// The name a file the user sent is stored under, when the app picks it
+/// from the file's own name: [`sanitize_name`], then shortened to
+/// [`MAX_UPLOAD_NAME_BYTES`], keeping its extension and cutting on a
+/// character boundary, never between a letter and its combining accent.
+/// A name the disk refuses would fail the upload every time (QA-106).
+#[must_use]
+pub fn upload_name(raw: &str) -> String {
+    let name = sanitize_name(raw);
+    if name.len() <= MAX_UPLOAD_NAME_BYTES {
+        return name;
+    }
+    let ext = name
+        .rfind('.')
+        .filter(|&i| i > 0 && name.len() - i <= MAX_KEPT_EXTENSION_BYTES)
+        .map_or("", |i| &name[i..]);
+    let stem = &name[..name.len() - ext.len()];
+    let mut cut = MAX_UPLOAD_NAME_BYTES - ext.len();
+    while !stem.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    // A decomposed accent (NFD, as macOS may send) stays with its letter.
+    while cut > 0 && stem[cut..].chars().next().is_some_and(is_combining_mark) {
+        cut = stem[..cut].char_indices().next_back().map_or(0, |(i, _)| i);
+    }
+    let stem = stem[..cut].trim_end_matches(['-', '_', '.']);
+    let stem = if stem.is_empty() { "file" } else { stem };
+    format!("{stem}{ext}")
 }
 
 /// [`validate_project_path`] then [`sanitize_name`] on every segment.
@@ -378,6 +426,53 @@ mod tests {
         assert_eq!(sanitize_name("测试 文档.docx"), "测试-文档.docx");
         assert_eq!(sanitize_name("..hidden"), "_hidden");
         assert_eq!(sanitize_name("a<b>c"), "a_b_c");
+        // Decomposed (NFD) Vietnamese keeps its accents.
+        assert_eq!(
+            sanitize_name("ma\u{302}\u{303}u.png"),
+            "ma\u{302}\u{303}u.png"
+        );
+    }
+
+    /// QA-106: a name longer than the disk allows is shortened, keeping
+    /// its extension and whole letters; a short one is left as it is.
+    #[test]
+    fn upload_names_fit_the_disk() {
+        assert_eq!(upload_name("ảnh chụp.png"), "ảnh-chụp.png");
+        let fit = format!("{}.png", "a".repeat(MAX_UPLOAD_NAME_BYTES - 4));
+        assert_eq!(upload_name(&fit), fit);
+        for raw in [
+            format!("{}.png", "anh-chup-man-hinh-".repeat(17)),
+            format!("{}.png", "ảnh chụp màn hình ".repeat(17)),
+        ] {
+            let name = upload_name(&raw);
+            assert!(name.len() <= MAX_UPLOAD_NAME_BYTES, "{} bytes", name.len());
+            assert!(
+                name.len() > MAX_UPLOAD_NAME_BYTES - 8,
+                "cut too much: {name}"
+            );
+            assert!(name.ends_with(".png"), "{name}");
+            assert!(
+                !name.trim_end_matches(".png").ends_with(['-', '.']),
+                "{name}"
+            );
+        }
+        // Decomposed accents (NFD): the limit falls inside `ẫ` (a + two
+        // marks, 5 bytes), which goes whole.
+        let nfd = upload_name(&format!("x{}.jpeg", "a\u{302}\u{303}".repeat(120)));
+        assert!(nfd.len() <= MAX_UPLOAD_NAME_BYTES, "{} bytes", nfd.len());
+        let stem = nfd.trim_end_matches(".jpeg");
+        assert!(
+            stem.ends_with("a\u{302}\u{303}"),
+            "accent cut from its letter: {stem:?}"
+        );
+        // An "extension" too long to be one is cut like the rest.
+        let odd = upload_name(&format!("a.{}", "b".repeat(300)));
+        assert_eq!(odd.len(), MAX_UPLOAD_NAME_BYTES);
+        // Nothing left of the stem: still a name.
+        assert_eq!(
+            upload_name(&format!("{}.png", "\u{301}".repeat(150))),
+            "file.png"
+        );
     }
 
     #[test]
