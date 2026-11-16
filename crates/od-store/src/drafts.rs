@@ -24,6 +24,11 @@ use std::collections::HashSet;
 /// deletes it: long enough for a tab left open over a night.
 pub const DRAFT_MAX_AGE_MS: i64 = 24 * 60 * 60 * 1000;
 
+/// `draft_held` (TEMP: no write is running after a restart) keeps the
+/// rows taken by page writes ([`Store::take_draft_uploads`]), and how many
+/// of them hold each and have not given it back: the image is a draft's
+/// again only when every one of them failed. One a write that wrote its
+/// page holds never is; the sweep forgets it.
 const SCHEMA: &str = r"
 CREATE TABLE IF NOT EXISTS draft_uploads (
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -37,6 +42,17 @@ CREATE INDEX IF NOT EXISTS idx_draft_uploads_session ON draft_uploads(session);
 CREATE TABLE IF NOT EXISTS draft_sessions_released (
   session TEXT PRIMARY KEY,
   released_at INTEGER NOT NULL
+);
+CREATE TEMP TABLE IF NOT EXISTS draft_held (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  session TEXT NOT NULL,
+  uploaded_at INTEGER NOT NULL,
+  ident TEXT,
+  held_at INTEGER NOT NULL,
+  holders INTEGER NOT NULL,
+  UNIQUE (project_id, path)
 );
 ";
 
@@ -172,13 +188,11 @@ fn released(conn: &Connection, session: &str) -> rusqlite::Result<bool> {
 }
 
 /// Takes `paths` of `project_id` out of the record: they are a comment's
-/// (or a page's) now, and ship with the project.
+/// now, and ship with the project. A page write holding one that fails
+/// does not give it back.
 pub(crate) fn claim(conn: &Connection, project_id: &str, paths: &[String]) -> rusqlite::Result<()> {
     for path in paths {
-        conn.execute(
-            "DELETE FROM draft_uploads WHERE project_id = ?1 AND path = ?2",
-            params![project_id, path],
-        )?;
+        forget(conn, project_id, path)?;
     }
     Ok(())
 }
@@ -193,22 +207,27 @@ pub(crate) fn renamed(
     // A rename onto itself moves nothing: its row stays.
     for (from, to) in pairs.iter().filter(|(from, to)| from != to) {
         forget(conn, project_id, to)?;
-        conn.execute(
-            "UPDATE draft_uploads SET path = ?3 WHERE project_id = ?1 AND path = ?2",
-            params![project_id, from, to],
-        )?;
+        for table in ["draft_uploads", "draft_held"] {
+            conn.execute(
+                &format!("UPDATE {table} SET path = ?3 WHERE project_id = ?1 AND path = ?2"),
+                params![project_id, from, to],
+            )?;
+        }
     }
     Ok(())
 }
 
 /// A file is written at `path` that is not a draft's (the user's upload,
 /// a write, a rename onto it): a row left there by a draft whose file went
-/// outside the app no longer says anything about it.
+/// outside the app no longer says anything about it, and a page write
+/// holding the draft's that fails does not give it back.
 pub(crate) fn forget(conn: &Connection, project_id: &str, path: &str) -> rusqlite::Result<()> {
-    conn.execute(
-        "DELETE FROM draft_uploads WHERE project_id = ?1 AND path = ?2",
-        params![project_id, path],
-    )?;
+    for table in ["draft_uploads", "draft_held"] {
+        conn.execute(
+            &format!("DELETE FROM {table} WHERE project_id = ?1 AND path = ?2"),
+            params![project_id, path],
+        )?;
+    }
     Ok(())
 }
 
@@ -221,10 +240,14 @@ pub(crate) fn forget_folder(
     let prefix = format!("{}/", dir.trim_end_matches('/'));
     // `length` of SQLite itself: `substr` counts characters, Rust's `len`
     // bytes (`Ảnh/` is 4 of one, 6 of the other).
-    conn.execute(
-        "DELETE FROM draft_uploads WHERE project_id = ?1 AND substr(path, 1, length(?2)) = ?2",
-        params![project_id, prefix],
-    )?;
+    for table in ["draft_uploads", "draft_held"] {
+        conn.execute(
+            &format!(
+                "DELETE FROM {table} WHERE project_id = ?1 AND substr(path, 1, length(?2)) = ?2"
+            ),
+            params![project_id, prefix],
+        )?;
+    }
     Ok(())
 }
 
@@ -327,10 +350,10 @@ fn delete_foretold(
     settle(root, path, fate)
 }
 
-/// A row taken out of the record by a write that may still fail
-/// ([`Store::take_draft_uploads`]).
+/// A draft's image held by a page write that may still fail
+/// ([`Store::take_draft_uploads`]): the id of its `draft_held` row.
 #[derive(Debug, Clone)]
-pub struct TakenDraft(DraftRow);
+pub struct TakenDraft(i64);
 
 /// A row of `draft_uploads`.
 #[derive(Debug, Clone)]
@@ -546,6 +569,9 @@ impl Store {
                 "DELETE FROM draft_sessions_released WHERE released_at <= ?1",
                 [before],
             )?;
+            // Held by a write that wrote its page (or never ended): the
+            // image is not a draft's again, and its hold is not needed.
+            conn.execute("DELETE FROM draft_held WHERE held_at <= ?1", [before])?;
             Ok(())
         })?;
         Ok(gone)
@@ -555,10 +581,13 @@ impl Store {
     /// puts them in a page, under the lock a release takes: once taken no
     /// release deletes them. One that is not there any more (a release
     /// came first) refuses the write rather than let the page point to
-    /// nothing; one taken already (a write tried again) is fine. Give them
-    /// back with [`Self::give_back_draft_uploads`] only if the write failed
-    /// before the page was written: once it is, they are the page's even
-    /// if a later step fails.
+    /// nothing; one taken already is fine: by a write still running (tried
+    /// again, sent twice), this one holds it too; by one done, it is the
+    /// page's already. Give them back with
+    /// [`Self::give_back_draft_uploads`] only if the write failed before
+    /// the page was written: once it is, they are the page's even if a
+    /// later step fails, and no other write holding them gives them back
+    /// (only the last holder to give back does, and this one never will).
     ///
     /// # Errors
     /// [`StoreError::FileNotFound`] for an image gone, SQLite errors.
@@ -571,43 +600,52 @@ impl Store {
             return Ok(Vec::new());
         }
         let root = self.root_for(project_id)?;
+        let at = crate::now_ms();
         self.with_conn(|conn| {
             for path in paths {
                 files::stat_file(&root, path)?;
             }
             let mut taken = Vec::new();
             for path in paths {
-                let row = conn
+                let held: Option<i64> = conn
                     .query_row(
-                        "SELECT session, uploaded_at, ident FROM draft_uploads \
-                         WHERE project_id = ?1 AND path = ?2",
+                        "SELECT id FROM draft_held WHERE project_id = ?1 AND path = ?2",
                         params![project_id, path],
-                        |r| {
-                            Ok((
-                                r.get::<_, String>(0)?,
-                                r.get::<_, i64>(1)?,
-                                r.get::<_, Option<String>>(2)?,
-                            ))
-                        },
+                        |r| r.get(0),
                     )
                     .optional()?;
-                if let Some((session, uploaded_at, ident)) = row {
-                    taken.push(TakenDraft(DraftRow {
-                        path: path.clone(),
-                        session,
-                        uploaded_at,
-                        ident,
-                    }));
+                if let Some(id) = held {
+                    conn.execute(
+                        "UPDATE draft_held SET holders = holders + 1 WHERE id = ?1",
+                        [id],
+                    )?;
+                    taken.push(TakenDraft(id));
+                    continue;
+                }
+                let moved = conn.execute(
+                    "INSERT INTO draft_held \
+                     (project_id, path, session, uploaded_at, ident, held_at, holders) \
+                     SELECT project_id, path, session, uploaded_at, ident, ?3, 1 \
+                     FROM draft_uploads WHERE project_id = ?1 AND path = ?2",
+                    params![project_id, path, at],
+                )?;
+                if moved == 1 {
+                    taken.push(TakenDraft(conn.last_insert_rowid()));
+                    conn.execute(
+                        "DELETE FROM draft_uploads WHERE project_id = ?1 AND path = ?2",
+                        params![project_id, path],
+                    )?;
                 }
             }
-            claim(conn, project_id, paths)?;
             Ok(taken)
         })
     }
 
-    /// A write that took `taken` failed before the page was written: they
-    /// are drafts' images again. One whose session was released meanwhile
-    /// goes at once, as an upload landing after it does.
+    /// A write that took `taken` failed before the page was written: each
+    /// is a draft's again once no write holds it, unless one wrote its
+    /// page meanwhile, a comment took it, or it was deleted or written
+    /// over. One whose session was released meanwhile goes at once, as an
+    /// upload landing after it does.
     pub fn give_back_draft_uploads(&self, project_id: &str, taken: Vec<TakenDraft>) {
         self.give_back_draft_uploads_each(project_id, taken, || {});
     }
@@ -622,14 +660,41 @@ impl Store {
     ) {
         let res = self.with_conn(|conn| {
             let mut late = Vec::new();
-            for TakenDraft(t) in taken {
+            for TakenDraft(id) in taken {
+                conn.execute(
+                    "UPDATE draft_held SET holders = holders - 1 WHERE id = ?1",
+                    [id],
+                )?;
+                let row = conn
+                    .query_row(
+                        "SELECT path, session, uploaded_at, ident FROM draft_held \
+                         WHERE id = ?1 AND holders <= 0",
+                        [id],
+                        |r| {
+                            Ok(DraftRow {
+                                path: r.get(0)?,
+                                session: r.get(1)?,
+                                uploaded_at: r.get(2)?,
+                                ident: r.get(3)?,
+                            })
+                        },
+                    )
+                    .optional()?;
+                let Some(row) = row else { continue };
+                conn.execute("DELETE FROM draft_held WHERE id = ?1", [id])?;
                 conn.execute(
                     "INSERT OR IGNORE INTO draft_uploads \
                      (project_id, path, session, uploaded_at, ident) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![project_id, t.path, t.session, t.uploaded_at, t.ident],
+                    params![
+                        project_id,
+                        row.path,
+                        row.session,
+                        row.uploaded_at,
+                        row.ident
+                    ],
                 )?;
-                if released(conn, &t.session)? {
-                    late.push(t);
+                if released(conn, &row.session)? {
+                    late.push(row);
                 }
             }
             Ok(late)
@@ -1422,6 +1487,207 @@ mod tests {
         });
         assert!(exists(&s, &p, &img), "the other write's image deleted");
         assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    /// Two writes put the same image in a page (Apply sent twice): the
+    /// first fails after the second wrote the page. The image is the
+    /// page's: it ships, and leaving the page or quitting leaves it.
+    #[test]
+    fn a_write_failing_after_another_wrote_the_same_image_leaves_it_the_pages() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let first = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        // This one wrote its page: it never gives the image back.
+        let _second = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.give_back_draft_uploads(&p, first);
+        assert!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty(),
+            "the page's image left out of the ZIP"
+        );
+        assert_eq!(s.release_all_draft_uploads().unwrap_or(0), 0);
+        assert!(exists(&s, &p, &img), "the page's image deleted on quit");
+    }
+
+    /// As above, the page left while the writes ran: the failed write
+    /// does not delete the image the other put in the page.
+    #[test]
+    fn a_write_failing_after_its_session_was_released_leaves_another_writes_image() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let first = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        // This one wrote its page: it never gives the image back.
+        let _second = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.give_back_draft_uploads(&p, first);
+        assert!(exists(&s, &p, &img), "the page's image deleted");
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    /// The other order: the second write fails after the first wrote the
+    /// page.
+    #[test]
+    fn a_write_failing_after_an_earlier_one_wrote_the_same_image_leaves_it() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        // This one wrote its page: it never gives the image back.
+        let _first = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let second = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.give_back_draft_uploads(&p, second);
+        assert!(exists(&s, &p, &img), "the page's image deleted");
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    /// Both writes fail: the image is a draft's again, once, and goes
+    /// with its page.
+    #[test]
+    fn an_image_two_failed_writes_took_is_a_drafts_again() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let first = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let second = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.give_back_draft_uploads(&p, first);
+        assert!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty(),
+            "the second write still holds it"
+        );
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(exists(&s, &p, &img), "held: the release leaves it");
+        s.give_back_draft_uploads(&p, second);
+        assert!(!exists(&s, &p, &img), "no page holds it now");
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    /// A comment takes an image a page write holds, and the write fails:
+    /// the image is the comment's, not a draft's again.
+    #[test]
+    fn a_write_failing_after_a_comment_took_its_image_leaves_it_the_comments() {
+        let (_tmp, s, p, c) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let taken = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.create_comment(
+            &p,
+            &c,
+            CreateCommentRequest {
+                file_path: "index.html".into(),
+                selector: "h1".into(),
+                note: "Bigger".into(),
+                attachments: vec![img.clone()],
+                ..CreateCommentRequest::default()
+            },
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.give_back_draft_uploads(&p, taken);
+        assert!(exists(&s, &p, &img), "the comment's image deleted");
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    /// The image a failed write held was deleted, and the user put a file
+    /// of their own at its path: that file is not given back as a draft's.
+    #[test]
+    fn a_write_failing_after_its_image_was_written_over_leaves_the_new_file() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let taken = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.delete_file(&p, &img).unwrap_or_else(|e| panic!("{e}"));
+        let mine = s
+            .upload_file(&p, Some("comments"), "hero.png", b"mine")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(mine.path, img, "the user's file at the image's path");
+        s.give_back_draft_uploads(&p, taken);
+        assert!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty(),
+            "the user's file left out of the ZIP"
+        );
+    }
+
+    /// A held image whose folder was deleted: no row is given back for it
+    /// (a file put at its path later would be taken for the draft's).
+    #[test]
+    fn a_write_failing_after_its_images_folder_was_deleted_leaves_no_row() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let taken = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.delete_folder(&p, "comments")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.give_back_draft_uploads(&p, taken);
+        assert!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty(),
+            "a row for a file gone"
+        );
+    }
+
+    /// A write that wrote its page leaves its hold; the sweep forgets it.
+    #[test]
+    fn a_sweep_forgets_the_holds_of_writes_done() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        s.take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let held = |s: &Store| {
+            s.with_conn(|c| Ok(c.query_row("SELECT COUNT(*) FROM draft_held", [], |r| r.get(0))?))
+                .unwrap_or(-1_i64)
+        };
+        s.sweep_draft_uploads(DRAFT_MAX_AGE_MS)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(held(&s), 1, "a hold an hour old is kept");
+        s.with_conn(|c| {
+            c.execute(
+                "UPDATE draft_held SET held_at = held_at - ?1",
+                [DRAFT_MAX_AGE_MS + 1],
+            )?;
+            Ok(())
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+        s.sweep_draft_uploads(DRAFT_MAX_AGE_MS)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(held(&s), 0);
+        assert!(exists(&s, &p, &img), "the page's image stays");
+    }
+
+    /// A held image renamed: its hold follows, as its row would.
+    #[test]
+    fn a_held_image_renamed_is_given_back_at_its_new_path() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let taken = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let to = "comments/moved.png".to_owned();
+        s.with_conn(|conn| Ok(renamed(conn, &p, &[(img.clone(), to.clone())])?))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.give_back_draft_uploads(&p, taken);
+        assert_eq!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default(),
+            HashSet::from([to])
+        );
     }
 
     /// An upload landing after its page was left, which the disk will not
