@@ -653,6 +653,22 @@ async fn media_library_lists_uploads_and_chats_to_design() {
     assert_eq!(v["projectId"], "media-library");
     let (s, _) = upload(&d, "/api/library/upload", &[("notes.txt", b"x")]).await;
     assert_eq!(s, 400, "only media files");
+    // The second file cannot be written (a name too long for the disk):
+    // all or nothing, so Try again does not add `first-1.png`.
+    let long = format!("{}.png", "x".repeat(300));
+    let (s, v) = upload(
+        &d,
+        "/api/library/upload",
+        &[("first.png", PNG), (long.as_str(), PNG)],
+    )
+    .await;
+    assert!(s >= 400, "{s} {v}");
+    assert!(
+        !d.data
+            .join("projects/media-library/uploads/first.png")
+            .exists(),
+        "the first file kept"
+    );
     // The project holding uploads is not one of the user's designs.
     let listed = d.get_json("/api/projects").await;
     let ids: Vec<&str> = listed["projects"]
@@ -1053,13 +1069,20 @@ async fn design_system_kit_import_copy_and_revisions() {
     )
     .await;
     assert_eq!(s, 200, "{v}");
+    // One file refused and none of the batch is written.
     let (s, _) = upload(
         &d,
         &format!("/api/design-systems/{id}/assets"),
-        &[("x.sh", b"echo")],
+        &[("ok.png", PNG), ("x.sh", b"echo")],
     )
     .await;
     assert_eq!(s, 400);
+    assert!(
+        !d.data
+            .join("design-systems/my-airbnb/assets/ok.png")
+            .exists(),
+        "the file before the refused one kept"
+    );
     let kit = d.get_json(&format!("/api/design-systems/{id}/kit")).await;
     let kinds: Vec<&str> = kit["assets"]
         .as_array()
@@ -1184,6 +1207,70 @@ async fn design_system_kit_import_copy_and_revisions() {
     assert_eq!(s, 200);
     let css = std::fs::read_to_string(d.data.join("design-systems/my-airbnb/tokens.css")).unwrap();
     assert!(!css.contains("#aa5500"));
+
+    // An accept that cannot write every file writes none: the revision
+    // stays pending, and a Reject then leaves the package as it was.
+    let package = d.data.join("design-systems/my-airbnb");
+    let rdir = package.join("revisions/half");
+    std::fs::create_dir_all(&rdir).unwrap();
+    std::fs::write(
+        rdir.join("revision.json"),
+        json!({"id": "half", "kind": "agent", "status": "pending",
+               "createdAt": 1, "updatedAt": 1})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(rdir.join("DESIGN.md"), "# Half\n").unwrap();
+    std::fs::write(rdir.join("tokens.css"), ":root { --half: 1; }\n").unwrap();
+    let design = std::fs::read_to_string(package.join("DESIGN.md")).unwrap();
+    let tokens = std::fs::read_to_string(package.join("tokens.css")).unwrap();
+    let locked = |file: &std::path::Path, on: bool| {
+        let mut perms = std::fs::metadata(file).unwrap().permissions();
+        perms.set_readonly(on);
+        std::fs::set_permissions(file, perms).unwrap();
+    };
+    // The second file cannot be written; then the decision itself.
+    for stuck in [package.join("tokens.css"), rdir.join("revision.json")] {
+        locked(&stuck, true);
+        let (s, v) = call(
+            &d,
+            "POST",
+            &format!("/api/design-systems/{id}/revisions/half"),
+            Some(json!({ "status": "accepted" })),
+        )
+        .await;
+        locked(&stuck, false);
+        assert_eq!(s, 500, "{stuck:?}: {v}");
+        for (name, was) in [("DESIGN.md", &design), ("tokens.css", &tokens)] {
+            assert_eq!(
+                &std::fs::read_to_string(package.join(name)).unwrap(),
+                was,
+                "{stuck:?}: {name} of the revision written"
+            );
+        }
+        let revs = d
+            .get_json(&format!("/api/design-systems/{id}/revisions"))
+            .await;
+        let half = revs["revisions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == "half")
+            .unwrap();
+        assert_eq!(half["status"], "pending", "{stuck:?}");
+    }
+    let (s, _) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/revisions/half"),
+        Some(json!({ "status": "accepted" })),
+    )
+    .await;
+    assert_eq!(s, 200, "Try again");
+    assert_eq!(
+        std::fs::read_to_string(package.join("DESIGN.md")).unwrap(),
+        "# Half\n"
+    );
 
     // Edit with agent: one project whose folder is the package.
     let (s, v) = call(

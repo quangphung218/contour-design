@@ -377,6 +377,26 @@ async fn library_assets_are_copied_into_the_project_and_attached() {
             .join(format!("projects/{target}/library/own.png"))
             .exists()
     );
+    // Attached in place and copied, mixed: the files keep the order picked.
+    let (status, v) = send(
+        &d,
+        reqwest::Method::POST,
+        "/api/library/assets/apply",
+        &apply(json!([
+            {"projectId": target, "path": "own.png"},
+            {"projectId": source, "path": "shots/hero.png"},
+            {"projectId": target, "path": "own.png"},
+        ])),
+    )
+    .await;
+    assert_eq!(status, 200, "{v}");
+    let paths: Vec<&str> = v["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(paths, ["own.png", "library/hero-2.png", "own.png"]);
 
     for (body, want) in [
         (
