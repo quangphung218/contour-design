@@ -33,6 +33,9 @@ pub enum ErrorCode {
     ValidationFailed,
     /// Export: the entry file is not HTML.
     UnsupportedMediaType,
+    /// MP4 export: the file is not a HyperFrames composition (no
+    /// `[data-composition-id]` root), so the project is not a motion film.
+    NotAComposition,
     /// Export: Chrome is missing or the render failed.
     UpstreamUnavailable,
     /// The OS refused a write (read-only folder or volume); the message

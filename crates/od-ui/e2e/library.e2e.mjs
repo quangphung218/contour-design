@@ -7,7 +7,8 @@
 // the plugin; install from a folder, uninstall; create with agent; skills:
 // detail, edit as an override, new skill, delete); Media (provider key and
 // base URL, generate through the queue against a loopback fake provider,
-// library filter, upload, preview, Chat to design, MP4 error path);
+// library filter, upload, preview, Chat to design, MP4 offers motion
+// projects only and words a page sent to it);
 // Templates (filters, large preview, Remix, Use, prompt templates Copy and
 // Generate, save a project as a template, use and delete it); Vietnamese
 // strings. Every request leaving loopback is blocked and fails the test.
@@ -415,12 +416,34 @@ try {
   const files = await api(`/api/projects/${chatProject}/files`);
   assert.equal(files.files.filter((f) => f.name.startsWith('assets/')).length, 2);
   results.media = 'ok';
+  // MP4 offers motion projects only. The projects so far are pages: the
+  // tab says how to make a motion one instead of a list that can only fail.
   await page.locator('nav a[href="/media"]').click();
   await page.getByTestId('media-tab-mp4').click();
-  await page.getByTestId('mp4-project').selectOption({ index: 1 });
+  await page.getByTestId('mp4-empty').waitFor();
+  assert.equal(await page.getByTestId('mp4-project').count(), 0, 'no page project offered');
+  // A Motion project keeps its film in motion-source/<film>/, with no
+  // top-level page.
+  const film = (await api('/api/projects', { method: 'POST', body: JSON.stringify({ name: 'Tea film' }) })).project.id;
+  const writeFilm = (content) =>
+    api(`/api/projects/${film}/files`, { method: 'POST', body: JSON.stringify({ name: 'motion-source/film/index.html', content, overwrite: true }) });
+  await writeFilm('<!doctype html><html><body><div data-composition-id="main" data-width="320" data-height="180" data-duration="1"></div></body></html>');
+  await page.getByTestId('media-tab-library').click();
+  await page.getByTestId('media-tab-mp4').click();
+  const filmOptions = page.getByTestId('mp4-project').locator('option');
+  await until(async () => (await filmOptions.count()) === 2, 'the motion project is offered');
+  assert.deepEqual(await filmOptions.allTextContents(), ['Choose a project', 'Tea film'], 'only the motion project');
+  await page.getByTestId('mp4-project').selectOption(film);
+  // The agent rewrites the film as a plain page while the tab is open: the
+  // render reaches the daemon with a page, and says so in the user's words.
+  await writeFilm('<!doctype html><html><body><h1>Not a film</h1></body></html>');
   await page.getByTestId('mp4-render').click();
   await page.getByTestId('mp4-status').waitFor({ timeout: 20_000 });
-  results.mp4 = (await page.getByTestId('mp4-status').textContent()).slice(0, 60);
+  results.mp4 = await page.getByTestId('mp4-status').textContent();
+  assert.equal(
+    results.mp4,
+    'Export failed: This project is not a motion video, so it has no film to render. Make one with Motion on Home.',
+  );
   // QA-069: a new base URL host with the key left empty drops the saved
   // key (it must not reach the new host); the save says so instead of a
   // plain "Saved", and a save after that has nothing more to report.
@@ -512,6 +535,9 @@ try {
   await page.goto(BASE + '/media');
   await page.locator('nav a[href="/design-systems"]', { hasText: 'Design system' }).waitFor();
   await page.getByTestId('media-tab-queue').filter({ hasText: 'Hàng đợi' }).waitFor();
+  // The rewritten film is a page now: no longer offered.
+  await page.getByTestId('media-tab-mp4').click();
+  await page.getByTestId('mp4-empty').filter({ hasText: 'Chưa có project chuyển động' }).waitFor();
   await page.goto(BASE + '/templates');
   await page.getByTestId('tpl-tab-mine').filter({ hasText: 'Template của tôi' }).waitFor();
   results.vi = 'ok';

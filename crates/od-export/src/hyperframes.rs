@@ -73,6 +73,14 @@ fn positive(v: Option<&str>) -> Option<f64> {
         .filter(|n| n.is_finite() && *n > 0.0)
 }
 
+/// Whether `html` has a `[data-composition-id]` element: a HyperFrames
+/// composition (a motion film), even one [`composition`] then refuses
+/// for its size or rate.
+#[must_use]
+pub fn has_root(html: &str) -> bool {
+    ROOT_TAG.is_match(html)
+}
+
 /// Reads the first `[data-composition-id]` element.
 ///
 /// # Errors
@@ -367,6 +375,8 @@ mod tests {
         assert_eq!(c.fps, DEFAULT_FPS);
         assert_eq!(c.duration_ms, None);
         assert_eq!(composition("<div></div>"), Err(CompositionError::NoRoot));
+        assert!(!has_root("<div></div>"));
+        assert!(has_root(r#"<div data-composition-id="m" data-width="0">"#));
         assert!(matches!(
             composition(r#"<div data-composition-id="m" data-width="0" data-height="5">"#),
             Err(CompositionError::InvalidSize { .. })
