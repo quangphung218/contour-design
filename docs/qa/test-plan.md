@@ -792,6 +792,44 @@ a backup tool or a DB browser left open would.
 | GONE-04 | Same rename without the link | No link; rename a removed file | The same not-found message (one wording for one case) | P2 | auto |
 | GONE-05 | A file still there, `.file-versions` a link | Rename, Move an existing file | Refused, the message names the link; the file stays | P1 | auto |
 
+## 27. Uploads all or nothing, after beta.40 (`uploads.qa.mjs`)
+
+Goal: what #217–#222 changed holds for the user. Several files sent
+together land all, or none: when one of them fails, the others are not
+left behind, a message says what went wrong, and sending the good files
+again puts them at their own names (no `-1` copies). The same for a
+design system's assets, an accepted revision (the package is all of it or
+none of it), a project made from a template or Chat to design (no half
+project left in Projects), and a comment's draft image the user's own
+program changed in place (kept, not deleted on Leave). Expected results
+from spec.md (nothing the user made is lost unseen, a message says what
+happened and what to do) and the changelog lines of #218–#222.
+
+How one file is made to fail: a name longer than the disk allows (a
+name over 255 bytes, as a camera app or a "Save page as" can make), a page
+when `.file-versions` is a link, a Library asset deleted after the list
+loaded, a SQLite trigger refusing one row (`draft_uploads`, the project's
+`pendingPrompt`), a saved template naming a file that cannot be written,
+or a revision folder made read-only.
+
+| ID | Scenario | Steps | Expected | P | Status |
+|---|---|---|---|---|---|
+| UL-01 | Files panel: two images, one with a name too long | Upload `ok.png` + 300-letter `.png` together | Error that says which file and why (not a bare "Try again", which fails the same way); neither file in the panel, on disk or in the ZIP; then `ok.png` alone lands as `ok.png` | P0 | auto (QA-106) |
+| UL-02 | Files panel: an image and a page, `.file-versions` a link | Link; upload `a.png` + `p.html` | Refused, the message names the link; `a.png` not left | P1 | auto |
+| UL-03 | Comment: two images, one with a name too long | Comment mode, attach both | "Could not attach …"; no chip, nothing in `comments/`; attaching `shot.png` again lands `comments/shot.png` | P0 | auto (QA-106) |
+| UL-04 | Comment: the second image cannot be recorded as the draft's | Trigger on `draft_uploads` for the 2nd; attach 2; drop trigger; attach again | First try: nothing on disk; second: both at their own names, both chips | P1 | auto |
+| UL-05 | Chat composer: two files, one with a name too long | Attach both in the composer | Sent one by one: the good one attached; the other's card says which name and why | P1 | auto (QA-106) |
+| UL-06 | Media library: two images, one with a name too long | Media ▸ Upload both | An error; no new tile; `a.png` alone then lands once | P1 | auto (QA-106) |
+| UL-07 | Add from Library: one chosen asset deleted meanwhile | Pick two assets; delete one on disk; Add | An error; the project gets neither copy | P1 | auto |
+| UL-08 | Chat to design, the project cannot take its prompt | Trigger on `pendingPrompt`; Chat to design | An error; no new project in Projects, no folder on disk; the Library keeps its assets | P1 | auto |
+| UL-09 | Use a saved template one of whose files cannot be written | Template saved; its file list given a 300-letter page; Use | An error; Projects unchanged, twice | P1 | auto |
+| DS-01 | Design system: an image and a text file together | Kit ▸ upload `logo.png` + `notes.txt` | Refused, names `notes.txt`; `logo.png` not added | P1 | auto |
+| DS-02 | Design system: two Vietnamese names | Upload `màu.png` + `mẫu.png` | Both kept (or one refused with a reason); never one silently written over the other | P1 | auto (QA-107) |
+| DS-03 | Accept a revision whose decision cannot be saved | Rebuild tokens; revision folder read-only; Accept | An error; `tokens.css` unchanged; still pending; after the folder is writable, Reject leaves `tokens.css` as before | P1 | auto |
+| DS-04 | Accept a revision (control) | Rebuild tokens; Accept | `tokens.css` rebuilt, the revision accepted | P0 | auto |
+| DR-01 | A draft image the user's program rewrote in place | Attach `shot.png`; overwrite it with other bytes of the same size, mtime kept (`cp -p`); Leave | `comments/shot.png` kept with the new bytes | P1 | auto |
+| DR-02 | A draft image untouched (control) | Attach; Leave | `comments/shot.png` deleted | P0 | auto |
+
 ## Not automated, and why
 
 - **Desktop shell (Tauri)**: native menus, Cmd+O folder dialog, Finder
