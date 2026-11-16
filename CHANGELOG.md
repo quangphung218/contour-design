@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Files: an image attached to a comment that lands after its Studio was left, and that the disk will not let the app delete, stays out of the project's files (and the ZIP) until the day-old sweep or the next quit deletes it; before, it became one of the project's files. Giving back the images of a page write that failed no longer holds every other request while it reads them, and one another write took meanwhile is no longer deleted.
+
 ## [0.2.0-beta.40] - 2026-11-16
 
 ### Fixed

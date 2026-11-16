@@ -291,12 +291,6 @@ fn settle(root: &ProjectRoot, path: &str, fate: Fate) -> bool {
     }
 }
 
-/// Deletes the file `path` of a draft if it is still the draft's
-/// ([`fate`], [`settle`]).
-fn delete_image(root: &ProjectRoot, path: &str, ident: Option<&str>, uploaded_at: i64) -> bool {
-    settle(root, path, fate(root, path, ident, uploaded_at))
-}
-
 /// A draft image's [`fate`] told before the database lock is taken:
 /// reading and hashing images (5 of 20 MB take some 70 ms) would hold
 /// every other call of the store. `stamp` is the file's metadata
@@ -313,7 +307,8 @@ fn foretell(root: &ProjectRoot, path: &str, ident: Option<&str>, uploaded_at: i6
     Foretold { fate, stamp }
 }
 
-/// [`delete_image`] under the lock, with the fate told before it: kept
+/// Deletes the file `path` of a draft if it is still the draft's
+/// ([`settle`]), under the lock, with the fate told before it: kept
 /// while the file's metadata is as it was then, told again otherwise.
 /// What stays: a file written over in place between the two, its size,
 /// mtime and inode kept, takes the fate of the one before (a window of
@@ -335,7 +330,11 @@ fn delete_foretold(
 /// A row taken out of the record by a write that may still fail
 /// ([`Store::take_draft_uploads`]).
 #[derive(Debug, Clone)]
-pub struct TakenDraft {
+pub struct TakenDraft(DraftRow);
+
+/// A row of `draft_uploads`.
+#[derive(Debug, Clone)]
+struct DraftRow {
     path: String,
     session: String,
     uploaded_at: i64,
@@ -360,19 +359,27 @@ impl Store {
     ) -> Result<bool> {
         check_session(session)?;
         let root = self.root_for(project_id)?;
-        self.with_conn(|conn| {
-            if released(conn, session)? {
-                // No row to keep: a sweep never sees it if this fails.
-                delete_image(&root, path, Some(ident), crate::now_ms());
-                return Ok(false);
-            }
+        let at = crate::now_ms();
+        let late = self.with_conn(|conn| {
+            // Noted even for a session released: one the disk will not
+            // delete below stays a draft's, for the sweep.
             conn.execute(
                 "INSERT OR REPLACE INTO draft_uploads \
                  (project_id, path, session, uploaded_at, ident) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![project_id, path, session, crate::now_ms(), ident],
+                params![project_id, path, session, at, ident],
             )?;
-            Ok(true)
-        })
+            Ok(released(conn, session)?)
+        })?;
+        if late {
+            let row = DraftRow {
+                path: path.to_owned(),
+                session: session.to_owned(),
+                uploaded_at: at,
+                ident: Some(ident.to_owned()),
+            };
+            self.drop_rows(&root, project_id, vec![row], || {})?;
+        }
+        Ok(!late)
     }
 
     /// The session's page is gone: deletes every image it uploaded that
@@ -396,7 +403,7 @@ impl Store {
     ) -> Result<Vec<String>> {
         check_session(session)?;
         let root = self.root_for(project_id)?;
-        let rows: Vec<(String, i64, Option<String>)> = self.with_conn(|conn| {
+        let rows: Vec<DraftRow> = self.with_conn(|conn| {
             // From here on an upload of the session goes at once.
             conn.execute(
                 "INSERT OR IGNORE INTO draft_sessions_released (session, released_at) \
@@ -409,33 +416,61 @@ impl Store {
             )?;
             let rows = stmt
                 .query_map(params![project_id, session], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    Ok(DraftRow {
+                        path: r.get(0)?,
+                        session: session.to_owned(),
+                        uploaded_at: r.get(1)?,
+                        ident: r.get(2)?,
+                    })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(rows)
         })?;
+        self.drop_rows(&root, project_id, rows, told)
+    }
+
+    /// Deletes the images of `rows`, drafts of released sessions, and
+    /// forgets them. Their fates are told before the lock is taken
+    /// ([`foretell`]), then `told` is called, so a test can act there as
+    /// another request would. A row taken meanwhile (a comment sent, a
+    /// page written), renamed or deleted is no longer the draft's: it
+    /// stays. One the disk would not delete keeps its row, for the sweep.
+    /// Returns the paths deleted.
+    fn drop_rows(
+        &self,
+        root: &ProjectRoot,
+        project_id: &str,
+        rows: Vec<DraftRow>,
+        told: impl FnOnce(),
+    ) -> Result<Vec<String>> {
         let rows: Vec<_> = rows
             .into_iter()
-            .map(|(path, at, ident)| {
-                let fate = foretell(&root, &path, ident.as_deref(), at);
-                (path, at, ident, fate)
+            .map(|row| {
+                let fate = foretell(root, &row.path, row.ident.as_deref(), row.uploaded_at);
+                (row, fate)
             })
             .collect();
         told();
         self.with_conn(|conn| {
             let mut paths = Vec::new();
-            for (path, at, ident, fate) in rows {
-                // Taken meanwhile (a comment sent, a page written), renamed
-                // or deleted: no longer this draft's to release.
+            for (row, fate) in rows {
                 let still: bool = conn.query_row(
                     "SELECT EXISTS(SELECT 1 FROM draft_uploads WHERE project_id = ?1 \
                      AND path = ?2 AND session = ?3 AND uploaded_at = ?4 AND ident IS ?5)",
-                    params![project_id, path, session, at, ident],
+                    params![
+                        project_id,
+                        row.path,
+                        row.session,
+                        row.uploaded_at,
+                        row.ident
+                    ],
                     |r| r.get(0),
                 )?;
-                if still && delete_foretold(&root, &path, ident.as_deref(), at, fate) {
-                    forget(conn, project_id, &path)?;
-                    paths.push(path);
+                if still
+                    && delete_foretold(root, &row.path, row.ident.as_deref(), row.uploaded_at, fate)
+                {
+                    forget(conn, project_id, &row.path)?;
+                    paths.push(row.path);
                 }
             }
             Ok(paths)
@@ -557,12 +592,12 @@ impl Store {
                     )
                     .optional()?;
                 if let Some((session, uploaded_at, ident)) = row {
-                    taken.push(TakenDraft {
+                    taken.push(TakenDraft(DraftRow {
                         path: path.clone(),
                         session,
                         uploaded_at,
                         ident,
-                    });
+                    }));
                 }
             }
             claim(conn, project_id, paths)?;
@@ -574,23 +609,35 @@ impl Store {
     /// are drafts' images again. One whose session was released meanwhile
     /// goes at once, as an upload landing after it does.
     pub fn give_back_draft_uploads(&self, project_id: &str, taken: Vec<TakenDraft>) {
-        let root = self.root_for(project_id).ok();
+        self.give_back_draft_uploads_each(project_id, taken, || {});
+    }
+
+    /// [`Self::give_back_draft_uploads`], calling `told` once the fates
+    /// of the images of sessions released are told ([`Self::drop_rows`]).
+    pub(crate) fn give_back_draft_uploads_each(
+        &self,
+        project_id: &str,
+        taken: Vec<TakenDraft>,
+        told: impl FnOnce(),
+    ) {
         let res = self.with_conn(|conn| {
-            for t in &taken {
-                if released(conn, &t.session)?
-                    && root.as_ref().is_some_and(|root| {
-                        delete_image(root, &t.path, t.ident.as_deref(), t.uploaded_at)
-                    })
-                {
-                    continue;
-                }
+            let mut late = Vec::new();
+            for TakenDraft(t) in taken {
                 conn.execute(
                     "INSERT OR IGNORE INTO draft_uploads \
                      (project_id, path, session, uploaded_at, ident) VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![project_id, t.path, t.session, t.uploaded_at, t.ident],
                 )?;
+                if released(conn, &t.session)? {
+                    late.push(t);
+                }
             }
-            Ok(())
+            Ok(late)
+        });
+        // A project whose folder is gone: its rows stay for the sweep.
+        let res = res.and_then(|late| match self.root_for(project_id) {
+            Ok(root) if !late.is_empty() => self.drop_rows(&root, project_id, late, told),
+            _ => Ok(Vec::new()),
         });
         if let Err(e) = res {
             tracing::warn!(error = %e, "cannot give draft images back");
@@ -1355,6 +1402,61 @@ mod tests {
         })
         .unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(read(&s, &p, &img), b"the user's, written just now");
+    }
+
+    /// A write failing after its session was released tells its images
+    /// before it takes the lock to delete them. One another write takes
+    /// in between is that write's: it stays.
+    #[test]
+    fn an_image_taken_while_a_failed_write_gives_it_back_stays() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let taken = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.give_back_draft_uploads_each(&p, taken, || {
+            s.take_draft_uploads(&p, std::slice::from_ref(&img))
+                .unwrap_or_else(|e| panic!("{e}"));
+        });
+        assert!(exists(&s, &p, &img), "the other write's image deleted");
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    /// An upload landing after its page was left, which the disk will not
+    /// delete, stays a draft's: out of the ZIP, for the sweep.
+    #[cfg(unix)]
+    #[test]
+    fn a_late_upload_that_cannot_be_deleted_stays_a_drafts() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, s, p, _) = store();
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let up = s
+            .upload_file(&p, Some("comments"), "late.png", PNG)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let full = s
+            .stat_file(&p, &up.path)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .1;
+        let dir = full.parent().unwrap_or_else(|| panic!("no folder"));
+        let lock = |mode| {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode))
+                .unwrap_or_else(|e| panic!("{e}"));
+        };
+        lock(0o555);
+        let kept = s.record_draft_upload(&p, "s1", &up.path, &content_ident(PNG));
+        lock(0o755);
+        assert!(!kept.unwrap_or_else(|e| panic!("{e}")));
+        assert!(exists(&s, &p, &up.path), "the disk kept it");
+        assert_eq!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default(),
+            HashSet::from([up.path.clone()]),
+            "shipped as the project's"
+        );
+        assert_eq!(s.release_all_draft_uploads().unwrap_or(0), 1);
+        assert!(!exists(&s, &p, &up.path));
     }
 
     /// A row made before identities were of content (`size:mtime:inode`,

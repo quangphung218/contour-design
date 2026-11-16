@@ -899,6 +899,16 @@ struct Prior {
 /// content back. Returns that old content, for [`put_back`] should the
 /// decision itself not be saved.
 fn accept_files(dir: &std::path::Path, files: &[RevisionFile]) -> ApiResult<Vec<Prior>> {
+    accept_files_with(dir, files, |path, bytes| std::fs::write(path, bytes))
+}
+
+/// [`accept_files`], each file written by `write`, so a test can fail a
+/// write half way as a full disk would.
+fn accept_files_with(
+    dir: &std::path::Path,
+    files: &[RevisionFile],
+    mut write: impl FnMut(&std::path::Path, &[u8]) -> std::io::Result<()>,
+) -> ApiResult<Vec<Prior>> {
     let mut prior: Vec<Prior> = Vec::new();
     let wrote = files
         .iter()
@@ -916,7 +926,7 @@ fn accept_files(dir: &std::path::Path, files: &[RevisionFile]) -> ApiResult<Vec<
                 old,
                 wrote: None,
             });
-            internal(std::fs::write(&path, &f.content))?;
+            internal(write(&path, f.content.as_bytes()))?;
             if let Some(p) = prior.last_mut() {
                 p.wrote = Some(f.content.clone().into_bytes());
             }
@@ -1317,9 +1327,10 @@ mod tests {
         );
     }
 
-    /// An accept that fails half way puts back what it wrote before.
+    /// An accept failing on a file it cannot read (so not listed to put
+    /// back) puts back those it wrote before.
     #[test]
-    fn an_accept_failing_half_way_puts_back_what_it_wrote() {
+    fn an_accept_failing_on_a_file_it_cannot_read_puts_back_those_before() {
         let tmp = tempfile::tempdir().unwrap();
         let d = tmp.path();
         std::fs::write(d.join("DESIGN.md"), "old").unwrap();
@@ -1328,6 +1339,31 @@ mod tests {
         let files = revision(&[("DESIGN.md", "new"), ("tokens.css", ":root {}")]);
         assert!(accept_files(d, &files).is_err());
         assert_eq!(std::fs::read_to_string(d.join("DESIGN.md")).unwrap(), "old");
+    }
+
+    /// A write failing half way (a full disk) leaves a part of the file:
+    /// it gets its old content back too, as do those written before.
+    #[test]
+    fn an_accept_failing_half_way_through_a_write_puts_that_file_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        std::fs::write(d.join("DESIGN.md"), "old").unwrap();
+        std::fs::write(d.join("tokens.css"), ":root { --old: 1 }").unwrap();
+        let files = revision(&[("DESIGN.md", "new"), ("tokens.css", ":root { --new: 2 }")]);
+        let res = accept_files_with(d, &files, |path, bytes| {
+            if path.ends_with("tokens.css") {
+                std::fs::write(path, &bytes[..bytes.len() / 2])?;
+                return Err(std::io::Error::other("no space left on device"));
+            }
+            std::fs::write(path, bytes)
+        });
+        assert!(res.is_err());
+        assert_eq!(std::fs::read_to_string(d.join("DESIGN.md")).unwrap(), "old");
+        assert_eq!(
+            std::fs::read_to_string(d.join("tokens.css")).unwrap(),
+            ":root { --old: 1 }",
+            "the half written file left in the package"
+        );
     }
 
     #[test]
