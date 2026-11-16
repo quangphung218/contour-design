@@ -294,7 +294,7 @@ xattr -dr com.apple.quarantine /Applications/Contour.app
 
 ### macOS keeps asking to allow Contour under App Management
 
-Up to 0.2.0-beta.40, an export that needs Chrome started Chrome headless
+Up to 0.2.0-beta.41, an export that needs Chrome started Chrome headless
 as Contour's own process. Chrome, its helper apps or its updater then
 tried to change an app bundle, and macOS charged that to Contour: it
 denied the change and asked you to allow Contour under System Settings ▸
