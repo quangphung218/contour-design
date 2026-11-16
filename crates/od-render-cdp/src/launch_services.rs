@@ -137,9 +137,11 @@ fn ws_url(port_file: &str) -> Option<String> {
 /// first fails at once with what it printed. The caller's profile ends
 /// whatever was started when it drops.
 ///
-/// `Ok(None)`: LaunchServices started nothing although `open` succeeded,
-/// as from inside another sandbox (`sandbox-exec`, how the maintainer's
-/// pre-merge check runs); the caller starts the browser itself.
+/// `Ok(None)`, before starting anything: `ps` cannot run here, as inside
+/// `sandbox-exec` (how the maintainer's pre-merge check runs). A browser
+/// that is not our child can only be found, and ended, through `ps`; the
+/// caller starts it as its child instead. (`open` still works there; only
+/// its `--stderr` file is not created, so that is no sign of a launch.)
 pub(crate) async fn launch(
     app: &Path,
     exe: &Path,
@@ -151,6 +153,13 @@ pub(crate) async fn launch(
 ) -> Result<Option<(Browser, Handler)>, LaunchError> {
     let cannot_start =
         |why: &str| RenderError::Unavailable(format!("cannot start {}: {why}", exe.display()));
+    let probe = profile.to_path_buf();
+    let ps_runs = tokio::task::spawn_blocking(move || profile_users_checked(&probe).is_some())
+        .await
+        .unwrap_or(false);
+    if !ps_runs {
+        return Ok(None);
+    }
     let stderr = profile.join(STDERR_FILE);
     // Chrome gets no environment from us: the temp dir is the one thing
     // it used to inherit that matters (the profile's own on Linux).
@@ -170,9 +179,6 @@ pub(crate) async fn launch(
     if !opened.status.success() {
         let why = String::from_utf8_lossy(&opened.stderr);
         return Err(LaunchError::Other(cannot_start(why.trim())));
-    }
-    if !stderr_created(&stderr).await {
-        return Ok(None);
     }
 
     let port_file = profile.join("DevToolsActivePort");
@@ -195,8 +201,7 @@ pub(crate) async fn launch(
                 .await
                 .ok()
                 .flatten();
-            // `None`: `ps` cannot run here (sandbox-exec); only the timeout
-            // can tell then.
+            // `None`: `ps` stopped answering; only the timeout can tell.
             if users.is_some_and(|u| u.is_empty()) {
                 return Err(LaunchError::Other(cannot_start(&format!(
                     "it exited before opening DevTools{}",
@@ -233,18 +238,6 @@ async fn last_line(stderr: &Path) -> String {
         .find(|l| !l.trim().is_empty())
         .map(|l| format!(" ({})", l.trim()))
         .unwrap_or_default()
-}
-
-/// `open` creates the `--stderr` file as it hands it to the new process,
-/// before it returns; allow a second in case it lags.
-async fn stderr_created(path: &Path) -> bool {
-    for _ in 0..20 {
-        if tokio::fs::try_exists(path).await.unwrap_or(false) {
-            return true;
-        }
-        tokio::time::sleep(POLL).await;
-    }
-    false
 }
 
 #[cfg(test)]

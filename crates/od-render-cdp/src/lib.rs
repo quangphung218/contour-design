@@ -561,7 +561,7 @@ impl Session {
             }
             tracing::warn!(
                 app = %app.display(),
-                "LaunchServices started no browser (inside another sandbox?); starting it as our child"
+                "`ps` cannot run (inside another sandbox?), so the browser starts as our child, not through LaunchServices"
             );
         }
         let mut config = BrowserConfig::builder();
