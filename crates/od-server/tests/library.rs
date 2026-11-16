@@ -846,10 +846,14 @@ async fn design_system_routes_stay_inside_the_package() {
     let _ = upload(
         &d,
         &format!("/api/design-systems/{id}/assets"),
-        &[("logo.png", b"PNG")],
+        &[("first.png", b"PNG"), ("logo.png", b"PNG")],
     )
     .await;
     unchanged(&logo);
+    assert!(
+        !dir.join("assets/first.png").exists(),
+        "a file before the refused one kept"
+    );
     let meta = secret("metadata.json");
     link(&meta, dir.join("metadata.json"));
     let _ = call(

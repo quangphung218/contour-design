@@ -795,7 +795,10 @@ pub async fn upload_assets(
         if bytes.len() > MAX_ASSET_BYTES {
             return Err(ApiErr::bad_request(format!("{name} is larger than 20 MB")));
         }
-        parts.push((name, bytes));
+        // Its path checked here too (a link planted at it): refused before
+        // any of the batch is written.
+        let path = inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?;
+        parts.push((name, path, bytes));
     }
     if parts.is_empty() {
         return Err(ApiErr::bad_request("no files in upload"));
@@ -806,8 +809,8 @@ pub async fn upload_assets(
         .await
         .map_err(|err| ApiErr::internal(err.to_string()))?;
     let mut saved = Vec::with_capacity(parts.len());
-    for (name, bytes) in parts {
-        tokio::fs::write(inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?, &bytes)
+    for (name, path, bytes) in parts {
+        tokio::fs::write(path, &bytes)
             .await
             .map_err(|err| ApiErr::internal(err.to_string()))?;
         saved.push(json!({ "name": name, "kind": asset_kind(&name), "size": bytes.len() }));
@@ -881,16 +884,22 @@ pub async fn list_revisions(
     Ok(Json(json!({ "revisions": revisions_of(&e.dir) })))
 }
 
-/// A package file an accept writes, with what it held before (`None`: it
-/// was not there).
-type Prior = (PathBuf, Option<Vec<u8>>);
+/// A package file an accept writes.
+struct Prior {
+    path: PathBuf,
+    /// What it held before (`None`: it was not there).
+    old: Option<Vec<u8>>,
+    /// What the accept wrote; `None` while it is written (a write that
+    /// fails half way leaves a part of it).
+    wrote: Option<Vec<u8>>,
+}
 
 /// Writes an accepted revision's files into the package `dir`, all or
 /// nothing: on an error those written (or being written) get their old
 /// content back. Returns that old content, for [`put_back`] should the
 /// decision itself not be saved.
 fn accept_files(dir: &std::path::Path, files: &[RevisionFile]) -> ApiResult<Vec<Prior>> {
-    let mut prior = Vec::new();
+    let mut prior: Vec<Prior> = Vec::new();
     let wrote = files
         .iter()
         .filter(|f| REVISABLE.contains(&f.name.as_str()))
@@ -902,8 +911,16 @@ fn accept_files(dir: &std::path::Path, files: &[RevisionFile]) -> ApiResult<Vec<
                 Err(err) => return Err(ApiErr::internal(err.to_string())),
             };
             // Listed before the write: one that fails half way is put back.
-            prior.push((path.clone(), old));
-            internal(std::fs::write(&path, &f.content))
+            prior.push(Prior {
+                path: path.clone(),
+                old,
+                wrote: None,
+            });
+            internal(std::fs::write(&path, &f.content))?;
+            if let Some(p) = prior.last_mut() {
+                p.wrote = Some(f.content.clone().into_bytes());
+            }
+            Ok(())
         });
     match wrote {
         Ok(()) => Ok(prior),
@@ -914,12 +931,25 @@ fn accept_files(dir: &std::path::Path, files: &[RevisionFile]) -> ApiResult<Vec<
     }
 }
 
-/// Undoes [`accept_files`]: each file gets back what it held.
+/// Undoes [`accept_files`]: each file gets back what it held, if it still
+/// holds what the accept wrote. One changed since (the agent revising the
+/// package, the user's editor), or gone, is theirs now: it is left as it
+/// is. What stays: a change that writes the very same content is taken for
+/// the accept's.
 fn put_back(prior: &[Prior]) {
-    for (path, old) in prior.iter().rev() {
-        let undone = match old {
-            Some(bytes) => std::fs::write(path, bytes),
-            None => std::fs::remove_file(path).or_else(|err| {
+    for p in prior.iter().rev() {
+        if let Some(wrote) = &p.wrote {
+            match std::fs::read(&p.path) {
+                Ok(now) if now == *wrote => {}
+                _ => {
+                    tracing::warn!(file = %p.path.display(), "a file an accept wrote changed since: left as it is");
+                    continue;
+                }
+            }
+        }
+        let undone = match &p.old {
+            Some(bytes) => std::fs::write(&p.path, bytes),
+            None => std::fs::remove_file(&p.path).or_else(|err| {
                 if err.kind() == std::io::ErrorKind::NotFound {
                     Ok(())
                 } else {
@@ -928,7 +958,7 @@ fn put_back(prior: &[Prior]) {
             }),
         };
         if let Err(err) = undone {
-            tracing::warn!(file = %path.display(), error = %err, "an accept that failed cannot be undone");
+            tracing::warn!(file = %p.path.display(), error = %err, "an accept that failed cannot be undone");
         }
     }
 }
@@ -1242,6 +1272,62 @@ mod tests {
         assert!(inside(d, "../other/DESIGN.md").is_err());
         assert!(inside(d, ".open-design/project.json").is_err());
         assert!(inside(d, "").is_err());
+    }
+
+    fn revision(files: &[(&str, &str)]) -> Vec<RevisionFile> {
+        files
+            .iter()
+            .map(|(name, content)| RevisionFile {
+                name: (*name).to_owned(),
+                content: (*content).to_owned(),
+            })
+            .collect()
+    }
+
+    /// The decision cannot be saved after an accept wrote the package: each
+    /// file goes back, but one the agent wrote in between is left as is.
+    #[test]
+    fn an_accept_undone_leaves_a_file_changed_since() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        std::fs::write(d.join("DESIGN.md"), "old").unwrap();
+        let files = revision(&[("DESIGN.md", "new"), ("tokens.css", ":root {}")]);
+        let prior = accept_files(d, &files).unwrap();
+        std::fs::write(d.join("tokens.css"), "the agent's").unwrap();
+        put_back(&prior);
+        assert_eq!(std::fs::read_to_string(d.join("DESIGN.md")).unwrap(), "old");
+        assert_eq!(
+            std::fs::read_to_string(d.join("tokens.css")).unwrap(),
+            "the agent's",
+            "a file the agent wrote deleted"
+        );
+
+        let prior = accept_files(d, &files).unwrap();
+        std::fs::write(d.join("DESIGN.md"), "the agent's").unwrap();
+        std::fs::remove_file(d.join("tokens.css")).unwrap();
+        put_back(&prior);
+        assert_eq!(
+            std::fs::read_to_string(d.join("DESIGN.md")).unwrap(),
+            "the agent's",
+            "the agent's change written over"
+        );
+        assert!(
+            !d.join("tokens.css").exists(),
+            "a file deleted since put back"
+        );
+    }
+
+    /// An accept that fails half way puts back what it wrote before.
+    #[test]
+    fn an_accept_failing_half_way_puts_back_what_it_wrote() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        std::fs::write(d.join("DESIGN.md"), "old").unwrap();
+        // Not a file: it cannot be read nor written.
+        std::fs::create_dir(d.join("tokens.css")).unwrap();
+        let files = revision(&[("DESIGN.md", "new"), ("tokens.css", ":root {}")]);
+        assert!(accept_files(d, &files).is_err());
+        assert_eq!(std::fs::read_to_string(d.join("DESIGN.md")).unwrap(), "old");
     }
 
     #[test]
