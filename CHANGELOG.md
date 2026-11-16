@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- macOS: exporting (PNG, PDF, MP4, editable PPTX) works again with a Chrome that was installed but never opened from Finder (for example with `brew install --cask google-chrome`); it waited 90 s and failed with "started but did not show the page", because macOS held the browser until someone approved its first launch. Such a Chrome now starts as Contour's child, and so does any Chrome macOS does not start within 20 s, so how Chrome is started no longer fails an export.
+
 ## [0.2.0-beta.42] - 2026-11-16
 
 ### Fixed

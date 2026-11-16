@@ -310,6 +310,12 @@ bundle (a script, a bare binary): such a browser still starts as
 Contour's own process. Point it at the app's binary
 (`…/Google Chrome.app/Contents/MacOS/Google Chrome`) instead.
 
+A Chrome you installed but never opened (`brew install --cask
+google-chrome`, say) also starts as Contour's own process: macOS would
+hold it until you approve its first launch, and the export would wait.
+Open Chrome once from Finder and choose Open; later exports start it the
+other way. The same holds when macOS does not start Chrome within 20 s.
+
 ### `make install` refuses to replace the app
 
 `/Applications/Contour.app` exists but has another bundle identifier than

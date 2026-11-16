@@ -80,14 +80,14 @@ impl Drop for Reap {
 }
 
 /// A script at `path` that writes its parent pid and arguments to
-/// `<dir>/args.txt`, counts launches in `<dir>/launches.txt`, then runs
-/// `body`.
+/// `<dir>/args.txt`, adds its parent pid to `<dir>/launches.txt` (a line
+/// per launch), then runs `body`.
 fn script(path: &Path, dir: &Path, body: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(
         path,
         format!(
-            "#!/bin/sh\n{{ echo \"ppid=$PPID\"; for a in \"$@\"; do printf '%s\\n' \"$a\"; done; }} > '{}'\necho x >> '{}'\n{body}\n",
+            "#!/bin/sh\n{{ echo \"ppid=$PPID\"; for a in \"$@\"; do printf '%s\\n' \"$a\"; done; }} > '{}'\necho \"ppid=$PPID\" >> '{}'\n{body}\n",
             dir.join("args.txt").display(),
             dir.join("launches.txt").display()
         ),
@@ -175,7 +175,7 @@ fn processes() -> String {
 /// bundle is started by launchd (parent pid 1), not by us. Without `ps` the
 /// bundle too is our child, and the export still works.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "flaky outside a sandbox (2 of 6 `make check` runs: the real Chrome inside a throwaway bundle never opened DevTools); run by hand when changing how Chrome starts: cargo test -p od-render-cdp --test launch_services -- --ignored"]
+#[ignore = "slow under `make check` load (2 of 6 runs: a new throwaway bundle took over 30 s to open DevTools through LaunchServices, 4-7 s when idle); CI runs it on macOS alone (ci.yml chrome-macos)"]
 async fn a_bundled_browser_is_not_our_child_where_ps_runs() {
     if skip() {
         return;
@@ -236,8 +236,18 @@ async fn a_bundled_browser_is_not_our_child_where_ps_runs() {
     );
 }
 
+/// Who started each launch so far, as `ppid=<pid>` lines.
+fn launches(dir: &Path) -> Vec<String> {
+    std::fs::read_to_string(dir.join("launches.txt"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
 /// A bundled browser that exits at once fails within seconds, saying what
-/// it printed; one that never opens DevTools is tried twice and ended.
+/// it printed; one that never opens DevTools is ended and tried again as
+/// our child (twice). Either way LaunchServices goes first, once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
     if std::env::var(NO_SANDBOX_ENV).as_deref() == Ok("1") {
@@ -248,15 +258,17 @@ async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
     let page = page_dir.path().join("page.html");
     std::fs::write(&page, "<!doctype html><h1>x</h1>").unwrap();
 
-    for (body, limit, launches) in [
+    let ours = format!("ppid={}", std::process::id());
+    for (body, limit, children) in [
         (
             "echo 'boom: no display' >&2; exit 1",
             Duration::from_secs(10),
             1,
         ),
         // A shell loop, not `exec sleep`: it keeps the profile in its
-        // arguments, as a hung Chrome does.
-        ("while :; do sleep 1; done", Duration::from_secs(70), 2),
+        // arguments, as a hung Chrome does. 20 s through LaunchServices,
+        // then 2 × 30 s as our child.
+        ("while :; do sleep 1; done", Duration::from_secs(88), 2),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let exe = bundled(dir.path(), body);
@@ -280,10 +292,16 @@ async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
         if body.contains("boom") {
             assert!(msg.contains("boom: no display"), "says why: {msg}");
         }
-        let launched = std::fs::read_to_string(dir.path().join("launches.txt")).unwrap();
-        assert_eq!(launched.lines().count(), launches, "{body}: launches");
+        let mut expected = vec![ours.clone(); children];
+        if launch_services() {
+            expected.insert(0, bundle_ppid());
+        }
+        assert_eq!(
+            launches(dir.path()),
+            expected,
+            "{body}: who started each launch"
+        );
         let args = recorded(dir.path());
-        assert_eq!(args[0], bundle_ppid(), "{body}: who started it");
         assert!(
             !args.iter().any(|a| a.contains("no-sandbox")),
             "the product turned Chrome's sandbox off by itself: {args:?}"
@@ -299,7 +317,7 @@ async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
 /// the export, and is killed: found through its profile, or as our child
 /// on the fallback.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "flaky outside a sandbox (2 of 6 `make check` runs: the real Chrome inside a throwaway bundle never opened DevTools); run by hand when changing how Chrome starts: cargo test -p od-render-cdp --test launch_services -- --ignored"]
+#[ignore = "slow under `make check` load (2 of 6 runs: a new throwaway bundle took over 30 s to open DevTools through LaunchServices, 4-7 s when idle); CI runs it on macOS alone (ci.yml chrome-macos)"]
 async fn a_bundled_browser_that_never_exits_does_not_hang_the_export() {
     if skip() {
         return;

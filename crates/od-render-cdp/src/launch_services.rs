@@ -11,6 +11,14 @@
 //! `<profile>/DevToolsActivePort`, Chrome's stderr from `open --stderr`,
 //! and the processes to end are found through the profile
 //! ([`super::profile_users`]).
+//!
+//! LaunchServices runs Gatekeeper's first-launch check, which a direct
+//! start skips: an app still quarantined and never approved (Chrome
+//! installed by `brew install --cask` and not yet opened from Finder, as on
+//! the GitHub macOS runners) waits for someone to click "Open", and `open`
+//! with it. Such a bundle is not opened this way ([`awaits_approval`]), and
+//! the whole start has one deadline; the caller starts the browser as its
+//! child when this way fails.
 
 use super::{LaunchError, RENDER_SWITCHES, profile_users_checked};
 use chromiumoxide::handler::HandlerConfig;
@@ -20,6 +28,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const OPEN: &str = "/usr/bin/open";
+/// Gatekeeper's mark on what was downloaded: `<flags>;<time>;<agent>;<id>`.
+const QUARANTINE: &str = "com.apple.quarantine";
+/// Quarantine flag set once the user approved the app's first launch.
+const QTN_USER_APPROVED: u32 = 0x40;
 /// Chrome's stderr, next to the profile's own files.
 const STDERR_FILE: &str = "od-stderr.log";
 /// How often the profile is checked for the DevTools port.
@@ -123,6 +135,25 @@ fn merge_repeated(switches: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+/// Whether LaunchServices would hold `app` for Gatekeeper's first-launch
+/// approval: it is quarantined and the user has not approved it yet.
+pub(crate) fn awaits_approval(app: &Path) -> bool {
+    xattr::get(app, QUARANTINE)
+        .ok()
+        .flatten()
+        .is_some_and(|v| unapproved(&String::from_utf8_lossy(&v)))
+}
+
+/// A quarantine value whose flags (hex, first field) lack the approval.
+/// One that cannot be read is left to the launch deadline.
+fn unapproved(quarantine: &str) -> bool {
+    quarantine
+        .split(';')
+        .next()
+        .and_then(|flags| u32::from_str_radix(flags, 16).ok())
+        .is_some_and(|flags| flags & QTN_USER_APPROVED == 0)
+}
+
 /// The browser's DevTools socket from `DevToolsActivePort` (the port, then
 /// the browser target's path). `None` until Chrome has written both lines.
 fn ws_url(port_file: &str) -> Option<String> {
@@ -132,10 +163,10 @@ fn ws_url(port_file: &str) -> Option<String> {
     (port != 0 && path.starts_with('/')).then(|| format!("ws://127.0.0.1:{port}{path}"))
 }
 
-/// Starts `app` headless on `profile` and connects to it. Waits at most
-/// `timeout` for DevTools ([`LaunchError::Timeout`]); a browser that exits
-/// first fails at once with what it printed. The caller's profile ends
-/// whatever was started when it drops.
+/// Starts `app` headless on `profile` and connects to it, all within
+/// `timeout` ([`LaunchError::Timeout`]: `open` itself can hang, see the
+/// module docs); a browser that exits first fails at once with what it
+/// printed. The caller's profile ends whatever was started when it drops.
 ///
 /// `Ok(None)`, before starting anything: `ps` cannot run here, as inside
 /// `sandbox-exec` (how the maintainer's pre-merge check runs). A browser
@@ -151,8 +182,39 @@ pub(crate) async fn launch(
     timeout: Duration,
     request_timeout: Duration,
 ) -> Result<Option<(Browser, Handler)>, LaunchError> {
+    launch_with(
+        Path::new(OPEN),
+        app,
+        exe,
+        profile,
+        tmp,
+        no_sandbox,
+        timeout,
+        request_timeout,
+    )
+    .await
+}
+
+/// [`launch`] through the `open` at `open` (a stand-in in tests).
+#[allow(clippy::too_many_arguments)] // launch's own, plus `open`
+async fn launch_with(
+    open: &Path,
+    app: &Path,
+    exe: &Path,
+    profile: &Path,
+    tmp: Option<&Path>,
+    no_sandbox: bool,
+    timeout: Duration,
+    request_timeout: Duration,
+) -> Result<Option<(Browser, Handler)>, LaunchError> {
     let cannot_start =
         |why: &str| RenderError::Unavailable(format!("cannot start {}: {why}", exe.display()));
+    let timed_out = |stderr: String| {
+        LaunchError::Timeout(cannot_start(&format!(
+            "DevTools did not open within {} s{stderr}",
+            timeout.as_secs()
+        )))
+    };
     let probe = profile.to_path_buf();
     let ps_runs = tokio::task::spawn_blocking(move || profile_users_checked(&probe).is_some())
         .await
@@ -164,7 +226,9 @@ pub(crate) async fn launch(
     // Chrome gets no environment from us: the temp dir is the one thing
     // it used to inherit that matters (the profile's own on Linux).
     let tmp = tmp.map_or_else(std::env::temp_dir, Path::to_path_buf);
-    let opened = tokio::process::Command::new(OPEN)
+    let started = Instant::now();
+    let deadline = started + timeout;
+    let opening = tokio::process::Command::new(open)
         .args(["-n", "-g", "-a"])
         .arg(app)
         .arg("--stderr")
@@ -173,16 +237,18 @@ pub(crate) async fn launch(
         .arg(format!("TMPDIR={}", tmp.display()))
         .arg("--args")
         .args(switches(profile, no_sandbox))
-        .output()
+        .kill_on_drop(true)
+        .output();
+    let opened = tokio::time::timeout_at(deadline.into(), opening)
         .await
-        .map_err(|e| LaunchError::Other(cannot_start(&format!("{OPEN}: {e}"))))?;
+        .map_err(|_| timed_out(String::new()))?
+        .map_err(|e| LaunchError::Other(cannot_start(&format!("{}: {e}", open.display()))))?;
     if !opened.status.success() {
         let why = String::from_utf8_lossy(&opened.stderr);
         return Err(LaunchError::Other(cannot_start(why.trim())));
     }
 
     let port_file = profile.join("DevToolsActivePort");
-    let started = Instant::now();
     let mut next_exit_check = started + EXIT_CHECK;
     let ws = loop {
         if let Some(ws) = tokio::fs::read_to_string(&port_file)
@@ -209,12 +275,8 @@ pub(crate) async fn launch(
                 ))));
             }
         }
-        if started.elapsed() >= timeout {
-            return Err(LaunchError::Timeout(cannot_start(&format!(
-                "DevTools did not open within {} s{}",
-                timeout.as_secs(),
-                last_line(&stderr).await
-            ))));
+        if Instant::now() >= deadline {
+            return Err(timed_out(last_line(&stderr).await));
         }
         tokio::time::sleep(POLL).await;
     };
@@ -223,8 +285,9 @@ pub(crate) async fn launch(
         request_timeout,
         ..HandlerConfig::default()
     };
-    Browser::connect_with_config(ws, config)
+    tokio::time::timeout_at(deadline.into(), Browser::connect_with_config(ws, config))
         .await
+        .map_err(|_| timed_out(String::new()))?
         .map(Some)
         .map_err(|e| LaunchError::Other(cannot_start(&e.to_string())))
 }
@@ -287,6 +350,88 @@ mod tests {
         assert!(switches(p, true).contains(&"--no-sandbox".to_owned()));
         let once = |a: &str| on.iter().filter(|s| *s == a).count() == 1;
         assert!(once("--no-first-run") && once("--disable-sync"), "{on:?}");
+    }
+
+    #[test]
+    fn only_an_unapproved_quarantine_waits_for_gatekeeper() {
+        // As Homebrew Cask leaves Chrome on the GitHub macOS runners.
+        assert!(unapproved("0181;6af5c21a;Homebrew Cask;2274814B-610A"));
+        assert!(unapproved("0083;6af5c21a;Safari;"));
+        assert!(!unapproved("01c1;6af5c21a;Homebrew Cask;"), "approved");
+        assert!(
+            !unapproved("zz;6af5c21a;x;"),
+            "unreadable: left to the deadline"
+        );
+        assert!(!unapproved(""));
+
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Some Browser.app");
+        std::fs::create_dir(&app).unwrap();
+        assert!(!awaits_approval(&app), "not quarantined");
+        xattr::set(&app, QUARANTINE, b"0181;6af5c21a;Homebrew Cask;").unwrap();
+        assert!(awaits_approval(&app));
+        xattr::set(&app, QUARANTINE, b"01c1;6af5c21a;Homebrew Cask;").unwrap();
+        assert!(!awaits_approval(&app), "approved from Finder");
+    }
+
+    /// `open` itself can hang (Gatekeeper waiting for a click): the launch
+    /// deadline covers it, and the `open` that hung is killed.
+    #[tokio::test]
+    async fn an_open_that_hangs_times_out_and_is_killed() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("hung-open-marker");
+        let open = dir.path().join("open");
+        std::fs::write(
+            &open,
+            format!(
+                "#!/bin/sh
+exec sleep 60 # {}
+",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let profile = dir.path().join("profile");
+        std::fs::create_dir(&profile).unwrap();
+        let exe = Path::new("/nowhere/X.app/Contents/MacOS/X");
+
+        let started = Instant::now();
+        let res = launch_with(
+            &open,
+            Path::new("/nowhere/X.app"),
+            exe,
+            &profile,
+            None,
+            false,
+            Duration::from_secs(1),
+            Duration::from_secs(5),
+        )
+        .await;
+        let took = started.elapsed();
+        match res {
+            Ok(None) => return, // no `ps` here (sandbox-exec): nothing was opened
+            Ok(Some(_)) => panic!("a hung `open` connected"),
+            Err(LaunchError::Other(e)) => panic!("not a timeout: {e}"),
+            Err(LaunchError::Timeout(e)) => {
+                assert!(e.to_string().contains("within 1 s"), "{e}");
+            }
+        }
+        assert!(took < Duration::from_secs(10), "took {took:?}");
+        let gone = || {
+            std::process::Command::new("pgrep")
+                .args(["-f", &marker.display().to_string()])
+                .output()
+                .unwrap()
+                .stdout
+                .is_empty()
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !gone() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(gone(), "the hung `open` was left running");
     }
 
     #[test]

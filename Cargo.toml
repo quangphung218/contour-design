@@ -69,6 +69,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-normalization = "0.1.26"
 uuid = { version = "1", features = ["v4"] }
+xattr = { version = "1.6", default-features = false }
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 # `apps/desktop/Cargo.toml` copies these lints (it denies `unsafe_code`
