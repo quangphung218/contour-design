@@ -1125,6 +1125,89 @@ async fn design_system_kit_import_copy_and_revisions() {
         "{said}"
     );
     assert!(!assets.join("Hình.png").exists() && !assets.join("hình.png").exists());
+    // An asset name already on disk (220 bytes, kept whole before names
+    // were shortened) is deleted by that very name, never by a shortened
+    // one that names another asset.
+    let old = format!("{}.png", "o".repeat(216));
+    let cut = od_store::paths::upload_name(&old);
+    assert_ne!(old, cut);
+    std::fs::write(assets.join(&old), b"old").unwrap();
+    std::fs::write(assets.join(&cut), b"cut").unwrap();
+    let (s, v) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/assets/{old}/delete"),
+        None,
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    assert!(!assets.join(&old).exists(), "the old asset kept");
+    assert_eq!(
+        std::fs::read(assets.join(&cut)).unwrap(),
+        b"cut",
+        "another asset deleted"
+    );
+    std::fs::remove_file(assets.join(&cut)).unwrap();
+    // Two names too long for the disk, alike up to the cut, sent in two
+    // batches: two assets, the second never written over the first.
+    let mut kept = Vec::new();
+    for (n, bytes) in [(1, b"one".as_slice()), (2, b"two!".as_slice())] {
+        let raw = format!("{}-v{n}.png", "b".repeat(260));
+        let (s, v) = upload(
+            &d,
+            &format!("/api/design-systems/{id}/assets"),
+            &[(raw.as_str(), bytes)],
+        )
+        .await;
+        assert_eq!(s, 200, "{v}");
+        let name = v["assets"][0]["name"].as_str().unwrap().to_owned();
+        assert!(name.len() <= 255 && name.ends_with(".png"), "{name}");
+        kept.push((name, bytes));
+    }
+    assert_ne!(kept[0].0, kept[1].0, "both long names saved as one");
+    for (name, bytes) in &kept {
+        assert_eq!(
+            &std::fs::read(assets.join(name)).unwrap(),
+            bytes,
+            "{name} written over"
+        );
+        let (s, _) = call(
+            &d,
+            "POST",
+            &format!("/api/design-systems/{id}/assets/{name}/delete"),
+            None,
+        )
+        .await;
+        assert_eq!(s, 200, "delete {name}");
+    }
+    // A shortened name whose own is taken skips `stem-1.png` when another
+    // file of the batch is sent as that: neither written over.
+    // `-` at the cut is trimmed, so the shortened name has room for `-1`.
+    let raw = format!(
+        "{}{}{}.png",
+        "c".repeat(190),
+        "-".repeat(20),
+        "x".repeat(100)
+    );
+    let cut = od_store::paths::upload_name(&raw);
+    let one = cut.replace(".png", "-1.png");
+    assert_eq!(od_store::paths::upload_name(&one), one);
+    std::fs::write(assets.join(&cut), b"before").unwrap();
+    let (s, v) = upload(
+        &d,
+        &format!("/api/design-systems/{id}/assets"),
+        &[(raw.as_str(), b"long"), (one.as_str(), b"one!")],
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let two = cut.replace(".png", "-2.png");
+    assert_eq!(v["assets"][0]["name"], two.as_str(), "{v}");
+    assert_eq!(std::fs::read(assets.join(&cut)).unwrap(), b"before");
+    assert_eq!(std::fs::read(assets.join(&one)).unwrap(), b"one!");
+    assert_eq!(std::fs::read(assets.join(&two)).unwrap(), b"long");
+    for n in [&cut, &one, &two] {
+        std::fs::remove_file(assets.join(n)).unwrap();
+    }
     for n in ["màu.png", "mẫu.png"] {
         let (s, _) = call(
             &d,

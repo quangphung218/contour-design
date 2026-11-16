@@ -756,15 +756,22 @@ pub(crate) fn kept_name(raw: &str) -> Option<String> {
     (!base.is_empty() && !base.starts_with('.')).then(|| od_store::paths::upload_name(base))
 }
 
+/// The key two names are one file under: NFC (macOS may send `mẫu`
+/// decomposed, and APFS takes both forms as one name), ignoring case as
+/// macOS and Windows disks do.
+fn same_file_key(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    name.nfc().collect::<String>().to_lowercase()
+}
+
 /// Refuses a batch two of whose files would be kept under one name: the
-/// second would be written over the first (QA-107). Compared ignoring
-/// case, as macOS and Windows disks do.
+/// second would be written over the first (QA-107).
 pub(crate) fn refuse_same_name<'a>(
     names: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> ApiResult<()> {
     let mut seen: HashMap<String, &str> = HashMap::new();
     for (raw, name) in names {
-        if let Some(first) = seen.insert(name.to_lowercase(), raw) {
+        if let Some(first) = seen.insert(same_file_key(name), raw) {
             return Err(ApiErr::bad_request(format!(
                 "{first} and {raw} would both be saved as {name}. Rename one, then try again."
             )));
@@ -773,13 +780,47 @@ pub(crate) fn refuse_same_name<'a>(
     Ok(())
 }
 
-fn safe_asset_name(raw: &str) -> Option<String> {
+const ASSET_EXTENSIONS: [&str; 10] = [
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".woff2", ".woff", ".ttf", ".otf",
+];
+
+fn is_asset_file(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    ASSET_EXTENSIONS.iter().any(|e| lower.ends_with(e))
+}
+
+/// The name a new asset is kept under (see [`kept_name`]), and whether it
+/// was shortened to fit the disk.
+fn safe_asset_name(raw: &str) -> Option<(String, bool)> {
     let clean = kept_name(raw)?;
-    let allowed = [
-        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".woff2", ".woff", ".ttf", ".otf",
-    ];
-    let lower = clean.to_lowercase();
-    allowed.iter().any(|e| lower.ends_with(e)).then_some(clean)
+    let base = raw.rsplit(['/', '\\']).next()?.trim();
+    let shortened = clean != od_store::paths::sanitize_name(base);
+    is_asset_file(&clean).then_some((clean, shortened))
+}
+
+/// An asset already in the package, named as it is on disk: one segment,
+/// not hidden, an asset's extension. Never cleaned or shortened again: a
+/// name kept whole before (a 220-byte one) would then name another asset.
+fn existing_asset_name(name: &str) -> Option<&str> {
+    (!name.is_empty()
+        && !name.starts_with('.')
+        && !name.contains(['/', '\\'])
+        && is_asset_file(name))
+    .then_some(name)
+}
+
+/// Candidate names for a shortened asset: its own, then `stem-1.ext`…
+fn shortened_candidates(name: &str) -> impl Iterator<Item = String> + '_ {
+    let (stem, ext) = name.rsplit_once('.').map_or((name, ""), |(s, e)| (s, e));
+    (0..10_000).map(move |i| {
+        if i == 0 {
+            name.to_owned()
+        } else if ext.is_empty() {
+            format!("{stem}-{i}")
+        } else {
+            format!("{stem}-{i}.{ext}")
+        }
+    })
 }
 
 pub async fn upload_assets(
@@ -799,7 +840,7 @@ pub async fn upload_assets(
         let Some(raw) = field.file_name().map(str::to_owned) else {
             continue;
         };
-        let name = safe_asset_name(&raw).ok_or_else(|| {
+        let (name, shortened) = safe_asset_name(&raw).ok_or_else(|| {
             ApiErr::bad_request(format!("{raw}: only images (PNG, JPG, SVG…) and fonts"))
         })?;
         let bytes = field
@@ -812,7 +853,7 @@ pub async fn upload_assets(
         // Its path checked here too (a link planted at it): refused before
         // any of the batch is written.
         let path = inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?;
-        parts.push((raw, name, path, bytes));
+        parts.push((raw, name, shortened, path, bytes));
     }
     if parts.is_empty() {
         return Err(ApiErr::bad_request("no files in upload"));
@@ -822,17 +863,69 @@ pub async fn upload_assets(
             .iter()
             .map(|(raw, name, ..)| (raw.as_str(), name.as_str())),
     )?;
-    // A write that fails half way keeps those before it: they replace
-    // assets of the same name, so Try again writes them over, adding none.
+    // A name as sent replaces the asset of that name; a shortened one
+    // never does: two long names alike up to the cut are two files, so it
+    // takes the first free `stem-N.ext`, none of the batch's other names.
+    let batch: Vec<String> = parts.iter().map(|(_, n, ..)| same_file_key(n)).collect();
     tokio::fs::create_dir_all(inside(&e.dir, ASSETS_DIR)?)
         .await
         .map_err(ApiErr::io)?;
+    // A write that fails half way keeps those before it: they replace
+    // assets of the same name, so Try again writes them over, adding none.
     let mut saved = Vec::with_capacity(parts.len());
-    for (_, name, path, bytes) in parts {
-        tokio::fs::write(path, &bytes).await.map_err(ApiErr::io)?;
+    for (_, name, shortened, path, bytes) in parts {
+        let name = if shortened {
+            write_new_asset(&e.dir, &name, &batch, &bytes).await?
+        } else {
+            tokio::fs::write(path, &bytes).await.map_err(ApiErr::io)?;
+            name
+        };
         saved.push(json!({ "name": name, "kind": asset_kind(&name), "size": bytes.len() }));
     }
     Ok(Json(json!({ "assets": saved })))
+}
+
+/// Writes a shortened asset under the first of its candidate names free
+/// on disk and not another file's of the batch, never over a file.
+async fn write_new_asset(
+    dir: &std::path::Path,
+    name: &str,
+    batch: &[String],
+    bytes: &[u8],
+) -> ApiResult<String> {
+    use tokio::io::AsyncWriteExt as _;
+    let own = same_file_key(name);
+    for candidate in shortened_candidates(name) {
+        let key = same_file_key(&candidate);
+        if key != own && batch.contains(&key) {
+            continue;
+        }
+        let path = inside(dir, &format!("{ASSETS_DIR}/{candidate}"))?;
+        let opened = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await;
+        match opened {
+            Ok(mut file) => {
+                let written = async {
+                    file.write_all(bytes).await?;
+                    file.flush().await
+                }
+                .await;
+                if let Err(err) = written {
+                    let _ = tokio::fs::remove_file(&path).await;
+                    return Err(ApiErr::io(err));
+                }
+                return Ok(candidate);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(ApiErr::io(err)),
+        }
+    }
+    Err(ApiErr::bad_request(format!(
+        "{name}: too many assets of this name"
+    )))
 }
 
 pub async fn delete_asset(
@@ -840,7 +933,7 @@ pub async fn delete_asset(
     Path((id, name)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     let e = editable(&state, &id)?;
-    let name = safe_asset_name(&name).ok_or_else(|| ApiErr::bad_request("invalid asset"))?;
+    let name = existing_asset_name(&name).ok_or_else(|| ApiErr::bad_request("invalid asset"))?;
     tokio::fs::remove_file(inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?)
         .await
         .map_err(|_| ApiErr::not_found("asset not found"))?;
@@ -1275,18 +1368,19 @@ pub async fn workspace(
 mod tests {
     use super::*;
 
+    fn new_asset(raw: &str) -> Option<String> {
+        safe_asset_name(raw).map(|(n, _)| n)
+    }
+
     #[test]
     fn asset_names_are_sanitised_and_typed() {
         assert_eq!(
-            safe_asset_name("../../Logo Mark.svg").as_deref(),
+            new_asset("../../Logo Mark.svg").as_deref(),
             Some("Logo-Mark.svg")
         );
-        assert_eq!(
-            safe_asset_name("Inter.woff2").as_deref(),
-            Some("Inter.woff2")
-        );
-        assert_eq!(safe_asset_name(".hidden.png"), None);
-        assert_eq!(safe_asset_name("run.sh"), None);
+        assert_eq!(new_asset("Inter.woff2").as_deref(), Some("Inter.woff2"));
+        assert_eq!(new_asset(".hidden.png"), None);
+        assert_eq!(new_asset("run.sh"), None);
         assert_eq!(asset_kind("brand-logo.png"), "logo");
         assert_eq!(asset_kind("Inter.woff2"), "font");
         assert_eq!(asset_kind("hero.jpg"), "image");
@@ -1294,17 +1388,19 @@ mod tests {
 
     /// QA-107: Vietnamese names keep their letters, so `màu.png` and
     /// `mẫu.png` stay two assets; a name too long for the disk is
-    /// shortened (QA-106); two files one name in a batch are refused.
+    /// shortened (QA-106) and says so; two files one name in a batch,
+    /// NFC or NFD, any case, are refused.
     #[test]
     fn asset_names_keep_their_letters_and_never_collide_unseen() {
-        let mau = safe_asset_name("màu.png").unwrap();
-        let mau2 = safe_asset_name("mẫu.png").unwrap();
+        let mau = new_asset("màu.png").unwrap();
+        let mau2 = new_asset("mẫu.png").unwrap();
         assert_eq!((mau.as_str(), mau2.as_str()), ("màu.png", "mẫu.png"));
         assert_eq!(
-            safe_asset_name("logo chính.PNG").as_deref(),
-            Some("logo-chính.PNG")
+            safe_asset_name("logo chính.PNG"),
+            Some(("logo-chính.PNG".to_owned(), false))
         );
-        let long = safe_asset_name(&format!("{}.png", "ảnh-".repeat(100))).unwrap();
+        let (long, shortened) = safe_asset_name(&format!("{}.png", "ảnh-".repeat(100))).unwrap();
+        assert!(shortened);
         assert!(long.len() <= od_store::paths::MAX_UPLOAD_NAME_BYTES && long.ends_with(".png"));
         assert!(refuse_same_name([("màu.png", mau.as_str()), ("mẫu.png", mau2.as_str())]).is_ok());
         let err =
@@ -1315,6 +1411,25 @@ mod tests {
             "{}",
             err.message
         );
+        // `mẫu` composed (NFC) and decomposed (NFD): one file on APFS.
+        let nfd = "ma\u{302}\u{303}u.png";
+        assert!(refuse_same_name([("mẫu.png", "mẫu.png"), (nfd, nfd)]).is_err());
+        assert!(refuse_same_name([("MẪU.png", "MẪU.png"), (nfd, nfd)]).is_err());
+    }
+
+    /// An asset already on disk is named as it is, never cleaned or
+    /// shortened again: a 220-byte name kept whole stays itself.
+    #[test]
+    fn existing_asset_names_are_taken_as_they_are() {
+        let old = format!("{}.png", "o".repeat(216));
+        assert_eq!(existing_asset_name(&old), Some(old.as_str()));
+        assert_eq!(existing_asset_name("logo (1).png"), Some("logo (1).png"));
+        assert_eq!(existing_asset_name(".hidden.png"), None);
+        assert_eq!(existing_asset_name("a/b.png"), None);
+        assert_eq!(existing_asset_name("a\\b.png"), None);
+        assert_eq!(existing_asset_name("run.sh"), None);
+        let c: Vec<String> = shortened_candidates("a.png").take(3).collect();
+        assert_eq!(c, ["a.png", "a-1.png", "a-2.png"]);
     }
 
     #[test]
