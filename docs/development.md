@@ -255,6 +255,23 @@ golden files the content tests compare against with
 `crates/od-content/tests/fixtures/regen/run.sh` (runs the original app's
 loader; see `crates/od-content/tests/fixtures/README.md`).
 
+### Browser launch
+
+Changing how a render starts Chrome (`Session::launch`, or
+`crates/od-render-cdp/src/launch_services.rs`, which starts it through
+LaunchServices on macOS), or bumping `chromiumoxide`, needs the two
+ignored tests that run the real Chrome inside a throwaway `.app` bundle.
+Run them on macOS, outside any sandbox:
+
+```bash
+cargo test -p od-render-cdp --test launch_services -- --ignored
+```
+
+They are ignored because they flaked in `make check` (2 of 6 runs, Chrome
+never opened DevTools) and `release.yml` runs the macOS tests. When one
+fails, its panic lists the fake browsers and Chrome profiles that were
+running.
+
 ### Benchmarks
 
 ```bash
