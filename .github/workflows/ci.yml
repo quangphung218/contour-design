@@ -150,8 +150,8 @@ jobs:
   # The Chrome tests on macOS for such a pull request: there a browser in an
   # `.app` starts through LaunchServices, which the Linux job never runs
   # (v0.2.0-beta.42 shipped a start that hung on every macOS runner). The
-  # runner's Chrome is quarantined by Homebrew, so the exports take the
-  # child fallback; the throwaway bundles go through LaunchServices.
+  # tests in tests/launch_services.rs that run Chrome inside a throwaway
+  # bundle stay manual: there Chrome never opened DevTools, approved or not.
   chrome-macos:
     name: Chrome on macOS (LaunchServices)
     needs: chrome-paths
@@ -179,10 +179,19 @@ jobs:
           brew install ffmpeg
           ffmpeg -version | head -n1
       - run: make ui-dist
+      # The runner's Chrome as Homebrew left it: quarantined, never
+      # approved, so every export takes the child fallback.
       - run: cargo test -p od-render-cdp -p od-cli
-      # Ignored in `make check` (slow under its load); alone here.
-      - name: LaunchServices with throwaway bundles
-        run: cargo test -p od-render-cdp --test launch_services -- --ignored --test-threads 1
+      # Then approved, as a Chrome opened once from Finder: the same
+      # exports go through LaunchServices, and a test checks that they do.
+      - name: Chrome approved, through LaunchServices
+        env:
+          OD_EXPECT_LAUNCH_SERVICES: "1"
+        run: |
+          sudo xattr -d com.apple.quarantine "/Applications/Google Chrome.app"
+          cargo test -p od-render-cdp --lib the_installed_chrome_starts_through_launch_services
+          cargo test -p od-render-cdp --test chrome
+          cargo test -p od-cli --test m5 export_cli_writes_every_format
 
   # The workspace tests on Windows: agent lookup (`.cmd` shims, the user's
   # Path in the registry), the Job Object, paths and file URLs.

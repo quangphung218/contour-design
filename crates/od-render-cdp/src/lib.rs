@@ -1241,4 +1241,61 @@ mod tests {
         );
         assert!(!ran.exists(), "it was started");
     }
+
+    /// The installed Chrome starts through LaunchServices: its browser
+    /// process is launchd's child, not ours. Skipped where that cannot be
+    /// (no Chrome, no `ps`, a Chrome never approved); `OD_EXPECT_LAUNCH_SERVICES=1`
+    /// turns a skip into a failure (ci.yml `chrome-macos`, after approving
+    /// the runner's Chrome).
+    #[cfg(target_os = "macos")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_installed_chrome_starts_through_launch_services() {
+        let expected = std::env::var("OD_EXPECT_LAUNCH_SERVICES").as_deref() == Ok("1");
+        let skip = |why: &str| {
+            assert!(!expected, "OD_EXPECT_LAUNCH_SERVICES=1 but {why}");
+            eprintln!("skipping: {why}");
+        };
+        if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
+            return skip("OD_SKIP_CHROME_TESTS=1");
+        }
+        let Ok(exe) = find_chrome() else {
+            return skip("no Chrome");
+        };
+        let Some(app) = launch_services::app_bundle(&exe) else {
+            return skip("Chrome is not in an .app bundle");
+        };
+        if launch_services::awaits_approval(&app) {
+            return skip("Chrome is quarantined and was never approved");
+        }
+        if profile_users_checked(Path::new("/nowhere")).is_none() {
+            return skip("`ps` cannot run here");
+        }
+
+        let launched = Session::launch_detached(&exe, no_sandbox_from_env())
+            .await
+            .expect("LaunchServices did not start Chrome within the deadline");
+        assert!(launched.detached);
+        let users = profile_users(launched.profile.path());
+        let ppids: Vec<String> = users
+            .iter()
+            .filter_map(|pid| {
+                let out = std::process::Command::new("ps")
+                    .args(["-o", "ppid=", "-p", &pid.to_string()])
+                    .output()
+                    .ok()?;
+                Some(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+            })
+            .collect();
+        assert!(
+            ppids.contains(&"1".to_owned()),
+            "no process of launchd: {ppids:?}"
+        );
+        let ours = std::process::id().to_string();
+        assert!(!ppids.contains(&ours), "Chrome is our child: {ppids:?}");
+        drop(launched.browser);
+        let profile = launched.profile;
+        tokio::task::spawn_blocking(move || drop(profile))
+            .await
+            .unwrap();
+    }
 }

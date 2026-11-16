@@ -175,7 +175,7 @@ fn processes() -> String {
 /// bundle is started by launchd (parent pid 1), not by us. Without `ps` the
 /// bundle too is our child, and the export still works.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "slow under `make check` load (2 of 6 runs: a new throwaway bundle took over 30 s to open DevTools through LaunchServices, 4-7 s when idle); CI runs it on macOS alone (ci.yml chrome-macos)"]
+#[ignore = "a fixture, not the product path: Chrome run from a throwaway bundle took over 30 s under `make check` load (2 of 6) and never opened DevTools on the GitHub runners; run by hand when changing how Chrome starts"]
 async fn a_bundled_browser_is_not_our_child_where_ps_runs() {
     if skip() {
         return;
@@ -317,7 +317,7 @@ async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
 /// the export, and is killed: found through its profile, or as our child
 /// on the fallback.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "slow under `make check` load (2 of 6 runs: a new throwaway bundle took over 30 s to open DevTools through LaunchServices, 4-7 s when idle); CI runs it on macOS alone (ci.yml chrome-macos)"]
+#[ignore = "a fixture, not the product path: Chrome run from a throwaway bundle took over 30 s under `make check` load (2 of 6) and never opened DevTools on the GitHub runners; run by hand when changing how Chrome starts"]
 async fn a_bundled_browser_that_never_exits_does_not_hang_the_export() {
     if skip() {
         return;

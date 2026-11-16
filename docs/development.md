@@ -261,17 +261,20 @@ Changing how a render starts Chrome (`Session::launch`, or
 `crates/od-render-cdp/src/launch_services.rs`, which starts it through
 LaunchServices on macOS), or bumping `chromiumoxide`, needs the two
 ignored tests that run the real Chrome inside a throwaway `.app` bundle.
-A pull request touching `crates/od-render-cdp` or `crates/od-cli` runs
-them on a macOS runner (`chrome-macos`); to run them yourself, on macOS
-and outside any sandbox:
+Run them on macOS, outside any sandbox:
 
 ```bash
 cargo test -p od-render-cdp --test launch_services -- --ignored
 ```
 
-They are ignored in `make check` because a new bundle can take over 30 s
-to open DevTools through LaunchServices under its load (2 of 6 runs; 4–7 s
-when idle). When one fails, its panic lists the fake browsers and Chrome
+They are ignored because Chrome run from a throwaway bundle is slow to
+open DevTools through LaunchServices under `make check` load (over 30 s in
+2 of 6 runs; 4–7 s idle) and never opens it on the GitHub macOS runners.
+What CI checks instead (`chrome-macos`, on pull requests touching
+`crates/od-render-cdp` or `crates/od-cli`): the exports with the runner's
+Chrome as Homebrew left it (quarantined: the child fallback), then with it
+approved, where `the_installed_chrome_starts_through_launch_services`
+checks that Chrome is launchd's child, not ours. When one fails, its panic lists the fake browsers and Chrome
 profiles that were running.
 
 A start through LaunchServices that fails or passes 20 s falls back to
@@ -303,7 +306,7 @@ before asking for review.
 | test | `ci.yml` | Ubuntu | macOS (release); macOS and Ubuntu (manual) | ffmpeg (MP4 export tests), `make test` |
 | test (windows-2025) | `ci.yml` | Windows | manual run only | ffmpeg, `trunk build`, `cargo test --workspace --no-fail-fast` |
 | build (windows) | `ci.yml` | no | Windows (never blocks a release) | `trunk build`, `cargo build --workspace --all-targets` |
-| Chrome on macOS | `ci.yml` | macOS, PRs touching `crates/od-render-cdp/**`, `crates/od-cli/**`, `Cargo.lock` or `ci.yml` | manual run only | `cargo test -p od-render-cdp -p od-cli`, then the ignored LaunchServices tests |
+| Chrome on macOS | `ci.yml` | macOS, PRs touching `crates/od-render-cdp/**`, `crates/od-cli/**`, `Cargo.lock` or `ci.yml` | manual run only | `cargo test -p od-render-cdp -p od-cli`, then again with the runner's Chrome approved (through LaunchServices) |
 | e2e | `ci.yml` | Ubuntu | manual run only | `make e2e`, screenshots uploaded on failure |
 | cargo-deny | `ci.yml` | Ubuntu | manual run only | licences, advisories, bans, sources (`deny.toml`) |
 | docs | `docs.yml` | Ubuntu | manual run only | `scripts/check-links.sh`, script tests, actionlint |
