@@ -25,14 +25,15 @@ The desktop app keeps one copy per user: opening it again (the Dock, Finder,
 a copy on a disk image) shows the running window. A copy that is still
 quitting (its agents stopping) or restarting after Update now holds the
 folder for a few seconds; a new launch waits up to 12 s for it. The app
-recognises its own copy by `daemon.lock.app`, the URL it last recorded
-beside `daemon.lock`. When something else holds the folder, mostly
-`od daemon start`, the app says "Contour can't open yet" ("Chưa mở được
-Contour"): stop that daemon and open the app again. "Contour is already
-open" means another copy of the app kept the folder past those 12 s. The
-log (`<data folder>/logs/daemon.log`, line "the data folder is held") has
-the URL and the folder. A copy started with its own `OD_DATA_DIR` runs
-beside the app, as before.
+recognises its own copy by `daemon-app.url`, the URL it last recorded
+beside `daemon.lock` (`daemon.lock.app` up to 0.2.0-beta.40: still read,
+and removed once the app records its URL). When something else holds the
+folder, mostly `od daemon start`, the app says "Contour can't open yet"
+("Chưa mở được Contour"): stop that daemon and open the app again.
+"Contour is already open" means another copy of the app kept the folder
+past those 12 s. The log (`<data folder>/logs/daemon.log`, line "the data
+folder is held") has the URL and the folder. A copy started with its own
+`OD_DATA_DIR` runs beside the app, as before.
 
 ### Port 7456 is in use
 
@@ -290,6 +291,17 @@ Control-click the app ▸ Open the first time. On any version:
 ```bash
 xattr -dr com.apple.quarantine /Applications/Contour.app
 ```
+
+### macOS keeps asking to allow Contour under App Management
+
+An export that needs Chrome starts Chrome headless. Chrome, its helper apps
+or its updater then try to change an app bundle, and macOS charges that
+to Contour, which started them: it denies the change and asks you to allow
+Contour under System Settings ▸ Privacy & Security ▸ App Management.
+Allowing it lasts only until the next update: the download is not signed,
+so macOS sees each version as a new app. (The data folder holds no
+app-like name either: `daemon.lock.app` became `daemon-app.url` after
+0.2.0-beta.40.)
 
 ### `make install` refuses to replace the app
 
