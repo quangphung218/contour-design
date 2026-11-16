@@ -270,7 +270,7 @@ pub fn MediaPage() -> impl IntoView {
                         on_providers=Callback::new(move |()| tab.set(Tab::Providers))/>
                 }.into_any(),
                 Tab::Providers => view! { <ProvidersView/> }.into_any(),
-                Tab::Mp4 => view! { <Mp4View projects=projects on_saved=Callback::new(move |()| reload_assets())/> }.into_any(),
+                Tab::Mp4 => view! { <Mp4View on_saved=Callback::new(move |()| reload_assets())/> }.into_any(),
             }}
         </section>
     }
@@ -1002,21 +1002,53 @@ fn ProvidersView() -> impl IntoView {
     }
 }
 
+/// A project Media ▸ MP4 can render, and the composition it renders
+/// (`GET /api/media/motion-projects`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MotionProject {
+    id: String,
+    name: String,
+    file_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct MotionProjects {
+    projects: Vec<MotionProject>,
+}
+
 #[component]
-fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl IntoView {
+fn Mp4View(on_saved: Callback<()>) -> impl IntoView {
     let screen = Tasks::here();
+    // Only motion projects: a plain page has no film to render. `None`
+    // while loading.
+    let films = RwSignal::new(None::<Result<Vec<MotionProject>, String>>);
+    screen.spawn_then(
+        api::get::<MotionProjects>("/api/media/motion-projects"),
+        move |res| {
+            films.set(Some(
+                res.map(|r| r.projects)
+                    .map_err(|e| api::failure(T::Mp4ProjectsFailed, &e)),
+            ));
+        },
+    );
     let project = RwSignal::new(String::new());
     let fps = RwSignal::new(30u32);
     let busy = RwSignal::new(false);
     let status = RwSignal::new(None::<Result<String, String>>);
     let render = move |_| {
         let pid = project.get_untracked();
-        if pid.is_empty() {
+        let Some(file) = films.with_untracked(|f| {
+            f.as_ref()
+                .and_then(|l| l.as_ref().ok())
+                .and_then(|l| l.iter().find(|p| p.id == pid))
+                .map(|p| p.file_name.clone())
+        }) else {
             return;
-        }
+        };
         busy.set(true);
         status.set(None);
-        let body = json!({ "fileName": "index.html", "fps": fps.get_untracked(), "output": "media/hyperframes.mp4" });
+        let body = json!({ "fileName": file, "fps": fps.get_untracked(), "output": "media/hyperframes.mp4" });
         // The export is counted even if Media is left during the render.
         let work = async move {
             let base = format!("/api/projects/{}", api::seg(&pid));
@@ -1055,12 +1087,22 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
     view! {
         <div class="card padded media-generate" data-testid="media-mp4">
             <p class="muted">{t(T::Mp4Hint)}</p>
+            {move || films.with(|f| match f {
+                None => view! { <span class="spinner"></span> }.into_any(),
+                Some(Err(e)) => view! { <p class="error-text" role="alert">{e.clone()}</p> }.into_any(),
+                Some(Ok(l)) if l.is_empty() => view! { <p data-testid="mp4-empty">{t(T::Mp4NoMotionProjects)}</p> }.into_any(),
+                Some(Ok(_)) => ().into_any(),
+            })}
+            <Show when=move || films.with(|f| matches!(f, Some(Ok(l)) if !l.is_empty()))>
             <div class="gen-options">
                 <label class="field">
                     <span>{t(T::ProjectLabel)}</span>
                     <select class="input" data-testid="mp4-project" prop:value=move || project.get() on:change=live(move |ev| project.set(event_target_value(&ev)))>
                         <option value="">{t(T::ChooseProject)}</option>
-                        {move || projects.get().into_iter().map(|p| view! { <option value=p.id.clone()>{p.name.clone()}</option> }).collect_view()}
+                        {move || films.with(|f| match f {
+                            Some(Ok(l)) => l.iter().map(|p| view! { <option value=p.id.clone()>{p.name.clone()}</option> }).collect_view().into_any(),
+                            _ => ().into_any(),
+                        })}
                     </select>
                 </label>
                 <label class="field">
@@ -1080,6 +1122,7 @@ fn Mp4View(projects: RwSignal<Vec<Project>>, on_saved: Callback<()>) -> impl Int
                     {t(T::RenderMp4)}
                 </button>
             </div>
+            </Show>
         </div>
     }
 }

@@ -3,10 +3,13 @@
 //! composition's `index.html`), optional `fps`, optional `output` (a
 //! project path ending in `.mp4`: the video is saved there and the file
 //! is returned as JSON instead of a download).
+//! `GET /api/media/motion-projects`: the projects that have a composition.
 
+use crate::error::ApiResult;
 use crate::routes::export::{
     Entry, ExportErr, ExportRequest, ExportResult, attachment, internal, resolve_entry, scratch,
 };
+use crate::routes::library::assets::LIBRARY_PROJECT_ID;
 use crate::routes::w3::motion::audio_plan;
 use crate::state::AppState;
 use axum::body::Bytes;
@@ -15,12 +18,14 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use od_contracts::ErrorCode;
-use od_export::hyperframes::{self, Composition, MAX_FPS};
+use od_export::hyperframes::{self, Composition, CompositionError, MAX_FPS};
 use od_export::renderer::frame_file_name;
+use od_export::standalone::MAX_ENTRY_BYTES;
 use od_export::{FrameOptions, FrameSet, Renderer};
 use od_render_cdp::ffmpeg::{AudioTrack, encode_mp4_with_audio, find_ffmpeg};
+use od_store::ProjectRoot;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -117,6 +122,57 @@ fn log_audio(project: &str, started: Instant, policy: &str, tracks: usize, mux: 
     );
 }
 
+/// `GET /api/media/motion-projects`: the projects Media ▸ MP4 can render
+/// (`{ projects: [{ id, name, fileName }] }`, newest project first), each
+/// with the composition it renders. A plain page project is not listed:
+/// its render could only fail.
+///
+/// # Errors
+/// Store failures.
+pub async fn motion_projects(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let projects = state
+        .blocking(|s| {
+            let mut out = Vec::new();
+            for p in s.list_projects()? {
+                if p.id == LIBRARY_PROJECT_ID {
+                    continue;
+                }
+                let Some(file) = s.project_root(&p).ok().and_then(|r| composition_file(&r)) else {
+                    continue;
+                };
+                out.push(json!({ "id": p.id, "name": p.name, "fileName": file }));
+            }
+            Ok(out)
+        })
+        .await?;
+    Ok(Json(json!({ "projects": projects })))
+}
+
+/// The composition a project renders to MP4: an `index.html` with a
+/// `[data-composition-id]` root. The top-level one first (a HyperFrames
+/// project keeps it there), else the newest (Motion keeps each film in
+/// `motion-source/<film>/`). Other HTML files are pages, or a film's
+/// sub-compositions, which do not render alone. `None`: not a motion
+/// project.
+pub(crate) fn composition_file(root: &ProjectRoot) -> Option<String> {
+    let is_index = |name: &str| {
+        name.rsplit('/')
+            .next()
+            .is_some_and(|base| base.eq_ignore_ascii_case("index.html"))
+    };
+    let mut found: Vec<_> = od_store::files::list_files(root)
+        .ok()?
+        .into_iter()
+        .filter(|f| is_index(&f.name) && f.size <= MAX_ENTRY_BYTES)
+        .collect();
+    // Newest first already; a stable sort brings the top-level one up.
+    found.sort_by_key(|f| f.name.contains('/'));
+    found.into_iter().map(|f| f.name).find(|name| {
+        od_store::files::read_file(root, name)
+            .is_ok_and(|(_, html)| hyperframes::has_root(&String::from_utf8_lossy(&html)))
+    })
+}
+
 pub async fn export_mp4(
     State(state): State<AppState>,
     Extension(renderer): Extension<Arc<dyn Renderer>>,
@@ -157,12 +213,21 @@ pub async fn export_mp4(
         .await
         .map_err(internal)??
         .1;
-    let comp = hyperframes::composition(&String::from_utf8_lossy(&html)).map_err(|e| {
-        bad(
+    let comp = hyperframes::composition(&String::from_utf8_lossy(&html)).map_err(|e| match e {
+        // Not a motion project at all: say so in the user's words.
+        CompositionError::NoRoot => bad(
+            ErrorCode::NotAComposition,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!(
+                "This project is not a motion video: {} has no HyperFrames composition ([data-composition-id] root). Make one with a Motion project.",
+                entry.path
+            ),
+        ),
+        _ => bad(
             ErrorCode::ValidationFailed,
             StatusCode::UNPROCESSABLE_ENTITY,
             e.to_string(),
-        )
+        ),
     })?;
     let fps = req
         .fps

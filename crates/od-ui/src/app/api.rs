@@ -74,6 +74,11 @@ pub fn failure(key: Msg, e: &HttpError) -> String {
 
 impl fmt::Display for HttpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Not a motion film: the whole answer is in the user's words
+        // (the daemon's English one names the HTML root they never see).
+        if self.code == Some(ErrorCode::NotAComposition) {
+            return write!(f, "{}", t(Msg::ErrNotMotion));
+        }
         // A cause the user can act on: their words, no status, no "daemon".
         if let Some(hint) = self.code.and_then(code_hint) {
             // The message may already say it ("Contour has no permission
@@ -534,6 +539,20 @@ mod tests {
             &"x".repeat(201),
         ] {
             assert!(!plain_reason(raw), "{raw:?} would be shown");
+        }
+    }
+
+    #[test]
+    fn a_page_sent_to_mp4_says_it_is_no_motion_video() {
+        let e = HttpError {
+            status: 422,
+            code: Some(ErrorCode::NotAComposition),
+            message: "This project is not a motion video: index.html has no HyperFrames composition ([data-composition-id] root). Make one with a Motion project.".to_owned(),
+        };
+        let shown = failure(Msg::ExportFailed, &e);
+        assert!(shown.contains(t(Msg::ErrNotMotion)), "{shown}");
+        for raw in ["data-composition-id", "HyperFrames", "not accepted", "422"] {
+            assert!(!shown.contains(raw), "{raw} in {shown}");
         }
     }
 

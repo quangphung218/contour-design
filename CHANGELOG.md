@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Media ▸ MP4 offers only motion projects, those with a HyperFrames composition, and renders the film where Motion keeps it (`motion-source/<film>/index.html`); it listed every project, so a page project ended in "The request was not accepted: HyperFrames HTML has no [data-composition-id] root", and a Motion project with no top-level page was not found. With no motion project, the tab says how to make one. A page that still reaches MP4 export (rewritten after the list loaded, or from `od export mp4`) is answered "This project is not a motion video" (in Vietnamese too), under the new error code `NOT_A_COMPOSITION`.
+
 ## [0.2.0-beta.41] - 2026-11-16
 
 ### Fixed

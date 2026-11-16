@@ -1,7 +1,8 @@
 //! Track W2-media routes (spec 1.3, 1.4, 1.5, 4.2), mounted with one
 //! `merge` in [`crate::router`]:
 //!
-//! - `POST /api/projects/:id/export/mp4`: HyperFrames → MP4 ([`mp4`]).
+//! - `POST /api/projects/:id/export/mp4`: HyperFrames → MP4, and
+//!   `GET /api/media/motion-projects`, the projects it can render ([`mp4`]).
 //! - `/api/live-artifacts/*`, `/api/tools/live-artifacts/*` ([`live`]).
 //! - `/api/plugins*` ([`plugins`]); runs apply them via `pluginId`.
 //! - `/api/media/*`, `POST /api/projects/:id/media/generate` ([`generate`]).
@@ -18,7 +19,7 @@ pub mod templates;
 use crate::error::{ApiErr, ApiResult};
 use crate::state::AppState;
 use axum::http::{HeaderMap, StatusCode, header};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Extension, Router};
 use od_contracts::ErrorCode;
 use od_export::Renderer;
@@ -56,6 +57,7 @@ pub fn routes_with(deps: Deps) -> Router<AppState> {
     Router::new()
         .route("/api/projects/{id}/export/mp4", post(mp4::export_mp4))
         .layer(Extension(Arc::clone(&deps.renderer)))
+        .route("/api/media/motion-projects", get(mp4::motion_projects))
         .merge(research::routes().layer(Extension(deps.clone())))
         .merge(generate::routes().layer(Extension(deps)))
         .merge(live::routes())
