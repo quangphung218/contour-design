@@ -18,8 +18,14 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// Beside `daemon.lock`: the URL the desktop app last recorded there.
-/// Only the app writes it; clients read `daemon.lock`.
-pub const APP_URL_FILE: &str = "daemon.lock.app";
+/// Only the app writes it; clients read `daemon.lock`. No bundle suffix
+/// (`.app`, `.bundle`…): macOS takes such a name for an app or a plug-in.
+pub const APP_URL_FILE: &str = "daemon-app.url";
+
+/// [`APP_URL_FILE`] up to 0.2.0-beta.40. A copy of that age, quitting
+/// while this one opens, recorded its URL only there: read as well, and
+/// removed once this copy records its own.
+const LEGACY_APP_URL_FILE: &str = "daemon.lock.app";
 
 /// How long a launch waits for the app's own last copy to let go.
 pub const APP_WAIT: Duration = Duration::from_secs(12);
@@ -46,7 +52,8 @@ pub enum Holder {
 }
 
 /// The holder whose URL is `lock_url` (from `daemon.lock`), given the URL
-/// the app last recorded (`app_url`, from [`APP_URL_FILE`]).
+/// the app last recorded (`app_url`, from [`APP_URL_FILE`] or
+/// [`LEGACY_APP_URL_FILE`]).
 fn holder(lock_url: Option<&str>, app_url: Option<&str>) -> Holder {
     match (lock_url.map(str::trim), app_url.map(str::trim)) {
         (Some(lock), Some(app)) if !lock.is_empty() && lock == app => Holder::App,
@@ -69,12 +76,31 @@ fn step(holder: Holder, waited: Duration, limit: Duration) -> Step {
     }
 }
 
-/// Records `url` as the app's, after [`DaemonLock::record_url`].
+/// Records `url` as the app's, after [`DaemonLock::record_url`], and
+/// removes [`LEGACY_APP_URL_FILE`], which an older copy left.
 ///
 /// # Errors
 /// When the file cannot be written.
 pub fn record_app_url(data_root: &Path, url: &str) -> std::io::Result<()> {
-    std::fs::write(data_root.join(APP_URL_FILE), url)
+    std::fs::write(data_root.join(APP_URL_FILE), url)?;
+    match std::fs::remove_file(data_root.join(LEGACY_APP_URL_FILE)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            tracing::warn!(error = %e, "cannot remove the older app url file");
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// [`holder`] for `lock_url`, by the URL in [`APP_URL_FILE`], else the one
+/// an older copy left in [`LEGACY_APP_URL_FILE`].
+fn holder_in(data_root: &Path, lock_url: Option<&str>) -> Holder {
+    [APP_URL_FILE, LEGACY_APP_URL_FILE]
+        .into_iter()
+        .map(|file| std::fs::read_to_string(data_root.join(file)).ok())
+        .map(|app_url| holder(lock_url, app_url.as_deref()))
+        .find(|h| *h == Holder::App)
+        .unwrap_or(Holder::Other)
 }
 
 /// Records `url` in `daemon.lock`, for clients, then as the app's
@@ -133,8 +159,7 @@ pub fn acquire_waiting(data_root: &Path, limit: Duration) -> Result<DaemonLock, 
         let LockError::Held { url, .. } = &error else {
             unreachable!("Io returned above");
         };
-        let app_url = std::fs::read_to_string(data_root.join(APP_URL_FILE)).ok();
-        let holder = holder(url.as_deref(), app_url.as_deref());
+        let holder = holder_in(data_root, url.as_deref());
         match step(holder, started.elapsed(), limit) {
             Step::Retry => std::thread::sleep(POLL),
             Step::GiveUp(holder) => {
@@ -250,6 +275,75 @@ mod tests {
         let mut lock = DaemonLock::acquire(data).expect("first lock");
         lock.record_url(url).expect("record");
         lock
+    }
+
+    /// Names macOS treats as a bundle (an app, a plug-in) when a folder has
+    /// them. No file or folder the app keeps in its data folder ends so.
+    const BUNDLE_SUFFIXES: &[&str] = &[
+        ".app",
+        ".appex",
+        ".bundle",
+        ".component",
+        ".framework",
+        ".kext",
+        ".mdimporter",
+        ".plugin",
+        ".prefpane",
+        ".qlgenerator",
+        ".saver",
+        ".systemextension",
+        ".xpc",
+    ];
+
+    /// Whether macOS may take `name` for a bundle ([`BUNDLE_SUFFIXES`]).
+    fn is_bundle_name(name: &str) -> bool {
+        let name = name.to_ascii_lowercase();
+        BUNDLE_SUFFIXES.iter().any(|suffix| name.ends_with(suffix))
+    }
+
+    /// The app writes these beside the lock on every launch: none may end
+    /// as a macOS bundle does.
+    #[test]
+    fn no_data_file_is_named_as_a_bundle() {
+        for name in [APP_URL_FILE, LOCK_FILE] {
+            assert!(!is_bundle_name(name), "{name}");
+        }
+        assert!(is_bundle_name(LEGACY_APP_URL_FILE));
+        assert!(is_bundle_name("X.APP") && is_bundle_name("a.Bundle"));
+        assert!(!is_bundle_name("daemon.lock") && !is_bundle_name("apps"));
+    }
+
+    /// Update now from a copy before the rename: the quitting copy recorded
+    /// its URL only under the old name, and the launch still waits for it.
+    #[test]
+    fn an_older_copys_url_still_marks_the_app() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let data = tmp.path().join("data");
+        let _held = hold(&data, APP);
+        std::fs::write(data.join(LEGACY_APP_URL_FILE), APP).expect("old marker");
+        let refused = acquire_waiting(&data, Duration::from_millis(300)).expect_err("held");
+        assert_eq!(refused.holder, Some(Holder::App));
+        // A stale new-name file does not hide the old copy's current URL.
+        std::fs::write(data.join(APP_URL_FILE), "http://127.0.0.1:5009").expect("stale");
+        let refused = acquire_waiting(&data, Duration::from_millis(300)).expect_err("held");
+        assert_eq!(refused.holder, Some(Holder::App));
+    }
+
+    /// Once this copy records its URL, the old-name file is gone.
+    #[test]
+    fn recording_removes_the_older_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let data = tmp.path().join("data");
+        std::fs::create_dir_all(&data).expect("data");
+        std::fs::write(data.join(LEGACY_APP_URL_FILE), CLI).expect("old marker");
+        record_app_url(&data, APP).expect("record");
+        assert!(!data.join(LEGACY_APP_URL_FILE).exists());
+        assert_eq!(
+            std::fs::read_to_string(data.join(APP_URL_FILE)).expect("new"),
+            APP
+        );
+        // Nothing to remove the next time: no error.
+        record_app_url(&data, APP).expect("record again");
     }
 
     #[test]
