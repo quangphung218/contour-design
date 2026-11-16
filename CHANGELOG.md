@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.42] - 2026-11-16
+
 ### Fixed
 
 - macOS: exporting (PNG, PDF, MP4, editable PPTX) no longer makes macOS ask to allow Contour under Privacy & Security ▸ App Management, again after every update. The headless Chrome an export uses is now started by macOS itself, not by Contour, so what Chrome and Google's updater do to app bundles is no longer charged to Contour. A Chrome, Edge or Chromium set with `OD_CHROME_PATH` to a file outside an `.app` bundle still starts as before.
@@ -1232,7 +1234,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.41...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.42...HEAD
+[0.2.0-beta.42]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.41...v0.2.0-beta.42
 [0.2.0-beta.41]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.40...v0.2.0-beta.41
 [0.2.0-beta.40]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.39...v0.2.0-beta.40
 [0.2.0-beta.39]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.38...v0.2.0-beta.39
