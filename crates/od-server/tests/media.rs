@@ -452,12 +452,31 @@ async fn mp4_export_rejects_non_compositions() {
         )
         .await;
     assert_eq!(res.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // A plain page: the user reads that the project is no motion film,
+    // under a code the UI words in their language.
+    let err = &res.json()["error"];
+    assert_eq!(err["code"], "NOT_A_COMPOSITION");
+    let message = err["message"].as_str().unwrap();
     assert!(
-        res.json()["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("data-composition-id")
+        message.starts_with("This project is not a motion video: plain.html"),
+        "{message}"
     );
+    assert!(message.contains("data-composition-id"), "{message}");
+    // A composition with a bad size is a motion film with a fault: its
+    // own precise words.
+    h.file(
+        &id,
+        "bad.html",
+        r#"<div data-composition-id="m" data-width="0" data-height="5"></div>"#,
+    );
+    let res = h
+        .post(
+            &format!("/api/projects/{id}/export/mp4"),
+            json!({ "fileName": "bad.html" }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(res.json()["error"]["code"], "VALIDATION_FAILED");
     let res = h
         .post(
             &format!("/api/projects/{id}/export/mp4"),
@@ -466,6 +485,72 @@ async fn mp4_export_rejects_non_compositions() {
         .await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
     assert!(h.frames.seen.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn motion_projects_lists_only_projects_with_a_composition() {
+    let h = harness();
+    let plain = h.project("Landing page");
+    h.file(&plain, "index.html", "<html><body>hi</body></html>");
+    // A sub-composition alone is not a film to render.
+    h.file(&plain, "parts/intro.html", COMPOSITION);
+    let top = h.project("HyperFrames");
+    h.file(&top, "index.html", COMPOSITION);
+    h.file(&top, "motion-source/film/index.html", COMPOSITION);
+    // Motion keeps the film in a folder, with no top-level page.
+    let motion = h.project("Motion");
+    h.file(&motion, "motion-source/film/index.html", COMPOSITION);
+    h.file(
+        &motion,
+        "motion-source/film/compositions/intro.html",
+        COMPOSITION,
+    );
+    let _empty = h.project("Empty");
+
+    let res = h.get("/api/media/motion-projects").await;
+    assert_eq!(res.status, StatusCode::OK);
+    let mut found: Vec<(String, String, String)> = res.json()["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["id"].as_str().unwrap().to_owned(),
+                p["name"].as_str().unwrap().to_owned(),
+                p["fileName"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    found.sort();
+    let mut want = vec![
+        (
+            top.clone(),
+            "HyperFrames".to_owned(),
+            "index.html".to_owned(),
+        ),
+        (
+            motion.clone(),
+            "Motion".to_owned(),
+            "motion-source/film/index.html".to_owned(),
+        ),
+    ];
+    want.sort();
+    assert_eq!(found, want);
+
+    // The agent rewrites the film as a plain page: no longer listed.
+    h.file(
+        &motion,
+        "motion-source/film/index.html",
+        "<p>not a film</p>",
+    );
+    let res = h.get("/api/media/motion-projects").await;
+    let ids: Vec<Value> = res.json()["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].clone())
+        .collect();
+    assert_eq!(ids, [json!(top)]);
 }
 
 // ---------------------------------------------------------------------------

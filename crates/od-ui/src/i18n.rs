@@ -241,6 +241,7 @@ messages! {
     ErrNoWritePermission => "No permission to write", "Không có quyền ghi";
     ErrNoReadPermission => "No permission to read", "Không có quyền đọc";
     ErrStorageFull => "Disk full", "Ổ đĩa đã đầy";
+    ErrNotMotion => "This project is not a motion video, so it has no film to render. Make one with Motion on Home.", "Project này không phải video chuyển động nên không có gì để render. Hãy tạo project bằng Motion ở Trang chủ.";
     // What was not done, then why ({0}); an internal failure ends the
     // sentence with "Try again." instead (`api::failure`, QA-081).
     JuryOnFailed => "Could not turn on the Design Jury: {0}", "Không bật được Design Jury: {0}";
@@ -1254,6 +1255,8 @@ messages! {
     KeySaved => "Key saved ···{0}", "Đã lưu key ···{0}";
     KeyFromEnv => "Key from environment", "Key từ biến môi trường";
     Mp4Hint => "Renders a motion project to an MP4 saved in the project. Needs Chrome and ffmpeg.", "Render project chuyển động ra MP4 lưu trong project. Cần Chrome và ffmpeg.";
+    Mp4ProjectsFailed => "Could not load the motion projects: {0}", "Không tải được danh sách project chuyển động: {0}";
+    Mp4NoMotionProjects => "No motion project yet. On Home, pick Motion and describe your video: the project shows up here.", "Chưa có project chuyển động. Ở Trang chủ, chọn Motion rồi mô tả video: project sẽ hiện ở đây.";
     FramesPerSecond => "Frames per second", "Khung hình mỗi giây";
     RenderMp4 => "Render MP4", "Render MP4";
     Mp4Saved => "Saved {0}.", "Đã lưu {0}.";
